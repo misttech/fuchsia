@@ -6,7 +6,7 @@ use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use attribution_server::{AttributionServer, AttributionServerHandle};
 use fidl_fuchsia_memory_attribution as fattribution;
 use starnix_logging::log_error;
-use starnix_sync::{LockDepMutex, Locked, MemoryAttributionPublisherLock, Unlocked};
+use starnix_sync::{Locked, Mutex, Unlocked};
 use starnix_uapi::pid_t;
 use starnix_uapi::restricted_aspace::{RESTRICTED_ASPACE_BASE, RESTRICTED_ASPACE_SIZE};
 use std::collections::{HashMap, HashSet};
@@ -69,8 +69,7 @@ impl MemoryAttributionManager {
     pub fn new(kernel: Weak<Kernel>) -> Self {
         let (publisher_tx, publisher_rx) = mpsc::sync_channel(1);
         let weak_kernel = kernel;
-        let publisher_rx =
-            Arc::new(LockDepMutex::<_, MemoryAttributionPublisherLock>::new(Some(publisher_rx)));
+        let publisher_rx = Arc::new(Mutex::new(Some(publisher_rx)));
         let memory_attribution_server = AttributionServer::new(Box::new(move || {
             // Initial scan of the PID table when a client connects.
             let mut events = vec![];

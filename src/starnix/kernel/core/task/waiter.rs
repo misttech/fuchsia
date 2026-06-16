@@ -10,9 +10,8 @@ use slab::Slab;
 use smallvec::SmallVec;
 use starnix_lifecycle::AtomicCounter;
 use starnix_sync::{
-    EventHandlerReadyQueueLock, EventWaitGuard, FileOpsCore, InterruptibleEvent, LockDepMutex,
-    LockEqualOrBefore, Locked, Mutex, NotifyKind, PortEvent, PortWaitResult,
-    WaiterEventHandlerLock,
+    EventWaitGuard, FileOpsCore, InterruptibleEvent, LockEqualOrBefore, Locked, Mutex, NotifyKind,
+    PortEvent, PortWaitResult,
 };
 use starnix_types::ownership::debug_assert_no_local_temp_ref;
 use starnix_uapi::error;
@@ -60,17 +59,13 @@ pub enum EventHandler {
     ///
     /// This event handler naturally synchronizes the notifier and notifee
     /// because of the lock acquired/released when enqueuing the event.
-    Enqueue {
-        key: ReadyItemKey,
-        queue: Arc<LockDepMutex<VecDeque<ReadyItem>, EventHandlerReadyQueueLock>>,
-        sought_events: FdEvents,
-    },
+    Enqueue { key: ReadyItemKey, queue: Arc<Mutex<VecDeque<ReadyItem>>>, sought_events: FdEvents },
 
     /// Wraps another EventHandler and only triggers it once. Further .handle() calls are ignored.
     ///
     /// This is intended for cases like BinderFileObject which need to register
     /// the same EventHandler on multiple wait queues.
-    HandleOnce(Arc<LockDepMutex<Option<EventHandler>, WaiterEventHandlerLock>>),
+    HandleOnce(Arc<Mutex<Option<EventHandler>>>),
 
     /// This handler is an epoll.
     Epoll(EpollEventHandler),
@@ -1214,8 +1209,7 @@ mod tests {
             let mut output_buffer = VecOutputBuffer::new(MEM_SIZE);
 
             let test_string = "hello startnix".to_string();
-            let queue: Arc<LockDepMutex<VecDeque<ReadyItem>, EventHandlerReadyQueueLock>> =
-                Default::default();
+            let queue: Arc<Mutex<VecDeque<ReadyItem>>> = Default::default();
             let handler = EventHandler::Enqueue {
                 key: KEY,
                 queue: queue.clone(),
@@ -1259,8 +1253,7 @@ mod tests {
             spawn_kernel_and_run(async move |locked, current_task| {
                 let event = new_eventfd(locked, &current_task, 0, EventFdType::Counter, true);
                 let waiter = Waiter::new();
-                let queue: Arc<LockDepMutex<VecDeque<ReadyItem>, EventHandlerReadyQueueLock>> =
-                    Default::default();
+                let queue: Arc<Mutex<VecDeque<ReadyItem>>> = Default::default();
                 let handler = EventHandler::Enqueue {
                     key: KEY,
                     queue: queue.clone(),
@@ -1432,8 +1425,7 @@ mod tests {
     #[::fuchsia::test]
     async fn test_async_typed_wait_value_with_handler() {
         spawn_kernel_and_run(async |locked, current_task| {
-            let queue: Arc<LockDepMutex<VecDeque<ReadyItem>, EventHandlerReadyQueueLock>> =
-                Default::default();
+            let queue: Arc<Mutex<VecDeque<ReadyItem>>> = Default::default();
             let handler = EventHandler::Enqueue {
                 key: KEY,
                 queue: queue.clone(),

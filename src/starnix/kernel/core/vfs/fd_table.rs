@@ -11,8 +11,8 @@ use fuchsia_rcu::{RcuArc, RcuReadGuard, RcuReadScope, rcu_drop};
 use fuchsia_rcu_collections::rcu_array::RcuArray;
 use linux_uapi::{FD_CLOEXEC, FIOCLEX, FIONCLEX};
 use starnix_sync::{
-    FdTableWriterQueueLock, FileOpsCore, LockBefore, LockDepGuard, LockDepMutex, LockEqualOrBefore,
-    Locked, ThreadGroupLimits, Unlocked,
+    FileOpsCore, LockBefore, LockEqualOrBefore, Locked, Mutex, MutexGuard, ThreadGroupLimits,
+    Unlocked,
 };
 use starnix_syscalls::SyscallResult;
 use starnix_types::ownership::Releasable;
@@ -332,7 +332,7 @@ impl<'a> FdTableView<'a> {
 
 struct FdTableWriteGuard<'a> {
     store: &'a FdTableInner,
-    _write_guard: LockDepGuard<'a, ()>,
+    _write_guard: MutexGuard<'a, ()>,
 }
 
 impl<'a> FdTableWriteGuard<'a> {
@@ -534,7 +534,7 @@ struct FdTableInner {
 
     /// A mutex used to serialize concurrent writers to the `FdTable`, and to prevent writers from
     /// being blocked by readers.
-    writer_queue: LockDepMutex<(), FdTableWriterQueueLock>,
+    writer_queue: Mutex<()>,
 }
 
 impl Default for FdTableInner {
@@ -543,7 +543,7 @@ impl Default for FdTableInner {
             share_count: AtomicUsize::new(1),
             entries: Default::default(),
             next_fd: AtomicFdNumber::default(),
-            writer_queue: LockDepMutex::new(()),
+            writer_queue: Mutex::new(()),
         }
     }
 }
@@ -555,7 +555,7 @@ impl Clone for FdTableInner {
             share_count: AtomicUsize::new(1),
             entries: self.entries.clone(),
             next_fd: self.next_fd.clone(),
-            writer_queue: LockDepMutex::new(()),
+            writer_queue: Mutex::new(()),
         }
     }
 }

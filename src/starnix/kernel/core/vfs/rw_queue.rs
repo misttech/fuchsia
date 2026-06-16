@@ -7,7 +7,7 @@ use starnix_uapi::errors::Errno;
 
 use core::marker::PhantomData;
 
-use starnix_sync::{InterruptibleEvent, LockBefore, LockDepMutex, Locked, RwQueueInnerLock};
+use starnix_sync::{InterruptibleEvent, LockBefore, Locked, Mutex};
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -18,7 +18,7 @@ use lock_api::RawRwLock;
 
 #[derive(Debug)]
 pub struct RwQueue<L> {
-    inner: LockDepMutex<RwQueueInner, RwQueueInnerLock>,
+    inner: Mutex<RwQueueInner>,
     _phantom: PhantomData<L>,
 
     // Used to inform our deadlock detector about the waiters in the queue.

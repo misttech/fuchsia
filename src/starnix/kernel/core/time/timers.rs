@@ -6,7 +6,7 @@ use crate::signals::{SignalEvent, SignalEventNotify, SignalEventValue};
 use crate::task::CurrentTask;
 use crate::time::interval_timer::{IntervalTimer, IntervalTimerHandle};
 use crate::time::{Timeline, TimerWakeup};
-use starnix_sync::{LockDepMutex, TimerTableStateLock};
+use starnix_sync::Mutex;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::SIGALRM;
 use starnix_uapi::{TIMER_ABSTIME, error, itimerspec, uapi};
@@ -28,7 +28,7 @@ pub type ClockId = uapi::__kernel_clockid_t;
 // timerfd's).
 #[derive(Debug, Default)]
 pub struct TimerTable {
-    state: LockDepMutex<TimerTableMutableState, TimerTableStateLock>,
+    state: Mutex<TimerTableMutableState>,
 }
 
 #[derive(Debug)]

@@ -5,7 +5,7 @@
 use crate::security;
 use crate::task::CurrentTask;
 use crate::vfs::{FileSystemHandle, FileSystemOptions, FsStr, FsString};
-use starnix_sync::{FsRegistryLock, LockDepMutex, Locked, Unlocked};
+use starnix_sync::{Locked, Mutex, Unlocked};
 use starnix_uapi::errors::Errno;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -23,7 +23,7 @@ type CreateFs = Arc<
 
 #[derive(Default)]
 pub struct FsRegistry {
-    registry: LockDepMutex<BTreeMap<FsString, CreateFs>, FsRegistryLock>,
+    registry: Mutex<BTreeMap<FsString, CreateFs>>,
 }
 
 impl FsRegistry {

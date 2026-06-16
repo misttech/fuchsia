@@ -16,8 +16,8 @@ use ref_cast::RefCast;
 use smallvec::SmallVec;
 use starnix_crypt::CryptService;
 use starnix_sync::{
-    DynamicLockDepMutex, FileOpsCore, FileSystemEntriesLock, FileSystemPermanentLock, FsRename,
-    FsRenameRecursive, FuseFsRenameLevel, LockDepMutex, LockEqualOrBefore, Locked,
+    DynamicLockDepMutex, FileOpsCore, FsRename, FsRenameRecursive, FuseFsRenameLevel,
+    LockEqualOrBefore, Locked, Mutex,
 };
 use starnix_uapi::arc_key::ArcKey;
 use starnix_uapi::as_any::AsAny;
@@ -132,11 +132,11 @@ impl FileSystemOptions {
 
 struct LruCache {
     capacity: usize,
-    entries: LockDepMutex<LinkedHashMap<ArcKey<DirEntry>, ()>, FileSystemEntriesLock>,
+    entries: Mutex<LinkedHashMap<ArcKey<DirEntry>, ()>>,
 }
 
 enum DirEntryCache {
-    Permanent(LockDepMutex<HashSet<ArcKey<DirEntry>>, FileSystemPermanentLock>),
+    Permanent(Mutex<HashSet<ArcKey<DirEntry>>>),
     Lru(LruCache),
     Uncached,
 }
@@ -198,10 +198,10 @@ impl FileSystem {
             },
             node_cache,
             dcache: match cache_mode {
-                CacheMode::Permanent => DirEntryCache::Permanent(LockDepMutex::new(HashSet::new())),
+                CacheMode::Permanent => DirEntryCache::Permanent(Mutex::new(HashSet::new())),
                 CacheMode::Cached(CacheConfig { capacity }) => DirEntryCache::Lru(LruCache {
                     capacity,
-                    entries: LockDepMutex::new(LinkedHashMap::new()),
+                    entries: Mutex::new(LinkedHashMap::new()),
                 }),
                 CacheMode::Uncached => DirEntryCache::Uncached,
             },

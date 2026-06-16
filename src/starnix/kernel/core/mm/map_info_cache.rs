@@ -5,7 +5,7 @@
 use crate::task::CurrentTask;
 use memory_pinning::ShadowProcess;
 use page_buf::PageBuf;
-use starnix_sync::{LockDepMutex, MapInfoCacheBufLock};
+use starnix_sync::Mutex;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::from_status_like_fdio;
 use std::sync::Arc;
@@ -17,7 +17,7 @@ use std::sync::Arc;
 /// potential lock contention for /proc/pid/status and related files. Luckily it seems that
 /// in practice files like /proc/pid/status are not regularly accessed concurrently.
 pub struct MapInfoCache {
-    buf: LockDepMutex<PageBuf<zx::MapInfo>, MapInfoCacheBufLock>,
+    buf: Mutex<PageBuf<zx::MapInfo>>,
 }
 
 const ZIRCON_NAME: zx::Name = zx::Name::new_lossy("starnix_zx_map_info_cache");
@@ -43,7 +43,7 @@ impl MapInfoCache {
             .map_err(|e| from_status_like_fdio!(e))?;
         buf.set_name(&ZIRCON_NAME);
 
-        Ok(Self { buf: LockDepMutex::new(buf) })
+        Ok(Self { buf: Mutex::new(buf) })
     }
 
     pub fn with_map_infos<R>(

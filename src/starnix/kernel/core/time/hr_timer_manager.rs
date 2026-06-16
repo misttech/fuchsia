@@ -20,7 +20,7 @@ use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::{FutureExt, SinkExt, StreamExt, select};
 use scopeguard::defer;
 use starnix_logging::{log_debug, log_error, log_info, log_warn};
-use starnix_sync::{HrTimerIsIntervalLock, HrTimerManagerStateLock, LockDepGuard, LockDepMutex};
+use starnix_sync::{HrTimerIsIntervalLock, LockDepMutex, Mutex, MutexGuard};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, from_status_like_fdio};
 use std::collections::{HashMap, VecDeque};
@@ -447,7 +447,7 @@ async fn run_utc_timeline_monitor_internal(
 ///
 /// This manager is responsible for creating and managing high-resolution timers.
 pub struct HrTimerManager {
-    state: LockDepMutex<HrTimerManagerState, HrTimerManagerStateLock>,
+    state: Mutex<HrTimerManagerState>,
 
     /// The channel sender that notifies the worker thread that HrTimer driver needs to be
     /// (re)started with a new deadline.
@@ -459,7 +459,7 @@ impl HrTimerManager {
     pub fn new(parent_node: &fuchsia_inspect::Node) -> HrTimerManagerHandle {
         let inspect_node = parent_node.create_child("hr_timer_manager");
         let new_manager = Arc::new(Self {
-            state: LockDepMutex::new(HrTimerManagerState::new(&inspect_node)),
+            state: Mutex::new(HrTimerManagerState::new(&inspect_node)),
             start_next_sender: Default::default(),
         });
         let manager_weak = Arc::downgrade(&new_manager);
@@ -713,7 +713,7 @@ impl HrTimerManager {
 
     fn record_inspect_on_stop(
         self: &HrTimerManagerHandle,
-        guard: &mut LockDepGuard<'_, HrTimerManagerState>,
+        guard: &mut MutexGuard<'_, HrTimerManagerState>,
         prev_len: usize,
     ) {
         let after_len = guard.get_pending_timers_count();
@@ -731,7 +731,7 @@ impl HrTimerManager {
 
     fn record_inspect_on_start(
         self: &HrTimerManagerHandle,
-        guard: &mut LockDepGuard<'_, HrTimerManagerState>,
+        guard: &mut MutexGuard<'_, HrTimerManagerState>,
         timer_id: zx::Koid,
         task: fasync::Task<()>,
         deadline: TargetTime,
@@ -1101,13 +1101,13 @@ impl HrTimerManager {
         Ok(())
     }
 
-    fn lock(&self) -> LockDepGuard<'_, HrTimerManagerState> {
+    fn lock(&self) -> MutexGuard<'_, HrTimerManagerState> {
         self.state.lock()
     }
 
     fn record_event(
         self: &HrTimerManagerHandle,
-        guard: &mut LockDepGuard<'_, HrTimerManagerState>,
+        guard: &mut MutexGuard<'_, HrTimerManagerState>,
         event_type: InspectHrTimerEvent,
         deadline: Option<TargetTime>,
     ) {
@@ -1386,7 +1386,7 @@ mod tests {
         response_type: Response,
     ) -> (HrTimerManagerHandle, zx::Counter) {
         let manager = Arc::new(HrTimerManager {
-            state: LockDepMutex::new(HrTimerManagerState::new_for_test()),
+            state: Mutex::new(HrTimerManagerState::new_for_test()),
             start_next_sender: Default::default(),
         });
         let counter = zx::Counter::create();

@@ -12,9 +12,7 @@ use crate::vfs::{
     FsNodeOps, FsStr, FsString, WdNumber, WeakFileHandle, default_ioctl, fileops_impl_nonseekable,
     fileops_impl_noop_sync, fs_args, inotify,
 };
-use starnix_sync::{
-    FileOpsCore, InotifyWatchersLock, LockDepMutex, LockEqualOrBefore, Locked, Mutex, Unlocked,
-};
+use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::auth::CAP_SYS_ADMIN;
@@ -58,7 +56,7 @@ pub struct InotifyWatcher {
 
 #[derive(Default)]
 pub struct InotifyWatchers {
-    watchers: LockDepMutex<BTreeMap<FileHandleKey, InotifyWatcher>, InotifyWatchersLock>,
+    watchers: Mutex<BTreeMap<FileHandleKey, InotifyWatcher>>,
 }
 
 #[derive(Default)]

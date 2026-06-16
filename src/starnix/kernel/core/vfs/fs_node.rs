@@ -27,10 +27,9 @@ use starnix_crypt::EncryptionKeyId;
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
 use starnix_logging::{log_error, track_stub};
 use starnix_sync::{
-    BeforeFsNodeAppend, DynamicLockDepRwLock, FileOpsCore, FsNodeAppend, FsNodeFlockInfoLock,
-    FsNodeFsVerityLock, FsNodeInfoLevel, FsNodeInfoRecursiveLevel, FsNodeWriteGuardStateLock,
-    FuseFsNodeInfoLevel, LockDepMutex, LockDepReadGuard, LockEqualOrBefore, Locked, Unlocked,
-    allow_subclass,
+    BeforeFsNodeAppend, DynamicLockDepRwLock, FileOpsCore, FsNodeAppend, FsNodeInfoLevel,
+    FsNodeInfoRecursiveLevel, FuseFsNodeInfoLevel, LockDepReadGuard, LockEqualOrBefore, Locked,
+    Mutex, Unlocked, allow_subclass,
 };
 use starnix_types::ownership::{Releasable, ReleaseGuard};
 use starnix_types::time::{NANOS_PER_SECOND, timespec_from_time};
@@ -112,10 +111,10 @@ pub struct FsNode {
     rare_data: OnceLock<Box<FsNodeRareData>>,
 
     /// Tracks lock state for this file.
-    pub write_guard_state: LockDepMutex<FileWriteGuardState, FsNodeWriteGuardStateLock>,
+    pub write_guard_state: Mutex<FileWriteGuardState>,
 
     /// Cached FsVerity state associated with this node.
-    pub fsverity: LockDepMutex<FsVerityState, FsNodeFsVerityLock>,
+    pub fsverity: Mutex<FsVerityState>,
 
     /// The security state associated with this node. Must always be acquired last
     /// relative to other `FsNode` locks.
@@ -135,7 +134,7 @@ struct FsNodeRareData {
     /// Information about the locking information on this node.
     ///
     /// No other lock on this object may be taken while this lock is held.
-    flock_info: LockDepMutex<FlockInfo, FsNodeFlockInfoLock>,
+    flock_info: Mutex<FlockInfo>,
 
     /// Records locks associated with this node.
     record_locks: RecordLocks,
@@ -1258,7 +1257,7 @@ impl FsNode {
                 append_lock: Default::default(),
                 rare_data: Default::default(),
                 write_guard_state: Default::default(),
-                fsverity: LockDepMutex::new(FsVerityState::None),
+                fsverity: Mutex::new(FsVerityState::None),
                 security_state: Default::default(),
             };
             #[cfg(any(test, debug_assertions))]

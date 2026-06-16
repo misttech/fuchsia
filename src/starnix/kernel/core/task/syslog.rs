@@ -15,7 +15,7 @@ use fuchsia_component::client::connect_to_protocol_sync;
 use fuchsia_inspect::Inspector;
 use futures::FutureExt;
 use serde::Deserialize;
-use starnix_sync::{LockDepMutex, Locked, Mutex, SyslogStateLock, Unlocked};
+use starnix_sync::{Locked, Mutex, Unlocked};
 use starnix_uapi::auth::CAP_SYSLOG;
 use starnix_uapi::errors::{EAGAIN, Errno, errno, error};
 use starnix_uapi::syslog::SyslogAction;
@@ -35,7 +35,7 @@ const MICROS_PER_NANOSECOND: i64 = 1_000;
 #[derive(Default)]
 pub struct Syslog {
     syscall_subscription: OnceLock<Mutex<LogSubscription>>,
-    state: Arc<LockDepMutex<TimelineEstimator<DefaultFetcher>, SyslogStateLock>>,
+    state: Arc<Mutex<TimelineEstimator<DefaultFetcher>>>,
 }
 
 #[derive(Debug)]
@@ -293,7 +293,7 @@ struct LogIterator {
     iterator: fdiagnostics::BatchIteratorSynchronousProxy,
     pending_formatted_contents: VecDeque<fdiagnostics::FormattedContent>,
     pending_datas: VecDeque<Data<Logs>>,
-    state: Arc<LockDepMutex<TimelineEstimator<DefaultFetcher>, SyslogStateLock>>,
+    state: Arc<Mutex<TimelineEstimator<DefaultFetcher>>>,
     tags: std::collections::HashMap<u64, diagnostics_message::MonikerWithUrl>,
 }
 
@@ -558,7 +558,7 @@ pub(crate) fn extract_level(msg: &[u8]) -> Option<(KmsgLevel, &[u8])> {
 
 fn format_log<T: TimeFetcher>(
     data: Data<Logs>,
-    state: &Arc<LockDepMutex<TimelineEstimator<T>, SyslogStateLock>>,
+    state: &Arc<Mutex<TimelineEstimator<T>>>,
 ) -> Result<Option<Vec<u8>>, io::Error> {
     let mut formatted_tags = match data.tags() {
         None => vec![],

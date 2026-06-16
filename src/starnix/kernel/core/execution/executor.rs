@@ -7,9 +7,7 @@ use crate::ptrace::{PtraceCoreState, ptrace_attach_from_state};
 use crate::task::{CurrentTask, DelayedReleaser, ExitStatus, TaskBuilder, ZirconThread};
 use anyhow::Error;
 use starnix_logging::{log_error, log_warn};
-use starnix_sync::{
-    ExecutorVmarManagerLock, LockBefore, LockDepMutex, Locked, TaskRelease, Unlocked,
-};
+use starnix_sync::{LockBefore, Locked, Mutex, TaskRelease, Unlocked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 use std::os::unix::thread::JoinHandleExt;
@@ -20,7 +18,7 @@ use thread_create_vmars::ThreadCreateVmars;
 /// Wrapper for `ThreadCreateVmars` to be stored in the kernel expando.
 ///
 /// This is a module-private singleton used to manage VMARs for thread creation.
-struct ExecutorVmarManager(LockDepMutex<ThreadCreateVmars, ExecutorVmarManagerLock>);
+struct ExecutorVmarManager(Mutex<ThreadCreateVmars>);
 
 pub fn execute_task_with_prerun_result<L, F, R, G>(
     locked: &mut Locked<L>,
@@ -75,9 +73,8 @@ where
     let process_handle = task_builder.task.thread_group().process.raw_handle();
 
     let kernel = task_builder.task.kernel();
-    let create_vmars = kernel
-        .expando
-        .get_or_init(|| ExecutorVmarManager(LockDepMutex::new(ThreadCreateVmars::new())));
+    let create_vmars =
+        kernel.expando.get_or_init(|| ExecutorVmarManager(Mutex::new(ThreadCreateVmars::new())));
     let mut create_vmars = create_vmars.0.lock();
 
     // SAFETY: thread_set_zx_create_handles only manipulates the handles for the current thread and

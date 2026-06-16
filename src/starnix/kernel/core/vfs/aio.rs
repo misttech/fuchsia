@@ -17,9 +17,7 @@ use crate::vfs::{
 };
 use smallvec::smallvec;
 use starnix_logging::track_stub;
-use starnix_sync::{
-    AioEventsLock, AioPendingOperationsLock, InterruptibleEvent, LockDepMutex, Locked, Unlocked,
-};
+use starnix_sync::{InterruptibleEvent, Locked, Mutex, Unlocked};
 use starnix_syscalls::SyscallResult;
 use starnix_types::user_buffer::{UserBuffer, UserBuffers};
 use starnix_uapi::errors::{EINTR, ETIMEDOUT, Errno};
@@ -433,7 +431,7 @@ impl PendingOperations {
 
 struct OperationQueue {
     max_operations: usize,
-    pending: LockDepMutex<PendingOperations, AioPendingOperationsLock>,
+    pending: Mutex<PendingOperations>,
     read_waiters: WaitQueue,
     write_waiters: WaitQueue,
 }
@@ -442,7 +440,7 @@ impl OperationQueue {
     fn new(max_operations: usize) -> Self {
         Self {
             max_operations,
-            pending: LockDepMutex::new(Default::default()),
+            pending: Default::default(),
             read_waiters: Default::default(),
             write_waiters: Default::default(),
         }
@@ -531,7 +529,7 @@ impl OperationQueue {
 #[derive(Default)]
 struct ResultQueue {
     waiters: WaitQueue,
-    events: LockDepMutex<VecDeque<io_event>, AioEventsLock>,
+    events: Mutex<VecDeque<io_event>>,
 }
 
 impl ResultQueue {
