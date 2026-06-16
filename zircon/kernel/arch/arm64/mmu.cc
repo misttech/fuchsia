@@ -2511,7 +2511,6 @@ void ArmVmICacheConsistencyManager::SyncAddr(vaddr_t start, size_t len) {
         __dsb(ARM_MB_ISHST);
       }
       arch::InvalidateInstructionCacheRange(start, len);
-      __isb(ARM_MB_SY);
     } else {
       // We will batch the icache global invalidate and perform it at the end.
       need_invalidate_ = need_dsb_ = true;
@@ -2548,7 +2547,6 @@ void ArmVmICacheConsistencyManager::Finish() {
   // the virtual aliases of the sections we cleaned so our only option is to
   // dump the entire icache.
   arch::InvalidateGlobalInstructionCache();
-  __isb(ARM_MB_SY);
   need_invalidate_ = false;
 }
 

@@ -63,6 +63,7 @@ FUNCTION(arch_sync_cache_range)
     // Invalidate entire icache to ensure in the case that the icache is VIPT that any virtual
     // aliases are invalidated.
     ic ialluis
+    dsb ish
     isb
     ret
     SPECULATION_POSTFENCE

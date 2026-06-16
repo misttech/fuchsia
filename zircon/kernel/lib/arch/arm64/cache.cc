@@ -16,7 +16,6 @@ GlobalCacheConsistencyContext::~GlobalCacheConsistencyContext() {
   // cache.
   if (!ArmCacheTypeEl0::Read().dic() && possible_aliasing_) {
     InvalidateGlobalInstructionCache();
-    __isb(ARM_MB_SY);
   }
 }
 

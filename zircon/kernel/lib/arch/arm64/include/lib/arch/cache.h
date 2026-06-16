@@ -66,6 +66,7 @@
 // parameterized on \op, since ivau is the only VA instruction cache operation.
 .macro instruction_cache_range_invalidate
   cache_range_op ic ivau CTR_EL0_IMIN_LINE_SHIFT CTR_EL0_IMIN_LINE_WIDTH
+  isb
 .endm
 
 // Generate assembly to iterate over all ways/sets across all levels of data
@@ -118,13 +119,12 @@ extern "C" void InvalidateDataCacheRange(uintptr_t addr, size_t size);
 extern "C" void InvalidateInstructionCacheRange(uintptr_t addr, size_t size);
 
 // Invalidate the entire instruction cache.
-//
-// Caller must perform an instruction barrier (e.g., `__isb(ARM_MB_SY)`)
-// prior to relying on the operation being complete.
 inline void InvalidateGlobalInstructionCache() {
   // Instruction cache: invalidate all ("iall") inner-sharable ("is") caches
   // to point of unification ("u").
   asm volatile("ic ialluis" ::: "memory");
+  __dsb(ARM_MB_ISH);
+  __isb(ARM_MB_SY);
 }
 
 // Invalidate both the instruction and data TLBs.
