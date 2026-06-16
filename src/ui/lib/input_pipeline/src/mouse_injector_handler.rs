@@ -133,15 +133,12 @@ impl InputHandler for MouseInjectorHandler {
                 }
 
                 // Handle the event.
-                if let Err(e) = self
-                    .send_event_to_scenic(
-                        mouse_event,
-                        &mouse_device_descriptor,
-                        event_time,
-                        trace_id.into(),
-                    )
-                    .await
-                {
+                if let Err(e) = self.send_event_to_scenic(
+                    mouse_event,
+                    &mouse_device_descriptor,
+                    event_time,
+                    trace_id.into(),
+                ) {
                     self.metrics_logger.log_error(
                         InputPipelineErrorMetricDimensionEvent::MouseInjectorSendEventToScenicFailed,
                         std::format!("send_event_to_scenic failed: {}", e));
@@ -438,7 +435,7 @@ impl MouseInjectorHandler {
     /// - `mouse_event`: The mouse event to send to Scenic.
     /// - `mouse_descriptor`: The descriptor for the device that sent the mouse event.
     /// - `event_time`: The time in nanoseconds when the event was first recorded.
-    async fn send_event_to_scenic(
+    fn send_event_to_scenic(
         &self,
         mouse_event: &mut mouse_binding::MouseEvent,
         mouse_descriptor: &mouse_binding::MouseDeviceDescriptor,

@@ -142,7 +142,7 @@ impl BatchInputHandler for TouchInjectorHandler {
                 result[0].device_descriptor
             {
                 if let Err(e) =
-                    self.inject_pointer_events(pending_scenic_events, touch_device_descriptor).await
+                    self.inject_pointer_events(pending_scenic_events, touch_device_descriptor)
                 {
                     self.metrics_logger.log_error(
                         InputPipelineErrorMetricDimensionEvent::TouchInjectorSendEventToScenicFailed,
@@ -500,7 +500,7 @@ impl TouchInjectorHandler {
     /// # Parameters
     /// - `events`: The events to inject.
     /// - `touch_descriptor`: The descriptor for the device that sent the touch event.
-    async fn inject_pointer_events(
+    fn inject_pointer_events(
         &self,
         events: Vec<pointerinjector::Event>,
         touch_descriptor: &touch_binding::TouchScreenDeviceDescriptor,
