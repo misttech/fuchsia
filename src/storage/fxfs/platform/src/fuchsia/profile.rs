@@ -13,7 +13,7 @@ use arrayref::{array_refs, mut_array_refs};
 use async_trait::async_trait;
 use fuchsia_async as fasync;
 use fuchsia_hash::Hash;
-use futures::future::{self, BoxFuture, RemoteHandle, join_all};
+use futures::future::{self, BoxFuture, join_all};
 use futures::lock::Mutex;
 use futures::{FutureExt, select};
 use fxfs::errors::FxfsError;
@@ -726,7 +726,7 @@ pub trait ProfileState: Send + Sync {
     async fn wait_for_replay_to_finish(&mut self);
 
     /// Waits for the recording to finish.
-    async fn wait_for_recording_to_finish(&mut self) -> Result<(), Error>;
+    async fn wait_for_recording_to_finish(&mut self);
 }
 
 pub fn new_profile_state(is_blob: bool) -> Box<dyn ProfileState> {
@@ -738,7 +738,7 @@ pub fn new_profile_state(is_blob: bool) -> Box<dyn ProfileState> {
 }
 
 struct ProfileStateImpl<T> {
-    recording: Option<RemoteHandle<Result<(), Error>>>,
+    recording: Option<fasync::CancelableJoinHandle<()>>,
     replay: Option<ReplayState<T>>,
 }
 
@@ -760,16 +760,16 @@ impl<T: RecordedVolume> ProfileState for ProfileStateImpl<T> {
         // Cancel the previous recording (if any).
         self.recording = None;
         let scope = volume.scope().clone();
-        let (task, remote_handle) = async move {
-            let recording = T::new(volume);
-            recording
-                .record(recording_handle, receiver)
-                .await
-                .inspect_err(|error| warn!(error:?; "Profile recording failed"))
-        }
-        .remote_handle();
-        self.recording = Some(remote_handle);
-        scope.spawn(task);
+        self.recording = Some(
+            scope
+                .spawn(async move {
+                    let recording = T::new(volume);
+                    if let Err(error) = recording.record(recording_handle, receiver).await {
+                        warn!(error:?; "Profile recording failed");
+                    }
+                })
+                .into(),
+        );
         Box::new(RecorderImpl::new(sender))
     }
 
@@ -788,8 +788,10 @@ impl<T: RecordedVolume> ProfileState for ProfileStateImpl<T> {
         }
     }
 
-    async fn wait_for_recording_to_finish(&mut self) -> Result<(), Error> {
-        if let Some(recording) = self.recording.take() { recording.await } else { Ok(()) }
+    async fn wait_for_recording_to_finish(&mut self) {
+        if let Some(recording) = self.recording.take() {
+            let _ = recording.await;
+        }
     }
 }
 
@@ -1007,7 +1009,7 @@ mod tests {
                 recorder.record_open(blob).unwrap();
             }
 
-            state.wait_for_recording_to_finish().await.unwrap();
+            state.wait_for_recording_to_finish().await;
 
             assert_eq!(get_test_profile_contents(volume).await.len(), BLOCK_SIZE);
         }
@@ -1037,7 +1039,7 @@ mod tests {
                 recorder.record(node.clone(), 0).unwrap();
                 recorder.record_open(node).unwrap();
             }
-            state.wait_for_recording_to_finish().await.unwrap();
+            state.wait_for_recording_to_finish().await;
 
             assert_eq!(get_test_profile_contents(volume).await.len(), BLOCK_SIZE);
         }
@@ -1061,7 +1063,7 @@ mod tests {
                 let mut recorder = state.record_new(volume, Box::new(handle));
                 recorder.record(blob.clone(), 0).unwrap();
             }
-            state.wait_for_recording_to_finish().await.unwrap();
+            state.wait_for_recording_to_finish().await;
 
             assert_eq!(get_test_profile_contents(volume).await.len(), 0);
         }
@@ -1089,7 +1091,7 @@ mod tests {
                 recorder.record(blob.clone(), 4096 * i as u64).unwrap();
             }
         }
-        state.wait_for_recording_to_finish().await.unwrap();
+        state.wait_for_recording_to_finish().await;
 
         assert_eq!(get_test_profile_contents(volume).await.len(), BLOCK_SIZE * 2);
 
@@ -1138,7 +1140,7 @@ mod tests {
                 recorder.record(node.clone(), 4096 * i as u64).unwrap();
             }
         }
-        state.wait_for_recording_to_finish().await.unwrap();
+        state.wait_for_recording_to_finish().await;
 
         assert_eq!(get_test_profile_contents(volume).await.len(), BLOCK_SIZE * 2);
 
@@ -1185,7 +1187,7 @@ mod tests {
                     recorder.record(blob.clone(), 4096 * i as u64).unwrap();
                 }
             }
-            state.wait_for_recording_to_finish().await.unwrap();
+            state.wait_for_recording_to_finish().await;
             assert_eq!(get_test_profile_contents(volume).await.len(), IO_SIZE + BLOCK_SIZE);
 
             let mut local_cache: BTreeMap<Hash, Option<OpenedNode<FxBlob>>> = BTreeMap::new();
@@ -1238,7 +1240,7 @@ mod tests {
         };
         let device = fixture.close().await;
         device.ensure_unique();
-        state.wait_for_recording_to_finish().await.unwrap();
+        state.wait_for_recording_to_finish().await;
 
         device.reopen(false);
         let fixture = open_blob_fixture(device).await;
@@ -1299,7 +1301,7 @@ mod tests {
         };
         let device = fixture.close().await;
         device.ensure_unique();
-        state.wait_for_recording_to_finish().await.unwrap();
+        state.wait_for_recording_to_finish().await;
 
         device.reopen(false);
         let fixture = TestFixture::open(
@@ -1352,7 +1354,7 @@ mod tests {
                     fasync::Timer::new(Duration::from_millis(25)).await;
                 }
             }
-            state.wait_for_recording_to_finish().await.unwrap();
+            state.wait_for_recording_to_finish().await;
         }
         fixture.close().await;
     }
@@ -1376,7 +1378,7 @@ mod tests {
             recorder.record(blob.clone(), 0).unwrap();
         }
 
-        state.wait_for_recording_to_finish().await.unwrap();
+        state.wait_for_recording_to_finish().await;
         first_recording = get_test_profile_contents(volume).await;
         assert_ne!(first_recording.len(), 0);
         let device = fixture.close().await;
@@ -1418,7 +1420,7 @@ mod tests {
             recorder.record_open(blob.clone()).unwrap();
         }
 
-        state.wait_for_recording_to_finish().await.unwrap();
+        state.wait_for_recording_to_finish().await;
 
         let volume = fixture.volume().volume();
         let second_recording = get_test_profile_contents(volume).await;
@@ -1445,7 +1447,7 @@ mod tests {
                 let blob = fixture.get_blob((*hash).into()).await.expect("Opening blob");
                 message = BlobMessage { id: blob.root(), offset: 0 };
             }
-            state.wait_for_recording_to_finish().await.unwrap();
+            state.wait_for_recording_to_finish().await;
 
             // Make a profile long enough to require 2 reads.
             let replay_handle = Box::new(FakeReaderWriter::new());
@@ -1633,6 +1635,37 @@ mod tests {
             // The tombstoned file should not have anything committed because it shouldn't be able
             // to open.
             assert_eq!(tombstoned_file.vmo().info().unwrap().committed_bytes, 0);
+        }
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_recording_stopped_by_scope_shutdown() {
+        let fixture = TestFixture::new().await;
+        {
+            let volumes_directory = fixture.volumes_directory();
+            let mut state = new_profile_state(false);
+            // The recorder outlives the shutdown here, to show that we stopped the recording due to
+            // scope shutdown.
+            let (store_id, _recorder) = {
+                let volume_and_root = volumes_directory
+                    .create_and_mount_volume("other_volume", None, false, None)
+                    .await
+                    .unwrap();
+                let volume = volume_and_root.into_volume();
+
+                let handle =
+                    FileRecordingHandle::new(TEST_PROFILE_NAME, volume.clone()).await.unwrap();
+                (volume.store().store_object_id(), state.record_new(&volume, Box::new(handle)))
+            };
+            volumes_directory.lock().await.unmount(store_id).await.expect("Unmounting");
+            state.wait_for_recording_to_finish().await;
+
+            let volume_and_root =
+                volumes_directory.mount_volume("other_volume", None, false).await.unwrap();
+            let volume = volume_and_root.into_volume();
+            let profile_dir = volume.get_profile_directory().await.unwrap();
+            assert!(profile_dir.lookup(TEST_PROFILE_NAME).await.unwrap().is_none());
         }
         fixture.close().await;
     }

@@ -247,7 +247,7 @@ impl FxVolume {
         let Some(mut state) = self.profile_state.lock().take() else { return };
         state.wait_for_replay_to_finish().await;
         self.pager.set_recorder(None);
-        let _ = state.wait_for_recording_to_finish().await;
+        state.wait_for_recording_to_finish().await;
     }
 
     /// Opens or creates the profile directory in the volume's internal directory.
