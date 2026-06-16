@@ -68,7 +68,7 @@
 'third_party/rust_crates/vendor/rand_chacha' = ["src/security/OWNERS"]
 'third_party/rust_crates/vendor/rand_core' = ["src/security/OWNERS"]
 'third_party/rust_crates/vendor/ring' = ["src/security/OWNERS"]
-'third_party/rust_crates/forks/ring-0.17.8' = ["src/security/OWNERS"]
+'third_party/rust_crates/forks/ring' = ["src/security/OWNERS"]
 'third_party/rust_crates/vendor/rustls' = ["src/lib/fuchsia-hyper/OWNERS", "src/security/OWNERS"]
 'third_party/rust_crates/vendor/rustls-pemfile' = ["src/security/OWNERS"]
 'third_party/rust_crates/vendor/rustls-native-certs' = ["src/security/OWNERS"]
@@ -84,7 +84,7 @@
 
 # storage team
 'third_party/rust_crates/forks/fatfs' = ["src/storage/OWNERS"]
-'third_party/rust_crates/forks/fuse3' = ["src/storage/OWNERS"]
+'third_party/rust_crates/forks/fuse' = ["src/storage/OWNERS"]
 
 'third_party/wayland' = ["src/graphics/OWNERS", "src/virtualization/OWNERS"]
 
