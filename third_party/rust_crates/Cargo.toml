@@ -271,7 +271,7 @@ which = "8.0.3"
 winnow = "0.7.13"
 xml-rs = "0.8"
 zerocopy = { version = "0.8.48", features = ["derive", "simd"] }
-zstd = "0.11.2"
+zstd = "0.13.3"
 # keep-sorted end
 
 # Target-side only dependencies
@@ -1306,14 +1306,14 @@ group_visibility = { import = "//third_party/rust_crates/visibility.gni", variab
 [gn.package.zmij."1.0.21"]
 rustflags = []
 
-[gn.package.zstd-safe."5.0.2+zstd.1.5.2"]
+[gn.package.zstd-safe."7.2.4"]
 rustflags = []
 
 # Note that the zstd version we use on Fuchsia doesn't match the current zstd/zstd-safe crate,
 # however we do not rely on any new or experimental features outside of the existing APIs these
 # crates provide. When we do update the zstd/zstd-safe crates, we should ensure that we update the
 # zstd version pinned in the integration repo via the fuchsia/third_party/flower file accordingly.
-[gn.package.zstd-sys."2.0.1+zstd.1.5.6"]
+[gn.package.zstd-sys."2.0.16+zstd.1.5.7"]
 rustflags = []
 # It is a fork:
 uses_fuchsia_license = true

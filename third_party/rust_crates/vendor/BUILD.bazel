@@ -3385,13 +3385,13 @@ alias(
 )
 
 alias(
-    name = "zstd-0.11.2+zstd.1.5.2",
-    actual = "//third_party/rust_crates/vendor/zstd-0.11.2-zstd.1.5.2:zstd",
+    name = "zstd-0.13.3",
+    actual = "//third_party/rust_crates/vendor/zstd-0.13.3:zstd",
     tags = ["manual"],
 )
 
 alias(
     name = "zstd",
-    actual = "//third_party/rust_crates/vendor/zstd-0.11.2-zstd.1.5.2:zstd",
+    actual = "//third_party/rust_crates/vendor/zstd-0.13.3:zstd",
     tags = ["manual"],
 )

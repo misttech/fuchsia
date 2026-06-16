@@ -504,7 +504,7 @@ _NORMAL_DEPENDENCIES = {
             "winnow": Label("//third_party/rust_crates/vendor/winnow-0.7.13:winnow"),
             "xml-rs": Label("//third_party/rust_crates/vendor/xml-rs-0.8.26:xml"),
             "zerocopy": Label("//third_party/rust_crates/vendor/zerocopy-0.8.48:zerocopy"),
-            "zstd": Label("//third_party/rust_crates/vendor/zstd-0.11.2+zstd.1.5.2:zstd"),
+            "zstd": Label("//third_party/rust_crates/vendor/zstd-0.13.3:zstd"),
         },
         "cfg(not(target_os = \"fuchsia\"))": {
             "askama": Label("//third_party/rust_crates/vendor/askama-0.15.6:askama"),

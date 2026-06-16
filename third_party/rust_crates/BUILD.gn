@@ -2566,11 +2566,11 @@ if (!(current_os == "fuchsia")) {
 }
 
 group("zstd") {
-  public_deps = [ ":zstd-v0_11_2+zstd_1_5_2" ]
+  public_deps = [ ":zstd-v0_13_3" ]
 }
 
-group("zstd-0.11.2+zstd.1.5.2") {
-  public_deps = [ ":zstd-v0_11_2+zstd_1_5_2" ]
+group("zstd-0.13.3") {
+  public_deps = [ ":zstd-v0_13_3" ]
 }
 
 license("adler2-v2_0_1.license") {
@@ -24354,31 +24354,29 @@ rustc_library("zmij-v1_0_21") {
   applicable_licenses = [ ":zmij-v1_0_21.license" ]
 }
 
-license("zstd-v0_11_2+zstd_1_5_2.license") {
+license("zstd-v0_13_3.license") {
   public_package_name = "zstd"
-  license_files =
-      [ "//third_party/rust_crates/vendor/zstd-0.11.2-zstd.1.5.2/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/zstd-0.13.3/LICENSE" ]
 }
 
-rustc_library("zstd-v0_11_2+zstd_1_5_2") {
+rustc_library("zstd-v0_13_3") {
   crate_name = "zstd"
-  source_root =
-      "//third_party/rust_crates/vendor/zstd-0.11.2-zstd.1.5.2/src/lib.rs"
-  output_name = "zstd-bcf2d1c121863bf5"
+  source_root = "//third_party/rust_crates/vendor/zstd-0.13.3/src/lib.rs"
+  output_name = "zstd-ee0340550aed463e"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zstd-safe-v5_0_2+zstd_1_5_2" ]
+  deps += [ ":zstd-safe-v7_2_4" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=bcf2d1c121863bf5",
-    "-Cextra-filename=-bcf2d1c121863bf5",
+    "-Cmetadata=ee0340550aed463e",
+    "-Cextra-filename=-ee0340550aed463e",
     "--cfg=feature=\"arrays\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"legacy\"",
@@ -24387,38 +24385,36 @@ rustc_library("zstd-v0_11_2+zstd_1_5_2") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":zstd-v0_11_2+zstd_1_5_2.license" ]
+  applicable_licenses = [ ":zstd-v0_13_3.license" ]
 }
 
-license("zstd-safe-v5_0_2+zstd_1_5_2.license") {
+license("zstd-safe-v7_2_4.license") {
   public_package_name = "zstd_safe"
   license_files = [
-    "//third_party/rust_crates/vendor/zstd-safe-5.0.2-zstd.1.5.2/LICENSE",
-    "//third_party/rust_crates/vendor/zstd-safe-5.0.2-zstd.1.5.2/LICENSE.Apache-2.0",
-    "//third_party/rust_crates/vendor/zstd-safe-5.0.2-zstd.1.5.2/LICENSE.Mit",
+    "//third_party/rust_crates/vendor/zstd-safe-7.2.4/LICENSE",
+    "//third_party/rust_crates/vendor/zstd-safe-7.2.4/LICENSE.Apache-2.0",
+    "//third_party/rust_crates/vendor/zstd-safe-7.2.4/LICENSE.Mit",
   ]
 }
 
-rustc_library("zstd-safe-v5_0_2+zstd_1_5_2") {
+rustc_library("zstd-safe-v7_2_4") {
   crate_name = "zstd_safe"
-  source_root =
-      "//third_party/rust_crates/vendor/zstd-safe-5.0.2-zstd.1.5.2/src/lib.rs"
-  output_name = "zstd_safe-b1d2ef593bc9f55f"
+  source_root = "//third_party/rust_crates/vendor/zstd-safe-7.2.4/src/lib.rs"
+  output_name = "zstd_safe-faffe229c81514e4"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zstd-sys-v2_0_1+zstd_1_5_6" ]
-  deps += [ ":libc-v0_2_186" ]
+  deps += [ ":zstd-sys-v2_0_16+zstd_1_5_7" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=b1d2ef593bc9f55f",
-    "-Cextra-filename=-b1d2ef593bc9f55f",
+    "-Cmetadata=faffe229c81514e4",
+    "-Cextra-filename=-faffe229c81514e4",
     "--cfg=feature=\"arrays\"",
     "--cfg=feature=\"legacy\"",
     "--cfg=feature=\"std\"",
@@ -24427,13 +24423,13 @@ rustc_library("zstd-safe-v5_0_2+zstd_1_5_2") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":zstd-safe-v5_0_2+zstd_1_5_2.license" ]
+  applicable_licenses = [ ":zstd-safe-v7_2_4.license" ]
 }
 
-rustc_library("zstd-sys-v2_0_1+zstd_1_5_6") {
+rustc_library("zstd-sys-v2_0_16+zstd_1_5_7") {
   crate_name = "zstd_sys"
   source_root = "//third_party/rust_crates/forks/zstd-sys/src/lib.rs"
-  output_name = "zstd_sys-7a4d001a9fbea5ad"
+  output_name = "zstd_sys-66b1706dcab3102"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -24446,8 +24442,8 @@ rustc_library("zstd-sys-v2_0_1+zstd_1_5_6") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=7a4d001a9fbea5ad",
-    "-Cextra-filename=-7a4d001a9fbea5ad",
+    "-Cmetadata=66b1706dcab3102",
+    "-Cextra-filename=-66b1706dcab3102",
     "--cfg=feature=\"legacy\"",
     "--cfg=feature=\"std\"",
     "--cfg=feature=\"zdict_builder\"",
