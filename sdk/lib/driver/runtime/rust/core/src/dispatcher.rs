@@ -19,7 +19,7 @@ use crate::shutdown_observer::ShutdownObserver;
 pub use fdf_sys::fdf_dispatcher_t;
 pub use libasync::{
     AfterDeadline, AsAsyncDispatcherRef, AsyncDispatcher, AsyncDispatcherRef, DispatcherTimerExt,
-    JoinHandle, OnDispatcher, Task,
+    GetAsyncDispatcher, JoinHandle, OnDispatcher, Task,
 };
 
 /// A marker trait for a function type that can be used as a shutdown observer for [`Dispatcher`].
@@ -492,14 +492,13 @@ impl<'a> core::ops::DerefMut for DriverDispatcherRef<'a> {
 /// a driver dispatcher.
 impl<T> OnDriverDispatcher for T where T: AsAsyncDispatcherRef + Clone {}
 
-/// A placeholder for the currently active dispatcher. Use [`OnDispatcher::on_dispatcher`] to
-/// access it when needed.
+/// A placeholder for the currently active dispatcher.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct CurrentDispatcher;
 
-impl OnDispatcher for CurrentDispatcher {
-    fn on_dispatcher<R>(&self, f: impl FnOnce(Option<AsyncDispatcherRef<'_>>) -> R) -> R {
-        let dispatcher = OVERRIDE_DISPATCHER
+impl GetAsyncDispatcher for CurrentDispatcher {
+    fn try_get_async_dispatcher(&self) -> Option<AsyncDispatcher> {
+        OVERRIDE_DISPATCHER
             .with(|global| *global.borrow())
             .or_else(|| {
                 // SAFETY: NonNull::new will null-check that we have a current dispatcher.
@@ -515,9 +514,8 @@ impl OnDispatcher for CurrentDispatcher {
                     fdf_dispatcher_get_async_dispatcher(dispatcher.as_ptr())
                 })
                 .expect("No async dispatcher on driver dispatcher");
-                unsafe { AsyncDispatcherRef::from_raw(async_dispatcher) }
-            });
-        f(dispatcher)
+                AsyncDispatcher::new(&unsafe { AsyncDispatcherRef::from_raw(async_dispatcher) })
+            })
     }
 }
 

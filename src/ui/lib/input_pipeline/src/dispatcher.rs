@@ -70,7 +70,7 @@ mod dso {
     #![cfg(feature = "dso")]
 
     pub use super::*;
-    use fdf::OnDriverDispatcher;
+    use fdf::{AsyncDispatcher, OnDriverDispatcher};
     use libasync::DispatcherTimerExt;
 
     #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -174,9 +174,9 @@ mod dso {
         }
     }
 
-    impl fdf::OnDispatcher for Dispatcher {
-        fn on_dispatcher<R>(&self, f: impl FnOnce(Option<fdf::AsyncDispatcherRef<'_>>) -> R) -> R {
-            fdf::CurrentDispatcher.on_dispatcher(f)
+    impl fdf::GetAsyncDispatcher for Dispatcher {
+        fn try_get_async_dispatcher(&self) -> Option<AsyncDispatcher> {
+            fdf::CurrentDispatcher.try_get_async_dispatcher()
         }
     }
 }

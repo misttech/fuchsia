@@ -149,14 +149,55 @@ pub trait AsAsyncDispatcherRef: Send + Sync {
     }
 }
 
+impl<T> AsAsyncDispatcherRef for Arc<T>
+where
+    T: AsAsyncDispatcherRef,
+{
+    fn as_async_dispatcher_ref(&self) -> AsyncDispatcherRef<'_> {
+        (**self).as_async_dispatcher_ref()
+    }
+}
+
 impl<'a> AsAsyncDispatcherRef for AsyncDispatcherRef<'a> {
     fn as_async_dispatcher_ref(&self) -> AsyncDispatcherRef<'_> {
         *self
     }
 }
 
+/// A trait for things that can be represented as an [`AsyncDispatcher`].
+///
+/// This is automatically implemented for things that implement [`AsAsyncDispatcherRef`],
+/// but may be implemented by other things that have more logic to how they obtain the correct
+/// dispatcher object.
+pub trait GetAsyncDispatcher {
+    /// Returns a refcounted handle to the active dispatcher for this object, if there is one.
+    /// Some types of dispatchers (like for the current dispatcher of a thread) may not always have
+    /// an active dispatcher, so it is returned as an option.
+    fn try_get_async_dispatcher(&self) -> Option<AsyncDispatcher>;
+
+    /// Returns a refcounted handle to the active dispatcher for this object.
+    ///
+    /// # Panics
+    ///
+    /// Some types of dispatchers (like for the current dispatcher of a thread) may not always have
+    /// an active dispatcher, in which case this will panic. If you need to be able to handle there
+    /// not being an active dispatcher, use [`Self::try_get_async_dispatcher`].
+    fn get_async_dispatcher(&self) -> AsyncDispatcher {
+        self.try_get_async_dispatcher().expect("No current async dispatcher")
+    }
+}
+
+impl<T> GetAsyncDispatcher for T
+where
+    T: AsAsyncDispatcherRef,
+{
+    fn try_get_async_dispatcher(&self) -> Option<AsyncDispatcher> {
+        Some(AsyncDispatcher::new(self))
+    }
+}
+
 /// A trait that can be used to access a lifetime-constrained dispatcher in a generic way.
-pub trait OnDispatcher: Clone + Send + Sync {
+pub trait OnDispatcher: GetAsyncDispatcher + Clone + Send + Sync {
     /// Runs the function `f` with a lifetime-bound [`AsyncDispatcherRef`] for this object's dispatcher.
     /// If the dispatcher is no longer valid, the callback will be given [`None`].
     ///
@@ -172,12 +213,7 @@ pub trait OnDispatcher: Clone + Send + Sync {
     fn on_maybe_dispatcher<R, E: From<Status>>(
         &self,
         f: impl FnOnce(AsyncDispatcherRef<'_>) -> Result<R, E>,
-    ) -> Result<R, E> {
-        self.on_dispatcher(|dispatcher| {
-            let dispatcher = dispatcher.ok_or(Status::BAD_STATE)?;
-            f(dispatcher)
-        })
-    }
+    ) -> Result<R, E>;
 
     /// Spawn an asynchronous task on this dispatcher. If this returns [`Ok`] then the task has
     /// successfully been scheduled and will run or be cancelled and dropped when the dispatcher
@@ -188,10 +224,7 @@ pub trait OnDispatcher: Clone + Send + Sync {
     /// Returns a [`JoinHandle`] that will detach the future when dropped.
     fn spawn(&self, future: impl Future<Output = ()> + Send + 'static) -> JoinHandle<()>
     where
-        Self: 'static,
-    {
-        Task::start(future, self.clone()).detach_on_drop()
-    }
+        Self: 'static;
 
     /// Spawn an asynchronous task that outputs type 'T' on this dispatcher. The returned future's
     /// result will be [`Ok`] if the task was started and completed successfully, or an [`Err`] if
@@ -207,21 +240,43 @@ pub trait OnDispatcher: Clone + Send + Sync {
         future: impl Future<Output = T> + Send + 'static,
     ) -> Task<T>
     where
+        Self: 'static;
+}
+
+impl<D: GetAsyncDispatcher + Clone + Send + Sync> OnDispatcher for D {
+    fn on_dispatcher<R>(&self, f: impl FnOnce(Option<AsyncDispatcherRef<'_>>) -> R) -> R {
+        if let Some(dispatcher) = self.try_get_async_dispatcher() {
+            f(Some(dispatcher.as_async_dispatcher_ref()))
+        } else {
+            f(None)
+        }
+    }
+
+    fn on_maybe_dispatcher<R, E: From<Status>>(
+        &self,
+        f: impl FnOnce(AsyncDispatcherRef<'_>) -> Result<R, E>,
+    ) -> Result<R, E> {
+        self.on_dispatcher(|dispatcher| {
+            let dispatcher = dispatcher.ok_or(Status::BAD_STATE)?;
+            f(dispatcher)
+        })
+    }
+
+    fn spawn(&self, future: impl Future<Output = ()> + Send + 'static) -> JoinHandle<()>
+    where
+        Self: 'static,
+    {
+        Task::start(future, self.clone()).detach_on_drop()
+    }
+
+    fn compute<T: Send + 'static>(
+        &self,
+        future: impl Future<Output = T> + Send + 'static,
+    ) -> Task<T>
+    where
         Self: 'static,
     {
         Task::start(future, self.clone())
-    }
-}
-
-impl<T: AsAsyncDispatcherRef + Clone> OnDispatcher for T {
-    fn on_dispatcher<R>(&self, f: impl FnOnce(Option<AsyncDispatcherRef<'_>>) -> R) -> R {
-        f(Some(self.as_async_dispatcher_ref()))
-    }
-}
-
-impl<T: AsAsyncDispatcherRef> OnDispatcher for Arc<T> {
-    fn on_dispatcher<R>(&self, f: impl FnOnce(Option<AsyncDispatcherRef<'_>>) -> R) -> R {
-        f(Some(self.as_async_dispatcher_ref()))
     }
 }
 
