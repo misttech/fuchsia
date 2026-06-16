@@ -33,6 +33,8 @@ class BucketMatch {
   std::optional<int64_t> event_code() const { return event_code_; }
   bool ProcessMatch(const Process& process);
   bool VmoMatch(const std::string& vmo);
+  // Invalidates the cached process match result for the given KOID.
+  void InvalidateProcess(zx_koid_t koid);
   // Removes all processes and VMOs that haven't been matched since the last Sweep call from the
   // internal cache.
   void Sweep();

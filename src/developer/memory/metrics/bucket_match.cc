@@ -48,6 +48,8 @@ bool BucketMatch::VmoMatch(const std::string& vmo) {
   return match;
 }
 
+void BucketMatch::InvalidateProcess(zx_koid_t koid) { process_match_.Erase(koid); }
+
 void BucketMatch::Sweep() {
   process_match_.Sweep();
   vmo_match_.Sweep();

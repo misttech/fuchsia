@@ -517,5 +517,38 @@ TEST_F(DigestUnitTest, AllDefaultBuckets) {
                                              actual_buckets_range.end()};
   EXPECT_THAT(actual_buckets, testing::UnorderedElementsAreArray(expected_buckets));
 }
+
+TEST_F(DigestUnitTest, ProcessRename) {
+  Digester digester({{"Flutter", "FlutterApp", ".*"}});
+
+  Capture c1;
+  TestUtils::CreateCapture(&c1, {
+                                    .vmos = {{.koid = 10,
+                                              .name = "vmo1",
+                                              .committed_bytes = 100,
+                                              .committed_scaled_bytes = 100}},
+                                    .processes = {{.koid = 1, .name = "bin/app", .vmos = {10}}},
+                                });
+
+  {
+    Digest d1(c1, &digester);
+    ConfirmNonEmptyBuckets(d1, {{.name = "Undigested", .size = 100U}});
+  }
+
+  Capture c2;
+  TestUtils::CreateCapture(&c2, {
+                                    .vmos = {{.koid = 10,
+                                              .name = "vmo1",
+                                              .committed_bytes = 100,
+                                              .committed_scaled_bytes = 100}},
+                                    .processes = {{.koid = 1, .name = "FlutterApp", .vmos = {10}}},
+                                });
+
+  {
+    Digest d2(c2, &digester);
+    ConfirmNonEmptyBuckets(d2, {{.name = "Flutter", .size = 100U}});
+  }
+}
+
 }  // namespace
 }  // namespace memory::test

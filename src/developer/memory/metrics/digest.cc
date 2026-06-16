@@ -32,6 +32,25 @@ Digester::Digester(const std::vector<BucketMatch>& bucket_matches)
 
 void Digester::Digest(const Capture& capture, class Digest* digest) {
   TRACE_DURATION("memory_metrics", "Digester::Digest");
+
+  // Detect renames and invalidate bucket match caches.
+  for (const auto& [koid, process] : capture.koid_to_process()) {
+    auto [it, inserted] = process_names_.try_emplace(koid, process.name);
+    if (!inserted && it->second != process.name) {
+      // If the process koid is known, but its name changed, invalidate the process on all buckets
+      // and store the new name.
+      for (auto& bucket_match : bucket_matches_) {
+        bucket_match.InvalidateProcess(koid);
+      }
+      it->second = process.name;
+    }
+  }
+
+  // Clean up dead processes from process_names_.
+  std::erase_if(process_names_, [&capture](const auto& pair) {
+    return !capture.koid_to_process().contains(pair.first);
+  });
+
   digest->time_ = capture.time();
   digest->undigested_vmos_.reserve(capture.koid_to_vmo().size());
   for (const auto& [koid, _] : capture.koid_to_vmo()) {

@@ -8,6 +8,7 @@
 #include <zircon/types.h>
 
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -59,6 +60,7 @@ class Digester {
 
  private:
   std::vector<BucketMatch> bucket_matches_;
+  std::unordered_map<zx_koid_t, std::string> process_names_;
 
   friend class Digest;
 };

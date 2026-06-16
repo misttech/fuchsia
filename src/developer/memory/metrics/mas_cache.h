@@ -53,6 +53,10 @@ class MarkAndSweepCache {
     return inserted;
   }
 
+  // Removes the entry for the key if present.
+  // Returns true if an entry was removed, false otherwise.
+  bool Erase(const Key& key) { return map_.erase(key) > 0; }
+
   // Removes all entries that have not been marked active since the last sweep.
   void Sweep() {
     for (auto it = map_.begin(); it != map_.end();) {
