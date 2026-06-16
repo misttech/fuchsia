@@ -534,13 +534,28 @@ void platform_mexec_prep(uintptr_t new_bootimage_addr, size_t new_bootimage_len)
 
 // This function requires NO_ASAN because it accesses ops, which is memory
 // that lives outside of the kernel address space (comes from IdAllocator).
-NO_ASAN void platform_mexec(mexec_asm_func mexec_assembly, memmov_ops_t* ops,
-                            uintptr_t new_bootimage_addr, size_t new_bootimage_len,
-                            uintptr_t new_kernel_entry) {
+NO_ASAN void platform_mexec(mexec_asm_func mexec_assembly, ktl::span<const memmov_ops_t> ops,
+                            uintptr_t new_kernel_addr, size_t new_kernel_len,
+                            uintptr_t new_kernel_entry, uintptr_t new_data_zbi_addr,
+                            size_t new_data_zbi_len) {
   DEBUG_ASSERT(arch_ints_disabled());
   DEBUG_ASSERT(mp_get_online_mask() == cpu_num_to_mask(BOOT_CPU_ID));
 
-  mexec_assembly((uintptr_t)new_bootimage_addr, 0, 0, arm64_get_boot_el(), ops, new_kernel_entry);
+  // Clean the destination range for the new kernel, so that nothing overwrites
+  // it when caches are re-enabled (in the cases where they are disabled at
+  // boot).
+  arch_clean_cache_range(reinterpret_cast<vaddr_t>(paddr_to_physmap(new_kernel_addr)),
+                         new_kernel_len);
+
+  // Clean the op source ranges, excluding the terminal null entry, ensuring
+  // that we do indeed end up copying the intended data when we access it
+  // directly from main memory.
+  for (const memmov_ops_t& memmov_ops : ops.subspan(0, ops.size() - 1)) {
+    paddr_t src = reinterpret_cast<paddr_t>(memmov_ops.src);
+    arch_clean_cache_range(reinterpret_cast<vaddr_t>(paddr_to_physmap(src)), memmov_ops.len);
+  }
+
+  mexec_assembly(new_data_zbi_addr, 0, 0, arm64_get_boot_el(), ops.data(), new_kernel_entry);
 }
 
 // Initialize Resource system after the heap is initialized.

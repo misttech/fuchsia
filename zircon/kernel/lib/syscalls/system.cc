@@ -336,7 +336,7 @@ zx_status_t sys_system_mexec_payload_get(zx_handle_t resource, user_out_ptr<void
 
 // zx_status_t zx_system_mexec
 NO_ASAN zx_status_t sys_system_mexec(zx_handle_t resource, zx_handle_t kernel_vmo,
-                                     zx_handle_t bootimage_vmo) {
+                                     zx_handle_t data_zbi_vmo) {
   if (!BootOptions::Get()->enable_debugging_syscalls) {
     return ZX_ERR_NOT_SUPPORTED;
   }
@@ -367,25 +367,25 @@ NO_ASAN zx_status_t sys_system_mexec(zx_handle_t resource, zx_handle_t kernel_vm
     ZX_ASSERT(zbi.take_error().is_ok());
   }
 
-  paddr_t new_bootimage_addr;
-  uint8_t* bootimage_buffer;
-  size_t bootimage_len;
-  result = vmo_coalesce_pages(bootimage_vmo, kBootdataPlatformExtraBytes, &new_bootimage_addr,
-                              &bootimage_buffer, &bootimage_len);
+  paddr_t new_data_zbi_addr;
+  uint8_t* data_zbi_buffer;
+  size_t data_zbi_len;
+  result = vmo_coalesce_pages(data_zbi_vmo, kBootdataPlatformExtraBytes, &new_data_zbi_addr,
+                              &data_zbi_buffer, &data_zbi_len);
   if (result != ZX_OK) {
     return result;
   }
 
   uintptr_t kernel_image_end = KernelPhysicalLoadAddress() + new_kernel_len;
 
-  paddr_t final_bootimage_addr = new_bootimage_addr;
+  paddr_t final_data_zbi_addr = new_data_zbi_addr;
   // For testing purposes, we may want the bootdata at a high address. Alternatively if our
   // coalesced VMO should overlap into the target kernel range then we also need to move it, and
   // placing it high is as good as anywhere else.
   if (BootOptions::Get()->mexec_force_high_ramdisk ||
-      Intersects(final_bootimage_addr, bootimage_len, KernelPhysicalLoadAddress(),
+      Intersects(final_data_zbi_addr, data_zbi_len, KernelPhysicalLoadAddress(),
                  kernel_image_end)) {
-    const size_t page_count = (bootimage_len / kPageSize) + 1;
+    const size_t page_count = (data_zbi_len / kPageSize) + 1;
     fbl::AllocChecker ac;
     ktl::unique_ptr<paddr_t[]> paddrs(new (&ac) paddr_t[page_count]);
     ASSERT(ac.check());
@@ -397,7 +397,7 @@ NO_ASAN zx_status_t sys_system_mexec(zx_handle_t resource, zx_handle_t kernel_vm
     result = alloc_pages_greater_than(4 * GB, page_count, 8 * GB, paddrs.get());
     ASSERT(result == ZX_OK);
 
-    final_bootimage_addr = paddrs.get()[0];
+    final_data_zbi_addr = paddrs.get()[0];
   }
 
   IdentityPageAllocator id_alloc(kernel_image_end);
@@ -418,7 +418,7 @@ NO_ASAN zx_status_t sys_system_mexec(zx_handle_t resource, zx_handle_t kernel_vm
   result = platform_halt_secondary_cpus(ZX_TIME_INFINITE);
   DEBUG_ASSERT(result == ZX_OK);
 
-  platform_mexec_prep(final_bootimage_addr, bootimage_len);
+  platform_mexec_prep(final_data_zbi_addr, data_zbi_len);
 
   const zx_instant_mono_t dlog_deadline = current_mono_time() + ZX_SEC(5);
   dlog_shutdown(dlog_deadline);
@@ -460,12 +460,12 @@ NO_ASAN zx_status_t sys_system_mexec(zx_handle_t resource, zx_handle_t kernel_vm
   ops[ops_idx].len = new_kernel_len;
   ops_idx++;
 
-  // We can leave the bootimage in place unless we've been asked to move it to
+  // We can leave the data ZBI in place unless we've been asked to move it to
   // high memory.
-  if (new_bootimage_addr != final_bootimage_addr) {
-    ops[ops_idx].src = (void*)new_bootimage_addr;
-    ops[ops_idx].dst = (void*)final_bootimage_addr;
-    ops[ops_idx].len = bootimage_len;
+  if (new_data_zbi_addr != final_data_zbi_addr) {
+    ops[ops_idx].src = (void*)new_data_zbi_addr;
+    ops[ops_idx].dst = (void*)final_data_zbi_addr;
+    ops[ops_idx].len = data_zbi_len;
     ops_idx++;
   }
 
@@ -475,7 +475,7 @@ NO_ASAN zx_status_t sys_system_mexec(zx_handle_t resource, zx_handle_t kernel_vm
   // Make sure that the kernel, when copied, will not overwrite the bootdata, our mexec code or
   // copy ops.
   DEBUG_ASSERT(!Intersects(reinterpret_cast<uintptr_t>(ops[0].dst), ops[0].len,
-                           reinterpret_cast<uintptr_t>(final_bootimage_addr), bootimage_len));
+                           reinterpret_cast<uintptr_t>(final_data_zbi_addr), data_zbi_len));
   DEBUG_ASSERT(!Intersects(reinterpret_cast<uintptr_t>(ops[0].dst), ops[0].len,
                            reinterpret_cast<uintptr_t>(id_page_addr),
                            static_cast<size_t>(kPageSize)));
@@ -501,7 +501,8 @@ NO_ASAN zx_status_t sys_system_mexec(zx_handle_t resource, zx_handle_t kernel_vm
 
   // Ask the platform to mexec into the next kernel.
   mexec_asm_func mexec_assembly = (mexec_asm_func)id_page_addr;
-  platform_mexec(mexec_assembly, ops, final_bootimage_addr, bootimage_len, new_kernel_entry);
+  platform_mexec(mexec_assembly, ktl::span{ops, ops_idx}, reinterpret_cast<uintptr_t>(ops[0].dst),
+                 ops[0].len, new_kernel_entry, final_data_zbi_addr, data_zbi_len);
 
   panic("Execution should never reach here\n");
   return ZX_OK;

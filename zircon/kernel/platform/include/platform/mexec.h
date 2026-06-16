@@ -43,8 +43,8 @@ static_assert(sizeof(memmov_ops_t) == MEMMOV_OPS_STRUCT_LEN,
               "sizeof memmov_ops_t must match MEMMOV_OPS_STRUCT_LEN");
 
 // Implemented in assembly. Copies the new kernel into place and branches to it.
-using mexec_asm_func = void (*)(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t aux,
-                                memmov_ops_t* ops, uintptr_t new_kernel_entry)
+typedef void (*mexec_asm_func)(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t aux,
+                               const memmov_ops_t* ops, uintptr_t new_kernel_entry)
     [[clang::cfi_unchecked_callee]];
 
 // Writes an mexec data ZBI into the provided buffer and returns the size of
@@ -54,13 +54,14 @@ zx::result<size_t> WriteMexecData(ktl::span<ktl::byte> buffer);
 /* This function is called at the beginning of mexec.  Interrupts are not yet
  * disabled, but only one CPU is running.
  */
-void platform_mexec_prep(uintptr_t final_bootimage_addr, size_t final_bootimage_len);
+void platform_mexec_prep(uintptr_t final_data_zbi_addr, size_t final_data_zbi_len);
 
 /* Ask the platform to mexec into the next kernel.
  * This function is called after platform_mexec_prep(), with interrupts disabled.
  */
-void platform_mexec(mexec_asm_func mexec_assembly, memmov_ops_t* ops, uintptr_t new_bootimage_addr,
-                    size_t new_bootimage_len, uintptr_t entry64_addr);
+void platform_mexec(mexec_asm_func mexec_assembly, ktl::span<const memmov_ops_t> ops,
+                    uintptr_t new_kernel_addr, size_t new_kernel_len, uintptr_t new_kernel_entry,
+                    uintptr_t new_data_zbi_addr, size_t new_data_zbi_len);
 
 /* Allocate |count| pages where no page has a physical address less than
  * |lower_bound|.

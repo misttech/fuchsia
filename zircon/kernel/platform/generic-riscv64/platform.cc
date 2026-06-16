@@ -487,8 +487,9 @@ void platform_mexec_prep(uintptr_t new_bootimage_addr, size_t new_bootimage_len)
   PANIC_UNIMPLEMENTED;
 }
 
-void platform_mexec(mexec_asm_func mexec_assembly, memmov_ops_t* ops, uintptr_t new_bootimage_addr,
-                    size_t new_bootimage_len, uintptr_t entry64_addr) {
+void platform_mexec(mexec_asm_func mexec_assembly, ktl::span<const memmov_ops_t> ops,
+                    uintptr_t new_kernel_addr, size_t new_kernel_len, uintptr_t new_kernel_entry,
+                    uintptr_t new_data_zbi_addr, size_t new_data_zbi_len) {
   PANIC_UNIMPLEMENTED;
 }
 

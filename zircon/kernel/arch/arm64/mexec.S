@@ -8,7 +8,6 @@
 #include <lib/arch/asm.h>
 #include <arch/defines.h>
 #include <asm.h>
-#include <lib/arch/cache.h>
 #include <platform/mexec.h>
 
 /* Arguments Passed via x0 through x8 inclusive */
@@ -18,7 +17,7 @@ bootarg2                .req x27
 boot_el                 .req x28
 
 // This is the address to branch to once the copy is completed.
-new_kernel_addr         .req x24
+new_kernel_entry        .req x24
 
 // This is a null terminated list of memory regions to copy.
 copy_list               .req x23
@@ -57,11 +56,11 @@ FUNCTION(mexec_asm)
     mov     copy_list, x4
 
 // This is the address of the kernel that we eventueally want to jump to.
-    mov     new_kernel_addr, x5
+    mov     new_kernel_entry, x5
 
 // If we were originally booted in EL2, transition back into EL2
     cmp     boot_el, #2
-    b.lt    .Lcplt_transition_to_boot_el  // We booted in EL1, no need to transition
+    b.lt    .Lcopypage  // We booted in EL1, no need to transition
 
 // Transition to EL2. We call the hypervisor, which will branch to the address
 // in x0.
@@ -76,14 +75,6 @@ FUNCTION(mexec_asm)
     movlit  tmp, SCTLR_EL2_RES1
     msr     sctlr_el2, tmp
     isb
-
-.Lcplt_transition_to_boot_el:
-    // Clean/Invalidate the cache early on.
-    // We want to make sure that there are no dirty cache entries hanging around
-    // in the cache before we start the memcpy.
-    // If these cache entries were to get written back later, they would corrupt
-    // the state of the system so we clean/invalidate them up front.
-    bl      mexec_arch_clean_invalidate_cache_all
 
 // Outer loop: Execute all the memmove ops in a given page.
 .Lcopypage:
@@ -125,20 +116,17 @@ FUNCTION(mexec_asm)
     b       .Lcopy
 
 .Lfinish_copy:
-
-    bl mexec_arch_clean_invalidate_cache_all
-
     // Restore the bootarguments for the next kernel.
     mov     x0, bootarg0
     mov     x1, bootarg1
     mov     x2, bootarg2
 
     // Get everything out of the pipeline before branching to the new kernel.
+    ic      iallu
     isb
-    dsb sy
 
     // Branch to the next kernel.
-    br      new_kernel_addr
+    br      new_kernel_entry
 END_FUNCTION(mexec_asm)
 
 LOCAL_FUNCTION(memmove_mexec)
@@ -192,27 +180,6 @@ LOCAL_FUNCTION(memmove_mexec)
 .done:
         ret
 END_FUNCTION(memmove_mexec)
-
-// Perform a bulk clean/invalidate across the whole cache
-// Normally on ARM we can use the CIVAC, CVAC, CVAU and IVAC instructions to
-// manipulate the cache but these ops only work against virtual memory addresses
-// and since we have disabled the MMU, these instructions are no longer
-// meaningful.
-// As a result, we have to use the Level/Set/Way cache ops. Since the definition
-// of the cache set is left up to the implementation, the only portable (safe)
-// way to perform these cache ops is to operate against the whole cache.
-// The following op cleans and invalidates every entry in each level of the
-// cache.
-LOCAL_FUNCTION(mexec_arch_clean_invalidate_cache_all)
-    data_cache_way_set_op cisw, clean_invalidate
-
-    // Invalidate the instruction cache as well
-    ic      iallu
-    isb
-    dsb sy
-
-    ret
-END_FUNCTION(mexec_arch_clean_invalidate_cache_all)
 
 /* This .ltorg emits any immediate constants here. We need to put this before
  * the mexec_asm_end symbol because we intend to relocate the assembly contained
