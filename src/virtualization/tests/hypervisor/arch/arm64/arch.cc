@@ -21,7 +21,7 @@
 
 namespace {
 
-using PagingTraits = arch::ArmPagingTraits<arch::ArmVirtualAddressRange::kLower, REGION_SIZE_BITS>;
+using PagingTraits = arch::ArmPagingTraits<arch::ArmPagingConfiguration::k4k39Bit, arch::ArmVirtualAddressRange::kLower>;
 using Paging = arch::Paging<PagingTraits>;
 
 }  // namespace

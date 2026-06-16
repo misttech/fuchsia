@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/arch/asm.h>
 #include <lib/arch/cache.h>
 
 #include "src/virtualization/tests/hypervisor/asm.h"
@@ -49,22 +50,7 @@
 .set SCTLR_ELX_M,  (1 << 0)   // MMU enabled.
 .set SCTLR_ELX_C,  (1 << 2)   // Data cache enabled.
 .set SCTLR_ELX_I,  (1 << 12)  // Instruction cache enabled.
-
 .set MEMORY_TEST_BYTES,         (2 * 1024 * 1024)  // Region size to read/write for memory tests.
-
-// Move a constant to a register, emitting multiple `mov` operations if required.
-.macro movlit reg, literal
-mov \reg, #((\literal) & 0xffff)
-.ifne (((\literal) >> 16) & 0xffff)
-movk \reg, #(((\literal) >> 16) & 0xffff), lsl #16
-.endif
-.ifne (((\literal) >> 32) & 0xffff)
-movk \reg, #(((\literal) >> 32) & 0xffff), lsl #32
-.endif
-.ifne (((\literal) >> 48) & 0xffff)
-movk \reg, #(((\literal) >> 48) & 0xffff), lsl #48
-.endif
-.endm
 
 // Architecture-specific callbacks called by the FUNCTION macro.
 .macro arch_function_start name start end
