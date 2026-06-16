@@ -24,6 +24,9 @@ group("amlogic_hw_dependent_tests") {
   testonly = true
 
   public_deps = [
+    "//src/devices/board/drivers/astro:driver-host-enumeration-test-astro",
+    "//src/devices/board/drivers/nelson:driver-host-enumeration-test-nelson",
+    "//src/devices/board/drivers/sherlock:driver-host-enumeration-test-sherlock",
     "//src/media/codec:hw_dependent_tests",
     "//src/media/stream_processors:hw_dependent_tests",
 
