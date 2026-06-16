@@ -5,12 +5,15 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/components.gni")
+import("//build/rust/rustc_bindgen.gni")
 import("//build/rust/rustc_library.gni")
 
 rustc_library("fbl") {
   edition = "2024"
+  validations = [ ":fbl_bindgen_golden" ]
   sources = [
     "src/array.rs",
+    "src/bindings.rs",
     "src/canary.rs",
     "src/conditional_select_nospec.rs",
     "src/confine_array_index.rs",
@@ -79,4 +82,42 @@ fuchsia_unittest_package("fbl-rust-test-pkg") {
 group("tests") {
   testonly = true
   deps = [ ":fbl-rust-test-pkg" ]
+}
+
+rustc_bindgen_golden("fbl_bindgen_golden") {
+  headers = [ "bindgen.h" ]
+  checked_in_source = "src/bindings.rs"
+
+  type_allowlist = [ "fbl_bindgen::.*" ]
+
+  include_dirs = [
+    "//prebuilt/third_party/clang/${host_os}-${host_cpu}/include/x86_64-unknown-linux-gnu/c++/v1",
+    "//prebuilt/third_party/clang/${host_os}-${host_cpu}/include/c++/v1",
+    "//sdk/lib/stdcompat/include",
+    "//sdk/lib/zircon-assert",
+    "//zircon/system/public",
+    "//zircon/system/ulib/fbl/include",
+  ]
+
+  additional_clang_flags = [
+    "-x",
+    "c++",
+    "-std=c++20",
+    "-stdlib=libc++",
+    "--sysroot=" + rebase_path("//prebuilt/third_party/sysroot/linux", "//"),
+  ]
+
+  additional_bindgen_flags = [
+    "--rust-edition",
+    "2021",
+  ]
+
+  notice_year = 2026
+  use_core = true
+
+  expect_lints = [
+    "dead_code",
+    "non_camel_case_types",
+    "non_upper_case_globals",
+  ]
 }

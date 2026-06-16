@@ -338,12 +338,6 @@ impl<T, R: WavlTreeRank> Default for WavlTreeNode<T, R> {
     }
 }
 
-// Static asserts for layout verification.
-::zr::static_assert!(core::mem::size_of::<WavlTreeNode<()>>() == 32);
-::zr::static_assert!(core::mem::align_of::<WavlTreeNode<()>>() == 8);
-::zr::static_assert!(core::mem::size_of::<WavlTreeNode<(), i32>>() == 32);
-::zr::static_assert!(core::mem::align_of::<WavlTreeNode<(), i32>>() == 8);
-
 impl<T, R: WavlTreeRank> Drop for WavlTreeNode<T, R> {
     fn drop(&mut self) {
         debug_assert!(!self.in_container(), "Object destroyed while still in container");

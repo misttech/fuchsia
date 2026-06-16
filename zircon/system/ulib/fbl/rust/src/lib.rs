@@ -8,6 +8,9 @@
 
 extern crate self as fbl;
 
+#[cfg(test)]
+mod bindings;
+
 mod array;
 mod canary;
 mod conditional_select_nospec;

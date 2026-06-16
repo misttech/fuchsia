@@ -74,14 +74,6 @@ impl<T> Default for DoublyLinkedListNode<T> {
     }
 }
 
-// Static asserts for layout verification.
-::zr::static_assert!(
-    core::mem::size_of::<DoublyLinkedListNode<()>>() == 2 * core::mem::size_of::<*mut ()>()
-);
-::zr::static_assert!(
-    core::mem::align_of::<DoublyLinkedListNode<()>>() == core::mem::align_of::<*mut ()>()
-);
-
 impl<T> Drop for DoublyLinkedListNode<T> {
     fn drop(&mut self) {
         debug_assert!(!self.in_container(), "Object destroyed while still in container");

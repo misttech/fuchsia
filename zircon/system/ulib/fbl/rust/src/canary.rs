@@ -45,9 +45,6 @@ pub struct Canary<const MAGIC: u32> {
     magic: u32,
 }
 
-zr::static_assert!(core::mem::size_of::<Canary<{ magic(b"test") }>>() == 4);
-zr::static_assert!(core::mem::align_of::<Canary<{ magic(b"test") }>>() == 4);
-
 impl<const MAGIC: u32> Canary<MAGIC> {
     /// Create a new Canary with the specified magic value.
     pub const fn new() -> Self {

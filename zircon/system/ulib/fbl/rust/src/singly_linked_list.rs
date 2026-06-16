@@ -765,13 +765,6 @@ mod tests {
     }
 
     zr::static_assert!(
-        core::mem::size_of::<SinglyLinkedListNode<()>>() == core::mem::size_of::<*mut ()>()
-    );
-    zr::static_assert!(
-        core::mem::align_of::<SinglyLinkedListNode<()>>() == core::mem::align_of::<*mut ()>()
-    );
-
-    zr::static_assert!(
         core::mem::size_of::<SinglyLinkedList<*mut DummyTarget>>()
             == core::mem::size_of::<*mut DummyTarget>()
     );
