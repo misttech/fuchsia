@@ -1942,6 +1942,65 @@ TEST(Sysmem, MultipleParticipantsV2) {
   ASSERT_TRUE(Equal(buffer_collection_info_1, buffer_collection_info_3));
 }
 
+TEST(Sysmem, ContiguousAndNonContiguousMixV2) {
+  auto allocator = connect_to_sysmem_service_v2();
+
+  auto [token_client_1, token_server_1] = fidl::Endpoints<v2::BufferCollectionToken>::Create();
+  fidl::SyncClient token_1{std::move(token_client_1)};
+
+  v2::AllocatorAllocateSharedCollectionRequest allocate_shared_request;
+  allocate_shared_request.token_request() = std::move(token_server_1);
+  ASSERT_TRUE(allocator->AllocateSharedCollection(std::move(allocate_shared_request)).is_ok());
+
+  auto [token_client_2, token_server_2] = fidl::Endpoints<v2::BufferCollectionToken>::Create();
+
+  v2::BufferCollectionTokenDuplicateRequest duplicate_request;
+  duplicate_request.rights_attenuation_mask() = ZX_RIGHT_SAME_RIGHTS;
+  duplicate_request.token_request() = std::move(token_server_2);
+  ASSERT_TRUE(token_1->Duplicate(std::move(duplicate_request)).is_ok());
+
+  auto [collection_client_1, collection_server_1] = fidl::Endpoints<v2::BufferCollection>::Create();
+  fidl::SyncClient collection_1{std::move(collection_client_1)};
+
+  v2::AllocatorBindSharedCollectionRequest bind_shared_request;
+  bind_shared_request.token() = token_1.TakeClientEnd();
+  bind_shared_request.buffer_collection_request() = std::move(collection_server_1);
+  ASSERT_TRUE(allocator->BindSharedCollection(std::move(bind_shared_request)).is_ok());
+
+  SetDefaultCollectionNameV2(collection_1);
+
+  // Client 1: physically_contiguous_required = false
+  set_specific_constraints_v2(collection_1, 4096, 1, false);
+
+  // Client 2 connects.
+  auto allocator_2 = connect_to_sysmem_service_v2();
+  auto [collection_client_2, collection_server_2] = fidl::Endpoints<v2::BufferCollection>::Create();
+  fidl::SyncClient collection_2{std::move(collection_client_2)};
+
+  ASSERT_TRUE(collection_1->Sync().is_ok());
+
+  v2::AllocatorBindSharedCollectionRequest bind_shared_request2;
+  bind_shared_request2.token() = std::move(token_client_2);
+  bind_shared_request2.buffer_collection_request() = std::move(collection_server_2);
+  ASSERT_TRUE(allocator_2->BindSharedCollection(std::move(bind_shared_request2)).is_ok());
+
+  // Client 2: physically_contiguous_required = true
+  set_specific_constraints_v2(collection_2, 4096, 1, true);
+
+  // Wait for allocation.
+  auto allocate_result_1 = collection_1->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(allocate_result_1.is_ok());
+
+  auto allocate_result_2 = collection_2->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(allocate_result_2.is_ok());
+
+  auto& settings = allocate_result_1->buffer_collection_info().value().settings();
+  ASSERT_TRUE(settings.has_value());
+  ASSERT_TRUE(settings->buffer_settings().has_value());
+  ASSERT_TRUE(settings->buffer_settings()->is_physically_contiguous().has_value());
+  EXPECT_TRUE(settings->buffer_settings()->is_physically_contiguous().value());
+}
+
 TEST(Sysmem, ComplicatedFormatModifiersV2) {
   auto allocator = connect_to_sysmem_service_v2();
 

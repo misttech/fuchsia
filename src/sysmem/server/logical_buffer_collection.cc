@@ -3684,8 +3684,11 @@ bool LogicalBufferCollection::AccumulateConstraintBufferMemory(
   acc->physically_contiguous_required() =
       *acc->physically_contiguous_required() || *c.physically_contiguous_required();
   if (*acc->physically_contiguous_required()) {
-    acc->min_physical_base_alignment() =
-        std::max(*acc->min_physical_base_alignment(), *c.min_physical_base_alignment());
+    uint64_t acc_alignment =
+        acc->min_physical_base_alignment().has_value() ? *acc->min_physical_base_alignment() : 1u;
+    uint64_t c_alignment =
+        c.min_physical_base_alignment().has_value() ? *c.min_physical_base_alignment() : 1u;
+    acc->min_physical_base_alignment() = std::max(acc_alignment, c_alignment);
   }
 
   acc->secure_required() = *acc->secure_required() || *c.secure_required();
