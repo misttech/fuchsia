@@ -625,6 +625,6 @@
              path="third_party/github.com/ridiculousfish/libdivide/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/ridiculousfish/libdivide"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="83d51439720d336806bccbc3b9b71b7682a91afb"/>
+             revision="b8a4423ddfc6f5a44b0ecbf506db1e2760d56ce6"/>
   </projects>
 </manifest>
