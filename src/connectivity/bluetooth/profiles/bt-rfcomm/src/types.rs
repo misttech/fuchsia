@@ -10,51 +10,60 @@ use fuchsia_bluetooth::profile::{
     ChannelParameters, Psm, ServiceDefinition, combine_channel_parameters,
 };
 use fuchsia_bluetooth::types::PeerId;
-use slab::Slab;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::profile::{psms_from_service_definitions, server_channels_from_service_definitions};
 
 /// Every group of registered services will be assigned a ServiceGroupHandle to track
 /// relevant information about the advertisement. There can be multiple `ServiceGroupHandle`s
 /// per profile client. A unique handle is assigned per Profile.Advertise() call.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ServiceGroupHandle(usize);
 
-/// Toplevel object for managing a single group of services advertised via the `bredr.Profile` API.
+/// Toplevel object for managing the active BR/EDR service advertisements.
 ///
-/// Each `ServiceGroup` typically represents a single `bredr.Advertise` request made by a FIDL
-/// client of the `bt-rfcomm` component.
-/// Each `ServiceGroup` is uniquely identified by a `ServiceGroupHandle`.
-pub struct Services(Slab<ServiceGroup>);
+/// Each advertisement is represented by a `ServiceGroup` and is uniquely
+/// identified by a `ServiceGroupHandle`.
+pub struct Services {
+    /// Maps each unique ServiceGroupHandle to its corresponding ServiceGroup.
+    groups: BTreeMap<ServiceGroupHandle, ServiceGroup>,
+    /// Monotonic counter used to generate unique ServiceGroupHandle values.
+    /// Handles are never reused, ensuring that stale events tagged with older
+    /// handles cannot affect new registrations.
+    next_handle_id: usize,
+}
 
 impl Services {
     pub fn new() -> Self {
-        Self(Slab::new())
-    }
-
-    pub fn contains(&self, handle: ServiceGroupHandle) -> bool {
-        self.0.contains(handle.0)
+        Self { groups: BTreeMap::new(), next_handle_id: 0 }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.groups.is_empty()
     }
 
     pub fn get_mut(&mut self, handle: ServiceGroupHandle) -> Option<&mut ServiceGroup> {
-        self.0.get_mut(handle.0)
+        self.groups.get_mut(&handle)
     }
 
-    pub fn remove(&mut self, handle: ServiceGroupHandle) -> ServiceGroup {
-        self.0.remove(handle.0)
+    /// Removes the service group identified by `handle`.
+    ///
+    /// Returns `Some(ServiceGroup)` if the group was active, or `None` if it was
+    /// already removed (e.g., due to a prior revocation event).
+    pub fn remove(&mut self, handle: ServiceGroupHandle) -> Option<ServiceGroup> {
+        self.groups.remove(&handle)
     }
 
     pub fn insert(&mut self, service: ServiceGroup) -> ServiceGroupHandle {
-        ServiceGroupHandle(self.0.insert(service))
+        let handle = ServiceGroupHandle(self.next_handle_id);
+        self.next_handle_id = self.next_handle_id.wrapping_add(1);
+        let old_group = self.groups.insert(handle, service);
+        debug_assert!(old_group.is_none(), "Duplicate ServiceGroupHandle assigned");
+        handle
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (ServiceGroupHandle, &ServiceGroup)> {
-        self.0.iter().map(|(id, data)| (ServiceGroupHandle(id), data))
+        self.groups.iter().map(|(handle, data)| (*handle, data))
     }
 
     /// Returns all the service definitions in the collection.
@@ -335,6 +344,7 @@ pub(crate) mod tests {
         expected_defs.extend(defs2);
         expected_adv_params.services = expected_defs.clone();
         expected_adv_params.parameters = new_chan_params;
+
         assert_eq!(services.psms(), expected_psms);
         assert_eq!(services.build_registration(), Some(expected_adv_params.clone()));
 
@@ -344,6 +354,24 @@ pub(crate) mod tests {
         expected_adv_params.services = defs1;
         expected_adv_params.parameters = ChannelParameters::default();
         assert_eq!(services.build_registration(), Some(expected_adv_params));
+    }
+
+    #[test]
+    fn test_services_handle_monotonicity() {
+        let _exec = fasync::TestExecutor::new();
+        let mut services = Services::new();
+
+        let (group1, _server1) = build_service_group();
+        let handle1 = services.insert(group1);
+        assert!(services.remove(handle1).is_some());
+
+        // A subsequent insertion must yield a unique handle even if the previous one was freed.
+        let (group2, _server2) = build_service_group();
+        let handle2 = services.insert(group2);
+        assert_ne!(handle1, handle2);
+
+        assert!(services.remove(handle1).is_none());
+        assert!(services.remove(handle2).is_some());
     }
 
     #[test]

@@ -9,6 +9,8 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 use fidl::endpoints::{RequestStream, create_request_stream};
 use fidl_fuchsia_bluetooth::{self as fidl_bt, ErrorCode};
+use fidl_fuchsia_bluetooth_bredr as bredr;
+use fuchsia_async as fasync;
 use fuchsia_bluetooth::profile::{
     ChannelParameters, ProtocolDescriptor, Psm, ServiceDefinition, l2cap_connect_parameters,
     psm_from_protocol,
@@ -21,7 +23,6 @@ use futures::stream::{FusedStream, Stream, StreamExt};
 use log::{info, trace, warn};
 use std::collections::HashSet;
 use std::ops::RangeFrom;
-use {fidl_fuchsia_bluetooth_bredr as bredr, fuchsia_async as fasync};
 
 use crate::fidl_service::Service;
 use crate::profile::*;
@@ -184,12 +185,10 @@ impl ProfileRegistrar {
     /// services.
     /// This should be called when a profile client decides to stop advertising its services.
     async fn unregister_service(&mut self, handle: ServiceGroupHandle) -> Result<(), Error> {
-        if !self.registered_services.contains(handle) {
-            return Ok(()); // No-op
-        }
+        let Some(service_info) = self.registered_services.remove(handle) else {
+            return Ok(());
+        };
 
-        // Remove the entry for this client.
-        let service_info = self.registered_services.remove(handle);
         self.rfcomm_server.free_server_channels(service_info.allocated_server_channels()).await;
 
         // Attempt to re-advertise - the returned services can be ignored since the registrar
@@ -1457,5 +1456,62 @@ mod tests {
         // The connect SCO request should be relayed directly to the upstream Profile server.
         let result = expect_stream_item(&mut exec, &mut profile_requests);
         assert_matches!(result, Ok(bredr::ProfileRequest::ConnectSco { .. }));
+    }
+
+    /// Validates that a stale termination event (Epitaph) from a previously
+    /// revoked client does not affect other active advertisements.
+    #[fuchsia::test]
+    fn stale_connection_receiver_termination_does_not_evict_active_client() {
+        let (mut exec, server, mut upstream_requests) = setup_server();
+        let (service_sender, handler_fut) = setup_handler_fut(server);
+        let mut handler_fut = pin!(handler_fut);
+        exec.run_until_stalled(&mut handler_fut).expect_pending("server active");
+
+        // Client A advertises a service.
+        let client_a = new_client(&mut exec, service_sender.clone(), &mut handler_fut);
+        let svc_a =
+            vec![bredr::ServiceDefinition::try_from(&rfcomm_service_definition(None)).unwrap()];
+        let (connection_stream_a, adv_fut_a) = make_advertise_request(&client_a, svc_a);
+        let mut adv_fut_a = pin!(adv_fut_a);
+        exec.run_until_stalled(&mut adv_fut_a).expect_pending("waiting for advertise response");
+        exec.run_until_stalled(&mut handler_fut).expect_pending("server active");
+        let upstream_recv1 = expect_advertise_request(&mut exec, &mut upstream_requests);
+        let _ = run_while(&mut exec, &mut handler_fut, &mut adv_fut_a);
+
+        // Client A revokes its advertisement but keeps the connection receiver open.
+        connection_stream_a.control_handle().send_on_revoke().expect("send OnRevoke");
+        exec.run_until_stalled(&mut handler_fut).expect_pending("server active");
+        {
+            let mut es = upstream_recv1.take_event_stream();
+            let r = expect_stream_item(&mut exec, &mut es);
+            assert_matches!(r, Ok(bredr::ConnectionReceiverEvent::OnRevoke {}));
+        }
+        drop(upstream_recv1);
+        exec.run_until_stalled(&mut handler_fut).expect_pending("server active");
+
+        // Client B advertises a new service.
+        let client_b = new_client(&mut exec, service_sender.clone(), &mut handler_fut);
+        let svc_b =
+            vec![bredr::ServiceDefinition::try_from(&rfcomm_service_definition(None)).unwrap()];
+        let (mut connection_stream_b, adv_fut_b) = make_advertise_request(&client_b, svc_b);
+        let mut adv_fut_b = pin!(adv_fut_b);
+        exec.run_until_stalled(&mut adv_fut_b).expect_pending("waiting for advertise response");
+        exec.run_until_stalled(&mut handler_fut).expect_pending("server active");
+        let upstream_recv2 = expect_advertise_request(&mut exec, &mut upstream_requests);
+        let _ = run_while(&mut exec, &mut handler_fut, &mut adv_fut_b);
+
+        // Client B's advertisement should be active.
+        expect_stream_pending(&mut exec, &mut connection_stream_b);
+        let mut upstream_es2 = upstream_recv2.take_event_stream();
+        expect_stream_pending(&mut exec, &mut upstream_es2);
+
+        // Client A finally closes its connection receiver, triggering a stale termination event (Epitaph).
+        drop(connection_stream_a);
+        exec.run_until_stalled(&mut handler_fut).expect_pending("server active");
+
+        // Verify that Client B's advertisement is NOT affected by Client A's termination.
+        // If the bug is present, Client B's advertisement would be incorrectly revoked here.
+        expect_stream_pending(&mut exec, &mut upstream_es2);
+        expect_stream_pending(&mut exec, &mut connection_stream_b);
     }
 }
