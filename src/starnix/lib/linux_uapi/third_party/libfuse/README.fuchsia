@@ -1,6 +1,6 @@
 Name: libfuse
 URL: https://android.googlesource.com/platform/external/libfuse
-Revision: 91c902a1d8e8335d88dc065b5b71d1e82f3207a7
+Revision: e877eedab4254ceb2af4b77c7327e4d0cde30824
 Security Critical: yes
 
 License File: LICENSE
