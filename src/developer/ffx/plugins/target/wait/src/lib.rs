@@ -3,11 +3,12 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use errors;
 use ffx_config::EnvironmentContext;
 use ffx_diagnostics::Notifier;
 use ffx_wait_args::WaitOptions;
 use ffx_writer::VerifiedMachineWriter;
-use fho::{Error, FfxContext, FfxMain, FfxTool, Result};
+use fho::{Error, FfxMain, FfxTool};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
@@ -30,7 +31,7 @@ pub trait DeviceWaiter {
         env: &EnvironmentContext,
         target_spec: &Option<String>,
         behavior: ffx_target::WaitFor,
-    ) -> impl Future<Output = Result<()>>;
+    ) -> impl Future<Output = Result<(), fho::Error>>;
 }
 
 pub struct DeviceWaiterImpl;
@@ -38,7 +39,7 @@ pub struct DeviceWaiterImpl;
 #[async_trait(?Send)]
 impl fho::TryFromEnv for DeviceWaiterImpl {
     type Error = std::convert::Infallible;
-    async fn try_from_env(_env: &fho::FhoEnvironment) -> std::result::Result<Self, Self::Error> {
+    async fn try_from_env(_env: &fho::FhoEnvironment) -> Result<Self, Self::Error> {
         Ok(DeviceWaiterImpl)
     }
 }
@@ -50,12 +51,39 @@ impl DeviceWaiter for DeviceWaiterImpl {
         env: &EnvironmentContext,
         target_spec: &Option<String>,
         behavior: ffx_target::WaitFor,
-    ) -> Result<()> {
+    ) -> Result<(), fho::Error> {
         ffx_target::wait_for_device(dur, env, target_spec, behavior).await
     }
 }
 
+use fho::FfxError;
+use thiserror::Error;
+
+#[derive(FfxError, Error, Debug)]
+pub enum WaitError {
+    #[exit_with_code(1)]
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[exit_with_code(1)]
+    #[error("Config error: {0}")]
+    Config(#[from] ffx_config::api::ConfigError),
+
+    #[exit_with_code(1)]
+    #[error("FFX Writer error: {0}")]
+    Writer(#[from] ffx_writer::Error),
+
+    #[exit_with_code(1)]
+    #[error("Wait operation failed:\n{0}")]
+    WaitFailed(String),
+
+    #[exit_with_code(1)]
+    #[error("Failed waiting for target to shut down: {0}")]
+    WaitDownFailed(fho::Error),
+}
+
 #[derive(FfxTool)]
+#[main_error(WaitError)]
 pub struct WaitOperation<T: DeviceWaiter + fho::TryFromEnv> {
     #[command]
     pub cmd: WaitOptions,
@@ -63,7 +91,7 @@ pub struct WaitOperation<T: DeviceWaiter + fho::TryFromEnv> {
     pub waiter: T,
 }
 
-fho::embedded_plugin!(WaitOperation<DeviceWaiterImpl>);
+fho::embedded_plugin!(WaitOperation<DeviceWaiterImpl>, WaitError);
 
 async fn get_diagnostics_string(env: &EnvironmentContext, timeout: u64, e: Error) -> String {
     let message = e.to_string();
@@ -87,10 +115,9 @@ async fn run_diagnostics(env: &EnvironmentContext, timeout: Duration) -> String 
 #[async_trait(?Send)]
 impl<T: DeviceWaiter + fho::TryFromEnv> FfxMain for WaitOperation<T> {
     type Writer = VerifiedMachineWriter<CommandStatus>;
+    type Error = WaitError;
 
-    type Error = ::fho::Error;
-
-    async fn main(self, mut writer: Self::Writer) -> Result<()> {
+    async fn main(self, mut writer: Self::Writer) -> Result<(), Self::Error> {
         match self.wait_impl().await {
             Ok(()) => {
                 writer.machine(&CommandStatus::Ok {})?;
@@ -99,23 +126,19 @@ impl<T: DeviceWaiter + fho::TryFromEnv> FfxMain for WaitOperation<T> {
             Err(e) if self.cmd.down => {
                 // If we are waiting for the device to go down, a failure means we cannot confirm it is down.
                 // Running diagnostics makes no sense in this case.
-                Err(e)
-            }
-            Err(e @ Error::User(_)) => {
-                let message = get_diagnostics_string(&self.env, self.cmd.timeout, e).await;
-                Err(Error::User(anyhow::anyhow!(message)))
+                Err(WaitError::WaitDownFailed(e))
             }
             Err(e) => {
                 let message = get_diagnostics_string(&self.env, self.cmd.timeout, e).await;
-                Err(Error::Unexpected(anyhow::anyhow!(message)))
+                Err(WaitError::WaitFailed(message))
             }
         }
     }
 }
 
 impl<T: DeviceWaiter + fho::TryFromEnv> WaitOperation<T> {
-    pub async fn wait_impl(&self) -> Result<()> {
-        let target_spec: Option<String> = ffx_target::get_target_specifier(&self.env).bug()?;
+    pub async fn wait_impl(&self) -> Result<(), fho::Error> {
+        let target_spec: Option<String> = ffx_target::get_target_specifier(&self.env)?;
         let behavior = if self.cmd.down {
             ffx_target::WaitFor::DeviceOffline
         } else {
@@ -136,9 +159,7 @@ mod test {
     #[async_trait(?Send)]
     impl fho::TryFromEnv for MockDeviceWaiter {
         type Error = std::convert::Infallible;
-        async fn try_from_env(
-            _env: &fho::FhoEnvironment,
-        ) -> std::result::Result<Self, Self::Error> {
+        async fn try_from_env(_env: &fho::FhoEnvironment) -> Result<Self, Self::Error> {
             unimplemented!()
         }
     }
@@ -154,7 +175,7 @@ mod test {
             waiter: mock_waiter,
         };
         let test_buffers = TestBuffers::default();
-        let writer = <WaitOperation<MockDeviceWaiter> as FfxMain>::Writer::new_test(
+        let writer = VerifiedMachineWriter::<CommandStatus>::new_test(
             Some(Format::JsonPretty),
             &test_buffers,
         );
@@ -164,7 +185,7 @@ mod test {
         let err = format!("schema not valid {stdout}");
         let json = serde_json::from_str(&stdout).expect(&err);
         let err = format!("json must adhere to schema: {json}");
-        <WaitOperation<MockDeviceWaiter> as FfxMain>::Writer::verify_schema(&json).expect(&err)
+        VerifiedMachineWriter::<CommandStatus>::verify_schema(&json).expect(&err)
     }
 
     #[fuchsia::test]
@@ -181,7 +202,7 @@ mod test {
             waiter: mock_waiter,
         };
         let test_buffers = TestBuffers::default();
-        let writer = <WaitOperation<MockDeviceWaiter> as FfxMain>::Writer::new_test(
+        let writer = VerifiedMachineWriter::<CommandStatus>::new_test(
             Some(Format::JsonPretty),
             &test_buffers,
         );
@@ -189,8 +210,8 @@ mod test {
         let (stdout, stderr) = test_buffers.into_strings();
         assert!(res.is_err(), "expected error {stdout} {stderr}");
         assert!(
-            matches!(res, Err(Error::Unexpected(_))),
-            "expected 'unexpected error' {stdout} {stderr}"
+            matches!(res, Err(WaitError::WaitFailed(_))),
+            "expected 'WaitFailed' error {stdout} {stderr}"
         );
     }
 
@@ -208,14 +229,17 @@ mod test {
             waiter: mock_waiter,
         };
         let test_buffers = TestBuffers::default();
-        let writer = <WaitOperation<MockDeviceWaiter> as FfxMain>::Writer::new_test(
+        let writer = VerifiedMachineWriter::<CommandStatus>::new_test(
             Some(Format::JsonPretty),
             &test_buffers,
         );
         let res = tool.main(writer).await;
         let (stdout, stderr) = test_buffers.into_strings();
         assert!(res.is_err(), "expected error {stdout} {stderr}");
-        assert!(matches!(res, Err(Error::User(_))), "expected 'user error' {stdout} {stderr}");
+        assert!(
+            matches!(res, Err(WaitError::WaitFailed(_))),
+            "expected 'WaitFailed' error {stdout} {stderr}"
+        );
     }
 
     #[fuchsia::test]
@@ -232,14 +256,14 @@ mod test {
             waiter: mock_waiter,
         };
         let test_buffers = TestBuffers::default();
-        let writer = <WaitOperation<MockDeviceWaiter> as FfxMain>::Writer::new_test(
+        let writer = VerifiedMachineWriter::<CommandStatus>::new_test(
             Some(Format::JsonPretty),
             &test_buffers,
         );
         let res = tool.main(writer).await;
         let (stdout, stderr) = test_buffers.into_strings();
         assert!(res.is_err(), "expected error {stdout} {stderr}");
-        if let Err(e) = res {
+        if let Err(WaitError::WaitDownFailed(e)) = res {
             let err_msg = e.to_string();
             assert!(err_msg.contains("oh no!"), "expected 'oh no!' in error message: {err_msg}");
             assert!(
