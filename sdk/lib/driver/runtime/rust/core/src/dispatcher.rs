@@ -414,21 +414,11 @@ pub trait OnDriverDispatcher: OnDispatcher {
     /// [`Status::BAD_STATE`].
     ///
     /// Returns a [`JoinHandle`] that will detach the future when dropped.
-    fn spawn_local(
-        &self,
-        future: impl Future<Output = ()> + 'static,
-    ) -> Result<JoinHandle<()>, Status>
+    fn spawn_local(&self, future: impl Future<Output = ()> + 'static) -> JoinHandle<()>
     where
         Self: 'static,
     {
-        self.on_maybe_dispatcher(|dispatcher| {
-            let dispatcher = DriverDispatcherRef::from_async_dispatcher(dispatcher);
-            if dispatcher.0.is_current_dispatcher() && !dispatcher.0.allows_thread_migration() {
-                Ok(OnDispatcher::spawn(self, AddSendFuture(future)))
-            } else {
-                Err(Status::BAD_STATE)
-            }
-        })
+        self.compute_local(future).detach_on_drop()
     }
 
     /// Spawn a local asynchronous task that outputs type 'T' on this dispatcher. The returned future's
@@ -445,21 +435,20 @@ pub trait OnDriverDispatcher: OnDispatcher {
     ///
     /// TODO(470088116): This may be the cause of some flakes, so care should be used with it
     /// in critical paths for now.
-    fn compute_local<T: Send + 'static>(
-        &self,
-        future: impl Future<Output = T> + 'static,
-    ) -> Result<Task<T>, Status>
+    fn compute_local<T: Send + 'static>(&self, future: impl Future<Output = T> + 'static) -> Task<T>
     where
         Self: 'static,
     {
-        self.on_maybe_dispatcher(|dispatcher| {
-            let dispatcher = DriverDispatcherRef::from_async_dispatcher(dispatcher);
-            if dispatcher.0.is_current_dispatcher() && !dispatcher.0.allows_thread_migration() {
-                Ok(OnDispatcher::compute(self, AddSendFuture(future)))
-            } else {
-                Err(Status::BAD_STATE)
-            }
-        })
+        let Some(dispatcher) = self.try_get_async_dispatcher() else {
+            return Task::new_failed(Status::BAD_STATE);
+        };
+        let dispatcher =
+            DriverDispatcherRef::from_async_dispatcher(dispatcher.as_async_dispatcher_ref());
+        if dispatcher.0.is_current_dispatcher() && !dispatcher.0.allows_thread_migration() {
+            OnDispatcher::compute(self, AddSendFuture(future))
+        } else {
+            Task::new_failed(Status::BAD_STATE)
+        }
     }
 }
 
@@ -668,11 +657,11 @@ mod tests {
             let inside_dispatcher = dispatcher.clone();
             dispatcher.spawn(async move {
                 assert_eq!(
-                    inside_dispatcher.spawn_local(futures::future::ready(())).unwrap_err(),
+                    inside_dispatcher.spawn_local(futures::future::ready(())).await.unwrap_err(),
                     Status::BAD_STATE
                 );
                 assert_eq!(
-                    inside_dispatcher.compute_local(futures::future::ready(())).unwrap_err(),
+                    inside_dispatcher.compute_local(futures::future::ready(())).await.unwrap_err(),
                     Status::BAD_STATE
                 );
                 shutdown_tx.send(()).unwrap();
@@ -693,16 +682,13 @@ mod tests {
                 let inside_dispatcher = dispatcher.clone();
                 dispatcher.spawn(async move {
                     let tx_clone = tx.clone();
-                    inside_dispatcher
-                        .spawn_local(async move {
-                            tx_clone.send(()).unwrap();
-                        })
-                        .unwrap();
+                    inside_dispatcher.spawn_local(async move {
+                        tx_clone.send(()).unwrap();
+                    });
                     inside_dispatcher
                         .compute_local(async move {
                             tx.send(()).unwrap();
                         })
-                        .unwrap()
                         .await
                         .unwrap();
                 });
@@ -721,16 +707,19 @@ mod tests {
             FDF_DISPATCHER_OPTION_NO_THREAD_MIGRATION,
             NO_SYNC_CALLS_ROLE,
             move |dispatcher| {
-                // we are not currently running in any dispatcher here, so this is a context
-                // where the 'current dispatcher' is definitely not the one in question.
-                assert_eq!(
-                    dispatcher.spawn_local(futures::future::ready(())).unwrap_err(),
-                    Status::BAD_STATE
-                );
-                assert_eq!(
-                    dispatcher.compute_local(futures::future::ready(())).unwrap_err(),
-                    Status::BAD_STATE
-                );
+                let mut executor = fuchsia_async::LocalExecutor::default();
+                executor.run_singlethreaded(async {
+                    // we are not currently running in any driver dispatcher here, so this is a
+                    // context where the 'current dispatcher' is definitely not the one in question.
+                    assert_eq!(
+                        dispatcher.spawn_local(futures::future::ready(())).await.unwrap_err(),
+                        Status::BAD_STATE
+                    );
+                    assert_eq!(
+                        dispatcher.compute_local(futures::future::ready(())).await.unwrap_err(),
+                        Status::BAD_STATE
+                    );
+                });
             },
         );
     }

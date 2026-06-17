@@ -151,12 +151,7 @@ mod dso {
             Self: 'static,
         {
             // This should never panic if the dispatcher is valid.
-            TaskHandle {
-                handle: Some(
-                    fdf::CurrentDispatcher.spawn_local(future).expect("Dispatcher::spawn_local"),
-                ),
-                detached: false,
-            }
+            TaskHandle { handle: Some(fdf::CurrentDispatcher.spawn_local(future)), detached: false }
         }
 
         pub fn after_deadline(deadline: MonotonicInstant) -> impl Future<Output = ()> + 'static {
