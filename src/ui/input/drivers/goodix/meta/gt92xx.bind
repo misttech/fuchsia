@@ -19,3 +19,14 @@ parent "gpio-reset" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.TOUCH_RESET;
 }
+
+optional parent "pdev" {
+  fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;
+  accept fuchsia.devicetree.FIRST_COMPATIBLE {
+    "goodix,gt92xx",
+  }
+}
+
+optional parent "gpio-init" {
+  fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
+}

@@ -37,5 +37,45 @@
                 }
             }
         ]
+    },
+    {
+        "parent": "pdev",
+        "tests": [
+            {
+                "name": "DevicetreeMatch",
+                "expected": "match",
+                "device": {
+                    "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC",
+                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"goodix,gt92xx\""
+                }
+            },
+            {
+                "name": "DevicetreeWrongCompatible",
+                "expected": "abort",
+                "device": {
+                    "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC",
+                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"goodix,wrong-gt92xx\""
+                }
+            }
+        ]
+    },
+    {
+        "parent": "gpio-init",
+        "tests": [
+            {
+                "name": "GpioInitMatch",
+                "expected": "match",
+                "device": {
+                    "fuchsia.BIND_INIT_STEP": "fuchsia.gpio.BIND_INIT_STEP.GPIO"
+                }
+            },
+            {
+                "name": "GpioInitWrongStep",
+                "expected": "abort",
+                "device": {
+                    "fuchsia.BIND_INIT_STEP": "fuchsia.gpio.BIND_INIT_STEP.I2C"
+                }
+            }
+        ]
     }
 ]
