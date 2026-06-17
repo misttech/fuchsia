@@ -409,26 +409,10 @@ impl<T: EngineOperations> EmuStartTool<T> {
             }
         } else {
             if self.cmd.reuse && !emulator_configuration.runtime.config_override {
-                if let Some(existing_instance) = existing_engine {
+                if let Some(mut existing_instance) = existing_engine {
+                    self.reuse_existing_engine(&mut existing_instance, emulator_configuration)
+                        .await?;
                     engine = existing_instance;
-                    // Reset the runtime config before reusing
-                    // Reset the host port map.
-                    if engine.emu_config().host.networking == NetworkingMode::User {
-                        engine.emu_config_mut().host.port_map =
-                            emulator_configuration.host.port_map.clone();
-                    }
-                    // Set the log file
-                    let config = engine.emu_config_mut();
-                    config.host.log = emulator_configuration.host.log.clone();
-                    config.runtime.startup_timeout =
-                        emulator_configuration.runtime.startup_timeout.clone();
-                    config.runtime.log_level = emulator_configuration.runtime.log_level.clone();
-
-                    // And regenerate the flags
-                    config.flags = process_flag_template(config)
-                        .context("Failed to process the flags template file.")?;
-
-                    engine.save_to_disk().await?;
                     let message = "[emulator] Reusing existing instance.";
                     log::info!("{message}");
                     writer.line(message)?;
@@ -439,7 +423,7 @@ impl<T: EngineOperations> EmuStartTool<T> {
                         name = emulator_configuration.runtime.name
                     );
                     log::debug!("{message}");
-                    writer.line("{message}")?;
+                    writer.line(message)?;
                     self.cmd.reuse = false;
                     engine = self
                         .engine_operations
@@ -636,21 +620,7 @@ impl<T: EngineOperations> EmuStartTool<T> {
         // If the hashes match, reuse the instance. Reset the config properties that are
         // dynamic and should be set from the command line.
         if &new_zbi == zbi_hash && &new_disk == disk_hash {
-            // Reset the host port map.
-            if engine.emu_config().host.networking == NetworkingMode::User {
-                engine.emu_config_mut().host.port_map = new_config.host.port_map.clone();
-            }
-            // Set the log file
-            let config = engine.emu_config_mut();
-            config.host.log = new_config.host.log.clone();
-            config.runtime.startup_timeout = new_config.runtime.startup_timeout.clone();
-            config.runtime.log_level = new_config.runtime.log_level.clone();
-
-            // And regenerate the flags
-            config.flags = process_flag_template(config)
-                .context("Failed to process the regenerated flags template file.")?;
-
-            engine.save_to_disk().await?;
+            self.reuse_existing_engine(&mut engine, new_config).await?;
             return Ok((true, engine));
         } else {
             let engine_type = EngineType::from_str(
@@ -667,6 +637,49 @@ impl<T: EngineOperations> EmuStartTool<T> {
 
     fn save_disk_hashes(config: &mut EmulatorConfiguration) -> Result<()> {
         config.guest.save_disk_hashes().bug_context("could not save disk hashes")?;
+        Ok(())
+    }
+
+    /// Syncs configuration updates and validates the environment when reusing an existing engine.
+    async fn reuse_existing_engine(
+        &self,
+        engine: &mut Box<dyn EmulatorEngine>,
+        new_config: &EmulatorConfiguration,
+    ) -> Result<()> {
+        // Dynamic options set from the command line (like host port mappings or logging configurations)
+        // must be updated in the reused engine instance to match the current invocation parameters.
+        if engine.emu_config().host.networking == NetworkingMode::User {
+            engine.emu_config_mut().host.port_map = new_config.host.port_map.clone();
+        }
+        {
+            let config = engine.emu_config_mut();
+            config.host.log = new_config.host.log.clone();
+            config.runtime.startup_timeout = new_config.runtime.startup_timeout.clone();
+            config.runtime.log_level = new_config.runtime.log_level.clone();
+        }
+
+        // Before starting a reused instance, we must validate its configuration and verify that
+        // any external host-level dependencies (such as bridged network tap interfaces) are still
+        // configured. If the host machine rebooted or the interface was deleted, this will return
+        // a user-friendly error instead of failing later with generic process execution errors.
+        engine.configure()?;
+
+        // Resolve and load the path to the correct emulator binary. Calling this here ensures
+        // that if the host SDK environment or toolpaths changed since the instance was first staged,
+        // we resolve to the correct path.
+        engine.load_emulator_binary()?;
+
+        {
+            let config = engine.emu_config_mut();
+            // Process the flag template to regenerate the command line parameters for the emulator
+            // binary (QEMU/Femu), incorporating the updated port mappings and configuration parameters.
+            config.flags = process_flag_template(config)
+                .context("Failed to process the flags template file.")?;
+        }
+
+        // Save the updated configuration to disk to ensure subsequent starts or status queries
+        // read the correct state.
+        engine.save_to_disk().await?;
         Ok(())
     }
 }
@@ -697,8 +710,10 @@ mod tests {
     pub struct TestEngine {
         do_stage: bool,
         do_start: bool,
+        do_configure: bool,
         did_stage: bool,
         did_start: bool,
+        did_configure: bool,
         stage_test_fn: fn(&mut EmulatorConfiguration) -> Result<()>,
         start_test_fn: fn(Command) -> Result<()>,
         config: EmulatorConfiguration,
@@ -712,8 +727,10 @@ mod tests {
                 start_test_fn: |_| Ok(()),
                 do_stage: false,
                 do_start: false,
+                do_configure: false,
                 did_stage: false,
                 did_start: false,
+                did_configure: false,
                 config: EmulatorConfiguration::default(),
                 running: false,
             }
@@ -748,6 +765,17 @@ mod tests {
             }
             Ok(0)
         }
+        fn configure(&mut self) -> fho::Result<()> {
+            self.did_configure = true;
+            if !self.do_configure {
+                fho::return_bug!("Test called configure() when it wasn't supposed to.")
+            }
+            Ok(())
+        }
+        fn load_emulator_binary(&mut self) -> fho::Result<()> {
+            Ok(())
+        }
+
         fn emu_config_mut(&mut self) -> &mut EmulatorConfiguration {
             &mut self.config
         }
@@ -773,6 +801,12 @@ mod tests {
                 assert!(
                     self.did_start,
                     "The start() function was supposed to be called but never was."
+                );
+            }
+            if self.do_configure {
+                assert!(
+                    self.did_configure,
+                    "The configure() function was supposed to be called but never was."
                 );
             }
         }
@@ -1114,6 +1148,7 @@ mod tests {
                 Ok(Some(Box::new(TestEngine {
                     do_stage: false,
                     do_start: true,
+                    do_configure: true,
                     config: reused_config.clone(),
                     ..Default::default()
                 }) as Box<dyn EmulatorEngine>))
@@ -1214,6 +1249,7 @@ mod tests {
                 Ok(Some(Box::new(TestEngine {
                     do_stage: false,
                     do_start: true,
+                    do_configure: true,
                     config: reused_config.clone(),
                     ..Default::default()
                 }) as Box<dyn EmulatorEngine>))
@@ -1397,6 +1433,7 @@ mod tests {
                 Ok(Some(Box::new(TestEngine {
                     do_stage: false,
                     do_start: true,
+                    do_configure: true,
                     config: reused_config.clone(),
                     ..Default::default()
                 }) as Box<dyn EmulatorEngine>))
@@ -1670,6 +1707,7 @@ mod tests {
                     // no staging should happen since we're reusing an instance.
                     do_stage: false,
                     do_start: true,
+                    do_configure: true,
                     config: matching_config.clone(),
                     ..Default::default()
                 }) as Box<dyn EmulatorEngine>))
@@ -1734,6 +1772,7 @@ mod tests {
             // no staging should happen since we're reusing an instance.
             do_stage: false,
             do_start: false,
+            do_configure: true,
             config: default_config.clone(),
             ..Default::default()
         });
