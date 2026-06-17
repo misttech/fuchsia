@@ -718,7 +718,7 @@ group_visibility = { import = "//third_party/rust_crates/visibility.gni", variab
 rustflags = ["--cfg=tuple_ty", "--cfg=allow_clippy", "--cfg=maybe_uninit", "--cfg=doctests", "--cfg=raw_ref_macros"]
 
 [gn.package.memoffset."0.9.1"]
-rustflags = ["--cfg=tuple_ty", "--cfg=allow_clippy", "--cfg=maybe_uninit", "--cfg=doctests", "--cfg=raw_ref_macros"]
+rustflags = ["--cfg=tuple_ty", "--cfg=allow_clippy", "--cfg=maybe_uninit", "--cfg=doctests", "--cfg=raw_ref_macros", "--cfg=stable_const", "--cfg=stable_offset_of"]
 
 [gn.package.mock-omaha-server."0.3.8"]
 rustflags = ["--cfg=fasync"]

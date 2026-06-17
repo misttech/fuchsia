@@ -11989,6 +11989,8 @@ rustc_library("memoffset-v0_9_1") {
     "--cfg=maybe_uninit",
     "--cfg=doctests",
     "--cfg=raw_ref_macros",
+    "--cfg=stable_const",
+    "--cfg=stable_offset_of",
   ]
 
   visibility = [ ":*" ]
