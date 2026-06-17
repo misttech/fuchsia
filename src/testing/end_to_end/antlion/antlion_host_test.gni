@@ -166,6 +166,10 @@ template("antlion_host_test") {
                              "timeout_secs",
                            ])
 
+    # Antlion E2E tests are target-bound and communicate with the device over
+    # SSH. Therefore, they always require expects_ssh = true.
+    expects_ssh = true
+
     binary_path = get_label_info("//tools/mobly_test_parser", "root_out_dir") +
                   "/mobly_test_parser"
 

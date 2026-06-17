@@ -304,14 +304,6 @@ template("python_mobly_test") {
     _list_cases_argument = invoker.list_cases_argument
   }
 
-  _expects_ssh_defined = defined(invoker.expects_ssh)
-  if (_expects_ssh_defined) {
-    _expects_ssh = invoker.expects_ssh
-  } else if (defined(invoker.ssh_key_path)) {
-    _expects_ssh = true
-    _expects_ssh_defined = true
-  }
-
   #
   # Define Mobly test python_binary().
   #
@@ -558,9 +550,10 @@ template("python_mobly_test") {
                              "timeout_secs",
                              "visibility",
                            ])
-    if (_expects_ssh_defined) {
-      expects_ssh = _expects_ssh
-    }
+
+    # Mobly E2E tests are target-bound and communicate with the device over SSH.
+    # Therefore, they always require expects_ssh = true.
+    expects_ssh = true
 
     list_cases_argument = _list_cases_argument
 
@@ -745,9 +738,10 @@ template("python_mobly_test") {
                                "visibility",
                                "timeout_secs",
                              ])
-      if (_expects_ssh_defined) {
-        expects_ssh = _expects_ssh
-      }
+
+      # Mobly E2E tests are target-bound and communicate with the device over
+      # SSH. Therefore, they always require expects_ssh = true.
+      expects_ssh = true
 
       binary_path = get_label_info("//tools/mobly_test_parser",
                                    "root_out_dir") + "/mobly_test_parser"
