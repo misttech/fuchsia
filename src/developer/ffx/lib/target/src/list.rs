@@ -51,14 +51,9 @@ async fn get_target_info(
         context.get("target.host_pipe_ssh_timeout").unwrap_or(DEFAULT_SSH_TIMEOUT_MS);
     let ssh_timeout = Duration::from_millis(ssh_timeout);
     for addr in addrs {
-        // An address is, conveniently, a valid target spec as well
-        let spec = if addr.port().filter(|x| *x != 0).is_none() {
-            format!("{addr}")
-        } else {
-            format!("{addr}:{}", addr.port().unwrap())
-        };
-        log::debug!("Trying to make a connection to spec {spec:?}");
-        match try_get_target_info(spec.try_into()?, context)
+        let query = TargetInfoQuery::from(*addr);
+        log::debug!("Trying to make a connection to query {query:?}");
+        match try_get_target_info(query, context)
             .on_timeout(ssh_timeout, || {
                 Err(KnockError::NonCritical(KnockNonCriticalError::Timeout {
                     detail: "knock_rcs() timed out".to_string(),
