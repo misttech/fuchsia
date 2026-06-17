@@ -136,6 +136,11 @@ class EventFuture:
         return _wait().__await__()
 
 
+SentCallback = Callable[
+    [asyncio.StreamWriter, Dict[str, Any]], Coroutine[Any, Any, None]
+]
+
+
 def get_build_root() -> Path:
     # //out/default/host_x64/obj/src/developer/debug/e2e_tests/dap_integration_tests/dap_integration_test/dap_integration_test.pyz
     curr = Path(sys.argv[0]).resolve()
@@ -166,6 +171,7 @@ class DapTestFramework:
     def __init__(self) -> None:
         self.client = ZxdbDapClient()
         self._split_requests: Dict[int, float] = {}
+        self._sent_callbacks: Dict[int, SentCallback] = {}
         self._original_write = self.client._write_message
         setattr(self.client, "_write_message", self._patched_write_message)
         self.event_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
@@ -327,10 +333,21 @@ class DapTestFramework:
             await writer.drain()
         else:
             await self._original_write(writer, value)
+        if seq is not None and seq in self._sent_callbacks:
+            callback = self._sent_callbacks.pop(seq)
+            await callback(writer, value)
 
     def split_request(self, seq: int, delay: float = 0.1) -> None:
         """Configures the client to split the request with the given sequence number."""
         self._split_requests[seq] = delay
+
+    def set_sent_callback(
+        self,
+        seq: int,
+        callback: SentCallback,
+    ) -> None:
+        """Registers a callback to be executed when the request with the given seq is sent and drained."""
+        self._sent_callbacks[seq] = callback
 
     async def _event_processor_loop(self) -> None:
         """Continuously reads events from queue and processes them against expectations."""
@@ -580,6 +597,29 @@ class DapTestFramework:
                 f"Pending event expectations were not met: {[e.event_name for e in self.event_expectations]}"
             )
 
+    def dispose_response(self, fut: RequestFuture) -> None:
+        """Disposes of a pending request future that we do not expect a response for.
+
+        This differs from simply ignoring a future. If we close a socket or abort a connection,
+        the background task for the request will eventually fail (e.g., timeout or socket error)
+        and set an exception on the future. If the future is GC'ed without being awaited,
+        Python will log a 'Future exception was never retrieved' warning.
+
+        This method removes the future from pending expectations and registers a callback
+        to silently retrieve and discard any exception when it completes, preventing warnings.
+        """
+        if fut in self.pending_futures:
+            self.pending_futures.remove(fut)
+
+        def silence_future(f: asyncio.Future[Any]) -> None:
+            try:
+                if not f.cancelled():
+                    f.exception()
+            except BaseException:
+                pass
+
+        fut.fut.add_done_callback(silence_future)
+
     def _check_event_expectations_against_history(self) -> None:
         """Helper to check pending event expectations against unmatched history."""
         for exp in list(self.event_expectations):
@@ -601,6 +641,16 @@ class DapTestFramework:
                         self.event_expectations.remove(exp)
                         self.unmatched_events.remove(msg)
                         break
+
+    async def wait_for_shutdown(self, timeout: float = 10.0) -> None:
+        """Waits for the server process to exit by waiting for the log reader task.
+
+        This is the safe way to wait for the process to exit because the background
+        log reader task (`_run_to_completion_collect_log`) is the sole consumer
+        of the process event queue.
+        """
+        if self._server_log_task:
+            await asyncio.wait_for(self._server_log_task, timeout=timeout)
 
     async def _drain_and_cleanup_server(self) -> None:
         """Drains server logs and ensures the process is terminated."""
@@ -779,7 +829,7 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
                 )
             else:
                 print(f"[{task_name}] Check failed: {e}", flush=True)
-                raise e
+                raise
 
     async def asyncTearDown(self) -> None:
         try:
@@ -830,6 +880,16 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
         self, args: Optional[DisconnectArguments] = None
     ) -> RequestFuture:
         return self.framework.disconnect(args)
+
+    def dispose_response(self, fut: RequestFuture) -> None:
+        self.framework.dispose_response(fut)
+
+    def set_sent_callback(
+        self,
+        seq: int,
+        callback: SentCallback,
+    ) -> None:
+        self.framework.set_sent_callback(seq, callback)
 
     def on_event(self, event_name: str) -> EventFuture:
         return self.framework.on_event(event_name)

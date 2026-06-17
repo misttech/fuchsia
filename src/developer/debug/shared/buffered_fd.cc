@@ -71,6 +71,9 @@ void BufferedFD::OnFDReady(int fd, bool readable, bool writable, bool err) {
         // We asked for data and it had none. Since this assumes async input,
         // that means EOF (otherwise it will return -1 and errno will be
         // EAGAIN).
+        if (auto cb = callback(); cb && stream().IsAvailable(1)) {
+          cb();
+        }
         OnFDError();
         return;
       } else if (num_read == -1) {
