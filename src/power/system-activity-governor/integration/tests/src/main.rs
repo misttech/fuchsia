@@ -5579,3 +5579,64 @@ async fn test_suspend_success_no_report() -> Result<()> {
 
     Ok(())
 }
+
+// Ensures that a wake lease's creation timestamp (WAKE_LEASE_ITEM_NODE_CREATED_AT) remains constant
+// across multiple Inspect snapshots. In b/522800734, the timestamp was evaluated lazily on each
+// snapshot poll, causing the reported value to incorrectly advance.
+#[fuchsia::test]
+async fn test_activity_governor_wake_lease_created_at_time_does_not_change() -> Result<()> {
+    let (realm, activity_governor_moniker) = create_realm().await?;
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+
+    let wake_lease_name = "test_lease_timestamp";
+    let wake_lease = activity_governor.acquire_wake_lease(wake_lease_name).await.unwrap().unwrap();
+    let server_token_koid = wake_lease.basic_info().unwrap().related_koid.raw_koid().to_string();
+
+    // Wait until the wake lease appears in Inspect
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            ref fobs::WAKE_LEASES_NODE: contains {
+                oldest_active: contains {
+                    ref server_token_koid: contains {
+                        ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: AnyProperty,
+                    }
+                }
+            }
+        }
+    );
+
+    // Fetch the inspect data first time
+    let inspect1 = get_diagnostics_hierarchy_for(&activity_governor_moniker).await?;
+    let created_at_1 = inspect1
+        .get_property_by_path(&[
+            fobs::WAKE_LEASES_NODE,
+            "oldest_active",
+            &server_token_koid,
+            fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT,
+        ])
+        .expect("wake_lease_created_at property not found")
+        .number_as_int()
+        .expect("wake_lease_created_at is not a number");
+
+    // Sleep for a short duration to let boot time advance
+    fasync::Timer::new(fasync::MonotonicInstant::after(zx::MonotonicDuration::from_millis(100)))
+        .await;
+
+    // Fetch the inspect data second time
+    let inspect2 = get_diagnostics_hierarchy_for(&activity_governor_moniker).await?;
+    let created_at_2 = inspect2
+        .get_property_by_path(&[
+            fobs::WAKE_LEASES_NODE,
+            "oldest_active",
+            &server_token_koid,
+            fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT,
+        ])
+        .expect("wake_lease_created_at property not found")
+        .number_as_int()
+        .expect("wake_lease_created_at is not a number");
+
+    assert_eq!(created_at_1, created_at_2, "wake_lease_created_at changed between snapshots!");
+
+    Ok(())
+}

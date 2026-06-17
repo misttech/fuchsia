@@ -24,7 +24,7 @@ use fuchsia_inspect::{
     ArrayProperty, BoolProperty as IBool, Inspector, IntProperty as IInt, LazyNode, Node as INode,
     Property, UintProperty as IUint,
 };
-use fuchsia_inspect_contrib::nodes::NodeTimeExt;
+
 use futures::channel::oneshot;
 use futures::future::FutureExt;
 use futures::lock::Mutex;
@@ -217,6 +217,7 @@ struct ActiveWakeLease {
     status: RefCell<LeaseStatus>,
     error: RefCell<Option<String>>,
     timer_task: RefCell<Option<fasync::Task<()>>>,
+    created_at: zx::BootInstant,
 }
 
 /// Manager of leases that block execution state.
@@ -298,9 +299,9 @@ impl LeaseManager {
                     let lease_node =
                         oldest_active_node.create_child(lease.server_token_koid.to_string());
 
-                    NodeTimeExt::<zx::BootTimeline>::record_time(
-                        &lease_node,
+                    lease_node.record_int(
                         fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT,
+                        lease.created_at.into_nanos(),
                     );
                     lease_node.record_string(fobs::WAKE_LEASE_ITEM_NAME, lease.name.clone());
                     lease_node.record_string(fobs::WAKE_LEASE_ITEM_TYPE, lease.lease_type);
@@ -486,6 +487,7 @@ impl LeaseManager {
             status: RefCell::new(LeaseStatus::Satisfied),
             error: RefCell::new(None),
             timer_task: RefCell::new(None),
+            created_at: zx::BootInstant::get(),
         });
         self.active_wake_leases.borrow_mut().insert(lease_id, active_lease);
 
@@ -579,6 +581,7 @@ impl LeaseManager {
                 status: RefCell::new(LeaseStatus::AwaitingSatisfaction),
                 error: RefCell::new(None),
                 timer_task: RefCell::new(timer_task),
+                created_at: zx::BootInstant::get(),
             });
 
             active_wake_leases.borrow_mut().insert(lease_id, active_lease.clone());
@@ -2254,6 +2257,7 @@ mod tests {
             status: RefCell::new(LeaseStatus::Satisfied),
             error: RefCell::new(None),
             timer_task: RefCell::new(None),
+            created_at: zx::BootInstant::get(),
         });
         active_wake_leases.borrow_mut().insert(lease_id, active_lease.clone());
 
@@ -2296,6 +2300,7 @@ mod tests {
                 status: RefCell::new(LeaseStatus::Satisfied),
                 error: RefCell::new(None),
                 timer_task: RefCell::new(None),
+                created_at: zx::BootInstant::get(),
             });
             active_wake_leases.borrow_mut().insert(lease_id, active_lease.clone());
 
@@ -2314,6 +2319,7 @@ mod tests {
             status: RefCell::new(LeaseStatus::Satisfied),
             error: RefCell::new(None),
             timer_task: RefCell::new(None),
+            created_at: zx::BootInstant::get(),
         });
         active_wake_leases.borrow_mut().insert(lease_id, active_lease.clone());
 
@@ -2359,6 +2365,7 @@ mod tests {
             status: RefCell::new(LeaseStatus::Satisfied),
             error: RefCell::new(None),
             timer_task: RefCell::new(None),
+            created_at: zx::BootInstant::get(),
         });
         active_wake_leases.borrow_mut().insert(lease_id, active_lease.clone());
 
@@ -2438,6 +2445,7 @@ mod tests {
             status: RefCell::new(LeaseStatus::Satisfied),
             error: RefCell::new(None),
             timer_task: RefCell::new(None), // No timer!
+            created_at: zx::BootInstant::get(),
         });
         active_wake_leases.borrow_mut().insert(lease_id, active_lease.clone());
 
