@@ -74,6 +74,28 @@ class VmarReservation {
 static_assert(std::movable<VmarReservation>);
 static_assert(!std::copyable<VmarReservation>);
 
+// Canonically calculate the bounds for the bottom half of a given primary VMAR.
+// This supports standard full address spaces where base is low, as well as
+// shared-process top-half VMAR configurations where base is high.
+// The calculation rounds the half-size up to the nearest page boundary.
+constexpr zx_info_vmar_t VmarBottomHalf(zx_info_vmar_t primary, size_t page_size) {
+  zx_info_vmar_t result = primary;
+  // Half of the primary length, page-aligned up.
+  result.len = ((primary.len / 2) + page_size - 1) & -page_size;
+  // Base remains the primary base.
+  return result;
+}
+
+// Canonically calculate the bounds for the top half of a given primary VMAR,
+// complementing VmarBottomHalf.
+constexpr zx_info_vmar_t VmarTopHalf(zx_info_vmar_t primary, size_t page_size) {
+  zx_info_vmar_t bottom = VmarBottomHalf(primary, page_size);
+  zx_info_vmar_t result = primary;
+  result.base = bottom.base + bottom.len;
+  result.len = primary.len - bottom.len;
+  return result;
+}
+
 }  // namespace ld
 
 #endif  // LIB_LD_VMAR_H_

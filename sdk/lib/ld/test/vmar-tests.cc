@@ -75,4 +75,87 @@ TEST(LdVmarTests, VmarReservationLifecycle) {
   EXPECT_THAT(VmarMaps(parent_vmar.borrow()), testing::SizeIs(1));
 }
 
+TEST(LdVmarTests, BoundsCalculations) {
+  const size_t page_size = zx_system_get_page_size();
+
+  constexpr struct {
+    const char* name;
+    zx_info_vmar_t primary;
+    zx_info_vmar_t expected_bottom;
+    zx_info_vmar_t expected_top;
+  } kTestCases[] = {
+      // StandardFullAspace39Bit
+      {
+          .name = "StandardFullAspace39Bit",
+          .primary = {.base = 0, .len = 1ull << 38},
+          .expected_bottom = {.base = 0, .len = 1ull << 37},
+          .expected_top = {.base = 1ull << 37, .len = 1ull << 37},
+      },
+      // StandardFullAspace48Bit
+      {
+          .name = "StandardFullAspace48Bit",
+          .primary = {.base = 0, .len = 1ull << 47},
+          .expected_bottom = {.base = 0, .len = 1ull << 46},
+          .expected_top = {.base = 1ull << 46, .len = 1ull << 46},
+      },
+      // StandardFullAspace56Bit
+      {
+          .name = "StandardFullAspace56Bit",
+          .primary = {.base = 0, .len = 1ull << 55},
+          .expected_bottom = {.base = 0, .len = 1ull << 54},
+          .expected_top = {.base = 1ull << 54, .len = 1ull << 54},
+      },
+      // SharedProcessTopHalf39Bit
+      {
+          .name = "SharedProcessTopHalf39Bit",
+          .primary = {.base = 1ull << 37, .len = 1ull << 37},
+          .expected_bottom = {.base = 1ull << 37, .len = 1ull << 36},
+          .expected_top = {.base = (1ull << 37) + (1ull << 36), .len = 1ull << 36},
+      },
+      // SharedProcessTopHalf48Bit
+      {
+          .name = "SharedProcessTopHalf48Bit",
+          .primary = {.base = 1ull << 46, .len = 1ull << 46},
+          .expected_bottom = {.base = 1ull << 46, .len = 1ull << 45},
+          .expected_top = {.base = (1ull << 46) + (1ull << 45), .len = 1ull << 45},
+      },
+      // SharedProcessTopHalf56Bit
+      {
+          .name = "SharedProcessTopHalf56Bit",
+          .primary = {.base = 1ull << 54, .len = 1ull << 54},
+          .expected_bottom = {.base = 1ull << 54, .len = 1ull << 53},
+          .expected_top = {.base = (1ull << 54) + (1ull << 53), .len = 1ull << 53},
+      },
+  };
+
+  for (const auto& tc : kTestCases) {
+    SCOPED_TRACE(tc.name);
+    zx_info_vmar_t bottom = ld::VmarBottomHalf(tc.primary, page_size);
+    EXPECT_EQ(bottom.base, tc.expected_bottom.base);
+    EXPECT_EQ(bottom.len, tc.expected_bottom.len);
+
+    zx_info_vmar_t top = ld::VmarTopHalf(tc.primary, page_size);
+    EXPECT_EQ(top.base, tc.expected_top.base);
+    EXPECT_EQ(top.len, tc.expected_top.len);
+  }
+}
+
+TEST(LdVmarTests, PageAlignmentRounding) {
+  const size_t page_size = zx_system_get_page_size();
+  // Primary length is 3 pages.
+  // Half length rounded up to nearest page boundary is 2 pages.
+  const zx_info_vmar_t primary = {
+      .base = 1000 * page_size,
+      .len = 3 * page_size,
+  };
+
+  zx_info_vmar_t bottom = ld::VmarBottomHalf(primary, page_size);
+  EXPECT_EQ(bottom.base, primary.base);
+  EXPECT_EQ(bottom.len, 2 * page_size);
+
+  zx_info_vmar_t top = ld::VmarTopHalf(primary, page_size);
+  EXPECT_EQ(top.base, primary.base + 2 * page_size);
+  EXPECT_EQ(top.len, page_size);
+}
+
 }  // namespace
