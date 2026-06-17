@@ -245,7 +245,7 @@ impl<S: HandleOwner> Directory<S> {
         let now = Timestamp::now();
 
         // The transaction takes ownership of the ID.
-        let object_id = object_id.release();
+        let object_id = object_id.release().get();
         transaction.add(
             store.store_object_id(),
             Mutation::insert_object(
@@ -943,7 +943,7 @@ impl<S: HandleOwner> Directory<S> {
                     transaction.add(
                         self.store().store_object_id(),
                         Mutation::insert_object(
-                            ObjectKey::object(reserved_symlink_id.release()),
+                            ObjectKey::object(reserved_symlink_id.release().get()),
                             ObjectValue::encrypted_symlink(
                                 link,
                                 Timestamp::now(),
@@ -974,7 +974,7 @@ impl<S: HandleOwner> Directory<S> {
                 transaction.add(
                     self.store().store_object_id(),
                     Mutation::insert_object(
-                        ObjectKey::object(reserved_symlink_id.release()),
+                        ObjectKey::object(reserved_symlink_id.release().get()),
                         ObjectValue::symlink(link, Timestamp::now(), Timestamp::now(), None),
                     ),
                 );

@@ -523,6 +523,13 @@ pub enum LockKey {
     MutationsKeyRoll {
         store_object_id: u64,
     },
+
+    /// Used to serialize pre caching of keys.  The lock ordering is different for this: it is
+    /// acquired in `Filesystem::commit_transaction` and happens *after* other keys have been
+    /// promoted to write locks, but before the commit lock.
+    PreCacheKeys {
+        store_object_id: u64,
+    },
 }
 
 impl LockKey {
@@ -548,6 +555,10 @@ impl LockKey {
 
     pub const fn mutations_key_roll(store_object_id: u64) -> Self {
         LockKey::MutationsKeyRoll { store_object_id }
+    }
+
+    pub const fn pre_cache_keys(store_object_id: u64) -> Self {
+        LockKey::PreCacheKeys { store_object_id }
     }
 }
 
@@ -706,6 +717,11 @@ pub struct TxnMutation<'a> {
 
 // We store TxnMutation in a set, and for that, we only use object_id and mutation and not the
 // associated object or checksum.
+//
+// WARNING: It is critical that `object_id` (which corresponds to the store ID for store mutations)
+// remains the primary key for sorting. The commit pipeline (`commit_transaction`) relies on
+// the mutations being sorted by `object_id` to acquire store locks in a consistent order,
+// preventing deadlocks.
 impl Ord for TxnMutation<'_> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.object_id.cmp(&other.object_id).then_with(|| self.mutation.cmp(&other.mutation))

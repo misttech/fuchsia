@@ -77,7 +77,7 @@ impl Graveyard {
         transaction.add(
             store.store_object_id,
             Mutation::insert_object(
-                ObjectKey::object(reserved_object_id.release()),
+                ObjectKey::object(reserved_object_id.release().get()),
                 ObjectValue::Object {
                     kind: ObjectKind::Graveyard,
                     attributes: ObjectAttributes {

@@ -4,6 +4,7 @@
 
 // This module is responsible for flushing (a.k.a. compacting) the object store trees.
 
+use crate::errors::FxfsError;
 use crate::log::*;
 use crate::lsm_tree::types::{ItemRef, LayerIterator};
 use crate::lsm_tree::{LSMTree, layers_from_handles};
@@ -14,12 +15,12 @@ use crate::object_store::object_record::{ObjectKey, ObjectValue};
 use crate::object_store::transaction::{AssociatedObject, LockKey, Mutation, lock_keys};
 use crate::object_store::{
     AssocObj, DirectWriter, EncryptedMutations, HandleOptions, LastObjectId, LastObjectIdInfo,
-    LockState, MAX_ENCRYPTED_MUTATIONS_SIZE, ObjectStore, Options, StoreInfo,
+    LockState, MAX_ENCRYPTED_MUTATIONS_SIZE, ObjectStore, Options, ReservedId, StoreInfo,
     layer_size_from_encrypted_mutations_size, tree,
 };
 use crate::serialized_types::{LATEST_VERSION, Version, VersionedLatest};
-use anyhow::{Context, Error};
-use fxfs_crypto::{EncryptionKey, KeyPurpose};
+use anyhow::{Context, Error, anyhow};
+
 use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
 
@@ -223,26 +224,34 @@ impl ObjectStore {
         // Create and write a new layer, compacting existing layers.
         let parent_store = self.parent_store.as_ref().unwrap();
         let handle_options = HandleOptions { skip_journal_checks: true, ..Default::default() };
-        let new_object_tree_layer = if let Some(crypt) = self.crypt().as_deref() {
-            let object_id = parent_store.get_next_object_id().await?;
-            let (key, unwrapped_key) =
-                match crypt.create_key(object_id.get(), KeyPurpose::Data).await {
-                    Ok((key, unwrapped_key)) => (key, unwrapped_key),
-                    Err(status) => {
-                        log::warn!(
-                            status:?;
-                            "Failed to create keys while flushing store {}",
-                            self.store_object_id(),
-                        );
-                        return Ok(FlushResult::CryptError(status.into()));
+        let id_and_key = {
+            let mut lock_state = self.lock_state.lock();
+            match &mut *lock_state {
+                LockState::Unlocked { cached_keys, .. } => {
+                    if let Some(item) = cached_keys.pop() {
+                        Ok(Some(item))
+                    } else {
+                        log::warn!("No cached keys for flush for store {}", self.store_object_id());
+                        Err(anyhow!(FxfsError::Internal).context("No cached keys for flush"))
                     }
-                };
+                }
+                LockState::UnlockedReadOnly(..) => {
+                    Err(anyhow!(FxfsError::Internal).context("Flush on read-only store"))
+                }
+                LockState::Unencrypted => Ok(None),
+                _ => Err(anyhow!(FxfsError::Internal))
+                    .with_context(|| format!("Invalid lock state ({:?}) for flush", *lock_state)),
+            }
+        }?;
+
+        let new_object_tree_layer = if let Some((raw_id, key, unwrapped_key)) = id_and_key {
+            let object_id = ReservedId::new(parent_store, raw_id);
             ObjectStore::create_object_with_key(
                 parent_store,
                 &mut transaction,
                 object_id,
                 handle_options,
-                EncryptionKey::Fxfs(key),
+                key,
                 unwrapped_key,
             )
             .await?

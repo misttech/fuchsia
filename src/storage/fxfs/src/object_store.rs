@@ -47,7 +47,7 @@ use crate::object_store::journal::{JournalCheckpoint, JournalCheckpointV32, Jour
 use crate::object_store::key_manager::KeyManager;
 use crate::object_store::transaction::{
     AssocObj, AssociatedObject, LockKey, LockKeys, ObjectStoreMutation, Operation, Options,
-    Transaction, lock_keys,
+    Transaction, WriteGuard, lock_keys,
 };
 use crate::range::RangeExt;
 use crate::round::round_up;
@@ -90,6 +90,15 @@ const OBJECT_ID_HI_MASK: u64 = 0xffffffff00000000;
 
 // At time of writing, this threshold limits transactions that delete extents to about 10,000 bytes.
 const TRANSACTION_MUTATION_THRESHOLD: usize = 200;
+
+// The number of keys we want to pre-cache for flushes.  We cache up to 2 keys.  One is for the
+// current flush, and one is pre-cached for the next flush so that we don't need to call the crypt
+// service during a flush.  To understand why, consider two threads T1 and T2.  Just prior to
+// committing a transaction, T1 ensures there are two keys.  Then, before T1 has committed the
+// transaction, T2 flushes and consumes one of the keys.  T1 then commits the transaction. The next
+// time a flush occurs, there's a key ready. If T1 had only ensured there was one key, there'd be no
+// key.
+const CACHED_KEYS_LIMIT: usize = 1;
 
 // Encrypted files and directories use the fscrypt key (identified by `FSCRYPT_KEY_ID`) to encrypt
 // file contents and filenames respectively. All non-fscrypt encrypted files otherwise default to
@@ -433,7 +442,11 @@ impl EncryptedMutations {
 pub enum LockState {
     Locked,
     Unencrypted,
-    Unlocked { owner: Weak<dyn StoreOwner>, crypt: Arc<dyn Crypt> },
+    Unlocked {
+        owner: Weak<dyn StoreOwner>,
+        crypt: Arc<dyn Crypt>,
+        cached_keys: Vec<(NonZero<u64>, EncryptionKey, UnwrappedKey)>,
+    },
 
     // The store is unlocked, but in a read-only state, and no flushes or other operations will be
     // performed on the store.
@@ -504,6 +517,11 @@ enum LastObjectId {
 }
 
 impl LastObjectId {
+    /// Returns true if object IDs require reservations.
+    fn uses_reserved_ids(&self) -> bool {
+        matches!(self, LastObjectId::Low32Bit { .. })
+    }
+
     /// Tries to get the next object ID.  Returns None if a new cipher is required because all
     /// object IDs that can be generated with the current cipher have been exhausted, or if only
     /// using the lower 32 bits which requires an async algorithm.
@@ -629,7 +647,7 @@ impl LastObjectId {
 pub struct ReservedId<'a>(&'a ObjectStore, NonZero<u64>);
 
 impl<'a> ReservedId<'a> {
-    fn new(store: &'a ObjectStore, id: NonZero<u64>) -> Self {
+    pub fn new(store: &'a ObjectStore, id: NonZero<u64>) -> Self {
         Self(store, id)
     }
 
@@ -639,8 +657,8 @@ impl<'a> ReservedId<'a> {
 
     /// The caller takes responsibility for this id.
     #[must_use]
-    pub fn release(self) -> u64 {
-        let id = self.1.get();
+    pub fn release(self) -> NonZero<u64> {
+        let id = self.1;
         std::mem::forget(self);
         id
     }
@@ -820,6 +838,59 @@ impl ObjectStore {
         Transaction::new(fs, options, locks).await
     }
 
+    /// Ensures that `cached_keys` is filled up to `CACHED_KEYS_LIMIT`.
+    async fn pre_cache_keys(&self) -> Result<(), Error> {
+        let crypt = match &*self.lock_state.lock() {
+            LockState::Unlocked { cached_keys, crypt, .. }
+                if cached_keys.len() < CACHED_KEYS_LIMIT =>
+            {
+                crypt.clone()
+            }
+            _ => return Ok(()),
+        };
+        loop {
+            let parent_store = self.parent_store.as_ref().unwrap();
+
+            // We assert that the parent store is not using object IDs that need reservation, since
+            // if it did, release() would leak the reservation below.
+            assert!(!parent_store.last_object_id.lock().uses_reserved_ids());
+
+            // Allocate a raw ID from the parent store.  Since the parent store is unencrypted, this
+            // is fast and won't block.
+            let raw_id = {
+                let reserved_id = parent_store
+                    .maybe_get_next_object_id()
+                    .expect("maybe_get_next_object_id failed on parent store");
+                reserved_id.release()
+            };
+
+            let (wrapped, unwrapped) = match crypt.create_key(raw_id.get(), KeyPurpose::Data).await
+            {
+                Ok(v) => v,
+                Err(error) => {
+                    log::warn!(
+                        error:?,
+                        store_id = self.store_object_id();
+                        "Failed to pre-cache key"
+                    );
+                    return Err(error.into());
+                }
+            };
+
+            let mut lock_state = self.lock_state.lock();
+            if let LockState::Unlocked { cached_keys, .. } = &mut *lock_state {
+                cached_keys.push((raw_id, EncryptionKey::Fxfs(wrapped), unwrapped));
+                if cached_keys.len() >= CACHED_KEYS_LIMIT {
+                    break;
+                }
+            } else {
+                // Store was locked while we were awaiting; discard the key.
+                break;
+            }
+        }
+        Ok(())
+    }
+
     /// Create a child store. It is a multi-step process:
     ///
     ///   1. Call `ObjectStore::new_child_store`.
@@ -884,7 +955,11 @@ impl ObjectStore {
                 }),
                 object_cache,
                 Some(StreamCipher::new(&unwrapped_key, 0)),
-                LockState::Unlocked { owner: options.options.owner, crypt },
+                LockState::Unlocked {
+                    owner: options.options.owner,
+                    crypt,
+                    cached_keys: Vec::new(),
+                },
                 last_object_id_in_memory,
             )
         } else {
@@ -1294,7 +1369,7 @@ impl ObjectStore {
                 .add(
                     store.store_object_id(),
                     Mutation::insert_object(
-                        ObjectKey::object(reserved_object_id.release()),
+                        ObjectKey::object(reserved_object_id.release().get()),
                         ObjectValue::file(
                             1,
                             0,
@@ -2098,7 +2173,6 @@ impl ObjectStore {
         let _ = std::mem::replace(&mut *self.lock_state.lock(), LockState::Unlocking);
         *self.store_info.lock() = Some(store_info);
 
-        // If we fail, clean up.
         let clean_up = scopeguard::guard((), |_| {
             *self.lock_state.lock() = LockState::Locked;
             *self.store_info.lock() = None;
@@ -2147,7 +2221,7 @@ impl ObjectStore {
         *self.lock_state.lock() = if read_only {
             LockState::UnlockedReadOnly(crypt)
         } else {
-            LockState::Unlocked { owner, crypt }
+            LockState::Unlocked { owner, crypt, cached_keys: Vec::new() }
         };
 
         // To avoid unbounded memory growth, we should flush the encrypted mutations now. Otherwise
@@ -2156,6 +2230,9 @@ impl ObjectStore {
         std::mem::drop(guard);
 
         if !read_only && !self.filesystem().options().read_only {
+            // We must populate the cache before calling flush, because flush itself does not top up
+            // the cache (it avoids calling crypt).
+            self.pre_cache_keys().await?;
             self.flush_with_reason(flush::Reason::Unlock).await?;
 
             // Reap purged files within this store.
@@ -2902,6 +2979,27 @@ impl JournalingObject for ObjectStore {
         }
     }
 
+    async fn prepare_commit<'a>(
+        &self,
+        filesystem: &'a FxFilesystem,
+        _transaction: &Transaction<'_>,
+    ) -> Result<Option<WriteGuard<'a>>, Error> {
+        // Short circuit check to see if this is an encrypted store.
+        if !matches!(&*self.lock_state.lock(), LockState::Unlocked { .. }) {
+            return Ok(None);
+        }
+
+        // We must acquire the keys lock before we can access or modify `cached_keys`.  This guard
+        // is returned and held until the transaction commits, ensuring that the keys we cache (or
+        // existing keys) remain valid and are not interfered with by other transactions.
+        let keys = lock_keys![LockKey::pre_cache_keys(self.store_object_id())];
+        let guard = filesystem.lock_manager().write_lock(keys).await;
+
+        self.pre_cache_keys().await?;
+
+        Ok(Some(guard))
+    }
+
     /// Push all in-memory structures to the device. This is not necessary for sync since the
     /// journal will take care of it.  This is supposed to be called when there is either memory or
     /// space pressure (flushing the store will persist in-memory data and allow the journal file to
@@ -3075,7 +3173,8 @@ mod tests {
     use crate::object_handle::{
         INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle, WriteObjectHandle,
     };
-    use crate::object_store::directory::Directory;
+    use crate::object_store::directory::{Directory, replace_child};
+    use crate::object_store::journal::JournalOptions;
     use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectKind, ObjectValue};
     use crate::object_store::transaction::{Options, lock_keys};
     use crate::object_store::volume::root_volume;
@@ -3088,7 +3187,8 @@ mod tests {
     use futures::join;
     use fxfs_crypto::ff1::Ff1;
     use fxfs_crypto::{
-        Crypt, FXFS_KEY_SIZE, FXFS_WRAPPED_KEY_SIZE, FxfsKey, UnwrappedKey, WrappedKeyBytes,
+        Crypt, EncryptionKey, FXFS_KEY_SIZE, FXFS_WRAPPED_KEY_SIZE, FxfsKey, KeyPurpose,
+        ObjectType, UnwrappedKey, WrappedKey, WrappedKeyBytes, WrappingKeyId,
     };
     use fxfs_insecure_crypto::new_insecure_crypt;
     use std::sync::Arc;
@@ -3096,6 +3196,7 @@ mod tests {
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
     use test_case::test_case;
+    use zx_status as zx;
 
     const TEST_DEVICE_BLOCK_SIZE: u32 = 512;
 
@@ -4474,38 +4575,101 @@ mod tests {
                     .expect("create_child_file failed");
                 transaction.commit().await.expect("commit failed");
             }
-            // Shut down the crypt instance for store2, and then compact.  Compaction should not
-            // fail, and the store should become locked.
+
+            // Shut down the crypt instance for store2.
             crypt.shutdown();
+
+            // Compact. This flushes store2 (using cached key) and store1.  This consumes 1 cached
+            // key from store2.
             fs.journal().force_compact().await.expect("compact failed");
-            // The store should now be locked.
-            assert!(store2.is_locked());
+
+            // Write to store2 again. This should fail because store2 needs to top up its cached
+            // keys, which requires calling the (dead) crypt service.
+            let root_directory2 = Directory::open(&store2, store2.root_directory_object_id())
+                .await
+                .expect("open failed");
+            let (child_id, _, _) = root_directory2
+                .lookup("test")
+                .await
+                .expect("lookup failed")
+                .expect("test file not found");
+            let mut transaction2 = store2
+                .new_transaction(
+                    lock_keys![
+                        LockKey::object(store2.store_object_id(), root_directory2.object_id()),
+                        LockKey::object(store2.store_object_id(), child_id),
+                    ],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            replace_child(&mut transaction2, None, (&root_directory2, "test"))
+                .await
+                .expect("replace_child failed");
+            assert!(transaction2.commit().await.is_err());
+
+            // Write to store1 should still succeed (its crypt is not dead).
+            let root_directory1 = Directory::open(&store1, store1.root_directory_object_id())
+                .await
+                .expect("open failed");
+            let mut transaction1 = store1
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        store1.store_object_id(),
+                        root_directory1.object_id()
+                    )],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            root_directory1
+                .create_child_file(&mut transaction1, "test2")
+                .await
+                .expect("create_child_file failed");
+            transaction1.commit().await.expect("commit failed");
+
+            // Compact again. Should succeed.
+            fs.journal().force_compact().await.expect("compact failed");
         }
 
-        // Even though the store wasn't flushed, the mutation to store2 will still be valid as it is
-        // held in the journal.
+        // Close and reopen to verify.
         fs.close().await.expect("close failed");
         let device = fs.take_device().await;
         device.reopen(false);
         let fs = FxFilesystem::open(device).await.expect("open failed");
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
 
-        for volume_name in ["vol1", "vol2"] {
-            let store = root_volume
-                .volume(
-                    volume_name,
-                    StoreOptions {
-                        crypt: Some(Arc::new(new_insecure_crypt())),
-                        ..StoreOptions::default()
-                    },
-                )
-                .await
-                .expect("open volume failed");
-            let root_directory = Directory::open(&store, store.root_directory_object_id())
-                .await
-                .expect("open failed");
-            assert!(root_directory.lookup("test").await.expect("lookup failed").is_some());
-        }
+        // vol1 should have "test" and "test2".
+        let store1 = root_volume
+            .volume(
+                "vol1",
+                StoreOptions {
+                    crypt: Some(Arc::new(new_insecure_crypt())),
+                    ..StoreOptions::default()
+                },
+            )
+            .await
+            .expect("volume failed");
+        let root_directory1 =
+            Directory::open(&store1, store1.root_directory_object_id()).await.expect("open failed");
+        assert!(root_directory1.lookup("test").await.expect("lookup failed").is_some());
+        assert!(root_directory1.lookup("test2").await.expect("lookup failed").is_some());
+
+        // vol2 should only have "test".
+        let store2 = root_volume
+            .volume(
+                "vol2",
+                StoreOptions {
+                    crypt: Some(Arc::new(new_insecure_crypt())),
+                    ..StoreOptions::default()
+                },
+            )
+            .await
+            .expect("volume failed");
+        let root_directory2 =
+            Directory::open(&store2, store2.root_directory_object_id()).await.expect("open failed");
+        assert!(root_directory2.lookup("test").await.expect("lookup failed").is_some());
+        assert!(root_directory2.lookup("test2").await.expect("lookup failed").is_none());
 
         fs.close().await.expect("close failed");
     }
@@ -4802,6 +4966,340 @@ mod tests {
             let child = root_dir.lookup("file_after_flush").await.expect("lookup failed");
             assert!(child.is_some(), "file_after_flush missing!");
         }
+        fs.close().await.expect("Close failed");
+    }
+
+    struct StallingCrypt {
+        delegate: Arc<dyn Crypt>,
+        blocker: Mutex<Option<futures::channel::oneshot::Receiver<()>>>,
+    }
+
+    #[async_trait]
+    impl Crypt for StallingCrypt {
+        async fn create_key(
+            &self,
+            owner: u64,
+            purpose: KeyPurpose,
+        ) -> Result<(FxfsKey, UnwrappedKey), zx::Status> {
+            let rx = self.blocker.lock().take();
+            if let Some(rx) = rx {
+                let _ = rx.await;
+            }
+            self.delegate.create_key(owner, purpose).await
+        }
+
+        async fn create_key_with_id(
+            &self,
+            owner: u64,
+            wrapping_key_id: WrappingKeyId,
+            object_type: ObjectType,
+        ) -> Result<(EncryptionKey, UnwrappedKey), zx::Status> {
+            self.delegate.create_key_with_id(owner, wrapping_key_id, object_type).await
+        }
+
+        async fn unwrap_key(
+            &self,
+            wrapped_key: &WrappedKey,
+            owner: u64,
+        ) -> Result<UnwrappedKey, zx::Status> {
+            self.delegate.unwrap_key(wrapped_key, owner).await
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_fsck_during_key_pre_cache_stall() {
+        let device = DeviceHolder::new(FakeDevice::new(16384, TEST_DEVICE_BLOCK_SIZE));
+        let fs = FxFilesystemBuilder::new().format(true).open(device).await.expect("open failed");
+
+        // Initialize crypt without blocker so new_volume doesn't stall.
+        let crypt = Arc::new(StallingCrypt {
+            delegate: Arc::new(new_insecure_crypt()),
+            blocker: Mutex::new(None),
+        });
+
+        let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
+        let store = root_vol
+            .new_volume(
+                "test",
+                NewChildStoreOptions {
+                    options: StoreOptions { crypt: Some(crypt.clone()), ..StoreOptions::default() },
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("new_volume failed");
+
+        // Now install the blocker.
+        let (tx, rx) = futures::channel::oneshot::channel();
+        *crypt.blocker.lock() = Some(rx);
+
+        // The volume was created, so it has 2 cached keys.
+        // We want to exhaust them so that the next transaction tries to pre-cache more.
+        {
+            let mut lock_state = store.lock_state.lock();
+            if let super::LockState::Unlocked { cached_keys, .. } = &mut *lock_state {
+                cached_keys.clear();
+            }
+        }
+
+        // Start a transaction in the background. It will try to pre-cache keys,
+        // and should stall on the crypt service.
+        let store_clone = store.clone();
+        let root_dir_id = store.root_directory_object_id();
+
+        let tx_join_handle = fasync::Task::spawn(async move {
+            let root_dir = Directory::open(&store_clone, root_dir_id).await.expect("open failed");
+            let mut transaction = store_clone
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        store_clone.store_object_id(),
+                        root_dir.object_id()
+                    )],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            root_dir
+                .create_child_file(&mut transaction, "foo")
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+        });
+
+        // Yield to let the background task run and block on crypt.
+        fasync::Timer::new(std::time::Duration::from_millis(100)).await;
+
+        // While it is blocked, we should still be able to run fsck.
+        fsck(fs.clone()).await.expect("fsck failed");
+
+        // Unblock the crypt service so the transaction can complete.
+        let _ = tx.send(());
+        tx_join_handle.await;
+
+        fs.close().await.expect("Close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_writes_to_other_store_not_blocked_by_stall() {
+        let device = DeviceHolder::new(FakeDevice::new(16384, TEST_DEVICE_BLOCK_SIZE));
+        let fs = FxFilesystemBuilder::new()
+            .format(true)
+            .journal_options(JournalOptions { reclaim_size: 32_768, ..Default::default() })
+            .open(device)
+            .await
+            .expect("open failed");
+
+        // Initialize crypt for store1 with a blocker.
+        // We will enable it after volume creation.
+        let crypt1 = Arc::new(StallingCrypt {
+            delegate: Arc::new(new_insecure_crypt()),
+            blocker: Mutex::new(None),
+        });
+
+        // Initialize normal crypt for store2.
+        let crypt2 = Arc::new(new_insecure_crypt());
+
+        let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
+
+        let store1 = root_vol
+            .new_volume(
+                "test1",
+                NewChildStoreOptions {
+                    options: StoreOptions {
+                        crypt: Some(crypt1.clone()),
+                        ..StoreOptions::default()
+                    },
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("new_volume failed");
+
+        store1.flush().await.expect("flush failed");
+
+        let store2 = root_vol
+            .new_volume(
+                "test2",
+                NewChildStoreOptions {
+                    options: StoreOptions {
+                        crypt: Some(crypt2.clone()),
+                        ..StoreOptions::default()
+                    },
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("new_volume failed");
+
+        // Now install the blocker on crypt1.
+        let (tx, rx) = futures::channel::oneshot::channel();
+        *crypt1.blocker.lock() = Some(rx);
+
+        // Exhaust cached keys for store1 so next txn tries to pre-cache.
+        {
+            let mut lock_state = store1.lock_state.lock();
+            if let super::LockState::Unlocked { cached_keys, .. } = &mut *lock_state {
+                cached_keys.clear();
+            }
+        }
+
+        // Start a transaction on store1 in the background.
+        // It should stall on crypt1.
+        let store1_clone = store1.clone();
+        let root_dir1_id = store1.root_directory_object_id();
+
+        let tx_join_handle = fasync::Task::spawn(async move {
+            let root_dir1 =
+                Directory::open(&store1_clone, root_dir1_id).await.expect("open failed");
+            let mut transaction = store1_clone
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        store1_clone.store_object_id(),
+                        root_dir1.object_id()
+                    )],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            root_dir1
+                .create_child_file(&mut transaction, "foo")
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+        });
+
+        // Yield to let the background task run and block.
+        fasync::Timer::new(std::time::Duration::from_millis(100)).await;
+
+        // While store1 is blocked, we should still be able to write to store2.
+        let root_dir2 =
+            Directory::open(&store2, store2.root_directory_object_id()).await.expect("open failed");
+        let long_name = "a".repeat(255);
+        let mut i = 0;
+        while store2.counters.lock().num_flushes < 3 {
+            if i > 200 {
+                panic!(
+                    "Failed to trigger 3 compactions after 200 transactions. Flushes: {}",
+                    store2.counters.lock().num_flushes
+                );
+            }
+            let mut transaction = store2
+                .new_transaction(
+                    lock_keys![LockKey::object(store2.store_object_id(), root_dir2.object_id())],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            root_dir2
+                .create_child_file(&mut transaction, &format!("{}-{:03}", long_name, i))
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+            i += 1;
+            fasync::Timer::new(std::time::Duration::from_millis(5)).await;
+        }
+
+        // Unblock crypt1.
+        let _ = tx.send(());
+        tx_join_handle.await;
+
+        fs.close().await.expect("Close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_concurrent_transactions_exhaust_cached_keys() {
+        let fs = test_filesystem().await;
+
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+        let crypt = Arc::new(new_insecure_crypt());
+        let store = root_volume
+            .new_volume(
+                "vol",
+                NewChildStoreOptions {
+                    options: StoreOptions { crypt: Some(crypt.clone()), ..Default::default() },
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("new_volume failed");
+
+        let root_directory =
+            Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
+
+        // Create three directories first, so we can run transactions concurrently
+        // without blocking on directory locks.
+        let mut transaction = store
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        let dir1 = root_directory
+            .create_child_dir(&mut transaction, "dir1")
+            .await
+            .expect("create_child_dir failed");
+        let dir2 = root_directory
+            .create_child_dir(&mut transaction, "dir2")
+            .await
+            .expect("create_child_dir failed");
+        let dir3 = root_directory
+            .create_child_dir(&mut transaction, "dir3")
+            .await
+            .expect("create_child_dir failed");
+        transaction.commit().await.expect("commit failed");
+
+        // Start three transactions. They will all see that the cached keys are full
+        // (size 2) after the first one tops them up, so they will all succeed to start
+        // without calling crypt again (except the first one which tops up).
+
+        // Transaction 1
+        let mut transaction1 = store
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), dir1.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction 1 failed");
+        dir1.create_child_file(&mut transaction1, "file1")
+            .await
+            .expect("create_child_file 1 failed");
+
+        // Transaction 2
+        let mut transaction2 = store
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), dir2.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction 2 failed");
+        dir2.create_child_file(&mut transaction2, "file2")
+            .await
+            .expect("create_child_file 2 failed");
+
+        // Transaction 3
+        let mut transaction3 = store
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), dir3.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction 3 failed");
+        dir3.create_child_file(&mut transaction3, "file3")
+            .await
+            .expect("create_child_file 3 failed");
+
+        // Now shut down the crypt service.
+        crypt.shutdown();
+
+        // Commit transaction 1 and compact. This should succeed and consume 1 cached key.
+        transaction1.commit().await.expect("commit 1 failed");
+        fs.journal().force_compact().await.expect("compact 1 failed");
+
+        // Commit transaction 2 should FAIL because it tries to top up (since cache size is 1 < 2)
+        // and the crypt service is dead.
+        assert!(transaction2.commit().await.is_err());
+
         fs.close().await.expect("Close failed");
     }
 }

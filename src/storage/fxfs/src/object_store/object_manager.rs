@@ -122,7 +122,7 @@ impl Inner {
             + self.reserved_space
     }
 
-    fn object(&self, object_id: u64) -> Option<Arc<dyn JournalingObject>> {
+    fn journaling_object(&self, object_id: u64) -> Option<Arc<dyn JournalingObject>> {
         if object_id == self.allocator_object_id {
             Some(self.allocator.clone().unwrap() as Arc<dyn JournalingObject>)
         } else {
@@ -357,11 +357,7 @@ impl ObjectManager {
                     }
                 }
             }
-            if object_id == inner.allocator_object_id {
-                inner.allocator.clone().unwrap() as Arc<dyn JournalingObject>
-            } else {
-                inner.stores.get(&object_id).unwrap().clone() as Arc<dyn JournalingObject>
-            }
+            inner.journaling_object(object_id).unwrap()
         };
         associated_object.map(|o| o.will_apply_mutation(&mutation, object_id, self));
         object.apply_mutation(mutation, context, associated_object)
@@ -562,7 +558,7 @@ impl ObjectManager {
     /// will unreserve allocations).
     pub fn drop_transaction(&self, transaction: &mut Transaction<'_>) {
         for TxnMutation { object_id, mutation, .. } in transaction.take_mutations() {
-            self.object(object_id).map(|o| o.drop_mutation(mutation, transaction));
+            self.journaling_object(object_id).map(|o| o.drop_mutation(mutation, transaction));
         }
     }
 
@@ -617,7 +613,7 @@ impl ObjectManager {
             object_ids
                 .iter()
                 .rev()
-                .map(|oid| (*oid, inner.object(*oid).unwrap()))
+                .map(|oid| (*oid, inner.journaling_object(*oid).unwrap()))
                 .collect::<Vec<_>>()
         };
 
@@ -634,8 +630,8 @@ impl ObjectManager {
         Ok(earliest_version)
     }
 
-    fn object(&self, object_id: u64) -> Option<Arc<dyn JournalingObject>> {
-        self.inner.read().object(object_id)
+    pub fn journaling_object(&self, object_id: u64) -> Option<Arc<dyn JournalingObject>> {
+        self.inner.read().journaling_object(object_id)
     }
 
     pub fn init_metadata_reservation(&self) -> Result<(), Error> {
@@ -701,7 +697,7 @@ impl ObjectManager {
     }
 
     pub fn write_mutation(&self, object_id: u64, mutation: &Mutation, writer: journal::Writer<'_>) {
-        self.object(object_id).unwrap().write_mutation(mutation, writer);
+        self.journaling_object(object_id).unwrap().write_mutation(mutation, writer);
     }
 
     pub fn unlocked_stores(&self) -> Vec<Arc<ObjectStore>> {

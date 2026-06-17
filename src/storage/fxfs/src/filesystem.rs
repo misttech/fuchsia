@@ -200,6 +200,16 @@ pub trait JournalingObject: Send + Sync {
     /// Called when a transaction fails to commit.
     fn drop_mutation(&self, mutation: Mutation, transaction: &Transaction<'_>);
 
+    /// Called before committing a transaction. Implementations can use this to acquire locks
+    /// or resources (like keys) that must be held until the transaction is committed.
+    async fn prepare_commit<'a>(
+        &self,
+        _filesystem: &'a FxFilesystem,
+        _transaction: &Transaction<'_>,
+    ) -> Result<Option<WriteGuard<'a>>, Error> {
+        Ok(None)
+    }
+
     /// Flushes in-memory changes to the device (to allow journal space to be freed).
     ///
     /// Also returns the earliest version of a struct in the filesystem.
@@ -715,6 +725,34 @@ impl FxFilesystem {
             hook(transaction)?;
         }
         debug_assert_not_too_long!(self.lock_manager.commit_prepare(&transaction));
+
+        // Call prepare_commit on all unique objects involved in the transaction.
+        // We must hold the returned guards until the transaction is committed.
+        // Since transaction.mutations() is sorted by object_id, we can deduplicate
+        // on-the-fly.
+        let mut guards = Vec::new();
+        let mut last_object_id = 0;
+        for mutation in transaction.mutations() {
+            let object_id = mutation.object_id;
+
+            // We don't need to prepare commits (which reserves keys) for flush mutations.
+            if matches!(mutation.mutation, Mutation::BeginFlush | Mutation::EndFlush) {
+                continue;
+            }
+
+            if object_id == last_object_id {
+                continue;
+            }
+            assert!(object_id > last_object_id);
+            last_object_id = object_id;
+
+            if let Some(obj) = self.object_manager().journaling_object(object_id) {
+                if let Some(guard) = obj.prepare_commit(self, transaction).await? {
+                    guards.push(guard);
+                }
+            }
+        }
+
         self.maybe_start_flush_task();
         let _guard = debug_assert_not_too_long!(self.commit_mutex.lock());
         let journal_offset = if self.journal().image_builder_mode().is_some() {
@@ -735,6 +773,8 @@ impl FxFilesystem {
         } else {
             self.journal.commit(transaction).await?
         };
+
+        std::mem::drop(guards);
         self.completed_transactions.add(1);
 
         // For now, call the callback whilst holding the lock.  Technically, we don't need to do

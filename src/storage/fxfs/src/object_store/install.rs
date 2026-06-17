@@ -370,7 +370,7 @@ async fn create_metadata_ownership_layer(
     // Add the extra object records we need for it to be a valid file.
 
     // The transaction takes ownership of the ID.
-    let object_id = object_id.release();
+    let object_id = object_id.release().get();
     layer.insert(Item {
         key: ObjectKey::object(object_id),
         value: ObjectValue::Object {
