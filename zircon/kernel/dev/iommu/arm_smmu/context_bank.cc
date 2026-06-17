@@ -683,6 +683,30 @@ zx::result<> ContextBank::AdoptRegisterState(Smmu& smmu) {
     }
   }
 
+  // We currently do not support adopting context banks which have active
+  // translation tables.  Disabling the MMU for passthru mode is fine, enabling
+  // the MMU and disabling both TTBRs for fault mode is also fine.  Having
+  // actively configured TTBRs, however, implies that the bootloader chain must
+  // have set aside _some_ memory for the translation tables.
+  //
+  // It is not impossible for us to verify that this memory is part of a
+  // properly reserved region and will not accidentally be used by the kernel or
+  // user-mode, and to arrange a proper handoff as the drivers start up for the
+  // first time, but we don't currently have any use cases which require this.
+  //
+  // For now, we simply ASSERT that this is not the case, unless we are in
+  // disabled mode, which should only be used during initial bringup.  There are
+  // a few different places where we might need to assert this, so we create
+  // this small lambda to help us out a bit.
+  auto AssertTtbrsDisabled = [&smmu, this](bool ttbr0_disabled, bool ttbr1_disabled) {
+    ASSERT_MSG((smmu.op_mode() == ArmSmmuMode::kDisabled) || (ttbr0_disabled && ttbr1_disabled),
+               "%s ERROR: SMMU driver is not disabled (mode %s), but adopted Context Bank #%u "
+               "has %s%s%s enabled!",
+               smmu.name(), ArmSmmuModeToString(smmu.op_mode()), cb_ndx_,
+               ttbr0_disabled ? "" : "TRBR0", ttbr0_disabled || ttbr1_disabled ? "" : " and ",
+               ttbr1_disabled ? "" : "TRBR1");
+  };
+
   // If translation is enabled at all, we may need to print some warnings
   // depending on whether or not either of the TTBRs are enabled for
   // translation.  If they are, it implies that we have actual translation
@@ -727,6 +751,7 @@ zx::result<> ContextBank::AdoptRegisterState(Smmu& smmu) {
       switch (addr_mode_) {
         case AddrMode::k64Bit: {
           const s1cbr::TCR_64Bit tcr = s1cbr::TCR_64Bit::Get().ReadFrom(&cb_base_);
+          AssertTtbrsDisabled(tcr.EPD0(), tcr.EPD1());
 
           ttbrs_[0].enabled = !tcr.EPD0();
           ttbrs_[1].enabled = !tcr.EPD1();
@@ -741,6 +766,7 @@ zx::result<> ContextBank::AdoptRegisterState(Smmu& smmu) {
         } break;
         case AddrMode::kExt32Bit: {
           const s1cbr::TCR_Ext32Bit tcr = s1cbr::TCR_Ext32Bit::Get().ReadFrom(&cb_base_);
+          AssertTtbrsDisabled(tcr.EPD0(), tcr.EPD1());
 
           ttbrs_[0].enabled = !tcr.EPD0();
           ttbrs_[1].enabled = !tcr.EPD1();
@@ -755,6 +781,7 @@ zx::result<> ContextBank::AdoptRegisterState(Smmu& smmu) {
         } break;
         case AddrMode::k32Bit: {
           const s1cbr::TCR_32Bit tcr = s1cbr::TCR_32Bit::Get().ReadFrom(&cb_base_);
+          AssertTtbrsDisabled(tcr.PD0(), tcr.PD1());
 
           ttbrs_[0].enabled = !tcr.PD0();
           ttbrs_[1].enabled = !tcr.PD1();
