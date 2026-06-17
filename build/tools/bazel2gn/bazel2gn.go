@@ -139,16 +139,29 @@ func assignStmtToGN(stmt *syntax.AssignStmt) ([]string, error) {
 	}
 	transformers = append(transformers, statement_transformers...)
 
-	rhs, err := exprToGN(stmt.RHS, transformers)
-	if err != nil {
-		return nil, fmt.Errorf("converting rhs of assignment statement: %v", err)
-	}
-	if len(rhs) == 0 {
-		return nil, errors.New("rhs of assignment statement is unexpectedly empty")
+	var ret []string
+	if hasBranching(stmt.RHS) {
+		lc, err := listConcatWithSelectToGN(lhs[0], stmt.RHS, transformers)
+		if err != nil {
+			return nil, err
+		}
+		if stmt.Op == syntax.EQ {
+			ret = append(ret, fmt.Sprintf("%s = []", lhs[0]))
+		}
+		ret = append(ret, lc...)
+	} else {
+		rhs, err := exprToGN(stmt.RHS, transformers)
+		if err != nil {
+			return nil, fmt.Errorf("converting rhs of assignment statement: %v", err)
+		}
+		if len(rhs) == 0 {
+			return nil, errors.New("rhs of assignment statement is unexpectedly empty")
+		}
+
+		ret = append(ret, fmt.Sprintf("%s %s %s", lhs[0], opToGN(stmt.Op), rhs[0]))
+		ret = append(ret, rhs[1:]...)
 	}
 
-	ret := []string{fmt.Sprintf("%s %s %s", lhs[0], opToGN(stmt.Op), rhs[0])}
-	ret = append(ret, rhs[1:]...)
 	ret = append(ret, []string{
 		"",
 		`# To avoid "Assignment had no effect" from GN.`,

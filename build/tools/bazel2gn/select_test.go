@@ -402,6 +402,33 @@ rust_library(
 	}
 }`,
 		},
+		{
+			name: "branching assignment",
+			bazel: `_FOO_DEPS = [
+	"bar",
+] + select({
+	"@platforms//os:fuchsia": ["fuchsia_bar"],
+	"//conditions:default": ["host_bar"],
+})`,
+			wantGN: `_FOO_DEPS = []
+_FOO_DEPS += [
+	"bar",
+]
+if (is_fuchsia) {
+	_FOO_DEPS += [
+		"fuchsia_bar",
+	]
+} else {
+	_FOO_DEPS += [
+		"host_bar",
+	]
+}
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "_FOO_DEPS" ])
+`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)
