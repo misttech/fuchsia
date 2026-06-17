@@ -209,7 +209,7 @@ impl<'a, C> SkBuff<'a, C> {
         packet: &'a P,
         ifindex: u32,
         marks: &Marks,
-        data_buffer: &'a mut SmallVec<[u8; SERIALIZED_HEAD_SIZE]>,
+        data_buffer: &'a mut SmallVec<[u8; PACKET_BUF_STACK_SIZE]>,
         bpf_sock: Option<&'a BpfSock>,
     ) -> Self {
         // TODO(https://fxbug.dev/424212358): Implement lazy packet serialization.
@@ -851,10 +851,10 @@ impl DeviceIfIndex for DeviceId<BindingsCtx> {
     }
 }
 
-// Max number of bytes serialized into the buffer passed to eBPF programs.
-// Normally eBPF programs need only IP and transport headers. These headers
-// should fit in 128 bytes.
-const SERIALIZED_HEAD_SIZE: usize = 128;
+// Size of the buffer used for stack buffer when serializing packet headers for
+// egress and ingress filters. 128 bytes is enough to fit headers for most
+// packets.
+const PACKET_BUF_STACK_SIZE: usize = 128;
 
 impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
     fn on_egress<I: FilterIpExt, P: FilterIpPacket<I>>(
@@ -901,6 +901,7 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
         &self,
         ip_version: IpVersion,
         packet: FragmentedByteSlice<'_, &[u8]>,
+        header_len: usize,
         device: &D,
         socket_info: SocketInfo,
         marks: &Marks,
@@ -917,17 +918,23 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
         let mark = get_linux_packet_mark(marks);
 
         // TODO(https://fxbug.dev/424212358): Implement lazy packet serialization.
-        let mut data = [0u8; SERIALIZED_HEAD_SIZE];
-        let packet_len = packet.len();
-        let bytes = std::cmp::min(packet_len, data.len());
-        packet.slice(0..bytes).copy_into_slice(&mut data[0..bytes]);
+        let mut data = SmallVec::<[u8; PACKET_BUF_STACK_SIZE]>::with_capacity(header_len);
+
+        // Copy `header_len` bytes from the `packet`.
+        for fragment in packet.iter_fragments() {
+            let bytes_to_copy = std::cmp::min(fragment.len(), header_len - data.len());
+            data.extend_from_slice(&fragment[..bytes_to_copy]);
+            if data.len() >= header_len {
+                break;
+            }
+        }
 
         let skb = SkBuff::new(
             Some(ethertype.into()),
-            packet_len,
+            packet.len(),
             device.get_ifindex(),
             mark,
-            &data,
+            &data[..],
             /*ip_offset=*/ 0,
             /*default_offset=*/ 0,
             bpf_sock.as_ref(),
@@ -1240,6 +1247,7 @@ mod tests {
                 let result = (&manager).on_ingress(
                     I::VERSION,
                     FragmentedByteSlice::new(&mut parts),
+                    serialized.len() - data.len(),
                     &device,
                     socket_info,
                     &marks,

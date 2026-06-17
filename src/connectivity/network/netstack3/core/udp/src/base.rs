@@ -1658,10 +1658,12 @@ fn try_deliver<
         let [ip_prefix, ip_options] = header_info.as_bytes();
         let [udp_header, data] = packet.as_bytes();
         let mut slices = [ip_prefix, ip_options, udp_header, data];
-        let data = FragmentedByteSlice::new(&mut slices);
+        let packet_buf = FragmentedByteSlice::new(&mut slices);
+        let header_len = ip_prefix.len() + ip_options.len() + udp_header.len();
         let filter_result = bindings_ctx.socket_ops_filter().on_ingress(
             WireI::VERSION,
-            data,
+            packet_buf,
+            header_len,
             device_id,
             id.socket_info(),
             state.options().marks(),

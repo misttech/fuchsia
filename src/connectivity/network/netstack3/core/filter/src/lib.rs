@@ -100,6 +100,7 @@ pub mod testutil {
             &self,
             _ip_version: IpVersion,
             _packet: FragmentedByteSlice<'_, &[u8]>,
+            _header_len: usize,
             _device: &D,
             _socket_info: SocketInfo,
             _marks: &Marks,

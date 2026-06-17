@@ -159,6 +159,7 @@ pub trait SocketOpsFilter<D> {
         &self,
         ip_version: IpVersion,
         packet: FragmentedByteSlice<'_, &[u8]>,
+        header_len: usize,
         device: &D,
         socket_info: SocketInfo,
         marks: &Marks,

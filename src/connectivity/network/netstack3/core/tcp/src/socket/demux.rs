@@ -1328,13 +1328,15 @@ where
     D: StrongDeviceIdentifier,
 {
     let [ip_prefix, ip_options] = header_info.as_bytes();
-    let [tcp_prefix, tcp_options, data] = tcp_segment.as_bytes();
-    let mut slices = [ip_prefix, ip_options, tcp_prefix, tcp_options, data];
-    let data = FragmentedByteSlice::new(&mut slices);
+    let [tcp_prefix, tcp_options, _data] = tcp_segment.as_bytes();
+    let mut slices = [ip_prefix, ip_options, tcp_prefix, tcp_options, _data];
+    let packet = FragmentedByteSlice::new(&mut slices);
+    let header_len = ip_prefix.len() + ip_options.len() + tcp_prefix.len() + tcp_options.len();
 
     bindings_ctx.socket_ops_filter().on_ingress(
         I::VERSION,
-        data,
+        packet,
+        header_len,
         incoming_device,
         socket_info,
         &socket_options.ip_options.marks,
