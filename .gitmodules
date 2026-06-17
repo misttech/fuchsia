@@ -388,11 +388,6 @@
 	url = https://fuchsia.googlesource.com/third_party/github.com/jd/tenacity
 	name = third_party/github.com/jd/tenacity
 	ignore = all
-[submodule "third_party/chromiumos-xorg-conf/src"]
-	path = third_party/chromiumos-xorg-conf/src
-	url = https://fuchsia.googlesource.com/third_party/chromium.googlesource.com/chromiumos/platform/xorg-conf
-	name = chromiumos-xorg-conf
-	ignore = all
 [submodule "third_party/flatbuffers/src"]
 	path = third_party/flatbuffers/src
 	url = https://fuchsia.googlesource.com/third_party/github.com/google/flatbuffers
