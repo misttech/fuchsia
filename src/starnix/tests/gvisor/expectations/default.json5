@@ -1098,15 +1098,6 @@
                 "AllInetTests/UdpSocketTest.ReadShutdownDifferentThread/*",
                 "AllInetTests/UdpSocketTest.ErrorQueue/*",
 
-                // TODO(https://fxbug.dev/42066087): Re-enable once CLONE_VM | CLONE_THREAD is implemented
-                "Waiters/WaitAnyChildTest.CloneSIGCHLD/*",
-                "Waiters/WaitAnyChildTest.ForkAndClone/*",
-                "Waiters/WaitSpecificChildTest.CloneSIGCHLD/*",
-                "Waiters/WaitSpecificChildTest.CloneNoSIGCHLD/*",
-                "Waiters/WaitSpecificChildTest.CloneAfterExit/*",
-                "Waiters/WaitSpecificChildTest.CloneWCLONE/*",
-                "Waiters/WaitSpecificChildTest.WALL/*",
-
                 // These tests cause fatal signals that crash the test suite.
                 "Processes.ExecSwapThreadGroupLeader",
                 "ExecveatTest.UnshareFiles",
