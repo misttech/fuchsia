@@ -178,9 +178,10 @@ impl ClockState {
         cold_path();
 
         let new_state = old_state | way_bit;
-        // If the compare-exchange fails, it means there's contention on the cache line. Avoid
-        // retrying: this limits cache line thrashing, at the cost of slightly less precise
-        // eviction.
+        // If the compare-exchange fails, it means there's contention on the cache line, or
+        // the CPU experienced an interrupt.
+        // Avoid retrying: this limits cache line thrashing, at the cost of slightly less
+        // precise eviction.
         let _ = self.state.compare_exchange_weak(
             old_state,
             new_state,
@@ -779,62 +780,83 @@ mod tests {
 
     #[test]
     fn test_bucket_capacity() {
-        let cache = ZeroHashCache::new(0);
+        loop {
+            let cache = ZeroHashCache::new(0);
 
-        // Insert 4 elements. They should all fit into a single bucket.
-        // Initial
-        cache.get_or_insert(&1, || 10);
-        cache.get_or_insert(&2, || 20);
-        cache.get_or_insert(&3, || 30);
-        cache.get_or_insert(&4, || 40);
+            // Insert 4 elements. They should all fit into a single bucket.
+            // Initial
+            cache.get_or_insert(&1, || 10);
+            cache.get_or_insert(&2, || 20);
+            cache.get_or_insert(&3, || 30);
+            cache.get_or_insert(&4, || 40);
 
-        // Verify all fit. This also marks the elements as hot.
-        assert_eq!(cache.get_or_insert(&1, || unreachable!()), 10);
-        assert_eq!(cache.get_or_insert(&2, || unreachable!()), 20);
-        assert_eq!(cache.get_or_insert(&3, || unreachable!()), 30);
-        assert_eq!(cache.get_or_insert(&4, || unreachable!()), 40);
+            // Verify all fit. This also marks the elements as hot.
+            assert_eq!(cache.get_or_insert(&1, || unreachable!()), 10);
+            assert_eq!(cache.get_or_insert(&2, || unreachable!()), 20);
+            assert_eq!(cache.get_or_insert(&3, || unreachable!()), 30);
+            assert_eq!(cache.get_or_insert(&4, || unreachable!()), 40);
 
-        // Insert 5th element. Element 1 should be evicted.
-        cache.get_or_insert(&5, || 50);
+            // Insert 5th element. Element 1 should be evicted.
+            cache.get_or_insert(&5, || 50);
 
-        assert_eq!(cache.get_or_insert(&2, || unreachable!()), 20);
-        assert_eq!(cache.get_or_insert(&3, || unreachable!()), 30);
-        assert_eq!(cache.get_or_insert(&4, || unreachable!()), 40);
-        assert_eq!(cache.get_or_insert(&5, || unreachable!()), 50);
-        assert_eq!(cache.get_or_insert(&1, || 0), 0);
+            // If a compare_exchange_weak failed in `record_access`, the eviction target will be wrong
+            // and Element 1 will still be there.
+            // If so, retry the test from the beginning.
+            if cache.get_or_try_insert::<()>(&1, || Err(())).is_ok() {
+                continue;
+            }
 
-        // Check cache statistics: 5 insertions, 1 eviction
-        let stats = cache.cache_stats();
-        assert_eq!(stats.lookups, 14);
-        assert_eq!(stats.hits, 8);
-        assert_eq!(stats.misses, 6);
-        assert_eq!(stats.allocs, 6);
-        assert_eq!(stats.reclaims, 2);
+            assert_eq!(cache.get_or_insert(&2, || unreachable!()), 20);
+            assert_eq!(cache.get_or_insert(&3, || unreachable!()), 30);
+            assert_eq!(cache.get_or_insert(&4, || unreachable!()), 40);
+            assert_eq!(cache.get_or_insert(&5, || unreachable!()), 50);
+            assert_eq!(cache.get_or_insert(&1, || 0), 0);
+
+            // Check cache statistics: 5 insertions, 1 eviction
+            let stats = cache.cache_stats();
+            assert_eq!(stats.lookups, 15);
+            assert_eq!(stats.hits, 8);
+            assert_eq!(stats.misses, 7);
+            assert_eq!(stats.allocs, 6);
+            assert_eq!(stats.reclaims, 2);
+            break;
+        }
     }
 
     #[test]
     fn test_eviction_lru_hot_bit() {
-        let cache = ZeroHashCache::new(0);
+        loop {
+            let cache = ZeroHashCache::new(0);
 
-        // Insert 4 elements
-        cache.get_or_insert(&1, || 10);
-        cache.get_or_insert(&2, || 20);
-        cache.get_or_insert(&3, || 30);
-        cache.get_or_insert(&4, || 40);
+            // Insert 4 elements
+            cache.get_or_insert(&1, || 10);
+            cache.get_or_insert(&2, || 20);
+            cache.get_or_insert(&3, || 30);
+            cache.get_or_insert(&4, || 40);
 
-        // Hit 1, 2, 3 again to make them "hot"
-        cache.get_or_insert(&1, || unreachable!());
-        cache.get_or_insert(&2, || unreachable!());
-        cache.get_or_insert(&3, || unreachable!());
+            // Hit 1, 2, 3 again to make them "hot"
+            cache.get_or_insert(&1, || unreachable!());
+            cache.get_or_insert(&2, || unreachable!());
+            cache.get_or_insert(&3, || unreachable!());
 
-        // Insert a new element.
-        cache.get_or_insert(&5, || 50);
+            // Insert a new element.
+            cache.get_or_insert(&5, || 50);
 
-        // 1, 2, 3 are still there, 4 is evicted.
-        assert_eq!(cache.get_or_insert(&1, || unreachable!()), 10);
-        assert_eq!(cache.get_or_insert(&2, || unreachable!()), 20);
-        assert_eq!(cache.get_or_insert(&3, || unreachable!()), 30);
-        assert_eq!(cache.get_or_insert(&4, || 0), 0);
+            // 1, 2, 3 are still there, 4 is evicted.
+            // If a compare_exchange_weak failed in `record_access`, the eviction target will be wrong,
+            // and Element 4 will still be there.
+            // If so, retry the test from the beginning.
+            if cache.get_or_try_insert::<()>(&4, || Err(())).is_ok() {
+                continue;
+            }
+
+            // Verify the rest of the expected state.
+            assert_eq!(cache.get_or_insert(&1, || unreachable!()), 10);
+            assert_eq!(cache.get_or_insert(&2, || unreachable!()), 20);
+            assert_eq!(cache.get_or_insert(&3, || unreachable!()), 30);
+            assert_eq!(cache.get_or_insert(&4, || 0), 0);
+            break;
+        }
     }
 
     #[test]
