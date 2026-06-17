@@ -151,18 +151,14 @@ class WlanRebootTest(base_test.WifiBaseTest):
             )
 
         def generate_test_name(t: TestParams) -> str:
-            # Map OpenWrt's "none" security string to "open" to match legacy test name format
-            encryption = (
-                "open"
-                if t.security.uci_encryption == "none"
-                else t.security.uci_encryption
-            )
+            # Map OpenWrt security to hostapd security string to match legacy test name format
+            security = ConfigMapper.to_hostapd_security(t.security)
             test_name = (
                 "test"
                 f"_{t.reboot_type}_reboot"
                 f"_{t.reboot_device}"
                 f"_{t.band.lower()}"
-                f"_{encryption}"
+                f"_{security}"
             )
             if t.ip_version.ipv4():
                 test_name += "_ipv4"
