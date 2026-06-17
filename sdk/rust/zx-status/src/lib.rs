@@ -281,6 +281,12 @@ impl From<Status> for Result<(), Status> {
     }
 }
 
+impl From<core::convert::Infallible> for Status {
+    fn from(x: core::convert::Infallible) -> Status {
+        match x {}
+    }
+}
+
 #[cfg(test)]
 mod test {
     extern crate std;

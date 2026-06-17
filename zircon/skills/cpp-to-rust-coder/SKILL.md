@@ -205,6 +205,13 @@ pub struct NetworkDevice {
 }
 ```
 
+#### Lock Class Autogeneration:
+The `#[guarded]` macro automatically generates a unique lock class (a Zero-Sized
+Type) for the annotated struct and applies it to the `KMutex` fields. Do not
+introduce a generic `Class: LockClass` parameter to your struct for the sake of
+the mutex unless explicit caller customization of the lock class is required by
+the design.
+
 #### Usage & Disjoint Borrows:
 To access fields, stack-pin both the structure and the guard, then utilize
 generated helper projections like `fields()` or `fields_mut()` to resolve
@@ -571,4 +578,66 @@ Create a basic component manifest that includes the default libFuzzer shard:
 #### Verification:
 - Add the fuzzer to your build using `fx add-test //path/to:my-fuzzers`.
 - Verify compilation by building the target: `fx build //path/to:my-fuzzers`.
+
+### 14. Safe Initialization in PinInit
+
+When initializing structures that use `PinInit` (such as those containing
+`KMutex` or intrusive collections), you may need to initialize nested fields
+that require post-construction setup (e.g., calling `reset()` on a bitmap).
+- **Avoid `unsafe` in post-init blocks**: Do not use the `_:`
+  post-initialization block to perform setup on fields if it requires `unsafe`
+  pointer casting to bypass lock/cell wrappers (like `KCell`).
+- **Initialize before moving**: If the field type is `Move` (like
+  `RawBitmapGeneric`), perform the setup *before* moving it into the struct. You
+  can do this by using a block expression in the field initializer:
+  ```rust
+  pin_init!(Self {
+      mutex <- KMutex::init(),
+      bitmap: {
+          let mut bitmap = RawBitmapGeneric::default();
+          bitmap.reset(MAX_ID)?;
+          bitmap
+      }.into(),
+  }? Status)
+  ```
+- This keeps the initialization 100% safe.
+
+### 15. Leverage Default Trait
+
+Prefer using `Default::default()` or `Type::default()` to construct types that
+have a natural empty/default state, rather than calling custom `new()`
+constructors with empty arguments (e.g., prefer `RawBitmapGeneric::default()`
+over `RawBitmapGeneric::new(FixedStorage::new())`). This improves readability
+and allows the compiler to infer the correct types more easily.
+
+### 16. Use Standard Library & Third-Party Crates (num-traits, zerocopy)
+
+When porting C++ code, leverage standard, audited third-party crates available
+in the Fuchsia tree instead of writing custom traits or unsafe casting
+boilerplate.
+
+#### 16.1. Generic Numeric Types (`num-traits`)
+- **When to use**: If a C++ class template is parameterized over numeric types
+  (e.g. `template <typename T>`), use bounds from the `num-traits` crate (like
+  `Unsigned`, `Bounded`, `FromPrimitive`, `AsPrimitive<usize>`) to constrain the
+  generic type `T`. Avoid defining local numeric helper traits (like
+  `UnsignedInt`) unless absolutely necessary.
+- **Const Generics Limitation**: Associated constants (like
+  `Bounded::max_value()`) are not `const fn` in `num-traits` v0.2. If you need
+  compile-time checks involving these values, you must replace them with runtime
+  assertions (e.g. in the `init()` constructor's post-initialization block)
+  returning `Status::OUT_OF_RANGE` on failure.
+- **Dependency**: Add `//third_party/rust_crates:num-traits` to `deps` in
+  `BUILD.gn`.
+
+#### 16.2. Safe Byte Casting (`zerocopy`)
+- **When to use**: When casting structs to byte slices (e.g. for FFI, IPC, or
+  storage serialization) or parsing raw byte arrays into structs.
+- **Safety**: Do NOT write manual `unsafe` pointer casts (e.g.
+  `slice::from_raw_parts`) or use `mem::transmute` for these conversions.
+  Instead, derive `FromBytes`, `IntoBytes` (or `AsBytes` depending on the
+  version), and `KnownLayout` from the `zerocopy` crate to perform these
+  operations safely at compile-time.
+- **Dependency**: Add `//third_party/rust_crates:zerocopy` to `deps` in
+  `BUILD.gn`.
 

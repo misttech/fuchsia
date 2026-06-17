@@ -5,6 +5,7 @@
 use zx_status::Status;
 
 /// Result of a `get` operation on a bitmap.
+#[derive(Default)]
 pub struct GetResult<T> {
     /// True if all bits in the range were set.
     pub all_set: bool,

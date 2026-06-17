@@ -44,8 +44,11 @@ across the following dimensions:
   O(1))?
 
 ### 3. Memory Safety and Correctness
-* **Safe vs. Unsafe**: Does the Rust code minimize `unsafe` blocks where safe
-  Rust is sufficient?
+* **Safe vs. Unsafe (Unsafe Minimization)**: Does the Rust code minimize
+  `unsafe` blocks where safe Rust is sufficient? The reviewer must scrutinize
+  *every* `unsafe` block and actively question whether it can be rewritten using
+  safe Rust APIs (e.g., leveraging `Default` traits, safe wrappers, block
+  expressions during initialization, or safe refactoring of internal logic).
 * **Unsafe Correctness**: Are all `unsafe` blocks accompanied by clear `//
   SAFETY:` comments explaining why the invariants are maintained?
 * **Pointer/Reference Invariants**: Are raw pointers handled correctly? Is there
@@ -179,6 +182,35 @@ When reviewing ports, pay special attention to these common issues:
      addresses) directly to pointers via `as *const T` or `as *mut T`. This
      violates Rust's strict provenance guidelines. Insist on using
      `core::ptr::with_exposed_provenance` or `with_exposed_provenance_mut`.
+12.  **Redundant LockClass Generic**: Using `#[guarded]` to auto-generate a lock
+     class for a mutex, but still introducing a generic `Class: LockClass`
+     parameter on the parent struct. This is redundant because `#[guarded]`
+     automatically generates and applies a unique lock class. Instruct the coder
+     to remove the generic parameter unless custom lock classes are strictly
+     required by callers.
+13.  **Unsafe Post-Initialization Blocks**: Using `unsafe` in `pin_init!`
+     post-init blocks (`_: { ... }`) to initialize `Move` fields. Insist on
+     refactoring these into safe field initializers using block expressions
+     (e.g. `{ let mut x = ...; x.setup()?; x }`) to maintain 100% safe
+     initialization.
+14.  **Ignoring Default Trait**: Constructing types using verbose `new(...)`
+     constructors when `Default::default()` is available and appropriate.
+     Encourage implementing `Default` for new/ported types if they have a clear
+     default state.
+15.  **Bypassing Safe APIs with Unsafe**: Overusing `unsafe` for operations that
+     have safe, idiomatic equivalents in Rust (e.g., manual pointer casting
+     instead of using safe trait methods, or unnecessary `unsafe` in
+     initialization blocks). Every `unsafe` block must be strictly necessary,
+     and the reviewer must insist on safe alternatives if they exist.
+16.  **Redundant Custom Numeric Traits**: Defining local custom numeric helper
+     traits (like `UnsignedInt`) for generic C++ templates. Instruct the coder
+     to use standard traits from `num-traits` (e.g., `Unsigned`, `Bounded`,
+     `FromPrimitive`, `AsPrimitive`) and move any const-assertion checks to safe
+     runtime checks in `init()` if needed.
+17.  **Unsafe Byte-Casting Boilerplate**: Writing manual `unsafe` pointer casts
+     (e.g., `slice::from_raw_parts`) or using `mem::transmute` to convert
+     structs to/from byte slices. Instruct the coder to use safe abstractions
+     from the `zerocopy` crate (e.g., deriving `FromBytes`, `IntoBytes`).
 
 ---
 
@@ -206,7 +238,9 @@ Map the Rust implementation against the C++ inventory:
 * Check if all template options (e.g., flavors, options) are supported.
 * Verify that compile-time static assertions are present for size and alignment
   of FFI-compatible structs.
-* Analyze all `unsafe` blocks for correctness and proper safety documentation.
+* Scrutinize all `unsafe` blocks: verify they are strictly necessary, check if
+  they can be refactored into safe Rust alternatives, and ensure they have
+  correct safety logic and proper safety documentation (`// SAFETY:` comments).
 * Verify that block comments and usage documentation are ported from C++ and
   adapted accurately for Rust.
 

@@ -34,6 +34,12 @@ impl core::fmt::Debug for DefaultStorage {
     }
 }
 
+impl Default for DefaultStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DefaultStorage {
     /// Create a new, empty default storage.
     pub const fn new() -> Self {
@@ -47,8 +53,6 @@ impl Storage for DefaultStorage {
         let num_elements = (size + usize_size - 1) / usize_size;
         let new_storage = kalloc::Box::<[usize]>::try_new_zeroed_slice(num_elements)
             .map_err(|_| Status::NO_MEMORY)?;
-        // SAFETY: zero-initialized memory is valid for usize.
-        let new_storage = unsafe { new_storage.assume_init() };
         self.storage = new_storage;
         Ok(())
     }
@@ -68,6 +72,12 @@ impl Storage for DefaultStorage {
 #[derive(Debug)]
 pub struct FixedStorage<const N: usize> {
     storage: [usize; N],
+}
+
+impl<const N: usize> Default for FixedStorage<N> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<const N: usize> FixedStorage<N> {
