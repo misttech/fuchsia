@@ -206,26 +206,24 @@ class FfxConfig:
         self._emu_instance_dir: str | None = emu_instance_dir
 
         # Use explicitly provided keys or fallback to os.environ keys
-        _ssh_priv_keys: list[str] = (
+        priv_keys: list[str] = (
             list(ssh_private_keys) if ssh_private_keys else []
         )
         env_ssh_key = os.environ.get("FUCHSIA_SSH_KEY")
-        if env_ssh_key and env_ssh_key not in _ssh_priv_keys:
-            _ssh_priv_keys.append(env_ssh_key)
+        if env_ssh_key and env_ssh_key not in priv_keys:
+            priv_keys.append(env_ssh_key)
 
-        if not _ssh_priv_keys:
+        if not priv_keys:
             default_priv = os.path.expanduser("~/.ssh/fuchsia_ed25519")
             if os.path.exists(default_priv):
-                _ssh_priv_keys.append(default_priv)
+                priv_keys.append(default_priv)
 
-        _ssh_pub_keys: list[str] = (
-            list(ssh_public_keys) if ssh_public_keys else []
-        )
-        if not _ssh_pub_keys:
-            for key in _ssh_priv_keys:
+        pub_keys: list[str] = list(ssh_public_keys) if ssh_public_keys else []
+        if not pub_keys:
+            for key in priv_keys:
                 pub_key = f"{key}.pub"
                 if os.path.exists(pub_key):
-                    _ssh_pub_keys.append(pub_key)
+                    pub_keys.append(pub_key)
                 else:
                     _LOGGER.warning(
                         "Public key '%s' not found for private key '%s'",
@@ -234,19 +232,19 @@ class FfxConfig:
                     )
 
         env_auth_keys = os.environ.get("FUCHSIA_AUTHORIZED_KEYS")
-        if env_auth_keys and env_auth_keys not in _ssh_pub_keys:
-            _ssh_pub_keys.append(env_auth_keys)
+        if env_auth_keys and env_auth_keys not in pub_keys:
+            pub_keys.append(env_auth_keys)
 
-        if not _ssh_pub_keys:
+        if not pub_keys:
             default_pub = os.path.expanduser("~/.ssh/fuchsia_authorized_keys")
             if os.path.exists(default_pub):
-                _ssh_pub_keys.append(default_pub)
+                pub_keys.append(default_pub)
 
         # Set these to the resolved lists (which may be empty, e.g., []).
         # An empty list overrides the ffx defaults that contain variable mappings (e.g., $HOME),
         # preventing ffx strict mode from failing on variable expansions.
-        self._ssh_private_keys: list[str] | None = _ssh_priv_keys
-        self._ssh_public_keys: list[str] | None = _ssh_pub_keys
+        self._ssh_private_keys: list[str] | None = priv_keys
+        self._ssh_public_keys: list[str] | None = pub_keys
 
         self._setup_done = True
 

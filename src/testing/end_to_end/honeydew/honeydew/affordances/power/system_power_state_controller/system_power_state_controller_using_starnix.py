@@ -9,6 +9,7 @@ import logging
 import re
 import subprocess
 import typing
+from collections.abc import AsyncGenerator
 from typing import Any
 
 import fuchsia_inspect
@@ -284,7 +285,7 @@ class SystemPowerStateControllerUsingStarnix(
     async def _set_resume_mode(
         self,
         resume_mode: system_power_state_controller_interface.ResumeMode,
-    ) -> typing.AsyncGenerator[None, None]:
+    ) -> AsyncGenerator[None, None]:
         """Perform resume operation on the device.
 
         This is a synchronous operation on the device and thus call will hang
@@ -425,7 +426,7 @@ class SystemPowerStateControllerUsingStarnix(
         self,
         suspend_state: system_power_state_controller_interface.SuspendState,
         resume_mode: system_power_state_controller_interface.ResumeMode,
-    ) -> typing.AsyncGenerator[None, None]:
+    ) -> AsyncGenerator[None, None]:
         """Validate suspend-resume operation using inspect data.
 
         Args:

@@ -5,8 +5,8 @@
 
 import asyncio
 import logging
-import typing
 import uuid
+from collections.abc import Sequence
 
 import fidl_fuchsia_bluetooth as f_bt
 import fidl_fuchsia_bluetooth_gatt2 as f_gatt_controller
@@ -404,7 +404,7 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
 
     async def discover_characteristics(
         self,
-    ) -> typing.Sequence[f_gatt_controller.Characteristic]:
+    ) -> Sequence[f_gatt_controller.Characteristic]:
         """Discover characteristics of a connected Gatt Service.
 
         Returns:

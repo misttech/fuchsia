@@ -208,9 +208,11 @@ class FuchsiaDevice(
         ffx_config_data: FfxConfigData,
         # intentionally made this a Dict instead of dataclass to minimize the changes in remaining Lacewing stack every time we need to add a new configuration item
         config: dict[str, Any] | None = None,
-        environ: Mapping[str, str] = os.environ,
+        environ: Mapping[str, str] | None = None,
     ) -> None:
         _LOGGER.debug("Initializing FuchsiaDevice")
+        if environ is None:
+            environ = os.environ
 
         self._device_info: custom_types.DeviceInfo = device_info
 
@@ -1094,6 +1096,7 @@ class FuchsiaDevice(
 
         Raises:
             NotSupportedError: If USB power hub not set.
+            FuchsiaDeviceError: If unexpected reboot detected.
         """
         if self._usb_power_hub is None:
             raise errors.NotSupportedError(
@@ -1123,6 +1126,7 @@ class FuchsiaDevice(
         Raises:
             FuchsiaControllerError: On communications failure.
             Sl4fError: On communications failure.
+            FuchsiaDeviceError: If device fails to go offline.
         """
         _LOGGER.info("Lacewing is rebooting %s...", self.device_name)
         await self.log_message_to_device(

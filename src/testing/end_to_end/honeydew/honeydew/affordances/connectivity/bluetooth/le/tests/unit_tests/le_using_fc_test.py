@@ -7,9 +7,8 @@
 
 import asyncio
 import types
-import typing
 import unittest
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 from unittest import mock
 
@@ -77,7 +76,7 @@ _SAMPLE_DISCOVER_CHARACTERISTIC_RESPONSE = (
     )
 )
 
-_SAMPLE_DISCOVER_CHARACTERISTIC_OUTPUT: typing.Sequence[
+_SAMPLE_DISCOVER_CHARACTERISTIC_OUTPUT: Sequence[
     f_gatt_controller.Characteristic
 ] = [
     f_gatt_controller.Characteristic(

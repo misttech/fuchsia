@@ -27,13 +27,13 @@ from honeydew.affordances.connectivity.netstack.types import (
     InterfaceProperties,
     PortClass,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import MacAddress
 from honeydew.errors import NotSupportedError
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
+from honeydew.typing.custom_types import MacAddress
 
 _TEST_MAC: MacAddress = MacAddress("12:34:56:78:90:ab")
 

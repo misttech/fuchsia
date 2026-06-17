@@ -12,9 +12,9 @@ from typing import TypeVar
 
 from mobly import signals
 
-T = TypeVar("T")
-
 from honeydew.utils.deadline import Deadline
+
+T = TypeVar("T")
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 

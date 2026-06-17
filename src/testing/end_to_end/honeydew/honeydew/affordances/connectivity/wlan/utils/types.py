@@ -17,7 +17,9 @@ import fidl_fuchsia_wlan_ieee80211 as f_wlan_ieee80211
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fidl_fuchsia_wlan_sme as f_wlan_sme
 
-from honeydew.typing.custom_types import MacAddress as MacAddress
+from honeydew.typing.custom_types import MacAddress as _MacAddress
+
+MacAddress = _MacAddress
 
 # Length of a pre-shared key (PSK) used as a password.
 _PSK_LENGTH = 64

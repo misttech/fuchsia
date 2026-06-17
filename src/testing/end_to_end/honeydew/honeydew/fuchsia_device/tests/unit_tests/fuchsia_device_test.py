@@ -1502,9 +1502,9 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     )
     async def test_resume_error(
         self,
-        mock_wait_for_online: mock.Mock,
-        mock_after_usb_reconnect: mock.Mock,
-        mock_boot_id: mock.Mock,
+        unused_mock_wait_for_online: mock.Mock,
+        unused_mock_after_usb_reconnect: mock.Mock,
+        unused_mock_boot_id: mock.Mock,
     ) -> None:
         """Testcase for FuchsiaDevice.resume() raising FuchsiaDeviceError."""
         mock_usb_power_hub = mock.MagicMock(

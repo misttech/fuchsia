@@ -364,7 +364,7 @@ class RetryTest(unittest.TestCase):
         deadline = Deadline.from_timeout(timedelta(seconds=10))
 
         # Script datetime.now() to jump past the deadline after the task triggers twice
-        def sleep_func(d: timedelta) -> None:
+        def sleep_func(unused_duration: timedelta) -> None:
             if mock_task.call_count == 2:
                 mock_datetime.now.return_value += timedelta(seconds=20)
 

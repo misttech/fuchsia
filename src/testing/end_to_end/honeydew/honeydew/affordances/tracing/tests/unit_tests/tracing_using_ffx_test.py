@@ -33,6 +33,7 @@ def _custom_test_name_func(
     return f"{test_func_name}_{test_label}"
 
 
+# pylint: disable=protected-access
 class TracingFfxTests(unittest.IsolatedAsyncioTestCase):
     """Unit tests for honeydew.affordances.tracing.tracing_using_ffx.py."""
 
@@ -402,7 +403,6 @@ class TracingFfxTests(unittest.IsolatedAsyncioTestCase):
             download_trace: bool = parameterized_dict.get(
                 "download_trace", False
             )
-            return_value: str = parameterized_dict.get("return_value", "")
 
             if parameterized_dict.get("session_initialized"):
                 self.tracing_obj.initialize()

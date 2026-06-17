@@ -4,7 +4,7 @@
 """Abstract base class for Bluetooth LE Profile affordance."""
 
 import abc
-import typing
+from collections.abc import Sequence
 
 import fidl_fuchsia_bluetooth as f_bt
 import fidl_fuchsia_bluetooth_gatt2 as f_gatt_controller
@@ -65,7 +65,7 @@ class LE(bluetooth_common.BluetoothCommon):
     @abc.abstractmethod
     async def discover_characteristics(
         self,
-    ) -> typing.Sequence[f_gatt_controller.Characteristic]:
+    ) -> Sequence[f_gatt_controller.Characteristic]:
         """Discover characteristics of a connected Gatt Service.
 
         Returns:

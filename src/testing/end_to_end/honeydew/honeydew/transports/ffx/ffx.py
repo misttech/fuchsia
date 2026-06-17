@@ -522,6 +522,7 @@ class FFX:
 
         Args:
             cmd: FFX command to run.
+            config_overrides: FFX configuration overrides.
             kwargs: Forwarded as-is to subprocess.Popen.
 
         Returns:
@@ -760,6 +761,7 @@ class FFX:
             machine: Specifies the machine format used for the ffx command (defaults
                 to "json")
             disable_controlmaster: boolean value of controlmaster.
+            config_overrides: FFX configuration overrides.
 
         Returns:
             FFX command to be run as list of string.

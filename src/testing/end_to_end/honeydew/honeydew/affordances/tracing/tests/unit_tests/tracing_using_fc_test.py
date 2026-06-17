@@ -48,6 +48,7 @@ def _initialize_tracing_fake(
     fc.Socket(output).close()
 
 
+# pylint: disable=protected-access
 class TracingFCTests(unittest.IsolatedAsyncioTestCase):
     """Unit tests for honeydew.affordances.fuchsia_controller.tracing.py."""
 

@@ -13,9 +13,6 @@ from honeydew.utils import screenshot
 
 
 class ScreenshotUtilsTest(unittest.TestCase):
-    def setUp(self) -> None:
-        return super().setUp()
-
     def test_is_square(self) -> None:
         self.assertTrue(screenshot.is_square(_gradient_image(Size(5, 5))))
         self.assertFalse(screenshot.is_square(_gradient_image(Size(3, 1))))
@@ -62,9 +59,9 @@ class ScreenshotUtilsTest(unittest.TestCase):
 
 def _gradient_image(
     size: Size,
-    origin_value: list[int] = [0, 10, 20, 30],
-    x_gradient: list[int] = [1, 0, 0, 0],
-    y_gradient: list[int] = [0, 1, 0, 0],
+    origin_value: list[int] | None = None,
+    x_gradient: list[int] | None = None,
+    y_gradient: list[int] | None = None,
 ) -> ScreenshotImage:
     """Creates a test image with a color gradient.
 
@@ -82,6 +79,13 @@ def _gradient_image(
     Returns:
         ScreenshotImage: the test image.
     """
+    if origin_value is None:
+        origin_value = [0, 10, 20, 30]
+    if x_gradient is None:
+        x_gradient = [1, 0, 0, 0]
+    if y_gradient is None:
+        y_gradient = [0, 1, 0, 0]
+
     assert len(origin_value) == 4
     assert len(y_gradient) == 4
     assert len(origin_value) == 4

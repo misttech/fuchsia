@@ -136,7 +136,7 @@ class FfxConfigTests(unittest.TestCase):
         return_value=False,
         autospec=True,
     )
-    def test_get_config(self, mock_exists: mock.Mock) -> None:
+    def test_get_config(self, unused_mock_exists: mock.Mock) -> None:
         """Test case for ffx_config.FfxConfig.get_config()"""
 
         ffx_config_obj: ffx_config.FfxConfig = ffx_config.FfxConfig()

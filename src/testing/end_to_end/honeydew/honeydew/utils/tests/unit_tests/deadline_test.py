@@ -12,9 +12,6 @@ from honeydew.utils.deadline import Deadline
 
 
 class DeadlineTest(unittest.TestCase):
-    def setUp(self) -> None:
-        return super().setUp()
-
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
     def test_deadline(self, mock_datetime: mock.Mock) -> None:
         start = datetime(2024, 7, 10, tzinfo=timezone.utc)
@@ -58,7 +55,7 @@ class DeadlineTest(unittest.TestCase):
         assert rem is not None
 
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
-    def test_utc_datetime(self, mock_datetime: mock.Mock) -> None:
+    def test_utc_datetime(self, unused_mock_datetime: mock.Mock) -> None:
         start = datetime(2024, 7, 10, tzinfo=timezone.utc)
         d = Deadline(start)
         self.assertEqual(d.utc_datetime(), start)

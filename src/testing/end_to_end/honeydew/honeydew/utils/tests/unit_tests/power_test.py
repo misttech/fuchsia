@@ -253,7 +253,9 @@ class PowerTests(unittest.IsolatedAsyncioTestCase):
         t0 = datetime.datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
         t_due = t0 + timedelta(minutes=10)
 
-        def mock_now(tz: datetime.timezone | None = None) -> datetime.datetime:
+        def mock_now(
+            unused_tz: datetime.timezone | None = None,
+        ) -> datetime.datetime:
             if mock_sleep.call_count > 0:
                 return t_due
             return t0
@@ -293,8 +295,8 @@ class PowerTests(unittest.IsolatedAsyncioTestCase):
     @mock.patch.object(power, "get_sag_suspend_stats")
     async def test_suspend_resume_ffx_error_raises(
         self,
-        mock_get_stats: mock.MagicMock,
-        mock_sleep: mock.MagicMock,
+        unused_mock_get_stats: mock.MagicMock,
+        unused_mock_sleep: mock.MagicMock,
         mock_datetime: mock.MagicMock,
     ) -> None:
         """Test case for suspend_resume() when ffx session drop-power-lease fails."""
@@ -318,7 +320,7 @@ class PowerTests(unittest.IsolatedAsyncioTestCase):
     async def test_suspend_resume_no_deadline(
         self,
         mock_get_stats: mock.MagicMock,
-        mock_sleep: mock.MagicMock,
+        unused_mock_sleep: mock.MagicMock,
         mock_datetime: mock.MagicMock,
     ) -> None:
         """Test case for suspend_resume() without a deadline."""

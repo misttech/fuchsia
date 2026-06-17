@@ -75,7 +75,7 @@ class GattLocalServerImpl(f_gatt_controller.LocalServiceServer):
         """Read value implementation for Local Server implementation
 
         Args:
-            read_value_request: a request to read the value on the Gatt Service
+            request: a request to read the value on the Gatt Service
 
         Return:
             [1, 2, 3]: a list of ints representing mock values

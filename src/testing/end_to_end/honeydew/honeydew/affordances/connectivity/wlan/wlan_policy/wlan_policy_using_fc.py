@@ -633,7 +633,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
                         return True
                     elif net.connection_state is ConnectionState.CONNECTING:
                         _LOGGER.debug(
-                            f"Network {ssid} still attempting to connect."
+                            "Network %s still attempting to connect.", ssid
                         )
                         return False
                     else:
@@ -1294,6 +1294,7 @@ class WlanPolicy(wlan_policy.WlanPolicy):
             security_type: The security protocol of the network.
             target_pwd: The credential being saved with the network. No password
                 is equivalent to an empty string.
+            timeout: Timeout duration in seconds.
 
         Raises:
             HoneydewWlanError: Error from WLAN stack.
@@ -1321,6 +1322,7 @@ class WlanPolicy(wlan_policy.WlanPolicy):
             security_type: The security protocol of the network.
             target_pwd: The credential being saved with the network. No password
                 is equivalent to an empty string.
+            timeout: Timeout duration in seconds.
 
         Raises:
             HoneydewWlanError: Error from WLAN stack.
