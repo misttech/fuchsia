@@ -44,11 +44,13 @@ const FIRST_INODE_VALUE: u64 = 1;
 // Packages in bootfs can contain both executable and read-only files. For example,
 // 'pkg/my_package/bin' should be executable but 'pkg/my_package/foo' should not.
 const BOOTFS_PACKAGE_PREFIX: &str = "pkg";
-const BOOTFS_EXECUTABLE_PACKAGE_DIRECTORIES: &[&str] = &["bin", "lib"];
 
-// Top level directories in bootfs that are allowed to contain executable files.
-// Every file in these directories will have ZX_RIGHT_EXECUTE.
-const BOOTFS_EXECUTABLE_DIRECTORIES: &[&str] = &["bin", "driver", "lib", "test", "blob"];
+// Packages are allowed to contain executable binaries, libraries, tests, and modern packaged drivers.
+const BOOTFS_EXECUTABLE_PACKAGE_DIRECTORIES: &[&str] = &["bin", "lib", "driver", "test"];
+
+// The root filesystem is highly restricted. Only core bootstrap binaries and shared libraries get execute rights.
+// Unpackaged drivers and tests are no longer supported and are stripped of execute rights.
+const BOOTFS_EXECUTABLE_ROOT_DIRECTORIES: &[&str] = &["bin", "lib", "blob", "test"];
 
 #[derive(Debug, Error)]
 pub enum BootfsError {
@@ -131,16 +133,12 @@ impl BootfsSvc {
         // If the first token is 'pkg', the second token can be anything, with the third
         // token needing to be within the list of allowed executable package directories.
         if path.len() > 2 && path[0] == BOOTFS_PACKAGE_PREFIX {
-            if BOOTFS_EXECUTABLE_PACKAGE_DIRECTORIES.iter().any(|dir| path[2] == *dir) {
-                return true;
-            }
+            return BOOTFS_EXECUTABLE_PACKAGE_DIRECTORIES.iter().any(|&dir| path[2] == dir);
         }
         // If the first token is an allowed executable directory, everything beneath it
         // can be marked executable.
         if path.len() > 1 {
-            if BOOTFS_EXECUTABLE_DIRECTORIES.iter().any(|dir| path[0] == *dir) {
-                return true;
-            }
+            return BOOTFS_EXECUTABLE_ROOT_DIRECTORIES.iter().any(|&dir| path[0] == dir);
         }
         false
     }
@@ -293,10 +291,10 @@ impl BootfsSvc {
                     .map_err(BootfsError::Vmo)?;
             }
 
-            // TODO(https://fxbug.dev/353380758): this strategy of granting
-            // exec rights may be overly liberal.
-            // If the VMO is not an executable, it is read-only. Exec rights are
-            // granted on the handle based on the entry's file path in Bootfs.
+            // Execution rights are granted based on the directory name (e.g., 'bin', 'lib')
+            // whether the file sits at the root or within a structured package (pkg/name/dir/).
+            // Files matching these paths receive ZX_RIGHT_EXECUTE, while all other files
+            // have WRITE permissions stripped and are kept strictly read-only.
             let path_parts: Vec<&str> = entry.name.split("/").filter(|&x| !x.is_empty()).collect();
             let is_exec = BootfsSvc::file_in_executable_directory(&path_parts);
             let vmo = if is_exec {
