@@ -11,6 +11,24 @@
                     "fuchsia.BIND_PLATFORM_DEV_PID": "fuchsia.ti.platform.BIND_PLATFORM_DEV_PID.LP8556",
                     "fuchsia.BIND_PROTOCOL": "fuchsia.platform.BIND_PROTOCOL.DEVICE"
                 }
+            },
+            {
+                "name": "DevicetreeMatch",
+                "expected": "match",
+                "device": {
+                    "fuchsia.BIND_PROTOCOL": "fuchsia.platform.BIND_PROTOCOL.DEVICE",
+                    "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC",
+                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"ti,lp8556\""
+                }
+            },
+            {
+                "name": "DevicetreeWrongCompatible",
+                "expected": "abort",
+                "device": {
+                    "fuchsia.BIND_PROTOCOL": "fuchsia.platform.BIND_PROTOCOL.DEVICE",
+                    "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC",
+                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"ti,wrong-compatible\""
+                }
             }
         ]
     },
