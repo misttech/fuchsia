@@ -341,7 +341,7 @@ semver = "1.0.28"
 serde_yaml = "0.9.14" # To use on Fuchsia, serde_yaml and unsafe-libyaml will need to be re-audited.
 serial_test = "0.8.0" # Not for use on Fuchsia, only for a single process.
 shared_child = { version = "1.1.1", default-features = false }
-signal-hook = "0.4.3"
+signal-hook = "0.4.4"
 syn = { version = "2.0.117", features = ["full", "visit", "visit-mut", "extra-traits"] }
 synstructure = "0.13.2"
 tar = "0.4.46"
@@ -1112,7 +1112,7 @@ testonly = true
 [gn.package.sha1."0.10.6"]
 group_visibility = { import = "//third_party/rust_crates/visibility.gni", variable = "sha1_visibility" }
 
-[gn.package.signal-hook."0.4.3"]
+[gn.package.signal-hook."0.4.4"]
 rustflags = []
 
 [gn.package.slab."0.4.11"]

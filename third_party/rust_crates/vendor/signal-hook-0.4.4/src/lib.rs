@@ -98,6 +98,8 @@
 //!   happens, therefore it is advised to register at least one action for each signal of interest
 //!   early, before any additional threads are started. Registering any additional (or removing and
 //!   registering again) action on the same signal is without the race condition.
+//! * Similarly, Rust itself registers some signal handlers and interaction with these is sometimes
+//!   interesting (eg. `SIGBUS`).
 //! * Once at least one action is registered for a signal, the default action is replaced (this is
 //!   how signals work in the OS). Even if all actions of that signal are removed, `signal-hook`
 //!   does not restore the default handler (such behaviour would be at times inconsistent with

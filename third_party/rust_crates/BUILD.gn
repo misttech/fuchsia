@@ -2015,13 +2015,13 @@ if (!(current_os == "fuchsia")) {
 
 if (!(current_os == "fuchsia")) {
   group("signal-hook") {
-    public_deps = [ ":signal-hook-v0_4_3" ]
+    public_deps = [ ":signal-hook-v0_4_4" ]
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("signal-hook-0.4.3") {
-    public_deps = [ ":signal-hook-v0_4_3" ]
+  group("signal-hook-0.4.4") {
+    public_deps = [ ":signal-hook-v0_4_4" ]
   }
 }
 
@@ -19487,18 +19487,18 @@ rustc_library("signal-hook-v0_1_17") {
   applicable_licenses = [ ":signal-hook-v0_1_17.license" ]
 }
 
-license("signal-hook-v0_4_3.license") {
+license("signal-hook-v0_4_4.license") {
   public_package_name = "signal_hook"
   license_files = [
-    "//third_party/rust_crates/vendor/signal-hook-0.4.3/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/signal-hook-0.4.3/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/signal-hook-0.4.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/signal-hook-0.4.4/LICENSE-MIT",
   ]
 }
 
-rustc_library("signal-hook-v0_4_3") {
+rustc_library("signal-hook-v0_4_4") {
   crate_name = "signal_hook"
-  source_root = "//third_party/rust_crates/vendor/signal-hook-0.4.3/src/lib.rs"
-  output_name = "signal_hook-5c6caee7b96c1e29"
+  source_root = "//third_party/rust_crates/vendor/signal-hook-0.4.4/src/lib.rs"
+  output_name = "signal_hook-dd35e2ed6d1c6e8d"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -19512,8 +19512,8 @@ rustc_library("signal-hook-v0_4_3") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=5c6caee7b96c1e29",
-    "-Cextra-filename=-5c6caee7b96c1e29",
+    "-Cmetadata=dd35e2ed6d1c6e8d",
+    "-Cextra-filename=-dd35e2ed6d1c6e8d",
     "--cfg=feature=\"channel\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"iterator\"",
@@ -19521,7 +19521,7 @@ rustc_library("signal-hook-v0_4_3") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":signal-hook-v0_4_3.license" ]
+  applicable_licenses = [ ":signal-hook-v0_4_4.license" ]
 }
 
 license("signal-hook-registry-v1_4_8.license") {

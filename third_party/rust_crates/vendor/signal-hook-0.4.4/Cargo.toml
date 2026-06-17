@@ -13,7 +13,7 @@
 edition = "2018"
 rust-version = "1.66"
 name = "signal-hook"
-version = "0.4.3"
+version = "0.4.4"
 authors = [
     "Michal 'vorner' Vaner <vorner@vorner.cz>",
     "Thomas Himmelstoss <thimm@posteo.de>",
