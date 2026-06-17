@@ -98,8 +98,9 @@ zx_status_t AmlRam::Create(void* context, zx_device_t* parent) {
 zx::result<std::unique_ptr<AmlRam>> AmlRam::Create(zx_device_t* parent) {
   zx_status_t status;
 
-  zx::result pdev_client_end = ddk::Device<void>::DdkConnectFragmentFidlProtocol<
-      fuchsia_hardware_platform_device::Service::Device>(parent, "pdev");
+  zx::result pdev_client_end =
+      ddk::Device<void>::DdkConnectFidlProtocol<fuchsia_hardware_platform_device::Service::Device>(
+          parent);
   if (pdev_client_end.is_error()) {
     zxlogf(ERROR, "Failed to connect to platform device: %s", pdev_client_end.status_string());
     return pdev_client_end.take_error();
@@ -138,15 +139,6 @@ zx::result<std::unique_ptr<AmlRam>> AmlRam::Create(zx_device_t* parent) {
     return info_result.take_error();
   }
   fdf::PDev::DeviceInfo info = std::move(info_result.value());
-
-  if (info.pid == PDEV_PID_GENERIC) {
-    zx::result board_info = pdev.GetBoardInfo();
-    if (board_info.is_error()) {
-      zxlogf(ERROR, "Failed to get board info: %s", board_info.status_string());
-      return board_info.take_error();
-    }
-    info.pid = board_info->pid;
-  }
 
   zx::resource smc_monitor = {};
   if (info.pid == PDEV_PID_AMLOGIC_A5) {

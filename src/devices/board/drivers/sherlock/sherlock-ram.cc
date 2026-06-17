@@ -7,14 +7,8 @@
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
 #include <lib/ddk/platform-defs.h>
-#include <lib/driver/component/cpp/composite_node_spec.h>
-#include <lib/driver/component/cpp/node_add_args.h>
 
 #include "sherlock.h"
-
-namespace fdf {
-using namespace fuchsia_driver_framework;
-}  // namespace fdf
 
 namespace sherlock {
 namespace fpbus = fuchsia_hardware_platform_bus;
@@ -47,17 +41,14 @@ static const fpbus::Node ramctl_dev = []() {
 zx_status_t Sherlock::RamCtlInit() {
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('RAMC');
-  auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(
-      fidl::ToWire(fidl_arena, ramctl_dev),
-      fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
-                                   {.name = "aml_ram", .parents2 = {}}}));
+  auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, ramctl_dev));
   if (!result.ok()) {
-    zxlogf(ERROR, "%s: AddCompositeNodeSpec RamCtl(ramctl_dev) request failed: %s", __func__,
+    zxlogf(ERROR, "%s: NodeAdd RamCtl(ramctl_dev) request failed: %s", __func__,
            result.FormatDescription().data());
     return result.status();
   }
   if (result->is_error()) {
-    zxlogf(ERROR, "%s: AddCompositeNodeSpec RamCtl(ramctl_dev) failed: %s", __func__,
+    zxlogf(ERROR, "%s: NodeAdd RamCtl(ramctl_dev) failed: %s", __func__,
            zx_status_get_string(result->error_value()));
     return result->error_value();
   }
