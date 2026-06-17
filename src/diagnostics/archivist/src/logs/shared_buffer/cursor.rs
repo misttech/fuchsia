@@ -129,14 +129,32 @@ impl FilterCursor {
             *this.index += ring_buffer_record_len(msg.len()) as u64;
             *this.message_id += 1;
         }
-        while let Some(message) = this.messages.pop() {
+        let message = loop {
+            let Some(message) = this.messages.pop() else { break None };
             if message.index < inner.tail {
                 // See note above regarding filtering.
                 dropped += 1;
-                continue;
+            } else {
+                break Some(message);
             }
+        };
+
+        let live_messages = (inner.last_scanned_message_id - inner.tail_message_id) as usize;
+        const HEAP_PRUNE_THRESHOLD: usize = 256;
+
+        // Drain all stale entries if the heap has grown too large.
+        // Timestamps are attacker-controlled (see parse_message), so a hostile writer
+        // can order the heap such that stale entries never surface and the heap grows
+        // without bound. This keeps the heap bounded by the live ring-buffer window.
+        if this.messages.len() > live_messages + HEAP_PRUNE_THRESHOLD {
+            let tail = inner.tail;
+            this.messages.retain(|m| m.index >= tail);
+        }
+
+        if let Some(message) = message {
             return Poll::Ready(Some(Message { inner, message, dropped }));
         }
+
         if this.end.is_some_and(|e| *this.index >= e) || inner.terminated {
             *this.index = u64::MAX;
             Poll::Ready(None)
@@ -446,5 +464,50 @@ mod tests {
         container.push_back(make_message("msg", None, zx::BootInstant::from_nanos(1)).bytes());
         drop(buffer.terminate());
         assert_eq!(cursor.count().await, 1);
+    }
+
+    #[fuchsia::test]
+    async fn cursor_descending_timestamps_bounded_heap() {
+        let buffer = SharedBuffer::new(
+            create_ring_buffer(65536),
+            Box::new(|_| {}),
+            SharedBufferOptions { sleep_time: Duration::ZERO, ..Default::default() },
+            &fuchsia_inspect::Node::default(),
+        );
+        let identity = Arc::new(vec!["a"].into());
+        let container = buffer.new_container_buffer(identity, test_stats());
+        let cursor = buffer.cursor(StreamMode::SnapshotThenSubscribe, vec![]);
+        let mut stream = pin!(FilterCursorStream::<LogsData>::from(cursor));
+
+        // Write enough messages to roll out old messages and exceed the HEAP_PRUNE_THRESHOLD.
+        // We interleave large and small timestamps so the large ones remain in the heap.
+        for i in 0..5000 {
+            let msg_large = make_message(
+                &format!("msg_large_{}", i),
+                None,
+                zx::BootInstant::from_nanos(2000000 + i as i64),
+            );
+            container.push_back(msg_large.bytes());
+            let msg_small = make_message(
+                &format!("msg_small_{}", i),
+                None,
+                zx::BootInstant::from_nanos(1000000 - i as i64),
+            );
+            container.push_back(msg_small.bytes());
+
+            {
+                let mut inner = InnerGuard::new(&buffer);
+                inner.check_space(inner.ring_buffer.head());
+            }
+
+            let item = stream.next().await.unwrap();
+            assert_eq!(item.msg().unwrap(), &format!("msg_small_{}", i));
+        }
+
+        // Without the prune logic, the large messages would stay in the heap forever,
+        // making the heap size >= 5000.
+        // With the prune logic, they are pruned once they exceed live_messages + PRUNE_THRESHOLD.
+        let heap_len = stream.as_mut().project().cursor.project().messages.len();
+        assert!(heap_len <= 3000, "Heap size: {}", heap_len);
     }
 }
