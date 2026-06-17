@@ -1501,29 +1501,31 @@ impl CommandQueue {
             _slot_guard: slot_guard,
         });
 
-        let mut guard = self.inner.lock();
         let mut res = Ok(());
-        guard.block_until(|inner| {
-            if inner.should_reject_tasks() {
-                res = Err(zx::Status::UNAVAILABLE);
-                true
-            } else if inner.needs_recovery || inner.blocked {
-                false
-            } else {
-                let task = task.take().expect("Task already taken");
-                if inner.active_partition == Some(partition) {
-                    inner.submit_transfer(tdl_slot, task);
+        {
+            let mut guard = self.inner.lock();
+            guard.block_until(|inner| {
+                if inner.should_reject_tasks() {
+                    res = Err(zx::Status::UNAVAILABLE);
+                    true
+                } else if inner.needs_recovery || inner.blocked {
+                    false
                 } else {
-                    let receiver =
-                        inner.partition_status_receivers.get(&partition).unwrap().clone();
-                    Inner::submit_async_task(
-                        inner,
-                        SwitchAndSubmitTask { partition, task: Some(task), receiver },
-                    );
+                    let task = task.take().expect("Task already taken");
+                    if inner.active_partition == Some(partition) {
+                        inner.submit_transfer(tdl_slot, task);
+                    } else {
+                        let receiver =
+                            inner.partition_status_receivers.get(&partition).unwrap().clone();
+                        Inner::submit_async_task(
+                            inner,
+                            SwitchAndSubmitTask { partition, task: Some(task), receiver },
+                        );
+                    }
+                    true
                 }
-                true
-            }
-        });
+            });
+        }
         if res.is_err() {
             if let Some(task) = task.take() {
                 // SAFETY: We never submitted the transfer.
