@@ -297,8 +297,11 @@ and it will print the symbolized text to stdout.
 
 ### Fetching CQ failures
 
-Use `fx fetch-cq-failures --help` to see how to fetch CQ/Tryjob failures for a CL.
-It also supports fetching log and artifact links using the `--logs` flag (requires `bb auth-login`).
+Use `fx gh pr checks <change_id>[/<patchset>]` to view the CI/CD checks and status for a Gerrit Change List (CL).
+To get detailed log links, failed steps, and command instructions to retrieve logs (e.g. `bb log ...`), pass the global verbose flag `-v` or `--verbose`:
+```bash
+fx gh pr checks <change_id>[/<patchset>] -v
+```
 
 # Code reviews
 

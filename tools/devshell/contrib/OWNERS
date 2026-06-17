@@ -18,7 +18,6 @@ per-file dupefinder = file: /tools/dupefinder/OWNERS
 per-file exec-host-tests=joshuaseaton@google.com
 per-file extract-pprof.fx = file: /src/connectivity/network/OWNERS
 per-file extract-pprof.py = file: /src/connectivity/network/OWNERS
-per-file fetch-cq-failures,fetch-cq-failures.py=puneetha@google.com
 per-file ffx = file: /src/developer/ffx/OWNERS
 per-file find-owner=cja@google.com
 per-file flash-kola=dpursell@google.com,hanbinyoon@google.com
