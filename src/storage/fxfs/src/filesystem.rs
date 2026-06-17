@@ -13,7 +13,7 @@ use crate::object_store::journal::super_block::{SuperBlockHeader, SuperBlockInst
 use crate::object_store::journal::{self, Journal, JournalCheckpoint, JournalOptions};
 use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::transaction::{
-    self, AssocObj, LockKey, LockManager, MetadataReservation, Mutation, ReadGuard,
+    self, AssocObj, LockKey, LockManager, MetadataReservation, Mutation,
     TRANSACTION_METADATA_MAX_AMOUNT, Transaction, WriteGuard, lock_keys,
 };
 use crate::object_store::volume::{VOLUMES_DIRECTORY, root_volume};
@@ -701,13 +701,8 @@ impl FxFilesystem {
     /// acquired before *all* other locks.  It is also important that this lock is not taken twice
     /// by the same task since that can lead to deadlocks if another task tries to take a write
     /// lock.
-    pub async fn txn_guard(self: Arc<Self>) -> TxnGuard<'static> {
-        TxnGuard::Owned(
-            self.lock_manager
-                .read_lock(lock_keys!(LockKey::Filesystem))
-                .await
-                .into_owned(self.clone()),
-        )
+    pub async fn lock_commits(&self) -> futures::lock::MutexGuard<'_, ()> {
+        self.commit_mutex.lock().await
     }
 
     #[trace]
@@ -1026,20 +1021,6 @@ impl FxFilesystem {
             iter.advance().await?;
         }
         Ok(inspector)
-    }
-}
-
-pub enum TxnGuard<'a> {
-    Borrowed(&'a TxnGuard<'a>),
-    Owned(ReadGuard<'static>),
-}
-
-impl TxnGuard<'_> {
-    pub fn fs(&self) -> &Arc<FxFilesystem> {
-        match self {
-            TxnGuard::Borrowed(b) => b.fs(),
-            TxnGuard::Owned(o) => o.fs().unwrap(),
-        }
     }
 }
 

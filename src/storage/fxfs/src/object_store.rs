@@ -34,7 +34,7 @@ pub use store_object_handle::{SetExtendedAttributeMode, StoreObjectHandle};
 use crate::errors::FxfsError;
 use crate::filesystem::{
     ApplyContext, ApplyMode, FxFilesystem, JournalingObject, MAX_FILE_SIZE, SyncOptions,
-    TruncateGuard, TxnGuard,
+    TruncateGuard,
 };
 use crate::log::*;
 use crate::lsm_tree::cache::{NullCache, ObjectCache};
@@ -817,12 +817,7 @@ impl ObjectStore {
             }
         }
         let fs = self.filesystem();
-        let guard = if let Some(guard) = options.txn_guard.as_ref() {
-            TxnGuard::Borrowed(guard)
-        } else {
-            fs.txn_guard().await
-        };
-        Transaction::new(guard, options, locks).await
+        Transaction::new(fs, options, locks).await
     }
 
     /// Create a child store. It is a multi-step process:
@@ -1366,7 +1361,7 @@ impl ObjectStore {
         wrapping_key_id: Option<WrappingKeyId>,
     ) -> Result<DataObjectHandle<S>, Error> {
         let store = owner.as_ref().as_ref();
-        let object_id = store.get_next_object_id(transaction.txn_guard()).await?;
+        let object_id = store.get_next_object_id().await?;
         let crypt = store.crypt();
         let encryption_options = if let Some(crypt) = crypt {
             let key_id =
@@ -2254,11 +2249,7 @@ impl ObjectStore {
     /// Returns a new object ID that can be used.  This will create an object ID cipher if needed.
     ///
     /// If the object ID key needs to be rolled, a new transaction will be created and committed.
-    /// This transaction does not take the filesystem lock, hence `txn_guard`.
-    pub(super) async fn get_next_object_id(
-        &self,
-        txn_guard: &TxnGuard<'_>,
-    ) -> Result<ReservedId<'_>, Error> {
+    pub(super) async fn get_next_object_id(&self) -> Result<ReservedId<'_>, Error> {
         {
             let mut last_object_id = self.last_object_id.lock();
             if let Some(id) = last_object_id.try_get_next() {
@@ -2284,7 +2275,6 @@ impl ObjectStore {
                     // compact.
                     skip_journal_checks: true,
                     borrow_metadata_space: true,
-                    txn_guard: Some(txn_guard),
                     ..Default::default()
                 },
             )

@@ -14,7 +14,7 @@ use crate::object_handle::INVALID_OBJECT_ID;
 use crate::object_store::allocator::{AllocatorKey, AllocatorValue, CoalescingIterator};
 use crate::object_store::journal::super_block::SuperBlockInstance;
 use crate::object_store::load_store_info;
-use crate::object_store::transaction::{LockKey, lock_keys};
+
 use crate::object_store::volume::root_volume;
 use anyhow::{Context, Error, anyhow};
 use futures::try_join;
@@ -115,11 +115,7 @@ pub async fn fsck_with_options(
         info!("Starting fsck");
     }
 
-    let _guard = if options.no_lock {
-        None
-    } else {
-        Some(filesystem.lock_manager().write_lock(lock_keys![LockKey::Filesystem]).await)
-    };
+    let _guard = if options.no_lock { None } else { Some(filesystem.lock_commits().await) };
 
     let mut fsck = Fsck::new(options);
 
@@ -279,11 +275,7 @@ pub async fn fsck_volume_with_options(
         info!(store_id:?; "Starting volume fsck");
     }
 
-    let _guard = if options.no_lock {
-        None
-    } else {
-        Some(filesystem.lock_manager().write_lock(lock_keys![LockKey::Filesystem]).await)
-    };
+    let _guard = if options.no_lock { None } else { Some(filesystem.lock_commits().await) };
 
     let mut fsck = Fsck::new(options);
     fsck.check_child_store(filesystem, store_id, crypt, &mut result).await?;

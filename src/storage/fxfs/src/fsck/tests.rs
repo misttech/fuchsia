@@ -154,7 +154,7 @@ async fn install_items_in_store<K: Key, V: Value>(
         .await
         .expect("new_transaction failed");
     let layer_handle = if let Some(crypt) = store.crypt().as_deref() {
-        let object_id = store.get_next_object_id(transaction.txn_guard()).await.unwrap();
+        let object_id = store.get_next_object_id().await.unwrap();
         let (key, unwrapped_key) =
             crypt.create_key(object_id.get(), KeyPurpose::Data).await.unwrap();
         ObjectStore::create_object_with_key(

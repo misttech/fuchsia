@@ -241,7 +241,7 @@ impl<S: HandleOwner> Directory<S> {
         dir_type: DirType,
     ) -> Result<Directory<S>, Error> {
         let store = owner.as_ref().as_ref();
-        let object_id = store.get_next_object_id(transaction.txn_guard()).await?;
+        let object_id = store.get_next_object_id().await?;
         let now = Timestamp::now();
 
         // The transaction takes ownership of the ID.
@@ -906,7 +906,7 @@ impl<S: HandleOwner> Directory<S> {
         // https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/limits.h.html.
         // See _POSIX_SYMLINK_MAX.
         ensure!(link.len() <= 256, FxfsError::BadPath);
-        let reserved_symlink_id = self.store().get_next_object_id(transaction.txn_guard()).await?;
+        let reserved_symlink_id = self.store().get_next_object_id().await?;
         let symlink_id = reserved_symlink_id.get();
         let mut link = link.to_vec();
 

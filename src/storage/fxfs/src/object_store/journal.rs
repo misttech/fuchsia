@@ -1433,7 +1433,7 @@ impl Journal {
 
     // Before we commit, we might need to extend the journal or write pending records to the
     // journal.
-    async fn pre_commit(&self, transaction: &Transaction<'_>) -> Result<(), Error> {
+    async fn pre_commit(&self, _transaction: &Transaction<'_>) -> Result<(), Error> {
         let handle;
 
         let (size, zero_offset) = {
@@ -1480,7 +1480,6 @@ impl Journal {
                 skip_journal_checks: true,
                 borrow_metadata_space: true,
                 allocator_reservation: Some(self.objects.metadata_reservation()),
-                txn_guard: Some(transaction.txn_guard()),
                 ..Default::default()
             })
             .await?;

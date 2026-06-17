@@ -4,7 +4,6 @@
 
 // This module is responsible for flushing (a.k.a. compacting) the object store trees.
 
-use crate::filesystem::TxnGuard;
 use crate::log::*;
 use crate::lsm_tree::types::{ItemRef, LayerIterator};
 use crate::lsm_tree::{LSMTree, layers_from_handles};
@@ -93,8 +92,6 @@ impl ObjectStore {
         let filesystem = self.filesystem();
         let object_manager = filesystem.object_manager();
 
-        // We must take the transaction guard *before* we take the flush lock.
-        let txn_guard = filesystem.clone().txn_guard().await;
         let keys = lock_keys![LockKey::flush(self.store_object_id())];
         let _guard = Some(filesystem.lock_manager().write_lock(keys).await);
 
@@ -140,12 +137,12 @@ impl ObjectStore {
         }
 
         if matches!(&*self.lock_state.lock(), LockState::Locked) {
-            self.flush_locked(&txn_guard).await.with_context(|| {
+            self.flush_locked().await.with_context(|| {
                 format!("Failed to flush object store {}", self.store_object_id)
             })?;
         } else {
             if let FlushResult::CryptError(error) = self
-                .flush_unlocked(&txn_guard, reason)
+                .flush_unlocked(reason)
                 .await
                 .with_context(|| format!("Failed to flush object store {}", self.store_object_id))?
             {
@@ -168,11 +165,7 @@ impl ObjectStore {
     }
 
     // Flushes an unlocked store. Returns the layer file sizes.
-    async fn flush_unlocked(
-        &self,
-        txn_guard: &TxnGuard<'_>,
-        reason: Reason,
-    ) -> Result<FlushResult<Vec<u64>>, Error> {
+    async fn flush_unlocked(&self, reason: Reason) -> Result<FlushResult<Vec<u64>>, Error> {
         struct StoreInfoSnapshot<'a> {
             store: &'a ObjectStore,
             store_info: OnceLock<StoreInfo>,
@@ -206,7 +199,6 @@ impl ObjectStore {
             skip_key_roll: true,
             borrow_metadata_space: true,
             allocator_reservation: Some(reservation),
-            txn_guard: Some(txn_guard),
             ..Default::default()
         };
 
@@ -232,7 +224,7 @@ impl ObjectStore {
         let parent_store = self.parent_store.as_ref().unwrap();
         let handle_options = HandleOptions { skip_journal_checks: true, ..Default::default() };
         let new_object_tree_layer = if let Some(crypt) = self.crypt().as_deref() {
-            let object_id = parent_store.get_next_object_id(transaction.txn_guard()).await?;
+            let object_id = parent_store.get_next_object_id().await?;
             let (key, unwrapped_key) =
                 match crypt.create_key(object_id.get(), KeyPurpose::Data).await {
                     Ok((key, unwrapped_key)) => (key, unwrapped_key),
@@ -400,7 +392,7 @@ impl ObjectStore {
     }
 
     // Flushes a locked store.
-    async fn flush_locked(&self, txn_guard: &TxnGuard<'_>) -> Result<(), Error> {
+    async fn flush_locked(&self) -> Result<(), Error> {
         let filesystem = self.filesystem();
         let object_manager = filesystem.object_manager();
         let reservation = object_manager.metadata_reservation();
@@ -409,7 +401,6 @@ impl ObjectStore {
             skip_key_roll: true,
             borrow_metadata_space: true,
             allocator_reservation: Some(reservation),
-            txn_guard: Some(txn_guard),
             ..Default::default()
         };
 

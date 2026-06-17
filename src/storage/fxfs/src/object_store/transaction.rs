@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::checksum::Checksum;
-use crate::filesystem::{FxFilesystem, TxnGuard};
+use crate::filesystem::FxFilesystem;
 use crate::log::*;
 use crate::lsm_tree::types::Item;
 use crate::object_handle::INVALID_OBJECT_ID;
@@ -58,9 +58,6 @@ pub struct Options<'a> {
     /// no free space.  The intention is that this should be used for things like the journal which
     /// require guaranteed space.
     pub allocator_reservation: Option<&'a Reservation>,
-
-    /// An existing transaction guard to be used.
-    pub txn_guard: Option<&'a TxnGuard<'a>>,
 }
 
 // This is the amount of space that we reserve for metadata when we are creating a new transaction.
@@ -482,17 +479,12 @@ impl PartialEq for UpdateMutationsKey {
 /// When creating a transaction, locks typically need to be held to prevent two or more writers
 /// trying to make conflicting mutations at the same time.  LockKeys are used for this.
 /// NOTE: Ordering is important here!  The lock manager sorts the list of locks in a transaction
-/// to acquire them in a consistent order, but there are special cases for the Filesystem lock and
-/// the Flush lock.
-/// The Filesystem lock is taken by every transaction and is done so first, as part of the TxnGuard.
+/// to acquire them in a consistent order, but there is a special case for the Flush lock.
 /// The Flush lock is taken when we flush an LSM tree (e.g. an object store), and is held for
 /// several transactions.  As such, it must come first in the lock acquisition ordering, so that
 /// other transactions using the Flush lock have the same ordering as in flushing.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Copy)]
 pub enum LockKey {
-    /// Locks the entire filesystem.
-    Filesystem,
-
     /// Used to lock flushing an object.
     Flush {
         object_id: u64,
@@ -760,7 +752,7 @@ pub enum MetadataReservation {
 
 /// A transaction groups mutation records to be committed as a group.
 pub struct Transaction<'a> {
-    txn_guard: TxnGuard<'a>,
+    fs: Arc<FxFilesystem>,
 
     // The mutations that make up this transaction.
     mutations: BTreeSet<TxnMutation<'a>>,
@@ -789,23 +781,23 @@ impl<'a> Transaction<'a> {
     /// Creates a new transaction.  `txn_locks` are read locks that can be upgraded to write locks
     /// at commit time.
     pub async fn new(
-        txn_guard: TxnGuard<'a>,
+        fs: Arc<FxFilesystem>,
         options: Options<'a>,
         txn_locks: LockKeys,
     ) -> Result<Transaction<'a>, Error> {
-        txn_guard.fs().add_transaction(options.skip_journal_checks).await;
-        let fs = txn_guard.fs().clone();
-        let guard = scopeguard::guard((), |_| fs.sub_transaction());
+        fs.add_transaction(options.skip_journal_checks).await;
+        let fs_clone = fs.clone();
+        let guard = scopeguard::guard((), |_| fs_clone.sub_transaction());
         let (metadata_reservation, allocator_reservation, hold) =
-            txn_guard.fs().reservation_for_transaction(options).await?;
+            fs.reservation_for_transaction(options).await?;
 
         let txn_locks = {
-            let lock_manager = txn_guard.fs().lock_manager();
+            let lock_manager = fs.lock_manager();
             let mut write_guard = lock_manager.txn_lock(txn_locks).await;
             std::mem::take(&mut write_guard.0.lock_keys)
         };
         let mut transaction = Transaction {
-            txn_guard,
+            fs,
             mutations: BTreeSet::new(),
             txn_locks,
             allocator_reservation: None,
@@ -819,10 +811,6 @@ impl<'a> Transaction<'a> {
         hold.map(|h| h.forget()); // Transaction takes ownership from here on.
         transaction.allocator_reservation = allocator_reservation;
         Ok(transaction)
-    }
-
-    pub fn txn_guard(&self) -> &TxnGuard<'_> {
-        &self.txn_guard
     }
 
     pub fn mutations(&self) -> &BTreeSet<TxnMutation<'a>> {
@@ -1063,7 +1051,7 @@ impl<'a> Transaction<'a> {
     /// Commits a transaction.  If successful, returns the journal offset of the transaction.
     pub async fn commit(mut self) -> Result<u64, Error> {
         debug!(txn:? = &self; "Commit");
-        self.txn_guard.fs().clone().commit_transaction(&mut self, |x| x).await
+        self.fs.clone().commit_transaction(&mut self, |x| x).await
     }
 
     /// Commits and then runs the callback whilst locks are held.  The callback accepts a single
@@ -1073,16 +1061,16 @@ impl<'a> Transaction<'a> {
         f: impl FnOnce(u64) -> R + Send,
     ) -> Result<R, Error> {
         debug!(txn:? = &self; "Commit");
-        self.txn_guard.fs().clone().commit_transaction(&mut self, f).await
+        self.fs.clone().commit_transaction(&mut self, f).await
     }
 
     /// Commits the transaction, but allows the transaction to be used again.  The locks are not
     /// dropped (but transaction locks will get downgraded to read locks).
     pub async fn commit_and_continue(&mut self) -> Result<(), Error> {
         debug!(txn:? = self; "Commit");
-        self.txn_guard.fs().clone().commit_transaction(self, |_| {}).await?;
+        self.fs.clone().commit_transaction(self, |_| {}).await?;
         assert!(self.mutations.is_empty());
-        self.txn_guard.fs().lock_manager().downgrade_locks(&self.txn_locks);
+        self.fs.lock_manager().downgrade_locks(&self.txn_locks);
         Ok(())
     }
 }
@@ -1092,7 +1080,7 @@ impl Drop for Transaction<'_> {
         // Call the filesystem implementation of drop_transaction which should, as a minimum, call
         // LockManager's drop_transaction to ensure the locks are released.
         debug!(txn:? = &self; "Drop");
-        self.txn_guard.fs().clone().drop_transaction(self);
+        self.fs.clone().drop_transaction(self);
     }
 }
 

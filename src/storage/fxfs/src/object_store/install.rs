@@ -134,7 +134,6 @@ impl ObjectStore {
         extents: Vec<FileExtent>,
     ) -> Result<(), Error> {
         let fs = self.filesystem();
-        let txn_guard = fs.clone().txn_guard().await;
         let keys = lock_keys![LockKey::flush(self.store_object_id())];
         let _guard = Some(fs.lock_manager().write_lock(keys).await);
 
@@ -166,7 +165,6 @@ impl ObjectStore {
             skip_journal_checks: true,
             borrow_metadata_space: true,
             allocator_reservation: Some(reservation),
-            txn_guard: Some(&txn_guard),
             ..Default::default()
         };
 
