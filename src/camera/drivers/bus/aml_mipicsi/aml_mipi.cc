@@ -34,7 +34,7 @@ zx_status_t AmlMipiDevice::Init() {
   fdf::PDev pdev;
   {
     zx::result pdev_client =
-        DdkConnectFidlProtocol<fuchsia_hardware_platform_device::Service::Device>(parent_);
+        DdkConnectFragmentFidlProtocol<fuchsia_hardware_platform_device::Service::Device>("pdev");
     if (pdev_client.is_error()) {
       zxlogf(ERROR, "Failed to connect to platform device: %s", pdev_client.status_string());
       return pdev_client.status_value();

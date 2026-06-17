@@ -242,14 +242,20 @@ zx_status_t Sherlock::CameraInit() {
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('CAME');
   {
-    auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, mipi_dev));
+    auto composite_spec = fuchsia_driver_framework::CompositeNodeSpec{{
+        .name = "mipi-csi2",
+        .parents2 = {},
+    }};
+
+    auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(
+        fidl::ToWire(fidl_arena, mipi_dev), fidl::ToWire(fidl_arena, composite_spec));
     if (!result.ok()) {
-      zxlogf(ERROR, "%s: NodeAdd Camera(mipi_dev) request failed: %s", __func__,
+      zxlogf(ERROR, "%s: AddCompositeNodeSpec Camera(mipi_dev) request failed: %s", __func__,
              result.FormatDescription().data());
       return result.status();
     }
     if (result->is_error()) {
-      zxlogf(ERROR, "%s: NodeAdd Camera(mipi_dev) failed: %s", __func__,
+      zxlogf(ERROR, "%s: AddCompositeNodeSpec Camera(mipi_dev) failed: %s", __func__,
              zx_status_get_string(result->error_value()));
       return result->error_value();
     }

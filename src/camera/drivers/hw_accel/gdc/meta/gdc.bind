@@ -5,13 +5,19 @@
 composite gdc;
 
 
+using fuchsia.devicetree;
+
 primary parent "camera-sensor" {
   fuchsia.BIND_PROTOCOL == fuchsia.camera.BIND_PROTOCOL.CAMERA_SENSOR_2;
 }
 
 parent "pdev" {
-  fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
-  fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.arm.platform.BIND_PLATFORM_DEV_VID.ARM;
-  fuchsia.BIND_PLATFORM_DEV_PID == fuchsia.arm.platform.BIND_PLATFORM_DEV_PID.GDC;
-  fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.arm.platform.BIND_PLATFORM_DEV_DID.MALI_IV010;
+  if fuchsia.devicetree.FIRST_COMPATIBLE == "arm,mali-gdc" {
+    true;
+  } else {
+    fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
+    fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.arm.platform.BIND_PLATFORM_DEV_VID.ARM;
+    fuchsia.BIND_PLATFORM_DEV_PID == fuchsia.arm.platform.BIND_PLATFORM_DEV_PID.GDC;
+    fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.arm.platform.BIND_PLATFORM_DEV_DID.MALI_IV010;
+  }
 }

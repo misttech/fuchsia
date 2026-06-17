@@ -45,7 +45,7 @@ class AmlMipiTest : public zxtest::Test {
     ASSERT_OK(endpoints);
     incoming_namespace_.SyncCall(&IncomingNamespace::Init, std::move(endpoints->server));
     parent_->AddFidlService(fuchsia_hardware_platform_device::Service::Name,
-                            std::move(endpoints->client));
+                            std::move(endpoints->client), "pdev");
     ASSERT_OK(fdf::RunOnDispatcherSync(driver_dispatcher_->async_dispatcher(), [&]() {
       ASSERT_OK(AmlMipiDevice::Bind(nullptr, parent_.get()));
     }));

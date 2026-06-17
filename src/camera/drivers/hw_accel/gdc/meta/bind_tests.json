@@ -23,6 +23,13 @@
                     "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.arm.platform.BIND_PLATFORM_DEV_DID.MALI_IV010",
                     "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.arm.platform.BIND_PLATFORM_DEV_VID.ARM"
                 }
+            },
+            {
+                "name": "Devicetree Match",
+                "expected": "match",
+                "device": {
+                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"arm,mali-gdc\""
+                }
             }
         ]
     }

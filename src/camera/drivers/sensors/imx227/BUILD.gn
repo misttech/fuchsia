@@ -25,6 +25,7 @@ driver_bind_rules("imx227_bind") {
     "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
     "//src/devices/bind/fuchsia.camera",
     "//src/devices/bind/fuchsia.clock",
+    "//src/devices/bind/fuchsia.devicetree",
     "//src/devices/bind/fuchsia.gpio",
     "//src/devices/bind/fuchsia.platform",
     "//src/devices/bind/fuchsia.sony.platform",

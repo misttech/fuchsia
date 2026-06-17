@@ -13,16 +13,21 @@ using fuchsia.hardware.i2c;
 using fuchsia.camera;
 using fuchsia.platform;
 using fuchsia.sony.platform;
+using fuchsia.devicetree;
 
 primary parent "mipicsi" {
   fuchsia.BIND_PROTOCOL == fuchsia.camera.BIND_PROTOCOL.MIPICSI;
 }
 
 parent "pdev" {
-  fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
-  fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.sony.platform.BIND_PLATFORM_DEV_VID.SONY;
-  fuchsia.BIND_PLATFORM_DEV_PID == fuchsia.sony.platform.BIND_PLATFORM_DEV_PID.IMX227;
-  fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.sony.platform.BIND_PLATFORM_DEV_DID.CAMERA_SENSOR;
+  if fuchsia.devicetree.FIRST_COMPATIBLE == "sony,imx227" {
+    true;
+  } else {
+    fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
+    fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.sony.platform.BIND_PLATFORM_DEV_VID.SONY;
+    fuchsia.BIND_PLATFORM_DEV_PID == fuchsia.sony.platform.BIND_PLATFORM_DEV_PID.IMX227;
+    fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.sony.platform.BIND_PLATFORM_DEV_DID.CAMERA_SENSOR;
+  }
 }
 
 parent "i2c" {
