@@ -51,6 +51,50 @@
                 },
                 "expected": "abort",
                 "name": "WrongProtocol"
+            },
+            {
+                "device": {
+                    "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC",
+                    "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE",
+                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"google,astro-thermistor\""
+                },
+                "expected": "match",
+                "name": "DevicetreeAstroMatch"
+            },
+            {
+                "device": {
+                    "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC",
+                    "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE",
+                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"google,sherlock-thermistor\""
+                },
+                "expected": "match",
+                "name": "DevicetreeSherlockMatch"
+            },
+            {
+                "device": {
+                    "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC",
+                    "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE",
+                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"google,nelson-thermistor\""
+                },
+                "expected": "match",
+                "name": "DevicetreeNelsonMatch"
+            },
+            {
+                "device": {
+                    "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC",
+                    "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE",
+                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"google,wrong-thermistor\""
+                },
+                "expected": "abort",
+                "name": "DevicetreeWrongCompatible"
+            },
+            {
+                "device": {
+                    "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC",
+                    "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.amlogic.platform.BIND_PLATFORM_DEV_DID.THERMISTOR"
+                },
+                "expected": "abort",
+                "name": "DevicetreeGenericWrongDid"
             }
         ]
     },
