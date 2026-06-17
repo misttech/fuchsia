@@ -26,7 +26,10 @@ source_set("spsc_ffi_helper") {
   sources = [ "tests/spsc_ffi_helper.cc" ]
   include_dirs = [ "include" ]
   configs += [ ":ktl_system_include" ]
-  deps = [ "//zircon/system/ulib/zx" ]
+  deps = [
+    ":headers",
+    "//zircon/system/ulib/zx",
+  ]
 }
 
 rustc_library("spsc-buffer-rs") {
@@ -37,8 +40,10 @@ rustc_library("spsc-buffer-rs") {
     "//sdk/rust/zx-status",
     "//src/lib/kalloc",
   ]
-  non_rust_deps = [ ":spsc_ffi_helper" ]
-  with_unit_tests = true
+  if (!is_kernel) {
+    test_deps = [ ":spsc_ffi_helper" ]
+    with_unit_tests = true
+  }
 }
 
 fuchsia_unittest_package("spsc-buffer-rust-test-pkg") {

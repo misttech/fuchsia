@@ -6,7 +6,8 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 use core::{cmp, ptr, slice};
-use kalloc::{Allocator, Box, DefaultAllocator, NoOpAllocator};
+pub use kalloc::NoOpAllocator;
+use kalloc::{Allocator, Box, DefaultAllocator};
 use zx_status::Status;
 
 /// A simple convenience type used to hold the read and write pointers as separate values.
