@@ -18125,7 +18125,7 @@ rustc_library("rustls-native-certs-v0_6_3") {
     deps += [ ":security-framework-v2_3_1" ]
   }
   if (false) {
-    deps += [ ":schannel-v0_1_19" ]
+    deps += [ ":schannel-v0_1_29" ]
   }
 
   rustenv = []
@@ -18417,36 +18417,35 @@ rustc_library("scanlex-v0_1_4") {
   applicable_licenses = [ ":scanlex-v0_1_4.license" ]
 }
 
-license("schannel-v0_1_19.license") {
+license("schannel-v0_1_29.license") {
   public_package_name = "schannel"
   license_files =
-      [ "//third_party/rust_crates/vendor/schannel-0.1.19/LICENSE.md" ]
+      [ "//third_party/rust_crates/vendor/schannel-0.1.29/LICENSE.md" ]
 }
 
-rustc_library("schannel-v0_1_19") {
+rustc_library("schannel-v0_1_29") {
   crate_name = "schannel"
-  source_root = "//third_party/rust_crates/vendor/schannel-0.1.19/src/lib.rs"
-  output_name = "schannel-140c87c712698950"
-  edition = "2015"
+  source_root = "//third_party/rust_crates/vendor/schannel-0.1.29/src/lib.rs"
+  output_name = "schannel-ada636f3cb7d3e4a"
+  edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":winapi-v0_3_9" ]
-  deps += [ ":lazy_static-v1_5_0" ]
+  deps += [ ":windows-sys-v0_61_2" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=140c87c712698950",
-    "-Cextra-filename=-140c87c712698950",
+    "-Cmetadata=ada636f3cb7d3e4a",
+    "-Cextra-filename=-ada636f3cb7d3e4a",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":schannel-v0_1_19.license" ]
+  applicable_licenses = [ ":schannel-v0_1_29.license" ]
 }
 
 license("schemars-v0_8_22.license") {
@@ -23593,8 +23592,6 @@ rustc_library("winapi-v0_3_9") {
     "--cfg=feature=\"handleapi\"",
     "--cfg=feature=\"in6addr\"",
     "--cfg=feature=\"inaddr\"",
-    "--cfg=feature=\"lmcons\"",
-    "--cfg=feature=\"minschannel\"",
     "--cfg=feature=\"minwinbase\"",
     "--cfg=feature=\"minwindef\"",
     "--cfg=feature=\"mstcpip\"",
@@ -23604,15 +23601,9 @@ rustc_library("winapi-v0_3_9") {
     "--cfg=feature=\"processenv\"",
     "--cfg=feature=\"processthreadsapi\"",
     "--cfg=feature=\"profileapi\"",
-    "--cfg=feature=\"schannel\"",
-    "--cfg=feature=\"securitybaseapi\"",
-    "--cfg=feature=\"sspi\"",
     "--cfg=feature=\"std\"",
-    "--cfg=feature=\"sysinfoapi\"",
-    "--cfg=feature=\"timezoneapi\"",
     "--cfg=feature=\"winbase\"",
     "--cfg=feature=\"wincon\"",
-    "--cfg=feature=\"wincrypt\"",
     "--cfg=feature=\"windef\"",
     "--cfg=feature=\"winerror\"",
     "--cfg=feature=\"winioctl\"",
@@ -23862,8 +23853,14 @@ rustc_library("windows-sys-v0_61_2") {
     "-Cextra-filename=-e6d20fb99309b432",
     "--cfg=feature=\"Win32_Foundation\"",
     "--cfg=feature=\"Win32_Networking_WinSock\"",
+    "--cfg=feature=\"Win32_Security_Authentication_Identity\"",
+    "--cfg=feature=\"Win32_Security_Credentials\"",
+    "--cfg=feature=\"Win32_Security_Cryptography\"",
     "--cfg=feature=\"Win32_System_Com\"",
     "--cfg=feature=\"Win32_System_Diagnostics_Debug\"",
+    "--cfg=feature=\"Win32_System_LibraryLoader\"",
+    "--cfg=feature=\"Win32_System_Memory\"",
+    "--cfg=feature=\"Win32_System_SystemInformation\"",
     "--cfg=feature=\"Win32_UI_Shell\"",
   ]
 
