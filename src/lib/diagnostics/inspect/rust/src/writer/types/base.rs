@@ -228,7 +228,9 @@ impl<T: InnerType> Drop for InnerRef<T> {
     /// InnerRef has a manual drop impl, to guarantee a single deallocation in
     /// the case of multiple strong references.
     fn drop(&mut self) {
-        T::free(&self.state, &self.data, self.block_index).unwrap();
+        if let Err(e) = T::free(&self.state, &self.data, self.block_index) {
+            log::error!("Failed to free InnerRef: {:?}", e);
+        }
     }
 }
 
