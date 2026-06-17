@@ -96,11 +96,6 @@
              path="third_party/chromium-zucchini/src"
              remote="https://fuchsia.googlesource.com/third_party/chromium.googlesource.com/chromium/src/components/zucchini"
              revision="c5695f0a5d0a912938e1fbe5db1d9e591cfdd769"/>
-    <project name="chromiumos-xorg-conf"
-             path="third_party/chromiumos-xorg-conf/src"
-             remote="https://fuchsia.googlesource.com/third_party/chromium.googlesource.com/chromiumos/platform/xorg-conf"
-             revision="a622f0b252c7de984aea54da016c303a103396cb"
-             gerrithost="https://chromium-review.googlesource.com/"/>
     <project name="third_party/crashpad"
              path="third_party/crashpad/src"
              remote="https://fuchsia.googlesource.com/third_party/crashpad"
