@@ -107,6 +107,12 @@ def process_component_profile(
     if buckets_metrics:
         for bucket in component_digest["digest"]["buckets"]:
             if re.match(buckets_metrics, bucket["name"]):
+                direction = (
+                    metrics.Direction.biggerIsBetter
+                    if bucket["name"]
+                    in ("[Addl]PagerOldest", "[Addl]PagerTotal")
+                    else None
+                )
                 results.append(
                     metrics.TestCaseResult(
                         label=f"Memory/Bucket/{cleanup_bucket_name(bucket['name'])}/CommittedBytes",
@@ -121,6 +127,7 @@ def process_component_profile(
                         unit=metrics.Unit.bytes,
                         values=[bucket["populated_size"]],
                         doc=f"Total populated bytes in the bucket: {bucket['name']}",
+                        direction=direction,
                     )
                 )
 
