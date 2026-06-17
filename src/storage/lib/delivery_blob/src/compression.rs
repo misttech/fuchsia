@@ -80,6 +80,7 @@ impl From<ZstdError> for zx::Status {
             | ZSTD_error_srcBuffer_wrong
             | ZSTD_error_sequenceProducer_failed
             | ZSTD_error_externalSequences_invalid
+            | ZSTD_error_cannotProduce_uncompressedBlock
             | ZSTD_error_maxCode => zx::Status::INTERNAL,
         }
     }

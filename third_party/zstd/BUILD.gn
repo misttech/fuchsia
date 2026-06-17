@@ -22,7 +22,7 @@ verify_rust_zstd_sys_crate_binding_version = true
 if (verify_rust_zstd_sys_crate_binding_version) {
   # zstd.h Header Version Information
   # Format: `#define ZSTD_VERSION_MAJOR 1`
-  zstd_version_line_no = 106
+  zstd_version_line_no = 111
   zstd_version_index = 2
   zstd_header_path = "src/lib/zstd.h"
 
@@ -132,6 +132,8 @@ zstd_compress_sources = [
   "src/lib/compress/zstd_ldm_geartab.h",
   "src/lib/compress/zstd_opt.c",
   "src/lib/compress/zstd_opt.h",
+  "src/lib/compress/zstd_preSplit.c",
+  "src/lib/compress/zstd_preSplit.h",
   "src/lib/compress/zstdmt_compress.c",
   "src/lib/compress/zstdmt_compress.h",
   "src/lib/dictBuilder/cover.c",

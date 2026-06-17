@@ -27,7 +27,7 @@ readonly RAW_LINES="// Copyright 2024 The Fuchsia Authors. All rights reserved.
 
 # Flags copied from https://github.com/gyscos/zstd-rs/blob/main/zstd-safe/zstd-sys/update_bindings.sh.
 
-readonly BINDGEN_FLAGS='--no-layout-tests --blocklist-type=max_align_t --rustified-enum=.* --use-core --disable-header-comment'
+readonly BINDGEN_FLAGS='--no-layout-tests --blocklist-type=max_align_t --rustified-enum=.* --use-core --disable-header-comment --formatter=none'
 
 readonly STD='_std'
 
@@ -36,6 +36,8 @@ readonly STD='_std'
   --allowlist-type "ZSTD_.*" \
   --allowlist-function "ZSTD_.*" \
   --allowlist-var "ZSTD_.*" \
+  --blocklist-type ZSTD_ErrorCode \
+  --blocklist-function ZSTD_getErrorString \
   --output src/bindings_zstd${STD}.rs \
   -- \
   -I "${FUCHSIA_DIR}"/third_party/zstd/src/lib
@@ -55,3 +57,5 @@ readonly STD='_std'
   --output src/bindings_zdict${STD}.rs \
   -- \
   -I "${FUCHSIA_DIR}"/third_party/zstd/src/lib
+
+"${PREBUILT_RUST_DIR}/bin/rustfmt" --config normalize_doc_attributes=true --unstable-features src/bindings_*.rs
