@@ -4,15 +4,14 @@
 
 composite aml_rawnand;
 
-using fuchsia.hardware.pin;
-using fuchsia.amlogic.platform;
-using fuchsia.gpio;
-using fuchsia.platform;
-
 primary parent "pdev" {
-  fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
-  fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.amlogic.platform.BIND_PLATFORM_DEV_VID.AMLOGIC;
-  fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.amlogic.platform.BIND_PLATFORM_DEV_DID.RAW_NAND;
+  if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE {
+    fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,meson-g12a-raw-nand";
+  } else {
+    fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
+    fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.amlogic.platform.BIND_PLATFORM_DEV_VID.AMLOGIC;
+    fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.amlogic.platform.BIND_PLATFORM_DEV_DID.RAW_NAND;
+  }
 }
 
 optional parent "gpio-init" {
