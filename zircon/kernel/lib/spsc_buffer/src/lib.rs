@@ -142,7 +142,7 @@ impl<'a> Reservation<'a> {
 // TODO(https://fxbug.dev/517301686): Use bindgen or another systematic way to avoid duplicating
 // this structure and causing drift.
 #[repr(C, align(8))]
-pub struct SpscBuffer<A: Allocator + Default = DefaultAllocator> {
+pub struct Buffer<A: Allocator + Default = DefaultAllocator> {
     // The read and write pointers are stored as the upper and lower halves, respectively, of a
     // single 64-bit atomic.
     combined_pointers: AtomicU64,
@@ -152,7 +152,7 @@ pub struct SpscBuffer<A: Allocator + Default = DefaultAllocator> {
     _phantom: core::marker::PhantomData<A>,
 }
 
-impl<A: Allocator + Default> Drop for SpscBuffer<A> {
+impl<A: Allocator + Default> Drop for Buffer<A> {
     fn drop(&mut self) {
         if !self.storage.is_null() {
             let slice_ptr = ptr::slice_from_raw_parts_mut(self.storage, self.size);
@@ -163,12 +163,12 @@ impl<A: Allocator + Default> Drop for SpscBuffer<A> {
     }
 }
 
-impl<A: Allocator + Default> SpscBuffer<A> {
+impl<A: Allocator + Default> Buffer<A> {
     /// Maximum size of backing storage buffer (2 GiB).
     const MAX_STORAGE_SIZE: u32 = 1 << 31;
 
-    /// Constructs a new `SpscBuffer` with a dynamically allocated backing storage of the given
-    /// size, using the given allocator.
+    /// Constructs a new `Buffer` with a dynamically allocated backing storage of the given size,
+    /// using the given allocator.
     pub fn try_new_in(size: u32, allocator: A) -> Result<Self, Status> {
         if size > Self::MAX_STORAGE_SIZE {
             return Err(Status::INVALID_ARGS);
@@ -213,8 +213,8 @@ impl<A: Allocator + Default> SpscBuffer<A> {
         let ring_break_distance = storage_len - write_offset;
         let bytes_before_break = cmp::min(size, ring_break_distance);
 
-        // SAFETY: The creator of SpscBuffer must ensure that `storage` points to a valid
-        // memory region of `size` bytes.
+        // SAFETY: The creator of Buffer must ensure that `storage` points to a valid memory region
+        // of `size` bytes.
         let storage_slice = unsafe { slice::from_raw_parts_mut(self.storage, self.size) };
         let (left, right) = storage_slice.split_at_mut(write_offset as usize);
         let region1 = &mut right[..bytes_before_break as usize];
@@ -265,8 +265,8 @@ impl<A: Allocator + Default> SpscBuffer<A> {
         let ring_break_distance = self.size - read_offset;
         let bytes_before_break = cmp::min(amount_to_copy, ring_break_distance);
 
-        // SAFETY: The creator of SpscBuffer must ensure that `storage` points to a valid
-        // memory region of `size` bytes.
+        // SAFETY: The creator of Buffer must ensure that `storage` points to a valid memory region
+        // of `size` bytes.
         let storage_slice = unsafe { slice::from_raw_parts(self.storage, self.size) };
         let slice1 = &storage_slice[read_offset..read_offset + bytes_before_break];
         copy_fn(0, slice1)?;
@@ -406,16 +406,16 @@ fn advance_write_pointer(
     Ok(())
 }
 
-impl SpscBuffer<DefaultAllocator> {
-    /// Constructs a new `SpscBuffer` with a dynamically allocated backing storage of the given
-    /// size, using the default allocator.
+impl Buffer<DefaultAllocator> {
+    /// Constructs a new `Buffer` with a dynamically allocated backing storage of the given size,
+    /// using the default allocator.
     pub fn try_new(size: u32) -> Result<Self, Status> {
         Self::try_new_in(size, DefaultAllocator)
     }
 }
 
-impl SpscBuffer<NoOpAllocator> {
-    /// Constructs a `SpscBuffer` from raw pointers using a no-op allocator.
+impl Buffer<NoOpAllocator> {
+    /// Constructs a `Buffer` from raw pointers using a no-op allocator.
     ///
     /// The returned buffer does not own the memory and will not deallocate it when dropped.
     ///
@@ -509,7 +509,7 @@ mod tests {
         ];
 
         for tc in &test_cases {
-            let buffer = SpscBuffer::try_new(tc.buffer_size).unwrap();
+            let buffer = Buffer::try_new(tc.buffer_size).unwrap();
             let actual = buffer.available_space(tc.pointers);
             assert_eq!(tc.expected, actual);
         }
@@ -565,7 +565,7 @@ mod tests {
         ];
 
         for tc in &test_cases {
-            let buffer = SpscBuffer::try_new(tc.buffer_size).unwrap();
+            let buffer = Buffer::try_new(tc.buffer_size).unwrap();
 
             let initial = tc.initial_pointers.as_combined();
             buffer.combined_pointers.store(initial, Ordering::Release);
@@ -606,7 +606,7 @@ mod tests {
         ];
 
         for tc in &test_cases {
-            let buffer = SpscBuffer::try_new(tc.buffer_size).unwrap();
+            let buffer = Buffer::try_new(tc.buffer_size).unwrap();
 
             let initial = tc.initial_pointers.as_combined();
             buffer.combined_pointers.store(initial, Ordering::Release);
@@ -627,25 +627,22 @@ mod tests {
     fn test_try_new() {
         // Happy case
         {
-            assert!(SpscBuffer::try_new(256).is_ok());
+            assert!(Buffer::try_new(256).is_ok());
         }
 
         // Calling try_new with too big of a size should fail
         {
-            assert_eq!(SpscBuffer::try_new(u32::MAX).err().unwrap(), Status::INVALID_ARGS);
+            assert_eq!(Buffer::try_new(u32::MAX).err().unwrap(), Status::INVALID_ARGS);
         }
 
         // Calling try_new with a size that is not a power of two should fail
         {
-            assert_eq!(SpscBuffer::try_new(100).err().unwrap(), Status::INVALID_ARGS);
+            assert_eq!(Buffer::try_new(100).err().unwrap(), Status::INVALID_ARGS);
         }
 
         // try_new should propagate allocation failures
         {
-            assert_eq!(
-                SpscBuffer::try_new_in(256, NoOpAllocator).err().unwrap(),
-                Status::NO_MEMORY
-            );
+            assert_eq!(Buffer::try_new_in(256, NoOpAllocator).err().unwrap(), Status::NO_MEMORY);
         }
     }
 
@@ -748,7 +745,7 @@ mod tests {
         for tc in &test_cases {
             let mut dst = [0u8; STORAGE_SIZE];
 
-            let mut spsc = SpscBuffer::try_new(STORAGE_SIZE as u32).unwrap();
+            let mut spsc = Buffer::try_new(STORAGE_SIZE as u32).unwrap();
 
             let starting_pointers = tc.initial_pointers.as_combined();
             spsc.combined_pointers.store(starting_pointers, Ordering::Release);
@@ -800,7 +797,7 @@ mod tests {
     #[test]
     fn test_drain() {
         const STORAGE_SIZE: u32 = 256;
-        let mut spsc = SpscBuffer::try_new(STORAGE_SIZE).unwrap();
+        let mut spsc = Buffer::try_new(STORAGE_SIZE).unwrap();
 
         let mut reservation = spsc.reserve(STORAGE_SIZE / 2).unwrap();
         let write_data = [b'f'; (STORAGE_SIZE / 2) as usize];
@@ -816,7 +813,7 @@ mod tests {
     #[test]
     fn test_commit_error() {
         const STORAGE_SIZE: u32 = 256;
-        let mut spsc = SpscBuffer::try_new(STORAGE_SIZE).unwrap();
+        let mut spsc = Buffer::try_new(STORAGE_SIZE).unwrap();
 
         let mut reservation = spsc.reserve(STORAGE_SIZE / 2).unwrap();
         // Write fewer bytes than reserved.
@@ -828,7 +825,7 @@ mod tests {
     #[test]
     fn test_write_error() {
         const STORAGE_SIZE: u32 = 256;
-        let mut spsc = SpscBuffer::try_new(STORAGE_SIZE).unwrap();
+        let mut spsc = Buffer::try_new(STORAGE_SIZE).unwrap();
 
         let mut reservation = spsc.reserve(STORAGE_SIZE / 2).unwrap();
         // Write more bytes than reserved.
@@ -843,7 +840,7 @@ mod tests {
 
         // Safety: Pointers are valid.
         let mut spsc =
-            unsafe { SpscBuffer::from_raw_parts(mock_storage.as_mut_ptr(), mock_storage.len()) };
+            unsafe { Buffer::from_raw_parts(mock_storage.as_mut_ptr(), mock_storage.len()) };
 
         // Verify reserve, write, commit works
         let mut reservation = spsc.reserve(100).unwrap();
@@ -859,7 +856,7 @@ mod tests {
     #[test]
     fn test_reserve_zero() {
         const STORAGE_SIZE: u32 = 256;
-        let mut spsc = SpscBuffer::try_new(STORAGE_SIZE).unwrap();
+        let mut spsc = Buffer::try_new(STORAGE_SIZE).unwrap();
         match spsc.reserve(0) {
             Err(e) => assert_eq!(e, Status::INVALID_ARGS),
             Ok(_) => panic!("reserve(0) should fail with INVALID_ARGS"),
@@ -869,7 +866,7 @@ mod tests {
     #[test]
     fn test_reserve_too_large() {
         const STORAGE_SIZE: u32 = 256;
-        let mut spsc = SpscBuffer::try_new(STORAGE_SIZE).unwrap();
+        let mut spsc = Buffer::try_new(STORAGE_SIZE).unwrap();
         match spsc.reserve(u32::MAX) {
             Err(e) => assert_eq!(e, Status::INVALID_ARGS),
             Ok(_) => panic!("reserve(u32::MAX) should fail with INVALID_ARGS"),
@@ -887,7 +884,7 @@ mod tests {
 
         // Safety: Pointers are valid.
         let mut spsc =
-            unsafe { SpscBuffer::from_raw_parts(mock_storage.as_mut_ptr(), mock_storage.len()) };
+            unsafe { Buffer::from_raw_parts(mock_storage.as_mut_ptr(), mock_storage.len()) };
         spsc.combined_pointers.store((3u64 << 32) | 15u64, Ordering::Release);
 
         let mut reservation = spsc.reserve(4).unwrap();
@@ -908,14 +905,10 @@ mod tests {
     fn test_cpp_rust_integration() {
         #[link(name = "c++")]
         unsafe extern "C" {
-            fn cpp_spsc_allocate(size: u32) -> *mut SpscBuffer<NoOpAllocator>;
-            fn cpp_spsc_free(spsc: *mut SpscBuffer<NoOpAllocator>);
-            fn cpp_spsc_write(
-                spsc: *mut SpscBuffer<NoOpAllocator>,
-                data: *const u8,
-                len: u32,
-            ) -> i32;
-            fn cpp_spsc_read(spsc: *mut SpscBuffer<NoOpAllocator>, dst: *mut u8, len: u32) -> i32;
+            fn cpp_spsc_allocate(size: u32) -> *mut Buffer<NoOpAllocator>;
+            fn cpp_spsc_free(spsc: *mut Buffer<NoOpAllocator>);
+            fn cpp_spsc_write(spsc: *mut Buffer<NoOpAllocator>, data: *const u8, len: u32) -> i32;
+            fn cpp_spsc_read(spsc: *mut Buffer<NoOpAllocator>, dst: *mut u8, len: u32) -> i32;
         }
 
         // 1. Allocate on the C++ side.
