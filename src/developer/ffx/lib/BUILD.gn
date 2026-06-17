@@ -46,6 +46,7 @@ libs = [
   "testing",
   "timeout",
   "trace",
+  "traceable_error",
   "usb_driver_api",
   "usb_fastboot_discovery",
   "usb_vsock_host",
