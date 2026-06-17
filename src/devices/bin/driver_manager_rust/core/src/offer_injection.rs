@@ -23,8 +23,8 @@ impl OfferInjector {
     pub fn extra_offers_count(&self) -> usize {
         let mut res = 0;
         if self.power_config.power_inject_offer {
-            // 1 for the broker, 2 for the SAG.
-            res += 3;
+            // 1 for the broker, 3 for the SAG.
+            res += 4;
         }
         res
     }
@@ -61,6 +61,16 @@ impl OfferInjector {
                 source: Some(sag_source.clone()),
                 source_name: Some("fuchsia.power.system.ActivityGovernor".to_string()),
                 target_name: Some("fuchsia.power.system.ActivityGovernor".to_string()),
+                dependency_type: Some(fdecl::DependencyType::Weak),
+                availability: Some(sag_availability),
+                ..Default::default()
+            });
+            offset += 1;
+
+            dynamic_offers[start_index + offset] = fdecl::Offer::Protocol(fdecl::OfferProtocol {
+                source: Some(sag_source.clone()),
+                source_name: Some("fuchsia.power.system.ExecutionStateManager".to_string()),
+                target_name: Some("fuchsia.power.system.ExecutionStateManager".to_string()),
                 dependency_type: Some(fdecl::DependencyType::Weak),
                 availability: Some(sag_availability),
                 ..Default::default()

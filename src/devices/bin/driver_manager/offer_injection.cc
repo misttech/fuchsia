@@ -11,8 +11,8 @@ namespace fdecl = fuchsia_component_decl;
 size_t OfferInjector::ExtraOffersCount() const {
   size_t res = 0;
   if (power_config_.power_inject_offer) {
-    // 1 for the broker, 2 for the SAG.
-    res += 3;
+    // 1 for the broker, 3 for the SAG.
+    res += 4;
   }
 
   return res;
@@ -52,6 +52,14 @@ void OfferInjector::Inject(fidl::AnyArena& arena,
         arena, fdecl::wire::OfferProtocol::Builder(arena)
                    .source_name(arena, "fuchsia.power.system.ActivityGovernor")
                    .target_name(arena, "fuchsia.power.system.ActivityGovernor")
+                   .source(sag_source)
+                   .dependency_type(fdecl::wire::DependencyType::kWeak)
+                   .availability(sag_availability)
+                   .Build());
+    dynamic_offers[start_index + offset++] = fdecl::wire::Offer::WithProtocol(
+        arena, fdecl::wire::OfferProtocol::Builder(arena)
+                   .source_name(arena, "fuchsia.power.system.ExecutionStateManager")
+                   .target_name(arena, "fuchsia.power.system.ExecutionStateManager")
                    .source(sag_source)
                    .dependency_type(fdecl::wire::DependencyType::kWeak)
                    .availability(sag_availability)

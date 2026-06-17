@@ -122,6 +122,7 @@
                 "fuchsia.power.system.ActivityGovernor",
                 "fuchsia.power.system.BootControl",
                 "fuchsia.power.system.CpuElementManager",
+                "fuchsia.power.system.ExecutionStateManager",
             ],
             from: "#system-activity-governor",
             source_availability: "unknown",
