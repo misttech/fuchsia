@@ -638,6 +638,15 @@ impl PendingState for StringRef {
     }
 }
 
+impl PendingState for Extent {
+    type Context = ();
+    fn cleanup(state: &mut InnerState, block_index: BlockIndex, _context: &Self::Context) {
+        if let Err(e) = state.free_extents(block_index) {
+            log::error!("failed to free pending extent chain: {:?}", e);
+        }
+    }
+}
+
 struct ValueContext {
     name_block_index: BlockIndex,
     parent_index: BlockIndex,
@@ -713,6 +722,23 @@ impl<'a> Pending<'a, StringRef> {
             .increment_ref_count()?;
         self.committed = true;
         Ok(self.block_index)
+    }
+}
+
+impl<'a> Pending<'a, Extent> {
+    fn new(state: &'a mut InnerState, block_index: BlockIndex) -> Self {
+        Self {
+            state,
+            block_index,
+            context: (),
+            committed: false,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    fn commit(mut self) -> BlockIndex {
+        self.committed = true;
+        self.block_index
     }
 }
 
@@ -932,19 +958,29 @@ impl InnerState {
                 let block_index = self.heap.allocate_block(utils::block_size_for_payload(
                     value.len() + constants::STRING_REFERENCE_TOTAL_LENGTH_BYTES,
                 ))?;
-                self.heap
+                let pending = Pending::<Reserved>::new(self, block_index);
+                pending
+                    .state
+                    .heap
                     .container
                     .block_at_unchecked_mut::<Reserved>(block_index)
                     .become_string_reference();
-                let res = self.write_string_reference_payload(block_index, &value);
-                if let Err(err) = res {
-                    let _ = self.heap.free_block(block_index);
-                    return Err(err);
-                }
+
+                let pending_extents =
+                    pending.state.write_string_reference_payload(block_index, &value)?;
+
                 let owned_value = Arc::new(value.into_owned().into());
-                self.string_reference_block_indexes.insert(Arc::clone(&owned_value), block_index);
-                self.block_index_string_references.insert(block_index, owned_value);
-                Ok(block_index)
+                pending_extents
+                    .state
+                    .string_reference_block_indexes
+                    .insert(Arc::clone(&owned_value), block_index);
+                pending_extents
+                    .state
+                    .block_index_string_references
+                    .insert(block_index, owned_value);
+
+                let _ = pending_extents.commit();
+                Ok(pending.commit())
             }
         }
     }
@@ -954,7 +990,7 @@ impl InnerState {
         &mut self,
         block_index: BlockIndex,
         value: &str,
-    ) -> Result<(), Error> {
+    ) -> Result<Pending<'_, Extent>, Error> {
         let value_bytes = value.as_bytes();
         let (head_extent, bytes_written) = {
             let inlined = self.inline_string_reference(block_index, value.as_bytes());
@@ -965,10 +1001,12 @@ impl InnerState {
                 (BlockIndex::EMPTY, inlined)
             }
         };
-        let mut block = self.heap.container.block_at_unchecked_mut::<StringRef>(block_index);
+        let pending_extents = Pending::<Extent>::new(self, head_extent);
+        let mut block =
+            pending_extents.state.heap.container.block_at_unchecked_mut::<StringRef>(block_index);
         block.set_next_index(head_extent);
         block.set_total_length(bytes_written.try_into().unwrap_or(u32::MAX));
-        Ok(())
+        Ok(pending_extents)
     }
 
     /// Given a string, write the portion that can be inlined to the given block.
@@ -1232,24 +1270,24 @@ impl InnerState {
             .block_at_unchecked::<Array<StringRef>>(block_index)
             .get_string_index_at(slot_index)
             .ok_or(Error::InvalidArrayIndex(slot_index))?;
+        if existing_index != BlockIndex::EMPTY
+            && self.string_reference_block_indexes.get(&value) == Some(&existing_index)
+        {
+            return Ok(());
+        }
 
         let reference_index = if !value.is_empty() {
-            Pending::<StringRef>::new(self, value)?.commit()?
+            let pending_ref = Pending::<StringRef>::new(self, value)?;
+            if existing_index != BlockIndex::EMPTY {
+                pending_ref.state.release_string_reference(existing_index)?;
+            }
+            pending_ref.commit()?
         } else {
+            if existing_index != BlockIndex::EMPTY {
+                self.release_string_reference(existing_index)?;
+            }
             BlockIndex::EMPTY
         };
-
-        if existing_index != BlockIndex::EMPTY {
-            match self.release_string_reference(existing_index) {
-                Ok(()) => {}
-                Err(err) => {
-                    if reference_index != BlockIndex::EMPTY {
-                        let _ = self.release_string_reference(reference_index);
-                    }
-                    return Err(err);
-                }
-            }
-        }
 
         self.heap
             .container
@@ -1391,15 +1429,26 @@ impl InnerState {
         block_index: BlockIndex,
         value: impl Into<Cow<'a, str>>,
     ) -> Result<(), Error> {
+        let value = value.into();
         let old_string_ref_idx =
             self.heap.container.block_at_unchecked::<Buffer>(block_index).extent_index();
-        let new_string_ref_idx = Pending::<StringRef>::new(self, value.into())?.commit()?;
+
+        if old_string_ref_idx != BlockIndex::EMPTY
+            && self.string_reference_block_indexes.get(&value) == Some(&old_string_ref_idx)
+        {
+            return Ok(());
+        }
+
+        let pending_ref = Pending::<StringRef>::new(self, value)?;
+
+        pending_ref.state.release_string_reference(old_string_ref_idx)?;
+
+        let new_string_ref_idx = pending_ref.commit()?;
 
         self.heap
             .container
             .block_at_unchecked_mut::<Buffer>(block_index)
             .set_extent_index(new_string_ref_idx);
-        self.release_string_reference(old_string_ref_idx)?;
         Ok(())
     }
 
