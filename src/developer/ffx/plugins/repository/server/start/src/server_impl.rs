@@ -134,8 +134,32 @@ pub fn get_repo_base_name(
     Ok(DEFAULT_REPO_NAME.to_string())
 }
 
+#[derive(Error, Debug)]
+#[error(transparent)]
+pub struct ServerValidationError {
+    kind: Box<ServerValidationErrorKind>,
+}
+
+impl From<ServerValidationErrorKind> for ServerValidationError {
+    fn from(kind: ServerValidationErrorKind) -> Self {
+        Self { kind: Box::new(kind) }
+    }
+}
+
+impl From<ServerValidationError> for ffx_command_error::Error {
+    fn from(err: ServerValidationError) -> Self {
+        (*err.kind).into()
+    }
+}
+
+impl From<ffx_config::api::ConfigError> for ServerValidationError {
+    fn from(err: ffx_config::api::ConfigError) -> Self {
+        ServerValidationErrorKind::from(err).into()
+    }
+}
+
 #[derive(FfxError, Error, Debug)]
-pub enum ServerValidationError {
+pub enum ServerValidationErrorKind {
     #[user]
     #[error("{0}")]
     TargetAmbiguous(String),
@@ -273,9 +297,15 @@ pub async fn serve_impl_validate_args(
                     user_err.source().and_then(|s| s.downcast_ref::<FfxTargetError>())
                 {
                     if err == &fidl_fuchsia_developer_ffx::OpenTargetError::QueryAmbiguous {
-                        return Err(ServerValidationError::TargetAmbiguous(user_err.to_string()));
+                        return Err(ServerValidationErrorKind::TargetAmbiguous(
+                            user_err.to_string(),
+                        )
+                        .into());
                     } else if err == &fidl_fuchsia_developer_ffx::OpenTargetError::TargetNotFound {
-                        return Err(ServerValidationError::TargetNotFound(user_err.to_string()));
+                        return Err(ServerValidationErrorKind::TargetNotFound(
+                            user_err.to_string(),
+                        )
+                        .into());
                     }
                 }
             }
@@ -290,26 +320,28 @@ pub async fn serve_impl_validate_args(
         cmd.product_bundle.clone(),
     ) {
         (Some(_), Some(_)) => {
-            return Err(ServerValidationError::PathConflict);
+            return Err(ServerValidationErrorKind::PathConflict.into());
         }
         (None, Some(product_bundle)) => {
             if !product_bundle.exists() {
-                return Err(ServerValidationError::ProductBundleDoesNotExist(product_bundle));
+                return Err(
+                    ServerValidationErrorKind::ProductBundleDoesNotExist(product_bundle).into()
+                );
             }
             let repositories = product_bundle::get_repositories(product_bundle.clone())
                 .with_context(|| {
                     format!("getting repositories from product bundle {product_bundle}")
                 })
-                .map_err(ServerValidationError::Unexpected)?;
+                .map_err(ServerValidationErrorKind::Unexpected)?;
             let mut pb_repo_name_paths = vec![];
             for r in repositories {
                 if let Some(first_alias) = r.aliases().clone().first() {
                     pb_repo_name_paths
                         .push((format!("{repo_base_name}.{first_alias}"), product_bundle.clone()));
                 } else {
-                    return Err(ServerValidationError::Unexpected(anyhow!(
+                    return Err(ServerValidationErrorKind::Unexpected(anyhow!(
                         "Invalid repository configuration in the product bundle {product_bundle}. No aliases defined for a repository"
-                    )));
+                    )).into());
                 }
             }
             pb_repo_name_paths
@@ -317,7 +349,7 @@ pub async fn serve_impl_validate_args(
         (repo_path, None) => {
             if let Some(path) = repo_path {
                 if !path.exists() {
-                    return Err(ServerValidationError::RepositoryDoesNotExist(path));
+                    return Err(ServerValidationErrorKind::RepositoryDoesNotExist(path).into());
                 }
                 vec![(repo_base_name, path)]
             // TODO(b/359927881): Use the configuration to read repo-path
@@ -328,15 +360,15 @@ pub async fn serve_impl_validate_args(
                 let path = build_dir.join(REPO_PATH_RELATIVE_TO_BUILD_DIR);
                 let path_utf8 = Utf8Path::from_path(&path)
                     .with_context(|| format!("converting repo path to UTF-8 {:?}", path))
-                    .map_err(ServerValidationError::Unexpected)?
+                    .map_err(ServerValidationErrorKind::Unexpected)?
                     .to_path_buf();
                 if !path_utf8.exists() {
-                    return Err(ServerValidationError::RepositoryDoesNotExist(path_utf8));
+                    return Err(ServerValidationErrorKind::RepositoryDoesNotExist(path_utf8).into());
                 }
                 vec![(repo_base_name, path_utf8)]
             } else {
                 log::warn!("repo-path not found in env: {:?}", context.env_kind());
-                return Err(ServerValidationError::MissingPaths);
+                return Err(ServerValidationErrorKind::MissingPaths.into());
             }
         }
     };
@@ -345,19 +377,20 @@ pub async fn serve_impl_validate_args(
         if !package_manifest.exists() {
             let msg = format!("package manifest {package_manifest:?} does not exist");
             log::error!("{msg}");
-            return Err(ServerValidationError::PackageManifestDoesNotExist(
+            return Err(ServerValidationErrorKind::PackageManifestDoesNotExist(
                 package_manifest.clone(),
-            ));
+            )
+            .into());
         }
     }
 
     // Compare against running instances.
     let instance_root =
-        context.get("repository.process_dir").map_err(ServerValidationError::Config)?;
+        context.get("repository.process_dir").map_err(ServerValidationErrorKind::Config)?;
     let mgr = PkgServerInstances::new(instance_root);
     let running_instances = mgr
         .list_instances()
-        .map_err(|e| ServerValidationError::Unexpected(anyhow::Error::from(e)))?;
+        .map_err(|e| ServerValidationErrorKind::Unexpected(anyhow::Error::from(e)))?;
 
     // Check all the name/path pairs for conflicts. If there is an exact match, return it as
     // an indicator that the server is already running and does not need to be started again.
@@ -372,23 +405,25 @@ pub async fn serve_impl_validate_args(
             // which is the path to the product bundle
             if let Some(pb_path) = &cmd.product_bundle {
                 if *pb_path != duplicate.repo_path_display() {
-                    return Err(ServerValidationError::AddressConflict {
+                    return Err(ServerValidationErrorKind::AddressConflict {
                         repo_name,
                         repo_path,
                         duplicate_name: duplicate.name.clone(),
                         duplicate_path: duplicate.repo_path_display(),
                         addr,
-                    });
+                    }
+                    .into());
                 }
             } else {
                 if repo_name != duplicate.name {
-                    return Err(ServerValidationError::AddressConflict {
+                    return Err(ServerValidationErrorKind::AddressConflict {
                         repo_name,
                         repo_path,
                         duplicate_name: duplicate.name.clone(),
                         duplicate_path: duplicate.repo_path_display(),
                         addr,
-                    });
+                    }
+                    .into());
                 }
             }
             if already_running_instance.is_none() {
@@ -398,13 +433,14 @@ pub async fn serve_impl_validate_args(
         let duplicate = running_instances.iter().find(|instance| instance.name == repo_name);
         if let Some(duplicate) = duplicate {
             if addr != duplicate.address {
-                return Err(ServerValidationError::NameConflict {
+                return Err(ServerValidationErrorKind::NameConflict {
                     repo_name,
                     repo_path,
                     duplicate_name: duplicate.name.clone(),
                     duplicate_path: duplicate.repo_path_display(),
                     addr: duplicate.address.clone(),
-                });
+                }
+                .into());
             }
             if already_running_instance.is_none() {
                 already_running_instance = Some(duplicate.clone());
