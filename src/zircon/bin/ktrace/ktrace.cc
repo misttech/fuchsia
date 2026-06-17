@@ -166,19 +166,24 @@ int DoSave(const zx::resource& tracing_resource, const char* path) {
     return EXIT_FAILURE;
   }
 
-  // Read/write this many bytes at a time.
-  constexpr size_t read_size = 4096;
-  uint8_t buf[read_size];
-  uint32_t offset = 0;
+  size_t read_size;
+  if (zx_status_t status = zx_ktrace_read(tracing_resource.get(), nullptr, 0, 0, &read_size);
+      status != ZX_OK) {
+    fprintf(stderr, "Failed to query expected ktrace buffer size: %s(%d)\n",
+            zx_status_get_string(status), status);
+    return EXIT_FAILURE;
+  }
+
+  std::unique_ptr buf = std::make_unique<uint8_t[]>(read_size);
+
   zx_status_t status;
   size_t actual;
-  while ((status = zx_ktrace_read(tracing_resource.get(), buf, offset, read_size, &actual)) ==
+  while ((status = zx_ktrace_read(tracing_resource.get(), buf.get(), 0, read_size, &actual)) ==
          ZX_OK) {
     if (actual == 0) {
       break;
     }
-    offset += actual;
-    size_t bytes_written = write(out_fd.get(), buf, actual);
+    size_t bytes_written = write(out_fd.get(), buf.get(), actual);
     if (bytes_written < 0) {
       fprintf(stderr, "I/O error saving buffer: %s\n", strerror(errno));
       return EXIT_FAILURE;
@@ -187,6 +192,11 @@ int DoSave(const zx::resource& tracing_resource, const char* path) {
       fprintf(stderr, "Short write saving buffer: %zd vs %zd\n", bytes_written, actual);
       return EXIT_FAILURE;
     }
+  }
+
+  if (status != ZX_OK) {
+    fprintf(stderr, "Error reading ktrace: %s(%d)\n", zx_status_get_string(status), status);
+    return EXIT_FAILURE;
   }
 
   return EXIT_SUCCESS;
