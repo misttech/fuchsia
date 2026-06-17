@@ -1187,7 +1187,6 @@
                 "TraceExec/PtraceExecveTest.Execve_GetRegs_PeekUser_SIGKILL_TraceClone_TraceExit/1",
 
                 // TODO(https://fxbug.dev/42079561): Fix flake.
-                "VforkTest.ExecedChildExitDoesntUnstopParent",
                 "VforkTest.ParentStopsUntilChildExits",
 
                 // TODO(b/3023404 Save XMM registers in signal handlers on x64.
