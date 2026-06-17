@@ -321,7 +321,7 @@ zero, then there are no active readers.
     reordering the critical section outside the counter increments.
 
 2.  **Writer-Side**: `rcu_synchronize()` (specifically `has_active_readers`)
-    issues a system barrier (`zx_system_barrier`).
+    issues a system barrier (`zx_membarrier_sync_process_data`).
 
 The pairing works as follows:
 
@@ -337,7 +337,7 @@ The pairing works as follows:
 
 -   `rcu_synchronize()` (checking for quiescence):
     1.  Sum all `end` counters (negated).
-    2.  System barrier (`zx_system_barrier`).
+    2.  System barrier (`zx_membarrier_sync_process_data`).
     3.  Sum all `begin` counters (positive).
 
 If `Sum(begin) - Sum(end) == 0`, then all readers that started before the RSEQ
@@ -365,16 +365,16 @@ operations guarantees by the memory model. Specifically, the
 increment to `begin` is _sequenced-before_ the critical section, and the
 critical section is _sequenced-before_ the increment to `end`.
 
-The `zx_system_barrier(ZX_SYSTEM_BARRIER_DATA_MEMORY)` in `has_active_readers` ensures that if the advancer
-observes the increment to `end` (at step 1), it must also observe the
-increment to `begin` (at step 3). This is because the store to `begin`
+The `zx_membarrier_sync_process_data()` in `has_active_readers` ensures that if
+the advancer observes the increment to `end` (at step 1), it must also observe
+the increment to `begin` (at step 3). This is because the store to `begin`
 _happens-before_ the store to `end` in the reader thread (due to program order
-and the compiler fence). When `zx_system_barrier` acts as a memory barrier, it
-ensures that all stores sequenced-before the barrier interruption point in the
-reader are visible to the advancer after the barrier. Since `begin` is
-sequenced-before `end`, if `end` is visible, `begin` must also be visible.
-Therefore, Case 4 is impossible: the advancer will never underestimate the
-number of active readers.
+and the compiler fence). When `zx_membarrier_sync_process_data` acts as a
+memory barrier, it ensures that all stores sequenced-before the barrier
+interruption point in the reader are visible to the advancer after the barrier.
+Since `begin` is sequenced-before `end`, if `end` is visible, `begin` must also
+be visible.  Therefore, Case 4 is impossible: the advancer will never
+underestimate the number of active readers.
 
 ### Update Visibility Barrier
 
@@ -395,8 +395,8 @@ Without this barrier, a race could occur:
    old data while the reader is still accessing it.
 
 To prevent this race, `rcu_grace_period()` issues a
-`zx_system_barrier(ZX_SYSTEM_BARRIER_DATA_MEMORY)` before advancing the
-generation counter. This forces all prior stores (including the pointer
-updates) to be visible to all CPUs. Consequently, any reader that observes the
-new generation is guaranteed to see the new pointer value.
+`zx_membarrier_sync_process_data()` before advancing the generation counter.
+This forces all prior stores (including the pointer updates) to be visible to
+all CPUs. Consequently, any reader that observes the new generation is
+guaranteed to see the new pointer value.
 

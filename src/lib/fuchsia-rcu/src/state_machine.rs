@@ -91,7 +91,7 @@ impl RcuThreadBlock {
 impl Default for RcuThreadBlock {
     fn default() -> Self {
         #[cfg(feature = "rseq_backend")]
-        fuchsia_rseq::rseq_register_thread().expect("failed to register thread");
+        fuchsia_rseq::rseq_register_thread();
 
         Self {
             nesting_level: AtomicUsize::new(0),
@@ -104,7 +104,7 @@ impl Default for RcuThreadBlock {
 impl Drop for RcuThreadBlock {
     fn drop(&mut self) {
         #[cfg(feature = "rseq_backend")]
-        fuchsia_rseq::rseq_unregister_thread().expect("failed to unregister thread");
+        fuchsia_rseq::rseq_unregister_thread();
     }
 }
 
@@ -360,11 +360,9 @@ fn rcu_grace_period() {
         // This ensures that all prior stores by all writers are visible to
         // any thread that subsequently enters an RCU read-side critical section.
         #[cfg(feature = "rseq_backend")]
-        {
-            let status =
-                unsafe { zx::sys::zx_system_barrier(zx::sys::ZX_SYSTEM_BARRIER_DATA_MEMORY) };
-            debug_assert_eq!(status, zx::sys::ZX_OK);
-        }
+        unsafe {
+            zx::sys::zx_membarrier_sync_process_data()
+        };
 
         let generation = RCU_CONTROL_BLOCK.generation.fetch_add(1, Ordering::Relaxed);
 

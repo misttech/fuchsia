@@ -7,9 +7,7 @@
 use fuchsia_rseq::{Rseq, RseqCriticalSection};
 use std::arch::global_asm;
 use std::cell::UnsafeCell;
-use zx::sys::{
-    ZX_SYSTEM_BARRIER_DATA_MEMORY, zx_rseq_t, zx_system_barrier, zx_system_get_num_cpus,
-};
+use zx::sys::{zx_membarrier_sync_process_data, zx_rseq_t, zx_system_get_num_cpus};
 
 /// Counters for a single CPU.
 ///
@@ -152,8 +150,7 @@ impl RcuReadCounters {
         // Therefore, we will never underestimate the number of active readers.
 
         // SAFETY: this is a basic FFI call with no pre- or post-conditions.
-        let status = unsafe { zx_system_barrier(ZX_SYSTEM_BARRIER_DATA_MEMORY) };
-        debug_assert_eq!(status, zx::sys::ZX_OK);
+        unsafe { zx_membarrier_sync_process_data() };
 
         // Phase 2: Add Begins (read after barrier)
         for cpu in 0..num_cpus {
