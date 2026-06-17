@@ -116,7 +116,6 @@ syscall_tests = [
   "terminal_test",
   "test_helper_test",
   "thread_group_lifecycle_test",
-  "time_test",
   "timerfd_test",
   "timers_test",
   "tmpfs_test",
@@ -168,6 +167,12 @@ syscall_tests_etc = [
     name = "udev_test"
     container_config = {
       extra_features = [ "framebuffer" ]
+    }
+  },
+  {
+    name = "time_test"
+    container_config = {
+      enable_utc_time_adjustment = true
     }
   },
 ]

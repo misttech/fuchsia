@@ -6,6 +6,7 @@
 #include <sys/time.h>
 
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
+#include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 TEST(TimeTest, ClockGetResMonotonic) {
   clockid_t clockid = CLOCK_MONOTONIC;
@@ -76,4 +77,43 @@ TEST(TimeTest, GetTimeOfDayNullTvNullTz) __attribute__((no_sanitize("nonnull-att
 #pragma GCC diagnostic ignored "-Wnonnull"
   ASSERT_THAT(gettimeofday(nullptr, nullptr), SyscallSucceeds());
 #pragma GCC diagnostic pop
+}
+
+TEST(TimeTest, AdjustedTimeReflectedInVdso) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "AdjustedTimeReflectedInVdso test requires CAP_SYS_ADMIN";
+  }
+
+  // Get time via vDSO (standard gettimeofday)
+  struct timeval tv_vdso1;
+  ASSERT_EQ(0, gettimeofday(&tv_vdso1, nullptr));
+
+  // Get time via syscall
+  struct timeval tv_sys1;
+  ASSERT_EQ(0, syscall(SYS_gettimeofday, &tv_sys1, nullptr));
+
+  // Adjust time by winding it forward.
+  struct timeval tv_adjust = tv_sys1;
+  tv_adjust.tv_sec += 10000;
+
+  // Use syscall to set time.
+  ASSERT_EQ(0, syscall(SYS_settimeofday, &tv_adjust, nullptr)) << strerror(errno);
+
+  // Get time via vDSO again.
+  struct timeval tv_vdso2;
+  ASSERT_EQ(0, gettimeofday(&tv_vdso2, nullptr));
+
+  // Get time via syscall again.
+  struct timeval tv_sys2;
+  ASSERT_EQ(0, syscall(SYS_gettimeofday, &tv_sys2, nullptr));
+
+  // Verify that the vDSO time has jumped forward.
+  EXPECT_GE(tv_vdso2.tv_sec, tv_adjust.tv_sec);
+
+  // Verify that vDSO and syscall agree (roughly).
+  long diff = tv_sys2.tv_sec - tv_vdso2.tv_sec;
+  if (diff < 0) {
+    diff = -diff;
+  }
+  EXPECT_LE(diff, 1);
 }
