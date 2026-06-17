@@ -9,6 +9,8 @@
 #include <lib/async/dispatcher.h>
 #include <lib/fit/defer.h>
 
+#include <memory>
+
 #include "src/devices/bin/driver_manager/node.h"
 
 namespace driver_manager {
@@ -17,7 +19,8 @@ class DriverRunner;
 
 // AllDriversElement is an ElementRunner server that handles leasing all leaf driver nodes in
 // the system.
-class AllDriversElement : public fidl::WireServer<fuchsia_power_broker::ElementRunner> {
+class AllDriversElement : public fidl::WireServer<fuchsia_power_broker::ElementRunner>,
+                          public std::enable_shared_from_this<AllDriversElement> {
  public:
   friend class AllDriversElementTest;
 

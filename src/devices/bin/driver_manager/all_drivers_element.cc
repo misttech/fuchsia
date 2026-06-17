@@ -4,6 +4,7 @@
 
 #include "src/devices/bin/driver_manager/all_drivers_element.h"
 
+#include <memory>
 #include <unordered_set>
 #include <vector>
 
@@ -229,13 +230,18 @@ void AllDriversElement::AcquireLease(std::shared_ptr<const Node> node,
 
   driver_runner_->power_topology()
       ->Lease(std::move(schema))
-      .Then([this, topo_path, lease_token = std::move(lease_token), deferred = std::move(deferred)](
+      .Then([weak_self = weak_from_this(), topo_path, lease_token = std::move(lease_token),
+             deferred = std::move(deferred)](
                 fidl::Result<fuchsia_power_broker::Topology::Lease>& result) mutable {
+        auto self = weak_self.lock();
+        if (!self) {
+          return;
+        }
         if (!result.is_ok()) {
           fdf_log::error("Failed to acquire lease for node '{}': {}", topo_path,
                          result.error_value());
-        } else if (current_level_ == 1) {
-          leases_.insert_or_assign(topo_path, std::move(lease_token));
+        } else if (self->current_level_ == 1) {
+          self->leases_.insert_or_assign(topo_path, std::move(lease_token));
         }
       });
 }
