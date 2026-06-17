@@ -12,7 +12,6 @@ pub mod ext_hdrs;
 
 use alloc::vec::Vec;
 use core::borrow::Borrow;
-use core::convert::Infallible as Never;
 use core::fmt::{self, Debug, Formatter};
 use core::ops::Range;
 
@@ -23,14 +22,15 @@ use packet::{
     BufferProvider, BufferView, BufferViewMut, EmptyBuf, FragmentedBytesMut, FromRaw,
     GrowBufferMut, InnerPacketBuilder, LayoutBufferAlloc, MaybeParsed, NestablePacketBuilder,
     NestableSerializer, NoOpSerializationContext, PacketBuilder, PacketConstraints, ParsablePacket,
-    ParseMetadata, PartialPacketBuilder, PartialSerializeResult, PartialSerializer, SerializeError,
-    SerializeTarget, Serializer,
+    ParseMetadata, PartialPacketBuilder, PartialSerializer, SerializeError, SerializeTarget,
+    Serializer,
 };
 use zerocopy::byteorder::network_endian::{U16, U32};
 use zerocopy::{
     FromBytes, Immutable, IntoBytes, KnownLayout, Ref, SplitByteSlice, SplitByteSliceMut, Unaligned,
 };
 
+use crate::TRANSPORT_HEADER_MAX_SIZE;
 use crate::error::{IpParseErrorAction, IpParseResult, Ipv6ParseError, ParseError};
 use crate::icmp::Icmpv6ParameterProblemCode;
 use crate::ip::{
@@ -379,23 +379,39 @@ impl<B: SplitByteSlice> FromRaw<Ipv6PacketRaw<B>, ()> for Ipv6Packet<B> {
     }
 }
 
-impl<B: SplitByteSlice, C: IpSerializationContext<Ipv6>> PartialSerializer<C> for Ipv6Packet<B> {
-    fn partial_serialize(
+impl<B, C> PartialSerializer<C> for Ipv6Packet<B>
+where
+    B: SplitByteSlice,
+    C: IpSerializationContext<Ipv6>,
+{
+    // TODO(https://fxbug.dev/473824085): Keep the reference to the whole
+    // serialized packet and return it from `partial_serialize()` as
+    // `PartialSerializeResult::Slice`.
+
+    fn partial_serialize_new_buf<BB: GrowBufferMut, A: LayoutBufferAlloc<BB>>(
         &self,
         _context: &mut C,
-        _constraints: PacketConstraints,
-        mut buffer: &mut [u8],
-    ) -> Result<PartialSerializeResult, SerializeError<Never>> {
+        constraints: PacketConstraints,
+        alloc: A,
+    ) -> Result<(BB, usize), SerializeError<A::Error>> {
+        // Copy IP header, extension header and up to 64 bytes of the body,
+        // which includes the transport headers.
         let fixed_hdr = Ref::bytes(&self.fixed_hdr);
         let extension_hdrs = self.extension_hdrs.bytes();
-
-        let mut buffer = &mut buffer;
-        let bytes_written = buffer.write_bytes_front_allow_partial(Ref::bytes(&self.fixed_hdr))
-            + buffer.write_bytes_front_allow_partial(self.extension_hdrs.bytes())
-            + buffer.write_bytes_front_allow_partial(&self.body);
-        let total_size = fixed_hdr.len() + extension_hdrs.len() + self.body.len();
-
-        Ok(PartialSerializeResult { bytes_written, total_size })
+        let fixed_hdr_len = fixed_hdr.len();
+        let header_len = fixed_hdr_len + extension_hdrs.len();
+        let body_to_copy = self.body().len().min(TRANSPORT_HEADER_MAX_SIZE);
+        let outer_header_len = constraints.header_len();
+        let mut buffer = alloc.layout_alloc(outer_header_len + header_len, body_to_copy, 0)?;
+        buffer.with_parts_mut(|prefix, mut body, _suffix| {
+            let extensions_pos = outer_header_len + fixed_hdr_len;
+            prefix[outer_header_len..extensions_pos].copy_from_slice(fixed_hdr);
+            prefix[extensions_pos..].copy_from_slice(extension_hdrs);
+            body.copy_from_slice(&self.body()[..body_to_copy]);
+        });
+        buffer.grow_front(header_len);
+        let total_size = header_len + self.body.len();
+        Ok((buffer, total_size))
     }
 }
 
@@ -1649,7 +1665,7 @@ pub(crate) fn reassemble_fragmented_packet<
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use packet::{Buf, FragmentedBuffer, ParseBuffer};
+    use packet::{Buf, FragmentedBuffer, ParseBuffer, PartialSerializeResult};
     use test_case::test_case;
 
     use crate::ethernet::{EthernetFrame, EthernetFrameLengthCheck};
@@ -2176,38 +2192,24 @@ mod tests {
         let mut builder = new_builder();
         builder.dscp_and_ecn(DscpAndEcn::new(0x12, 3));
         builder.flowlabel(0x10405);
-        let body = [0, 1, 2, 3, 3, 4, 5, 7, 8, 9];
-        let packet = (&body).into_serializer().wrap_in(builder);
+        const BODY: &[u8] = &[0, 1, 2, 3, 3, 4, 5, 7, 8, 9];
+        let packet = (&BODY).into_serializer().wrap_in(builder);
 
         // Note that this header is different from the one in test_serialize
         // because the checksum is not calculated.
-        const HEADER_LEN: usize = 40;
-        const HEADER: [u8; HEADER_LEN] = [
+        const HEADER: &[u8] = &[
             100, 177, 4, 5, 0, 10, 6, 64, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
             17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
         ];
-        let mut expected_partial = HEADER.to_vec();
-        expected_partial.resize(expected_partial.len() + body.len(), 0);
+        const PACKET_SIZE: usize = HEADER.len() + BODY.len();
 
-        for i in 1..expected_partial.len() {
-            let mut buf = vec![0u8; i];
-            let result = packet.partial_serialize(
-                &mut NoOpSerializationContext,
-                PacketConstraints::UNCONSTRAINED,
-                buf.as_mut_slice(),
-            );
-
-            // PartialSerializer serializes the header only if the buffer is
-            // large enough to fit the whole header.
-            let bytes_written = if i >= HEADER_LEN { HEADER_LEN } else { 0 };
-            assert_eq!(
-                result,
-                Ok(PartialSerializeResult { bytes_written, total_size: body.len() + HEADER_LEN })
-            );
-            if bytes_written > 0 {
-                assert_eq!(buf, expected_partial[..i]);
-            }
-        }
+        // PartialSerializer serializes the header only if the buffer is
+        // large enough to fit the whole header.
+        let buf = assert_matches!(
+            packet.partial_serialize(&mut NoOpSerializationContext, packet::new_buf_vec),
+            Ok(PartialSerializeResult::NewBuffer { buffer, total_size: PACKET_SIZE }) => buffer
+        );
+        assert_eq!(buf.as_ref(), HEADER);
     }
 
     #[test]
@@ -2958,30 +2960,20 @@ mod tests {
 
     #[test]
     fn test_partial_serialize_parsed() {
-        let packet_bytes = [
+        const PACKET_BYTES: &[u8] = &[
             100, 177, 4, 5, 0, 10, 6, 64, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
             17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 0, 1, 2, 3, 4, 5, 6, 7,
             8, 9,
         ];
-        let packet_len = packet_bytes.len();
-        let mut packet_bytes_copy = packet_bytes;
+        const PACKET_LEN: usize = PACKET_BYTES.len();
+        let mut packet_bytes_copy = Vec::from(PACKET_BYTES);
         let mut packet_bytes_ref: &mut [u8] = &mut packet_bytes_copy[..];
         let packet = packet_bytes_ref.parse::<Ipv6Packet<_>>().unwrap();
 
-        for i in 1..(packet_len + 1) {
-            let mut buf = vec![0u8; i];
-            let result = packet.partial_serialize(
-                &mut NoOpSerializationContext,
-                PacketConstraints::UNCONSTRAINED,
-                buf.as_mut_slice(),
-            );
-
-            let bytes_written = if i >= packet_len { packet_len } else { i };
-            assert_eq!(
-                result,
-                Ok(PartialSerializeResult { bytes_written, total_size: packet_len })
-            );
-            assert_eq!(buf[..bytes_written], packet_bytes[..bytes_written]);
-        }
+        let buf = assert_matches!(
+            packet.partial_serialize(&mut NoOpSerializationContext, packet::new_buf_vec),
+            Ok(PartialSerializeResult::NewBuffer { buffer, total_size: PACKET_LEN }) => buffer
+        );
+        assert_eq!(buf.as_ref(), PACKET_BYTES);
     }
 }

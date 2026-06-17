@@ -2124,12 +2124,9 @@ impl<C: SerializationContext> PartialPacketBuilder<C> for () {
 
 /// Result returned by `PartialSerializer::partial_serialize`.
 #[derive(Debug, Eq, PartialEq)]
-pub struct PartialSerializeResult {
-    // Number of bytes written to the output buffer.
-    pub bytes_written: usize,
-
-    // Size of the whole packet.
-    pub total_size: usize,
+pub enum PartialSerializeResult<'a, B> {
+    Slice(&'a [u8]),
+    NewBuffer { buffer: B, total_size: usize },
 }
 
 /// A serializer that supports partial serialization.
@@ -2137,106 +2134,137 @@ pub struct PartialSerializeResult {
 /// Partial serialization allows to serialize only packet headers without
 /// calculating packet checksums (if any).
 pub trait PartialSerializer<C: SerializationContext> {
-    /// Serializes the head of the packet to the specified `buffer`.
+    /// If the packet is already serialized then returns the whole seialized
+    /// packet as `PartialSerializeResult::Slice`. Otherwise serializes the
+    /// headers into a new buffer returned as `PartialSerializeResult::NewBuffer`.
+    fn partial_serialize<B: GrowBufferMut + ContiguousBuffer, A: LayoutBufferAlloc<B>>(
+        &self,
+        context: &mut C,
+        alloc: A,
+    ) -> Result<PartialSerializeResult<'_, B>, SerializeError<A::Error>> {
+        let (buffer, total_size) =
+            self.partial_serialize_new_buf(context, PacketConstraints::UNCONSTRAINED, alloc)?;
+        Ok(PartialSerializeResult::NewBuffer { buffer, total_size })
+    }
+
+    /// Serializes the headers into a new buffer allocated used `alloc`.
     ///
-    /// If the packet contains network or transport level headers that fit in
-    /// the provided buffer then they will be serialized. Complete or partial
-    /// body may be copied to the output buffer as well, depending on the
-    /// serializer type.
+    /// Returns a buffer with serialized headers. If the serializer doesn't
+    /// serialize any headers then an empty buffer is returned. In either case,
+    /// the buffer is guaranteed to contain exactly `constraints.header_len()`
+    /// at the head.
     ///
-    /// `PartialSerializeResult.bytes_written` indicates how many bytes were
-    /// actually serialized.
-    fn partial_serialize(
+    /// The second returned value indicates total number of bytes in the
+    /// packet, including the headers.
+    fn partial_serialize_new_buf<B: GrowBufferMut, A: LayoutBufferAlloc<B>>(
         &self,
         context: &mut C,
         constraints: PacketConstraints,
-        buffer: &mut [u8],
-    ) -> Result<PartialSerializeResult, SerializeError<Never>>;
+        alloc: A,
+    ) -> Result<(B, usize), SerializeError<A::Error>>;
 }
 
-impl<C: SerializationContext, B: GrowBuffer + ShrinkBuffer> PartialSerializer<C> for B {
-    fn partial_serialize(
-        &self,
-        _context: &mut C,
-        _constraints: PacketConstraints,
-        _buffer: &mut [u8],
-    ) -> Result<PartialSerializeResult, SerializeError<Never>> {
-        Ok(PartialSerializeResult { bytes_written: 0, total_size: self.len() })
-    }
-}
-
-impl<C: SerializationContext, B: GrowBuffer + ShrinkBuffer> PartialSerializer<C>
-    for TruncatingSerializer<B>
+impl<C, B> PartialSerializer<C> for B
+where
+    C: SerializationContext,
+    B: GrowBuffer + ShrinkBuffer,
 {
-    fn partial_serialize(
+    fn partial_serialize_new_buf<BB: GrowBufferMut, A: LayoutBufferAlloc<BB>>(
         &self,
         _context: &mut C,
         constraints: PacketConstraints,
-        _buffer: &mut [u8],
-    ) -> Result<PartialSerializeResult, SerializeError<Never>> {
+        alloc: A,
+    ) -> Result<(BB, usize), SerializeError<A::Error>> {
+        let buffer = alloc.layout_alloc(constraints.header_len(), 0, 0)?;
+        Ok((buffer, self.len()))
+    }
+}
+
+impl<C, B> PartialSerializer<C> for TruncatingSerializer<B>
+where
+    C: SerializationContext,
+    B: GrowBuffer + ShrinkBuffer,
+{
+    fn partial_serialize_new_buf<BB: GrowBufferMut, A: LayoutBufferAlloc<BB>>(
+        &self,
+        _context: &mut C,
+        constraints: PacketConstraints,
+        alloc: A,
+    ) -> Result<(BB, usize), SerializeError<A::Error>> {
         let total_size = cmp::max(
             constraints.min_body_len(),
             cmp::min(self.buffer().len(), constraints.max_body_len()),
         );
-        Ok(PartialSerializeResult { bytes_written: 0, total_size })
+        let buffer = alloc.layout_alloc(constraints.header_len(), 0, 0)?;
+        Ok((buffer, total_size))
     }
 }
 
-impl<C: SerializationContext, I: InnerPacketBuilder, B: GrowBuffer + ShrinkBuffer>
-    PartialSerializer<C> for InnerSerializer<I, B>
+impl<C, I, B> PartialSerializer<C> for InnerSerializer<I, B>
+where
+    C: SerializationContext,
+    I: InnerPacketBuilder,
+    B: GrowBuffer + ShrinkBuffer,
 {
-    fn partial_serialize(
+    fn partial_serialize_new_buf<BB: GrowBufferMut, A: LayoutBufferAlloc<BB>>(
         &self,
         _context: &mut C,
         constraints: PacketConstraints,
-        _buffer: &mut [u8],
-    ) -> Result<PartialSerializeResult, SerializeError<Never>> {
-        Ok(PartialSerializeResult {
-            bytes_written: 0,
-            total_size: cmp::max(self.inner().bytes_len(), constraints.min_body_len()),
-        })
+        alloc: A,
+    ) -> Result<(BB, usize), SerializeError<A::Error>> {
+        let total_size = cmp::max(self.inner().bytes_len(), constraints.min_body_len());
+        let buffer = alloc.layout_alloc(constraints.header_len(), 0, 0)?;
+        Ok((buffer, total_size))
     }
 }
 
-impl<C: SerializationContext, A: PartialSerializer<C>, B: PartialSerializer<C>> PartialSerializer<C>
-    for EitherSerializer<A, B>
+impl<C, A, B> PartialSerializer<C> for EitherSerializer<A, B>
+where
+    C: SerializationContext,
+    A: PartialSerializer<C>,
+    B: PartialSerializer<C>,
 {
-    fn partial_serialize(
+    fn partial_serialize_new_buf<BB: GrowBufferMut, AA: LayoutBufferAlloc<BB>>(
         &self,
         context: &mut C,
         constraints: PacketConstraints,
-        buffer: &mut [u8],
-    ) -> Result<PartialSerializeResult, SerializeError<Never>> {
+        alloc: AA,
+    ) -> Result<(BB, usize), SerializeError<AA::Error>> {
         match self {
-            EitherSerializer::A(s) => s.partial_serialize(context, constraints, buffer),
-            EitherSerializer::B(s) => s.partial_serialize(context, constraints, buffer),
+            EitherSerializer::A(s) => s.partial_serialize_new_buf(context, constraints, alloc),
+            EitherSerializer::B(s) => s.partial_serialize_new_buf(context, constraints, alloc),
         }
     }
 }
 
-impl<C: SerializationContext, I: PartialSerializer<C>, O: PartialPacketBuilder<C>>
-    PartialSerializer<C> for Nested<I, O>
+impl<C, I, O> PartialSerializer<C> for Nested<I, O>
+where
+    C: SerializationContext,
+    I: PartialSerializer<C>,
+    O: PartialPacketBuilder<C>,
 {
-    fn partial_serialize(
+    fn partial_serialize_new_buf<B: GrowBufferMut, A: LayoutBufferAlloc<B>>(
         &self,
         context: &mut C,
         constraints: PacketConstraints,
-        buffer: &mut [u8],
-    ) -> Result<PartialSerializeResult, SerializeError<Never>> {
+        alloc: A,
+    ) -> Result<(B, usize), SerializeError<A::Error>> {
         context.serialize_nested(&self.outer, constraints, |context, constraints| {
             let header_constraints = self.outer.constraints();
             let Some(constraints) = header_constraints.try_encapsulate(&constraints) else {
                 return Err(SerializeError::SizeLimitExceeded);
             };
             let header_len = header_constraints.header_len();
-            let inner_buf = buffer.get_mut(header_len..).unwrap_or(&mut []);
-            let mut result = self.inner.partial_serialize(context, constraints, inner_buf)?;
-            if header_len <= buffer.len() {
-                self.outer.partial_serialize(context, result.total_size, &mut buffer[..header_len]);
-                result.bytes_written += header_len;
-            }
-            result.total_size += header_len + header_constraints.footer_len();
-            Ok(result)
+            let (mut buffer, mut total_size) =
+                self.inner.partial_serialize_new_buf(context, constraints, alloc)?;
+            buffer.with_parts_mut(|prefix, _body, _suffix| {
+                let header_offset = prefix.len() - header_len;
+                let header = &mut prefix[header_offset..];
+                self.outer.partial_serialize(context, total_size, header);
+            });
+            buffer.grow_front(header_len);
+            total_size += header_len + header_constraints.footer_len();
+            Ok((buffer, total_size))
         })
     }
 }
@@ -2264,6 +2292,15 @@ mod sealed {
             outer: PacketConstraints,
             alloc: &mut dyn DynamicBufferAlloc,
         ) -> Result<(usize, usize), SerializeError<DynAllocError>>;
+    }
+
+    pub trait DynamicPartialSerializerInner<C: SerializationContext> {
+        fn partial_serialize_dyn_alloc(
+            &self,
+            context: &mut C,
+            constraints: PacketConstraints,
+            alloc: &mut dyn DynamicBufferAlloc,
+        ) -> Result<usize, SerializeError<DynAllocError>>;
     }
 
     /// Type-erased allocator allowing dynamic serializers through
@@ -2302,7 +2339,63 @@ mod sealed {
     pub struct DynAllocError;
 }
 
-use sealed::{DynAllocError, DynamicBufferAlloc, DynamicSerializerInner};
+use sealed::{
+    DynAllocError, DynamicBufferAlloc, DynamicPartialSerializerInner, DynamicSerializerInner,
+};
+
+/// `DynamicBufferAlloc` implementation that wraps an `LayoutBufferAlloc`
+enum DynBufferAlloc<A: LayoutBufferAlloc<B>, B> {
+    Empty,
+    Alloc(A),
+    Buffer(B),
+    Error(A::Error),
+}
+
+impl<A: LayoutBufferAlloc<B>, B> DynBufferAlloc<A, B> {
+    fn take_buffer(self) -> B {
+        let DynBufferAlloc::Buffer(b) = self else { unreachable!("unexpected alloc state") };
+        b
+    }
+
+    fn take_error(self) -> A::Error {
+        let DynBufferAlloc::Error(e) = self else { unreachable!("unexpected alloc state") };
+        e
+    }
+}
+
+impl<A: LayoutBufferAlloc<B>, B: GrowBufferMut> DynamicBufferAlloc for DynBufferAlloc<A, B> {
+    fn alloc(
+        &mut self,
+        prefix: usize,
+        body: usize,
+        suffix: usize,
+    ) -> Result<Buf<&mut [u8]>, DynAllocError> {
+        let alloc = match core::mem::replace(self, Self::Empty) {
+            Self::Alloc(a) => a,
+            _ => panic!("unexpected alloc state"),
+        };
+
+        let buffer = match alloc.layout_alloc(prefix, body, suffix) {
+            Ok(b) => b,
+            Err(e) => {
+                *self = Self::Error(e);
+                return Err(DynAllocError);
+            }
+        };
+        *self = Self::Buffer(buffer);
+        let buffer = match self {
+            Self::Buffer(b) => b.with_all_contents_mut(|b| match b.try_into_contiguous() {
+                Ok(b) => b,
+                Err(_) => {
+                    todo!("https://fxbug.dev/428952155: support dyn serialize fragmented buffers")
+                }
+            }),
+            // We just set buffer above.
+            _ => unreachable!(),
+        };
+        Ok(Buf::new(buffer, prefix..(buffer.len() - suffix)))
+    }
+}
 
 fn dyn_serialize_new_buf<C: SerializationContext, B: GrowBufferMut, A: LayoutBufferAlloc<B>>(
     serializer: &dyn DynamicSerializerInner<C>,
@@ -2310,67 +2403,16 @@ fn dyn_serialize_new_buf<C: SerializationContext, B: GrowBufferMut, A: LayoutBuf
     outer: PacketConstraints,
     alloc: A,
 ) -> Result<B, SerializeError<A::Error>> {
-    enum Adapter<A: LayoutBufferAlloc<B>, B> {
-        Empty,
-        Alloc(A),
-        Buffer(B),
-        Error(A::Error),
-    }
-
-    impl<A: LayoutBufferAlloc<B>, B: GrowBufferMut> DynamicBufferAlloc for Adapter<A, B> {
-        fn alloc(
-            &mut self,
-            prefix: usize,
-            body: usize,
-            suffix: usize,
-        ) -> Result<Buf<&mut [u8]>, DynAllocError> {
-            let alloc = match core::mem::replace(self, Self::Empty) {
-                Self::Alloc(a) => a,
-                _ => panic!("unexpected alloc state"),
-            };
-
-            let buffer = match alloc.layout_alloc(prefix, body, suffix) {
-                Ok(b) => b,
-                Err(e) => {
-                    *self = Self::Error(e);
-                    return Err(DynAllocError);
-                }
-            };
-            *self = Self::Buffer(buffer);
-            let buffer = match self {
-                Self::Buffer(b) => b.with_all_contents_mut(|b| match b.try_into_contiguous() {
-                    Ok(b) => b,
-                    Err(_) => todo!(
-                        "https://fxbug.dev/428952155: support dyn serialize fragmented buffers"
-                    ),
-                }),
-                // We just set buffer above.
-                _ => unreachable!(),
-            };
-            Ok(Buf::new(buffer, prefix..(buffer.len() - suffix)))
+    let mut alloc = DynBufferAlloc::Alloc(alloc);
+    let (prefix, suffix) = match serializer.serialize_dyn_alloc(context, outer, &mut alloc) {
+        Ok(result) => result,
+        Err(SerializeError::SizeLimitExceeded) => return Err(SerializeError::SizeLimitExceeded),
+        Err(SerializeError::Alloc(DynAllocError)) => {
+            return Err(SerializeError::Alloc(alloc.take_error()));
         }
-    }
-
-    let mut adapter = Adapter::Alloc(alloc);
-    let (prefix, suffix) = match serializer.serialize_dyn_alloc(context, outer, &mut adapter) {
-        Ok(b) => b,
-        Err(SerializeError::SizeLimitExceeded) => {
-            return Err(SerializeError::SizeLimitExceeded);
-        }
-        Err(SerializeError::Alloc(DynAllocError)) => match adapter {
-            Adapter::Error(e) => {
-                return Err(SerializeError::Alloc(e));
-            }
-            _ => {
-                unreachable!();
-            }
-        },
     };
 
-    let mut buffer = match adapter {
-        Adapter::Buffer(b) => b,
-        _ => unreachable!("unexpected alloc state"),
-    };
+    let mut buffer = alloc.take_buffer();
     buffer.grow_front(buffer.prefix_len().checked_sub(prefix).unwrap_or_else(|| {
         panic!("failed to grow buffer front; want: {} got: {}", prefix, buffer.prefix_len())
     }));
@@ -2450,6 +2492,22 @@ impl<C: SerializationContext> Serializer<C> for DynSerializer<'_, C> {
     }
 }
 
+// `LayoutBufferAlloc` implementation that wraps a `DynamicBufferAlloc`.
+struct DynamicBufferAllocAdapter<'a>(&'a mut dyn DynamicBufferAlloc);
+impl<'a> LayoutBufferAlloc<Buf<&'a mut [u8]>> for DynamicBufferAllocAdapter<'a> {
+    type Error = DynAllocError;
+
+    fn layout_alloc(
+        self,
+        prefix: usize,
+        body: usize,
+        suffix: usize,
+    ) -> Result<Buf<&'a mut [u8]>, Self::Error> {
+        let Self(inner) = self;
+        inner.alloc(prefix, body, suffix)
+    }
+}
+
 impl<C: SerializationContext> NestableSerializer for DynSerializer<'_, C> {}
 
 impl<C: SerializationContext, O: Serializer<C>> DynamicSerializerInner<C> for O {
@@ -2459,21 +2517,7 @@ impl<C: SerializationContext, O: Serializer<C>> DynamicSerializerInner<C> for O 
         outer: PacketConstraints,
         alloc: &mut dyn DynamicBufferAlloc,
     ) -> Result<(usize, usize), SerializeError<DynAllocError>> {
-        struct Adapter<'a>(&'a mut dyn DynamicBufferAlloc);
-        impl<'a> LayoutBufferAlloc<Buf<&'a mut [u8]>> for Adapter<'a> {
-            type Error = DynAllocError;
-
-            fn layout_alloc(
-                self,
-                prefix: usize,
-                body: usize,
-                suffix: usize,
-            ) -> Result<Buf<&'a mut [u8]>, Self::Error> {
-                let Self(inner) = self;
-                inner.alloc(prefix, body, suffix)
-            }
-        }
-        self.serialize_new_buf(context, outer, Adapter(alloc))
+        self.serialize_new_buf(context, outer, DynamicBufferAllocAdapter(alloc))
             .map(|buffer| (buffer.prefix_len(), buffer.suffix_len()))
     }
 }
@@ -2495,10 +2539,76 @@ impl<C: SerializationContext, O: Serializer<C>> DynamicSerializerInner<C> for O 
 pub trait DynamicSerializer<C: SerializationContext>: DynamicSerializerInner<C> {}
 impl<C: SerializationContext, O: DynamicSerializerInner<C>> DynamicSerializer<C> for O {}
 
+#[derive(Copy, Clone)]
+pub struct DynPartialSerializer<'a, C: SerializationContext>(
+    &'a dyn DynamicPartialSerializerInner<C>,
+);
+
+impl<'a, C: SerializationContext> DynPartialSerializer<'a, C> {
+    pub fn new_dyn(s: &'a dyn DynamicPartialSerializerInner<C>) -> Self {
+        Self(s)
+    }
+}
+
+impl<'a, C: SerializationContext> PartialSerializer<C> for DynPartialSerializer<'a, C> {
+    fn partial_serialize_new_buf<B: GrowBufferMut, A: LayoutBufferAlloc<B>>(
+        &self,
+        context: &mut C,
+        constraints: PacketConstraints,
+        alloc: A,
+    ) -> Result<(B, usize), SerializeError<A::Error>> {
+        let Self(inner) = self;
+        let mut alloc = DynBufferAlloc::Alloc(alloc);
+        let total_size = match inner.partial_serialize_dyn_alloc(context, constraints, &mut alloc) {
+            Ok(result) => result,
+            Err(SerializeError::SizeLimitExceeded) => {
+                return Err(SerializeError::SizeLimitExceeded);
+            }
+            Err(SerializeError::Alloc(DynAllocError)) => {
+                return Err(SerializeError::Alloc(alloc.take_error()));
+            }
+        };
+
+        let mut buffer = alloc.take_buffer();
+        buffer.grow_front(
+            buffer.prefix_len().checked_sub(constraints.header_len()).unwrap_or_else(|| {
+                panic!(
+                    "failed to grow buffer front; want: {} got: {}",
+                    constraints.header_len(),
+                    buffer.prefix_len()
+                )
+            }),
+        );
+        Ok((buffer, total_size))
+    }
+}
+
+impl<C: SerializationContext, O: PartialSerializer<C>> DynamicPartialSerializerInner<C> for O {
+    fn partial_serialize_dyn_alloc(
+        &self,
+        context: &mut C,
+        constraints: PacketConstraints,
+        alloc: &mut dyn DynamicBufferAlloc,
+    ) -> Result<usize, SerializeError<DynAllocError>> {
+        self.partial_serialize_new_buf(context, constraints, DynamicBufferAllocAdapter(alloc))
+            .map(|(_buf, total_size)| total_size)
+    }
+}
+pub trait DynamicPartialSerializer<C: SerializationContext>:
+    DynamicPartialSerializerInner<C>
+{
+}
+
+impl<C: SerializationContext, O: DynamicPartialSerializerInner<C>> DynamicPartialSerializer<C>
+    for O
+{
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::BufferMut;
+    use assert_matches::assert_matches;
     use std::fmt::Debug;
     use test_case::test_case;
     use test_util::{assert_geq, assert_leq};
@@ -3264,20 +3374,17 @@ mod tests {
     fn nested_partial_serialize_constraints() {
         const BODY: &[u8] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
         const INNER_PACKET_MAX_BODY: usize = 10;
+        const EXPECTED_HEADER: &[u8] = &[0xFF; 20];
 
-        let mut buf = vec![0; 100];
-
-        assert_eq!(
-            BODY.into_serializer()
-                .wrap_in(DummyPacketBuilder::new(0, 0, 0, INNER_PACKET_MAX_BODY))
-                .wrap_in(DummyPacketBuilder::new(2 * INNER_PACKET_MAX_BODY, 0, 0, usize::MAX))
-                .partial_serialize(
-                    &mut NoOpSerializationContext,
-                    PacketConstraints::UNCONSTRAINED,
-                    &mut buf
-                ),
-            Ok(PartialSerializeResult { bytes_written: 20, total_size: 30 })
-        );
+        let packet = BODY
+            .into_serializer()
+            .wrap_in(DummyPacketBuilder::new(0, 0, 0, INNER_PACKET_MAX_BODY))
+            .wrap_in(DummyPacketBuilder::new(2 * INNER_PACKET_MAX_BODY, 0, 0, usize::MAX));
+        let result = packet.partial_serialize(&mut NoOpSerializationContext, new_buf_vec);
+        let buffer = assert_matches!(
+            result,
+            Ok(PartialSerializeResult::NewBuffer { buffer, total_size: 30 }) => buffer);
+        assert_eq!(buffer.as_ref(), EXPECTED_HEADER);
     }
 
     #[test]
@@ -3665,10 +3772,7 @@ mod tests {
         let serializer = body.wrap_in(inner).wrap_in(middle).wrap_in(outer);
 
         let mut context = TrackingSerializationContext { history: Vec::new() };
-        let mut buf = vec![0; 100];
-        let _result = serializer
-            .partial_serialize(&mut context, PacketConstraints::UNCONSTRAINED, &mut buf)
-            .unwrap();
+        let _result = serializer.partial_serialize(&mut context, new_buf_vec).unwrap();
         assert_eq!(context.history, vec![3, 2, 1]);
     }
 }

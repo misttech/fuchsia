@@ -32,10 +32,12 @@ use netstack3_core::ip::{Mark, Marks};
 
 use netstack3_core::sync::{Mutex, RwLock};
 use netstack3_core::trace::trace_duration;
-use packet::{FragmentedByteSlice, PacketConstraints};
+use packet::{Buf, FragmentedByteSlice, LayoutBufferAlloc, PartialSerializeResult};
 use packet_formats::ethernet::EtherType;
 use packet_formats::ip::{IpProto, Ipv4Proto, Ipv6Proto};
+use smallvec::SmallVec;
 use std::collections::{HashMap, hash_map};
+use std::convert::Infallible as Never;
 use std::mem::offset_of;
 use std::sync::{Arc, Weak};
 use zerocopy::FromBytes;
@@ -141,6 +143,24 @@ pub struct SkBuff<'a, C> {
     _marker: std::marker::PhantomData<fn(C) -> C>,
 }
 
+struct SmallVecAlloc<'a, const N: usize> {
+    buf: &'a mut SmallVec<[u8; N]>,
+}
+
+impl<'a, const N: usize> LayoutBufferAlloc<Buf<&'a mut [u8]>> for SmallVecAlloc<'a, N> {
+    type Error = Never;
+
+    fn layout_alloc(
+        self,
+        prefix: usize,
+        body: usize,
+        suffix: usize,
+    ) -> Result<Buf<&'a mut [u8]>, Self::Error> {
+        self.buf.resize(prefix + body + suffix, 0);
+        Ok::<_, Never>(Buf::new(&mut self.buf[..], prefix..(prefix + body)))
+    }
+}
+
 impl<'a, C> SkBuff<'a, C> {
     pub fn new(
         ethertype: Option<u16>,
@@ -186,22 +206,24 @@ impl<'a, C> SkBuff<'a, C> {
     }
 
     fn from_ip_packet<I: FilterIpExt, P: FilterIpPacket<I>>(
-        packet: &P,
+        packet: &'a P,
         ifindex: u32,
         marks: &Marks,
-        data_buffer: &'a mut [u8],
+        data_buffer: &'a mut SmallVec<[u8; SERIALIZED_HEAD_SIZE]>,
         bpf_sock: Option<&'a BpfSock>,
     ) -> Self {
         // TODO(https://fxbug.dev/424212358): Implement lazy packet serialization.
+        let alloc = SmallVecAlloc { buf: data_buffer };
         let serialize_result = packet
-            .partial_serialize(
-                &mut NetworkSerializationContext::default(),
-                PacketConstraints::UNCONSTRAINED,
-                data_buffer,
-            )
+            .partial_serialize(&mut NetworkSerializationContext::default(), alloc)
             .expect("Packet serialization failed");
-        let packet_len = serialize_result.total_size;
-        let packet_data = &data_buffer[..serialize_result.bytes_written];
+        let (packet_data, packet_len) = match serialize_result {
+            PartialSerializeResult::Slice(slice) => (slice, slice.len()),
+            PartialSerializeResult::NewBuffer { buffer: _, total_size } => {
+                (&data_buffer[..], total_size)
+            }
+        };
+
         let mark = get_linux_packet_mark(marks);
         let mut result = SkBuff {
             sk_buff: __sk_buff {
@@ -478,7 +500,7 @@ where
         let ifindex =
             interfaces.ingress.or(interfaces.egress).map(|d| d.get_ifindex()).unwrap_or(0);
 
-        let mut data_buffer = [0u8; SERIALIZED_HEAD_SIZE];
+        let mut data_buffer = SmallVec::new();
         let sk_buff = SkBuff::<'_, SocketFilterProgram>::from_ip_packet(
             packet,
             ifindex,
@@ -850,7 +872,7 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
         trace_duration!("ebpf::egress");
 
         let bpf_sock = BpfSock::new(socket_info, marks);
-        let mut data_buffer = [0u8; SERIALIZED_HEAD_SIZE];
+        let mut data_buffer = SmallVec::new();
         let sk_buff = SkBuff::from_ip_packet(
             packet,
             device.get_ifindex(),

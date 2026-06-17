@@ -86,6 +86,9 @@ mod private {
     pub trait Sealed {}
 }
 
+/// The maximum size of a transport-level header.
+pub const TRANSPORT_HEADER_MAX_SIZE: usize = crate::tcp::MAX_HDR_LEN;
+
 /// The checksumming action that should be performed during serialization based
 /// on available checksum offloading capabilities.
 #[derive(Debug, Copy, Clone, PartialEq)]

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use core::cmp;
 use core::convert::Infallible as Never;
 use core::fmt::Debug;
 use core::num::NonZeroU16;
@@ -10,16 +11,18 @@ use net_types::ip::{
     GenericOverIp, Ip, IpAddress, IpInvariant, IpVersionMarker, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr,
 };
 use netstack3_base::{
-    DynamicNetworkSerializer, MalformedFlags, NetworkPartialSerializer,
-    NetworkSerializationContext, NetworkSerializer, Options, PayloadLen, SegmentHeader,
+    DynamicNetworkPartialSerializer, DynamicNetworkSerializer, MalformedFlags,
+    NetworkPartialSerializer, NetworkSerializationContext, NetworkSerializer, Options, PayloadLen,
+    SegmentHeader,
 };
 use packet::{
-    Buf, Buffer, BufferMut, BufferProvider, BufferViewMut, DynSerializer, EitherSerializer,
-    EmptyBuf, GrowBufferMut, InnerSerializer, LayoutBufferAlloc, NestablePacketBuilder as _,
-    NestableSerializer, Nested, PacketConstraints, ParsablePacket, ParseBuffer, ParseMetadata,
-    PartialSerializeResult, PartialSerializer, SerializationContext, SerializeError, Serializer,
-    SliceBufViewMut, TruncatingSerializer,
+    Buf, Buffer, BufferMut, BufferProvider, BufferViewMut, ContiguousBuffer, DynPartialSerializer,
+    DynSerializer, EitherSerializer, EmptyBuf, GrowBufferMut, InnerSerializer, LayoutBufferAlloc,
+    NestablePacketBuilder as _, NestableSerializer, Nested, PacketConstraints, ParsablePacket,
+    ParseBuffer, ParseMetadata, PartialSerializeResult, PartialSerializer, SerializationContext,
+    SerializeError, Serializer, SliceBufViewMut, TruncatingSerializer,
 };
+use packet_formats::TRANSPORT_HEADER_MAX_SIZE;
 use packet_formats::icmp::mld::{
     MulticastListenerDone, MulticastListenerQuery, MulticastListenerQueryV2,
     MulticastListenerReport, MulticastListenerReportV2,
@@ -403,7 +406,7 @@ where
 /// for slow-path protocols.
 pub trait DynamicTransportSerializer<I: FilterIpExt>:
     DynamicNetworkSerializer
-    + NetworkPartialSerializer
+    + DynamicNetworkPartialSerializer
     + MaybeTransportPacket
     + DynamicMaybeTransportPacketMut<I>
     + DynamicMaybeIcmpErrorMut<I>
@@ -462,13 +465,13 @@ impl<'a, I: FilterIpExt> NestableSerializer for DynTransportSerializer<'a, I> {}
 impl<'a, I: FilterIpExt> PartialSerializer<NetworkSerializationContext>
     for DynTransportSerializer<'a, I>
 {
-    fn partial_serialize(
+    fn partial_serialize_new_buf<B: GrowBufferMut, A: LayoutBufferAlloc<B>>(
         &self,
         context: &mut NetworkSerializationContext,
         constraints: PacketConstraints,
-        buffer: &mut [u8],
-    ) -> Result<PartialSerializeResult, SerializeError<Never>> {
-        (*self.0).partial_serialize(context, constraints, buffer)
+        alloc: A,
+    ) -> Result<(B, usize), SerializeError<A::Error>> {
+        DynPartialSerializer::new_dyn(self.0).partial_serialize_new_buf(context, constraints, alloc)
     }
 }
 
@@ -1191,16 +1194,26 @@ pub struct PartialSerializeRef<'a, S> {
     reference: &'a S,
 }
 
-impl<'a, C: SerializationContext, S: PartialSerializer<C>> PartialSerializer<C>
-    for PartialSerializeRef<'a, S>
+impl<'a, C, S> PartialSerializer<C> for PartialSerializeRef<'a, S>
+where
+    C: SerializationContext,
+    S: PartialSerializer<C>,
 {
-    fn partial_serialize(
+    fn partial_serialize<B: GrowBufferMut + ContiguousBuffer, A: LayoutBufferAlloc<B>>(
+        &self,
+        context: &mut C,
+        alloc: A,
+    ) -> Result<PartialSerializeResult<'_, B>, SerializeError<A::Error>> {
+        self.reference.partial_serialize(context, alloc)
+    }
+
+    fn partial_serialize_new_buf<B: GrowBufferMut, A: LayoutBufferAlloc<B>>(
         &self,
         context: &mut C,
         constraints: PacketConstraints,
-        buffer: &mut [u8],
-    ) -> Result<PartialSerializeResult, SerializeError<Never>> {
-        self.reference.partial_serialize(context, constraints, buffer)
+        alloc: A,
+    ) -> Result<(B, usize), SerializeError<A::Error>> {
+        self.reference.partial_serialize_new_buf(context, constraints, alloc)
     }
 }
 
@@ -1215,17 +1228,17 @@ const TX_PACKET_NO_TTL: u8 = 0;
 impl<I: FilterIpExt, S: TransportPacketSerializer<I> + NetworkPartialSerializer>
     PartialSerializer<NetworkSerializationContext> for TxPacket<'_, I, S>
 {
-    fn partial_serialize(
+    fn partial_serialize_new_buf<B: GrowBufferMut, A: LayoutBufferAlloc<B>>(
         &self,
         context: &mut NetworkSerializationContext,
         constraints: PacketConstraints,
-        buffer: &mut [u8],
-    ) -> Result<PartialSerializeResult, SerializeError<Never>> {
+        alloc: A,
+    ) -> Result<(B, usize), SerializeError<A::Error>> {
         let packet_builder =
             I::PacketBuilder::new(self.src_addr, self.dst_addr, TX_PACKET_NO_TTL, self.protocol);
         packet_builder
             .wrap_body(PartialSerializeRef { reference: self.serializer })
-            .partial_serialize(context, constraints, buffer)
+            .partial_serialize_new_buf(context, constraints, alloc)
     }
 }
 
@@ -1309,17 +1322,29 @@ impl<I: IpExt, B: BufferMut + NetworkSerializer> NestableSerializer for Forwarde
 impl<C: SerializationContext, I: IpExt, B: BufferMut> PartialSerializer<C>
     for ForwardedPacket<I, B>
 {
-    fn partial_serialize(
+    fn partial_serialize<BB: GrowBufferMut + ContiguousBuffer, A: LayoutBufferAlloc<BB>>(
         &self,
         _context: &mut C,
-        _constraints: PacketConstraints,
-        mut buffer: &mut [u8],
-    ) -> Result<PartialSerializeResult, SerializeError<Never>> {
-        let mut buffer = &mut buffer;
-        Ok(PartialSerializeResult {
-            bytes_written: buffer.write_bytes_front_allow_partial(self.buffer.as_ref()),
-            total_size: self.buffer.len(),
-        })
+        _alloc: A,
+    ) -> Result<PartialSerializeResult<'_, BB>, SerializeError<A::Error>> {
+        Ok(PartialSerializeResult::Slice(self.buffer.as_ref()))
+    }
+
+    fn partial_serialize_new_buf<BB: GrowBufferMut, A: LayoutBufferAlloc<BB>>(
+        &self,
+        _context: &mut C,
+        constraints: PacketConstraints,
+        alloc: A,
+    ) -> Result<(BB, usize), SerializeError<A::Error>> {
+        let bytes_to_copy = cmp::min(
+            self.buffer.as_ref().len(),
+            self.transport_header_offset + TRANSPORT_HEADER_MAX_SIZE,
+        );
+        let mut buffer = alloc.layout_alloc(constraints.header_len(), bytes_to_copy, 0)?;
+        buffer.with_parts_mut(|_prefix, mut body, _suffix| {
+            body.copy_from_slice(&self.buffer.as_ref()[..bytes_to_copy]);
+        });
+        Ok((buffer, self.buffer.as_ref().len()))
     }
 }
 
@@ -2445,15 +2470,31 @@ impl<I: IpExt, B: BufferMut + NetworkSerializer> Serializer<NetworkSerialization
 impl<I: IpExt, B: BufferMut + NetworkSerializer> NestableSerializer for RawIpBody<I, B> {}
 
 impl<I: IpExt, B: BufferMut> PartialSerializer<NetworkSerializationContext> for RawIpBody<I, B> {
-    fn partial_serialize(
+    fn partial_serialize<BB: GrowBufferMut + ContiguousBuffer, A: LayoutBufferAlloc<BB>>(
         &self,
         _context: &mut NetworkSerializationContext,
-        _constraints: PacketConstraints,
-        buffer: &mut [u8],
-    ) -> Result<PartialSerializeResult, SerializeError<Never>> {
-        let bytes_to_copy = core::cmp::min(self.body.len(), buffer.len());
-        buffer[..bytes_to_copy].copy_from_slice(&self.body.as_ref()[..bytes_to_copy]);
-        Ok(PartialSerializeResult { bytes_written: bytes_to_copy, total_size: self.body.len() })
+        _alloc: A,
+    ) -> Result<PartialSerializeResult<'_, BB>, SerializeError<A::Error>> {
+        Ok(PartialSerializeResult::Slice(self.body.as_ref()))
+    }
+
+    fn partial_serialize_new_buf<BB: GrowBufferMut, A: LayoutBufferAlloc<BB>>(
+        &self,
+        _context: &mut NetworkSerializationContext,
+        constraints: PacketConstraints,
+        alloc: A,
+    ) -> Result<(BB, usize), SerializeError<A::Error>> {
+        let bytes_to_copy = cmp::min(self.body.len(), TRANSPORT_HEADER_MAX_SIZE);
+        let header_len = constraints.header_len();
+        let mut buffer = alloc.layout_alloc(header_len, bytes_to_copy, 0)?;
+        buffer.with_parts_mut(|_prefix, mut body, _suffix| {
+            body.copy_from_slice(&self.body.as_ref()[..bytes_to_copy]);
+        });
+        let total_size = cmp::max(
+            constraints.min_body_len(),
+            cmp::min(self.body.len(), constraints.max_body_len()),
+        );
+        Ok((buffer, total_size))
     }
 }
 
@@ -3215,31 +3256,29 @@ pub mod testutil {
         where
             for<'a> &'a T: TransportPacketExt<I>,
         {
-            fn partial_serialize(
+            fn partial_serialize_new_buf<B: GrowBufferMut, A: LayoutBufferAlloc<B>>(
                 &self,
                 context: &mut NetworkSerializationContext,
-                _constraints: PacketConstraints,
-                buffer: &mut [u8],
-            ) -> Result<PartialSerializeResult, SerializeError<Never>> {
+                constraints: PacketConstraints,
+                alloc: A,
+            ) -> Result<(B, usize), SerializeError<A::Error>> {
+                assert!(constraints == PacketConstraints::UNCONSTRAINED);
+
                 let Some(proto) = <&T>::proto() else {
-                    return Ok(PartialSerializeResult { bytes_written: 0, total_size: 0 });
+                    let buffer = alloc.layout_alloc(0, 0, 0)?;
+                    return Ok((buffer, 0));
                 };
                 let builder = I::PacketBuilder::new(self.src_ip, self.dst_ip, I::PACKET_TTL, proto);
                 let constraints = builder.constraints();
+                let header_len = constraints.header_len();
                 let body_len = (&self.body).len();
 
-                if constraints.header_len() > buffer.len() {
-                    return Ok(PartialSerializeResult {
-                        bytes_written: 0,
-                        total_size: constraints.header_len() + body_len,
-                    });
-                }
-                builder.partial_serialize(context, body_len, buffer);
+                let mut buffer = alloc.layout_alloc(header_len, 0, 0)?;
+                buffer.with_parts_mut(|prefix, _body, _suffix| {
+                    builder.partial_serialize(context, body_len, prefix);
+                });
 
-                Ok(PartialSerializeResult {
-                    bytes_written: constraints.header_len(),
-                    total_size: constraints.header_len() + body_len,
-                })
+                Ok((buffer, header_len + body_len))
             }
         }
 
@@ -5050,12 +5089,11 @@ mod tests {
             P::make_serializer_with_ports_data::<I>(I::SRC_IP, I::DST_IP, SRC_PORT, DST_PORT, DATA);
         let packet = TxPacket::<I, _>::new(I::SRC_IP, I::DST_IP, P::proto::<I>(), &mut body);
 
-        let mut buf = [0u8; 128];
-        let result = PartialSerializer::partial_serialize(
+        let (buf, total_size) = PartialSerializer::partial_serialize_new_buf(
             &packet,
             &mut NetworkSerializationContext::default(),
             PacketConstraints::UNCONSTRAINED,
-            &mut buf,
+            packet::new_buf_vec,
         )
         .unwrap();
 
@@ -5072,14 +5110,16 @@ mod tests {
                 .unwrap_b()
                 .into_inner();
 
-        assert_eq!(result.total_size, whole_packet.len());
-        assert_eq!(result.bytes_written, I::MIN_HEADER_LENGTH + P::HEADER_SIZE);
+        let headers_size = I::MIN_HEADER_LENGTH + P::HEADER_SIZE;
+        assert_eq!(total_size, whole_packet.len());
+        assert_eq!(buf.len(), headers_size);
 
         // Count the number of bytes that are different in the partially
-        // serialized packet.
-        let num_bytes_differ = buf[..result.bytes_written]
+        // serialized packet headers.
+        let num_bytes_differ = buf
+            .as_ref()
             .iter()
-            .zip(whole_packet[..result.bytes_written].iter())
+            .zip(whole_packet[..headers_size].iter())
             .map(|(a, b)| if a != b { 1 } else { 0 })
             .sum::<usize>();
 
@@ -5095,28 +5135,83 @@ mod tests {
     #[test_case(PhantomData::<Udp>)]
     #[test_case(PhantomData::<Tcp>)]
     #[test_case(PhantomData::<IcmpEchoRequest>)]
+    fn tx_packet_raw_ip_body_partial_serialize<I: TestIpExt, P: Protocol>(_proto: PhantomData<P>) {
+        const DATA: &[u8] = b"Packet Body";
+        let body_bytes =
+            P::make_serializer_with_ports_data::<I>(I::SRC_IP, I::DST_IP, SRC_PORT, DST_PORT, DATA)
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
+                .unwrap()
+                .unwrap_b()
+                .into_inner();
+        let body_bytes_len = body_bytes.len();
+        let mut body =
+            RawIpBody::new(P::proto::<I>(), I::SRC_IP, I::DST_IP, Buf::new(body_bytes.clone(), ..));
+        let packet = TxPacket::<I, _>::new(I::SRC_IP, I::DST_IP, P::proto::<I>(), &mut body);
+
+        let (buf, total_size) = PartialSerializer::partial_serialize_new_buf(
+            &packet,
+            &mut NetworkSerializationContext::default(),
+            PacketConstraints::UNCONSTRAINED,
+            packet::new_buf_vec,
+        )
+        .unwrap();
+
+        let whole_packet = Buf::new(body_bytes, ..)
+            .wrap_in(I::PacketBuilder::new(I::SRC_IP, I::DST_IP, TX_PACKET_NO_TTL, P::proto::<I>()))
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .expect("serialize packet")
+            .unwrap_b()
+            .into_inner();
+
+        let headers_size =
+            I::MIN_HEADER_LENGTH + cmp::min(body_bytes_len, TRANSPORT_HEADER_MAX_SIZE);
+        assert_eq!(total_size, whole_packet.len());
+        assert_eq!(buf.len(), headers_size);
+
+        // Count the number of bytes that are different in the partially
+        // serialized packet headers.
+        let num_bytes_differ = buf
+            .as_ref()
+            .iter()
+            .zip(whole_packet[..headers_size].iter())
+            .map(|(a, b)| if a != b { 1 } else { 0 })
+            .sum::<usize>();
+
+        // Partial serializer doesn't calculate packet checksum. IPv6 header
+        // doesn't contain a checksum, but IPv4 header contains 2 bytes for checksum.
+        // The transport header checksum is already calculated because we fully
+        // serialized it to put in RawIpBody.
+        let checksum_bytes = I::map_ip((), |()| 2, |()| 0);
+        assert!(num_bytes_differ <= checksum_bytes);
+    }
+
+    #[ip_test(I)]
+    #[test_case(PhantomData::<Udp>)]
+    #[test_case(PhantomData::<Tcp>)]
+    #[test_case(PhantomData::<IcmpEchoRequest>)]
     fn forwarded_packet_partial_serialize<I: TestIpExt, P: Protocol>(_proto: PhantomData<P>) {
         let mut packet_buf = ip_packet::<I, P>(I::SRC_IP, I::DST_IP);
         let packet_bytes = packet_buf.to_flattened_vec();
-        let packet_len = packet_bytes.len();
         let meta = packet_buf.parse::<I::Packet<_>>().expect("parse IP packet").parse_metadata();
         let packet =
             ForwardedPacket::<I, _>::new(I::SRC_IP, I::DST_IP, P::proto::<I>(), meta, packet_buf);
 
-        for i in 1..(packet_len + 1) {
-            let mut buf = alloc::vec![0u8; i];
-            let result = packet.partial_serialize(
-                &mut NetworkSerializationContext::default(),
-                PacketConstraints::UNCONSTRAINED,
-                buf.as_mut_slice(),
-            );
+        let result = packet
+            .partial_serialize(&mut NetworkSerializationContext::default(), packet::new_buf_vec)
+            .unwrap();
+        assert_eq!(result, PartialSerializeResult::Slice(&packet_bytes[..]));
 
-            let bytes_written = if i >= packet_len { packet_len } else { i };
-            assert_eq!(
-                result,
-                Ok(PartialSerializeResult { bytes_written, total_size: packet_len })
-            );
-            assert_eq!(buf[..bytes_written], packet_bytes[..bytes_written]);
-        }
+        let (buf, total_size) = PartialSerializer::partial_serialize_new_buf(
+            &packet,
+            &mut NetworkSerializationContext::default(),
+            PacketConstraints::UNCONSTRAINED,
+            packet::new_buf_vec,
+        )
+        .unwrap();
+
+        let expected_len =
+            cmp::min(packet_bytes.len(), meta.header_len() + TRANSPORT_HEADER_MAX_SIZE);
+        assert_eq!(total_size, packet_bytes.len());
+        assert_eq!(buf.as_ref(), &packet_bytes[..expected_len]);
     }
 }

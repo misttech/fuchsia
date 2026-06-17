@@ -85,9 +85,10 @@ pub use matchers::{
 };
 pub use num::PositiveIsize;
 pub use packet::{
-    ChecksumOffloadResult, ChecksumOffloadSpec, ChecksumRxOffloading, DynamicNetworkSerializer,
-    NetworkParsingContext, NetworkPartialSerializer, NetworkSerializationContext,
-    NetworkSerializer, ProtocolSpecificOffloadSpec,
+    ChecksumOffloadResult, ChecksumOffloadSpec, ChecksumRxOffloading,
+    DynamicNetworkPartialSerializer, DynamicNetworkSerializer, NetworkParsingContext,
+    NetworkPartialSerializer, NetworkSerializationContext, NetworkSerializer,
+    ProtocolSpecificOffloadSpec,
 };
 pub use port_alloc::{EphemeralPort, PortAllocImpl, simple_randomized_port_alloc};
 pub use resource_references::{

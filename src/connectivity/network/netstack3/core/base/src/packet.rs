@@ -8,8 +8,8 @@ use bitflags::bitflags;
 use core::num::NonZeroU16;
 use net_types::ip::IpInvariant;
 use packet::{
-    DynamicSerializer, PacketBuilder, PacketConstraints, PartialSerializer, SerializationContext,
-    Serializer,
+    DynamicPartialSerializer, DynamicSerializer, PacketBuilder, PacketConstraints,
+    PartialSerializer, SerializationContext, Serializer,
 };
 use packet_formats::TransportChecksumAction;
 use packet_formats::ethernet::{EthernetEnvelope, EthernetSerializationContext};
@@ -30,6 +30,16 @@ impl<S: PartialSerializer<NetworkSerializationContext>> NetworkPartialSerializer
 /// The specific dynamic packet `Serializer` type used within netstack3.
 pub trait DynamicNetworkSerializer: DynamicSerializer<NetworkSerializationContext> {}
 impl<S: DynamicSerializer<NetworkSerializationContext>> DynamicNetworkSerializer for S {}
+
+/// The specific dynamic packet `PartialSerializer` type used within netstack3.
+pub trait DynamicNetworkPartialSerializer:
+    DynamicPartialSerializer<NetworkSerializationContext>
+{
+}
+impl<S: DynamicPartialSerializer<NetworkSerializationContext>> DynamicNetworkPartialSerializer
+    for S
+{
+}
 
 /// Networking protocols that support checksum offloading.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
