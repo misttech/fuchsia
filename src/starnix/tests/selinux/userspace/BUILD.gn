@@ -405,10 +405,10 @@ if (is_host) {
     foreach(lib, host_lib_names) {
       sources += [ sysroot_libs + "/$lib" ]
     }
-    outputs = [ "$target_gen_dir/libs/{{source_file_part}}" ]
+    outputs = [ "$target_gen_dir/libs_v2/{{source_file_part}}" ]
     args = [
       "{{source}}",
-      rebase_path(target_gen_dir + "/libs/{{source_file_part}}",
+      rebase_path(target_gen_dir + "/libs_v2/{{source_file_part}}",
                   root_build_dir),
     ]
   }
@@ -417,7 +417,7 @@ if (is_host) {
     deps = [ ":libs_copy" ]
     sources = []
     foreach(lib, host_lib_names) {
-      sources += [ "$target_gen_dir/libs/$lib" ]
+      sources += [ "$target_gen_dir/libs_v2/$lib" ]
     }
     outputs = [ "$target_out_dir/libs/{{source_file_part}}" ]
   }

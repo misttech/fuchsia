@@ -7,7 +7,6 @@ to preserve nanoseconds of mtime. See https://fxbug.dev/42134108#c5."""
 
 import os
 import shutil
-import stat
 import sys
 
 
@@ -26,20 +25,8 @@ def main():
 
     if os.path.exists(dest):
         if os.path.isdir(dest):
-
-            def _on_error(fn, path, dummy_excinfo):
-                # The operation failed, possibly because the file is set to
-                # read-only. If that's why, make it writable and try the op
-                # again.
-                if not os.access(path, os.W_OK):
-                    os.chmod(path, stat.S_IWRITE)
-                fn(path)
-
-            shutil.rmtree(dest, onerror=_on_error)
+            shutil.rmtree(dest)
         else:
-            if not os.access(dest, os.W_OK):
-                # Attempt to make the file writable before deleting it.
-                os.chmod(dest, stat.S_IWRITE)
             os.unlink(dest)
 
     shutil.copy2(source, dest)
