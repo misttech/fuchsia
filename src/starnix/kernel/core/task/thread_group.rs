@@ -25,8 +25,8 @@ use macro_rules_attribute::apply;
 use starnix_lifecycle::{AtomicCounter, DropNotifier};
 use starnix_logging::{log_debug, log_error, log_info, log_warn, track_stub};
 use starnix_sync::{
-    LockBefore, LockDepMutex, Locked, OrderedMutex, ProcessGroupState, RwLock, ThreadGroupLimits,
-    ThreadGroupPendingSignalsLock, ThreadGroupPtraceesLock, Unlocked,
+    LockBefore, LockDepMutex, Locked, OrderedMutex, ProcessGroupState, RwLock, RwLockWriteGuard,
+    ThreadGroupLimits, ThreadGroupPendingSignalsLock, ThreadGroupPtraceesLock, Unlocked,
 };
 use starnix_task_command::TaskCommand;
 use starnix_types::ownership::{OwnedRef, Releasable};
@@ -878,11 +878,15 @@ impl ThreadGroup {
     ///
     /// It is important that the task is taken as an `Arc`. It ensures the tasks of the
     /// ThreadGroup are always valid as they are still valid when removed.
-    pub fn remove<L>(&self, locked: &mut Locked<L>, pids: &mut PidTable, task: &Arc<Task>)
-    where
+    pub fn remove<L>(
+        &self,
+        locked: &mut Locked<L>,
+        mut pids: RwLockWriteGuard<'_, PidTable>,
+        task: &Arc<Task>,
+    ) where
         L: LockBefore<ProcessGroupState>,
     {
-        task.set_ptrace_zombie(pids);
+        task.set_ptrace_zombie(&mut pids);
         pids.remove_task(task.tid);
 
         let mut state = self.write();
@@ -916,7 +920,7 @@ impl ThreadGroup {
                 ZombieProcess::new(state.as_ref(), &persistent_info.real_creds(), exit_info);
             pids.kill_process(self.leader, OwnedRef::downgrade(&zombie));
 
-            state.leave_process_group(locked, pids);
+            state.leave_process_group(locked, &pids);
 
             // I have no idea if dropping the lock here is correct, and I don't want to think about
             // it. If problems do turn up with another thread observing an intermediate state of
@@ -963,9 +967,9 @@ impl ThreadGroup {
                     // If we don't have a reaper then just drop the zombies.
                     let mut state = self.write();
                     for zombie in state.zombie_children.drain(..) {
-                        zombie.release(pids);
+                        zombie.release(&mut pids);
                     }
-                    state.zombie_ptracees.release(pids);
+                    state.zombie_ptracees.release(&mut pids);
                 }
             }
 
@@ -991,7 +995,7 @@ impl ThreadGroup {
                         if let Ok(ref tracer) = pids.get_task(tracer_pid) {
                             break 'compute_zombie tracer
                                 .thread_group()
-                                .maybe_notify_tracer(task, pids, &parent, zombie);
+                                .maybe_notify_tracer(task, &mut pids, &parent, zombie);
                         }
                     }
                     Some(zombie)
@@ -1000,7 +1004,7 @@ impl ThreadGroup {
                     parent.do_zombie_notifications(zombie);
                 }
             } else {
-                zombie.release(pids);
+                zombie.release(&mut pids);
             }
 
             // TODO: Set the error_code on the Zircon process object. Currently missing a way
@@ -1010,7 +1014,7 @@ impl ThreadGroup {
 
             if let Some(parent) = parent {
                 let parent = parent.upgrade();
-                parent.check_orphans(locked, pids);
+                parent.check_orphans(locked, &pids);
             }
 
             self.write().set_exited();
