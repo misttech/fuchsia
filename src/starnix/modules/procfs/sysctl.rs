@@ -6,8 +6,6 @@ use crate::sys_net::{
     PingGroupRangeFile, ProcSysNetIpv4Conf, ProcSysNetIpv4Neigh, ProcSysNetIpv6Conf,
     ProcSysNetIpv6Neigh, RmemMaxFile, TcpRmemFile, WmemMaxFile,
 };
-use fidl::endpoints::SynchronousProxy;
-use fidl_fuchsia_hardware_power_suspend as fhps;
 use starnix_core::security;
 use starnix_core::task::{CurrentTask, SeccompAction};
 use starnix_core::vfs::pseudo::simple_directory::{SimpleDirectory, SimpleDirectoryMutator};
@@ -121,13 +119,6 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
         );
         dir.entry("io_uring_disabled", SystemLimitFile::<IoUringDisabled>::new_node(), mode);
         dir.entry("io_uring_group", SystemLimitFile::<IoUringGroup>::new_node(), mode);
-        // TODO(https://fxbug.dev/459771111): Remove this once devices can enter this state
-        // automatically.
-        dir.entry(
-            "force_lowest_power_mode",
-            SystemLimitFile::<ForceLowestPowerMode>::new_node(),
-            mode!(IFREG, 0o666),
-        );
         dir.entry(
             "modprobe",
             StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874334")),
@@ -673,55 +664,5 @@ impl AtomicLimit for IoUringGroup {
     }
     fn store(current_task: &CurrentTask, value: i32) {
         current_task.kernel().system_limits.io_uring_group.store(value, Ordering::Relaxed);
-    }
-}
-
-/// This file allows developers to force the device to enter its lowest power mode.
-///
-/// Once the device does this automatically, the file can be removed.
-struct ForceLowestPowerMode;
-
-impl ForceLowestPowerMode {
-    const SERVICE_DIRECTORY: &str = "/svc/fuchsia.hardware.power.suspend.SuspendService";
-    fn connect_to_device_channel(name: &str) -> zx::Channel {
-        // It's fine to kernel panic on failures here, as this service is only used for manual
-        // debugging purposes.
-        //
-        // Note that this code will be removed once the device automatically enters lowest power mode.
-        let mut dir =
-            std::fs::read_dir(Self::SERVICE_DIRECTORY).expect("Failed to read service directory");
-        let entry = dir.next().unwrap().expect("Failed to get service entry");
-        let path = entry
-            .path()
-            .join(name)
-            .into_os_string()
-            .into_string()
-            .expect("Failed to create service path");
-
-        let (client_channel, server_channel) = zx::Channel::create();
-        fdio::service_connect(&path, server_channel).expect("Failed to connect to service");
-        client_channel
-    }
-}
-
-impl AtomicLimit for ForceLowestPowerMode {
-    type ValueType = bool;
-
-    fn load(current_task: &CurrentTask) -> bool {
-        current_task.kernel().system_limits.force_lowest_power_mode.load(Ordering::Relaxed)
-    }
-    fn store(current_task: &CurrentTask, value: bool) {
-        let proxy = fhps::SuspenderSynchronousProxy::from_channel(Self::connect_to_device_channel(
-            "suspender",
-        ));
-        let _ = proxy.force_lowest_power_mode(
-            &fhps::SuspenderForceLowestPowerModeRequest {
-                enable: Some(value),
-                ..Default::default()
-            },
-            zx::MonotonicInstant::INFINITE,
-        );
-        starnix_logging::log_info!("Set force_lowest_power_mode to {value}");
-        current_task.kernel().system_limits.force_lowest_power_mode.store(value, Ordering::Relaxed);
     }
 }

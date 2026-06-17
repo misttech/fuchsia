@@ -47,7 +47,6 @@ rustc_library("procfs") {
 
   deps = [
     "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
-    "//sdk/fidl/fuchsia.hardware.power.suspend:fuchsia.hardware.power.suspend_rust",
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
     "//sdk/fidl/fuchsia.net.interfaces.admin:fuchsia.net.interfaces.admin_rust",
     "//sdk/fidl/fuchsia.net.root:fuchsia.net.root_rust",
@@ -57,7 +56,6 @@ rustc_library("procfs") {
     "//sdk/rust/zx",
     "//src/connectivity/lib/net-types",
     "//src/connectivity/network/netlink",
-    "//src/lib/fdio/rust:fdio",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",

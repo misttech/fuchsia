@@ -6,7 +6,7 @@ use crate::mm::PAGE_SIZE;
 use crate::vfs::inotify::InotifyLimits;
 use starnix_sync::{IcmpPingGidsLock, LockDepMutex};
 use std::ops::Range;
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize};
+use std::sync::atomic::{AtomicI32, AtomicUsize};
 
 #[derive(Default, Debug)]
 pub struct SocketLimits {
@@ -42,11 +42,6 @@ pub struct SystemLimits {
     ///
     /// See https://docs.kernel.org/admin-guide/sysctl/kernel.html#io-uring-group
     pub io_uring_group: AtomicI32,
-
-    /// Whether or not the minimum power mode of the device is enabled.
-    ///
-    /// This is a transitional flag that does not exist on Linux.
-    pub force_lowest_power_mode: AtomicBool,
 }
 
 impl Default for SystemLimits {
@@ -64,7 +59,6 @@ impl Default for SystemLimits {
             pipe_max_size: AtomicUsize::new((*PAGE_SIZE * 256) as usize),
             io_uring_disabled: AtomicI32::new(0),
             io_uring_group: AtomicI32::new(-1),
-            force_lowest_power_mode: false.into(),
         }
     }
 }
