@@ -1860,6 +1860,273 @@ async fn test_activity_governor_take_application_activity_lease() -> Result<()> 
     Ok(())
 }
 
+// Places an element between (Execution State, Active) and (Application Activity, Active).
+#[fuchsia::test]
+async fn test_activity_governor_add_application_activity_dependency() -> Result<()> {
+    let (realm, _activity_governor_moniker) = create_realm().await?;
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+    let execution_state_manager =
+        realm.connect_to_protocol::<fsystem::ExecutionStateManagerMarker>().await?;
+
+    let topology = realm.connect_to_protocol::<fbroker::TopologyMarker>().await?;
+    let (element_runner_client, element_runner_server) =
+        create_endpoints::<fbroker::ElementRunnerMarker>();
+    let mut element_runner_stream = element_runner_server.into_stream();
+
+    let execution_state_token = execution_state_manager
+        .get_execution_state_dependency_token()
+        .await?
+        .dependency_token
+        .unwrap();
+
+    let test_element =
+        PowerElementContext::builder(&topology, "test_element", &[0, 1], element_runner_client)
+            .dependencies(vec![fbroker::LevelDependency {
+                dependent_level: Some(1),
+                requires_token: Some(execution_state_token),
+                requires_level_by_preference: Some(vec![
+                    fsystem::ExecutionStateLevel::Active.into_primitive(),
+                ]),
+                ..Default::default()
+            }])
+            .build()
+            .await?;
+
+    let dependency_token = test_element.assertive_dependency_token().unwrap();
+
+    execution_state_manager
+        .add_application_activity_dependency(
+            fsystem::ExecutionStateManagerAddApplicationActivityDependencyRequest {
+                dependency_token: Some(dependency_token),
+                power_level: Some(1),
+                ..Default::default()
+            },
+        )
+        .await?
+        .unwrap();
+
+    // Open status channel for test_element.
+    let (status_client, status_server) = fidl::endpoints::create_proxy::<fbroker::StatusMarker>();
+    test_element.element_control.open_status_channel(status_server)?;
+
+    // Start a no-op element runner.
+    let _runner_task = fasync::Task::local(async move {
+        while let Some(Ok(request)) = element_runner_stream.next().await {
+            match request {
+                fbroker::ElementRunnerRequest::SetLevel { responder, .. } => {
+                    responder.send().unwrap();
+                }
+                _ => {}
+            }
+        }
+    });
+
+    // Verify initial level is 0.
+    assert_eq!(status_client.watch_power_level().await?.unwrap(), 0);
+
+    // Trigger "boot complete" signal.
+    {
+        let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
+        let () =
+            boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
+    }
+
+    // Confirm the Application Activity dependency:
+    //  1. Take an Application Activity lease.
+    //  2. Confirm that the test element rises to level 1.
+    //  3. Drop the lease.
+    //  4. Confirm that the test element drops to level 0.
+    let lease_name = "test_app_activity_lease";
+    let lease = activity_governor.take_application_activity_lease(lease_name).await?;
+    assert_eq!(status_client.watch_power_level().await?.unwrap(), 1);
+    drop(lease);
+    assert_eq!(status_client.watch_power_level().await?.unwrap(), 0);
+
+    // Confirm the dependency on Execution State:
+    //  1. Confirm that Execution State starts at Inactive.
+    //  2. Lease the test element.
+    //  3. Confirm that Execution State rises to Active.
+    let element_info_provider = realm
+        .connect_to_service_instance::<fbroker::ElementInfoProviderServiceMarker>(
+            &"system_activity_governor",
+        )
+        .await
+        .expect("failed to connect to service ElementInfoProviderService")
+        .connect_to_status_provider()
+        .expect("failed to connect to protocol ElementInfoProvider");
+    let status_endpoints: HashMap<String, fbroker::StatusProxy> = element_info_provider
+        .get_status_endpoints()
+        .await?
+        .unwrap()
+        .into_iter()
+        .map(|s| (s.identifier.unwrap(), s.status.unwrap().into_proxy()))
+        .collect();
+    let es_status = status_endpoints.get("execution_state").unwrap();
+
+    // Wait for execution state to become Inactive. Depending on timing, we may see it in
+    // Active and Suspending.
+    let mut level = 0;
+    for _ in 0..2 {
+        level = es_status.watch_power_level().await?.unwrap();
+        if level == fsystem::ExecutionStateLevel::Inactive.into_primitive() {
+            break;
+        }
+    }
+    assert_eq!(level, fsystem::ExecutionStateLevel::Inactive.into_primitive());
+
+    let test_element_lease = self::lease(&test_element, 1).await?;
+    assert_eq!(
+        es_status.watch_power_level().await?.unwrap(),
+        fsystem::ExecutionStateLevel::Active.into_primitive()
+    );
+    drop(test_element_lease);
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_activity_governor_add_application_activity_dependency_errors() -> Result<()> {
+    let (realm, _activity_governor_moniker) = create_realm().await?;
+    let execution_state_manager =
+        realm.connect_to_protocol::<fsystem::ExecutionStateManagerMarker>().await?;
+
+    let topology = realm.connect_to_protocol::<fbroker::TopologyMarker>().await?;
+    let (element_runner_client, _element_runner_server) =
+        create_endpoints::<fbroker::ElementRunnerMarker>();
+
+    let execution_state_token = execution_state_manager
+        .get_execution_state_dependency_token()
+        .await?
+        .dependency_token
+        .unwrap();
+
+    let test_element =
+        PowerElementContext::builder(&topology, "test_element", &[0, 1], element_runner_client)
+            .dependencies(vec![fbroker::LevelDependency {
+                dependent_level: Some(1),
+                requires_token: Some(execution_state_token),
+                requires_level_by_preference: Some(vec![
+                    fsystem::ExecutionStateLevel::Active.into_primitive(),
+                ]),
+                ..Default::default()
+            }])
+            .build()
+            .await?;
+
+    let dependency_token = test_element.assertive_dependency_token().unwrap();
+
+    // Trigger AlreadyExists by adding the dependency twice.
+    execution_state_manager
+        .add_application_activity_dependency(
+            fsystem::ExecutionStateManagerAddApplicationActivityDependencyRequest {
+                dependency_token: Some(dependency_token.duplicate_handle(zx::Rights::SAME_RIGHTS)?),
+                power_level: Some(1),
+                ..Default::default()
+            },
+        )
+        .await?
+        .unwrap();
+
+    let res = execution_state_manager
+        .add_application_activity_dependency(
+            fsystem::ExecutionStateManagerAddApplicationActivityDependencyRequest {
+                dependency_token: Some(dependency_token.duplicate_handle(zx::Rights::SAME_RIGHTS)?),
+                power_level: Some(1),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(res, Err(fsystem::AddApplicationActivityDependencyError::AlreadyExists));
+
+    // Trigger Invalid by providing an invalid power level with a valid token.
+    let res = execution_state_manager
+        .add_application_activity_dependency(
+            fsystem::ExecutionStateManagerAddApplicationActivityDependencyRequest {
+                dependency_token: Some(dependency_token),
+                power_level: Some(99),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(res, Err(fsystem::AddApplicationActivityDependencyError::Invalid));
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_execution_state_manager_requests_queued_before_sag_initialized() -> Result<()> {
+    let (realm, _activity_governor_moniker) = create_realm_ext(ftest::RealmOptions {
+        wait_for_suspending_token: Some(true),
+        ..Default::default()
+    })
+    .await?;
+
+    let execution_state_manager =
+        realm.connect_to_protocol::<fsystem::ExecutionStateManagerMarker>().await?;
+    let cpu_element_manager =
+        realm.connect_to_protocol::<fsystem::CpuElementManagerMarker>().await?;
+    let topology = realm.connect_to_protocol::<fbroker::TopologyMarker>().await?;
+    let (element_runner_client, _element_runner_server) =
+        create_endpoints::<fbroker::ElementRunnerMarker>();
+
+    let (cpu_driver_controller, _, _cpu_driver_task) =
+        create_cpu_driver_topology(&realm).await.unwrap();
+    let cpu_driver_token = cpu_driver_controller.assertive_dependency_token().unwrap();
+
+    let test_element = PowerElementContext::builder(
+        &topology,
+        "test_element_queued",
+        &[0, 1],
+        element_runner_client,
+    )
+    .build()
+    .await?;
+    let dependency_token = test_element.assertive_dependency_token().unwrap();
+
+    // Invoke ExecutionStateManager methods. Since SAG is not initialized yet (waiting for
+    // suspending token), these calls should queue and block.
+    let token_fut = execution_state_manager.get_execution_state_dependency_token();
+    let dep_fut = execution_state_manager.add_application_activity_dependency(
+        fsystem::ExecutionStateManagerAddApplicationActivityDependencyRequest {
+            dependency_token: Some(dependency_token),
+            power_level: Some(1),
+            ..Default::default()
+        },
+    );
+
+    // Verify that the futures are blocked and don't complete within a short window
+    let mut token_fut = token_fut.boxed_local().fuse();
+    let mut dep_fut = dep_fut.boxed_local().fuse();
+    let mut timer =
+        Box::pin(fasync::Timer::new(fasync::MonotonicDuration::from_millis(200))).fuse();
+    futures::select! {
+        _ = token_fut => panic!("token_fut completed prematurely"),
+        _ = dep_fut => panic!("dep_fut completed prematurely"),
+        _ = timer => {}, // Expected: timer fires first because the futures are queued/blocked
+    }
+
+    // Initialize SAG by providing the execution state dependency to CpuElementManager.
+    cpu_element_manager
+        .add_execution_state_dependency(
+            fsystem::CpuElementManagerAddExecutionStateDependencyRequest {
+                dependency_token: Some(cpu_driver_token),
+                power_level: Some(1),
+                ..Default::default()
+            },
+        )
+        .await?
+        .unwrap();
+
+    // Now that SAG is initialized, the queued calls should complete.
+    let execution_state_token_res = token_fut.await?;
+    assert!(execution_state_token_res.dependency_token.is_some());
+
+    let add_dep_res = dep_fut.await?;
+    assert_eq!(add_dep_res, Ok(()));
+
+    Ok(())
+}
+
 async fn get_diagnostics_hierarchy_for(moniker: &str) -> Result<DiagnosticsHierarchy> {
     let mut reader = ArchiveReader::inspect();
     reader

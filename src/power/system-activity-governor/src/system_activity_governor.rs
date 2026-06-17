@@ -1406,6 +1406,35 @@ impl SystemActivityGovernor {
         }
     }
 
+    pub async fn handle_execution_state_manager_stream(
+        self: Rc<Self>,
+        mut stream: fsystem::ExecutionStateManagerRequestStream,
+    ) {
+        // Before handling requests, ensure power elements are initialized and handlers are running.
+        self.is_running_signal.wait().await;
+        while let Some(request) = stream.next().await {
+            match request {
+                Ok(fsystem::ExecutionStateManagerRequest::GetExecutionStateDependencyToken {
+                    responder,
+                }) => {
+                    self.handle_get_execution_state_dependency_token(responder);
+                }
+                Ok(fsystem::ExecutionStateManagerRequest::AddApplicationActivityDependency {
+                    payload,
+                    responder,
+                }) => {
+                    self.handle_add_application_activity_dependency(responder, payload).await;
+                }
+                Ok(fsystem::ExecutionStateManagerRequest::_UnknownMethod { ordinal, .. }) => {
+                    log::warn!(ordinal:?; "Unknown ExecutionStateManagerRequest method");
+                }
+                Err(error) => {
+                    log::error!(error:?; "Error handling ExecutionStateManager request stream");
+                }
+            }
+        }
+    }
+
     pub(crate) fn handle_get_power_elements(
         &self,
         responder: fsystem::ActivityGovernorGetPowerElementsResponder,
@@ -1426,6 +1455,25 @@ impl SystemActivityGovernor {
             log::warn!(
                 error:?;
                 "Encountered error while responding to GetPowerElements request"
+            );
+        }
+    }
+
+    pub(crate) fn handle_get_execution_state_dependency_token(
+        &self,
+        responder: fsystem::ExecutionStateManagerGetExecutionStateDependencyTokenResponder,
+    ) {
+        let result = responder.send(fsystem::ExecutionState {
+            dependency_token: Some(
+                self.execution_state.assertive_dependency_token().expect("token not registered"),
+            ),
+            ..Default::default()
+        });
+
+        if let Err(error) = result {
+            log::warn!(
+                error:?;
+                "Encountered error while responding to GetExecutionStateDependencyToken request"
             );
         }
     }
@@ -1628,20 +1676,65 @@ impl SystemActivityGovernor {
         let _ = responder.send(res);
     }
 
+    async fn handle_add_application_activity_dependency(
+        &self,
+        responder: fsystem::ExecutionStateManagerAddApplicationActivityDependencyResponder,
+        payload: fsystem::ExecutionStateManagerAddApplicationActivityDependencyRequest,
+    ) {
+        let res = match (payload.dependency_token, payload.power_level) {
+            (Some(dependency_token), Some(power_level)) => {
+                match self
+                    .application_activity
+                    .element_control
+                    .add_dependency(fbroker::LevelDependency {
+                        dependent_level: Some(
+                            fsystem::ApplicationActivityLevel::Active.into_primitive(),
+                        ),
+                        requires_token: Some(dependency_token),
+                        requires_level_by_preference: Some(vec![power_level]),
+                        remove_with_required_element: Some(true),
+                        ..Default::default()
+                    })
+                    .await
+                {
+                    Ok(Ok(())) => Ok(()),
+                    Ok(Err(e)) => {
+                        log::warn!("Failed to add dependency; Power Broker error: {:?}", e);
+                        let err = match e {
+                            fbroker::ModifyDependencyError::AlreadyExists => {
+                                fsystem::AddApplicationActivityDependencyError::AlreadyExists
+                            }
+                            fbroker::ModifyDependencyError::Invalid => {
+                                fsystem::AddApplicationActivityDependencyError::Invalid
+                            }
+                            _ => fsystem::AddApplicationActivityDependencyError::Internal,
+                        };
+                        Err(err)
+                    }
+                    Err(e) => {
+                        log::warn!("FIDL error adding dependency: {:?}", e);
+                        Err(fsystem::AddApplicationActivityDependencyError::Internal)
+                    }
+                }
+            }
+            _ => Err(fsystem::AddApplicationActivityDependencyError::Invalid),
+        };
+        let _ = responder.send(res);
+    }
+
     pub(crate) async fn process_accumulated_requests(
         &self,
         wake_leases: Vec<StoredWakeLease>,
         suspend_blockers: Vec<StoredSuspendBlocker>,
         application_activity_leases: Vec<StoredApplicationActivityLease>,
-    ) -> (
-        Vec<Result<(), anyhow::Error>>,
-        Vec<Result<(), anyhow::Error>>,
-        Vec<Result<(), anyhow::Error>>,
+        add_application_activity_dependencies: Vec<(
+            fsystem::ExecutionStateManagerAddApplicationActivityDependencyRequest,
+            fsystem::ExecutionStateManagerAddApplicationActivityDependencyResponder,
+        )>,
     ) {
         log::info!("Processing accumulated requests in SAG...");
 
         // Check if the peer closed the other side before making a wake lease.
-        let mut lease_results = Vec::new();
         for lease in wake_leases {
             match lease
                 .server_token
@@ -1652,7 +1745,6 @@ impl SystemActivityGovernor {
                         "Token already closed for accumulated lease '{}', skipping",
                         lease.name
                     );
-                    lease_results.push(Ok(()));
                     continue;
                 }
                 _ => {}
@@ -1672,10 +1764,8 @@ impl SystemActivityGovernor {
                     "Encountered error while registering accumulated wake lease for {0}", lease.name
                 );
             }
-            lease_results.push(res);
         }
 
-        let mut blocker_results = Vec::new();
         for blocker in suspend_blockers {
             let proxy = blocker.suspend_blocker;
             let name = blocker.name;
@@ -1709,10 +1799,8 @@ impl SystemActivityGovernor {
                     "Encountered error while registering accumulated suspend blocker for '{0}'", name
                 );
             }
-            blocker_results.push(res);
         }
 
-        let mut app_activity_results = Vec::new();
         for lease in application_activity_leases {
             let res = self
                 .lease_manager
@@ -1729,10 +1817,11 @@ impl SystemActivityGovernor {
                     lease.name
                 );
             }
-            app_activity_results.push(res);
         }
 
-        (lease_results, blocker_results, app_activity_results)
+        for (payload, responder) in add_application_activity_dependencies {
+            self.handle_add_application_activity_dependency(responder, payload).await;
+        }
     }
 
     pub async fn handle_boot_control_stream(

@@ -28,6 +28,14 @@ pub struct ActivityGovernorRequestFrontend {
     stored_application_activity_leases:
         RefCell<Vec<crate::system_activity_governor::StoredApplicationActivityLease>>,
     get_power_elements_queue: RefCell<Vec<fsystem::ActivityGovernorGetPowerElementsResponder>>,
+    get_execution_state_dependency_token_queue:
+        RefCell<Vec<fsystem::ExecutionStateManagerGetExecutionStateDependencyTokenResponder>>,
+    add_application_activity_dependency_queue: RefCell<
+        Vec<(
+            fsystem::ExecutionStateManagerAddApplicationActivityDependencyRequest,
+            fsystem::ExecutionStateManagerAddApplicationActivityDependencyResponder,
+        )>,
+    >,
 }
 
 impl ActivityGovernorRequestFrontend {
@@ -38,6 +46,8 @@ impl ActivityGovernorRequestFrontend {
             stored_suspend_blockers: RefCell::new(Vec::new()),
             stored_application_activity_leases: RefCell::new(Vec::new()),
             get_power_elements_queue: RefCell::new(Vec::new()),
+            get_execution_state_dependency_token_queue: RefCell::new(Vec::new()),
+            add_application_activity_dependency_queue: RefCell::new(Vec::new()),
         }
     }
 
@@ -66,6 +76,30 @@ impl ActivityGovernorRequestFrontend {
         };
 
         sag.clone().handle_activity_governor_stream(stream).await;
+    }
+
+    pub async fn handle_execution_state_manager_stream(
+        self: Rc<Self>,
+        mut stream: fsystem::ExecutionStateManagerRequestStream,
+    ) {
+        let self_clone = self.clone();
+        let sag_available_fut = self_clone.sag.wait().fuse();
+        pin_mut!(sag_available_fut);
+
+        let sag = loop {
+            let mut next_request = stream.next().fuse();
+            let result = select_biased! {
+                sag = sag_available_fut => break sag,
+                next_request = next_request => next_request,
+            };
+
+            match result {
+                Some(request) => self.clone().handle_execution_state_manager_request(request).await,
+                None => return,
+            }
+        };
+
+        sag.clone().handle_execution_state_manager_stream(stream).await;
     }
 
     /// Handles the requests for the `fuchsia.power.system.ActivityGovernor` protocol.
@@ -155,18 +189,56 @@ impl ActivityGovernorRequestFrontend {
         }
     }
 
+    async fn handle_execution_state_manager_request(
+        &self,
+        request: Result<fsystem::ExecutionStateManagerRequest, fidl::Error>,
+    ) {
+        match request {
+            Ok(fsystem::ExecutionStateManagerRequest::GetExecutionStateDependencyToken {
+                responder,
+            }) => {
+                self.get_execution_state_dependency_token_queue.borrow_mut().push(responder);
+            }
+            Ok(fsystem::ExecutionStateManagerRequest::AddApplicationActivityDependency {
+                payload,
+                responder,
+            }) => {
+                self.add_application_activity_dependency_queue
+                    .borrow_mut()
+                    .push((payload, responder));
+            }
+            Ok(fsystem::ExecutionStateManagerRequest::_UnknownMethod { ordinal, .. }) => {
+                log::warn!(ordinal:?; "Unknown ExecutionStateManagerRequest method in frontend");
+            }
+            Err(error) => {
+                log::error!(error:?; "Error handling ExecutionStateManager request stream in frontend");
+            }
+        }
+    }
+
     fn drain_accumulated_requests(
         &self,
     ) -> (
         Vec<StoredWakeLease>,
         Vec<StoredSuspendBlocker>,
         Vec<crate::system_activity_governor::StoredApplicationActivityLease>,
+        Vec<(
+            fsystem::ExecutionStateManagerAddApplicationActivityDependencyRequest,
+            fsystem::ExecutionStateManagerAddApplicationActivityDependencyResponder,
+        )>,
     ) {
         let wake_leases = self.stored_wake_leases.borrow_mut().split_off(0);
         let suspend_blockers = self.stored_suspend_blockers.borrow_mut().split_off(0);
         let application_activity_leases =
             self.stored_application_activity_leases.borrow_mut().split_off(0);
-        (wake_leases, suspend_blockers, application_activity_leases)
+        let add_application_activity_dependencies =
+            self.add_application_activity_dependency_queue.borrow_mut().split_off(0);
+        (
+            wake_leases,
+            suspend_blockers,
+            application_activity_leases,
+            add_application_activity_dependencies,
+        )
     }
 
     pub async fn create_sag(
@@ -201,27 +273,37 @@ impl ActivityGovernorRequestFrontend {
         self.sag.set(sag.clone()).await.unwrap_or_else(|_| panic!("SAG OnceCell already set"));
 
         // Flush accumulated requests.
-        let (wake_leases, suspend_blockers, application_activity_leases) =
-            self.drain_accumulated_requests();
+        let (
+            wake_leases,
+            suspend_blockers,
+            application_activity_leases,
+            add_application_activity_dependencies,
+        ) = self.drain_accumulated_requests();
 
         // Process leases and suspend blockers in a spawned task since they may require relatively
         // lengthy interaction.
         let sag_clone = sag.clone();
         fasync::Task::local(async move {
-            let _ = sag_clone
+            sag_clone
                 .process_accumulated_requests(
                     wake_leases,
                     suspend_blockers,
                     application_activity_leases,
+                    add_application_activity_dependencies,
                 )
                 .await;
         })
         .detach();
 
-        // GetPowerElements is fast, so just do all the work here.
+        // GetPowerElements and GetExecutionStateDependencyToken are fast, so just do all the work
+        // here.
         let queue = self.get_power_elements_queue.borrow_mut().split_off(0);
         for responder in queue {
             sag.handle_get_power_elements(responder);
+        }
+        let queue = self.get_execution_state_dependency_token_queue.borrow_mut().split_off(0);
+        for responder in queue {
+            sag.handle_get_execution_state_dependency_token(responder);
         }
 
         Ok(())
@@ -318,7 +400,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_get_power_elements_queue_accumulation() {
+    async fn test_get_power_elements_accumulation() {
         let sag_cell = Rc::new(OnceCell::new());
         let frontend = Rc::new(ActivityGovernorRequestFrontend::new(sag_cell));
 
@@ -340,40 +422,129 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_drain_accumulated_requests() {
+    async fn test_get_execution_state_dependency_token_accumulation() {
         let sag_cell = Rc::new(OnceCell::new());
-        let frontend = ActivityGovernorRequestFrontend::new(sag_cell);
+        let frontend = Rc::new(ActivityGovernorRequestFrontend::new(sag_cell));
 
-        // Manually populate the queues
-        frontend.stored_wake_leases.borrow_mut().push(StoredWakeLease {
-            name: "test_lease".to_string(),
-            server_token: fsystem::LeaseToken::create().0,
-            is_unmonitored: false,
+        let (proxy, stream) = create_proxy_and_stream::<fsystem::ExecutionStateManagerMarker>();
+
+        let frontend_clone = frontend.clone();
+        let _task = fasync::Task::local(async move {
+            frontend_clone.handle_execution_state_manager_stream(stream).await;
         });
 
-        frontend.stored_suspend_blockers.borrow_mut().push(StoredSuspendBlocker {
-            name: "test_blocker".to_string(),
-            suspend_blocker: fidl::endpoints::create_endpoints::<fsystem::SuspendBlockerMarker>()
-                .0
-                .into_proxy(),
-            server_token: fsystem::LeaseToken::create().0,
+        let _token = proxy.get_execution_state_dependency_token();
+
+        loop {
+            if frontend.get_execution_state_dependency_token_queue.borrow().len() == 1 {
+                break;
+            }
+            fasync::Timer::new(fasync::MonotonicDuration::from_millis(100)).await;
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_add_application_activity_dependency_accumulation() {
+        let sag_cell = Rc::new(OnceCell::new());
+        let frontend = Rc::new(ActivityGovernorRequestFrontend::new(sag_cell));
+
+        let (proxy, stream) = create_proxy_and_stream::<fsystem::ExecutionStateManagerMarker>();
+
+        let frontend_clone = frontend.clone();
+        let _task = fasync::Task::local(async move {
+            frontend_clone.handle_execution_state_manager_stream(stream).await;
         });
 
-        frontend.stored_application_activity_leases.borrow_mut().push(
-            crate::system_activity_governor::StoredApplicationActivityLease {
-                name: "test_app_lease".to_string(),
-                server_token: fsystem::LeaseToken::create().0,
+        let event = zx::Event::create();
+        let _ = proxy.add_application_activity_dependency(
+            fsystem::ExecutionStateManagerAddApplicationActivityDependencyRequest {
+                dependency_token: Some(event),
+                power_level: Some(1),
+                ..Default::default()
             },
         );
 
-        let (wake_leases, suspend_blockers, application_activity_leases) =
-            frontend.drain_accumulated_requests();
+        loop {
+            if frontend.add_application_activity_dependency_queue.borrow().len() == 1 {
+                break;
+            }
+            fasync::Timer::new(fasync::MonotonicDuration::from_millis(100)).await;
+        }
+
+        assert_eq!(
+            frontend.add_application_activity_dependency_queue.borrow()[0].0.power_level,
+            Some(1)
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_drain_accumulated_requests() {
+        let sag_cell = Rc::new(OnceCell::new());
+        let frontend = Rc::new(ActivityGovernorRequestFrontend::new(sag_cell));
+
+        // Accumulate ActivityGovernor requests.
+        let (ag_proxy, ag_stream) = create_proxy_and_stream::<fsystem::ActivityGovernorMarker>();
+        let frontend_clone = frontend.clone();
+        let _ag_task = fasync::Task::local(async move {
+            frontend_clone.handle_activity_governor_stream(ag_stream).await;
+        });
+
+        let _token = ag_proxy.acquire_wake_lease("test_lease");
+
+        let (client_end, _server_end) =
+            fidl::endpoints::create_endpoints::<fsystem::SuspendBlockerMarker>();
+        let _ = ag_proxy.register_suspend_blocker(
+            fsystem::ActivityGovernorRegisterSuspendBlockerRequest {
+                suspend_blocker: Some(client_end),
+                name: Some("test_blocker".to_string()),
+                ..Default::default()
+            },
+        );
+
+        let _token = ag_proxy.take_application_activity_lease("test_app_lease");
+
+        // Accumulate ExecutionStateManager requests.
+        let (esm_proxy, stream) = create_proxy_and_stream::<fsystem::ExecutionStateManagerMarker>();
+
+        let frontend_clone = frontend.clone();
+        let _task = fasync::Task::local(async move {
+            frontend_clone.handle_execution_state_manager_stream(stream).await;
+        });
+
+        let event = zx::Event::create();
+        let _ = esm_proxy.add_application_activity_dependency(
+            fsystem::ExecutionStateManagerAddApplicationActivityDependencyRequest {
+                dependency_token: Some(event),
+                power_level: Some(1),
+                ..Default::default()
+            },
+        );
+
+        loop {
+            if frontend.stored_wake_leases.borrow().len() == 1
+                && frontend.stored_suspend_blockers.borrow().len() == 1
+                && frontend.stored_application_activity_leases.borrow().len() == 1
+                && frontend.add_application_activity_dependency_queue.borrow().len() == 1
+            {
+                break;
+            }
+            fasync::Timer::new(fasync::MonotonicDuration::from_millis(100)).await;
+        }
+
+        let (
+            wake_leases,
+            suspend_blockers,
+            application_activity_leases,
+            add_application_activity_dependencies,
+        ) = frontend.drain_accumulated_requests();
 
         assert_eq!(wake_leases.len(), 1);
         assert_eq!(suspend_blockers.len(), 1);
         assert_eq!(application_activity_leases.len(), 1);
+        assert_eq!(add_application_activity_dependencies.len(), 1);
         assert!(frontend.stored_wake_leases.borrow().is_empty());
         assert!(frontend.stored_suspend_blockers.borrow().is_empty());
         assert!(frontend.stored_application_activity_leases.borrow().is_empty());
+        assert!(frontend.add_application_activity_dependency_queue.borrow().is_empty());
     }
 }

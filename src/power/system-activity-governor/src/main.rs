@@ -67,6 +67,7 @@ async fn connect_to_interrupt_attributor() -> Result<ffhpb::InterruptAttributorP
 
 enum IncomingService {
     ActivityGovernor(fsystem::ActivityGovernorRequestStream),
+    ExecutionStateManager(fsystem::ExecutionStateManagerRequestStream),
     BootControl(fsystem::BootControlRequestStream),
     CpuElementManager(fsystem::CpuElementManagerRequestStream),
     Stats(fsuspend::StatsRequestStream),
@@ -86,6 +87,7 @@ where
     service_fs
         .dir("svc")
         .add_fidl_service(IncomingService::ActivityGovernor)
+        .add_fidl_service(IncomingService::ExecutionStateManager)
         .add_fidl_service(IncomingService::BootControl)
         .add_fidl_service(IncomingService::Stats)
         .add_fidl_service(IncomingService::CpuElementManager)
@@ -109,6 +111,9 @@ where
                 match request {
                     IncomingService::ActivityGovernor(stream) => {
                         front_end.handle_activity_governor_stream(stream).await
+                    }
+                    IncomingService::ExecutionStateManager(stream) => {
+                        front_end.handle_execution_state_manager_stream(stream).await
                     }
                     IncomingService::BootControl(stream) => {
                         cpu_service

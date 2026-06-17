@@ -18,6 +18,7 @@
                 "fuchsia.power.system.ActivityGovernor",
                 "fuchsia.power.system.BootControl",
                 "fuchsia.power.system.CpuElementManager",
+                "fuchsia.power.system.ExecutionStateManager",
             ],
         },
         {
@@ -165,6 +166,7 @@
                 "fuchsia.power.system.ActivityGovernor",
                 "fuchsia.power.system.BootControl",
                 "fuchsia.power.system.CpuElementManager",
+                "fuchsia.power.system.ExecutionStateManager",
             ],
             from: "self",
         },

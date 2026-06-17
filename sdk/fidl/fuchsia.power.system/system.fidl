@@ -101,6 +101,12 @@ type Cpu = resource table {
     1: assertive_dependency_token fuchsia.power.broker.DependencyToken;
 };
 
+/// Holds the dependency token for the Execution State power element.
+@available(added=HEAD)
+type ExecutionState = resource table {
+    1: dependency_token fuchsia.power.broker.DependencyToken;
+};
+
 /// CPU power levels
 ///
 /// Elements should take an assertive dependency on `CpuLevel::ACTIVE`
@@ -145,6 +151,18 @@ type AddExecutionStateDependencyError = flexible enum {
     INVALID_ARGS = 1;
     /// The server is not in a state to handle the request.
     BAD_STATE = 2;
+};
+
+/// Error codes for responses from `AddApplicationActivityDependency` in
+/// [`fuchsia.power.system/ActivityGovernor`].
+@available(added=HEAD)
+type AddApplicationActivityDependencyError = flexible enum {
+    /// The dependency already exists.
+    ALREADY_EXISTS = 1;
+    /// Required arguments are either not given or are not valid.
+    INVALID = 2;
+    /// The service encountered an error while attempting to add the dependency.
+    INTERNAL = 3;
 };
 
 /// Error codes for responses from `RegisterSuspendBlocker` in
@@ -332,6 +350,31 @@ open protocol ActivityGovernor {
         /// The token that blocks hardware platform suspension.
         token LeaseToken;
     }) error RegisterSuspendBlockerError;
+};
+
+/// A service for exposing execution state management capabilities.
+@available(added=HEAD)
+@discoverable
+open protocol ExecutionStateManager {
+    /// Gets the dependency token for the execution state power element. This will block if SAG
+    /// is not fully initialized.
+    flexible GetExecutionStateDependencyToken() -> (ExecutionState);
+
+    /// Adds a dependency from the Application Activity power element to the target
+    /// power element identified by [`dependency_token`] at [`power_level`].
+    /// Be aware of the following client-side conditions:
+    ///  - If SAG is not fully initialized, the call blocks until initialization is complete.
+    ///  - The call may block as required by `fuchsia.power.broker/ElementControl.AddDependency`,
+    ///    which at time of writing may call `fuchsia.power.ElementControl.SetLevel` on the
+    ///    associated power element.
+    flexible AddApplicationActivityDependency(resource table {
+        /// The dependency token representing the target power element of this dependency.
+        /// Required.
+        1: dependency_token fuchsia.power.broker.DependencyToken;
+        /// The power level of the target power element.
+        /// Required.
+        2: power_level fuchsia.power.broker.PowerLevel;
+    }) -> () error AddApplicationActivityDependencyError;
 };
 
 /// A service that processes notification about the system boot state.
