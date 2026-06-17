@@ -126,6 +126,7 @@ python_library("honeydew_no_testonly") {
     "auxiliary_devices/power_switch/power_switch_using_dmc.py",
     "auxiliary_devices/power_switch/power_switch_using_pdu.py",
     "auxiliary_devices/usb_power_hub/__init__.py",
+    "auxiliary_devices/usb_power_hub/linux_virtual_usb_hub.py",
     "auxiliary_devices/usb_power_hub/usb_power_hub.py",
     "auxiliary_devices/usb_power_hub/usb_power_hub_using_dmc.py",
     "errors.py",
