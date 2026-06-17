@@ -12,6 +12,22 @@
                     "fuchsia.BIND_PLATFORM_DEV_INSTANCE_ID": "0",
                     "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.amlogic.platform.BIND_PLATFORM_DEV_VID.AMLOGIC"
                 }
+            },
+            {
+                "name": "DevicetreeMatch",
+                "expected": "match",
+                "device": {
+                    "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE",
+                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"amlogic,secure-mem\""
+                }
+            },
+            {
+                "name": "DevicetreeWrongCompatible",
+                "expected": "abort",
+                "device": {
+                    "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE",
+                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"amlogic,wrong-secure-mem\""
+                }
             }
         ]
     },
