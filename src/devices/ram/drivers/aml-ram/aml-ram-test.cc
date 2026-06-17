@@ -70,7 +70,7 @@ class AmlRamDeviceTest : public zxtest::Test {
     });
     ASSERT_NO_FATAL_FAILURE();
     fake_parent_->AddFidlService(fuchsia_hardware_platform_device::Service::Name,
-                                 std::move(outgoing_endpoints.client));
+                                 std::move(outgoing_endpoints.client), "pdev");
 
     EXPECT_OK(amlogic_ram::AmlRam::Create(nullptr, fake_parent_.get()));
   }

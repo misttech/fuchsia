@@ -68,7 +68,7 @@ TEST_F(DeviceEnumerationTest, NelsonTest) {
 
       "gpio-h.aml_gpio_h.aml-gpio.gpio.gpio-82.spi_1.aml-spi-1.spi.spi-1-0.selina-composite.selina",
 
-      "aml-ram-ctl.ram",
+      "aml-ram-ctl.aml_ram.ram",
 
       // Thermistor/ADC
       "03_0a_27.thermistor.thermistor-device.therm-thread",

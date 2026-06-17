@@ -48,7 +48,7 @@ TEST_F(DeviceEnumerationTest, SherlockTest) {
       "i2c-0.aml-i2c.i2c.i2c-0-57.tcs3400_light.tcs-3400",
       "aml-secure-mem.aml_securemem.aml-securemem",
       "pwm.amlogic_pwm.aml-pwm-device.pwm-4.pwm_init",
-      "aml-ram-ctl.ram",
+      "aml-ram-ctl.aml_ram.ram",
       "registers",  // registers device
 
       // CPU Devices.

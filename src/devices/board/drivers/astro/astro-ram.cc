@@ -6,10 +6,16 @@
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
+#include <lib/driver/component/cpp/composite_node_spec.h>
+#include <lib/driver/component/cpp/node_add_args.h>
 
 #include <soc/aml-s905d2/s905d2-hw.h>
 
 #include "astro.h"
+
+namespace fdf {
+using namespace fuchsia_driver_framework;
+}  // namespace fdf
 
 namespace astro {
 namespace fpbus = fuchsia_hardware_platform_bus;
@@ -50,14 +56,17 @@ static const fpbus::Node ramctl_dev = []() {
 zx_status_t Astro::RamCtlInit() {
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('RAMC');
-  auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, ramctl_dev));
+  auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(
+      fidl::ToWire(fidl_arena, ramctl_dev),
+      fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
+                                   {.name = "aml_ram", .parents2 = {}}}));
   if (!result.ok()) {
-    zxlogf(ERROR, "%s: NodeAdd RamCtl(ramctl_dev) request failed: %s", __func__,
+    zxlogf(ERROR, "%s: AddCompositeNodeSpec RamCtl(ramctl_dev) request failed: %s", __func__,
            result.FormatDescription().data());
     return result.status();
   }
   if (result->is_error()) {
-    zxlogf(ERROR, "%s: NodeAdd RamCtl(ramctl_dev) failed: %s", __func__,
+    zxlogf(ERROR, "%s: AddCompositeNodeSpec RamCtl(ramctl_dev) failed: %s", __func__,
            zx_status_get_string(result->error_value()));
     return result->error_value();
   }
