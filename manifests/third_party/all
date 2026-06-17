@@ -218,7 +218,7 @@
              path="third_party/glslang/src"
              remote="https://fuchsia.googlesource.com/third_party/glslang"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="48526e7fe330553c9b20fbedd02eed612cc35291"/>
+             revision="92fb730717168ccb53f1e6863816c901f80b8fd8"/>
     <project name="third_party/github.com/google/googletest"
              path="third_party/googletest/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/google/googletest"
