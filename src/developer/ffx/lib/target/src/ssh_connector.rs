@@ -176,9 +176,7 @@ impl SshConnector {
             FDomainConnectionError::NotSupported => {
                 TargetConnectionError::Fatal(anyhow::anyhow!("FDomain not supported"))
             }
-            FDomainConnectionError::ConnectionError(other) => {
-                TargetConnectionError::Fatal(anyhow::anyhow!("Connection error: {other:?}"))
-            }
+            FDomainConnectionError::ConnectionError(other) => other,
         })
     }
 

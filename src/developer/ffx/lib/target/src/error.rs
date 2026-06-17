@@ -66,10 +66,10 @@ pub enum FfxTargetCrateError {
     #[error("Invalid network interface ID: {0}")]
     InvalidInterfaceId(#[from] netext::InvalidInterfaceIdError),
 
-    #[error("FIDL error: {0}")]
+    #[error("FIDL error")]
     Fidl(#[from] fidl::Error),
 
-    #[error("Temporary fallback error: {0}")]
+    #[error(transparent)]
     Fallback(#[from] anyhow::Error),
 }
 

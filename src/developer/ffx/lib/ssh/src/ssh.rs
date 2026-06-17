@@ -24,11 +24,11 @@ pub const CONNECTION_ATTEMPTS_CONFIG: &str = "ssh.connection_attempts";
 pub enum SshCommandError {
     #[error("Missing SSH command")]
     MissingSshCommand,
-    #[error("SSH configuration error: {0}")]
+    #[error("SSH configuration error")]
     Config(#[from] crate::config::SshConfigError),
-    #[error("FFX configuration error: {0}")]
+    #[error("FFX configuration error")]
     FfxConfig(#[from] ffx_config::ConfigError),
-    #[error("ControlMaster management error: {0}")]
+    #[error("ControlMaster management error")]
     ControlMaster(#[from] ManageSshControlMasterError),
 }
 
@@ -250,11 +250,11 @@ pub enum ManageSshControlMasterError {
     ControlMasterDirNotSpecified,
     #[error("ssh ControlMaster path was not specified")]
     ControlMasterPathNotSpecified,
-    #[error("Error parsing ssh ControlMaster mode: {0}")]
+    #[error("Error parsing ssh ControlMaster mode")]
     ParseError(#[from] ParseControlMasterModeError),
-    #[error("Error reading configuration: {0}")]
+    #[error("Error reading configuration")]
     ConfigError(#[from] ffx_config::ConfigError),
-    #[error("Error spawning ssh control master: {0}")]
+    #[error("Error spawning ssh control master")]
     SpawnError(#[from] SpawnControlMasterError),
 }
 
@@ -262,13 +262,13 @@ const MAX_SOCKET_LEN: usize = 100;
 
 #[derive(Error, Debug)]
 pub enum SpawnControlMasterError {
-    #[error("parsing ssh configuration: {0}")]
+    #[error("parsing ssh configuration")]
     ParseSshConfig(#[from] crate::config::SshConfigError),
     #[error("Socket path \"{path}\" is too long. Maximum is {max_allowed}")]
     SocketPathTooLong { path: PathBuf, max_allowed: usize },
-    #[error("failed to start: {0}")]
+    #[error("failed to start")]
     ControlMasterStartError(#[source] SshError),
-    #[error("io error: {0}")]
+    #[error("io error")]
     IOError(#[from] std::io::Error),
 }
 
