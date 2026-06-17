@@ -5,6 +5,7 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/cpp/library_headers.gni")
+import("//build/rust/rustc_library.gni")
 import("//build/zircon/zircon_cpu.gni")
 
 source_set("platform") {
@@ -78,4 +79,17 @@ group("kernel-tests") {
   } else if (current_cpu == "x64") {
     deps += [ "pc:kernel-tests" ]
   }
+}
+
+source_set("ffi") {
+  sources = [ "timer_ffi.cc" ]
+  deps = [ "//zircon/kernel/lib/ktl" ]
+}
+
+rustc_library("platform-rs") {
+  edition = "2024"
+  name = "platform_rs"
+  source_root = "timer.rs"
+  sources = [ "timer.rs" ]
+  non_rust_deps = [ ":ffi" ]
 }
