@@ -30,6 +30,7 @@ test = [
 guidelines = [
     "coverage==7.2.7",        # for measuring code coverage using unit tests
     "pylint==2.17.4",         # for code linting
+    "ty==0.0.49",             # static type checker for Python
 ]
 
 [tool.setuptools.packages.find]

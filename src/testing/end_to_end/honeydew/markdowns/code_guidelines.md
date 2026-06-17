@@ -49,7 +49,7 @@ To help facilitate #2, Honeydew relies on [Google Python Style Guide]
   - Sort the imports using [isort]
   - Formatting using [black]
   - Linting using [pylint] (static code analysis for Python)
-  - Type checking using [mypy] (static type checker for Python)
+  - Type checking using [mypy] and [ty] (static type checkers for Python)
 
 To ease the development workflow, we have
 [automated checking for these guidelines](#How-to-check-for-these-guidelines?)
@@ -113,6 +113,8 @@ This script will run the following scripts in same sequence:
 [pylint]: https://pypi.org/project/pylint/
 
 [mypy]: https://mypy.readthedocs.io/en/stable/
+
+[ty]: https://docs.astral.sh/ty/
 
 [black]: https://github.com/psf/black
 
