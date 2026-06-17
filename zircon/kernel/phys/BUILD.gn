@@ -4,7 +4,7 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/config/linker_config.gni")
+import("//build/config/compiler_config.gni")
 import("//build/config/zircon/standard.gni")
 import("//build/cpp/library_headers.gni")
 import("//build/info/info.gni")
@@ -151,7 +151,7 @@ if (toolchain_environment == "kernel.phys" ||
     defines = [ "LK_DEBUGLEVEL=2" ]
   }
 
-  linker_config("load-pic") {
+  compiler_config("load-pic") {
     # ZBI executables can be loaded anywhere, so they are linked at 0.
     linker_flags = [ "-defsym=PHYS_LOAD_ADDRESS=0" ]
   }
@@ -945,7 +945,7 @@ kernel_elf_interp("physload.interp") {
   deps = [ ":physload" ]
 }
 
-linker_config("phys-elf-module.config") {
+compiler_config("phys-elf-module.config") {
   # When `-fsanitize=cfi` is enabled, this ensures that the ELF modules loaded
   # by physload (i.e. physboot) or physboot (i.e. the kernel proper) export the
   # cross-DSO checking entrypoint.  When that instrumentation is not enabled,
@@ -1001,7 +1001,7 @@ if (is_kernel) {
     data_deps = [ ":physload" ]
   }
 
-  linker_config("physload.module.config") {
+  compiler_config("physload.module.config") {
     visibility = [ ":*" ]
     linker_flags = [ "--entry=PhysLoadHandoff" ]
     configs = [ ":phys-elf-module.config" ]
@@ -1075,7 +1075,7 @@ if (is_kernel) {
     deps = [ ":physboot.interp" ]
   }
 
-  linker_config("physboot.kernel.config") {
+  compiler_config("physboot.kernel.config") {
     visibility = [ ":*" ]
     linker_flags = [
       # The <phys/zircon-abi-spec.h> data structure is used in lieu of the

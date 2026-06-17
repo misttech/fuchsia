@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/compiler.gni")
-import("//build/config/linker_config.gni")
+import("//build/config/compiler_config.gni")
 import("//build/config/lto/config.gni")
 import("//build/config/riscv64/riscv64.gni")
 import("//build/toolchain/toolchain_environment.gni")
@@ -27,7 +27,7 @@ config("fat-lto-objects-compilation") {
   }
 }
 
-linker_config("fat-lto-objects-linking") {
+compiler_config("fat-lto-objects-linking") {
   if (fat_lto_objects && !is_gcc) {
     # TODO(https://fxbug.dev/340553826): - Add FatLTO support for Mach-O and COFF file formats
     # Currently, FatLTO requires ELF, so its only valid on non-EFI Fuchsia and
@@ -56,7 +56,7 @@ config("no-fat-lto-objects-compilation") {
   }
 }
 
-linker_config("no-fat-lto-objects-linking") {
+compiler_config("no-fat-lto-objects-linking") {
   # The --no-fat-lto-objects option is only valid in LLD
   if (fat_lto_objects && !is_gcc) {
     # TODO(https://fxbug.dev/340553826): - Add FatLTO support for Mach-O and COFF file formats
@@ -75,19 +75,19 @@ config("no-fat-lto-objects") {
   ]
 }
 
-linker_config("lto-workarounds") {
-  linker_flags = []
+compiler_config("lto-workarounds") {
+  linker_llvm_flags = []
 
   if (toolchain_environment != "kernel.phys32" &&
       toolchain_environment != "kernel.efi") {
     # TODO(https://fxbug.dev/42079915): LLD lets --no-pie trump the code generation
     # switches, since we default to PIC, specify that to LTO links outside of
     # x86_32 and EFI.
-    linker_flags += [ "-mllvm=-relocation-model=pic" ]
+    linker_llvm_flags += [ "-relocation-model=pic" ]
 
     # TODO(https://fxbug.dev/481320391): Remove the TLSDESC workaround when the
     # toolchain propagates the target information correctly in LTO builds.
-    linker_flags += [ "-mllvm=--enable-tlsdesc" ]
+    linker_llvm_flags += [ "--enable-tlsdesc" ]
   }
 
   # TODO(https://fxbug.dev/42061844): Temporarily disable branch funneling on lto. Branch
@@ -95,7 +95,7 @@ linker_config("lto-workarounds") {
   # correctly to other functions. Once this is resolved, come back and remove
   # this.
   if (is_fuchsia) {
-    linker_flags += [ "-mllvm=-wholeprogramdevirt-branch-funnel-threshold=0" ]
+    linker_llvm_flags += [ "-wholeprogramdevirt-branch-funnel-threshold=0" ]
   }
 
   # TODO(https://fxbug.dev/42086180): The workarounds below are required to
@@ -246,7 +246,7 @@ config("thinlto-clang") {
   ]
 }
 
-config("thinlto-rust") {
+compiler_config("thinlto-rust") {
   rustflags = [
     "-Clto=thin",
     "-Zdylib-lto",
@@ -255,19 +255,10 @@ config("thinlto-rust") {
   # These switches have the same meaning but different spellings for
   # lld-link vs ld.lld.
   if (is_pecoff) {
-    _cache_dir = "/lldltocache:"
+    rust_linker_flags = [ "/lldltocache:${thinlto_cache_dir}" ]
   } else {
-    _cache_dir = "--thinlto-cache-dir="
+    rust_linker_flags = [ "--thinlto-cache-dir=${thinlto_cache_dir}" ]
   }
-
-  rust_linkarg = "-Clink-args="
-
-  if (!is_fuchsia) {
-    # On non-Fuchsia platforms, rustc calls clang, which calls lld.
-    rust_linkarg += "-Wl,"
-  }
-
-  rustflags += [ "${rust_linkarg}${_cache_dir}${thinlto_cache_dir}" ]
 
   configs = [
     ":lto-workarounds",

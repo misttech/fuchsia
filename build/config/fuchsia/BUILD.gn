@@ -6,10 +6,10 @@ import("//build/board.gni")
 import("//build/config/build_id.gni")
 import("//build/config/clang/clang.gni")
 import("//build/config/clang/clang_target_toolchain_info.gni")
+import("//build/config/compiler_config.gni")
 import("//build/config/current_target_tuple.gni")
 import("//build/config/fuchsia/target_api_level.gni")
 import("//build/config/fuchsia/zircon_asserts.gni")
-import("//build/config/linker_config.gni")
 import("//build/config/sanitizers/sanitizer_default_options.gni")
 import("//build/config/sysroot.gni")
 import("//build/icu/third_party_icu_headers.gni")
@@ -55,7 +55,7 @@ config("ccache") {
   asmflags = cflags
 }
 
-linker_config("compiler") {
+compiler_config("compiler") {
   configs = [
     ":compiler_sysroot",
     ":compiler_target",
@@ -83,6 +83,8 @@ linker_config("compiler") {
     configs += [ "//build/config/rust:codegen_units_16" ]
   }
 
+  rustflags = [ "-Clinker=$rebased_clang_prefix/lld" ]
+
   _clang_resource_dir =
       "${rebased_clang_dir}/${clang_target_toolchain_info.resource_dir}"
 
@@ -106,17 +108,15 @@ linker_config("compiler") {
   _libcxx_dir =
       "${rebased_clang_dir}/lib/${current_target_tuple}${_multilib_dir}"
 
-  rustflags = [
-    "-Clinker=$rebased_clang_prefix/lld",
-
-    # These could alternatively come from clang's '--print-search-dirs', but
-    # that would require an exec_script and post-processing of the output or a
-    # JSON file generated during the toolchain build.
-    "-Clink-arg=-L${_libcxx_dir}",
-    "-Clink-arg=-L${_clang_resource_dir}/lib/${current_target_tuple}",
-    "-Clink-arg=--pack-dyn-relocs=relr",
-    "-Clink-arg=-dynamic-linker=ld.so.1",
-    "-Clink-arg=--icf=all",
+  # These could alternatively come from clang's '--print-search-dirs', but
+  # that would require an exec_script and post-processing of the output or a
+  # JSON file generated during the toolchain build.
+  rust_linker_flags = [
+    "-L${_libcxx_dir}",
+    "-L${_clang_resource_dir}/lib/${current_target_tuple}",
+    "--pack-dyn-relocs=relr",
+    "-dynamic-linker=ld.so.1",
+    "--icf=all",
   ]
 
   if (rust_rbe_enable) {
@@ -124,7 +124,7 @@ linker_config("compiler") {
   }
 
   # TODO(https://fxbug.dev/42130451): Eventually the default in the compler driver.
-  rustflags += [ "-Clink-arg=-zrel" ]
+  rust_linker_flags += [ "-zrel" ]
 }
 
 config("compiler_sysroot") {
@@ -159,7 +159,7 @@ config("compiler_fuchsia_api_level") {
   }
 }
 
-linker_config("max-page-size") {
+compiler_config("max-page-size") {
   default_size = experimental_elf_page_size == default_elf_page_size
   if (!default_size || is_gcc) {
     linker_flags = [ "-zmax-page-size=$experimental_elf_page_size" ]
@@ -277,7 +277,7 @@ if (is_fuchsia) {
 
 # NOTE: This config's label is hard-coded in //build/config/BUILDCONFIG.gn
 # so don't rename it without updating that file too!
-linker_config("static-pie-config") {
+compiler_config("static-pie-config") {
   cflags = [
     "-fno-sanitize=all",
     "-fno-stack-protector",

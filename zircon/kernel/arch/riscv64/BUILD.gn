@@ -4,7 +4,7 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/config/custom_target_config.gni")
+import("//build/config/compiler_config.gni")
 import("//build/config/riscv64/riscv64.gni")
 import("//build/toolchain/toolchain_environment.gni")
 
@@ -12,8 +12,8 @@ if (toolchain_base_environment == "kernel") {
   # These set the ABI contract between C++ and assembly code.
   # This is kept consistent between the kernel proper and phys
   # so (pure PIC) assembly code should be callable from either.
-  custom_target_config("abi") {
-    custom_target_configs = [
+  compiler_config("abi") {
+    compiler_configs = [
       ":arch-abi",
       ":percpu-abi",
     ]
@@ -55,8 +55,8 @@ if (toolchain_base_environment == "kernel") {
 
   # Reserve a register (s11 / x27) to be called percpu_ptr in <lib/arch/asm.h>.
   # The compiler must never touch it except via our inline assembly.
-  custom_target_config("percpu-abi") {
-    common_flags = [ "-ffixed-x27" ]
+  compiler_config("percpu-abi") {
+    c_family_flags = [ "-ffixed-x27" ]
     rust_target_features = [ "+reserve-x27" ]
   }
 

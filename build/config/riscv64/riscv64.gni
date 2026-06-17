@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/custom_target_config.gni")
+import("//build/config/compiler_config.gni")
 import("//build/toolchain/toolchain_environment.gni")
 
 declare_args() {
@@ -222,7 +222,7 @@ fuchsia_riscv_abi = "lp64d"
 #     - Default: []
 #
 template("riscv64_abi_config") {
-  custom_target_config(target_name) {
+  compiler_config(target_name) {
     forward_variables_from(invoker, [ "visibility" ])
 
     _extra_features =
@@ -287,7 +287,7 @@ template("riscv64_abi_config") {
       _mabi = fuchsia_riscv_abi
     }
 
-    common_flags = [
+    c_family_flags = [
       "-march=$_march",
       "-mabi=$_mabi",
     ]
@@ -330,8 +330,7 @@ template("riscv64_abi_config") {
       rust_target_features += _implicit_features
       rust_target_features -= _implicit_features
 
-      rustflags = [ "-Cllvm-args=--target-abi=$_mabi" ]
-      rust_linker_flags = [ "--mllvm=--target-abi=$_mabi" ]
+      rust_llvm_flags = [ "--target-abi=$_mabi" ]
     }
   }
 }

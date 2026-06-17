@@ -8,10 +8,10 @@ import("//build/config/clang/crash_diagnostics.gni")
 import("//build/config/clang/stack_clash_protection.gni")
 import("//build/config/clang/time_trace.gni")
 import("//build/config/compiler.gni")
+import("//build/config/compiler_config.gni")
 import("//build/config/enable_frame_pointers.gni")
 import("//build/config/fuchsia_cxx_version.gni")
 import("//build/config/linker.gni")
-import("//build/config/linker_config.gni")
 import("//build/config/lto/config.gni")
 import("//build/rust/config.gni")
 import("//build/toolchain/ccache.gni")
@@ -66,59 +66,43 @@ foreach(cxx_version, fuchsia_sdk_cxx_supported_versions) {
   }
 }
 
-linker_config("color_diagnostics") {
+compiler_config("color_diagnostics") {
   # GCC correctly defaults this from the terminal, so leave it alone.
   if (!is_gcc) {
-    cflags = [ "-fcolor-diagnostics" ]
-    asmflags = cflags
-    ldflags = cflags
+    c_family_flags = [ "-fcolor-diagnostics" ]
     linker_flags = [ "--color-diagnostics" ]
   }
 }
 
-config("crash_diagnostics") {
+compiler_config("crash_diagnostics") {
   if (!is_gcc) {
-    cflags = [
+    c_family_flags = [
       "-fcrash-diagnostics-dir=" +
           rebase_path(crash_diagnostics_dir, root_build_dir),
       "-fcrash-diagnostics=all",
     ]
     if (clang_enable_error_reproducers) {
-      cflags += [ "-gen-reproducer=error" ]
+      c_family_flags += [ "-gen-reproducer=error" ]
     }
-    ldflags = cflags
-    asmflags = cflags
   }
 }
 
-config("call-graph-section") {
+compiler_config("call-graph-section") {
   if (call_graph_section && !is_gcc && is_elf) {
-    cflags = [ "-fexperimental-call-graph-section" ]
-    asmflags = cflags
-    ldflags = cflags
+    c_family_flags = [ "-fexperimental-call-graph-section" ]
   }
 }
 
-config("stack-size-section") {
+compiler_config("stack-size-section") {
   if (!is_gcc) {
-    cflags = [ "-fstack-size-section" ]
-    asmflags = cflags
-    ldflags = cflags
+    c_family_flags = [ "-fstack-size-section" ]
   }
 
-  if (is_fuchsia) {
-    rust_link_prefix = ""
-  } else {
-    rust_link_prefix = "-Wl,"
-  }
+  rustflags = [ "-Zemit-stack-sizes" ]
 
-  rustflags = [
-    "-Zemit-stack-sizes",
-
-    # TODO(https://fxbug.dev/434231527): Remove the --stack-size-section
-    # workaround once rustc does this.
-    "-Clink-arg=${rust_link_prefix}--mllvm=--stack-size-section",
-  ]
+  # TODO(https://fxbug.dev/434231527): Remove the --stack-size-section
+  # workaround once rustc does this.
+  rust_linker_llvm_flags = [ "--stack-size-section" ]
 }
 
 config("stack-clash-protection") {
@@ -312,13 +296,13 @@ config("toolchain_version_stamp") {
   rustflags = [ "--cfg=__rust_toolchain=\"${rustc_version_string}\"" ]
 }
 
-linker_config("relative_paths") {
+compiler_config("relative_paths") {
   if (is_gcc) {
     # Relativize paths without leaking the build output directory in debug info.
     # Note: with multiple prefix map options, the mappings are checked in
     # reverse-order, and *stops* after the first match is applied.
     # Thus, longest prefix matches should be near the tail of this list.
-    cflags = [
+    c_family_flags = [
       # Map "/some/dir/fuchsia" to "../..".
       "-ffile-prefix-map=" + rebase_path("//") + "=" +
           rebase_path("//", root_build_dir),
@@ -336,7 +320,7 @@ linker_config("relative_paths") {
     # the absolute path of build directory. -ffile-compilation-dir is designed
     # to address this issue, making both debug info and coverage mapping
     # independent of the absolute path of the build directory.
-    cflags = [ "-ffile-compilation-dir=." ]
+    c_family_flags = [ "-ffile-compilation-dir=." ]
   }
 
   # This makes sure that include directories in the toolchain are represented
@@ -347,10 +331,7 @@ linker_config("relative_paths") {
   # have a prefix matching `absolute_path` and hence be mapped to
   # `relative_path` in the debugging information, so this should actually be
   # superfluous for purposes of the debugging information.
-  cflags += [ "-no-canonical-prefixes" ]
-
-  asmflags = cflags
-  ldflags = cflags
+  c_family_flags += [ "-no-canonical-prefixes" ]
 
   if (is_pecoff) {
     linker_flags = [
@@ -427,7 +408,7 @@ variant("linker_gc") {
   ]
 }
 
-linker_config("linker_gc.linker") {
+compiler_config("linker_gc.linker") {
   visibility = [ ":*" ]
 
   # These are the link-time flags to take advantage of the code generation
@@ -459,7 +440,7 @@ config("default_linker_gc") {
   configs = [ ":linker_gc" ]
 }
 
-linker_config("linker_string_merging") {
+compiler_config("linker_string_merging") {
   if (is_pecoff) {
     linker_flags = [ "/opt:lldtailmerge" ]
   } else {
@@ -666,7 +647,7 @@ config("compress_debuginfo") {
   }
 }
 
-linker_config("default_debuginfo") {
+compiler_config("default_debuginfo") {
   cflags = []
   linker_flags = []
   configs = [ ":debuginfo_${debuginfo}" ]
@@ -1315,7 +1296,7 @@ config("symbol_visibility_hidden") {
   }
 }
 
-linker_config("symbol_no_undefined") {
+compiler_config("symbol_no_undefined") {
   linker_flags = [ "--no-undefined" ]
 }
 
@@ -1339,7 +1320,7 @@ config("default_libs") {
   configs = []
 }
 
-linker_config("werror") {
+compiler_config("werror") {
   if (!use_ccache) {
     cflags = [
       "-Werror",
@@ -1417,7 +1398,7 @@ config("no_profile") {
   ]
 }
 
-linker_config("icf") {
+compiler_config("icf") {
   # This changes C/C++ semantics and might be incompatible with third-party
   # code that relies on function pointers comparison.
   if (is_pecoff) {
@@ -1673,6 +1654,6 @@ config("standalone") {
 }
 
 # Enable LLD's balanced partitioning for ordering function sections.
-linker_config("bp-compression-sort") {
+compiler_config("bp-compression-sort") {
   linker_flags = [ "--bp-compression-sort=function" ]
 }

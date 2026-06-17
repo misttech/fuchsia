@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/custom_target_config.gni")
+import("//build/config/compiler_config.gni")
 
 # Platform baseline.
 # This tracks the minimum hardware requirements for Fuchsia on AArch64.
@@ -45,7 +45,7 @@ config("cortex-a53") {
 # The compiler default for aarch64 targets uses outcalls to compiler-rt
 # (libgcc) functions that can do runtime switching between old and new atomic
 # insns.  This needs to be disabled when the standard runtime is not available.
-custom_target_config("no-outline-atomics") {
+compiler_config("no-outline-atomics") {
   cflags = [ "-mno-outline-atomics" ]
   rust_target_features = [ "-outline-atomics" ]
 }

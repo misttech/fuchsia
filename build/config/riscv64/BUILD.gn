@@ -2,8 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/custom_target_config.gni")
-import("//build/config/linker_config.gni")
+import("//build/config/compiler_config.gni")
 import("riscv64.gni")
 
 # Platform baseline.
@@ -11,7 +10,7 @@ import("riscv64.gni")
 riscv64_abi_config("abi") {
 }
 
-custom_target_config("riscv64") {
+compiler_config("riscv64") {
   # TODO(https://fxbug.dev/42076645): Clang should do this everywhere for Fuchsia
   # targets. When it does, put this under `if (is_gcc)`.
   #
@@ -27,7 +26,7 @@ custom_target_config("riscv64") {
     cflags = [ "-msmall-data-limit=0" ]
   }
   if (toolchain_environment != "kernel") {
-    custom_target_configs = [ ":abi" ]
+    compiler_configs = [ ":abi" ]
   }
 
   rustflags = [
@@ -40,7 +39,7 @@ riscv64_abi_config("no-vector") {
   exclude_letters = [ "v" ]
 }
 
-linker_config("lto-workarounds") {
+compiler_config("lto-workarounds") {
   visibility = [ "//build/config/lto:lto-workarounds" ]
 
   # TODO(https://fxbug.dev/42086180): These workarounds can be safely removed
@@ -53,12 +52,11 @@ linker_config("lto-workarounds") {
     "+relax",
   ]
 
-  # TODO(https://fxbug.dev/42086180): The linker flags below are required to avoid code
-  # generation bugs during LTO. They can be removed once LTO properly handles
-  # target features
-  linker_flags = []
+  # TODO(https://fxbug.dev/42086180): The linker flags below are required to
+  # avoid code generation bugs during LTO. They can be removed once LTO
+  # properly handles target features
+  linker_llvm_flags = []
   foreach(attr, riscv64_extra_mattr) {
-    # Use the long option to pass -mllvm -mattr= to LLD.
-    linker_flags += [ "--mllvm=-mattr=$attr" ]
+    linker_llvm_flags += [ "-mattr=$attr" ]
   }
 }

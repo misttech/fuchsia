@@ -7,8 +7,8 @@ import("//build/config/build_id.gni")
 import("//build/config/clang/clang.gni")
 import("//build/config/clang/crash_diagnostics.gni")
 import("//build/config/compiler.gni")
+import("//build/config/compiler_config.gni")
 import("//build/config/linker.gni")
-import("//build/config/linker_config.gni")
 import("//build/config/zircon/levels.gni")
 import("//build/toolchain/rbe.gni")
 import("//build/toolchain/variant.gni")
@@ -23,13 +23,13 @@ import("//build/toolchain/variant.gni")
 #  - All code paths related to |is_host| has been removed (the Zircon toolchain
 #    are never used to build host binaries).
 
-linker_config("compiler") {
+compiler_config("compiler") {
   # Per CPU targeting policy we always target the baseline when building the
   # kernel, rather than using board_configs. This is done to reduce binary
   # diversity. See: TODO RFC LINK HERE
   configs = [ "//build/config:cpu_baseline" ]
 
-  compiler_flags = []
+  c_family_flags = []
   cflags_cc = []
   defines = []
   ldflags = []
@@ -52,7 +52,7 @@ linker_config("compiler") {
   # For GCC, the compiler command implies the target.
   # For Clang, there's a single compiler command that takes `--target`.
   if (!is_gcc) {
-    compiler_flags += [ "--target=${zircon_toolchain.target_tuple}" ]
+    c_family_flags += [ "--target=${zircon_toolchain.target_tuple}" ]
   }
 
   if (linker != "") {
@@ -78,8 +78,6 @@ linker_config("compiler") {
     "//build/config:call-graph-section",
     "//build/config:stack-size-section",
     "//build/config:rust-depinfo",
-
-    # TODO: "$current_os:compiler",
   ]
   if (!is_gcc) {
     configs += [
@@ -162,7 +160,7 @@ linker_config("compiler") {
     # But for the normal clang(++) driver, stick to the `-` option syntax.
     # The driver passes the corresponding option on to the linker as well,
     # where it enables build ID-like PDB UUIDs without timestamp.
-    compiler_flags += [ "-mno-incremental-linker-compatible" ]
+    c_family_flags += [ "-mno-incremental-linker-compatible" ]
 
     # TODO(https://fxbug.dev/496585236): Remove when Clang's UEFI target
     # translates the -mno-incremental-linker-compatible switch to /Brepro
@@ -171,10 +169,6 @@ linker_config("compiler") {
   }
 
   lib_dirs = zircon_toolchain.lib_dirs
-
-  asmflags = compiler_flags
-  cflags += compiler_flags
-  ldflags += compiler_flags
 
   if (is_fuchsia && build_id_format != "") {
     linker_flags += [ "--build-id=$build_id_format" ]
@@ -310,7 +304,7 @@ variant("user-executable") {
 # This prevents the default dynamic linker from being embedded.  Other deps
 # can still set PT_INTERP either via link inputs with a `.interp` section, or
 # ldflags that come later with an explicit `-Wl,-dynamic-linker=...`.
-linker_config("no-dynamic-linker") {
+compiler_config("no-dynamic-linker") {
   linker_flags = [ "--no-dynamic-linker" ]
 }
 
@@ -384,11 +378,11 @@ variant("static-pie-link") {
   ]
 }
 
-linker_config("link-pie") {
+compiler_config("link-pie") {
   linker_flags = [ "--pie" ]
 }
 
-linker_config("link-no-pie") {
+compiler_config("link-no-pie") {
   linker_flags = [ "--no-pie" ]
 }
 
@@ -403,7 +397,7 @@ config("forbid-guard-variables") {
 }
 
 # This is used by hermetic_code_blob() in hermetic_code_blob.gni.
-linker_config("hermetic-code-blob") {
+compiler_config("hermetic-code-blob") {
   inputs = [ "hermetic-code-blob.ld" ]
 
   # Use a custom linker script rather than the default PIE layout.
@@ -439,7 +433,7 @@ linker_config("hermetic-code-blob") {
   }
 }
 
-linker_config("no-synthetic-sections") {
+compiler_config("no-synthetic-sections") {
   # These may be necessary to override earlier explicit switches passed by
   # //build/config:compiler and its dependencies, e.g. when using -r.
   linker_flags = [
@@ -450,7 +444,7 @@ linker_config("no-synthetic-sections") {
 }
 
 # This is used by the basic_executable() for an hermetic partial link step.
-linker_config("hermetic_source_set.config") {
+compiler_config("hermetic_source_set.config") {
   # The partial link with --gc-sections will drop some sections that should
   # survive (while not directly referenced) into the outer link to be
   # implicitly referenced later, e.g. via a generated .eh_frame_hdr.

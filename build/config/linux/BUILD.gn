@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/clang/clang.gni")
-import("//build/config/linker_config.gni")
+import("//build/config/compiler_config.gni")
 import("//build/config/sysroot.gni")
 
 config("compiler") {
@@ -43,7 +43,7 @@ config("default-pie") {
   }
 }
 
-linker_config("implicit-host-libs") {
+compiler_config("implicit-host-libs") {
   ldflags = [
     # Use static C++ standard library.
     "-static-libstdc++",

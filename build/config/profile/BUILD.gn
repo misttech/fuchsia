@@ -4,7 +4,7 @@
 
 import("//build/config/clang/clang.gni")
 import("//build/config/clang/clang_target_toolchain_info.gni")
-import("//build/config/linker_config.gni")
+import("//build/config/compiler_config.gni")
 import("//build/config/profile/config.gni")
 import("//build/toolchain/variant.gni")
 
@@ -72,7 +72,7 @@ _has_compiler_abi = toolchain_variant.tags + [ "no-compiler-abi" ] -
                     [ "no-compiler-abi" ] == toolchain_variant.tags
 _fuchsia_prebuilt_runtime = _has_compiler_abi && is_fuchsia && !is_kernel
 
-linker_config("variant-libprefix") {
+compiler_config("variant-libprefix") {
   visibility = [ ":*" ]
 
   # Even specialized environments that don't use the prebuilt runtime still

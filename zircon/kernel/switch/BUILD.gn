@@ -5,8 +5,7 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/config/clang/clang_prefix.gni")
-import("//build/config/custom_target_config.gni")
-import("//build/config/linker_config.gni")
+import("//build/config/compiler_config.gni")
 import("//build/rust/config.gni")
 import("//build/toolchain/variant.gni")
 import("//build/zircon/zircon_cpu.gni")
@@ -25,8 +24,8 @@ declare_args() {
 }
 
 # For any standalone static binary.
-custom_target_config("standalone") {
-  custom_target_configs = [ ":static-pic-link" ]
+compiler_config("standalone") {
+  compiler_configs = [ ":static-pic-link" ]
 
   if (toolchain_environment == "kernel") {
     rust_target_edits = [
@@ -42,7 +41,7 @@ custom_target_config("standalone") {
     ]
   }
 
-  common_flags = [ "-ffreestanding" ]
+  c_family_flags = [ "-ffreestanding" ]
 
   configs = [
     "//build/config:no_exceptions",
@@ -53,7 +52,7 @@ custom_target_config("standalone") {
 
 # These flags say that all function and variable references will be statically
 # resolved at link time, so PIC generation will never use GOT indirection.
-custom_target_config("static-pic-link") {
+compiler_config("static-pic-link") {
   ldflags = [
     "-nostdlib",
     "-static",
@@ -66,7 +65,7 @@ custom_target_config("static-pic-link") {
   ]
 
   if (is_gcc && current_os == "fuchsia") {
-    common_flags = [ "-fpie" ]
+    c_family_flags = [ "-fpie" ]
   }
 
   rustflags = []
@@ -176,12 +175,12 @@ config("instrumented-stack-size") {
   }
 }
 
-# This is the "top" custom_target_config().  Its $custom_target_configs must
-# reach all other custom_target_config()s that could be reached in any way as
-# normal config()s in this toolchain.
-custom_target_config("abi") {
+# This is the "top" compiler_config().  Its $compiler_configs must reach all
+# other compiler_config()s that could be reached in any way as normal config()s
+# in this toolchain.
+compiler_config("abi") {
   visibility = [ ":*" ]
-  custom_target_configs = [
+  compiler_configs = [
     "//zircon/kernel/arch/$zircon_cpu:abi",
     ":standalone",
   ]
@@ -406,7 +405,7 @@ if (current_cpu == "arm64" && is_gcc) {
 }
 
 # This is implicitly added last to configs in kernel_executable().
-linker_config("kernel_executable.config") {
+compiler_config("kernel_executable.config") {
   visibility = [ "//zircon/kernel/bin/*" ]
 
   inputs = [ "//zircon/kernel/kernel.ld" ]
@@ -439,7 +438,7 @@ linker_config("kernel_executable.config") {
   ]
 }
 
-# Collect the edit steps defined by each custom_target_config().
+# Collect the edit steps defined by each compiler_config().
 generated_file("rust-target-edits") {
   visibility = [ ":rust-custom-target" ]
   outputs = [ "$root_gen_dir/rust-target-edits.json" ]
