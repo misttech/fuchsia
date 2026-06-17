@@ -4,6 +4,14 @@
 
 composite dw_spi;
 
+using fuchsia.hardware.pin;
+using fuchsia.clock;
+using fuchsia.devicetree;
+using fuchsia.hardware.clock;
+using fuchsia.hardware.reset;
+using fuchsia.hardware.powerdomain;
+using fuchsia.gpio;
+using fuchsia.hardware.gpio;
 
 primary parent "pdev" {
   fuchsia.devicetree.FIRST_COMPATIBLE == "google,spi";
@@ -40,4 +48,11 @@ optional parent "gpio-init-0" {
 optional parent "gpio-init-1" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
   fuchsia.BIND_GPIO_CONTROLLER == 1;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
+}
+optional parent "pin-states-1" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }

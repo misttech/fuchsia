@@ -4,6 +4,13 @@
 
 composite gt6853_touch;
 
+using fuchsia.hardware.pin;
+using fuchsia.goodix.platform;
+using fuchsia.gpio;
+using fuchsia.hardware.gpio;
+using fuchsia.hardware.i2c;
+using fuchsia.amlogic.platform.s905d3;
+using fuchsia.platform;
 
 primary parent "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
@@ -26,6 +33,10 @@ parent "gpio-reset" {
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.TOUCH_RESET;
 }
 
-parent "gpio-init" {
+optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }

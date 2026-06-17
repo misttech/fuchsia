@@ -4,6 +4,14 @@
 
 composite aml_tdm_composite;
 
+using fuchsia.hardware.pin;
+using fuchsia.amlogic.platform.a311d;
+using fuchsia.amlogic.platform;
+using fuchsia.gpio;
+using fuchsia.clock;
+using fuchsia.hardware.clock;
+using fuchsia.platform;
+using fuchsia.devicetree;
 
 primary parent "pdev" {
   if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE {
@@ -52,4 +60,8 @@ optional parent "gpio-tdm-b-sclk" {
 
 optional parent "gpio-tdm-c-sclk" {
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.TDM_C_SCLK;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }

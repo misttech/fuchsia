@@ -4,6 +4,12 @@
 
 composite bt_uart;
 
+using fuchsia.hardware.pin;
+using fuchsia.amlogic.platform;
+using fuchsia.gpio;
+using fuchsia.platform;
+using fuchsia.pwm;
+using fuchsia.devicetree;
 
 primary parent "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,bt-uart" {
@@ -20,6 +26,10 @@ parent "pwm" {
   fuchsia.BIND_INIT_STEP == fuchsia.pwm.BIND_INIT_STEP.PWM;
 }
 
-parent "gpio-init" {
+optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }

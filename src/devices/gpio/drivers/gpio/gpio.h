@@ -143,6 +143,40 @@ class GpioDevice : public fidl::WireServer<fuchsia_hardware_pin::Pin>,
   fdf::Logger& logger_;
 };
 
+class PinStatesDevice : public fidl::WireServer<fuchsia_hardware_pin::PinStates> {
+ public:
+  PinStatesDevice(fdf::WireSharedClient<fuchsia_hardware_pinimpl::PinImpl> pinimpl,
+                  fuchsia_hardware_pinimpl::DevicePinStates pin_states, uint32_t controller_id,
+                  fdf::Logger& logger)
+      : fidl_dispatcher_(fdf::Dispatcher::GetCurrent()->async_dispatcher()),
+        pin_states_(std::move(pin_states)),
+        controller_id_(controller_id),
+        pinimpl_(std::move(pinimpl)),
+        logger_(logger) {}
+
+  zx::result<> AddServices(const std::shared_ptr<fdf::Namespace>& incoming,
+                           const std::shared_ptr<fdf::OutgoingDirectory>& outgoing);
+
+  zx::result<> AddDevice(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> root_node);
+
+  zx::result<> ApplyDefaultState();
+
+ private:
+  void SelectState(SelectStateRequestView request, SelectStateCompleter::Sync& completer) override;
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_pin::PinStates> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override;
+
+  zx_status_t ApplyState(const std::string& state_name);
+
+  async_dispatcher_t* const fidl_dispatcher_;
+  const fuchsia_hardware_pinimpl::DevicePinStates pin_states_;
+  const uint32_t controller_id_;
+  fdf::WireSharedClient<fuchsia_hardware_pinimpl::PinImpl> pinimpl_;
+  fidl::ServerBindingGroup<fuchsia_hardware_pin::PinStates> bindings_;
+  fidl::ClientEnd<fuchsia_driver_framework::NodeController> controller_;
+  fdf::Logger& logger_;
+};
+
 class GpioInitDevice {
  public:
   static std::unique_ptr<GpioInitDevice> Create(
@@ -182,6 +216,7 @@ class GpioRootDevice : public fdf::DriverBase2 {
 
   // Must be run on the FIDL dispatcher.
   void CreatePinDevices(uint32_t controller_id, std::span<fuchsia_hardware_pinimpl::Pin> pins,
+                        std::vector<fuchsia_hardware_pinimpl::DevicePinStates> device_pin_states,
                         gpio_config::Config config, fdf::StartCompleter completer);
 
   // Must be run on the driver dispatcher.
@@ -201,6 +236,7 @@ class GpioRootDevice : public fdf::DriverBase2 {
   std::optional<fdf::SynchronizedDispatcher> fidl_dispatcher_;
   fdf::WireSharedClient<fuchsia_hardware_pinimpl::PinImpl> pinimpl_;
   std::vector<std::unique_ptr<GpioDevice>> children_;
+  std::vector<std::unique_ptr<PinStatesDevice>> pin_states_children_;
   std::unique_ptr<GpioInitDevice> init_device_;
 
   std::shared_ptr<fdf::Namespace> incoming_;

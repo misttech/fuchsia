@@ -4,6 +4,13 @@
 
 composite brownout_protection;
 
+using fuchsia.hardware.pin;
+using fuchsia.ti.platform;
+using fuchsia.amlogic.platform.s905d3;
+using fuchsia.gpio;
+using fuchsia.hardware.audio;
+using fuchsia.hardware.gpio;
+using fuchsia.hardware.power.sensor;
 
 primary parent "codec" {
   fuchsia.hardware.audio.CodecService == fuchsia.hardware.audio.CodecService.ZirconTransport;
@@ -19,6 +26,10 @@ parent "alert-gpio" {
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.GPIO_ALERT_PWR_L;
 }
 
-parent "gpio-init" {
+optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }

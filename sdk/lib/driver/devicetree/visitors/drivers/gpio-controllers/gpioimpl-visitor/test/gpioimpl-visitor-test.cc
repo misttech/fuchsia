@@ -18,11 +18,18 @@
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
 #include <bind/fuchsia/hardware/gpio/cpp/bind.h>
+#include <bind/fuchsia/pin/cpp/bind.h>
 #include <gtest/gtest.h>
 
 #include "dts/gpio.h"
 
 namespace gpio_impl_dt {
+
+namespace bind_fuchsia_hardware_pin {
+static const char PIN_STATES_SERVICE[] = "fuchsia.hardware.pin.PinStatesService";
+static const char PIN_STATES_SERVICE_ZIRCONTRANSPORT[] =
+    "fuchsia.hardware.pin.PinStatesService.ZirconTransport";
+}  // namespace bind_fuchsia_hardware_pin
 
 class GpioImplVisitorTester : public fdf_devicetree::testing::VisitorTestHelper<GpioImplVisitor> {
  public:
@@ -64,8 +71,11 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
   gpioA_id = *controller_metadata->controller_id();
 
   ASSERT_TRUE(controller_metadata->init_steps());
-  ASSERT_EQ((*controller_metadata).init_steps()->size(),
-            6u /*from gpio hog*/ + 8u /*pincfg groups*/);
+  // 10 init steps:
+  //   - 6 from gpio-hog (3 pins * 2 steps)
+  //   - 4 from video (2 pins * 2 steps)
+  // Note: Audio node configurations are parsed as pin states and do not generate init steps.
+  ASSERT_EQ((*controller_metadata).init_steps()->size(), 10u);
 
   // GPIO Hog init steps.
   const auto& init_steps = *controller_metadata->init_steps();
@@ -99,68 +109,77 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
   ASSERT_EQ(init_steps[5].call()->call(), fuchsia_hardware_pinimpl::InitCall::WithBufferMode(
                                               fuchsia_hardware_gpio::BufferMode::kInput));
 
-  // Pin controller config init steps.
+  // Pin controller config init steps (from video node group2 which doesn't have pinctrl-names).
   ASSERT_TRUE(init_steps[6].call());
-  ASSERT_EQ(init_steps[6].call()->pin(), static_cast<uint32_t>(GROUP1_PIN1));
-  ASSERT_EQ(init_steps[6].call()->call(),
-            fuchsia_hardware_pinimpl::InitCall::WithPinConfig({{
-                .function = GROUP1_FUNCTION,
-                .drive_strength_ua = GROUP1_DRIVE_STRENGTH,
-                .drive_type = fuchsia_hardware_pin::DriveType::kOpenDrain,
-            }}));
+  ASSERT_EQ(init_steps[6].call()->pin(), static_cast<uint32_t>(GROUP2_PIN1));
+  ASSERT_EQ(init_steps[6].call()->call(), fuchsia_hardware_pinimpl::InitCall::WithPinConfig(
+                                              {{.power_source = GROUP2_POWER_SOURCE}}));
 
   ASSERT_TRUE(init_steps[7].call());
-  ASSERT_EQ(init_steps[7].call()->pin(), static_cast<uint32_t>(GROUP1_PIN2));
-  ASSERT_EQ(init_steps[7].call()->call(),
-            fuchsia_hardware_pinimpl::InitCall::WithPinConfig({{
-                .function = GROUP1_FUNCTION,
-                .drive_strength_ua = GROUP1_DRIVE_STRENGTH,
-                .drive_type = fuchsia_hardware_pin::DriveType::kOpenDrain,
-            }}));
+  ASSERT_EQ(init_steps[7].call()->pin(), static_cast<uint32_t>(GROUP2_PIN1));
+  ASSERT_EQ(init_steps[7].call()->call(), fuchsia_hardware_pinimpl::InitCall::WithBufferMode(
+                                              fuchsia_hardware_gpio::BufferMode::kOutputLow));
 
   ASSERT_TRUE(init_steps[8].call());
-  ASSERT_EQ(init_steps[8].call()->pin(), static_cast<uint32_t>(GROUP3_PIN1));
-  ASSERT_EQ(init_steps[8].call()->call(),
-            fuchsia_hardware_pinimpl::InitCall::WithPinConfig({{
-                .pull = fuchsia_hardware_pin::Pull::kNone,
-                .drive_type = fuchsia_hardware_pin::DriveType::kOpenSource,
-                .wake_vector = true,
-            }}));
+  ASSERT_EQ(init_steps[8].call()->pin(), static_cast<uint32_t>(GROUP2_PIN2));
+  ASSERT_EQ(init_steps[8].call()->call(), fuchsia_hardware_pinimpl::InitCall::WithPinConfig(
+                                              {{.power_source = GROUP2_POWER_SOURCE}}));
 
   ASSERT_TRUE(init_steps[9].call());
-  ASSERT_EQ(init_steps[9].call()->pin(), static_cast<uint32_t>(GROUP3_PIN1));
+  ASSERT_EQ(init_steps[9].call()->pin(), static_cast<uint32_t>(GROUP2_PIN2));
   ASSERT_EQ(init_steps[9].call()->call(), fuchsia_hardware_pinimpl::InitCall::WithBufferMode(
-                                              fuchsia_hardware_gpio::BufferMode::kInput));
+                                              fuchsia_hardware_gpio::BufferMode::kOutputLow));
 
-  ASSERT_TRUE(init_steps[10].call());
-  ASSERT_EQ(init_steps[10].call()->pin(), static_cast<uint32_t>(GROUP2_PIN1));
-  ASSERT_EQ(init_steps[10].call()->call(), fuchsia_hardware_pinimpl::InitCall::WithPinConfig(
-                                               {{.power_source = GROUP2_POWER_SOURCE}}));
+  // Test device_pin_states metadata.
+  ASSERT_TRUE(controller_metadata->device_pin_states().has_value());
+  ASSERT_EQ(controller_metadata->device_pin_states()->size(), 1lu);
 
-  ASSERT_TRUE(init_steps[11].call());
-  ASSERT_EQ(init_steps[11].call()->pin(), static_cast<uint32_t>(GROUP2_PIN1));
-  ASSERT_EQ(init_steps[11].call()->call(), fuchsia_hardware_pinimpl::InitCall::WithBufferMode(
-                                               fuchsia_hardware_gpio::BufferMode::kOutputLow));
+  const auto& dev_pin_states = *controller_metadata->device_pin_states();
+  EXPECT_EQ(dev_pin_states[0].name(), "audio-ffffc000");
+  ASSERT_EQ(dev_pin_states[0].states().size(), 2lu);
 
-  ASSERT_TRUE(init_steps[12].call());
-  ASSERT_EQ(init_steps[12].call()->pin(), static_cast<uint32_t>(GROUP2_PIN2));
-  ASSERT_EQ(init_steps[12].call()->call(), fuchsia_hardware_pinimpl::InitCall::WithPinConfig(
-                                               {{.power_source = GROUP2_POWER_SOURCE}}));
+  EXPECT_EQ(dev_pin_states[0].states()[0].name(), "default");
+  ASSERT_EQ(dev_pin_states[0].states()[0].pins().size(), 2lu);
+  const auto& default_pins = dev_pin_states[0].states()[0].pins();
+  EXPECT_EQ(default_pins[0].pin(), static_cast<uint32_t>(GROUP1_PIN1));
+  ASSERT_EQ(default_pins[0].call().Which(), fuchsia_hardware_pinimpl::InitCall::Tag::kPinConfig);
+  EXPECT_EQ(default_pins[0].call().pin_config()->function().value(),
+            static_cast<uint64_t>(GROUP1_FUNCTION));
+  EXPECT_EQ(default_pins[0].call().pin_config()->drive_strength_ua().value(),
+            static_cast<uint32_t>(GROUP1_DRIVE_STRENGTH));
+  EXPECT_EQ(default_pins[0].call().pin_config()->drive_type().value(),
+            fuchsia_hardware_pin::DriveType::kOpenDrain);
+  EXPECT_EQ(default_pins[1].pin(), static_cast<uint32_t>(GROUP1_PIN2));
+  ASSERT_EQ(default_pins[1].call().Which(), fuchsia_hardware_pinimpl::InitCall::Tag::kPinConfig);
+  EXPECT_EQ(default_pins[1].call().pin_config()->function().value(),
+            static_cast<uint64_t>(GROUP1_FUNCTION));
+  EXPECT_EQ(default_pins[1].call().pin_config()->drive_strength_ua().value(),
+            static_cast<uint32_t>(GROUP1_DRIVE_STRENGTH));
+  EXPECT_EQ(default_pins[1].call().pin_config()->drive_type().value(),
+            fuchsia_hardware_pin::DriveType::kOpenDrain);
 
-  ASSERT_TRUE(init_steps[13].call());
-  ASSERT_EQ(init_steps[13].call()->pin(), static_cast<uint32_t>(GROUP2_PIN2));
-  ASSERT_EQ(init_steps[13].call()->call(), fuchsia_hardware_pinimpl::InitCall::WithBufferMode(
-                                               fuchsia_hardware_gpio::BufferMode::kOutputLow));
+  EXPECT_EQ(dev_pin_states[0].states()[1].name(), "sleep");
+  ASSERT_EQ(dev_pin_states[0].states()[1].pins().size(), 2lu);
+  const auto& sleep_pins = dev_pin_states[0].states()[1].pins();
+  EXPECT_EQ(sleep_pins[0].pin(), static_cast<uint32_t>(GROUP3_PIN1));
+  ASSERT_EQ(sleep_pins[0].call().Which(), fuchsia_hardware_pinimpl::InitCall::Tag::kPinConfig);
+  EXPECT_EQ(sleep_pins[0].call().pin_config()->pull().value(), fuchsia_hardware_pin::Pull::kNone);
+  EXPECT_EQ(sleep_pins[0].call().pin_config()->drive_type().value(),
+            fuchsia_hardware_pin::DriveType::kOpenSource);
+  EXPECT_EQ(sleep_pins[0].call().pin_config()->wake_vector().value(), true);
+  EXPECT_EQ(sleep_pins[1].pin(), static_cast<uint32_t>(GROUP3_PIN1));
+  ASSERT_EQ(sleep_pins[1].call().Which(), fuchsia_hardware_pinimpl::InitCall::Tag::kBufferMode);
+  EXPECT_EQ(sleep_pins[1].call().buffer_mode().value(), fuchsia_hardware_gpio::BufferMode::kInput);
 
-  // GPIO Hog init steps.
+  // GPIO pins.
   ASSERT_TRUE(controller_metadata->pins().has_value());
   ASSERT_EQ((*controller_metadata).pins()->size(), 2lu);
   std::span<fuchsia_hardware_pinimpl::Pin> gpio_pins = controller_metadata->pins().value();
   ASSERT_EQ(gpio_pins.size(), 2lu);
-  EXPECT_EQ(gpio_pins[0].pin().value(), static_cast<uint32_t>(PIN1));
-  EXPECT_EQ(gpio_pins[0].name().value(), PIN1_NAME);
-  EXPECT_EQ(gpio_pins[1].pin().value(), static_cast<uint32_t>(PIN2));
-  EXPECT_EQ(gpio_pins[1].name().value(), PIN2_NAME);
+  EXPECT_EQ(gpio_pins[0].pin(), static_cast<uint32_t>(PIN1));
+  EXPECT_EQ(gpio_pins[0].name(), PIN1_NAME);
+  EXPECT_EQ(gpio_pins[1].pin(), static_cast<uint32_t>(PIN2));
+  EXPECT_EQ(gpio_pins[1].name(), PIN2_NAME);
 
   std::vector<fuchsia_hardware_platform_bus::Node> gpio_nodes_b =
       gpio_tester->GetPbusNodes("gpio-controller-ffffb000");
@@ -196,6 +215,8 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
             static_cast<uint32_t>(GROUP5_PIN1));
   ASSERT_EQ((*controller_metadata_b->init_steps())[1].call()->call(),
             fuchsia_hardware_pinimpl::InitCall::WithPinConfig({{.function_name = "spi-bus"}}));
+
+  ASSERT_FALSE(controller_metadata_b->device_pin_states().has_value());
 
   ASSERT_EQ(1lu, gpio_tester->GetCompositeNodeSpecs("audio").size());
   auto mgr_request_audio = gpio_tester->GetCompositeNodeSpecs("audio")[0];
@@ -234,14 +255,17 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
         fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(PIN2))}},
       (*mgr_request_audio.parents2())[2].bind_rules(), false));
 
-  // 4th parent is GPIO INIT.
+  // 4th parent is PIN STATES.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-      {{fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
-        fdf::MakeProperty2(bind_fuchsia::GPIO_CONTROLLER, static_cast<uint32_t>(0))}},
+      {{fdf::MakeProperty2(bind_fuchsia_hardware_pin::PIN_STATES_SERVICE,
+                           bind_fuchsia_hardware_pin::PIN_STATES_SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeProperty2(bind_fuchsia_pin::CONTROLLER, static_cast<uint32_t>(0))}},
       (*mgr_request_audio.parents2())[3].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
-        fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_CONTROLLER, gpioA_id)}},
+      {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_pin::PIN_STATES_SERVICE,
+                                bind_fuchsia_hardware_pin::PIN_STATES_SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule(bind_fuchsia_pin::CONTROLLER, gpioA_id),
+        fdf::MakeAcceptBindRule(bind_fuchsia_pin::NAME, std::string("audio-ffffc000"))}},
       (*mgr_request_audio.parents2())[3].bind_rules(), false));
 
   ASSERT_EQ(1lu, gpio_tester->GetCompositeNodeSpecs("video").size());

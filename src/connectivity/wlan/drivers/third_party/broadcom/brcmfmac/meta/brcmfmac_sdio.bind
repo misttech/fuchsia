@@ -4,6 +4,14 @@
 
 composite brcmfmac_sdio;
 
+using fuchsia.hardware.pin;
+using fuchsia.hardware.pin;
+using fuchsia.broadcom.platform;
+using fuchsia.gpio;
+using fuchsia.hardware.gpio;
+using fuchsia.hardware.sdio;
+using fuchsia.platform;
+using fuchsia.devicetree;
 
 primary parent "sdio-function-1" {
   fuchsia.hardware.sdio.Service == fuchsia.hardware.sdio.Service.ZirconTransport;
@@ -34,6 +42,10 @@ parent "pdev" {
   }
 }
 
-parent "gpio-init" {
+optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }

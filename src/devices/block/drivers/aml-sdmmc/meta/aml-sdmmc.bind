@@ -4,6 +4,14 @@
 
 composite aml_sdmmc;
 
+using fuchsia.hardware.pin;
+using fuchsia.amlogic.platform;
+using fuchsia.gpio;
+using fuchsia.hardware.clock;
+using fuchsia.hardware.gpio;
+using fuchsia.platform;
+using fuchsia.pwm;
+using fuchsia.devicetree;
 
 primary parent "pdev" {
   if fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC {
@@ -34,6 +42,10 @@ optional parent "clock-gate" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
 }
 
-parent "gpio-init" {
+optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }

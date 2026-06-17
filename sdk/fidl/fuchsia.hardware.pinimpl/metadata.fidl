@@ -11,6 +11,9 @@ using zx;
 @deprecated("Unused")
 const METADATA_TYPE_NAME string = "fuchsia.hardware.pinimpl.Metadata";
 
+@available(added=HEAD)
+const MAX_DEVICE_NAME_LEN uint32 = 64;
+
 type Pin = table {
     1: pin uint32;
     2: name string:fuchsia.hardware.pin.MAX_PIN_NAME_LEN;
@@ -39,6 +42,24 @@ type InitStep = flexible union {
     2: delay zx.Duration;
 };
 
+@available(added=HEAD)
+type PinConfiguration = struct {
+    pin uint32;
+    call InitCall;
+};
+
+@available(added=HEAD)
+type PinState = struct {
+    name string:fuchsia.hardware.pin.MAX_STATE_NAME_LEN;
+    pins vector<PinConfiguration>:MAX;
+};
+
+@available(added=HEAD)
+type DevicePinStates = struct {
+    name string:MAX_DEVICE_NAME_LEN;
+    states vector<PinState>:MAX;
+};
+
 @serializable
 type Metadata = table {
     /// Init steps are processed sequentially in the order that they appear in the vector.
@@ -46,4 +67,6 @@ type Metadata = table {
     1: init_steps vector<InitStep>:MAX;
     2: controller_id uint32;
     3: pins vector<Pin>:MAX;
+    @available(added=HEAD)
+    4: device_pin_states vector<DevicePinStates>:MAX;
 };

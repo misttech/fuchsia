@@ -4,6 +4,12 @@
 
 composite aml_eth;
 
+using fuchsia.hardware.pin;
+using fuchsia.amlogic.platform;
+using fuchsia.gpio;
+using fuchsia.hardware.gpio;
+using fuchsia.platform;
+using fuchsia.devicetree;
 
 primary parent "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,ethernet-phy" {
@@ -16,10 +22,14 @@ primary parent "pdev" {
   }
 }
 
-parent "gpio-init" {
+optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }
 
 parent "gpio-int" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }

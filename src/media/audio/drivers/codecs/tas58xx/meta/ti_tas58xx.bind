@@ -4,6 +4,12 @@
 
 composite tas58xx;
 
+using fuchsia.hardware.pin;
+using fuchsia.gpio;
+using fuchsia.hardware.gpio;
+using fuchsia.hardware.i2c;
+using fuchsia.ti.platform;
+using fuchsia.platform;
 
 primary parent "i2c" {
   fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;
@@ -16,7 +22,7 @@ parent "gpio-fault" {
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.SOC_AUDIO_FAULT;
 }
 
-parent "gpio-init" {
+optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }
 
@@ -24,4 +30,8 @@ parent "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
   fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.ti.platform.BIND_PLATFORM_DEV_VID.TI;
   fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.ti.platform.BIND_PLATFORM_DEV_DID.TAS58xx;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }

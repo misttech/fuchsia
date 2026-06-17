@@ -4,6 +4,10 @@
 
 composite aml_rawnand;
 
+using fuchsia.hardware.pin;
+using fuchsia.amlogic.platform;
+using fuchsia.gpio;
+using fuchsia.platform;
 
 primary parent "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
@@ -11,6 +15,10 @@ primary parent "pdev" {
   fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.amlogic.platform.BIND_PLATFORM_DEV_DID.RAW_NAND;
 }
 
-parent "gpio-init" {
+optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }

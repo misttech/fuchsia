@@ -4,6 +4,12 @@
 
 composite post_init;
 
+using fuchsia.hardware.pin;
+using fuchsia.amlogic.platform.s905d2;
+using fuchsia.google.platform;
+using fuchsia.gpio;
+using fuchsia.hardware.gpio;
+using fuchsia.hardware.platform.bus;
 
 primary parent "pbus" {
   fuchsia.hardware.platform.bus.Service == fuchsia.hardware.platform.bus.Service.DriverTransport;
@@ -41,6 +47,10 @@ parent "touch-reset" {
   fuchsia.BIND_GPIO_PIN == fuchsia.amlogic.platform.s905d2.GPIOZ_PIN_ID.PIN_9;
 }
 
-parent "gpio-init" {
+optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }

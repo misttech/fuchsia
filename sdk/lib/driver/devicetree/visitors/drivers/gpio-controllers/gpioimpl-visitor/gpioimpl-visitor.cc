@@ -18,10 +18,12 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string_view>
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
+#include <bind/fuchsia/pin/cpp/bind.h>
 
 // TODO(https://fxbug.dev/494450198): Re-add this once the Bazel dependency issue is resolved.
 // #include <bind/fuchsia/hardware/gpio/cpp/bind.h>
@@ -36,6 +38,12 @@ namespace bind_fuchsia_hardware_gpio {
 static const char SERVICE[] = "fuchsia.hardware.gpio.Service";
 static const char SERVICE_ZIRCONTRANSPORT[] = "fuchsia.hardware.gpio.Service.ZirconTransport";
 }  // namespace bind_fuchsia_hardware_gpio
+
+namespace bind_fuchsia_hardware_pin {
+static const char PIN_STATES_SERVICE[] = "fuchsia.hardware.pin.PinStatesService";
+static const char PIN_STATES_SERVICE_ZIRCONTRANSPORT[] =
+    "fuchsia.hardware.pin.PinStatesService.ZirconTransport";
+}  // namespace bind_fuchsia_hardware_pin
 
 using fuchsia_hardware_gpio::BufferMode;
 using fuchsia_hardware_pin::DriveType;
@@ -79,12 +87,6 @@ GpioImplVisitor::GpioImplVisitor() {
   gpio_properties.emplace_back(
       std::make_unique<fdf_devicetree::StringListProperty>(kGpioNames, /* required */ false));
   gpio_parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(gpio_properties));
-
-  fdf_devicetree::Properties pinctrl_state_properties = {};
-  pinctrl_state_properties.emplace_back(
-      std::make_unique<fdf_devicetree::ReferenceProperty>(kPinCtrl0, 0u, /* required */ false));
-  pinctrl_state_parser_ =
-      std::make_unique<fdf_devicetree::PropertyParser>(std::move(pinctrl_state_properties));
 }
 
 zx::result<> GpioImplVisitor::Visit(fdf_devicetree::Node& node,
@@ -124,37 +126,176 @@ zx::result<> GpioImplVisitor::Visit(fdf_devicetree::Node& node,
       }
     }
 
-    auto pinctrl_props = pinctrl_state_parser_->Parse(node);
-    if (pinctrl_props.is_error()) {
-      return pinctrl_props.take_error();
+    bool has_names = node.GetProperty<std::vector<std::string>>("pinctrl-names").is_ok();
+    if (has_names) {
+      auto result = ParsePinStates(node);
+      if (result.is_error()) {
+        return result.take_error();
+      }
+    } else {
+      auto result = ParseBootTimeConfig(node);
+      if (result.is_error()) {
+        return result.take_error();
+      }
+    }
+  }
+
+  return zx::ok();
+}
+
+zx::result<> GpioImplVisitor::ParsePinStates(fdf_devicetree::Node& node) {
+  auto names_prop = node.GetProperty<std::vector<std::string>>("pinctrl-names");
+  if (names_prop.is_error()) {
+    return names_prop.take_error();
+  }
+  std::vector<std::string> state_names = *names_prop;
+
+  uint32_t num_states = 0;
+  while (true) {
+    std::string prop_name = "pinctrl-" + std::to_string(num_states);
+    if (node.properties().contains(prop_name)) {
+      num_states++;
+    } else {
+      break;
+    }
+  }
+
+  if (num_states == 0) {
+    return zx::ok();
+  }
+
+  if (state_names.size() != num_states) {
+    fdf::error("Node '{}' has {} pin states but {} names in pinctrl-names.", node.name(),
+               num_states, state_names.size());
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  fdf_devicetree::Properties pinctrl_properties;
+  for (uint32_t i = 0; i < num_states; ++i) {
+    pinctrl_properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(
+        "pinctrl-" + std::to_string(i), 0u, false));
+  }
+  fdf_devicetree::PropertyParser pinctrl_parser(std::move(pinctrl_properties));
+  auto pinctrl_props = pinctrl_parser.Parse(node);
+  if (pinctrl_props.is_error()) {
+    return pinctrl_props.take_error();
+  }
+
+  // Collect all unique GPIO controller IDs referenced by the pin states.
+  std::set<uint32_t> controllers;
+  for (uint32_t i = 0; i < num_states; ++i) {
+    std::string prop_name = "pinctrl-" + std::to_string(i);
+    auto pinctrl_configs = pinctrl_props->Get<fdf_devicetree::References>(prop_name);
+    if (!pinctrl_configs) {
+      fdf::error("Failed to get pinctrl reference property '{}' for node '{}'", prop_name,
+                 node.name());
+      return zx::error(ZX_ERR_INTERNAL);
+    }
+    for (auto& pinctrl_cfg : *pinctrl_configs) {
+      auto gpio_node = GetGpioNodeForPinConfig(pinctrl_cfg.reference_node());
+      if (gpio_node.is_error()) {
+        return gpio_node.take_error();
+      }
+      if (!is_match(gpio_node->properties())) {
+        continue;
+      }
+      controllers.insert(gpio_node->id());
+    }
+  }
+
+  std::map<uint32_t, fuchsia_hardware_pinimpl::DevicePinStates> controller_to_device_states;
+  for (uint32_t controller_id : controllers) {
+    auto& dev_states = controller_to_device_states[controller_id];
+    dev_states.name() = GetUniqueNodeName(node);
+    for (uint32_t i = 0; i < num_states; ++i) {
+      fuchsia_hardware_pinimpl::PinState state{{
+          .name = state_names[i],
+          .pins = {},
+      }};
+      dev_states.states().push_back(std::move(state));
+    }
+  }
+
+  // Parse configurations for each pin state and add them to the metadata.
+  for (uint32_t i = 0; i < num_states; ++i) {
+    std::string prop_name = "pinctrl-" + std::to_string(i);
+    auto pinctrl_configs = pinctrl_props->Get<fdf_devicetree::References>(prop_name);
+    if (!pinctrl_configs) {
+      fdf::error("Failed to get pinctrl reference property '{}' for node '{}'", prop_name,
+                 node.name());
+      return zx::error(ZX_ERR_INTERNAL);
     }
 
-    if (auto pinctrl_configs = pinctrl_props->Get<fdf_devicetree::References>(kPinCtrl0)) {
-      // Names of gpio controllers used in this pin control state. This is used to add gpio init
-      // bind rule only once per controller.
-      std::vector<uint32_t> controllers;
-
-      uint32_t controller_index = 0;
-      for (auto& pinctrl_cfg : *pinctrl_configs) {
-        auto gpio_node = GetGpioNodeForPinConfig(pinctrl_cfg.reference_node());
-        if (gpio_node.is_error()) {
-          return gpio_node.take_error();
-        }
-
-        auto result = ParsePinCtrlCfg(node, pinctrl_cfg.reference_node(), *gpio_node);
-        if (result.is_error()) {
-          return result.take_error();
-        }
-
-        if (std::find(controllers.begin(), controllers.end(), gpio_node->id()) ==
-            controllers.end()) {
-          result = AddInitNodeSpec(node, gpio_node->id(), controller_index++);
-          if (result.is_error()) {
-            return result.take_error();
-          }
-          controllers.push_back(gpio_node->id());
-        }
+    for (auto& pinctrl_cfg : *pinctrl_configs) {
+      auto gpio_node = GetGpioNodeForPinConfig(pinctrl_cfg.reference_node());
+      if (gpio_node.is_error()) {
+        return gpio_node.take_error();
       }
+
+      if (!is_match(gpio_node->properties())) {
+        continue;
+      }
+
+      auto& dev_states = controller_to_device_states[gpio_node->id()];
+      auto& state = dev_states.states()[i];
+
+      auto result = ParsePinCtrlStateCfg(pinctrl_cfg.reference_node(), *gpio_node, state.pins());
+      if (result.is_error()) {
+        return result.take_error();
+      }
+    }
+  }
+
+  uint32_t controller_index = 0;
+  for (auto& [controller_id, dev_states] : controller_to_device_states) {
+    std::string unique_name = dev_states.name();
+    auto& controller = GetController(controller_id);
+    if (!controller.metadata.device_pin_states()) {
+      controller.metadata.device_pin_states().emplace();
+    }
+    controller.metadata.device_pin_states()->push_back(std::move(dev_states));
+
+    auto result = AddPinStatesNodeSpec(node, controller_id, controller_index++, unique_name);
+    if (result.is_error()) {
+      return result.take_error();
+    }
+  }
+
+  return zx::ok();
+}
+
+zx::result<> GpioImplVisitor::ParseBootTimeConfig(fdf_devicetree::Node& node) {
+  fdf_devicetree::Properties pinctrl_properties;
+  pinctrl_properties.emplace_back(
+      std::make_unique<fdf_devicetree::ReferenceProperty>(kPinCtrl0, 0u, false));
+  fdf_devicetree::PropertyParser pinctrl_parser(std::move(pinctrl_properties));
+  auto pinctrl_props = pinctrl_parser.Parse(node);
+  if (pinctrl_props.is_error()) {
+    return pinctrl_props.take_error();
+  }
+
+  auto pinctrl_configs = pinctrl_props->Get<fdf_devicetree::References>(kPinCtrl0);
+  if (!pinctrl_configs) {
+    return zx::ok();
+  }
+
+  std::vector<uint32_t> controllers;
+  uint32_t controller_index = 0;
+  for (auto& pinctrl_cfg : *pinctrl_configs) {
+    auto gpio_node = GetGpioNodeForPinConfig(pinctrl_cfg.reference_node());
+    if (gpio_node.is_error()) {
+      return gpio_node.take_error();
+    }
+    auto result = ParsePinCtrlCfg(node, pinctrl_cfg.reference_node(), *gpio_node);
+    if (result.is_error()) {
+      return result.take_error();
+    }
+    if (std::find(controllers.begin(), controllers.end(), gpio_node->id()) == controllers.end()) {
+      result = AddInitNodeSpec(node, gpio_node->id(), controller_index++);
+      if (result.is_error()) {
+        return result.take_error();
+      }
+      controllers.push_back(gpio_node->id());
     }
   }
 
@@ -203,35 +344,41 @@ zx::result<> GpioImplVisitor::AddInitNodeSpec(fdf_devicetree::Node& child, uint3
   return zx::ok();
 }
 
-zx::result<fdf_devicetree::ParentNode> GpioImplVisitor::GetGpioNodeForPinConfig(
-    fdf_devicetree::ReferenceNode& cfg_node) {
-  // TODO(b/325077980): Add gpio-ranges based mapping in case the pinctrl cfg is not a direct
-  // child of gpio-controller.
-  return zx::ok(cfg_node.parent());
+zx::result<> GpioImplVisitor::AddPinStatesNodeSpec(fdf_devicetree::Node& child,
+                                                   uint32_t controller_id,
+                                                   uint32_t controller_index,
+                                                   const std::string& client_name) {
+  auto pin_states_node = fuchsia_driver_framework::ParentSpec2{{
+      .bind_rules =
+          {
+              fdf::MakeAcceptBindRule(
+                  bind_fuchsia_hardware_pin::PIN_STATES_SERVICE,
+                  bind_fuchsia_hardware_pin::PIN_STATES_SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia_pin::CONTROLLER, controller_id),
+              fdf::MakeAcceptBindRule(bind_fuchsia_pin::NAME, client_name),
+          },
+      .properties =
+          {
+              fdf::MakeProperty2(bind_fuchsia_hardware_pin::PIN_STATES_SERVICE,
+                                 bind_fuchsia_hardware_pin::PIN_STATES_SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeProperty2(bind_fuchsia_pin::CONTROLLER, controller_index),
+          },
+  }};
+  child.AddNodeSpec(pin_states_node);
+  return zx::ok();
 }
 
-zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
-                                              fdf_devicetree::ReferenceNode& cfg_node,
-                                              fdf_devicetree::ParentNode& gpio_node) {
-  // Check that the parent is indeed a gpio-controller that we support.
-  if (!is_match(gpio_node.properties())) {
-    return zx::ok();
+std::string GpioImplVisitor::GetUniqueNodeName(fdf_devicetree::Node& node) {
+  std::string name = node.fdf_name();
+  auto parent = node.parent();
+  if (parent && parent.name() != "dt-root") {
+    name = parent.fdf_name() + "-" + name;
   }
+  return name;
+}
 
-  auto& controller = GetController(gpio_node.id());
-  auto pins = cfg_node.GetProperty<std::vector<uint32_t>>(kPins);
-  if (pins.is_error()) {
-    fdf::error("Pin controller config '{}' does not have pins property: {}", cfg_node.name(), pins);
-
-    return pins.take_error();
-  }
-
-  if (pins->empty()) {
-    fdf::error("No pins found in pin controller config '{}'", cfg_node.name());
-
-    return zx::error(ZX_ERR_INVALID_ARGS);
-  }
-
+zx::result<fuchsia_hardware_pin::Configuration> GpioImplVisitor::ParsePinConfiguration(
+    fdf_devicetree::ReferenceNode& cfg_node) {
   fuchsia_hardware_pin::Configuration config;
 
   std::optional<Pull> pull;
@@ -240,7 +387,6 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
       fdf::error(
           "Pin controller config '{}' can only support one pull direction. Previously already set with {}, now trying to set as {}",
           cfg_node.name(), static_cast<uint32_t>(*pull), static_cast<uint32_t>(val));
-
       return zx::error(ZX_ERR_NOT_SUPPORTED);
     }
     pull = val;
@@ -248,21 +394,18 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
   };
   if (cfg_node.GetProperty<bool>(kPinBiasPullDown)) {
     auto result = save_pull(Pull::kDown);
-    if (result.is_error()) {
+    if (result.is_error())
       return result.take_error();
-    }
   }
   if (cfg_node.GetProperty<bool>(kPinBiasPullUp)) {
     auto result = save_pull(Pull::kUp);
-    if (result.is_error()) {
+    if (result.is_error())
       return result.take_error();
-    }
   }
   if (cfg_node.GetProperty<bool>(kPinBiasDisable)) {
     auto result = save_pull(Pull::kNone);
-    if (result.is_error()) {
+    if (result.is_error())
       return result.take_error();
-    }
   }
 
   config.pull(pull);
@@ -293,7 +436,6 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
   } else if (drive_strength_ua.status_value() != ZX_ERR_NOT_FOUND) {
     fdf::error("Pin controller config '{}' has invalid drive strength: {}.", cfg_node.name(),
                drive_strength_ua);
-
     return drive_strength_ua.take_error();
   }
 
@@ -303,7 +445,6 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
       fdf::error(
           "Pin controller config '{}' can only support one drive type. Previously already set with {}, now trying to set as {}",
           cfg_node.name(), static_cast<uint32_t>(*drive_type), static_cast<uint32_t>(val));
-
       return zx::error(ZX_ERR_NOT_SUPPORTED);
     }
     drive_type = val;
@@ -311,21 +452,18 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
   };
   if (cfg_node.GetProperty<bool>(kPinDrivePushPull)) {
     auto result = save_drive_type(DriveType::kPushPull);
-    if (result.is_error()) {
+    if (result.is_error())
       return result.take_error();
-    }
   }
   if (cfg_node.GetProperty<bool>(kPinDriveOpenDrain)) {
     auto result = save_drive_type(DriveType::kOpenDrain);
-    if (result.is_error()) {
+    if (result.is_error())
       return result.take_error();
-    }
   }
   if (cfg_node.GetProperty<bool>(kPinDriveOpenSource)) {
     auto result = save_drive_type(DriveType::kOpenSource);
-    if (result.is_error()) {
+    if (result.is_error())
       return result.take_error();
-    }
   }
   if (drive_type.has_value()) {
     config.drive_type(drive_type);
@@ -337,7 +475,6 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
   } else if (power_source.status_value() != ZX_ERR_NOT_FOUND) {
     fdf::error("Pin controller config '{}' has invalid power source: {}.", cfg_node.name(),
                power_source);
-
     return power_source.take_error();
   }
 
@@ -345,41 +482,131 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
     config.wake_vector(true);
   }
 
-  std::optional<BufferMode> buffer_mode;
+  return zx::ok(config);
+}
+
+zx::result<std::optional<fuchsia_hardware_gpio::BufferMode>> GpioImplVisitor::ParseBufferMode(
+    fdf_devicetree::ReferenceNode& cfg_node) {
+  std::optional<fuchsia_hardware_gpio::BufferMode> buffer_mode;
   if (cfg_node.GetProperty<bool>(kPinOutputDisable)) {
-    buffer_mode = BufferMode::kInput;
+    buffer_mode = fuchsia_hardware_gpio::BufferMode::kInput;
   }
   if (cfg_node.GetProperty<bool>(kPinOutputLow)) {
     if (buffer_mode) {
       fdf::error(
-          "Multiple values for InitCall defined in pin config '{}'. Property 'output-low' clashes with another property.",
+          "Multiple values for BufferMode defined in pin config '{}'. Property 'output-low' clashes.",
           cfg_node.name());
-
       return zx::error(ZX_ERR_ALREADY_EXISTS);
     }
-    buffer_mode = BufferMode::kOutputLow;
+    buffer_mode = fuchsia_hardware_gpio::BufferMode::kOutputLow;
   }
   if (cfg_node.GetProperty<bool>(kPinOutputHigh)) {
     if (buffer_mode) {
       fdf::error(
-          "Multiple values for InitCall defined in pin config '{}'. Property 'output-high' clashes with another property.",
+          "Multiple values for BufferMode defined in pin config '{}'. Property 'output-high' clashes.",
           cfg_node.name());
-
       return zx::error(ZX_ERR_ALREADY_EXISTS);
     }
-    buffer_mode = BufferMode::kOutputHigh;
+    buffer_mode = fuchsia_hardware_gpio::BufferMode::kOutputHigh;
+  }
+  return zx::ok(buffer_mode);
+}
+
+zx::result<> GpioImplVisitor::ParsePinCtrlStateCfg(
+    fdf_devicetree::ReferenceNode& cfg_node, fdf_devicetree::ParentNode& gpio_node,
+    std::vector<fuchsia_hardware_pinimpl::PinConfiguration>& pin_configs) {
+  if (!is_match(gpio_node.properties())) {
+    return zx::ok();
+  }
+
+  auto pins = cfg_node.GetProperty<std::vector<uint32_t>>(kPins);
+  if (pins.is_error()) {
+    fdf::error("Pin controller config '{}' does not have pins property: {}", cfg_node.name(), pins);
+    return pins.take_error();
+  }
+
+  if (pins->empty()) {
+    fdf::error("No pins found in pin controller config '{}'", cfg_node.name());
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  auto config = ParsePinConfiguration(cfg_node);
+  if (config.is_error()) {
+    return config.take_error();
+  }
+
+  auto buffer_mode = ParseBufferMode(cfg_node);
+  if (buffer_mode.is_error()) {
+    return buffer_mode.take_error();
+  }
+
+  auto actual_buffer_mode = *buffer_mode;
+  for (size_t i = 0; i < pins->size(); i++) {
+    if (!config->IsEmpty()) {
+      fuchsia_hardware_pinimpl::PinConfiguration pin_cfg{{
+          .pin = (*pins)[i],
+          .call = fuchsia_hardware_pinimpl::InitCall::WithPinConfig(*config),
+      }};
+      pin_configs.push_back(std::move(pin_cfg));
+    }
+    if (actual_buffer_mode.has_value()) {
+      fuchsia_hardware_pinimpl::PinConfiguration pin_cfg{{
+          .pin = (*pins)[i],
+          .call = fuchsia_hardware_pinimpl::InitCall::WithBufferMode(*actual_buffer_mode),
+      }};
+      pin_configs.push_back(std::move(pin_cfg));
+    }
+  }
+
+  return zx::ok();
+}
+
+zx::result<fdf_devicetree::ParentNode> GpioImplVisitor::GetGpioNodeForPinConfig(
+    fdf_devicetree::ReferenceNode& cfg_node) {
+  // TODO(b/325077980): Add gpio-ranges based mapping in case the pinctrl cfg is not a direct
+  // child of gpio-controller.
+  return zx::ok(cfg_node.parent());
+}
+
+zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
+                                              fdf_devicetree::ReferenceNode& cfg_node,
+                                              fdf_devicetree::ParentNode& gpio_node) {
+  // Check that the parent is indeed a gpio-controller that we support.
+  if (!is_match(gpio_node.properties())) {
+    return zx::ok();
+  }
+
+  auto& controller = GetController(gpio_node.id());
+  auto pins = cfg_node.GetProperty<std::vector<uint32_t>>(kPins);
+  if (pins.is_error()) {
+    fdf::error("Pin controller config '{}' does not have pins property: {}", cfg_node.name(), pins);
+    return pins.take_error();
+  }
+
+  if (pins->empty()) {
+    fdf::error("No pins found in pin controller config '{}'", cfg_node.name());
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  auto config = ParsePinConfiguration(cfg_node);
+  if (config.is_error()) {
+    return config.take_error();
+  }
+
+  auto buffer_mode = ParseBufferMode(cfg_node);
+  if (buffer_mode.is_error()) {
+    return buffer_mode.take_error();
   }
 
   std::vector<InitCall> init_calls;
-  if (!config.IsEmpty()) {
-    init_calls.emplace_back(InitCall::WithPinConfig(std::move(config)));
+  if (!config->IsEmpty()) {
+    init_calls.emplace_back(InitCall::WithPinConfig(std::move(*config)));
   }
-  if (buffer_mode) {
-    init_calls.emplace_back(InitCall::WithBufferMode(*buffer_mode));
+  if (*buffer_mode) {
+    init_calls.emplace_back(InitCall::WithBufferMode(**buffer_mode));
   }
   if (init_calls.empty()) {
     fdf::error("Pin controller config '{}' does not have a valid config.", cfg_node.name());
-
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
@@ -554,6 +781,10 @@ zx::result<> GpioImplVisitor::FinalizeNode(fdf_devicetree::Node& node) {
     }
     if (!controller->second.metadata.pins()->empty()) {
       metadata.pins() = *std::move(controller->second.metadata.pins());
+    }
+    if (controller->second.metadata.device_pin_states() &&
+        !controller->second.metadata.device_pin_states()->empty()) {
+      metadata.device_pin_states() = *std::move(controller->second.metadata.device_pin_states());
     }
 
     const fit::result persisted_pin_metadata = fidl::Persist(metadata);

@@ -12,6 +12,7 @@ driver_bind_rules("aml_g12_pdm_bind") {
   bind_output = "aml-g12-pdm.bindbc"
   tests = "meta/tests.json"
   deps = [
+    "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.clock",
     "//src/devices/bind/fuchsia.gpio",

@@ -23,8 +23,13 @@ properties:
     $ref: /schemas/types.yaml#/definitions/string-array
     description: Names of the GPIOs.
 
-  pinctrl-0:
+  pinctrl-names:
+    $ref: /schemas/types.yaml#/definitions/string-array
+    description: Names of the pin control states.
+
+patternProperties:
+  "^pinctrl-[0-9]+$":
     $ref: /schemas/types.yaml#/definitions/phandle-array
-    description: Pin control state 0.
+    description: Pin control state.
 
 additionalProperties: true

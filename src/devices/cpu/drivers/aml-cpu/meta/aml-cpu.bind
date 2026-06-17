@@ -4,6 +4,16 @@
 
 composite aml_cpu;
 
+using fuchsia.hardware.pin;
+using fuchsia.google.platform;
+using fuchsia.amlogic.platform;
+using fuchsia.clock;
+using fuchsia.gpio;
+using fuchsia.hardware.clock;
+using fuchsia.hardware.power;
+using fuchsia.platform;
+using fuchsia.power;
+using fuchsia.devicetree;
 
 parent "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,cpu" {
@@ -67,4 +77,8 @@ optional parent "clock-cpu-scaler-02" {
 
 optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }

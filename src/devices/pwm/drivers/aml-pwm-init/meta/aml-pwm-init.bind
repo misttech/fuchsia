@@ -4,16 +4,24 @@
 
 composite aml_pwm_init;
 
+using fuchsia.hardware.pin;
+using fuchsia.gpio;
+using fuchsia.hardware.gpio;
+using fuchsia.hardware.pwm;
 
 primary parent "pwm" {
   fuchsia.hardware.pwm.Service == fuchsia.hardware.pwm.Service.ZirconTransport;
 }
 
-parent "gpio-init" {
+optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }
 
 parent "gpio-bt" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.BT_REG_ON;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }

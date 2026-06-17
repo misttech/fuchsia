@@ -74,7 +74,9 @@
 		reg = <0x0 0xffffc000 0x0 0x1000>;
 		gpios = <&gpioA PIN1 0 &gpioA PIN2 0>;
 		gpio-names = PIN1_NAME, PIN2_NAME;
-		pinctrl-0 = <&group1 &group3>;
+		pinctrl-0 = <&group1>;
+		pinctrl-1 = <&group3>;
+		pinctrl-names = "default", "sleep";
 	};
 
 	video@ffffd000 {

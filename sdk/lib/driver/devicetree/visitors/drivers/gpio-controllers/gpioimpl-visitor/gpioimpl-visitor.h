@@ -71,6 +71,19 @@ class GpioImplVisitor : public fdf_devicetree::Visitor {
   zx::result<> ParsePinCtrlCfg(fdf_devicetree::Node& child, fdf_devicetree::ReferenceNode& cfg_node,
                                fdf_devicetree::ParentNode& gpio_node);
 
+  // Helper to parse pin controller state config.
+  zx::result<> ParsePinCtrlStateCfg(
+      fdf_devicetree::ReferenceNode& cfg_node, fdf_devicetree::ParentNode& gpio_node,
+      std::vector<fuchsia_hardware_pinimpl::PinConfiguration>& pin_configs);
+
+  zx::result<> ParsePinStates(fdf_devicetree::Node& node);
+  zx::result<> ParseBootTimeConfig(fdf_devicetree::Node& node);
+
+  static zx::result<fuchsia_hardware_pin::Configuration> ParsePinConfiguration(
+      fdf_devicetree::ReferenceNode& cfg_node);
+  static zx::result<std::optional<fuchsia_hardware_gpio::BufferMode>> ParseBufferMode(
+      fdf_devicetree::ReferenceNode& cfg_node);
+
   static zx::result<fdf_devicetree::ParentNode> GetGpioNodeForPinConfig(
       fdf_devicetree::ReferenceNode& cfg_node);
 
@@ -80,6 +93,12 @@ class GpioImplVisitor : public fdf_devicetree::Visitor {
   static zx::result<> AddInitNodeSpec(fdf_devicetree::Node& child, uint32_t controller_id,
                                       uint32_t controller_index);
 
+  static zx::result<> AddPinStatesNodeSpec(fdf_devicetree::Node& child, uint32_t controller_id,
+                                           uint32_t controller_index,
+                                           const std::string& client_name);
+
+  static std::string GetUniqueNodeName(fdf_devicetree::Node& node);
+
   static bool is_match(
       const std::unordered_map<std::string_view, devicetree::PropertyValue>& properties) {
     return properties.contains("gpio-controller");
@@ -88,8 +107,6 @@ class GpioImplVisitor : public fdf_devicetree::Visitor {
   // Mapping of gpio controller node ID to its info.
   std::map<uint32_t, GpioController> gpio_controllers_;
   std::unique_ptr<fdf_devicetree::PropertyParser> gpio_parser_;
-  std::unique_ptr<fdf_devicetree::PropertyParser> pinctrl_cfg_parser_;
-  std::unique_ptr<fdf_devicetree::PropertyParser> pinctrl_state_parser_;
 };
 
 }  // namespace gpio_impl_dt

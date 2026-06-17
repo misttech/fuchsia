@@ -20,6 +20,7 @@
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
+#include <bind/fuchsia/pin/cpp/bind.h>
 #include <fbl/alloc_checker.h>
 
 namespace gpio {
@@ -358,6 +359,131 @@ void GpioDevice::DevfsConnect(fidl::ServerEnd<fuchsia_hardware_pin::Debug> serve
                              fidl::kIgnoreBindingClosure);
 }
 
+//
+// PinStatesDevice implementation
+//
+
+zx::result<> PinStatesDevice::AddServices(const std::shared_ptr<fdf::Namespace>& incoming,
+                                          const std::shared_ptr<fdf::OutgoingDirectory>& outgoing) {
+  fuchsia_hardware_pin::PinStatesService::InstanceHandler pin_handler({
+      .device =
+          [&](fidl::ServerEnd<fuchsia_hardware_pin::PinStates> server) {
+            async::PostTask(fidl_dispatcher_, [this, server = std::move(server)]() mutable {
+              bindings_.AddBinding(fidl_dispatcher_, std::move(server), this,
+                                   fidl::kIgnoreBindingClosure);
+            });
+          },
+  });
+  zx::result<> service_result = outgoing->AddService<fuchsia_hardware_pin::PinStatesService>(
+      std::move(pin_handler), pin_states_.name());
+  if (service_result.is_error()) {
+    logger_.log(fdf::ERROR, "Failed to add PinStates service to the outgoing directory");
+    return service_result.take_error();
+  }
+  return zx::ok();
+}
+
+zx::result<> PinStatesDevice::AddDevice(
+    fidl::UnownedClientEnd<fuchsia_driver_framework::Node> root_node) {
+  std::vector<fuchsia_driver_framework::Offer> offers{
+      fdf::MakeOffer2<fuchsia_hardware_pin::PinStatesService>(pin_states_.name()),
+  };
+
+  std::vector<fuchsia_driver_framework::NodeProperty2> props{
+      fdf::MakeProperty2(bind_fuchsia_pin::CONTROLLER, controller_id_),
+      fdf::MakeProperty2(bind_fuchsia_pin::NAME, pin_states_.name()),
+  };
+
+  zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> result =
+      fdf::AddChild(root_node, logger_, pin_states_.name(), props, offers);
+  if (result.is_error()) {
+    logger_.log(fdf::ERROR, "Failed to add pin-states child node: {}", result);
+    return result.take_error();
+  }
+
+  controller_ = std::move(result.value());
+  return zx::ok();
+}
+
+zx_status_t PinStatesDevice::ApplyState(const std::string& state_name) {
+  const fuchsia_hardware_pinimpl::PinState* target_state = nullptr;
+  for (const auto& state : pin_states_.states()) {
+    if (state.name() == state_name) {
+      target_state = &state;
+      break;
+    }
+  }
+
+  if (!target_state) {
+    logger_.log(fdf::ERROR, "Pin state '{}' not found for device '{}'", state_name,
+                pin_states_.name());
+    return ZX_ERR_NOT_FOUND;
+  }
+
+  fdf::Arena arena('GPIO');
+  for (const auto& pin_cfg : target_state->pins()) {
+    uint32_t pin = pin_cfg.pin();
+
+    if (pin_cfg.call().Which() == fuchsia_hardware_pinimpl::InitCall::Tag::kPinConfig) {
+      auto result = pinimpl_.sync().buffer(arena)->Configure(
+          pin, fidl::ToWire(arena, pin_cfg.call().pin_config().value()));
+      if (!result.ok()) {
+        logger_.log(fdf::ERROR, "Failed to configure pin {} for state '{}': {}", pin, state_name,
+                    result.status_string());
+        return result.status();
+      }
+      if (result->is_error()) {
+        logger_.log(fdf::ERROR, "PinImpl Configure returned error for pin {} state '{}': {}", pin,
+                    state_name, result->error_value());
+        return result->error_value();
+      }
+    } else if (pin_cfg.call().Which() == fuchsia_hardware_pinimpl::InitCall::Tag::kBufferMode) {
+      auto result =
+          pinimpl_.sync().buffer(arena)->SetBufferMode(pin, pin_cfg.call().buffer_mode().value());
+      if (!result.ok()) {
+        logger_.log(fdf::ERROR, "Failed to set buffer mode for pin {} state '{}': {}", pin,
+                    state_name, result.status_string());
+        return result.status();
+      }
+      if (result->is_error()) {
+        logger_.log(fdf::ERROR, "PinImpl SetBufferMode returned error for pin {} state '{}': {}",
+                    pin, state_name, result->error_value());
+        return result->error_value();
+      }
+    }
+  }
+
+  return ZX_OK;
+}
+
+zx::result<> PinStatesDevice::ApplyDefaultState() {
+  zx_status_t status = ApplyState("default");
+  if (status == ZX_ERR_NOT_FOUND) {
+    logger_.log(fdf::INFO, "No 'default' pin state found for device '{}'", pin_states_.name());
+    return zx::ok();
+  }
+  if (status != ZX_OK) {
+    return zx::error(status);
+  }
+  return zx::ok();
+}
+
+void PinStatesDevice::SelectState(SelectStateRequestView request,
+                                  SelectStateCompleter::Sync& completer) {
+  zx_status_t status = ApplyState(std::string(request->name.data(), request->name.size()));
+  if (status != ZX_OK) {
+    completer.ReplyError(status);
+  } else {
+    completer.ReplySuccess();
+  }
+}
+
+void PinStatesDevice::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_hardware_pin::PinStates> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  logger_.log(fdf::ERROR, "Unknown PinStates method ordinal 0x{:016x}", metadata.method_ordinal);
+}
+
 void GpioRootDevice::Start(fdf::DriverContext context, fdf::StartCompleter completer) {
   incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
 
@@ -439,45 +565,77 @@ void GpioRootDevice::Start(fdf::DriverContext context, fdf::StartCompleter compl
   }
   node_ = *std::move(node);
 
-  if (!metadata.has_value() || !metadata->pins().has_value()) {
-    logger().log(fdf::INFO, "No gpio pins provided");
+  bool has_pins =
+      metadata.has_value() && metadata->pins().has_value() && !metadata->pins()->empty();
+  bool has_states = metadata.has_value() && metadata->device_pin_states().has_value() &&
+                    !metadata->device_pin_states()->empty();
+
+  if (!has_pins && !has_states) {
+    logger().log(fdf::INFO, "No gpio pins or pin-states provided");
     completer(zx::ok());
     return;
   }
-  auto pins = std::move(metadata->pins().value());
-  for (size_t i = 0; i < pins.size(); ++i) {
-    const auto& pin = pins[i];
-    if (!pin.name().has_value()) {
-      logger().log(fdf::TRACE, "Pin {} missing name", i);
-      completer(zx::error(ZX_ERR_INTERNAL));
-      return;
+
+  std::vector<fuchsia_hardware_pinimpl::Pin> pins;
+  if (has_pins) {
+    pins = std::move(metadata->pins().value());
+    for (size_t i = 0; i < pins.size(); ++i) {
+      const auto& pin = pins[i];
+      if (!pin.name().has_value()) {
+        logger().log(fdf::TRACE, "Pin {} missing name", i);
+        completer(zx::error(ZX_ERR_INTERNAL));
+        return;
+      }
+      if (!pin.pin().has_value()) {
+        logger().log(fdf::TRACE, "Pin {} missing pin", i);
+        completer(zx::error(ZX_ERR_INTERNAL));
+        return;
+      }
     }
-    if (!pin.pin().has_value()) {
-      logger().log(fdf::TRACE, "Pin {} missing pin", i);
-      completer(zx::error(ZX_ERR_INTERNAL));
+    // Make sure that the list of GPIO pins has no duplicates.
+    auto gpio_cmp_lt = [](fuchsia_hardware_pinimpl::Pin& lhs, fuchsia_hardware_pinimpl::Pin& rhs) {
+      return lhs.pin() < rhs.pin();
+    };
+    auto gpio_cmp_eq = [](fuchsia_hardware_pinimpl::Pin& lhs, fuchsia_hardware_pinimpl::Pin& rhs) {
+      return lhs.pin() == rhs.pin();
+    };
+    std::sort(pins.begin(), pins.end(), gpio_cmp_lt);
+    auto result = std::adjacent_find(pins.begin(), pins.end(), gpio_cmp_eq);
+    if (result != pins.end()) {
+      logger().log(fdf::TRACE, "gpio pin '{}' was published more than once", result->pin().value());
+      completer(zx::error(ZX_ERR_INVALID_ARGS));
       return;
     }
   }
-  // Make sure that the list of GPIO pins has no duplicates.
-  auto gpio_cmp_lt = [](fuchsia_hardware_pinimpl::Pin& lhs, fuchsia_hardware_pinimpl::Pin& rhs) {
-    return lhs.pin() < rhs.pin();
-  };
-  auto gpio_cmp_eq = [](fuchsia_hardware_pinimpl::Pin& lhs, fuchsia_hardware_pinimpl::Pin& rhs) {
-    return lhs.pin() == rhs.pin();
-  };
-  std::sort(pins.begin(), pins.end(), gpio_cmp_lt);
-  auto result = std::adjacent_find(pins.begin(), pins.end(), gpio_cmp_eq);
-  if (result != pins.end()) {
-    logger().log(fdf::TRACE, "gpio pin '{}' was published more than once", result->pin().value());
-    completer(zx::error(ZX_ERR_INVALID_ARGS));
-    return;
+
+  std::vector<fuchsia_hardware_pinimpl::DevicePinStates> device_pin_states;
+  if (has_states) {
+    device_pin_states = std::move(metadata->device_pin_states().value());
+    for (size_t i = 0; i < device_pin_states.size(); ++i) {
+      const auto& dev_state = device_pin_states[i];
+      if (dev_state.name().empty()) {
+        logger().log(fdf::TRACE, "DevicePinStates {} missing name", i);
+        completer(zx::error(ZX_ERR_INVALID_ARGS));
+        return;
+      }
+      for (size_t j = 0; j < dev_state.states().size(); ++j) {
+        const auto& state = dev_state.states()[j];
+        if (state.name().empty()) {
+          logger().log(fdf::TRACE, "DevicePinStates {} state {} missing name", i, j);
+          completer(zx::error(ZX_ERR_INVALID_ARGS));
+          return;
+        }
+      }
+    }
   }
 
   async::PostTask(
       fidl_dispatcher()->async_dispatcher(),
-      [=, this, pins = std::move(pins), config = context.take_config<gpio_config::Config>(),
+      [=, this, pins = std::move(pins), device_pin_states = std::move(device_pin_states),
+       config = context.take_config<gpio_config::Config>(),
        completer = std::move(completer)]() mutable {
-        CreatePinDevices(controller_id, pins, config, std::move(completer));
+        CreatePinDevices(controller_id, pins, std::move(device_pin_states), config,
+                         std::move(completer));
       });
 }
 
@@ -487,15 +645,27 @@ void GpioRootDevice::Stop(fdf::StopCompleter completer) {
   pinimpl_.AsyncTeardown();
 }
 
-void GpioRootDevice::CreatePinDevices(const uint32_t controller_id,
-                                      std::span<fuchsia_hardware_pinimpl::Pin> pins,
-                                      gpio_config::Config config, fdf::StartCompleter completer) {
+void GpioRootDevice::CreatePinDevices(
+    const uint32_t controller_id, std::span<fuchsia_hardware_pinimpl::Pin> pins,
+    std::vector<fuchsia_hardware_pinimpl::DevicePinStates> device_pin_states,
+    gpio_config::Config config, fdf::StartCompleter completer) {
   for (const auto& pin : pins) {
     fbl::AllocChecker ac;
     children_.emplace_back(new (&ac) GpioDevice(pinimpl_.Clone(), pin.pin().value(), controller_id,
                                                 pin.name().value(), logger()));
     if (!ac.check()) {
       logger().log(fdf::ERROR, "Failed to allocate memory for pin");
+      completer(zx::error(ZX_ERR_NO_MEMORY));
+      return;
+    }
+  }
+
+  for (auto& device_states : device_pin_states) {
+    fbl::AllocChecker ac;
+    pin_states_children_.emplace_back(new (&ac) PinStatesDevice(
+        pinimpl_.Clone(), std::move(device_states), controller_id, logger()));
+    if (!ac.check()) {
+      logger().log(fdf::ERROR, "Failed to allocate memory for pin-states");
       completer(zx::error(ZX_ERR_NO_MEMORY));
       return;
     }
@@ -517,6 +687,15 @@ void GpioRootDevice::ServePinDevices(gpio_config::Config config, fdf::StartCompl
     }
   }
 
+  for (std::unique_ptr<PinStatesDevice>& child : pin_states_children_) {
+    zx::result<> result = child->AddServices(incoming(), outgoing());
+    if (result.is_error()) {
+      logger().log(fdf::ERROR, "Failed to serve pin-states devices: {}", result);
+      completer(result.take_error());
+      return;
+    }
+  }
+
   async::PostTask(fidl_dispatcher()->async_dispatcher(),
                   [this, config = config, completer = std::move(completer)]() mutable {
                     AddPinDevices(config, std::move(completer));
@@ -533,7 +712,21 @@ void GpioRootDevice::AddPinDevices(gpio_config::Config config, fdf::StartComplet
     }
   }
 
-  logger().log(fdf::INFO, "All pin devices added successfully");
+  for (std::unique_ptr<PinStatesDevice>& child : pin_states_children_) {
+    if (zx::result<> result = child->AddDevice(node_.node_.borrow()); result.is_error()) {
+      logger().log(fdf::ERROR, "Failed to add pin-states device: {}", result);
+      completer(result.take_error());
+      return;
+    }
+
+    if (zx::result<> result = child->ApplyDefaultState(); result.is_error()) {
+      logger().log(fdf::ERROR, "Failed to apply default state: {}", result);
+      completer(result.take_error());
+      return;
+    }
+  }
+
+  logger().log(fdf::INFO, "All pin/pin-states devices added successfully");
   completer(zx::ok());
 }
 

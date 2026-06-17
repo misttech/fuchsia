@@ -4,6 +4,11 @@
 
 composite tcs3400_light;
 
+using fuchsia.hardware.pin;
+using fuchsia.gpio;
+using fuchsia.hardware.gpio;
+using fuchsia.hardware.i2c;
+using fuchsia.platform;
 
 primary parent "i2c" {
   fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;
@@ -22,6 +27,10 @@ parent "pdev" {
   fuchsia.BIND_PLATFORM_DEV_INSTANCE_ID == 0;
 }
 
-parent "gpio-init" {
+optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }

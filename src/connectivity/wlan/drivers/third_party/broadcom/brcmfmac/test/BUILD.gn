@@ -238,6 +238,7 @@ bind_test("brcmfmac_sdio_bind_test") {
   tests = "meta/bind_sdio_tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib",
+    "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
     "//sdk/fidl/fuchsia.hardware.sdio:fuchsia.hardware.sdio_bindlib",
     "//src/devices/bind/fuchsia.broadcom.platform",
     "//src/devices/bind/fuchsia.devicetree",

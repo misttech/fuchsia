@@ -14,6 +14,9 @@ const MAX_PIN_NAME_LEN uint32 = 64;
 @available(added=31)
 const MAX_FUNCTION_NAME_LEN uint32 = 32;
 
+/// Maximum length of the pin state name.
+@available(added=HEAD)
+const MAX_STATE_NAME_LEN uint32 = 64;
 
 @strict_audit(bug="https://fxbug.dev/467128430", state="PENDING_REVIEW")
 type Pull = strict enum {
@@ -72,8 +75,27 @@ open protocol Pin {
     }) error zx.Status;
 };
 
+@available(added=HEAD)
+open protocol PinStates {
+    /// Configures the pins to the state with the given name.
+    ///
+    /// Errors:
+    /// * `ZX_ERR_NOT_FOUND`: The state with the given name is not found.
+    /// * Other errors may be returned if applying the pin configuration fails.
+    ///   In case of failure, some pin configurations might have been applied,
+    ///   leaving the pins in a partially configured state.
+    strict SelectState(struct {
+        name string:MAX_STATE_NAME_LEN;
+    }) -> () error zx.Status;
+};
+
 service Service {
     device client_end:Pin;
+};
+
+@available(added=HEAD)
+service PinStatesService {
+    device client_end:PinStates;
 };
 
 open protocol Debug {

@@ -11,6 +11,7 @@ driver_bind_rules("sherlock-post-init-bind") {
   tests = "meta/post-init-bind-test.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib",
+    "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
     "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib",
     "//src/devices/bind/fuchsia.amlogic.platform.t931",
     "//src/devices/bind/fuchsia.google.platform",

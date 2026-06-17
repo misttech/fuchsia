@@ -4,6 +4,10 @@
 
 composite fusb302;
 
+using fuchsia.hardware.pin;
+using fuchsia.gpio;
+using fuchsia.hardware.i2c;
+using fuchsia.hardware.gpio;
 
 primary parent "gpio" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
@@ -14,6 +18,10 @@ parent "i2c" {
   fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;
 }
 
-parent "gpio-init" {
+optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }

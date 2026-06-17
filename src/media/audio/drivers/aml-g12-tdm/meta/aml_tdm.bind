@@ -4,6 +4,15 @@
 
 composite aml_tdm;
 
+using fuchsia.hardware.pin;
+using fuchsia.amlogic.platform;
+using fuchsia.gpio;
+using fuchsia.clock;
+using fuchsia.hardware.audio;
+using fuchsia.hardware.clock;
+using fuchsia.hardware.gpio;
+using fuchsia.platform;
+using fuchsia.amlogic.platform.meson;
 
 primary parent "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
@@ -29,7 +38,7 @@ optional parent "clock-pll" {
   fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.AUDIO_PLL;
 }
 
-parent "gpio-init" {
+optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }
 
@@ -55,4 +64,8 @@ optional parent "codec-03" {
 
 parent "clock-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.clock.BIND_INIT_STEP.CLOCK;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }

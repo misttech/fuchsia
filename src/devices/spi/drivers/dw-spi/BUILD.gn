@@ -12,6 +12,7 @@ driver_bind_rules("bind_rules") {
   deps = [
     "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_bindlib",
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib",
+    "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
     "//sdk/fidl/fuchsia.hardware.powerdomain:fuchsia.hardware.powerdomain_bindlib",
     "//sdk/fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_bindlib",
     "//src/devices/bind/fuchsia.clock",

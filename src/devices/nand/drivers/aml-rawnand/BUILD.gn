@@ -32,6 +32,7 @@ driver_bind_rules("aml-rawnand-bind") {
   bind_output = "aml-rawnand.bindbc"
   tests = "meta/bind-tests.json"
   deps = [
+    "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.gpio",
     "//src/devices/bind/fuchsia.platform",

@@ -26,6 +26,7 @@ devicetree_visitor("gpioimpl") {
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
     "//src/devices/bind/fuchsia.gpio",
+    "//src/devices/bind/fuchsia.pin",
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.pinimpl:fuchsia.hardware.pinimpl_cpp",
@@ -35,6 +36,7 @@ devicetree_visitor("gpioimpl") {
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.gpio:fuchsia.gpio_cpp",
+    "//src/devices/bind/fuchsia.pin:fuchsia.pin_cpp",
   ]
 }
 
@@ -51,6 +53,7 @@ source_set("gpioimpl-visitor") {
     "//sdk/lib/driver/logging/cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.gpio:fuchsia.gpio_cpp",
+    "//src/devices/bind/fuchsia.pin:fuchsia.pin_cpp",
     "//src/lib/ddk",
     "//src/lib/ddk:ddk-metadata-headers",
   ]
@@ -71,6 +74,7 @@ test("gpioimpl-visitor-test-bin") {
     "//sdk/lib/driver/devicetree/visitors/default/mmio",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.gpio:fuchsia.gpio_cpp",
+    "//src/devices/bind/fuchsia.pin:fuchsia.pin_cpp",
     "//src/lib/fxl/test:gtest_main",
   ]
 }

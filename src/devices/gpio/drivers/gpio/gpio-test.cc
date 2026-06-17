@@ -1287,6 +1287,83 @@ TEST_F(GpioTest, DoubleGetInterruptAndRelease) {
   EXPECT_TRUE(driver_test().StopDriver().is_ok());
 }
 
+TEST_F(GpioTest, TestPinStates) {
+  fuchsia_hardware_pinimpl::DevicePinStates dev_states;
+  dev_states.name() = "my-device";
+
+  // default state: Configure Pin 1 to Pull Up
+  fuchsia_hardware_pinimpl::PinState default_state;
+  default_state.name() = "default";
+
+  fuchsia_hardware_pinimpl::PinConfiguration pin1_default{{
+      .pin = 1,
+      .call =
+          fuchsia_hardware_pinimpl::InitCall::WithPinConfig(fuchsia_hardware_pin::Configuration{{
+              .pull = fuchsia_hardware_pin::Pull::kUp,
+          }}),
+  }};
+  default_state.pins().push_back(std::move(pin1_default));
+  dev_states.states().push_back(std::move(default_state));
+
+  // sleep state: Configure Pin 1 to Pull Down
+  fuchsia_hardware_pinimpl::PinState sleep_state;
+  sleep_state.name() = "sleep";
+
+  fuchsia_hardware_pinimpl::PinConfiguration pin1_sleep{{
+      .pin = 1,
+      .call =
+          fuchsia_hardware_pinimpl::InitCall::WithPinConfig(fuchsia_hardware_pin::Configuration{{
+              .pull = fuchsia_hardware_pin::Pull::kDown,
+          }}),
+  }};
+  sleep_state.pins().push_back(std::move(pin1_sleep));
+  dev_states.states().push_back(std::move(sleep_state));
+
+  SetPinMetadata({{.device_pin_states = {{dev_states}}}});
+
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    gpio_config::Config config{{.enable_suspend = true}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
+
+  // Default state should have been applied automatically.
+  EXPECT_EQ(pin_state(1).pull, fuchsia_hardware_pin::Pull::kUp);
+
+  zx::result client_end =
+      driver_test().Connect<fuchsia_hardware_pin::PinStatesService::Device>("my-device");
+  ASSERT_TRUE(client_end.is_ok());
+
+  fidl::WireClient<fuchsia_hardware_pin::PinStates> client(
+      *std::move(client_end), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+  // Switch to sleep state.
+  client->SelectState("sleep").ThenExactlyOnce(
+      [&](fidl::WireUnownedResult<fuchsia_hardware_pin::PinStates::SelectState>& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_TRUE(result->is_ok());
+        driver_test().runtime().Quit();
+      });
+  driver_test().runtime().Run();
+  driver_test().runtime().ResetQuit();
+
+  EXPECT_EQ(pin_state(1).pull, fuchsia_hardware_pin::Pull::kDown);
+
+  // Try invalid state.
+  client->SelectState("invalid").ThenExactlyOnce(
+      [&](fidl::WireUnownedResult<fuchsia_hardware_pin::PinStates::SelectState>& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_TRUE(result->is_error());
+        EXPECT_EQ(result->error_value(), ZX_ERR_NOT_FOUND);
+        driver_test().runtime().Quit();
+      });
+  driver_test().runtime().Run();
+  driver_test().runtime().ResetQuit();
+
+  EXPECT_TRUE(driver_test().StopDriver().is_ok());
+}
+
 }  // namespace
 
 }  // namespace gpio

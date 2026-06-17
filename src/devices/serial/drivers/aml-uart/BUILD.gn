@@ -20,6 +20,7 @@ driver_bind_rules("aml_uart_bind") {
   bind_output = "aml-uart.bindbc"
   tests = "meta/bind_tests.json"
   deps = [
+    "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.devicetree",
     "//src/devices/bind/fuchsia.gpio",

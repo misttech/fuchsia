@@ -4,6 +4,13 @@
 
 composite display;
 
+using fuchsia.hardware.pin;
+using fuchsia.hardware.amlogiccanvas;
+using fuchsia.hardware.gpio;
+using fuchsia.gpio;
+using fuchsia.platform;
+using fuchsia.amlogic.platform;
+using fuchsia.devicetree;
 
 primary parent "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,display" {
@@ -37,4 +44,8 @@ parent "canvas" {
 
 optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }

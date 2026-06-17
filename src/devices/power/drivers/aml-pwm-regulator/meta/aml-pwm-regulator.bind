@@ -4,6 +4,12 @@
 
 composite aml_pwm_regulator;
 
+using fuchsia.hardware.pin;
+using fuchsia.gpio;
+using fuchsia.platform;
+using fuchsia.hardware.pwm;
+using fuchsia.pwm;
+using fuchsia.devicetree;
 
 primary parent "pwm" {
     fuchsia.hardware.pwm.Service == fuchsia.hardware.pwm.Service.ZirconTransport;
@@ -20,6 +26,10 @@ parent "pdev" {
   }
 }
 
-parent "gpio-init" {
+optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }

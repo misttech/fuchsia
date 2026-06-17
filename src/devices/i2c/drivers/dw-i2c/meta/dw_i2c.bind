@@ -4,6 +4,13 @@
 
 composite dw_i2c;
 
+using fuchsia.hardware.pin;
+using fuchsia.clock;
+using fuchsia.devicetree;
+using fuchsia.hardware.clock;
+using fuchsia.hardware.reset;
+using fuchsia.hardware.powerdomain;
+using fuchsia.gpio;
 
 primary parent "pdev" {
   fuchsia.devicetree.FIRST_COMPATIBLE == "google,i2c";
@@ -32,3 +39,6 @@ optional parent "gpio-init-0" {
   fuchsia.BIND_GPIO_CONTROLLER == 0;
 }
 
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
+}

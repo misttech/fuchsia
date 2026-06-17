@@ -4,6 +4,14 @@
 
 composite aml_thermal_pll;
 
+using fuchsia.hardware.pin;
+using fuchsia.platform;
+using fuchsia.amlogic.platform;
+using fuchsia.gpio;
+using fuchsia.hardware.clock;
+using fuchsia.hardware.pwm;
+using fuchsia.pwm;
+using fuchsia.clock;
 
 primary parent "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
@@ -16,7 +24,7 @@ primary parent "pdev" {
   fuchsia.BIND_PLATFORM_DEV_INSTANCE_ID == 0;
 }
 
-parent "gpio-init" {
+optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }
 
@@ -48,4 +56,8 @@ optional parent "clock-3" {
 optional parent "clock-4" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
   fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.SYS_CPUB_DIV16;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }

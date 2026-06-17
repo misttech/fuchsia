@@ -4,6 +4,12 @@
 
 composite ot_radio;
 
+using fuchsia.hardware.pin;
+using fuchsia.gpio;
+using fuchsia.hardware.gpio;
+using fuchsia.hardware.spi;
+using fuchsia.nordic.platform;
+using fuchsia.platform;
 
 primary parent "spi" {
   fuchsia.hardware.spi.Service == fuchsia.hardware.spi.Service.ZirconTransport;
@@ -33,6 +39,10 @@ parent "pdev" {
   fuchsia.BIND_PLATFORM_DEV_INSTANCE_ID == 0;
 }
 
-parent "gpio-init" {
+optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }

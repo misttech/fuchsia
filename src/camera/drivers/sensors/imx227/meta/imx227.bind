@@ -4,6 +4,15 @@
 
 composite imx227_sensor;
 
+using fuchsia.hardware.pin;
+using fuchsia.clock;
+using fuchsia.gpio;
+using fuchsia.hardware.clock;
+using fuchsia.hardware.gpio;
+using fuchsia.hardware.i2c;
+using fuchsia.camera;
+using fuchsia.platform;
+using fuchsia.sony.platform;
 
 primary parent "mipicsi" {
   fuchsia.BIND_PROTOCOL == fuchsia.camera.BIND_PROTOCOL.MIPICSI;
@@ -40,6 +49,10 @@ parent "clock-sensor" {
   fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.CAMERA_SENSOR;
 }
 
-parent "gpio-init" {
+optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
+}
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }
