@@ -12,6 +12,7 @@ import("//build/config/linker.gni")
 import("//build/config/zircon/levels.gni")
 import("//build/toolchain/rbe.gni")
 import("//build/toolchain/variant.gni")
+import("//build/toolchain/zircon/gcc.gni")
 
 # NOTE: This file provides the GN configs used by Zircon toolchains
 # exclusively. See //build/toolchain/zircon/zircon_toolchain.gni.
@@ -55,10 +56,18 @@ compiler_config("compiler") {
     c_family_flags += [ "--target=${zircon_toolchain.target_tuple}" ]
   }
 
-  if (linker != "") {
-    ldflags += [ "-fuse-ld=$linker" ]
-  } else {
+  if (linker == "lld") {
+    assert(!is_gcc)
     rustflags = [ "-Clinker=$rebased_clang_prefix/lld" ]
+    if (is_efi_toolchain) {
+      ldflags += [ "-fuse-ld=lld" ]
+    }
+  } else {
+    assert(is_gcc)
+    assert(linker == "")
+    rustflags =
+        [ "-Clinker=" +
+          rebase_path("$gcc_tool_dir/$clang_cpu-elf-ld", root_build_dir) ]
   }
 
   if (defined(zircon_toolchain.version_string) &&
