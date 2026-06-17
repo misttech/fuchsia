@@ -15,6 +15,7 @@
 #include <algorithm>
 
 #include <fbl/algorithm.h>
+#include <safemath/safe_math.h>
 
 // Checks that the partition map is valid, sorts it in partition order, and
 // ensures blocks are on erase block boundaries.
@@ -63,8 +64,14 @@ zx_status_t SanitizePartitionMap(fuchsia_boot_metadata::PartitionMap& pmap,
   auto block_size = pmap.block_size().value();
   if (block_size != erase_block_size) {
     for (auto& part : partitions) {
-      uint64_t first_byte_offset = part.first_block() * block_size;
-      uint64_t last_byte_offset = (part.last_block() + 1) * block_size;
+      uint64_t first_byte_offset;
+      uint64_t last_byte_offset;
+      if (!safemath::CheckMul(part.first_block(), block_size).AssignIfValid(&first_byte_offset) ||
+          !safemath::CheckMul(safemath::CheckAdd(part.last_block(), 1), block_size)
+               .AssignIfValid(&last_byte_offset)) {
+        fdf::error("Partition {} offsets overflow", part.name().c_str());
+        return ZX_ERR_INTERNAL;
+      }
 
       if (fbl::round_down(first_byte_offset, erase_block_size) != first_byte_offset ||
           fbl::round_down(last_byte_offset, erase_block_size) != last_byte_offset) {
