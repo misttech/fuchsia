@@ -51,7 +51,9 @@ use starnix_core::vfs::{FileSystemOptions, FsContext, LookupContext, Namespace, 
 use starnix_logging::{
     CATEGORY_STARNIX, NAME_CREATE_CONTAINER, log_debug, log_error, log_info, log_warn,
 };
-use starnix_modules::{init_common_devices, register_common_file_systems};
+use starnix_modules::{
+    init_common_devices, register_common_file_systems, register_common_syscalls,
+};
 use starnix_modules_layeredfs::{LayeredFsBuilder, LayeredFsMounts};
 use starnix_modules_magma::get_magma_params;
 use starnix_modules_overlayfs::OverlayStack;
@@ -747,6 +749,8 @@ async fn create_container(
     log_info!("Registering devices and filesystems.");
     init_common_devices(kernel.kthreads.unlocked_for_async().deref_mut(), &kernel)?;
     register_common_file_systems(kernel.kthreads.unlocked_for_async().deref_mut(), &kernel);
+
+    register_common_syscalls(&kernel);
 
     log_info!("Mounting filesystems.");
     mount_filesystems(

@@ -6,7 +6,7 @@ use crate::security;
 use crate::task::CurrentTask;
 use crate::vfs::{
     CheckAccessReason, FileHandle, FileObject, FsLockDepType, FsNodeHandle, FsNodeLinkBehavior,
-    FsStr, FsString, LookupVec, MountInfo, Mounts, NamespaceNode, UnlinkKind, path,
+    FsStr, FsString, LookupVec, MountInfo, Mounts, NamespaceNode, UnlinkKind, inotify_hook, path,
 };
 use atomic_bitflags::atomic_bitflags;
 use bitflags::bitflags;
@@ -968,10 +968,14 @@ impl DirEntry {
         renamed.node.update_ctime();
 
         let mode = renamed.node.info().mode;
-        let cookie = current_task.kernel().get_next_inotify_cookie();
-        old_parent.node.notify(InotifyMask::MOVE_FROM, cookie, old_basename, mode, false);
-        new_parent.node.notify(InotifyMask::MOVE_TO, cookie, new_basename, mode, false);
-        renamed.node.notify(InotifyMask::MOVE_SELF, 0, Default::default(), mode, false);
+        if let Some(hook) =
+            current_task.kernel().expando.peek::<Arc<dyn inotify_hook::NotifyHook>>()
+        {
+            let cookie = hook.get_next_cookie();
+            old_parent.node.notify(InotifyMask::MOVE_FROM, cookie, old_basename, mode, false);
+            new_parent.node.notify(InotifyMask::MOVE_TO, cookie, new_basename, mode, false);
+            renamed.node.notify(InotifyMask::MOVE_SELF, 0, Default::default(), mode, false);
+        }
 
         Ok(())
     }

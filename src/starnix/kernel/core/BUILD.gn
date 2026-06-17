@@ -190,7 +190,7 @@ _starnix_core_sources = [
   "vfs/fs_node_cache.rs",
   "vfs/fs_registry.rs",
   "vfs/fsverity.rs",
-  "vfs/inotify.rs",
+  "vfs/inotify_hook.rs",
   "vfs/memory_directory.rs",
   "vfs/memory_regular.rs",
   "vfs/mod.rs",

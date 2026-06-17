@@ -117,17 +117,20 @@ pub fn dispatch_syscall(
         sys_faccessat, sys_faccessat2, sys_fadvise64, sys_fallocate, sys_fchdir, sys_fchmod,
         sys_fchmodat, sys_fchown, sys_fchownat, sys_fcntl, sys_fdatasync, sys_fgetxattr,
         sys_flistxattr, sys_flock, sys_fremovexattr, sys_fsetxattr, sys_fstat, sys_fstatfs,
-        sys_fsync, sys_ftruncate, sys_getcwd, sys_getdents64, sys_getxattr, sys_inotify_add_watch,
-        sys_inotify_init1, sys_inotify_rm_watch, sys_io_cancel, sys_io_destroy, sys_io_getevents,
-        sys_io_setup, sys_io_submit, sys_ioctl, sys_lgetxattr, sys_linkat, sys_listxattr,
-        sys_llistxattr, sys_lremovexattr, sys_lseek, sys_lsetxattr, sys_memfd_create, sys_mkdirat,
-        sys_mknodat, sys_mount, sys_newfstatat, sys_openat, sys_openat2, sys_pidfd_getfd,
-        sys_pidfd_open, sys_pipe2, sys_ppoll, sys_pread64, sys_preadv, sys_preadv2, sys_pselect6,
-        sys_pwrite64, sys_pwritev, sys_pwritev2, sys_read, sys_readahead, sys_readlinkat,
-        sys_readv, sys_removexattr, sys_renameat2, sys_sendfile, sys_setxattr, sys_splice,
-        sys_statfs, sys_statx, sys_symlinkat, sys_sync, sys_sync_file_range, sys_syncfs, sys_tee,
-        sys_timerfd_create, sys_timerfd_gettime, sys_timerfd_settime, sys_truncate, sys_umask,
-        sys_umount2, sys_unlinkat, sys_utimensat, sys_vmsplice, sys_write, sys_writev,
+        sys_fsync, sys_ftruncate, sys_getcwd, sys_getdents64, sys_getxattr, sys_io_cancel,
+        sys_io_destroy, sys_io_getevents, sys_io_setup, sys_io_submit, sys_ioctl, sys_lgetxattr,
+        sys_linkat, sys_listxattr, sys_llistxattr, sys_lremovexattr, sys_lseek, sys_lsetxattr,
+        sys_memfd_create, sys_mkdirat, sys_mknodat, sys_mount, sys_newfstatat, sys_openat,
+        sys_openat2, sys_pidfd_getfd, sys_pidfd_open, sys_pipe2, sys_ppoll, sys_pread64,
+        sys_preadv, sys_preadv2, sys_pselect6, sys_pwrite64, sys_pwritev, sys_pwritev2, sys_read,
+        sys_readahead, sys_readlinkat, sys_readv, sys_removexattr, sys_renameat2, sys_sendfile,
+        sys_setxattr, sys_splice, sys_statfs, sys_statx, sys_symlinkat, sys_sync,
+        sys_sync_file_range, sys_syncfs, sys_tee, sys_timerfd_create, sys_timerfd_gettime,
+        sys_timerfd_settime, sys_truncate, sys_umask, sys_umount2, sys_unlinkat, sys_utimensat,
+        sys_vmsplice, sys_write, sys_writev,
+    };
+    use starnix_modules_inotify::syscalls::{
+        sys_inotify_add_watch, sys_inotify_init1, sys_inotify_rm_watch,
     };
     use starnix_modules_iouring::syscalls::{
         sys_io_uring_enter, sys_io_uring_register, sys_io_uring_setup,
@@ -218,23 +221,21 @@ pub fn dispatch_syscall(
             sys_arch32_fchmod, sys_arch32_fchmodat, sys_arch32_fchown, sys_arch32_fchown32,
             sys_arch32_fchownat, sys_arch32_fdatasync, sys_arch32_flock, sys_arch32_fsetxattr,
             sys_arch32_fstat64, sys_arch32_fstatat64, sys_arch32_fstatfs, sys_arch32_fstatfs64,
-            sys_arch32_fsync, sys_arch32_ftruncate, sys_arch32_ftruncate64,
-            sys_arch32_inotify_add_watch, sys_arch32_inotify_init, sys_arch32_inotify_init1,
-            sys_arch32_inotify_rm_watch, sys_arch32_io_cancel, sys_arch32_io_destroy,
-            sys_arch32_io_getevents, sys_arch32_io_setup, sys_arch32_io_submit,
-            sys_arch32_lgetxattr, sys_arch32_link, sys_arch32_linkat, sys_arch32_listxattr,
-            sys_arch32_llistxattr, sys_arch32_lsetxattr, sys_arch32_mkdir, sys_arch32_mkdirat,
-            sys_arch32_mknodat, sys_arch32_open, sys_arch32_pidfd_getfd, sys_arch32_pidfd_open,
-            sys_arch32_poll, sys_arch32_ppoll, sys_arch32_pread64, sys_arch32_preadv,
-            sys_arch32_pselect6, sys_arch32_pwrite64, sys_arch32_readlink, sys_arch32_readv,
-            sys_arch32_removexattr, sys_arch32_rename, sys_arch32_renameat2, sys_arch32_rmdir,
-            sys_arch32_sendfile, sys_arch32_sendfile64, sys_arch32_setxattr, sys_arch32_splice,
-            sys_arch32_stat64, sys_arch32_statfs, sys_arch32_statfs64, sys_arch32_statx,
-            sys_arch32_symlink, sys_arch32_symlinkat, sys_arch32_sync, sys_arch32_syncfs,
-            sys_arch32_tee, sys_arch32_timerfd_create, sys_arch32_timerfd_gettime,
-            sys_arch32_timerfd_settime, sys_arch32_truncate, sys_arch32_truncate64,
-            sys_arch32_umask, sys_arch32_unlink, sys_arch32_utimensat, sys_arch32_vmsplice,
-            sys_close as sys_arch32_close, sys_dup as sys_arch32_dup,
+            sys_arch32_fsync, sys_arch32_ftruncate, sys_arch32_ftruncate64, sys_arch32_io_cancel,
+            sys_arch32_io_destroy, sys_arch32_io_getevents, sys_arch32_io_setup,
+            sys_arch32_io_submit, sys_arch32_lgetxattr, sys_arch32_link, sys_arch32_linkat,
+            sys_arch32_listxattr, sys_arch32_llistxattr, sys_arch32_lsetxattr, sys_arch32_mkdir,
+            sys_arch32_mkdirat, sys_arch32_mknodat, sys_arch32_open, sys_arch32_pidfd_getfd,
+            sys_arch32_pidfd_open, sys_arch32_poll, sys_arch32_ppoll, sys_arch32_pread64,
+            sys_arch32_preadv, sys_arch32_pselect6, sys_arch32_pwrite64, sys_arch32_readlink,
+            sys_arch32_readv, sys_arch32_removexattr, sys_arch32_rename, sys_arch32_renameat2,
+            sys_arch32_rmdir, sys_arch32_sendfile, sys_arch32_sendfile64, sys_arch32_setxattr,
+            sys_arch32_splice, sys_arch32_stat64, sys_arch32_statfs, sys_arch32_statfs64,
+            sys_arch32_statx, sys_arch32_symlink, sys_arch32_symlinkat, sys_arch32_sync,
+            sys_arch32_syncfs, sys_arch32_tee, sys_arch32_timerfd_create,
+            sys_arch32_timerfd_gettime, sys_arch32_timerfd_settime, sys_arch32_truncate,
+            sys_arch32_truncate64, sys_arch32_umask, sys_arch32_unlink, sys_arch32_utimensat,
+            sys_arch32_vmsplice, sys_close as sys_arch32_close, sys_dup as sys_arch32_dup,
             sys_faccessat as sys_arch32_faccessat, sys_faccessat2 as sys_arch32_faccessat2,
             sys_fcntl as sys_arch32_fcntl64, sys_getcwd as sys_arch32_getcwd,
             sys_getdents64 as sys_arch32_getdents64, sys_getxattr as sys_arch32_getxattr,
@@ -245,6 +246,10 @@ pub fn dispatch_syscall(
             sys_readlinkat as sys_arch32_readlinkat, sys_umount2 as sys_arch32_umount2,
             sys_unlinkat as sys_arch32_unlinkat, sys_write as sys_arch32_write,
             sys_writev as sys_arch32_writev,
+        };
+        pub use starnix_modules_inotify::syscalls::{
+            sys_arch32_inotify_add_watch, sys_arch32_inotify_init, sys_arch32_inotify_init1,
+            sys_arch32_inotify_rm_watch,
         };
         pub use starnix_modules_iouring::syscalls::{
             sys_arch32_io_uring_enter, sys_arch32_io_uring_register, sys_arch32_io_uring_setup,
@@ -260,12 +265,13 @@ pub fn dispatch_syscall(
         pub use starnix_core::arch::syscalls::{
             sys_access, sys_alarm, sys_arch_prctl, sys_chmod, sys_chown, sys_creat, sys_dup2,
             sys_epoll_create, sys_epoll_wait, sys_eventfd, sys_fork, sys_getdents, sys_getpgrp,
-            sys_inotify_init, sys_lchown, sys_link, sys_lstat, sys_mkdir, sys_mknod, sys_open,
-            sys_pipe, sys_poll, sys_readlink, sys_rename, sys_renameat, sys_rmdir, sys_signalfd,
-            sys_stat, sys_symlink, sys_time, sys_unlink, sys_vfork,
+            sys_lchown, sys_link, sys_lstat, sys_mkdir, sys_mknod, sys_open, sys_pipe, sys_poll,
+            sys_readlink, sys_rename, sys_renameat, sys_rmdir, sys_signalfd, sys_stat, sys_symlink,
+            sys_time, sys_unlink, sys_vfork,
         };
         pub use starnix_core::signals::syscalls::sys_pause;
         pub use starnix_core::vfs::syscalls::sys_select;
+        pub use starnix_modules_inotify::syscalls::sys_inotify_init;
     }
     #[cfg(target_arch = "x86_64")]
     #[allow(clippy::wildcard_imports)]

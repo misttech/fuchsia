@@ -3,10 +3,23 @@
 // found in the LICENSE file.
 
 use crate::mm::PAGE_SIZE;
-use crate::vfs::inotify::InotifyLimits;
 use starnix_sync::{IcmpPingGidsLock, LockDepMutex};
 use std::ops::Range;
 use std::sync::atomic::{AtomicI32, AtomicUsize};
+
+/// Corresponds to files in /proc/sys/fs/inotify/, but cannot be negative.
+#[derive(Debug)]
+pub struct InotifyLimits {
+    // This value is used when creating an inotify instance.
+    // Updating this value does not affect already-created inotify instances.
+    pub max_queued_events: AtomicI32,
+
+    // TODO(b/297439734): Make this a real user limit on inotify instances.
+    pub max_user_instances: AtomicI32,
+
+    // TODO(b/297439734): Make this a real user limit on inotify watches.
+    pub max_user_watches: AtomicI32,
+}
 
 #[derive(Default, Debug)]
 pub struct SocketLimits {

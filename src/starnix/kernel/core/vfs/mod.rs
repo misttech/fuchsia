@@ -29,7 +29,7 @@ pub mod fs_args;
 pub mod fs_node_cache;
 pub mod fs_registry;
 pub mod fsverity;
-pub mod inotify;
+pub mod inotify_hook;
 pub mod memory_directory;
 pub mod path;
 pub mod pidfd;

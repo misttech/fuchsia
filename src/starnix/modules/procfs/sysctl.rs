@@ -11,9 +11,9 @@ use starnix_core::task::{CurrentTask, SeccompAction};
 use starnix_core::vfs::pseudo::simple_directory::{SimpleDirectory, SimpleDirectoryMutator};
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps, parse_unsigned_file};
 use starnix_core::vfs::pseudo::stub_bytes_file::StubBytesFile;
-use starnix_core::vfs::{FileSystemHandle, FsNodeHandle, FsNodeOps, FsString, fs_args, inotify};
+use starnix_core::vfs::{FileSystemHandle, FsNodeHandle, FsNodeOps, FsString, fs_args};
 use starnix_logging::bug_ref;
-use starnix_uapi::auth::{CAP_LAST_CAP, CAP_SYS_ADMIN, CAP_SYS_RESOURCE};
+use starnix_uapi::auth::{CAP_LAST_CAP, CAP_SYS_ADMIN, CAP_SYS_RESOURCE, Capabilities};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::version::{KERNEL_RELEASE, KERNEL_VERSION};
@@ -326,9 +326,21 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
     });
     dir.subdir("fs", 0o555, |dir| {
         dir.subdir("inotify", 0o555, |dir| {
-            dir.entry("max_queued_events", inotify::InotifyMaxQueuedEvents::new_node(), mode);
-            dir.entry("max_user_instances", inotify::InotifyMaxUserInstances::new_node(), mode);
-            dir.entry("max_user_watches", inotify::InotifyMaxUserWatches::new_node(), mode);
+            dir.entry(
+                "max_queued_events",
+                SystemLimitFile::<InotifyMaxQueuedEvents>::new_node(),
+                mode,
+            );
+            dir.entry(
+                "max_user_instances",
+                SystemLimitFile::<InotifyMaxUserInstances>::new_node(),
+                mode,
+            );
+            dir.entry(
+                "max_user_watches",
+                SystemLimitFile::<InotifyMaxUserWatches>::new_node(),
+                mode,
+            );
         });
         dir.entry("pipe-max-size", SystemLimitFile::<PipeMaxSize>::new_node(), mode);
         dir.entry(
@@ -582,9 +594,10 @@ impl BytesFileOps for SeccompActionsLogged {
 
 trait AtomicLimit {
     type ValueType: std::str::FromStr + std::fmt::Display;
+    const WRITE_CAP: Capabilities = CAP_SYS_RESOURCE;
 
     fn load(current_task: &CurrentTask) -> Self::ValueType;
-    fn store(current_task: &CurrentTask, value: Self::ValueType);
+    fn store(current_task: &CurrentTask, value: Self::ValueType) -> Result<(), Errno>;
 }
 
 struct SystemLimitFile<T: AtomicLimit + Send + Sync + 'static> {
@@ -605,10 +618,9 @@ where
     <T::ValueType as std::str::FromStr>::Err: std::fmt::Debug,
 {
     fn write(&self, current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
-        // Is CAP_SYS_RESOURCE the correct capability for all these files?
-        security::check_task_capable(current_task, CAP_SYS_RESOURCE)?;
+        security::check_task_capable(current_task, T::WRITE_CAP)?;
         let value = fs_args::parse(FsString::from(data).as_ref())?;
-        T::store(current_task, value);
+        T::store(current_task, value)?;
         Ok(())
     }
 
@@ -624,8 +636,9 @@ impl AtomicLimit for PipeMaxSize {
     fn load(current_task: &CurrentTask) -> usize {
         current_task.kernel().system_limits.pipe_max_size.load(Ordering::Relaxed)
     }
-    fn store(current_task: &CurrentTask, value: usize) {
+    fn store(current_task: &CurrentTask, value: usize) -> Result<(), Errno> {
         current_task.kernel().system_limits.pipe_max_size.store(value, Ordering::Relaxed);
+        Ok(())
     }
 }
 
@@ -636,8 +649,9 @@ impl AtomicLimit for SoMaxConn {
     fn load(current_task: &CurrentTask) -> i32 {
         current_task.kernel().system_limits.socket.max_connections.load(Ordering::Relaxed)
     }
-    fn store(current_task: &CurrentTask, value: i32) {
+    fn store(current_task: &CurrentTask, value: i32) -> Result<(), Errno> {
         current_task.kernel().system_limits.socket.max_connections.store(value, Ordering::Relaxed);
+        Ok(())
     }
 }
 
@@ -648,9 +662,12 @@ impl AtomicLimit for IoUringDisabled {
     fn load(current_task: &CurrentTask) -> i32 {
         current_task.kernel().system_limits.io_uring_disabled.load(Ordering::Relaxed)
     }
-    fn store(current_task: &CurrentTask, value: i32) {
+    fn store(current_task: &CurrentTask, value: i32) -> Result<(), Errno> {
         if (0..=2).contains(&value) {
             current_task.kernel().system_limits.io_uring_disabled.store(value, Ordering::Relaxed);
+            Ok(())
+        } else {
+            error!(EINVAL)
         }
     }
 }
@@ -662,7 +679,74 @@ impl AtomicLimit for IoUringGroup {
     fn load(current_task: &CurrentTask) -> i32 {
         current_task.kernel().system_limits.io_uring_group.load(Ordering::Relaxed)
     }
-    fn store(current_task: &CurrentTask, value: i32) {
+    fn store(current_task: &CurrentTask, value: i32) -> Result<(), Errno> {
         current_task.kernel().system_limits.io_uring_group.store(value, Ordering::Relaxed);
+        Ok(())
+    }
+}
+
+struct InotifyMaxQueuedEvents;
+impl AtomicLimit for InotifyMaxQueuedEvents {
+    type ValueType = i32;
+    const WRITE_CAP: Capabilities = CAP_SYS_ADMIN;
+
+    fn load(current_task: &CurrentTask) -> i32 {
+        current_task.kernel().system_limits.inotify.max_queued_events.load(Ordering::Relaxed)
+    }
+    fn store(current_task: &CurrentTask, value: i32) -> Result<(), Errno> {
+        if value < 0 {
+            return error!(EINVAL);
+        }
+        current_task
+            .kernel()
+            .system_limits
+            .inotify
+            .max_queued_events
+            .store(value, Ordering::Relaxed);
+        Ok(())
+    }
+}
+
+struct InotifyMaxUserInstances;
+impl AtomicLimit for InotifyMaxUserInstances {
+    type ValueType = i32;
+    const WRITE_CAP: Capabilities = CAP_SYS_ADMIN;
+
+    fn load(current_task: &CurrentTask) -> i32 {
+        current_task.kernel().system_limits.inotify.max_user_instances.load(Ordering::Relaxed)
+    }
+    fn store(current_task: &CurrentTask, value: i32) -> Result<(), Errno> {
+        if value < 0 {
+            return error!(EINVAL);
+        }
+        current_task
+            .kernel()
+            .system_limits
+            .inotify
+            .max_user_instances
+            .store(value, Ordering::Relaxed);
+        Ok(())
+    }
+}
+
+struct InotifyMaxUserWatches;
+impl AtomicLimit for InotifyMaxUserWatches {
+    type ValueType = i32;
+    const WRITE_CAP: Capabilities = CAP_SYS_ADMIN;
+
+    fn load(current_task: &CurrentTask) -> i32 {
+        current_task.kernel().system_limits.inotify.max_user_watches.load(Ordering::Relaxed)
+    }
+    fn store(current_task: &CurrentTask, value: i32) -> Result<(), Errno> {
+        if value < 0 {
+            return error!(EINVAL);
+        }
+        current_task
+            .kernel()
+            .system_limits
+            .inotify
+            .max_user_watches
+            .store(value, Ordering::Relaxed);
+        Ok(())
     }
 }

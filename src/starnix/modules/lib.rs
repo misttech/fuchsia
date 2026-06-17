@@ -24,6 +24,7 @@ use starnix_modules_device_mapper::{create_device_mapper, device_mapper_init};
 use starnix_modules_ext4::ExtFilesystem;
 use starnix_modules_functionfs::FunctionFs;
 use starnix_modules_fuse::{new_fuse_fs, new_fusectl_fs, open_fuse_device};
+use starnix_modules_inotify::inotify::inotify_init;
 use starnix_modules_loop::{create_loop_control_device, loop_device_init};
 use starnix_modules_overlayfs::new_overlay_fs;
 use starnix_modules_procfs::proc_fs;
@@ -125,4 +126,8 @@ pub fn register_common_file_systems(_locked: &mut Locked<Unlocked>, kernel: &Ker
     registry.register(b"sysfs".into(), sys_fs);
     registry.register(b"tmpfs".into(), tmp_fs);
     registry.register(b"tracefs".into(), trace_fs);
+}
+
+pub fn register_common_syscalls(kernel: &Kernel) {
+    inotify_init(kernel);
 }

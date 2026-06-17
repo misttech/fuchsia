@@ -16,7 +16,7 @@ use crate::vfs::{
     DefaultDirEntryOps, DirEntryOps, FileObject, FileObjectState, FileOps, FileSystem,
     FileSystemHandle, FileWriteGuardState, FsLockDepType, FsStr, FsString, MAX_LFS_FILESIZE,
     MountInfo, NamespaceNode, OPathOps, RecordLockCommand, RecordLockOwner, RecordLocks,
-    WeakFileHandle, checked_add_offset_and_length, inotify,
+    WeakFileHandle, checked_add_offset_and_length, inotify_hook,
 };
 use bitflags::bitflags;
 use fuchsia_runtime::UtcInstant;
@@ -146,7 +146,7 @@ struct FsNodeRareData {
     link_behavior: OnceLock<FsNodeLinkBehavior>,
 
     /// Inotify watchers on this node. See inotify(7).
-    watchers: inotify::InotifyWatchers,
+    watchers: inotify_hook::InotifyWatchers,
 }
 
 impl FsNodeRareData {
@@ -2723,7 +2723,7 @@ impl FsNode {
     ///
     /// Only call this function if you require this node to actually store a list of watchers. If
     /// you just wish to notify any watchers that might exist, please use `notify` instead.
-    pub fn ensure_watchers(&self) -> &inotify::InotifyWatchers {
+    pub fn ensure_watchers(&self) -> &inotify_hook::InotifyWatchers {
         &self.ensure_rare_data().watchers
     }
 
@@ -2737,7 +2737,10 @@ impl FsNode {
         is_dead: bool,
     ) {
         if let Some(rare_data) = self.rare_data.get() {
-            rare_data.watchers.notify(event_mask, cookie, name, mode, is_dead);
+            let kernel = self.fs().kernel.upgrade().expect("kernel is dead");
+            if let Some(hook) = kernel.expando.peek::<Arc<dyn inotify_hook::NotifyHook>>() {
+                hook.notify(&rare_data.watchers, event_mask, cookie, name, mode, is_dead);
+            }
         }
     }
 

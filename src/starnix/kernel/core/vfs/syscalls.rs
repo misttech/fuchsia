@@ -11,7 +11,6 @@ use crate::vfs::aio::AioContext;
 use crate::vfs::buffers::{UserBuffersInputBuffer, UserBuffersOutputBuffer};
 use crate::vfs::eventfd::{EventFdType, new_eventfd};
 use crate::vfs::fs_args::MountParams;
-use crate::vfs::inotify::InotifyFileObject;
 use crate::vfs::pidfd::new_pidfd;
 use crate::vfs::pipe::{PipeFileObject, new_pipe};
 use crate::vfs::timer::TimerFile;
@@ -20,8 +19,8 @@ use crate::vfs::{
     FileAsyncOwner, FileHandle, FileSystemOptions, FlockOperation, FsStr, FsString, LookupContext,
     Mount, NamespaceNode, PathWithReachability, RecordLockCommand, RenameFlags, SeekTarget,
     StatxFlags, SymlinkMode, SymlinkTarget, TargetFdNumber, TimeUpdateType, UnlinkKind,
-    ValueOrSize, WdNumber, WhatToMount, XattrOp, checked_add_offset_and_length, new_memfd,
-    new_zombie_pidfd, splice,
+    ValueOrSize, WhatToMount, XattrOp, checked_add_offset_and_length, new_memfd, new_zombie_pidfd,
+    splice,
 };
 use starnix_logging::{log_trace, track_stub};
 use starnix_sync::{
@@ -61,15 +60,14 @@ use starnix_uapi::{
     F_DUPFD, F_DUPFD_CLOEXEC, F_GET_SEALS, F_GETFD, F_GETFL, F_GETLEASE, F_GETLK, F_GETLK64,
     F_GETOWN, F_GETOWN_EX, F_OFD_GETLK, F_OFD_SETLK, F_OFD_SETLKW, F_OWNER_PGRP, F_OWNER_PID,
     F_OWNER_TID, F_SETFD, F_SETFL, F_SETLEASE, F_SETLK, F_SETLK64, F_SETLKW, F_SETLKW64, F_SETOWN,
-    F_SETOWN_EX, F_SETSIG, FIOCLEX, FIONCLEX, IN_CLOEXEC, IN_NONBLOCK, MFD_ALLOW_SEALING,
-    MFD_CLOEXEC, MFD_EXEC, MFD_HUGE_MASK, MFD_HUGE_SHIFT, MFD_HUGETLB, MFD_NOEXEC_SEAL, NAME_MAX,
-    O_CLOEXEC, O_CREAT, O_NOFOLLOW, O_PATH, O_TMPFILE, PIDFD_NONBLOCK, POLLERR, POLLHUP, POLLIN,
-    POLLOUT, POLLPRI, POLLRDBAND, POLLRDNORM, POLLWRBAND, POLLWRNORM, POSIX_FADV_DONTNEED,
-    POSIX_FADV_NOREUSE, POSIX_FADV_NORMAL, POSIX_FADV_RANDOM, POSIX_FADV_SEQUENTIAL,
-    POSIX_FADV_WILLNEED, RWF_SUPPORTED, TFD_CLOEXEC, TFD_NONBLOCK, TFD_TIMER_ABSTIME,
-    TFD_TIMER_CANCEL_ON_SET, XATTR_CREATE, XATTR_NAME_MAX, XATTR_REPLACE, aio_context_t, errno,
-    error, f_owner_ex, io_event, iocb, off_t, pid_t, pollfd, pselect6_sigmask, sigset_t, statx,
-    timespec, uapi, uid_t,
+    F_SETOWN_EX, F_SETSIG, FIOCLEX, FIONCLEX, MFD_ALLOW_SEALING, MFD_CLOEXEC, MFD_EXEC,
+    MFD_HUGE_MASK, MFD_HUGE_SHIFT, MFD_HUGETLB, MFD_NOEXEC_SEAL, NAME_MAX, O_CLOEXEC, O_CREAT,
+    O_NOFOLLOW, O_PATH, O_TMPFILE, PIDFD_NONBLOCK, POLLERR, POLLHUP, POLLIN, POLLOUT, POLLPRI,
+    POLLRDBAND, POLLRDNORM, POLLWRBAND, POLLWRNORM, POSIX_FADV_DONTNEED, POSIX_FADV_NOREUSE,
+    POSIX_FADV_NORMAL, POSIX_FADV_RANDOM, POSIX_FADV_SEQUENTIAL, POSIX_FADV_WILLNEED,
+    RWF_SUPPORTED, TFD_CLOEXEC, TFD_NONBLOCK, TFD_TIMER_ABSTIME, TFD_TIMER_CANCEL_ON_SET,
+    XATTR_CREATE, XATTR_NAME_MAX, XATTR_REPLACE, aio_context_t, errno, error, f_owner_ex, io_event,
+    iocb, off_t, pid_t, pollfd, pselect6_sigmask, sigset_t, statx, timespec, uapi, uid_t,
 };
 use std::cmp::Ordering;
 use std::collections::VecDeque;
@@ -750,7 +748,7 @@ pub struct LookupFlags {
 }
 
 impl LookupFlags {
-    fn no_follow() -> Self {
+    pub fn no_follow() -> Self {
         Self { symlink_mode: SymlinkMode::NoFollow, ..Default::default() }
     }
 
@@ -2969,58 +2967,6 @@ pub fn sys_fallocate(
     Ok(())
 }
 
-pub fn sys_inotify_init1(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    flags: u32,
-) -> Result<FdNumber, Errno> {
-    if flags & !(IN_NONBLOCK | IN_CLOEXEC) != 0 {
-        return error!(EINVAL);
-    }
-    let non_blocking = flags & IN_NONBLOCK != 0;
-    let close_on_exec = flags & IN_CLOEXEC != 0;
-    let inotify_file = InotifyFileObject::new_file(locked, current_task, non_blocking);
-    let fd_flags = if close_on_exec { FdFlags::CLOEXEC } else { FdFlags::empty() };
-    current_task.add_file(locked, inotify_file, fd_flags)
-}
-
-pub fn sys_inotify_add_watch(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    fd: FdNumber,
-    user_path: UserCString,
-    mask: u32,
-) -> Result<WdNumber, Errno> {
-    let mask = InotifyMask::from_bits(mask).ok_or_else(|| errno!(EINVAL))?;
-    if !mask.intersects(InotifyMask::ALL_EVENTS) {
-        // Mask must include at least 1 event.
-        return error!(EINVAL);
-    }
-    let file = current_task.get_file(fd)?;
-    let inotify_file = file.downcast_file::<InotifyFileObject>().ok_or_else(|| errno!(EINVAL))?;
-    let options = if mask.contains(InotifyMask::DONT_FOLLOW) {
-        LookupFlags::no_follow()
-    } else {
-        LookupFlags::default()
-    };
-    let watched_node = lookup_at(locked, current_task, FdNumber::AT_FDCWD, user_path, options)?;
-    if mask.contains(InotifyMask::ONLYDIR) && !watched_node.entry.node.is_dir() {
-        return error!(ENOTDIR);
-    }
-    inotify_file.add_watch(watched_node.entry, mask, &file)
-}
-
-pub fn sys_inotify_rm_watch(
-    _locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    fd: FdNumber,
-    watch_id: WdNumber,
-) -> Result<(), Errno> {
-    let file = current_task.get_file(fd)?;
-    let inotify_file = file.downcast_file::<InotifyFileObject>().ok_or_else(|| errno!(EINVAL))?;
-    inotify_file.remove_watch(watch_id, &file)
-}
-
 pub fn sys_utimensat(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
@@ -3595,13 +3541,6 @@ mod arch32 {
         super::sys_eventfd2(locked, current_task, value, 0)
     }
 
-    pub fn sys_arch32_inotify_init(
-        locked: &mut Locked<Unlocked>,
-        current_task: &CurrentTask,
-    ) -> Result<FdNumber, Errno> {
-        super::sys_inotify_init1(locked, current_task, 0)
-    }
-
     pub fn sys_arch32_link(
         locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
@@ -3682,10 +3621,7 @@ mod arch32 {
         sys_fdatasync as sys_arch32_fdatasync, sys_flock as sys_arch32_flock,
         sys_fsetxattr as sys_arch32_fsetxattr, sys_fstatat64 as sys_arch32_fstatat64,
         sys_fstatfs as sys_arch32_fstatfs, sys_fsync as sys_arch32_fsync,
-        sys_ftruncate as sys_arch32_ftruncate,
-        sys_inotify_add_watch as sys_arch32_inotify_add_watch,
-        sys_inotify_init1 as sys_arch32_inotify_init1,
-        sys_inotify_rm_watch as sys_arch32_inotify_rm_watch, sys_io_cancel as sys_arch32_io_cancel,
+        sys_ftruncate as sys_arch32_ftruncate, sys_io_cancel as sys_arch32_io_cancel,
         sys_io_destroy as sys_arch32_io_destroy, sys_io_getevents as sys_arch32_io_getevents,
         sys_io_setup as sys_arch32_io_setup, sys_io_submit as sys_arch32_io_submit,
         sys_lgetxattr as sys_arch32_lgetxattr, sys_linkat as sys_arch32_linkat,

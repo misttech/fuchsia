@@ -2,22 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::mm::MemoryAccessorExt;
-use crate::security;
-use crate::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, WaitQueue, Waiter};
-use crate::vfs::buffers::{InputBuffer, OutputBuffer};
-use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
-use crate::vfs::{
-    Anon, DirEntryHandle, FileHandle, FileHandleKey, FileObject, FileObjectState, FileOps,
-    FsNodeOps, FsStr, FsString, WdNumber, WeakFileHandle, default_ioctl, fileops_impl_nonseekable,
-    fileops_impl_noop_sync, fs_args, inotify,
+use starnix_core::mm::MemoryAccessorExt;
+use starnix_core::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, WaitQueue, Waiter};
+use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
+use starnix_core::vfs::{
+    Anon, DirEntryHandle, FileHandle, FileObject, FileObjectState, FileOps, FsStr, FsString,
+    WdNumber, default_ioctl, fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
-use starnix_sync::{
-    FileOpsCore, InotifyWatchersLock, LockDepMutex, LockEqualOrBefore, Locked, Mutex, Unlocked,
-};
+use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::arc_key::WeakKey;
-use starnix_uapi::auth::CAP_SYS_ADMIN;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::inotify_mask::InotifyMask;
@@ -26,10 +20,10 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{FIONREAD, errno, error, inotify_event};
-use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::mem::size_of;
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use zerocopy::IntoBytes;
 
 const DATA_SIZE: usize = size_of::<inotify_event>();
@@ -46,19 +40,6 @@ struct InotifyState {
 
     // Last created WdNumber, stored as raw i32. WdNumber's are unique per inotify instance.
     last_watch_id: i32,
-}
-
-// InotifyWatcher's attach to a FsNode.
-#[derive(Clone)]
-pub struct InotifyWatcher {
-    pub watch_id: WdNumber,
-
-    pub mask: InotifyMask,
-}
-
-#[derive(Default)]
-pub struct InotifyWatchers {
-    watchers: LockDepMutex<BTreeMap<FileHandleKey, InotifyWatcher>, InotifyWatchersLock>,
 }
 
 #[derive(Default)]
@@ -229,7 +210,6 @@ impl FileOps for InotifyFileObject {
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
         debug_assert!(offset == 0);
-
         file.blocking_op(locked, current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, |_| {
             let mut state = self.state.lock();
             if let Some(front) = state.events.front() {
@@ -420,68 +400,14 @@ impl InotifyEvent {
     }
 }
 
-impl InotifyWatchers {
-    fn add(&self, mask: InotifyMask, watch_id: WdNumber, inotify: FileHandleKey) {
-        let mut watchers = self.watchers.lock();
-        watchers.insert(inotify, inotify::InotifyWatcher { watch_id, mask });
-    }
+struct InotifyImpl {
+    next_cookie: std::sync::atomic::AtomicU32,
+}
 
-    // Checks if inotify is already part of watchers. Replaces mask if found and returns the WdNumber.
-    // Combines mask if IN_MASK_ADD is specified in mask. Returns None if no present in watchers.
-    //
-    // Errors if:
-    //  - both IN_MASK_ADD and IN_MASK_CREATE are specified in mask, or
-    //  - IN_MASK_CREATE is specified and existing entry is found.
-    fn maybe_update(
+impl starnix_core::vfs::inotify_hook::NotifyHook for InotifyImpl {
+    fn notify(
         &self,
-        mask: InotifyMask,
-        inotify: &FileHandleKey,
-    ) -> Result<Option<WdNumber>, Errno> {
-        let combine_existing = mask.contains(InotifyMask::MASK_ADD);
-        let create_new = mask.contains(InotifyMask::MASK_CREATE);
-        if combine_existing && create_new {
-            return error!(EINVAL);
-        }
-
-        let mut watchers = self.watchers.lock();
-        if let Some(watcher) = watchers.get_mut(inotify) {
-            if create_new {
-                return error!(EEXIST);
-            }
-
-            if combine_existing {
-                watcher.mask.insert(mask);
-            } else {
-                watcher.mask = mask;
-            }
-            Ok(Some(watcher.watch_id))
-        } else {
-            Ok(None)
-        }
-    }
-
-    fn get(&self, inotify: &FileHandleKey) -> Option<InotifyWatcher> {
-        self.watchers.lock().get(inotify).cloned()
-    }
-
-    fn remove(&self, inotify: &FileHandleKey) {
-        let mut watchers = self.watchers.lock();
-        watchers.remove(inotify);
-    }
-
-    fn remove_by_ref(&self, inotify: &WeakFileHandle) {
-        let mut watchers = self.watchers.lock();
-        watchers.retain(|weak_key, _| weak_key.0.strong_count() > 0 && weak_key != inotify)
-    }
-
-    /// Notifies all watchers that listen for the specified event mask with
-    /// struct inotify_event { event_mask, cookie, name }.
-    ///
-    /// If event_mask is IN_DELETE_SELF, all watchers are removed after this event.
-    /// cookie is used to link a pair of IN_MOVE_FROM/IN_MOVE_TO events only.
-    /// mode is used to check whether IN_ISDIR should be combined with event_mask.
-    pub fn notify(
-        &self,
+        watchers: &starnix_core::vfs::inotify_hook::InotifyWatchers,
         mut event_mask: InotifyMask,
         cookie: u32,
         name: &FsStr,
@@ -504,7 +430,7 @@ impl InotifyWatchers {
         }
         let mut watches: Vec<InotifyWatch> = vec![];
         {
-            let mut watchers = self.watchers.lock();
+            let mut watchers = watchers.watchers.lock();
             watchers.retain(|inotify, watcher| {
                 let mut should_remove = event_mask == InotifyMask::DELETE_SELF;
                 if watcher.mask.contains(event_mask)
@@ -540,97 +466,28 @@ impl InotifyWatchers {
             inotify.notify(watch.watch_id, event_mask, cookie, name, watch.should_remove);
         }
     }
-}
 
-impl Kernel {
-    pub fn get_next_inotify_cookie(&self) -> u32 {
-        let cookie = self.next_inotify_cookie.next();
-        // 0 is an invalid cookie.
-        if cookie == 0 {
-            return self.next_inotify_cookie.next();
+    fn get_next_cookie(&self) -> u32 {
+        let mut cookie = self.next_cookie.fetch_add(1, Ordering::Relaxed);
+        while cookie == 0 {
+            cookie = self.next_cookie.fetch_add(1, Ordering::Relaxed);
         }
         cookie
     }
 }
 
-/// Corresponds to files in /proc/sys/fs/inotify/, but cannot be negative.
-#[derive(Debug)]
-pub struct InotifyLimits {
-    // This value is used when creating an inotify instance.
-    // Updating this value does not affect already-created inotify instances.
-    pub max_queued_events: AtomicI32,
-
-    // TODO(b/297439734): Make this a real user limit on inotify instances.
-    pub max_user_instances: AtomicI32,
-
-    // TODO(b/297439734): Make this a real user limit on inotify watches.
-    pub max_user_watches: AtomicI32,
+pub fn inotify_init(kernel: &Kernel) {
+    kernel.expando.get_or_init(|| {
+        Arc::new(InotifyImpl { next_cookie: std::sync::atomic::AtomicU32::new(1) })
+            as Arc<dyn starnix_core::vfs::inotify_hook::NotifyHook>
+    });
 }
-
-pub trait AtomicGetter {
-    fn get_atomic<'a>(current_task: &'a CurrentTask) -> &'a AtomicI32;
-}
-
-pub struct MaxQueuedEventsGetter;
-impl AtomicGetter for MaxQueuedEventsGetter {
-    fn get_atomic<'a>(current_task: &'a CurrentTask) -> &'a AtomicI32 {
-        &current_task.kernel().system_limits.inotify.max_queued_events
-    }
-}
-
-pub struct MaxUserInstancesGetter;
-impl AtomicGetter for MaxUserInstancesGetter {
-    fn get_atomic<'a>(current_task: &'a CurrentTask) -> &'a AtomicI32 {
-        &current_task.kernel().system_limits.inotify.max_user_instances
-    }
-}
-
-pub struct MaxUserWatchesGetter;
-impl AtomicGetter for MaxUserWatchesGetter {
-    fn get_atomic<'a>(current_task: &'a CurrentTask) -> &'a AtomicI32 {
-        &current_task.kernel().system_limits.inotify.max_user_watches
-    }
-}
-
-pub struct InotifyLimitProcFile<G: AtomicGetter + Send + Sync + 'static> {
-    marker: std::marker::PhantomData<G>,
-}
-
-impl<G: AtomicGetter + Send + Sync + 'static> InotifyLimitProcFile<G> {
-    pub fn new_node() -> impl FsNodeOps {
-        BytesFile::new_node(Self { marker: Default::default() })
-    }
-}
-
-impl<G: AtomicGetter + Send + Sync + 'static> BytesFileOps for InotifyLimitProcFile<G> {
-    fn write(&self, current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
-        security::check_task_capable(current_task, CAP_SYS_ADMIN)?;
-        let value = fs_args::parse::<i32>(data.as_slice().into())?;
-        if value < 0 {
-            return error!(EINVAL);
-        }
-        G::get_atomic(current_task).store(value, Ordering::Relaxed);
-        Ok(())
-    }
-
-    fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
-        Ok(G::get_atomic(current_task).load(Ordering::Relaxed).to_string().into_bytes().into())
-    }
-}
-
-pub type InotifyMaxQueuedEvents = InotifyLimitProcFile<MaxQueuedEventsGetter>;
-pub type InotifyMaxUserInstances = InotifyLimitProcFile<MaxUserInstancesGetter>;
-pub type InotifyMaxUserWatches = InotifyLimitProcFile<MaxUserWatchesGetter>;
 
 #[cfg(test)]
 mod tests {
-    use super::{DATA_SIZE, InotifyEvent, InotifyEventQueue, InotifyFileObject};
-    use crate::testing::spawn_kernel_and_run_with_pkgfs;
-    use crate::vfs::buffers::VecOutputBuffer;
-    use crate::vfs::{OutputBuffer, WdNumber};
-    use starnix_uapi::arc_key::WeakKey;
-    use starnix_uapi::file_mode::FileMode;
-    use starnix_uapi::inotify_mask::InotifyMask;
+    use super::*;
+    use starnix_core::testing::spawn_kernel_and_run_with_pkgfs;
+    use starnix_core::vfs::buffers::VecOutputBuffer;
 
     #[::fuchsia::test]
     fn inotify_event() {
@@ -752,6 +609,7 @@ mod tests {
     #[::fuchsia::test]
     async fn notify_from_watchers() {
         spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
+            inotify_init(current_task.kernel());
             let file = InotifyFileObject::new_file(locked, &current_task, true);
             let inotify =
                 file.downcast_file::<InotifyFileObject>().expect("failed to downcast to inotify");
@@ -814,6 +672,7 @@ mod tests {
     #[::fuchsia::test]
     async fn notify_deletion_from_watchers() {
         spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
+            inotify_init(current_task.kernel());
             let file = InotifyFileObject::new_file(locked, &current_task, true);
             let inotify =
                 file.downcast_file::<InotifyFileObject>().expect("failed to downcast to inotify");
@@ -855,6 +714,7 @@ mod tests {
     #[::fuchsia::test]
     async fn inotify_on_same_file() {
         spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
+            inotify_init(current_task.kernel());
             let file = InotifyFileObject::new_file(locked, &current_task, true);
             let file_key = WeakKey::from(&file);
             let inotify =
@@ -916,6 +776,7 @@ mod tests {
     #[::fuchsia::test]
     async fn coalesce_events() {
         spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
+            inotify_init(current_task.kernel());
             let file = InotifyFileObject::new_file(locked, &current_task, true);
             let inotify =
                 file.downcast_file::<InotifyFileObject>().expect("failed to downcast to inotify");
