@@ -486,8 +486,8 @@
     },
     {
         "package": "fuchsia/third_party/fonts",
-        "version": "git_revision:b661b6ba3cd54bb79800f059bb2cfeb13b09f99e",
-        "instance_id": "QMnMJTv4Vs4Tjn2nOTBlSIN6nIKRB4sAPG-qlPCssGAC"
+        "version": "git_revision:53ce919947100ae0e8fbe90dc9c5137246d356d1",
+        "instance_id": "gbTNaCCcTbhST_iHyERnFCtBMc0I5cnetiT6z5jY7UoC"
     },
     {
         "package": "fuchsia/third_party/gcc/linux-amd64",

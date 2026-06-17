@@ -259,7 +259,7 @@
              path="prebuilt/third_party/ffmpeg"/>
     <!--   Fonts -->
     <package name="fuchsia/third_party/fonts"
-             version="git_revision:b661b6ba3cd54bb79800f059bb2cfeb13b09f99e"
+             version="git_revision:53ce919947100ae0e8fbe90dc9c5137246d356d1"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/fonts"/>
     <!--   ICU time zone resource files -->
