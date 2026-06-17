@@ -356,10 +356,10 @@ impl LeaseManager {
         if is_unmonitored {
             let count = active_unmonitored_lease_count.get() + 1;
             active_unmonitored_lease_count.set(count);
-            log::info!("Unmonitored lease acquired. Active count: {}", count);
+            log::debug!("Unmonitored lease acquired. Active count: {}", count);
 
             if count == 1 {
-                log::info!("Unmonitored lease active, cancelling regular lease timers.");
+                log::debug!("Unmonitored lease active, cancelling regular lease timers.");
                 for lease in active_wake_leases.borrow().values() {
                     if !lease.is_unmonitored {
                         lease.timer_task.borrow_mut().take();
@@ -381,10 +381,10 @@ impl LeaseManager {
             if old_count > 0 {
                 let count = old_count - 1;
                 active_unmonitored_lease_count.set(count);
-                log::info!("Unmonitored lease dropped. Active count: {}", count);
+                log::debug!("Unmonitored lease dropped. Active count: {}", count);
 
                 if count == 0 {
-                    log::info!("All unmonitored leases dropped, restarting regular lease timers.");
+                    log::debug!("All unmonitored leases dropped, restarting regular lease timers.");
                     for (id, lease) in active_wake_leases.borrow().iter() {
                         if !lease.is_unmonitored {
                             let timer_task = long_lease_detector
@@ -395,7 +395,7 @@ impl LeaseManager {
                     }
                 }
             } else {
-                log::warn!("Unmonitored lease dropped but count was already 0");
+                log::error!("Unmonitored lease dropped but count was already 0");
             }
         }
     }
