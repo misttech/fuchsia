@@ -8,10 +8,17 @@ using fuchsia.hardware.pin;
 using fuchsia.gpio;
 using fuchsia.hardware.gpio;
 using fuchsia.hardware.i2c;
+using fuchsia.devicetree;
 using fuchsia.platform;
+using fuchsia.i2c;
 
 primary parent "i2c" {
   fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;
+  if fuchsia.BIND_I2C_BUS_ID == fuchsia.i2c.BIND_I2C_BUS_ID.I2C_A0_0 {
+    fuchsia.BIND_I2C_ADDRESS == fuchsia.i2c.BIND_I2C_ADDRESS.AMBIENTLIGHT;
+  } else {
+    true;
+  }
 }
 
 parent "gpio" {
@@ -20,11 +27,12 @@ parent "gpio" {
 }
 
 parent "pdev" {
-  fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
   fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;
-  fuchsia.BIND_PLATFORM_DEV_PID == fuchsia.platform.BIND_PLATFORM_DEV_PID.GENERIC;
-  fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.TCS3400_LIGHT;
-  fuchsia.BIND_PLATFORM_DEV_INSTANCE_ID == 0;
+  if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE {
+    fuchsia.devicetree.FIRST_COMPATIBLE == "ams,tcs3400";
+  } else {
+    fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.TCS3400_LIGHT;
+  }
 }
 
 optional parent "gpio-init" {
@@ -34,3 +42,4 @@ optional parent "gpio-init" {
 optional parent "pin-states-0" {
   fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
 }
+

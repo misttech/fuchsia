@@ -7,7 +7,8 @@
 #include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
 #include <fidl/fuchsia.hardware.i2c/cpp/wire_test_base.h>
 #include <fidl/fuchsia.hardware.lightsensor/cpp/fidl.h>
-#include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
+#include <lib/ddk/metadata.h>
+#include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/fake-i2c/fake-i2c.h>
 #include <lib/inspect/cpp/reader.h>
@@ -105,15 +106,18 @@ class Tcs3400TestEnvironment : public fdf_testing::Environment {
   void Init(const fuchsia_hardware_lightsensor::Metadata& metadata, zx::interrupt gpio_interrupt) {
     gpio_.SetInterrupt(zx::ok(std::move(gpio_interrupt)));
 
-    ASSERT_OK(
-        pdev_.AddFidlMetadata(fuchsia_hardware_lightsensor::Metadata::kSerializableName, metadata));
+    fit::result persisted_metadata = fidl::Persist(metadata);
+    ASSERT_TRUE(persisted_metadata.is_ok());
+
+    compat_server_.Initialize("pdev");
+    ASSERT_OK(compat_server_.AddMetadata(DEVICE_METADATA_PRIVATE, persisted_metadata->data(),
+                                         persisted_metadata->size()));
   }
 
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
     async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
 
-    EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_platform_device::Service>(
-        pdev_.GetInstanceHandler(dispatcher), "pdev"));
+    EXPECT_OK(compat_server_.Serve(dispatcher, &to_driver_vfs));
 
     EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_i2c::Service>(
         i2c_.CreateInstanceHandler(dispatcher), "i2c"));
@@ -127,7 +131,7 @@ class Tcs3400TestEnvironment : public fdf_testing::Environment {
   FakeLightSensor& i2c() { return i2c_; }
 
  private:
-  fdf_fake::FakePDev pdev_;
+  compat::DeviceServer compat_server_;
   FakeLightSensor i2c_;
   fake_gpio::FakeGpio gpio_;
 };

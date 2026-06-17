@@ -7,8 +7,9 @@
 #include <fidl/fuchsia.hardware.lightsensor/cpp/fidl.h>
 #include <fidl/fuchsia.input.report/cpp/wire.h>
 #include <lib/async/cpp/task.h>
+#include <lib/ddk/metadata.h>
+#include <lib/driver/compat/cpp/metadata.h>
 #include <lib/driver/component/cpp/driver_export2.h>
-#include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/zx/clock.h>
 #include <unistd.h>
 #include <zircon/syscalls.h>
@@ -569,15 +570,8 @@ zx_status_t Tcs3400::InitGain(uint8_t gain) {
 }
 
 zx::result<> Tcs3400::InitMetadata(fdf::Namespace& incoming) {
-  zx::result pdev_client =
-      incoming.Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
-  if (pdev_client.is_error()) {
-    fdf::error("Failed to connect to platform device: {}", pdev_client);
-    return pdev_client.take_error();
-  }
-  fdf::PDev pdev(std::move(pdev_client.value()));
-
-  zx::result metadata_result = pdev.GetFidlMetadata<fuchsia_hardware_lightsensor::Metadata>();
+  zx::result metadata_result = compat::GetMetadata<fuchsia_hardware_lightsensor::Metadata>(
+      &incoming, DEVICE_METADATA_PRIVATE, "pdev");
   if (metadata_result.is_error()) {
     fdf::error("Failed to get metadata: {}", metadata_result);
     return metadata_result.take_error();
