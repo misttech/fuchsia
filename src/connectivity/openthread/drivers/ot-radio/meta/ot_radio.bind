@@ -4,17 +4,20 @@
 
 composite ot_radio;
 
-using fuchsia.hardware.pin;
-using fuchsia.gpio;
-using fuchsia.hardware.gpio;
-using fuchsia.hardware.spi;
-using fuchsia.nordic.platform;
-using fuchsia.platform;
-
 primary parent "spi" {
   fuchsia.hardware.spi.Service == fuchsia.hardware.spi.Service.ZirconTransport;
-  fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.nordic.platform.BIND_PLATFORM_DEV_VID.NORDIC;
-  fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.nordic.platform.BIND_PLATFORM_DEV_DID.THREAD;
+}
+
+parent "pdev" {
+  if fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC {
+    fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE;
+    fuchsia.devicetree.FIRST_COMPATIBLE == "nordic,nrf52840";
+  } else {
+    fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
+    fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;
+    fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.OT_RADIO;
+    fuchsia.BIND_PLATFORM_DEV_INSTANCE_ID == 0;
+  }
 }
 
 parent "gpio-int" {
@@ -30,13 +33,6 @@ parent "gpio-reset" {
 parent "gpio-bootloader" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.OT_RADIO_BOOTLOADER;
-}
-
-parent "pdev" {
-  fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
-  fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;
-  fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.OT_RADIO;
-  fuchsia.BIND_PLATFORM_DEV_INSTANCE_ID == 0;
 }
 
 optional parent "gpio-init" {
