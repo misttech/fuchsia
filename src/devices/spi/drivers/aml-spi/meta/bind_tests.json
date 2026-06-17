@@ -11,6 +11,20 @@
                     "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.amlogic.platform.BIND_PLATFORM_DEV_DID.SPI",
                     "fuchsia.BIND_PROTOCOL": "fuchsia.platform.BIND_PROTOCOL.DEVICE"
                 }
+            },
+            {
+                "name": "DevicetreeMatch",
+                "expected": "match",
+                "device": {
+                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"amlogic,g12a-spi\""
+                }
+            },
+            {
+                "name": "DevicetreeWrongCompatible",
+                "expected": "abort",
+                "device": {
+                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"amlogic,wrong-spi\""
+                }
             }
         ]
     },
