@@ -2044,10 +2044,25 @@ async fn check_usb_driver<W: Write, D: UsbDriverFinder>(
     ledger: &mut DoctorLedger<W>,
     env_context: &EnvironmentContext,
 ) -> Result<()> {
+    if !env_context.get(ffx_config::keys::USB_ENABLED).unwrap_or(false) {
+        return Ok(());
+    }
+
     let usb_driver_node = ledger.add_node("FFX USB Driver", LedgerMode::Automatic)?;
 
     let usb_driver_statuses = match finder.find().await {
         Ok(statuses) => statuses,
+        Err(FindUsbDriverError::DriverIsNotRunning) => {
+            let info_node = ledger.add_node(
+                "The ffx-usb-driver is not running. It should be started automatically when \
+                needed. If this error persists and there are ongoing issues communicating with the \
+                target, this may be a bug.",
+                LedgerMode::Automatic,
+            )?;
+            ledger.set_outcome(info_node, LedgerOutcome::Warning)?;
+            ledger.close(usb_driver_node)?;
+            return Ok(());
+        }
         Err(e) => {
             let node = ledger.add_node(&format!("{}", e), LedgerMode::Automatic)?;
             ledger.set_outcome(node, LedgerOutcome::Failure)?;
@@ -3082,6 +3097,7 @@ mod test {
             .user_config("ssh.priv", json!([&priv_key]))
             .user_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, json!(&emu_dir))
             .user_config(usb_driver_api::CONFIG_USB_SOCKET_PATH, json!(socket_file))
+            .user_config(ffx_config::keys::USB_ENABLED, json!(true))
             .build()
             .unwrap();
         Ok(test_env)
@@ -3190,6 +3206,7 @@ mod test {
             .user_config("ssh.pub", json!([&pub_key]))
             .user_config("ssh.priv", json!([&priv_key]))
             .user_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, json!(&emu_dir))
+            .user_config(ffx_config::keys::USB_ENABLED, json!(true))
             .build()
             .unwrap();
 
@@ -3262,8 +3279,10 @@ mod test {
             \n    [✓] abi-revision: {ABI_REVISION_STR}\
             \n    [✓] api-level: {FAKE_API_LEVEL}\
             \n    [✓] Default target: (none)\
-            \n[✗] FFX USB Driver\
-            \n    [✗] ffx-usb-driver is not running.\
+            \n[!] FFX USB Driver\
+            \n    [!] The ffx-usb-driver is not running. It should be started automatically when \
+            needed. If this error persists and there are ongoing issues communicating with the \
+            target, this may be a bug.\
             \n[✗] Google Network Checks\
             \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
             \n[✗] Searching for targets\
@@ -3276,6 +3295,66 @@ mod test {
                 global_file = test_env.global_file.path().display(),
             )
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_usb_driver_disabled() {
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+
+        let (pub_key, priv_key) =
+            setup_ssh_keys(&isolate_root).await.expect("setting up ssh test keys");
+        let emu_dir = setup_emu_dir(&isolate_root).expect("setting up emulator data");
+
+        let test_env = builder
+            .user_config("ssh.pub", json!([&pub_key]))
+            .user_config("ssh.priv", json!([&priv_key]))
+            .user_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, json!(&emu_dir))
+            .user_config(ffx_config::keys::USB_ENABLED, json!(false))
+            .build()
+            .unwrap();
+
+        let fake = FakeDaemonManager::new(
+            vec![true],
+            vec![],
+            vec![],
+            vec![Ok(setup_responsive_daemon_server())],
+            vec![Ok(vec![1])],
+        );
+        let mut handler = FakeStepHandler::new();
+        let ledger_view = Box::new(FakeLedgerView::new());
+        let mut ledger = DoctorLedger::<MockWriter>::new(
+            MockWriter::new(),
+            ledger_view,
+            LedgerViewMode::Verbose,
+        );
+
+        let mut mock_driver_finder = MockUsbDriverFinder::new();
+        mock_driver_finder.expect_find().times(0);
+
+        doctor(
+            &mut handler,
+            &mut ledger,
+            false,
+            &fake,
+            "",
+            1,
+            DEFAULT_RETRY_DELAY,
+            false,
+            frontend_version_info(true),
+            Ok(None),
+            &test_env.context,
+            record_params_no_record(),
+            mock_driver_finder,
+            FakeGChecker,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+
+        let output = ledger.writer.get_data();
+        assert!(!output.contains("FFX USB Driver"), "Output contains FFX USB Driver: {}", output);
     }
 
     #[fuchsia::test]
@@ -4824,6 +4903,7 @@ mod test {
             .user_config("ssh.pub", json!([&pub_key]))
             .user_config("ssh.priv", json!([&priv_key]))
             .user_config(usb_driver_api::CONFIG_USB_SOCKET_PATH, json!(socket_file))
+            .user_config(ffx_config::keys::USB_ENABLED, json!(true))
             .build()
             .unwrap();
         // Do not generate the keys - so they are missing.
