@@ -76,6 +76,7 @@ library_headers("headers") {
       "lib/ld/remote-load-module.h",
       "lib/ld/remote-perfect-symbol-filter.h",
       "lib/ld/remote-zygote.h",
+      "lib/ld/vmar.h",
     ]
 
     public_deps += [
