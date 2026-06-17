@@ -21,6 +21,9 @@ fuchsia.microbenchmarks.starnix_aarch32: Filesystem_Open_Ext4
 fuchsia.microbenchmarks.starnix_aarch32: Filesystem_Open_Remotefs
 fuchsia.microbenchmarks.starnix_aarch32: Filesystem_Open_Sysfs
 fuchsia.microbenchmarks.starnix_aarch32: Filesystem_Open_Tmpfs
+fuchsia.microbenchmarks.starnix_aarch32: Filesystem_ProcSelfStat/1000mappings
+fuchsia.microbenchmarks.starnix_aarch32: Filesystem_ProcSelfStat/100mappings
+fuchsia.microbenchmarks.starnix_aarch32: Filesystem_ProcSelfStat/10mappings
 fuchsia.microbenchmarks.starnix_aarch32: Filesystem_Stat
 fuchsia.microbenchmarks.starnix_aarch32: Filesystem_Stat_Ext4
 fuchsia.microbenchmarks.starnix_aarch32: Fork.fork
