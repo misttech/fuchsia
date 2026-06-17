@@ -383,6 +383,36 @@ impl FileOps for DmDeviceFile {
         }
     }
 
+    fn ioctl(
+        &self,
+        locked: &mut Locked<Unlocked>,
+        file: &FileObject,
+        current_task: &CurrentTask,
+        request: u32,
+        arg: SyscallArg,
+    ) -> Result<SyscallResult, Errno> {
+        let device = &self.device;
+        let mut state = device.state.lock();
+        if !state.suspended {
+            if let Some(active_table) = &mut state.active_table {
+                if active_table.targets.len() == 1 {
+                    let target = &mut active_table.targets[0];
+                    if let TargetType::Verity(args) = &mut target.target_type {
+                        return args.block_device.ops().ioctl(
+                            locked,
+                            &*args.block_device,
+                            current_task,
+                            request,
+                            arg,
+                        );
+                    }
+                }
+            }
+        }
+
+        default_ioctl(file, locked, current_task, request, arg)
+    }
+
     fn close(
         self: Box<Self>,
         _locked: &mut Locked<FileOpsCore>,
