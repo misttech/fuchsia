@@ -176,14 +176,14 @@ mod tests {
         // A terminated call will not be sent to the HF
         let terminated = Call::new(
             1,
-            Number::from_non_at_string("1"),
+            Number::from_non_at_string("1").unwrap(),
             CallState::Terminated,
             Direction::MobileTerminated,
         );
         // An ongoing call will be sent to the HF.
         let ongoing = Call::new(
             2,
-            Number::from_non_at_string("2"),
+            Number::from_non_at_string("2").unwrap(),
             CallState::IncomingRinging,
             Direction::MobileTerminated,
         );

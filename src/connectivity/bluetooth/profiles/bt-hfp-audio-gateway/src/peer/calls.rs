@@ -15,12 +15,13 @@ use fidl_fuchsia_bluetooth_hfp::{
     CallAction as FidlCallAction, CallProxy, CallState, NextCall, PeerHandlerProxy, RedialLast,
     TransferActive,
 };
+use fuchsia_async as fasync;
+use fuchsia_inspect as inspect;
 use fuchsia_inspect_derive::{AttachError, Inspect};
 use futures::stream::{FusedStream, Stream, StreamExt};
 use log::{debug, info, warn};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use {fuchsia_async as fasync, fuchsia_inspect as inspect};
 
 mod pending;
 
@@ -49,7 +50,8 @@ impl TryFrom<NextCall> for CallEntry {
                 call: Some(c), remote: Some(n), state: Some(s), direction: Some(d), ..
             } => {
                 let proxy = c.into_proxy();
-                Ok(CallEntry::new(proxy, Number::from_non_at_string(&n), s, d.into()))
+                let number = Number::from_non_at_string(&n)?;
+                Ok(CallEntry::new(proxy, number, s, d.into()))
             }
             _ => Err(Error::MissingParameter("Missing fidl in NextCall table".into())),
         }
@@ -750,7 +752,7 @@ mod tests {
 
         let mut call = CallEntry::new(
             proxy,
-            Number::from_non_at_string("1"),
+            Number::from_non_at_string("1").unwrap(),
             CallState::IncomingRinging,
             Direction::MobileTerminated,
         );
@@ -796,7 +798,7 @@ mod tests {
             callheld: indicators::CallHeld::None,
         };
         assert_eq!(calls.indicators(), expected);
-        (calls, peer_stream, call_stream, 1, Number::from_non_at_string(num))
+        (calls, peer_stream, call_stream, 1, Number::from_non_at_string(num).unwrap())
     }
 
     #[fuchsia::test]
@@ -1442,6 +1444,55 @@ mod tests {
             let result = exec.run_until_stalled(&mut send).unwrap();
             // There are no calls present to which to direct the DTMF code.
             assert!(result.is_err());
+        }
+    }
+
+    #[fuchsia::test]
+    fn test_handle_new_call_success() {
+        let _exec = fasync::TestExecutor::new();
+        // Verify that a valid number (even if optionally quoted) is accepted
+        let valid_numbers = vec!["12345", "\"12345\""];
+        for num in valid_numbers {
+            let mut calls = Calls::new(None);
+            let (client, _call) = fidl::endpoints::create_request_stream::<CallMarker>();
+            let next_call = NextCall {
+                call: Some(client),
+                remote: Some(num.to_string()),
+                state: Some(CallState::OngoingActive),
+                direction: Some(CallDirection::MobileTerminated),
+                ..Default::default()
+            };
+
+            let result = calls.handle_new_call(next_call);
+            assert!(result.is_ok(), "Failed to accept valid: {}", num);
+            assert_eq!(calls.current_calls().len(), 1);
+        }
+    }
+
+    #[fuchsia::test]
+    fn test_handle_new_call_rejects_invalid_numbers() {
+        let _exec = fasync::TestExecutor::new();
+        let invalid_numbers = vec![
+            "12345\r\n+BVRA: 1", // CRLF
+            "12345\0",           // Null byte
+            "123\"45",           // Internal quote (breakout)
+            "\"123\"45\"",       // Internal quote with outer quotes
+        ];
+
+        for num in invalid_numbers {
+            let mut calls = Calls::new(None);
+            let (client, _call) = fidl::endpoints::create_request_stream::<CallMarker>();
+            let next_call = NextCall {
+                call: Some(client),
+                remote: Some(num.to_string()),
+                state: Some(CallState::OngoingActive),
+                direction: Some(CallDirection::MobileTerminated),
+                ..Default::default()
+            };
+
+            let result = calls.handle_new_call(next_call);
+            assert!(matches!(result, Err(Error::InvalidFIDLInput(_))), "Failed to reject: {}", num);
+            assert_eq!(calls.current_calls().len(), 0);
         }
     }
 }

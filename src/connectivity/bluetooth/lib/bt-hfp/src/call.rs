@@ -8,4 +8,4 @@ pub mod list;
 pub mod number;
 
 pub use direction::Direction;
-pub use number::{FidlNumber, Number};
+pub use number::{FidlNumber, Number, NumberError};

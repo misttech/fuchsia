@@ -2,6 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use thiserror::Error;
+
+#[derive(Debug, Clone, PartialEq, Hash, Eq, Error)]
+pub enum NumberError {
+    #[error("Number contains control characters")]
+    ControlCharacters,
+    #[error("Number contains internal quotes")]
+    InternalQuotes,
+    #[error("Number is not enclosed in delimiting quotes")]
+    NotQuoted,
+}
+
 /// The fuchsia.bluetooth.hfp library representation of a Number.
 pub type FidlNumber = String;
 /// A phone number.  Clients should generally use `as_non_at_string` and
@@ -11,6 +23,10 @@ pub type FidlNumber = String;
 /// and `as_at_string`, which maintain the quotes.
 #[derive(Debug, Clone, PartialEq, Hash, Default, Eq)]
 pub struct Number(String);
+
+fn is_quoted(s: &str) -> bool {
+    s.starts_with('"') && s.ends_with('"') && s.len() >= 2
+}
 
 impl Number {
     /// Format value indicating no changes on the number presentation are required.
@@ -25,7 +41,7 @@ impl Number {
 
     /// Converts the Number to a String, stripping quotes from the beginning and end.
     pub fn to_non_at_string(&self) -> String {
-        if self.0.len() >= 2 && self.0.starts_with("\"") && self.0.ends_with("\"") {
+        if is_quoted(&self.0) {
             let string = self.0.clone();
             let mut chars = string.chars();
             let _front_must_exist = chars.next();
@@ -42,20 +58,33 @@ impl Number {
         self.0.clone()
     }
 
-    /// Converts a String to a Number, adding delimiting quotes.
-    pub fn from_non_at_string(s: &str) -> Self {
-        // Phone numbers must be enclosed in double quotes
-        let inner = if s.starts_with("\"") && s.ends_with("\"") {
-            s.to_string()
+    pub fn from_non_at_string(s: &str) -> Result<Self, NumberError> {
+        if is_quoted(s) {
+            Self::from_at_string(s)
         } else {
-            format!("\"{}\"", s)
-        };
-        Self(inner)
+            let quoted = format!("\"{}\"", s);
+            Self::from_at_string(&quoted)
+        }
     }
 
     /// Converts a String to a Number, from an AT command, leaving the delimiting quotes in place.
-    pub fn from_at_string(s: &str) -> Self {
-        Self(String::from(s))
+    /// Returns an error if the string contains ASCII control characters or internal quotes.
+    pub fn from_at_string(s: &str) -> Result<Self, NumberError> {
+        if s.chars().any(|c| c.is_ascii_control()) {
+            return Err(NumberError::ControlCharacters);
+        }
+
+        if !is_quoted(s) {
+            return Err(NumberError::NotQuoted);
+        }
+
+        let inner_s = &s[1..s.len() - 1];
+
+        if inner_s.contains('"') {
+            return Err(NumberError::InternalQuotes);
+        }
+
+        Ok(Self(String::from(s)))
     }
 }
 
@@ -75,7 +104,7 @@ mod tests {
     fn number_str_delimiters() {
         // Convert str to Number
         {
-            let actual_number = Number::from_non_at_string("1234567");
+            let actual_number = Number::from_non_at_string("1234567").unwrap();
             let expected_number = Number(String::from("\"1234567\""));
             assert_eq!(actual_number, expected_number);
         }
@@ -89,14 +118,14 @@ mod tests {
 
         // Convert str to Number with redundant quotes
         {
-            let actual_number = Number::from_non_at_string("\"1234567\"");
+            let actual_number = Number::from_non_at_string("\"1234567\"").unwrap();
             let expected_number = Number(String::from("\"1234567\""));
             assert_eq!(actual_number, expected_number);
         }
 
         // Convert AT command str to Number
         {
-            let actual_number = Number::from_at_string("\"1234567\"");
+            let actual_number = Number::from_at_string("\"1234567\"").unwrap();
             let expected_number = Number(String::from("\"1234567\""));
             assert_eq!(actual_number, expected_number);
         }
@@ -107,5 +136,36 @@ mod tests {
             let expected_string = String::from("\"1234567\"");
             assert_eq!(actual_string, expected_string);
         }
+    }
+
+    #[fuchsia::test]
+    fn number_validation_success() {
+        assert!(Number::from_non_at_string("123456").is_ok());
+        assert!(Number::from_non_at_string("\"123456\"").is_ok());
+        assert!(Number::from_at_string("\"123456\"").is_ok());
+    }
+
+    #[fuchsia::test]
+    fn number_validation_error() {
+        // Control characters are rejected
+        assert!(matches!(
+            Number::from_non_at_string("123\r\n456"),
+            Err(NumberError::ControlCharacters)
+        ));
+        assert!(matches!(
+            Number::from_at_string("\"123\0456\""),
+            Err(NumberError::ControlCharacters)
+        ));
+
+        // Not quoted is rejected for from_at_string
+        assert!(matches!(Number::from_at_string("123456"), Err(NumberError::NotQuoted)));
+
+        // Internal quotes are rejected
+        assert!(matches!(Number::from_non_at_string("123\"456"), Err(NumberError::InternalQuotes)));
+        assert!(matches!(
+            Number::from_non_at_string("\"123\"456\""),
+            Err(NumberError::InternalQuotes)
+        ));
+        assert!(matches!(Number::from_at_string("\"123\"456\""), Err(NumberError::InternalQuotes)));
     }
 }

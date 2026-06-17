@@ -102,7 +102,7 @@ mod tests {
 
         let call = Call::new(
             1,
-            Number::from_non_at_string("123"),
+            Number::from_non_at_string("123").unwrap(),
             CallState::IncomingRinging,
             Direction::MobileTerminated,
         );
@@ -130,7 +130,7 @@ mod tests {
 
         let call = Call::new(
             1,
-            Number::from_non_at_string("123"),
+            Number::from_non_at_string("123").unwrap(),
             CallState::IncomingRinging,
             Direction::MobileTerminated,
         );

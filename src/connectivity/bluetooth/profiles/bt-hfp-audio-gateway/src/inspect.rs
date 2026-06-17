@@ -284,7 +284,7 @@ mod tests {
         let inspect = inspect::Inspector::default();
         let mut call_entry =
             CallEntryInspect::default().with_inspect(inspect.root(), "call").unwrap();
-        call_entry.set_number(Number::from_non_at_string("1234567"));
+        call_entry.set_number(Number::from_non_at_string("1234567").unwrap());
         call_entry.set_call_direction(Direction::MobileTerminated);
         call_entry.set_call_state(CallState::IncomingRinging);
         assert_data_tree!(inspect, root: {

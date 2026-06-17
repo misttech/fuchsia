@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use async_utils::hanging_get::error::HangingGetServerError;
-use bt_hfp::call::list as call_list;
+use bt_hfp::call::{NumberError, list as call_list};
 use bt_hfp::sco;
 use fidl_fuchsia_bluetooth_hfp::CallState;
 use profile_client::Error as ProfileError;
@@ -30,6 +30,8 @@ pub enum Error {
     HangingGet(#[from] HangingGetServerError),
     #[error("Missing required parameter: {}", .0)]
     MissingParameter(String),
+    #[error("Invalid FIDL input: {}", .0)]
+    InvalidFIDLInput(String),
     #[error("Fidl Error: {}", .0)]
     Fidl(#[from] fidl::Error),
 }
@@ -59,5 +61,11 @@ pub enum CallError {
 impl From<sco::ConnectError> for Error {
     fn from(x: sco::ConnectError) -> Self {
         Self::sco_connection(x)
+    }
+}
+
+impl From<NumberError> for Error {
+    fn from(err: NumberError) -> Self {
+        Self::InvalidFIDLInput(format!("Invalid phone number: {}", err))
     }
 }

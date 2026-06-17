@@ -1629,7 +1629,7 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
 
         let raw_number = "1234567";
-        let number = Number::from_non_at_string(raw_number);
+        let number = Number::from_non_at_string(raw_number).unwrap();
         let expected_ccwa = vec![at::success(at::Success::Ccwa {
             ty: number.type_(),
             number: number.to_at_string(),

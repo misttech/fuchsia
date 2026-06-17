@@ -328,7 +328,7 @@ impl Call {
         // we probably won't get it and so set it to the empty string so as to
         // be able to respond to WatchNextCall.
         if self.number.is_none() {
-            self.number = Some(Number::from_non_at_string(""));
+            self.number = Some(Number::from_non_at_string("").expect("empty number is valid"));
         }
     }
 
@@ -877,7 +877,7 @@ mod test {
                 Direction::MobileOriginated,
                 CallState::OutgoingAlerting,
                 /* multiparty */ false,
-                Some(Number::from_non_at_string("+1 212 555 0100")),
+                Some(Number::from_non_at_string("+1 212 555 0100").expect("valid test number")),
             )
             .expect("Set queried call info");
 
