@@ -9,7 +9,7 @@ use core::num::NonZeroU16;
 use core::ops::RangeInclusive;
 
 use derivative::Derivative;
-use log::error;
+use log::{debug, error};
 use net_types::ip::{GenericOverIp, Ip, IpVersionMarker};
 use netstack3_base::{
     AnyDevice, DeviceIdContext, HandleableTimer, InterfaceProperties, IpDeviceAddressIdContext,
@@ -243,8 +243,17 @@ fn apply_transparent_proxy<I: IpExt, P: MaybeTransportPacket>(
                 );
                 return RoutineResult::Drop;
             };
-            let port = NonZeroU16::new(transport_packet_data.dst_port())
-                .expect("TCP and UDP destination port is always non-zero");
+            // TCP and UDP don't support a destination port of 0, so we have no
+            // choice but to drop the packet.
+            //
+            // TODO(https://fxbug.dev/341128580): Revisit this once filtering is
+            // able to rewrite a port to 0.
+            let Some(port) = NonZeroU16::new(transport_packet_data.dst_port()) else {
+                // TODO(https://fxbug.dev/517102537): This should have an
+                // Inspect counter.
+                debug!("attempted to TPROXY packet to port 0");
+                return RoutineResult::Drop;
+            };
             (*addr, port)
         }
         TransparentProxy::LocalAddrAndPort(addr, port) => (*addr, *port),
@@ -1929,5 +1938,45 @@ mod tests {
             IngressVerdict::Proceed(Accept)
         );
         assert_eq!(metadata.marks, Marks::new([(MarkDomain::Mark1, 2), (MarkDomain::Mark2, 1)]));
+    }
+
+    // Regression test for https://fxbug.dev/517102537.
+    #[ip_test(I)]
+    fn transparent_proxy_drop_on_port_0<I: TestIpExt>() {
+        let ingress = Hook {
+            routines: vec![Routine {
+                rules: vec![Rule::new(
+                    PacketMatcher::default(),
+                    Action::TransparentProxy(TransparentProxy::LocalAddr(I::DST_IP)),
+                )],
+            }],
+        };
+
+        let packet = FakeIpPacket::<I, FakeTcpSegment> {
+            body: FakeTcpSegment {
+                dst_port: 0,
+                src_port: 11111,
+                segment: SegmentHeader::arbitrary_value(),
+                payload_len: 0,
+            },
+            ..FakeIpPacket::<I, FakeTcpSegment>::arbitrary_value()
+        };
+
+        assert_eq!(
+            check_routines_for_hook::<
+                I,
+                _,
+                FakeMatcherDeviceId,
+                FakeBindingsCtx<I>,
+                _,
+                IngressStopReason<I>,
+            >(
+                &ingress,
+                &packet,
+                Interfaces { ingress: None, egress: None },
+                &mut FakePacketMetadata::default(),
+            ),
+            IngressVerdict::Stop(IngressStopReason::Drop),
+        );
     }
 }
