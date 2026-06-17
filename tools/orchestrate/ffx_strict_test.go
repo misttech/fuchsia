@@ -206,6 +206,36 @@ func TestFFXStrictClient_SetDefaultTarget(t *testing.T) {
 	}
 }
 
+func TestParsePort(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		addrStr string
+		want    int
+		wantErr bool
+	}{
+		{"valid ipv4", "127.0.0.1:8080", 8080, false},
+		{"valid ipv6", "[::1]:8080", 8080, false},
+		{"invalid format", "8080", 0, true},
+		{"not a number", "localhost:abc", 0, true},
+		{"out of range high", "localhost:65536", 0, true},
+		{"out of range low", "localhost:0", 0, true},
+		{"negative port", "localhost:-1", 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parsePort(tt.addrStr)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parsePort() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("parsePort() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func createSmartFakeFfx(t *testing.T, tmpDir string) string {
 	script := fmt.Sprintf(`#!/bin/bash
 # Find log.dir in arguments to know where to write state

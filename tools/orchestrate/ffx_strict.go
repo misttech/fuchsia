@@ -7,8 +7,10 @@ package orchestrate
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -22,13 +24,20 @@ type FFXStrictClient struct {
 	// TODO(jcecil): Remove this embedding once strict mode is fully implemented.
 	*ffx.Ffx // Embed legacy client to fallback on unimplemented methods
 
-	mu           sync.Mutex // synchronizes calls to ffxInst target state
+	// The following fields are read-only after initialization.
 	ffxInst      *ffxutil.FFXInstance
 	outputsDir   string
 	ffxStrictDir string
 	sshInfo      *ffxutil.SSHInfo
 	sshDir       string
 	isTemp       bool
+
+	mu           sync.Mutex // protects mutable server lifecycle fields below and target state
+	serverCtx    context.Context
+	serverCancel context.CancelFunc
+	serverDone   chan struct{}
+	serverErr    error
+	repoPort     int
 }
 
 // NewFFXStrictClient creates a new FFXStrictClient.
@@ -135,6 +144,25 @@ func NewFFXStrictClient(ctx context.Context, ffxPath, outputsDir, repoName strin
 }
 
 func (c *FFXStrictClient) Close() error {
+	c.mu.Lock()
+	cancel := c.serverCancel
+	doneChan := c.serverDone
+	c.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+		if doneChan != nil {
+			<-doneChan
+		}
+		c.mu.Lock()
+		c.serverCancel = nil
+		c.serverCtx = nil
+		c.serverDone = nil
+		c.serverErr = nil
+		c.repoPort = 0
+		c.mu.Unlock()
+	}
+
 	// DO NOT call c.Ffx.Close() because it unconditionally deletes its IsolateDir.
 	// Since we set IsolateDir to ffxStrictDir, calling c.Ffx.Close() would wipe
 	// the entire ffx_strict sandbox, preventing log collection by Bazel.
@@ -210,6 +238,21 @@ func (c *FFXStrictClient) RepositoryPublish(ctx context.Context, repoDir string,
 		}
 	}
 	return nil
+}
+
+func parsePort(addrStr string) (int, error) {
+	_, portStr, err := net.SplitHostPort(addrStr)
+	if err != nil {
+		return 0, err
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return 0, err
+	}
+	if port <= 0 || port > 65535 {
+		return 0, fmt.Errorf("port %d out of range (must be > 0 and <= 65535)", port)
+	}
+	return port, nil
 }
 
 var xdgEnvVars = []string{"HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"}
