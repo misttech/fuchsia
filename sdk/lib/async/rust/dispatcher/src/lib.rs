@@ -266,7 +266,7 @@ impl<D: GetAsyncDispatcher + Clone + Send + Sync> OnDispatcher for D {
     where
         Self: 'static,
     {
-        Task::start(future, self.clone()).detach_on_drop()
+        self.compute(future).detach_on_drop()
     }
 
     fn compute<T: Send + 'static>(
@@ -276,7 +276,10 @@ impl<D: GetAsyncDispatcher + Clone + Send + Sync> OnDispatcher for D {
     where
         Self: 'static,
     {
-        Task::start(future, self.clone())
+        match self.try_get_async_dispatcher() {
+            Some(dispatcher) => Task::start(future, dispatcher),
+            None => Task::new_failed(Status::BAD_STATE),
+        }
     }
 }
 

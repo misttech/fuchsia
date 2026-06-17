@@ -18,10 +18,10 @@ use zx_status::Status;
 use futures::future::{BoxFuture, FutureExt};
 use futures::task::AtomicWaker;
 
-use crate::{AsAsyncDispatcherRef, OnDispatcher};
+use crate::{AsAsyncDispatcherRef, AsyncDispatcher};
 
-/// The future returned by [`OnDispatcher::compute`] or [`OnDispatcher::try_compute`]. If this is
-/// dropped, the task will be cancelled.
+/// The future returned by [`crate::OnDispatcher::compute`]. If this is dropped, the task will be
+/// cancelled.
 #[must_use]
 #[derive(Debug)]
 pub struct Task<T> {
@@ -31,10 +31,10 @@ pub struct Task<T> {
 }
 
 impl<T: Send + 'static> Task<T> {
-    fn new<D: OnDispatcher + 'static>(
+    fn new(
         future: impl Future<Output = T> + Send + 'static,
-        dispatcher: D,
-    ) -> (Self, Arc<TaskWakerState<T, D>>) {
+        dispatcher: AsyncDispatcher,
+    ) -> (Self, Arc<TaskWakerState<T>>) {
         let future_state = Arc::new(TaskFutureState {
             waker: AtomicWaker::new(),
             aborted: AtomicBool::new(false),
@@ -50,9 +50,22 @@ impl<T: Send + 'static> Task<T> {
         (future, state)
     }
 
-    pub(crate) fn start<D: OnDispatcher + 'static>(
+    /// Constructs a task that never runs, but immediately fails with the given error status.
+    pub fn new_failed(status: Status) -> Self {
+        let state = Arc::new(TaskFutureState {
+            waker: AtomicWaker::new(),
+            aborted: AtomicBool::new(false),
+        });
+        let (result_sender, result_receiver) = mpsc::sync_channel(1);
+        // send the error to the result receiver. This should never fail, since
+        // we just created both ends.
+        result_sender.try_send(Err(status)).unwrap();
+        Task { state, result_receiver, detached: false }
+    }
+
+    pub(crate) fn start(
         future: impl Future<Output = T> + Send + 'static,
-        dispatcher: D,
+        dispatcher: AsyncDispatcher,
     ) -> Self {
         let (future, state) = Self::new(future, dispatcher);
 
@@ -145,14 +158,14 @@ impl<T> Future for JoinHandle<T> {
     }
 }
 
-struct TaskWakerState<T, D> {
+struct TaskWakerState<T> {
     result_sender: mpsc::SyncSender<Result<T, Status>>,
     future_state: Arc<TaskFutureState>,
     future: Mutex<Option<BoxFuture<'static, T>>>,
-    dispatcher: D,
+    dispatcher: AsyncDispatcher,
 }
 
-impl<T: Send + 'static, D: OnDispatcher + 'static> Wake for TaskWakerState<T, D> {
+impl<T: Send + 'static> Wake for TaskWakerState<T> {
     fn wake(self: Arc<Self>) {
         self.wake_by_ref();
     }
@@ -170,7 +183,7 @@ impl<T: Send + 'static, D: OnDispatcher + 'static> Wake for TaskWakerState<T, D>
     }
 }
 
-impl<T: Send + 'static, D: OnDispatcher + 'static> TaskWakerState<T, D> {
+impl<T: Send + 'static> TaskWakerState<T> {
     /// Sends the result to the future end of this task, if it still exists.
     fn send_result(&self, res: Result<T, Status>) {
         // send the result and wake the waker if any has been registered.
@@ -185,39 +198,37 @@ impl<T: Send + 'static, D: OnDispatcher + 'static> TaskWakerState<T, D> {
     /// Otherwise, the future is kept to be polled again after being woken.
     pub(crate) fn queue(self: &Arc<Self>) -> Result<(), Status> {
         let arc_self = self.clone();
-        self.dispatcher.on_maybe_dispatcher(move |dispatcher| {
-            dispatcher
-                .post_task_sync(move |status| {
-                    let mut future_slot = arc_self.future.lock();
-                    // if the executor is shutting down, drop the future we're waiting on and pass
-                    // on the error.
-                    if status != Status::from_raw(ZX_OK) {
-                        drop(future_slot.take());
-                        arc_self.send_result(Err(status));
-                        return;
-                    }
+        self.dispatcher
+            .post_task_sync(move |status| {
+                let mut future_slot = arc_self.future.lock();
+                // if the executor is shutting down, drop the future we're waiting on and pass
+                // on the error.
+                if status != Status::from_raw(ZX_OK) {
+                    drop(future_slot.take());
+                    arc_self.send_result(Err(status));
+                    return;
+                }
 
-                    // if the future has been dropped without being detached, drop the future and
-                    // send an Err(Status::CANCELED) if the caller is still listening.
-                    if arc_self.future_state.aborted.load(Ordering::Relaxed) {
-                        drop(future_slot.take());
-                        arc_self.send_result(Err(Status::CANCELED));
-                        return;
-                    }
+                // if the future has been dropped without being detached, drop the future and
+                // send an Err(Status::CANCELED) if the caller is still listening.
+                if arc_self.future_state.aborted.load(Ordering::Relaxed) {
+                    drop(future_slot.take());
+                    arc_self.send_result(Err(Status::CANCELED));
+                    return;
+                }
 
-                    let Some(mut future) = future_slot.take() else {
-                        return;
-                    };
-                    let waker = Waker::from(arc_self.clone());
-                    let context = &mut Context::from_waker(&waker);
-                    match future.as_mut().poll(context) {
-                        Poll::Pending => *future_slot = Some(future),
-                        Poll::Ready(res) => {
-                            arc_self.send_result(Ok(res));
-                        }
+                let Some(mut future) = future_slot.take() else {
+                    return;
+                };
+                let waker = Waker::from(arc_self.clone());
+                let context = &mut Context::from_waker(&waker);
+                match future.as_mut().poll(context) {
+                    Poll::Pending => *future_slot = Some(future),
+                    Poll::Ready(res) => {
+                        arc_self.send_result(Ok(res));
                     }
-                })
-                .map(|_| ())
-        })
+                }
+            })
+            .map(|_| ())
     }
 }
