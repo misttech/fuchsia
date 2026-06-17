@@ -51,18 +51,17 @@ impl<T> Condition<T> {
     }
 
     /// Returns when `poll` resolves.
-    pub async fn when<R>(&self, poll: impl Fn(&mut T) -> Poll<R>) -> R {
+    pub async fn when<R>(
+        &self,
+        mut poll: impl for<'b> FnMut(&mut ConditionGuard<'b, T>) -> Poll<R>,
+    ) -> R {
         let mut entry = pin!(self.waker_entry());
-        poll_fn(|cx| {
-            let mut guard = self.0.lock();
-            // SAFETY: We uphold the pin guarantee.
-            let entry = unsafe { entry.as_mut().get_unchecked_mut() };
-            let result = poll(&mut guard.data);
+        poll_fn(move |cx| {
+            let guard = self.0.lock();
+            let mut cond_guard = ConditionGuard(guard);
+            let result = poll(&mut cond_guard);
             if result.is_pending() {
-                // SAFETY: We set list correctly above.
-                unsafe {
-                    entry.node.add(&mut *guard, cx.waker().clone());
-                }
+                cond_guard.add_waker(entry.as_mut(), cx.waker().clone());
             }
             result
         })
@@ -126,7 +125,7 @@ impl<'a, T> ConditionGuard<'a, T> {
     /// Blocks the current thread until `condition` returns true.
     ///
     /// The mutex is unlocked while waiting and re-locked before this function returns.
-    pub fn block_until(&mut self, mut condition: impl FnMut(&mut T) -> bool) {
+    pub fn block_until(&mut self, mut condition: impl FnMut(&mut Self) -> bool) {
         struct Condv(Condvar);
 
         impl Wake for Condv {
@@ -141,7 +140,7 @@ impl<'a, T> ConditionGuard<'a, T> {
             node: Node { next: None, prev: None, waker: None, _pinned: PhantomPinned },
         });
 
-        while !condition(&mut **self) {
+        while !condition(self) {
             self.add_waker(entry.as_mut(), Waker::from(condv.clone()));
             condv.0.wait(&mut self.0);
         }
@@ -284,7 +283,7 @@ mod tests {
         let mut futures = FuturesUnordered::new();
 
         for _ in 0..COUNT {
-            futures.push(condition.when(|()| {
+            futures.push(condition.when(|_| {
                 if counter.fetch_add(1, Ordering::Relaxed) >= COUNT {
                     Poll::Ready(())
                 } else {
@@ -385,7 +384,7 @@ mod tests {
     fn test_block_until_immediate() {
         let condition = Condition::new(42);
         let mut guard = condition.lock();
-        guard.block_until(|val| *val == 42);
+        guard.block_until(|val| **val == 42);
         assert_eq!(*guard, 42);
     }
 
@@ -409,7 +408,7 @@ mod tests {
         });
 
         let mut guard = condition.lock();
-        guard.block_until(|val| *val == 1);
+        guard.block_until(|val| **val == 1);
         assert_eq!(*guard, 1);
 
         handle.join().unwrap();

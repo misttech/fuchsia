@@ -703,8 +703,8 @@ impl FakeTaskHandler {
                             CqhciCqCtlRegister::HALT.bits(),
                         );
                         state.halt = false;
+                        return;
                     }
-                    return;
                 }
                 // Return if HALT is set, or Command Queuing is disabled.
                 if state.load32(MmioRegionType::Cqhci, CQHCI_CQ_CTL_OFFSET)

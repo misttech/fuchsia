@@ -1133,7 +1133,7 @@ impl Pauser {
             if !*self.pause.lock() {
                 return;
             }
-            self.pause.when(|p| if *p { Poll::Pending } else { Poll::Ready(()) }).await;
+            self.pause.when(|p| if **p { Poll::Pending } else { Poll::Ready(()) }).await;
             fasync::Timer::new(self.bounce_delay).await;
         }
     }

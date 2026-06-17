@@ -10,15 +10,17 @@ use std::thread::JoinHandle;
 use anyhow::Context as _;
 use async_trait::async_trait;
 use block_server::RequestId;
-use event_listener::{Event, Listener as _};
 use fdf_fidl::DriverChannel;
 use fidl_fuchsia_storage_block as fblock;
 use fidl_next_fuchsia_hardware_cqhci::{self as cqhci, EmmcPartitionId};
 use fidl_next_fuchsia_hardware_rpmb as rpmb;
 use fidl_next_fuchsia_hardware_sdmmc as sdmmc;
 use fuchsia_async as fasync;
-use fuchsia_sync::Mutex;
+use fuchsia_async::condition::{Condition, ConditionGuard};
+use std::task::Poll;
+
 use futures::channel::oneshot;
+
 use log::{debug, error, info, trace, warn};
 use mmio::Mmio;
 use sdmmc_spec::{
@@ -188,6 +190,7 @@ struct PendingTask {
     partition: EmmcPartitionId,
     transfer: Transfer,
     trace_flow_id: Option<NonZero<u64>>,
+    _slot_guard: TransferSlot,
 }
 
 impl PendingTask {
@@ -220,41 +223,195 @@ impl PendingTask {
         unsafe { transfer.unpin() };
         complete_request(status_receiver.upgrade(), request_id, status);
     }
+
+    /// Unpins the transfer.  Must only be called if the task was never submitted.
+    unsafe fn unpin(self) {
+        let Self { transfer, .. } = self;
+        unsafe { transfer.unpin() };
+    }
 }
 
-#[derive(Default)]
-struct PendingTasks {
-    tasks: [Option<PendingTask>; CQHCI_TASK_DESCRIPTOR_LIST_NUM_SLOTS - 1],
+/// Represents the state of a single TDL slot.
+#[derive(Default, Debug)]
+enum SlotState {
+    /// The slot is free and can be allocated.
+    #[default]
+    Free,
+    /// The slot has been allocated to a client thread but the task is not yet in-flight.
+    Allocated,
+    /// The task is in-flight in hardware.
+    InFlight(PendingTask),
+}
+
+/// Tracks the allocation and in-flight state of all TDL slots (0..31).
+struct CommandQueueSlots {
+    /// State of transfer slots (0..30).
+    tasks: [SlotState; CQHCI_TASK_DESCRIPTOR_LIST_NUM_SLOTS - 1], // 31 slots (0..30)
+    /// Bitmask of free slots: 1 = Free, 0 = Allocated/InFlight (bit 31 is DCMD).
+    free_slots: u32,
+    /// Number of InFlight tasks.
     num_tasks: usize,
+    /// Status of the completed DCMD task, if any.
     dcmd_status: Option<zx::Status>,
 }
 
-impl PendingTasks {
+impl CommandQueueSlots {
+    /// Creates a new `CommandQueueSlots` with all slots free.
+    fn new() -> Self {
+        Self {
+            tasks: Default::default(),
+            // Initially all 32 slots (including DCMD at bit 31) are free.
+            free_slots: u32::MAX,
+            num_tasks: 0,
+            dcmd_status: None,
+        }
+    }
+
+    /// Returns `true` if there are no in-flight tasks.
     fn is_empty(&self) -> bool {
         self.num_tasks == 0
     }
 
+    /// Returns `true` if there is at least one slot available for regular I/O.
+    fn has_free_transfer_slot(&self) -> bool {
+        (self.free_slots & !(1 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT)) != 0
+    }
+
+    /// Allocates a slot for a regular I/O request.
+    fn allocate_transfer_slot(&mut self, queue: &Arc<CommandQueue>) -> Option<TransferSlot> {
+        let free = self.free_slots & !(1 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT);
+        if free == 0 {
+            return None;
+        }
+        let slot = free.trailing_zeros() as u8;
+        self.free_slots &= !(1 << slot); // Mark as occupied
+        self.tasks[slot as usize] = SlotState::Allocated;
+        Some(TransferSlot { queue: queue.clone(), tdl_slot: slot })
+    }
+
+    /// Releases a transfer slot.
+    ///
+    /// Returns `true` if the caller should wake up pending wakers (e.g. because the queue
+    /// transitioned from full to not-full, or all in-flight tasks completed).
+    fn release_transfer_slot(&mut self, slot_id: u8) -> bool {
+        let was_full = !self.has_free_transfer_slot();
+        let was_inflight = matches!(self.tasks[slot_id as usize], SlotState::InFlight(_));
+
+        self.tasks[slot_id as usize] = SlotState::Free;
+        self.free_slots |= 1 << slot_id; // Mark as free
+
+        if was_inflight {
+            self.num_tasks -= 1;
+        }
+
+        // Wake if we transitioned from full to not-full, or if we transitioned to empty.
+        was_full || (was_inflight && self.num_tasks == 0)
+    }
+
+    /// Allocates the DCMD slot.
+    fn allocate_dcmd_slot(&mut self, queue: &Arc<CommandQueue>) -> Option<DcmdSlot> {
+        let dcmd_bit = 1 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT;
+        if (self.free_slots & dcmd_bit) == 0 {
+            None
+        } else {
+            self.free_slots &= !dcmd_bit;
+            Some(DcmdSlot { queue: queue.clone() })
+        }
+    }
+
+    /// Releases the DCMD slot.
+    fn release_dcmd_slot(&mut self) {
+        let dcmd_bit = 1 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT;
+        assert!((self.free_slots & dcmd_bit) == 0, "DCMD slot was not in use!");
+        self.free_slots |= dcmd_bit;
+    }
+
+    /// Associates an in-flight task with an allocated slot, transitioning it to `InFlight`.
     fn add_task(&mut self, slot_id: u8, task: PendingTask) {
-        assert!(self.tasks[slot_id as usize].is_none());
-        self.tasks[slot_id as usize] = Some(task);
+        assert!(
+            matches!(self.tasks[slot_id as usize], SlotState::Allocated),
+            "Slot {slot_id} was not Allocated, it was {:?}",
+            self.tasks[slot_id as usize]
+        );
+        self.tasks[slot_id as usize] = SlotState::InFlight(task);
         self.num_tasks += 1;
     }
 
-    fn take_task(&mut self, slot_id: u8, event: &Event) -> Option<PendingTask> {
-        let task = std::mem::take(&mut self.tasks[slot_id as usize]);
-        if task.is_some() {
-            let needs_wake = self.num_tasks == 1 || self.num_tasks == self.tasks.len();
-            self.num_tasks -= 1;
-            if needs_wake {
-                event.notify(usize::MAX);
+    /// Removes and returns the in-flight task from the slot, transitioning it to `Free`.
+    ///
+    /// Returns `None` if the slot did not contain an in-flight task.
+    fn take_task(&mut self, slot_id: u8) -> Option<PendingTask> {
+        let state = std::mem::replace(&mut self.tasks[slot_id as usize], SlotState::Free);
+        match state {
+            SlotState::InFlight(task) => {
+                self.num_tasks -= 1;
+                Some(task)
+            }
+            _ => {
+                self.tasks[slot_id as usize] = state;
+                None
             }
         }
-        task
+    }
+}
+
+/// RAII guard that reserves a transfer slot (0..30).
+///
+/// When dropped, it automatically releases the slot and wakes up pending waiters if the queue
+/// transitioned to not-full or empty.
+struct TransferSlot {
+    queue: Arc<CommandQueue>,
+    /// The TDL slot index reserved by this guard.
+    pub tdl_slot: u8,
+}
+
+impl std::fmt::Debug for TransferSlot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TransferSlot").field("tdl_slot", &self.tdl_slot).finish_non_exhaustive()
+    }
+}
+
+impl Drop for TransferSlot {
+    fn drop(&mut self) {
+        let mut inner = self.queue.inner.lock();
+        if inner.slots.release_transfer_slot(self.tdl_slot) {
+            for waker in inner.drain_wakers() {
+                waker.wake();
+            }
+        }
+    }
+}
+
+/// RAII guard that reserves the DCMD slot (31).
+///
+/// When dropped, it automatically releases the DCMD slot and wakes up pending waiters.
+struct DcmdSlot {
+    queue: Arc<CommandQueue>,
+}
+
+impl std::fmt::Debug for DcmdSlot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DcmdSlot").finish_non_exhaustive()
+    }
+}
+
+impl Drop for DcmdSlot {
+    fn drop(&mut self) {
+        let mut inner = self.queue.inner.lock();
+        inner.slots.release_dcmd_slot();
+        for waker in inner.drain_wakers() {
+            waker.wake();
+        }
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum State {
+    /// The driver is initializing, and CQE may be enabled depending on how far along this is.
+    /// Internal DCMD tasks (like enabling barriers via `do_switch`) are allowed to run, but
+    /// external client transfers are blocked and queued until we're Enabled.
+    Initializing,
+
     /// CQE is enabled.  This is a prerequisite for submitting any task to hardware.
     Enabled,
 
@@ -320,17 +477,11 @@ struct Inner {
     blocked: bool,
     /// The queue of asynchronous tasks.
     async_task_queue: VecDeque<Box<dyn AsyncTask>>,
-    /// An event which is used to wake up various tasks when the queue state changes.
-    /// Specifically, the event is fired in all of the following scenarios (and possibly more):
-    /// - When `state` changes.
-    /// - When transfers or dcmds complete.
-    /// - During shutdown.
-    event: Event,
     /// The currently active partition.  Switching this requires blocking the queue and executing a
     /// switch DCMD; see [`CommandQueueExclExcl::switch_and_submit`].
     active_partition: Option<EmmcPartitionId>,
-    /// In-flight tasks.
-    pending_tasks: PendingTasks,
+    /// Slots and in-flight tasks.
+    slots: CommandQueueSlots,
     cqhci_mmio: Box<dyn Mmio + Send + Sync>,
     sdhci_mmio: Box<dyn Mmio + Send + Sync>,
     /// Runs async tasks in a loop.
@@ -451,30 +602,41 @@ impl Inner {
         // ring the doorbell.
         self.cqhci_mmio.write_barrier();
         self.cqhci_mmio.store32(CQHCI_CQ_TDBR_OFFSET, 1u32 << tdl_slot);
-        self.pending_tasks.add_task(tdl_slot, task);
+        self.slots.add_task(tdl_slot, task);
     }
 
     /// Fills `output` with additional tasks based on the slots identified by `completed_mask`.
     ///
     /// If a DCMD was completed, signals its event immediately.
+    ///
+    /// Returns whether the caller must wake up pending wakers.
     fn take_complete(
-        &mut self,
+        this: &mut ConditionGuard<'_, Self>,
         mut completed_mask: u32,
         status: zx::Status,
         output: &mut CompletedTasks,
     ) {
+        let mut dcmd_completed = false;
+        let was_empty = this.slots.is_empty();
         while completed_mask > 0 {
             let slot = completed_mask.trailing_zeros() as u8;
             if slot == CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT {
-                self.pending_tasks.dcmd_status = Some(status);
-                self.event.notify(usize::MAX);
-            } else if let Some(task) = self.pending_tasks.take_task(slot, &self.event) {
-                let Some(receiver) = self.partition_status_receivers.get(&task.partition) else {
+                this.slots.dcmd_status = Some(status);
+                dcmd_completed = true;
+            } else if let Some(task) = this.slots.take_task(slot) {
+                let Some(receiver) = this.partition_status_receivers.get(&task.partition) else {
                     panic!("No receiver was registered for partition {:?}", task.partition);
                 };
                 output.add(task, receiver.clone(), status);
             }
             completed_mask &= !(1 << slot);
+        }
+
+        // Wake wakers if a DCMD completed, or if we transitioned to having no in-flight tasks.
+        if dcmd_completed || (!was_empty && this.slots.is_empty()) {
+            for waker in this.drain_wakers() {
+                waker.wake();
+            }
         }
     }
 
@@ -489,16 +651,18 @@ impl Inner {
     }
 
     /// Submits an async task to the command queue.
-    fn submit_async_task(&mut self, task: impl AsyncTask) {
-        if self.should_reject_tasks() {
-            // Tasks need to handle drop to return errors as needed.
+    fn submit_async_task(this: &mut ConditionGuard<'_, Self>, task: impl AsyncTask) {
+        if this.should_reject_tasks() {
+            // `task`'s drop impl should handle returning an error.
             return;
         }
-        debug_assert!(self.async_task_loop.is_some());
+        debug_assert!(this.async_task_loop.is_some());
 
-        self.async_task_queue.push_back(Box::new(task));
-        if self.async_task_queue.len() == 1 {
-            self.event.notify_additional(usize::MAX);
+        this.async_task_queue.push_back(Box::new(task));
+        if this.async_task_queue.len() == 1 {
+            for waker in this.drain_wakers() {
+                waker.wake();
+            }
         }
     }
 }
@@ -526,6 +690,9 @@ impl CompletedTasks {
     }
 
     /// Completes all tasks in the list.
+    ///
+    /// Note that this acquires the lock on `CommandQueue::inner` to release held slots, so that
+    /// lock must not already be held.
     ///
     /// SAFETY: The caller must ensure that all of the tasks are no longer in-flight in hardware.
     unsafe fn complete(mut self) {
@@ -573,19 +740,27 @@ impl AsyncTask for SwitchAndSubmitTask {
             & EXT_CSD_PARTITION_ACCESS_MASK
             | self.partition as u8;
         let res = cq.do_switch(EXT_CSD_PARTITION_CONFIG, partition_config_value).await;
-        let mut inner = cq.inner.lock();
-        if res.is_ok() {
-            inner.active_partition = Some(self.partition);
-            let task = self.task.take().unwrap();
-            let tdl = task.transfer.tdl_slot();
-            inner.submit_transfer(tdl, task);
-        } else {
-            let Some(receiver) = inner.partition_status_receivers.get(&self.partition) else {
-                panic!("No receiver was registered for partition {:?}", self.partition);
-            };
-            let task = self.task.take().unwrap();
+
+        let task_to_complete = {
+            let mut inner = cq.inner.lock();
+            if res.is_ok() {
+                inner.active_partition = Some(self.partition);
+                let task = self.task.take().unwrap();
+                let tdl = task.transfer.tdl_slot();
+                inner.submit_transfer(tdl, task);
+                None
+            } else {
+                let Some(receiver) = inner.partition_status_receivers.get(&self.partition) else {
+                    panic!("No receiver was registered for partition {:?}", self.partition);
+                };
+                let task = self.task.take().unwrap();
+                Some((task, receiver.clone(), res.clone().into()))
+            }
+        };
+
+        if let Some((task, receiver, status)) = task_to_complete {
             // SAFETY: We never submitted the transfer.
-            unsafe { task.complete(receiver.clone(), res.clone().into()) };
+            unsafe { task.complete(receiver, status) };
         }
         debug!("switch_partition {:?} done: {res:?}", self.partition);
     }
@@ -644,7 +819,9 @@ impl Drop for CommandQueueExcl {
     fn drop(&mut self) {
         let mut inner = self.inner.lock();
         inner.blocked = false;
-        inner.event.notify(usize::MAX);
+        for waker in inner.drain_wakers() {
+            waker.wake();
+        }
     }
 }
 
@@ -713,8 +890,10 @@ impl CommandQueueExcl {
             cqcfg.insert(CqhciCqCfgRegister::CQE_ENABLE);
             inner.cqhci_mmio.store32(CQHCI_CQ_CFG_OFFSET, cqcfg.bits());
             inner.unhalt();
-            inner.event.notify(usize::MAX);
-        }
+            for waker in inner.drain_wakers() {
+                waker.wake();
+            }
+        };
         debug!("CQHCI enabled");
         Ok(())
     }
@@ -732,8 +911,10 @@ impl CommandQueueExcl {
             // Issue a write barrier so the CQE is disabled before we issue the commands to disable
             // command queueing mode in the underlying driver.
             inner.cqhci_mmio.write_barrier();
-            inner.event.notify(usize::MAX);
-        }
+            for waker in inner.drain_wakers() {
+                waker.wake();
+            }
+        };
         let _ = self.host.disable().await;
         debug!("CQHCI disabled");
     }
@@ -779,48 +960,43 @@ impl CommandQueueExcl {
         command: MmcCommand,
         command_arg: u32,
     ) -> Result<u32, zx::Status> {
-        let mut dcmd = None;
-        loop {
-            let listener = {
-                let mut inner = self.inner.lock();
+        // Wait for a slot to be free.
+        let _slot = self.queue.acquire_dcmd_slot().await?;
 
-                // The queue must be empty for CMD6 (see JESD84-B51B 6.6.39.1).
-                assert!(command != MmcCommand::Switch || inner.pending_tasks.is_empty());
+        // Issue the command.
+        self.transfer_manager.prepare_dcmd(command, command_arg)?;
+        trace!("Submitting dcmd {command:?}");
 
-                match &mut dcmd {
-                    Some(_) if inner.pending_tasks.dcmd_status.is_some() => {
-                        // The command is complete, check its status.
-                        let status = inner.pending_tasks.dcmd_status.take().unwrap();
-                        trace!("Dcmd {command:?} completed: {status:?}");
-                        return match status.into() {
-                            Ok(()) => Ok(inner.cqhci_mmio.load32(CQHCI_CQ_CRDCT_OFFSET)),
-                            Err(status) => Err(status),
-                        };
-                    }
-                    Some(_) => {
-                        // The command is in flight, wait for it to complete.
-                        inner.event.listen()
-                    }
-                    None => {
-                        // Submit the command.
-                        if let Some(slot) = self.transfer_manager.acquire_dcmd_slot() {
-                            self.transfer_manager.prepare_dcmd(&slot, command, command_arg)?;
-                            dcmd = Some(slot);
-                            trace!("Submitting dcmd {command:?}");
-                            // Execute a write barrier, so the descriptor's contents are visible
-                            // *before* we ring the doorbell.
-                            inner.cqhci_mmio.write_barrier();
-                            inner.cqhci_mmio.store32(
-                                CQHCI_CQ_TDBR_OFFSET,
-                                1u32 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT,
-                            );
-                            inner.pending_tasks.dcmd_status = None;
-                        }
-                        inner.event.listen()
-                    }
+        {
+            let mut inner = self.inner.lock();
+            // Execute a write barrier, so the descriptor's contents are visible *before* we ring
+            // the doorbell.
+            inner.cqhci_mmio.write_barrier();
+            inner
+                .cqhci_mmio
+                .store32(CQHCI_CQ_TDBR_OFFSET, 1u32 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT);
+            inner.slots.dcmd_status = None;
+        }
+
+        // Wait for it to complete.
+        let status = self
+            .inner
+            .when(|inner| {
+                if let Some(status) = inner.slots.dcmd_status.take() {
+                    Poll::Ready(status)
+                } else {
+                    Poll::Pending
                 }
-            };
-            listener.await;
+            })
+            .await;
+
+        trace!("Dcmd {command:?} completed: {status:?}");
+        match status.into() {
+            Ok(()) => {
+                let inner = self.inner.lock();
+                Ok(inner.cqhci_mmio.load32(CQHCI_CQ_CRDCT_OFFSET))
+            }
+            Err(status) => Err(status),
         }
     }
 
@@ -901,12 +1077,17 @@ impl CommandQueueExcl {
         // Complete all tasks.  Normally self gets done by the IRQ thread which we're about to shut
         // down.
         debug!("Cancelling all tasks");
+        let mut completed_tasks = CompletedTasks::default();
         {
-            let mut completed_tasks = CompletedTasks::default();
-            self.inner.lock().take_complete(u32::MAX, zx::Status::CANCELED, &mut completed_tasks);
-            // SAFETY: CQE is disabled.
-            unsafe { completed_tasks.complete() }
+            let mut inner = self.inner.lock();
+            Inner::take_complete(&mut inner, u32::MAX, zx::Status::CANCELED, &mut completed_tasks);
+            for waker in inner.drain_wakers() {
+                waker.wake();
+            }
         }
+        // SAFETY: CQE is disabled. We call this outside the lock to avoid deadlock when dropping
+        // slot guards.
+        unsafe { completed_tasks.complete() }
 
         // Stop handling interrupts.  To avoid races, shut our IRQ thread down first, then destroy
         // the virtual interrupt to signal to the server to start handling the physical IRQ again.
@@ -920,9 +1101,16 @@ impl CommandQueueExcl {
             warn!(err:?; "Failed to join irq thread");
         }
         debug!("IRQ thread joined.");
-        let mut inner = self.inner.lock();
-        inner.virtual_irq_lifeline = None;
-        inner.async_task_queue.clear();
+
+        // Release the lock on `inner` before we drop the remaining tasks.
+        //
+        // A dropped task might be holding onto a `TransferSlot`, which acquires the lock on `inner`
+        // in its drop implementation.
+        let _queue_to_drop = {
+            let mut inner = self.inner.lock();
+            inner.virtual_irq_lifeline = None;
+            std::mem::take(&mut inner.async_task_queue)
+        };
         Ok(())
     }
 
@@ -974,16 +1162,18 @@ impl CommandQueueExcl {
     async fn run_recovery(&mut self) -> Result<(), zx::Status> {
         self.inner.lock().dump_regs(&self.capabilities);
         self.disable().await;
+        let mut completed_tasks = CompletedTasks::default();
         {
-            let mut completed_tasks = CompletedTasks::default();
             let mut inner = self.inner.lock();
-            inner.take_complete(u32::MAX, zx::Status::IO, &mut completed_tasks);
-            // SAFETY: CQE is disabled.
-            unsafe {
-                completed_tasks.complete();
+            Inner::take_complete(&mut inner, u32::MAX, zx::Status::IO, &mut completed_tasks);
+            for waker in inner.drain_wakers() {
+                waker.wake();
             }
-            // Reset `needs_recovery` now in case the interrupt handler finds another error.
-            inner.needs_recovery = false;
+        }
+        // SAFETY: CQE is disabled. We call this outside the lock to avoid deadlock when dropping
+        // slot guards.
+        unsafe {
+            completed_tasks.complete();
         }
         let res = match self.enable().await {
             Ok(_) => {
@@ -998,22 +1188,20 @@ impl CommandQueueExcl {
         {
             // Whether we succeeded or not, notify other tasks that we're done.
             let mut inner = self.inner.lock();
+            inner.needs_recovery = false;
             if res.is_err() {
                 inner.state = State::Disabled;
             }
-            inner.event.notify(usize::MAX);
-        }
+            for waker in inner.drain_wakers() {
+                waker.wake();
+            }
+        };
         res
     }
 }
 
-enum SubmitResult {
-    Done(zx::Status),
-    ShouldWait(event_listener::EventListener),
-}
-
 pub struct CommandQueue {
-    inner: Mutex<Inner>,
+    inner: Condition<Inner>,
     host: Box<dyn CommandQueueHost>,
     rpmb: fidl_next::Client<rpmb::DriverRpmb, DriverChannel>,
     capabilities: CqhciCqCapsRegister,
@@ -1098,15 +1286,14 @@ impl CommandQueue {
         let (irq_lifeline, irq_lifeline2) = zx::EventPair::create();
 
         let this = Arc::new(Self {
-            inner: Mutex::new(Inner {
-                state: State::Disabled,
+            inner: Condition::new(Inner {
+                state: State::Initializing,
                 needs_recovery: false,
                 shutting_down: false,
                 blocked: false,
                 async_task_queue: VecDeque::new(),
-                event: Event::new(),
                 active_partition: None,
-                pending_tasks: PendingTasks::default(),
+                slots: CommandQueueSlots::new(),
                 cqhci_mmio,
                 sdhci_mmio,
                 async_task_loop: None,
@@ -1170,8 +1357,10 @@ impl CommandQueue {
                 this_clone.async_task_loop().await;
             }));
             inner.state = State::Enabled;
-            inner.event.notify(usize::MAX);
-        }
+            for waker in inner.drain_wakers() {
+                waker.wake();
+            }
+        };
         Ok(this)
     }
 
@@ -1182,7 +1371,9 @@ impl CommandQueue {
         let async_task_loop = {
             let mut inner = self.inner.lock();
             inner.shutting_down = true;
-            inner.event.notify(usize::MAX);
+            for waker in inner.drain_wakers() {
+                waker.wake();
+            }
             inner.async_task_loop.take()
         };
         if let Some(async_task_loop) = async_task_loop {
@@ -1225,80 +1416,39 @@ impl CommandQueue {
         assert!(self.inner.lock().partition_status_receivers.insert(partition, receiver).is_none());
     }
 
-    fn try_submit_transfer(
-        &self,
-        partition: EmmcPartitionId,
-        request_id: RequestId,
-        direction: Direction,
-        block_offset: u32,
-        block_count: u32,
-        vmo: Arc<zx::Vmo>,
-        vmo_offset: u64,
-        options: TransferOptions,
-        trace_flow_id: Option<NonZero<u64>>,
-    ) -> SubmitResult {
-        if options.queue_barrier && (self.cache_enabled() && !self.cache_policy_fifo()) {
-            // TODO(https://fxbug.dev/490483833): If the device is not FIFO, we can't get away with
-            // just using a queue barrier.  We will also need to issue an actual barrier command to
-            // the MMC.
-            warn!("Barriers on non-FIFO devices are not supported");
-            return SubmitResult::Done(zx::Status::NOT_SUPPORTED);
-        }
-        let slot = match self.transfer_manager.acquire_transfer_slot() {
-            Some(s) => s,
-            None => {
-                let inner = self.inner.lock();
-                if inner.should_reject_tasks() {
-                    return SubmitResult::Done(zx::Status::UNAVAILABLE);
-                } else {
-                    return SubmitResult::ShouldWait(inner.event.listen());
-                }
+    /// Blocks the current thread until a transfer slot (0..30) is acquired.
+    fn acquire_transfer_slot(self: &Arc<Self>) -> Result<TransferSlot, zx::Status> {
+        let mut guard = self.inner.lock();
+        let mut res = None;
+        guard.block_until(|inner| {
+            if inner.should_reject_tasks() {
+                res = Some(Err(zx::Status::UNAVAILABLE));
+                true
+            } else if inner.should_wait_to_submit_tasks() {
+                false
+            } else if let Some(slot_guard) = inner.slots.allocate_transfer_slot(self) {
+                res = Some(Ok(slot_guard));
+                true
+            } else {
+                false
             }
-        };
-        // Prepare the transfer now.  We might have to drop it (unpinning buffers and releasing the
-        // slot we've acquired) if the CQE is blocked.  This should be rare, and it enables us to
-        // prepare the transfer outside of the lock context of Inner, which reduces contention on
-        // the fast path.
-        let transfer = match self.transfer_manager.prepare_transfer(
-            slot,
-            vmo.clone(),
-            vmo_offset,
-            block_offset,
-            block_count,
-            direction,
-            options,
-        ) {
-            Ok(transfer) => scopeguard::guard(transfer, |t| {
-                // SAFETY: We never submitted the transfer.
-                unsafe { t.unpin() }
-            }),
-            Err(status) => return SubmitResult::Done(status),
-        };
+        });
+        res.unwrap()
+    }
 
-        let mut inner = self.inner.lock();
-        if inner.should_reject_tasks() {
-            return SubmitResult::Done(zx::Status::UNAVAILABLE);
-        } else if inner.should_wait_to_submit_tasks() {
-            return SubmitResult::ShouldWait(inner.event.listen());
-        }
-
-        let task = PendingTask {
-            request_id,
-            partition,
-            transfer: scopeguard::ScopeGuard::into_inner(transfer),
-            trace_flow_id,
-        };
-        let tdl = task.transfer.tdl_slot();
-        if inner.active_partition == Some(partition) {
-            // Fast path, we can immediately submit.
-            inner.submit_transfer(tdl, task);
-            SubmitResult::Done(zx::Status::OK)
-        } else {
-            // Slow path, we have to switch partitions before we can submit.
-            let receiver = inner.partition_status_receivers.get(&partition).unwrap().clone();
-            inner.submit_async_task(SwitchAndSubmitTask { partition, task: Some(task), receiver });
-            SubmitResult::Done(zx::Status::OK)
-        }
+    /// Waits until the DCMD slot (31) is available, and acquires it.
+    async fn acquire_dcmd_slot(self: &Arc<Self>) -> Result<DcmdSlot, zx::Status> {
+        self.inner
+            .when(|inner| {
+                if inner.should_reject_tasks() {
+                    Poll::Ready(Err(zx::Status::UNAVAILABLE))
+                } else if let Some(slot_guard) = inner.slots.allocate_dcmd_slot(self) {
+                    Poll::Ready(Ok(slot_guard))
+                } else {
+                    Poll::Pending
+                }
+            })
+            .await
     }
 
     fn submit_transfer(
@@ -1316,39 +1466,69 @@ impl CommandQueue {
         if options.inline_crypto.is_enabled && !self.capabilities.crypto_support() {
             return Err(zx::Status::NOT_SUPPORTED);
         }
+        if options.queue_barrier && (self.cache_enabled() && !self.cache_policy_fifo()) {
+            // TODO(https://fxbug.dev/490483833): If the device is not FIFO, we can't get away with
+            // just using a queue barrier.  We will also need to issue an actual barrier command to
+            // the MMC.
+            warn!("Barriers on non-FIFO devices are not supported");
+            return Err(zx::Status::NOT_SUPPORTED);
+        }
+
         fuchsia_trace::duration!("sdmmc", "cqhci::submit_transfer",
             "op" => direction.as_str(),
             "blocks" => block_count as u64
         );
         let block_offset = block_offset.try_into().map_err(|_| zx::Status::INVALID_ARGS)?;
-        let res: Result<(), zx::Status> = loop {
-            match self.try_submit_transfer(
-                partition,
-                request_id,
-                direction,
-                block_offset,
-                block_count,
-                vmo.clone(),
-                vmo_offset,
-                options,
-                trace_flow_id,
-            ) {
-                SubmitResult::Done(status) => {
-                    break status.into();
+
+        let slot_guard = self.acquire_transfer_slot()?;
+        let tdl_slot = slot_guard.tdl_slot;
+
+        let transfer = self.transfer_manager.prepare_transfer(
+            tdl_slot,
+            vmo.clone(),
+            vmo_offset,
+            block_offset,
+            block_count,
+            direction,
+            options,
+        )?;
+
+        let mut task = Some(PendingTask {
+            request_id,
+            partition,
+            transfer,
+            trace_flow_id,
+            _slot_guard: slot_guard,
+        });
+
+        let mut guard = self.inner.lock();
+        let mut res = Ok(());
+        guard.block_until(|inner| {
+            if inner.should_reject_tasks() {
+                res = Err(zx::Status::UNAVAILABLE);
+                true
+            } else if inner.needs_recovery || inner.blocked {
+                false
+            } else {
+                let task = task.take().expect("Task already taken");
+                if inner.active_partition == Some(partition) {
+                    inner.submit_transfer(tdl_slot, task);
+                } else {
+                    let receiver =
+                        inner.partition_status_receivers.get(&partition).unwrap().clone();
+                    Inner::submit_async_task(
+                        inner,
+                        SwitchAndSubmitTask { partition, task: Some(task), receiver },
+                    );
                 }
-                SubmitResult::ShouldWait(listener) => {
-                    listener.wait();
-                }
+                true
             }
-        };
-        if let Some(trace_flow_id) = trace_flow_id
-            && res.is_ok()
-        {
-            fuchsia_trace::flow_step!(
-                "storage",
-                "cqhci::submit_transfer",
-                trace_flow_id.get().into()
-            );
+        });
+        if res.is_err() {
+            if let Some(task) = task.take() {
+                // SAFETY: We never submitted the transfer.
+                unsafe { task.unpin() };
+            }
         }
         res
     }
@@ -1435,24 +1615,27 @@ impl CommandQueue {
         }
         let mut inner = self.inner.lock();
         let receiver = inner.partition_status_receivers.get(&partition).unwrap().clone();
-        inner.submit_async_task(into_async_task(
-            async move |mut cq| {
-                let result = cq.do_switch(EXT_CSD_FLUSH_CACHE, EXT_CSD_FLUSH_CACHE_FLUSH).await;
-                fuchsia_trace::duration!(
-                    "sdmmc", "cqhci::complete_flush", "status"
-                        => zx::Status::from(result).into_raw()
-                );
-                if let Some(trace_flow_id) = trace_flow_id {
-                    fuchsia_trace::flow_step!(
-                        "storage",
-                        "cqhci::complete_flush",
-                        trace_flow_id.get().into()
+        Inner::submit_async_task(
+            &mut inner,
+            into_async_task(
+                async move |mut cq| {
+                    let result = cq.do_switch(EXT_CSD_FLUSH_CACHE, EXT_CSD_FLUSH_CACHE_FLUSH).await;
+                    fuchsia_trace::duration!(
+                        "sdmmc", "cqhci::complete_flush", "status"
+                            => zx::Status::from(result).into_raw()
                     );
-                }
-                result
-            },
-            move |result| receiver.complete(request_id, zx::Status::from(result)),
-        ));
+                    if let Some(trace_flow_id) = trace_flow_id {
+                        fuchsia_trace::flow_step!(
+                            "storage",
+                            "cqhci::complete_flush",
+                            trace_flow_id.get().into()
+                        );
+                    }
+                    result
+                },
+                move |result| receiver.complete(request_id, zx::Status::from(result)),
+            ),
+        );
     }
 
     pub fn submit_trim(
@@ -1470,24 +1653,27 @@ impl CommandQueue {
         debug!("submit_trim");
         let mut inner = self.inner.lock();
         let receiver = inner.partition_status_receivers.get(&partition).unwrap().clone();
-        inner.submit_async_task(into_async_task(
-            async move |mut cq| {
-                let result = cq.trim(partition, block_offset, block_count).await;
-                fuchsia_trace::duration!(
-                    "sdmmc", "cqhci::complete_trim", "status"
-                        => zx::Status::from(result).into_raw()
-                );
-                if let Some(trace_flow_id) = trace_flow_id {
-                    fuchsia_trace::flow_step!(
-                        "storage",
-                        "cqhci::complete_trim",
-                        trace_flow_id.get().into()
+        Inner::submit_async_task(
+            &mut inner,
+            into_async_task(
+                async move |mut cq| {
+                    let result = cq.trim(partition, block_offset, block_count).await;
+                    fuchsia_trace::duration!(
+                        "sdmmc", "cqhci::complete_trim", "status"
+                            => zx::Status::from(result).into_raw()
                     );
-                }
-                result
-            },
-            move |result| receiver.complete(request_id, zx::Status::from(result)),
-        ));
+                    if let Some(trace_flow_id) = trace_flow_id {
+                        fuchsia_trace::flow_step!(
+                            "storage",
+                            "cqhci::complete_trim",
+                            trace_flow_id.get().into()
+                        );
+                    }
+                    result
+                },
+                move |result| receiver.complete(request_id, zx::Status::from(result)),
+            ),
+        );
     }
 
     pub async fn get_rpmb_info(&self) -> Result<rpmb::natural::DeviceInfo, zx::Status> {
@@ -1499,15 +1685,19 @@ impl CommandQueue {
         request: rpmb::Request,
         callback: impl FnOnce(Result<(), zx::Status>) -> Fut + Send + 'static,
     ) {
-        self.inner.lock().submit_async_task(into_async_task(
-            async |mut cq| cq.rpmb_request(request).await,
-            |result| {
-                fasync::Task::spawn(async move {
-                    callback(result).await;
-                })
-                .detach()
-            },
-        ));
+        let mut inner = self.inner.lock();
+        Inner::submit_async_task(
+            &mut inner,
+            into_async_task(
+                async |mut cq| cq.rpmb_request(request).await,
+                |result| {
+                    fasync::Task::spawn(async move {
+                        callback(result).await;
+                    })
+                    .detach()
+                },
+            ),
+        );
     }
 
     /// Suspends the CQ engine.  The caller should use the returned sender to resume.
@@ -1516,35 +1706,38 @@ impl CommandQueue {
         {
             let mut inner = self.inner.lock();
             assert!(inner.state == State::Enabled);
-            inner.submit_async_task(into_async_task(
-                async |mut cq| {
-                    cq.disable().await;
-                    assert_eq!(
-                        std::mem::replace(&mut cq.inner.lock().state, State::Suspended),
-                        State::Enabled
-                    );
-                    let (resume_tx, resume_rx) = oneshot::channel();
-                    let _ = tx.send(resume_tx);
-
-                    info!("Suspended");
-
-                    // Wait till resumed.
-                    let _ = resume_rx.await;
-                    let result = cq.enable().await;
-                    cq.inner.lock().state = match result {
-                        Ok(()) => {
-                            info!("Resumed");
+            Inner::submit_async_task(
+                &mut inner,
+                into_async_task(
+                    async |mut cq| {
+                        cq.disable().await;
+                        assert_eq!(
+                            std::mem::replace(&mut cq.inner.lock().state, State::Suspended),
                             State::Enabled
-                        }
-                        Err(error) => {
-                            warn!(error:?; "Failed to resume");
-                            State::Disabled
-                        }
-                    };
-                    result
-                },
-                |_| {},
-            ));
+                        );
+                        let (resume_tx, resume_rx) = oneshot::channel();
+                        let _ = tx.send(resume_tx);
+
+                        info!("Suspended");
+
+                        // Wait till resumed.
+                        let _ = resume_rx.await;
+                        let result = cq.enable().await;
+                        cq.inner.lock().state = match result {
+                            Ok(()) => {
+                                info!("Resumed");
+                                State::Enabled
+                            }
+                            Err(error) => {
+                                warn!(error:?; "Failed to resume");
+                                State::Disabled
+                            }
+                        };
+                        result
+                    },
+                    |_| {},
+                ),
+            );
         }
         rx.await.map_err(|_| zx::Status::CANCELED)
     }
@@ -1554,49 +1747,25 @@ impl CommandQueue {
     ///
     /// Returns None when the command queue is shutting down and there are no more tasks.
     async fn get_next_task(self: &Arc<Self>) -> Option<(Box<dyn AsyncTask>, CommandQueueExcl)> {
-        let mut excl = None;
-
-        loop {
-            let listener = {
-                let mut inner = self.inner.lock();
-
+        self.inner
+            .when(|inner| {
                 if inner.shutting_down {
-                    return None;
+                    return Poll::Ready(None);
                 }
-
                 if inner.needs_recovery {
-                    // NB: We don't need to block transfers since we're about to run recovery and
-                    // cancel all in-flight transfers.
-                    return Some((
-                        Box::new(RecoveryTask),
-                        excl.unwrap_or_else(|| CommandQueueExcl::new(self.clone(), &mut inner)),
-                    ));
+                    let excl = CommandQueueExcl::new(self.clone(), inner);
+                    return Poll::Ready(Some((Box::new(RecoveryTask) as Box<dyn AsyncTask>, excl)));
                 }
-
                 if inner.should_reject_tasks() {
-                    return None;
+                    return Poll::Ready(None);
                 }
-
-                if inner.async_task_queue.is_empty() {
-                    excl = None;
-                } else {
-                    // Block the queue.
-                    excl.get_or_insert_with(|| CommandQueueExcl::new(self.clone(), &mut inner));
-
-                    // Return if there are no pending tasks.
-                    if inner.pending_tasks.is_empty() {
-                        return Some((
-                            inner.async_task_queue.pop_front().unwrap(),
-                            excl.take().unwrap(),
-                        ));
-                    }
+                if !inner.async_task_queue.is_empty() && inner.slots.is_empty() {
+                    let excl = CommandQueueExcl::new(self.clone(), inner);
+                    return Poll::Ready(Some((inner.async_task_queue.pop_front().unwrap(), excl)));
                 }
-
-                inner.event.listen()
-            };
-
-            listener.await;
-        }
+                Poll::Pending
+            })
+            .await
     }
 
     async fn async_task_loop(self: &Arc<Self>) {
@@ -1606,9 +1775,15 @@ impl CommandQueue {
 
         let _ = CommandQueueExcl { queue: self.clone() }.shutdown().await;
 
-        let mut inner = self.inner.lock();
-        inner.async_task_queue.clear();
-        inner.state = State::Disabled;
+        // Release the lock on `inner` before we drop the remaining tasks.
+        //
+        // A dropped task might be holding onto a `TransferSlot`, which acquires the lock on `inner`
+        // in its drop implementation.
+        let _queue_to_drop = {
+            let mut inner = self.inner.lock();
+            inner.state = State::Disabled;
+            std::mem::take(&mut inner.async_task_queue)
+        };
 
         debug!("async_task_loop completed");
     }
@@ -1637,7 +1812,12 @@ impl CommandQueue {
                 if cq_irq_status.task_complete() {
                     let finished = inner.cqhci_mmio.load32(CQHCI_CQ_TCN_OFFSET);
                     inner.cqhci_mmio.store32(CQHCI_CQ_TCN_OFFSET, finished);
-                    inner.take_complete(finished, zx::Status::OK, &mut completed_tasks);
+                    Inner::take_complete(
+                        &mut inner,
+                        finished,
+                        zx::Status::OK,
+                        &mut completed_tasks,
+                    );
                 };
                 if cq_irq_status.is_error() {
                     warn!("on_interrupt error, sdhci {irq_status:x?} cqhci {cq_irq_status:x?}");
@@ -1661,7 +1841,7 @@ impl CommandQueue {
                     if terri.data_transfer_error_fields_valid() {
                         mask |= 1 << terri.data_transfer_error_task_id();
                     }
-                    inner.take_complete(mask, zx::Status::IO, &mut completed_tasks);
+                    Inner::take_complete(&mut inner, mask, zx::Status::IO, &mut completed_tasks);
 
                     // Per JESD84-B51A B.2.8, we need to run recovery on error.
                     if inner.needs_recovery {
@@ -1669,7 +1849,9 @@ impl CommandQueue {
                     } else {
                         warn!("CQE needs recovery!");
                         inner.needs_recovery = true;
-                        inner.event.notify(usize::MAX);
+                        for waker in inner.drain_wakers() {
+                            waker.wake();
+                        }
                     }
                 }
             }

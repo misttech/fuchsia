@@ -14,7 +14,6 @@ use sdmmc_spec::{
 use std::num::NonZeroU16;
 use std::ops::Range;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
 use zx::sys::zx_paddr_t;
 
 type ContiguousPages = Range<zx_paddr_t>;
@@ -147,32 +146,6 @@ impl<'a> Iterator for ContiguousPagesIter<'a> {
     }
 }
 
-/// An RAII guard for a transfer slot in the TDL.
-#[derive(Debug)]
-pub struct TransferSlot {
-    manager: Arc<TransferManager>,
-    tdl_slot: u8,
-}
-
-impl Drop for TransferSlot {
-    fn drop(&mut self) {
-        self.manager.state.fetch_and(!(1u32 << self.tdl_slot), Ordering::Release);
-    }
-}
-
-/// An RAII guard for the DCMD slot in the TDL.
-pub struct DcmdSlot<'a> {
-    manager: &'a TransferManager,
-}
-
-impl Drop for DcmdSlot<'_> {
-    fn drop(&mut self) {
-        self.manager
-            .state
-            .fetch_and(!(1u32 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT), Ordering::Release);
-    }
-}
-
 /// TransferManager is responsible for keeping track of in-flight CQHCI requests.  It maintains the
 /// state of the Task Descriptor List and other transfer descriptors, and interacts with the CQE via
 /// registers to submit tasks.
@@ -181,7 +154,6 @@ pub struct TransferManager {
     extra_descriptors_buffer: DiscontiguousDmaBuffer,
     bti: zx::Bti,
     max_transfer_blocks: u32,
-    state: AtomicU32,
 }
 
 impl std::fmt::Debug for TransferManager {
@@ -215,13 +187,7 @@ impl TransferManager {
     ) -> Self {
         let (extra_descriptor_size, max_transfer_blocks) = Self::extra_descriptors_dimensions();
         assert!(extra_descriptors_buffer.size() >= extra_descriptor_size);
-        Self {
-            tdl_buffer,
-            extra_descriptors_buffer,
-            bti,
-            max_transfer_blocks,
-            state: AtomicU32::new(0),
-        }
+        Self { tdl_buffer, extra_descriptors_buffer, bti, max_transfer_blocks }
     }
 
     /// Consumes the TransferManager and unpins its pinned DMA buffers.  This must be called
@@ -244,48 +210,11 @@ impl TransferManager {
         self.tdl_buffer.phys_address() as u64
     }
 
-    /// Acquires the DCMD slot in the TDL, if available.
-    pub fn acquire_dcmd_slot(&self) -> Option<DcmdSlot<'_>> {
-        let state =
-            self.state.fetch_or(1u32 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT, Ordering::Acquire);
-        if state & (1u32 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT) != 0 {
-            None
-        } else {
-            Some(DcmdSlot { manager: self })
-        }
-    }
-
     /// Initializes the TDL entry for a DCMD.
-    pub fn prepare_dcmd(
-        &self,
-        _slot: &DcmdSlot<'_>,
-        command: MmcCommand,
-        command_arg: u32,
-    ) -> Result<(), zx::Status> {
+    pub fn prepare_dcmd(&self, command: MmcCommand, command_arg: u32) -> Result<(), zx::Status> {
         let tdl_entry = CommandQueueTDLDirectCmdEntry::new(command, command_arg);
         self.commit(CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT, tdl_entry)?;
         Ok(())
-    }
-
-    /// Acquires a slot in the TDL for a transfer, if available.
-    pub fn acquire_transfer_slot(self: &Arc<Self>) -> Option<TransferSlot> {
-        let mut state = self.state.load(Ordering::Relaxed);
-        loop {
-            let tdl_slot = state.trailing_ones() as u8;
-            if tdl_slot < CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT {
-                match self.state.compare_exchange_weak(
-                    state,
-                    state | (1u32 << tdl_slot),
-                    Ordering::Acquire,
-                    Ordering::Relaxed,
-                ) {
-                    Ok(_) => return Some(TransferSlot { manager: self.clone(), tdl_slot }),
-                    Err(observed) => state = observed,
-                }
-            } else {
-                return None;
-            }
-        }
     }
 
     /// Pins the specified region in the VMO and prepares transfer descriptors pointing to the
@@ -298,11 +227,9 @@ impl TransferManager {
     ///       to point directly to the region.
     ///    b) If there are multiple ranges, allocate and prepare a contiguous block of descriptors
     ///       outside the TDL, and points the TDL entry to this scatter/gather range.
-    ///
-    /// The returned `Transfer` MUST be explicitly unpinned by calling [`Transfer::unpin`].
     pub fn prepare_transfer(
         self: &Arc<Self>,
-        slot: TransferSlot,
+        slot: u8,
         vmo: Arc<zx::Vmo>,
         vmo_offset: u64,
         block_offset: u32,
@@ -324,7 +251,7 @@ impl TransferManager {
             NonZeroU16::try_from(block_count as u16).map_err(|_| zx::Status::INVALID_ARGS)?;
         let length = block_count.get() as u64 * MMC_BLOCK_SIZE;
         let mut transfer = Transfer {
-            slot,
+            tdl_slot: slot,
             vmo: vmo.clone(),
             vmo_offset,
             offset: block_offset as u64 * MMC_BLOCK_SIZE,
@@ -508,7 +435,7 @@ enum TransferBuffers {
 }
 
 pub struct Transfer {
-    slot: TransferSlot,
+    tdl_slot: u8,
     vmo: Arc<zx::Vmo>,
     vmo_offset: u64,
     offset: u64,
@@ -539,7 +466,7 @@ impl Transfer {
     }
 
     pub fn tdl_slot(&self) -> u8 {
-        self.slot.tdl_slot
+        self.tdl_slot
     }
 
     #[allow(dead_code)]
@@ -716,75 +643,12 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn tdl_slots_freed_on_drop() {
-        let (manager, _) = setup();
-        let vmo = Arc::new(zx::Vmo::create(16384).unwrap());
-        let mut off = 0;
-        let mut transfers = vec![];
-        let mut last_tdl_slot = None;
-        for _ in 0..CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT {
-            transfers.push(
-                manager
-                    .prepare_transfer(
-                        manager.acquire_transfer_slot().unwrap(),
-                        vmo.clone(),
-                        off as u64 * 512,
-                        off,
-                        1,
-                        Direction::Read,
-                        TransferOptions::default(),
-                    )
-                    .expect("prepare_transfer failed"),
-            );
-            let transfer = transfers.last().unwrap();
-            assert!(transfer.pmt.is_some());
-            if let Some(last) = last_tdl_slot {
-                assert_ne!(transfer.tdl_slot(), last);
-            }
-            last_tdl_slot = Some(transfer.tdl_slot());
-            off += 1;
-        }
-        // Should fail because all TDL slots are in use.
-        assert!(manager.acquire_transfer_slot().is_none());
-
-        // Drop one, ensure we can make progress
-        unsafe { transfers.pop().unwrap().unpin() };
-
-        // Should succeed now
-        let transfer = manager
-            .prepare_transfer(
-                manager.acquire_transfer_slot().unwrap(),
-                vmo.clone(),
-                0,
-                0,
-                1,
-                Direction::Read,
-                TransferOptions::default(),
-            )
-            .expect("prepare_transfer failed");
-        unsafe { transfer.unpin() };
-
-        for transfer in transfers {
-            unsafe { transfer.unpin() };
-        }
-        unsafe { Arc::try_unwrap(manager).unwrap().unpin_buffers() };
-    }
-
-    #[fuchsia::test]
     fn single_buffer_transfer() {
         let (manager, fake_bti) = setup();
         fake_bti.set_paddrs(&[4096, 16384]);
         let vmo = Arc::new(zx::Vmo::create(4096).unwrap());
         let transfer = manager
-            .prepare_transfer(
-                manager.acquire_transfer_slot().unwrap(),
-                vmo.clone(),
-                0,
-                0,
-                1,
-                Direction::Read,
-                TransferOptions::default(),
-            )
+            .prepare_transfer(0, vmo.clone(), 0, 0, 1, Direction::Read, TransferOptions::default())
             .expect("prepare_transfer failed");
         assert!(transfer.pmt.is_some());
         validate_tdl_entry(
@@ -816,7 +680,7 @@ mod tests {
         fake_bti.set_paddrs(&[4096, 16384, 32768]);
         let transfer = manager
             .prepare_transfer(
-                manager.acquire_transfer_slot().unwrap(),
+                0,
                 vmo.clone(),
                 512,
                 10,
@@ -869,7 +733,7 @@ mod tests {
             fake_bti.set_paddrs(&[8192, 20480, 36864]);
             let transfer2 = manager
                 .prepare_transfer(
-                    manager.acquire_transfer_slot().unwrap(),
+                    1,
                     vmo.clone(),
                     512,
                     40,
@@ -913,7 +777,7 @@ mod tests {
         let block_count = ((page_size * num_descriptors) / MMC_BLOCK_SIZE as usize) as u32;
         let transfer = manager
             .prepare_transfer(
-                manager.acquire_transfer_slot().unwrap(),
+                0,
                 vmo.clone(),
                 0,
                 0,
@@ -960,7 +824,7 @@ mod tests {
         let vmo = Arc::new(zx::Vmo::create(40 * 512).unwrap());
         let transfer = manager
             .prepare_transfer(
-                manager.acquire_transfer_slot().unwrap(),
+                0,
                 vmo.clone(),
                 0,
                 100,
@@ -1015,17 +879,7 @@ mod tests {
     #[fuchsia::test]
     fn dcmd() {
         let (manager, _) = setup();
-        {
-            let slot = manager.acquire_dcmd_slot().unwrap();
-            assert!(manager.acquire_dcmd_slot().is_none());
-            manager.prepare_dcmd(&slot, MmcCommand::SendStatus, 0).expect("prepare_dcmd failed");
-        }
-
-        {
-            let slot = manager.acquire_dcmd_slot().unwrap();
-            manager.prepare_dcmd(&slot, MmcCommand::SendStatus, 0).expect("prepare_dcmd failed");
-        }
-
+        manager.prepare_dcmd(MmcCommand::SendStatus, 0).expect("prepare_dcmd failed");
         unsafe { Arc::try_unwrap(manager).unwrap().unpin_buffers() };
     }
 
@@ -1036,21 +890,13 @@ mod tests {
 
         fake_bti.set_paddrs(&[4096, 16384]);
         let transfer1 = manager
-            .prepare_transfer(
-                manager.acquire_transfer_slot().unwrap(),
-                vmo.clone(),
-                0,
-                0,
-                16,
-                Direction::Read,
-                TransferOptions::default(),
-            )
+            .prepare_transfer(0, vmo.clone(), 0, 0, 16, Direction::Read, TransferOptions::default())
             .expect("prepare_transfer 1 failed");
 
         fake_bti.set_paddrs(&[16384, 8192]);
         let transfer2 = manager
             .prepare_transfer(
-                manager.acquire_transfer_slot().unwrap(),
+                1,
                 vmo.clone(),
                 4096,
                 16,
@@ -1066,7 +912,7 @@ mod tests {
 
         validate_extra_transfer_descriptors(
             &manager,
-            transfer1.tdl_slot() as usize * descriptors_per_slot,
+            0,
             &[
                 CommandQueueTransferDescriptor::transfer(
                     4096,
@@ -1083,7 +929,7 @@ mod tests {
 
         validate_extra_transfer_descriptors(
             &manager,
-            transfer2.tdl_slot() as usize * descriptors_per_slot,
+            1 * descriptors_per_slot,
             &[
                 CommandQueueTransferDescriptor::transfer(
                     16384,
@@ -1258,7 +1104,7 @@ mod tests {
         let vmo = Arc::new(zx::Vmo::create(4096).unwrap());
         let transfer = manager
             .prepare_transfer(
-                manager.acquire_transfer_slot().unwrap(),
+                0,
                 vmo.clone(),
                 0,
                 0,

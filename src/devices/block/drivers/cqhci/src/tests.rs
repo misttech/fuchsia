@@ -1083,3 +1083,213 @@ async fn test_suspend_with_active_io() {
 
     started_driver.stop_driver().await;
 }
+
+#[fuchsia::test(threads = 4)]
+async fn test_no_wakeup_on_prepare_transfer_failure() {
+    let mut blocker = Blocker::default();
+    let (fixture, mut harness) = FakeCqhci::new(Some(blocker.hook()));
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+    let started_driver = Mutex::new(Some(started_driver));
+
+    // Perform a read to ensure the partition is switched and avoid DCMDs during the test.
+    let block_client = {
+        let proxy = connect_block_proxy(started_driver.lock().as_ref().unwrap(), "user");
+        RemoteBlockClient::new(proxy).await.expect("failed to create block client")
+    };
+    {
+        let mut buf = vec![0u8; 512];
+        block_client
+            .read_at(MutableBufferSlice::from(&mut buf[..]), 0)
+            .await
+            .expect("placeholder read failed");
+    }
+
+    // Block all requests in hardware.
+    blocker.block(!(1 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT));
+
+    // Queue up 31 requests, which should fill all transfer slots (0..30) and leave one blocked
+    // waiting for a slot.
+    let read_scope = fixture.scope.new_child();
+    for _ in 0..31 {
+        let proxy = connect_block_proxy(started_driver.lock().as_ref().unwrap(), "user");
+        read_scope.spawn(async move {
+            let block_client =
+                RemoteBlockClient::new(proxy).await.expect("failed to create block client");
+            let mut buf = vec![0u8; 512];
+            let _ = block_client.read_at(MutableBufferSlice::from(&mut buf[..]), 0).await;
+        });
+    }
+
+    // Wait for 31 requests to be enqueued and submitted to the hardware.
+    let mut unblock: Vec<_> = blocker.by_ref().take(31).collect().await;
+    assert_eq!(unblock.len(), 31);
+
+    // Spawn Task A: Submit an invalid request. It should block because queue is full.
+    // When it wakes up, it will fail in `prepare_transfer` and drop the slot without notifying.
+    let proxy_invalid = connect_block_proxy(started_driver.lock().as_ref().unwrap(), "user");
+    let (tx_invalid, rx_invalid) = oneshot::channel();
+    read_scope.spawn(async move {
+        let block_client =
+            RemoteBlockClient::new(proxy_invalid).await.expect("failed to create block client");
+        let mut buf = vec![];
+        let res = block_client.read_at(MutableBufferSlice::from(&mut buf[..]), 0).await;
+        assert_eq!(res, Err(zx::Status::INVALID_ARGS));
+        let _ = tx_invalid.send(());
+    });
+
+    // Spawn Task B: Submit a valid request. It should block because queue is full.
+    // It should be woken up when a slot is freed.
+    let proxy_valid = connect_block_proxy(started_driver.lock().as_ref().unwrap(), "user");
+    let (tx_valid, rx_valid) = oneshot::channel();
+    read_scope.spawn(async move {
+        let block_client =
+            RemoteBlockClient::new(proxy_valid).await.expect("failed to create block client");
+        let mut buf = vec![0u8; 512];
+        let res = block_client.read_at(MutableBufferSlice::from(&mut buf[..]), 0).await;
+        assert_eq!(res, Ok(()));
+        let _ = tx_valid.send(());
+    });
+
+    // Give them a moment to block.
+    fasync::Timer::new(std::time::Duration::from_millis(100)).await;
+
+    // Now, unblock one request in hardware.
+    // This will free one slot.
+    drop(unblock.pop().unwrap());
+
+    let mut rx_invalid = rx_invalid.fuse();
+    let mut next_blocked = blocker.next().fuse();
+    let mut timeout = pin!(fasync::Timer::new(std::time::Duration::from_secs(5)).fuse());
+
+    let (thread_a_finished, thread_b_unblocker) = futures::select! {
+        _ = rx_invalid => {
+            // Thread A finished first. Thread B must submit because Thread A freed the slot.
+            let res = futures::select! {
+                res = next_blocked => res,
+                _ = timeout => {
+                    panic!("Thread A finished but Thread B did not submit request! Lost wakeup?");
+                }
+            };
+            println!("Thread A won the race, both finished/submitted as expected.");
+            (true, res)
+        }
+        res = next_blocked => {
+            // Thread B submitted first. Thread A should still be blocked.
+            if (&mut rx_invalid).now_or_never().is_some() {
+                println!("Both finished/submitted (Thread B polled first), as expected.");
+                (true, res)
+            } else {
+                println!("Thread B won the race, Thread A is waiting.");
+                (false, res)
+            }
+        }
+        _ = timeout => {
+            panic!("Timed out waiting for either thread to finish/submit!");
+        }
+    };
+
+    // Clean up remaining blocked tasks so driver can progress and Thread A (if waiting) can finish.
+    blocker.block(0);
+    for u in unblock {
+        drop(u);
+    }
+    if let Some(u) = thread_b_unblocker {
+        drop(u);
+    }
+
+    // Ensure Thread A is finished.
+    if !thread_a_finished {
+        rx_invalid.await.expect("Thread A failed to run");
+    }
+
+    // Ensure Thread B completes successfully.
+    let mut rx_valid = rx_valid.fuse();
+    let mut cleanup_timeout = pin!(fasync::Timer::new(std::time::Duration::from_secs(5)).fuse());
+    futures::select! {
+        res = rx_valid => {
+            res.expect("Thread B failed to complete");
+        }
+        _ = cleanup_timeout => {
+            panic!("Timed out waiting for Thread B to complete!");
+        }
+    }
+
+    let driver = started_driver.lock().take().unwrap();
+    driver.stop_driver().await;
+}
+
+#[fuchsia::test(threads = 4)]
+async fn test_async_task_wakeup_with_active_transfers() {
+    let mut blocker = Blocker::default();
+    let (fixture, mut harness) = FakeCqhci::new(Some(blocker.hook()));
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+    let started_driver = Mutex::new(Some(started_driver));
+
+    // Perform a read to ensure the partition is switched to UserDataPartition.
+    let block_client = {
+        let proxy = connect_block_proxy(started_driver.lock().as_ref().unwrap(), "user");
+        RemoteBlockClient::new(proxy).await.expect("failed to create block client")
+    };
+    {
+        let mut buf = vec![0u8; 512];
+        block_client
+            .read_at(MutableBufferSlice::from(&mut buf[..]), 0)
+            .await
+            .expect("placeholder read failed");
+    }
+
+    // Block all requests in hardware.
+    blocker.block(!(1 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT));
+
+    // Submit 1 placeholder request to UserDataPartition. It will be fast-path and block in
+    // hardware.
+    let placeholder_scope = fixture.scope.new_child();
+    let (tx_placeholder, rx_placeholder) = oneshot::channel();
+    {
+        let proxy = connect_block_proxy(started_driver.lock().as_ref().unwrap(), "user");
+        placeholder_scope.spawn(async move {
+            let block_client =
+                RemoteBlockClient::new(proxy).await.expect("failed to create block client");
+            let mut buf = vec![0u8; 512];
+            let _ = block_client.read_at(MutableBufferSlice::from(&mut buf[..]), 0).await;
+            let _ = tx_placeholder.send(());
+        });
+    }
+
+    // Wait for placeholder request to be enqueued and submitted to hardware.
+    let unblock = blocker.next().await;
+
+    // Submit a slow-path request to BootPartition2.
+    // It should acquire a slot, but block in async_task_queue because placeholder task is active.
+    let proxy_slow = connect_block_proxy(started_driver.lock().as_ref().unwrap(), "boot1");
+    let (tx_slow, rx_slow) = oneshot::channel();
+    placeholder_scope.spawn(async move {
+        let block_client =
+            RemoteBlockClient::new(proxy_slow).await.expect("failed to create block client");
+        let mut buf = vec![0u8; 512];
+        let res = block_client.read_at(MutableBufferSlice::from(&mut buf[..]), 0).await;
+        assert_eq!(res, Ok(()));
+        let _ = tx_slow.send(());
+    });
+
+    // Give it a moment to block.
+    fasync::Timer::new(std::time::Duration::from_millis(100)).await;
+
+    // Now, unblock the placeholder request in hardware.
+    // This should free the placeholder slot and wake up get_next_task to run the slow-path task.
+    drop(unblock);
+
+    // Wait for the placeholder task to finish.
+    rx_placeholder.await.expect("placeholder task failed to finish");
+
+    // The slow-path task should now be able to run.
+    // We wait for the read to be submitted (after partition switch DCMD which is not blocked).
+    let unblock_slow = blocker.next().await;
+    drop(unblock_slow);
+
+    // Now the slow-path task should complete.
+    rx_slow.await.expect("slow task failed to run");
+
+    let driver = started_driver.lock().take().unwrap();
+    driver.stop_driver().await;
+}
