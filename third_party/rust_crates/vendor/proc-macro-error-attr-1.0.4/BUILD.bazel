@@ -128,7 +128,7 @@ cargo_build_script(
     version = "1.0.4",
     visibility = ["//visibility:private"],
     deps = [
-        "//third_party/rust_crates/vendor/version_check-0.9.4:version_check",
+        "//third_party/rust_crates/vendor/version_check-0.9.5:version_check",
     ],
 )
 
