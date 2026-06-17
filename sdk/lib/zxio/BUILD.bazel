@@ -3,10 +3,10 @@
 # found in the LICENSE file.
 
 load("//build/bazel:fuchsia_api_level.bzl", "fuchsia_api_level_copts")
-load("//build/bazel/rules/cc:defs.bzl", "cc_library_headers")
+load("//build/bazel/rules/cc:defs.bzl", "fx_cc_library_headers")
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
 
-cc_library_headers(
+fx_cc_library_headers(
     name = "headers",
     hdrs = [
         "include/lib/zxio/bsdsocket.h",
@@ -26,7 +26,7 @@ cc_library_headers(
 # facilitate moving logic from fdio into zxio. It should not be used outside of
 # these two libraries.
 
-cc_library_headers(
+fx_cc_library_headers(
     name = "inception",
     hdrs = [
         "include/lib/zxio/cpp/inception.h",
@@ -44,7 +44,7 @@ cc_library_headers(
     ],
 )
 
-cc_library_headers(
+fx_cc_library_headers(
     name = "udp_socket_private",
     hdrs = ["include/lib/zxio/cpp/udp_socket_private.h"],
     include_dir = "include",

@@ -2,13 +2,15 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@rules_cc//cc:defs.bzl", "cc_library")
+"""Macro for defining the set of public headers for a `fx_cc_library()`."""
+
+load(":fx_cc_library.bzl", "fx_cc_library")
 
 visibility(["//build/bazel/rules/cc/..."])
 
 # LINT.IfChange(library_headers)
 
-def _cc_library_headers_impl(
+def _fx_cc_library_headers_impl(
         name,
         hdrs,
         include_dir,
@@ -17,13 +19,13 @@ def _cc_library_headers_impl(
         defines,
         testonly,
         visibility):
-    """Implementation for the cc_library_headers() macro."""
+    """Implementation for the `fx_cc_library_headers()` macro."""
 
     # TODO(https://fxbug.dev/456186319): When adding support for building
     # Zircon, add the following when `is_kernel`.
     # deps += [ "//zircon/system/public" ]
 
-    cc_library(
+    fx_cc_library(
         name = name,
         hdrs = hdrs,
         includes = [include_dir],
@@ -34,12 +36,11 @@ def _cc_library_headers_impl(
         visibility = visibility,
     )
 
-cc_library_headers = macro(
-    doc = """Defines the set of public headers for a given cc_library() and its
-eventual dependencies.
+fx_cc_library_headers = macro(
+    doc = """Defines the set of public headers for a given `fx_cc_library()` and its eventual dependencies.
 
-Other targets can depend on a cc_library_headers() target directly if they do
-not need to link to the library itself, e.g. if they include the headers
+Other targets can depend on a `fx_cc_library_headers()` target directly if they
+do not need to link to the library itself, e.g. if they include the headers
 to get type definitions only. This ensures higher build parallelism.
 
 A few important tips to use these efficiently:
@@ -47,7 +48,7 @@ A few important tips to use these efficiently:
 - Naming convention:
 
   A very common naming convention is to use "foo-headers" to name the
-  cc_library_headers() target used by library "foo".
+  `fx_cc_library_headers()` target used by library "foo".
 
   Alternatively, the Zircon artifacts have been using a slightly different
   convention used to shorten references to the target's name, i.e.:
@@ -57,9 +58,9 @@ A few important tips to use these efficiently:
     for the headers target as in:
 
        # In //some/dir/foo/BUILD.bazel:
-       cc_library_headers("headers") { ... }
+       fx_cc_library_headers("headers") { ... }
 
-       cc_library("foo") { ... }
+       fx_cc_library("foo") { ... }
 
     This allows references to look like //some/dir/foo:headers.
 
@@ -67,14 +68,14 @@ A few important tips to use these efficiently:
     //some/dir/foo:bar.headers label instead, as in:
 
     # In //some/dir/foo/BUILD.bazel:
-    cc_library_headers("bar.headers")
+    fx_cc_library_headers("bar.headers")
 
     static_library("bar") { ... }
 
   In the case where the target is the only thing defined by the BUILD.bazel
   file, it is ok to use //some/dir/foo:foo as its label, as in:
 
-    cc_library_headers("foo") { ... }
+    fx_cc_library_headers("foo") { ... }
 
   But try to limit this to cases where it is certain that no library with
   the same name will be created in the future, to avoid updating all
@@ -89,40 +90,40 @@ A few important tips to use these efficiently:
   value. For example, if all headers and sources are in the same directory
   as the BUILD.bazel file, one can use:
 
-    cc_library_headers("headers") {
+    fx_cc_library_headers("headers") {
       include_dir = "."
       hdrs = [ "foo.h" ]
     }
 
 - Dependencies:
 
-  It is important to always depend on a cc_library_headers() target through
+  It is important to always depend on a `fx_cc_library_headers()` target through
   public `deps`, and _not_ `implementation_deps`, as it ensures dependents will
   use the right include directory in their search path.
 
-  As such, a cc_library_headers() target should nearly never use
+  As such, a `fx_cc_library_headers()` target should nearly never use
   `implementation_deps`, except when absolutely needed (i.e. when headers are
   auto-generated).
 
   This means that the library that owns the headers from the target should
-  depend on the cc_library_headers() target through `deps`, to ensure that
+  depend on the `fx_cc_library_headers()` target through `deps`, to ensure that
   anything that depends on it will be able to include the headers properly,
   as in:
 
-    cc_library_headers("headers") {
+    fx_cc_library_headers("headers") {
       hdrs = [
         "foo.h",
       ]
     }
 
-    cc_library("foo") {
+    fx_cc_library("foo") {
       srcs = [
         "foo.cc",
       ]
       deps = [ ":headers" ]
     }
 """,
-    implementation = _cc_library_headers_impl,
+    implementation = _fx_cc_library_headers_impl,
     attrs = {
         "hdrs": attr.label_list(
             doc = "A list of header file paths.",
@@ -145,7 +146,7 @@ A few important tips to use these efficiently:
                   "case where the headers are auto-generated, though.",
         ),
         "defines": attr.string_list(
-            doc = "Usual `cc_library()` meaning.",
+            doc = "Usual `fx_cc_library()` meaning.",
         ),
         "testonly": attr.bool(
             doc = "Usual meaning.",

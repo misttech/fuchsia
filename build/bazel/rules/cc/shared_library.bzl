@@ -10,6 +10,11 @@ load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
 load("//build/bazel/rules:golden_files.bzl", "verify_golden_files")
 load("//build/bazel/rules/cc:providers.bzl", "PrebuiltLibraryInfo")
 
+visibility([
+    "//build/bazel/rules/idk/...",
+    "//src/zircon/lib/zircon/...",
+])
+
 def _to_clang_cpu(cpu):
     if cpu == "arm64":
         return "aarch64"

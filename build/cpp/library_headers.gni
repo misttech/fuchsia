@@ -173,4 +173,4 @@ template("library_headers") {
     }
   }
 }
-# LINT.ThenChange(//build/bazel/rules/cc/library_headers.bzl:library_headers)
+# LINT.ThenChange(//build/bazel/rules/cc/fx_cc_library_headers.bzl:library_headers)

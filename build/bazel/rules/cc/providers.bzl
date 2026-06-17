@@ -4,6 +4,11 @@
 
 """Defines providers related to C++ libraries."""
 
+visibility([
+    "//build/bazel/rules/idk/...",
+    "//build/bazel/bazel_idk/tests/...",
+])
+
 # LINT.IfChange(prebuilt_library_info)
 PrebuiltLibraryInfo = provider(
     doc = "Provides various files related to a built library. " +

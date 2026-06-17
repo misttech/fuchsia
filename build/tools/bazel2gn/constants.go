@@ -76,10 +76,10 @@ var bazelRuleToGNTemplate = map[string]string{
 	"rust_proc_macro":  "rustc_macro",
 
 	// C++
-	"cc_library":         "static_library",
-	"cc_binary":          "executable",
-	"cc_library_headers": "library_headers",
-	"fx_cc_library":      "static_library",
+	"cc_library":            "static_library",
+	"cc_binary":             "executable",
+	"fx_cc_library_headers": "library_headers",
+	"fx_cc_library":         "static_library",
 
 	// C++ Zircon
 	"cc_shared_library_zx": "zx_library", // With `sdk="shared"` and `sdk_publishable` not specified.
