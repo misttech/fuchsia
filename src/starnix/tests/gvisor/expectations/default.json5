@@ -1124,9 +1124,6 @@
                 // libpthread.  See h//g/grte/c/AOZW4ySVadE/m/NhMQgRs-5r8J
                 "RobustFutexTest.PthreadMutexAttr",
 
-                // uidgid_test - https://fxbug.dev/42159674
-                "UidGidRootTest.SetgidNotFromThreadGroupLeader",
-
                 // socket_bind_to_device_test
                 "BindToDeviceTest*",
 
