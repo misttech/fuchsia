@@ -5,12 +5,13 @@
 use traceable_error::TraceableError;
 use traceable_error_derive::TraceableError;
 
-#[derive(TraceableError)]
+#[derive(Debug, TraceableError)]
 enum SimpleError {
     CodeZero,
     CodeOne,
 }
 
+#[derive(Debug)]
 struct RootError;
 
 impl TraceableError for RootError {
@@ -22,18 +23,18 @@ impl TraceableError for RootError {
     }
 }
 
-#[derive(TraceableError)]
+#[derive(Debug, TraceableError)]
 enum FromError {
     FromZero,
 }
 
-#[derive(TraceableError)]
+#[derive(Debug, TraceableError)]
 enum ChainedError {
     Wrapped(#[source] RootError),
     FromError(#[from] FromError),
 }
 
-#[derive(TraceableError)]
+#[derive(Debug, TraceableError)]
 enum OpaqueError {
     #[trace(opaque)]
     Wrapped(#[source] RootError),

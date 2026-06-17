@@ -85,9 +85,18 @@ use syn::{Data, DeriveInput, parse_macro_input};
 
 /// Derives the `TraceableError` trait for an enum.
 ///
-/// This procedural macro automatically calculates a 32-bit layer identifier for each variant
+/// This procedural macro automatically calculates a stable 32-bit layer identifier for each variant
 /// by shifting the 24-bit FNV-1a crate hash and combining it with an 8-bit variant index.
-/// It generates `layer_code()` and `chain_codes()` match arms based on `#[source]` and `#[trace(opaque)]` attributes.
+/// It generates `layer_code()` and `chain_codes()` match arms based on `#[source]`, `#[from]`,
+/// and `#[trace(opaque)]` attributes.
+///
+/// ### Compilation-Time Constraints & Safety Panics
+///
+/// - **Enum Only**: This macro is strictly restricted to `enum` declarations. Attempting to derive
+///   `TraceableError` on a `struct` or `union` will result in a compilation-time panic.
+/// - **Variant Count**: Since the variant ID field occupies exactly 8 bits (low bits) of the 32-bit
+///   layer code, the enum is capped at a maximum of **256 variants** (0x00 to 0xFF). Enums with
+///   257 or more variants will trigger a compilation failure.
 ///
 /// # Examples
 ///
