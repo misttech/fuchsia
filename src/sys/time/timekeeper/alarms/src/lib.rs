@@ -1787,13 +1787,12 @@ fn notify_all(
     // A new timer is not scheduled yet here.
 }
 
-/// The hrtimer driver service directory.  hrtimer driver APIs appear as randomly
-/// named files in this directory. They are expected to come and go.
-const HRTIMER_DIRECTORY: &str = "/dev/class/hrtimer";
+/// The hrtimer driver service directory.
+const HRTIMER_DIRECTORY: &str = "/svc/fuchsia.hardware.hrtimer.Service";
 
 /// Connects to the high resolution timer device driver.
 ///
-/// This function watches the hrtimer device directory and connects to the first
+/// This function watches the hrtimer service directory and connects to the first
 /// available hrtimer device.
 ///
 /// # Returns
@@ -1811,10 +1810,11 @@ pub async fn connect_to_hrtimer_async() -> Result<ffhh::DeviceProxy> {
         .await
         .with_context(|| format!("Getting a file from {}", HRTIMER_DIRECTORY))?;
     let path = path.ok_or_else(|| anyhow!("Could not find {}", HRTIMER_DIRECTORY))?;
-    let path = path
+    let path_str = path
         .to_str()
         .ok_or_else(|| anyhow!("Could not find a valid str for {}", HRTIMER_DIRECTORY))?;
-    connect_to_named_protocol_at_dir_root::<ffhh::DeviceMarker>(&dir, path)
+    let service_path = format!("{}/device", path_str);
+    connect_to_named_protocol_at_dir_root::<ffhh::DeviceMarker>(&dir, &service_path)
         .context("Failed to connect built-in service")
 }
 
