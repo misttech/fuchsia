@@ -215,7 +215,13 @@ std::vector<std::thread> LaunchAutorun(const console_launcher::ConsoleLauncher& 
                                    fs::FuchsiaVfs& vfs, const fbl::RefPtr<fs::Vnode>& root,
                                    fidl::ClientEnd<fuchsia_hardware_pty::Device> stdio,
                                    const std::string& term, const std::optional<std::string>& cmd) {
+  zx::duration backoff = zx::sec(1);
+  const zx::duration max_backoff = zx::sec(60);
+  const zx::duration quick_exit_threshold = zx::sec(1);
+
   while (true) {
+    auto start_time = zx::clock::get_monotonic();
+
     auto [client, server] = fidl::Endpoints<fuchsia_hardware_pty::Device>::Create();
 
     const fidl::Status result = fidl::WireCall(stdio)->Clone(
@@ -247,6 +253,15 @@ std::vector<std::thread> LaunchAutorun(const console_launcher::ConsoleLauncher& 
     if (zx_status_t status = console_launcher::WaitForExit(std::move(process.value()));
         status != ZX_OK) {
       FX_PLOGS(FATAL, status) << "failed to wait for shell exit";
+    }
+
+    auto duration = zx::clock::get_monotonic() - start_time;
+
+    if (duration < quick_exit_threshold) {
+      zx::nanosleep(zx::deadline_after(backoff));
+      backoff = std::min(backoff * 2, max_backoff);
+    } else {
+      backoff = zx::sec(1);
     }
   }
 }
