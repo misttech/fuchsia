@@ -1,0 +1,52 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/go/go_binary.gni")
+import("//build/go/go_library.gni")
+import("//build/go/go_test.gni")
+import("//build/host.gni")
+
+if (is_host) {
+  go_library("readme_fuchsia_lib") {
+    sources = [
+      "formatter.go",
+      "parser.go",
+      "types.go",
+      "validate.go",
+    ]
+    visibility = [ "//*" ]
+  }
+
+  go_library("main") {
+    sources = [ "cmd/main.go" ]
+    deps = [ ":readme_fuchsia_lib" ]
+  }
+
+  go_binary("readme_fuchsia_bin") {
+    embed = [ ":main" ]
+    output_name = "readme_fuchsia"
+    visibility = [ "//*" ]
+  }
+
+  go_test("readme_fuchsia_test") {
+    embed = [ ":readme_fuchsia_lib" ]
+    sources = [
+      "formatter_test.go",
+      "parser_test.go",
+    ]
+  }
+}
+
+if (is_host) {
+  group("tests") {
+    testonly = true
+    visibility = [ "*" ]
+    deps = [ ":readme_fuchsia_test" ]
+  }
+
+  install_host_tools("host") {
+    deps = [ ":readme_fuchsia_bin" ]
+    outputs = [ "readme_fuchsia" ]
+  }
+}
