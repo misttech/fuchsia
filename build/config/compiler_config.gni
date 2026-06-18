@@ -131,18 +131,26 @@ template("compiler_config") {
     _rust_llvm_flags += invoker.rust_llvm_flags
   }
 
-  if (defined(invoker.linker_llvm_flags)) {
-    foreach(arg, invoker.linker_llvm_flags) {
-      if (!is_gcc) {
+  # The Rust _compiler_ is always LLVM-based and so takes LLVM backend flags
+  # even in is_gcc contexts.  However, the _linker_ it invokes in is_gcc
+  # contexts is the GNU linker that doesn't take any LLVM flags.
+  if (is_gcc) {
+    not_needed(invoker,
+               [
+                 "linker_llvm_flags",
+                 "rust_linker_llvm_flags",
+               ])
+  } else {
+    if (defined(invoker.linker_llvm_flags)) {
+      foreach(arg, invoker.linker_llvm_flags) {
         _linker_flags += [ "--mllvm=$arg" ]
+        _rust_linker_flags += [ "--mllvm=$arg" ]
       }
-      _rust_linker_flags += [ "--mllvm=$arg" ]
     }
-  }
-
-  if (defined(invoker.rust_linker_llvm_flags)) {
-    foreach(arg, invoker.rust_linker_llvm_flags) {
-      _rust_linker_flags += [ "--mllvm=$arg" ]
+    if (defined(invoker.rust_linker_llvm_flags)) {
+      foreach(arg, invoker.rust_linker_llvm_flags) {
+        _rust_linker_flags += [ "--mllvm=$arg" ]
+      }
     }
   }
 
