@@ -92,16 +92,21 @@ impl SchedulerManager {
         };
 
         let role_name = self.role_name_inner(task, scheduler_state)?;
-        let running_state = match task.running_state() {
-            Ok(live) => live,
-            Err(_) => {
-                log_debug!("thread role update requested for task without live state, skipping");
+        let zircon_thread = {
+            let running_state = match task.running_state() {
+                Ok(live) => live,
+                Err(_) => {
+                    log_debug!(
+                        "thread role update requested for task without live state, skipping"
+                    );
+                    return Ok(());
+                }
+            };
+            let Some(zircon_thread) = running_state.thread.get() else {
+                log_debug!("thread role update requested for task without thread, skipping");
                 return Ok(());
-            }
-        };
-        let Some(zircon_thread) = running_state.thread.get() else {
-            log_debug!("thread role update requested for task without thread, skipping");
-            return Ok(());
+            };
+            zircon_thread.clone()
         };
         Self::set_thread_role_inner(
             role_manager,
