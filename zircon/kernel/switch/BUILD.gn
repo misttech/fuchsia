@@ -6,8 +6,12 @@
 
 import("//build/config/clang/clang_prefix.gni")
 import("//build/config/compiler_config.gni")
+import("//build/config/current_target_tuple.gni")
+import("//build/config/linker.gni")
 import("//build/rust/config.gni")
+import("//build/toolchain/rbe.gni")
 import("//build/toolchain/variant.gni")
+import("//build/toolchain/zircon/gcc.gni")
 import("//build/zircon/zircon_cpu.gni")
 import("//zircon/kernel/params.gni")
 
@@ -30,13 +34,120 @@ compiler_config("standalone") {
   if (toolchain_environment == "kernel") {
     rust_target_edits = [
       {
-        key = "linker"
-        action = "set"
-        value = "$rebased_clang_prefix/lld"
-      },
-      {
         key = "pre-link-objects"
         action = "unset"
+      },
+    ]
+    if (linker == "lld") {
+      rust_linker = "$rebased_clang_prefix/lld"
+      rust_linker_flavor = "gnu-lld"
+    } else {
+      assert(linker == "")
+      rust_linker =
+          rebase_path("$gcc_tool_dir/$clang_cpu-elf-ld", root_build_dir)
+      rust_linker_flavor = "gnu"
+      pre_link_edits = []
+      post_link_edits = []
+      foreach(flavor,
+              [
+                "gnu",
+                "gnu-lld",
+              ]) {
+        pre_link_edits += [
+          {
+            key = flavor
+            action = "erase"
+            value = [
+              "-z",
+              "rodynamic",
+            ]
+          },
+          {
+            key = flavor
+            action = "erase"
+            value = [
+              "-z",
+              "separate-loadable-segments",
+            ]
+          },
+          {
+            key = flavor
+            action = "erase"
+            value = [
+              "-z",
+              "rel",
+            ]
+          },
+          {
+            key = flavor
+            action = "erase"
+            value = [ "--pack-dyn-relocs=relr" ]
+          },
+          {
+            key = flavor
+            action = "extend"
+            value = [
+              "-z",
+              "pack-relative-relocs",
+            ]
+          },
+          {
+            key = flavor
+            action = "extend"
+            value = [ "--start-group" ]
+          },
+        ]
+        if (is_gcc && current_cpu == "arm64") {
+          pre_link_edits += [
+            {
+              key = flavor
+              action = "erase"
+              value = [ "--execute-only" ]
+            },
+            {
+              key = flavor
+              action = "erase"
+              value = [
+                "-z",
+                "--fix-cortex-a53-843419",
+              ]
+            },
+          ]
+        }
+        post_link_edits += [
+          {
+            key = flavor
+            action = "set"
+            value = [ "--end-group" ]
+          },
+        ]
+      }
+      rust_target_edits += [
+        {
+          key = "pre-link-args"
+          action = "edit"
+          value = pre_link_edits
+        },
+        {
+          key = "post-link-args"
+          action = "edit"
+          value = post_link_edits
+        },
+      ]
+    }
+    if (rust_rbe_enable) {
+      rustflags = [ "--remote-inputs=$rust_linker" ]
+    }
+    rust_target_edits += [
+      {
+        key = "linker"
+        action = "set"
+        value = rust_linker
+      },
+      {
+        key = "linker-flavor"
+        action = "set"
+        value = rust_linker_flavor
       },
     ]
   }
