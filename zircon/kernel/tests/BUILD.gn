@@ -6,6 +6,7 @@
 
 import("//build/zircon/migrated_targets.gni")
 import("//build/zircon/zircon_cpu.gni")
+import("//zircon/kernel/kernel_rust_crate.gni")
 import("//zircon/kernel/params.gni")
 
 # See //zircon/kernel/lib/BUILD.gn for the various *tests target names and uses.
@@ -153,5 +154,27 @@ if (toolchain_environment == "kernel") {
       deps += [ "//zircon/kernel/lib/userabi" ]
     }
     public_deps = [ "//zircon/system/ulib/zx:headers" ]
+    if (enable_rust_in_zircon) {
+      deps += [ ":rust-based-kernel-tests" ]
+    }
+  }
+
+  if (enable_rust_in_zircon) {
+    source_set("rust-based-kernel-tests") {
+      visibility = [ ":*" ]
+      testonly = true
+      sources = [ "arch_rs_tests.cc" ]
+      deps = [
+        ":arch_rs_tests",
+        "//zircon/kernel/lib/unittest",
+      ]
+    }
+
+    kernel_rust_crate("arch_rs_tests") {
+      testonly = true
+      source_root = "arch_rs_tests.rs"
+      sources = [ source_root ]
+      deps = [ "//zircon/kernel/arch:arch-rs" ]
+    }
   }
 }

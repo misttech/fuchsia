@@ -4,6 +4,10 @@
 
 #![no_std]
 
+// This crate has tests of the Rust build support and fundamental features of
+// the compiler and cross-language linkage support.  It is not a place to put
+// tests for other kernel code that happens to be in Rust.
+
 use test_macro::plus_one;
 
 #[unsafe(no_mangle)]
@@ -34,31 +38,4 @@ pub extern "C" fn fetch_add_var_exported_to_rust(x: i32) -> i32 {
         gVarExportedToRust += x;
         old
     }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn test_rust_interrupt_ops() -> bool {
-    let initially_disabled = arch_rs::ints_disabled();
-    if initially_disabled {
-        return false;
-    }
-    arch_rs::disable_ints();
-    if !arch_rs::ints_disabled() {
-        return false;
-    }
-    arch_rs::enable_ints();
-    if arch_rs::ints_disabled() {
-        return false;
-    }
-    true
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn test_rust_curr_cpu_num() -> u32 {
-    arch_rs::curr_cpu_num()
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn test_rust_max_num_cpus() -> u32 {
-    arch_rs::max_num_cpus()
 }

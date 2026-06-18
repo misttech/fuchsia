@@ -7,6 +7,10 @@
 import("//zircon/kernel/kernel_rust_crate.gni")
 import("//zircon/kernel/params.gni")
 
+# This directory has tests of the Rust build support and fundamental features
+# of the compiler and cross-language linkage support.  It is not a place to put
+# tests for other kernel code that happens to be in Rust.
+
 source_set("kernel-tests") {
   testonly = true
   if (enable_rust_in_zircon) {
@@ -23,5 +27,4 @@ kernel_rust_crate("trivial_tests") {
   visibility = [ ":*" ]
   sources = [ "src/lib.rs" ]
   deps = [ "test_macro" ]
-  deps += [ "//zircon/kernel/arch:arch-rs" ]
 }
