@@ -591,6 +591,12 @@ action("rust-custom-target") {
 
   outputs = [ "$rustlib_dir/target.json" ]
   args += [ "--output=" + rebase_path(outputs[0], root_build_dir) ]
+
+  metadata = {
+    # This will roll up into the generated_file()s fed to the RBE wrapper so it
+    # knows what GN and Ninja know via the inputs list in the config() below.
+    rust_compilation_deps = rebase_path(outputs, root_build_dir)
+  }
 }
 
 # Apply the custom target.  This confers the Ninja file dependency on the
@@ -609,6 +615,13 @@ config("rust-target") {
     "--target",
     "kernel",
   ]
+  if (rust_rbe_enable) {
+    rustflags += [
+      "--remote-flag=--clang-target=$current_target_tuple",
+      "--remote-inputs=" +
+          string_join(",", rebase_path(inputs, root_build_dir)),
+    ]
+  }
 }
 
 group("rust-target.deps") {
