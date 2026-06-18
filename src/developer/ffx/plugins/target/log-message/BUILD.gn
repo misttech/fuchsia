@@ -35,5 +35,5 @@ ffx_plugin("ffx_target_log_message") {
 group("tests") {
   testonly = true
 
-  deps = [ ":ffx_target_log_message_tests" ]
+  deps = [ ":ffx_target_log_message_tests($host_toolchain)" ]
 }

@@ -59,19 +59,21 @@ if (is_host) {
   group("tests") {
     testonly = true
     deps = [
+      "add:tests",
       "default:tests",
+      "list:tests",
       "log-message:tests",
-      "wipe:ffx_wipe_tests",
+      "package:tests",
+      "remove:tests",
+      "ssh:tests",
+      "wipe:tests",
     ]
   }
 
   group("host_tests") {
     testonly = true
     deps = [
-      "add:tests",
-      "list:tests",
       "package:host_tests",
-      "remove:tests",
       "ssh:host_tests",
     ]
   }
