@@ -259,7 +259,10 @@ def parse_args():
         help="number of concurrent jobs to run",
         default=None,
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.verbose:
+        args.quiet = False
+    return args
 
 
 if __name__ == "__main__":

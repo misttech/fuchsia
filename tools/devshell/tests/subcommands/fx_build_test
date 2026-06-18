@@ -535,4 +535,66 @@ EOF
     BT_EXPECT_EQ "${BT_MOCK_ARGS[9]}" ""  # quiet
 }
 
+TEST_fx-build-antigravity-quiet-by-default() {
+    setup_build_test
+
+    track_build_event=$(btf::make_mock_binary track-build-event)
+
+    cat > "${BT_TEMP_DIR}/tools/devshell/lib/metrics.sh.mock_side_effects" <<EOF
+  function metrics-init {
+    echo ""
+  }
+  function track-command-execution {
+    echo ""
+  }
+  function track-feature-status {
+    echo ""
+  }
+  function track-command-finished {
+    echo ""
+  }
+  function track-build-event {
+    "${track_build_event}" "\$@"
+  }
+EOF
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    export FX_BUILD_DRY_RUN=1
+    BT_EXPECT ANTIGRAVITY_AGENT=1 "${fx}" build "-j4" //src:foo ">" stdout.txt
+    BT_EXPECT grep -q "obj/src/foo" stdout.txt
+
+    source "${track_build_event}.mock_state"
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[9]}" "true"  # quiet should be true by default in antigravity
+}
+
+TEST_fx-build-antigravity-verbose-overrides-quiet() {
+    setup_build_test
+
+    track_build_event=$(btf::make_mock_binary track-build-event)
+
+    cat > "${BT_TEMP_DIR}/tools/devshell/lib/metrics.sh.mock_side_effects" <<EOF
+  function metrics-init {
+    echo ""
+  }
+  function track-command-execution {
+    echo ""
+  }
+  function track-feature-status {
+    echo ""
+  }
+  function track-command-finished {
+    echo ""
+  }
+  function track-build-event {
+    "${track_build_event}" "\$@"
+  }
+EOF
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    export FX_BUILD_DRY_RUN=1
+    BT_EXPECT ANTIGRAVITY_AGENT=1 "${fx}" build "-j4" --verbose //src:foo ">" stdout.txt
+    BT_EXPECT grep -q "obj/src/foo" stdout.txt
+
+    source "${track_build_event}.mock_state"
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[9]}" ""  # quiet should be empty when --verbose is passed
+}
+
 BT_RUN_TESTS "$@"
