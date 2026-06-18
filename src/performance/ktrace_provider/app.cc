@@ -109,8 +109,19 @@ void ForwardBuffer(DrainContext drain_context) {
     while (offset < num_words) {
       uint64_t header = drain_context.buffer[offset];
       size_t record_size_words = fxt::RecordFields::RecordSize::Get<size_t>(header);
-      if (void* dst = trace_context_alloc_record(buffer_context, record_size_words * 8);
-          dst != nullptr) {
+      fxt::RecordType type = fxt::RecordFields::Type::Get<fxt::RecordType>(header);
+      bool is_durable =
+          (type == fxt::RecordType::kMetadata || type == fxt::RecordType::kInitialization ||
+           type == fxt::RecordType::kString || type == fxt::RecordType::kThread ||
+           type == fxt::RecordType::kKernelObject);
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+      void* dst = is_durable
+                      ? trace_context_alloc_durable_record(buffer_context, record_size_words * 8)
+                      : trace_context_alloc_record(buffer_context, record_size_words * 8);
+#else
+      void* dst = trace_context_alloc_record(buffer_context, record_size_words * 8);
+#endif
+      if (dst != nullptr) {
         memcpy(dst, reinterpret_cast<const char*>(drain_context.buffer.get() + offset),
                record_size_words * 8);
         offset += record_size_words;

@@ -667,6 +667,21 @@ void trace_context_write_thread_record(trace_context_t* context, trace_thread_in
 // This function is thread-safe, fail-fast, and lock-free.
 void* trace_context_alloc_record(trace_context_t* context, size_t num_bytes);
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+// Allocates space for a durable record in the trace buffer.
+//
+// |context| must be a valid trace context reference.
+// |num_bytes| must be a multiple of 8 bytes.
+//
+// Returns a pointer to the allocated space within the durable trace buffer with
+// 8 byte alignment, or NULL if the durable buffer is full or if |num_bytes|
+// exceeds |TRACE_ENCODED_RECORD_MAX_LENGTH|.
+//
+// This function is thread-safe, fail-fast, and lock-free.
+void* trace_context_alloc_durable_record(trace_context_t* context, size_t num_bytes)
+    ZX_AVAILABLE_SINCE(HEAD);
+#endif
+
 trace_buffering_mode_t trace_context_get_buffering_mode(const trace_context_t* context);
 
 __END_CDECLS

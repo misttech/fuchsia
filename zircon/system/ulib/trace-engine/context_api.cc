@@ -1261,6 +1261,14 @@ EXPORT_NO_DDK void* trace_context_alloc_record(trace_context_t* context, size_t 
   return context->AllocRecord(num_bytes);
 }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+EXPORT_NO_DDK void* trace_context_alloc_durable_record(trace_context_t* context, size_t num_bytes)
+    ZX_AVAILABLE_SINCE(HEAD) {
+  return context->UsingDurableBuffer() ? context->AllocDurableRecord(num_bytes)
+                                       : context->AllocRecord(num_bytes);
+}
+#endif
+
 EXPORT_NO_DDK void trace_context_snapshot_buffer_header_internal(
     trace_prolonged_context_t* context, ::trace::internal::trace_buffer_header* dest) {
   auto ctx = reinterpret_cast<trace_context_t*>(context);
