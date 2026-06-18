@@ -67,10 +67,17 @@ ffx_plugin("ffx_doctor") {
   ]
 
   sources = [
+    "src/daemon.rs",
     "src/doctor_ledger.rs",
+    "src/environment.rs",
     "src/gcheck.rs",
     "src/ledger_view.rs",
     "src/lib.rs",
+    "src/network.rs",
+    "src/record.rs",
     "src/single_target_diagnostics.rs",
+    "src/target.rs",
+    "src/types.rs",
+    "src/usb.rs",
   ]
 }
