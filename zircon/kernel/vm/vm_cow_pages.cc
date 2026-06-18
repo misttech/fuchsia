@@ -7239,8 +7239,7 @@ VmCowReclaimResult VmCowPages::ReclaimRangeForEviction(uint64_t offset, size_t l
     return true;
   };
 
-  __UNINITIALIZED ScopedPageFreedList freed_list;
-  __UNINITIALIZED BatchPQRemove page_remover(freed_list);
+  __UNINITIALIZED BatchPQRemove page_remover(deferred.FreedList(this));
 
   uint32_t num_evicted_pages = 0;
   uint32_t num_evicted_loaned = 0;
@@ -7270,7 +7269,6 @@ VmCowReclaimResult VmCowPages::ReclaimRangeForEviction(uint64_t offset, size_t l
       offset, offset + length);
 
   page_remover.Flush();
-  freed_list.FreePages(this);
 
   if (num_evicted_pages + num_evicted_loaned == 0) {
     vm_reclaim_evict_fail_range.Add(1);
