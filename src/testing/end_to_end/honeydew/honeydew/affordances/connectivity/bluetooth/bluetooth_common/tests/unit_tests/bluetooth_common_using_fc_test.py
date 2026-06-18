@@ -8,7 +8,7 @@ import asyncio
 import types
 import unittest
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 from unittest import mock
 
 import fidl_fuchsia_bluetooth as f_bt
@@ -73,7 +73,7 @@ def _custom_test_name_func(
     testcase_func: Callable[..., None], _: str, param_arg: param
 ) -> str:
     """Custom name function method."""
-    test_func_name: str = testcase_func.__name__
+    test_func_name: str = cast(Any, testcase_func).__name__
 
     params_dict: dict[str, Any] = param_arg.args[0]
     test_label: str = parameterized.to_safe_name(params_dict["label"])
@@ -155,7 +155,9 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
         # Neither MagicMock or AsyncMock are suitable for mocking an asyncio.Task.
         # Use an asyncio.Future() instead since the base implementation is sufficient
         # for this test.
-        self.bluetooth_common_fc_obj._pairing_delegate_server = asyncio.Future()  # type: ignore[assignment]
+        self.bluetooth_common_fc_obj._pairing_delegate_server = cast(
+            Any, asyncio.Future()
+        )
 
         await self.bluetooth_common_fc_obj.reset_state()
         assert self.bluetooth_common_fc_obj._access_controller_proxy is None
@@ -466,7 +468,7 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
         else:
             f: asyncio.Future[None] = asyncio.Future()
             f.set_result(None)
-            self.bluetooth_common_fc_obj._pairing_delegate_server = f  # type: ignore[assignment]
+            self.bluetooth_common_fc_obj._pairing_delegate_server = cast(Any, f)
             await self.bluetooth_common_fc_obj.run_pairing_delegate()
             self.assertEqual(self.bluetooth_common_fc_obj._async_op_count, 1)
 

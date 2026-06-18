@@ -52,7 +52,7 @@ class BluetoothFidlServerTest(unittest.TestCase):
     def test_on_pairing_request(self) -> None:
         """Test for PairingDelegateImpl.on_pairing_request() method."""
         data = self.bluetooth_server.on_pairing_request(
-            pairing_start_request=_SAMPLE_ON_PAIRING_REQUEST_INPUT
+            request=_SAMPLE_ON_PAIRING_REQUEST_INPUT
         )
         self.assertEqual(data, _SAMPLE_ON_PAIRING_REQUEST_OUTPUT)
 
@@ -60,12 +60,12 @@ class BluetoothFidlServerTest(unittest.TestCase):
         """Test for PairingDelegateImpl.on_pairing_complete() method."""
         # The test passes by virtue of not raising an exception.
         self.bluetooth_server.on_pairing_complete(
-            pairing_complete_request=_SAMPLE_ON_PAIRING_COMPLETE_SUCCESS_INPUT
+            request=_SAMPLE_ON_PAIRING_COMPLETE_SUCCESS_INPUT
         )
 
     def test_on_pairing_complete_failure(self) -> None:
         """Test for PairingDelegateImpl.on_pairing_complete() method."""
         with self.assertRaises(bluetooth_errors.BluetoothError):
             self.bluetooth_server.on_pairing_complete(
-                pairing_complete_request=_SAMPLE_ON_PAIRING_COMPLETE_FAILURE_INPUT
+                request=_SAMPLE_ON_PAIRING_COMPLETE_FAILURE_INPUT
             )

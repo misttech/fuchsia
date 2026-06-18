@@ -23,20 +23,20 @@ class PairingDelegateImpl(f_btsys_controller.PairingDelegateServer):
 
     def on_pairing_request(
         self,
-        pairing_start_request: f_btsys_controller.PairingDelegateOnPairingRequestRequest,
+        request: f_btsys_controller.PairingDelegateOnPairingRequestRequest,
     ) -> f_btsys_controller.PairingDelegateOnPairingRequestResponse:
         """On Pairing Request implementation for Pairing Delegate Server
 
         Args:
-            pairing_start_request: pairing request that Bluetooth stack received.
+            request: pairing request that Bluetooth stack received.
 
         Returns:
             response: pairing response to Bluetooth stack.
         """
-        assert pairing_start_request.peer.id_ is not None
+        assert request.peer.id_ is not None
         _LOGGER.info(
             "On Pairing Request method called with peer: %s",
-            pairing_start_request.peer.id_.value,
+            request.peer.id_.value,
         )
         return f_btsys_controller.PairingDelegateOnPairingRequestResponse(
             accept=True, entered_passkey=0
@@ -44,17 +44,17 @@ class PairingDelegateImpl(f_btsys_controller.PairingDelegateServer):
 
     def on_pairing_complete(
         self,
-        pairing_complete_request: f_btsys_controller.PairingDelegateOnPairingCompleteRequest,
+        request: f_btsys_controller.PairingDelegateOnPairingCompleteRequest,
     ) -> None:
         """On Pairing Complete implementation for Pairing Delegate Server
 
         Args:
-            pairing_complete_request: pairing response completion request from Bluetooth stack.
+            request: pairing response completion request from Bluetooth stack.
 
         Raises:
             BluetoothError: Pairing request failed to complete from the device.
         """
-        if not pairing_complete_request.success:
+        if not request.success:
             raise bt_errors.BluetoothError("Pairing request failed.")
         _LOGGER.info("Pairing was successful.")
 
