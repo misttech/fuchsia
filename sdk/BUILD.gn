@@ -905,6 +905,7 @@ if (current_toolchain == default_toolchain) {
       "//sdk/lib/driver/devicetree/visitors/default:default_sdk",
       "//sdk/lib/driver/devicetree/visitors/drivers:all-driver-visitors_sdk",
       "//sdk/lib/driver/devicetree/visitors/drivers/amlogic-canvas:amlogic-canvas-visitor_visitor_sdk",
+      "//sdk/lib/driver/devicetree/visitors/drivers/audio/audio-codec:audio-codec-visitor_visitor_sdk",
       "//sdk/lib/driver/devicetree/visitors/drivers/clock-controllers/clockimpl-visitor:clockimpl-visitor_visitor_sdk",
       "//sdk/lib/driver/devicetree/visitors/drivers/cpu/performance-domain:performance-domain-visitor_visitor_sdk",
       "//sdk/lib/driver/devicetree/visitors/drivers/display/display-panel:display-panel-visitor_visitor_sdk",

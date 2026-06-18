@@ -13,32 +13,31 @@ group("tests") {
 }
 
 devicetree_visitor("audio-codec-visitor") {
-  deps = [ ":audio-codec-visitor-impl" ]
-}
-
-source_set("audio-codec-visitor-impl") {
   sources = [
     "audio-codec-visitor.cc",
     "audio-codec-visitor.h",
   ]
-  inputs = [ "audio-codec.yaml" ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_bindlib_cpp",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
-    "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/lib/ddk:ddk_metadata",
   ]
   public_deps = [
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:property-parser",
+  ]
+  non_sdk_deps = [
+    "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_bindlib_cpp",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/lib/ddk:ddk_metadata",
   ]
 }
 
 test("audio-codec-visitor-test-bin") {
   sources = [ "test/audio-codec-visitor-test.cc" ]
   deps = [
-    ":audio-codec-visitor-impl",
+    ":audio-codec-visitor.static",
     "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_bindlib_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",
