@@ -1,8 +1,15 @@
 ---
 name: rust-driver-best-practices
 description: >
-  Best practices, patterns, and available libraries for writing modern Rust
-  drivers in Fuchsia (DFv2, fidl_next).
+  Apply idiomatic patterns and the standard libraries for writing or reviewing
+  a modern Rust DFv2 driver in Fuchsia. Use when authoring a new Rust driver
+  or porting one and needing fidl_next, fdf_component
+  (Driver/DriverContext/driver_register!), fuchsia_async (Scope/OnInterrupt),
+  safe MMIO via the mmio register!/register_block! macros, the pdev library,
+  service_marker connections, lock-free concurrency, NodeController lifecycle,
+  or VMO-backed driver tests -- and to review a finished Rust driver change.
+  Covers patterns only, not the migration process (use migrate-cpp-to-rust-
+  driver).
 ---
 
 # Rust Driver Best Practices in Fuchsia

@@ -1,8 +1,12 @@
 ---
 name: migrate-logging
 description: >
-  Guide for migrating Fuchsia driver frameworks from DF_LOG or FDF_LOG legacy
-  logging to the modern fdf::logger standard.
+  Migrate a DFv2 C++ driver's logging from the legacy FDF_LOG/DF_LOG/FDF_LOGL
+  macros to the modern fdf:: logger (fdf::info/error/warn/debug/trace). Use
+  when a driver still calls FDF_LOG or DF_LOG with printf-style format strings
+  (%s, %d, %08x) that must become std::format-style {} placeholders, including
+  the //sdk/lib/driver/logging/cpp dep and zx::result formatter rules. DFv2
+  drivers only -- confirm the driver is not DFv1 first.
 ---
 
 # Migration Guide: Old Logger to New fdf:: Logger

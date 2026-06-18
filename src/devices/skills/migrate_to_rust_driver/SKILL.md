@@ -1,8 +1,14 @@
 ---
 name: migrate-cpp-to-rust-driver
 description: >
-  Guide for migrating a C++ driver in Fuchsia to a Rust driver using the
-  modern Driver Framework (DFv2).
+  Migrate a Fuchsia C++ driver to a full Rust driver on Driver Framework v2
+  (DFv2). Use when porting an existing C++ driver's complete behavior to Rust
+  -- bind rules, MMIO/IRQ/pdev access, FIDL services, and internal logic --
+  landing on the fdf_component Driver trait, fidl_next, fuchsia_async, the
+  mmio crate, and the log crate. This is the end-to-end rewrite. For only
+  generating the coexisting -rust target, boilerplate, and .cml without
+  porting logic, use migrate-cpp-to-rust-scaffolding; for idiomatic Rust
+  patterns once ported, see rust-driver-best-practices.
 ---
 
 # Migration Guide: C++ Driver to Rust Driver (DFv2)

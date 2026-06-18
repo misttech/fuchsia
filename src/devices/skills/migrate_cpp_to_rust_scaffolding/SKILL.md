@@ -1,10 +1,14 @@
 ---
 name: migrate-cpp-to-rust-scaffolding
 description: >
-  Scaffolds the conversion of a Fuchsia C++ driver to Rust by creating
-  boilerplate files and updating build targets. Use when starting a migration
-  of a C++ driver to Rust and wanting to automate the initial setup. Don't use
-  for manual code conversion or for drivers that are already migrated.
+  Scaffold (do not implement) the conversion of a Fuchsia C++ driver to Rust
+  by generating the coexisting -rust target, src/lib.rs boilerplate, the
+  meta/*-rust.cml manifest, BUILD.gn driver/test groups, and the
+  all_drivers_list.txt entry via scaffold_migration.py. Use when starting a
+  C++-to-Rust migration and wanting the initial setup, build wiring, and
+  optional C++/Rust hot-swap feature flag automated. Only scaffolds -- don't
+  use for the actual logic port or manual code conversion (use migrate-cpp-to-
+  rust-driver), or for drivers already migrated.
 ---
 
 # Scaffolding for Converting a C++ Driver to Rust

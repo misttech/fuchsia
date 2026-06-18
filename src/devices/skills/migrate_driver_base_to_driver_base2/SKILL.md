@@ -1,6 +1,15 @@
 ---
 name: migrate-driver-base-to-driver-base2
-description: Migrate Fuchsia drivers from fdf::DriverBase to fdf::DriverBase2.
+description: >
+  Migrate an already-DFv2 C++ driver from the older fdf::DriverBase to
+  fdf::DriverBase2. Use when a driver compiles against driver_base.h, takes
+  DriverStartArgs and an UnownedSynchronizedDispatcher in its constructor,
+  uses FUCHSIA_DRIVER_EXPORT, or overrides Start()/PrepareStop()/Stop(), and
+  must move to a default-constructible class, Start(DriverContext),
+  FUCHSIA_DRIVER_EXPORT2, context.incoming()/take_incoming(),
+  context.CreateInspector, and destructor-based sync cleanup. Assumes the
+  driver is ALREADY DFv2 -- don't use for a DFv1/DDK driver still on
+  ddk::Device or ZIRCON_DRIVER (use migrate-dfv1-to-dfv2).
 ---
 
 # Migrate to DriverBase2

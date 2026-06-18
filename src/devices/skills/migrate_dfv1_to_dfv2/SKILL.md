@@ -1,6 +1,16 @@
 ---
 name: migrate-dfv1-to-dfv2
-description: Migrate drivers from DFv1 to DFv2.
+description: >
+  Migrate a C++ driver from the legacy Driver Framework v1 (DFv1/DDK) to
+  Driver Framework v2 (DFv2). Use when a driver still inherits from
+  ddk::Device, uses ZIRCON_DRIVER, device_get_protocol,
+  DdkInit/DdkBind/DdkUnbind/DdkSuspend, or links //src/lib/ddk and
+  //src/lib/ddktl, and must move to fdf::DriverBase2, Start(DriverContext),
+  FUCHSIA_DRIVER_EXPORT2, and a native driver .cml. Covers headers,
+  BUILD.gn/Bazel deps, Banjo-to-FIDL, logging, pdev/MMIO, and DMA hand-offs.
+  Stays in C++ -- don't use for a C++-to-Rust rewrite (migrate-cpp-to-rust-
+  driver). For a driver already on the older fdf::DriverBase, use migrate-
+  driver-base-to-driver-base2 instead.
 ---
 
 # Driver Migration (DFv1 to DFv2)

@@ -1,10 +1,14 @@
 ---
 name: suspend-resume-migration-integration
-description: >-
-  How to use driver framework-provided power elements to implement
-  suspend/resume support in the driver. Covers migrating a driver which
-  currently uses SuspendBlockers and drivers without any current suspend/resume
-  support.
+description: >
+  Add or migrate suspend/resume support in a Fuchsia driver using Driver-
+  Framework power elements. Use when a driver implements
+  fuchsia.power.system/SuspendBlocker, fdf_power::Suspendable, or the Rust
+  fdf_power::SuspendableDriver trait and must move to framework power elements
+  (migration), or has no suspend/resume support yet and needs it added
+  (integration). Covers the required component manifest (.cml), BUILD.gn/Bazel
+  deps, and implementation in both C++ and Rust; routes to
+  suspend_resume_migration.md vs suspend_resume_integration.md.
 ---
 
 ## Overview
@@ -21,7 +25,8 @@ First determine if we need to do a migration or an integration.
 
 For migrations look to see if there are implementations of
 `fuchsia.power.system/SuspendBlocker` or `fdf_power::Suspendable` for C++
-drivers or the `fdf_power::SuspendableDriver` trait for Rust drivers. In
-these cases, look at suspend_resume_migration.md.
+drivers or the `fdf_power::SuspendableDriver` trait for Rust drivers. In these
+cases, look at suspend_resume_migration.md.
 
-For other cases look at how to do an integration in suspend_resume_integration.md.
+For other cases look at how to do an integration in
+suspend_resume_integration.md.
