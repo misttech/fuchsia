@@ -362,7 +362,7 @@
              path="third_party/github.com/google/cppdap/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/google/cppdap"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="c69444ed76f7468b232ac4f989cb8f2bdc100185"/>
+             revision="6464cd7bd0a5639b11902055ca607b53915833fc"/>
     <project name="third_party/github.com/google/farmhash"
              path="third_party/github.com/google/farmhash"
              remote="https://fuchsia.googlesource.com/third_party/github.com/google/farmhash"
