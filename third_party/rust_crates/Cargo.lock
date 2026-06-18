@@ -1824,6 +1824,7 @@ dependencies = [
  "rustls-webpki",
  "rustyline",
  "rutabaga_gfx",
+ "sapphire-uuid",
  "schemars",
  "scopeguard",
  "sec1 0.7.3",
@@ -4581,6 +4582,10 @@ version = "1.0.6"
 dependencies = [
  "winapi-util",
 ]
+
+[[package]]
+name = "sapphire-uuid"
+version = "0.1.0"
 
 [[package]]
 name = "scanlex"

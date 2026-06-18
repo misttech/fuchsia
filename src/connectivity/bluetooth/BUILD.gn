@@ -68,6 +68,7 @@ group("tests") {
     "hci:tests",
     "lib:tests",
     "profiles:tests",
+    "sunstone:tests",
     "testing:tests",
     "tests",
     "tools:tests",

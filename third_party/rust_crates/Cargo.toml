@@ -220,6 +220,7 @@ rustls-pemfile = "1.0.4"
 rustls-webpki = "0.101.6"
 rustyline = "2.1.0"
 rutabaga_gfx = { version = "0.1.3", features = ["gfxstream"] }
+sapphire-uuid = "0.1.0"
 schemars = { version = "0.8.22", features = ["chrono", "preserve_order"] }
 scopeguard = "1.2.0"
 serde = { version = "1.0.228", features = ["derive"] }
@@ -363,6 +364,7 @@ zip = { version = "0.5.5", default-features = false, features = ["deflate"] }
 # keep-sorted start
 bssl-sys = { path = "intree/bssl-sys" }
 fuchsia-cprng = { path = "intree/fuchsia-cprng" }
+sapphire-uuid = { path = "intree/sunstone/sapphire-uuid" }
 # keep-sorted end
 
 ### Ask to Patch: crates which require a policy exception to contribute to.
@@ -607,6 +609,9 @@ license_files = ["LICENSE-APACHE"]
 
 [gn.package.fuchsia-cprng."0.1.1"]
 existing_gn_target = "//src/lib/fuchsia-cprng"
+
+[gn.package.sapphire-uuid."0.1.0"]
+uses_fuchsia_license = true
 
 [gn.package.futures-channel."0.3.31"]
 env_vars = [ "CARGO_PKG_NAME=futures-channel" ]

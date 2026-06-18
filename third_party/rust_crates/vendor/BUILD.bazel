@@ -2521,6 +2521,18 @@ alias(
 )
 
 alias(
+    name = "sapphire-uuid-0.1.0",
+    actual = "//third_party/rust_crates/intree/sunstone/sapphire-uuid:sapphire_uuid",
+    tags = ["manual"],
+)
+
+alias(
+    name = "sapphire-uuid",
+    actual = "//third_party/rust_crates/intree/sunstone/sapphire-uuid:sapphire_uuid",
+    tags = ["manual"],
+)
+
+alias(
     name = "schemars-0.8.22",
     actual = "//third_party/rust_crates/vendor/schemars-0.8.22:schemars",
     tags = ["manual"],
