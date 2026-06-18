@@ -35,6 +35,7 @@ _COMMON_FILESYSTEMS = {
 
 _COMMON_PROVIDED_FEATURES = [
     # keep-sorted start
+    "fuchsia::bus_pci",
     "fuchsia::fake_battery",
     "fuchsia::fake_power_sensor",
     "fuchsia::input",

@@ -196,7 +196,9 @@ impl
         )?;
 
         // Include the bus-pci driver through platform AIBs.
-        if context.board_config.provides_feature(BoardFeature::BusPci) {
+        if context.board_config.provides_feature(BoardFeature::BusPci)
+            || context.board_config.provides_feature(BoardFeature::BusPciSoftMigration)
+        {
             builder.platform_bundle("bus_pci_driver")?;
             // In engineering builds, include the lspci tool whenever the pci
             // bus feature is enabled.

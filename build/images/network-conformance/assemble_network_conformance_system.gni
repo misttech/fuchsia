@@ -45,6 +45,7 @@ template("assemble_network_conformance_system") {
     }
 
     provided_features = [
+      "fuchsia::bus_pci",
       "fuchsia::real_time_clock",
       "fuchsia::usb_host",
       "fuchsia::usb_peripheral_support",
