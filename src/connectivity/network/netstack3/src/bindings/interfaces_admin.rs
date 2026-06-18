@@ -1777,6 +1777,16 @@ async fn address_state_provider_main_loop(
                                     AddressStateProviderCancellationReason::InvalidProperties,
                                 );
                             }
+                            AddressStateProviderError::AddressNotFound => {
+                                // We raced with the address being removed. Get
+                                // the reason from Core.
+                                debug_assert!(!stop_receiver.is_terminated());
+                                break Some(
+                                    stop_receiver
+                                        .await
+                                        .expect("address disappeared without removal reason"),
+                                );
+                            }
                             AddressStateProviderError::Fidl(_) => {
                                 break None;
                             }
@@ -1833,6 +1843,8 @@ pub(crate) enum AddressStateProviderError {
     Fidl(fidl::Error),
     #[error("invalid address properties update for {field}: {err}")]
     InvalidPropertiesUpdate { field: &'static str, err: NotPositiveMonotonicInstantError },
+    #[error("address not found in core")]
+    AddressNotFound,
 }
 
 // State Machine for the `WatchAddressAssignmentState` "Hanging-Get" FIDL API.
@@ -1978,9 +1990,7 @@ fn dispatch_address_state_provider_request(
                 }
                 Err(SetIpAddressPropertiesError::NotFound(
                     netstack3_core::error::NotFoundError,
-                )) => {
-                    panic!("address not found")
-                }
+                )) => Err(AddressStateProviderError::AddressNotFound),
                 Err(SetIpAddressPropertiesError::NotManual) => {
                     panic!("address not manual")
                 }

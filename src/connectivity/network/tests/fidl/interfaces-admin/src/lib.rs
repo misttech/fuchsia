@@ -4421,3 +4421,112 @@ async fn dad_failure_race_with_user_removal_detached(name: &str) {
         assert_matches!(removed, Ok(_));
     }
 }
+
+// Regression test for https://fxbug.dev/524633320. Racing a properties update
+// with a Core-initiated address removal.
+#[netstack_test]
+async fn dad_failure_race_with_update_properties(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+
+    let network = sandbox.create_network(name).await.expect("create network");
+    let iface = realm
+        .join_network_with_if_config(
+            &network,
+            "client",
+            netemul::InterfaceConfig { ipv6_dad_transmits: Some(u16::MAX), ..Default::default() },
+        )
+        .await
+        .expect("join network");
+    let fake_ep = network.create_fake_endpoint().expect("create fake endpoint");
+
+    let ipv6_addr = netstack_testing_common::constants::ipv6::LINK_LOCAL_ADDR;
+
+    // Wait for DAD NS.
+    let mut stream = fake_ep
+        .frame_stream()
+        .map(|r| r.expect("frame error").0)
+        .filter_map(|data| {
+            let is_dad =
+                packet_formats::testutil::parse_icmp_packet_in_ip_packet_in_ethernet_frame::<
+                    net_types::ip::Ipv6,
+                    _,
+                    packet_formats::icmp::ndp::NeighborSolicitation,
+                    _,
+                >(
+                    &data, packet_formats::ethernet::EthernetFrameLengthCheck::NoCheck, |_| {}
+                )
+                .map_or(
+                    false,
+                    |(_src_mac, _dst_mac, _src_ip, _dst_ip, _ttl, ns, _code)| {
+                        *ns.target_address() == ipv6_addr
+                    },
+                );
+            futures::future::ready(is_dad.then_some(()))
+        })
+        .fuse();
+
+    // Try a number of times to draw out the race.
+    for _ in 0..30 {
+        let (asp, asp_server_end) =
+            fidl::endpoints::create_proxy::<finterfaces_admin::AddressStateProviderMarker>();
+
+        iface
+            .control()
+            .add_address(
+                &fnet::Subnet { addr: IpAddr::V6(ipv6_addr).into_ext(), prefix_len: 64 },
+                &finterfaces_admin::AddressParameters {
+                    perform_dad: Some(true),
+                    ..Default::default()
+                },
+                asp_server_end,
+            )
+            .expect("add address");
+
+        let mut address_removed_event = asp
+            .take_event_stream()
+            .try_filter_map(|e| {
+                futures::future::ok(match e {
+                    finterfaces_admin::AddressStateProviderEvent::OnAddressRemoved { error } => {
+                        Some(error)
+                    }
+                    finterfaces_admin::AddressStateProviderEvent::OnAddressAdded { .. } => None,
+                })
+            })
+            .into_future()
+            .map(|(r, _stream)| r.expect("stream ended without event").expect("FIDL error"));
+
+        futures::select! {
+            r = stream.next() => r.expect("wait for DAD NS"),
+            e = address_removed_event => {
+                assert_eq!(e, finterfaces_admin::AddressRemovalReason::DadFailed);
+                continue;
+            }
+        }
+
+        // Race a reply that causes DAD to fail with an update address properties request.
+        netstack_testing_common::ndp::fail_dad_with_na(&fake_ep).await;
+
+        let mut update_futures = Vec::new();
+        for _ in 0..20 {
+            update_futures.push(asp.update_address_properties(
+                &finterfaces_admin::AddressProperties {
+                    valid_lifetime_end: Some(123_000_000_000),
+                    ..Default::default()
+                },
+            ));
+        }
+
+        let update_results = futures::future::join_all(update_futures).await;
+        for update_result in update_results {
+            match update_result {
+                Ok(()) => {}
+                Err(e) => {
+                    assert!(e.is_closed(), "unexpected error: {:?}", e);
+                }
+            }
+        }
+
+        assert_eq!(address_removed_event.await, finterfaces_admin::AddressRemovalReason::DadFailed);
+    }
+}
