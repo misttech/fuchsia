@@ -247,7 +247,7 @@ void GenericPlatformManagerImpl_Fuchsia<ImplClass>::HandleSessionSuccess(
 #endif  // WEAVE_CONFIG_ENABLE_KEY_EXPORT_RESPONDER
 
   // Notify inspector to update session auth mode state.
-  WeaveSessionKey* session_key;
+  WeaveSessionKey* session_key = NULL;
   FabricState.GetSessionKey(session_key_id, peer_node_id, session_key);
   WeaveAuthMode auth_mode =
       (session_key != NULL) ? session_key->AuthMode : (WeaveAuthMode)kWeaveAuthMode_NotSpecified;
