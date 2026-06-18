@@ -388,7 +388,6 @@ class SimpleClient {
         .frame_type = static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet),
         .chain_length = 0,
         .nxt = 0,
-        .info_type = static_cast<uint32_t>(fuchsia_hardware_network::wire::InfoType::kNoInfo),
         .port_id =
             {
                 .base = port_id_.base,

@@ -67,16 +67,6 @@ type FrameTypeSupport = struct {
 @available(added=HEAD)
 const MAX_DESCRIPTOR_CHAIN uint8 = 4;
 
-/// The type of metadata information appended to a frame.
-// TODO(https://fxbug.dev/373642881): Drivers are currently not capable of
-// consuming or generating extra frame metadata, so this is effectively unused.
-// Removal is under consideration.
-@available(added=HEAD)
-type InfoType = strict enum : uint32 {
-    /// No extra information is available.
-    NO_INFO = 0x00;
-};
-
 /// Flags set by a Device when handing a buffer to a client on the rx path.
 ///
 /// Set by devices on the `inbound_flags` field of an rx descriptor.
@@ -84,8 +74,10 @@ type InfoType = strict enum : uint32 {
 type RxFlags = strict bits : uint32 {
     /// The device verified one or more "full" checksums (meaning an Internet
     /// Checksum over the full contents of e.g. a UDP or TCP packet).
-    // TODO(https://fxbug.dev/512101182): Update this comment to describe where
-    // the checksum count must be indicated on the buffer descriptor.
+    ///
+    /// The number of verified checksums, minus one, is indicated by the
+    /// `rx_full_csums_verified` field of the `accel_metadata` field of the rx
+    /// descriptor.
     FULL_CHECKSUMS_VERIFIED = 0x00000001;
 
     /// Device experienced a hardware rx overrun.
@@ -115,8 +107,10 @@ type TxFlags = flexible bits : uint32 {
     /// starting byte index relative to the start of the frame and a byte offset
     /// indicating the the offset from the starting index to the checksum field
     /// where the result must be placed.
-    // TODO(https://fxbug.dev/512101182): Update this comment to describe how
-    // the start and offset are indicated in the buffer descriptor.
+    ///
+    /// The starting offset and the offset to the checksum field are indicated
+    /// by the `tx_partial_csum` field of the `accel_metadata` field of the tx
+    /// descriptor.
     COMPUTE_GENERIC_CHECKSUM = 0x00000001;
 };
 

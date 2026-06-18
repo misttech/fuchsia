@@ -10,12 +10,12 @@
 
 pub const __NETWORK_DEVICE_DESCRIPTOR_VERSION: u32 = 1;
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Copy, Clone)]
 pub struct buffer_descriptor {
     pub frame_type: u8,
     pub chain_length: u8,
     pub nxt: u16,
-    pub info_type: u32,
+    pub accel_metadata: buffer_descriptor_accel_metadata,
     pub port_id: buffer_descriptor_port_id,
     pub vmo_id: u8,
     pub _reserved: u8,
@@ -26,6 +26,18 @@ pub struct buffer_descriptor {
     pub data_length: u32,
     pub inbound_flags: u32,
     pub return_flags: u32,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union buffer_descriptor_accel_metadata {
+    pub tx_partial_csum: buffer_descriptor_accel_metadata_tx_partial_csum,
+    pub rx_full_csums_verified: u16,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct buffer_descriptor_accel_metadata_tx_partial_csum {
+    pub start: u16,
+    pub offset: u16,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

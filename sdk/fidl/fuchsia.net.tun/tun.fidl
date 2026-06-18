@@ -142,20 +142,7 @@ type Frame = table {
     /// Network Device data frames.
     ///
     /// If not set, interpreted as empty.
-    // NOTE(brunodalbo): NetworkDevice's `InfoType` definition is still in its
-    // infancy. This solution allows access to the raw bytes in the sidecar
-    // metadata. We expect that this will evolve into a more type-safe solution
-    // which will be more transparent.
     3: meta @generated_name("FrameMetadata") struct {
-        /// Additional frame information type.
-        ///
-        /// If not set, interpreted as
-        /// [`fuchsia.hardware.network/InfoType.NO_INFO`].
-        info_type fuchsia.hardware.network.InfoType;
-        /// Additional frame information value.
-        ///
-        /// If not set, interpreted as empty bytes.
-        info vector<uint8>:4096;
         /// Frame flags. `RxFlags` for `WriteFrame` and `TxFlags` for
         /// `ReadFrame`.
         ///

@@ -164,7 +164,6 @@ TxBuffer::TxBuffer(const fuchsia_hardware_network_driver::wire::TxBuffer& tx, bo
   }
   if (get_meta) {
     meta_ = fuchsia_net_tun::wire::FrameMetadata{
-        .info_type = fuchsia_hardware_network::wire::InfoType::kNoInfo,
         .flags = tx.meta.flags,
     };
   }

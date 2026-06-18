@@ -429,10 +429,6 @@ void DeviceAdapter::EnqueueRx(uint8_t port_id, fuchsia_hardware_network::wire::F
   });
   if (meta) {
     ret.meta.flags = meta->flags;
-    if (meta->info_type != fuchsia_hardware_network::wire::InfoType::kNoInfo) {
-      FX_LOGST(WARNING, "tun") << "Unrecognized info type "
-                               << static_cast<uint32_t>(meta->info_type);
-    }
   }
 }
 

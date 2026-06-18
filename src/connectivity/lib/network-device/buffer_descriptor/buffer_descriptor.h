@@ -44,15 +44,22 @@ typedef struct buffer_descriptor {
   uint8_t chain_length;
   // The index of the next descriptor to use, ignored if |chain_length| is 0.
   uint16_t nxt;
-  // Identifies type of sidecar metadata associated with the buffer. The
-  // metadata is written immediately after the buffer_descriptor in the
-  // descriptors VMO.
-  //
-  // |DESC_NO_INFO| describes no extra information.
-  // TODO(https://fxbug.dev/373642881): Drivers are currently not capable of
-  // consuming or generating extra frame metadata, so this is effectively
-  // unused. Removal is under consideration.
-  uint32_t info_type;
+
+  // Hardware acceleration metadata.
+  union accel_metadata {
+    // Partial checksum metadata.
+    struct tx_partial_csum {
+      // The offset in bytes from the start of the frame to where the device
+      // must begin computing the checksum.
+      uint16_t start;
+      // The offset in bytes from the start of the checksummed portion of the
+      // buffer to where the device must place the checksum result. The checksum
+      // field itself is included in the checksum.
+      uint16_t offset;
+    } tx_partial_csum;
+    // The number of full checksums, minus one, verified by the device.
+    uint16_t rx_full_csums_verified;
+  } accel_metadata;
 
   // Frame's device port identifier.
   struct port_id {

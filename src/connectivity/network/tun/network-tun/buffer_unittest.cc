@@ -71,8 +71,6 @@ TEST_F(BufferTest, TestBufferBuildTx) {
   EXPECT_EQ(b.id(), tx.id);
   EXPECT_EQ(b.frame_type(), fuchsia_hardware_network::wire::FrameType::kEthernet);
   auto meta = b.TakeMetadata();
-  EXPECT_EQ(meta->info_type, fuchsia_hardware_network::wire::InfoType::kNoInfo);
-  EXPECT_TRUE(meta->info.empty());
   EXPECT_EQ(meta->flags, static_cast<uint32_t>(
                              fuchsia_hardware_network::wire::TxFlags::kComputeGenericChecksum));
   std::vector<uint8_t> data;

@@ -186,8 +186,7 @@ void TunDevice::RunReadFrame() {
       frame.set_port(port_id);
       std::optional meta = buff.TakeMetadata();
       if (meta.has_value()) {
-        frame.set_meta(
-            fidl::ObjectView<fuchsia_net_tun::wire::FrameMetadata>::FromExternal(&meta.value()));
+        frame.set_meta(meta.value());
       }
       pending_read_frame_.front().ReplySuccess(frame);
       pending_read_frame_.pop();

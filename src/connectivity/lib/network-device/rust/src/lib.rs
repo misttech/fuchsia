@@ -15,8 +15,8 @@ pub use client::{Client, DevicePortEvent, PortStatus};
 pub use error::{Error, Result};
 pub use port_slab::PortSlab;
 pub use session::{
-    Buffer, Config, DerivableConfig, DeviceInfo, Port, Rx, RxLease, Session, SinglePartTxBuffer,
-    Task, Tx,
+    Buffer, ChecksumRxOffloading, Config, DerivableConfig, DeviceInfo, Port, Rx, RxLease, Session,
+    SinglePartTxBuffer, Task, Tx,
 };
 
 /// Alias for receive buffer.

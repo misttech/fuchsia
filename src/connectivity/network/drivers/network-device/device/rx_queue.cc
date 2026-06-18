@@ -265,6 +265,7 @@ void RxQueue::CompleteRxList(
         .port_id_salt = parent_->GetPortSalt(rx_buffer.meta.port),
         .buffers = cpp20::span(session_parts.begin(), session_parts_iter),
         .total_length = total_length,
+        .full_csums_verified = rx_buffer.full_csums_verified,
     };
     session_->AssertParentRxLock(*parent_);
     if (session_->CompleteRx(frame_info)) {

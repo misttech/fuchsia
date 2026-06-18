@@ -12,7 +12,7 @@ use std::convert::TryInto as _;
 use std::fmt::Debug;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::mem::MaybeUninit;
-use std::num::TryFromIntError;
+use std::num::{NonZeroU16, TryFromIntError};
 use std::ops::{Deref, DerefMut};
 use std::ptr::NonNull;
 use std::sync::Arc;
@@ -502,6 +502,9 @@ impl<K: AllocKind> Buffer<K> {
     }
 }
 
+// TODO(https://fxbug.dev/525167122): Consider a different API for the `set_*`
+// methods if the `descriptor_mut()` call isn't optimized out on consecutive
+// method calls.
 impl Buffer<Tx> {
     /// Sets the buffer's destination port.
     pub fn set_port(&mut self, port: Port) {
@@ -516,6 +519,11 @@ impl Buffer<Tx> {
     /// Sets TxFlags of a Tx buffer.
     pub fn set_tx_flags(&mut self, flags: netdev::TxFlags) {
         self.alloc.descriptor_mut().set_tx_flags(flags)
+    }
+
+    /// Sets the generic checksum offload metadata for this buffer.
+    pub fn set_generic_csum_offload(&mut self, start: u16, offset: u16) {
+        self.alloc.descriptor_mut().set_generic_csum_offload(start, offset)
     }
 
     /// Shrinks the buffer.
@@ -548,6 +556,15 @@ impl Buffer<Tx> {
     }
 }
 
+/// The rx checksum offloading information.
+pub enum ChecksumRxOffloading {
+    /// N checksums were fully verified by the device.
+    Offloaded(NonZeroU16),
+}
+
+// TODO(https://fxbug.dev/525167122): Consider a different API for the `rx_*`
+// methods if the `descriptor()` call isn't optimized out on consecutive method
+// calls.
 impl Buffer<Rx> {
     /// Turns an rx buffer into a tx one.
     pub async fn into_tx(self) -> Buffer<Tx> {
@@ -558,6 +575,11 @@ impl Buffer<Rx> {
     /// Retrieves RxFlags of an Rx Buffer.
     pub fn rx_flags(&self) -> Result<netdev::RxFlags> {
         self.alloc.descriptor().rx_flags()
+    }
+
+    /// Retrieves the checksum offloading information.
+    pub fn rx_checksum_offloading(&self) -> Option<ChecksumRxOffloading> {
+        self.alloc.descriptor().rx_checksum_offloading()
     }
 }
 

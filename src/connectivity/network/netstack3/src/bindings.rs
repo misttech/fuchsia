@@ -707,9 +707,7 @@ fn send_netdevice_frame(
             tx_buffer
         }
     };
-    handler
-        .send(frame_type, tx_buffer, csum_offload)
-        .unwrap_or_else(|e| warn!("failed to send frame to {:?}: {:?}", handler, e));
+    handler.send(frame_type, tx_buffer, csum_offload);
     Ok(())
 }
 

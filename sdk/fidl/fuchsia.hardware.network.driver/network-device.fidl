@@ -120,6 +120,17 @@ type BufferMetadata = struct {
     frame_type fuchsia.hardware.network.FrameType;
 };
 
+/// Partial checksum metadata.
+type TxPartialCsumMetadata = struct {
+    /// The offset in bytes from the start of the frame to where the device
+    /// must begin computing the checksum.
+    start uint16;
+    /// The offset in bytes from the start of the checksummed portion of the
+    /// buffer to where the device must place the checksum result. The
+    /// checksum field itself is included in the checksum.
+    offset uint16;
+};
+
 /// A transmit buffer containing a single frame.
 type TxBuffer = struct {
     /// Unique buffer identifier.
@@ -138,6 +149,11 @@ type TxBuffer = struct {
     /// Will always be either 0 or the requested [`DeviceInfo.tx_tail_length`]
     /// value. The tail bytes are always at the end of the buffer.
     tail_length uint16;
+    /// Metadata sent by the stack to request generic checksum offloading.
+    ///
+    /// Only meaningful if `meta.flags` contains
+    /// `TxFlags::COMPUTE_GENERIC_CHECKSUM`.
+    partial_csum_metadata TxPartialCsumMetadata;
 };
 
 /// A buffer with allocated space to receive frames in. An `RxSpaceBuffer` must
@@ -174,6 +190,11 @@ type RxBuffer = struct {
     ///
     /// Must have at least one part.
     data vector<RxBufferPart>:MAX_BUFFER_PARTS;
+    /// The number of full checksums, minus one, verified by the device.
+    ///
+    /// Only meaningful if `meta.flags` contains
+    /// `RxFlags::FULL_CHECKSUMS_VERIFIED`.
+    full_csums_verified uint16;
 };
 
 /// The result of a tx operation, reported to [`NetworkDeviceIfc`] through
@@ -265,11 +286,11 @@ const MAX_TX_RESULTS uint32 = 8188;
 /// bindings.
 ///
 /// At the time of writing, FIDL messages are limited to 65 KiB. In the current
-/// FIDL wire format, the size of an `RxBuffer` is 80 bytes, and the fixed
+/// FIDL wire format, the size of an `RxBuffer` is 88 bytes, and the fixed
 /// overhead of the `CompleteRx` request is 32 bytes (16 for the FIDL message
 /// header + 16 for the vector), so we selected the maximum N where 32
-/// + N * 80 <= 65 KiB.
-const MAX_RX_BUFFERS uint32 = 818;
+/// + N * 88 <= 65 KiB.
+const MAX_RX_BUFFERS uint32 = 744;
 
 /// Parameters for Rx buffer management.
 type RxBufferManagement = flexible union {
@@ -515,11 +536,11 @@ type DeviceImplInfo = table {
 /// bindings.
 ///
 /// At the time of writing, FIDL messages are limited to 65 KiB. In the current
-/// FIDL wire format, the size of a `TxBuffer` is 136 bytes, and the
+/// FIDL wire format, the size of a `TxBuffer` is 144 bytes, and the
 /// fixed overhead of the `QueueTx` request is 32 bytes (16 for the FIDL message
 /// header + 16 for the vector), so we selected the maximum N where
-/// 32 + N * 136 <= 65 KiB.
-const MAX_TX_BUFFERS uint32 = 481;
+/// 32 + N * 144 <= 65 KiB.
+const MAX_TX_BUFFERS uint32 = 454;
 
 /// The maximum number of `RxSpaceBuffer` structs that could be sent in a single
 /// FIDL message while staying within the maximum message size enforced by the

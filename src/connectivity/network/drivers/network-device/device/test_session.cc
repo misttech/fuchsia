@@ -152,7 +152,6 @@ buffer_descriptor_t& TestSession::ResetDescriptor(uint16_t index, uint8_t vmo_id
   buffer_descriptor_t& desc = descriptor(index);
   desc = {
       .frame_type = static_cast<uint8_t>(netdev::wire::FrameType::kEthernet),
-      .info_type = static_cast<uint32_t>(netdev::wire::InfoType::kNoInfo),
       .vmo_id = vmo_id,
       .offset = offset,
       .data_length = static_cast<uint32_t>(buffer_length_),

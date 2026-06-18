@@ -55,6 +55,7 @@ struct RxFrameInfo {
   uint8_t port_id_salt;
   cpp20::span<const SessionRxBuffer> buffers;
   uint32_t total_length;
+  uint16_t full_csums_verified;
 };
 
 enum class DeviceStatus { STARTING, STARTED, STOPPING, STOPPED };

@@ -197,7 +197,6 @@ func (c *Client) prepareTxDescriptor(descriptorIndex uint16, port network.PortId
 	}
 	descriptor.port_id.base = C.uchar(port.Base)
 	descriptor.port_id.salt = C.uchar(port.Salt)
-	descriptor.info_type = C.uint(network.InfoTypeNoInfo)
 	descriptor.frame_type = C.uchar(frameType)
 	descriptor.data_length = C.uint(n)
 }
@@ -621,7 +620,6 @@ func (c *Client) getDescriptorData(desc *bufferDescriptor) []byte {
 // Tx buffers.
 func (c *Client) resetTxDescriptor(descriptor *bufferDescriptor) {
 	*descriptor = bufferDescriptor{
-		info_type:   C.uint(network.InfoTypeNoInfo),
 		offset:      descriptor.offset,
 		head_length: C.ushort(c.config.TxHeaderLength),
 		// Note: we assert that BufferLength > TxHeaderLength + TxTailLength when
@@ -637,7 +635,6 @@ func (c *Client) resetTxDescriptor(descriptor *bufferDescriptor) {
 // Rx buffers.
 func (c *Client) resetRxDescriptor(descriptor *bufferDescriptor) {
 	*descriptor = bufferDescriptor{
-		info_type:   C.uint(network.InfoTypeNoInfo),
 		offset:      descriptor.offset,
 		data_length: C.uint(c.config.BufferLength),
 	}

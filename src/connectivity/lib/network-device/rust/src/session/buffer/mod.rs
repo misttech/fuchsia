@@ -22,7 +22,7 @@ use crate::error::{Error, Result};
 use crate::session::Port;
 use types::{ChainLength, DESCID_NO_NEXT};
 
-pub use pool::{AllocKind, Buffer, Rx, SinglePartTxBuffer, Tx};
+pub use pool::{AllocKind, Buffer, ChecksumRxOffloading, Rx, SinglePartTxBuffer, Tx};
 /// Network device descriptor version.
 pub const NETWORK_DEVICE_DESCRIPTOR_VERSION: u8 = sys::__NETWORK_DEVICE_DESCRIPTOR_VERSION as u8;
 pub(super) use types::DescId;
@@ -114,7 +114,7 @@ impl<K: AllocKind> Descriptor<K> {
                 // We shouldn't touch this field as it is always managed by the
                 // allocation routines.
                 nxt: _,
-                info_type,
+                accel_metadata,
                 port_id: sys::buffer_descriptor_port_id { base, salt },
                 // TODO(https://issues.fuchsia.dev/438527741): Support multiple
                 // VMOs.
@@ -136,7 +136,8 @@ impl<K: AllocKind> Descriptor<K> {
         ) = self;
         *frame_type = 0;
         *chain_length = chain_len.get();
-        *info_type = 0;
+        // SAFETY: the all-zero pattern is a valid value for `accel_metadata`.
+        *accel_metadata = unsafe { std::mem::zeroed() };
         *base = 0;
         *salt = 0;
         *head_length = head_len;
@@ -165,6 +166,25 @@ impl Descriptor<Rx> {
         let bits = this.inbound_flags;
         netdev::RxFlags::from_bits(bits).ok_or(Error::RxFlags(bits))
     }
+
+    fn rx_checksum_offloading(&self) -> Option<ChecksumRxOffloading> {
+        let Self(this, _marker) = self;
+        if this.inbound_flags & netdev::RxFlags::FULL_CHECKSUMS_VERIFIED.bits() != 0 {
+            // SAFETY: `FULL_CHECKSUMS_VERIFIED` implies that `accel_metadata`
+            // contains `rx_full_csums_verified`.
+            let num_verified_minus_one = unsafe { this.accel_metadata.rx_full_csums_verified };
+            // The driver sets `rx_full_csums_verified` to the number of
+            // checksums verified *minus one*. Here we bridge the semantics to
+            // provide a more straightforward API.
+            let num_verified = num_verified_minus_one.saturating_add(1);
+            // SAFETY: `num_verified` must be nonzero because `saturating_add`
+            // does not overflow.
+            let offloading = unsafe { NonZeroU16::new_unchecked(num_verified) };
+            Some(ChecksumRxOffloading::Offloaded(offloading))
+        } else {
+            None
+        }
+    }
 }
 
 impl Descriptor<Tx> {
@@ -172,6 +192,13 @@ impl Descriptor<Tx> {
         let Self(this, _marker) = self;
         let bits = flags.bits();
         this.inbound_flags = bits;
+    }
+
+    fn set_generic_csum_offload(&mut self, start: u16, offset: u16) {
+        let Self(this, _marker) = self;
+        this.inbound_flags |= netdev::TxFlags::COMPUTE_GENERIC_CHECKSUM.bits();
+        this.accel_metadata.tx_partial_csum =
+            sys::buffer_descriptor_accel_metadata_tx_partial_csum { start, offset };
     }
 
     fn set_frame_type(&mut self, frame_type: netdev::FrameType) {

@@ -15,11 +15,11 @@ use net_types::{MulticastAddr, UnicastAddr, Witness};
 use netstack3_base::ref_counted_hash_map::{InsertResult, RefCountedHashSet, RemoveResult};
 use netstack3_base::sync::{Mutex, RwLock};
 use netstack3_base::{
-    BroadcastIpExt, ChecksumOffloadSpec, CoreTimerContext, Device, DeviceIdContext, EventContext,
-    FrameDestination, HandleableTimer, LinkDevice, NestedIntoCoreTimerCtx, NetworkParsingContext,
-    NetworkSerializer, ReceivableFrameMeta, RecvFrameContext, RecvIpFrameMeta,
-    ResourceCounterContext, RngContext, SendFrameError, SendFrameErrorReason, SendableFrameMeta,
-    TimerContext, TimerHandler, TxMetadataBindingsTypes, WeakDeviceIdentifier, WrapBroadcastMarker,
+    BroadcastIpExt, CoreTimerContext, Device, DeviceIdContext, EventContext, FrameDestination,
+    HandleableTimer, LinkDevice, NestedIntoCoreTimerCtx, NetworkParsingContext, NetworkSerializer,
+    ReceivableFrameMeta, RecvFrameContext, RecvIpFrameMeta, ResourceCounterContext, RngContext,
+    SendFrameError, SendFrameErrorReason, SendableFrameMeta, TimerContext, TimerHandler,
+    TxMetadataBindingsTypes, WeakDeviceIdentifier, WrapBroadcastMarker,
 };
 use netstack3_ip::nud::{LinkResolutionContext, NudHandler, NudState, NudTimerId, NudUserConfig};
 use netstack3_ip::{DeviceIpLayerMetadata, IpCounters, IpPacketDestination};
@@ -922,7 +922,7 @@ impl DeviceStateSpec for EthernetLinkDevice {
     >(
         bindings_ctx: &mut BC,
         self_id: CC::WeakDeviceId,
-        EthernetCreationProperties { mac, max_frame_size, tx_offload_spec: _ }: Self::CreationProperties,
+        EthernetCreationProperties { mac, max_frame_size, tx_offload_spec }: Self::CreationProperties,
         tx_allocator: <Self as DeviceBufferSpec<BC>>::TxAllocator,
     ) -> Self::State<BC>
     where
@@ -942,7 +942,7 @@ impl DeviceStateSpec for EthernetLinkDevice {
             ipv6_nud_config: Default::default(),
             static_state: StaticEthernetDeviceState { mac, max_frame_size },
             dynamic_state: RwLock::new(DynamicEthernetDeviceState::new(max_frame_size)),
-            tx_queue: TransmitQueue::new(tx_allocator, ChecksumOffloadSpec::default()),
+            tx_queue: TransmitQueue::new(tx_allocator, tx_offload_spec),
         }
     }
     const IS_LOOPBACK: bool = false;

@@ -30,7 +30,7 @@ use buffer::pool::{Pool, RxLeaseWatcher};
 use buffer::{
     AllocKind, DescId, NETWORK_DEVICE_DESCRIPTOR_LENGTH, NETWORK_DEVICE_DESCRIPTOR_VERSION,
 };
-pub use buffer::{Buffer, Rx, SinglePartTxBuffer, Tx};
+pub use buffer::{Buffer, ChecksumRxOffloading, Rx, SinglePartTxBuffer, Tx};
 
 /// A session between network device client and driver.
 #[derive(Clone)]

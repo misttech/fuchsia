@@ -629,7 +629,6 @@ void* NetworkDeviceClient::data(uint64_t offset) {
 void NetworkDeviceClient::ResetRxDescriptor(buffer_descriptor_t* descriptor) {
   *descriptor = {
       .nxt = 0xFFFF,
-      .info_type = static_cast<uint32_t>(netdev::wire::InfoType::kNoInfo),
       .offset = descriptor->offset,
       .data_length = session_config_.buffer_length,
   };
@@ -638,7 +637,6 @@ void NetworkDeviceClient::ResetRxDescriptor(buffer_descriptor_t* descriptor) {
 void NetworkDeviceClient::ResetTxDescriptor(buffer_descriptor_t* descriptor) {
   *descriptor = {
       .nxt = 0xFFFF,
-      .info_type = static_cast<uint32_t>(netdev::wire::InfoType::kNoInfo),
       .offset = descriptor->offset,
       .head_length = session_config_.tx_header_length,
       .tail_length = session_config_.tx_tail_length,
@@ -1009,10 +1007,6 @@ void NetworkDeviceClient::BufferData::SetPortId(netdev::wire::PortId port_id) {
       .base = port_id.base,
       .salt = port_id.salt,
   };
-}
-
-netdev::wire::InfoType NetworkDeviceClient::BufferData::info_type() const {
-  return static_cast<netdev::wire::InfoType>(part(0).desc_->frame_type);
 }
 
 uint32_t NetworkDeviceClient::BufferData::inbound_flags() const {

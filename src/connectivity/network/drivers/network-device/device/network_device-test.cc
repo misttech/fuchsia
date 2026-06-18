@@ -3003,6 +3003,108 @@ TEST_F(NetworkDeviceTest, SessionNoDualLeaseWatch) {
   }
 }
 
+TEST_F(NetworkDeviceTest, TxChecksumOffloadMetadata) {
+  ASSERT_OK(CreateDeviceWithPort13());
+  fidl::WireSyncClient connection = OpenConnection();
+  TestSession session;
+  ASSERT_OK(OpenSession(&session));
+  ASSERT_OK(AttachSessionPort(session, port13_));
+  ASSERT_OK(WaitStart());
+
+  const netdev::wire::PortId port13_id = GetSaltedPortId(kPort13);
+
+  // Configure a descriptor with checksum offload flags and metadata.
+  constexpr uint16_t kChecksumStart = 0x12;
+  constexpr uint16_t kChecksumOffset = 0x34;
+  uint16_t desc_idx = kDescriptorIndex0;
+  buffer_descriptor_t& desc = session.ResetDescriptor(desc_idx);
+  desc.port_id = {
+      .base = port13_id.base,
+      .salt = port13_id.salt,
+  };
+  desc.inbound_flags = static_cast<uint32_t>(netdev::wire::TxFlags::kComputeGenericChecksum);
+  desc.accel_metadata.tx_partial_csum = {
+      .start = kChecksumStart,
+      .offset = kChecksumOffset,
+  };
+
+  size_t sent;
+  ASSERT_OK(session.SendTx(&desc_idx, 1, &sent));
+  ASSERT_EQ(sent, 1u);
+  ASSERT_OK(WaitTx());
+
+  // Pop the buffer from the fake device and verify metadata.
+  std::unique_ptr tx = impl_.PopTxBuffer();
+  ASSERT_TRUE(tx);
+
+  const auto& buffer = tx->buffer();
+  EXPECT_EQ(buffer.partial_csum_metadata.start, kChecksumStart);
+  EXPECT_EQ(buffer.partial_csum_metadata.offset, kChecksumOffset);
+
+  // Return the buffer.
+  TxFidlReturnTransaction return_session(&impl_);
+  return_session.Enqueue(std::move(tx));
+
+  sync_completion_t completion;
+  SetEvtTxCompleteHandler([&completion]() { sync_completion_signal(&completion); });
+  return_session.Commit();
+  ASSERT_OK(sync_completion_wait_deadline(&completion, TEST_DEADLINE.get()));
+  SetEvtTxCompleteHandler(nullptr);
+}
+
+TEST_F(NetworkDeviceTest, RxChecksumOffloadMetadata) {
+  ASSERT_OK(CreateDeviceWithPort13());
+  fidl::WireSyncClient connection = OpenConnection();
+  TestSession session;
+  ASSERT_OK(OpenSession(&session));
+  ASSERT_OK(AttachSessionPort(session, port13_));
+  ASSERT_OK(WaitStart());
+
+  constexpr uint16_t kDescriptor = 0;
+  session.ResetDescriptor(kDescriptor);
+
+  ASSERT_OK(session.SendRx(kDescriptor));
+  ASSERT_OK(WaitRxAvailable());
+
+  std::optional first_vmo = impl_.first_vmo_id();
+  ASSERT_TRUE(first_vmo.has_value());
+
+  RxFidlReturnTransaction return_session(&impl_);
+  fbl::DoublyLinkedList buffers = impl_.TakeRxBuffers();
+  std::unique_ptr rx = buffers.pop_back();
+  ASSERT_TRUE(rx);
+
+  rx->return_part().offset = 0;
+  rx->return_part().length = 64;
+
+  // Create a descriptor with full checksum offload metadata.
+  constexpr uint16_t kCsumsVerified = 3;
+  std::unique_ptr ret = std::make_unique<RxFidlReturn>(std::move(rx), kPort13);
+  ret->buffer().meta.flags = static_cast<uint32_t>(netdev::wire::RxFlags::kFullChecksumsVerified);
+  ret->buffer().full_csums_verified = kCsumsVerified;
+
+  return_session.Enqueue(std::move(ret));
+  ASSERT_TRUE(buffers.is_empty());
+
+  libsync::Completion* completion = nullptr;
+  SetEvtRxQueuePacketHandler(CreateTriggerRxHandler(&completion));
+  return_session.Commit();
+  ASSERT_OK(completion->Wait(TEST_DEADLINE));
+  SetEvtRxQueuePacketHandler(nullptr);
+
+  // Fetch the rx buffer and check the flags and metadata.
+  uint16_t read_desc;
+  size_t read_back;
+  ASSERT_OK(session.FetchRx(&read_desc, 1, &read_back));
+  ASSERT_EQ(read_back, 1u);
+  EXPECT_EQ(read_desc, kDescriptor);
+
+  buffer_descriptor_t& desc = session.descriptor(kDescriptor);
+  EXPECT_EQ(desc.inbound_flags,
+            static_cast<uint32_t>(netdev::wire::RxFlags::kFullChecksumsVerified));
+  EXPECT_EQ(desc.accel_metadata.rx_full_csums_verified, kCsumsVerified);
+}
+
 class MultiVmoSessionTest : public NetworkDeviceTest {
  protected:
   static constexpr size_t kRxVmos = 2;

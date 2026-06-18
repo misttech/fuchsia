@@ -260,7 +260,7 @@ class NetworkDeviceClient : public internal::DeviceEventHandlerProxy<NetworkDevi
 
     netdev::wire::PortId port_id() const;
     netdev::wire::FrameType frame_type() const;
-    netdev::wire::InfoType info_type() const;
+
     uint32_t inbound_flags() const;
     uint32_t return_flags() const;
 

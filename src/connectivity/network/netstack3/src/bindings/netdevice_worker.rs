@@ -7,7 +7,7 @@ use std::num::TryFromIntError;
 use std::sync::Arc;
 
 use assert_matches::assert_matches;
-use fidl_fuchsia_hardware_network::{self as fhardware_network};
+use fidl_fuchsia_hardware_network as fhardware_network;
 use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
 use fuchsia_async as fasync;
@@ -26,7 +26,9 @@ use netstack3_core::device::{
 use netstack3_core::routes::RawMetric;
 use netstack3_core::sync::RwLock as CoreRwLock;
 use netstack3_core::trace::trace_duration;
-use netstack3_core::{ChecksumOffloadResult, ChecksumOffloadSpec, NetworkParsingContext};
+use netstack3_core::{
+    ChecksumOffloadResult, ChecksumOffloadSpec, ChecksumRxOffloading, NetworkParsingContext,
+};
 use thiserror::Error;
 
 use crate::bindings::devices::{NetdeviceAllocator, StaticCommonInfo, TxTask};
@@ -230,6 +232,13 @@ impl NetdeviceWorker {
             };
 
             let frame_type = rx.frame_type().map_err(Error::Client)?.try_into()?;
+            let checksum_offloading = match rx.rx_checksum_offloading() {
+                Some(netdevice_client::ChecksumRxOffloading::Offloaded(n)) => {
+                    ChecksumRxOffloading::Offloaded(Some(n))
+                }
+                None => ChecksumRxOffloading::Offloaded(None),
+            };
+            let parsing_context = NetworkParsingContext::new(checksum_offloading);
             let rx_data = match rx.as_slice_mut() {
                 Some(slice) => slice,
                 None => {
@@ -247,7 +256,6 @@ impl NetdeviceWorker {
                 }
             };
             let buf = packet::Buf::new(rx_data, ..);
-            let parsing_context = NetworkParsingContext::default();
             match id {
                 NetdeviceId::Ethernet(id) => {
                     match frame_type {
@@ -844,16 +852,24 @@ impl PortHandler {
         &self,
         frame_type: fhardware_network::FrameType,
         mut tx: netdevice_client::TxBuffer,
-        // TODO(https://fxbug.dev/512101182): set checksum offload info on tx
-        // buffer.
-        _csum_offload: Option<ChecksumOffloadResult>,
-    ) -> Result<(), netdevice_client::Error> {
+        csum_offload: Option<ChecksumOffloadResult>,
+    ) {
         trace_duration!("netdevice::send");
         let Self { port_id, inner: Inner { session, .. }, .. } = self;
         tx.set_port(*port_id);
         tx.set_frame_type(frame_type);
+        match csum_offload {
+            Some(ChecksumOffloadResult::Generic(partial)) => {
+                tx.set_generic_csum_offload(partial.start, partial.offset);
+            }
+            Some(ChecksumOffloadResult::ProtocolSpecific(_)) => {
+                // TODO(https://fxbug.dev/512101182): Expose protocol-specific
+                // TX checksum offloading in the netdevice API.
+                todo!("protocol-specific TX checksum offloading not yet supported");
+            }
+            None => {}
+        }
         session.send(tx);
-        Ok(())
     }
 
     pub(crate) async fn uninstall(self) -> Result<(), netdevice_client::Error> {
