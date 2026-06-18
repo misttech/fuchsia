@@ -43,21 +43,21 @@ _default_compilation_settings = {
   debug = {
     fuchsia_optimize = "none"
     host_optimize = "none"
-    kernel_optimize = "moderate"
+    kernel_optimize = "moderate_thinlto"
     user_optimize = "moderate"
   }
 
   balanced = {
     fuchsia_optimize = "size_thinlto_clang"
     host_optimize = "size"
-    kernel_optimize = "moderate"
+    kernel_optimize = "moderate_thinlto"
     user_optimize = "moderate"
   }
 
   release = {
     fuchsia_optimize = "size_lto"
     host_optimize = "size"
-    kernel_optimize = "moderate"
+    kernel_optimize = "moderate_thinlto"
     user_optimize = "moderate"
   }
 }
