@@ -1,6 +1,14 @@
 ---
 name: driver-fidl-server-impl-rust
-description: Serve FIDL protocols and services from a Rust driver.
+description: >
+  Serve (implement and advertise) a FIDL protocol or service from a Rust DFv2
+  driver as the provider/server. Use when a Rust driver must build a
+  ServiceFs, call add_fidl_service_instance/serve_outgoing, handle a request
+  stream, offer a service to a child node via ServiceOffer/NodeBuilder,
+  declare capabilities/expose in .cml, or choose Zircon vs Driver transport
+  (build_zircon_offer/build_driver_offer). Not for C++ drivers (use the C++
+  server skill) and not for connecting as a client (use the Rust client
+  skill).
 ---
 
 # Serve FIDL in a Rust Driver

@@ -1,6 +1,13 @@
 ---
 name: driver-fidl-server-debugging
-description: Debug FIDL service advertising and outgoing namespace in DFv2 drivers.
+description: >
+  Debug a DFv2 driver that fails to advertise a FIDL service from its outgoing
+  namespace (provider/server side). Use when a service is missing from
+  /out/svc, outgoing() AddService / serve_outgoing seems to fail, or clients
+  cannot connect -- diagnose with ffx component explore and ffx component
+  doctor, checking the capabilities and expose declarations, dispatcher
+  liveness, and instance-name mismatches. For the consumer/incoming-namespace
+  side, use the client FIDL debugging skill instead.
 ---
 
 # Driver FIDL Server Debugging (DFv2)

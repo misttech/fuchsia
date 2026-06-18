@@ -1,6 +1,14 @@
 ---
 name: driver-metadata-cpp-impl
-description: Implement metadata handling in C++ DFv2 drivers.
+description: >
+  Implement driver metadata in a C++ DFv2 driver -- send, retrieve, or forward
+  a @serializable FIDL-table metadata type. Use when a C++ driver must serve
+  metadata to children with fdf_metadata::MetadataServer::Serve and pass
+  CreateOffer() to AddChild, read parent metadata with
+  fdf_metadata::GetMetadata, forward it with ForwardAndServe, or declare the
+  metadata service (named for the FIDL type) in capabilities/expose/use. For
+  writing metadata tests use the C++ metadata testing skill; to debug delivery
+  failures use the metadata debugging skill.
 ---
 
 # Driver Metadata Implementation (C++) (DFv2)

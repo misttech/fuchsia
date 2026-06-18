@@ -1,6 +1,13 @@
 ---
 name: driver-metadata-cpp-testing
-description: Test metadata handling in C++ DFv2 drivers.
+description: >
+  Test driver metadata in a C++ DFv2 driver. Use when a unit test must mock
+  incoming metadata by serving it from a fdf_testing::Environment with
+  fdf_metadata::MetadataServer, or verify outgoing metadata the driver serves
+  by reading it back with fdf_metadata::GetMetadata over
+  ConnectToDriverSvcDir(). For implementing metadata in the driver use the C++
+  metadata implementation skill; to debug delivery failures use the metadata
+  debugging skill.
 ---
 
 # Driver Metadata Testing (C++) (DFv2)

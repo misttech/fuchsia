@@ -1,6 +1,14 @@
 ---
 name: driver-metadata-debugging
-description: Debug metadata issues in DFv2 drivers.
+description: >
+  Debug driver metadata delivery failures between a sender and receiver DFv2
+  driver. Use when fdf_metadata::GetMetadata returns ZX_ERR_NOT_FOUND, the
+  receiver gets stale or default values, or the metadata service is missing
+  from /ns/svc -- diagnose with ffx component explore, verifying the sender's
+  capabilities/expose, the receiver's use, a missing CreateOffer, populate-
+  before-AddChild ordering, and that the service name equals the fully
+  qualified FIDL type (not fuchsia.driver.metadata.Service). For generic FIDL
+  routing not involving metadata, use the FIDL client debugging skill.
 ---
 
 # Driver Metadata Debugging (DFv2)

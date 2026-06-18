@@ -1,6 +1,11 @@
 ---
 name: use-pdev-dfv2
-description: Use Platform Device (pdev) in DFv2 drivers.
+description: >
+  Acquire hardware resources via the Platform Device (pdev) protocol in a C++
+  DFv2 driver. Use when a driver for a devicetree/platform device must connect
+  to fuchsia.hardware.platform.device/Service and construct an fdf::PDev to
+  map MMIO (MapMmio), obtain an interrupt/IRQ (GetInterrupt), or get a BTI
+  (GetBti), plus the matching use entry in .cml.
 ---
 
 # Using Platform Device (pdev) in DFv2

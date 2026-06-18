@@ -1,6 +1,13 @@
 ---
 name: driver-interrupt-testing-cpp
-description: Test interrupt handling in Fuchsia C++ drivers (DFv2)
+description: >
+  Test IRQ / interrupt handling in a C++ DFv2 driver. Use when a unit test
+  must create a virtual interrupt (ZX_INTERRUPT_VIRTUAL), inject a duplicate
+  into the driver via a fake FIDL service, fire it with interrupt.trigger(),
+  and assert the driver acked by waiting on ZX_VIRTUAL_INTERRUPT_UNTRIGGERED
+  with async::WaitMethod inside an fdf_testing::Environment. For implementing
+  interrupts in the driver use the C++ interrupt implementation skill; for
+  Rust tests use the Rust interrupt testing skill.
 ---
 
 # Driver Interrupt Testing (C++) (DFv2)

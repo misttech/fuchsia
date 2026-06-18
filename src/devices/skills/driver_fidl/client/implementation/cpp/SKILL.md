@@ -1,6 +1,13 @@
 ---
 name: driver-fidl-client-impl-cpp
-description: Connect to FIDL protocols and services in a C++ DFv2 driver.
+description: >
+  Connect a C++ DFv2 driver (client/consumer) to a FIDL protocol or service
+  from its incoming namespace. Use when a C++ driver must call
+  context.incoming().Connect(), inherit fdf::DriverBase2, add a use entry to
+  its .cml, pick Zircon vs Driver transport (fidl::WireClient /
+  fdf::WireClient), or connect to a named service instance. Not for Rust
+  drivers (use the Rust client skill) and not for serving/advertising FIDL
+  (use the C++ server skill).
 ---
 
 # Using FIDL in a C++ Driver

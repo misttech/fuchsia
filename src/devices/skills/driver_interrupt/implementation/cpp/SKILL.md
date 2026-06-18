@@ -1,6 +1,13 @@
 ---
 name: driver-interrupt-impl-cpp
-description: Implement interrupt handling in Fuchsia C++ drivers (DFv2)
+description: >
+  Implement IRQ / interrupt handling in a C++ DFv2 driver. Use when a C++
+  driver must acquire a zx::interrupt (from pdev GetInterrupt or
+  fuchsia.hardware.gpio/Gpio.GetInterrupt), listen with async::IrqMethod on
+  its dispatcher, and acknowledge with interrupt_.ack() (using fit::defer to
+  re-arm) -- including when interrupts stop firing after the first because ack
+  was missed. For writing interrupt tests use the C++ interrupt testing skill;
+  for Rust drivers use the Rust interrupt implementation skill.
 ---
 
 # Driver Interrupt Implementation (C++) (DFv2)

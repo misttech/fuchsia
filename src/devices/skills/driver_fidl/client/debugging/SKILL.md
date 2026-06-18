@@ -1,6 +1,13 @@
 ---
 name: driver-fidl-debugging
-description: Debug FIDL connections in the incoming namespace of DFv2 drivers.
+description: >
+  Debug a DFv2 driver that fails to connect to a FIDL protocol or service from
+  its incoming namespace (client/consumer side). Use when a Connect() call
+  returns ZX_ERR_NOT_FOUND, a capability is missing from /ns/svc, or routing
+  fails -- diagnose with ffx component explore and ffx component doctor,
+  checking use declarations, protocol-vs-service mismatch, and named-instance
+  mismatches. For the provider/outgoing-namespace side, use the server FIDL
+  debugging skill instead.
 ---
 
 # Driver FIDL Usage Debugging (DFv2)

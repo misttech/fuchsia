@@ -1,6 +1,13 @@
 ---
 name: driver-interrupt-testing-rust
-description: Test interrupt handling in Fuchsia Rust drivers
+description: >
+  Test IRQ / interrupt handling in a Rust DFv2 driver. Use when a unit test
+  must create a zx::VirtualInterrupt (create_virtual), hand a duplicated
+  zx::Interrupt to the driver, fire it with .trigger(), and assert the driver
+  acked by awaiting Signals::VIRTUAL_INTERRUPT_UNTRIGGERED with
+  fuchsia_async::OnSignals. For implementing interrupts in the driver use the
+  Rust interrupt implementation skill; for C++ tests use the C++ interrupt
+  testing skill.
 ---
 
 # Driver Interrupt Testing (Rust)

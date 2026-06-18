@@ -1,6 +1,12 @@
 ---
 name: driver-fidl-client-impl-rust
-description: Connect to FIDL protocols and services in a Rust DFv2 driver.
+description: >
+  Connect a Rust DFv2 driver (client/consumer) to a FIDL protocol or service
+  from its incoming namespace. Use when a Rust driver must call
+  connect_to_protocol, use context.incoming.service_marker(...).connect(),
+  handle DriverContext, select a named .instance(), reference a Marker type,
+  or add a use entry to its .cml. Not for C++ drivers (use the C++ client
+  skill) and not for serving/advertising FIDL (use the Rust server skill).
 ---
 
 # Using FIDL in a Rust Driver

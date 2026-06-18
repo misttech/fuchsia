@@ -1,6 +1,13 @@
 ---
 name: driver-interrupt-impl-rust
-description: Implement interrupt handling in Fuchsia Rust drivers
+description: >
+  Implement IRQ / interrupt handling in a Rust DFv2 driver. Use when a Rust
+  driver must acquire a zx::Interrupt, build a stream with
+  fuchsia_async::OnInterrupt, drive it on a Task::local, and acknowledge via
+  the inner handle's .ack() (AsRef) -- including when interrupts stop after
+  the first because ack or the stored Task was dropped. For writing interrupt
+  tests use the Rust interrupt testing skill; for C++ drivers use the C++
+  interrupt implementation skill.
 ---
 
 # Driver Interrupt Implementation (Rust)

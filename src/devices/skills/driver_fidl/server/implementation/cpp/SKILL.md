@@ -1,6 +1,13 @@
 ---
 name: driver-fidl-server-impl-cpp
-description: Serve FIDL protocols and services from a C++ driver using service advertising.
+description: >
+  Serve (implement and advertise) a FIDL protocol or service from a C++ DFv2
+  driver as the provider/server. Use when a C++ driver must inherit
+  fidl::WireServer, manage clients with fidl::ServerBindingGroup, call
+  outgoing() AddService with an InstanceHandler, offer a service to a child
+  node via fdf::MakeOffer2/AddChild, declare capabilities/expose in .cml, or
+  choose Zircon vs Driver transport. Not for Rust drivers (use the Rust server
+  skill) and not for connecting as a client (use the C++ client skill).
 ---
 
 # Serve FIDL in a C++ Driver
