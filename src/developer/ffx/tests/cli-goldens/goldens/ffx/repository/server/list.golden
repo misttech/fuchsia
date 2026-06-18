@@ -1,6 +1,6 @@
 {
   "name": "list",
-  "description": "Retrieves the status of the repository server. If server is running will also return socket address. Note that all repositories under `ffx repository list` will be running as subpaths at the returned address.",
+  "description": "Retrieves the status of the running repository servers, including their socket addresses.",
   "examples": [],
   "flags": [
     {

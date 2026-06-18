@@ -5,10 +5,7 @@
 use argh::{ArgsInfo, FromArgs};
 use ffx_core::ffx_command;
 
-/// Retrieves the status of the repository server.
-///
-/// If server is running will also return socket address. Note that all repositories under
-/// `ffx repository list` will be running as subpaths at the returned address.
+/// Retrieves the status of the running repository servers, including their socket addresses.
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "list")]
