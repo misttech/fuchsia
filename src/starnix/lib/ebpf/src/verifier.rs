@@ -1003,13 +1003,12 @@ pub fn verify_program(
         if context.pc >= code.len() {
             return error_and_log(verification_context.logger, "pc out of bounds");
         }
-        let visit_result = context.visit(&mut verification_context, code[context.pc]);
-        match visit_result {
-            Err(message) => {
-                let message = format!("at PC {}: {}", context.pc, message);
-                return error_and_log(verification_context.logger, message);
-            }
-            _ => {}
+        if let Err(message) = context.visit(&mut verification_context, code[context.pc]) {
+            let message = format!("at PC {}: {}", context.pc, message);
+            return error_and_log(verification_context.logger, message);
+        }
+        if context.terminated {
+            context.terminate(&mut verification_context).map_err(EbpfError::ProgramVerifyError)?;
         }
         verification_context.iteration += 1;
     }
@@ -1400,6 +1399,10 @@ struct ComputationContext {
     /// The data dependencies of this context. This is used to broaden a known ending context to
     /// help cutting computation branches.
     dependencies: Mutex<Vec<DataDependencies>>,
+    /// Whether this context has reached an exit instruction. The main loop uses this flag to
+    /// call terminate() on the owned context, avoiding the extra Arc reference that would be
+    /// created by cloning self in the exit handler.
+    terminated: bool,
 }
 
 impl Clone for ComputationContext {
@@ -1414,6 +1417,7 @@ impl Clone for ComputationContext {
             // dependencies are erased as they must always be used on the same instance of the
             // context.
             dependencies: Default::default(),
+            terminated: false,
         }
     }
 }
@@ -1493,6 +1497,7 @@ impl ComputationContext {
             resources: self.resources.clone(),
             parent,
             dependencies: Default::default(),
+            terminated: false,
         };
         Ok(result)
     }
@@ -2968,6 +2973,7 @@ impl BpfVisitor for DataDependencies {
             if let Source::Reg(src) = src {
                 self.registers.insert(src);
             }
+            self.registers.insert(dst);
         }
 
         Ok(())
@@ -3339,9 +3345,7 @@ impl BpfVisitor for ComputationContext {
         if !self.resources.is_empty() {
             return Err("some resources have not been released at exit time".to_string());
         }
-        let this = self.clone();
-        this.terminate(context)?;
-        // Nothing to do, the program terminated with a valid scalar value.
+        self.terminated = true;
         Ok(())
     }
 
@@ -4298,9 +4302,7 @@ impl BpfVisitor for ComputationContext {
         if !self.resources.is_empty() {
             return Err("some resources have not been released at exit time".to_string());
         }
-        let this = self.clone();
-        this.terminate(context)?;
-        // Nothing to do, the program terminated with a valid scalar value.
+        self.terminated = true;
         Ok(())
     }
 
