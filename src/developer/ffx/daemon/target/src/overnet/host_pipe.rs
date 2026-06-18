@@ -12,7 +12,7 @@ use ffx_daemon_core::events;
 use ffx_daemon_events::TargetEvent;
 use ffx_ssh::parse::{
     HostAddr, ParseSshConnectionError, PipeError, parse_ssh_output, read_ssh_line,
-    read_ssh_line_with_timeouts, write_ssh_log,
+    read_ssh_line_with_timeouts, ssh_log_file, write_ssh_log,
 };
 use ffx_ssh::ssh::{SshError, build_ssh_command_with_env};
 use fuchsia_async::{Task, TimeoutExt, Timer, unblock};
@@ -344,7 +344,7 @@ impl HostPipeChild {
 
         let log_stderr = async move {
             let mut lb = ffx_ssh::parse::LineBuffer::new();
-            let verbose_ssh = ffx_config::logging::debugging_on(&ctx);
+            let log_file = ssh_log_file(&ctx);
             loop {
                 let result = read_ssh_line(&mut lb, &mut stderr).await;
                 match result {
@@ -353,9 +353,13 @@ impl HostPipeChild {
                         // ssh connection problems; or change it so that once we
                         // know the connection is established, the error messages
                         // go to the event queue as normal.
-                        if verbose_ssh {
-                            write_ssh_log("E", &line, &ctx);
+                        if let Some(file) = log_file {
+                            write_ssh_log("E", &line, file);
                         } else {
+                            // Note: We also fall back to this block if verbose logging is enabled
+                            // but the log file failed to open (e.g., due to permissions or disk space).
+                            // This prevents data loss in error scenarios.
+                            //
                             // Sometimes the SSH message that comes from openssh has a carriage
                             // return at the end which messes up the flow of the info log.
                             log::info!("SSH stderr: {:?}", line.trim());

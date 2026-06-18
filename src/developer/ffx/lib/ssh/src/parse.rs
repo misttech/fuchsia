@@ -185,7 +185,9 @@ async fn parse_ssh_connection<R: AsyncBufRead + Unpin>(
         log::error!("Failed to read first line from stdout");
         return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into());
     }
-    write_ssh_log("O", &line, ctx);
+    if let Some(file) = ssh_log_file(ctx) {
+        write_ssh_log("O", &line, file);
+    }
     if line.starts_with("{") {
         parse_ssh_connection_with_info(&line)
     } else {
@@ -308,6 +310,7 @@ async fn parse_ssh_error<R: AsyncBufRead + Unpin>(
     stderr: &mut R,
     ctx: &EnvironmentContext,
 ) -> PipeError {
+    let log_file = ssh_log_file(ctx);
     loop {
         let line = match read_ssh_line_with_timeouts(stderr).await {
             Err(e) => {
@@ -316,7 +319,9 @@ async fn parse_ssh_error<R: AsyncBufRead + Unpin>(
             }
             Ok(l) => l,
         };
-        write_ssh_log("E", &line, ctx);
+        if let Some(file) = log_file {
+            write_ssh_log("E", &line, file);
+        }
         if let Some(e) = ssh_stderr_to_pipe_error(&line) {
             break e;
         }
@@ -341,40 +346,39 @@ fn parse_ssh_connection_with_info(
 
 // We'd like to cache the log file, if only so that our debug logs don't
 // include multiple config-query lines for every line of ssh logging.
-fn ssh_log_file(ctx: &EnvironmentContext) -> &'static Option<Mutex<File>> {
+pub fn ssh_log_file(ctx: &EnvironmentContext) -> Option<&'static Mutex<File>> {
     // This is a OnceLock so it's effectively global, an Option because we don't
     // always want to get a log file at all, and a Mutex because we need mutable
     // access to the File. (We can't use OnceLock::get_mut() because the static
     // INSTANCE will only provide an immutable reference.)
     static INSTANCE: OnceLock<Option<Mutex<File>>> = OnceLock::new();
-    INSTANCE.get_or_init(|| {
-        if !ffx_config::logging::debugging_on(ctx) {
-            None
-        } else {
-            match ffx_config::logging::log_file_with_info(
-                &ctx,
-                &PathBuf::from("ssh.log"),
-                LogDirHandling::WithDirWithRotate,
-            ) {
-                Ok((f, _)) => Some(Mutex::new(f)),
-                Err(e) => {
-                    eprintln!("Couldn't open ssh log file: {e:?}");
-                    None
+    INSTANCE
+        .get_or_init(|| {
+            if !ffx_config::logging::debugging_on(ctx) {
+                None
+            } else {
+                match ffx_config::logging::log_file_with_info(
+                    &ctx,
+                    &PathBuf::from("ssh.log"),
+                    LogDirHandling::WithDirWithRotate,
+                ) {
+                    Ok((f, _)) => Some(Mutex::new(f)),
+                    Err(e) => {
+                        eprintln!("Couldn't open ssh log file: {e:?}");
+                        None
+                    }
                 }
             }
-        }
-    })
+        })
+        .as_ref()
 }
 
-pub fn write_ssh_log(prefix: &str, line: &String, ctx: &EnvironmentContext) {
+pub fn write_ssh_log(prefix: &str, line: &String, file: &Mutex<File>) {
     // Skip keepalives, which will show up in the steady-state
     if line.contains("keepalive") {
         return;
     }
-    let Some(f_mutex) = ssh_log_file(ctx) else {
-        return;
-    };
-    let mut f = f_mutex.lock().expect("poisoned ssh log mutex");
+    let mut f = file.lock().expect("poisoned ssh log mutex");
     const TIME_FORMAT: &str = "%b %d %H:%M:%S%.3f";
     let timestamp = chrono::Local::now().format(TIME_FORMAT);
     let log_id: u64 = *ffx_config::logging::LOGGING_ID;

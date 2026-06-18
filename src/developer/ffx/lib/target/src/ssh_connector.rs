@@ -99,15 +99,18 @@ impl SshConnector {
     }
 }
 
-type StderrLineReader = tokio::io::Lines<BufReader<BufReader<ChildStderr>>>;
+type StderrLineReader = tokio::io::Lines<BufReader<ChildStderr>>;
 
 async fn read_stderr(
     mut stderr: StderrLineReader,
     error_sender: Sender<ConnectionStreamError>,
     ctx: &EnvironmentContext,
 ) {
+    let log_file = ffx_ssh::parse::ssh_log_file(ctx);
     while let Ok(Some(line)) = stderr.next_line().await {
-        ffx_ssh::parse::write_ssh_log("E", &line, &ctx);
+        if let Some(file) = log_file {
+            ffx_ssh::parse::write_ssh_log("E", &line, file);
+        }
         // This abandons the structured error as this output is intended to provide debugging after
         // an ssh connection has failed. The error sender is only here to show the verbatim error
         // so that it can be drained in the event of the SshConnector disconnecting.
@@ -152,7 +155,7 @@ impl SshConnector {
                 }
             };
         let stdin = cmd.stdin.take().expect("process should have stdin");
-        let stderr = BufReader::new(stderr).lines();
+        let stderr = stderr.lines();
         let (error_sender, errors_receiver) = async_channel::unbounded();
         let stderr_ctx = self.env_context.clone();
         let stderr_reader = async move { read_stderr(stderr, error_sender, &stderr_ctx).await };
@@ -222,7 +225,7 @@ impl SshConnector {
             ));
         }
         let stdin = cmd.stdin.take().expect("process should have stdin");
-        let stderr = BufReader::new(stderr).lines();
+        let stderr = stderr.lines();
         let (error_sender, errors_receiver) = async_channel::unbounded();
         let stderr_ctx = self.env_context.clone();
         let stderr_reader = async move { read_stderr(stderr, error_sender, &stderr_ctx).await };
