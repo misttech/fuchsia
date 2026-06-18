@@ -77,6 +77,7 @@ struct RcuStall {
     first_seen: zx::MonotonicInstant,
 }
 
+#[derive(Default)]
 struct Lockups {
     long_running: Vec<ThreadLockupInfo>,
     current_koids: BTreeSet<zx::Koid>,
@@ -220,11 +221,7 @@ fn check_lockups(context: &mut LockupDetectorContext) -> Lockups {
     context.reported_lockup_koids.retain(|koid| current_koids.contains(koid));
 
     if long_running.is_empty() {
-        return Lockups {
-            long_running: Vec::new(),
-            current_koids: BTreeSet::new(),
-            newly_locked: Vec::new(),
-        };
+        return Lockups::default();
     }
 
     // Identify newly locked threads.
@@ -235,11 +232,7 @@ fn check_lockups(context: &mut LockupDetectorContext) -> Lockups {
         .collect();
 
     if newly_locked.is_empty() {
-        return Lockups {
-            long_running: Vec::new(),
-            current_koids: BTreeSet::new(),
-            newly_locked: Vec::new(),
-        };
+        return Lockups::default();
     }
 
     log_error!(
