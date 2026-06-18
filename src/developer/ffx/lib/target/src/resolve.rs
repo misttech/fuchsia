@@ -206,11 +206,12 @@ pub trait TargetResolver {
         ctx: &EnvironmentContext,
     ) -> impl Future<Output = Result<Resolution, FfxTargetError>> {
         async move {
-            let query = TargetInfoQuery::from(target_spec.clone());
-            if let TargetInfoQuery::Addr(a) = query {
-                return Ok(Resolution::from_addr(a));
+            if let TargetInfoQuery::Addr(a) = target_spec {
+                let query_tag = target_spec.to_analytics_tag();
+                emit_cache_event("explicit_addr", &query_tag).await;
+                return Ok(Resolution::from_addr(*a));
             }
-            let res = self.resolve_single_target(&target_spec, use_cache, ctx).await?;
+            let res = self.resolve_single_target(target_spec, use_cache, ctx).await?;
             let target_spec_info: String = target_spec.into();
             log::debug!("resolved target spec {target_spec_info} to address {:?}", res.addr());
             Ok(res)
@@ -302,23 +303,15 @@ pub trait TargetResolver {
         env_context: &EnvironmentContext,
     ) -> impl Future<Output = Result<Resolution, FfxTargetError>> {
         async move {
-            // If the user passed in an address, we're going to use that, so we
-            // can even if there are multiple ways of reaching the target, we'll
-            // use the one they provided.
-            if let TargetInfoQuery::Addr(a) = target_spec {
-                return Ok(Resolution::from_addr(*a));
-            }
+            let query_tag = target_spec.to_analytics_tag();
             let mut resolutions: Option<Vec<Resolution>> = None;
-            if use_cache
-                && let Some(cache_file) = crate::cache::get_discovery_cache_file(env_context)
-            {
-                match crate::cache::Cache::load(&cache_file) {
-                    Ok(cache) => {
-                        // Given a TargetInfo from the cache, we don't have much information -- just the target we've resolved
-                        // it to
-                        resolutions = Some(
-                            // Get all the TargetInfos from the cache, filtering out (via flatten()) those not in product mode
-                            cache
+            if use_cache {
+                if let Some(cache_file) = crate::cache::get_discovery_cache_file(env_context) {
+                    match crate::cache::Cache::load(&cache_file) {
+                        Ok(cache) => {
+                            // Given a TargetInfo from the cache, we don't have much information -- just the target we've resolved
+                            // it to
+                            let matched: Vec<Resolution> = cache
                                 .targets
                                 .into_iter()
                                 .filter(|ti| ti.match_query(target_spec))
@@ -327,13 +320,34 @@ pub trait TargetResolver {
                                         .map(Resolution::from_target)
                                 })
                                 .flatten()
-                                .collect(),
-                        );
+                                .collect();
+                            if matched.is_empty() {
+                                // If the cache has no matches, leave `resolutions` as `None`
+                                // so that target resolution falls back to active discovery.
+                                emit_cache_event("cache_miss", &query_tag).await;
+                            } else {
+                                emit_cache_event("cache_hit", &query_tag).await;
+                                resolutions = Some(matched);
+                            }
+                        }
+                        Err(crate::cache::CacheError::OpenFile { err, .. })
+                            if err.kind() == std::io::ErrorKind::NotFound =>
+                        {
+                            emit_cache_event("no_cache_file", &query_tag).await;
+                        }
+                        Err(crate::cache::CacheError::Expired(_)) => {
+                            emit_cache_event("cache_expired", &query_tag).await;
+                        }
+                        Err(e) => {
+                            emit_cache_event("cache_invalid", &query_tag).await;
+                            log::warn!("Cache loading failed: {e:?}");
+                        }
                     }
-                    Err(e) => {
-                        log::warn!("Cache loading failed: {e:?}");
-                    }
+                } else {
+                    emit_cache_event("no_cache_file", &query_tag).await;
                 }
+            } else {
+                emit_cache_event("cache_disabled", &query_tag).await;
             }
 
             let resolutions = match resolutions {
@@ -982,6 +996,14 @@ async fn emit_target_connection_event(ty: &str) {
     .await;
 }
 
+async fn emit_cache_event(status: &'static str, query_type: &str) {
+    let mut fields = std::collections::BTreeMap::new();
+    fields.insert("status", analytics::GA4Value::from(status));
+    fields.insert("query_type", analytics::GA4Value::from(query_type));
+    let _ =
+        analytics::add_custom_event(Some("ffx_target_resolution_cache"), None, None, fields).await;
+}
+
 impl Resolution {
     pub async fn try_from_env_context_with_resolver<R: TargetResolver>(
         resolver: &R,
@@ -1312,5 +1334,82 @@ mod test {
 
         // Now it should not be usable
         assert!(!resolution.is_usable().await);
+    }
+
+    #[fuchsia::test]
+    async fn test_cache_miss_falls_back_to_discovery() {
+        use crate::cache::{Cache, get_discovery_cache_file};
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache_dir_path = temp_dir.path().to_path_buf();
+
+        let test_env = ffx_config::test_env()
+            .user_config(
+                ffx_config::keys::DISCOVERY_CACHE_DIR_CONFIG,
+                serde_json::json!(cache_dir_path.to_str().unwrap().to_string()),
+            )
+            .build()
+            .unwrap();
+
+        // Write an empty cache file (contains no targets)
+        let cache_file = get_discovery_cache_file(&test_env.context).unwrap();
+        let cache = Cache::new(vec![]);
+        cache.save(&cache_file).unwrap();
+
+        let mut resolver = MockTargetResolver::new();
+        let name = "foobar".to_string();
+        let name_spec = TargetInfoQuery::NodenameOrSerial(name.clone());
+        let (sa, addr_spec) = get_addr_and_spec();
+        let th = make_target_handle_for_product(&name, sa);
+
+        // Even though cache exists (empty), because of cache miss, it must fall back to manual and discovery queries:
+        resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
+        resolver.expect_discovered_targets().return_once(move |_| Ok(vec![th]));
+
+        let target_spec =
+            locally_resolve_target_spec(&name_spec.clone(), &resolver, &test_env.context)
+                .await
+                .unwrap();
+        assert_eq!(target_spec, addr_spec);
+    }
+
+    #[fuchsia::test]
+    async fn test_cache_hit_bypasses_discovery() {
+        use crate::cache::{Cache, get_discovery_cache_file};
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache_dir_path = temp_dir.path().to_path_buf();
+
+        let test_env = ffx_config::test_env()
+            .user_config(
+                ffx_config::keys::DISCOVERY_CACHE_DIR_CONFIG,
+                serde_json::json!(cache_dir_path.to_str().unwrap().to_string()),
+            )
+            .build()
+            .unwrap();
+
+        // Write a cache file containing our target info!
+        let cache_file = get_discovery_cache_file(&test_env.context).unwrap();
+        let (sa, addr_spec) = get_addr_and_spec();
+
+        let mut target_info = crate::TargetInfo::default();
+        target_info.nodename = Some("foobar".to_string());
+        target_info.target_state = info::TargetState::Product;
+        target_info.addresses = vec![sa.into()];
+        let cache = Cache::new(vec![target_info]);
+        cache.save(&cache_file).unwrap();
+
+        let resolver = MockTargetResolver::new();
+        let name_spec = TargetInfoQuery::NodenameOrSerial("foobar".to_string());
+
+        // Note: we do NOT mock expect_try_resolve_manual_target or expect_discovered_targets.
+        // If the resolver attempts to call them, MockTargetResolver will panic,
+        // validating that discovery was indeed bypassed on cache hit.
+
+        let target_spec =
+            locally_resolve_target_spec(&name_spec.clone(), &resolver, &test_env.context)
+                .await
+                .unwrap();
+        assert_eq!(target_spec, addr_spec);
     }
 }
