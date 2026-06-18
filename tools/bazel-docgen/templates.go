@@ -119,6 +119,7 @@ var (
 		pb.AttributeType_STRING_LIST_DICT:  "string_list_dict",
 		pb.AttributeType_OUTPUT:            "output",
 		pb.AttributeType_OUTPUT_LIST:       "output_list",
+		pb.AttributeType_LABEL_LIST_DICT:   "label_list_dict",
 	}
 	attributeTypeReadableNameMap = map[pb.AttributeType]string{
 		pb.AttributeType_INT:               "Integer",
@@ -133,6 +134,7 @@ var (
 		pb.AttributeType_STRING_LIST_DICT:  "String List Dict",
 		pb.AttributeType_OUTPUT:            "Output",
 		pb.AttributeType_OUTPUT_LIST:       "Output List",
+		pb.AttributeType_LABEL_LIST_DICT:   "Label List Dict",
 	}
 )
 
@@ -179,7 +181,7 @@ func attributeTypeString(t pb.AttributeType) string {
 	if t == pb.AttributeType_NAME {
 		return "<a href=\"https://bazel.build/concepts/labels#target-names\">Name</a>"
 	} else if t == pb.AttributeType_UNKNOWN {
-		return "UKNOWN"
+		return "UNKNOWN"
 	} else {
 		return "<a href=\"https://bazel.build/rules/lib/toplevel/attr#" + attributeTypeURLMap[t] + "\">" + attributeTypeReadableNameMap[t] + "</a>"
 	}

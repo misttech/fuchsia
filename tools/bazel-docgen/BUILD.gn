@@ -74,11 +74,11 @@ if (is_host) {
     outputs = [
       "${target_gen_dir}/goldens/_toc.yaml",
       "$target_gen_dir/goldens/README.md",
-      "$target_gen_dir/goldens/rule_example_rule.md",
-      "$target_gen_dir/goldens/func_some_function.md",
-      "$target_gen_dir/goldens/func_empty_function.md",
-      "$target_gen_dir/goldens/provider_FooInfo.md",
-      "$target_gen_dir/goldens/repo_rule_empty_repo.md",
+      "$target_gen_dir/goldens/example_rule.md",
+      "$target_gen_dir/goldens/some_function.md",
+      "$target_gen_dir/goldens/empty_function.md",
+      "$target_gen_dir/goldens/FooInfo.md",
+      "$target_gen_dir/goldens/empty_repo.md",
     ]
   }
 
@@ -95,24 +95,24 @@ if (is_host) {
         candidate = "$target_gen_dir/goldens/README.md"
       },
       {
-        golden = "goldens/rule_example_rule.md.golden"
-        candidate = "$target_gen_dir/goldens/rule_example_rule.md"
+        golden = "goldens/example_rule.md.golden"
+        candidate = "$target_gen_dir/goldens/example_rule.md"
       },
       {
-        golden = "goldens/func_some_function.md.golden"
-        candidate = "$target_gen_dir/goldens/func_some_function.md"
+        golden = "goldens/some_function.md.golden"
+        candidate = "$target_gen_dir/goldens/some_function.md"
       },
       {
-        golden = "goldens/func_empty_function.md.golden"
-        candidate = "$target_gen_dir/goldens/func_empty_function.md"
+        golden = "goldens/empty_function.md.golden"
+        candidate = "$target_gen_dir/goldens/empty_function.md"
       },
       {
-        golden = "goldens/provider_FooInfo.md.golden"
-        candidate = "$target_gen_dir/goldens/provider_FooInfo.md"
+        golden = "goldens/FooInfo.md.golden"
+        candidate = "$target_gen_dir/goldens/FooInfo.md"
       },
       {
-        golden = "goldens/repo_rule_empty_repo.md.golden"
-        candidate = "$target_gen_dir/goldens/repo_rule_empty_repo.md"
+        golden = "goldens/empty_repo.md.golden"
+        candidate = "$target_gen_dir/goldens/empty_repo.md"
       },
     ]
   }

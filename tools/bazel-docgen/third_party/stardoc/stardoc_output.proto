@@ -13,7 +13,8 @@
 // limitations under the License.
 //
 // Vendored from src/main/protobuf/stardoc_output.proto
-// in the Bazel source tree at commit 9780e6dc69470c9c8a141004775de03ae3d28ad8
+// in the Bazel source tree at commit 58cd0a15421529a957bfb0f7fca1b188930dc5b5
+
 //
 // Protos for Stardoc data.
 //
@@ -54,11 +55,13 @@ message ModuleInfo {
   repeated RepositoryRuleInfo repository_rule_info = 8;
 
   repeated MacroInfo macro_info = 9;
+
+  repeated StarlarkOtherSymbolInfo starlark_other_symbol_info = 10;
 }
 
 // Representation of a Starlark rule attribute type. These generally
 // have a one-to-one correspondence with functions defined at
-// https://bazel.build/rules/lib/attr.
+// https://bazel.build/rules/lib/toplevel/attr.
 enum AttributeType {
   UNKNOWN = 0;
   // A special case of STRING; all rules have exactly one implicit
@@ -77,6 +80,7 @@ enum AttributeType {
   OUTPUT = 12;
   OUTPUT_LIST = 13;
   LABEL_DICT_UNARY = 14;
+  LABEL_LIST_DICT = 15;
 }
 
 // Representation of a Starlark rule definition.
@@ -140,7 +144,7 @@ message MacroInfo {
 // Representation of a Starlark rule, repository rule, or module extension tag
 // attribute definition, comprised of an attribute name, and a schema defined by
 // a call to one of the 'attr' module methods enumerated at
-// https://bazel.build/rules/lib/attr
+// https://bazel.build/rules/lib/toplevel/attr.
 message AttributeInfo {
   // The name of the attribute.
   string name = 1;
@@ -404,6 +408,21 @@ message RepositoryRuleInfo {
   // The Starlark module where and the name under which the repository rule was
   // originally declared.
   OriginKey origin_key = 5;
+}
+
+// Representation of a Starlark symbol whose value is of type which lacks
+// built-in docstring and needs to be documented using `#:`-prefixed doc
+// comments; for example, a bool, dict, float, int, list, range, set, string,
+// struct, or tuple.
+message StarlarkOtherSymbolInfo {
+  // The name of the symbol.
+  string name = 1;
+
+  // The content of the symbol's doc comments.
+  string doc = 2;
+
+  // The symbol's value's data type.
+  string type_name = 3;
 }
 
 // Representation of the origin of a rule, provider, aspect, or function.

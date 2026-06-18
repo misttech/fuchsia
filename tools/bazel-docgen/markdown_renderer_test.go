@@ -12,14 +12,18 @@ import (
 )
 
 const EXPECTED_RULE_OUTPUT_WITH_ATTRIBUTES string = `
-## foo
+[TOC]
+
+# foo
 
 docs for foo
 
-**ATTRIBUTES**
+## **ATTRIBUTES**
 
- - first
- - name
+| Name  | Description | Type | Mandatory | Default |
+| :------------- | :------------- | :------------- | :------------- | :------------- |
+| first | - | UNKNOWN | optional | - |
+| name | A unique name for this target. | <a href="https://bazel.build/concepts/labels#target-names">Name</a> | required | - |
 
 `
 
