@@ -71,25 +71,107 @@ impl std::fmt::Display for CasefoldString {
         write!(f, "{}", self.0)
     }
 }
-impl std::ops::Deref for CasefoldString {
-    type Target = str;
-    fn deref(&self) -> &str {
+/// A borrowed slice of a casefolded string.
+///
+/// It is designed to be the borrowed counterpart to `CasefoldString`, mirroring
+/// the relationship between `str` and `String`.
+///
+/// We wrap `str` instead of a struct like `CasefoldStr<'a>(&'a str)`
+/// so that `CasefoldString` can implement `Deref<Target = CasefoldStr>`. This allows
+/// `CasefoldString` to coerce to `&CasefoldStr` automatically, and enables zero-allocation
+/// map lookups via `Borrow<CasefoldStr>`.
+#[repr(transparent)]
+pub struct CasefoldStr(str);
+
+impl CasefoldStr {
+    pub fn new(s: &str) -> &Self {
+        // SAFETY: `CasefoldStr` is `#[repr(transparent)]` around `str`, so it has the same layout
+        // and alignment.
+        unsafe { &*(s as *const str as *const CasefoldStr) }
+    }
+
+    pub fn as_str(&self) -> &str {
         &self.0
     }
 }
+
+impl std::fmt::Debug for CasefoldStr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "CasefoldStr(\"{}\")", &self.0)
+    }
+}
+
+impl std::fmt::Display for CasefoldStr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "{}", &self.0)
+    }
+}
+
+impl std::cmp::PartialEq for CasefoldStr {
+    fn eq(&self, rhs: &Self) -> bool {
+        casefold_cmp(self.as_str(), rhs.as_str()).is_eq()
+    }
+}
+impl std::cmp::Eq for CasefoldStr {}
+
+impl std::cmp::Ord for CasefoldStr {
+    fn cmp(&self, rhs: &Self) -> std::cmp::Ordering {
+        casefold_cmp(self.as_str(), rhs.as_str())
+    }
+}
+impl std::cmp::PartialOrd for CasefoldStr {
+    fn partial_cmp(&self, rhs: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(rhs))
+    }
+}
+
+impl ToOwned for CasefoldStr {
+    type Owned = CasefoldString;
+    fn to_owned(&self) -> Self::Owned {
+        CasefoldString::new(self.as_str().to_owned())
+    }
+}
+
+impl std::hash::Hash for CasefoldStr {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        casefold_hash(self.as_str(), state);
+    }
+}
+
+impl CasefoldString {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for CasefoldString {
+    type Target = CasefoldStr;
+    fn deref(&self) -> &CasefoldStr {
+        CasefoldStr::new(&self.0)
+    }
+}
+
+impl std::borrow::Borrow<CasefoldStr> for CasefoldString {
+    fn borrow(&self) -> &CasefoldStr {
+        &**self
+    }
+}
+
 impl std::cmp::PartialEq for CasefoldString {
     fn eq(&self, rhs: &Self) -> bool {
-        casefold_cmp(&self.0, &rhs.0) == std::cmp::Ordering::Equal
+        **self == **rhs
     }
 }
+
 impl std::cmp::Ord for CasefoldString {
     fn cmp(&self, rhs: &Self) -> std::cmp::Ordering {
-        casefold_cmp(&self.0, &rhs.0)
+        (**self).cmp(&**rhs)
     }
 }
+
 impl std::cmp::PartialOrd for CasefoldString {
     fn partial_cmp(&self, rhs: &Self) -> Option<std::cmp::Ordering> {
-        Some(casefold_cmp(&self.0, &rhs.0))
+        Some(self.cmp(rhs))
     }
 }
 
@@ -106,7 +188,7 @@ impl Hash for CasefoldString {
     where
         H: std::hash::Hasher,
     {
-        casefold_hash(&self.0, state);
+        (**self).hash(state);
     }
 }
 
@@ -119,6 +201,13 @@ impl From<&str> for CasefoldString {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::hash::{Hash, Hasher};
+
+    fn get_hash<T: Hash + ?Sized>(t: &T) -> u64 {
+        let mut s = std::collections::hash_map::DefaultHasher::new();
+        t.hash(&mut s);
+        s.finish()
+    }
 
     #[test]
     fn test_casefold() {
@@ -163,16 +252,41 @@ mod test {
 
     #[test]
     fn test_casefold_hash_equality() {
-        use std::hash::{Hash, Hasher};
-        fn get_hash<T: Hash>(t: &T) -> u64 {
-            let mut s = std::collections::hash_map::DefaultHasher::new();
-            t.hash(&mut s);
-            s.finish()
-        }
         // hello and hello with soft hyphen (ignorable) should be equal and have identical hashes
         let a = CasefoldString::new("hello\u{00AD}".to_owned());
         let b = CasefoldString::new("hello".to_owned());
         assert_eq!(a, b);
         assert_eq!(get_hash(&a), get_hash(&b));
+    }
+
+    #[test]
+    fn test_casefoldstr() {
+        use std::borrow::Borrow;
+
+        let a = CasefoldString::new("Hello There".to_owned());
+        let b = CasefoldStr::new("hello there");
+        let c = CasefoldStr::new("hello");
+
+        // Compare CasefoldString with CasefoldStr (via Borrow)
+        let borrowed_a: &CasefoldStr = a.borrow();
+        assert_eq!(borrowed_a, b);
+        assert!(borrowed_a > c);
+
+        // Compare CasefoldStr with CasefoldStr
+        assert_eq!(b, b);
+        assert_eq!(CasefoldStr::new("Hello"), CasefoldStr::new("hello"));
+        assert!(b > c);
+
+        // Verify as_str() returns the original case-sensitive string
+        assert_eq!(b.as_str(), "hello there");
+        assert_ne!(b.as_str(), "Hello There");
+
+        // Test ToOwned
+        let owned_b: CasefoldString = b.to_owned();
+        assert_eq!(owned_b, a);
+
+        // Test Hash consistency
+        assert_eq!(get_hash(&a), get_hash(borrowed_a));
+        assert_eq!(get_hash(&owned_b), get_hash(b));
     }
 }

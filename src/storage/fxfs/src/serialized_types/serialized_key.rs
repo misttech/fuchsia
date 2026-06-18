@@ -212,7 +212,7 @@ impl SerializeKey for String {
 
 impl SerializeKey for fxfs_unicode::CasefoldString {
     fn serialize_key_to<B: Buffer>(&self, serializer: &mut KeySerializer<'_, B>) {
-        let s: &str = self.as_ref();
+        let s: &str = self.as_str();
         serializer.write_last(s.as_bytes());
     }
     fn deserialize_key_from(deserializer: &mut KeyDeserializer<'_>) -> Result<Self, Error> {

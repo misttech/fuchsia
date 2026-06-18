@@ -236,7 +236,7 @@ impl DirentCacheKeyRef for DirentCacheKey {
     fn name(&self) -> NameRef<'_> {
         match &self.name {
             Name::CaseSensitive(s) => NameRef::CaseSensitive(s),
-            Name::CaseInsensitive(s) => NameRef::CaseInsensitive(s),
+            Name::CaseInsensitive(s) => NameRef::CaseInsensitive(s.as_str()),
         }
     }
 }

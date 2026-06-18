@@ -1574,7 +1574,7 @@ impl<'a, 'b> DirectoryIterator<'a, 'b> {
                 key: ObjectKey { object_id: oid, data: ObjectKeyData::LegacyCasefoldChild(name) },
                 value: ObjectValue::Child(ChildValue { object_id, object_descriptor }),
                 ..
-            }) if *oid == self.object_id => Some((name, *object_id, object_descriptor)),
+            }) if *oid == self.object_id => Some((name.as_str(), *object_id, object_descriptor)),
             Some(ItemRef {
                 key: ObjectKey { object_id: oid, data: ObjectKeyData::EncryptedChild(_) },
                 value: ObjectValue::Child(ChildValue { object_id, object_descriptor }),
@@ -1620,7 +1620,7 @@ impl<'a, 'b> DirectoryIterator<'a, 'b> {
             Some(ItemRef {
                 key: ObjectKey { object_id: oid, data: ObjectKeyData::LegacyCasefoldChild(name) },
                 ..
-            }) if *oid == self.object_id => Some(name_visitor(name)),
+            }) if *oid == self.object_id => Some(name_visitor(name.as_str())),
 
             Some(ItemRef {
                 key:
