@@ -6,8 +6,6 @@
 
 load(":fx_cc_library.bzl", "fx_cc_library")
 
-visibility(["//build/bazel/rules/cc/..."])
-
 # LINT.IfChange(library_headers)
 
 def _fx_cc_library_headers_impl(
