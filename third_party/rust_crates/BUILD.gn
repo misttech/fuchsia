@@ -2182,11 +2182,11 @@ if (!(current_os == "fuchsia")) {
 }
 
 group("termion") {
-  public_deps = [ ":termion-v1_5_3" ]
+  public_deps = [ ":termion-v4_0_6" ]
 }
 
-group("termion-1.5.3") {
-  public_deps = [ ":termion-v1_5_3" ]
+group("termion-4.0.6") {
+  public_deps = [ ":termion-v4_0_6" ]
 }
 
 group("test-case") {
@@ -3862,15 +3862,15 @@ rustc_library("atomic-waker-v1_1_2") {
   applicable_licenses = [ ":atomic-waker-v1_1_2.license" ]
 }
 
-license("atty-v0_2_11.license") {
+license("atty-v0_2_14.license") {
   public_package_name = "atty"
-  license_files = [ "//third_party/rust_crates/vendor/atty-0.2.11/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/atty-0.2.14/LICENSE" ]
 }
 
-rustc_library("atty-v0_2_11") {
+rustc_library("atty-v0_2_14") {
   crate_name = "atty"
-  source_root = "//third_party/rust_crates/vendor/atty-0.2.11/src/lib.rs"
-  output_name = "atty-8928199b13c115d5"
+  source_root = "//third_party/rust_crates/vendor/atty-0.2.14/src/lib.rs"
+  output_name = "atty-1236eace84ad89c"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -3878,7 +3878,7 @@ rustc_library("atty-v0_2_11") {
 
   deps = []
   if (false) {
-    deps += [ ":termion-v1_5_3" ]
+    deps += [ ":hermit-abi-v0_1_19" ]
   }
   if (true) {
     deps += [ ":libc-v0_2_186" ]
@@ -3891,13 +3891,13 @@ rustc_library("atty-v0_2_11") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=8928199b13c115d5",
-    "-Cextra-filename=-8928199b13c115d5",
+    "-Cmetadata=1236eace84ad89c",
+    "-Cextra-filename=-1236eace84ad89c",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":atty-v0_2_11.license" ]
+  applicable_licenses = [ ":atty-v0_2_14.license" ]
 }
 
 rustc_library("backtrace-v0_3_61") {
@@ -6145,7 +6145,7 @@ rustc_library("criterion-v0_2_11") {
   deps = []
   deps += [ ":csv-v1_4_0" ]
   deps += [ ":walkdir-v2_5_0" ]
-  deps += [ ":atty-v0_2_11" ]
+  deps += [ ":atty-v0_2_14" ]
   deps += [ ":cast-v0_2_7" ]
   deps += [ ":clap-v2_34_0" ]
   deps += [ ":itertools-v0_8_0" ]
@@ -10076,6 +10076,30 @@ rustc_library("hermit-abi-v0_5_2") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
+rustc_library("hermit-abi-v0_1_19") {
+  crate_name = "hermit_abi"
+  source_root = "//third_party/rust_crates/empty/hermit-abi-0.1.19/src/lib.rs"
+  output_name = "hermit_abi-791583c99daf4226"
+  edition = "2015"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=791583c99daf4226",
+    "-Cextra-filename=-791583c99daf4226",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+}
+
 license("hex-v0_4_3.license") {
   public_package_name = "hex"
   license_files = [
@@ -13183,18 +13207,18 @@ rustc_library("num-traits-v0_2_19") {
   applicable_licenses = [ ":num-traits-v0_2_19.license" ]
 }
 
-license("numtoa-v0_1_0.license") {
+license("numtoa-v0_2_4.license") {
   public_package_name = "numtoa"
   license_files = [
-    "//third_party/rust_crates/vendor/numtoa-0.1.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/numtoa-0.1.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/numtoa-0.2.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/numtoa-0.2.4/LICENSE-MIT",
   ]
 }
 
-rustc_library("numtoa-v0_1_0") {
+rustc_library("numtoa-v0_2_4") {
   crate_name = "numtoa"
-  source_root = "//third_party/rust_crates/vendor/numtoa-0.1.0/src/lib.rs"
-  output_name = "numtoa-7acb857cdac0bf2"
+  source_root = "//third_party/rust_crates/vendor/numtoa-0.2.4/src/lib.rs"
+  output_name = "numtoa-7231fdf43fa39f3e"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -13206,14 +13230,13 @@ rustc_library("numtoa-v0_1_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=7acb857cdac0bf2",
-    "-Cextra-filename=-7acb857cdac0bf2",
-    "--cfg=feature=\"std\"",
+    "-Cmetadata=7231fdf43fa39f3e",
+    "-Cextra-filename=-7231fdf43fa39f3e",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":numtoa-v0_1_0.license" ]
+  applicable_licenses = [ ":numtoa-v0_2_4.license" ]
 }
 
 license("omaha_client-v0_3_8.license") {
@@ -15169,7 +15192,7 @@ rustc_library("prettytable-rs-v0_8_0") {
 
   deps = []
   deps += [ ":csv-v1_4_0" ]
-  deps += [ ":atty-v0_2_11" ]
+  deps += [ ":atty-v0_2_14" ]
   deps += [ ":encode_unicode-v0_3_6" ]
   deps += [ ":lazy_static-v1_5_0" ]
   deps += [ ":term-v0_5_1" ]
@@ -16678,37 +16701,6 @@ rustc_library("rdrand-v0_4_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":rdrand-v0_4_0.license" ]
-}
-
-license("redox_termios-v0_1_3.license") {
-  public_package_name = "redox_termios"
-  license_files =
-      [ "//third_party/rust_crates/vendor/redox_termios-0.1.3/LICENSE" ]
-}
-
-rustc_library("redox_termios-v0_1_3") {
-  crate_name = "redox_termios"
-  source_root =
-      "//third_party/rust_crates/vendor/redox_termios-0.1.3/src/lib.rs"
-  output_name = "redox_termios-84c41a36092d681"
-  edition = "2021"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=84c41a36092d681",
-    "-Cextra-filename=-84c41a36092d681",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":redox_termios-v0_1_3.license" ]
 }
 
 license("ref-cast-v1_0_25.license") {
@@ -20431,37 +20423,6 @@ rustc_library("synstructure-v0_13_2") {
   applicable_licenses = [ ":synstructure-v0_13_2.license" ]
 }
 
-license("redox_syscall-v0_1_51.license") {
-  public_package_name = "syscall"
-  license_files =
-      [ "//third_party/rust_crates/vendor/redox_syscall-0.1.51/LICENSE" ]
-}
-
-rustc_library("redox_syscall-v0_1_51") {
-  crate_name = "syscall"
-  source_root =
-      "//third_party/rust_crates/vendor/redox_syscall-0.1.51/src/lib.rs"
-  output_name = "syscall-744b5901ce7227f5"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=744b5901ce7227f5",
-    "-Cextra-filename=-744b5901ce7227f5",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":redox_syscall-v0_1_51.license" ]
-}
-
 license("redox_syscall-v0_2_13.license") {
   public_package_name = "syscall"
   license_files =
@@ -20714,44 +20675,35 @@ rustc_library("termcolor-v1_1_2") {
   applicable_licenses = [ ":termcolor-v1_1_2.license" ]
 }
 
-license("termion-v1_5_3.license") {
+license("termion-v4_0_6.license") {
   public_package_name = "termion"
-  license_files = [ "//third_party/rust_crates/vendor/termion-1.5.3/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/termion-4.0.6/LICENSE" ]
 }
 
-rustc_library("termion-v1_5_3") {
+rustc_library("termion-v4_0_6") {
   crate_name = "termion"
-  source_root = "//third_party/rust_crates/vendor/termion-1.5.3/src/lib.rs"
-  output_name = "termion-bd203e66cab9a985"
+  source_root = "//third_party/rust_crates/vendor/termion-4.0.6/src/lib.rs"
+  output_name = "termion-d7e46783ae62d176"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":numtoa-v0_1_0" ]
-  if (!false) {
-    deps += [ ":libc-v0_2_186" ]
-  }
-  if (false) {
-    deps += [ ":redox_syscall-v0_1_51" ]
-    deps += [ ":redox_termios-v0_1_3" ]
-  }
+  deps += [ ":libc-v0_2_186" ]
+  deps += [ ":numtoa-v0_2_4" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=bd203e66cab9a985",
-    "-Cextra-filename=-bd203e66cab9a985",
+    "-Cmetadata=d7e46783ae62d176",
+    "-Cextra-filename=-d7e46783ae62d176",
   ]
 
-  aliased_deps = {
-    syscall = ":redox_syscall-v0_1_51.actual"
-  }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":termion-v1_5_3.license" ]
+  applicable_licenses = [ ":termion-v4_0_6.license" ]
 }
 
 license("termtree-v0_5_1.license") {

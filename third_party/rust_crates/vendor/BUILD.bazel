@@ -2905,14 +2905,14 @@ alias(
 )
 
 alias(
-    name = "termion-1.5.3",
-    actual = "//third_party/rust_crates/vendor/termion-1.5.3:termion",
+    name = "termion-4.0.6",
+    actual = "//third_party/rust_crates/vendor/termion-4.0.6:termion",
     tags = ["manual"],
 )
 
 alias(
     name = "termion",
-    actual = "//third_party/rust_crates/vendor/termion-1.5.3:termion",
+    actual = "//third_party/rust_crates/vendor/termion-4.0.6:termion",
     tags = ["manual"],
 )
 

@@ -243,7 +243,7 @@ strsim = "0.11.1"
 strum = "0.28.0"
 strum_macros = "0.28.0"
 tempfile = "3.2"
-termion = "1.5.3"
+termion = "4.0.6"
 test-case = "3.3.1"
 textwrap = { version = "0.16.2", default-features = false }
 thiserror = "2.0.18"
@@ -390,6 +390,7 @@ cloudabi = { path = "empty/cloudabi"}
 crossterm_winapi = { path = "empty/crossterm_winapi" }
 ctor = { path = "empty/ctor" }
 hermit-abi = { path = "empty/hermit-abi" }
+hermit-abi-0_1_19 = { package = "hermit-abi", path = "empty/hermit-abi-0.1.19" }
 iana-time-zone-haiku = { path = "empty/iana-time-zone-haiku" }
 js-sys-102 = { package = "js-sys", path = "empty/js-sys-102" }
 miow = { path = "empty/miow" }
