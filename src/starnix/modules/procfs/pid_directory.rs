@@ -1357,7 +1357,11 @@ impl DynamicFileSource for StatusFile {
             writeln!(sink, "Pid:\t{}", pid)?;
         }
         let (ppid, threads, tracer_pid) = if let Some(task) = task {
-            let tracer_pid = task.read().ptrace.as_ref().map_or(0, |p| p.get_pid());
+            let tracer_pid = task
+                .read()
+                .ptrace
+                .as_ref()
+                .map_or(0, |p| p.core_state.thread_group.upgrade().map_or(0, |tg| tg.leader));
             let task_group = task.thread_group().read();
             (task_group.get_ppid(), task_group.tasks_count(), tracer_pid)
         } else {

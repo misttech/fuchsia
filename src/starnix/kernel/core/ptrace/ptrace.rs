@@ -190,10 +190,6 @@ impl PtraceEventData {
 /// task that clones it.
 #[derive(Clone)]
 pub struct PtraceCoreState {
-    // TODO(https://fxbug.dev/524605237): Remove the `pid` field.
-    /// The pid of the tracer
-    pub pid: pid_t,
-
     /// The task of the tracer
     pub task: Weak<Task>,
 
@@ -248,7 +244,6 @@ pub struct PtraceState {
 
 impl PtraceState {
     pub fn new(
-        pid: pid_t,
         task: Weak<Task>,
         thread_group: Weak<ThreadGroup>,
         attach_type: PtraceAttachType,
@@ -256,7 +251,6 @@ impl PtraceState {
     ) -> Box<Self> {
         Box::new(PtraceState {
             core_state: PtraceCoreState {
-                pid,
                 task,
                 thread_group,
                 attach_type,
@@ -270,14 +264,6 @@ impl PtraceState {
             stop_status: PtraceStatus::default(),
             last_syscall_was_error: false,
         })
-    }
-
-    pub fn get_pid(&self) -> pid_t {
-        self.core_state.pid
-    }
-
-    pub fn set_pid(&mut self, pid: pid_t) {
-        self.core_state.pid = pid;
     }
 
     pub fn is_seized(&self) -> bool {
@@ -807,7 +793,6 @@ where
 }
 
 /// For all ptrace requests that require an attached tracee
-
 pub fn ptrace_dispatch<L>(
     locked: &mut Locked<L>,
     current_task: &mut CurrentTask,
@@ -823,7 +808,12 @@ where
     let tracee = pids.get_task(pid)?;
 
     if let Some(ptrace) = &tracee.read().ptrace {
-        if ptrace.get_pid() != current_task.get_pid() {
+        let is_tracer = ptrace
+            .core_state
+            .thread_group
+            .upgrade()
+            .is_some_and(|tg| Arc::ptr_eq(&tg, current_task.thread_group()));
+        if !is_tracer {
             return error!(ESRCH);
         }
     }
@@ -1084,7 +1074,6 @@ fn do_attach(
     let process_state = &mut task.thread_group().write();
     let mut state = task.write();
     state.set_ptrace(Some(PtraceState::new(
-        thread_group.leader,
         tracer_task,
         thread_group.weak_self.clone(),
         attach_type,
@@ -1117,9 +1106,7 @@ where
     L: LockBefore<ThreadGroupLimits>,
 {
     {
-        let tracer_tg =
-            tracee_task.thread_group().kernel.pids.read().get_thread_group(ptrace_state.pid);
-        let tracer_tg = tracer_tg.ok_or_else(|| errno!(ESRCH))?;
+        let tracer_tg = ptrace_state.thread_group.upgrade().ok_or_else(|| errno!(ESRCH))?;
         do_attach(
             &tracer_tg,
             ptrace_state.task.clone(),

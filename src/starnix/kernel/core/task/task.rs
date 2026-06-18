@@ -998,8 +998,7 @@ impl Task {
         if let Some(ptrace) = &mut state.ptrace {
             // Add a zombie that the ptracer will notice.
             ptrace.last_signal_waitable = true;
-            let tracer_pid = ptrace.get_pid();
-            let tracer_tg = pids.get_thread_group(tracer_pid);
+            let tracer_tg = ptrace.core_state.thread_group.upgrade();
             if let Some(tracer_tg) = tracer_tg {
                 drop(state);
                 let mut tracer_state = tracer_tg.write();

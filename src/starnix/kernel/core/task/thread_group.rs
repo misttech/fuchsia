@@ -985,21 +985,20 @@ impl ThreadGroup {
 
             if let Some(ref parent) = parent {
                 let parent = parent.upgrade();
-                let mut tracer_pid = None;
-                if let Some(ptrace) = &task.read().ptrace {
-                    tracer_pid = Some(ptrace.get_pid());
-                }
 
-                let maybe_zombie = 'compute_zombie: {
-                    if let Some(tracer_pid) = tracer_pid {
-                        if let Ok(ref tracer) = pids.get_task(tracer_pid) {
-                            break 'compute_zombie tracer
-                                .thread_group()
-                                .maybe_notify_tracer(task, &mut pids, &parent, zombie);
-                        }
+                let tracer_tg = task
+                    .read()
+                    .ptrace
+                    .as_ref()
+                    .and_then(|ptrace| ptrace.core_state.thread_group.upgrade());
+
+                let maybe_zombie = match tracer_tg {
+                    Some(tracer_tg) => {
+                        tracer_tg.maybe_notify_tracer(task, &mut pids, &parent, zombie)
                     }
-                    Some(zombie)
+                    None => Some(zombie),
                 };
+
                 if let Some(zombie) = maybe_zombie {
                     parent.do_zombie_notifications(zombie);
                 }
