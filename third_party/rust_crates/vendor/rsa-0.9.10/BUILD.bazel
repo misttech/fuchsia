@@ -41,7 +41,7 @@ rust_library(
         allow_empty = False,
     ),
     aliases = {
-        "//third_party/rust_crates/vendor/num-bigint-dig-0.8.6:num_bigint_dig": "num_bigint",
+        "//third_party/rust_crates/forks/num-bigint-dig:num_bigint_dig": "num_bigint",
     },
     compile_data = glob(
         include = ["**"],

@@ -187,7 +187,7 @@ prepare_bazel_workspace "${bazel_workspace}"
 # e.g. `//third_party/rust_crates/ask2patch/walkdir`.
 "${FUCHSIA_DIR}/scripts/fuchsia-vendored-python" \
   "${FUCHSIA_DIR}/build/bazel/update-rustc-third-party/remove_incorrect_aliases.py" \
-  --build-file="${VENDOR_DIR}/BUILD.bazel" \
+  --search-dir="${VENDOR_DIR}" \
   --fuchsia-dir="${FUCHSIA_DIR}"
 
 # Restore files for unchanged directories.
