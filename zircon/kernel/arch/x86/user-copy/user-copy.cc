@@ -77,17 +77,15 @@ static UserCopyCaptureFaultsResult _arch_copy_to_from_user(void* dst, const void
     return UserCopyCaptureFaultsResult{ZX_ERR_INVALID_ARGS};
   }
 
-  // Spectre V1 - force resolution of can_access() before attempting to copy
-  // from user memory.  A poisoned conditional branch predictor can be used to
-  // force the kernel to read any kernel address (speculatively); dependent
-  // operations can leak the values read-in.
+  // Spectre V1 (CopyDirection::FromUser) - force resolution of can_access() before attempting to
+  // copy from a user-controlled pointer to a kernel address.  A poisoned conditional branch
+  // predictor can be used to force the kernel to read any kernel address (speculatively).
   //
-  // Note, this is only needed if we are copying data to the user address space.
-  // We skip this fence in the case that we are copying from the user address
-  // space into the kernel space.
-  if constexpr (DIRECTION == CopyDirection::ToUser) {
-    __asm__ __volatile__("lfence" ::: "memory");
-  }
+  // Spectre V1.1 (CopyDirection::ToUser) -  force resolution of can_access() before attempting to
+  // speculatively store a value into a user-controlled kernel address. This can be chained with
+  // other attacks to overwrite data such as stack return addresses or function pointers in the
+  // speculative window.
+  __asm__ __volatile__("lfence" ::: "memory");
 
   Thread* thr = Thread::Current::Get();
   X64CopyToFromUserRet ret =
