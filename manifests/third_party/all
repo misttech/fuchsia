@@ -352,7 +352,7 @@
              path="third_party/colorama/colorama"
              remote="https://fuchsia.googlesource.com/third_party/github.com/tartley/colorama"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="21c4b94fe21ce29c85c896ace828da24b7527641"/>
+             revision="4ea8b1c7cbf96cc21613bb51b38fc49831fdddb4"/>
     <project name="third_party/github.com/kmackay/micro-ecc"
              path="third_party/micro-ecc"
              remote="https://fuchsia.googlesource.com/third_party/github.com/kmackay/micro-ecc"
