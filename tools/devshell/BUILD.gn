@@ -65,6 +65,7 @@ group("tests") {
   deps = [
     ":fx_script_tests($host_toolchain)",
     "//tools/devshell/python:tests($host_toolchain)",
+    "//tools/devshell/worktree:tests($host_toolchain)",
   ]
 }
 
