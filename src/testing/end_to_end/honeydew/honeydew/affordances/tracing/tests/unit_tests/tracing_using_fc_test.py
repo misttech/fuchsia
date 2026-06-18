@@ -8,7 +8,7 @@ import tempfile
 import types
 import unittest
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 from unittest import mock
 
 import fidl_fuchsia_tracing_controller as f_tracingcontroller
@@ -28,7 +28,7 @@ def _custom_test_name_func(
     testcase_func: Callable[..., None], _: str, param_arg: param
 ) -> str:
     """Custom name function method."""
-    test_func_name: str = testcase_func.__name__
+    test_func_name: str = cast(Any, testcase_func).__name__
 
     params_dict: dict[str, Any] = param_arg.args[0]
     test_label: str = parameterized.to_safe_name(params_dict["label"])
