@@ -557,6 +557,26 @@ impl FromExt<&ot::message::BufferInfo> for fidl_fuchsia_lowpan_experimental::Buf
     }
 }
 
+impl FromExt<ot::CacheEntryState> for Option<fidl_fuchsia_lowpan_experimental::CacheEntryState> {
+    fn from_ext(x: ot::CacheEntryState) -> Self {
+        match x {
+            ot::CacheEntryState::Cached => {
+                Some(fidl_fuchsia_lowpan_experimental::CacheEntryState::Cached)
+            }
+            ot::CacheEntryState::Snooped => {
+                Some(fidl_fuchsia_lowpan_experimental::CacheEntryState::Snooped)
+            }
+            ot::CacheEntryState::Query => {
+                Some(fidl_fuchsia_lowpan_experimental::CacheEntryState::Query)
+            }
+            ot::CacheEntryState::Retry => {
+                Some(fidl_fuchsia_lowpan_experimental::CacheEntryState::Retry)
+            }
+            ot::CacheEntryState::Unknown => None,
+        }
+    }
+}
+
 impl AllCountersUpdate<ot::MleCounters> for AllCounters {
     fn update_from(&mut self, data: &ot::MleCounters) {
         self.mle = Some(MleCounters {

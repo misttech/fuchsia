@@ -18,6 +18,20 @@ impl<T: ?Sized + Thread> Iterator for NeighborInfoIterator<'_, T> {
     }
 }
 
+/// Iterator type for EID cache table entries.
+#[allow(missing_debug_implementations)]
+pub struct CacheEntryIterator<'a, T: ?Sized> {
+    ot_instance: &'a T,
+    ot_iter: otCacheEntryIterator,
+}
+
+impl<T: ?Sized + Thread> Iterator for CacheEntryIterator<'_, T> {
+    type Item = CacheEntryInfo;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.ot_instance.iter_next_cache_entry_info(&mut self.ot_iter)
+    }
+}
+
 /// Methods from the [OpenThread "Thread General" Module][1].
 ///
 /// [1]: https://openthread.io/reference/group/api-thread-general
@@ -166,6 +180,17 @@ pub trait Thread {
     /// Functional equivalent of
     /// [`otsys::otThreadGetMleCounters`](crate::otsys::otThreadGetMleCounters).
     fn get_mle_counters(&self) -> &MleCounters;
+
+    /// [`otsys::otThreadGetNextCacheEntry`](crate::otsys::otThreadGetNextCacheEntry).
+    fn iter_next_cache_entry_info(
+        &self,
+        ot_iter: &mut otCacheEntryIterator,
+    ) -> Option<CacheEntryInfo>;
+
+    /// Returns an iterator for iterating through the EID cache table entries.
+    fn iter_cache_entry_info(&self) -> CacheEntryIterator<'_, Self> {
+        CacheEntryIterator { ot_instance: self, ot_iter: otCacheEntryIterator::default() }
+    }
 }
 
 impl<T: Thread + Boxable> Thread for ot::Box<T> {
@@ -290,6 +315,13 @@ impl<T: Thread + Boxable> Thread for ot::Box<T> {
 
     fn get_mle_counters(&self) -> &MleCounters {
         self.as_ref().get_mle_counters()
+    }
+
+    fn iter_next_cache_entry_info(
+        &self,
+        ot_iter: &mut otCacheEntryIterator,
+    ) -> Option<CacheEntryInfo> {
+        self.as_ref().iter_next_cache_entry_info(ot_iter)
     }
 }
 
@@ -485,5 +517,23 @@ impl Thread for Instance {
 
     fn get_mle_counters(&self) -> &MleCounters {
         unsafe { MleCounters::ref_from_ot_ptr(otThreadGetMleCounters(self.as_ot_ptr())) }.unwrap()
+    }
+
+    fn iter_next_cache_entry_info(
+        &self,
+        ot_iter: &mut otCacheEntryIterator,
+    ) -> Option<CacheEntryInfo> {
+        unsafe {
+            let mut ret = CacheEntryInfo::default();
+            match Error::from(otThreadGetNextCacheEntry(
+                self.as_ot_ptr(),
+                ret.as_ot_mut_ptr(),
+                ot_iter as *mut otCacheEntryIterator,
+            )) {
+                Error::NotFound => None,
+                Error::None => Some(ret),
+                err => unreachable!("Unexpected error from otThreadGetNextCacheEntry: {:?}", err),
+            }
+        }
     }
 }

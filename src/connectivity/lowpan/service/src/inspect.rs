@@ -2898,6 +2898,65 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                 }
                             });
                         }
+                        if let Some(x) = telemetry_data.eid_cache_entries {
+                            inspector.root().record_child(
+                                "eidcache",
+                                |eid_cache_child| {
+                                    for (index, cache) in x.iter().enumerate() {
+                                        eid_cache_child.record_child(
+                                            format!("{}", index),
+                                            |cache_node| {
+                                                if let Some(y) = &cache.target {
+                                                    cache_node.record_string(
+                                                        "target",
+                                                        format!("{}", Ipv6Addr::from(y.addr)),
+                                                    );
+                                                }
+                                                if let Some(y) = cache.rloc16 {
+                                                    cache_node.record_string("rloc", format!("{:04x}", y));
+                                                }
+                                                if let Some(y) = cache.state {
+                                                    cache_node.record_string("state", format!("{:?}", y));
+                                                }
+                                                if let Some(y) = cache.can_evict {
+                                                    cache_node.record_bool("can_evict", y.into());
+                                                }
+                                                if let Some(y) = cache.ramp_down {
+                                                    cache_node.record_bool("ramp_down", y.into());
+                                                }
+                                                if let Some(y) = cache.valid_last_trans {
+                                                    cache_node.record_bool("valid_last_trans", y.into());
+                                                }
+                                                if let Some(y) = cache.last_trans_time {
+                                                    cache_node.record_uint(
+                                                        "last_trans_time",
+                                                        y.try_into().unwrap_or(0),
+                                                    );
+                                                }
+                                                if let Some(y) = &cache.mesh_local_eid {
+                                                    cache_node.record_string(
+                                                        "mesh_local_eid",
+                                                        format!("{}", Ipv6Addr::from(y.addr)),
+                                                    );
+                                                }
+                                                if let Some(y) = cache.timeout {
+                                                    cache_node.record_uint(
+                                                        "timeout",
+                                                        y.try_into().unwrap_or(0),
+                                                    );
+                                                }
+                                                if let Some(y) = cache.retry_delay {
+                                                    cache_node.record_uint(
+                                                        "retry_delay",
+                                                        y.try_into().unwrap_or(0),
+                                                    );
+                                                }
+                                            }
+                                        );
+                                    }
+                                }
+                            );
+                        }
                     }
                     Err(e) => {
                         warn!("Error in logging telemetry. Error: {}", e);

@@ -1730,6 +1730,42 @@ where
             })
             .collect::<Vec<_>>();
 
+        // Get the EID-to-RLOC cache entries.
+        let eid_cache_entries = ot
+            .iter_cache_entry_info()
+            .take(fidl_fuchsia_lowpan_experimental::MAX_NEIGHBOR_INSPECT_ENTRIES as usize)
+            .map(|entry| fidl_fuchsia_lowpan_experimental::EidCacheEntry {
+                target: Some(fidl_fuchsia_net::Ipv6Address { addr: entry.target().octets() }),
+                rloc16: Some(entry.rloc16()),
+                state: entry.state().into_ext(),
+                can_evict: Some(entry.can_evict()),
+                ramp_down: Some(entry.ramp_down()),
+                valid_last_trans: Some(entry.valid_last_trans()),
+                last_trans_time: Some(
+                    fuchsia_async::MonotonicDuration::from_seconds(entry.last_trans_time().into())
+                        .into_nanos()
+                        .try_into()
+                        .unwrap(),
+                ),
+                mesh_local_eid: Some(fidl_fuchsia_net::Ipv6Address {
+                    addr: entry.mesh_local_eid().octets(),
+                }),
+                timeout: Some(
+                    fuchsia_async::MonotonicDuration::from_seconds(entry.timeout().into())
+                        .into_nanos()
+                        .try_into()
+                        .unwrap(),
+                ),
+                retry_delay: Some(
+                    fuchsia_async::MonotonicDuration::from_seconds(entry.retry_delay().into())
+                        .into_nanos()
+                        .try_into()
+                        .unwrap(),
+                ),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
+
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
             partition_id: Some(ot.get_partition_id()),
@@ -1829,6 +1865,7 @@ where
                 ..Default::default()
             }),
             buffer_info: Some((&buffer_info).into_ext()),
+            eid_cache_entries: Some(eid_cache_entries),
             ..Default::default()
         })
     }
