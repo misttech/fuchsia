@@ -907,6 +907,16 @@ impl ClientSme {
         receiver
     }
 
+    pub fn update_mac_address(&mut self, mac_addr: [u8; 6]) {
+        let mut device_info = (*self.context.device_info).clone();
+        device_info.sta_addr = mac_addr;
+        self.context.device_info = Arc::new(device_info);
+    }
+
+    pub fn device_info(&self) -> Arc<fidl_mlme::DeviceInfo> {
+        Arc::clone(&self.context.device_info)
+    }
+
     pub fn query_apf_packet_filter_support(
         &mut self,
     ) -> oneshot::Receiver<Result<fidl_common::ApfPacketFilterSupport, i32>> {

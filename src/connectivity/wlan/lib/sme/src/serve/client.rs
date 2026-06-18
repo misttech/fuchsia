@@ -402,7 +402,11 @@ async fn set_mac_address(
 ) -> Result<(), fidl::Error> {
     let receiver = sme.lock().set_mac_address(mac_addr);
     let resp = match receiver.await {
-        Ok(result) => result,
+        Ok(Ok(())) => {
+            sme.lock().update_mac_address(mac_addr);
+            Ok(())
+        }
+        Ok(result @ Err(_)) => result,
         Err(_) => Err(zx::sys::ZX_ERR_CANCELED),
     };
     responder.send(resp)
@@ -827,5 +831,88 @@ mod tests {
             assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Ready(Ok(())));
         });
         assert_matches!(exec.run_until_stalled(&mut get_enabled_fut), Poll::Ready(Ok(Ok(true))));
+    }
+
+    #[test_case(Ok(()); "ok")]
+    #[test_case(Err(123); "err")]
+    fn test_handle_fidl_request_set_mac_address(set_mac_address_result: Result<(), i32>) {
+        let mut exec = fasync::TestExecutor::new();
+        let inspector = fuchsia_inspect::Inspector::default();
+        let (sme, _mlme_sink, mut mlme_stream, _time_stream) = client_sme::ClientSme::new(
+            client_sme::ClientConfig::default(),
+            test_utils::fake_device_info([0; 6].into()),
+            inspector.clone(),
+            inspector.root().create_child("sme"),
+            wlan_common::test_utils::fake_features::fake_security_support(),
+            wlan_common::test_utils::fake_features::fake_spectrum_management_support_empty(),
+        );
+        let sme = Mutex::new(sme);
+
+        // Send SetMacAddress request
+        let (proxy, stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
+        let new_mac = [1, 2, 3, 4, 5, 6];
+        let mut set_mac_fut = proxy.set_mac_address(&new_mac);
+        let mut stream = pin!(stream);
+
+        // Handle SetMacAddress request
+        assert_matches!(exec.run_until_stalled(&mut stream.next()), Poll::Ready(Some(Ok(req))) => {
+            let mut handle_fut = pin!(handle_fidl_request(&sme, req));
+            assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Pending);
+
+            assert_matches!(exec.run_until_stalled(&mut mlme_stream.next()), Poll::Ready(Some(crate::MlmeRequest::SetMacAddress(mac, responder))) => {
+                assert_eq!(mac, new_mac);
+                responder.respond(set_mac_address_result);
+            });
+
+            assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Ready(Ok(())));
+        });
+
+        if set_mac_address_result.is_ok() {
+            assert_matches!(exec.run_until_stalled(&mut set_mac_fut), Poll::Ready(Ok(Ok(()))));
+            // Verify the device_info in client_sme is updated
+            assert_eq!(sme.lock().device_info().sta_addr, new_mac);
+        } else {
+            assert_matches!(exec.run_until_stalled(&mut set_mac_fut), Poll::Ready(Ok(Err(123))));
+            assert_eq!(sme.lock().device_info().sta_addr, [0; 6]);
+        }
+    }
+
+    #[test]
+    fn test_handle_fidl_request_set_mac_address_cancelled() {
+        let mut exec = fasync::TestExecutor::new();
+        let inspector = fuchsia_inspect::Inspector::default();
+        let (sme, _mlme_sink, mut mlme_stream, _time_stream) = client_sme::ClientSme::new(
+            client_sme::ClientConfig::default(),
+            test_utils::fake_device_info([0; 6].into()),
+            inspector.clone(),
+            inspector.root().create_child("sme"),
+            wlan_common::test_utils::fake_features::fake_security_support(),
+            wlan_common::test_utils::fake_features::fake_spectrum_management_support_empty(),
+        );
+        let sme = Mutex::new(sme);
+
+        // Send SetMacAddress request
+        let (proxy, stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
+        let new_mac = [1, 2, 3, 4, 5, 6];
+        let mut set_mac_fut = proxy.set_mac_address(&new_mac);
+        let mut stream = pin!(stream);
+
+        // Handle SetMacAddress request
+        assert_matches!(exec.run_until_stalled(&mut stream.next()), Poll::Ready(Some(Ok(req))) => {
+            let mut handle_fut = pin!(handle_fidl_request(&sme, req));
+            assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Pending);
+
+            assert_matches!(exec.run_until_stalled(&mut mlme_stream.next()), Poll::Ready(Some(crate::MlmeRequest::SetMacAddress(_mac, _responder))) => {
+                // Drop the responder to simulate an error
+            });
+
+            assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Ready(Ok(())));
+        });
+
+        assert_matches!(
+            exec.run_until_stalled(&mut set_mac_fut),
+            Poll::Ready(Ok(Err(zx::sys::ZX_ERR_CANCELED)))
+        );
+        assert_eq!(sme.lock().device_info().sta_addr, [0; 6]);
     }
 }
