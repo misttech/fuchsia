@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <lib/fpromise/result.h>
 
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 

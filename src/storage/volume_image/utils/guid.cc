@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <iterator>
 #include <span>
+#include <string>
 
 #include <safemath/safe_conversions.h>
 
