@@ -2,15 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::path::Path;
-use std::{fs, io};
-
 use anyhow::{Context as _, Error, format_err};
 use async_trait::async_trait;
 use fidl_fuchsia_input_report::{
-    DeviceDescriptor, InputDeviceMarker, InputDeviceProxy, InputReportsReaderMarker,
-    InputReportsReaderProxy, SensorInputDescriptor, SensorType,
+    DeviceDescriptor, InputReportsReaderMarker, InputReportsReaderProxy, SensorInputDescriptor,
+    SensorType, ServiceMarker,
 };
+use fuchsia_component::client::Service;
 
 #[derive(Debug)]
 pub struct AmbientLightInputRpt {
@@ -35,23 +33,17 @@ struct AmbientLightInputReportReaderProxy {
     pub blue: Option<AmbientLightComponent>,
 }
 
-fn open_input_report_device(path: &str) -> Result<InputDeviceProxy, Error> {
-    log::info!("Opening sensor at {:?}", path);
-    let (proxy, server) = fidl::endpoints::create_proxy::<InputDeviceMarker>();
-    fdio::service_connect(path, server.into_channel())
-        .context("Failed to connect built-in service")?;
-    Ok(proxy)
-}
+use futures::StreamExt;
 
 async fn open_sensor_input_report_reader() -> Result<AmbientLightInputReportReaderProxy, Error> {
-    let input_report_directory = "/dev/class/input-report";
-    let dir_path = Path::new(input_report_directory);
-    let entries = fs::read_dir(dir_path)?;
-    for entry in entries {
-        let entry = entry?;
-        let device_path = entry.path();
-        let device_path = device_path.to_str().expect("Bad path");
-        let device = open_input_report_device(device_path)?;
+    let mut watcher = Service::open(ServiceMarker)?
+        .watch()
+        .await
+        .context("Failed to watch for sensor service instances")?;
+
+    while let Some(instance_result) = watcher.next().await {
+        let instance = instance_result?;
+        let device = instance.connect_to_input_device()?;
 
         fn get_sensor_input(
             descriptor: &DeviceDescriptor,
@@ -103,12 +95,12 @@ async fn open_sensor_input_report_reader() -> Result<AmbientLightInputReportRead
                     }
                 }
                 Err(e) => {
-                    log::info!("Skip device {}: {}", device_path, e);
+                    log::info!("Skip device {:?}: {}", instance.instance_name(), e);
                 }
             };
         }
     }
-    Err(io::Error::new(io::ErrorKind::NotFound, "no sensor found").into())
+    Err(format_err!("no sensor found"))
 }
 
 /// Reads the sensor's input report and decodes it.

@@ -2,32 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Error};
+use anyhow::Error;
 use async_trait::async_trait;
-use fidl_fuchsia_hardware_light::{Info, LightError, LightMarker, LightProxy};
-use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
-use fuchsia_fs::PERM_READABLE;
-use fuchsia_fs::directory::open_in_namespace;
-use futures::TryStreamExt;
+use fidl_fuchsia_hardware_light::{Info, LightError, LightMarker, LightProxy, LightServiceMarker};
+use fuchsia_component::client::Service;
 
 async fn open_light() -> Result<LightProxy, Error> {
-    eprintln!("Opening light");
-    // Wait for the first node.
-    const LIGHT_PATH: &str = "/dev/class/light";
-    let dir = open_in_namespace(LIGHT_PATH, PERM_READABLE)
-        .with_context(|| format!("Opening {}", LIGHT_PATH))?;
-    let path = device_watcher::watch_for_files(&dir)
-        .await
-        .with_context(|| format!("Watching for files in {}", LIGHT_PATH))?
-        .try_next()
-        .await
-        .with_context(|| format!("Getting a file from {}", LIGHT_PATH))?;
-    let path = path.ok_or_else(|| anyhow::anyhow!("Could not find {}", LIGHT_PATH))?;
-    let path = path
-        .to_str()
-        .ok_or_else(|| anyhow::anyhow!("Could not find a valid str for {}", LIGHT_PATH))?;
-    connect_to_named_protocol_at_dir_root::<LightMarker>(&dir, path)
-        .context("Failed to connect built-in service")
+    log::info!("Opening light");
+    let service_proxy = Service::open(LightServiceMarker)?.watch_for_any().await?;
+    Ok(service_proxy.connect_to_light()?)
 }
 
 pub struct Led {
