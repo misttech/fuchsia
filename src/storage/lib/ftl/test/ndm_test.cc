@@ -505,4 +505,83 @@ TEST(NdmReadOnlyTestWithLogger, BadBlocksV2) {
   EXPECT_TRUE(logger_called);
 }
 
+void fix_crc(uint8_t* page_buf, uint32_t page_size, bool version_2) {
+  uint32_t crc = CRC32_START;
+  uint32_t crc_location = HDR_CRC_LOC;
+  uint32_t data_start = CTRL_DATA_START;
+  if (version_2) {
+    crc_location += HDR_V2_SHIFT;
+    data_start += HDR_V2_SHIFT;
+  }
+
+  for (uint32_t i = 0; i < page_size; ++i) {
+    if (i == crc_location) {
+      i = data_start;
+    }
+    crc = CRC32_UPDATE(crc, page_buf[i]);
+  }
+  crc = ~crc;
+  page_buf[crc_location] = crc & 0xff;
+  page_buf[crc_location + 1] = (crc >> 8) & 0xff;
+  page_buf[crc_location + 2] = (crc >> 16) & 0xff;
+  page_buf[crc_location + 3] = (crc >> 24) & 0xff;
+}
+
+TEST_F(NdmReadOnlyTest, RejectsCorruptPartitionSize) {
+  std::vector<uint8_t> page0(kPageSize, 0xff);
+  constexpr uint32_t kPage0Template[] = {
+      0x00000002,  // 0: version
+      0x00020001,  // 1: curr=1, last=2
+      0x00000002,  // 2: seq
+      0x00000000,  // 3: CRC (placeholder)
+      0x0000001e,  // 4: num_blocks
+      0x00010000,  // 5: block_size
+      0x0000001d,  // 6: ctrl_blk0
+      0x0000001c,  // 7: ctrl_blk1
+      0xffffffff,  // 8: free_virt_blk
+      0xffffffff,  // 9: free_ctrl_blk
+      0xffffffff,  // 10: xfr_tblk
+      0x00000003,  // 11: xfr_fblk
+      0x0000000d,  // 12: xfr_bad_po
+      0x00000001,  // 13: num_partitions
+      0x00000000,  // 14: init_bad_blk[0]
+      0x0000001e,  // 15: init_bad_blk[1]
+      0x00000003,  // 16: run_bad_blk[0].key
+      0x0000001b,  // 17: run_bad_blk[0].val
+      0xffffffff,  // 18: run_bad_blk[1].key
+      0xffffffff,  // 19: run_bad_blk[1].val
+      0x00000000,  // 20: partitions[0].first_block
+      0x0000001a,  // 21: partitions[0].num_blocks
+      0x006c7466,  // 22: name "ftl"
+      0x00000000,  // 23: name
+      0x00000000,  // 24: name
+      0x00000000,  // 25: name/type
+      0x00001004,  // 26: user_data_size (4100)
+  };
+  memcpy(page0.data(), kPage0Template, sizeof(kPage0Template));
+  fix_crc(page0.data(), kPageSize, true);
+  ASSERT_EQ(ftl::kNdmOk, ndm_driver_->NandWrite(kControlPage0, 1, page0.data(), kControlOob));
+
+  std::vector<uint8_t> page1(kPageSize, 0xff);
+  constexpr uint32_t kPage1Template[] = {
+      0x00000002,  // 0: version
+      0x00020002,  // 1: curr=2, last=2
+      0x00000002,  // 2: seq
+      0x00000000,  // 3: CRC (placeholder)
+      // Offset 16 (index 4)
+      0x00000000,  // 4: partitions[0].first_block
+      0x0000001a,  // 5: partitions[0].num_blocks
+      0x006c7466,  // 6: name "ftl"
+      0x00000000,  // 7: name
+      0x00000000,  // 8: name
+      0x00000000,  // 9: name/type
+      0x00001004,  // 10: user_data_size (4100)
+  };
+  memcpy(page1.data(), kPage1Template, sizeof(kPage1Template));
+  fix_crc(page1.data(), kPageSize, true);
+  ASSERT_EQ(ftl::kNdmOk, ndm_driver_->NandWrite(kControlPage0 + 1, 1, page1.data(), kControlOob));
+
+  ASSERT_NE(nullptr, ndm_driver_->CreateVolume());
+}
+
 }  // namespace

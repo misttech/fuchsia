@@ -806,7 +806,15 @@ static int read_ctrl_info(NDM ndm) {
       // every partition. We can adjust this when we start using more than one
       // partition.
       PfAssert(ndm->num_partitions == 1);
+      uint32_t header_and_meta =
+          ndmGetHeaderControlDataStart(ndm) + sizeof(NDMPartition) + sizeof(ui32);
+      if (curr_loc + sizeof(NDMPartition) + sizeof(ui32) > ndm->page_size) {
+        return FsError2(NDM_BAD_META_DATA, EINVAL);
+      }
       user_data_size = RD32_LE(&ndm->main_buf[curr_loc + sizeof(NDMPartition)]);
+      if (ndm->page_size < header_and_meta || user_data_size > ndm->page_size - header_and_meta) {
+        return FsError2(NDM_BAD_META_DATA, EINVAL);
+      }
       partition_size += user_data_size + sizeof(ui32);
     }
     ndm->partitions = FsCalloc(ndm->num_partitions, partition_size);

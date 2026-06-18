@@ -1764,6 +1764,13 @@ int ndmWritePartitionInfo(NDM ndm, const NDMPartitionInfo* partition) {
     return FsError2(NDM_CFG_ERR, EINVAL);
   }
 
+  uint32_t header_and_meta =
+      ndmGetHeaderControlDataStart(ndm) + sizeof(NDMPartition) + sizeof(ui32);
+  if (ndm->page_size < header_and_meta ||
+      partition->user_data.data_size > ndm->page_size - header_and_meta) {
+    return FsError2(NDM_CFG_ERR, EINVAL);
+  }
+
   size_t partition_size = sizeof(NDMPartition) + sizeof(ui32) + partition->user_data.data_size;
 
   // Allocate space for the new partition info.
