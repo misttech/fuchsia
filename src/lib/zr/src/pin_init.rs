@@ -17,4 +17,36 @@ macro_rules! pin_init_ffi {
             })
         }
     };
+    ($ffi_fn:expr, $($args:expr),+ $(,)?) => {
+        unsafe {
+            pin_init::pin_init_from_closure(move |slot| {
+                let ptr = slot as *mut _ as *mut core::ffi::c_void;
+                $ffi_fn(ptr, $($args),*);
+                Ok(())
+            })
+        }
+    };
+}
+
+/// A helper macro to implement `PinnedDrop` using a raw FFI destructor.
+///
+/// This generates a `PinnedDrop` implementation that calls the FFI function
+/// with a type-cast pointer of the object.
+///
+/// # Safety
+///
+/// The FFI function must take a pointer to the object and correctly clean it up.
+#[macro_export]
+macro_rules! unsafe_pinned_drop_ffi {
+    ($type:ty, $ffi_fn:expr) => {
+        #[pin_init::pinned_drop]
+        impl pin_init::PinnedDrop for $type {
+            fn drop(self: core::pin::Pin<&mut Self>) {
+                unsafe {
+                    let me = self.get_unchecked_mut();
+                    $ffi_fn(me.as_mut_ptr());
+                }
+            }
+        }
+    };
 }

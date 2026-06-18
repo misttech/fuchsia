@@ -14,9 +14,13 @@ import("//zircon/kernel/params.gni")
 source_set("kernel-tests") {
   testonly = true
   if (enable_rust_in_zircon) {
-    sources = [ "rust-tests.cc" ]
+    sources = [
+      "ksync-tests.cc",
+      "rust-tests.cc",
+    ]
     deps = [
       ":trivial_tests",
+      "//src/lib/ksync:ksync-kernel-tests",
       "//zircon/kernel/lib/unittest",
     ]
   }

@@ -47,7 +47,11 @@ mod raw_lock;
 mod raw_userspace_mutex;
 
 #[cfg(feature = "kernel")]
+mod raw_kernel_event;
+#[cfg(feature = "kernel")]
 mod raw_kernel_mutex;
+#[cfg(feature = "kernel")]
+mod raw_spin_lock;
 
 pub use kcell::{KCell, KCellInit, kcell_init};
 pub use kmutex::{KMutex, KMutexGuard};
@@ -59,4 +63,11 @@ pub use raw_lock::RawLock;
 pub use raw_userspace_mutex::RawMutex;
 
 #[cfg(feature = "kernel")]
+pub use raw_kernel_event::{KEvent, RawEvent};
+#[cfg(feature = "kernel")]
 pub use raw_kernel_mutex::{RawCriticalMutex, RawMutex};
+#[cfg(feature = "kernel")]
+pub use raw_spin_lock::{InterruptSavedState, RawSpinlock};
+
+#[cfg(feature = "kernel")]
+pub type KSpinlock<Class> = KMutex<Class, RawSpinlock>;

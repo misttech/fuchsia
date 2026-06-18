@@ -25,8 +25,10 @@ rustc_library("ksync") {
     "src/kmutex.rs",
     "src/lib.rs",
     "src/lock_token.rs",
+    "src/raw_kernel_event.rs",
     "src/raw_kernel_mutex.rs",
     "src/raw_lock.rs",
+    "src/raw_spin_lock.rs",
     "src/raw_userspace_mutex.rs",
   ]
   with_unit_tests = !is_kernel
@@ -46,6 +48,9 @@ rustc_library("ksync") {
     } else if (enable_lock_dep_metadata_only) {
       _cfgs += [ "lock_metadata_only" ]
     }
+    if (scheduler_lock_spin_tracing_enabled) {
+      _cfgs += [ "spin_lock_tracing" ]
+    }
     if (lock_name_tracing_enabled || scheduler_lock_spin_tracing_enabled) {
       _cfgs += [ "lock_name_tracing" ]
     }
@@ -53,6 +58,8 @@ rustc_library("ksync") {
       cfgs = _cfgs
     }
     deps += [
+      "//sdk/rust/zx-status",
+      "//sdk/rust/zx-types",
       "//src/lib/zr",
       "//zircon/kernel/lib/ksync",
     ]
@@ -71,4 +78,18 @@ fuchsia_unittest_package("ksync-tests") {
 group("tests") {
   testonly = true
   deps = [ ":ksync-tests" ]
+}
+
+if (is_kernel) {
+  import("//zircon/kernel/kernel_rust_crate.gni")
+
+  kernel_rust_crate("ksync-kernel-tests") {
+    testonly = true
+    source_root = "tests/kernel.rs"
+    sources = [ "tests/kernel.rs" ]
+    deps = [
+      ":ksync",
+      "//third_party/rust_crates:pin-init",
+    ]
+  }
 }

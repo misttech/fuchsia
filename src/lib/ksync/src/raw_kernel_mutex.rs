@@ -4,8 +4,7 @@
 
 use crate::raw_lock::RawLock;
 use core::ffi::c_void;
-use core::pin::Pin;
-use pin_init::{PinInit, pin_data, pinned_drop};
+use pin_init::{PinInit, pin_data};
 
 #[cfg(lock_name_tracing)]
 const RAW_MUTEX_SIZE: usize = 32;
@@ -52,15 +51,7 @@ pub struct RawMutex {
 unsafe impl Sync for RawMutex {}
 unsafe impl Send for RawMutex {}
 
-#[pinned_drop]
-impl PinnedDrop for RawMutex {
-    fn drop(self: Pin<&mut Self>) {
-        unsafe {
-            let me = self.get_unchecked_mut();
-            cpp_mutex_destroy(me.as_mut_ptr());
-        }
-    }
-}
+zr::unsafe_pinned_drop_ffi!(RawMutex, cpp_mutex_destroy);
 
 impl crate::RawLock for RawMutex {
     type LockEntry = LockEntryStorage;
@@ -104,15 +95,7 @@ pub struct RawCriticalMutex {
 unsafe impl Sync for RawCriticalMutex {}
 unsafe impl Send for RawCriticalMutex {}
 
-#[pinned_drop]
-impl PinnedDrop for RawCriticalMutex {
-    fn drop(self: Pin<&mut Self>) {
-        unsafe {
-            let me = self.get_unchecked_mut();
-            cpp_critical_mutex_destroy(me.as_mut_ptr());
-        }
-    }
-}
+zr::unsafe_pinned_drop_ffi!(RawCriticalMutex, cpp_critical_mutex_destroy);
 
 impl crate::RawLock for RawCriticalMutex {
     type LockEntry = LockEntryStorage;
