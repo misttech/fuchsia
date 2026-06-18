@@ -85,6 +85,7 @@
 # storage team
 'third_party/rust_crates/forks/fatfs' = ["src/storage/OWNERS"]
 'third_party/rust_crates/forks/fuse' = ["src/storage/OWNERS"]
+'third_party/rust_crates/forks/zstd-sys' = ["third_party/zstd/OWNERS"]
 
 'third_party/wayland' = ["src/graphics/OWNERS", "src/virtualization/OWNERS"]
 
