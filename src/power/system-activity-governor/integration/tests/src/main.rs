@@ -5074,6 +5074,26 @@ async fn test_no_suspend_loop_files_report() -> Result<()> {
     let wake_lease =
         activity_governor.acquire_wake_lease("prevent-suspend").await.unwrap().unwrap();
 
+    let prevent_suspend_koid = wake_lease.basic_info().unwrap().related_koid.raw_koid().to_string();
+    let prevent_suspend_koid_str = prevent_suspend_koid.as_str();
+
+    // Wait for the wake lease to be fully satisfied in Power Broker before allowing
+    // the boot complete signal to trigger transitions.
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            ref fobs::WAKE_LEASES_NODE: {
+                active_count: 1u64,
+                oldest_active: {
+                    var prevent_suspend_koid_str: contains {
+                        ref fobs::WAKE_LEASE_ITEM_NAME: "prevent-suspend",
+                        ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                    }
+                }
+            },
+        }
+    );
+
     // Trigger "boot complete" signal to allow element transitions.
     {
         let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
@@ -5083,9 +5103,6 @@ async fn test_no_suspend_loop_files_report() -> Result<()> {
 
     // Clear initial state
     let _ = querier.watch_file().await?;
-
-    let prevent_suspend_koid = wake_lease.basic_info().unwrap().related_koid.raw_koid().to_string();
-    let prevent_suspend_koid_str = prevent_suspend_koid.as_str();
 
     // Cycle Application Activity 6 times.
     // This is because a crash report is filed on the 6th lease taken after a resume, which
@@ -5117,10 +5134,14 @@ async fn test_no_suspend_loop_files_report() -> Result<()> {
         );
     }
 
-    // Verify crash report
+    // Verify crash report.
+    // The timeout is set to 55 seconds, which is shorter than the 60-second
+    // long wake lease watchdog timeout. This ensures that if the loop detector
+    // fails to trigger, the test fails on this timeout instead of passing
+    // due to a watchdog crash report.
     let mut watch_fut = Box::pin(querier.watch_file().fuse());
     let mut timeout_fut = Box::pin(
-        fasync::Timer::new(fasync::MonotonicDuration::from_seconds(60).after_now()).fuse(),
+        fasync::Timer::new(fasync::MonotonicDuration::from_seconds(55).after_now()).fuse(),
     );
 
     let num_filed = futures::select! {
@@ -5130,8 +5151,8 @@ async fn test_no_suspend_loop_files_report() -> Result<()> {
 
     assert_eq!(num_filed, 1);
 
-    // Cycle Application Activity again 5 times to verify no new report is filed.
-    for _ in 0..5 {
+    // Cycle Application Activity again 6 times to verify no new report is filed.
+    for _ in 0..6 {
         let lease = activity_governor.take_application_activity_lease("cycle-lease").await?;
         while aa_status.watch_power_level().await?.unwrap() != 1 {}
         drop(lease);
@@ -5183,6 +5204,9 @@ async fn test_no_suspend_loop_files_report() -> Result<()> {
         .unwrap();
 
     // Take a new wake lease to prevent suspension while we cycle AA.
+    // We must do this BEFORE waiting for Inspect to ensure we keep SAG awake,
+    // avoiding a race where the 100ms resume_control lease expires, causing SAG
+    // to attempt a second suspend (which would deadlock as the test is not watching).
     let wake_lease =
         activity_governor.acquire_wake_lease("prevent-suspend-again").await.unwrap().unwrap();
 
@@ -5190,8 +5214,18 @@ async fn test_no_suspend_loop_files_report() -> Result<()> {
         wake_lease.basic_info().unwrap().related_koid.raw_koid().to_string();
     let prevent_suspend_again_koid_str = prevent_suspend_again_koid.as_str();
 
-    // Cycle Application Activity again 5 times.
-    for _ in 0..5 {
+    // Wait for SAG to fully process the resume to ensure the lease counter is reset.
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            suspend_stats: contains {
+                ref fobs::SUSPEND_SUCCESS_COUNT: 1u64,
+            }
+        }
+    );
+
+    // Cycle Application Activity again 6 times.
+    for _ in 0..6 {
         let lease = activity_governor.take_application_activity_lease("cycle-lease-again").await?;
         while aa_status.watch_power_level().await?.unwrap() != 1 {}
         drop(lease);
@@ -5214,7 +5248,7 @@ async fn test_no_suspend_loop_files_report() -> Result<()> {
 
     // Verify a NEW crash report is filed
     let mut timeout_fut3 = Box::pin(
-        fasync::Timer::new(fasync::MonotonicDuration::from_seconds(60).after_now()).fuse(),
+        fasync::Timer::new(fasync::MonotonicDuration::from_seconds(55).after_now()).fuse(),
     );
 
     let num_filed = futures::select! {
