@@ -23,7 +23,6 @@ fuchsia_fidl_library(
         "cpp_driver",
     ],
     library = "fuchsia.driver.compat",
-    sdk_for_default_deps = "@fuchsia_sdk",
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
         "@fuchsia_sdk//fidl/zx",

@@ -23,7 +23,6 @@ fuchsia_fidl_library(
     deps = [
         {{deps}}
     ],
-    sdk_for_default_deps = "{{parent_sdk}}",
     target_compatible_with = COMPATIBILITY.FUCHSIA_CONDITION,
 )
 

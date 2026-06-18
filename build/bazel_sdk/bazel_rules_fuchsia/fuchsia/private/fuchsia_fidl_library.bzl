@@ -89,7 +89,7 @@ _fidl_library = rule(
     },
 )
 
-def fuchsia_fidl_library(name, srcs, library = None, sdk_for_default_deps = None, cc_bindings = [], deps = [], **kwargs):
+def fuchsia_fidl_library(name, srcs, library = None, cc_bindings = [], deps = [], **kwargs):
     """
     A FIDL library.
 
@@ -100,7 +100,6 @@ def fuchsia_fidl_library(name, srcs, library = None, sdk_for_default_deps = None
         cc_bindings: list of FIDL CC binding types to generate. Each binding specified will be represented by
             a new target named {name}_{cc_binding} of type fuchsia_fidl_cc_library.
         deps: List of labels for FIDL libraries this library depends on.
-        sdk_for_default_deps: Name of the Bazel workspace where default FIDL library dependencies are defined. If empty or not defined, defaults to @fuchsia_sdk.
         **kwargs: Remaining args to be passed to the C++ binding rules
     """
 
@@ -121,6 +120,5 @@ def fuchsia_fidl_library(name, srcs, library = None, sdk_for_default_deps = None
             library = name,
             binding_type = cc_binding,
             deps = deps,
-            sdk_for_default_deps = sdk_for_default_deps,
             **kwargs
         )

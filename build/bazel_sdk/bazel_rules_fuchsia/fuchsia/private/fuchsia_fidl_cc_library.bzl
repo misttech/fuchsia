@@ -34,23 +34,19 @@ def _typed_deps(deps, binding_type):
 def get_cc_lib_name(fidl_target_name, binding_type):
     return "{fidl}_{binding_type}".format(fidl = fidl_target_name, binding_type = binding_type)
 
-def fuchsia_fidl_cc_library(name, library, binding_type = "cpp_wire", sdk_for_default_deps = None, deps = [], tags = [], **kwargs):
+def fuchsia_fidl_cc_library(name, library, binding_type = "cpp_wire", deps = [], tags = [], **kwargs):
     """Generates cc_library() for the given fidl_library.
 
     Args:
       name: Target name. Required.
       library: fidl_library() target to generate the language bindings for. Required.
       binding_type: the FIDL binding type, for example "cpp_wire", "cpp_driver" or "cpp_natural_types". Defaults to "cpp_wire"
-      sdk_for_default_deps: Name of the Bazel workspace where default FIDL library dependencies are defined. If empty or not defined, defaults to the current repository.
       deps: Additional dependencies.
       tags: Optional tags.
       **kwargs: Remaining args.
     """
     gen_name = "%s_codegen" % name
     impl_name = "%s_impl" % name
-
-    if not sdk_for_default_deps:
-        sdk_for_default_deps = "@fuchsia_sdk"
 
     _codegen(
         name = gen_name,
@@ -76,10 +72,10 @@ def fuchsia_fidl_cc_library(name, library, binding_type = "cpp_wire", sdk_for_de
         # This is necessary in order to locate generated headers.
         strip_include_prefix = gen_name + "." + binding_type,
         deps = _typed_deps(deps, binding_type) + [
-            sdk_for_default_deps + "//pkg/fidl_cpp_wire",
-            sdk_for_default_deps + "//pkg/fidl_cpp_v2",
-            sdk_for_default_deps + "//pkg/fidl_driver",
-            sdk_for_default_deps + "//pkg/fidl_driver_natural",
+            "@fuchsia_sdk//pkg/fidl_cpp_wire",
+            "@fuchsia_sdk//pkg/fidl_cpp_v2",
+            "@fuchsia_sdk//pkg/fidl_driver",
+            "@fuchsia_sdk//pkg/fidl_driver_natural",
         ],
         tags = tags,
         **kwargs
