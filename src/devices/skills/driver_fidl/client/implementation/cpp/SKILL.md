@@ -167,6 +167,6 @@ Used for high-performance communication between drivers in the same process.
   Drivers](/docs/development/drivers/tutorials/fidl-tutorial.md) - Learn how to
   define and use FIDL protocols in drivers.
 * For guidance on debugging FIDL connection issues, see the [Driver FIDL Usage
-  Debugging](/src/devices/skills/driver_fidl/debugging/SKILL.md) skill.
+  Debugging](/src/devices/skills/driver_fidl/client/debugging/SKILL.md) skill.
 * [Zircon Transport Example Driver](/examples/drivers/transport/zircon/v2/)
 * [Driver Transport Example Driver](/examples/drivers/transport/driver/v2/)

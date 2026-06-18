@@ -129,7 +129,7 @@ Rules](/src/devices/skills/driver_bind_find_instance_name/SKILL.md) skill.
   Drivers](/docs/development/drivers/tutorials/fidl-tutorial.md) - Learn how to
   define and use FIDL protocols in drivers.
 * For guidance on debugging FIDL connection issues, see the [Driver FIDL Usage
-  Debugging](/src/devices/skills/driver_fidl/debugging/SKILL.md) skill.
+  Debugging](/src/devices/skills/driver_fidl/client/debugging/SKILL.md) skill.
 * [Zircon Transport Rust Example
   Driver](/examples/drivers/transport/zircon/rust/)
 * [Driver Transport Rust Example

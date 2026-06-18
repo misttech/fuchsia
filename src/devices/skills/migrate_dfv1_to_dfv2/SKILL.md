@@ -88,7 +88,7 @@ In DFv1, initialization happens in the constructor, `Bind` static method, and
 * Use `context.incoming()` to access incoming services (replacing
   `device_get_protocol`). For details on how to connect to parent FIDL
   connections in C++, see the [Driver FIDL Usage Implementation Skill
-  (C++)](/src/devices/skills/driver_fidl_usage/implementation/cpp/SKILL.md).
+  (C++)](/src/devices/skills/driver_fidl/client/implementation/cpp/SKILL.md).
 
 ### D. Update Macros
 

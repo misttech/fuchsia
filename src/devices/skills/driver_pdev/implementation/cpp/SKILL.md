@@ -69,4 +69,4 @@ fdf::PDev pdev(std::move(pdev_client.value()));
 
 * For more information on FIDL usage, see the [Driver FIDL Usage Implementation
   Skill
-  (C++)](/src/devices/skills/driver_fidl_usage/implementation/cpp/SKILL.md).
+  (C++)](/src/devices/skills/driver_fidl/client/implementation/cpp/SKILL.md).
