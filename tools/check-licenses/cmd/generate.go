@@ -206,10 +206,10 @@ func (c *CustomClassifier) Run(ctx context.Context, in <-chan pipeline.FilteredP
 			if err == nil {
 				for _, r := range readmes {
 					for _, lf := range r.LicenseFiles {
-						licenseFiles[filepath.Join(proj.RootPath, lf.Path)] = true
+						licenseFiles[filepath.Join(proj.RootPath, lf)] = true
 					}
 					for _, sf := range r.SourceFiles {
-						sourceFiles[filepath.Join(proj.RootPath, sf.Path)] = true
+						sourceFiles[filepath.Join(proj.RootPath, sf)] = true
 					}
 				}
 			}
@@ -227,8 +227,8 @@ func (c *CustomClassifier) Run(ctx context.Context, in <-chan pipeline.FilteredP
 					if err == nil {
 						for _, r := range readmes {
 							for _, lf := range r.LicenseFiles {
-								if filepath.Join(proj.RootPath, lf.Path) == f.Path {
-									licenseType = lf.License
+								if filepath.Join(proj.RootPath, lf) == f.Path {
+									licenseType = strings.Join(r.Licenses, ", ")
 									break
 								}
 							}
@@ -270,8 +270,8 @@ func (c *CustomClassifier) Run(ctx context.Context, in <-chan pipeline.FilteredP
 					if err == nil {
 						for _, r := range readmes {
 							for _, sf := range r.SourceFiles {
-								if filepath.Join(proj.RootPath, sf.Path) == f.Path {
-									licenseType = sf.License
+								if filepath.Join(proj.RootPath, sf) == f.Path {
+									licenseType = strings.Join(r.Licenses, ", ")
 									break
 								}
 							}

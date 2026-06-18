@@ -107,13 +107,14 @@ func (c *ReadmeFormatCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 
 	builder := v2config.NewBuilder(fuchsiaDir)
 	if err := builder.Assemble(); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to assemble config: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Failed to assemble config: %v\n", err)
+		return subcommands.ExitFailure
 	}
 
 	errs := readme.Validate(fuchsiaDir, absPath, readmes, builder.Config)
 	hasValidationErrors := len(errs) > 0
 	for _, err := range errs {
-		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 	}
 
 	if c.printStdout {
@@ -194,13 +195,14 @@ func (c *ReadmeCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...
 
 	builder := v2config.NewBuilder(fuchsiaDir)
 	if err := builder.Assemble(); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to assemble config: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Failed to assemble config: %v\n", err)
+		return subcommands.ExitFailure
 	}
 
 	errs := readme.Validate(fuchsiaDir, absPath, readmes, builder.Config)
 	hasValidationErrors := len(errs) > 0
 	for _, err := range errs {
-		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 	}
 
 	if hasValidationErrors {

@@ -50,6 +50,8 @@ func TestCustomClassifier_Run(t *testing.T) {
 	readmeContent := `Name: my_project
 URL: http://foo
 Version: 1.0
+Revision: abc
+Security Critical: no
 License File: LICENSE
 Source File: main.cc
 `

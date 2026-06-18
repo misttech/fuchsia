@@ -105,6 +105,11 @@ func TestReadme_ValidFuchsia(t *testing.T) {
 	os.MkdirAll(root, 0755)
 
 	readmeContent := `Name: TestProject
+URL: http://test
+Version: 1.0
+Revision: abc
+Security Critical: no
+License: MIT
 License File: LICENSE
 `
 	os.WriteFile(filepath.Join(root, "README.fuchsia"), []byte(readmeContent), 0644)

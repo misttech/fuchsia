@@ -14,10 +14,8 @@ Name: awesome_lib
 URL: https://github.com/awesome/lib
 Version: 1.2.3
 Security Critical: no
-License File: LICENSE
-License File: third_party/NOTICE
- -> License: MIT, Apache-2.0
- -> License Type: Android
+License: MIT, Apache-2.0
+License File: LICENSE, third_party/NOTICE
 Description: An awesome library for doing awesome things.
 Local Modifications: None.
 `
@@ -48,24 +46,21 @@ Local Modifications: None.
 	if len(readme.LicenseFiles) != 2 {
 		t.Fatalf("Expected 2 LicenseFiles, got %d", len(readme.LicenseFiles))
 	}
-
-	lf1 := readme.LicenseFiles[0]
-	if lf1.Path != "LICENSE" {
-		t.Errorf("Expected lf1 Path 'LICENSE', got %q", lf1.Path)
+	if readme.LicenseFiles[0] != "LICENSE" {
+		t.Errorf("Expected lf1 Path 'LICENSE', got %q", readme.LicenseFiles[0])
 	}
-	if lf1.LicenseType != "" {
-		t.Errorf("Expected lf1 LicenseType to be empty, got %q", lf1.LicenseType)
+	if readme.LicenseFiles[1] != "third_party/NOTICE" {
+		t.Errorf("Expected lf2 Path 'third_party/NOTICE', got %q", readme.LicenseFiles[1])
 	}
 
-	lf2 := readme.LicenseFiles[1]
-	if lf2.Path != "third_party/NOTICE" {
-		t.Errorf("Expected lf2 Path 'third_party/NOTICE', got %q", lf2.Path)
+	if len(readme.Licenses) != 2 {
+		t.Fatalf("Expected 2 Licenses, got %d", len(readme.Licenses))
 	}
-	if lf2.LicenseType != "Android" {
-		t.Errorf("Expected lf2 LicenseType 'Android', got %q", lf2.LicenseType)
+	if readme.Licenses[0] != "Apache-2.0" {
+		t.Errorf("Expected license 1 'Apache-2.0', got %q", readme.Licenses[0])
 	}
-	if lf2.License != "MIT, Apache-2.0" {
-		t.Errorf("Expected lf2 License 'MIT, Apache-2.0', got %q", lf2.License)
+	if readme.Licenses[1] != "MIT" {
+		t.Errorf("Expected license 2 'MIT', got %q", readme.Licenses[1])
 	}
 }
 
@@ -130,7 +125,7 @@ License File: LICENSE
 	if readme.Name != "foo" {
 		t.Errorf("Expected Name 'foo', got %q", readme.Name)
 	}
-	if len(readme.LicenseFiles) != 1 || readme.LicenseFiles[0].Path != "LICENSE" {
+	if len(readme.LicenseFiles) != 1 || readme.LicenseFiles[0] != "LICENSE" {
 		t.Errorf("Expected 1 License File 'LICENSE'")
 	}
 	if len(readme.UnknownFields) != 2 {
@@ -170,7 +165,7 @@ License File: third_party/sub/LICENSE
 	if parent.Name != "Parent Project" {
 		t.Errorf("Expected first readme Name 'Parent Project', got %q", parent.Name)
 	}
-	if len(parent.LicenseFiles) != 1 || parent.LicenseFiles[0].Path != "LICENSE" {
+	if len(parent.LicenseFiles) != 1 || parent.LicenseFiles[0] != "LICENSE" {
 		t.Errorf("Expected 1 License File 'LICENSE' for parent")
 	}
 
@@ -181,27 +176,12 @@ License File: third_party/sub/LICENSE
 	if child.Location != "third_party/sub" {
 		t.Errorf("Expected second readme Location 'third_party/sub', got %q", child.Location)
 	}
-	if len(child.LicenseFiles) != 1 || child.LicenseFiles[0].Path != "third_party/sub/LICENSE" {
+	if len(child.LicenseFiles) != 1 || child.LicenseFiles[0] != "third_party/sub/LICENSE" {
 		t.Errorf("Expected 1 License File 'third_party/sub/LICENSE' for child")
 	}
 }
 
 func TestParse_LicenseOrder(t *testing.T) {
-	// 1. Canonical nested order
-	canonicalText := `
-Name: canonical
-License File: LICENSE
-  License: MIT
-`
-	canonicalReadmes, err := Parse([]byte(canonicalText))
-	if err != nil || len(canonicalReadmes) != 1 {
-		t.Fatalf("Failed to parse canonical: %v", err)
-	}
-	if len(canonicalReadmes[0].LicenseFiles) != 1 || canonicalReadmes[0].LicenseFiles[0].License != "MIT" {
-		t.Errorf("Expected canonical License 'MIT', got %+v", canonicalReadmes[0].LicenseFiles)
-	}
-
-	// 2. Legacy out-of-order
 	legacyText := `
 Name: legacy
 License: MIT
@@ -211,7 +191,7 @@ License File: LICENSE
 	if err != nil || len(legacyReadmes) != 1 {
 		t.Fatalf("Failed to parse legacy: %v", err)
 	}
-	if len(legacyReadmes[0].LicenseFiles) != 1 || legacyReadmes[0].LicenseFiles[0].License != "MIT" {
-		t.Errorf("Expected legacy License 'MIT', got %+v", legacyReadmes[0].LicenseFiles)
+	if len(legacyReadmes[0].LicenseFiles) != 1 || legacyReadmes[0].Licenses[0] != "MIT" {
+		t.Errorf("Expected legacy License 'MIT', got %+v", legacyReadmes[0].Licenses)
 	}
 }

@@ -36,14 +36,14 @@ func TestGrouper_Run(t *testing.T) {
 	if err := os.MkdirAll(proj1Dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	readmeContent := []byte(fmt.Sprintf(`License File: %s
- -> License Type: Android
+	readmeContent := []byte(fmt.Sprintf(`License: Android
+License File: %s
 
 -------------------- DEPENDENCY DIVIDER --------------------
 
 Location: vendored_lib
+License: Chromium
 License File: %s
- -> License Type: Chromium
 `, filepath.Join(proj1DirRel, "lib", "util.cc"), filepath.Join(proj1DirRel, "vendored_lib", "LICENSE")))
 
 	if err := os.WriteFile(filepath.Join(proj1Dir, "README.fuchsia"), readmeContent, 0644); err != nil {
@@ -85,7 +85,7 @@ License File: %s
 
 	expectedProj1 := []pipeline.FileInfo{
 		{Path: filepath.Join(proj1Dir, "README.fuchsia")},
-		{Path: filepath.Join(proj1Dir, "lib", "util.cc"), LicenseParser: "Android", IsLicenseFile: true},
+		{Path: filepath.Join(proj1Dir, "lib", "util.cc"), IsLicenseFile: true},
 		{Path: filepath.Join(proj1Dir, "main.cc")},
 	}
 	if !reflect.DeepEqual(results[proj1Dir], expectedProj1) {

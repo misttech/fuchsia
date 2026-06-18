@@ -118,6 +118,7 @@ if (is_host) {
       ":v2_pipeline",
       "//third_party/golibs:github.com/BurntSushi/toml",
       "//third_party/golibs:gopkg.in/yaml.v2",
+      "//tools/readme_fuchsia:readme_fuchsia_lib",
     ]
   }
 }
@@ -251,6 +252,7 @@ if (is_host) {
       "//tools/check-licenses/readme:readme_test",
       "//tools/check-licenses/result:result_test",
       "//tools/check-licenses/util:util_test",
+      "//tools/readme_fuchsia:readme_fuchsia_test",
     ]
   }
 }

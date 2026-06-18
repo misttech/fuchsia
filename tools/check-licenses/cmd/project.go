@@ -78,9 +78,10 @@ func RunProjectPipeline(ctx context.Context, fuchsiaDir, absDir string, config *
 
 	for _, orig := range originalReadmes {
 		clone := *orig
-		clone.LicenseFiles = append([]readme.LicenseEntry(nil), orig.LicenseFiles...)
-		clone.SourceFiles = append([]readme.LicenseEntry(nil), orig.SourceFiles...)
-		clone.NonLicenseFiles = append([]readme.NonLicenseEntry(nil), orig.NonLicenseFiles...)
+		clone.Licenses = append([]string(nil), orig.Licenses...)
+		clone.LicenseFiles = append([]string(nil), orig.LicenseFiles...)
+		clone.SourceFiles = append([]string(nil), orig.SourceFiles...)
+		clone.NonLicenseFiles = append([]string(nil), orig.NonLicenseFiles...)
 		clone.UnknownFields = append([]readme.UnknownField(nil), orig.UnknownFields...)
 		updatedReadmes = append(updatedReadmes, &clone)
 	}
@@ -121,21 +122,6 @@ func RunProjectPipeline(ctx context.Context, fuchsiaDir, absDir string, config *
 		})
 	}
 
-	for _, r := range originalReadmes {
-		for _, lf := range r.LicenseFiles {
-			if lf.LicenseReference != "" {
-				absExternal := filepath.Join(absDir, lf.LicenseReference)
-				if _, statErr := os.Stat(absExternal); statErr == nil {
-					filesToClassify = append(filesToClassify, pipeline.FileInfo{
-						Path:          absExternal,
-						LicenseParser: lf.LicenseType,
-						IsLicenseFile: true,
-					})
-				}
-			}
-		}
-	}
-
 	inChan := make(chan pipeline.FilteredProject, 1)
 	inChan <- pipeline.FilteredProject{
 		Project: pipeline.Project{
@@ -171,23 +157,12 @@ func RunProjectPipeline(ctx context.Context, fuchsiaDir, absDir string, config *
 	return originalReadmes, updatedReadmes, readmePath, targetProject, filesToClassify, foundLicenses, nil
 }
 
-func compareLicenseEntries(a, b []readme.LicenseEntry) bool {
+func compareLicenseEntries(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
 	}
 	for i := range a {
-		if a[i].Path != b[i].Path || a[i].License != b[i].License || a[i].LicenseFileURL != b[i].LicenseFileURL || a[i].LicenseReference != b[i].LicenseReference {
-			return false
-		}
-		typeA := a[i].LicenseType
-		if typeA == "" {
-			typeA = "Single License"
-		}
-		typeB := b[i].LicenseType
-		if typeB == "" {
-			typeB = "Single License"
-		}
-		if typeA != typeB {
+		if a[i] != b[i] {
 			return false
 		}
 	}
@@ -197,13 +172,8 @@ func compareLicenseEntries(a, b []readme.LicenseEntry) bool {
 func verifyTargetCompliance(originalReadmes, updatedReadmes []*readme.Readme, absTarget, projectRoot string, isDir bool, foundLicenses []pipeline.ClassifiedFile) error {
 	declaredPrimary := make(map[string]bool)
 	for _, r := range originalReadmes {
-		for _, lf := range r.LicenseFiles {
-			for _, part := range strings.Split(lf.License, ",") {
-				part = strings.TrimSpace(part)
-				if part != "" {
-					declaredPrimary[part] = true
-				}
-			}
+		for _, l := range r.Licenses {
+			declaredPrimary[l] = true
 		}
 	}
 
@@ -244,70 +214,54 @@ func verifyTargetCompliance(originalReadmes, updatedReadmes []*readme.Readme, ab
 		return err
 	}
 
-	var expectedEntry *readme.LicenseEntry
+	var expectedEntry string
 	for _, r := range updatedReadmes {
 		for _, lf := range r.LicenseFiles {
-			if filepath.Clean(lf.Path) == relTarget {
-				expectedEntry = &lf
+			if filepath.Clean(lf) == relTarget {
+				expectedEntry = lf
 				break
 			}
 		}
-		if expectedEntry == nil {
+		if expectedEntry == "" {
 			for _, sf := range r.SourceFiles {
-				if filepath.Clean(sf.Path) == relTarget {
-					expectedEntry = &sf
+				if filepath.Clean(sf) == relTarget {
+					expectedEntry = sf
 					break
 				}
 			}
 		}
-		if expectedEntry != nil {
+		if expectedEntry != "" {
 			break
 		}
 	}
 
-	if expectedEntry == nil {
+	if expectedEntry == "" {
 		return nil
 	}
 
-	var actualEntry *readme.LicenseEntry
+	var actualEntry string
 	for _, r := range originalReadmes {
 		for _, lf := range r.LicenseFiles {
-			if filepath.Clean(lf.Path) == relTarget {
-				actualEntry = &lf
+			if filepath.Clean(lf) == relTarget {
+				actualEntry = lf
 				break
 			}
 		}
-		if actualEntry == nil {
+		if actualEntry == "" {
 			for _, sf := range r.SourceFiles {
-				if filepath.Clean(sf.Path) == relTarget {
-					actualEntry = &sf
+				if filepath.Clean(sf) == relTarget {
+					actualEntry = sf
 					break
 				}
 			}
 		}
-		if actualEntry != nil {
+		if actualEntry != "" {
 			break
 		}
 	}
 
-	if actualEntry == nil {
-		return fmt.Errorf("file contains license texts (%s) but is NOT declared in README.fuchsia", expectedEntry.License)
-	}
-
-	if actualEntry.License != expectedEntry.License {
-		return fmt.Errorf("declared license (%s) does not match detected license (%s)", actualEntry.License, expectedEntry.License)
-	}
-
-	typeA := actualEntry.LicenseType
-	if typeA == "" {
-		typeA = "Single License"
-	}
-	typeB := expectedEntry.LicenseType
-	if typeB == "" {
-		typeB = "Single License"
-	}
-	if typeA != typeB {
-		return fmt.Errorf("declared license type (%s) does not match detected license type (%s)", typeA, typeB)
+	if actualEntry == "" {
+		return fmt.Errorf("file contains license texts but is NOT declared in README.fuchsia")
 	}
 
 	return nil

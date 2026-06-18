@@ -26,9 +26,10 @@ func TestReadmeCommand_Format(t *testing.T) {
 Name: test_project
 URL: https://test
 Version: 1.0
+Revision: abc
 Security Critical: no
+License: MIT
 License File: LICENSE
-    License: MIT
 Description:
   A test project
 `)
@@ -59,7 +60,7 @@ Description:
 	formatted := string(formattedBytes)
 
 	// It should now be canonically formatted (e.g. no weird leading newlines, fixed indents)
-	if !strings.Contains(formatted, "Name: test_project") || !strings.Contains(formatted, "  License: MIT") {
+	if !strings.Contains(formatted, "Name: test_project") || !strings.Contains(formatted, "License: MIT") {
 		t.Errorf("File was not correctly formatted: %s", formatted)
 	}
 }
@@ -69,7 +70,7 @@ func TestReadmeCommand_Check(t *testing.T) {
 	testFilePath := filepath.Join(tempDir, "README.fuchsia")
 
 	// Clean, canonical content
-	content := []byte("Name: test_project\nURL: https://test\nVersion: 1.0\nSecurity Critical: no\n\nLicense File: LICENSE\n  License: MIT\n\nDescription:\n  A test project\n")
+	content := []byte("Name: test_project\nURL: https://test\nVersion: 1.0\nRevision: abc\nSecurity Critical: no\nLicense: MIT\nLicense File: LICENSE\n\nDescription:\n  A test project\n")
 	if err := os.WriteFile(testFilePath, content, 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +92,7 @@ func TestReadmeCommand_Check(t *testing.T) {
 	}
 
 	// Now introduce an unknown field to make it fail the check
-	badContent := []byte("Name: test_project\nURL: https://test\nVersion: 1.0\nSecurity Critical: no\nLicense File: LICENSE\n  License: MIT\nUnknown Field: foo\nDescription:\n  A test project\n")
+	badContent := []byte("Name: test_project\nURL: https://test\nVersion: 1.0\nRevision: abc\nSecurity Critical: no\nLicense: MIT\nLicense File: LICENSE\nUnknown Field: foo\nDescription:\n  A test project\n")
 	if err := os.WriteFile(testFilePath, badContent, 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +104,7 @@ func TestReadmeCommand_Check(t *testing.T) {
 	}
 
 	// Test missing Location for sub-project
-	badSubProjectContent := []byte("Name: test_project\nURL: https://test\nVersion: 1.0\nSecurity Critical: no\nLicense File: LICENSE\n  License: MIT\n\n-------------------- DEPENDENCY DIVIDER --------------------\n\nName: sub\nURL: https://sub\nVersion: 1.0\nSecurity Critical: no\nLicense File: sub/LICENSE\n  License: MIT\n")
+	badSubProjectContent := []byte("Name: test_project\nURL: https://test\nVersion: 1.0\nRevision: abc\nSecurity Critical: no\nLicense: MIT\nLicense File: LICENSE\n\n-------------------- DEPENDENCY DIVIDER --------------------\n\nName: sub\nURL: https://sub\nVersion: 1.0\nRevision: abc\nSecurity Critical: no\nLicense: MIT\nLicense File: sub/LICENSE\n")
 	if err := os.WriteFile(testFilePath, badSubProjectContent, 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +118,7 @@ func TestReadmeCommand_Check(t *testing.T) {
 		t.Errorf("Expected ExitFailure (1) for checking file with missing Location on sub-project, got %v", status)
 	}
 	// Test missing License File existence
-	missingLicenseContent := []byte("Name: test_project\nURL: https://test\nVersion: 1.0\nSecurity Critical: no\nLicense File: NON_EXISTENT_FILE\n  License: MIT\n")
+	missingLicenseContent := []byte("Name: test_project\nURL: https://test\nVersion: 1.0\nRevision: abc\nSecurity Critical: no\nLicense: MIT\nLicense File: NON_EXISTENT_FILE\n")
 	if err := os.WriteFile(testFilePath, missingLicenseContent, 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +134,7 @@ func TestReadmeCommand_Stdout(t *testing.T) {
 	testFilePath := filepath.Join(tempDir, "README.fuchsia")
 
 	// Messy content
-	messyContent := []byte("Name: test\nURL: https://test\nVersion: 1.0\nSecurity Critical: no\nLicense File: LICENSE\n    License: MIT\n")
+	messyContent := []byte("Name: test\nURL: https://test\nVersion: 1.0\nRevision: abc\nSecurity Critical: no\nLicense: MIT\nLicense File: LICENSE\n")
 	if err := os.WriteFile(testFilePath, messyContent, 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +166,7 @@ func TestReadmeCommand_Stdout(t *testing.T) {
 		t.Errorf("Expected ExitSuccess (0), got %v", status)
 	}
 
-	if !strings.Contains(output, "  License: MIT") {
+	if !strings.Contains(output, "License: MIT") {
 		t.Errorf("Expected output to be formatted, got: %s", output)
 	}
 
@@ -205,7 +206,7 @@ func TestReadmeCommand_AllowlistedProject(t *testing.T) {
 	testFilePath := filepath.Join(projDir, "README.fuchsia")
 
 	// Content without License File and without Version
-	content := []byte("Name: allowlisted\nURL: https://test\nSecurity Critical: no\n")
+	content := []byte("Name: allowlisted\nURL: https://test\nVersion: 1.0\nRevision: abc\nSecurity Critical: no\n")
 	if err := os.WriteFile(testFilePath, content, 0644); err != nil {
 		t.Fatal(err)
 	}

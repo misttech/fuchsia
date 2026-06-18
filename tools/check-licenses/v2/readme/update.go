@@ -17,7 +17,6 @@ import (
 // Files that match any NonLicenseFile entries are ignored.
 func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, foundLicenses []pipeline.ClassifiedFile) {
 	fileToReadme := make(map[string]*Readme)
-	externalToFileEntry := make(map[string]string) // maps cf.Path (external) -> local Path (e.g. "LICENSE")
 
 	for _, cf := range foundLicenses {
 		relToFile, _ := filepath.Rel(absDir, cf.Path)
@@ -25,17 +24,6 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 		bestPrefixLength := -1
 
 		for _, r := range readmes {
-			for _, lf := range r.LicenseFiles {
-				if filepath.Clean(lf.LicenseReference) == relToFile {
-					bestMatch = r
-					externalToFileEntry[cf.Path] = lf.Path
-					break
-				}
-			}
-			if bestMatch != nil {
-				break
-			}
-
 			loc := filepath.Clean(r.Location)
 			if loc == "" || loc == "." {
 				if bestPrefixLength < 0 {
@@ -56,20 +44,6 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 		}
 	}
 
-	existingLicenses := make(map[*Readme]map[string]LicenseEntry)
-	for _, r := range readmes {
-		existingLicenses[r] = make(map[string]LicenseEntry)
-		if r.LicenseFile != "" {
-			existingLicenses[r][r.LicenseFile] = LicenseEntry{Path: r.LicenseFile, LicenseType: "Single License"}
-		}
-		for _, lf := range r.LicenseFiles {
-			existingLicenses[r][lf.Path] = lf
-		}
-		for _, sf := range r.SourceFiles {
-			existingLicenses[r][sf.Path] = sf
-		}
-	}
-
 	isPrimaryLicenseFile := make(map[string]bool)
 	primaryLicensesByReadme := make(map[*Readme]map[string]bool)
 	for _, r := range readmes {
@@ -82,26 +56,13 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 			continue
 		}
 		relToReadme, _ := filepath.Rel(absDir, cf.Path)
-		if localPath, ok := externalToFileEntry[cf.Path]; ok {
-			relToReadme = localPath
-		} else if existing, ok := existingLicenses[r][relToReadme]; ok && existing.LicenseReference != "" {
-			// Skip local stub file! We only care about its external reference file!
-			continue
-		}
 
 		isPrimary := cf.IsLicenseFile
-		if localPath, ok := externalToFileEntry[cf.Path]; ok {
-			isPrimary = true
-			relToReadme = localPath
-		} else if !isPrimary {
-			if r.LicenseFile == relToReadme {
-				isPrimary = true
-			} else {
-				for _, lf := range r.LicenseFiles {
-					if lf.Path == relToReadme {
-						isPrimary = true
-						break
-					}
+		if !isPrimary {
+			for _, lf := range r.LicenseFiles {
+				if lf == relToReadme {
+					isPrimary = true
+					break
 				}
 			}
 		}
@@ -118,8 +79,8 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 
 	for _, r := range readmes {
 		r.LicenseFiles = nil
-		r.LicenseFile = ""
 		r.SourceFiles = nil
+		r.Licenses = nil
 	}
 
 	for _, cf := range foundLicenses {
@@ -129,16 +90,10 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 		}
 
 		relToReadme, _ := filepath.Rel(absDir, cf.Path)
-		if localPath, ok := externalToFileEntry[cf.Path]; ok {
-			relToReadme = localPath
-		} else if existing, ok := existingLicenses[r][relToReadme]; ok && existing.LicenseReference != "" {
-			continue
-		}
-
 		relToFuchsia, _ := filepath.Rel(fuchsiaDir, cf.Path)
 		isNonLicense := false
 		for _, nlf := range r.NonLicenseFiles {
-			if filepath.Clean(nlf.Path) == relToReadme || filepath.Clean(nlf.Path) == relToFuchsia {
+			if filepath.Clean(nlf) == relToReadme || filepath.Clean(nlf) == relToFuchsia {
 				isNonLicense = true
 				break
 			}
@@ -176,47 +131,33 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 			}
 		}
 
-		var licNames []string
-		for l := range lics {
-			licNames = append(licNames, l)
-		}
-		sort.Strings(licNames)
-
-		licenseType := "Single License"
-		licenseFileURL := ""
-		licenseReference := ""
-		notes := ""
-		if existing, ok := existingLicenses[r][relToReadme]; ok {
-			if existing.LicenseType != "" {
-				licenseType = existing.LicenseType
-			}
-			licenseFileURL = existing.LicenseFileURL
-			licenseReference = existing.LicenseReference
-			notes = existing.Notes
-		}
-
-		entry := LicenseEntry{
-			Path:             relToReadme,
-			License:          strings.Join(licNames, ", "),
-			LicenseType:      licenseType,
-			LicenseFileURL:   licenseFileURL,
-			LicenseReference: licenseReference,
-			Notes:            notes,
-		}
-
 		if isPrimaryLicenseFile[cf.Path] {
-			r.LicenseFiles = append(r.LicenseFiles, entry)
+			r.LicenseFiles = append(r.LicenseFiles, relToReadme)
+			for l := range lics {
+				r.Licenses = append(r.Licenses, l)
+			}
 		} else {
-			r.SourceFiles = append(r.SourceFiles, entry)
+			r.SourceFiles = append(r.SourceFiles, relToReadme)
 		}
 	}
 
 	for _, r := range readmes {
-		sort.Slice(r.LicenseFiles, func(i, j int) bool {
-			return r.LicenseFiles[i].Path < r.LicenseFiles[j].Path
-		})
-		sort.Slice(r.SourceFiles, func(i, j int) bool {
-			return r.SourceFiles[i].Path < r.SourceFiles[j].Path
-		})
+		r.Licenses = deduplicateAndSort(r.Licenses)
+		r.LicenseFiles = deduplicateAndSort(r.LicenseFiles)
+		r.SourceFiles = deduplicateAndSort(r.SourceFiles)
 	}
+}
+
+func deduplicateAndSort(items []string) []string {
+	seen := make(map[string]bool)
+	var result []string
+	for _, item := range items {
+		trimmed := strings.TrimSpace(item)
+		if trimmed != "" && !seen[trimmed] {
+			seen[trimmed] = true
+			result = append(result, trimmed)
+		}
+	}
+	sort.Strings(result)
+	return result
 }

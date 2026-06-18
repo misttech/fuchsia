@@ -5,293 +5,17 @@
 package readme
 
 import (
-	"bufio"
-	"bytes"
-	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
+
+	"go.fuchsia.dev/fuchsia/tools/readme_fuchsia"
 )
-
-const dependencyDivider = "-------------------- DEPENDENCY DIVIDER --------------------"
-
-// ParseFile reads a README.fuchsia file from disk and parses it into a slice of Readme structs.
-func ParseFile(path string) ([]*Readme, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	return Parse(data)
-}
-
-var knownDirectives = map[string]bool{
-	"Name":                       true,
-	"URL":                        true,
-	"Version":                    true,
-	"Security Critical":          true,
-	"Location":                   true,
-	"License File":               true,
-	"Source File":                true,
-	"Non-License File":           true,
-	"Upstream Git":               true,
-	"Description":                true,
-	"Local Modifications":        true,
-	"License Android Compatible": true, // Kept for Chromium Compatibility
-	"Original URL":               true, // Kept for Chromium Compatibility
-	"Revision":                   true, // Kept for Chromium Compatibility
-	"Modifications":              true, // Legacy alias
-	"Deprecated":                 true, // Legacy
-	"License":                    true, // Legacy flat root directive
-	"Upstream revision":          true,
-	"Upstream Revision":          true,
-}
-
-var knownFileDirectives = map[string]bool{
-	"License":                      true,
-	"License Type":                 true,
-	"License File URL":             true,
-	"License Reference":            true,
-	"Non-License File Explanation": true,
-	"Notes":                        true,
-}
-
-// isMultiLineField returns true if the given key is allowed to span multiple lines.
-func isMultiLineField(key string) bool {
-	return key == "Description" || key == "Local Modifications" || key == "Modifications" || key == "Deprecated"
-}
-
-// Parse extracts a slice of Readme structs from the given byte array,
-// splitting by the standard DEPENDENCY DIVIDER if present.
-func Parse(data []byte) ([]*Readme, error) {
-	var readmes []*Readme
-
-	blocks := bytes.Split(data, []byte(dependencyDivider))
-
-	for _, block := range blocks {
-		readme := &Readme{}
-		var currentLicenseEntry *LicenseEntry
-		var currentSourceEntry *LicenseEntry
-		var currentNonLicenseEntry *NonLicenseEntry
-		var pendingLicense string
-
-		var currentKey string
-		var currentValue strings.Builder
-
-		scanner := bufio.NewScanner(bytes.NewReader(block))
-		for scanner.Scan() {
-			line := scanner.Text()
-			trimmed := strings.TrimSpace(line)
-
-			// Skip empty lines or comments ONLY if we are not actively parsing a multi-line field.
-			if (trimmed == "" || strings.HasPrefix(trimmed, "#")) && !isMultiLineField(currentKey) {
-				continue
-			}
-
-			// 1. Check if the line is a known file-level directive
-			// These usually have leading whitespace or an arrow (e.g., " -> License Type: Android")
-			isFileDirective := false
-			if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") || strings.HasPrefix(line, "->") {
-				cleanLine := strings.TrimLeft(line, " \t->")
-				parts := strings.SplitN(cleanLine, ":", 2)
-				if len(parts) == 2 {
-					key := strings.TrimSpace(parts[0])
-					if knownFileDirectives[key] {
-						isFileDirective = true
-						value := strings.TrimSpace(parts[1])
-						if key == "License" && currentLicenseEntry == nil && currentSourceEntry == nil {
-							pendingLicense = value
-						} else if currentLicenseEntry != nil {
-							switch key {
-							case "License":
-								currentLicenseEntry.License = value
-							case "License Type":
-								currentLicenseEntry.LicenseType = value
-							case "License File URL":
-								currentLicenseEntry.LicenseFileURL = value
-							case "License Reference":
-								currentLicenseEntry.LicenseReference = value
-							case "Notes":
-								currentLicenseEntry.Notes = value
-							}
-						} else if currentSourceEntry != nil {
-							switch key {
-							case "License":
-								currentSourceEntry.License = value
-							case "License Type":
-								currentSourceEntry.LicenseType = value
-							case "License File URL":
-								currentSourceEntry.LicenseFileURL = value
-							case "License Reference":
-								currentSourceEntry.LicenseReference = value
-							case "Notes":
-								currentSourceEntry.Notes = value
-							}
-						} else if currentNonLicenseEntry != nil {
-							switch key {
-							case "Non-License File Explanation", "Notes":
-								currentNonLicenseEntry.Notes = value
-							}
-						}
-						currentKey = "" // File-level metadata interrupts any active multi-line field
-						continue
-					}
-				}
-			}
-			if isFileDirective {
-				continue
-			}
-
-			// 2. Check if the line is a new directive (Key: Value pair)
-			isRootDirective := false
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				key := strings.TrimSpace(parts[0])
-				value := strings.TrimSpace(parts[1])
-
-				if knownDirectives[key] {
-					isRootDirective = true
-
-					if key == "License" {
-						pendingLicense = value
-						currentKey = ""
-						continue
-					}
-
-					if key == "License File" || key == "Source File" || key == "Non-License File" {
-						if currentLicenseEntry != nil {
-							readme.LicenseFiles = append(readme.LicenseFiles, *currentLicenseEntry)
-							currentLicenseEntry = nil
-						}
-						if currentSourceEntry != nil {
-							readme.SourceFiles = append(readme.SourceFiles, *currentSourceEntry)
-							currentSourceEntry = nil
-						}
-						if currentNonLicenseEntry != nil {
-							readme.NonLicenseFiles = append(readme.NonLicenseFiles, *currentNonLicenseEntry)
-							currentNonLicenseEntry = nil
-						}
-
-						if key == "License File" {
-							currentLicenseEntry = &LicenseEntry{Path: value, License: pendingLicense}
-							pendingLicense = ""
-							if readme.LicenseFile == "" {
-								readme.LicenseFile = value
-							}
-						} else if key == "Source File" {
-							currentSourceEntry = &LicenseEntry{Path: value}
-						} else if key == "Non-License File" {
-							currentNonLicenseEntry = &NonLicenseEntry{Path: value}
-						}
-						currentKey = "" // reset multi-line tracking
-						continue
-					}
-
-					currentKey = key
-					currentValue.Reset()
-					currentValue.WriteString(value)
-					assignValue(readme, currentKey, currentValue.String())
-					continue
-				} else if !isMultiLineField(currentKey) {
-					// We hit a Key: Value pair, it's not a known directive, and we are NOT
-					// currently inside a multi-line field. This is an unknown field.
-					readme.UnknownFields = append(readme.UnknownFields, UnknownField{
-						Key:   key,
-						Value: value,
-					})
-					currentKey = ""        // Ensure we don't accidentally treat the next line as part of this unknown field
-					isRootDirective = true // Mark as handled
-					continue
-				}
-			}
-
-			// 3. Continuation of a multi-line value
-			if !isRootDirective && currentKey != "" {
-				// Only specific fields are allowed to be multi-line
-				if !isMultiLineField(currentKey) {
-					currentKey = ""
-					continue
-				}
-
-				// Heuristic: Any line (including unknown Key: Value pairs) found while actively parsing a multi-line
-				// directive (like Description or Local Modifications) is treated as a continuation of the paragraph.
-
-				if trimmed == "" {
-					currentValue.WriteString("\n")
-				} else {
-					// Strip up to 2 spaces of indentation from continuation lines
-					unindented := line
-					if strings.HasPrefix(unindented, "  ") {
-						unindented = unindented[2:]
-					} else if strings.HasPrefix(unindented, " ") {
-						unindented = unindented[1:]
-					}
-					currentValue.WriteString("\n" + strings.TrimRight(unindented, " \t\r\n"))
-				}
-				assignValue(readme, currentKey, currentValue.String())
-			}
-		}
-
-		if err := scanner.Err(); err != nil {
-			return nil, fmt.Errorf("error scanning README bytes: %w", err)
-		}
-
-		// Commit the final License File entry
-		if currentLicenseEntry != nil {
-			readme.LicenseFiles = append(readme.LicenseFiles, *currentLicenseEntry)
-		}
-		if currentSourceEntry != nil {
-			readme.SourceFiles = append(readme.SourceFiles, *currentSourceEntry)
-		}
-		if currentNonLicenseEntry != nil {
-			readme.NonLicenseFiles = append(readme.NonLicenseFiles, *currentNonLicenseEntry)
-		}
-
-		// Only append if we actually parsed something useful (ignores empty trailing blocks)
-		if readme.Name != "" || len(readme.LicenseFiles) > 0 || len(readme.SourceFiles) > 0 || len(readme.NonLicenseFiles) > 0 {
-			readmes = append(readmes, readme)
-		}
-	}
-
-	return readmes, nil
-}
-
-func assignValue(r *Readme, key, value string) {
-	switch key {
-	case "Name":
-		r.Name = value
-	case "URL":
-		r.URL = value
-	case "Original URL":
-		r.OriginalURL = value
-	case "Version":
-		r.Version = value
-	case "Security Critical":
-		r.SecurityCritical = value
-	case "Location":
-		r.Location = value
-	case "Upstream Git":
-		r.UpstreamGit = value
-	case "Revision":
-		r.Revision = value
-	case "License Android Compatible":
-		r.LicenseAndroidCompatible = value
-	case "Description":
-		r.Description = value
-	case "Local Modifications", "Modifications":
-		r.LocalModifications = value
-	case "Deprecated":
-		r.Deprecated = value
-	case "Upstream revision", "Upstream Revision":
-		r.UpstreamRevision = value
-	}
-}
 
 // ParseAnyMetadata parses a metadata file based on its filename (README.fuchsia, go.mod, Cargo.toml, pubspec.yaml)
 // and returns the root Readme (if any) and a slice of sub-project Readmes.
 // For go.mod, there is no root readme, only sub-projects.
-func ParseAnyMetadata(path string) (rootReadmes []*Readme, subReadmes []*Readme, err error) {
+func ParseAnyMetadata(path string) (rootReadmes []*readme_fuchsia.Readme, subReadmes []*readme_fuchsia.Readme, err error) {
 	base := filepath.Base(path)
-	var readmes []*Readme
+	var readmes []*readme_fuchsia.Readme
 
 	if base == "go.mod" {
 		readmes, err = ParseGoMod(path)
@@ -300,7 +24,7 @@ func ParseAnyMetadata(path string) (rootReadmes []*Readme, subReadmes []*Readme,
 	} else if base == "pubspec.yaml" {
 		readmes, err = ParsePubspecYaml(path)
 	} else {
-		readmes, err = ParseFile(path)
+		readmes, err = readme_fuchsia.ParseFile(path)
 	}
 
 	if err != nil || len(readmes) == 0 {
@@ -321,4 +45,12 @@ func ParseAnyMetadata(path string) (rootReadmes []*Readme, subReadmes []*Readme,
 	}
 
 	return rootReadmes, subReadmes, nil
+}
+
+func ParseFile(path string) ([]*Readme, error) {
+	return readme_fuchsia.ParseFile(path)
+}
+
+func Parse(data []byte) ([]*Readme, error) {
+	return readme_fuchsia.Parse(data)
 }

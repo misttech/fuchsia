@@ -1,6 +1,7 @@
 Name: Fuchsia
 URL: https://fuchsia.googlesource.com/
 Version: Fuchsia Platform Version
+CPEPrefix: unknown
 Security Critical: yes
 
 License File: LICENSE

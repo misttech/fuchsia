@@ -6,7 +6,6 @@ package boundary
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -96,30 +95,8 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 					if subReadme.Location != "" && subReadme.Location != "." {
 						absSubProjectDir := filepath.Join(dir, subReadme.Location)
 
-						// It's possible multiple sub-projects share a directory. We append them.
+						// It is possible multiple sub-projects share a directory. We append them.
 						projectRoots[absSubProjectDir] = append(projectRoots[absSubProjectDir], subReadme)
-					}
-				}
-			}
-		}
-
-		// Inject virtual license files from READMEs into allFiles if their external reference exists on disk
-		existingFiles := make(map[string]bool)
-		for _, f := range allFiles {
-			existingFiles[f] = true
-		}
-		for root, readmes := range projectRoots {
-			for _, r := range readmes {
-				for _, lf := range r.LicenseFiles {
-					if lf.LicenseReference != "" && lf.Path != "" {
-						cleanPath := filepath.Clean(filepath.Join(root, lf.Path))
-						if !existingFiles[cleanPath] {
-							absExternal := filepath.Join(root, lf.LicenseReference)
-							if _, statErr := os.Stat(absExternal); statErr == nil {
-								allFiles = append(allFiles, cleanPath)
-								existingFiles[cleanPath] = true
-							}
-						}
 					}
 				}
 			}
@@ -157,16 +134,18 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 
 				for _, r := range readmes {
 					for _, lf := range r.LicenseFiles {
-						if filepath.Clean(lf.Path) == relToReadme || filepath.Clean(lf.Path) == relToFuchsia {
-							parser = lf.LicenseType
+						if filepath.Clean(lf) == relToReadme || filepath.Clean(lf) == relToFuchsia {
 							listedInReadme = true
 							isLicenseFile = true
-							if lf.LicenseReference != "" {
-								absExternal := filepath.Join(root, lf.LicenseReference)
-								if _, statErr := os.Stat(absExternal); statErr == nil {
-									file = absExternal
-								}
-							}
+							break
+						}
+					}
+					if listedInReadme {
+						break
+					}
+					for _, sf := range r.SourceFiles {
+						if filepath.Clean(sf) == relToReadme || filepath.Clean(sf) == relToFuchsia {
+							listedInReadme = true
 							break
 						}
 					}
@@ -174,7 +153,7 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 						break
 					}
 					for _, nlf := range r.NonLicenseFiles {
-						if filepath.Clean(nlf.Path) == relToReadme || filepath.Clean(nlf.Path) == relToFuchsia {
+						if filepath.Clean(nlf) == relToReadme || filepath.Clean(nlf) == relToFuchsia {
 							listedInReadme = true
 							isNonLicense = true
 							break

@@ -16,11 +16,9 @@ Version: 1.2.3
 Upstream Git: https://github.com/awesome/lib.git
 Security Critical: yes
 
+License: Apache-2.0, MIT
 License File: LICENSE
-
 License File: third_party/NOTICE
-  License: MIT, Apache-2.0
-  License Type: Android
 
 Some Unfamiliar Key: Some weird value
 Another Unfamiliar Key: Wow
@@ -63,8 +61,8 @@ Name: Vendored Sub Project
 URL: http://subproject
 Location: third_party/sub
 
+License: MIT
 License File: third_party/sub/LICENSE
-  License: MIT
 `
 	readmes, err := Parse([]byte(readmeText))
 	if err != nil {
