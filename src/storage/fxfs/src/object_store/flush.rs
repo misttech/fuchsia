@@ -20,7 +20,6 @@ use crate::object_store::{
 };
 use crate::serialized_types::{LATEST_VERSION, Version, VersionedLatest};
 use anyhow::{Context, Error, anyhow};
-
 use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
 
@@ -33,62 +32,13 @@ pub enum Reason {
     Unlock,
 }
 
-/// If flushing an unlocked fails due to a Crypt error, we want to re-lock the store and flush it
-/// again, so we can make progress on flushing (and therefore journal compaction) without depending
-/// on Crypt.  This is necessary because Crypt is an external component that might crash or become
-/// unresponsive.
-#[derive(Debug)]
-enum FlushResult<T> {
-    Ok(T),
-    CryptError(Error),
-}
-
 #[fxfs_trace::trace]
 impl ObjectStore {
     #[trace("store_object_id" => self.store_object_id)]
     pub async fn flush_with_reason(&self, reason: Reason) -> Result<Version, Error> {
-        // Loop to deal with Crypt errors.  If flushing fails due to a Crypt error, we re-lock the
-        // store and try again.  However, another task might racily unlock the store after we lock
-        // but before we flush (since we dropped the lock taken in `try_flush_with_reason`).
-        // We set a limit on the number of times we'll permit a retry, to avoid looping forever if
-        // the race condition is continuously hit.  In practice it is very unlikely to ever occur
-        // at all, since that would require something else busily unlocking the volume and the Crypt
-        // instance dying repeatedly.
-        const MAX_RETRIES: usize = 10;
-        let mut retries = 0;
-        loop {
-            match self.try_flush_with_reason(reason).await? {
-                FlushResult::Ok(version) => return Ok(version),
-                FlushResult::CryptError(error) => {
-                    if reason == Reason::Unlock || retries >= MAX_RETRIES {
-                        // If flushing due to unlock fails due to Crypt issues, just fail, so we
-                        // don't return to `unlock` with a locked store.
-                        return Err(error);
-                    }
-                    log::warn!(
-                        error:?;
-                        "Flushing failed for store {}, re-locking and trying again.",
-                        self.store_object_id()
-                    );
-                    let owner = self.lock_state.lock().owner();
-                    if let Some(owner) = owner {
-                        owner
-                            .force_lock(&self)
-                            .await
-                            .context("Failed to re-lock store during flush")?;
-                    }
-                    // The owner might have already been cleaned up, and in doing so it might have
-                    // locked the store.  In this case we should try again.
-                }
-            }
-            retries += 1;
-        }
-    }
-
-    async fn try_flush_with_reason(&self, reason: Reason) -> Result<FlushResult<Version>, Error> {
         if self.parent_store.is_none() {
             // Early exit, but still return the earliest version used by a struct in the tree
-            return Ok(FlushResult::Ok(self.tree.get_earliest_version()));
+            return Ok(self.tree.get_earliest_version());
         }
         let filesystem = self.filesystem();
         let object_manager = filesystem.object_manager();
@@ -100,7 +50,7 @@ impl ObjectStore {
         if matches!(*self.lock_state.lock(), LockState::Deleted) {
             // When we compact, it's possible that the store has been deleted since we gathered the
             // list of stores that need compacting.  This is benign.
-            return Ok(FlushResult::Ok(LATEST_VERSION));
+            return Ok(LATEST_VERSION);
         }
 
         match reason {
@@ -115,7 +65,7 @@ impl ObjectStore {
                     // mutations.
                     // Early exit, but still return the earliest version used by a struct in the
                     // tree.
-                    return Ok(FlushResult::Ok(self.tree.get_earliest_version()));
+                    return Ok(self.tree.get_earliest_version());
                 }
             }
             Reason::Journal => {
@@ -127,7 +77,7 @@ impl ObjectStore {
                 {
                     // Early exit, but still return the earliest version used by a struct in the
                     // tree.
-                    return Ok(FlushResult::Ok(earliest_version));
+                    return Ok(earliest_version);
                 }
             }
         }
@@ -142,13 +92,9 @@ impl ObjectStore {
                 format!("Failed to flush object store {}", self.store_object_id)
             })?;
         } else {
-            if let FlushResult::CryptError(error) = self
-                .flush_unlocked(reason)
-                .await
-                .with_context(|| format!("Failed to flush object store {}", self.store_object_id))?
-            {
-                return Ok(FlushResult::CryptError(error));
-            }
+            self.flush_unlocked(reason).await.with_context(|| {
+                format!("Failed to flush object store {}", self.store_object_id)
+            })?;
         }
 
         if trace {
@@ -162,11 +108,11 @@ impl ObjectStore {
         counters.num_flushes += 1;
         counters.last_flush_time = Some(std::time::SystemTime::now());
         // Return the earliest version used by a struct in the tree
-        Ok(FlushResult::Ok(self.tree.get_earliest_version()))
+        Ok(self.tree.get_earliest_version())
     }
 
     // Flushes an unlocked store. Returns the layer file sizes.
-    async fn flush_unlocked(&self, reason: Reason) -> Result<FlushResult<Vec<u64>>, Error> {
+    async fn flush_unlocked(&self, reason: Reason) -> Result<Vec<u64>, Error> {
         struct StoreInfoSnapshot<'a> {
             store: &'a ObjectStore,
             store_info: OnceLock<StoreInfo>,
@@ -397,7 +343,7 @@ impl ObjectStore {
             parent_store.tombstone_object(old_encrypted_mutations_object_id, txn_options).await?;
         }
 
-        Ok(FlushResult::Ok(layer_file_sizes))
+        Ok(layer_file_sizes)
     }
 
     // Flushes a locked store.
@@ -529,7 +475,7 @@ mod tests {
     use crate::object_store::transaction::{Options, lock_keys};
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
-        HandleOptions, LockKey, NO_OWNER, NewChildStoreOptions, ObjectStore, StoreOptions,
+        HandleOptions, LockKey, NewChildStoreOptions, ObjectStore, StoreOptions,
         layer_size_from_encrypted_mutations_size, tree,
     };
     use fxfs_insecure_crypto::new_insecure_crypt;
@@ -570,7 +516,7 @@ mod tests {
 
         let (first_filename, last_filename) = {
             let store = fs.object_manager().store(store_id).expect("store not found");
-            store.unlock(NO_OWNER, Arc::new(new_insecure_crypt())).await.expect("unlock failed");
+            store.unlock(Arc::new(new_insecure_crypt())).await.expect("unlock failed");
 
             // Keep writing until we notice the key has rolled.
             let root_dir = Directory::open(&store, store.root_directory_object_id())
@@ -641,7 +587,7 @@ mod tests {
 
         {
             let store = fs.object_manager().store(store_id).expect("store not found");
-            store.unlock(NO_OWNER, Arc::new(new_insecure_crypt())).await.expect("unlock failed");
+            store.unlock(Arc::new(new_insecure_crypt())).await.expect("unlock failed");
 
             // The key should get rolled when we unlock.
             assert_eq!(store.mutations_cipher.lock().as_ref().unwrap().offset(), 0);
@@ -749,7 +695,7 @@ mod tests {
         );
 
         // Unlocking the store should replay that encrypted mutations file.
-        store.unlock(NO_OWNER, crypt).await.expect("unlock failed");
+        store.unlock(crypt).await.expect("unlock failed");
 
         ObjectStore::open_object(&store, foo.object_id(), HandleOptions::default(), None)
             .await

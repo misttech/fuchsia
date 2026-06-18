@@ -115,10 +115,7 @@ impl RootVolume {
         // Unlock the volume if required.
         if let Some(crypt) = options.crypt {
             let read_only = self.filesystem.options().read_only;
-            store
-                .unlock_inner(options.owner, crypt, read_only)
-                .await
-                .context("Failed to unlock volume")?;
+            store.unlock_inner(crypt, read_only).await.context("Failed to unlock volume")?;
         } else if store.is_locked() {
             bail!(FxfsError::AccessDenied);
         }

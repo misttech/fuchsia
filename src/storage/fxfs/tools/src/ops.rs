@@ -14,7 +14,7 @@ use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 use fxfs::object_store::volume::root_volume;
 use fxfs::object_store::{
     Directory, HandleOptions, NewChildStoreOptions, ObjectDescriptor, ObjectStore, ProjectId,
-    SetExtendedAttributeMode, StoreObjectHandle, StoreOptions, StoreOwner,
+    SetExtendedAttributeMode, StoreObjectHandle, StoreOptions,
 };
 use fxfs_crypto::{Crypt, WrappingKeyId};
 use sparse::reader::SparseReader;
@@ -22,7 +22,7 @@ use sparse::{build_sparse_files, unsparse};
 use std::io::Seek;
 use std::ops::Deref;
 use std::path::Path;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use storage_device::DeviceHolder;
 use storage_device::file_backed_device::FileBackedDevice;
 
@@ -103,11 +103,10 @@ pub async fn create_volume(
 pub async fn open_volume(
     fs: &OpenFxFilesystem,
     name: &str,
-    owner: Weak<dyn StoreOwner>,
     crypt: Option<Arc<dyn Crypt>>,
 ) -> Result<Arc<ObjectStore>, Error> {
     let root_volume = root_volume(fs.deref().clone()).await?;
-    root_volume.volume(name, StoreOptions { owner, crypt }).await.map(|v| v.into())
+    root_volume.volume(name, StoreOptions { crypt }).await.map(|v| v.into())
 }
 
 /// Walks a directory path from a given root.

@@ -8,7 +8,6 @@ use anyhow::Error;
 use argh::FromArgs;
 use fxfs::filesystem::{FxFilesystem, FxFilesystemBuilder, mkfs_with_volume};
 use fxfs::fsck;
-use fxfs::object_store::NO_OWNER;
 use fxfs_crypto::Crypt;
 use fxfs_insecure_crypto::new_insecure_crypt;
 use std::io::Read;
@@ -206,8 +205,7 @@ async fn main() -> Result<(), Error> {
                     let (device, temp_file) = ops::open_device(&cmd.file, false).await?;
                     {
                         let fs = FxFilesystem::open(device).await?;
-                        let vol =
-                            ops::open_volume(&fs, &cmd.volume, NO_OWNER, crypt.clone()).await?;
+                        let vol = ops::open_volume(&fs, &cmd.volume, crypt.clone()).await?;
                         ops::unlink(&fs, &vol, &Path::new(&rmargs.path)).await?;
                         fs.close().await?;
                         let result = ops::fsck(&fs, args.verbose).await?;
@@ -221,7 +219,7 @@ async fn main() -> Result<(), Error> {
                 ImageSubCommand::Get(getargs) => {
                     let (device, _temp_file) = ops::open_device(&cmd.file, true).await?;
                     let fs = FxFilesystemBuilder::new().read_only(true).open(device).await?;
-                    let vol = ops::open_volume(&fs, &cmd.volume, NO_OWNER, crypt.clone()).await?;
+                    let vol = ops::open_volume(&fs, &cmd.volume, crypt.clone()).await?;
                     let data = ops::get(&vol, &Path::new(&getargs.src)).await?;
                     let mut reader = std::io::Cursor::new(&data);
                     let parent = std::path::Path::new(&getargs.dst)
@@ -237,8 +235,7 @@ async fn main() -> Result<(), Error> {
                     let (device, temp_file) = ops::open_device(&cmd.file, false).await?;
                     {
                         let fs = FxFilesystem::open(device).await?;
-                        let vol =
-                            ops::open_volume(&fs, &cmd.volume, NO_OWNER, crypt.clone()).await?;
+                        let vol = ops::open_volume(&fs, &cmd.volume, crypt.clone()).await?;
                         let mut data = Vec::new();
                         std::fs::File::open(&putargs.src)?.read_to_end(&mut data)?;
                         ops::put(&fs, &vol, &Path::new(&putargs.dst), data).await?;
@@ -272,7 +269,7 @@ async fn main() -> Result<(), Error> {
                 ImageSubCommand::Ls(lsargs) => {
                     let (device, _temp_file) = ops::open_device(&cmd.file, true).await?;
                     let fs = FxFilesystemBuilder::new().read_only(true).open(device).await?;
-                    let vol = ops::open_volume(&fs, &cmd.volume, NO_OWNER, crypt.clone()).await?;
+                    let vol = ops::open_volume(&fs, &cmd.volume, crypt.clone()).await?;
                     let dir = ops::walk_dir(&vol, &Path::new(&lsargs.path)).await?;
                     ops::print_ls(&dir).await?;
                     Ok(())
@@ -281,8 +278,7 @@ async fn main() -> Result<(), Error> {
                     let (device, temp_file) = ops::open_device(&cmd.file, false).await?;
                     {
                         let fs = FxFilesystem::open(device).await?;
-                        let vol =
-                            ops::open_volume(&fs, &cmd.volume, NO_OWNER, crypt.clone()).await?;
+                        let vol = ops::open_volume(&fs, &cmd.volume, crypt.clone()).await?;
                         ops::mkdir(&fs, &vol, &Path::new(&mkdirargs.path)).await?;
                         fs.close().await?;
                         ops::fsck(&fs, args.verbose).await?;
@@ -296,8 +292,7 @@ async fn main() -> Result<(), Error> {
                     let (device, temp_file) = ops::open_device(&cmd.file, false).await?;
                     {
                         let fs = FxFilesystem::open(device).await?;
-                        let vol =
-                            ops::open_volume(&fs, &cmd.volume, NO_OWNER, crypt.clone()).await?;
+                        let vol = ops::open_volume(&fs, &cmd.volume, crypt.clone()).await?;
                         ops::unlink(&fs, &vol, &Path::new(&rmdirargs.path)).await?;
                         fs.close().await?;
                         ops::fsck(&fs, args.verbose).await?;

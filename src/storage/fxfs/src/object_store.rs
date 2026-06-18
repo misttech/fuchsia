@@ -108,21 +108,6 @@ const CACHED_KEYS_LIMIT: usize = 1;
 pub const VOLUME_DATA_KEY_ID: u64 = 0;
 pub const FSCRYPT_KEY_ID: u64 = 1;
 
-/// A constant that can be used where an owner is expected of type `Weak<dyn StoreOwner>` but no
-/// owner is required.
-pub const NO_OWNER: Weak<()> = Weak::new();
-impl StoreOwner for () {}
-
-#[async_trait]
-pub trait StoreOwner: Send + Sync {
-    /// Forcibly lock the store.  This exists to give the StoreOwner an opportunity to clean up
-    /// tasks which might access the store before locking it, because ObjectStore::unlock can only
-    /// be called when the store is not in use.
-    async fn force_lock(self: Arc<Self>, _store: &ObjectStore) -> Result<(), Error> {
-        Err(anyhow!(FxfsError::Internal))
-    }
-}
-
 /// DataObjectHandle stores an owner that must implement this trait, which allows the handle to get
 /// back to an ObjectStore.
 pub trait HandleOwner: AsRef<ObjectStore> + Send + Sync + 'static {}
@@ -296,16 +281,13 @@ pub struct ObjectEncryptionOptions {
 }
 
 pub struct StoreOptions {
-    /// The owner of the store.
-    pub owner: Weak<dyn StoreOwner>,
-
     /// The store is unencrypted if store is none.
     pub crypt: Option<Arc<dyn Crypt>>,
 }
 
 impl Default for StoreOptions {
     fn default() -> Self {
-        Self { owner: NO_OWNER, crypt: None }
+        Self { crypt: None }
     }
 }
 
@@ -443,7 +425,6 @@ pub enum LockState {
     Locked,
     Unencrypted,
     Unlocked {
-        owner: Weak<dyn StoreOwner>,
         crypt: Arc<dyn Crypt>,
         cached_keys: Vec<(NonZero<u64>, EncryptionKey, UnwrappedKey)>,
     },
@@ -470,12 +451,6 @@ pub enum LockState {
 
     // The store has been deleted.
     Deleted,
-}
-
-impl LockState {
-    fn owner(&self) -> Option<Arc<dyn StoreOwner>> {
-        if let Self::Unlocked { owner, .. } = self { owner.upgrade() } else { None }
-    }
 }
 
 impl fmt::Debug for LockState {
@@ -955,11 +930,7 @@ impl ObjectStore {
                 }),
                 object_cache,
                 Some(StreamCipher::new(&unwrapped_key, 0)),
-                LockState::Unlocked {
-                    owner: options.options.owner,
-                    crypt,
-                    cached_keys: Vec::new(),
-                },
+                LockState::Unlocked { crypt, cached_keys: Vec::new() },
                 last_object_id_in_memory,
             )
         } else {
@@ -2042,12 +2013,8 @@ impl ObjectStore {
 
     /// Unlocks a store so that it is ready to be used.
     /// This is not thread-safe.
-    pub async fn unlock(
-        self: &Arc<Self>,
-        owner: Weak<dyn StoreOwner>,
-        crypt: Arc<dyn Crypt>,
-    ) -> Result<(), Error> {
-        self.unlock_inner(owner, crypt, /*read_only=*/ false).await
+    pub async fn unlock(self: &Arc<Self>, crypt: Arc<dyn Crypt>) -> Result<(), Error> {
+        self.unlock_inner(crypt, /*read_only=*/ false).await
     }
 
     /// Unlocks a store so that it is ready to be read from.
@@ -2058,12 +2025,11 @@ impl ObjectStore {
     /// flush, although the store might still be flushed during other operations.
     /// This is not thread-safe.
     pub async fn unlock_read_only(self: &Arc<Self>, crypt: Arc<dyn Crypt>) -> Result<(), Error> {
-        self.unlock_inner(NO_OWNER, crypt, /*read_only=*/ true).await
+        self.unlock_inner(crypt, /*read_only=*/ true).await
     }
 
     async fn unlock_inner(
         self: &Arc<Self>,
-        owner: Weak<dyn StoreOwner>,
         crypt: Arc<dyn Crypt>,
         read_only: bool,
     ) -> Result<(), Error> {
@@ -2221,7 +2187,7 @@ impl ObjectStore {
         *self.lock_state.lock() = if read_only {
             LockState::UnlockedReadOnly(crypt)
         } else {
-            LockState::Unlocked { owner, crypt, cached_keys: Vec::new() }
+            LockState::Unlocked { crypt, cached_keys: Vec::new() }
         };
 
         // To avoid unbounded memory growth, we should flush the encrypted mutations now. Otherwise
@@ -2255,7 +2221,7 @@ impl ObjectStore {
     pub fn is_unlocked(&self) -> bool {
         matches!(
             *self.lock_state.lock(),
-            LockState::Unlocked { .. } | LockState::UnlockedReadOnly { .. } | LockState::Unlocking
+            LockState::Unlocked { .. } | LockState::UnlockedReadOnly(..) | LockState::Unlocking
         )
     }
 
@@ -3160,8 +3126,8 @@ async fn load_store_info_from_handle(
 mod tests {
     use super::{
         AttributeId, FsverityMetadata, HandleOptions, LastObjectId, LastObjectIdInfo, LockKey,
-        MAX_STORE_INFO_SERIALIZED_SIZE, Mutation, NO_OWNER, NewChildStoreOptions,
-        OBJECT_ID_HI_MASK, ObjectStore, RootDigest, StoreInfo, StoreOptions, StoreOwner,
+        MAX_STORE_INFO_SERIALIZED_SIZE, Mutation, NewChildStoreOptions, OBJECT_ID_HI_MASK,
+        ObjectStore, RootDigest, StoreInfo, StoreOptions,
     };
     use crate::errors::FxfsError;
     use crate::filesystem::{
@@ -3295,10 +3261,7 @@ mod tests {
                 .new_volume(
                     "test",
                     NewChildStoreOptions {
-                        options: StoreOptions {
-                            owner: NO_OWNER,
-                            crypt: Some(Arc::new(new_insecure_crypt())),
-                        },
+                        options: StoreOptions { crypt: Some(Arc::new(new_insecure_crypt())) },
                         ..Default::default()
                     },
                 )
@@ -3314,7 +3277,7 @@ mod tests {
 
         {
             let store = fs.object_manager().store(store_id).expect("store not found");
-            store.unlock(NO_OWNER, Arc::new(new_insecure_crypt())).await.expect("unlock failed");
+            store.unlock(Arc::new(new_insecure_crypt())).await.expect("unlock failed");
         }
         fs.close().await.expect("Close failed");
     }
@@ -3330,10 +3293,7 @@ mod tests {
                 .new_volume(
                     "test",
                     NewChildStoreOptions {
-                        options: StoreOptions {
-                            owner: NO_OWNER,
-                            crypt: Some(Arc::new(new_insecure_crypt())),
-                        },
+                        options: StoreOptions { crypt: Some(Arc::new(new_insecure_crypt())) },
                         ..Default::default()
                     },
                 )
@@ -3351,7 +3311,7 @@ mod tests {
 
         {
             let store = fs.object_manager().store(store_id).expect("store not found");
-            store.unlock(NO_OWNER, Arc::new(new_insecure_crypt())).await.expect("unlock failed");
+            store.unlock(Arc::new(new_insecure_crypt())).await.expect("unlock failed");
             assert_eq!(
                 dir_id,
                 store.get_or_create_internal_directory_id().await.expect("Retrieving dir")
@@ -4120,7 +4080,7 @@ mod tests {
         let last_object_id = store.last_object_id.lock().id();
 
         store.lock().await.unwrap();
-        store.unlock(NO_OWNER, crypt.clone()).await.unwrap();
+        store.unlock(crypt.clone()).await.unwrap();
 
         assert_eq!(store.last_object_id.lock().id(), last_object_id);
     }
@@ -4240,7 +4200,7 @@ mod tests {
         transaction.commit().await.expect("commit failed");
         store.lock().await.expect("lock failed");
 
-        store.unlock(NO_OWNER, crypt).await.expect("unlock failed");
+        store.unlock(crypt).await.expect("unlock failed");
         root_directory.lookup("test").await.expect("lookup failed").expect("not found");
     }
 
@@ -4465,7 +4425,7 @@ mod tests {
         if read_only {
             store.unlock_read_only(crypt).await.expect("unlock failed");
         } else {
-            store.unlock(NO_OWNER, crypt).await.expect("unlock failed");
+            store.unlock(crypt).await.expect("unlock failed");
         }
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
@@ -4515,15 +4475,6 @@ mod tests {
     async fn test_crypt_failure_does_not_fuse_journal() {
         let fs = test_filesystem().await;
 
-        struct Owner;
-        #[async_trait]
-        impl StoreOwner for Owner {
-            async fn force_lock(self: Arc<Self>, store: &ObjectStore) -> Result<(), anyhow::Error> {
-                store.lock().await
-            }
-        }
-        let owner = Arc::new(Owner) as Arc<dyn StoreOwner>;
-
         {
             // Create two stores and a record for each store, so the journal will need to flush them
             // both later.
@@ -4546,10 +4497,7 @@ mod tests {
                 .new_volume(
                     "vol2",
                     NewChildStoreOptions {
-                        options: StoreOptions {
-                            owner: Arc::downgrade(&owner),
-                            crypt: Some(crypt.clone()),
-                        },
+                        options: StoreOptions { crypt: Some(crypt.clone()) },
                         ..Default::default()
                     },
                 )
@@ -4678,25 +4626,13 @@ mod tests {
     async fn test_crypt_failure_during_unlock_race() {
         let fs = test_filesystem().await;
 
-        struct Owner;
-        #[async_trait]
-        impl StoreOwner for Owner {
-            async fn force_lock(self: Arc<Self>, store: &ObjectStore) -> Result<(), anyhow::Error> {
-                store.lock().await
-            }
-        }
-        let owner = Arc::new(Owner) as Arc<dyn StoreOwner>;
-
         let store_object_id = {
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
             let store = root_volume
                 .new_volume(
                     "vol",
                     NewChildStoreOptions {
-                        options: StoreOptions {
-                            owner: Arc::downgrade(&owner),
-                            crypt: Some(Arc::new(new_insecure_crypt())),
-                        },
+                        options: StoreOptions { crypt: Some(Arc::new(new_insecure_crypt())) },
                         ..Default::default()
                     },
                 )
@@ -4738,15 +4674,8 @@ mod tests {
             join!(
                 async move {
                     // Unlock might fail, so ignore errors.
-                    let _ = root_volume
-                        .volume(
-                            "vol",
-                            StoreOptions {
-                                owner: Arc::downgrade(&owner),
-                                crypt: Some(crypt_clone),
-                            },
-                        )
-                        .await;
+                    let _ =
+                        root_volume.volume("vol", StoreOptions { crypt: Some(crypt_clone) }).await;
                 },
                 async move {
                     // Block until unlock is finished but before flushing due to unlock is finished, to

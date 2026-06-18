@@ -11,7 +11,6 @@ use crate::fuchsia::memory_pressure::{MemoryPressureLevel, MemoryPressureMonitor
 use crate::fuchsia::profile::new_profile_state;
 use crate::fuchsia::volume::{FxVolume, FxVolumeAndRoot, MemoryPressureConfig, RootDir};
 use anyhow::{Context, Error, anyhow, ensure};
-use async_trait::async_trait;
 use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
 use fidl_fuchsia_fs::{AdminMarker, AdminRequest, AdminRequestStream};
 use fidl_fuchsia_fs_startup::{
@@ -29,7 +28,7 @@ use fxfs::log::*;
 use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 use fxfs::object_store::volume::RootVolume;
 use fxfs::object_store::{
-    Directory, NewChildStoreOptions, ObjectDescriptor, ObjectStore, StoreOptions, StoreOwner,
+    Directory, NewChildStoreOptions, ObjectDescriptor, ObjectStore, StoreOptions,
 };
 use fxfs_crypto::Crypt;
 use fxfs_trace::{TraceFutureExt, trace_future_args};
@@ -109,7 +108,6 @@ impl MountedVolumesGuard<'_> {
         mode: Mode,
         as_blob: bool,
     ) -> Result<FxVolumeAndRoot, Error> {
-        let owner = Arc::downgrade(&self.volumes_directory) as Weak<dyn StoreOwner>;
         let store = match mode {
             Mode::Create { guid, low_32_bit_object_ids } => self
                 .volumes_directory
@@ -117,7 +115,7 @@ impl MountedVolumesGuard<'_> {
                 .new_volume(
                     name,
                     NewChildStoreOptions {
-                        options: StoreOptions { owner, crypt },
+                        options: StoreOptions { crypt },
                         guid,
                         low_32_bit_object_ids,
                         ..Default::default()
@@ -126,10 +124,7 @@ impl MountedVolumesGuard<'_> {
                 .await
                 .context("failed to create new volume")?,
             Mode::Mount => {
-                self.volumes_directory
-                    .root_volume
-                    .volume(name, StoreOptions { owner, crypt })
-                    .await?
+                self.volumes_directory.root_volume.volume(name, StoreOptions { crypt }).await?
             }
         };
         ensure!(
@@ -309,18 +304,6 @@ impl MountedVolumesGuard<'_> {
             self.mounted_volumes.remove(&store_id).ok_or(FxfsError::NotFound)?;
         self.lock_mount(&mut mounted_volume).await;
         Ok(mounted_volume.volume)
-    }
-
-    async fn force_lock(&mut self, store_id: u64) -> Result<(), Error> {
-        if let Some(mut mounted_volume) = self.mounted_volumes.remove(&store_id) {
-            self.lock_mount(&mut mounted_volume).await;
-            // Reinsert the volume as locked. This looks racy but it isn't, we held the mutable
-            // reference to `self` for this whole duration. `get_mut()` would be cleaner but that
-            // would hold a mutable reference while this call would take another reference.
-            self.mounted_volumes.insert(store_id, mounted_volume);
-        }
-
-        Ok(())
     }
 
     // Auto-unmount the volume when the last connection to the volume is closed.
@@ -1067,13 +1050,6 @@ impl VolumesDirectory {
 
         info!("install complete");
         Ok(())
-    }
-}
-
-#[async_trait]
-impl StoreOwner for VolumesDirectory {
-    async fn force_lock(self: Arc<Self>, store: &ObjectStore) -> Result<(), Error> {
-        self.lock().await.force_lock(store.store_object_id()).await
     }
 }
 
