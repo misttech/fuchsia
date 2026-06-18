@@ -24,7 +24,7 @@ func TestDlog(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 	i.WaitForLogMessage("initializing platform")
 

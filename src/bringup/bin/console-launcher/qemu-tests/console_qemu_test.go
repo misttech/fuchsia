@@ -34,7 +34,7 @@ func TestConsoleIsLaunched(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	// Wait for the system to finish booting.

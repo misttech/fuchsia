@@ -46,7 +46,7 @@ func TestQemuWithUFSDisk(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	emu := distro.CreateContext(ctx, device)
+	emu := distro.NewInstance(ctx, device)
 	emu.Start()
 
 	// This message indicates that the ufs disk was detected.
@@ -101,7 +101,7 @@ func TestQemuWithUFSDiskAndRunBlktest(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	emu := distro.CreateContext(ctx, device)
+	emu := distro.NewInstance(ctx, device)
 	emu.Start()
 
 	// This message indicates that the ufs disk was detected.

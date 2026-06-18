@@ -260,59 +260,29 @@ func (d *Distribution) buildCommandLine(
 
 }
 
-// CreateContext creates an instance of the emulator with the given parameters,
+// NewInstance creates an instance of the emulator with the given parameters,
 // passing through ctx to the underlying exec.Cmd.
-func (d *Distribution) CreateContext(
+func (d *Distribution) NewInstance(
 	ctx context.Context,
 	fvd *fvdpb.VirtualDevice,
 ) (*Instance, error) {
-	return d.create(
-		func(args []string) *exec.Cmd { return exec.CommandContext(ctx, args[0], args[1:]...) },
-		fvd,
-		nil,
-	)
+	return d.NewInstanceWithAuthorizedKeys(ctx, fvd, "", "")
 }
 
-// CreateContextWithAuthorizedKeys creates an instance of the emulator, passing through ctx to the
+// NewInstanceWithAuthorizedKeys creates an instance of the emulator, passing through ctx to the
 // underlying exec.Cmd, and updating the virtual device's initrd to contain the specified authorized
 // keys.
-func (d *Distribution) CreateContextWithAuthorizedKeys(
+func (d *Distribution) NewInstanceWithAuthorizedKeys(
 	ctx context.Context,
 	fvd *fvdpb.VirtualDevice,
 	hostPathZbiBinary, hostPathAuthorizedKeys string,
-) (*Instance, error) {
-	return d.create(
-		func(args []string) *exec.Cmd { return exec.CommandContext(ctx, args[0], args[1:]...) },
-		fvd,
-		&addAuthorizedKeys{
-			hostPathZbiBinary:      hostPathZbiBinary,
-			hostPathAuthorizedKeys: hostPathAuthorizedKeys,
-		},
-	)
-}
-
-type addAuthorizedKeys = struct {
-	hostPathZbiBinary      string
-	hostPathAuthorizedKeys string
-}
-
-// The create method is structured like this because the context docs explicitly warn
-// against passing a nil Context, and exec.CommandContext(context.Background(), ...)
-// is not equivalent to exec.Command(...).
-func (d *Distribution) create(
-	makeCmd func(args []string) *exec.Cmd,
-	fvd *fvdpb.VirtualDevice,
-	addAuthorizedKeys *addAuthorizedKeys,
 ) (*Instance, error) {
 	images, err := d.loadImageManifest()
 	if err != nil {
 		return nil, err
 	}
 
-	if addAuthorizedKeys != nil {
-		hostPathZbiBinary := addAuthorizedKeys.hostPathZbiBinary
-		hostPathAuthorizedKeys := addAuthorizedKeys.hostPathAuthorizedKeys
-
+	if hostPathZbiBinary != "" && hostPathAuthorizedKeys != "" {
 		// This will get cleaned up by d.Delete().
 		root, err := os.MkdirTemp(d.unpackedPath, "zbi-tmp-dir-*")
 		if err != nil {
@@ -348,7 +318,7 @@ func (d *Distribution) create(
 	fmt.Printf("Running %s %s\n", args[0], args[1:])
 
 	i := &Instance{
-		cmd:            makeCmd(args),
+		cmd:            exec.CommandContext(ctx, args[0], args[1:]...),
 		emulator:       d.Emulator,
 		logDestination: os.Stdout,
 	}

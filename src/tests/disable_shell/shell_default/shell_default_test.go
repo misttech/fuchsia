@@ -24,7 +24,7 @@ func TestShellDefault(t *testing.T) {
 	device := emulator.DefaultVirtualDevice(string(arch))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 	i.WaitForLogMessage("console.shell: enabled")
 	tokenFromSerial := randomTokenAsString(t)

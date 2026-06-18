@@ -60,7 +60,7 @@ func TestMissingCmdlineEntropyPanics(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	// See that assertion triggered.
@@ -83,7 +83,7 @@ func TestIncompleteCmdlineEntropyPanics(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	// See that assertion triggered.
@@ -109,7 +109,7 @@ func TestCmdlineEntropyBoots(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	// Wait for the system to finish booting.
@@ -133,7 +133,7 @@ func captureCPRNGDraws(t *testing.T, entropy []byte, extraKernelArgs []string) m
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 	lines := i.CaptureLinesContaining("cprng-draw{", "-- cprng-draw-end --")
 	if len(lines) != CPRNG_DRAWS {
@@ -262,7 +262,7 @@ func TestDisabledJitterEntropyAndRequiredForReseedDoesntReachUserspace(t *testin
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 
 	// This test only makes sense if we are using KVM, as JitterEntropy is only
 	// available if we have Invalid TSC.
@@ -297,7 +297,7 @@ func TestDisabledJitterEntropyAndRequiredDoesntBoot(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 
 	// This test only makes sense if we are using KVM, as JitterEntropy is only
 	// available if we have Invalid TSC.

@@ -25,7 +25,7 @@ func TestShutdown(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	// Make sure the shell is ready to accept commands over serial

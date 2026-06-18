@@ -55,7 +55,7 @@ func TestBoot(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	// Watch for happy signal, asserting failure if the device reboots due to OOM.

@@ -68,7 +68,7 @@ func TestLegacyUartSmallMessage(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	i.WaitForLogMessages([]string{serialInputReady})
@@ -98,7 +98,7 @@ func TestLegacyUartLargeMessage(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	i.WaitForLogMessages([]string{serialInputReady})
@@ -122,7 +122,7 @@ func TestMigratedUartSmallMessage(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	i.WaitForLogMessages([]string{serialInputReady})
@@ -146,7 +146,7 @@ func TestMigratedUartLargeMessage(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	i.WaitForLogMessages([]string{serialInputReady})

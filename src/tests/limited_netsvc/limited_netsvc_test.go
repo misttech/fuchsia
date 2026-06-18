@@ -193,7 +193,7 @@ func setupQemu(t *testing.T, ctx context.Context, appendCmdline []string, modeSt
 		Kind:   "tap",
 		Device: &fvdpb.Device{Model: "virtio-net-pci"},
 	})
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	// Make sure netsvc in expected mode.

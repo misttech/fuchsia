@@ -79,7 +79,7 @@ func NewQemuInstance(
 		SourceRootRelativeDir,
 	)
 
-	i, err := distro.CreateContextWithAuthorizedKeys(
+	i, err := distro.NewInstanceWithAuthorizedKeys(
 		ctx,
 		device,
 		filepath.Join(hostTestDataDir, "zbi"),

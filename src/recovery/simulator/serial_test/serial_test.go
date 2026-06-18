@@ -25,7 +25,7 @@ func TestSerialShellEnabled(t *testing.T) {
 	device.Initrd = "recovery-fdr"
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 	i.WaitForLogMessage("launching /boot/bin/sh (sh:console)")
 	tokenFromSerial := randomTokenAsString(t)

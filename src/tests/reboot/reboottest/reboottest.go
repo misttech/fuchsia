@@ -66,7 +66,7 @@ func RebootWithCommand(t *testing.T, cmd string, eKind ExpectedRebootType, eActi
 	device.Drive = nil
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	i.WaitForLogMessage("initializing platform")

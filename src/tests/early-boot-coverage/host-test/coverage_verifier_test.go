@@ -129,7 +129,7 @@ func GetCoverageDataFromTest(t *testing.T, outDir string, config *Config) []stri
 	}
 
 	hostPathAuthorizedKeys := ffxInstance.GetSshAuthorizedKeys()
-	i := distro.CreateContextWithAuthorizedKeys(ctx, device, config.Bin.ZbiHostTool, hostPathAuthorizedKeys)
+	i := distro.NewInstanceWithAuthorizedKeys(ctx, device, config.Bin.ZbiHostTool, hostPathAuthorizedKeys)
 	i.Start()
 	// Wait for sshd-host to come up.
 	t.Log("Waiting for sshd-host on target")

@@ -24,7 +24,7 @@ func TestShellEnabled(t *testing.T) {
 	device.KernelArgs = append(device.KernelArgs, "console.shell=true")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 	i.WaitForLogMessage("console.shell: enabled")
 	tokenFromSerial := randomTokenAsString(t)
@@ -43,7 +43,7 @@ func TestAutorunEnabled(t *testing.T) {
 		"zircon.autorun.boot=/boot/bin/sh+-c+echo+"+tokenFromSerial)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	// Wait for console-launcher to come up before waiting for the autorun output.

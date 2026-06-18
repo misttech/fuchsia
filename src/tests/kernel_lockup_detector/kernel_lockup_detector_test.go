@@ -40,7 +40,7 @@ func testCommon(t *testing.T, ctx context.Context, kernel_arg string) (*emulator
 	device.KernelArgs = append(device.KernelArgs, common_args...)
 	// Enable the lockup detector using the specified kernel_arg.
 	device.KernelArgs = append(device.KernelArgs, kernel_arg)
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 
 	// Boot.
 	i.Start()

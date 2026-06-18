@@ -38,7 +38,7 @@ func TestOOMSignal(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	initMsgs := make([]string, len(initMessages))
@@ -51,7 +51,8 @@ func TestOOMSignal(t *testing.T) {
 
 	// Sometimes fshost shut down so quickly, its messages are printed
 	// before the memory-pressure ones.
-	i.WaitForLogMessages([]string{"memory-pressure: memory availability state - OutOfMemory",
+	i.WaitForLogMessages([]string{
+		"memory-pressure: memory availability state - OutOfMemory",
 		"received shutdown command over lifecycle interface",
 		"fshost shutdown complete"})
 
@@ -79,7 +80,7 @@ func TestOOMSignalBeforeCriticalProcess(t *testing.T) {
 	device.KernelArgs = append(device.KernelArgs, cmdlineCommon...)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	initMsgs := make([]string, len(initMessages))
@@ -118,7 +119,7 @@ func testOOMCommon(t *testing.T, cmdline []string, cmd string, msgs ...string) {
 	device.KernelArgs = append(device.KernelArgs, cmdline...)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	initMsgs := make([]string, len(initMessages))

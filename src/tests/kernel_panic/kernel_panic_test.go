@@ -36,7 +36,7 @@ func TestBasicCrash(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	// Wait for the system to finish booting.
@@ -66,7 +66,7 @@ func TestReadUserMemoryViolation(t *testing.T) {
 	device.KernelArgs = append(device.KernelArgs, cmdline...)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	// Wait for the system to finish booting.
@@ -93,7 +93,7 @@ func TestExecuteUserMemoryViolation(t *testing.T) {
 	device.KernelArgs = append(device.KernelArgs, cmdline...)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	// Wait for the system to finish booting.
@@ -124,7 +124,7 @@ func pmmCheckerTestCommon(t *testing.T, ctx context.Context, check_action string
 
 	device := emulator.DefaultVirtualDevice(string(arch))
 	device.KernelArgs = append(device.KernelArgs, cmdline...)
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	// Wait for the system to finish booting.
@@ -184,7 +184,7 @@ func TestCrashAssert(t *testing.T) {
 	device.KernelArgs = append(device.KernelArgs, cmdline...)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	i := distro.CreateContext(ctx, device)
+	i := distro.NewInstance(ctx, device)
 	i.Start()
 
 	// Wait for the system to finish booting.
