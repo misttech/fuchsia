@@ -8,7 +8,7 @@ import subprocess
 import unittest
 from collections.abc import Callable
 from copy import deepcopy
-from typing import Any
+from typing import Any, cast
 from unittest import mock
 
 import fuchsia_inspect
@@ -151,7 +151,7 @@ def _custom_test_name_func(
     testcase_func: Callable[..., None], _: str, param_obj: param
 ) -> str:
     """Custom test name function method."""
-    test_func_name: str = testcase_func.__name__
+    test_func_name: str = cast(Any, testcase_func).__name__
     test_label: str = parameterized.to_safe_name(param_obj.kwargs["label"])
     return f"{test_func_name}_with_{test_label}"
 
@@ -206,7 +206,7 @@ class SystemPowerStateControllerStarnixTests(unittest.IsolatedAsyncioTestCase):
         NotSupportedError for invalid suspend operation."""
         with self.assertRaises(errors.NotSupportedError):
             await self.system_power_state_controller_using_starnix_obj.suspend_resume(
-                suspend_state="invalid",  # type: ignore[arg-type]
+                suspend_state=cast(Any, "invalid"),
                 resume_mode=system_power_state_controller_interface.TimerResume(
                     duration=3
                 ),
