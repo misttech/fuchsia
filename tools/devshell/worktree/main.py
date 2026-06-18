@@ -115,7 +115,9 @@ def main() -> None:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser_lease.add_argument("name", help="Name of the worktree to lease")
+    parser_lease.add_argument(
+        "name", nargs="?", help="Name of the worktree to lease"
+    )
     parser_lease.add_argument(
         "--json",
         action="store_true",
@@ -129,6 +131,9 @@ def main() -> None:
     parser_lease.add_argument(
         "--agent-id",
         help="Metadata identifying the agent/task leasing the worktree; automatically creates and checks out git branch 'feat/<agent-id>'",
+    )
+    parser_lease.add_argument(
+        "--any", action="store_true", help="Lease any free worktree"
     )
 
     # Subcommand 'release'

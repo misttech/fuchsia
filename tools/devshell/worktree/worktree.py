@@ -14,6 +14,10 @@ from build_dir import BuildDir
 from utils import run_git
 
 
+class NoFreeWorktreesError(RuntimeError):
+    pass
+
+
 class WorktreeState(Enum):
     FREE = "free"
     LEASED = "leased"

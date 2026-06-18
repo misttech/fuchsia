@@ -3,10 +3,11 @@
 # found in the LICENSE file.
 
 import os
+import random
 from pathlib import Path
 
 from utils import run_jiri
-from worktree import Worktree
+from worktree import NoFreeWorktreesError, Worktree, WorktreeState
 
 
 class WorktreeRegistry:
@@ -49,6 +50,16 @@ class WorktreeRegistry:
             if wt.name == name:
                 return wt
         raise KeyError(f"Worktree '{name}' not found")
+
+    def get_any_free_worktree(self) -> Worktree:
+        free_worktrees = [
+            wt
+            for wt in self.get_worktrees()
+            if wt.get_state() == WorktreeState.FREE
+        ]
+        if not free_worktrees:
+            raise NoFreeWorktreesError("No free worktrees available")
+        return random.choice(free_worktrees)
 
     def add_worktree(self, name: str) -> Worktree:
         wt_path = self.worktrees_dir / name

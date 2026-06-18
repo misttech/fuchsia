@@ -8,12 +8,39 @@ import sys
 from typing import Any
 
 from utils import run_git, run_jiri
+from worktree import NoFreeWorktreesError
 from worktree_registry import WorktreeRegistry
 
 
 def run(args: Any, registry: WorktreeRegistry) -> None:
-    wt = registry.get_worktree_by_name(args.name)
-    wt.acquire_lease(agent_id=args.agent_id)
+    if args.any and args.name:
+        print(
+            "Error: Cannot specify both a worktree name and --any",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if not args.any and not args.name:
+        print(
+            "Error: Must specify either a worktree name or --any",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if args.any:
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            try:
+                wt = registry.get_any_free_worktree()
+                wt.acquire_lease(agent_id=args.agent_id)
+                break
+            except NoFreeWorktreesError:
+                raise
+            except RuntimeError:
+                if attempt == max_attempts - 1:
+                    raise
+    else:
+        wt = registry.get_worktree_by_name(args.name)
+        wt.acquire_lease(agent_id=args.agent_id)
 
     if args.sync:
         try:
@@ -49,6 +76,6 @@ def run(args: Any, registry: WorktreeRegistry) -> None:
                 sys.exit(1)
 
     if args.json:
-        print(json.dumps({"worktree_id": args.name}))
+        print(json.dumps({"worktree_id": wt.name}))
     else:
-        print(f"Successfully leased worktree '{args.name}'")
+        print(f"Successfully leased worktree '{wt.name}'")
