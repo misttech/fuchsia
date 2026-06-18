@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/lto/config.gni")
+import("//build/dist/distribution_manifest_copy.gni")
 import("//build/dist/resource.gni")
 import("//build/testing/host_test_data.gni")
 import("//build/toolchain/generated_ifs_file.gni")
@@ -162,63 +163,6 @@ group("dl-unittest.deps") {
     ":multiple-transitive-foo-deps.StartupModulesDepOrder",
     ":static-tls-var",
   ]
-}
-
-# Populate a build directory from resource() equivalent metadata.
-#
-# This defines an action() target that creates a subdirectory (within the build
-# directory) containing hard links (virtual copies) of source and/or build
-# files in a layout described by the resource() equivalent metadata in its
-# $deps graph.
-#
-# Parameters
-#
-#  * outputs
-#    - Required: A singleton list of a directory path.
-#    - Type: list(path)
-#
-#  * sources
-#    - Optional: Singleton list of distribution_manifest() JSON file path.
-#    - Type: list(path)
-#    - Default: get_target_outputs(deps[0])
-#
-#  * deps
-#    - Required: Singleton list of target label that generates $sources.  If
-#    $sources is empty or omitted, that must be a distribution_manifest()
-#    target just defined.  This must also lead (via deps or data_deps)
-#    to all the resource() equivalent targets of interest.
-#    - Type: list(label)
-#    - Default: []
-#
-#  * metadata, testonly, visibility
-#    - Optional: Usual GN meanings.
-#
-template("distribution_manifest_copy") {
-  action(target_name) {
-    forward_variables_from(invoker,
-                           [
-                             "deps",
-                             "metadata",
-                             "outputs",
-                             "sources",
-                             "testonly",
-                             "visibility",
-                           ])
-    assert(defined(outputs), "distribution_entries_files() requires outputs")
-    assert(outputs == [ outputs[0] ], "outputs must be a single directory")
-    if (defined(sources) && sources != []) {
-      assert(sources == [ sources[0] ], "sources must be a single file")
-    } else {
-      assert(defined(deps), "distribution_manifest_copy() requires deps")
-      assert(deps == [ deps[0] ],
-             "deps must list a single, local distribution_manifest() target")
-      sources = get_target_outputs(deps[0])
-    }
-    script = "distribution-manifest-copy.py"
-    depfile = "$target_gen_dir/$target_name.d"
-    args = [ "--depfile=" + rebase_path(depfile, root_build_dir) ] +
-           rebase_path(sources + outputs, root_build_dir)
-  }
 }
 
 # Produce host_test_data() from a distribution_manifest() target.
