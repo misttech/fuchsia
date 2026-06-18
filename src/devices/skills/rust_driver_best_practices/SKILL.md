@@ -69,7 +69,38 @@ For generic Rust style, naming conventions, and best practices (like `use`
 groupings, avoiding `allow_unused`, constants vs magic values, `Mutex`
 preferences, etc.), please refer to the `rust_best_practices` skill.
 
+### Error Handling & Diagnostics
+* **Do not swallow errors:** Avoid discarding errors silently (e.g., using `let
+  _ = ...` or empty `map_err` without action). If an error is expected and safe
+  to ignore, document the reasoning in a comment. Otherwise, handle it,
+  propagate it, or log it.
+* **Provide context in errors:** When returning or logging errors, include
+  relevant context (e.g., arguments that failed validation, current state) to
+  aid debugging. Avoid generic "internal error" messages without diagnostics.
+* **Use `inspect_err`:** Prefer `inspect_err` over `map_err` when you only need
+  to perform a side-effect (like logging) on the error before passing it
+  through.
+
+### Style, Imports and Idioms
+* **Group and alphabetize `use` statements:** Keep imports grouped together at
+  the top of the file without blank lines, and ensure they are alphabetical.
+* **Avoid nested names in code:** Prefer importing names at the top of the file
+  with `use` rather than using fully qualified paths in the code body, unless
+  the namespace is required for clarity (e.g., disambiguating same-named types).
+* **Prefer enums:** Use enums instead of raw constants where it improves scoping
+  and reduces visual clutter.
+* **Avoid magic values:** Explicitly name and document all magic numbers, or
+  mark them clearly as unused if they are placeholders.
+* **Pattern matching references:** Prefer matching references directly in
+  patterns (e.g., `let Some(val) = &optional_val`) rather than using `.as_ref()`
+  (e.g., `if let Some(val) = optional_val.as_ref()`).
+* **Visibility in standalone binaries:** In standalone drivers or executables
+  (not libraries), prefer standard `pub` over `pub(crate)` as it is not consumed
+  externally anyway.
+
 **Driver-Specific Guidelines:**
+
+### Documentation
 * **References to Specs**: If a name, value, or logic flow is derived from a
   hardware specification or a reference driver (e.g., from the Linux kernel),
   include a comment referencing that source so it can be easily looked up by
@@ -239,11 +270,24 @@ possible, preferring actor pattern when it makes sense.
   ownership of the mutable state directly into the long-running async task that
   processes interrupts. This eliminates the need for locks.
 
-### General Async Guidelines:
+### General Async and Concurrency Guidelines:
 * **Concurrency (`fasync::Scope`)**: Do not detach tasks using `.detach()`.
   Instead, initialize a `fuchsia_async::Scope` within the driver's start method
   and use it to spawn concurrent work. The driver must retain ownership of the
   `Scope`.
+* **Sequence client responses carefully:** In actor or async handlers, send
+  response acknowledgements to clients only *after* the hardware or state
+  changes have been successfully committed and verified.
+* **Constructor spawning:** It is acceptable and often preferred for
+  constructors (e.g., `new` or `start`) to take an async scope/spawner and spawn
+  necessary asynchronous tasks directly, rather than returning them to the
+  caller to spawn.
+* **Fuchsia Multiserver:** Prefer using standard Fuchsia multiserver dispatching
+  mechanisms (such as `fuchsia_component::server::*`) to handle multiple
+  concurrent clients with less manual effort, rather than implementing custom
+  dispatchers or actors unless strictly necessary.
+* **Document concurrency risks:** Add comments explaining potential deadlock
+  scenarios, such as when channel capacities are reached in actor models.
 
 ### Two approaches based on FIDL bindings:
 1.  **With `fidl_next`**: Pass `ServerEnd` over the channel. The handler task
