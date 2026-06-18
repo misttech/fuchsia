@@ -173,7 +173,7 @@ class LoadInfoMutableMemory {
     constexpr MutableSegment(MutableSegment&&) noexcept = default;
 
     constexpr bool contains(size_type ptr, size_type size) const {
-      return vaddr_ <= ptr && filesz_ >= size && ptr - vaddr_ < filesz_ - size;
+      return vaddr_ <= ptr && filesz_ >= size && ptr - vaddr_ <= filesz_ - size;
     }
 
     constexpr bool operator<(size_type ptr) const { return vaddr_ + filesz_ <= ptr; }

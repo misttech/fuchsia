@@ -311,4 +311,35 @@ TYPED_TEST(ElfldltlLoadInfoMutableMemoryTests, ReadArray) {
   EXPECT_EQ(memory.template ReadArray<size_type>(kDataMiddle), std::nullopt);
 }
 
+// Verify that memory accesses ending at the exact final byte of an ELF segment
+// (vaddr + filesz) are treated as inclusive and accepted.
+TYPED_TEST(ElfldltlLoadInfoMutableMemoryTests, StoreAtSegmentEnd) {
+  using Elf = typename TestFixture::Elf;
+  using size_type = typename Elf::size_type;
+
+  auto load_info = MakeLoadInfo<Elf>();
+
+  InSequence seq;
+
+  StrictMockGetMutableMemory mock_get;
+  auto get_mutable_memory = MockGet(mock_get);
+
+  auto diag = elfldltl::testing::ExpectOkDiagnostics();
+
+  elfldltl::LoadInfoMutableMemory memory{diag, load_info, get_mutable_memory};
+  ASSERT_TRUE(memory.Init());
+
+  StrictMockMemory mock_memory;
+
+  // Calculate the address of the very last word fitting inside the DATA segment.
+  constexpr uintptr_t kDataSegmentLastWord =
+      kDataStart + elfldltl::testing::kPageSize - sizeof(size_type);
+
+  ExpectGet(mock_get, kDataStart, elfldltl::testing::kPageSize, mock_memory);
+  ExpectStore<size_type, true>(mock_memory, kDataSegmentLastWord, 0x1234);
+
+  // Storing at the exact end of the segment must succeed without out-of-bounds errors.
+  EXPECT_TRUE(memory.template Store<size_type>(kDataSegmentLastWord, 0x1234));
+}
+
 }  // namespace
