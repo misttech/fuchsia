@@ -351,7 +351,8 @@ class Fastboot(AsyncLazyReady):
     async def wait_for_fuchsia_mode(self) -> None:
         """Wait for Fuchsia device to go to fuchsia mode."""
         _LOGGER.info("Waiting for %s to go fuchsia mode...", self._device_name)
-        self.ffx.wait_for_rcs_connection()
+        is_static_ip = getattr(self._reboot_affordance, "is_static_ip", False)
+        self.ffx.wait_for_rcs_connection(include_target_name=not is_static_ip)
         _LOGGER.info("%s is in fuchsia mode...", self._device_name)
 
     # List all the private methods

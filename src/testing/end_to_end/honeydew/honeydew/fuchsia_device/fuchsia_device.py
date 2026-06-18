@@ -274,6 +274,11 @@ class FuchsiaDevice(
         """
         return self._device_info.name
 
+    @property
+    def is_static_ip(self) -> bool:
+        """Returns True if the device was created with a statically provided IP."""
+        return self._is_static_ip
+
     async def manufacturer(self) -> str:
         """Returns the manufacturer of the device, cached after the first retrieval.
 
@@ -428,6 +433,7 @@ class FuchsiaDevice(
             device_name=self.device_name,
             reboot_affordance=self,
             ffx_transport=self.ffx,
+            fastboot_node_id=self._device_info.serial_number,
         )
         return fastboot_obj
 
