@@ -35,7 +35,10 @@ echo "Running static type checking using 'ty'..."
 BUILD_DIR=$(cat "$FUCHSIA_DIR/.fx-build-dir")
 NEW_PATH=$($HONEYDEW_SRC/scripts/conformance_paths.py --python-path-json "$FUCHSIA_DIR/$BUILD_DIR/extra_python_dirs.json" --fuchsia-dir "$FUCHSIA_DIR" --build-dir "$FUCHSIA_DIR/$BUILD_DIR")
 
-PYTHONPATH="${NEW_PATH}${PYTHONPATH:+:${PYTHONPATH}}" ty check $HONEYDEW_SRC/honeydew/ $HONEYDEW_SRC/tests/ || echo "WARNING: ty check failed. Codebase is transitioning from mypy to ty."
+# Exclude functional tests from local 'ty' check because they depend on external
+# libraries (like antlion) that might not be present in the local environment.
+# These tests are still verified by 'mypy' in CQ where the full build graph is available.
+PYTHONPATH="${NEW_PATH}${PYTHONPATH:+:${PYTHONPATH}}" ty check --exclude "**/functional_tests" $HONEYDEW_SRC/honeydew/ $HONEYDEW_SRC/tests/ || echo "WARNING: ty check failed. Codebase is transitioning from mypy to ty."
 
 echo "Running static code analysis using 'pylint'..."
 pylint --rcfile=$HONEYDEW_SRC/linter/pylintrc $HONEYDEW_SRC/honeydew/ > /dev/null 2>&1 \

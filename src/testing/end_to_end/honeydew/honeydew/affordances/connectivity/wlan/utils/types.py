@@ -611,7 +611,6 @@ class BssDescriptionParser:
 # TODO(http://b/346424966): Only necessary because Python does not have static
 # typing for FIDL. Once these static types are available and the SL4F affordance
 # is removed, replace with the statically generated FIDL equivalent.
-@dataclass(frozen=True)
 class ClientStatusResponse(Protocol):
     """WLAN client interface status."""
 
