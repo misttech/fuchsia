@@ -259,7 +259,7 @@ template <typename T, typename B,
     return nullptr;
   }
 
-  if (index > capacity.value()) {
+  if (index >= capacity.value()) {
     return nullptr;
   }
 

@@ -618,7 +618,9 @@ void State::SetDoubleArray(DoubleArray* array, size_t index, double value) {
 
 void State::SetStringArray(StringArray* array, size_t index, std::string_view value) {
   BlockIndex value_index;
-  CreateAndIncrementStringReference(value, &value_index);
+  if (CreateAndIncrementStringReference(value, &value_index) != ZX_OK) {
+    return;
+  }
   InnerSetArray<BlockIndex, StringArray, BlockType::kStringReference>(array, index, value_index);
 }
 

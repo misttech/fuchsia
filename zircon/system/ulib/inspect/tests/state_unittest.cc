@@ -1861,4 +1861,91 @@ TEST(State, CreateNodeHierarchyInTransaction) {
   CompareBlock(blocks.find(12)->block, MakeInlinedOrder0StringReferenceBlock("1.0b"));
 }
 
+TEST(State, ArrayCapacityOffByOne) {
+  auto state = InitState(4096);
+  ASSERT_TRUE(state != nullptr);
+
+  // Allocate an array of capacity 2
+  IntArray a = state->CreateIntArray("a", 0, 2, ArrayBlockFormat::kDefault);
+  // Allocate another property.
+  IntProperty b = state->CreateIntProperty("b", 0, 0);
+
+  // Take a snapshot and locate the array block and its adjacent block.
+  BlockIndex array_idx = 0;
+  BlockIndex adjacent_idx = 0;
+  {
+    fbl::WAVLTree<BlockIndex, std::unique_ptr<ScannedBlock>> blocks;
+    size_t free_blocks, allocated_blocks;
+    auto snapshot = SnapshotAndScan(state->GetVmo(), &blocks, &free_blocks, &allocated_blocks);
+    ASSERT_TRUE(snapshot);
+
+    for (const auto& pair : blocks) {
+      const Block* block = pair.block;
+      if (GetType(block) == BlockType::kArrayValue) {
+        array_idx = pair.GetKey();
+        size_t size_in_indices = inspect::internal::OrderToSize(GetOrder(block)) / 16;
+        adjacent_idx = array_idx + size_in_indices;
+        break;
+      }
+    }
+  }
+
+  ASSERT_NE(array_idx, 0u);
+  ASSERT_NE(adjacent_idx, 0u);
+
+  // Read the adjacent block's content before the write.
+  uint8_t buffer_before[16];
+  ASSERT_EQ(ZX_OK, state->GetVmo().read(buffer_before, adjacent_idx * 16, 16));
+
+  // try to write at capacity
+  a.Set(2, 999);
+
+  // Read the adjacent block's content after the write.
+  uint8_t buffer_after[16];
+  ASSERT_EQ(ZX_OK, state->GetVmo().read(buffer_after, adjacent_idx * 16, 16));
+
+  // The adjacent block must NOT be modified.
+  EXPECT_EQ(0, memcmp(buffer_before, buffer_after, 16));
+
+  state->FreeIntArray(&a);
+  state->FreeIntProperty(&b);
+}
+
+TEST(State, SetStringArrayAllocationFailure) {
+  auto state = InitState(4096);
+  ASSERT_TRUE(state != nullptr);
+
+  StringArray d = state->CreateStringArray("d", 0, 2, ArrayBlockFormat::kDefault);
+
+  // Set index 0 to a valid string first.
+  d.Set(0, "abc");
+
+  fbl::WAVLTree<BlockIndex, std::unique_ptr<ScannedBlock>> blocks;
+  size_t free_blocks, allocated_blocks;
+  auto snapshot = SnapshotAndScan(state->GetVmo(), &blocks, &free_blocks, &allocated_blocks);
+  ASSERT_TRUE(snapshot);
+
+  // Find index of slot 0. It should be non-zero (since "abc" is allocated).
+  auto initial_slot_val = GetArraySlotForString(blocks.find(2)->block, 0);
+  ASSERT_TRUE(initial_slot_val.has_value());
+  ASSERT_NE(*initial_slot_val, 0u);
+
+  // Attempt to write a string that is too large to fit in the VMO.
+  // This allocation will fail.
+  std::string large_string(5000, '.');
+  d.Set(0, large_string);
+
+  // Re-scan and verify that the slot value was NOT overwritten with a garbage/uninitialized value,
+  // and instead remains unchanged (the previous valid string reference).
+  fbl::WAVLTree<BlockIndex, std::unique_ptr<ScannedBlock>> blocks_after;
+  snapshot = SnapshotAndScan(state->GetVmo(), &blocks_after, &free_blocks, &allocated_blocks);
+  ASSERT_TRUE(snapshot);
+
+  auto post_fail_slot_val = GetArraySlotForString(blocks_after.find(2)->block, 0);
+  ASSERT_TRUE(post_fail_slot_val.has_value());
+  EXPECT_EQ(*post_fail_slot_val, *initial_slot_val);
+
+  state->FreeStringArray(&d);
+}
+
 }  // namespace

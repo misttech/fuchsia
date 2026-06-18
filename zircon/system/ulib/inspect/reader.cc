@@ -402,24 +402,24 @@ void Reader::InnerParseNumericOrArrayProperty(ParsedNode* parent, const Block* b
       if (entry_type == BlockType::kIntValue) {
         std::vector<int64_t> values;
         values.reserve(count);
-        std::copy(GetArraySlot<const int64_t>(block, 0), GetArraySlot<const int64_t>(block, count),
-                  std::back_inserter(values));
+        const int64_t* start = GetArraySlot<const int64_t>(block, 0);
+        std::copy(start, start + count, std::back_inserter(values));
 
         parent_node->add_property(
             PropertyValue(std::move(name.value()), IntArrayValue(std::move(values), array_format)));
       } else if (entry_type == BlockType::kUintValue) {
         std::vector<uint64_t> values;
         values.reserve(count);
-        std::copy(GetArraySlot<const uint64_t>(block, 0),
-                  GetArraySlot<const uint64_t>(block, count), std::back_inserter(values));
+        const uint64_t* start = GetArraySlot<const uint64_t>(block, 0);
+        std::copy(start, start + count, std::back_inserter(values));
 
         parent_node->add_property(PropertyValue(std::move(name.value()),
                                                 UintArrayValue(std::move(values), array_format)));
       } else if (entry_type == BlockType::kDoubleValue) {
         std::vector<double> values;
         values.reserve(count);
-        std::copy(GetArraySlot<const double>(block, 0), GetArraySlot<const double>(block, count),
-                  std::back_inserter(values));
+        const double* start = GetArraySlot<const double>(block, 0);
+        std::copy(start, start + count, std::back_inserter(values));
 
         parent_node->add_property(PropertyValue(std::move(name.value()),
                                                 DoubleArrayValue(std::move(values), array_format)));
