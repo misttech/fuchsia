@@ -14,7 +14,7 @@ use ffx_config::EnvironmentContext;
 use fuchsia_async::TimeoutExt;
 use futures::StreamExt;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Duration;
 
 const DEFAULT_SSH_TIMEOUT_MS: u64 = 10000;
@@ -131,13 +131,13 @@ fn merge_target_addrs(targets: Vec<TargetInfo>) -> Vec<TargetInfo> {
     let mut merged_map: HashMap<u64, TargetInfo> = HashMap::with_capacity(targets.len());
     let mut result = HashSet::<TargetInfo>::with_capacity(targets.len());
     for mut t in targets {
-        let aset: HashSet<TargetAddr> = t.addresses.into_iter().collect();
+        let aset: BTreeSet<TargetAddr> = t.addresses.into_iter().collect();
         t.addresses = aset.into_iter().collect();
         if let Some(boot_id) = t.boot_id {
             match merged_map.entry(boot_id) {
                 Entry::Occupied(mut entry) => {
                     let addresses = &mut entry.get_mut().addresses;
-                    let mut aset: HashSet<TargetAddr> = addresses.clone().into_iter().collect();
+                    let mut aset: BTreeSet<TargetAddr> = addresses.clone().into_iter().collect();
                     aset.extend(t.addresses);
                     *addresses = aset.into_iter().collect();
                 }
