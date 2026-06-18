@@ -331,7 +331,6 @@
       "third_party/double-conversion/**": true,
       "third_party/etnaviv_gpu_tests/**": true,
       "third_party/expat/**": true,
-      "third_party/flatbuffers/**": true,
       "third_party/fmtlib/**": true,
       "third_party/freetype2/**": true,
       "third_party/gflags/**": true,

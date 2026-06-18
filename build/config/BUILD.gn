@@ -706,10 +706,7 @@ variant("no_frame_pointers") {
 
 config("suppress_iterator_warnings") {
   defines = [ "_LIBCPP_DISABLE_DEPRECATION_WARNINGS" ]
-  visibility = [
-    "//third_party/flatbuffers/*",
-    "//third_party/grpc/*",
-  ]
+  visibility = [ "//third_party/grpc/*" ]
 }
 
 # LINT.IfChange(default_warnings)
