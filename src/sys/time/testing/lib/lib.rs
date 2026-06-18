@@ -515,11 +515,11 @@ async fn setup_rtc(
 
     let rtc_dir = match rtc_options {
         RtcOptions::InitialRtcTime(initial_time) => {
-            log::debug!("using fake /dev/class/rtc/000");
+            log::debug!("using fake fuchsia.hardware.rtc.Service");
             pseudo_directory! {
-                "class" => pseudo_directory! {
-                    "rtc" => pseudo_directory! {
-                        "000" => vfs::service::host({
+                "fuchsia.hardware.rtc.Service" => pseudo_directory! {
+                    "default" => pseudo_directory! {
+                        "device" => vfs::service::host({
                             let rtc_updates = rtc_updates.clone();
                             move |stream| {
                                 serve_fake_rtc(initial_time, rtc_updates.clone(), stream)
@@ -530,20 +530,16 @@ async fn setup_rtc(
             }
         }
         RtcOptions::None => {
-            log::debug!("using an empty /dev/class/rtc directory");
+            log::debug!("using an empty fuchsia.hardware.rtc.Service directory");
             pseudo_directory! {
-                "class" => pseudo_directory! {
-                    "rtc" => pseudo_directory! {
-                    }
+                "fuchsia.hardware.rtc.Service" => pseudo_directory! {
                 }
             }
         }
         RtcOptions::InjectedRtc(h) => {
-            log::debug!("using /dev/class/rtc provided by client");
+            log::debug!("using RTC provided by client");
             pseudo_directory! {
-                "class" => pseudo_directory! {
-                    "rtc" => vfs::remote::remote_dir(h)
-                }
+                "fuchsia.hardware.rtc.Service" => vfs::remote::remote_dir(h)
             }
         }
     };
@@ -555,10 +551,9 @@ async fn setup_rtc(
                 move |handles| {
                     let rtc_dir = rtc_dir.clone();
                     async move {
-                        let _ = &handles;
                         let mut fs = ServiceFs::new();
                         fs.add_remote(
-                            "dev",
+                            "svc",
                             vfs::directory::serve_read_only(
                                 rtc_dir,
                                 vfs::execution_scope::ExecutionScope::new(),
@@ -580,9 +575,7 @@ async fn setup_rtc(
     builder
         .add_route(
             Route::new()
-                .capability(
-                    Capability::directory("dev-rtc").path("/dev/class/rtc").rights(fio::R_STAR_DIR),
-                )
+                .capability(Capability::service::<fidl_fuchsia_hardware_rtc::ServiceMarker>())
                 .from(&fake_rtc_server)
                 .to(&*timekeeper),
         )
