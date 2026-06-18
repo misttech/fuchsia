@@ -12,40 +12,28 @@ group("tests") {
   testonly = true
 }
 
-devicetree_visitor("gpioimpl") {
-  enable_sdk_source_set = true
-  category = "internal"
+devicetree_visitor("gpioimpl-visitor") {
   sources = [
     "gpioimpl-visitor-registration.cc",
     "gpioimpl-visitor.cc",
     "gpioimpl-visitor.h",
   ]
+  enable_sdk_source_set = true
   deps = [
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:common-types",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.gpio",
     "//src/devices/bind/fuchsia.pin",
   ]
   public_deps = [
+    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
     "//sdk/fidl/fuchsia.hardware.pinimpl:fuchsia.hardware.pinimpl_cpp",
     "//sdk/lib/driver/devicetree/visitors:driver-visitor",
   ]
   non_sdk_deps = [
-    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib_cpp",
-    "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/bind/fuchsia.gpio:fuchsia.gpio_cpp",
-    "//src/devices/bind/fuchsia.pin:fuchsia.pin_cpp",
-  ]
-}
-
-source_set("gpioimpl-visitor") {
-  sources = [
-    "gpioimpl-visitor.cc",
-    "gpioimpl-visitor.h",
-  ]
-  deps = [
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib_cpp",
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:common-types",
@@ -57,16 +45,14 @@ source_set("gpioimpl-visitor") {
     "//src/lib/ddk",
     "//src/lib/ddk:ddk-metadata-headers",
   ]
-  public_deps = [
-    "//sdk/fidl/fuchsia.hardware.pinimpl:fuchsia.hardware.pinimpl_cpp",
-    "//sdk/lib/driver/devicetree/visitors:driver-visitor",
-  ]
+
+  category = "internal"
 }
 
 test("gpioimpl-visitor-test-bin") {
   sources = [ "test/gpioimpl-visitor-test.cc" ]
   deps = [
-    ":gpioimpl-visitor",
+    ":gpioimpl-visitor.static",
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",

@@ -13,19 +13,19 @@ group("tests") {
 }
 
 devicetree_visitor("mali-gpu-visitor") {
-  deps = [ ":mali-gpu" ]
-}
-
-source_set("mali-gpu") {
   sources = [
     "mali-gpu-visitor.cc",
     "mali-gpu-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.gpu.mali:fuchsia.hardware.gpu.mali_bindlib_cpp",
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
+  ]
+  non_sdk_deps = [
+    "//sdk/fidl/fuchsia.hardware.gpu.mali:fuchsia.hardware.gpu.mali_bindlib_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.arm.platform:fuchsia.arm.platform_cpp",
     "//src/lib/ddk",
@@ -35,7 +35,7 @@ source_set("mali-gpu") {
 test("mali-gpu-visitor-test-bin") {
   sources = [ "test/mali-gpu-visitor-test.cc" ]
   deps = [
-    ":mali-gpu",
+    ":mali-gpu-visitor.static",
     "//sdk/fidl/fuchsia.hardware.gpu.mali:fuchsia.hardware.gpu.mali_bindlib_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",

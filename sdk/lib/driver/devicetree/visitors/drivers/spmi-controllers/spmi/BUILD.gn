@@ -13,30 +13,31 @@ group("tests") {
 }
 
 devicetree_visitor("spmi") {
-  deps = [ ":spmi-visitor" ]
-}
-
-source_set("spmi-visitor") {
   sources = [
     "spmi-visitor.cc",
     "spmi-visitor.h",
+    "spmi.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.spmi:fuchsia.hardware.spmi_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.spmi:fuchsia.hardware.spmi_cpp",
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:common-types",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
-    "//src/devices/bind/fuchsia.spmi:fuchsia.spmi_cpp",
   ]
   public_deps = [ "//sdk/lib/driver/devicetree/visitors:driver-visitor" ]
+  non_sdk_deps = [
+    "//sdk/fidl/fuchsia.hardware.spmi:fuchsia.hardware.spmi_bindlib_cpp",
+    "//src/devices/bind/fuchsia.spmi:fuchsia.spmi_cpp",
+  ]
 }
 
 test("spmi-visitor-test-bin") {
   sources = [ "test/spmi-visitor-test.cc" ]
   deps = [
-    ":spmi-visitor",
+    ":spmi.static",
     "//sdk/fidl/fuchsia.hardware.spmi:fuchsia.hardware.spmi_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.spmi:fuchsia.hardware.spmi_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",

@@ -13,20 +13,20 @@ group("tests") {
 }
 
 devicetree_visitor("sdio-visitor") {
-  deps = [ ":sdio" ]
-}
-
-source_set("sdio") {
   sources = [
     "sdio-visitor.cc",
     "sdio-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.sdio:fuchsia.hardware.sdio_bindlib_cpp",
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:property-parser",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
+  ]
+  non_sdk_deps = [
+    "//sdk/fidl/fuchsia.hardware.sdio:fuchsia.hardware.sdio_bindlib_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.sdio:fuchsia.sdio_cpp",
   ]

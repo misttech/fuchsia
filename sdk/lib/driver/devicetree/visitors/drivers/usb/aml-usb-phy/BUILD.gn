@@ -13,33 +13,33 @@ group("tests") {
 }
 
 devicetree_visitor("aml-usb-phy-visitor") {
-  deps = [ ":aml-usb-phy-visitor-impl" ]
-}
-
-source_set("aml-usb-phy-visitor-impl") {
   sources = [
     "aml-usb-phy-visitor.cc",
     "aml-usb-phy-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
     "//sdk/fidl/fuchsia.hardware.usb.phy:fuchsia.hardware.usb.phy_cpp",
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
-    "//src/devices/lib/amlogic",
-    "//src/devices/usb/lib/usb:usb-header",
-    "//src/lib/ddk:ddk_metadata",
   ]
   public_deps = [
     "//sdk/lib/driver/devicetree/visitors:driver-visitor",
     "//sdk/lib/driver/devicetree/visitors:property-parser",
+  ]
+  non_sdk_deps = [
+    "//src/devices/lib/amlogic",
+    "//src/devices/usb/lib/usb:usb-header",
+    "//src/lib/ddk:ddk_metadata",
   ]
 }
 
 test("aml-usb-phy-visitor-test-bin") {
   sources = [ "test/aml-usb-phy-visitor-test.cc" ]
   deps = [
-    ":aml-usb-phy-visitor-impl",
+    ":aml-usb-phy-visitor.static",
     "//sdk/fidl/fuchsia.hardware.usb.phy:fuchsia.hardware.usb.phy_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",

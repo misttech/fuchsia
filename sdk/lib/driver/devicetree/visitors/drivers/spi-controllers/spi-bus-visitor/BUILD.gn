@@ -13,34 +13,34 @@ group("tests") {
 }
 
 devicetree_visitor("spi-bus-visitor") {
-  deps = [ ":spi-bus" ]
-}
-
-source_set("spi-bus") {
   sources = [
     "spi-bus-visitor.cc",
     "spi-bus-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi_bindlib_cpp",
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:common-types",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
-    "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/lib/ddk",
-    "//src/lib/ddk:ddk-metadata-headers",
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.spi.businfo:fuchsia.hardware.spi.businfo_cpp",
     "//sdk/lib/driver/devicetree/visitors:driver-visitor",
+  ]
+  non_sdk_deps = [
+    "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi_bindlib_cpp",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/lib/ddk",
+    "//src/lib/ddk:ddk-metadata-headers",
   ]
 }
 
 test("spi-bus-visitor-test-bin") {
   sources = [ "test/spi-bus-visitor-test.cc" ]
   deps = [
-    ":spi-bus",
+    ":spi-bus-visitor.static",
     "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi_bindlib_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",

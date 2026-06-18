@@ -17,28 +17,25 @@ group("tests") {
 }
 
 devicetree_visitor("thermal-zones-visitor") {
-  deps = [ ":thermal-zones-visitor-impl" ]
-}
-
-source_set("thermal-zones-visitor-impl") {
   sources = [
     "thermal-zones-visitor.cc",
     "thermal-zones-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
     "//sdk/fidl/fuchsia.hardware.trippoint:fuchsia.hardware.trippoint_cpp",
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
   ]
-
   public_deps = [ "//sdk/lib/driver/devicetree/visitors:property-parser" ]
 }
 
 test("thermal-zones-visitor-test-bin") {
   sources = [ "test/thermal-zones-visitor-test.cc" ]
   deps = [
-    ":thermal-zones-visitor-impl",
+    ":thermal-zones-visitor.static",
     "//sdk/fidl/fuchsia.hardware.trippoint:fuchsia.hardware.trippoint_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",

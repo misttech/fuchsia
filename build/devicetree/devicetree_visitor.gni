@@ -98,15 +98,25 @@ template("devicetree_visitor") {
     configs += [ "//sdk/lib/driver/devicetree/visitors:static_visitor_config" ]
   }
 
-  # TODO(https://fxbug.dev/494446193): Remove this once all visitors are migrated to
-  # support static libraries.
   if (defined(invoker.enable_sdk_source_set) && invoker.enable_sdk_source_set) {
-    _visitor_sdk_name = "devicetree-${target_name}-visitor"
+    _visitor_sdk_name = "devicetree-${target_name}-static"
 
     sdk_source_set("${target_name}_visitor") {
-      forward_variables_from(invoker, "*")
+      forward_variables_from(invoker,
+                             "*",
+                             [
+                               "category",
+                               "defines",
+                             ])
       sdk_name = _visitor_sdk_name
       include_base = "//sdk"
+      if (!defined(category)) {
+        category = "internal"
+      }
+      if (!defined(defines)) {
+        defines = []
+      }
+      defines += [ "FDF_DEVICETREE_STATIC_VISITOR" ]
     }
   }
 

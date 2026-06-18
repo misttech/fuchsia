@@ -13,26 +13,29 @@ group("tests") {
 }
 
 devicetree_visitor("arm-gic") {
-  deps = [ ":arm-gic-visitor" ]
-}
-
-source_set("arm-gic-visitor") {
-  sources = [ "arm-gic-visitor.cc" ]
+  sources = [
+    "arm-gic-visitor.cc",
+    "arm-gic-visitor.h",
+    "arm-gicv2.h",
+    "arm-gicv3.h",
+  ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
   ]
   public_deps = [
     "//sdk/lib/driver/devicetree/visitors:driver-visitor",
-    "//sdk/lib/driver/devicetree/visitors:interrupt-parser",
     "//sdk/lib/driver/devicetree/visitors:property-parser",
   ]
+  non_sdk_deps = [ "//sdk/lib/driver/devicetree/visitors:interrupt-parser" ]
 }
 
 test("arm-gic-visitor-test-bin") {
   sources = [ "test/arm-gic-test.cc" ]
   deps = [
-    ":arm-gic-visitor",
+    ":arm-gic.static",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",
     "//sdk/lib/driver/devicetree/visitors/default/bind-property",

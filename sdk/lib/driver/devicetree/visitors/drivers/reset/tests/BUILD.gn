@@ -39,10 +39,13 @@ resource("test-data-name-mismatch-file") {
 test("reset-visitor-test-bin") {
   sources = [ "reset-visitor-test.cc" ]
   deps = [
+    "//sdk/fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_bindlib_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",
     "//sdk/lib/driver/devicetree/visitors/default/bind-property",
-    "//sdk/lib/driver/devicetree/visitors/drivers/reset",
+    "//sdk/lib/driver/devicetree/visitors/drivers/reset:reset-visitor.static",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/devices/bind/fuchsia.reset:fuchsia.reset_cpp",
     "//src/lib/fxl/test:gtest_main",
   ]
 }

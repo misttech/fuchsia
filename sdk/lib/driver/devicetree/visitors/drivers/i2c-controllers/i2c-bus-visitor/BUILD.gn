@@ -13,34 +13,35 @@ group("tests") {
 }
 
 devicetree_visitor("i2c-bus-visitor") {
-  deps = [ ":i2c-bus" ]
-}
-
-source_set("i2c-bus") {
   sources = [
     "i2c-bus-visitor.cc",
     "i2c-bus-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_bindlib_cpp",
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:common-types",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
-    "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/lib/ddk",
     "//zircon/system/ulib/fbl",
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.i2c.businfo:fuchsia.hardware.i2c.businfo_cpp",
     "//sdk/lib/driver/devicetree/visitors:driver-visitor",
   ]
+  non_sdk_deps = [
+    "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_bindlib_cpp",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/devices/bind/fuchsia.devicetree:fuchsia.devicetree_cpp",
+    "//src/lib/ddk",
+  ]
 }
 
 test("i2c-bus-visitor-test-bin") {
   sources = [ "test/i2c-bus-visitor-test.cc" ]
   deps = [
-    ":i2c-bus",
+    ":i2c-bus-visitor.static",
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_bindlib_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",

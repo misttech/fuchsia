@@ -17,29 +17,29 @@ group("tests") {
 }
 
 devicetree_visitor("focaltech-visitor") {
-  deps = [ ":focaltech-visitor-impl" ]
-}
-
-source_set("focaltech-visitor-impl") {
   sources = [
     "focaltech-visitor.cc",
     "focaltech-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.input.focaltech:fuchsia.hardware.input.focaltech_cpp",
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:driver-visitor",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
-    "//src/lib/ddk:ddk_metadata",
   ]
   public_deps = [ "//sdk/lib/driver/devicetree/visitors:property-parser" ]
+  non_sdk_deps = [
+    "//sdk/fidl/fuchsia.hardware.input.focaltech:fuchsia.hardware.input.focaltech_cpp",
+    "//src/lib/ddk:ddk_metadata",
+  ]
 }
 
 test("focaltech-visitor-test-bin") {
   sources = [ "test/focaltech-visitor-test.cc" ]
   deps = [
-    ":focaltech-visitor-impl",
+    ":focaltech-visitor.static",
     "//sdk/fidl/fuchsia.hardware.input.focaltech:fuchsia.hardware.input.focaltech_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",

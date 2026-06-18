@@ -4,7 +4,6 @@
 
 #include <lib/driver/devicetree/testing/visitor-test-helper.h>
 #include <lib/driver/devicetree/visitors/default/bind-property/bind-property.h>
-#include <lib/driver/devicetree/visitors/drivers/interrupt-controllers/arm-gic/arm-gic-visitor.h>
 #include <lib/driver/devicetree/visitors/registry.h>
 
 #include <gtest/gtest.h>

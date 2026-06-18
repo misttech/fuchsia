@@ -11,14 +11,12 @@ group("tests") {
 }
 
 devicetree_visitor("rtc-visitor") {
-  deps = [ ":rtc" ]
-}
-
-source_set("rtc") {
   sources = [
     "rtc-visitor.cc",
     "rtc-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
     "//sdk/lib/driver/component/cpp:node",
     "//sdk/lib/driver/devicetree/manager:node",
@@ -27,9 +25,9 @@ source_set("rtc") {
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
   ]
-  public_deps = [
+  public_deps = [ "//sdk/lib/driver/devicetree/visitors:driver-visitor" ]
+  non_sdk_deps = [
     "//sdk/fidl/fuchsia.hardware.hrtimer:fuchsia.hardware.hrtimer_bindlib_cpp",
-    "//sdk/lib/driver/devicetree/visitors:driver-visitor",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
   ]
 }

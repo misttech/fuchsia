@@ -13,20 +13,20 @@ group("tests") {
 }
 
 devicetree_visitor("adc-visitor") {
-  deps = [ ":adc" ]
-}
-
-source_set("adc") {
   sources = [
     "adc-visitor.cc",
     "adc-visitor.h",
   ]
-  deps = [ "//sdk/lib/driver/devicetree/visitors/drivers/iio/lib:iio" ]
+  enable_sdk_source_set = true
+  category = "internal"
   public_deps = [
-    "//sdk/fidl/fuchsia.hardware.adc:fuchsia.hardware.adc_bindlib_cpp",
-    "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl_cpp",
     "//sdk/lib/driver/devicetree/visitors:driver-visitor",
+  ]
+  non_sdk_deps = [
+    "//sdk/fidl/fuchsia.hardware.adc:fuchsia.hardware.adc_bindlib_cpp",
+    "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl_bindlib_cpp",
+    "//sdk/lib/driver/devicetree/visitors/drivers/iio/lib:iio",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.adc:fuchsia.adc_cpp",
   ]
@@ -35,12 +35,15 @@ source_set("adc") {
 test("adc-visitor-test-bin") {
   sources = [ "test/adc-visitor-test.cc" ]
   deps = [
-    ":adc",
+    ":adc-visitor.static",
+    "//sdk/fidl/fuchsia.hardware.adc:fuchsia.hardware.adc_bindlib_cpp",
+    "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl_bindlib_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",
     "//sdk/lib/driver/devicetree/visitors/default/bind-property",
     "//sdk/lib/driver/devicetree/visitors/default/mmio",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/devices/bind/fuchsia.adc:fuchsia.adc_cpp",
     "//src/lib/ddk:ddk-metadata-headers",
     "//src/lib/fxl/test:gtest_main",
   ]

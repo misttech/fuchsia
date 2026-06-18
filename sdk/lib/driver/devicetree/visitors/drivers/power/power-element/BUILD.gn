@@ -17,14 +17,12 @@ group("tests") {
 }
 
 devicetree_visitor("power-element-visitor") {
-  deps = [ ":power-element-visitor-impl" ]
-}
-
-source_set("power-element-visitor-impl") {
   sources = [
     "power-element-visitor.cc",
     "power-element-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:registration",
@@ -36,7 +34,7 @@ source_set("power-element-visitor-impl") {
 test("power-element-visitor-test-bin") {
   sources = [ "test/power-element-visitor-test.cc" ]
   deps = [
-    ":power-element-visitor-impl",
+    ":power-element-visitor.static",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",
     "//sdk/lib/driver/devicetree/visitors/default/bind-property",

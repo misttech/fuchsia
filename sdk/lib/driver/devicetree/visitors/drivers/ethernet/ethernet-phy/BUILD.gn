@@ -13,28 +13,28 @@ group("tests") {
 }
 
 devicetree_visitor("ethernet-phy-visitor") {
-  deps = [ ":ethernet-phy-visitor-impl" ]
-}
-
-source_set("ethernet-phy-visitor-impl") {
   sources = [
     "ethernet-phy-visitor.cc",
     "ethernet-phy-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.ethernet.board:fuchsia.hardware.ethernet.board_bindlib_cpp",
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
-    "//src/devices/bind/fuchsia:fuchsia_cpp",
   ]
   public_deps = [ "//sdk/lib/driver/devicetree/visitors:property-parser" ]
+  non_sdk_deps = [
+    "//sdk/fidl/fuchsia.hardware.ethernet.board:fuchsia.hardware.ethernet.board_bindlib_cpp",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
+  ]
 }
 
 test("ethernet-phy-visitor-test-bin") {
   sources = [ "test/ethernet-phy-visitor-test.cc" ]
   deps = [
-    ":ethernet-phy-visitor-impl",
+    ":ethernet-phy-visitor.static",
     "//sdk/fidl/fuchsia.hardware.ethernet.board:fuchsia.hardware.ethernet.board_bindlib_cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",

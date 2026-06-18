@@ -11,14 +11,12 @@ group("tests") {
 }
 
 devicetree_visitor("reset-visitor") {
-  deps = [ ":reset" ]
-}
-
-source_set("reset") {
   sources = [
     "reset-visitor.cc",
     "reset-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:common-types",
@@ -27,9 +25,11 @@ source_set("reset") {
     "//sdk/lib/driver/logging/cpp",
   ]
   public_deps = [
-    "//sdk/fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_cpp",
     "//sdk/lib/driver/devicetree/visitors:driver-visitor",
+  ]
+  non_sdk_deps = [
+    "//sdk/fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_bindlib_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.reset:fuchsia.reset_cpp",
   ]

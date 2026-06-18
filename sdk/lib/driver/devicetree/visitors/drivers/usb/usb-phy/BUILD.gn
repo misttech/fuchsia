@@ -13,33 +13,33 @@ group("tests") {
 }
 
 devicetree_visitor("usb-phy-visitor") {
-  deps = [ ":usb-phy-visitor-impl" ]
-}
-
-source_set("usb-phy-visitor-impl") {
   sources = [
     "usb-phy-visitor.cc",
     "usb-phy-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.usb.phy:fuchsia.hardware.usb.phy_bindlib_cpp",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
-    "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/bind/fuchsia.designware.platform:fuchsia.designware.platform_cpp",
-    "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
-    "//src/devices/bind/fuchsia.usb.phy:fuchsia.usb.phy_cpp",
   ]
   public_deps = [
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:property-parser",
+  ]
+  non_sdk_deps = [
+    "//sdk/fidl/fuchsia.hardware.usb.phy:fuchsia.hardware.usb.phy_bindlib_cpp",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/devices/bind/fuchsia.designware.platform:fuchsia.designware.platform_cpp",
+    "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
+    "//src/devices/bind/fuchsia.usb.phy:fuchsia.usb.phy_cpp",
   ]
 }
 
 test("usb-phy-visitor-test-bin") {
   sources = [ "test/usb-phy-visitor-test.cc" ]
   deps = [
-    ":usb-phy-visitor-impl",
+    ":usb-phy-visitor.static",
     "//sdk/fidl/fuchsia.hardware.usb.phy:fuchsia.hardware.usb.phy_bindlib_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",

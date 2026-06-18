@@ -17,21 +17,21 @@ group("tests") {
 }
 
 devicetree_visitor("regulator-visitor") {
-  deps = [ ":regulator-visitor-impl" ]
-}
-
-source_set("regulator-visitor-impl") {
   sources = [
     "regulator-visitor.cc",
     "regulator-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.vreg:fuchsia.hardware.vreg_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.vreg:fuchsia.hardware.vreg_cpp",
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:property-parser",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
+  ]
+  non_sdk_deps = [
+    "//sdk/fidl/fuchsia.hardware.vreg:fuchsia.hardware.vreg_bindlib_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.regulator:fuchsia.regulator_cpp",
     "//src/lib/ddk",
@@ -41,7 +41,7 @@ source_set("regulator-visitor-impl") {
 test("regulator-visitor-test-bin") {
   sources = [ "test/regulator-visitor-test.cc" ]
   deps = [
-    ":regulator-visitor-impl",
+    ":regulator-visitor.static",
     "//sdk/fidl/fuchsia.hardware.vreg:fuchsia.hardware.vreg_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.vreg:fuchsia.hardware.vreg_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",

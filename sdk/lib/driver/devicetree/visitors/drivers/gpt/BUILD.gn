@@ -13,29 +13,29 @@ group("tests") {
 }
 
 devicetree_visitor("gpt-visitor") {
-  deps = [ ":gpt" ]
-}
-
-source_set("gpt") {
   sources = [
     "gpt-visitor.cc",
     "gpt-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:common-types",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
+  ]
+  public_deps = [ "//sdk/lib/driver/devicetree/visitors:driver-visitor" ]
+  non_sdk_deps = [
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.block.gpt:fuchsia.block.gpt_cpp",
   ]
-  public_deps = [ "//sdk/lib/driver/devicetree/visitors:driver-visitor" ]
 }
 
 test("gpt-visitor-test-bin") {
   sources = [ "test/gpt-visitor-test.cc" ]
   deps = [
-    ":gpt",
+    ":gpt-visitor.static",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",
     "//sdk/lib/driver/devicetree/visitors/default/bind-property",

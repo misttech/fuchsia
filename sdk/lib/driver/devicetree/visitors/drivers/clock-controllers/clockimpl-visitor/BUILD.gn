@@ -13,32 +13,32 @@ group("tests") {
 }
 
 devicetree_visitor("clockimpl-visitor") {
-  deps = [ ":clockimpl" ]
-}
-
-source_set("clockimpl") {
   sources = [
     "clockimpl-visitor.cc",
     "clockimpl-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_bindlib_cpp",
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:registration",
-    "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/bind/fuchsia.clock:fuchsia.clock_cpp",
-    "//src/lib/ddk",
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.clockimpl:fuchsia.hardware.clockimpl_cpp",
     "//sdk/lib/driver/devicetree/visitors:driver-visitor",
+  ]
+  non_sdk_deps = [
+    "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_bindlib_cpp",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/devices/bind/fuchsia.clock:fuchsia.clock_cpp",
+    "//src/lib/ddk",
   ]
 }
 
 test("clockimpl-visitor-test-bin") {
   sources = [ "test/clockimpl-visitor-test.cc" ]
   deps = [
-    ":clockimpl",
+    ":clockimpl-visitor.static",
     "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_bindlib_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",

@@ -13,29 +13,29 @@ group("tests") {
 }
 
 devicetree_visitor("sdmmc-visitor") {
-  deps = [ ":sdmmc" ]
-}
-
-source_set("sdmmc") {
   sources = [
     "sdmmc-visitor.cc",
     "sdmmc-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
     "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_cpp",
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
+  ]
+  public_deps = [ "//sdk/lib/driver/devicetree/visitors:driver-visitor" ]
+  non_sdk_deps = [
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/lib/ddk:ddk_metadata",
   ]
-  public_deps = [ "//sdk/lib/driver/devicetree/visitors:driver-visitor" ]
 }
 
 test("sdmmc-visitor-test-bin") {
   sources = [ "test/sdmmc-visitor-test.cc" ]
   deps = [
-    ":sdmmc",
+    ":sdmmc-visitor.static",
     "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",

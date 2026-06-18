@@ -13,35 +13,35 @@ group("tests") {
 }
 
 devicetree_visitor("registers-visitor") {
-  deps = [ ":registers" ]
-}
-
-source_set("registers") {
   sources = [
     "registers-visitor.cc",
     "registers-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers_bindlib_cpp",
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:common-types",
     "//sdk/lib/driver/devicetree/visitors:multivisitor",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
-    "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/bind/fuchsia.register:fuchsia.register_cpp",
-    "//src/lib/ddk",
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers_cpp",
     "//sdk/lib/driver/devicetree/visitors:driver-visitor",
+  ]
+  non_sdk_deps = [
+    "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers_bindlib_cpp",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/devices/bind/fuchsia.register:fuchsia.register_cpp",
+    "//src/lib/ddk",
   ]
 }
 
 test("registers-visitor-test-bin") {
   sources = [ "test/registers-visitor-test.cc" ]
   deps = [
-    ":registers",
+    ":registers-visitor.static",
     "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers_bindlib_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",

@@ -13,19 +13,19 @@ group("tests") {
 }
 
 devicetree_visitor("amlogic-canvas-visitor") {
-  deps = [ ":amlogic-canvas" ]
-}
-
-source_set("amlogic-canvas") {
   sources = [
     "amlogic-canvas-visitor.cc",
     "amlogic-canvas-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.amlogiccanvas:fuchsia.hardware.amlogiccanvas_bindlib_cpp",
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
+  ]
+  non_sdk_deps = [
+    "//sdk/fidl/fuchsia.hardware.amlogiccanvas:fuchsia.hardware.amlogiccanvas_bindlib_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/lib/ddk",
   ]
@@ -34,7 +34,7 @@ source_set("amlogic-canvas") {
 test("amlogic-canvas-visitor-test-bin") {
   sources = [ "test/amlogic-canvas-visitor-test.cc" ]
   deps = [
-    ":amlogic-canvas",
+    ":amlogic-canvas-visitor.static",
     "//sdk/fidl/fuchsia.hardware.amlogiccanvas:fuchsia.hardware.amlogiccanvas_bindlib_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",

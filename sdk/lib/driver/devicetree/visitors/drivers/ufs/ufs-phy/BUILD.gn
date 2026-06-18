@@ -8,21 +8,21 @@ import("//build/devicetree/devicetree_visitor.gni")
 import("//build/test.gni")
 
 devicetree_visitor("ufs-phy-visitor") {
-  deps = [ ":ufs-phy-visitor-impl" ]
-}
-
-source_set("ufs-phy-visitor-impl") {
   sources = [
     "ufs-phy-visitor.cc",
     "ufs-phy-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.ufs.phy:fuchsia.hardware.ufs.phy_bindlib_cpp",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
   ]
   public_deps = [
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:property-parser",
+  ]
+  non_sdk_deps = [
+    "//sdk/fidl/fuchsia.hardware.ufs.phy:fuchsia.hardware.ufs.phy_bindlib_cpp",
   ]
 }

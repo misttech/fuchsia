@@ -13,33 +13,33 @@ group("tests") {
 }
 
 devicetree_visitor("interconnect-visitor") {
-  deps = [ ":interconnect" ]
-}
-
-source_set("interconnect") {
   sources = [
     "interconnect-visitor.cc",
     "interconnect-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.interconnect:fuchsia.hardware.interconnect_bindlib_cpp",
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:common-types",
     "//sdk/lib/driver/devicetree/visitors:registration",
-    "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/bind/fuchsia.interconnect:fuchsia.interconnect_cpp",
-    "//src/lib/ddk",
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.interconnect:fuchsia.hardware.interconnect_cpp",
     "//sdk/lib/driver/devicetree/visitors:driver-visitor",
+  ]
+  non_sdk_deps = [
+    "//sdk/fidl/fuchsia.hardware.interconnect:fuchsia.hardware.interconnect_bindlib_cpp",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/devices/bind/fuchsia.interconnect:fuchsia.interconnect_cpp",
+    "//src/lib/ddk",
   ]
 }
 
 test("interconnect-visitor-test-bin") {
   sources = [ "test/interconnect-visitor-test.cc" ]
   deps = [
-    ":interconnect",
+    ":interconnect-visitor.static",
     "//sdk/fidl/fuchsia.hardware.interconnect:fuchsia.hardware.interconnect_bindlib_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",

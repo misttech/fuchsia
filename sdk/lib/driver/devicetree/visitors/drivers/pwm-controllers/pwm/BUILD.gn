@@ -13,35 +13,36 @@ group("tests") {
 }
 
 devicetree_visitor("pwm-visitor") {
-  deps = [ ":pwm-visitor-impl" ]
-}
-
-source_set("pwm-visitor-impl") {
   sources = [
     "pwm-visitor.cc",
     "pwm-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.pwm:fuchsia.hardware.pwm_bindlib_cpp",
     "//sdk/lib/driver/devicetree/visitors:common-types",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
+  ]
+  public_deps = [
+    "//sdk/lib/driver/devicetree/manager:node",
+    "//sdk/lib/driver/devicetree/visitors:property-parser",
+  ]
+  non_sdk_deps = [
+    "//sdk/fidl/fuchsia.hardware.pwm:fuchsia.hardware.pwm_bindlib_cpp",
+    "//sdk/fidl/fuchsia.hardware.pwm:fuchsia.hardware.pwm_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.pwm:fuchsia.pwm_cpp",
     "//src/lib/ddk:ddk_metadata",
-  ]
-  public_deps = [
-    "//sdk/fidl/fuchsia.hardware.pwm:fuchsia.hardware.pwm_cpp",
-    "//sdk/lib/driver/devicetree/manager:node",
-    "//sdk/lib/driver/devicetree/visitors:property-parser",
   ]
 }
 
 test("pwm-visitor-test-bin") {
   sources = [ "test/pwm-visitor-test.cc" ]
   deps = [
-    ":pwm-visitor-impl",
+    ":pwm-visitor.static",
     "//sdk/fidl/fuchsia.hardware.pwm:fuchsia.hardware.pwm_bindlib_cpp",
+    "//sdk/fidl/fuchsia.hardware.pwm:fuchsia.hardware.pwm_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",
     "//sdk/lib/driver/devicetree/visitors/default/bind-property",

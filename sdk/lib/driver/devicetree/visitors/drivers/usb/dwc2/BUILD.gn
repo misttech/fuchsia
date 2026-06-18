@@ -13,31 +13,31 @@ group("tests") {
 }
 
 devicetree_visitor("dwc2-visitor") {
-  deps = [ ":dwc2-visitor-impl" ]
-}
-
-source_set("dwc2-visitor-impl") {
   sources = [
     "dwc2-visitor.cc",
     "dwc2-visitor.h",
   ]
+  enable_sdk_source_set = true
+  category = "internal"
   deps = [
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
-    "//src/devices/usb/lib/fuchsia.hardware.usb.dwc2:fuchsia.hardware.usb.dwc2_cpp",
-    "//src/lib/ddk:ddk_metadata",
   ]
   public_deps = [
     "//sdk/lib/driver/devicetree/visitors:driver-visitor",
     "//sdk/lib/driver/devicetree/visitors:property-parser",
+  ]
+  non_sdk_deps = [
+    "//src/devices/usb/lib/fuchsia.hardware.usb.dwc2:fuchsia.hardware.usb.dwc2_cpp",
+    "//src/lib/ddk:ddk_metadata",
   ]
 }
 
 test("dwc2-visitor-test-bin") {
   sources = [ "test/dwc2-visitor-test.cc" ]
   deps = [
-    ":dwc2-visitor-impl",
+    ":dwc2-visitor.static",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",
     "//sdk/lib/driver/devicetree/visitors/default/bind-property",
