@@ -36,14 +36,15 @@ Status SecurityStorageService::DeleteBond(::grpc::ServerContext* context,
   if (request->address_case() == ::pandora::DeleteBondRequest::AddressCase::ADDRESS_NOT_SET) {
     return Status(StatusCode::INVALID_ARGUMENT, "DeleteBondRequest address not set");
   }
-  std::string address;
+  std::string little_endian_addr;
   if (request->address_case() == ::pandora::DeleteBondRequest::AddressCase::kPublic) {
-    address = request->public_();
+    little_endian_addr = request->public_();
   } else {
-    address = request->random();
+    little_endian_addr = request->random();
   }
+  std::ranges::reverse(little_endian_addr);
 
-  uint64_t peer_id = get_peer_id(address.c_str());
+  uint64_t peer_id = get_peer_id(little_endian_addr.c_str());
   auto result = access_client_->Forget(fuchsia_bluetooth::PeerId{peer_id});
   if (result.is_error()) {
     return Status(StatusCode::INTERNAL, "fuchsia.bluetooth.sys.Access/Forget error: " +
