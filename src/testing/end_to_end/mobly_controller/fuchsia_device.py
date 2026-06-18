@@ -5,6 +5,7 @@
 
 import logging
 import os
+import tempfile
 from copy import deepcopy
 from typing import Any
 
@@ -46,6 +47,7 @@ async def create(
 
     test_logs_dir: str = _get_log_directory()
     ffx_config_dict: dict[str, Any] = _get_ffx_config(configs)
+    ffx_config_dict["emu_instance_dir"] = os.path.join(test_logs_dir, "emu")
 
     device_configs = []
     ssh_private_keys = []
@@ -276,6 +278,9 @@ def _get_log_directory() -> str:
     return getattr(
         logging,
         "log_path",  # Set by Mobly in base_test.BaseTestClass.run.
+        tempfile.mkdtemp(
+            prefix="fuchsia_test_logs_"
+        ),  # Safe fallback if run outside Mobly (e.g. standalone/tests)
     )
 
 
@@ -324,5 +329,4 @@ def _get_ffx_config(configs: list[dict[str, Any]]) -> dict[str, Any]:
                     f"Invalid value sent in '{ffx_config_key}'. Please pass a int value"
                 ) from err
     ffx_config_dict["enable_usb"] = True
-    ffx_config_dict["emu_instance_dir"] = "$SHARED_DATA"
     return ffx_config_dict
