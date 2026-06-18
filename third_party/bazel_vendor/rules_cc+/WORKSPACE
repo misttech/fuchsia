@@ -4,10 +4,10 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
     name = "bazel_skylib",
-    sha256 = "bc283cdfcd526a52c3201279cda4bc298652efa898b10b4db0837dc51652756f",
+    sha256 = "fa01292859726603e3cd3a0f3f29625e68f4d2b165647c72908045027473e933",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/bazel-skylib/releases/download/1.7.1/bazel-skylib-1.7.1.tar.gz",
-        "https://github.com/bazelbuild/bazel-skylib/releases/download/1.7.1/bazel-skylib-1.7.1.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-skylib/releases/download/1.8.0/bazel-skylib-1.8.0.tar.gz",
+        "https://github.com/bazelbuild/bazel-skylib/releases/download/1.8.0/bazel-skylib-1.8.0.tar.gz",
     ],
 )
 
@@ -37,11 +37,13 @@ rules_shell_dependencies()
 
 rules_shell_toolchains()
 
+# Required commit 26a0b7d "Add CollectionSubject.contains_no_duplicates"
+# TODO: pzembrod - Change to a released version again when the commit is in a release.
 http_archive(
     name = "rules_testing",
-    sha256 = "02c62574631876a4e3b02a1820cb51167bb9cdcdea2381b2fa9d9b8b11c407c4",
-    strip_prefix = "rules_testing-0.6.0",
-    url = "https://github.com/bazelbuild/rules_testing/releases/download/v0.6.0/rules_testing-v0.6.0.tar.gz",
+    integrity = "sha256-Fv1hcAnEWf4QxN9MhAcL9MBowNFqYdeFhZAApqdaY6w=",
+    strip_prefix = "rules_testing-26a0b7d0b21c21338bb2f5ce693eac14aa24e323",
+    url = "https://github.com/bazelbuild/rules_testing/archive/26a0b7d0b21c21338bb2f5ce693eac14aa24e323.tar.gz",
 )
 
 http_archive(
@@ -53,9 +55,9 @@ http_archive(
 
 http_archive(
     name = "bazel_features",
-    sha256 = "07bd2b18764cdee1e0d6ff42c9c0a6111ffcbd0c17f0de38e7f44f1519d1c0cd",
-    strip_prefix = "bazel_features-1.32.0",
-    url = "https://github.com/bazel-contrib/bazel_features/releases/download/v1.32.0/bazel_features-v1.32.0.tar.gz",
+    sha256 = "5f7f87f50584df12bbfe5e461d358b16a8e15d245a7e596011bf39aaee5f58a9",
+    strip_prefix = "bazel_features-1.47.0",
+    url = "https://github.com/bazel-contrib/bazel_features/releases/download/v1.47.0/bazel_features-v1.47.0.tar.gz",
 )
 
 load("@bazel_features//:deps.bzl", "bazel_features_deps")

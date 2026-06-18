@@ -11,11 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""This is an experimental implementation of cc_static_library.
-
-We may change the implementation at any moment or even delete this file. Do not
-rely on this.
-"""
+"""The implementation of cc_static_library."""
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("//cc:action_names.bzl", "ACTION_NAMES")
@@ -122,6 +118,12 @@ def _validate_static_library(*, name, actions, cc_toolchain, feature_configurati
     args.add(static_library)
     args.add(validation_output)
 
+    env = cc_common.get_environment_variables(
+        feature_configuration = feature_configuration,
+        action_name = ACTION_NAMES.validate_static_library,
+        variables = cc_common.empty_variables(),
+    )
+
     execution_requirements_keys = cc_common.get_execution_requirements(
         feature_configuration = feature_configuration,
         action_name = ACTION_NAMES.validate_static_library,
@@ -130,6 +132,7 @@ def _validate_static_library(*, name, actions, cc_toolchain, feature_configurati
     actions.run(
         executable = validator_path,
         arguments = [args],
+        env = env,
         execution_requirements = {k: "" for k in execution_requirements_keys},
         inputs = depset(
             direct = [static_library],

@@ -14,7 +14,9 @@
 
 """objc_library Starlark implementation replacing native"""
 
+load("//cc:build_settings.bzl", "cc")
 load("//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
+load("//cc/common:cc_common.bzl", "cc_common")
 load("//cc/common:cc_helper.bzl", "cc_helper")
 load("//cc/common:cc_info.bzl", "CcInfo")
 load("//cc/common:semantics.bzl", cc_semantics = "semantics")
@@ -62,7 +64,7 @@ def _objc_library_impl(ctx):
         deps = ctx.attr.deps,
         implementation_deps = ctx.attr.implementation_deps,
         attr_linkopts = ctx.attr.linkopts,
-        alwayslink = ctx.fragments.objc.target_should_alwayslink(ctx),
+        alwayslink = cc.target_should_alwayslink(ctx),
     )
     files = []
     if common_variables.compilation_artifacts.archive != None:
@@ -85,12 +87,18 @@ def _objc_library_impl(ctx):
         pic_gcno_files = compilation_outputs.pic_gcno_files()
     else:
         pic_gcno_files = compilation_outputs._pic_gcno_files
+    feature_configuration = cc_common.configure_features(
+        ctx = ctx,
+        cc_toolchain = cc_toolchain,
+        requested_features = ctx.features,
+        unsupported_features = ctx.disabled_features,
+    )
     instrumented_files_info = coverage_common.instrumented_files_info(
         ctx = ctx,
         source_attributes = ["srcs", "non_arc_srcs", "hdrs"],
         dependency_attributes = ["deps", "data", "binary", "xctest_app"],
         extensions = extensions.NON_CPP_SOURCES + extensions.CPP_SOURCES + extensions.HEADERS,
-        coverage_environment = cc_helper.get_coverage_environment(ctx, ctx.fragments.cpp, cc_toolchain),
+        coverage_environment = cc_helper.get_coverage_environment(ctx, ctx.fragments.cpp, cc_toolchain, feature_configuration),
         # TODO(cmita): Use ctx.coverage_instrumented() instead when rules_swift can access
         # cc_toolchain.coverage_files and the coverage_support_files parameter of
         # coverage_common.instrumented_files_info(...)
@@ -98,10 +106,31 @@ def _objc_library_impl(ctx):
         metadata_files = gcno_files + pic_gcno_files,
     )
 
+    runfiles_list = []
+    for data_dep in ctx.attr.data:
+        if data_dep[DefaultInfo].data_runfiles.files:
+            runfiles_list.append(data_dep[DefaultInfo].data_runfiles)
+        else:
+            # This branch ensures interop with custom Starlark rules following
+            # https://bazel.build/extending/rules#runfiles_features_to_avoid
+            runfiles_list.append(ctx.runfiles(transitive_files = data_dep[DefaultInfo].files))
+            runfiles_list.append(data_dep[DefaultInfo].default_runfiles)
+
+    for src in ctx.attr.srcs:
+        runfiles_list.append(src[DefaultInfo].default_runfiles)
+
+    for dep in ctx.attr.deps:
+        runfiles_list.append(dep[DefaultInfo].default_runfiles)
+
+    for dep in ctx.attr.implementation_deps:
+        runfiles_list.append(dep[DefaultInfo].default_runfiles)
+
+    runfiles = ctx.runfiles().merge_all(runfiles_list)
+
     return [
         DefaultInfo(
             files = depset(files),
-            data_runfiles = ctx.runfiles(files = files),
+            runfiles = runfiles,
         ),
         CcInfo(
             compilation_context = compilation_context,
@@ -114,6 +143,7 @@ def _objc_library_impl(ctx):
 
 objc_library = rule(
     implementation = _objc_library_impl,
+    initializer = common_attrs.alwayslink_initializer,
     doc = """
 <p>This rule produces a static library from the given Objective-C source files.</p>""",
     attrs = common_attrs.union(

@@ -1717,6 +1717,17 @@ def _impl(ctx):
         ],
     )
 
+    lsan_feature = _sanitizer_feature(
+        name = "lsan",
+        specific_compile_flags = [
+            "-fsanitize=leak",
+            "-fno-common",
+        ],
+        specific_link_flags = [
+            "-fsanitize=leak",
+        ],
+    )
+
     tsan_feature = _sanitizer_feature(
         name = "tsan",
         specific_compile_flags = [
@@ -1746,6 +1757,21 @@ def _impl(ctx):
             flag_set(
                 actions = all_compile_actions + all_link_actions,
                 flag_groups = [flag_group(flags = ["-mmacosx-version-min={}".format(_target_os_version(ctx))])],
+            ),
+        ],
+    )
+
+    macos_reproducible_feature = feature(
+        name = "macos_reproducible",
+        enabled = "macos_reproducible" in ctx.features,
+        flag_sets = [
+            flag_set(
+                actions = all_compile_actions,
+                flag_groups = [flag_group(flags = ["-ffile-compilation-dir=."])],
+            ),
+            flag_set(
+                actions = all_link_actions,
+                flag_groups = [flag_group(flags = ["-Wl,-oso_prefix,."])],
             ),
         ],
     )
@@ -1820,6 +1846,8 @@ def _impl(ctx):
 
     no_dotd_file_feature = feature(name = "no_dotd_file")
 
+    skip_virtual_includes_feature = feature(name = "skip_virtual_includes")
+
     # TODO(#8303): Mac crosstool should also declare every feature.
     if is_linux:
         # Linux artifact name patterns are the default.
@@ -1868,6 +1896,7 @@ def _impl(ctx):
             supports_pic_feature,
             prefer_pic_for_opt_binaries_feature,
             asan_feature,
+            lsan_feature,
             tsan_feature,
             ubsan_feature,
             gcc_quoting_for_param_files_feature,
@@ -1897,6 +1926,7 @@ def _impl(ctx):
             archive_param_file_feature,
             set_install_name_feature,
             no_dotd_file_feature,
+            skip_virtual_includes_feature,
         ] + layering_check_features(ctx.attr.compiler, ctx.attr.extra_flags_per_feature, is_macos = False)
     else:
         # macOS artifact name patterns differ from the defaults only for dynamic
@@ -1913,6 +1943,7 @@ def _impl(ctx):
             cpp_module_modmap_file_feature,
             cpp20_module_compile_flags_feature,
             macos_minimum_os_feature,
+            macos_reproducible_feature,
             macos_default_link_flags_feature,
             dependency_file_feature,
             runtime_library_search_directories_feature,
@@ -1920,6 +1951,7 @@ def _impl(ctx):
             libtool_feature,
             archiver_flags_feature,
             asan_feature,
+            lsan_feature,
             tsan_feature,
             ubsan_feature,
             gcc_quoting_for_param_files_feature,
@@ -1949,6 +1981,7 @@ def _impl(ctx):
             archive_param_file_feature,
             generate_linkmap_feature,
             no_dotd_file_feature,
+            skip_virtual_includes_feature,
         ] + layering_check_features(ctx.attr.compiler, ctx.attr.extra_flags_per_feature, is_macos = True)
 
     parse_headers_action_configs, parse_headers_features = parse_headers_support(

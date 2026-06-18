@@ -13,17 +13,23 @@
 # limitations under the License.
 """Tests for the cc_toolchain_config rule."""
 
+load("@bazel_features//:features.bzl", "bazel_features")
 load(
     "//cc:cc_toolchain_config_lib.bzl",
     legacy_action_config = "action_config",
+    legacy_env_entry = "env_entry",
+    legacy_env_set = "env_set",
     legacy_feature = "feature",
     legacy_flag_group = "flag_group",
     legacy_flag_set = "flag_set",
     legacy_tool = "tool",
+    legacy_tool_path = "tool_path",  # buildifier: disable=deprecated-function
 )
+load("//cc/toolchains:cc_toolchain_config_info.bzl", "CcToolchainConfigInfo")
 load("//cc/toolchains:cc_toolchain_info.bzl", "ActionTypeInfo", "ToolchainConfigInfo")
 load("//cc/toolchains/impl:legacy_converter.bzl", "convert_toolchain")
 load("//cc/toolchains/impl:toolchain_config_info.bzl", _toolchain_config_info = "toolchain_config_info")
+load("//tests/rule_based_toolchain:helpers.bzl", "path_pattern")
 load("//tests/rule_based_toolchain:subjects.bzl", "result_fn_wrapper", "subjects")
 
 visibility("private")
@@ -171,19 +177,32 @@ def _args_missing_requirements_invalid_test(env, targets):
         "It is impossible to enable %s" % targets.requires_all_simple_args.label,
     )
 
+def _args_requiring_capability_valid_test(env, targets):
+    # A cc_args with requires_any_of pointing at a capability should be valid
+    # when the tool_map contains a tool that provides that capability.
+    _expect_that_toolchain(
+        env,
+        args = [targets.requires_supports_pic_args],
+        tool_map = targets.compile_tool_map,
+        expr = "capability_from_tool",
+    ).ok()
+
+    # Without a tool providing the capability, it should fail.
+    _expect_that_toolchain(
+        env,
+        args = [targets.requires_supports_pic_args],
+        tool_map = targets.empty_tool_map,
+        expr = "capability_missing",
+    ).err().contains(
+        "It is impossible to enable %s" % targets.requires_supports_pic_args.label,
+    )
+
 def _toolchain_collects_files_test(env, targets):
     tc = env.expect.that_target(
         targets.collects_files_toolchain_config,
     ).provider(ToolchainConfigInfo)
     tc.files().get(targets.c_compile[ActionTypeInfo]).contains_exactly(_COLLECTED_C_COMPILE_FILES)
     tc.files().get(targets.cpp_compile[ActionTypeInfo]).contains_exactly(_COLLECTED_CPP_COMPILE_FILES)
-
-    env.expect.that_target(
-        targets.collects_files_c_compile,
-    ).default_outputs().contains_exactly(_COLLECTED_C_COMPILE_FILES)
-    env.expect.that_target(
-        targets.collects_files_cpp_compile,
-    ).default_outputs().contains_exactly(_COLLECTED_CPP_COMPILE_FILES)
 
     legacy = convert_toolchain(tc.actual)
     env.expect.that_collection(legacy.features).contains_exactly([
@@ -230,7 +249,7 @@ def _toolchain_collects_files_test(env, targets):
                 legacy_flag_set(
                     flag_groups = [
                         legacy_flag_group(flags = [
-                            "--sysroot=tests/rule_based_toolchain/testdata",
+                            "--sysroot=" + path_pattern("tests/rule_based_toolchain/testdata"),
                         ]),
                     ],
                 ),
@@ -250,7 +269,7 @@ def _toolchain_collects_files_test(env, targets):
                 legacy_flag_set(
                     flag_groups = [
                         legacy_flag_group(flags = [
-                            "--sysroot=tests/rule_based_toolchain/testdata",
+                            "--sysroot=" + path_pattern("tests/rule_based_toolchain/testdata"),
                         ]),
                     ],
                 ),
@@ -258,27 +277,113 @@ def _toolchain_collects_files_test(env, targets):
         ),
     ]).in_order()
 
+def _tool_env_wires_into_toolchain_test(env, targets):
+    tc = env.expect.that_target(targets.tool_env_toolchain_config).provider(ToolchainConfigInfo)
+    legacy = convert_toolchain(tc.actual)
+
+    env.expect.that_collection(legacy.features).contains_exactly([
+        legacy_feature(
+            name = "implied_by_always_enabled_env_sets",
+            enabled = True,
+            env_sets = [
+                legacy_env_set(
+                    actions = ["c_compile"],
+                    env_entries = [
+                        legacy_env_entry(key = "STATIC", value = "value"),
+                        legacy_env_entry(key = "TOOL_ENV", value = path_pattern("tests/rule_based_toolchain/testdata/file1")),
+                        legacy_env_entry(key = "TOOL_ENV_AGAIN", value = path_pattern("tests/rule_based_toolchain/testdata/file1")),
+                    ],
+                ),
+                legacy_env_set(
+                    actions = ["c_compile"],
+                    env_entries = [
+                        legacy_env_entry(key = "FROM_ARGS", value = "args-env"),
+                    ],
+                ),
+            ],
+        ),
+    ])
+
+def _legacy_tools_produce_tool_paths_test(env, targets):
+    tc = env.expect.that_target(
+        targets.toolchain_config_with_legacy_tools,
+    ).provider(ToolchainConfigInfo)
+
+    legacy = convert_toolchain(tc.actual)
+    env.expect.that_collection(legacy.tool_paths).contains_exactly([
+        legacy_tool_path(name = "gcov", path = "/usr/bin/gcov"),
+    ])
+
+def _expect_rules_based_cc_toolchain_config(env, cc_toolchain_config):
+    if bazel_features.cc.supports_starlarkified_toolchains:
+        compiler = cc_toolchain_config.compiler
+        target_system_name = cc_toolchain_config.target_system_name
+        make_variables = [(m.name, m.value) for m in cc_toolchain_config.make_variables]
+        tool_paths = [(t.name, t.path) for t in cc_toolchain_config.tool_paths]
+    else:
+        compiler = cc_toolchain_config.compiler()
+        target_system_name = cc_toolchain_config.target_system_name()
+        make_variables = cc_toolchain_config.make_variables()
+        tool_paths = cc_toolchain_config.tool_paths()
+
+    env.expect.that_str(compiler).equals("rules-based-compiler")
+    env.expect.that_str(target_system_name).equals("rules-based-system")
+    env.expect.that_collection(make_variables).contains_exactly([
+        ("RULES_BASED_VAR", "rules-based-value"),
+    ])
+    env.expect.that_collection(tool_paths).contains_exactly([
+        ("gcov", "/usr/bin/gcov"),
+    ])
+
+def _rules_based_cc_toolchain_returns_cc_toolchain_config_info_test(env, targets):
+    if not bazel_features.cc.supports_starlarkified_toolchains:
+        return
+
+    env.expect.that_target(targets.rules_based_cc_toolchain).has_provider(CcToolchainConfigInfo)
+    _expect_rules_based_cc_toolchain_config(
+        env,
+        targets.rules_based_cc_toolchain[CcToolchainConfigInfo],
+    )
+
+def _rules_based_cc_toolchain_generated_config_has_same_values_test(env, targets):
+    if bazel_features.cc.supports_starlarkified_toolchains:
+        return
+
+    generated_config = targets.rules_based_cc_toolchain_generated_config
+    env.expect.that_target(generated_config).has_provider(CcToolchainConfigInfo)
+    _expect_rules_based_cc_toolchain_config(
+        env,
+        generated_config[CcToolchainConfigInfo],
+    )
+
 TARGETS = [
     "//tests/rule_based_toolchain/actions:c_compile",
     "//tests/rule_based_toolchain/actions:cpp_compile",
     ":builtin_feature",
     ":compile_tool_map",
-    ":collects_files_c_compile",
-    ":collects_files_cpp_compile",
     ":collects_files_toolchain_config",
     ":compile_feature",
     ":c_compile_args",
     ":c_compile_tool_map",
+    ":tool_env_toolchain_config",
+    ":tool_env_tool_map",
+    ":c_compile_env_args",
     ":empty_tool_map",
     ":implies_simple_feature",
+    ":legacy_gcov",
     ":overrides_feature",
     ":requires_any_simple_feature",
     ":requires_all_simple_feature",
     ":requires_all_simple_args",
+    ":requires_supports_pic_args",
     ":simple_feature",
     ":simple_feature2",
     ":same_feature_name",
-]
+    ":rules_based_cc_toolchain",
+    ":toolchain_config_with_legacy_tools",
+] + ([
+    ":rules_based_cc_toolchain_generated_config",
+] if not bazel_features.cc.supports_starlarkified_toolchains else [])
 
 # @unsorted-dict-items
 TESTS = {
@@ -288,5 +393,10 @@ TESTS = {
     "feature_config_implies_missing_feature_invalid_test": _feature_config_implies_missing_feature_invalid_test,
     "feature_missing_requirements_invalid_test": _feature_missing_requirements_invalid_test,
     "args_missing_requirements_invalid_test": _args_missing_requirements_invalid_test,
+    "args_requiring_capability_valid_test": _args_requiring_capability_valid_test,
     "toolchain_collects_files_test": _toolchain_collects_files_test,
+    "tool_env_wires_into_toolchain_test": _tool_env_wires_into_toolchain_test,
+    "legacy_tools_produce_tool_paths_test": _legacy_tools_produce_tool_paths_test,
+    "rules_based_cc_toolchain_returns_cc_toolchain_config_info_test": _rules_based_cc_toolchain_returns_cc_toolchain_config_info_test,
+    "rules_based_cc_toolchain_generated_config_has_same_values_test": _rules_based_cc_toolchain_generated_config_has_same_values_test,
 }

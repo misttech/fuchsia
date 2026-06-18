@@ -2,8 +2,11 @@ load("@rules_testing//lib:util.bzl", "util")
 load("//cc/toolchains:args.bzl", "cc_args")
 load("//cc/toolchains:feature.bzl", "cc_feature")
 load("//cc/toolchains:feature_set.bzl", "cc_feature_set")
+load("//cc/toolchains:legacy_tool.bzl", "cc_legacy_tool")
+load("//cc/toolchains:make_variable.bzl", "cc_make_variable")
 load("//cc/toolchains:tool.bzl", "cc_tool")
 load("//cc/toolchains:tool_map.bzl", "cc_tool_map")
+load("//cc/toolchains:toolchain.bzl", "cc_toolchain")
 load("//cc/toolchains/args:sysroot.bzl", "cc_sysroot")
 load("//cc/toolchains/impl:external_feature.bzl", "cc_external_feature")
 load("//cc/toolchains/impl:toolchain_config.bzl", "cc_legacy_file_group", "cc_toolchain_config")
@@ -44,6 +47,13 @@ util.helper_target(
     actions = ["//tests/rule_based_toolchain/actions:cpp_compile"],
     args = ["cpp_compile_args"],
     env = {"CPP_COMPILE": "1"},
+)
+
+util.helper_target(
+    cc_args,
+    name = "c_compile_env_args",
+    actions = ["//tests/rule_based_toolchain/actions:c_compile"],
+    env = {"FROM_ARGS": "args-env"},
 )
 
 cc_tool(
@@ -114,6 +124,14 @@ util.helper_target(
 )
 
 util.helper_target(
+    cc_tool_map,
+    name = "tool_env_tool_map",
+    tools = {
+        "//tests/rule_based_toolchain/actions:c_compile": "//tests/rule_based_toolchain/tool:tool_with_env",
+    },
+)
+
+util.helper_target(
     cc_feature,
     name = "compile_feature",
     args = [":compile_args"],
@@ -158,6 +176,14 @@ util.helper_target(
 )
 
 util.helper_target(
+    cc_args,
+    name = "requires_supports_pic_args",
+    actions = ["//tests/rule_based_toolchain/actions:c_compile"],
+    args = ["--pic"],
+    requires_any_of = ["//cc/toolchains/capabilities:supports_pic"],
+)
+
+util.helper_target(
     cc_feature,
     name = "requires_all_simple_feature",
     args = [":c_compile_args"],
@@ -197,6 +223,52 @@ util.helper_target(
     args = [":c_compile_args"],
     feature_name = "simple_feature2",
     visibility = ["//tests/rule_based_toolchain:__subpackages__"],
+)
+
+util.helper_target(
+    cc_toolchain_config,
+    name = "tool_env_toolchain_config",
+    args = [":c_compile_env_args"],
+    tool_map = ":tool_env_tool_map",
+)
+
+cc_legacy_tool(
+    name = "legacy_gcov",
+    path = "/usr/bin/gcov",
+    tool_name = "gcov",
+)
+
+cc_make_variable(
+    name = "rules_based_make_variable",
+    value = "rules-based-value",
+    variable_name = "RULES_BASED_VAR",
+)
+
+util.helper_target(
+    cc_toolchain_config,
+    name = "toolchain_config_with_legacy_tools",
+    legacy_tools = [
+        ":legacy_gcov",
+    ],
+    tool_map = ":empty_tool_map",
+)
+
+cc_toolchain(
+    name = "rules_based_cc_toolchain",
+    compiler = "rules-based-compiler",
+    legacy_tools = [
+        ":legacy_gcov",
+    ],
+    make_variables = [":rules_based_make_variable"],
+    tags = ["manual"],
+    target_system_name = "rules-based-system",
+    tool_map = ":empty_tool_map",
+)
+
+alias(
+    name = "rules_based_cc_toolchain_generated_config",
+    actual = ":_rules_based_cc_toolchain_config",
+    tags = ["manual"],
 )
 
 analysis_test_suite(

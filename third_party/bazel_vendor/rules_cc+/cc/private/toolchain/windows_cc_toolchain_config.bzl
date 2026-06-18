@@ -50,6 +50,11 @@ all_compile_actions = [
     ACTION_NAMES.lto_backend,
 ]
 
+all_c_compile_actions = [
+    ACTION_NAMES.c_compile,
+    ACTION_NAMES.clif_match,
+]
+
 all_cpp_compile_actions = [
     ACTION_NAMES.cpp_compile,
     ACTION_NAMES.linkstamp_compile,
@@ -393,11 +398,8 @@ def _impl(ctx):
                     flag_groups = [
                         flag_group(
                             flags = [
-                                "/wd4117",
-                                "-D__DATE__=\"redacted\"",
-                                "-D__TIMESTAMP__=\"redacted\"",
-                                "-D__TIME__=\"redacted\"",
-                            ] + (["-Wno-builtin-macro-redefined"] if ctx.attr.compiler == "clang-cl" else []),
+                                "/Brepro",
+                            ],
                         ),
                     ],
                 ),
@@ -550,7 +552,7 @@ def _impl(ctx):
             flag_sets = [
                 flag_set(
                     actions = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile],
-                    flag_groups = [flag_group(flags = ["/Od", "/Z7"])],
+                    flag_groups = [flag_group(flags = ["/Od"])],
                 ),
                 flag_set(
                     actions = all_link_actions,
@@ -764,6 +766,17 @@ def _impl(ctx):
                             expand_if_available = "user_link_flags",
                         ),
                     ],
+                ),
+            ],
+        )
+
+        default_c_std_feature = feature(
+            name = "default_c_std",
+            enabled = True,
+            flag_sets = [
+                flag_set(
+                    actions = all_c_compile_actions,
+                    flag_groups = [flag_group(flags = ["/std:c17"])],
                 ),
             ],
         )
@@ -1006,6 +1019,8 @@ def _impl(ctx):
             enabled = ctx.attr.shorten_virtual_includes,
         )
 
+        skip_virtual_includes_feature = feature(name = "skip_virtual_includes")
+
         treat_warnings_as_errors_feature = feature(
             name = "treat_warnings_as_errors",
             flag_sets = [
@@ -1070,6 +1085,9 @@ def _impl(ctx):
                         ACTION_NAMES.objcpp_compile,
                     ],
                     flag_groups = [
+                        flag_group(
+                            flags = ["/external:W0"],
+                        ),
                         flag_group(
                             flags = ["/external:I%{external_include_paths}"],
                             iterate_over = "external_include_paths",
@@ -1331,6 +1349,7 @@ def _impl(ctx):
             no_stripping_feature,
             targets_windows_feature,
             copy_dynamic_libraries_to_binary_feature,
+            default_c_std_feature,
             default_cpp_std_feature,
             default_compile_flags_feature,
             msvc_env_feature,
@@ -1342,6 +1361,7 @@ def _impl(ctx):
             parse_showincludes_feature,
             no_dotd_file_feature,
             shorten_virtual_includes_feature,
+            skip_virtual_includes_feature,
             generate_pdb_file_feature,
             generate_linkmap_feature,
             shared_flag_feature,

@@ -20,6 +20,7 @@ load(
     "ArgsListInfo",
     "ArtifactNamePatternInfo",
     "FeatureSetInfo",
+    "LegacyToolInfo",
     "MakeVariableInfo",
     "ToolConfigInfo",
     "ToolchainConfigInfo",
@@ -29,6 +30,7 @@ load(":legacy_converter.bzl", "convert_toolchain")
 load(":toolchain_config_info.bzl", "toolchain_config_info")
 
 visibility([
+    "//cc/private/rules_impl/...",
     "//cc/toolchains/...",
     "//tests/rule_based_toolchain/...",
 ])
@@ -50,7 +52,14 @@ cc_legacy_file_group = rule(
     },
 )
 
-def _cc_toolchain_config_impl(ctx):
+def cc_toolchain_config_impl_helper(ctx):
+    """Main implementation for _cc_toolchain_config_impl, reused for rules-based toolchains
+
+    Args:
+      ctx: Rule context
+    Returns:
+        toolchain_config_info and cc_toolchain_config_info providers"""
+
     if ctx.attr.features:
         fail("Features is a reserved attribute in bazel. Did you mean 'known_features' or 'enabled_features'?")
 
@@ -62,11 +71,12 @@ def _cc_toolchain_config_impl(ctx):
         args = ctx.attr.args,
         artifact_name_patterns = ctx.attr.artifact_name_patterns,
         make_variables = ctx.attr.make_variables,
+        legacy_tools = ctx.attr.legacy_tools,
     )
 
     legacy = convert_toolchain(toolchain_config)
 
-    return [
+    return (
         toolchain_config,
         cc_common.create_cc_toolchain_config_info(
             ctx = ctx,
@@ -75,6 +85,7 @@ def _cc_toolchain_config_impl(ctx):
             make_variables = legacy.make_variables,
             features = legacy.features,
             cxx_builtin_include_directories = legacy.cxx_builtin_include_directories,
+            tool_paths = legacy.tool_paths,
             # toolchain_identifier is deprecated, but setting it to None results
             # in an error that it expected a string, and for safety's sake, I'd
             # prefer to provide something unique.
@@ -84,12 +95,19 @@ def _cc_toolchain_config_impl(ctx):
             # compiler
             compiler = ctx.attr.compiler,
             target_cpu = ctx.attr.cpu,
+            target_libc = ctx.attr.target_libc,  # Used by legacy features to determine if we're building for Apple platfroms or not
+            target_system_name = ctx.expand_make_variables("target_system_name", ctx.attr.target_system_name, {}),
             # These fields are only relevant for legacy toolchain resolution.
-            target_system_name = "",
-            target_libc = "",
             abi_version = "",
             abi_libc_version = "",
         ),
+    )
+
+def _cc_toolchain_config_impl(ctx):
+    toolchain_config, cc_toolchain_config_info = cc_toolchain_config_impl_helper(ctx)
+    return [
+        toolchain_config,
+        cc_toolchain_config_info,
         # This allows us to support all_files.
         # If all_files was simply an alias to
         # //cc/toolchains/actions:all_actions,
@@ -98,19 +116,24 @@ def _cc_toolchain_config_impl(ctx):
         DefaultInfo(files = depset(transitive = toolchain_config.files.values())),
     ]
 
+CC_TOOLCHAIN_CONFIG_PUBLIC_ATTRS = {
+    # Attributes new to this rule.
+    "compiler": attr.string(default = ""),
+    "cpu": attr.string(default = ""),
+    "target_libc": attr.string(default = ""),
+    "target_system_name": attr.string(default = ""),
+    "tool_map": attr.label(providers = [ToolConfigInfo], mandatory = True),
+    "args": attr.label_list(providers = [ArgsListInfo]),
+    "known_features": attr.label_list(providers = [FeatureSetInfo]),
+    "enabled_features": attr.label_list(providers = [FeatureSetInfo]),
+    "artifact_name_patterns": attr.label_list(providers = [ArtifactNamePatternInfo]),
+    "make_variables": attr.label_list(providers = [MakeVariableInfo]),
+    "legacy_tools": attr.label_list(providers = [LegacyToolInfo]),
+}
+
 cc_toolchain_config = rule(
     implementation = _cc_toolchain_config_impl,
-    # @unsorted-dict-items
-    attrs = {
-        # Attributes new to this rule.
-        "compiler": attr.string(default = ""),
-        "cpu": attr.string(default = ""),
-        "tool_map": attr.label(providers = [ToolConfigInfo], mandatory = True),
-        "args": attr.label_list(providers = [ArgsListInfo]),
-        "known_features": attr.label_list(providers = [FeatureSetInfo]),
-        "enabled_features": attr.label_list(providers = [FeatureSetInfo]),
-        "artifact_name_patterns": attr.label_list(providers = [ArtifactNamePatternInfo]),
-        "make_variables": attr.label_list(providers = [MakeVariableInfo]),
+    attrs = CC_TOOLCHAIN_CONFIG_PUBLIC_ATTRS | {
         "_builtin_features": attr.label(default = "//cc/toolchains/features:all_builtin_features"),
     },
     provides = [ToolchainConfigInfo],

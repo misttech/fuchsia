@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
 load(":starlark_doc_extract_helper.bzl", "starlark_doc_extract_helper")
 
@@ -32,6 +33,14 @@ exports_files([
     "defs.bzl",
     "action_names.bzl",
     "system_library.bzl",
+    "cc_binary.bzl",
+    "cc_import.bzl",
+    "cc_library.bzl",
+    "cc_shared_library.bzl",
+    "cc_static_library.bzl",
+    "cc_test.bzl",
+    "objc_import.bzl",
+    "objc_library.bzl",
 ])
 
 # The toolchain type used to distinguish cc toolchains.
@@ -62,11 +71,15 @@ filegroup(
 
 filegroup(
     name = "srcs",
+    testonly = 1,
     srcs = glob([
         "**/*.bzl",
         "**/BUILD",
     ]) + [
+        "//cc/common:srcs",
         "//cc/private:srcs",
+        "//cc/toolchains:srcs",
+        "@bazel_skylib//:test_deps",
     ],
     visibility = ["//visibility:public"],
 )
@@ -84,9 +97,14 @@ filegroup(
 
 bzl_library(
     name = "find_cc_toolchain_bzl",
-    srcs = ["find_cc_toolchain.bzl"],
+    srcs = [
+        "find_cc_toolchain.bzl",
+        "use_cc_toolchain.bzl",
+    ],
     visibility = ["//visibility:public"],
-    deps = ["//cc/common"],
+    deps = [
+        "//cc/common",
+    ],
 )
 
 bzl_library(
@@ -116,6 +134,7 @@ bzl_library(
     srcs = ["defs.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        ":build_settings_bzl",
         ":core_rules",
         "//cc/common",
         "//cc/common:cc_helper_bzl",
@@ -126,7 +145,47 @@ bzl_library(
 
 bzl_library(
     name = "cc_postmark_bzl",
-    srcs = ["cc_postmark.bzl"],
+    srcs = [
+        "cc_postmark.bzl",
+        "cc_postmark_initializers.bzl",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "build_settings_bzl",
+    srcs = ["build_settings.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@bazel_skylib//rules:common_settings",
+    ],
+)
+
+bool_flag(
+    name = "incompatible_disallow_sdk_frameworks_attributes",
+    build_setting_default = False,
+    scope = "universal",
+    visibility = ["//visibility:public"],
+)
+
+bool_flag(
+    name = "incompatible_strip_executable_safely",
+    build_setting_default = False,
+    scope = "universal",
+    visibility = ["//visibility:public"],
+)
+
+bool_flag(
+    name = "incompatible_objc_alwayslink_by_default",
+    build_setting_default = False,
+    scope = "universal",
+    visibility = ["//visibility:public"],
+)
+
+bool_flag(
+    name = "incompatible_builtin_objc_strip_action",
+    build_setting_default = True,
+    scope = "universal",
     visibility = ["//visibility:public"],
 )
 
@@ -144,7 +203,9 @@ bzl_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":build_settings_bzl",
         ":cc_postmark_bzl",
+        "//cc/toolchains:toolchain_rules",
         "@cc_compatibility_proxy//:proxy_bzl",
     ],
 )

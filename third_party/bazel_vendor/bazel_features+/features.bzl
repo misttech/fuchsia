@@ -44,6 +44,23 @@ _cc = struct(
     # Whether cc_toolchain has the generate_modmap attribute.
     # https://github.com/bazelbuild/bazel/commit/8028655414a189b6897b1b51e3e43b5711e0af98
     cc_toolchain_has_generate_modmap = gt("9.0.0-pre.20250716.1"),
+    # Whether cc_toolchain is imlemented in starlark.
+    # https://github.com/bazelbuild/bazel/commit/b9f1721f79bb1f21e39d74c13878a33f05fa7034
+    supports_starlarkified_toolchains = gt("9.0.0-pre.20250911"),
+    # Whether cc_common is taken from rules_cc, in its starlarkified version,
+    # rather than the builtin, typically native cc_common of Bazel 7 and Bazel 8.
+    # One behavioral change between the two comes from
+    # https://github.com/bazelbuild/bazel/pull/25750, and it is expected that more
+    # will accumulate as cc_common in rules_cc evolves further while cc_common in
+    # Bazel 7 and Bazel 8 stays as it is.
+    # The tests in rules_cc need to be able to take this into account.
+    # The compatibility proxy in rules_cc/cc/extensions.bzl:31 switches from native to
+    # rules_cc at Bazel version 9.0.0-pre.20250911.
+    cc_common_is_in_rules_cc = ge("9.0.0-pre.20250911"),
+    # Whether toolchain features can mark paths for path mapping via ${path:...} patterns.
+    # https://github.com/bazelbuild/bazel/commit/41a36ff029340823700e2f4dec0c7cf71fcbdb31
+    # https://github.com/bazelbuild/bazel/commit/39386503ad55cfad38290f45a8d3732d5b2cd9ac
+    supports_path_variable_patterns = ge_same_major("9.1.0") or ge("10.0.0-pre.20260408.3"),
 )
 
 _docs = struct(
@@ -91,6 +108,10 @@ _external_deps = struct(
     # https://github.com/bazelbuild/bazel/commit/c230e39fb225edd206ed0aa07cfcdd8c51589965
     # https://github.com/bazelbuild/bazel/commit/25815511434d17f2843f73e0ff5231f3d80bc44e
     repository_ctx_has_getenv = ge_same_major("7.1.0") or ge("8.0.0-pre.20240128.3"),
+    # Whether rctx.symlink calls get rewritten to be relative symlinks when the repo is cached.
+    # https://github.com/bazelbuild/bazel/commit/2ce32e70485ab807e5188efcb696927ec6606a3e
+    # https://github.com/bazelbuild/bazel/commit/4edfe3276c127f73145018f4973cc422da61f05d
+    repo_rules_relativize_symlinks = ge_same_major("9.0.1") or ge("10.0.0-pre.20260322.2"),
 )
 
 _flags = struct(
@@ -142,6 +163,23 @@ _rules = struct(
     # Whether structs can have fields names 'to_json' and 'to_proto'.
     # https://github.com/bazelbuild/bazel/commit/db5906870bdcb1631e1b18be8637aa21b79cf943
     no_struct_field_denylist = ge("9.0.0-pre.20250128.3"),
+    # Whether the new merkle cache exists, which is on by default and handles source directories efficiently.
+    # https://github.com/bazelbuild/bazel/commit/30ca50950fdaff032925efe64c2690a9f05e074d
+    merkle_cache_v2 = gt("9.0.0-pre.20251014.1"),
+    # Whether ctx.actions.symlink accepts a target_type argument to create junctions on Windows.
+    # https://github.com/bazelbuild/bazel/commit/b9bbda939cddab807e34559cb7ee798febfa3861
+    symlink_action_has_target_type = ge_same_major("8.6.0") or ge("9.0.0"),
+    # Whether ctx.actions.write accepts a mnemonic parameter.
+    # https://github.com/bazelbuild/bazel/commit/34673f3371229fe310b433cf6ade353b9610f9fb
+    write_action_has_mnemonic = ge("9.0.0-pre.20250710.1"),
+    # Whether ctx.actions.write supports the execution_requirements parameter.
+    # https://github.com/bazelbuild/bazel/commit/2e4abf8b2252512947298300a03750574f050ce6
+    # https://github.com/bazel-io/bazel/commit/825369f7231b11f2d966bf8f3ef2d4905eae1344
+    write_action_has_execution_requirements = ge_same_major("9.1.0") or gt("10.0.0-pre.20260120.1"),
+
+    # Whether ctx.configuration.is_tool_configuration is public API
+    # https://github.com/bazelbuild/bazel/commit/84c0253add3784b75ff08b6d049a7f152c7b7532
+    is_tool_configuration_public = ge_same_major("8.7.0") or ge_same_major("9.1.0") or ge("10.0.0-pre.20260329.2"),
 
     # Internal only, don't use outside rules_java, rules_python & rules_shell.
     # TODO: Use a larger version range after cherry-picking

@@ -64,6 +64,14 @@ passed not only to the compiler for this target (as <code>copts</code>
 are) but also to all <code>objc_</code> dependers of this target.
 Subject to <a href="${link make-variables}">"Make variable"</a> substitution and
 <a href="${link common-definitions#sh-tokenization}">Bourne shell tokenization</a>."""),
+        "local_defines": attr.string_list(doc = """
+List of defines to add to the compile line.
+Subject to <a href="${link make-variables}">"Make" variable</a> substitution and
+<a href="${link common-definitions#sh-tokenization}">Bourne shell tokenization</a>.
+Each string, which must consist of a single Bourne shell token,
+is prepended with <code>-D</code> and added to the compile command line for this target,
+but not to its dependents. Unlike <code>defines</code>, the defines are only added to the
+compile command line for this target."""),
         "linkopts": attr.string_list(doc = "Extra flags to pass to the linker."),
         # How many rules use this in the depot?
         "stamp": attr.bool(),
@@ -143,6 +151,9 @@ and all depending targets, where each path is relative to
         doc = """
 The list of targets that this target depend on.""",
     ),
+    "_incompatible_strip_executable_safely": attr.label(
+        default = "//cc:incompatible_strip_executable_safely",
+    ),
 }
 
 # buildifier: disable=unsorted-dict-items
@@ -167,6 +178,9 @@ Names of SDK .dylib libraries to link with. For instance, "libz" or
 Objective-C++ sources in its dependency tree. When linking a binary,
 all libraries named in that binary's transitive dependency graph are
 used."""),
+    "_incompatible_disallow_sdk_frameworks_attributes": attr.label(
+        default = "//cc:incompatible_disallow_sdk_frameworks_attributes",
+    ),
 }
 
 # buildifier: disable=unsorted-dict-items
@@ -212,7 +226,27 @@ symbols referenced by the binary.
 This is useful if your code isn't explicitly called by code in
 the binary, e.g., if your code registers to receive some callback
 provided by some service."""),
+    # Private attribute used by target_should_alwayslink() to determine if
+    # "alwayslink" was explicitly specified by the user or was left at its
+    # default value. This replicates the native
+    # AttributeMap.isAttributeValueExplicitlySpecified() functionality.
+    "_alwayslink_explicitly_set": attr.bool(default = False),
+    # Reference to the Starlark build setting that determines if objc_library
+    # and objc_import should default to alwayslink=True.
+    "_incompatible_objc_alwayslink_by_default": attr.label(
+        default = "//cc:incompatible_objc_alwayslink_by_default",
+    ),
 }
+
+def _alwayslink_initializer(**kwargs):
+    """Initializer for starlarkified alwayslink rules.
+
+    Sets _alwayslink_explicitly_set to True if the 'alwayslink' attribute was
+    provided in the rule invocation.
+    """
+    if "alwayslink" in kwargs:
+        kwargs["_alwayslink_explicitly_set"] = True
+    return kwargs
 
 def _union(*dictionaries):
     result = {}
@@ -223,6 +257,7 @@ def _union(*dictionaries):
 common_attrs = struct(
     union = _union,
     ALWAYSLINK_RULE = _ALWAYSLINK_RULE,
+    alwayslink_initializer = _alwayslink_initializer,
     COMPILING_RULE = _get_compiling_rule_attrs(),
     COMPILE_DEPENDENCY_RULE = _COMPILE_DEPENDENCY_RULE,
     COPTS_RULE = _COPTS_RULE,

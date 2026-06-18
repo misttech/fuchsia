@@ -16,7 +16,10 @@ bzl_library(
     name = "toolchain_impl_rules",
     srcs = glob(["*.bzl"]),
     visibility = ["//cc/toolchains:__subpackages__"],
-    deps = ["//cc/common"],
+    deps = [
+        "//cc/common",
+        "@bazel_skylib//rules:common_settings",
+    ],
 )
 
 config_setting(
@@ -70,5 +73,11 @@ config_setting(
         "@platforms//os:windows",
         "@platforms//cpu:x86_64",
     ],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["**"]),
     visibility = ["//visibility:public"],
 )

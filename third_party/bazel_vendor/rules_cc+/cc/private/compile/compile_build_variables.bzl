@@ -15,7 +15,7 @@
 All build variables we create for various `CppCompileAction`s
 """
 
-load("//cc/common:cc_helper_internal.bzl", "extensions", _PRIVATE_STARLARKIFICATION_ALLOWLIST = "PRIVATE_STARLARKIFICATION_ALLOWLIST")
+load("//cc/common:cc_helper_internal.bzl", "extensions", "get_fdo_build_stamp", "get_linkstamp_stamps", _PRIVATE_STARLARKIFICATION_ALLOWLIST = "PRIVATE_STARLARKIFICATION_ALLOWLIST")
 load("//cc/private:cc_internal.bzl", _cc_internal = "cc_internal")
 load("//cc/private/rules_impl:native_cc_common.bzl", _cc_common_internal = "native_cc_common")
 
@@ -92,6 +92,7 @@ def create_compile_variables(
         output_file = None,
         user_compile_flags = None,
         includes = None,
+        local_includes = None,
         include_directories = None,
         quote_include_directories = None,
         system_include_directories = None,
@@ -122,6 +123,7 @@ def create_compile_variables(
         includes: paths to headers that should be included using -include
         user_compile_flags: List of additional compilation flags (copts).
         include_directories: Depset of include directories.
+        local_includes: Depset of local include directories.
         quote_include_directories: Depset of quote include directories.
         system_include_directories: Depset of system include directories.
         framework_include_directories: Depset of framework include directories.
@@ -154,9 +156,10 @@ def create_compile_variables(
     common_vars = _setup_common_compile_build_variables_internal(
         feature_configuration = feature_configuration,
         is_using_memprof = getattr(fdo_context, "memprof_profile_artifact", None) != None,
-        fdo_build_stamp = _get_fdo_build_stamp(cpp_configuration, fdo_context, feature_configuration),
+        fdo_build_stamp = get_fdo_build_stamp(cpp_configuration, fdo_context, feature_configuration),
         variables_extension = variables_extension,
         includes = includes or [],
+        local_includes = local_includes or depset(),
         include_dirs = include_directories or depset(),
         quote_include_dirs = quote_include_directories or depset(),
         system_include_dirs = system_include_directories or depset(),
@@ -194,9 +197,10 @@ def setup_common_compile_build_variables(
     common_vars = _setup_common_compile_build_variables_internal(
         feature_configuration = feature_configuration,
         is_using_memprof = getattr(fdo_context, "memprof_profile_artifact", None) != None,
-        fdo_build_stamp = _get_fdo_build_stamp(cpp_configuration, fdo_context, feature_configuration),
+        fdo_build_stamp = get_fdo_build_stamp(cpp_configuration, fdo_context, feature_configuration),
         variables_extension = variables_extension,
         include_dirs = cc_compilation_context.includes,
+        local_includes = cc_compilation_context.local_includes or depset(),
         quote_include_dirs = cc_compilation_context.quote_includes,
         system_include_dirs = cc_compilation_context.system_includes,
         framework_include_dirs = cc_compilation_context.framework_includes,
@@ -215,6 +219,7 @@ def _setup_common_compile_build_variables_internal(
         variables_extension = [],  # [dict{str,object}]
         additional_build_variables = {},  # dict{str,str}
         include_dirs = depset(),
+        local_includes = depset(),
         quote_include_dirs = depset(),
         system_include_dirs = depset(),
         framework_include_dirs = depset(),
@@ -225,9 +230,13 @@ def _setup_common_compile_build_variables_internal(
 
     if feature_configuration.is_enabled("use_header_modules"):
         result[_VARS.MODULE_FILES] = []
-    result[_VARS.INCLUDE_PATHS] = include_dirs
+    if feature_configuration.is_requested("system_include_paths"):
+        result[_VARS.INCLUDE_PATHS] = include_dirs
+        result[_VARS.SYSTEM_INCLUDE_PATHS] = depset(transitive = [system_include_dirs, local_includes])
+    else:
+        result[_VARS.INCLUDE_PATHS] = depset(transitive = [include_dirs, local_includes])
+        result[_VARS.SYSTEM_INCLUDE_PATHS] = system_include_dirs
     result[_VARS.QUOTE_INCLUDE_PATHS] = quote_include_dirs
-    result[_VARS.SYSTEM_INCLUDE_PATHS] = system_include_dirs
     if includes:
         result[_VARS.INCLUDES] = _cc_internal.intern_string_sequence_variable_value(includes)
     result[_VARS.FRAMEWORK_PATHS] = framework_include_dirs
@@ -258,20 +267,6 @@ def _setup_common_compile_build_variables_internal(
     if external_include_dirs:
         result[_VARS.EXTERNAL_INCLUDE_PATHS] = external_include_dirs
     return _cc_internal.cc_toolchain_variables(vars = result)
-
-def _get_fdo_build_stamp(cpp_configuration, fdo_context, feature_configuration):
-    branch_fdo_profile = getattr(fdo_context, "branch_fdo_profile", None)
-    if branch_fdo_profile:
-        branch_fdo_mode = branch_fdo_profile.branch_fdo_mode
-        if branch_fdo_mode == "auto_fdo":
-            return "AFDO" if feature_configuration.is_enabled("autofdo") else None
-        if branch_fdo_mode == "xbinary_fdo":
-            return "XFDO" if feature_configuration.is_enabled("xbinaryfdo") else None
-        if branch_fdo_mode == "llvm_cs_fdo" or cpp_configuration.cs_fdo_instrument():
-            return "CSFDO"
-    if branch_fdo_profile or cpp_configuration.fdo_instrument():
-        return "FDO"
-    return None
 
 # Note: this method is side-effect free, callers should add fdo inputs to
 # cc_compile_action_builder themselves
@@ -573,12 +568,6 @@ def get_linkstamp_compile_variables(
         action_name = "linkstamp-compile",
     ):
         fail("Action 'linkstamp-compile' is not configured.")
-    fdo_build_stamp = _get_fdo_build_stamp(
-        cc_toolchain._cpp_configuration,
-        cc_toolchain._fdo_context,
-        feature_configuration,
-    )
-    code_coverage_enabled = feature_configuration.is_enabled("coverage")
     copts = get_copts(
         language = "c++",  # The only language that receives special treatment is "objc".
         cpp_configuration = cc_toolchain._cpp_configuration,
@@ -593,8 +582,7 @@ def get_linkstamp_compile_variables(
         output_replacement = output_replacement,
         additional_linkstamp_defines = additional_linkstamp_defines,
         cc_toolchain = cc_toolchain,
-        fdo_build_stamp = fdo_build_stamp,
-        code_coverage_enabled = code_coverage_enabled,
+        feature_configuration = feature_configuration,
     )
     return create_compile_variables(
         feature_configuration = feature_configuration,
@@ -608,37 +596,31 @@ def get_linkstamp_compile_variables(
         user_compile_flags = copts,
     )
 
+def _stamps_to_defines(stamps):
+    """Converts a dictionary of stamps to a list of C preprocessor defines."""
+    defines = []
+    for k, v in stamps.items():
+        if v.isdigit() or k == "BUILD_LTO_TYPE":
+            # BUILD_LTO_TYPE is a special case because of the AS_STRING(x) call in "builddata_globals.cc".
+            # Normally, a string set as -DKEY_NAME="VALUE" is interpreted as KEY_NAME="VALUE",
+            # but for this specific case, it's KEY_NAME="\"VALUE\"" because of AS_STRING(x).
+            defines.append("{}={}".format(k, v))
+        else:
+            defines.append('{}="{}"'.format(k, v))
+    return defines
+
 def _compute_all_linkstamp_defines(
         label_replacement,
         output_replacement,
         additional_linkstamp_defines,
         cc_toolchain,
-        fdo_build_stamp,
-        code_coverage_enabled):
+        feature_configuration):
     """Computes defines for linkstamp compilation."""
-    defines = [
-        'GPLATFORM="' + cc_toolchain.toolchain_id + '"',
-        "BUILD_COVERAGE_ENABLED=" + ("1" if code_coverage_enabled else "0"),
-        # G3_TARGET_NAME is a C string literal that normally contain the label of the target
-        # being linked.  However, they are set differently when using shared native deps. In
-        # that case, a single .so file is shared by multiple targets, and its contents cannot
-        # depend on which target(s) were specified on the command line.  So in that case we
-        # have to use the (obscure) name of the .so file instead, or more precisely the path of
-        # the .so file relative to the workspace root.
-        'G3_TARGET_NAME="${LABEL}"',
-        # G3_BUILD_TARGET is a C string literal containing the output of this
-        # link.  (An undocumented and untested invariant is that G3_BUILD_TARGET is the
-        # location of the executable, either absolutely, or relative to the directory part of
-        # BUILD_INFO.)
-        'G3_BUILD_TARGET="${OUTPUT_PATH}"',
-    ]
-    if additional_linkstamp_defines:
-        defines.extend(additional_linkstamp_defines)
-
-    if fdo_build_stamp:
-        defines.append('BUILD_FDO_TYPE="' + fdo_build_stamp + '"')
-
-    return [
-        define.replace("${LABEL}", label_replacement).replace("${OUTPUT_PATH}", output_replacement)
-        for define in defines
-    ]
+    stamps = get_linkstamp_stamps(
+        cc_toolchain = cc_toolchain,
+        feature_configuration = feature_configuration,
+        label_replacement = label_replacement,
+        output_replacement = output_replacement,
+        additional_linkstamp_defines = additional_linkstamp_defines,
+    )
+    return _stamps_to_defines(stamps)

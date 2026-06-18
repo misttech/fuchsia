@@ -146,8 +146,8 @@ def create_library_to_link(
         dynamic_library: (File|None) Dynamic library to be linked. Always used for runtime and used for
             linking if `interface_library` is not passed.
         interface_library: (File|None) Interface library to be linked.
-        pic_objects: (list[File]|None) Experimental, do not use.
-        objects: (list[File]|None) Experimental, do not use.
+        pic_objects: (list[File]|None) PIC object files to be linked.
+        objects: (list[File]|None)  Non-PIC object files to be linked.
         lto_compilation_context: (LtoCompilationContext) Experimental, do not use.
         pic_lto_compilation_context: (LtoCompilationContext) Experimental, do not use.
         alwayslink: (bool) Whether to link the static library/objects in the --whole_archive block.
@@ -191,9 +191,17 @@ def create_library_to_link(
         else:
             _validate_ext(pic_static_library, [".a", ".lib", ".rlib"], not_ext = [".lo.lib", ".if.lib"], empty_ext = True)
 
-    resolved_symlink_dynamic_library = None
     if dynamic_library:
         _validate_ext(dynamic_library, [".so", ".dylib", ".dll", ".pyd", ".wasm", ".tgt", ".vpi"], is_versioned_shared_library, empty_ext = True)
+
+    if interface_library:
+        _validate_ext(interface_library, [".ifso", ".tbd", ".lib", ".dll.a", ".so", ".dylib"])
+
+    if errors:
+        fail("\n".join(errors))
+
+    resolved_symlink_dynamic_library = None
+    if dynamic_library:
         if not cc_toolchain:
             fail("If you pass 'dynamic_library', you must also pass a 'cc_toolchain'")
         if not feature_configuration:
@@ -209,7 +217,6 @@ def create_library_to_link(
 
     resolved_symlink_interface_library = None
     if interface_library:
-        _validate_ext(interface_library, [".ifso", ".tbd", ".lib", ".dll.a", ".so", ".dylib"])
         if not cc_toolchain:
             fail("If you pass 'interface_library', you must also pass a 'cc_toolchain'")
         if not feature_configuration:
@@ -222,9 +229,6 @@ def create_library_to_link(
                 interface_library = _cc_internal.dynamic_library_symlink2(actions, interface_library, cc_toolchain._solib_dir, interface_library_symlink_path)
             else:
                 interface_library = _cc_internal.dynamic_library_symlink(actions, interface_library, cc_toolchain._solib_dir, True, True)
-
-    if errors:
-        fail("\n".join(errors))
 
     identifier = static_library or pic_static_library or dynamic_library or interface_library
     if not identifier:
@@ -276,11 +280,12 @@ def _validate_symlink_path(attr, path):
 
 def _validate_extension(path, extensions, func = None, not_ext = [], fail = fail, empty_ext = False):
     path = getattr(path, "basename", path)  # Handle str|File
+    path_lower = path.lower()
     for ext in not_ext:
-        if path.endswith(ext):
+        if path_lower.endswith(ext.lower()):
             fail("'%s' does not have any of the allowed extensions %s" % (path, ", ".join(extensions)))
     for ext in extensions:
-        if path.endswith(ext):
+        if path_lower.endswith(ext.lower()):
             return
     if empty_ext:
         _, actual_ext = paths.split_extension(path)

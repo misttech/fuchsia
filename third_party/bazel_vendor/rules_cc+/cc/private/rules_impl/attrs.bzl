@@ -15,7 +15,7 @@
 """Attributes for cc_binary.
 """
 
-load("//cc:cc_postmark.bzl", "postmark")
+load("//cc:cc_postmark_initializers.bzl", "get_postmark_attrs")
 load("//cc/common:cc_info.bzl", "CcInfo")
 load("//cc/common:semantics.bzl", "semantics")
 load(":cc_shared_library.bzl", "dynamic_deps_attrs")
@@ -144,6 +144,20 @@ very careful, since this may have far-reaching effects.  When in doubt, add
 The added <code>include</code> paths will include generated files as well as
 files in the source tree.
 </p>
+"""),
+    "local_includes": attr.string_list(doc = """
+List of include dirs to be added to the compile line.
+Subject to <a href="${link make-variables}">"Make variable"</a> substitution.
+Each string is prepended with the package path and passed to the C++ toolchain for
+expansion via the "include_paths" CROSSTOOL feature. A toolchain running on a
+POSIX system with typical feature definitions will produce
+<code>-I path_to_package/local_include_entry</code>.
+
+Unlike <a href="#cc_binary.includes">INCLUDES</a>, these flags are added for
+this target and not added to every target that depends on it.
+
+The <code>local_includes</code> paths will include generated files as well as files
+in the source tree.
 """),
     "defines": attr.string_list(doc = """
 List of defines to add to the compile line of this and all dependent targets.
@@ -303,7 +317,7 @@ Whether to encode build information into the binary. Possible values:
 """ + semantics.stamp_extra_docs
 
 # buildifier: disable=attr-licenses
-cc_binary_attrs = common_attrs | postmark.get_attrs() | {
+cc_binary_attrs = common_attrs | get_postmark_attrs() | {
     "deps": attr.label_list(
         allow_files = semantics.ALLOWED_FILES_IN_DEPS,
         allow_rules = semantics.ALLOWED_RULES_IN_DEPS + semantics.ALLOWED_RULES_WITH_WARNINGS_IN_DEPS,
@@ -344,16 +358,7 @@ linking the binary target.
 </p>
 """),
     "nocopts": attr.string(doc = """
-Remove matching options from the C++ compilation command.
-Subject to <a href="${link make-variables}">"Make" variable</a> substitution.
-The value of this attribute is interpreted as a regular expression.
-Any preexisting <code>COPTS</code> that match this regular expression
-(including values explicitly specified in the rule's <a
-href="#cc_binary.copts">copts</a> attribute)
-will be removed from <code>COPTS</code> for purposes of compiling this rule.
-This attribute should not be needed or used
-outside of <code>third_party</code>.  The values are not preprocessed
-in any way other than the "Make" variable substitution.
+Deprecated, no-op.
     """),
     "linkstatic": attr.bool(
         default = True,

@@ -3,27 +3,7 @@
 load("//:features.bzl", "bazel_features")
 load("//private:parse.bzl", "parse_version")
 load("//private:util.bzl", "BAZEL_VERSION", "ge", "lt")
-
-def _empty_test_impl(ctx):
-    extension = ".bat" if ctx.attr.is_windows else ".sh"
-    content = "exit 0" if ctx.attr.is_windows else "#!/usr/bin/env bash\nexit 0"
-    executable = ctx.actions.declare_file(ctx.label.name + extension)
-    ctx.actions.write(
-        output = executable,
-        is_executable = True,
-        content = content,
-    )
-
-    return [DefaultInfo(
-        files = depset([executable]),
-        executable = executable,
-    )]
-
-_empty_test = rule(
-    implementation = _empty_test_impl,
-    attrs = {"is_windows": attr.bool(mandatory = True)},
-    test = True,
-)
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
 
 def _assert_lt(a, b):
     if parse_version(a) >= parse_version(b):
@@ -56,18 +36,19 @@ def run_test(name):
     if not bazel_features.globals.DefaultInfo == DefaultInfo:
         fail("bazel_features.globals.DefaultInfo != DefaultInfo")
 
-    # TODO: add tests with --incompatible_autoload_symbols
-    if lt("8.0.0") and not bazel_features.globals.ProtoInfo == ProtoInfo:
-        fail("bazel_features.globals.ProtoInfo != ProtoInfo")
+    if lt("8.0.0") != (bazel_features.globals.ProtoInfo != None):
+        fail("lt(\"8.0.0\") != (bazel_features.globals.ProtoInfo != None)")
 
     if not bazel_features.globals.__TestingOnly_NeverAvailable == None:
         fail("bazel_features.globals.__TestingOnly_NeverAvailable != None")
 
+    if (lt("6.0.0-pre.20220630.1") or ge("9.0.0-pre.20250921.2")) and bazel_features.globals.CcSharedLibraryInfo != None:
+        fail("bazel_features.globals.CcSharedLibraryInfo != None")
+    elif (ge("6.0.0-pre.20220630.1") and lt("9.0.0-pre.20250921.2")) and bazel_features.globals.CcSharedLibraryInfo == None:
+        fail("bazel_features.globals.CcSharedLibraryInfo == None")
+
     # the pseudo test target that doesn't actually test anything
-    _empty_test(
+    build_test(
         name = name,
-        is_windows = select({
-            "@bazel_tools//src/conditions:host_windows": True,
-            "//conditions:default": False,
-        }),
+        targets = ["BUILD.bazel"],
     )

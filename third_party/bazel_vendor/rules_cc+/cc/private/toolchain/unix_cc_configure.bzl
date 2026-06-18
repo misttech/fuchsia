@@ -163,6 +163,9 @@ def _is_linker_option_supported(repository_ctx, cc, force_linker_flags, option, 
     ])
     return result.stderr.find(pattern) == -1
 
+def _is_oso_prefix_supported(repository_ctx, ld):
+    return repository_ctx.execute([ld, "-v", "-oso_prefix", "."]).return_code == 0
+
 def _find_linker_path(repository_ctx, cc, linker, is_clang):
     """Checks if a given linker is supported by the C compiler.
 
@@ -319,26 +322,6 @@ def _find_generic(repository_ctx, name, env_name, overridden_tools, warn = False
             auto_configure_fail(msg)
     return result
 
-def find_cc(repository_ctx, overridden_tools):
-    """Find the C compiler (gcc or clang) for the repository, considering overridden tools.
-
-    Args:
-      repository_ctx: The repository context.
-      overridden_tools: A dictionary of overridden tools.
-
-    Returns:
-      The path to the C compiler.
-    """
-    cc = _find_generic(repository_ctx, "gcc", "CC", overridden_tools)
-    if _is_clang(repository_ctx, cc):
-        # If clang is run through a symlink with -no-canonical-prefixes, it does
-        # not find its own include directory, which includes the headers for
-        # libc++. Resolving the potential symlink here prevents this.
-        result = repository_ctx.execute(["readlink", "-f", cc])
-        if result.return_code == 0:
-            return result.stdout.strip()
-    return cc
-
 def configure_unix_toolchain(repository_ctx, cpu_value, overridden_tools):
     """Configure C++ toolchain on Unix platforms.
 
@@ -373,7 +356,7 @@ def configure_unix_toolchain(repository_ctx, cpu_value, overridden_tools):
     darwin = cpu_value.startswith("darwin")
     bsd = cpu_value == "freebsd" or cpu_value == "openbsd"
 
-    cc = find_cc(repository_ctx, overridden_tools)
+    cc = _find_generic(repository_ctx, "gcc", "CC", overridden_tools)
     is_clang = _is_clang(repository_ctx, cc)
     overridden_tools = dict(overridden_tools)
     overridden_tools["gcc"] = cc
@@ -416,6 +399,10 @@ def configure_unix_toolchain(repository_ctx, cpu_value, overridden_tools):
     auto_configure_warning_maybe(repository_ctx, "CC used: " + str(cc))
     tool_paths = _get_tool_paths(repository_ctx, overridden_tools)
     tool_paths["cpp-module-deps-scanner"] = "deps_scanner_wrapper.sh"
+
+    toolchain_features = []
+    if darwin and _is_oso_prefix_supported(repository_ctx, tool_paths["ld"]):
+        toolchain_features.append("macos_reproducible")
 
     # The parse_header tool needs to be a wrapper around the compiler as it has
     # to touch the output file.
@@ -597,7 +584,7 @@ def configure_unix_toolchain(repository_ctx, cpu_value, overridden_tools):
         ) +
         # Always included in case the user has Xcode + the CLT installed, both
         # paths can be used interchangeably
-        ["/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"],
+        (["/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"] if darwin else []),
     )
 
     generate_modulemap = is_clang
@@ -753,7 +740,14 @@ def configure_unix_toolchain(repository_ctx, cpu_value, overridden_tools):
                     "-gc-sections",
                 ),
             ),
-            "%{supports_start_end_lib}": "True" if gold_or_lld_linker_path else "False",
+            "%{supports_start_end_lib}": "True" if _is_linker_option_supported(
+                repository_ctx,
+                cc,
+                force_linker_flags,
+                "-Wl,--start-lib",
+                "--start-lib",
+            ) else "False",
+            "%{toolchain_features}": get_starlark_list(toolchain_features),
             "%{target_cpu}": escape_string(get_env_var(
                 repository_ctx,
                 "BAZEL_TARGET_CPU",

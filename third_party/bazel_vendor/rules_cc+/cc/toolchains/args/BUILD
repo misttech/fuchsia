@@ -16,6 +16,7 @@ cc_feature_set(
     name = "experimental_replace_legacy_action_config_features",
     all_of = [
         ":backfill_legacy_args",
+        "//cc/toolchains/args/sanitize_pwd:feature",
         "//cc/toolchains/args/archiver_flags:feature",
         "//cc/toolchains/args/pic_flags:feature",
         "//cc/toolchains/args/libraries_to_link:feature",
@@ -30,14 +31,18 @@ cc_feature_set(
         "//cc/toolchains/args/soname_flags:feature",
         "//cc/toolchains/args/static_libgcc:feature",
         "//cc/toolchains/args/include_flags:feature",
-        "//cc/toolchains/args/compiler_input_flags:feature",
-        "//cc/toolchains/args/compiler_output_flags:feature",
         "//cc/toolchains/args/fission_flags:feature",
         "//cc/toolchains/args/link_flags:feature",
         "//cc/toolchains/args/linkstamp_flags:feature",
         "//cc/toolchains/args/library_search_directories:feature",
         "//cc/toolchains/args/dependency_file:feature",
-        "//cc/toolchains/args/compile_flags:feature",  # NOTE: This should come below default flags so user flags can override them
+
+        # NOTE: This should come below default flags so user flags can override them
+        "//cc/toolchains/args/compile_flags:feature",
+
+        # NOTE: This should come after user compile flags since some flags need to be added before the input file (e.g., -x lang)
+        "//cc/toolchains/args/compiler_input_flags:feature",
+        "//cc/toolchains/args/compiler_output_flags:feature",
     ],
 )
 
@@ -50,4 +55,9 @@ cc_feature(
         "//cc/toolchains/features/legacy:dynamic_library_linker_tool",
     ],
     visibility = ["//visibility:private"],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["**"]),
 )

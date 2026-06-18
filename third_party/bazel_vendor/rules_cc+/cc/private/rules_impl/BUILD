@@ -18,6 +18,7 @@ filegroup(
         "**/BUILD",
     ]) + [
         "//cc/private/rules_impl/fdo:srcs",
+        "//cc/private/rules_impl/wrappers:srcs",
     ],
 )
 
@@ -40,11 +41,15 @@ bzl_library(
     srcs = [
         "attrs.bzl",
         "cc_binary.bzl",
+        "cc_binary_impl.bzl",
         "cc_import.bzl",
         "cc_library.bzl",
+        "cc_library_impl.bzl",
         "cc_shared_library.bzl",
+        "cc_shared_library_impl.bzl",
         "cc_static_library.bzl",
         "cc_test.bzl",
+        "cc_test_impl.bzl",
         "objc_import.bzl",
         "objc_library.bzl",
     ],
@@ -53,6 +58,7 @@ bzl_library(
         "@cc_compatibility_proxy//:__pkg__",
     ],
     deps = [
+        ":function_providing_rule_bzl",
         ":objc_common",
         ":objc_compilation_support_bzl",
         "//cc:action_names_bzl",
@@ -99,6 +105,7 @@ bzl_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//cc:build_settings_bzl",
         "//cc/common",
         "@bazel_skylib//lib:paths",
     ],
@@ -110,6 +117,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":objc_common",
+        "//cc:build_settings_bzl",
         "//cc/common:cc_helper_bzl",
         "@bazel_skylib//lib:paths",
     ],
@@ -140,4 +148,10 @@ bzl_library(
         "//cc:__subpackages__",
         "@cc_compatibility_proxy//:__pkg__",
     ],
+)
+
+bzl_library(
+    name = "function_providing_rule_bzl",
+    srcs = ["function_providing_rule.bzl"],
+    visibility = ["//cc:__subpackages__"],
 )

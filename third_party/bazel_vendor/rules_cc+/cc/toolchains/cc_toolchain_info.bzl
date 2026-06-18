@@ -18,6 +18,7 @@
 # Once it's stabilized, we *may* consider opening up parts of the API, or we may
 # decide to just require users to use the public user-facing rules.
 visibility([
+    "//cc/private/rules_impl/...",
     "//cc/toolchains/...",
     "//tests/rule_based_toolchain/...",
 ])
@@ -181,6 +182,15 @@ MakeVariableInfo = provider(
     },
 )
 
+ExecutionRequirementsInfo = provider(
+    doc = "Provider for execution requirements attached to tool actions.",
+    # @unsorted-dict-items
+    fields = {
+        "label": "(Label) The label defining this provider. Place in error messages to simplify debugging",
+        "requirements": "(Sequence[str]) The execution requirements to apply.",
+    },
+)
+
 MutuallyExclusiveCategoryInfo = provider(
     doc = "Multiple features with the category will be mutally exclusive",
     # @unsorted-dict-items
@@ -198,6 +208,7 @@ ToolInfo = provider(
         "exe": "(File) The file corresponding to the tool",
         "runfiles": "(runfiles) The files required to run the tool",
         "execution_requirements": "(Sequence[str]) A set of execution requirements of the tool",
+        "env": "(dict[str, str]) Environment variables applied when using this tool",
         "allowlist_include_directories": "(depset[DirectoryInfo]) Built-in include directories implied by this tool that should be allowlisted in Bazel's include checker",
         "capabilities": "(Sequence[ToolCapabilityInfo]) Capabilities supported by the tool.",
     },
@@ -221,6 +232,16 @@ ToolConfigInfo = provider(
     },
 )
 
+LegacyToolInfo = provider(
+    doc = "A tool specified by path rather than by label, for legacy toolchain configurations.",
+    # @unsorted-dict-items
+    fields = {
+        "label": "(Label) The label defining this provider. Place in error messages to simplify debugging",
+        "name": "(str) The tool name (eg. gcc, ar, ld, strip)",
+        "path": "(str) The filesystem path to the tool",
+    },
+)
+
 ToolchainConfigInfo = provider(
     doc = "The configuration for a toolchain",
     # @unsorted-dict-items
@@ -235,5 +256,6 @@ ToolchainConfigInfo = provider(
         "files": "(dict[ActionTypeInfo, depset[File]]) Files required for the toolchain, keyed by the action type.",
         "allowlist_include_directories": "(depset[DirectoryInfo]) Built-in include directories implied by this toolchain's args and tools that should be allowlisted in Bazel's include checker",
         "allowlist_absolute_include_directories": "(List[str]) Built-in include directories allowed the sandbox. Use with care",
+        "legacy_tools": "(Sequence[LegacyToolInfo]) Legacy tools specified by path rather than by label",
     },
 )

@@ -474,53 +474,6 @@ cc_feature(
 | <a id="cc_mutually_exclusive_category-name"></a>name |  A unique name for this target.   | <a href="https://bazel.build/concepts/labels#target-names">Name</a> | required |  |
 
 
-<a id="cc_tool"></a>
-
-## cc_tool
-
-<pre>
-load("@rules_cc//cc/toolchains/impl:documented_api.bzl", "cc_tool")
-
-cc_tool(<a href="#cc_tool-name">name</a>, <a href="#cc_tool-src">src</a>, <a href="#cc_tool-data">data</a>, <a href="#cc_tool-allowlist_include_directories">allowlist_include_directories</a>, <a href="#cc_tool-capabilities">capabilities</a>)
-</pre>
-
-Declares a tool for use by toolchain actions.
-
-[`cc_tool`](#cc_tool) rules are used in a [`cc_tool_map`](#cc_tool_map) rule to ensure all files and
-metadata required to run a tool are available when constructing a [`cc_toolchain`](#cc_toolchain).
-
-In general, include all files that are always required to run a tool (e.g. libexec/** and
-cross-referenced tools in bin/*) in the [data](#cc_tool-data) attribute. If some files are only
-required when certain flags are passed to the tool, consider using a [`cc_args`](#cc_args) rule to
-bind the files to the flags that require them. This reduces the overhead required to properly
-enumerate a sandbox with all the files required to run a tool, and ensures that there isn't
-unintentional leakage across configurations and actions.
-
-Example:
-```
-load("@rules_cc//cc/toolchains:tool.bzl", "cc_tool")
-
-cc_tool(
-    name = "clang",
-    src = "@llvm_toolchain//:bin/clang",
-    # Suppose clang needs libc to run.
-    data = ["@llvm_toolchain//:lib/x86_64-linux-gnu/libc.so.6"]
-    capabilities = ["@rules_cc//cc/toolchains/capabilities:supports_pic"],
-)
-```
-
-**ATTRIBUTES**
-
-
-| Name  | Description | Type | Mandatory | Default |
-| :------------- | :------------- | :------------- | :------------- | :------------- |
-| <a id="cc_tool-name"></a>name |  A unique name for this target.   | <a href="https://bazel.build/concepts/labels#target-names">Name</a> | required |  |
-| <a id="cc_tool-src"></a>src |  The underlying binary that this tool represents.<br><br>Usually just a single prebuilt (eg. @toolchain//:bin/clang), but may be any executable label.   | <a href="https://bazel.build/concepts/labels">Label</a> | optional |  `None`  |
-| <a id="cc_tool-data"></a>data |  Additional files that are required for this tool to run.<br><br>Frequently, clang and gcc require additional files to execute as they often shell out to other binaries (e.g. `cc1`).   | <a href="https://bazel.build/concepts/labels">List of labels</a> | optional |  `[]`  |
-| <a id="cc_tool-allowlist_include_directories"></a>allowlist_include_directories |  Include paths implied by using this tool.<br><br>Compilers may include a set of built-in headers that are implicitly available unless flags like `-nostdinc` are provided. Bazel checks that all included headers are properly provided by a dependency or allowlisted through this mechanism.<br><br>As a rule of thumb, only use this if Bazel is complaining about absolute paths in your toolchain and you've ensured that the toolchain is compiling with the `-no-canonical-prefixes` and/or `-fno-canonical-system-headers` arguments.<br><br>These files are not automatically passed to each action. If they need to be, add them to 'data' as well.<br><br>This can help work around errors like: `the source file 'main.c' includes the following non-builtin files with absolute paths (if these are builtin files, make sure these paths are in your toolchain)`.   | <a href="https://bazel.build/concepts/labels">List of labels</a> | optional |  `[]`  |
-| <a id="cc_tool-capabilities"></a>capabilities |  Declares that a tool is capable of doing something.<br><br>For example, `@rules_cc//cc/toolchains/capabilities:supports_pic`.   | <a href="https://bazel.build/concepts/labels">List of labels</a> | optional |  `[]`  |
-
-
 <a id="cc_tool_capability"></a>
 
 ## cc_tool_capability
@@ -663,7 +616,7 @@ For more extensive examples, see the usages here:
 | <a id="cc_args-args"></a>args |  (List[str]) The command-line arguments that are applied by using this rule. This is mutually exclusive with [nested](#cc_args-nested).   |  `None` |
 | <a id="cc_args-data"></a>data |  (List[Label]) A list of runtime data dependencies that are required for these arguments to work as intended.   |  `None` |
 | <a id="cc_args-env"></a>env |  (Dict[str, str]) Environment variables that should be set when the tool is invoked.   |  `None` |
-| <a id="cc_args-format"></a>format |  (Dict[str, Label]) A mapping of format strings to the label of a corresponding target. This target can be a `directory`, `subdirectory`, [`cc_variable`](#cc_variable), or a single file that the value should be pulled from. All instances of `{variable_name}` in the `args` list will be replaced with the expanded value in this dictionary. The complete list of possible variables can be found in https://github.com/bazelbuild/rules_cc/tree/main/cc/toolchains/variables/BUILD. It is not possible to declare custom variables--these are inherent to Bazel itself.   |  `{}` |
+| <a id="cc_args-format"></a>format |  (Dict[str, Label]) A mapping of format strings to the label of a corresponding target. This target can be a `directory`, `subdirectory`, [`cc_variable`](#cc_variable), a build setting (a target that provides `BuildSettingInfo`), or a single file that the value should be pulled from. All instances of `{variable_name}` in the `args` list will be replaced with the expanded value in this dictionary. The complete list of possible variables can be found in https://github.com/bazelbuild/rules_cc/tree/main/cc/toolchains/variables/BUILD. It is not possible to declare custom variables--these are inherent to Bazel itself.   |  `{}` |
 | <a id="cc_args-iterate_over"></a>iterate_over |  (Label) The label of a [`cc_variable`](#cc_variable) that should be iterated over. This is intended for use with built-in variables that are lists.   |  `None` |
 | <a id="cc_args-nested"></a>nested |  (List[Label]) A list of [`cc_nested_args`](#cc_nested_args) rules that should be expanded to command-line arguments when this rule is used. This is mutually exclusive with [args](#cc_args-args).   |  `None` |
 | <a id="cc_args-requires_not_none"></a>requires_not_none |  (Label) The label of a [`cc_variable`](#cc_variable) that should be checked for existence before expanding this rule. If the variable is None, this rule will be ignored.   |  `None` |
@@ -723,6 +676,59 @@ use this rule.
 | <a id="cc_nested_args-requires_equal"></a>requires_equal |  (Label) The label of a [`cc_variable`](#cc_variable) that should be checked for equality before expanding this rule. If the variable is not equal to (requires_equal_value)[#cc_nested_args-requires_equal_value], this rule will be ignored.   |  `None` |
 | <a id="cc_nested_args-requires_equal_value"></a>requires_equal_value |  (str) The value to compare (requires_equal)[#cc_nested_args-requires_equal] against.   |  `None` |
 | <a id="cc_nested_args-kwargs"></a>kwargs |  [common attributes](https://bazel.build/reference/be/common-definitions#common-attributes) that should be applied to this rule.   |  none |
+
+
+<a id="cc_tool"></a>
+
+## cc_tool
+
+<pre>
+load("@rules_cc//cc/toolchains/impl:documented_api.bzl", "cc_tool")
+
+cc_tool(*, <a href="#cc_tool-name">name</a>, <a href="#cc_tool-src">src</a>, <a href="#cc_tool-data">data</a>, <a href="#cc_tool-allowlist_include_directories">allowlist_include_directories</a>, <a href="#cc_tool-env">env</a>, <a href="#cc_tool-execution_requirements">execution_requirements</a>, <a href="#cc_tool-format">format</a>,
+        <a href="#cc_tool-capabilities">capabilities</a>, <a href="#cc_tool-kwargs">**kwargs</a>)
+</pre>
+
+Declares a tool for use by toolchain actions.
+
+[`cc_tool`](#cc_tool) rules are used in a [`cc_tool_map`](#cc_tool_map) rule to ensure all files and
+metadata required to run a tool are available when constructing a [`cc_toolchain`](#cc_toolchain).
+
+In general, include all files that are always required to run a tool (e.g. libexec/** and
+cross-referenced tools in bin/*) in the [data](#cc_tool-data) attribute. If some files are only
+required when certain flags are passed to the tool, consider using a [`cc_args`](#cc_args) rule to
+bind the files to the flags that require them. This reduces the overhead required to properly
+enumerate a sandbox with all the files required to run a tool, and ensures that there isn't
+unintentional leakage across configurations and actions.
+
+Example:
+```
+load("@rules_cc//cc/toolchains:tool.bzl", "cc_tool")
+
+cc_tool(
+    name = "clang",
+    src = "@llvm_toolchain//:bin/clang",
+    # Suppose clang needs libc to run.
+    data = ["@llvm_toolchain//:lib/x86_64-linux-gnu/libc.so.6"]
+    capabilities = ["@rules_cc//cc/toolchains/capabilities:supports_pic"],
+)
+```
+
+
+**PARAMETERS**
+
+
+| Name  | Description | Default Value |
+| :------------- | :------------- | :------------- |
+| <a id="cc_tool-name"></a>name |  (str) The name of the target.   |  none |
+| <a id="cc_tool-src"></a>src |  (Label) The underlying binary that this tool represents. Usually just a single prebuilt (e.g. @toolchain//:bin/clang), but may be any executable label.   |  `None` |
+| <a id="cc_tool-data"></a>data |  (List[Label]) Additional files that are required for this tool to run. Frequently, clang and gcc require additional files to execute as they often shell out to other binaries (e.g. `cc1`).   |  `None` |
+| <a id="cc_tool-allowlist_include_directories"></a>allowlist_include_directories |  (List[Label]) Include paths implied by using this tool. Compilers may include a set of built-in headers that are implicitly available unless flags like `-nostdinc` are provided. Bazel checks that all included headers are properly provided by a dependency or allowlisted through this mechanism.<br><br>As a rule of thumb, only use this if Bazel is complaining about absolute paths in your toolchain and you've ensured that the toolchain is compiling with the `-no-canonical-prefixes` and/or `-fno-canonical-system-headers` arguments.<br><br>These files are not automatically passed to each action. If they need to be, add them to 'data' as well.<br><br>This can help work around errors like: `the source file 'main.c' includes the following non-builtin files with absolute paths (if these are builtin files, make sure these paths are in your toolchain)`.   |  `None` |
+| <a id="cc_tool-env"></a>env |  (Dict[str, str]) Environment variables to apply when running this tool. Format expansion is performed on values using `format`.   |  `None` |
+| <a id="cc_tool-execution_requirements"></a>execution_requirements |  (List[Label]) Additional execution requirements for actions that run this tool. Each label must provide `ExecutionRequirementsInfo`. For fixed execution requirements, use `tags`.   |  `None` |
+| <a id="cc_tool-format"></a>format |  (Dict[str, Label]) A mapping of format strings to the label of a corresponding target. This target can be a `directory`, `subdirectory`, or a single file that the value should be pulled from. All instances of `{variable_name}` in the `env` dictionary values will be replaced with the expanded value in this dictionary.   |  `{}` |
+| <a id="cc_tool-capabilities"></a>capabilities |  (List[Label]) Declares that a tool is capable of doing something. For example, `@rules_cc//cc/toolchains/capabilities:supports_pic`.   |  `None` |
+| <a id="cc_tool-kwargs"></a>kwargs |  [common attributes](https://bazel.build/reference/be/common-definitions#common-attributes) that should be applied to this rule.   |  none |
 
 
 <a id="cc_tool_map"></a>
@@ -785,9 +791,10 @@ cc_tool_map(
 <pre>
 load("@rules_cc//cc/toolchains/impl:documented_api.bzl", "cc_toolchain")
 
-cc_toolchain(*, <a href="#cc_toolchain-name">name</a>, <a href="#cc_toolchain-tool_map">tool_map</a>, <a href="#cc_toolchain-args">args</a>, <a href="#cc_toolchain-artifact_name_patterns">artifact_name_patterns</a>, <a href="#cc_toolchain-make_variables">make_variables</a>, <a href="#cc_toolchain-known_features">known_features</a>,
-             <a href="#cc_toolchain-enabled_features">enabled_features</a>, <a href="#cc_toolchain-libc_top">libc_top</a>, <a href="#cc_toolchain-module_map">module_map</a>, <a href="#cc_toolchain-dynamic_runtime_lib">dynamic_runtime_lib</a>, <a href="#cc_toolchain-static_runtime_lib">static_runtime_lib</a>,
-             <a href="#cc_toolchain-supports_header_parsing">supports_header_parsing</a>, <a href="#cc_toolchain-supports_param_files">supports_param_files</a>, <a href="#cc_toolchain-compiler">compiler</a>, <a href="#cc_toolchain-kwargs">**kwargs</a>)
+cc_toolchain(*, <a href="#cc_toolchain-name">name</a>, <a href="#cc_toolchain-tool_map">tool_map</a>, <a href="#cc_toolchain-args">args</a>, <a href="#cc_toolchain-artifact_name_patterns">artifact_name_patterns</a>, <a href="#cc_toolchain-make_variables">make_variables</a>, <a href="#cc_toolchain-legacy_tools">legacy_tools</a>,
+             <a href="#cc_toolchain-known_features">known_features</a>, <a href="#cc_toolchain-enabled_features">enabled_features</a>, <a href="#cc_toolchain-libc_top">libc_top</a>, <a href="#cc_toolchain-module_map">module_map</a>, <a href="#cc_toolchain-dynamic_runtime_lib">dynamic_runtime_lib</a>,
+             <a href="#cc_toolchain-static_runtime_lib">static_runtime_lib</a>, <a href="#cc_toolchain-supports_header_parsing">supports_header_parsing</a>, <a href="#cc_toolchain-supports_param_files">supports_param_files</a>, <a href="#cc_toolchain-compiler">compiler</a>, <a href="#cc_toolchain-cpu">cpu</a>,
+             <a href="#cc_toolchain-target_system_name">target_system_name</a>, <a href="#cc_toolchain-kwargs">**kwargs</a>)
 </pre>
 
 A C/C++ toolchain configuration.
@@ -840,6 +847,7 @@ Generated rules:
 | <a id="cc_toolchain-args"></a>args |  (List[Label]) A list of [`cc_args`](#cc_args) and `cc_arg_list` to apply across this toolchain.   |  `[]` |
 | <a id="cc_toolchain-artifact_name_patterns"></a>artifact_name_patterns |  (List[Label]) A list of `cc_artifact_name_pattern` defining patterns for names of artifacts created by this toolchain.   |  `[]` |
 | <a id="cc_toolchain-make_variables"></a>make_variables |  (List[Label]) A list of `cc_make_variable` defining variable substitutions.   |  `[]` |
+| <a id="cc_toolchain-legacy_tools"></a>legacy_tools |  (List[Label]) A list of `cc_legacy_tool` rules that specify tools by filesystem path. These are used to populate the legacy `tool_paths` parameter of the toolchain configuration, which is required by some Bazel features (e.g. coverage).   |  `[]` |
 | <a id="cc_toolchain-known_features"></a>known_features |  (List[Label]) A list of [`cc_feature`](#cc_feature) rules that this toolchain supports. Whether or not these [features](https://bazel.build/docs/cc-toolchain-config-reference#features) are enabled may change over the course of a build. See the documentation for [`cc_feature`](#cc_feature) for more information.   |  `[]` |
 | <a id="cc_toolchain-enabled_features"></a>enabled_features |  (List[Label]) A list of [`cc_feature`](#cc_feature) rules whose initial state should be `enabled`. Note that it is still possible for these [features](https://bazel.build/docs/cc-toolchain-config-reference#features) to be disabled over the course of a build through other mechanisms. See the documentation for [`cc_feature`](#cc_feature) for more information.   |  `[]` |
 | <a id="cc_toolchain-libc_top"></a>libc_top |  (Label) A collection of artifacts for libc passed as inputs to compile/linking actions. See [`cc_toolchain.libc_top`](https://bazel.build/reference/be/c-cpp#cc_toolchain.libc_top) for more information.   |  `None` |
@@ -849,6 +857,8 @@ Generated rules:
 | <a id="cc_toolchain-supports_header_parsing"></a>supports_header_parsing |  (bool) Whether or not this toolchain supports header parsing actions. See [`cc_toolchain.supports_header_parsing`](https://bazel.build/reference/be/c-cpp#cc_toolchain.supports_header_parsing) for more information.   |  `False` |
 | <a id="cc_toolchain-supports_param_files"></a>supports_param_files |  (bool) Whether or not this toolchain supports linking via param files. See [`cc_toolchain.supports_param_files`](https://bazel.build/reference/be/c-cpp#cc_toolchain.supports_param_files) for more information.   |  `False` |
 | <a id="cc_toolchain-compiler"></a>compiler |  (str) The type of compiler used by this toolchain (e.g. "gcc", "clang"). The current toolchain's compiler is exposed to `@rules_cc//cc/private/toolchain:compiler (compiler_flag)` as a flag value.   |  `""` |
+| <a id="cc_toolchain-cpu"></a>cpu |  (str) DEPRECATED: CPU string (ex: "darwin_arm64", "k8") exposed through the `target_cpu` attribute of the toolchain configuration. We should not add new readers of this value, but there are many existing ones in the wild.   |  `""` |
+| <a id="cc_toolchain-target_system_name"></a>target_system_name |  (str) The target system name for this toolchain. Bazel doesn't use this but starlark rules can read this value through `toolchain_info.target_gnu_system_name`. This string is commonly the target triple you would pass to `clang -target` (e.g. "x86_64-unknown-linux-gnu"). If not provided, a best effort default is selected.   |  `None` |
 | <a id="cc_toolchain-kwargs"></a>kwargs |  [common attributes](https://bazel.build/reference/be/common-definitions#common-attributes) that should be applied to all rules created by this macro.   |  none |
 
 

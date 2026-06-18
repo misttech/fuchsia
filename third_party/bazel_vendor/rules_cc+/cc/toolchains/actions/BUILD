@@ -89,6 +89,16 @@ cc_action_type(
 )
 
 cc_action_type(
+    name = "llvm_profdata",
+    action_name = ACTION_NAMES.llvm_profdata,
+)
+
+cc_action_type(
+    name = "gcov",
+    action_name = ACTION_NAMES.gcov,
+)
+
+cc_action_type(
     name = "lto_indexing",
     action_name = ACTION_NAMES.lto_indexing,
 )
@@ -153,19 +163,17 @@ cc_action_type(
     action_name = ACTION_NAMES.validate_static_library,
 )
 
-# ld_embed_data is only available within google.
 cc_action_type(
-    # # copybara-comment-this-out-please
-    name = "ld_embed_data_action",  # # copybara-comment-this-out-please
-    action_name = "ld_embed_data",  # # copybara-comment-this-out-please
-)  # # copybara-comment-this-out-please
+    name = "ld_embed_data_action",
+    action_name = "ld_embed_data",
+)
 
-# To make things simple, both internal and external rules will refer to
-# ld_embed_data, but externally it will evaluate to the empty set.
+# ld_embed_data is not presently used by any rules in rules_cc
+
 cc_action_type_set(
     name = "ld_embed_data",
     actions = [
-        ":ld_embed_data_action",  # # copybara-comment-this-out-please
+        ":ld_embed_data_action",
     ],
     allow_empty = True,
     visibility = ["//cc/toolchains:__subpackages__"],
@@ -203,7 +211,10 @@ cc_action_type(
 
 cc_action_type_set(
     name = "ar_actions",
-    actions = [":cpp_link_static_library"],
+    actions = [
+        ":cpp_link_static_library",
+        ":objc_fully_link",
+    ],
 )
 
 cc_action_type_set(
@@ -222,32 +233,40 @@ cc_action_type_set(
 )
 
 cc_action_type_set(
-    name = "cpp_compile_actions",
+    name = "cpp_compile_without_header_parsing",
     actions = [
         ":linkstamp_compile",
         ":cpp_compile",
-        ":cpp_header_parsing",
         ":cpp_module_compile",
         ":cpp_module_codegen",
-        ":lto_backend",
         ":clif_match",
         ":objcpp_compile",
     ],
 )
 
-# This should match `compile_actions` with `lto_backend` omitted, because `lto_backend` actions
-# do not instantiate the full set of build variables.
+cc_action_type_set(
+    name = "cpp_compile_actions",
+    actions = [
+        ":cpp_compile_without_header_parsing",
+        ":cpp_header_parsing",
+        ":lto_backend",
+    ],
+)
+
+# This matches `compile_actions` with `lto_backend` omitted, because
+# `lto_backend` actions do not instantiate the full set of build variables.
 cc_action_type_set(
     name = "source_compile_actions",
     actions = [
-        ":linkstamp_compile",
-        ":cpp_compile",
+        ":compile_actions_without_header_parsing",
         ":cpp_header_parsing",
-        ":cpp_module_compile",
-        ":cpp_module_codegen",
-        ":clif_match",
-        ":objcpp_compile",
-        ":preprocess_assemble",
+    ],
+)
+
+cc_action_type_set(
+    name = "compile_actions_without_header_parsing",
+    actions = [
+        ":cpp_compile_without_header_parsing",
         ":c_compile_actions",
         ":assembly_actions",
         ":objc_compile",
@@ -257,10 +276,8 @@ cc_action_type_set(
 cc_action_type_set(
     name = "compile_actions",
     actions = [
-        ":cpp_compile_actions",
-        ":c_compile_actions",
-        ":assembly_actions",
-        ":objc_compile",
+        ":source_compile_actions",
+        ":lto_backend",
     ],
 )
 
@@ -326,6 +343,8 @@ cc_action_type_set(
         ":assemble",
         ":preprocess_assemble",
         ":llvm_cov",
+        ":llvm_profdata",
+        ":gcov",
         ":lto_indexing",
         ":lto_backend",
         ":lto_index_for_executable",
@@ -346,4 +365,9 @@ cc_action_type_set(
         ":clif_match",
         ":validate_static_library",
     ],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["**"]),
 )

@@ -13,7 +13,9 @@
 # limitations under the License.
 """Implementation of the cc_toolchain rule."""
 
+load("@bazel_features//:features.bzl", "bazel_features")
 load("//cc/toolchains:cc_toolchain.bzl", _cc_toolchain = "cc_toolchain")
+load("//cc/toolchains:legacy_file_group.bzl", "LEGACY_FILE_GROUPS")
 load(
     "//cc/toolchains/impl:toolchain_config.bzl",
     "cc_legacy_file_group",
@@ -22,37 +24,15 @@ load(
 
 visibility("public")
 
-# Taken from https://bazel.build/docs/cc-toolchain-config-reference#actions
-# TODO: This is best-effort. Update this with the correct file groups once we
-#  work out what actions correspond to what file groups.
-_LEGACY_FILE_GROUPS = {
-    "ar_files": [
-        Label("//cc/toolchains/actions:ar_actions"),
-    ],
-    "as_files": [
-        Label("//cc/toolchains/actions:assembly_actions"),
-    ],
-    "compiler_files": [
-        Label("//cc/toolchains/actions:cc_flags_make_variable"),
-        Label("//cc/toolchains/actions:c_compile"),
-        Label("//cc/toolchains/actions:cpp_compile"),
-        Label("//cc/toolchains/actions:cpp_header_parsing"),
-    ],
-    # There are no actions listed for coverage and objcopy in action_names.bzl.
-    "coverage_files": [],
-    "dwp_files": [
-        Label("//cc/toolchains/actions:dwp"),
-    ],
-    "linker_files": [
-        Label("//cc/toolchains/actions:cpp_link_dynamic_library"),
-        Label("//cc/toolchains/actions:cpp_link_nodeps_dynamic_library"),
-        Label("//cc/toolchains/actions:cpp_link_executable"),
-    ],
-    "objcopy_files": [],
-    "strip_files": [
-        Label("//cc/toolchains/actions:strip"),
-    ],
-}
+_CPU = select({
+    Label("//cc/toolchains/impl:darwin_aarch64"): "darwin_arm64",
+    Label("//cc/toolchains/impl:darwin_x86_64"): "darwin_x86_64",
+    Label("//cc/toolchains/impl:linux_aarch64"): "aarch64",
+    Label("//cc/toolchains/impl:linux_x86_64"): "k8",
+    Label("//cc/toolchains/impl:windows_x86_32"): "win32",
+    Label("//cc/toolchains/impl:windows_x86_64"): "win64",
+    "//conditions:default": "",
+})
 
 def cc_toolchain(
         *,
@@ -61,6 +41,7 @@ def cc_toolchain(
         args = [],
         artifact_name_patterns = [],
         make_variables = [],
+        legacy_tools = [],
         known_features = [],
         enabled_features = [],
         libc_top = None,
@@ -70,6 +51,8 @@ def cc_toolchain(
         supports_header_parsing = False,
         supports_param_files = False,
         compiler = "",
+        cpu = "",
+        target_system_name = None,
         **kwargs):
     """A C/C++ toolchain configuration.
 
@@ -118,6 +101,9 @@ def cc_toolchain(
         artifact_name_patterns: (List[Label]) A list of `cc_artifact_name_pattern` defining patterns
             for names of artifacts created by this toolchain.
         make_variables: (List[Label]) A list of `cc_make_variable` defining variable substitutions.
+        legacy_tools: (List[Label]) A list of `cc_legacy_tool` rules that specify tools by filesystem
+            path. These are used to populate the legacy `tool_paths` parameter of the toolchain
+            configuration, which is required by some Bazel features (e.g. coverage).
         known_features: (List[Label]) A list of `cc_feature` rules that this toolchain supports.
             Whether or not these
             [features](https://bazel.build/docs/cc-toolchain-config-reference#features)
@@ -158,14 +144,63 @@ def cc_toolchain(
         compiler: (str) The type of compiler used by this toolchain (e.g. "gcc", "clang"). The current
             toolchain's compiler is exposed to `@rules_cc//cc/private/toolchain:compiler
             (compiler_flag)` as a flag value.
+        cpu: (str) DEPRECATED: CPU string (ex: "darwin_arm64", "k8") exposed
+            through the `target_cpu` attribute of the toolchain configuration. We
+            should not add new readers of this value, but there are many existing
+            ones in the wild.
+        target_system_name: (str) The target system name for this toolchain. Bazel doesn't use this
+            but starlark rules can read this value through `toolchain_info.target_gnu_system_name`.
+            This string is commonly the target triple you would pass to `clang -target` (e.g. "x86_64-unknown-linux-gnu").
+            If not provided, a best effort default is selected.
         **kwargs: [common attributes](https://bazel.build/reference/be/common-definitions#common-attributes)
             that should be applied to all rules created by this macro.
     """
+
     cc_toolchain_visibility = kwargs.pop("visibility", default = None)
 
-    for group in _LEGACY_FILE_GROUPS:
+    for group in LEGACY_FILE_GROUPS:
         if group in kwargs:
             fail("Don't use legacy file groups such as %s. Instead, associate files with `cc_tool` or `cc_args` rules." % group)
+
+    target_system_name = target_system_name or select({
+        Label("//cc/toolchains/impl:darwin_aarch64"): "aarch64-apple-darwin",
+        Label("//cc/toolchains/impl:darwin_x86_64"): "x86_64-apple-darwin",
+        Label("//cc/toolchains/impl:linux_aarch64"): "aarch64-unknown-linux-gnu",
+        Label("//cc/toolchains/impl:linux_x86_64"): "x86_64-unknown-linux-gnu",
+        Label("//cc/toolchains/impl:windows_x86_32"): "i686-pc-windows-msvc",
+        Label("//cc/toolchains/impl:windows_x86_64"): "x86_64-pc-windows-msvc",
+        "//conditions:default": "",
+    })
+
+    target_libc = select({
+        Label("//cc/settings:apple_constraint"): "macosx",
+        "//conditions:default": "",
+    })
+
+    if bazel_features.cc.supports_starlarkified_toolchains:
+        _cc_toolchain(
+            name = name,
+            tool_map = tool_map,
+            args = args,
+            artifact_name_patterns = artifact_name_patterns,
+            make_variables = make_variables,
+            legacy_tools = legacy_tools,
+            known_features = known_features,
+            enabled_features = enabled_features,
+            compiler = compiler,
+            target_libc = target_libc,
+            cpu = cpu or _CPU,
+            target_system_name = target_system_name,
+            dynamic_runtime_lib = dynamic_runtime_lib,
+            libc_top = libc_top,
+            module_map = module_map,
+            static_runtime_lib = static_runtime_lib,
+            supports_header_parsing = supports_header_parsing,
+            supports_param_files = supports_param_files,
+            visibility = cc_toolchain_visibility,
+            **kwargs
+        )
+        return
 
     config_name = "_{}_config".format(name)
     cc_toolchain_config(
@@ -174,25 +209,20 @@ def cc_toolchain(
         args = args,
         artifact_name_patterns = artifact_name_patterns,
         make_variables = make_variables,
+        legacy_tools = legacy_tools,
         known_features = known_features,
         enabled_features = enabled_features,
         compiler = compiler,
-        cpu = select({
-            Label("//cc/toolchains/impl:darwin_aarch64"): "darwin_arm64",
-            Label("//cc/toolchains/impl:darwin_x86_64"): "darwin_x86_64",
-            Label("//cc/toolchains/impl:linux_aarch64"): "aarch64",
-            Label("//cc/toolchains/impl:linux_x86_64"): "k8",
-            Label("//cc/toolchains/impl:windows_x86_32"): "win32",
-            Label("//cc/toolchains/impl:windows_x86_64"): "win64",
-            "//conditions:default": "",
-        }),
+        cpu = cpu or _CPU,
+        target_libc = target_libc,
+        target_system_name = target_system_name,
         visibility = ["//visibility:private"],
         **kwargs
     )
 
     # Provides ar_files, compiler_files, linker_files, ...
     legacy_file_groups = {}
-    for group, actions in _LEGACY_FILE_GROUPS.items():
+    for group, actions in LEGACY_FILE_GROUPS.items():
         group_name = "_{}_{}".format(name, group)
         cc_legacy_file_group(
             name = group_name,

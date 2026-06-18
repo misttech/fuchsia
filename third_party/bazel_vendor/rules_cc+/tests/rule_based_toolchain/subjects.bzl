@@ -210,6 +210,7 @@ _ToolFactory = generate_factory(
         exe = _subjects.file,
         runfiles = runfiles_subject,
         execution_requirements = _subjects.collection,
+        env = _subjects.dict,
         allowlist_include_directories = _FakeDirectoryDepset,
         capabilities = ProviderSequence(_ToolCapabilityFactory),
     ),
@@ -238,6 +239,7 @@ _ToolchainConfigFactory = generate_factory(
         allowlist_absolute_include_directories = ProviderDepset(_subjects.str),
         artifact_name_patterns = [],
         make_variables = [],
+        legacy_tools = _subjects.collection,
     ),
 )
 
