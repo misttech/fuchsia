@@ -1,6 +1,12 @@
 ---
 name: driver-version-identification
-description: Identify a driver's version (DFv1 vs DFv2).
+description: >
+  Identify whether a Fuchsia driver is DFv1 (legacy/compat) or DFv2. Distinguishes
+  via the .cml program block (compat vs binary key), C++ headers/base class
+  (ddk::Device vs fdf::DriverBase2), entry point (bind/create vs Start), logging
+  (zxlogf vs FDF_LOG), build deps, and runtime `ffx component show` / `ffx
+  driver show`. Use before migrating, debugging, or modifying a driver when its
+  framework version is unclear. Note: all Rust drivers are DFv2.
 ---
 
 # Identify Driver Version (DFv1 vs DFv2)

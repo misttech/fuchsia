@@ -1,8 +1,13 @@
 ---
 name: driver-file-structure
 description: >
-  Create or update the standard directory, file layout, and target naming
-  conventions for a Fuchsia driver.
+  Create or update a Fuchsia driver's directory layout, file names, and build
+  target conventions. Covers the meta/ dir (.bind, .cml, -info.json), C++
+  (.cc/.h) vs Rust (mandatory src/lib.rs) sources, and the four-target GN/Bazel
+  chain (bind -> driver -> component -> package). Use when scaffolding a new
+  driver or when build/bind targets fail to resolve due to hyphen-vs-underscore
+  naming mismatches with the parent directory, or a missing dependency on the
+  bind target.
 ---
 
 # Driver File Structure

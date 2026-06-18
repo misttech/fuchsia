@@ -1,8 +1,13 @@
 ---
 name: devicetree-debugging
 description: >
-  Debugging devicetree issues, including compilation, golden mismatches, and
-  driver binding.
+  Debug Fuchsia devicetree problems: golden file mismatches, DTB/DTS compilation
+  errors, stale checked-in .dtb overlays, and drivers that fail to bind to a
+  devicetree node. Covers decompiling with dtc, ffx driver node/composite
+  list/show, ffx driver doctor, and `ffx log --filter devicetree`. Use when a
+  build fails with 'Golden file mismatch', a .dts edit has no effect, or a
+  node's properties don't match expected bind rules. Don't use for writing a new
+  visitor (see devicetree-visitor).
 ---
 
 # Devicetree Debugging

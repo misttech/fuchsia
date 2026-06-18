@@ -1,6 +1,13 @@
 ---
 name: driver-inclusion
-description: Include drivers in Bazel-based boot images for specific hardware targets.
+description: >
+  Add a driver to a Bazel-built boot image for a specific hardware target/board.
+  Use when a driver was added via GN args or `fx add-test` but is still missing
+  from `ffx driver list` on a Bazel-based board, or when bringing up a new board
+  target. Requires declaring fuchsia_cc_driver / fuchsia_driver_component /
+  fuchsia_package in BUILD.bazel and listing the package in the board's image
+  definition (e.g. //vendor/google/boards/<target>/BUILD.bazel). Don't use for
+  host/test-realm unit tests, where GN and `fx add-test` still apply.
 ---
 
 # Driver Inclusion for Specific Hardware Targets

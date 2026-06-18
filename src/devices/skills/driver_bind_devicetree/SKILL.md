@@ -1,6 +1,14 @@
 ---
 name: driver-bind-devicetree
-description: Write bind rules for a Fuchsia driver that connects to a devicetree node.
+description: >
+  Write the .bind rules and deps for a Fuchsia driver that binds to a devicetree
+  node via fuchsia.devicetree.FIRST_COMPATIBLE matching the node's compatible
+  string. Covers the fuchsia.devicetree bind library (GN and Bazel) and
+  platform-device (pdev) bind properties for composite nodes. Use when
+  authoring a driver for a devicetree-published device, or when binding fails
+  on a compatible-string mismatch or 'unknown library fuchsia.devicetree'
+  error. Don't use for diagnosing why an existing driver won't bind (see
+  debugging-driver-binding).
 ---
 
 # Driver Devicetree Binding

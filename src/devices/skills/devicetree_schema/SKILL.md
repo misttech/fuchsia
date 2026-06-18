@@ -1,6 +1,12 @@
 ---
 name: devicetree-schema
-description: Writing and validating Fuchsia devicetree schema YAML files.
+description: >
+  Write and validate Fuchsia devicetree binding schema YAML files (dt-schema
+  meta-schema, $id, properties, required, $ref types, DTS examples). Use when
+  creating or updating a devicetree binding, documenting the properties a
+  devicetree visitor requires, or validating a schema against a .dtb. Don't use
+  for writing visitor C++ parsing code (see devicetree-visitor) or diagnosing
+  golden mismatches (see devicetree-debugging).
 ---
 
 # Devicetree Schema Creation

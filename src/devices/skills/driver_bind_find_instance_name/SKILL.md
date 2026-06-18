@@ -1,6 +1,13 @@
 ---
 name: driver-bind-find-instance-name
-description: Find the instance name for a FIDL connection using the driver's bind rules.
+description: >
+  Find the instance/parent node name to pass when opening a FIDL connection to a
+  driver's parent capability, by reading the .bind rules. Non-composite drivers
+  use "default"; composite drivers use the named parent (e.g. "pdev"). Use when
+  a driver needs the right instance name for a Connect call, or when a parent
+  connection fails because the instance name doesn't match the composite bind
+  rule node name. Don't use for diagnosing overall bind failures (see
+  debugging-driver-binding).
 ---
 
 # Finding Instance Names from Bind Rules

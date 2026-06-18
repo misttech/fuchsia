@@ -1,8 +1,12 @@
 ---
 name: run-on-serial
 description: >
-  Runs serial commands on a Fuchsia device and filters output.  Use when `ffx`
-  fails or when direct serial access is needed.
+  Run shell commands on a Fuchsia device over the serial console via
+  scripts/run_serial_cmd.sh, filtering background log noise from command
+  output. Use when `ffx` times out, hangs, or has no RCS/network path, and a
+  command must run directly over serial (drop the `ffx` prefix, e.g. `driver
+  list`). Requires FUCHSIA_SERIAL_UNIX_SOCKET and FUCHSIA_SERIAL_LOG_FILE; ask
+  the user if unset.
 ---
 
 # Run on Serial

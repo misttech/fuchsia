@@ -1,8 +1,13 @@
 ---
 name: devicetree-visitor
 description: >
-  Creating a new Fuchsia devicetree visitor to parse devicetree nodes into
-  driver metadata and bind rules.
+  Create a new Fuchsia devicetree visitor to parse devicetree node properties into
+  FIDL driver metadata and bind properties. Covers `fx create devicetree visitor`,
+  fdf_devicetree::DriverVisitor / PropertyParser, compatible-string filtering,
+  phandles, and visitor-test-helper. Use when a driver needs custom devicetree
+  properties parsed, or when a bind failure traces to a missing visitor for a
+  compatible string. Don't use for diagnosing golden mismatches or general bind
+  failures (see devicetree-debugging).
 ---
 
 # Devicetree Visitor Creation

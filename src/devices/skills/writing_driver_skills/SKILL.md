@@ -1,6 +1,12 @@
 ---
 name: writing-driver-skills
-description: Create and edit Fuchsia driver skills.
+description: >
+  Create or edit a Fuchsia driver SKILL.md, following the in-tree conventions
+  for frontmatter description wording, task-first directory structure,
+  hyphenated skill names, dependency (GN/Bazel) and manifest grouping, link
+  style, and required Pitfalls/Further Reading sections. Use when authoring a
+  new driver skill, reviewing a skill's description for intent-matching, or
+  aligning an existing skill with the writing-driver-skills rules.
 ---
 
 # Writing Driver Skills
