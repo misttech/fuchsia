@@ -43,7 +43,6 @@ if (is_host) {
       "//tools/testgen:host",
       "//tools/update_crates",
       "//tools/validate_test_type:install",
-      "//tools/virtual_device:fvd",
       "//tools/zedmon/client:zedmon_client",
     ]
   }
