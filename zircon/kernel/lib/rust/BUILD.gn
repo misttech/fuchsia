@@ -20,31 +20,64 @@ rust_sysroot_dir = root_gen_dir  # Passed as --sysroot.
 rust_sysroot_rlib_dir =  # Derived given that --sysroot and --target=kernel.
     "$rust_sysroot_dir/lib/rustlib/kernel/lib"
 
+# These are configs that might be in the toolchain / variant's default list but
+# must be disabled for building the empty pseudo-crates.
+rust_instrumentation_configs = [
+  "//build/config/profile:coverage-rust",
+  "//build/config/profile:profile-rust",
+]
+
 # These very special crates are built very specially.
 rust_sysroot_crates = [
   {
+    # This is implicitly used by all compilations.
     name = "compiler_builtins"
 
     # This is actually an empty crate with just a local stub source file.
     crate_root = "src/lib.rs"
     rust_sources = [ crate_root ]
+
+    # Disable instrumentation switches that require extra crates to exist
+    # already, like profiler_builtins itself.
+    remove_configs = rust_instrumentation_configs
   },
   {
+    # This is used only when coverage / profile instrumentation is enabled.
+    name = "profiler_builtins"
+
+    # This just an empty crate, but upstream provides the stub source file.
+    # The upstream build.rs is adding in a copy of compiler-rt/lib/profile.
+    # But in the kernel //src/lib/llvm-profdata handles that instead.
+    crate_root = "$rustc_library_dir/$name/src/lib.rs"
+    rust_sources = [ crate_root ]
+
+    # Disable instrumentation switches that require extra crates to exist
+    # already, like profiler_builtins itself.
+    remove_configs = rust_instrumentation_configs
+  },
+  {
+    # This is implicitly used by all compilations.
     name = "core"
+
+    crate_root = "$rustc_library_dir/$name/src/lib.rs"
 
     # This needs all the sources from the toolchain package directory, but
     # there is no ready list of all the names other than the crate_root file.
-    # The .rust_sources file will just list the whole directory, which is good
-    # enough for the RBE wrapper to make all the files available.
-    rust_sources = [ "$rustc_library_dir/$name/src" ]
-    crate_root = "${rust_sources[0]}/lib.rs"
+    # The magic placeholder file tells the machinery that it just has to use
+    # rustc parsing of `mod` et al to discover all the source files used.
+    rust_sources = [ "//build/rust/__SKIP_ENFORCEMENT__.rs" ]
 
     # The core crate could well depend on compiler_builtins, but won't
     # necessarily.  If it's directly in deps then rustc can complain if the
     # compiler never produces a reference to it.  But if it's not present in
     # the sysroot at all, rustc will complain about that instead.  So this just
     # ensures an ordering dependency to have it in place before rustc looks.
-    data_deps = [ ":compiler_builtins.sysroot" ]
+    # The same goes for profiler_builtins, which is always required but only if
+    # certain configs are enabled.
+    data_deps = [
+      ":compiler_builtins.sysroot",
+      ":profiler_builtins.sysroot",
+    ]
   },
 ]
 
@@ -73,15 +106,25 @@ foreach(crate, rust_sysroot_crates) {
                            "*",
                            [
                              "name",
+                             "remove_configs",
                              "rust_sources",
                            ])
 
     visibility = [ ":*" ]
 
+    # This is the default in GN's actual logic, but it only gets into the
+    # gn_desc.json file if it's explicit in the target scope, and
+    # generate_cargo.py needs to find it there (see //build/rust/BUILD.gn).
+    output_name = target_name
+
     rustenv = [ "RUSTC_BOOTSTRAP=$target_name" ]
     rustflags = [ "--edition=2024" ]
     configs =
         default_common_binary_configs - [ "//build/config/rust:no_features" ]
+    if (defined(crate.remove_configs)) {
+      configs += crate.remove_configs
+      configs -= crate.remove_configs
+    }
 
     # The config("rust-target") confers an inputs list for the file dependency
     # on the target.json file.  Normal Rust targets all get implicit deps that
@@ -125,6 +168,10 @@ foreach(crate, rust_sysroot_crates) {
                              "deps",
                              "public_deps",
                            ])
+    if (!defined(deps)) {
+      deps = []
+    }
+    deps += [ "//zircon/kernel/switch:rust-custom-target" ]
   }
 
   generated_file("${crate.name}.rust_sources") {
