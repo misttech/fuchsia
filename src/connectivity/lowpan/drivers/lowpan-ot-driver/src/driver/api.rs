@@ -1866,6 +1866,7 @@ where
             }),
             buffer_info: Some((&buffer_info).into_ext()),
             eid_cache_entries: Some(eid_cache_entries),
+            cca_threshold: ot.get_cca_threshold().ok(),
             ..Default::default()
         })
     }

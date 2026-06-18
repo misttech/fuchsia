@@ -42,6 +42,10 @@ pub trait Radio {
 
     /// Calling into OT state change handler in platform radio
     fn on_radio_handle_state_change(&self, flags: ot::ChangedFlags);
+
+    /// Functional equivalent of [`otsys::otPlatRadioGetCcaEnergyDetectThreshold`]
+    /// (crate::otsys::otPlatRadioGetCcaEnergyDetectThreshold).
+    fn get_cca_threshold(&self) -> Result<Decibels>;
 }
 
 impl<T: Radio + Boxable> Radio for ot::Box<T> {
@@ -79,6 +83,10 @@ impl<T: Radio + Boxable> Radio for ot::Box<T> {
 
     fn on_radio_handle_state_change(&self, flags: ot::ChangedFlags) {
         self.as_ref().on_radio_handle_state_change(flags)
+    }
+
+    fn get_cca_threshold(&self) -> Result<Decibels> {
+        self.as_ref().get_cca_threshold()
     }
 }
 
@@ -134,5 +142,14 @@ impl Radio for Instance {
 
     fn on_radio_handle_state_change(&self, flags: ot::ChangedFlags) {
         unsafe { platformRadioHandleStateChange(self.as_ot_ptr(), flags.bits()) }
+    }
+
+    fn get_cca_threshold(&self) -> Result<Decibels> {
+        let mut ret = DECIBELS_UNSPECIFIED;
+        Error::from(unsafe {
+            otPlatRadioGetCcaEnergyDetectThreshold(self.as_ot_ptr(), &mut ret as *mut Decibels)
+        })
+        .into_result()?;
+        Ok(ret)
     }
 }

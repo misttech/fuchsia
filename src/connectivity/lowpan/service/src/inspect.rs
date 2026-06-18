@@ -2957,6 +2957,9 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                 }
                             );
                         }
+                        if let Some(x) = telemetry_data.cca_threshold {
+                            inspector.root().record_int("cca_threshold", x.into());
+                        }
                     }
                     Err(e) => {
                         warn!("Error in logging telemetry. Error: {}", e);
