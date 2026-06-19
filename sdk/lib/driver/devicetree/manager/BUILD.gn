@@ -208,6 +208,11 @@ fuchsia_unittest_component("devicetree-manager-test-component") {
 fuchsia_test_package("devicetree-manager-test-package") {
   test_components = [ ":devicetree-manager-test-component" ]
   package_name = "devicetree-manager-test"
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }
 
 if (is_host) {

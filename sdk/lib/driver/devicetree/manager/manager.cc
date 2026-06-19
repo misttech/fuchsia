@@ -221,4 +221,15 @@ std::optional<Node*> Manager::FindNode(std::string_view name) {
   return std::nullopt;
 }
 
+zx::result<> Manager::AddMetadata(std::string_view path,
+                                  const fuchsia_hardware_platform_bus::Metadata& metadata) {
+  auto node = nodes_by_path_.find(std::string(path));
+  if (node == nodes_by_path_.end()) {
+    fdf::error("Manager::AddMetadata: Node path '{}' not found", path);
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+  node->second->AddMetadata(metadata);
+  return zx::ok();
+}
+
 }  // namespace fdf_devicetree

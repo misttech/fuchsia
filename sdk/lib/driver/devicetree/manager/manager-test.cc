@@ -192,6 +192,37 @@ TEST_F(ManagerTest, TestMetadata) {
             *reinterpret_cast<uint32_t*>((*(*metadata)[0].data()).data()));
 }
 
+TEST_F(ManagerTest, TestAddMetadataByPath) {
+  Manager manager(testing::LoadTestBlob("/pkg/test-data/simple.dtb"));
+  DefaultVisitors<> visitor;
+  ASSERT_EQ(ZX_OK, manager.Walk(visitor).status_value());
+
+  uint32_t metadata_value = 42;
+  fuchsia_hardware_platform_bus::Metadata metadata = {
+      {.data = std::vector<uint8_t>(
+           reinterpret_cast<const uint8_t*>(&metadata_value),
+           reinterpret_cast<const uint8_t*>(&metadata_value) + sizeof(metadata_value))}};
+
+  // Valid path.
+  ASSERT_TRUE(manager.AddMetadata("/example-device", metadata).is_ok());
+
+  // Non-existent path.
+  ASSERT_TRUE(manager.AddMetadata("/non-existent-device", metadata).is_error());
+
+  ASSERT_TRUE(DoPublish(manager).is_ok());
+
+  // Check that the node has been published as a pbus node (since it now has metadata).
+  ASSERT_EQ(1lu, publisher()->GetPbusNodes().size());
+  auto pbus_node = publisher()->GetPbusNodes()[0];
+  ASSERT_EQ(pbus_node.name(), "example-device");
+
+  // Check metadata.
+  ASSERT_TRUE(pbus_node.metadata());
+  ASSERT_EQ(1lu, pbus_node.metadata()->size());
+  ASSERT_EQ(metadata_value,
+            *reinterpret_cast<uint32_t*>((*(*pbus_node.metadata())[0].data()).data()));
+}
+
 TEST_F(ManagerTest, TestReferences) {
   Manager manager(testing::LoadTestBlob("/pkg/test-data/basic-properties.dtb"));
 

@@ -22,7 +22,6 @@ namespace fdf_devicetree {
 
 class Manager final : public NodeManager {
  public:
-
   // Create a new device tree manager using the given FDT blob.
   explicit Manager(std::vector<uint8_t> fdt_blob)
       : fdt_blob_(std::move(fdt_blob)),
@@ -66,6 +65,10 @@ class Manager final : public NodeManager {
 
   // Find a node by its name.
   std::optional<Node*> FindNode(std::string_view name);
+
+  // Add metadata to a node by its absolute path.
+  zx::result<> AddMetadata(std::string_view path,
+                           const fuchsia_hardware_platform_bus::Metadata& metadata);
 
  private:
   std::vector<uint8_t> fdt_blob_;
