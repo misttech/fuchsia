@@ -316,7 +316,7 @@ void Allocator::V2::GetVmoInfo(GetVmoInfoRequest& request, GetVmoInfoCompleter::
   }
   auto& vmo = *request.vmo();
   auto find_logical_buffer = [this](const zx::vmo& vmo, GetVmoInfoCompleter::Sync& completer)
-      -> std::optional<Sysmem::FindLogicalBufferByVmoKoidResult> {
+      -> std::optional<std::pair<Sysmem::FindLogicalBufferByVmoKoidResult, zx_rights_t>> {
     zx_info_handle_basic_t basic_info{};
     zx_status_t status =
         vmo.get_info(ZX_INFO_HANDLE_BASIC, &basic_info, sizeof(basic_info), nullptr, nullptr);
@@ -347,14 +347,14 @@ void Allocator::V2::GetVmoInfo(GetVmoInfoRequest& request, GetVmoInfoCompleter::
       completer.Reply(fit::error(Error::kNotFound));
       return std::nullopt;
     }
-    return logical_buffer_result;
+    return std::make_pair(logical_buffer_result, basic_info.rights);
   };
   auto maybe_logical_buffer_result = find_logical_buffer(vmo, completer);
   if (!maybe_logical_buffer_result.has_value()) {
     // find_logical_buffer already called completer.Reply
     return;
   }
-  auto& logical_buffer_result = *maybe_logical_buffer_result;
+  auto& [logical_buffer_result, vmo_rights] = *maybe_logical_buffer_result;
   auto& logical_buffer = *logical_buffer_result.logical_buffer;
   fuchsia_sysmem2::AllocatorGetVmoInfoResponse response;
   response.buffer_collection_id() =
@@ -378,7 +378,22 @@ void Allocator::V2::GetVmoInfo(GetVmoInfoRequest& request, GetVmoInfoCompleter::
       return;
     }
     auto& weak_vmo = *maybe_weak_vmo;
-    response.weak_vmo() = std::move(weak_vmo);
+    zx_info_handle_basic_t weak_vmo_info{};
+    zx_status_t status = weak_vmo.get_info(ZX_INFO_HANDLE_BASIC, &weak_vmo_info,
+                                           sizeof(weak_vmo_info), nullptr, nullptr);
+    if (status != ZX_OK) {
+      allocator_->LogError(FROM_HERE, "GetVmoInfo couldn't weak_vmo.get_info to get rights");
+      completer.Reply(fit::error(Error::kUnspecified));
+      return;
+    }
+    zx::vmo attenuated_weak_vmo;
+    status = weak_vmo.duplicate(weak_vmo_info.rights & vmo_rights, &attenuated_weak_vmo);
+    if (status != ZX_OK) {
+      allocator_->LogError(FROM_HERE, "GetVmoInfo duplicate weak_vmo failed: %d", status);
+      completer.Reply(fit::error(Error::kUnspecified));
+      return;
+    }
+    response.weak_vmo() = std::move(attenuated_weak_vmo);
   }
   if (logical_buffer_result.is_koid_of_weak_vmo || need_weak) {
     auto dup_result = logical_buffer.logical_buffer_collection().DupCloseWeakAsapClientEnd(
@@ -408,7 +423,7 @@ void Allocator::V2::GetVmoInfo(GetVmoInfoRequest& request, GetVmoInfoCompleter::
       // find_logical_buffer already called completer.Reply
       return;
     }
-    auto& other_logical_buffer = *maybe_other_logical_buffer_result->logical_buffer;
+    auto& other_logical_buffer = *maybe_other_logical_buffer_result->first.logical_buffer;
     if (request.vmo_settings_to_check_ignore_size().has_value() &&
         *request.vmo_settings_to_check_ignore_size()) {
       // this path can be useful for video decoder input buffers where input buffer sizes may vary

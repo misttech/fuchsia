@@ -6503,6 +6503,20 @@ TEST(Sysmem, GetVmoInfo) {
               }
 
               ASSERT_EQ(is_need_weak, vmo_info.weak_vmo().has_value());
+              if (is_need_weak) {
+                // See GetVmoInfoAttenuatedRights for a test that ensures the passed-in VMO won't
+                // have the ZX_RIGHT_WRITE.
+                zx_info_handle_basic_t original_info{};
+                ASSERT_OK(collection_info.buffers()
+                              ->at(buffer_index)
+                              .vmo()
+                              ->get_info(ZX_INFO_HANDLE_BASIC, &original_info,
+                                         sizeof(original_info), nullptr, nullptr));
+                zx_info_handle_basic_t weak_info{};
+                ASSERT_OK(vmo_info.weak_vmo()->get_info(ZX_INFO_HANDLE_BASIC, &weak_info,
+                                                        sizeof(weak_info), nullptr, nullptr));
+                EXPECT_EQ(weak_info.rights & ~original_info.rights, 0u);
+              }
 
               ASSERT_EQ(is_vmo_settings_to_check_set, vmo_info.vmo_settings_match().has_value());
               if (is_vmo_settings_to_check_set) {
@@ -6564,6 +6578,71 @@ TEST(Sysmem, GetVmoInfo) {
       }
     }
   }
+}
+
+TEST(Sysmem, GetVmoInfoAttenuatedRights) {
+  auto sysmem = connect_to_sysmem_service_v2();
+  auto token = create_initial_token_v2();
+  auto weak_token = create_token_under_token_v2(token);
+  ASSERT_TRUE(weak_token->SetWeak().is_ok());
+
+  auto get_buffer_collection_id_result = token->GetBufferCollectionId();
+  ASSERT_TRUE(get_buffer_collection_id_result.is_ok());
+
+  auto collection = convert_token_to_collection_v2(std::move(token));
+  auto weak_collection = convert_token_to_collection_v2(std::move(weak_token));
+
+  auto constraints = make_min_camping_constraints_v2(1);
+  fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  set_constraints_request.constraints() = constraints;
+  ASSERT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
+
+  set_min_camping_constraints_v2(weak_collection, 0);
+
+  auto wait_result = collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(wait_result.is_ok());
+  auto collection_info = std::move(wait_result.value().buffer_collection_info());
+
+  // Wait for the weak collection to also finish.
+  auto weak_wait_result = weak_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(weak_wait_result.is_ok());
+
+  zx::vmo original_vmo;
+  ASSERT_OK(
+      collection_info->buffers()->at(0).vmo()->duplicate(ZX_RIGHT_SAME_RIGHTS, &original_vmo));
+
+  zx_info_handle_basic_t original_info{};
+  ASSERT_OK(original_vmo.get_info(ZX_INFO_HANDLE_BASIC, &original_info, sizeof(original_info),
+                                  nullptr, nullptr));
+
+  // Assert that the original VMO has ZX_RIGHT_WRITE.
+  ASSERT_TRUE(original_info.rights & ZX_RIGHT_WRITE);
+
+  // Duplicate the VMO but strip ZX_RIGHT_WRITE.
+  zx::vmo restricted_vmo;
+  ASSERT_OK(original_vmo.duplicate(original_info.rights & ~ZX_RIGHT_WRITE, &restricted_vmo));
+
+  zx_info_handle_basic_t restricted_info{};
+  ASSERT_OK(restricted_vmo.get_info(ZX_INFO_HANDLE_BASIC, &restricted_info, sizeof(restricted_info),
+                                    nullptr, nullptr));
+  ASSERT_FALSE(restricted_info.rights & ZX_RIGHT_WRITE);
+
+  // Call GetVmoInfo with the restricted VMO.
+  fuchsia_sysmem2::AllocatorGetVmoInfoRequest get_vmo_info_request;
+  get_vmo_info_request.vmo() = std::move(restricted_vmo);
+  get_vmo_info_request.need_weak() = true;
+
+  auto get_vmo_info_result = sysmem->GetVmoInfo(std::move(get_vmo_info_request));
+  ASSERT_TRUE(get_vmo_info_result.is_ok());
+  auto vmo_info = std::move(get_vmo_info_result.value());
+
+  ASSERT_TRUE(vmo_info.weak_vmo().has_value());
+  zx_info_handle_basic_t weak_info{};
+  ASSERT_OK(vmo_info.weak_vmo()->get_info(ZX_INFO_HANDLE_BASIC, &weak_info, sizeof(weak_info),
+                                          nullptr, nullptr));
+
+  // The returned weak VMO must also lack ZX_RIGHT_WRITE.
+  EXPECT_FALSE(weak_info.rights & ZX_RIGHT_WRITE);
 }
 
 TEST(Sysmem, Weak_SetWeakOk_NeverSentFails) {
