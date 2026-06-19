@@ -38,7 +38,7 @@ TEST(LogDecoder, DecodesCorrectly) {
   fuchsia_free_decoded_log_message(const_cast<char*>(json));
 }
 
-int RustStrcmp(CPPArray<uint8_t> rust_string, const char* c_str) {
+int RustStrcmp(CppArray<uint8_t> rust_string, const char* c_str) {
   size_t c_len = strlen(c_str);
   if (rust_string.len != c_len) {
     return rust_string.len < c_len ? -1 : 1;

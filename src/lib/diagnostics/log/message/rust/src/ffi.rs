@@ -21,7 +21,7 @@ pub use crate::constants::*;
 /// If len is 0, ptr is allowed to be nullptr,
 /// otherwise, ptr must be valid.
 #[repr(C)]
-pub struct CPPArray<'a, T> {
+pub struct CppArray<'a, T> {
     /// Number of elements in the array
     pub len: usize,
     /// Pointer to the first element in the array,
@@ -33,13 +33,13 @@ pub struct CPPArray<'a, T> {
     phantom: PhantomData<&'a T>,
 }
 
-impl<T> Default for CPPArray<'_, T> {
+impl<T> Default for CppArray<'_, T> {
     fn default() -> Self {
-        CPPArray { len: 0, ptr: std::ptr::null(), phantom: PhantomData }
+        CppArray { len: 0, ptr: std::ptr::null(), phantom: PhantomData }
     }
 }
 
-impl CPPArray<'_, u8> {
+impl CppArray<'_, u8> {
     /// # Safety
     ///
     /// input must refer to a valid string, sized according to len.
@@ -52,25 +52,25 @@ impl CPPArray<'_, u8> {
     }
 }
 
-impl<'a> From<&'a str> for CPPArray<'a, u8> {
+impl<'a> From<&'a str> for CppArray<'a, u8> {
     fn from(value: &'a str) -> Self {
         value.as_bytes().into()
     }
 }
 
-impl<'a> From<Option<&'a str>> for CPPArray<'a, u8> {
+impl<'a> From<Option<&'a str>> for CppArray<'a, u8> {
     fn from(value: Option<&'a str>) -> Self {
         value.map(|v| v.into()).unwrap_or_default()
     }
 }
 
-impl<'a, T> From<&'a [T]> for CPPArray<'a, T> {
+impl<'a, T> From<&'a [T]> for CppArray<'a, T> {
     fn from(value: &'a [T]) -> Self {
-        CPPArray { len: value.len(), ptr: value.as_ptr(), phantom: PhantomData }
+        CppArray { len: value.len(), ptr: value.as_ptr(), phantom: PhantomData }
     }
 }
 
-impl<'a> From<BumpaloString<'a>> for CPPArray<'a, u8> {
+impl<'a> From<BumpaloString<'a>> for CppArray<'a, u8> {
     fn from(value: BumpaloString<'a>) -> Self {
         value.into_bump_str().into()
     }
@@ -82,7 +82,7 @@ pub struct LogMessage<'a> {
     /// Severity of a log message.
     severity: u8,
     /// Tags in a log message, guaranteed to be non-null.
-    tags: CPPArray<'a, CPPArray<'a, u8>>,
+    tags: CppArray<'a, CppArray<'a, u8>>,
     /// Process ID from a LogMessage, or 0 if unknown
     pid: u64,
     /// Thread ID from a LogMessage, or 0 if unknown
@@ -90,7 +90,7 @@ pub struct LogMessage<'a> {
     /// Number of dropped log messages.
     dropped: u64,
     /// The UTF-encoded log message, guaranteed to be valid UTF-8.
-    message: CPPArray<'a, u8>,
+    message: CppArray<'a, u8>,
     /// Timestamp on the boot timeline of the log message,
     /// in nanoseconds.
     timestamp: i64,

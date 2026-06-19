@@ -5,7 +5,7 @@ use bumpalo::Bump;
 use diagnostics_log_encoding;
 use diagnostics_log_encoding::parse::ParseError;
 use diagnostics_message::error::MessageError;
-use diagnostics_message::ffi::{CPPArray, CPPMessageFormatter, LogMessage};
+use diagnostics_message::ffi::{CPPMessageFormatter, CppArray, LogMessage};
 use diagnostics_message::{self as message, MonikerWithUrl};
 use std::ffi::CString;
 use std::ops::{Deref, DerefMut};
@@ -46,7 +46,7 @@ pub unsafe extern "C" fn fuchsia_decode_log_message_to_json(
 /// the LogMessages are free'd.
 #[repr(C)]
 pub struct LogMessages<'a> {
-    messages: CPPArray<'a, &'a LogMessage<'a>>,
+    messages: CppArray<'a, &'a LogMessage<'a>>,
     error_str: *const c_char,
     allocator: AliasableBox<Bump>,
 }
@@ -143,7 +143,7 @@ pub unsafe extern "C" fn fuchsia_decode_log_messages_to_struct<'a>(
             LogMessages { messages: messages.into(), error_str: std::ptr::null(), allocator }
         }
         Err(err) => LogMessages {
-            messages: CPPArray::default(),
+            messages: CppArray::default(),
             error_str: allocator_ref
                 .alloc_slice_copy(CString::new(err.to_string()).unwrap().as_bytes_with_nul())
                 .as_ptr() as *const c_char,

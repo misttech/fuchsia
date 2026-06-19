@@ -51,7 +51,7 @@ struct MessageParser;
 /// If len is 0, ptr is allowed to be nullptr,
 /// otherwise, ptr must be valid.
 template <typename T>
-struct CPPArray {
+struct CppArray {
   /// Number of elements in the array
   uintptr_t len;
   /// Pointer to the first element in the array,
@@ -66,7 +66,7 @@ struct LogMessage {
   /// Severity of a log message.
   uint8_t severity;
   /// Tags in a log message, guaranteed to be non-null.
-  CPPArray<CPPArray<uint8_t>> tags;
+  CppArray<CppArray<uint8_t>> tags;
   /// Process ID from a LogMessage, or 0 if unknown
   uint64_t pid;
   /// Thread ID from a LogMessage, or 0 if unknown
@@ -74,7 +74,7 @@ struct LogMessage {
   /// Number of dropped log messages.
   uint64_t dropped;
   /// The UTF-encoded log message, guaranteed to be valid UTF-8.
-  CPPArray<uint8_t> message;
+  CppArray<uint8_t> message;
   /// Timestamp on the boot timeline of the log message,
   /// in nanoseconds.
   int64_t timestamp;
@@ -94,7 +94,7 @@ struct AliasableBox {
 /// by the LogMessages must not be modified or free'd until
 /// the LogMessages are free'd.
 struct LogMessages {
-  CPPArray<const LogMessage *> messages;
+  CppArray<const LogMessage *> messages;
   const char *error_str;
   AliasableBox<Bump> allocator;
 };
