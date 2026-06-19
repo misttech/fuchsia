@@ -51,8 +51,24 @@ is used in cases where an out-of-bounds source value should be saturated to the
 corresponding maximum or minimum of the destination type:
 
 ```cpp
+// Cast to a smaller type, saturating as needed.
+int8_t eight_bit_value = saturated_cast<int8_t>(int_value);
+
 // Convert from float with saturation to INT_MAX, INT_MIN, or 0 for NaN.
 int int_value = saturated_cast<int>(floating_point_value);
+```
+
+`ClampCeil`, `ClampFloor`, and `ClampRound` provide similar functionality to the
+versions in `std::`, but saturate and return an integral type.  An optional
+template parameter specifies the desired destination type (`int` if
+unspecified).  These should be used for most floating-to-integral conversions.
+
+```cpp
+// Basically saturated_cast<int>(std::round(floating_point_value)).
+int int_value = ClampRound(floating_point_value);
+
+// A destination type can be explicitly specified.
+uint8_t byte_value = ClampFloor<uint8_t>(floating_point_value);
 ```
 
 ### Enforcing arithmetic type conversions at compile-time
@@ -72,7 +88,7 @@ using the `StrictNumeric` template:
 ```cpp
 // Throw a compiler error if the size argument cannot be represented by a
 // size_t (e.g. passing an int will fail to compile).
-bool AllocateBuffer(void** buffer, StrictCast<size_t> size);
+bool AllocateBuffer(void** buffer, StrictNumeric<size_t> size);
 ```
 
 ### Comparing values between arbitrary arithmetic types
@@ -179,16 +195,25 @@ performing a range of conversions, assignments, and tests.
 
 ### Other helper and conversion functions
 
-*   `IsValueInRangeForNumericType<>()` - A convenience function that returns
-    true if the type supplied as the template parameter can represent the value
-    passed as an argument to the function.
+*   `ClampCeil<>()` - A convenience function that computes the ceil of its floating-
+    point arg, then saturates to the destination type (template parameter,
+    defaults to `int`).
+*   `ClampFloor<>()` - A convenience function that computes the floor of its
+    floating-point arg, then saturates to the destination type (template
+    parameter, defaults to `int`).
 *   `IsTypeInRangeForNumericType<>()` - A convenience function that evaluates
     entirely at compile-time and returns true if the destination type (first
     template parameter) can represent the full range of the source type
     (second template parameter).
+*   `IsValueInRangeForNumericType<>()` - A convenience function that returns
+    true if the type supplied as the template parameter can represent the value
+    passed as an argument to the function.
 *   `IsValueNegative()` - A convenience function that will accept any
     arithmetic type as an argument and will return whether the value is less
     than zero. Unsigned types always return false.
+*   `ClampRound<>()` - A convenience function that rounds its floating-point arg,
+    then saturates to the destination type (template parameter, defaults to
+    `int`).
 *   `SafeUnsignedAbs()` - Returns the absolute value of the supplied integer
     parameter as an unsigned result (thus avoiding an overflow if the value
     is the signed, two's complement minimum).
@@ -221,11 +246,63 @@ eliminate redundant expressions that are unavoidable with the with the operator
 overloads. (Ideally the compiler should optimize those away, but better to avoid
 them in the first place.)
 
-Type promotions are a slightly modified version of the [standard C/C++ numeric
-promotions
-](http://en.cppreference.com/w/cpp/language/implicit_conversion#Numeric_promotions)
-with the two differences being that *there is no default promotion to int*
+### Example
+
+```
+#include "safemath/checked_math.h"
+...
+CheckedNumeric<uint32_t> variable = 0;
+variable++;
+variable--;
+if (variable.ValueOrDie() == 0)
+  // Fine, |variable| still within valid range.
+
+variable--;
+variable++;
+if (variable.ValueOrDie() == 0)  // Breakpoint or configured CheckHandler
+  // Does not happen as variable underflowed.
+```
+
+When performing an infix arithmetic operation, CheckedNumerics are promoted to
+the smallest CheckedNumeric type that can contain either side of the expression,
+and a CheckedNumeric of that size is returned. This is a slightly modified
+version of the
+[standard C/C++ numeric promotions](https://en.cppreference.com/w/cpp/language/implicit_conversion#Numeric_promotions).
+Two differences are that *there is no default promotion to int*
 and *bitwise logical operations always return an unsigned of the wider type.*
+
+Hence, callers may wind up with a valid CheckedNumeric of a wider type than
+what they originally started with unless a Cast<>() call is made back to the
+original type, or an assignment is made to the original type. Consequently,
+using `auto` to deduce the type of a CheckedNumeric is discouaged.
+
+This subtlety only comes play when using infix expressions. Assignment
+assignment operators back to an existing safe numeric variable (e.g. `+=`,
+`*=`, `-=`, `/=`) avoid the need to worry about promotion.
+
+### Examples
+
+```
+#include "safemath/checked_math.h"
+...
+// A checked numeric of uint16_t can hold the largest uint16_t value.
+static_assert(std::is_same_v<decltype(CheckedNumeric<uint16_t>(65535)),
+                             CheckedNumeric<uint16_t>>);
+
+// Adding an int to it results in a valid checked numeric of int.
+static_assert(std::is_same_v<decltype(CheckedNumeric<uint16_t>(65535) + 1),
+                             CheckedNumeric<int>>);
+
+// Adding a uint16_t to it results in an invalid checked numeric of uint16_t.
+static_assert(std::is_same_v<
+    decltype(CheckedNumeric<uint16_t>(65535) + static_cast<uint16_t>(1)),
+    CheckedNumeric<uint16_t>>);
+
+// Incrementing it by an int results in an invalid checked numeric of uint16_t.
+static_assert(std::is_same_v<
+    std::remove_reference_t<decltype(CheckedNumeric<uint16_t>(65535) += 1)>,
+    CheckedNumeric<uint16_t>>);
+```
 
 ### Members
 
@@ -311,12 +388,6 @@ disambiguator syntax when converting a destination type.
 *   `ValueOrDieForType<>()` in place of: `a.template ValueOrDie<>()`
 *   `ValueOrDefaultForType<>()` in place of: `a.template ValueOrDefault<>()`
 
-The following general utility methods is are useful for converting from
-arithmetic types to `CheckedNumeric` types:
-
-*   `MakeCheckedNum()` - Creates a new `CheckedNumeric` from the underlying type
-    of the supplied arithmetic or directly convertible type.
-
 ## ClampedNumeric<> in clamped_math.h
 
 `ClampedNumeric<>` implements all the logic and operators for clamped
@@ -334,11 +405,9 @@ as they eliminate redundant expressions that are unavoidable with the operator
 overloads. (Ideally the compiler should optimize those away, but better to avoid
 them in the first place.)
 
-Type promotions are a slightly modified version of the [standard C/C++ numeric
-promotions
-](http://en.cppreference.com/w/cpp/language/implicit_conversion#Numeric_promotions)
-with the two differences being that *there is no default promotion to int*
-and *bitwise logical operations always return an unsigned of the wider type.*
+Type promotions occur in a manner analogous to those for CheckedNumeric<>. See
+the documentation for CheckedNumeric<> for details.
+
 
 *** aside
 Most arithmetic operations saturate normally, to the numeric limit in the
@@ -401,9 +470,3 @@ or `ClampedNumeric` types, perform arithmetic operations, and return a
 *   `ClampXor()` - Bitwise XOR (integer only with unsigned result).
 *   `ClampMax()` - Maximum of supplied arguments.
 *   `ClampMin()` - Minimum of supplied arguments.
-
-The following is a general utility method that is useful for converting
-to a `ClampedNumeric` type:
-
-*   `MakeClampedNum()` - Creates a new `ClampedNumeric` from the underlying type
-    of the supplied arithmetic or directly convertible type.

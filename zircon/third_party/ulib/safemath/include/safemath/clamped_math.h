@@ -1,57 +1,50 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef SAFEMATH_CLAMPED_MATH_H_
 #define SAFEMATH_CLAMPED_MATH_H_
 
-#include <stddef.h>
-
-#include <limits>
 #include <type_traits>
 
-#include <safemath/clamped_math_impl.h>
+#include <safemath/clamped_math_impl.h>  // IWYU pragma: export
+#include <safemath/safe_conversions.h>
+#include <safemath/safe_math_shared_impl.h>  // IWYU pragma: export
 
 namespace safemath {
 namespace internal {
 
 template <typename T>
+  requires std::is_arithmetic_v<T>
 class ClampedNumeric {
-  static_assert(std::is_arithmetic<T>::value,
-                "ClampedNumeric<T>: T must be a numeric type.");
-
  public:
   using type = T;
 
-  constexpr ClampedNumeric() : value_(0) {}
+  constexpr ClampedNumeric() = default;
 
   // Copy constructor.
   template <typename Src>
   constexpr ClampedNumeric(const ClampedNumeric<Src>& rhs)
       : value_(saturated_cast<T>(rhs.value_)) {}
 
-  template <typename Src>
-  friend class ClampedNumeric;
-
   // This is not an explicit constructor because we implicitly upgrade regular
   // numerics to ClampedNumerics to make them easier to use.
   template <typename Src>
-  constexpr ClampedNumeric(Src value)  // NOLINT(runtime/explicit)
-      : value_(saturated_cast<T>(value)) {
-    static_assert(std::is_arithmetic<Src>::value, "Argument must be numeric.");
-  }
+    requires(IsNumeric<Src>)
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  constexpr ClampedNumeric(Src value) : value_(saturated_cast<T>(value)) {}
 
   // This is not an explicit constructor because we want a seamless conversion
   // from StrictNumeric types.
   template <typename Src>
-  constexpr ClampedNumeric(
-      StrictNumeric<Src> value)  // NOLINT(runtime/explicit)
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  constexpr ClampedNumeric(StrictNumeric<Src> value)
       : value_(saturated_cast<T>(static_cast<Src>(value))) {}
 
   // Returns a ClampedNumeric of the specified type, cast from the current
   // ClampedNumeric, and saturated to the destination type.
   template <typename Dst>
-  constexpr ClampedNumeric<typename UnderlyingType<Dst>::type> Cast() const {
+  constexpr ClampedNumeric<UnderlyingType<Dst>> Cast() const {
     return *this;
   }
 
@@ -95,7 +88,7 @@ class ClampedNumeric {
 
   template <typename U>
   constexpr ClampedNumeric<typename MathWrapper<ClampedMaxOp, T, U>::type> Max(
-      const U rhs) const {
+      U rhs) const {
     using result_type = typename MathWrapper<ClampedMaxOp, T, U>::type;
     return ClampedNumeric<result_type>(
         ClampedMaxOp<T, U>::Do(value_, Wrapper<U>::value(rhs)));
@@ -103,7 +96,7 @@ class ClampedNumeric {
 
   template <typename U>
   constexpr ClampedNumeric<typename MathWrapper<ClampedMinOp, T, U>::type> Min(
-      const U rhs) const {
+      U rhs) const {
     using result_type = typename MathWrapper<ClampedMinOp, T, U>::type;
     return ClampedNumeric<result_type>(
         ClampedMinOp<T, U>::Do(value_, Wrapper<U>::value(rhs)));
@@ -142,18 +135,16 @@ class ClampedNumeric {
 
   // These perform the actual math operations on the ClampedNumerics.
   // Binary arithmetic operations.
-  template <template <typename, typename, typename> class M,
-            typename L,
-            typename R>
-  static constexpr ClampedNumeric MathOp(const L lhs, const R rhs) {
+  template <template <typename, typename> class M, typename L, typename R>
+  static constexpr ClampedNumeric MathOp(L lhs, R rhs) {
     using Math = typename MathWrapper<M, L, R>::math;
     return ClampedNumeric<T>(
         Math::template Do<T>(Wrapper<L>::value(lhs), Wrapper<R>::value(rhs)));
   }
 
   // Assignment arithmetic operations.
-  template <template <typename, typename, typename> class M, typename R>
-  constexpr ClampedNumeric& MathOp(const R rhs) {
+  template <template <typename, typename> class M, typename R>
+  constexpr ClampedNumeric& MathOp(R rhs) {
     using Math = typename MathWrapper<M, T, R>::math;
     *this =
         ClampedNumeric<T>(Math::template Do<T>(value_, Wrapper<R>::value(rhs)));
@@ -161,9 +152,9 @@ class ClampedNumeric {
   }
 
   template <typename Dst>
-  constexpr operator Dst() const {
-    return saturated_cast<typename ArithmeticOrUnderlyingEnum<Dst>::type>(
-        value_);
+    requires std::is_arithmetic_v<ArithmeticOrUnderlyingEnum<Dst>>
+  constexpr operator Dst() const {  // NOLINT(google-explicit-constructor)
+    return saturated_cast<ArithmeticOrUnderlyingEnum<Dst>>(value_);
   }
 
   // This method extracts the raw integer value without saturating it to the
@@ -172,54 +163,39 @@ class ClampedNumeric {
   constexpr T RawValue() const { return value_; }
 
  private:
-  T value_;
+  template <typename U>
+    requires std::is_arithmetic_v<U>
+  friend class ClampedNumeric;
+
+  T value_ = 0;
 
   // These wrappers allow us to handle state the same way for both
   // ClampedNumeric and POD arithmetic types.
   template <typename Src>
   struct Wrapper {
-    static constexpr Src value(Src value) {
-      return static_cast<typename UnderlyingType<Src>::type>(value);
-    }
+    static constexpr UnderlyingType<Src> value(Src value) { return value; }
   };
 };
 
-// Convience wrapper to return a new ClampedNumeric from the provided arithmetic
-// or ClampedNumericType.
 template <typename T>
-constexpr ClampedNumeric<typename UnderlyingType<T>::type> MakeClampedNum(
-    const T value) {
-  return value;
-}
-
-#if !SAFEMATH_DISABLE_OSTREAM_OPERATORS
-// Overload the ostream output operator to make logging work nicely.
-template <typename T>
-std::ostream& operator<<(std::ostream& os, const ClampedNumeric<T>& value) {
-  os << static_cast<T>(value);
-  return os;
-}
-#endif
+ClampedNumeric(T) -> ClampedNumeric<T>;
 
 // These implement the variadic wrapper for the math operations.
-template <template <typename, typename, typename> class M,
-          typename L,
-          typename R>
+template <template <typename, typename> class M, typename L, typename R>
 constexpr ClampedNumeric<typename MathWrapper<M, L, R>::type> ClampMathOp(
-    const L lhs,
-    const R rhs) {
+    L lhs,
+    R rhs) {
   using Math = typename MathWrapper<M, L, R>::math;
   return ClampedNumeric<typename Math::result_type>::template MathOp<M>(lhs,
                                                                         rhs);
 }
 
 // General purpose wrapper template for arithmetic operations.
-template <template <typename, typename, typename> class M,
+template <template <typename, typename> class M,
           typename L,
           typename R,
           typename... Args>
-constexpr ClampedNumeric<typename ResultType<M, L, R, Args...>::type>
-ClampMathOp(const L lhs, const R rhs, const Args... args) {
+constexpr auto ClampMathOp(L lhs, R rhs, Args... args) {
   return ClampMathOp<M>(ClampMathOp<M>(lhs, rhs), args...);
 }
 
@@ -257,7 +233,6 @@ using internal::ClampOr;
 using internal::ClampRsh;
 using internal::ClampSub;
 using internal::ClampXor;
-using internal::MakeClampedNum;
 
 }  // namespace safemath
 

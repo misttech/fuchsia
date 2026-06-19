@@ -695,7 +695,7 @@ class CodecAdapterVaApiDecoder : public CodecAdapter {
   uint32_t GetOutputStride() {
     ZX_ASSERT(surface_buffer_manager_);
     auto surface_size = surface_buffer_manager_->GetDPBSurfaceSize();
-    auto checked_stride = safemath::MakeCheckedNum(surface_size.width()).Cast<uint32_t>();
+    auto checked_stride = safemath::CheckedNumeric(surface_size.width()).Cast<uint32_t>();
 
     if (!checked_stride.IsValid()) {
       FX_LOGS(FATAL) << "Stride could not be represented as a 32 bit integer";

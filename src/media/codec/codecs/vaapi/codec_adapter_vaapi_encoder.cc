@@ -85,8 +85,8 @@ bool CodecAdapterVaApiEncoder::HandleInputFormatChange(
   uint32_t width = input_format_details.domain().video().uncompressed().image_format.display_width;
   uint32_t height =
       input_format_details.domain().video().uncompressed().image_format.display_height;
-  auto checked_width = safemath::MakeCheckedNum(width).Cast<int>();
-  auto checked_height = safemath::MakeCheckedNum(height).Cast<int>();
+  auto checked_width = safemath::CheckedNumeric(width).Cast<int>();
+  auto checked_height = safemath::CheckedNumeric(height).Cast<int>();
   if (!checked_width.IsValid() || checked_width.ValueOrDie() == 0) {
     events_->onCoreCodecFailCodec("HandleInputFormatChange(): Initial width %d invalid", width);
     return false;
@@ -99,8 +99,8 @@ bool CodecAdapterVaApiEncoder::HandleInputFormatChange(
       input_format_details.domain().video().uncompressed().image_format.coded_width;
   uint32_t coded_height =
       input_format_details.domain().video().uncompressed().image_format.coded_height;
-  auto checked_coded_width = safemath::MakeCheckedNum(coded_width).Cast<int>();
-  auto checked_coded_height = safemath::MakeCheckedNum(coded_height).Cast<int>();
+  auto checked_coded_width = safemath::CheckedNumeric(coded_width).Cast<int>();
+  auto checked_coded_height = safemath::CheckedNumeric(coded_height).Cast<int>();
   if (!checked_coded_width.IsValid() || checked_coded_width.ValueOrDie() == 0) {
     events_->onCoreCodecFailCodec("HandleInputFormatChange(): Initial coded width %d invalid",
                                   coded_width);

@@ -89,7 +89,7 @@ void usage(const char* fname) {
 zx_status_t MapFileForWriting(const fbl::unique_fd& fd, const char* file, size_t write_size,
                               uint8_t** out_write_buf) {
   off_t trunc_size;
-  if (!safemath::MakeCheckedNum<size_t>(write_size).Cast<off_t>().AssignIfValid(&trunc_size)) {
+  if (!safemath::CheckedNumeric<size_t>(write_size).Cast<off_t>().AssignIfValid(&trunc_size)) {
     return ZX_ERR_OUT_OF_RANGE;
   }
 
@@ -309,7 +309,7 @@ int main(int argc, char** argv) {
 
   if (!options.compressed_file.empty()) {
     off_t trunc_size;
-    if (!safemath::MakeCheckedNum<size_t>(dest_size).Cast<off_t>().AssignIfValid(&trunc_size)) {
+    if (!safemath::CheckedNumeric<size_t>(dest_size).Cast<off_t>().AssignIfValid(&trunc_size)) {
       return ZX_ERR_OUT_OF_RANGE;
     }
 

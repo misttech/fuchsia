@@ -148,7 +148,7 @@ class LinearBufferManager : public SurfaceBufferManager {
     // create an image backed by a surface that can be larger than |coded_picture_size_| which will
     // increase the amount of time to deswizzle and copy to our VMO since we will end up copying
     // junk data in the DPB that was not a part of the current decode operation.
-    auto aligned_stride_checked = safemath::MakeCheckedNum(surface_size.width()).Cast<uint32_t>();
+    auto aligned_stride_checked = safemath::CheckedNumeric(surface_size.width()).Cast<uint32_t>();
     auto aligned_y_height = safemath::checked_cast<uint32_t>(coded_picture_size_.height());
     auto aligned_uv_height = safemath::checked_cast<uint32_t>(coded_picture_size_.height()) / 2u;
     auto y_plane_size_checked =
@@ -720,7 +720,7 @@ class TiledBufferManager : public SurfaceBufferManager {
   static safemath::internal::CheckedNumeric<uint32_t> GetAlignedStride(const gfx::Size& size) {
     auto aligned_stride = fbl::round_up(static_cast<uint64_t>(size.width()),
                                         CodecAdapterVaApiDecoder::kTileSurfaceWidthAlignment);
-    return safemath::MakeCheckedNum(aligned_stride).Cast<uint32_t>();
+    return safemath::CheckedNumeric(aligned_stride).Cast<uint32_t>();
   }
 
   static std::pair<safemath::internal::CheckedNumeric<uint32_t>,
@@ -1208,7 +1208,7 @@ fit::result<std::string, bool> CodecAdapterVaApiDecoder::IsBufferReconfiguration
   // TODO(https://fxbug.dev/42073232): This isn't the correct calculation as it does not factor in
   // alignment for tiled surfaces
   auto total_plane_size_checked =
-      ((safemath::MakeCheckedNum(surface_size.GetArea()) * 3) / 2).Cast<uint32_t>();
+      ((safemath::CheckedNumeric(surface_size.GetArea()) * 3) / 2).Cast<uint32_t>();
 
   // The check above should ensure that we never get to an unsupported hardware size, but
   // better safe than sorry when calling ValueOrDie()

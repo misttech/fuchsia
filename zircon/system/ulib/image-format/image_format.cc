@@ -28,7 +28,6 @@ using safemath::CheckDiv;
 using safemath::CheckedNumeric;
 using safemath::CheckMul;
 using safemath::CheckSub;
-using safemath::MakeCheckedNum;
 
 namespace {
 
@@ -105,10 +104,10 @@ constexpr CheckedNumeric<uint32_t> kTransactionEliminationAlignment = 64;
 constexpr uint32_t kTransactionEliminationPlane = 3;
 
 constexpr CheckedNumeric<uint32_t> kInvalidCheckedNumeric32 =
-    CheckAdd(MakeCheckedNum(std::numeric_limits<uint32_t>::max()), 1);
+    CheckAdd(CheckedNumeric(std::numeric_limits<uint32_t>::max()), 1);
 static_assert(!kInvalidCheckedNumeric32.IsValid());
 constexpr CheckedNumeric<uint64_t> kInvalidCheckedNumeric64 =
-    CheckAdd(MakeCheckedNum(std::numeric_limits<uint64_t>::max()), 1);
+    CheckAdd(CheckedNumeric(std::numeric_limits<uint64_t>::max()), 1);
 static_assert(!kInvalidCheckedNumeric64.IsValid());
 
 template <typename T, typename U>
@@ -273,7 +272,7 @@ class IntelTiledFormats : public ImageFormatSet {
     ZX_DEBUG_ASSERT(constraints.pixel_format().has_value());
 
     if (constraints.size_alignment().has_value()) {
-      width = CheckRoundUp(width, safemath::MakeCheckedNum(constraints.size_alignment()->width()));
+      width = CheckRoundUp(width, safemath::CheckedNumeric(constraints.size_alignment()->width()));
     }
 
     if (!width.IsValid()) {
@@ -300,7 +299,7 @@ class IntelTiledFormats : public ImageFormatSet {
 
     // This code should match the code in garnet/public/rust/fuchsia-framebuffer/src/sysmem.rs.
     CheckedNumeric<uint32_t> non_padding_bytes_per_row =
-        MakeCheckedNum(ImageFormatStrideBytesPerWidthPixel(pixel_format_and_modifier)) * width;
+        CheckedNumeric(ImageFormatStrideBytesPerWidthPixel(pixel_format_and_modifier)) * width;
     if (!non_padding_bytes_per_row.IsValid()) {
       return kInvalidCheckedNumeric32;
     }
@@ -411,7 +410,7 @@ class IntelTiledFormats : public ImageFormatSet {
 
         *width_out = CheckRoundUp(bytes_per_row, bytes_per_row_per_tile) / bytes_per_row_per_tile;
         *height_out =
-            CheckRoundUp(MakeCheckedNum(image_format.size()->height()), tile_rows) / tile_rows;
+            CheckRoundUp(CheckedNumeric(image_format.size()->height()), tile_rows) / tile_rows;
       } break;
       // Since NV12 is a biplanar format we must handle the size for each plane separately. From
       // https://github.com/intel/gmmlib/blob/e1f634c5d5a41ac48756b25697ea499605711747/Source/GmmLib/Texture/GmmTextureAlloc.cpp#L1192:
@@ -422,7 +421,7 @@ class IntelTiledFormats : public ImageFormatSet {
           // Calculate the Y plane size (8 bpp)
           *width_out = CheckRoundUp(bytes_per_row, bytes_per_row_per_tile) / bytes_per_row_per_tile;
           *height_out =
-              CheckRoundUp(MakeCheckedNum(image_format.size()->height()), tile_rows) / tile_rows;
+              CheckRoundUp(CheckedNumeric(image_format.size()->height()), tile_rows) / tile_rows;
         } else if (plane == 1) {
           // Calculate the UV plane size (4 bpp)
           // We effectively have 1/2 the height of our original image since we are subsampled at
@@ -573,9 +572,9 @@ class AfbcFormats : public ImageFormatSet {
 
     ZX_DEBUG_ASSERT(image_format.size().has_value());
     CheckedNumeric<uint64_t> block_count =
-        CheckRoundUp(MakeCheckedNum<uint64_t>(image_format.size()->width()), width_alignment) /
+        CheckRoundUp(CheckedNumeric<uint64_t>(image_format.size()->width()), width_alignment) /
         block_width *
-        CheckRoundUp(MakeCheckedNum<uint64_t>(image_format.size()->height()), height_alignment) /
+        CheckRoundUp(CheckedNumeric<uint64_t>(image_format.size()->height()), height_alignment) /
         block_height;
     return block_count * block_width * block_height * kBytesPerPixel +
            CheckRoundUp(block_count * kBytesPerBlockHeader, body_alignment);
@@ -731,7 +730,7 @@ CheckedNumeric<uint32_t> linear_minimum_row_bytes(
   // size_alignment.width divisibility requirement for any fuchsia.sysmem.ImageFormat2.coded_width
   // or fuchsia.images2.ImageFormat.size.width values the caller generates.
   if (constraints.size_alignment().has_value()) {
-    width = CheckRoundUp(width, MakeCheckedNum(constraints.size_alignment()->width()));
+    width = CheckRoundUp(width, CheckedNumeric(constraints.size_alignment()->width()));
   }
 
   CheckedNumeric<uint32_t> constraints_min_bytes_per_row =
@@ -851,7 +850,7 @@ class LinearFormats : public ImageFormatSet {
         case PixelFormat::kNv12:
         case PixelFormat::kI420:
         case PixelFormat::kYv12: {
-          return MakeCheckedNum<uint64_t>(image_format.size().value().height()) *
+          return CheckedNumeric<uint64_t>(image_format.size().value().height()) *
                  image_format.bytes_per_row().value();
         }
         default:
@@ -863,11 +862,11 @@ class LinearFormats : public ImageFormatSet {
         case PixelFormat::kI420:
         case PixelFormat::kYv12: {
           CheckedNumeric<uint64_t> luma_bytes =
-              MakeCheckedNum<uint64_t>(image_format.size().value().height()) *
+              CheckedNumeric<uint64_t>(image_format.size().value().height()) *
               image_format.bytes_per_row().value();
           CheckedNumeric<uint64_t> one_chroma_plane_bytes =
-              (MakeCheckedNum<uint64_t>(image_format.size().value().height()) / 2) *
-              (MakeCheckedNum<uint64_t>(image_format.bytes_per_row().value()) / 2);
+              (CheckedNumeric<uint64_t>(image_format.size().value().height()) / 2) *
+              (CheckedNumeric<uint64_t>(image_format.bytes_per_row().value()) / 2);
           CheckedNumeric<uint64_t> offset_just_past_luma_and_one_chroma =
               luma_bytes + one_chroma_plane_bytes;
           // 2nd chroma plane is just past luma and 1st chroma plane
@@ -895,7 +894,7 @@ class LinearFormats : public ImageFormatSet {
           return image_format.bytes_per_row().value();
         case PixelFormat::kI420:
         case PixelFormat::kYv12:
-          return MakeCheckedNum(image_format.bytes_per_row().value()) / 2;
+          return CheckedNumeric(image_format.bytes_per_row().value()) / 2;
         default:
           return kInvalidCheckedNumeric32;
       }
@@ -903,7 +902,7 @@ class LinearFormats : public ImageFormatSet {
       switch (pixel_format_and_modifier.pixel_format) {
         case PixelFormat::kI420:
         case PixelFormat::kYv12:
-          return MakeCheckedNum(image_format.bytes_per_row().value()) / 2;
+          return CheckedNumeric(image_format.bytes_per_row().value()) / 2;
         default:
           return kInvalidCheckedNumeric32;
       }
@@ -1039,7 +1038,7 @@ class ArmTELinearFormats : public ImageFormatSet {
       CheckedNumeric<uint32_t> bytes_per_row = image_format.bytes_per_row().value();
       CheckedNumeric<uint64_t> size = linear_size(image_format.size()->height(), bytes_per_row,
                                                   image_format.pixel_format().value());
-      return CheckRoundUp(size, MakeCheckedNum<uint64_t>(64));
+      return CheckRoundUp(size, CheckedNumeric<uint64_t>(64));
     }
 
     return kInvalidCheckedNumeric64;

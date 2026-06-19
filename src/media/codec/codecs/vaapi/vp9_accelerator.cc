@@ -41,8 +41,8 @@ VP9Accelerator::Status VP9Accelerator::SubmitDecode(
   VASliceParameterBufferVP9 slice_param{};
   VAStatus status = VA_STATUS_SUCCESS;
 
-  auto checked_width = safemath::MakeCheckedNum(frame_hdr->frame_width).Cast<uint16_t>();
-  auto checked_height = safemath::MakeCheckedNum(frame_hdr->frame_height).Cast<uint16_t>();
+  auto checked_width = safemath::CheckedNumeric(frame_hdr->frame_width).Cast<uint16_t>();
+  auto checked_height = safemath::CheckedNumeric(frame_hdr->frame_height).Cast<uint16_t>();
   if (!checked_width.IsValid() || !checked_height.IsValid()) {
     FX_LOG_KV(ERROR, "Invalid frame dimensions", FX_KV("frame_width", frame_hdr->frame_width),
               FX_KV("frame_height", frame_hdr->frame_height));

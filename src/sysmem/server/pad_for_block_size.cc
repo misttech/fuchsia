@@ -142,7 +142,6 @@ using safemath::CheckMin;
 using safemath::CheckMod;
 using safemath::CheckMul;
 using safemath::CheckSub;
-using safemath::MakeCheckedNum;
 
 using fuchsia_logging::LogSeverity::Debug;
 using fuchsia_logging::LogSeverity::Error;
@@ -187,21 +186,21 @@ bool AccumulateMaxPaddingBytesFromHeightLowerBound(
     complain(FROM_HERE, Warn, "!max_padding_bytes_so_far.IsValid()");
     return false;
   }
-  const auto block_size_width = MakeCheckedNum<uint64_t>(block_size_param.width());
-  const auto block_size_height = MakeCheckedNum<uint64_t>(block_size_param.height());
-  const auto constraints_min_size_width = MakeCheckedNum<uint64_t>(constraints.min_size()->width());
-  const auto constraints_max_size_width = MakeCheckedNum<uint64_t>(constraints.max_size()->width());
+  const auto block_size_width = CheckedNumeric<uint64_t>(block_size_param.width());
+  const auto block_size_height = CheckedNumeric<uint64_t>(block_size_param.height());
+  const auto constraints_min_size_width = CheckedNumeric<uint64_t>(constraints.min_size()->width());
+  const auto constraints_max_size_width = CheckedNumeric<uint64_t>(constraints.max_size()->width());
   const auto constraints_size_alignment_width =
-      MakeCheckedNum<uint64_t>(constraints.size_alignment()->width());
+      CheckedNumeric<uint64_t>(constraints.size_alignment()->width());
   const auto constraints_size_alignment_height =
-      MakeCheckedNum<uint64_t>(constraints.size_alignment()->height());
+      CheckedNumeric<uint64_t>(constraints.size_alignment()->height());
   const auto constraints_max_bytes_per_row =
-      MakeCheckedNum<uint64_t>(*constraints.max_bytes_per_row());
+      CheckedNumeric<uint64_t>(*constraints.max_bytes_per_row());
   const auto constraints_bytes_per_row_divisor =
-      MakeCheckedNum<uint64_t>(*constraints.bytes_per_row_divisor());
+      CheckedNumeric<uint64_t>(*constraints.bytes_per_row_divisor());
 
   // in pixels
-  auto max_width_upper_bound = MakeCheckedNum<uint64_t>(0xFFFFFFFF);
+  auto max_width_upper_bound = CheckedNumeric<uint64_t>(0xFFFFFFFF);
 
   // max width based on height_lower_bound, space within buffer_settings_size_bytes, and
   // bytes_per_row_divisor
@@ -305,9 +304,9 @@ bool AccumulateMaxPaddingBytesFromHeightLowerBound(
   auto& block_aligned_format = block_aligned_format_result.value();
 
   auto image_bytes_non_block_aligned =
-      MakeCheckedNum<uint64_t>(ImageFormatImageSize(non_block_aligned_format));
+      CheckedNumeric<uint64_t>(ImageFormatImageSize(non_block_aligned_format));
   auto image_bytes_block_aligned =
-      MakeCheckedNum<uint64_t>(ImageFormatImageSize(block_aligned_format));
+      CheckedNumeric<uint64_t>(ImageFormatImageSize(block_aligned_format));
   if (!image_bytes_non_block_aligned.IsValid()) {
     complain(FROM_HERE, Warn, "!image_bytes_non_block_aligned.IsValid()");
     return false;
@@ -368,11 +367,11 @@ bool AccumulateMaxPaddingBytesFromHeightLowerBound(
 fit::result<fit::failed, uint64_t> PaddedSizeFromBlockSize(
     const fuchsia_sysmem2::ImageFormatConstraints& constraints_param,
     uint64_t buffer_settings_size_bytes_param, const ComplainFunction& complain) {
-  const auto buffer_settings_size_bytes = MakeCheckedNum(buffer_settings_size_bytes_param);
+  const auto buffer_settings_size_bytes = CheckedNumeric(buffer_settings_size_bytes_param);
   ZX_DEBUG_ASSERT(constraints_param.pad_for_block_size().has_value());
   const auto& pad_for_block_size_param = *constraints_param.pad_for_block_size();
-  const auto block_size_width = MakeCheckedNum<uint64_t>(pad_for_block_size_param.width());
-  const auto block_size_height = MakeCheckedNum<uint64_t>(pad_for_block_size_param.height());
+  const auto block_size_width = CheckedNumeric<uint64_t>(pad_for_block_size_param.width());
+  const auto block_size_height = CheckedNumeric<uint64_t>(pad_for_block_size_param.height());
   ZX_DEBUG_ASSERT(constraints_param.pixel_format().has_value());
   ZX_DEBUG_ASSERT(constraints_param.pixel_format_modifier().has_value());
   ZX_DEBUG_ASSERT(!constraints_param.pixel_format_and_modifiers().has_value() ||
@@ -383,25 +382,25 @@ fit::result<fit::failed, uint64_t> PaddedSizeFromBlockSize(
   ZX_DEBUG_ASSERT(constraints_param.min_size().has_value());
   const auto& constraints_min_size_param = *constraints_param.min_size();
   const auto constraints_min_size_height =
-      MakeCheckedNum<uint64_t>(constraints_min_size_param.height());
+      CheckedNumeric<uint64_t>(constraints_min_size_param.height());
   ZX_DEBUG_ASSERT(constraints_param.max_size().has_value());
   const auto& constraints_max_size_param = *constraints_param.max_size();
   const auto constraints_max_size_width =
-      MakeCheckedNum<uint64_t>(constraints_max_size_param.width());
+      CheckedNumeric<uint64_t>(constraints_max_size_param.width());
   const auto constraints_max_size_height =
-      MakeCheckedNum<uint64_t>(constraints_max_size_param.height());
+      CheckedNumeric<uint64_t>(constraints_max_size_param.height());
   ZX_DEBUG_ASSERT(constraints_param.size_alignment().has_value());
   const auto& constraints_size_alignment_param = *constraints_param.size_alignment();
   const auto constraints_size_alignment_height =
-      MakeCheckedNum<uint64_t>(constraints_size_alignment_param.height());
+      CheckedNumeric<uint64_t>(constraints_size_alignment_param.height());
   ZX_DEBUG_ASSERT(constraints_param.max_bytes_per_row().has_value());
   auto pixel_format_and_modifier = PixelFormatAndModifierFromConstraints(constraints_param);
   auto stride_bytes_per_width_pixel =
-      MakeCheckedNum<uint64_t>(ImageFormatStrideBytesPerWidthPixel(pixel_format_and_modifier));
+      CheckedNumeric<uint64_t>(ImageFormatStrideBytesPerWidthPixel(pixel_format_and_modifier));
   auto bytes_per_row_per_block = CheckMul(stride_bytes_per_width_pixel, block_size_width);
   ZX_DEBUG_ASSERT(constraints_param.bytes_per_row_divisor().has_value());
   auto constraints_bytes_per_row_divisor =
-      MakeCheckedNum<uint64_t>(*constraints_param.bytes_per_row_divisor());
+      CheckedNumeric<uint64_t>(*constraints_param.bytes_per_row_divisor());
   ZX_DEBUG_ASSERT(constraints_bytes_per_row_divisor.ValueOrDie() >=
                   bytes_per_row_per_block.ValueOrDie());
   ZX_DEBUG_ASSERT(

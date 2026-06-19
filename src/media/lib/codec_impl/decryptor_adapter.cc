@@ -473,13 +473,13 @@ void DecryptorAdapter::ProcessInput() {
     OutputBuffer output;
     if (is_secure()) {
       auto checked_data_offset =
-          safemath::MakeCheckedNum(output_buffer->vmo_offset()).Cast<uint32_t>();
+          safemath::CheckedNumeric(output_buffer->vmo_offset()).Cast<uint32_t>();
       if (!checked_data_offset.IsValid()) {
         events_->onCoreCodecFailCodec("Can not convert data offset to unsigned 32-bit value");
         return;
       }
 
-      auto checked_data_length = safemath::MakeCheckedNum(output_buffer->size()).Cast<uint32_t>();
+      auto checked_data_length = safemath::CheckedNumeric(output_buffer->size()).Cast<uint32_t>();
       if (!checked_data_length.IsValid()) {
         events_->onCoreCodecFailCodec("Can not convert data length to unsigned 32-bit value");
         return;
@@ -491,7 +491,7 @@ void DecryptorAdapter::ProcessInput() {
       secure_output.data_length = checked_data_length.ValueOrDie();
       output = secure_output;
     } else if (IsCoreCodecMappedBufferUseful(kOutputPort)) {
-      auto checked_data_length = safemath::MakeCheckedNum(output_buffer->size()).Cast<uint32_t>();
+      auto checked_data_length = safemath::CheckedNumeric(output_buffer->size()).Cast<uint32_t>();
       if (!checked_data_length.IsValid()) {
         events_->onCoreCodecFailCodec("Can not convert data length to unsigned 32-bit value");
         return;

@@ -256,13 +256,13 @@ void VaapiFuzzerTestFixture::onCoreCodecMidStreamOutputConstraintsChange(
     case ImageFormat::kLinear: {
       // Output is linear
       auto out_width =
-          RoundUp(safemath::MakeCheckedNum(image_constraints.required_max_size()->width()),
-                  safemath::MakeCheckedNum(image_constraints.size_alignment()->width()));
+          RoundUp(safemath::CheckedNumeric(image_constraints.required_max_size()->width()),
+                  safemath::CheckedNumeric(image_constraints.size_alignment()->width()));
       auto out_width_stride =
-          RoundUp(out_width, safemath::MakeCheckedNum(*image_constraints.bytes_per_row_divisor()));
+          RoundUp(out_width, safemath::CheckedNumeric(*image_constraints.bytes_per_row_divisor()));
       auto out_height =
-          RoundUp(safemath::MakeCheckedNum(image_constraints.required_max_size()->height()),
-                  safemath::MakeCheckedNum(image_constraints.size_alignment()->height()));
+          RoundUp(safemath::CheckedNumeric(image_constraints.required_max_size()->height()),
+                  safemath::CheckedNumeric(image_constraints.size_alignment()->height()));
 
       auto main_plane_size = out_width_stride * out_height;
       auto uv_plane_size = main_plane_size / 2;
@@ -277,16 +277,16 @@ void VaapiFuzzerTestFixture::onCoreCodecMidStreamOutputConstraintsChange(
     case ImageFormat::kTiled: {
       // Output is tiled
       static constexpr auto kRowsPerTile =
-          safemath::MakeCheckedNum(CodecAdapterVaApiDecoder::kTileSurfaceHeightAlignment);
+          safemath::CheckedNumeric(CodecAdapterVaApiDecoder::kTileSurfaceHeightAlignment);
       static constexpr auto kBytesPerRowPerTile =
-          safemath::MakeCheckedNum(CodecAdapterVaApiDecoder::kTileSurfaceWidthAlignment);
+          safemath::CheckedNumeric(CodecAdapterVaApiDecoder::kTileSurfaceWidthAlignment);
 
-      auto aligned_stride = RoundUp(safemath::MakeCheckedNum(image_constraints.max_size()->width()),
+      auto aligned_stride = RoundUp(safemath::CheckedNumeric(image_constraints.max_size()->width()),
                                     kBytesPerRowPerTile);
       auto aligned_y_height =
-          safemath::MakeCheckedNum(image_constraints.required_max_size()->height());
+          safemath::CheckedNumeric(image_constraints.required_max_size()->height());
       auto aligned_uv_height =
-          safemath::MakeCheckedNum(image_constraints.required_max_size()->height()) / 2u;
+          safemath::CheckedNumeric(image_constraints.required_max_size()->height()) / 2u;
 
       aligned_y_height = RoundUp(aligned_y_height, kRowsPerTile);
       aligned_uv_height = RoundUp(aligned_uv_height, kRowsPerTile);

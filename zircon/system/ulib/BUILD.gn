@@ -61,6 +61,7 @@ group("tests") {
     "zircon-internal:tests",
     "zxtest:tests",
     "//zircon/third_party/ulib/lz4:tests",
+    "//zircon/third_party/ulib/safemath:tests",
   ]
 }
 

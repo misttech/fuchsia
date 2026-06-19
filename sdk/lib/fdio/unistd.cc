@@ -806,7 +806,7 @@ ssize_t writev(int fd, const struct iovec* iov, int iovcnt) {
 __EXPORT
 ssize_t preadv(int fd, const struct iovec* iov, int iovcnt, off_t offset) {
   zx_off_t zx_offset;
-  if (!safemath::MakeCheckedNum(offset).AssignIfValid(&zx_offset)) {
+  if (!safemath::CheckedNumeric(offset).AssignIfValid(&zx_offset)) {
     return ERRNO(EINVAL);
   }
   if (iovcnt > IOV_MAX) {
@@ -850,7 +850,7 @@ ssize_t preadv(int fd, const struct iovec* iov, int iovcnt, off_t offset) {
 __EXPORT
 ssize_t pwritev(int fd, const struct iovec* iov, int iovcnt, off_t offset) {
   zx_off_t zx_offset;
-  if (!safemath::MakeCheckedNum(offset).AssignIfValid(&zx_offset)) {
+  if (!safemath::CheckedNumeric(offset).AssignIfValid(&zx_offset)) {
     return ERRNO(EINVAL);
   }
   if (iovcnt > IOV_MAX) {

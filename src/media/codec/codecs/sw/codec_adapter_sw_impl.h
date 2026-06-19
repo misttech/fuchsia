@@ -145,7 +145,7 @@ class CodecAdapterSWImpl : public CodecAdapterSW<fit::deferred_action<fit::closu
 
             const CodecBuffer* buffer = output_buffer_pool_.AllocateBuffer();
             ZX_DEBUG_ASSERT(buffer);
-            auto checked_buffer_length = safemath::MakeCheckedNum(buffer->size()).Cast<uint32_t>();
+            auto checked_buffer_length = safemath::CheckedNumeric(buffer->size()).Cast<uint32_t>();
             ZX_DEBUG_ASSERT(checked_buffer_length.IsValid());
             ZX_DEBUG_ASSERT(checked_buffer_length.ValueOrDie() >= MinOutputBufferSize());
 

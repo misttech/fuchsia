@@ -1,25 +1,25 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef SAFEMATH_CHECKED_MATH_H_
 #define SAFEMATH_CHECKED_MATH_H_
 
-#include <stddef.h>
+#include <stdint.h>
 
 #include <limits>
 #include <type_traits>
 
-#include <safemath/checked_math_impl.h>
+#include <safemath/checked_math_impl.h>  // IWYU pragma: export
+#include <safemath/safe_conversions.h>
+#include <safemath/safe_math_shared_impl.h>  // IWYU pragma: export
 
 namespace safemath {
 namespace internal {
 
 template <typename T>
+  requires std::is_arithmetic_v<T>
 class CheckedNumeric {
-  static_assert(std::is_arithmetic<T>::value,
-                "CheckedNumeric<T>: T must be a numeric type.");
-
  public:
   using type = T;
 
@@ -30,22 +30,18 @@ class CheckedNumeric {
   constexpr CheckedNumeric(const CheckedNumeric<Src>& rhs)
       : state_(rhs.state_.value(), rhs.IsValid()) {}
 
-  template <typename Src>
-  friend class CheckedNumeric;
-
   // This is not an explicit constructor because we implicitly upgrade regular
   // numerics to CheckedNumerics to make them easier to use.
   template <typename Src>
-  constexpr CheckedNumeric(Src value)  // NOLINT(runtime/explicit)
-      : state_(value) {
-    static_assert(std::is_arithmetic<Src>::value, "Argument must be numeric.");
-  }
+    requires(std::is_arithmetic_v<Src>)
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  constexpr CheckedNumeric(Src value) : state_(value) {}
 
   // This is not an explicit constructor because we want a seamless conversion
   // from StrictNumeric types.
   template <typename Src>
-  constexpr CheckedNumeric(
-      StrictNumeric<Src> value)  // NOLINT(runtime/explicit)
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  constexpr CheckedNumeric(StrictNumeric<Src> value)
       : state_(static_cast<Src>(value)) {}
 
   // IsValid() - The public API to test if a CheckedNumeric is currently valid.
@@ -57,6 +53,46 @@ class CheckedNumeric {
            IsValueInRangeForNumericType<Dst>(state_.value());
   }
 
+  // Returns true if all the following are true:
+  // - `this` is valid
+  // - the underlying value can be represented by the type of
+  //   `predicate`'s single parameter.
+  // - `predicate(underlying_value)` evaluates to true
+  //
+  // `predicate` must take a single argument of arithmetic by value and return
+  // a `bool`.
+  //
+  // Example:
+  //   CheckedNumeric<int> zero;
+  //   if (zero.IsValidAnd([] (int x) { return x == 0; })) { ... }
+  template <typename Predicate>
+    requires(std::is_arithmetic_v<ExtractPredicateParamType<Predicate>>)
+  constexpr bool IsValidAnd(Predicate&& predicate) const {
+    using Dst = ExtractPredicateParamType<Predicate>;
+    return IsValid<Dst>() &&
+           std::forward<Predicate>(predicate)(static_cast<Dst>(state_.value()));
+  }
+
+  // Returns true if any of the following are true:
+  // - `this` is invalid
+  // - the underlying value cannot be represented by the type of
+  //   `predicate`'s single parameter.
+  // - `predicate` evaluates to true
+  //
+  // `predicate` must take a single argument of arithmetic by value and return
+  // a `bool`.
+  //
+  // Example:
+  //   CheckedNumeric<int> out_of_range = std::numeric_limits<int>::max();
+  //   if (out_of_range.IsInvalidOr([] (int x) { return x > 1024; })) { ... }
+  template <typename Predicate>
+    requires(std::is_arithmetic_v<ExtractPredicateParamType<Predicate>>)
+  constexpr bool IsInvalidOr(Predicate&& predicate) const {
+    using Dst = ExtractPredicateParamType<Predicate>;
+    return !IsValid<Dst>() ||
+           std::forward<Predicate>(predicate)(static_cast<Dst>(state_.value()));
+  }
+
   // AssignIfValid(Dst) - Assigns the underlying value if it is currently valid
   // and is within the range supported by the destination type. Returns true if
   // successful and false otherwise.
@@ -66,11 +102,12 @@ class CheckedNumeric {
 #elif defined(_MSC_VER)
   _Check_return_
 #endif
-  constexpr bool
-  AssignIfValid(Dst* result) const {
-    return SAFEMATH_LIKELY(IsValid<Dst>())
-               ? ((*result = static_cast<Dst>(state_.value())), true)
-               : false;
+  constexpr bool AssignIfValid(Dst* result) const {
+    if (IsValid<Dst>()) [[likely]] {
+      *result = static_cast<Dst>(state_.value());
+      return true;
+    }
+    return false;
   }
 
   // ValueOrDie() - The primary accessor for the underlying value. If the
@@ -83,9 +120,10 @@ class CheckedNumeric {
   // the underlying value, and it is not available through other means.
   template <typename Dst = T, class CheckHandler = CheckOnFailure>
   constexpr StrictNumeric<Dst> ValueOrDie() const {
-    return SAFEMATH_LIKELY(IsValid<Dst>())
-               ? static_cast<Dst>(state_.value())
-               : CheckHandler::template HandleFailure<Dst>();
+    if (IsValid<Dst>()) [[likely]] {
+      return static_cast<Dst>(state_.value());
+    }
+    return CheckHandler::template HandleFailure<Dst>();
   }
 
   // ValueOrDefault(T default_value) - A convenience method that returns the
@@ -95,21 +133,23 @@ class CheckedNumeric {
   // parameter. WARNING: This function may fail to compile or CHECK at runtime
   // if the supplied default_value is not within range of the destination type.
   template <typename Dst = T, typename Src>
-  constexpr StrictNumeric<Dst> ValueOrDefault(const Src default_value) const {
-    return SAFEMATH_LIKELY(IsValid<Dst>()) ? static_cast<Dst>(state_.value())
-                                           : checked_cast<Dst>(default_value);
+  constexpr StrictNumeric<Dst> ValueOrDefault(Src default_value) const {
+    if (IsValid<Dst>()) [[likely]] {
+      return static_cast<Dst>(state_.value());
+    }
+    return checked_cast<Dst>(default_value);
   }
 
   // Returns a checked numeric of the specified type, cast from the current
   // CheckedNumeric. If the current state is invalid or the destination cannot
   // represent the result then the returned CheckedNumeric will be invalid.
   template <typename Dst>
-  constexpr CheckedNumeric<typename UnderlyingType<Dst>::type> Cast() const {
+  constexpr CheckedNumeric<UnderlyingType<Dst>> Cast() const {
     return *this;
   }
 
   // This friend method is available solely for providing more detailed logging
-  // in the the tests. Do not implement it in production code, because the
+  // in the tests. Do not implement it in production code, because the
   // underlying values may change at any time.
   template <typename U>
   friend U GetNumericValueForTest(const CheckedNumeric<U>& src);
@@ -137,18 +177,17 @@ class CheckedNumeric {
   constexpr CheckedNumeric& operator^=(const Src rhs);
 
   constexpr CheckedNumeric operator-() const {
-    // The negation of two's complement int min is int min, so we simply
-    // check for that in the constexpr case.
-    // We use an optimized code path for a known run-time variable.
-    return MustTreatAsConstexpr(state_.value()) || !std::is_signed<T>::value ||
-                   std::is_floating_point<T>::value
-               ? CheckedNumeric<T>(
-                     NegateWrapper(state_.value()),
-                     IsValid() && (!std::is_signed<T>::value ||
-                                   std::is_floating_point<T>::value ||
-                                   NegateWrapper(state_.value()) !=
-                                       std::numeric_limits<T>::lowest()))
-               : FastRuntimeNegate();
+    // Use an optimized code path for a known run-time variable.
+    if (!std::is_constant_evaluated() && std::is_signed_v<T> &&
+        std::is_floating_point_v<T>) {
+      return FastRuntimeNegate();
+    }
+    // The negation of two's complement int min is int min.
+    const bool is_valid =
+        IsValid() &&
+        (!std::is_signed_v<T> || std::is_floating_point_v<T> ||
+         NegateWrapper(state_.value()) != std::numeric_limits<T>::lowest());
+    return CheckedNumeric<T>(NegateWrapper(state_.value()), is_valid);
   }
 
   constexpr CheckedNumeric operator~() const {
@@ -162,32 +201,14 @@ class CheckedNumeric {
 
   template <typename U>
   constexpr CheckedNumeric<typename MathWrapper<CheckedMaxOp, T, U>::type> Max(
-      const U rhs) const {
-    using R = typename UnderlyingType<U>::type;
-    using result_type = typename MathWrapper<CheckedMaxOp, T, U>::type;
-    // TODO(jschuh): This can be converted to the MathOp version and remain
-    // constexpr once we have C++14 support.
-    return CheckedNumeric<result_type>(
-        static_cast<result_type>(
-            IsGreater<T, R>::Test(state_.value(), Wrapper<U>::value(rhs))
-                ? state_.value()
-                : Wrapper<U>::value(rhs)),
-        state_.is_valid() && Wrapper<U>::is_valid(rhs));
+      U rhs) const {
+    return CheckMax(*this, rhs);
   }
 
   template <typename U>
   constexpr CheckedNumeric<typename MathWrapper<CheckedMinOp, T, U>::type> Min(
-      const U rhs) const {
-    using R = typename UnderlyingType<U>::type;
-    using result_type = typename MathWrapper<CheckedMinOp, T, U>::type;
-    // TODO(jschuh): This can be converted to the MathOp version and remain
-    // constexpr once we have C++14 support.
-    return CheckedNumeric<result_type>(
-        static_cast<result_type>(
-            IsLess<T, R>::Test(state_.value(), Wrapper<U>::value(rhs))
-                ? state_.value()
-                : Wrapper<U>::value(rhs)),
-        state_.is_valid() && Wrapper<U>::is_valid(rhs));
+      U rhs) const {
+    return CheckMin(*this, rhs);
   }
 
   // This function is available only for integral types. It returns an unsigned
@@ -205,8 +226,8 @@ class CheckedNumeric {
   }
 
   constexpr CheckedNumeric operator++(int) {
-    CheckedNumeric value = *this;
-    *this += 1;
+    const CheckedNumeric value = *this;
+    ++*this;
     return value;
   }
 
@@ -216,42 +237,45 @@ class CheckedNumeric {
   }
 
   constexpr CheckedNumeric operator--(int) {
-    CheckedNumeric value = *this;
-    *this -= 1;
+    const CheckedNumeric value = *this;
+    --*this;
     return value;
   }
 
   // These perform the actual math operations on the CheckedNumerics.
   // Binary arithmetic operations.
-  template <template <typename, typename, typename> class M,
-            typename L,
-            typename R>
-  static constexpr CheckedNumeric MathOp(const L lhs, const R rhs) {
+  template <template <typename, typename> class M, typename L, typename R>
+  static constexpr CheckedNumeric MathOp(L lhs, R rhs) {
     using Math = typename MathWrapper<M, L, R>::math;
     T result = 0;
-    bool is_valid =
+    const bool is_valid =
         Wrapper<L>::is_valid(lhs) && Wrapper<R>::is_valid(rhs) &&
         Math::Do(Wrapper<L>::value(lhs), Wrapper<R>::value(rhs), &result);
     return CheckedNumeric<T>(result, is_valid);
   }
 
   // Assignment arithmetic operations.
-  template <template <typename, typename, typename> class M, typename R>
-  constexpr CheckedNumeric& MathOp(const R rhs) {
+  template <template <typename, typename> class M, typename R>
+  constexpr CheckedNumeric& MathOp(R rhs) {
     using Math = typename MathWrapper<M, T, R>::math;
     T result = 0;  // Using T as the destination saves a range check.
-    bool is_valid = state_.is_valid() && Wrapper<R>::is_valid(rhs) &&
-                    Math::Do(state_.value(), Wrapper<R>::value(rhs), &result);
+    const bool is_valid =
+        state_.is_valid() && Wrapper<R>::is_valid(rhs) &&
+        Math::Do(state_.value(), Wrapper<R>::value(rhs), &result);
     *this = CheckedNumeric<T>(result, is_valid);
     return *this;
   }
 
  private:
+  template <typename U>
+    requires std::is_arithmetic_v<U>
+  friend class CheckedNumeric;
+
   CheckedNumericState<T> state_;
 
   CheckedNumeric FastRuntimeNegate() const {
     T result;
-    bool success = CheckedSubOp<T, T>::Do(T(0), state_.value(), &result);
+    const bool success = CheckedSubOp<T, T>::Do(T(0), state_.value(), &result);
     return CheckedNumeric<T>(result, IsValid() && success);
   }
 
@@ -269,22 +293,25 @@ class CheckedNumeric {
 
   template <typename Src>
   struct Wrapper<CheckedNumeric<Src>> {
-    static constexpr bool is_valid(const CheckedNumeric<Src> v) {
+    static constexpr bool is_valid(CheckedNumeric<Src> v) {
       return v.IsValid();
     }
-    static constexpr Src value(const CheckedNumeric<Src> v) {
+    static constexpr Src value(CheckedNumeric<Src> v) {
       return v.state_.value();
     }
   };
 
   template <typename Src>
   struct Wrapper<StrictNumeric<Src>> {
-    static constexpr bool is_valid(const StrictNumeric<Src>) { return true; }
-    static constexpr Src value(const StrictNumeric<Src> v) {
+    static constexpr bool is_valid(StrictNumeric<Src>) { return true; }
+    static constexpr Src value(StrictNumeric<Src> v) {
       return static_cast<Src>(v);
     }
   };
 };
+
+template <typename T>
+CheckedNumeric(T) -> CheckedNumeric<T>;
 
 // Convenience functions to avoid the ugly template disambiguator syntax.
 template <typename Dst, typename Src>
@@ -299,39 +326,27 @@ constexpr StrictNumeric<Dst> ValueOrDieForType(
 }
 
 template <typename Dst, typename Src, typename Default>
-constexpr StrictNumeric<Dst> ValueOrDefaultForType(
-    const CheckedNumeric<Src> value,
-    const Default default_value) {
+constexpr StrictNumeric<Dst> ValueOrDefaultForType(CheckedNumeric<Src> value,
+                                                   Default default_value) {
   return value.template ValueOrDefault<Dst>(default_value);
 }
 
-// Convience wrapper to return a new CheckedNumeric from the provided arithmetic
-// or CheckedNumericType.
-template <typename T>
-constexpr CheckedNumeric<typename UnderlyingType<T>::type> MakeCheckedNum(
-    const T value) {
-  return value;
-}
-
 // These implement the variadic wrapper for the math operations.
-template <template <typename, typename, typename> class M,
-          typename L,
-          typename R>
+template <template <typename, typename> class M, typename L, typename R>
 constexpr CheckedNumeric<typename MathWrapper<M, L, R>::type> CheckMathOp(
-    const L lhs,
-    const R rhs) {
+    L lhs,
+    R rhs) {
   using Math = typename MathWrapper<M, L, R>::math;
   return CheckedNumeric<typename Math::result_type>::template MathOp<M>(lhs,
                                                                         rhs);
 }
 
 // General purpose wrapper template for arithmetic operations.
-template <template <typename, typename, typename> class M,
+template <template <typename, typename> class M,
           typename L,
           typename R,
           typename... Args>
-constexpr CheckedNumeric<typename ResultType<M, L, R, Args...>::type>
-CheckMathOp(const L lhs, const R rhs, const Args... args) {
+constexpr auto CheckMathOp(L lhs, R rhs, Args... args) {
   return CheckMathOp<M>(CheckMathOp<M>(lhs, rhs), args...);
 }
 
@@ -352,18 +367,18 @@ SAFEMATH_NUMERIC_ARITHMETIC_VARIADIC(Checked, Check, Min)
 // arithmetic with our result types. Since wrapping on a pointer is always
 // bad, we trigger the CHECK condition here.
 template <typename L, typename R>
-L* operator+(L* lhs, const StrictNumeric<R> rhs) {
-  uintptr_t result = CheckAdd(reinterpret_cast<uintptr_t>(lhs),
-                              CheckMul(sizeof(L), static_cast<R>(rhs)))
-                         .template ValueOrDie<uintptr_t>();
+L* operator+(L* lhs, StrictNumeric<R> rhs) {
+  const uintptr_t result = CheckAdd(reinterpret_cast<uintptr_t>(lhs),
+                                    CheckMul(sizeof(L), static_cast<R>(rhs)))
+                               .template ValueOrDie<uintptr_t>();
   return reinterpret_cast<L*>(result);
 }
 
 template <typename L, typename R>
-L* operator-(L* lhs, const StrictNumeric<R> rhs) {
-  uintptr_t result = CheckSub(reinterpret_cast<uintptr_t>(lhs),
-                              CheckMul(sizeof(L), static_cast<R>(rhs)))
-                         .template ValueOrDie<uintptr_t>();
+L* operator-(L* lhs, StrictNumeric<R> rhs) {
+  const uintptr_t result = CheckSub(reinterpret_cast<uintptr_t>(lhs),
+                                    CheckMul(sizeof(L), static_cast<R>(rhs)))
+                               .template ValueOrDie<uintptr_t>();
   return reinterpret_cast<L*>(result);
 }
 
@@ -383,7 +398,6 @@ using internal::CheckRsh;
 using internal::CheckSub;
 using internal::CheckXor;
 using internal::IsValidForType;
-using internal::MakeCheckedNum;
 using internal::ValueOrDefaultForType;
 using internal::ValueOrDieForType;
 
