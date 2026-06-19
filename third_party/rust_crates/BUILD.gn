@@ -1875,6 +1875,14 @@ group("rutabaga_gfx-0.1.3") {
   public_deps = [ ":rutabaga_gfx-v0_1_3" ]
 }
 
+group("sapphire-peer-cache") {
+  public_deps = [ ":sapphire-peer-cache-v0_1_0" ]
+}
+
+group("sapphire-peer-cache-0.1.0") {
+  public_deps = [ ":sapphire-peer-cache-v0_1_0" ]
+}
+
 group("sapphire-uuid") {
   public_deps = [ ":sapphire-uuid-v0_1_0" ]
 }
@@ -18387,6 +18395,31 @@ rustc_library("same-file-v1_0_6") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":same-file-v1_0_6.license" ]
+}
+
+rustc_library("sapphire-peer-cache-v0_1_0") {
+  crate_name = "sapphire_peer_cache"
+  source_root =
+      "//src/connectivity/bluetooth/sunstone/sapphire-peer-cache/src/lib.rs"
+  output_name = "sapphire_peer_cache-5475bf84cb7e6377"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=5475bf84cb7e6377",
+    "-Cextra-filename=-5475bf84cb7e6377",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
 rustc_library("sapphire-uuid-v0_1_0") {

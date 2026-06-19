@@ -12,9 +12,20 @@ if (is_host) {
     features = [ "testing" ]
     deps = [ "//third_party/rust_crates:proptest" ]
   }
+
+  rustc_test("sapphire_peer_cache_test") {
+    edition = "2024"
+    source_root = "sapphire-peer-cache/src/lib.rs"
+    sources = [ "sapphire-peer-cache/src/lib.rs" ]
+    features = []
+    deps = []
+  }
 }
 
 group("tests") {
   testonly = true
-  deps = [ ":sapphire_uuid_test($host_toolchain)" ]
+  deps = [
+    ":sapphire_peer_cache_test($host_toolchain)",
+    ":sapphire_uuid_test($host_toolchain)",
+  ]
 }

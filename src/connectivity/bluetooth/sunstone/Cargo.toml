@@ -3,7 +3,8 @@
 # found in the LICENSE file.
 [workspace]
 members = [
-  "sapphire-uuid",
   "sapphire-gatt",
+  "sapphire-peer-cache",
+  "sapphire-uuid",
 ]
 resolver = "3"

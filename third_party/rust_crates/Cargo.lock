@@ -1824,6 +1824,7 @@ dependencies = [
  "rustls-webpki",
  "rustyline",
  "rutabaga_gfx",
+ "sapphire-peer-cache",
  "sapphire-uuid",
  "schemars",
  "scopeguard",
@@ -4574,6 +4575,10 @@ version = "1.0.6"
 dependencies = [
  "winapi-util",
 ]
+
+[[package]]
+name = "sapphire-peer-cache"
+version = "0.1.0"
 
 [[package]]
 name = "sapphire-uuid"
