@@ -40,10 +40,9 @@ const DISCONNECT_TIMEOUT: fasync::MonotonicDuration = fasync::MonotonicDuration:
 /// If the scan results are older than this duration when handling a connect request, refresh
 /// the scan results.
 const SCAN_CACHE_AGE_LIMIT: zx::BootDuration = zx::BootDuration::from_seconds(30);
-
 /// This is the acceptable difference in RSSI to treat two BSS's as similar. It is used for OWE
 /// transition networks to compare the open advertising BSS with the OWE BSS it points to. If the
-/// OWE BSS's signal is at least this close or better, we use it without a scan.
+/// OWE BSS's signal is at least this close or better, we can restrict the active scan to its channel.
 const RSSI_DELTA_FOR_CLOSE_NETWORK: i8 = 5;
 
 #[async_trait]
@@ -574,8 +573,8 @@ impl SmeClientIface {
 
         // Look for the OWE BSS in the recent scan results where the OWE transition BSS was seen:
         // look for the BSSID of the transition IE.
-        if let Some(scan_results) = self.last_scan_results.lock().clone() {
-            let found_bss = scan_results.results.into_iter().find_map(|r| {
+        let found_bss = self.last_scan_results.lock().clone().and_then(|scan_results| {
+            scan_results.results.into_iter().find_map(|r| {
                 let bss_desc = BssDescription::try_from(r.bss_description).ok()?;
                 let bssid_matches = bss_desc.bssid == owe_ie.bssid;
                 if bssid_matches {
@@ -588,28 +587,31 @@ impl SmeClientIface {
                 } else {
                     None
                 }
-            });
-            // If the BSS is found and has an RSSI similar or better to the provided BSS, directly
-            // return this BSS and skip the extra scan.
-            if let Some(owe_bss) = found_bss {
-                if owe_bss.rssi_dbm >= bss.rssi_dbm - RSSI_DELTA_FOR_CLOSE_NETWORK {
-                    return Ok(owe_bss);
-                } else {
-                    info!("RSSI of seen OWE BSS not good enough, starting active scan");
-                }
+            })
+        });
+
+        // If the OWE BSS was seen and has a good enough RSSI, only scan on that channel. Otherwise
+        // scan on all channels to find the best OWE BSS in case there are multiple. Don't scan on
+        // the channel specified in the IE first if it wasn't in the scan cache to keep it simple.
+        let scan_channels = if let Some(owe_bss) = &found_bss {
+            if owe_bss.rssi_dbm >= bss.rssi_dbm - RSSI_DELTA_FOR_CLOSE_NETWORK {
+                // The BssDescription is necessary for connecting because the driver uses the SSID
+                // from the BssDescription instead of the SSID from the connect request to connect.
+                info!(
+                    "Found OWE BSS in cache. Performing active scan on channel {}",
+                    owe_bss.channel.primary
+                );
+                vec![owe_bss.channel.primary]
             } else {
-                info!("OWE BSS not found in scan results, starting active scan");
+                info!("RSSI of seen OWE BSS not good enough, starting active scan on all channels");
+                vec![]
             }
         } else {
-            // We would not expect this to actually happen since the the transition BSS description
-            // should have come from a recent scan.
-            info!("No cached scan results, starting active scan for the OWE BSS");
-        }
+            info!("OWE BSS not found in scan results. Will active scan on all channels");
+            vec![]
+        };
 
-        // Perform an active scan to find the best BSS with the SSID specified in the IE
-        // in case there are multiple options. Don't scan for the specific channel from the IE if
-        // wasn't seen in the passive scan to keep it simple.
-        self.trigger_scan(Some(&owe_ie.ssid), vec![]).await?;
+        self.trigger_scan(Some(&owe_ie.ssid), scan_channels).await?;
 
         let last_scan_results = self
             .last_scan_results
@@ -620,7 +622,7 @@ impl SmeClientIface {
         find_matching_network_in_scan(
             &owe_ie.ssid,
             &None,
-            &None,
+            &Some(fidl_wlanix::KeyMgmtMask::OWE),
             last_scan_results.results,
             &self.bss_scorer,
         )
@@ -2572,6 +2574,16 @@ mod tests {
                 .set_raw(owe_transition_ie.clone()),
         );
 
+        // This is the BSS description that would show up for the OWE BSS in an active scan.
+        let owe_bss = fake_fidl_bss_description!(
+            protection => FakeProtectionCfg::Owe,
+            ssid: Ssid::try_from(owe_ssid).unwrap(),
+            bssid: OWE_BSSID,
+            rssi_dbm: -40,
+            ies_overrides: wlan_common::test_utils::fake_stas::IesOverrides::new()
+                .set_raw(owe_transition_ie),
+        );
+
         // Build scan results that contain the transition and OWE BSSs and set the scan cache; the
         // connect process will use these scan results.
         *test_values.iface.last_scan_results.lock() = Some(LastScanResults::new(
@@ -2606,14 +2618,37 @@ mod tests {
             Some(fidl_wlanix::KeyMgmtMask::OWE),
         );
 
-        // Verify that the connect request is sent immediately for the OWE BSS without any active scan.
+        // Verify that an active scan is triggered for the OWE SSID on the channel of the cached BSS.
+        assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
+        let (scan_req, scan_responder) = assert_matches!(
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder)
+        );
+        let expected_channel = hidden_owe_bss.channel.primary;
+        assert_matches!(&scan_req, fidl_sme::ScanRequest::Active(active_scan_req) => {
+            assert_eq!(active_scan_req.ssids, vec![Ssid::try_from(owe_ssid).unwrap().to_vec()]);
+            assert_eq!(active_scan_req.channels, vec![expected_channel]);
+        });
+
+        // Respond to the scan request with the OWE BSS
+        let scan_result_vmo = wlan_common::scan::write_vmo(vec![fidl_sme::ScanResult {
+            bss_description: owe_bss.clone(),
+            compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
+                mutual_security_protocols: vec![fidl_security::Protocol::Owe],
+            }),
+            timestamp_nanos: 1,
+        }])
+        .unwrap();
+        scan_responder.send(Ok(scan_result_vmo)).unwrap();
+
+        // Now the connect request should be sent for the OWE BSS.
         assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
         let (connect_req, connect_txn) = assert_matches!(
             test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Connect { req, txn, .. }))) => (req, txn)
         );
 
-        assert_eq!(connect_req.bss_description, hidden_owe_bss);
+        assert_eq!(connect_req.bss_description, owe_bss);
         assert_eq!(connect_req.authentication.protocol, fidl_security::Protocol::Owe);
 
         let connect_txn_handle = connect_txn.unwrap().into_stream_and_control_handle().1;
