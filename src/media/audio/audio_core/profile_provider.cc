@@ -6,9 +6,6 @@
 
 #include <lib/syslog/cpp/macros.h>
 
-#include <sstream>
-
-#include "src/media/audio/audio_core/mix_profile_config.h"
 #include "src/media/audio/audio_core/reporter.h"
 
 namespace media::audio {
@@ -68,7 +65,7 @@ void ProfileProvider::UnregisterHandler(zx::thread thread_handle, const std::str
           .set_role(fuchsia::scheduler::RoleName{role_name_for_unset}));
 
   role_manager_->SetRole(
-      std::move(request), [callback = std::move(callback), &role_name, &role_name_for_unset](
+      std::move(request), [callback = std::move(callback), role_name, role_name_for_unset](
                               fuchsia::scheduler::RoleManager_SetRole_Result result) {
         if (result.is_err()) {
           FX_PLOGS(WARNING, result.err()) << "Failed to unset thread role '" << role_name << "'";
@@ -90,8 +87,8 @@ void ProfileProvider::RegisterMemoryRange(zx::vmar vmar_handle, std::string role
                     .set_role(fuchsia::scheduler::RoleName{role_name}));
 
   role_manager_->SetRole(
-      std::move(request), [callback = std::move(callback),
-                           &role_name](fuchsia::scheduler::RoleManager_SetRole_Result result) {
+      std::move(request), [callback = std::move(callback), role_name = std::move(role_name)](
+                              fuchsia::scheduler::RoleManager_SetRole_Result result) {
         if (result.is_err()) {
           // Failing to apply a Memory Profile is not fatal (e.g. it may happen in tests),
           // but we warn because performance may suffer.
@@ -115,7 +112,7 @@ void ProfileProvider::UnregisterMemoryRange(zx::vmar vmar_handle,
                     .set_role(fuchsia::scheduler::RoleName{role_name_for_unset}));
 
   role_manager_->SetRole(
-      std::move(request), [callback = std::move(callback), &role_name_for_unset](
+      std::move(request), [callback = std::move(callback), role_name_for_unset](
                               fuchsia::scheduler::RoleManager_SetRole_Result result) {
         if (result.is_err()) {
           FX_PLOGS(WARNING, result.err()) << "Failed to unset memory role";
