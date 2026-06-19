@@ -236,10 +236,12 @@ impl StreamConfig {
             StreamConfigRequest::WatchPlugState { responder } => {
                 let mut state = self.inner.lock().await;
 
-                let time = state.plugged_time;
+                // plug_state_time can't be any later than "right now"
+                let plug_time =
+                    std::cmp::min(state.plugged_time, zx::MonotonicInstant::get().into_nanos());
                 let plug_state = fidl_fuchsia_hardware_audio::PlugState {
                     plugged: Some(state.plugged),
-                    plug_state_time: Some(time),
+                    plug_state_time: Some(plug_time),
                     ..Default::default()
                 };
                 log::trace!("StreamConfig watch plug state: {:?}", plug_state.plugged);

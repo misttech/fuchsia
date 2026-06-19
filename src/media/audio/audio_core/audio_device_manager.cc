@@ -9,10 +9,10 @@
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
 
+#include <algorithm>
 #include <string>
+#include <utility>
 
-#include "src/media/audio/audio_core/audio_core_impl.h"
-#include "src/media/audio/audio_core/base_capturer.h"
 #include "src/media/audio/audio_core/base_renderer.h"
 #include "src/media/audio/audio_core/driver_output.h"
 #include "src/media/audio/audio_core/logging_flags.h"
@@ -31,7 +31,7 @@ AudioDeviceManager::AudioDeviceManager(ThreadingModel& threading_model,
       plug_detector_(std::move(plug_detector)),
       link_matrix_(link_matrix),
       process_config_(process_config),
-      clock_factory_(clock_factory),
+      clock_factory_(std::move(clock_factory)),
       device_router_(device_router),
       effects_loader_v2_(effects_loader_v2) {}
 
@@ -61,6 +61,7 @@ void AudioDeviceManager::Shutdown() {
   plug_detector_->Stop();
 
   std::vector<fpromise::promise<void>> device_promises;
+  device_promises.reserve(devices_pending_init_.size());
   for (auto& [_, device] : devices_pending_init_) {
     device_promises.push_back(device->Shutdown());
   }
@@ -75,13 +76,14 @@ void AudioDeviceManager::Shutdown() {
 }
 
 fpromise::promise<void, fuchsia::media::audio::UpdateEffectError> AudioDeviceManager::UpdateEffect(
-    const std::string& instance_name, const std::string& config, bool persist) {
+    const std::string& instance_name, const std::string& message, bool persist) {
   if (persist) {
-    persisted_effects_updates_[instance_name] = config;
+    persisted_effects_updates_[instance_name] = message;
   }
   std::vector<fpromise::promise<void, fuchsia::media::audio::UpdateEffectError>> promises;
+  promises.reserve(devices_.size());
   for (auto& [_, device] : devices_) {
-    promises.push_back(device->UpdateEffect(instance_name, config));
+    promises.push_back(device->UpdateEffect(instance_name, message));
   }
   return fpromise::join_promise_vector(std::move(promises))
       .then([](fpromise::result<
@@ -110,9 +112,8 @@ AudioDeviceManager::UpdateDeviceEffect(const std::string device_id,
                                        const std::string& instance_name,
                                        const std::string& message) {
   auto devices = GetDeviceInfos();
-  const auto dev = std::find_if(devices.begin(), devices.end(), [&device_id](auto candidate) {
-    return candidate.unique_id == device_id;
-  });
+  const auto dev = std::ranges::find_if(
+      devices, [&device_id](const auto& candidate) { return candidate.unique_id == device_id; });
   if (dev == devices.end()) {
     return fpromise::make_error_promise(fuchsia::media::audio::UpdateEffectError::NOT_FOUND);
   }
@@ -127,9 +128,8 @@ AudioDeviceManager::UpdateDeviceEffect(const std::string device_id,
         }
         if (result.error() == fuchsia::media::audio::UpdateEffectError::INVALID_CONFIG) {
           return result;
-        } else {
-          return fpromise::error(fuchsia::media::audio::UpdateEffectError::NOT_FOUND);
         }
+        return fpromise::error(fuchsia::media::audio::UpdateEffectError::NOT_FOUND);
       });
 }
 
@@ -137,9 +137,8 @@ fpromise::promise<void, zx_status_t> AudioDeviceManager::UpdatePipelineConfig(
     const std::string device_id, const PipelineConfig& pipeline_config,
     const VolumeCurve& volume_curve) {
   auto devices = GetDeviceInfos();
-  const auto dev = std::find_if(devices.begin(), devices.end(), [&device_id](auto candidate) {
-    return candidate.unique_id == device_id;
-  });
+  const auto dev = std::ranges::find_if(
+      devices, [&device_id](const auto& candidate) { return candidate.unique_id == device_id; });
   if (dev == devices.end()) {
     return fpromise::make_error_promise(ZX_ERR_NOT_FOUND);
   }
@@ -165,7 +164,9 @@ fpromise::promise<void, zx_status_t> AudioDeviceManager::UpdatePipelineConfig(
 
   device->UpdateRoutableState(false);
   auto profile_params = DeviceConfig::OutputDeviceProfile::Parameters{
-      .pipeline_config = pipeline_config, .volume_curve = volume_curve};
+      .pipeline_config = pipeline_config,
+      .volume_curve = volume_curve,
+  };
   return device->UpdateDeviceProfile(profile_params).and_then([this, device]() {
     device->UpdateRoutableState(true);
     if (device->plugged()) {
@@ -196,7 +197,7 @@ void AudioDeviceManager::ActivateDevice(const std::shared_ptr<AudioDevice>& devi
 
   // Have we already been removed from the pending list?  If so, the device is
   // already shutting down and there is nothing to be done.
-  if (devices_pending_init_.find(device->token()) == devices_pending_init_.end()) {
+  if (!devices_pending_init_.contains(device->token())) {
     return;
   }
 
@@ -226,7 +227,7 @@ void AudioDeviceManager::ActivateDevice(const std::shared_ptr<AudioDevice>& devi
 
   // Apply persisted effects updates.
   std::vector<fpromise::promise<void, void>> promises;
-  for (auto it : persisted_effects_updates_) {
+  for (const auto& it : persisted_effects_updates_) {
     std::string instance_name = it.first;
     std::string config = it.second;
     promises.push_back(
@@ -298,7 +299,7 @@ void AudioDeviceManager::OnPlugStateChanged(const std::shared_ptr<AudioDevice>& 
   }
 
   // If the device is not yet activated, we should not be changing routes.
-  bool activated = devices_.find(device->token()) != devices_.end();
+  bool activated = devices_.contains(device->token());
   if (!activated) {
     if constexpr (kLogDevicePlugUnplug) {
       FX_LOGS(INFO) << "Ignoring OnPlugStateChanged event (not activated): "
@@ -375,7 +376,7 @@ void AudioDeviceManager::SetDeviceGain(uint64_t device_token,
 std::shared_ptr<AudioDevice> AudioDeviceManager::FindLastPlugged(AudioObject::Type type,
                                                                  bool allow_unplugged) {
   TRACE_DURATION("audio", "AudioDeviceManager::FindLastPlugged");
-  FX_DCHECK((type == AudioObject::Type::Output) || (type == AudioObject::Type::Input));
+  FX_DCHECK(type == AudioObject::Type::Output || type == AudioObject::Type::Input);
   std::shared_ptr<AudioDevice> best = nullptr;
 
   // TODO(johngro): Consider tracking last-plugged times in a fbl::WAVLTree, so
@@ -386,13 +387,13 @@ std::shared_ptr<AudioDevice> AudioDeviceManager::FindLastPlugged(AudioObject::Ty
       continue;
     }
 
-    if ((best == nullptr) || (!best->plugged() && device->plugged()) ||
-        ((best->plugged() == device->plugged()) && (best->plug_time() < device->plug_time()))) {
+    if (best == nullptr || (!best->plugged() && device->plugged()) ||
+        ((best->plugged() == device->plugged()) && best->plug_time() < device->plug_time())) {
       best = device;
     }
   }
 
-  FX_DCHECK((best == nullptr) || (best->type() == type));
+  FX_DCHECK(best == nullptr || best->type() == type);
   if (!allow_unplugged && best && !best->plugged()) {
     return nullptr;
   }
@@ -522,7 +523,7 @@ void AudioDeviceManager::AddDeviceInternal(
                   << device_name << "': " << new_device.get();
   }
 
-  AddDevice(std::move(new_device));
+  AddDevice(new_device);
 }
 
 }  // namespace media::audio

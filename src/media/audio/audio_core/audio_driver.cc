@@ -27,7 +27,6 @@
 #include "src/media/audio/audio_core/select_best_format.h"
 #include "src/media/audio/lib/clock/audio_clock_coefficients.h"
 #include "src/media/audio/lib/clock/clone_mono.h"
-#include "src/media/audio/lib/clock/utils.h"
 #include "src/media/audio/lib/format/driver_format.h"
 
 namespace media::audio {
@@ -395,7 +394,9 @@ zx_status_t AudioDriver::Configure(const Format& format, zx::duration min_ring_b
   fidl::InterfaceRequest<fuchsia::hardware::audio::RingBuffer> request = {};
   request.set_channel(std::move(remote_channel));
 
-  DriverSampleFormat driver_format = {};
+  DriverSampleFormat driver_format = {
+      .sample_format = fuchsia::hardware::audio::SampleFormat::PCM_SIGNED,
+  };
   if (!AudioSampleFormatToDriverSampleFormat(format.stream_type().sample_format, &driver_format)) {
     FX_LOGS(ERROR) << "Failed to convert Fmt 0x" << std::hex << static_cast<uint32_t>(sample_format)
                    << " to driver format.";
@@ -574,7 +575,7 @@ void AudioDriver::RequestRingBufferVmo(int64_t min_frames_64) {
   SetCommandTimeout(kDefaultLongCmdTimeout, "RingBuffer::GetVmo");
 
   auto num_notifications_per_ring =
-      ((clock_domain_ == fuchsia::hardware::audio::CLOCK_DOMAIN_MONOTONIC)) ? 0 : 2;
+      (clock_domain_ == fuchsia::hardware::audio::CLOCK_DOMAIN_MONOTONIC) ? 0 : 2;
   ring_buffer_fidl_->GetVmo(
       static_cast<uint32_t>(min_frames_64), num_notifications_per_ring,
       [this](fuchsia::hardware::audio::RingBuffer_GetVmo_Result result) {
@@ -641,13 +642,15 @@ void AudioDriver::RequestNextPlugStateChange() {
     }
 
     OBTAIN_EXECUTION_DOMAIN_TOKEN(token, &owner_->mix_domain());
-    // Wardware reporting hardwired but notifies unplugged.
+    // plug_state_time can't be any later than "right now".
+    auto plug_state_time = std::min(zx::time(state.plug_state_time()), zx::clock::get_monotonic());
+    // Hardware reporting hardwired but notifies unplugged.
     if (pd_hardwired_ && !state.plugged()) {
       FX_LOGS(WARNING) << "Stream reports hardwired yet notifies unplugged, notifying as plugged";
-      ReportPlugStateChange(true, zx::time(state.plug_state_time()));
+      ReportPlugStateChange(true, plug_state_time);
       return;
     }
-    ReportPlugStateChange(state.plugged(), zx::time(state.plug_state_time()));
+    ReportPlugStateChange(state.plugged(), plug_state_time);
     RequestNextPlugStateChange();
   });
   // No need for a driver command timeout: this is a "hanging get".
@@ -691,7 +694,7 @@ void AudioDriver::ClockRecoveryUpdate(fuchsia::hardware::audio::RingBufferPositi
                     << " notification #" << position_notification_count_ << " [" << info.timestamp
                     << ", " << std::setw(6) << info.position << "] run_pos_bytes "
                     << running_pos_bytes_ << ", run_time "
-                    << (actual_mono_time - mono_start_time_).get() << ", predicted_mono "
+                    << actual_mono_time.get() - mono_start_time_.get() << ", predicted_mono "
                     << predicted_mono_time.get() << ", curr_err " << curr_error.get();
     }
   }
@@ -781,11 +784,12 @@ zx_status_t AudioDriver::Start() {
       // frame, pointers P, F and W each shift to the right by one frame. For any given time T:
       //     ref_time_to_frac_presentation_frame(T) = P
       //     ref_time_to_frac_safe_write_frame(T) = W
-      ref_time_to_frac_presentation_frame_ = TimelineFunction(
-          0,                                                            // F starts at 0.
-          (ref_start_time_ + external_delay_ + internal_delay_).get(),  // P is ext+int_delay later.
-          frac_fps                                                      // frac-frames-->seconds.
-      );
+      ref_time_to_frac_presentation_frame_ =
+          TimelineFunction(0,                                               // F starts at 0.
+                           ref_start_time_.get() + external_delay_.get() +  // P is [ext+int]
+                               internal_delay_.get(),                       // _delay later.
+                           frac_fps                                         // frac-frames-->seconds
+          );
       ref_time_to_frac_safe_read_or_write_frame_ = TimelineFunction(
           raw_driver_transfer_frames,  // F is 0, and first safe frame W is driver_transfer more,
           ref_start_time_.get(),       // at the moment that playback begins.
@@ -830,11 +834,12 @@ zx_status_t AudioDriver::Start() {
       // advances, and we define functions to locate C and R:
       //     ref_time_to_frac_presentation_frame(T) = C        more accurately "frac_capture_time"
       //     ref_time_to_frac_safe_read_frame(T)    = R
-      ref_time_to_frac_presentation_frame_ = TimelineFunction(
-          0,                                                            // F starts at 0; C is
-          (ref_start_time_ - external_delay_ - internal_delay_).get(),  // ext+int delay earlier.
-          frac_fps                                                      // frac frames-->seconds.
-      );
+      ref_time_to_frac_presentation_frame_ =
+          TimelineFunction(0,                                               // F starts at 0;
+                           ref_start_time_.get() - external_delay_.get() -  // C is [ext+int]
+                               internal_delay_.get(),                       // _delay earlier.
+                           frac_fps                                         // frac frames-->seconds
+          );
       ref_time_to_frac_safe_read_or_write_frame_ = TimelineFunction(
           -raw_driver_transfer_frames,  // We define R as driver_transfer behind (less than) F,
           ref_start_time_.get(),        // which is 0 at the moment that capture begins.

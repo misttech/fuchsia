@@ -22,7 +22,6 @@
 #include "src/media/audio/audio_core/channel_attributes.h"
 #include "src/media/audio/audio_core/reporter.h"
 #include "src/media/audio/audio_core/ring_buffer.h"
-#include "src/media/audio/audio_core/utils.h"
 
 namespace media::audio {
 
@@ -119,7 +118,7 @@ class AudioDriver {
   zx_status_t Configure(const Format& format, zx::duration min_ring_buffer_duration);
   zx_status_t Start();
   zx_status_t Stop();
-  zx_status_t SetPlugDetectEnabled(bool enabled);
+  static zx_status_t SetPlugDetectEnabled(bool enabled);
   zx_status_t SetGain(const AudioDeviceSettings::GainState& gain_state,
                       audio_set_gain_flags_t set_flags);
   zx_status_t SelectBestFormat(uint32_t* frames_per_second_inout, uint32_t* channels_inout,

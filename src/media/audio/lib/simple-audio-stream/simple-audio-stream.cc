@@ -173,7 +173,7 @@ zx_status_t SimpleAudioStream::NotifyPlugDetect() {
 
 zx_status_t SimpleAudioStream::NotifyPosition(const audio_proto::RingBufPositionNotify& notif) {
   fbl::AutoLock channel_lock(&channel_lock_);
-  if (!expected_notifications_per_ring_.load() || (rb_channel_ == nullptr)) {
+  if (!expected_notifications_per_ring_.load() || rb_channel_ == nullptr) {
     return ZX_ERR_BAD_STATE;
   }
   audio_fidl::wire::RingBufferPositionInfo position_info = {};
@@ -223,7 +223,7 @@ void SimpleAudioStream::Connect(ConnectRequestView request, ConnectCompleter::Sy
   // already have an stream_channel_, flag this channel is the privileged
   // connection (The connection which is allowed to do things like change
   // formats).
-  bool privileged = (stream_channel_ == nullptr);
+  bool privileged = stream_channel_ == nullptr;
 
   auto stream_channel = StreamChannel::Create<StreamChannel>(this);
   // We keep alive all channels in stream_channels_ (protected by channel_lock_).
@@ -246,7 +246,7 @@ void SimpleAudioStream::Connect(ConnectRequestView request, ConnectCompleter::Sy
 
   if (privileged) {
     ZX_DEBUG_ASSERT(stream_channel_ == nullptr);
-    stream_channel_ = stream_channel;
+    stream_channel_ = std::move(stream_channel);
   }
 }
 
@@ -500,9 +500,11 @@ void SimpleAudioStream::WatchPlugState(StreamChannel* channel,
   if (channel->last_reported_plugged_state_ == StreamChannel::Plugged::kNotReported ||
       (channel->last_reported_plugged_state_ == StreamChannel::Plugged::kPlugged) != plugged) {
     fidl::Arena allocator;
+    // plug_state_time can't be any later than "right now"
+    auto plug_time = std::min(plug_time_, zx::clock::get_monotonic().get());
     auto plug_state = audio_fidl::wire::PlugState::Builder(allocator)
                           .plugged(plugged)
-                          .plug_state_time(plug_time_)
+                          .plug_state_time(plug_time)
                           .Build();
     channel->last_reported_plugged_state_ =
         plugged ? StreamChannel::Plugged::kPlugged : StreamChannel::Plugged::kUnplugged;
@@ -785,7 +787,7 @@ void SimpleAudioStream::GetVmo(GetVmoRequestView request, GetVmoCompleter::Sync&
   audio_proto::RingBufGetBufferReq req = {};
   // The ring buffer must be at least min_frames + fifo_frames.
   req.min_ring_buffer_frames =
-      request->min_frames + (driver_transfer_bytes_ + frame_size_ - 1) / frame_size_;
+      request->min_frames + ((driver_transfer_bytes_ + frame_size_ - 1) / frame_size_);
   req.notifications_per_ring = request->clock_recovery_notifications_per_ring;
   zx::vmo buffer;
   auto status = GetBuffer(req, &num_ring_buffer_frames, &buffer);

@@ -97,9 +97,12 @@ void ObserverServer::PlugStateIsChanged(const fad::PlugState& new_plug_state,
   ADR_LOG_METHOD(kLogObserverServerMethods || kLogNotifyMethods)
       << new_plug_state << " @ " << plug_change_time.get();
 
+  // plug_state_time can't be any later than "right now"
+  auto plug_time = std::min(plug_change_time, zx::clock::get_monotonic());
+
   new_plug_state_to_notify_ = fad::ObserverWatchPlugStateResponse{{
       .state = new_plug_state,
-      .plug_time = plug_change_time.get(),
+      .plug_time = plug_time.get(),
   }};
   MaybeCompleteWatchPlugState();
 }
@@ -171,7 +174,7 @@ void ObserverServer::GetElements(GetElementsCompleter::Sync& completer) {
 
   FX_CHECK(device_->info().has_value() &&
            device_->info()->signal_processing_elements().has_value() &&
-           device_->info()->signal_processing_elements()->size());
+           !device_->info()->signal_processing_elements()->empty());
   completer.Reply(fit::success(*device_->info()->signal_processing_elements()));
 }
 
@@ -199,7 +202,7 @@ void ObserverServer::GetTopologies(GetTopologiesCompleter::Sync& completer) {
 
   FX_CHECK(device_->info().has_value() &&
            device_->info()->signal_processing_topologies().has_value() &&
-           device_->info()->signal_processing_topologies()->size());
+           !device_->info()->signal_processing_topologies()->empty());
   completer.Reply(fit::success(*device_->info()->signal_processing_topologies()));
 }
 
