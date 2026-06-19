@@ -45,6 +45,7 @@ impl RingPointers {
 /// attempt to write more than this amount of data into the slot is a programming error and will
 /// cause an assertion failure. This class provides a formal way for writers to serialize data in
 /// place in the ring buffer, thus eliminating the need for a temporary serialization buffer.
+#[derive(Debug)]
 pub struct Reservation<'a> {
     combined_pointers: &'a AtomicU64,
     storage_len: u32,
@@ -148,6 +149,8 @@ pub struct Buffer<A: Allocator + Default = DefaultAllocator> {
     combined_pointers: AtomicU64,
     // The types used for `storage` and `size` must match those of ktl::span.
     storage: *mut u8,
+    // The size of the backing storage in bytes. This is enforced to be at most
+    // MAX_STORAGE_SIZE (2 GiB), meaning this value will never exceed u32::MAX.
     size: usize,
     _phantom: core::marker::PhantomData<A>,
 }
@@ -187,6 +190,11 @@ impl<A: Allocator + Default> Buffer<A> {
             size: size as usize,
             _phantom: core::marker::PhantomData,
         })
+    }
+
+    /// Returns the size of the backing storage.
+    pub fn size(&self) -> u32 {
+        self.size as u32
     }
 
     /// Reserves a block of the given size in the buffer.
