@@ -1,9 +1,8 @@
 #!/usr/bin/env fuchsia-vendored-python
+#
 # Copyright 2017 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-
-from __future__ import print_function
 
 import argparse
 import json
@@ -52,8 +51,6 @@ DT_RELCOUNT = 0x6FFFFFFA
 NT_GNU_BUILD_ID = 3
 SHT_SYMTAB = 2
 SHF_ALLOC = 2
-
-IS_PYTHON3 = sys.version_info[0] >= 3
 
 
 class elf_note(
@@ -459,10 +456,7 @@ def get_elf_info(filename, match_notes=False):
                     name = str(file[pos : pos + nhdr.n_namesz].decode())
                     pos += round_up_to(nhdr.n_namesz)
                     # PT_DESC is not always string-ish, just copy the bytes.
-                    if IS_PYTHON3:
-                        desc = file[pos : pos + nhdr.n_descsz]
-                    else:
-                        desc = [ord(b) for b in file[pos : pos + nhdr.n_descsz]]
+                    desc = file[pos : pos + nhdr.n_descsz]
                     pos += round_up_to(nhdr.n_descsz)
                     yield elf_note(name, nhdr.n_type, desc)
 
@@ -721,9 +715,7 @@ def get_elf_info(filename, match_notes=False):
                     value = 0
                     bits = 0
                     while start < limit:
-                        # TODO(https://fxbug.dev/42125859): Remove this single-element slice hack
-                        # once Python2 is no longer used in-tree.
-                        byte = ord(file[start : start + 1])
+                        byte = file[start]
                         start += 1
                         value |= (byte & 0x7F) << bits
                         if (byte & 0x80) == 0:

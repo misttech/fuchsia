@@ -719,9 +719,7 @@ def get_elf_info(filename: str, match_notes: bool = False) -> None | elf_info:
                     value = 0
                     bits = 0
                     while start < limit:
-                        # TODO(https://fxbug.dev/42125859): Remove this single-element slice hack
-                        # once Python2 is no longer used in-tree.
-                        byte = ord(file[start : start + 1])
+                        byte = file[start]
                         start += 1
                         value |= (byte & 0x7F) << bits
                         if (byte & 0x80) == 0:
