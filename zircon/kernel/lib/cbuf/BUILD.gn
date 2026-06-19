@@ -4,7 +4,11 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/components.gni")
 import("//build/cpp/library_headers.gni")
+import("//build/rust/rustc_library.gni")
+import("//zircon/kernel/kernel_rust_crate.gni")
+import("//zircon/kernel/params.gni")
 
 static_library("cbuf") {
   public_deps = [ ":headers" ]
@@ -22,8 +26,34 @@ library_headers("headers") {
   headers = [ "lib/cbuf.h" ]
 }
 
+rustc_library("cbuf-rs") {
+  edition = "2024"
+  name = "cbuf"
+  sources = [ "src/lib.rs" ]
+  deps = [
+    "//sdk/rust/zx-status",
+    "//src/lib/ksync",
+    "//third_party/rust_crates:pin-init",
+  ]
+}
+
+# TODO(b/517130174): Refactor these tests once fxr/1631555 lands.
+kernel_rust_crate("cbuf-rs-kernel-tests") {
+  testonly = true
+  source_root = "tests/kernel.rs"
+  sources = [ "tests/kernel.rs" ]
+  deps = [
+    ":cbuf-rs",
+    "//sdk/rust/zx-status",
+    "//sdk/rust/zx-types",
+    "//third_party/rust_crates:pin-init",
+    "//zircon/kernel/kernel:kernel-rs",
+  ]
+}
+
 group("tests") {
   testonly = true
+  deps = []
 }
 
 source_set("kernel-tests") {
@@ -33,6 +63,10 @@ source_set("kernel-tests") {
     ".",
     "//zircon/kernel/lib/unittest",
   ]
+  if (enable_rust_in_zircon) {
+    sources += [ "tests/cbuf_tests_launcher.cc" ]
+    deps += [ ":cbuf-rs-kernel-tests" ]
+  }
 }
 
 group("phys-tests") {

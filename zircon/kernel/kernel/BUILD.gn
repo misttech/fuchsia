@@ -4,6 +4,8 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/rust/rustc_library.gni")
+
 source_set("kernel") {
   sources = [
     "brwlock.cc",
@@ -98,4 +100,27 @@ source_set("tests") {
 group("kernel-tests") {
   testonly = true
   deps = [ ":tests" ]
+}
+
+source_set("ffi") {
+  sources = [ "thread_ffi.cc" ]
+  deps = [
+    "//zircon/kernel/lib/kconcurrent",
+    "//zircon/kernel/lib/ktl",
+  ]
+}
+
+rustc_library("kernel-rs") {
+  edition = "2024"
+  name = "kernel"
+  source_root = "lib.rs"
+  sources = [
+    "lib.rs",
+    "thread.rs",
+  ]
+  deps = [
+    "//sdk/rust/zx-status",
+    "//sdk/rust/zx-types",
+  ]
+  non_rust_deps = [ ":ffi" ]
 }
