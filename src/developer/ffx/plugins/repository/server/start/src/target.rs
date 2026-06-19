@@ -9,7 +9,7 @@ use camino::Utf8Path;
 use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use fdomain_fuchsia_pkg::{RepositoryManagerMarker, RepositoryManagerProxy};
 use fdomain_fuchsia_pkg_rewrite::{EngineMarker, EngineProxy};
-use ffx_command_error::{Result, return_user_error};
+use ffx_command_error::Result;
 use ffx_config::EnvironmentContext;
 use ffx_repository_server_start_args::StartCommand;
 use ffx_target::{KnockError, RcsKnocker, TargetInfoQuery};
@@ -31,7 +31,7 @@ use target_connector::Connector;
 use target_holders::fdomain::RemoteControlProxyHolder;
 use timeout::timeout;
 
-const MAX_CONSECUTIVE_CONNECT_ATTEMPTS: u8 = 10;
+const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
 /// Connects to the target and registers the repositories.
 ///
@@ -281,19 +281,11 @@ pub(crate) async fn main_connect_loop(
     mut connection_sink: mpsc::UnboundedSender<anyhow::Result<ConnectionStream>>,
     repo_host_tx: Option<futures::channel::mpsc::UnboundedSender<String>>,
 ) -> Result<()> {
-    // We try to reconnect unless MAX_CONSECUTIVE_CONNECT_ATTEMPTS reconnect
-    // attempts in immediate succession fail.
     let mut attempts = 0;
 
     // Outer connection loop, retries when disconnected.
     loop {
-        if attempts >= MAX_CONSECUTIVE_CONNECT_ATTEMPTS {
-            return_user_error!(
-                "Stopping reconnecting after {attempts} consecutive failed attempts"
-            );
-        } else {
-            attempts += 1;
-        }
+        attempts += 1;
 
         let cancel = async {
             // Block until a loop stop request comes in
@@ -332,7 +324,18 @@ pub(crate) async fn main_connect_loop(
                         attempts = 0;
                     }
                     Err(e) => {
-                        log::info!("Attempt {attempts}: {}", e);
+                        log::info!(
+                            "Attempt {attempts}: {e}. Retrying in {} seconds...",
+                            RECONNECT_DELAY.as_secs()
+                        );
+                        let timer = fuchsia_async::Timer::new(RECONNECT_DELAY).fuse();
+                        pin_mut!(timer);
+                        select! {
+                            () = cancel => {
+                                break Ok(());
+                            }
+                            _ = timer => {},
+                        }
                     }
                 }
             },
