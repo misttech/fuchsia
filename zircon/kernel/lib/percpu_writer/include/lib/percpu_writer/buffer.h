@@ -114,6 +114,9 @@ class Buffer {
     return buffer_.Read(copy_fn, len);
   }
 
+  // Returns a pointer to the underlying SpscBuffer.
+  BufferImpl* spsc_buffer() { return &buffer_; }
+
   // We interpose ourselves in the Reserve path to ensure that we can emit a record containing
   // the dropped records statistics if we need to.
   zx::result<Reservation> Reserve(uint64_t header) {
