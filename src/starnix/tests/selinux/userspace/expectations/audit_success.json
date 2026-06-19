@@ -1217,8 +1217,22 @@
         {
             "name": "PerfEventTest.OpenEventsNoPerfmon",
             "audit_expectations": [
-                "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_no_perfmon_t:s0 tcontext=test_u:test_r:test_perf_no_perfmon_t:s0 tclass=capability2 permissive=0",
-                "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_perf_no_perfmon_t:s0 tcontext=test_u:test_r:test_perf_no_perfmon_t:s0 tclass=capability permissive=0"
+                "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_no_perfmon_t:s0 tcontext=test_u:test_r:test_perf_event_no_perfmon_t:s0 tclass=capability2 permissive=0",
+                "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_perf_event_no_perfmon_t:s0 tcontext=test_u:test_r:test_perf_event_no_perfmon_t:s0 tclass=capability permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest.OpenEventsNoPerfmonWithSysAdmin",
+            "audit_expectations": [
+                "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_no_perfmon_with_sys_admin_t:s0 tcontext=test_u:test_r:test_perf_event_no_perfmon_with_sys_admin_t:s0 tclass=capability2 permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest.OpenEventsNoPermissions",
+            "audit_expectations": [
+                "avc:  denied  { open } for scontext=test_u:test_r:test_perf_event_no_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_no_permissions_t:s0 tclass=perf_event permissive=1",
+                "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_no_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_no_permissions_t:s0 tclass=capability2 permissive=1",
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_no_permissions_t:s0 tclass=perf_event permissive=1"
             ]
         },
         {
@@ -1273,6 +1287,20 @@
             "audit_expectations": [
                 "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tclass=capability2 permissive=0",
                 "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tclass=capability2 permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest.PermissiveOpenEventsNoCapabilities",
+            "audit_expectations": [
+                "avc:  denied  { setcap } for scontext=test_u:test_r:test_perf_event_no_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_no_permissions_t:s0 tclass=process permissive=1"
+            ]
+        },
+        {
+            "name": "PerfEventTest.PermissiveOpenEventsNoPermissions",
+            "audit_expectations": [
+                "avc:  denied  { open } for scontext=test_u:test_r:test_perf_event_no_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_no_permissions_t:s0 tclass=perf_event permissive=1",
+                "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_no_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_no_permissions_t:s0 tclass=capability2 permissive=1",
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_no_permissions_t:s0 tclass=perf_event permissive=1"
             ]
         },
         {

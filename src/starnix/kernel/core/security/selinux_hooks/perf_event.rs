@@ -7,10 +7,8 @@ use crate::security::selinux_hooks::{PerfEventState, check_permission};
 use crate::security::{PerfEventType, TargetTaskType};
 use crate::task::CurrentTask;
 use linux_uapi::perf_event_attr;
-use selinux::{
-    Cap2Class, CapClass, CommonCap2Permission, CommonCapPermission, ForClass, PerfEventPermission,
-    SecurityServer,
-};
+use selinux::{PerfEventPermission, SecurityServer};
+use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 
 use super::{build_permission_check, check_self_permission, current_task_state};
@@ -37,32 +35,19 @@ pub(in crate::security) fn check_perf_event_open_access(
 
     // Check capability `capability2 { perfmon }` first, and if it fails check
     // `capability { sys_admin }` instead.
-    if check_self_permission(
-        &build_permission_check(current_task, security_server),
-        current_task,
-        subject_sid,
-        CommonCap2Permission::Perfmon.for_class(Cap2Class::Capability2),
-        audit_context,
-    )
-    .is_err()
-    {
-        let sys_admin_check_res = check_self_permission(
-            &build_permission_check(current_task, security_server),
-            current_task,
-            subject_sid,
-            CommonCapPermission::SysAdmin.for_class(CapClass::Capability),
-            audit_context,
-        );
-        if sys_admin_check_res.is_err() {
+    if crate::security::check_task_capable(current_task, starnix_uapi::auth::CAP_PERFMON).is_err() {
+        if crate::security::check_task_capable(current_task, starnix_uapi::auth::CAP_SYS_ADMIN)
+            .is_err()
+        {
             // Exceptionally, if the event is a tracepoint perf event on the current task and while
             // excluding kernel, we allow it.
             if matches!(
-                (event_type, attr.exclude_kernel(), target_task_type),
+                (event_type, attr.exclude_kernel(), &target_task_type),
                 (PerfEventType::Tracepoint, 1, TargetTaskType::CurrentTask)
             ) {
                 return Ok(());
             }
-            return sys_admin_check_res;
+            return Err(errno!(EACCES));
         }
     }
 

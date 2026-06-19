@@ -45,6 +45,21 @@ bool IsPolicyCapEnabled(const char* capability) {
   return false;
 }
 
+/// Returns a header and data struct of the type required by `capget` and `capset`
+/// populated with the Linux capability version preferred by Starnix.
+/// The caps are properly zeroed out.
+std::pair<__user_cap_header_struct, std::array<__user_cap_data_struct, _LINUX_CAPABILITY_U32S_3>>
+NewCapStructs() {
+  __user_cap_header_struct header;
+  memset(&header, 0, sizeof(header));
+  header.version = _LINUX_CAPABILITY_VERSION_3;
+
+  std::array<__user_cap_data_struct, _LINUX_CAPABILITY_U32S_3> caps;
+  memset(caps.data(), 0, sizeof(caps));
+
+  return {header, caps};
+}
+
 fit::result<int> WriteExistingFile(const std::string& path, std::string_view data) {
   auto fd = fbl::unique_fd(open(path.c_str(), O_WRONLY | O_TRUNC, 0777));
   if (!fd.is_valid()) {

@@ -12,12 +12,22 @@
 #include <string>
 
 #include <gmock/gmock.h>
+#include <linux/capability.h>
 
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 namespace test_helper {
 class ForkHelper;
 }  // namespace test_helper
+
+#include <array>
+#include <utility>
+
+/// Returns a header and data struct of the type required by `capget` and `capset`
+/// populated with the Linux capability version preferred by Starnix.
+/// The caps are properly zeroed out.
+std::pair<__user_cap_header_struct, std::array<__user_cap_data_struct, _LINUX_CAPABILITY_U32S_3>>
+NewCapStructs();
 
 /// Returns true if the kernel supports the specified policy capability.
 bool IsPolicyCapSupported(const char* capability);

@@ -15,16 +15,6 @@ extern std::string DoPrePolicyLoadWork() { return "capabilities_policy"; }
 
 namespace {
 
-/// Returns a header struct of the type required by `capget` and `capset`
-/// populated with the provided Linux capability version, or, by default,
-/// the Linux capability version preferred by Starnix.
-__user_cap_header_struct NewCapHeader(__u32 version = _LINUX_CAPABILITY_VERSION_3) {
-  __user_cap_header_struct header;
-  memset(&header, 0, sizeof(header));
-  header.version = version;
-  return header;
-}
-
 /// When the `getcap` process class permission is granted, the `capget` syscall succeeds
 /// when the header is valid and the user data argument is non-null.
 TEST(CapabilitiesTest, GetCapAllowed) {
@@ -33,9 +23,8 @@ TEST(CapabilitiesTest, GetCapAllowed) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(RunSubprocessAs(kTestSecurityContext, [&] {
-    auto header = NewCapHeader();
-    __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3];
-    EXPECT_THAT(syscall(SYS_capget, &header, &caps), SyscallSucceeds());
+    auto [header, caps] = NewCapStructs();
+    EXPECT_THAT(syscall(SYS_capget, &header, caps.data()), SyscallSucceeds());
   }));
 }
 
@@ -47,9 +36,8 @@ TEST(CapabilitiesTest, GetCapDenied) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(RunSubprocessAs(kTestSecurityContext, [&] {
-    auto header = NewCapHeader();
-    __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3];
-    EXPECT_THAT(syscall(SYS_capget, &header, &caps), SyscallFailsWithErrno(EACCES));
+    auto [header, caps] = NewCapStructs();
+    EXPECT_THAT(syscall(SYS_capget, &header, caps.data()), SyscallFailsWithErrno(EACCES));
   }));
 }
 
@@ -62,7 +50,7 @@ TEST(CapabilitiesTest, GetCapDeniedNullData) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(RunSubprocessAs(kTestSecurityContext, [&] {
-    auto header = NewCapHeader();
+    auto [header, _] = NewCapStructs();
     EXPECT_THAT(syscall(SYS_capget, &header, NULL), SyscallSucceeds());
   }));
 }
@@ -77,9 +65,9 @@ TEST(CapabilitiesTest, GetCapDeniedInvalidVersion) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(RunSubprocessAs(kTestSecurityContext, [&] {
-    auto header = NewCapHeader(0);
-    __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3];
-    EXPECT_THAT(syscall(SYS_capget, &header, &caps), SyscallFailsWithErrno(EINVAL));
+    auto [header, caps] = NewCapStructs();
+    header.version = 0;
+    EXPECT_THAT(syscall(SYS_capget, &header, caps.data()), SyscallFailsWithErrno(EINVAL));
   }));
 }
 
@@ -93,10 +81,9 @@ TEST(CapabilitiesTest, GetCapDeniedInvalidPid) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(RunSubprocessAs(kTestSecurityContext, [&] {
-    auto header = NewCapHeader();
+    auto [header, caps] = NewCapStructs();
     header.pid = -1;
-    __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3] = {};
-    EXPECT_THAT(syscall(SYS_capget, &header, &caps), SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(syscall(SYS_capget, &header, caps.data()), SyscallFailsWithErrno(EINVAL));
   }));
 }
 
@@ -107,10 +94,10 @@ TEST(CapabilitiesTest, SetCapAllowed) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(RunSubprocessAs(kTestSecurityContext, [&] {
-    auto header = NewCapHeader();
+    auto [header, caps] = NewCapStructs();
     // Attempt to drop all capabilities.
-    __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3] = {{0, 0, 0}, {0, 0, 0}};
-    EXPECT_THAT(syscall(SYS_capset, &header, &caps), SyscallSucceeds());
+    caps.fill({0, 0, 0});
+    EXPECT_THAT(syscall(SYS_capset, &header, caps.data()), SyscallSucceeds());
   }));
 }
 
@@ -122,10 +109,9 @@ TEST(CapabilitiesTest, SetCapDenied) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(RunSubprocessAs(kTestSecurityContext, [&] {
-    auto header = NewCapHeader();
+    auto [header, caps] = NewCapStructs();
     // Attempt to drop all capabilities.
-    __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3] = {{0, 0, 0}, {0, 0, 0}};
-    EXPECT_THAT(syscall(SYS_capset, &header, &caps), SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(syscall(SYS_capset, &header, caps.data()), SyscallFailsWithErrno(EACCES));
   }));
 }
 
@@ -138,7 +124,7 @@ TEST(CapabilitiesTest, SetCapDeniedNullData) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(RunSubprocessAs(kTestSecurityContext, [&] {
-    auto header = NewCapHeader();
+    auto [header, _] = NewCapStructs();
     EXPECT_THAT(syscall(SYS_capset, &header, NULL), SyscallFailsWithErrno(EFAULT));
   }));
 }
@@ -152,10 +138,10 @@ TEST(CapabilitiesTest, SetCapDeniedInvalidVersion) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(RunSubprocessAs(kTestSecurityContext, [&] {
-    auto header = NewCapHeader(0);
+    auto [header, caps] = NewCapStructs();
+    header.version = 0;
     // Attempt to drop all capabilities.
-    __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3] = {{0, 0, 0}, {0, 0, 0}};
-    EXPECT_THAT(syscall(SYS_capset, &header, &caps), SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(syscall(SYS_capset, &header, caps.data()), SyscallFailsWithErrno(EINVAL));
   }));
 }
 
@@ -171,10 +157,9 @@ TEST(CapabilitiesTest, SetCapDeniedDifferentPid) {
 
   ASSERT_TRUE(RunSubprocessAs(kTestSecurityContext, [&] {
     // Attempt to drop all capabilities for the parent process.
-    auto header = NewCapHeader();
+    auto [header, caps] = NewCapStructs();
     header.pid = test_pid;
-    __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3] = {{0, 0, 0}};
-    EXPECT_THAT(syscall(SYS_capset, &header, &caps), SyscallFailsWithErrno(EPERM));
+    EXPECT_THAT(syscall(SYS_capset, &header, caps.data()), SyscallFailsWithErrno(EPERM));
   }));
 }
 
@@ -188,19 +173,18 @@ TEST(CapabilitiesTest, SetCapDeniedExpandPermittedSet) {
   ASSERT_TRUE(RunSubprocessAs(kTestSecurityContext, [&] {
     // Prepare for the test by dropping the `CAP_SYS_ADMIN` capability from the
     // effective and permitted sets while running SELinux in permissive mode.
-    auto header = NewCapHeader();
-    __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3];
-    ASSERT_THAT(syscall(SYS_capget, &header, &caps), SyscallSucceeds());
+    auto [header, caps] = NewCapStructs();
+    ASSERT_THAT(syscall(SYS_capget, &header, caps.data()), SyscallSucceeds());
     caps[CAP_TO_INDEX(CAP_SYS_ADMIN)].effective &= ~CAP_TO_MASK(CAP_SYS_ADMIN);
     caps[CAP_TO_INDEX(CAP_SYS_ADMIN)].permitted &= ~CAP_TO_MASK(CAP_SYS_ADMIN);
-    ASSERT_THAT(syscall(SYS_capset, &header, &caps), SyscallSucceeds());
+    ASSERT_THAT(syscall(SYS_capset, &header, caps.data()), SyscallSucceeds());
 
     // Start enforcing SELinux permission checks.
     auto enforce = ScopedEnforcement::SetEnforcing();
 
     // Attempt to add the `CAP_SYS_ADMIN` capability back to the permitted set.
     caps[CAP_TO_INDEX(CAP_SYS_ADMIN)].effective |= CAP_TO_MASK(CAP_SYS_ADMIN);
-    EXPECT_THAT(syscall(SYS_capset, &header, &caps), SyscallFailsWithErrno(EPERM));
+    EXPECT_THAT(syscall(SYS_capset, &header, caps.data()), SyscallFailsWithErrno(EPERM));
   }));
 }
 

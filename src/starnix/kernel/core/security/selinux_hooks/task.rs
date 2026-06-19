@@ -755,6 +755,9 @@ fn permission_from_capability(capability: starnix_uapi::auth::Capabilities) -> K
         starnix_uapi::auth::CAP_WAKE_ALARM => {
             CommonCap2Permission::WakeAlarm.for_class(Cap2Class::Capability2)
         }
+        starnix_uapi::auth::CAP_PERFMON => {
+            CommonCap2Permission::Perfmon.for_class(Cap2Class::Capability2)
+        }
 
         _ => {
             panic!("Unrecognized capabilities \"{:?}\" passed to check_capable!", capability)

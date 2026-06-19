@@ -14,6 +14,7 @@
 #include <string>
 
 #include <gtest/gtest.h>
+#include <linux/capability.h>    /* Definition of _LINUX_CAPABILITY_VERSION_3 */
 #include <linux/hw_breakpoint.h> /* Definition of HW_* constants */
 #include <linux/perf_event.h>    /* Definition of PERF_* constants */
 
@@ -328,10 +329,20 @@ TEST(PerfEventTest, OpenEventsNoTracepointNoPerfmon) {
 TEST(PerfEventTest, OpenEventsNoPerfmon) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
-  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_no_perfmon_t:s0", [&] {
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_no_perfmon_t:s0", [&] {
     auto pe = GetPerfEventAttr(PERF_TYPE_TRACEPOINT, valid_tracepoint_id, /*exclude_kernel=*/true);
     fbl::unique_fd fd(perf_event_open(pe.get(), -1 /* All tasks */, 0 /* this CPU */));
     EXPECT_THAT(fd.get(), SyscallFailsWithErrno(EACCES));
+  }));
+}
+
+TEST(PerfEventTest, OpenEventsNoPerfmonWithSysAdmin) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_no_perfmon_with_sys_admin_t:s0", [&] {
+    auto pe = GetPerfEventAttr(PERF_TYPE_TRACEPOINT, valid_tracepoint_id, /*exclude_kernel=*/true);
+    fbl::unique_fd fd(perf_event_open(pe.get(), -1 /* All tasks */, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
   }));
 }
 
@@ -615,6 +626,48 @@ TEST(PerfEventTest, InvalidTracepointIdAndNoPermission) {
     auto pe = GetPerfEventAttr(PERF_TYPE_TRACEPOINT, 0x7FFFFFFF, /*exclude_kernel=*/false);
     fbl::unique_fd fd(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */));
     EXPECT_THAT(fd.get(), SyscallFailsWithErrno(EINVAL));
+  }));
+}
+
+TEST(PerfEventTest, OpenEventsWithSelinuxButNoCapabilityFails) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_all_permissions_t:s0", [&] {
+    auto [header, caps] = NewCapStructs();
+    // Attempt to drop all capabilities.
+    EXPECT_THAT(syscall(SYS_capset, &header, caps.data()), SyscallSucceeds());
+
+    auto pe =
+        GetPerfEventAttr(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_CLOCK, /*exclude_kernel=*/false);
+    fbl::unique_fd fd(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallFailsWithErrno(EACCES));
+  }));
+}
+
+TEST(PerfEventTest, PermissiveOpenEventsNoPermissions) {
+  /// Checks the order of checking the different permission types.
+  auto enforce = ScopedEnforcement::SetPermissive();
+
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_no_permissions_t:s0", [&] {
+    auto pe =
+        GetPerfEventAttr(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_CLOCK, /*exclude_kernel=*/false);
+    fbl::unique_fd fd(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
+  }));
+}
+
+TEST(PerfEventTest, PermissiveOpenEventsNoCapabilities) {
+  auto enforce = ScopedEnforcement::SetPermissive();
+
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_no_permissions_t:s0", [&] {
+    auto [header, caps] = NewCapStructs();
+    // Attempt to drop all capabilities.
+    EXPECT_THAT(syscall(SYS_capset, &header, caps.data()), SyscallSucceeds());
+
+    auto pe =
+        GetPerfEventAttr(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_CLOCK, /*exclude_kernel=*/false);
+    fbl::unique_fd fd(perf_event_open(pe.get(), kCurrentTaskPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallFailsWithErrno(EACCES));
   }));
 }
 
