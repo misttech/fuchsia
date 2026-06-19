@@ -12,6 +12,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"io"
 	"log"
@@ -85,6 +86,63 @@ func updateBundle() {
 	// "convert_mozilla_certdata.go" assumes it's in PWD.
 	out := run("third_party/cert", "go", "run", "../convert_mozilla_certdata/convert_mozilla_certdata.go")
 	if err := os.WriteFile("third_party/cert/cert.pem", out, 0644); err != nil {
+		log.Fatal(err)
+	}
+
+	infof("  Updating README.fuchsia...")
+	revision := getLatestRevision()
+	updateReadme(revision)
+}
+
+const jsonRevURL = "https://hg.mozilla.org/mozilla-central/json-rev/tip"
+
+func getLatestRevision() string {
+	resp, err := http.Get(jsonRevURL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Node string `json:"node"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Fatal(err)
+	}
+	return result.Node
+}
+
+const readmePath = "third_party/cert/README.fuchsia"
+
+func updateReadme(revision string) {
+	content, err := os.ReadFile(readmePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	lines := strings.Split(string(content), "\n")
+	var newLines []string
+	hasRevision := false
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Revision:") {
+			hasRevision = true
+			break
+		}
+	}
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Revision:") {
+			newLines = append(newLines, "Revision: "+revision)
+		} else if strings.HasPrefix(line, "URL:") && !hasRevision {
+			newLines = append(newLines, line)
+			newLines = append(newLines, "Revision: "+revision)
+		} else {
+			newLines = append(newLines, line)
+		}
+	}
+
+	err = os.WriteFile(readmePath, []byte(strings.Join(newLines, "\n")), 0644)
+	if err != nil {
 		log.Fatal(err)
 	}
 }

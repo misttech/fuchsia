@@ -1,5 +1,6 @@
 Name: certdata.txt
 URL: https://hg.mozilla.org/mozilla-central/raw-file/tip/security/nss/lib/ckfw/builtins/certdata.txt
+Revision: 0e796bae8077d9fcda90269997e207d8ccb9a2e6
 Security Critical: yes
 
 License File: LICENSE.MPLv2
