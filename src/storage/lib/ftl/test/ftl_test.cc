@@ -640,4 +640,21 @@ TEST(FtlTest, FindWornBlockTest) {
   ASSERT_EQ(1u, FtlnCheckBlockBitmap(ftl, ftl->written, page_two_physical / kPagesPerBlock));
 }
 
+TEST(FtlTest, ReadBoundsCheck) {
+  FtlShell ftl;
+  ASSERT_TRUE(ftl.Init(kDefaultOptions));
+  ftl::Volume* volume = ftl.volume();
+  uint32_t max_page = ftl.num_pages();
+  uint8_t buf[kPageSize];
+  ASSERT_EQ(ZX_OK, volume->Read(max_page, 0, buf));
+}
+
+TEST(FtlTest, TrimBoundsCheck) {
+  FtlShell ftl;
+  ASSERT_TRUE(ftl.Init(kDefaultOptions));
+  ftl::Volume* volume = ftl.volume();
+  uint32_t max_page = ftl.num_pages();
+  ASSERT_NE(ZX_OK, volume->Trim(max_page, 0));
+}
+
 }  // namespace

@@ -50,7 +50,7 @@ static int proc_elist(FTLN ftl) {
     ++lp;
 
     // List validly ends with -1.
-    if (b > ftl->num_blks) {
+    if (b >= ftl->num_blks) {
       PfAssert(b == (ui32)-1);
       break;
     }

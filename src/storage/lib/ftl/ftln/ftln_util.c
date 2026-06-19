@@ -317,7 +317,7 @@ int FtlnReport(void* vol, ui32 msg, ...) {
       va_end(ap);
 
       // Check arguments for validity.
-      if (vpn + count > ftl->num_vpages)
+      if (vpn >= ftl->num_vpages || vpn + count > ftl->num_vpages)
         return -1;
 
       // Mark page(s) unused in FTL.
