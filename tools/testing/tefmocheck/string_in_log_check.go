@@ -1154,5 +1154,11 @@ func infraToolLogChecks() []FailureModeCheck {
 			Type:               swarmingOutputType,
 			SkipAllPassedTests: true,
 		},
+		// For https://fxbug.dev/505825178
+		&stringInLogCheck{
+			String:                "CRASH: process fxfs.cm",
+			Type:                  serialLogType,
+			emitSyntheticTestCase: true,
+		},
 	}
 }
