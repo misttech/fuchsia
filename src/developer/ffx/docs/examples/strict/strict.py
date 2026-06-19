@@ -28,7 +28,9 @@ import ffx
 # Run with:
 # FUCHSIA_NODENAME=<target-ip:port> python3 strict.py
 
-ssh_key = f"{os.environ['HOME']}/.ssh/fuchsia_ed25519"
+ssh_key = os.environ.get(
+    "FUCHSIA_SSH_KEY", os.path.expanduser("~/.ssh/fuchsia_ed25519")
+)
 runner = ffx.FfxRunner("my.log", ssh_key)
 # runner.discover_target()
 runner.set_target(os.environ["FUCHSIA_NODENAME"])
