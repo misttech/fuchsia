@@ -6,7 +6,7 @@ use crate::nl80211::{Nl80211RateInfoAttr, Nl80211StaInfoAttr};
 use crate::security::Credential;
 use crate::security::wep::WepKeys;
 use anyhow::{Context, Error, bail, format_err};
-use fidl::endpoints::ProtocolMarker;
+use fidl::endpoints::{ProtocolMarker, Proxy};
 use fidl_fuchsia_power_system as fsystem;
 use fidl_fuchsia_wlan_common as fidl_common;
 use fidl_fuchsia_wlan_device_service as fidl_device_service;
@@ -566,12 +566,139 @@ fn maybe_run_callback<T: fidl::endpoints::Proxy>(
     }
 }
 
+trait MulticastProxySet {
+    const NAME: &'static str;
+
+    fn proxies(&mut self) -> &mut Vec<fidl_wlanix::Nl80211MulticastProxy>;
+
+    fn add_proxy(&mut self, proxy: fidl_wlanix::Nl80211MulticastProxy) {
+        self.proxies().retain(|p| !p.is_closed());
+        self.proxies().push(proxy);
+    }
+
+    fn send(&mut self, mut msg_fn: impl FnMut() -> fidl_wlanix::Nl80211MulticastMessageRequest) {
+        self.proxies().retain(|proxy| {
+            if proxy.is_closed() {
+                false
+            } else {
+                match proxy.message(msg_fn()) {
+                    Ok(()) => true,
+                    Err(fidl::Error::ClientChannelClosed { .. }) => false,
+                    Err(e) => {
+                        warn!("Failed sending {} multicast message: {}", Self::NAME, e);
+                        true
+                    }
+                }
+            }
+        });
+    }
+}
+
+#[derive(Default)]
+struct ScanMulticastProxySet {
+    proxies: Vec<fidl_wlanix::Nl80211MulticastProxy>,
+}
+
+impl MulticastProxySet for ScanMulticastProxySet {
+    const NAME: &'static str = "scan";
+
+    fn proxies(&mut self) -> &mut Vec<fidl_wlanix::Nl80211MulticastProxy> {
+        &mut self.proxies
+    }
+}
+
+impl ScanMulticastProxySet {
+    fn send_new_scan_results(&mut self, iface_id: u32) {
+        self.send(|| fidl_wlanix::Nl80211MulticastMessageRequest {
+            message: Some(build_nl80211_message(
+                Nl80211Cmd::NewScanResults,
+                vec![Nl80211Attr::IfaceIndex(iface_id)],
+            )),
+            ..Default::default()
+        });
+    }
+
+    fn send_scan_aborted(&mut self, iface_id: u32) {
+        self.send(|| fidl_wlanix::Nl80211MulticastMessageRequest {
+            message: Some(build_nl80211_message(
+                Nl80211Cmd::ScanAborted,
+                vec![Nl80211Attr::IfaceIndex(iface_id)],
+            )),
+            ..Default::default()
+        });
+    }
+
+    fn send_sched_scan_results(&mut self, iface_id: u32) {
+        self.send(|| fidl_wlanix::Nl80211MulticastMessageRequest {
+            message: Some(build_nl80211_message(
+                Nl80211Cmd::SchedScanResults,
+                vec![Nl80211Attr::IfaceIndex(iface_id)],
+            )),
+            ..Default::default()
+        });
+    }
+
+    fn send_sched_scan_stopped(&mut self, iface_id: u32) {
+        self.send(|| fidl_wlanix::Nl80211MulticastMessageRequest {
+            message: Some(build_nl80211_message(
+                Nl80211Cmd::SchedScanStopped,
+                vec![Nl80211Attr::IfaceIndex(iface_id)],
+            )),
+            ..Default::default()
+        });
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.proxies.len()
+    }
+}
+
+#[derive(Default)]
+struct MlmeMulticastProxySet {
+    proxies: Vec<fidl_wlanix::Nl80211MulticastProxy>,
+}
+
+impl MulticastProxySet for MlmeMulticastProxySet {
+    const NAME: &'static str = "mlme";
+
+    fn proxies(&mut self) -> &mut Vec<fidl_wlanix::Nl80211MulticastProxy> {
+        &mut self.proxies
+    }
+}
+
+impl MlmeMulticastProxySet {
+    fn send_disconnect(&mut self, iface_id: u32, mac: [u8; 6]) {
+        self.send(|| fidl_wlanix::Nl80211MulticastMessageRequest {
+            message: Some(build_nl80211_message(
+                Nl80211Cmd::Disconnect,
+                vec![Nl80211Attr::IfaceIndex(iface_id), Nl80211Attr::Mac(mac)],
+            )),
+            ..Default::default()
+        });
+    }
+
+    fn send_connect(&mut self, iface_id: u32, mac: [u8; 6], status_code: u16) {
+        self.send(|| fidl_wlanix::Nl80211MulticastMessageRequest {
+            message: Some(build_nl80211_message(
+                Nl80211Cmd::Connect,
+                vec![
+                    Nl80211Attr::IfaceIndex(iface_id),
+                    Nl80211Attr::Mac(mac),
+                    Nl80211Attr::StatusCode(status_code),
+                ],
+            )),
+            ..Default::default()
+        });
+    }
+}
+
 #[derive(Default)]
 struct WifiState {
     started: bool,
     callback: Option<fidl_wlanix::WifiEventCallbackProxy>,
-    scan_multicast_proxy: Option<fidl_wlanix::Nl80211MulticastProxy>,
-    mlme_multicast_proxy: Option<fidl_wlanix::Nl80211MulticastProxy>,
+    scan_multicast_proxies: ScanMulticastProxySet,
+    mlme_multicast_proxies: MlmeMulticastProxySet,
 }
 
 async fn handle_wifi_request<I: IfaceManager, P: PowerManager>(
@@ -847,21 +974,9 @@ fn send_disconnect_event<C: ClientIface>(
         &mut sta_iface_state.callback,
     );
     // Also communicate the state change via nl80211.
-    if let Some(proxy) = &wifi_state.mlme_multicast_proxy {
-        let res = proxy.message(fidl_wlanix::Nl80211MulticastMessageRequest {
-            message: Some(build_nl80211_message(
-                Nl80211Cmd::Disconnect,
-                vec![
-                    Nl80211Attr::IfaceIndex(iface_id.into()),
-                    Nl80211Attr::Mac(ctx.original_bss_desc.bssid.to_array()),
-                ],
-            )),
-            ..Default::default()
-        });
-        if let Err(e) = res {
-            error!("Failed to notify nl80211 mlme group of disconnect: {}", e);
-        }
-    }
+    wifi_state
+        .mlme_multicast_proxies
+        .send_disconnect(iface_id.into(), ctx.original_bss_desc.bssid.to_array());
 
     // Let iface know about disconnect so it clears any intermediate state
     iface.on_disconnect(source);
@@ -1274,21 +1389,13 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager, P: PowerManager>
                 }
             };
             responder.send(result).context("send Select response")?;
-            if let Some(proxy) = state.lock().mlme_multicast_proxy.as_ref() {
+            {
                 let bssid = connected_bssid.map(|bssid| bssid.to_array()).unwrap_or_default();
-                proxy
-                    .message(fidl_wlanix::Nl80211MulticastMessageRequest {
-                        message: Some(build_nl80211_message(
-                            Nl80211Cmd::Connect,
-                            vec![
-                                Nl80211Attr::IfaceIndex(iface_id.into()),
-                                Nl80211Attr::Mac(bssid),
-                                Nl80211Attr::StatusCode(status_code.into_primitive()),
-                            ],
-                        )),
-                        ..Default::default()
-                    })
-                    .context("Failed to send nl80211 Connect")?;
+                state.lock().mlme_multicast_proxies.send_connect(
+                    iface_id.into(),
+                    bssid,
+                    status_code.into_primitive(),
+                );
             }
             // Drop the wake lease now that the connection is established, before the long-running
             // handle_client_connect_transactions task takes over.
@@ -1982,51 +2089,21 @@ async fn handle_nl80211_message<I: IfaceManager>(
                                     num_results: client_iface.get_last_scan_results().len(),
                                 },
                             });
-                            if let Some(proxy) = state.lock().scan_multicast_proxy.as_ref() {
-                                proxy
-                                    .message(fidl_wlanix::Nl80211MulticastMessageRequest {
-                                        message: Some(build_nl80211_message(
-                                            Nl80211Cmd::NewScanResults,
-                                            vec![Nl80211Attr::IfaceIndex(iface_id)],
-                                        )),
-                                        ..Default::default()
-                                    })
-                                    .context("Failed to send NewScanResults")?;
-                            }
+                            state.lock().scan_multicast_proxies.send_new_scan_results(iface_id);
                         }
                         Ok(ScanEnd::Cancelled) => {
                             info!("Passive scan terminated");
                             telemetry_sender.send(TelemetryEvent::ScanResult {
                                 result: wlan_telemetry::ScanResult::Cancelled,
                             });
-                            if let Some(proxy) = state.lock().scan_multicast_proxy.as_ref() {
-                                proxy
-                                    .message(fidl_wlanix::Nl80211MulticastMessageRequest {
-                                        message: Some(build_nl80211_message(
-                                            Nl80211Cmd::ScanAborted,
-                                            vec![Nl80211Attr::IfaceIndex(iface_id)],
-                                        )),
-                                        ..Default::default()
-                                    })
-                                    .context("Failed to send ScanAborted after scan cancelled")?;
-                            }
+                            state.lock().scan_multicast_proxies.send_scan_aborted(iface_id);
                         }
                         Err(e) => {
                             error!("Failed to run passive scan: {:?}", e);
                             telemetry_sender.send(TelemetryEvent::ScanResult {
                                 result: wlan_telemetry::ScanResult::Failed,
                             });
-                            if let Some(proxy) = state.lock().scan_multicast_proxy.as_ref() {
-                                proxy
-                                    .message(fidl_wlanix::Nl80211MulticastMessageRequest {
-                                        message: Some(build_nl80211_message(
-                                            Nl80211Cmd::ScanAborted,
-                                            vec![Nl80211Attr::IfaceIndex(iface_id)],
-                                        )),
-                                        ..Default::default()
-                                    })
-                                    .context("Failed to send ScanAborted after scan error")?;
-                            }
+                            state.lock().scan_multicast_proxies.send_scan_aborted(iface_id);
                         }
                     }
                 }
@@ -2510,10 +2587,11 @@ async fn handle_nl80211_request<I: IfaceManager>(
         }
         fidl_wlanix::Nl80211Request::GetMulticast { payload, .. } => {
             if let Some(multicast) = payload.multicast {
+                let mut state = state.lock();
                 if payload.group == Some("scan".to_string()) {
-                    state.lock().scan_multicast_proxy.replace(multicast.into_proxy());
+                    state.scan_multicast_proxies.add_proxy(multicast.into_proxy());
                 } else if payload.group == Some("mlme".to_string()) {
-                    state.lock().mlme_multicast_proxy.replace(multicast.into_proxy());
+                    state.mlme_multicast_proxies.add_proxy(multicast.into_proxy());
                 } else {
                     warn!("Dropping channel for unsupported multicast group {:?}", payload.group);
                 }
@@ -3004,28 +3082,10 @@ async fn handle_scheduled_scan_events(
     while let Some(event) = receiver.next().await {
         match event {
             ScheduledScanEvent::ResultsAvailable { iface_id } => {
-                let proxy = state.lock().scan_multicast_proxy.clone();
-                if let Some(proxy) = &proxy {
-                    let _ = proxy.message(fidl_wlanix::Nl80211MulticastMessageRequest {
-                        message: Some(build_nl80211_message(
-                            Nl80211Cmd::SchedScanResults,
-                            vec![Nl80211Attr::IfaceIndex(iface_id)],
-                        )),
-                        ..Default::default()
-                    });
-                }
+                state.lock().scan_multicast_proxies.send_sched_scan_results(iface_id);
             }
             ScheduledScanEvent::Stopped { iface_id } => {
-                let proxy = state.lock().scan_multicast_proxy.clone();
-                if let Some(proxy) = &proxy {
-                    let _ = proxy.message(fidl_wlanix::Nl80211MulticastMessageRequest {
-                        message: Some(build_nl80211_message(
-                            Nl80211Cmd::SchedScanStopped,
-                            vec![Nl80211Attr::IfaceIndex(iface_id)],
-                        )),
-                        ..Default::default()
-                    });
-                }
+                state.lock().scan_multicast_proxies.send_sched_scan_stopped(iface_id);
             }
         }
     }
@@ -5885,7 +5945,7 @@ mod tests {
 
         // Setup multicast channel
         let (proxy, mut stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211MulticastMarker>();
-        test_values.state.lock().scan_multicast_proxy = Some(proxy);
+        test_values.state.lock().scan_multicast_proxies.add_proxy(proxy);
 
         // Start it
         let start_sched_scan_message = build_nl80211_message(
@@ -5936,7 +5996,7 @@ mod tests {
 
         // Setup multicast channel
         let (proxy, mut stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211MulticastMarker>();
-        test_values.state.lock().scan_multicast_proxy = Some(proxy);
+        test_values.state.lock().scan_multicast_proxies.add_proxy(proxy);
 
         // Start it
         let start_sched_scan_message = build_nl80211_message(
@@ -6115,7 +6175,7 @@ mod tests {
         // Set the scan multicast channel for sched scan results to be sent over
         let (mcast_proxy, mut mcast_stream) =
             create_proxy_and_stream::<fidl_wlanix::Nl80211MulticastMarker>();
-        state.lock().scan_multicast_proxy = Some(mcast_proxy);
+        state.lock().scan_multicast_proxies.add_proxy(mcast_proxy);
 
         let log_throttler =
             Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
@@ -7431,6 +7491,72 @@ mod tests {
         assert_matches!(
             test_helper.telemetry_receiver.try_next(),
             Ok(Some(TelemetryEvent::ChipPowerDownFailure))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_multiple_multicast_clients() {
+        let mut exec = fasync::TestExecutor::new();
+        let mut test_values = setup_nl80211_test(&mut exec);
+
+        let (client_end1, mut stream1) =
+            fidl::endpoints::create_request_stream::<fidl_wlanix::Nl80211MulticastMarker>();
+        test_values
+            .nl80211_proxy
+            .get_multicast(fidl_wlanix::Nl80211GetMulticastRequest {
+                group: Some("scan".to_string()),
+                multicast: Some(client_end1),
+                ..Default::default()
+            })
+            .expect("failed to request multicast");
+
+        let (client_end2, mut stream2) =
+            fidl::endpoints::create_request_stream::<fidl_wlanix::Nl80211MulticastMarker>();
+        test_values
+            .nl80211_proxy
+            .get_multicast(fidl_wlanix::Nl80211GetMulticastRequest {
+                group: Some("scan".to_string()),
+                multicast: Some(client_end2),
+                ..Default::default()
+            })
+            .expect("failed to request multicast");
+
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
+        assert_eq!(test_values.state.lock().scan_multicast_proxies.len(), 2);
+
+        // Send a multicast message
+        test_values.state.lock().scan_multicast_proxies.send_new_scan_results(0);
+
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
+
+        // Verify both clients received it
+        let mut stream1_fut = stream1.next();
+        assert_matches!(
+            exec.run_until_stalled(&mut stream1_fut),
+            Poll::Ready(Some(Ok(fidl_wlanix::Nl80211MulticastRequest::Message { .. })))
+        );
+
+        let mut stream2_fut = stream2.next();
+        assert_matches!(
+            exec.run_until_stalled(&mut stream2_fut),
+            Poll::Ready(Some(Ok(fidl_wlanix::Nl80211MulticastRequest::Message { .. })))
+        );
+
+        // Now drop Client 1
+        std::mem::drop(stream1);
+
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
+
+        // Send another message
+        test_values.state.lock().scan_multicast_proxies.send_new_scan_results(0);
+        // Only Client 2 should be in the proxies vector now
+        assert_eq!(test_values.state.lock().scan_multicast_proxies.len(), 1);
+
+        // Verify Client 2 received the second message
+        let mut stream2_fut = stream2.next();
+        assert_matches!(
+            exec.run_until_stalled(&mut stream2_fut),
+            Poll::Ready(Some(Ok(fidl_wlanix::Nl80211MulticastRequest::Message { .. })))
         );
     }
 }
