@@ -7,7 +7,9 @@ use fidl_fuchsia_feedback as ffeedback;
 use fidl_fuchsia_mem as fmem;
 use fuchsia_async as fasync;
 use fuchsia_async::TimeoutExt;
+use fuchsia_inspect::Inspector;
 use fuchsia_runtime as fruntime;
+use futures::future::BoxFuture;
 use starnix_c_file_buffer::CFileBuffer;
 use starnix_core::task::ThreadLockupInfo;
 use starnix_logging::{log_debug, log_error, log_warn};
@@ -315,6 +317,29 @@ pub fn start_thread_lockup_detector() -> fasync::Task<()> {
                 log_warn!("Error in thread lockup detector: {:?}", e);
             }
         }
+    })
+}
+
+/// Creates a lazy inspect node that exports information about currently locked threads.
+///
+/// When the node is read, it queries the `ThreadLockupDetector` for all threads that have been
+/// running longer than the `LOCKUP_DETECTOR_INTERVAL_MINUTES` threshold and records their KOIDs
+/// and names as properties of the node.
+pub fn inspect_lazy_node_callback() -> BoxFuture<'static, Result<Inspector, anyhow::Error>> {
+    Box::pin(async {
+        let inspector = Inspector::default();
+        let long_running = starnix_core::task::ThreadLockupDetector::get_long_running_threads(
+            zx::MonotonicDuration::from_minutes(LOCKUP_DETECTOR_INTERVAL_MINUTES),
+        );
+        for info in long_running {
+            let name = info
+                .thread
+                .get_name()
+                .map(|n| n.to_string())
+                .unwrap_or_else(|_| "unknown".to_string());
+            inspector.root().record_string(info.koid.raw_koid().to_string(), name);
+        }
+        Ok(inspector)
     })
 }
 
