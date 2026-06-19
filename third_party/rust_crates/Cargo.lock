@@ -1824,6 +1824,7 @@ dependencies = [
  "rustls-webpki",
  "rustyline",
  "rutabaga_gfx",
+ "sapphire-gatt",
  "sapphire-peer-cache",
  "sapphire-uuid",
  "schemars",
@@ -4574,6 +4575,15 @@ name = "same-file"
 version = "1.0.6"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "sapphire-gatt"
+version = "0.1.0"
+dependencies = [
+ "strum",
+ "strum_macros",
+ "zerocopy 0.8.48",
 ]
 
 [[package]]

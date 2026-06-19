@@ -20,11 +20,34 @@ if (is_host) {
     features = []
     deps = []
   }
+
+  rustc_test("sapphire_gatt_test") {
+    edition = "2024"
+    source_root = "sapphire-gatt/src/lib.rs"
+    sources = [
+      "sapphire-gatt/src/att.rs",
+      "sapphire-gatt/src/att/client.rs",
+      "sapphire-gatt/src/att/l2cap.rs",
+      "sapphire-gatt/src/att/l2cap/cid.rs",
+      "sapphire-gatt/src/att/pdu.rs",
+      "sapphire-gatt/src/att/server.rs",
+      "sapphire-gatt/src/gatt.rs",
+      "sapphire-gatt/src/gatt/client.rs",
+      "sapphire-gatt/src/gatt/server.rs",
+      "sapphire-gatt/src/lib.rs",
+    ]
+    features = []
+    deps = [
+      "//third_party/rust_crates:strum_macros",
+      "//third_party/rust_crates:zerocopy",
+    ]
+  }
 }
 
 group("tests") {
   testonly = true
   deps = [
+    ":sapphire_gatt_test($host_toolchain)",
     ":sapphire_peer_cache_test($host_toolchain)",
     ":sapphire_uuid_test($host_toolchain)",
   ]

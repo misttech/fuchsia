@@ -2521,6 +2521,18 @@ alias(
 )
 
 alias(
+    name = "sapphire-gatt-0.1.0",
+    actual = "//third_party/rust_crates/intree/sunstone/sapphire-gatt:sapphire_gatt",
+    tags = ["manual"],
+)
+
+alias(
+    name = "sapphire-gatt",
+    actual = "//third_party/rust_crates/intree/sunstone/sapphire-gatt:sapphire_gatt",
+    tags = ["manual"],
+)
+
+alias(
     name = "sapphire-peer-cache-0.1.0",
     actual = "//third_party/rust_crates/intree/sunstone/sapphire-peer-cache:sapphire_peer_cache",
     tags = ["manual"],
