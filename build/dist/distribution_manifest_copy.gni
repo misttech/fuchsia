@@ -54,7 +54,10 @@ template("distribution_manifest_copy") {
     }
     script = "//build/dist/distribution-manifest-copy.py"
     depfile = "$target_gen_dir/$target_name.d"
-    args = [ "--depfile=" + rebase_path(depfile, root_build_dir) ] +
-           rebase_path(sources + outputs, root_build_dir)
+    args = [
+      "--output=" + rebase_path(outputs[0], root_build_dir),
+      "--manifest=" + rebase_path(sources[0], root_build_dir),
+      "--depfile=" + rebase_path(depfile, root_build_dir),
+    ]
   }
 }

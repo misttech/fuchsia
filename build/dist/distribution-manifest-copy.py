@@ -5,52 +5,53 @@
 
 import argparse
 import json
-import os
 import shutil
-import sys
+from pathlib import Path
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "manifest",
-        type=argparse.FileType("r"),
+        "--manifest",
+        type=Path,
         help="JSON manifest file",
-        nargs=1,
+        required=True,
     )
     parser.add_argument(
-        "output",
+        "--output",
         help="Output directory",
-        nargs=1,
+        type=Path,
+        required=True,
     )
     parser.add_argument(
         "--depfile",
-        type=argparse.FileType("w"),
+        type=Path,
         help="Depfile",
+        required=True,
     )
     args = parser.parse_args()
-    [manifest_file] = args.manifest
-    [output_dir_name] = args.output
 
-    files = {
-        os.path.join(output_dir_name, entry["destination"]): entry["source"]
-        for entry in json.load(manifest_file)
-    }
-    manifest_file.close()
+    with args.manifest.open() as f:
+        files = {
+            args.output.joinpath(entry["destination"]): Path(entry["source"])
+            for entry in json.load(f)
+        }
 
-    if os.path.exists(output_dir_name):
-        shutil.rmtree(output_dir_name)
+    # Always completely remove any old directory.
+    if args.output.exists():
+        shutil.rmtree(args.output)
+
+    # Create a fresh new directory, even if it will be empty.
+    args.output.mkdir(parents=True, exist_ok=False)
 
     for dst, src in files.items():
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
-        os.link(src, dst)
+        # Create any intermediate subdirectories needed.
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.hardlink_to(src)
 
-    inputs = " ".join(list(files.values()) + [manifest_file.name])
-    args.depfile.write(f"{output_dir_name}: {inputs}\n")
-    args.depfile.close()
-
-    return 0
+    inputs = " ".join([str(f) for f in files.values()] + [str(args.manifest)])
+    args.depfile.write_text(f"{args.output}: {inputs}\n")
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
