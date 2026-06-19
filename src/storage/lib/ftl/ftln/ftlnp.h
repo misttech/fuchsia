@@ -189,7 +189,7 @@ struct ftln {
   ui32 mappings_per_mpg;  // Number of phys page numbers per map page.
   ui32 num_vpages;        // Number of volume pages.
   ui32 num_free_blks;     // Number of free blocks.
-  ui32 num_map_pgs;       // Number of pages holding map data.
+  ui32 num_map_pgs;       // Number of pages holding map data or the metapage.
   ui32 high_wc;           // Highest block wear count.
   ui32 high_bc;           // Highest map block write count.
   ui32 max_rc;            // Per block read wear limit.

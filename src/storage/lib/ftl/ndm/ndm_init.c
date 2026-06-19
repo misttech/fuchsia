@@ -805,7 +805,9 @@ static int read_ctrl_info(NDM ndm) {
       // Read the size of the first partition, and assume that's the size of
       // every partition. We can adjust this when we start using more than one
       // partition.
-      PfAssert(ndm->num_partitions == 1);
+      if (ndm->num_partitions != 1) {
+        return -1;
+      }
       uint32_t header_and_meta =
           ndmGetHeaderControlDataStart(ndm) + sizeof(NDMPartition) + sizeof(ui32);
       if (curr_loc + sizeof(NDMPartition) + sizeof(ui32) > ndm->page_size) {
@@ -860,7 +862,9 @@ static int read_ctrl_info(NDM ndm) {
 
       if (ndm->version_2) {
         // Attach the user data at the end of this partition data.
-        PfAssert(RD32_LE(&ndm->main_buf[curr_loc]) <= user_data_size);
+        if (RD32_LE(&ndm->main_buf[curr_loc]) > user_data_size) {
+          return -1;
+        }
         curr_loc += sizeof(ui32);
         NDMPartitionInfo* info = (NDMPartitionInfo*)(ndm->partitions);
         info->user_data.data_size = (uint32_t)user_data_size;

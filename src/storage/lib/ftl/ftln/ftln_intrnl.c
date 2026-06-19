@@ -168,7 +168,9 @@ static ui32 next_free_vpg(FTLN ftl) {
         return (ui32)-1;
 
     // Decrement free block count.
-    PfAssert(ftl->num_free_blks);
+    if (ftl->num_free_blks == 0) {
+      return (ui32)-1;
+    }
     --ftl->num_free_blks;
 #ifdef FTL_RESUME_STRESS
     FtlNumFree(ftl->num_free_blks);
@@ -214,7 +216,9 @@ static ui32 next_free_mpg(FTLN ftl) {
         return (ui32)-1;
 
     // Decrement free block count.
-    PfAssert(ftl->num_free_blks);
+    if (ftl->num_free_blks == 0) {
+      return (ui32)-1;
+    }
     --ftl->num_free_blks;
 #ifdef FTL_RESUME_STRESS
     FtlNumFree(ftl->num_free_blks);
@@ -624,7 +628,7 @@ static int recycle_vblk(FTLN ftl, ui32 recycle_b) {
 
     // Get virtual page number from spare. Skip page if unmapped.
     vpn = GET_SA_VPN(ftl->spare_buf);
-    if (vpn > ftl->num_vpages)
+    if (vpn >= ftl->num_vpages)
       continue;
 
     // Retrieve physical page number for VPN. Return -1 if error.
@@ -1209,7 +1213,9 @@ int FtlnMapGetPpn(CFTLN ftl, ui32 vpn, ui32* pnp) {
   int unmapped;
 
   // Determine map page to use.
-  PfAssert(vpn <= ftl->num_vpages);
+  if (vpn >= ftl->num_vpages) {
+    return -1;
+  }
   mpn = vpn / ftl->mappings_per_mpg;
 
   // Retrieve map page via cache. Return -1 if I/O error.
@@ -1262,7 +1268,9 @@ int FtlnMapSetPpn(CFTLN ftl, ui32 vpn, ui32 ppn) {
   ui8* maddr;
 
   // Determine map page to use.
-  PfAssert(vpn <= ftl->num_vpages);
+  if (vpn >= ftl->num_vpages) {
+    return -1;
+  }
   mpn = vpn / ftl->mappings_per_mpg;
 
   // Retrieve map page contents via cache, marking it dirty if clean.

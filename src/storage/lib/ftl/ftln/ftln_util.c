@@ -172,7 +172,9 @@ int FtlnReport(void* vol, ui32 msg, ...) {
       // Save all dirty map pages to flash. Return -1 if error.
       if (ftlmcFlushMap(ftl->map_cache))
         return -1;
-      PfAssert(ftl->num_free_blks >= FTLN_MIN_FREE_BLKS);
+      if (ftl->num_free_blks < FTLN_MIN_FREE_BLKS) {
+        return -1;
+      }
 
 #if INC_FTL_NDM_MLC
       // For MLC devices, advance free_vpn pointer so next volume page
@@ -243,7 +245,9 @@ int FtlnReport(void* vol, ui32 msg, ...) {
                 lp = (ui32*)(ftl->main_buf + FTLN_META_DATA_BEG);
 
                 // Assert not at block end. That requires 16B pages.
-                PfAssert(ftl->free_mpn != (ui32)-1);
+                if (ftl->free_mpn == (ui32)-1) {
+                  return -1;
+                }
               }
             }
 
@@ -287,7 +291,9 @@ int FtlnReport(void* vol, ui32 msg, ...) {
       va_end(ap);
 
       // Check argument for validity.
-      PfAssert(vpn < ftl->num_vpages);
+      if (vpn >= ftl->num_vpages) {
+        return -1;
+      }
 
       // Figure out MPN this page belongs to.
       mpn = vpn / ftl->mappings_per_mpg;
@@ -343,7 +349,9 @@ int FtlnReport(void* vol, ui32 msg, ...) {
         // decrement block's used page count.
         if (FtlnMapSetPpn(ftl, vpn, (ui32)-1))
           return -1;
-        PfAssert(ftl->num_free_blks >= FTLN_MIN_FREE_BLKS);
+        if (ftl->num_free_blks < FTLN_MIN_FREE_BLKS) {
+          return -1;
+        }
         FtlnDecUsed(ftl, ppn, vpn);
 
 #if FS_ASSERT
@@ -663,7 +671,9 @@ ui32 FtlnHiWcFreeBlk(CFTLN ftl) {
 int FtlnFormat(FTLN ftl, ui32 meta_block) {
   ui32 b;
 
-  PfAssert(meta_block < ftl->num_blks);
+  if (meta_block >= ftl->num_blks) {
+    return -1;
+  }
   // Erase all map blocks, except the one containing the metapage.
   for (b = 0; b < ftl->num_blks; ++b) {
     // Skip non-map blocks.

@@ -1593,9 +1593,9 @@ int ndmReadPages(uint32_t vpn, uint32_t count, ui8* buf, ui8* spare, NDM ndm) {
 int ndmWritePages(uint32_t vpn, uint32_t count, const ui8* data, ui8* spare, NDM ndm) {
   int action, rc = 0;
 
-  // Ensure all writes are to the same virtual block.
-  PfAssert(count);
-  PfAssert(vpn / ndm->pgs_per_blk == (vpn + count - 1) / ndm->pgs_per_blk);
+  if (count == 0 || (vpn / ndm->pgs_per_blk != (vpn + count - 1) / ndm->pgs_per_blk)) {
+    return -1;
+  }
 
   // Else for FTL, prepare ECC and, if map page, validity checks too.
   if (RD32_LE(&((ui8*)spare)[5]) == (ui32)-1)

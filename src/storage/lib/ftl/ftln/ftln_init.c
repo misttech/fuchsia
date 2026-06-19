@@ -749,7 +749,9 @@ static int format_status(FTLN ftl) {
 
           // Save parameters of the interrupted vblk resume transfer.
           ftl->resume_vblk = RD32_LE(&ftl->main_buf[0]);
-          PfAssert(ftl->resume_vblk < ftl->num_blks);
+          if (ftl->resume_vblk >= ftl->num_blks) {
+            return FtlnFatErr(ftl);
+          }
           ftl->resume_tblk = b;
           ftl->resume_po = n - 1;
 #if DEBUG_RESUME
@@ -1316,7 +1318,9 @@ static int rd_map_pg(void* vol, ui32 mpn, void* buf, int* unmapped) {
   ui32 ppn;
 
   // Sanity check that map page index is valid and not the meta page.
-  PfAssert(mpn < ftl->num_map_pgs - 1);
+  if (mpn >= ftl->num_map_pgs - 1) {
+    return -1;
+  }
 
   // Retrieve physical map page number from MPNs array, if available.
   // Else output 0xFF's, set unmapped flag, and return success.

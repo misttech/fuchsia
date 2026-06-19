@@ -109,7 +109,7 @@ typedef unsigned int uint;
 
 #if FS_ASSERT
 #define PF_DEBUG
-#define PfAssert(c) ZX_DEBUG_ASSERT(c)
+#define PfAssert(c) ZX_ASSERT(c)
 #else
 #define PfAssert(c) \
   do {              \
