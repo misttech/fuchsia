@@ -98,3 +98,24 @@ fx manage-skills
 This command scans the workspace, displays all discovered skills, and
 prompts you to select the ones you want to enable. It automatically
 generates or updates the `.agents/skills.json` file with your selections.
+
+### Non-interactive mode
+
+The `fx manage-skills` tool also supports a non-interactive mode for scripting
+and quick updates using command-line flags:
+
+*   **`--add=<path>`**: Adds a skill or container path to your configuration.
+    If the path points to a single skill (containing `SKILL.md`), it is added
+    without recursive inclusion. If it is a container directory, it is added
+    with recursive inclusion.
+*   **`--remove=<path>`**: Removes any entries in `.agents/skills.json` whose
+    path matches or begins with the specified path.
+*   **`--list`**: Displays the current contents of `.agents/skills.json`.
+*   **`--clear`**: Removes all entries from `.agents/skills.json`.
+
+For example, to add multiple skill paths and list the resulting configuration:
+
+```bash
+fx manage-skills --add=//src/devices/skills --add=//docs/skills
+fx manage-skills --list
+```
