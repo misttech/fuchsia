@@ -5,6 +5,7 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/cpp/library_headers.gni")
+import("//build/rust/rustc_bindgen.gni")
 import("//build/rust/rustc_library.gni")
 import("//zircon/kernel/params.gni")
 
@@ -29,7 +30,11 @@ source_set("counters") {
 
 rustc_library("counters-rs") {
   edition = "2024"
-  sources = [ "src/lib.rs" ]
+  validations = [ ":counters_bindgen_golden" ]
+  sources = [
+    "src/bindings.rs",
+    "src/lib.rs",
+  ]
   deps = [
     ":counters",
     "//src/lib/zr",
@@ -51,6 +56,10 @@ library_headers("headers") {
 
 group("tests") {
   testonly = true
+  deps = [
+    ":counters-rs",
+    ":counters_bindgen_golden",
+  ]
 }
 
 group("kernel-tests") {
@@ -63,4 +72,39 @@ group("phys-tests") {
 
 group("boot_tests") {
   testonly = true
+}
+
+rustc_bindgen_golden("counters_bindgen_golden") {
+  headers = [ "bindgen.h" ]
+  checked_in_source = "src/bindings.rs"
+
+  type_allowlist = [ "counters::.*" ]
+
+  include_dirs = [
+    "//prebuilt/third_party/clang/${host_os}-${host_cpu}/include/x86_64-unknown-linux-gnu/c++/v1",
+    "//prebuilt/third_party/clang/${host_os}-${host_cpu}/include/c++/v1",
+    "//zircon/kernel/lib/counters/include",
+  ]
+
+  additional_clang_flags = [
+    "-x",
+    "c++",
+    "-std=c++20",
+    "-stdlib=libc++",
+    "--sysroot=" + rebase_path("//prebuilt/third_party/sysroot/linux", "//"),
+  ]
+
+  additional_bindgen_flags = [
+    "--rust-edition",
+    "2021",
+  ]
+
+  notice_year = 2026
+  use_core = true
+
+  expect_lints = [
+    "dead_code",
+    "non_camel_case_types",
+    "non_upper_case_globals",
+  ]
 }

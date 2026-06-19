@@ -4,6 +4,8 @@
 
 #![no_std]
 
+mod bindings;
+
 /// The maximum number of CPUs that this counter descriptor supports.
 /// This value is read from the `SMP_MAX_CPUS` environment variable at build time.
 pub const SMP_MAX_CPUS: usize =
@@ -32,21 +34,30 @@ pub enum Type {
 /// The memory layout of this structure matches Zircon's `counters::Descriptor` exactly,
 /// enabling the linker and userspace diagnostic tools to parse Rust-declared counters
 /// seamlessly from the kernel's binary segments.
-// TODO(https://fxbug.dev/517301686): Use bindgen or another systematic way to avoid duplicating
-// this structure and causing drift.
 #[repr(C, align(8))]
 pub struct Descriptor {
     name: [u8; 56],
     type_: u64,
 }
 
-const _: () = {
-    assert!(core::mem::size_of::<Descriptor>() == 64, "Descriptor size must be exactly 64 bytes");
-    assert!(
-        core::mem::align_of::<Descriptor>() == 8,
-        "Descriptor alignment must be exactly 8 bytes"
-    );
-};
+zr::static_assert!(
+    core::mem::size_of::<Descriptor>() == core::mem::size_of::<bindings::counters_Descriptor>()
+);
+zr::static_assert!(
+    core::mem::align_of::<Descriptor>() == core::mem::align_of::<bindings::counters_Descriptor>()
+);
+zr::static_assert!(
+    core::mem::offset_of!(Descriptor, name)
+        == core::mem::offset_of!(bindings::counters_Descriptor, name)
+);
+zr::static_assert!(
+    core::mem::offset_of!(Descriptor, type_)
+        == core::mem::offset_of!(bindings::counters_Descriptor, type_)
+);
+zr::static_assert!(Type::Padding as u64 == bindings::counters_Type_kPadding as u64);
+zr::static_assert!(Type::Sum as u64 == bindings::counters_Type_kSum as u64);
+zr::static_assert!(Type::Min as u64 == bindings::counters_Type_kMin as u64);
+zr::static_assert!(Type::Max as u64 == bindings::counters_Type_kMax as u64);
 
 impl Descriptor {
     /// Create a new raw `Descriptor` instance with the given packed name and type value.
