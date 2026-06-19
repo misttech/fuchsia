@@ -61,6 +61,8 @@ filegroup(
         "//build/bazel/bazel_idk/tests:api_level_and_cpu_combinations_build_only_tests",
         # Tests `fx_cc_library_headers()`.
         "//zircon/system/ulib/zircon-internal",
+        # Tests `fx_package()`.
+        "//src/security/bin/root_ssl_certificates",
     ],
     # This target is only intended to be built in Fuchsia configurations.
     # Individual test groups can use a transition to build targets in host

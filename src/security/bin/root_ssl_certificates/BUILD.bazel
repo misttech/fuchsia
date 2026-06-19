@@ -19,6 +19,10 @@ fx_package(
     visibility = [
         "//build/images/guest:__subpackages__",
         "//bundles/assembly:__subpackages__",
+
+        # TODO(https://fxbug.dev/460538634): Remove once there is other build
+        # test coverage for `fx_package()`.
+        "//build/bazel/rules/tests:__subpackages__",
     ],
 )
 
