@@ -46,6 +46,21 @@ impl InternedString {
         // points to a valid, null-terminated static byte string in read-only memory.
         unsafe { core::ffi::CStr::from_ptr(self.ptr as *const core::ffi::c_char) }
     }
+
+    /// Returns the numeric trace ID for this interned string.
+    #[inline]
+    pub fn id(&self) -> u16 {
+        unsafe extern "C" {
+            #[link_name = "__start___fxt_interned_string_table"]
+            static START: InternedString;
+        }
+        let self_ptr = self as *const InternedString;
+        let start_ptr = unsafe { &START as *const InternedString };
+        // SAFETY: Both pointers reside within the contiguous `__fxt_interned_string_table` linker
+        // section.
+        let diff = unsafe { self_ptr.offset_from(start_ptr) };
+        (diff + 1) as u16
+    }
 }
 
 /// Statically declares a new `InternedString` and allocates it inside the special
@@ -137,6 +152,18 @@ mod tests {
             p2 >= start_ptr && p2 < stop_ptr,
             "TEST_STR_2 pointer {p2:p} is outside bounds [{start_ptr:p}, {stop_ptr:p})"
         );
+    }
+
+    #[test]
+    fn test_id() {
+        assert!(TEST_STR_1.id() > 0);
+        assert!(TEST_STR_2.id() > 0);
+
+        let p1 = &TEST_STR_1 as *const InternedString;
+        let p2 = &TEST_STR_2 as *const InternedString;
+        let expected_diff = unsafe { p2.offset_from(p1) };
+        let actual_diff = (TEST_STR_2.id() as isize) - (TEST_STR_1.id() as isize);
+        assert_eq!(actual_diff, expected_diff);
     }
 
     #[test]
