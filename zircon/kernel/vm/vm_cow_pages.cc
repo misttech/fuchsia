@@ -11,6 +11,7 @@
 #include <lib/counters.h>
 #include <lib/fit/defer.h>
 #include <lib/page/size.h>
+#include <lib/page_cache.h>
 #include <trace.h>
 
 #include <cstdint>
@@ -42,6 +43,8 @@
       ASSERT(x);                                                                    \
     }                                                                               \
   } while (0)
+
+page_cache::PageCache VmCowPages::page_cache_;
 
 namespace {
 

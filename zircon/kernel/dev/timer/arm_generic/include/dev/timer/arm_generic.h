@@ -8,9 +8,13 @@
 #ifndef ZIRCON_KERNEL_DEV_TIMER_ARM_GENERIC_INCLUDE_DEV_TIMER_ARM_GENERIC_H_
 #define ZIRCON_KERNEL_DEV_TIMER_ARM_GENERIC_INCLUDE_DEV_TIMER_ARM_GENERIC_H_
 
+#include <lib/affine/ratio.h>
 #include <lib/zbi-format/driver-config.h>
 #include <sys/types.h>
 #include <zircon/types.h>
+
+template <bool AllowDebugPrint = false>
+affine::Ratio arm_generic_timer_compute_conversion_factors(uint32_t cntfrq);
 
 // Initializes the driver.
 void ArmGenericTimerInit(const zbi_dcfg_arm_generic_timer_driver_t& config);

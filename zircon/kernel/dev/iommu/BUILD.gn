@@ -14,6 +14,7 @@ static_library("iommu") {
   deps = [
     "//zircon/kernel/lib/fbl",
     "//zircon/kernel/lib/libc",
+    "//zircon/kernel/object:headers",
     "//zircon/kernel/vm:headers",
   ]
 }

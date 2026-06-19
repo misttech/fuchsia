@@ -18,7 +18,10 @@ static_library("page_cache") {
 
 library_headers("headers") {
   headers = [ "lib/page_cache.h" ]
-  public_deps = [ "//zircon/kernel/lib/ktl:headers" ]
+  public_deps = [
+    "//zircon/kernel/lib/ktl:headers",
+    "//zircon/kernel/vm:headers",
+  ]
 }
 
 group("tests") {

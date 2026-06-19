@@ -120,7 +120,6 @@ if (toolchain_environment == "kernel.phys" ||
       "handoff.cc",
       "mexec.S",
       "mmu.cc",
-      "mmu_tests.cc",
       "mp.cc",
       "perf_mon.cc",
       "periphmap.cc",
@@ -156,7 +155,6 @@ if (toolchain_environment == "kernel.phys" ||
       "//zircon/kernel/lib/perfmon",
       "//zircon/kernel/lib/syscalls",
       "//zircon/kernel/lib/thread-stack",
-      "//zircon/kernel/lib/unittest",
       "//zircon/kernel/lib/userabi:headers",
       "//zircon/kernel/object",
       "//zircon/kernel/phys:handoff",
@@ -182,12 +180,17 @@ if (toolchain_environment == "kernel.phys" ||
 
   source_set("tests") {
     testonly = true
-    sources = [ "cache_test.cc" ]
+    sources = [
+      "asid_allocator_tests.cc",
+      "cache_test.cc",
+      "mmu_tests.cc",
+    ]
     deps = [
       "//zircon/kernel/lib/arch",
       "//zircon/kernel/lib/ktl",
       "//zircon/kernel/lib/unittest",
       "//zircon/kernel/vm",
+      "//zircon/system/ulib/bitmap",
     ]
   }
 

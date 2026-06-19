@@ -18,6 +18,7 @@
 #include <ktl/memory.h>
 #include <object/clock_dispatcher.h>
 #include <object/vm_object_dispatcher.h>
+#include <vm/physmap.h>
 
 KCOUNTER(dispatcher_clock_create_count, "dispatcher.clock.create")
 KCOUNTER(dispatcher_clock_destroy_count, "dispatcher.clock.destroy")

@@ -9,7 +9,6 @@
 
 #include <assert.h>
 #include <lib/page/size.h>
-#include <lib/page_cache.h>
 #include <lib/user_copy/user_ptr.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <stdint.h>
@@ -140,6 +139,10 @@ using AttributionTracker = ContinuousAttributionTracker;
 #else   // EXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED
 using AttributionTracker = StubContinuousAttributionTracker;
 #endif  // EXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED
+
+namespace page_cache {
+class PageCache;
+}  // namespace page_cache
 
 class ScopedPageFreedList;
 
@@ -1752,7 +1755,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   LifeCycle life_cycle_ TA_GUARDED(lock()) = LifeCycle::Init;
 
   // PageCache instance for COW page allocations.
-  inline static page_cache::PageCache page_cache_;
+  static page_cache::PageCache page_cache_;
 };
 
 // Implements a cursor that allows for retrieving successive pages over a range in a VMO. The

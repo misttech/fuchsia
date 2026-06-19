@@ -9,7 +9,6 @@
 #include <lib/affine/ratio.h>
 #include <lib/arch/intrin.h>
 #include <lib/counters.h>
-#include <lib/unittest/unittest.h>
 #include <lib/zbi-format/driver-config.h>
 #include <platform.h>
 #include <trace.h>

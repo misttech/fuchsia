@@ -8,7 +8,10 @@ import("//build/cpp/library_headers.gni")
 
 library_headers("headers") {
   headers = [ "dev/timer/arm_generic.h" ]
-  public_deps = [ "//sdk/lib/zbi-format" ]
+  public_deps = [
+    "//sdk/lib/zbi-format",
+    "//zircon/system/ulib/affine:headers",
+  ]
 }
 
 source_set("arm_generic") {
@@ -22,8 +25,25 @@ source_set("arm_generic") {
     "//zircon/kernel/lib/fixed_point",
     "//zircon/kernel/lib/init",
     "//zircon/kernel/lib/ktl",
-    "//zircon/kernel/lib/unittest",
     "//zircon/kernel/phys:handoff",
     "//zircon/system/ulib/affine",
   ]
+}
+
+source_set("tests") {
+  testonly = true
+  sources = [ "arm_generic_timer_tests.cc" ]
+  deps = [
+    ":headers",
+    "//sdk/lib/fit",
+    "//zircon/kernel/lib/boot-options",
+    "//zircon/kernel/lib/ktl",
+    "//zircon/kernel/lib/unittest",
+    "//zircon/system/ulib/affine",
+  ]
+}
+
+group("kernel-tests") {
+  testonly = true
+  deps = [ ":tests" ]
 }

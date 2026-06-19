@@ -111,9 +111,6 @@ library_headers("headers") {
     # Many headers naturally have #include <lib/page/size.h>
     "//zircon/kernel/lib/page:headers",
 
-    # <vm/vm_cow_pages.h> has #include <lib/page_cache.h>
-    "//zircon/kernel/lib/page_cache:headers",
-
     # <vm/vm_object.h> has #include <ffl/fixed.h>
     "//zircon/system/ulib/ffl:headers",
 
