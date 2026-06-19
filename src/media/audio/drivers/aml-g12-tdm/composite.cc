@@ -137,6 +137,18 @@ zx::result<> Driver::Start(fdf::DriverContext context) {
           fdf::error("Unsupported PID {:#x} for VID {:#x}", board_info->pid, board_info->vid);
           return zx::error(ZX_ERR_NOT_SUPPORTED);
       }
+    } else if (board_info->vid == PDEV_VID_GOOGLE) {
+      switch (board_info->pid) {
+        case PDEV_PID_SHERLOCK:
+          device_info->pid = PDEV_PID_AMLOGIC_T931;
+          break;
+        case PDEV_PID_ASTRO:
+          device_info->pid = PDEV_PID_AMLOGIC_S905D2;
+          break;
+        default:
+          fdf::error("Unsupported PID {:#x} for VID {:#x}", board_info->pid, board_info->vid);
+          return zx::error(ZX_ERR_NOT_SUPPORTED);
+      }
     } else {
       fdf::error("Unsupported VID {:#x}", board_info->vid);
       return zx::error(ZX_ERR_NOT_SUPPORTED);
