@@ -71,6 +71,7 @@ TEST_F(SystemTimeTrackerTest, WritesOnStart) {
   EXPECT_FALSE(ReadUptime().has_value());
 
   tracker.Start();
+  RunLoopUntilIdle();
   EXPECT_EQ(ReadRuntime(), GetMonotonicTimeMs());
   EXPECT_EQ(ReadUptime(), GetBootTimeMs());
 }
@@ -114,6 +115,7 @@ TEST_F(SystemTimeTrackerTest, RecordSystemShutdownSignal) {
 
   RunLoopFor(zx::msec(500));
   tracker.RecordSystemShutdownSignal();
+  RunLoopUntilIdle();
   EXPECT_EQ(ReadRuntime(), GetMonotonicTimeMs());
   EXPECT_EQ(ReadUptime(), GetBootTimeMs());
 }

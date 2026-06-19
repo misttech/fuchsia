@@ -7,6 +7,7 @@
 #include <fuchsia/feedback/cpp/fidl.h>
 #include <fuchsia/hardware/power/statecontrol/cpp/fidl.h>
 #include <fuchsia/process/lifecycle/cpp/fidl.h>
+#include <lib/async-loop/default.h>
 #include <lib/fidl/cpp/interface_request.h>
 #include <lib/fit/defer.h>
 #include <lib/fit/function.h>
@@ -84,7 +85,9 @@ MainService::MainService(
                      options.crash_reports_options),
       last_reboot_(dispatcher_, cobalt_, redactor_.get(), crash_reports_.CrashReporter(),
                    std::move(options.last_reboot_options)),
-      system_time_tracker_(dispatcher_, clock_, kSystemTimeTrackerWritePeriod,
+      system_time_tracker_loop_(&kAsyncLoopConfigNoAttachToCurrentThread),
+      system_time_tracker_(system_time_tracker_loop_.dispatcher(), clock_,
+                           kSystemTimeTrackerWritePeriod,
                            std::move(options.current_system_time_write_path)),
       component_data_register_bindings_(dispatcher_, annotations_.ComponentDataRegister(),
                                         &inspect_node_manager_,
@@ -142,8 +145,17 @@ MainService::MainService(
   network_watcher_.Register(
       fit::bind_member(&crash_reports_, &CrashReports::SetNetworkIsReachable));
 
+  // Perform periodic writes on a separate thread so that Feedback can still function if the
+  // filesystem gets stuck.
+  if (const zx_status_t status = system_time_tracker_loop_.StartThread("system-time-tracker");
+      status != ZX_OK) {
+    FX_PLOGS(FATAL, status) << "Failed to start writer thread for SystemTimeTracker";
+  }
+
   system_time_tracker_.Start();
 }
+
+MainService::~MainService() { system_time_tracker_loop_.Shutdown(); }
 
 template <>
 ::fidl::InterfaceRequestHandler<fuchsia::feedback::LastRebootInfoProvider>

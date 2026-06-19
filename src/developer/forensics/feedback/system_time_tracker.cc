@@ -55,9 +55,13 @@ SystemTimeTracker::SystemTimeTracker(async_dispatcher_t* dispatcher, timekeeper:
       write_period_(write_period),
       write_path_(std::move(write_path)) {}
 
-void SystemTimeTracker::Start() { WriteTimeTask(); }
+void SystemTimeTracker::Start() {
+  async::PostTask(dispatcher_, [this] { WriteTimeTask(); });
+}
 
-void SystemTimeTracker::RecordSystemShutdownSignal() { WriteUptimeAndRuntime(); }
+void SystemTimeTracker::RecordSystemShutdownSignal() {
+  async::PostTask(dispatcher_, [this] { WriteUptimeAndRuntime(); });
+}
 
 void SystemTimeTracker::WriteTimeTask() {
   WriteUptimeAndRuntime();

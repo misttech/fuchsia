@@ -6,6 +6,7 @@
 
 #include <fuchsia/feedback/cpp/fidl.h>
 #include <fuchsia/process/lifecycle/cpp/fidl.h>
+#include <lib/async-loop/cpp/loop.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/async/dispatcher.h>
 #include <lib/fidl/cpp/interface_handle.h>
@@ -51,6 +52,8 @@ class MainService {
               fidl::InterfaceRequest<fuchsia::process::lifecycle::Lifecycle> lifecycle_channel,
               std::unique_ptr<RedactorBase> redactor, Options options);
 
+  ~MainService();
+
   template <typename Protocol>
   ::fidl::InterfaceRequestHandler<Protocol> GetHandler();
 
@@ -71,6 +74,7 @@ class MainService {
   FeedbackData feedback_data_;
   CrashReports crash_reports_;
   LastReboot last_reboot_;
+  async::Loop system_time_tracker_loop_;
   SystemTimeTracker system_time_tracker_;
 
   InstrumentedBindingSet<fuchsia::feedback::ComponentDataRegister>
