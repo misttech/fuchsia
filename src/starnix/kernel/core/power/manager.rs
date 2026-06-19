@@ -82,7 +82,7 @@ impl WakeupSource {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum WakeupSourceOrigin {
     WakeLock(String),
-    Epoll(String),
+    Epoll(starnix_task_command::TaskCommand, crate::vfs::EpollKey),
     HAL(String),
 }
 
@@ -90,7 +90,7 @@ impl std::string::ToString for WakeupSourceOrigin {
     fn to_string(&self) -> String {
         match self {
             WakeupSourceOrigin::WakeLock(lock) => lock.clone(),
-            WakeupSourceOrigin::Epoll(lock) => format!("[epoll] {}", lock),
+            WakeupSourceOrigin::Epoll(command, key) => format!("[epoll] [{}] {}", command, key),
             WakeupSourceOrigin::HAL(lock) => format!("[HAL] {}", lock),
         }
     }
