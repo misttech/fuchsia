@@ -7,7 +7,6 @@
 
 #include <lib/fdf/dispatcher.h>
 #include <lib/fdf/types.h>
-#include <zircon/fidl.h>
 
 // The |DriverRegistration| is the ABI for drivers to expose themselves to the Driver Framework.
 // The driver is loaded in as a shared library (also referred to as a DSO), and the global symbol
