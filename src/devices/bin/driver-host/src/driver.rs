@@ -129,7 +129,7 @@ impl Hooks {
         // it's a valid pointer.
         let hooks = unsafe { registration.as_ref() };
         let version = hooks.version;
-        if version < 1 || version > fdf_sys::DRIVER_REGISTRATION_VERSION_MAX as u64 {
+        if version < 1 || version > fdf_sys::DRIVER_REGISTRATION_VERSION_MAX {
             log::error!("Failed to start driver, unknown driver registration version: {version}");
             return Err(Status::WRONG_TYPE);
         }

@@ -35,34 +35,34 @@ typedef struct fdf_channel_call_args {
 
 // Scheduler Role options
 
-// This flag will prevent any dispatchers from being created on the role that allow sync calls.
+/// This flag will prevent any dispatchers from being created on the role that allow sync calls.
 static const uint32_t FDF_SCHEDULER_ROLE_OPTION_NO_SYNC_CALLS = 1u << 0;
 
 // Dispatcher creation options
 
-// This flag disallows parallel calls into callbacks set in the dispatcher.
+/// This flag disallows parallel calls into callbacks set in the dispatcher.
 static const uint32_t FDF_DISPATCHER_OPTION_SYNCHRONIZED = 0u << 0;
-// This flag allows parallel calls into callbacks set in the dispatcher.
-// Cannot be set in conjunction with `FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS`.
+/// This flag allows parallel calls into callbacks set in the dispatcher.
+/// Cannot be set in conjunction with `FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS`.
 static const uint32_t FDF_DISPATCHER_OPTION_UNSYNCHRONIZED = 1u << 0;
-// This flag indicates that the dispatcher may not share zircon threads with other drivers.
-// Cannot be set in conjunction with `FDF_DISPATCHER_OPTION_UNSYNCHRONIZED`.
+/// This flag indicates that the dispatcher may not share zircon threads with other drivers.
+/// Cannot be set in conjunction with `FDF_DISPATCHER_OPTION_UNSYNCHRONIZED`.
 static const uint32_t FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS = 1u << 1;
-// This flag indicates that the dispatcher must not have its thread migrated at
-// runtime. It can only be used if the dispatcher's scheduler role has the
-// `FDF_SCHEDULER_ROLE_OPTION_NO_SYNC_CALLS` option set.
+/// This flag indicates that the dispatcher must not have its thread migrated at
+/// runtime. It can only be used if the dispatcher's scheduler role has the
+/// `FDF_SCHEDULER_ROLE_OPTION_NO_SYNC_CALLS` option set.
 static const uint32_t FDF_DISPATCHER_OPTION_NO_THREAD_MIGRATION = 1u << 2;
 
 static const uint32_t FDF_DISPATCHER_OPTION_SYNCHRONIZATION_MASK = 1u << 0;
 
-// This flag forces a channel wait to call its callback on cancellation,
-// even if the wait starts on a synchronized dispatcher. This allows
-// for safe cancellation of the wait from a different dispatcher than the one
-// it started on.
+/// This flag forces a channel wait to call its callback on cancellation,
+/// even if the wait starts on a synchronized dispatcher. This allows
+/// for safe cancellation of the wait from a different dispatcher than the one
+/// it started on.
 static const uint32_t FDF_CHANNEL_WAIT_OPTION_FORCE_ASYNC_CANCEL = 1u << 0;
 
-// This flag indicates that the channel wait was scheduled on an always-on
-// dispatcher.
+/// This flag indicates that the channel wait was scheduled on an always-on
+/// dispatcher.
 static const uint32_t FDF_CHANNEL_WAIT_OPTION_ALWAYS_ON = 1u << 1;
 
 __END_CDECLS

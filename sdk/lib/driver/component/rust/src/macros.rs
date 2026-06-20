@@ -20,7 +20,7 @@ pub use fdf_sys::{
 #[doc(hidden)]
 pub const fn make_driver_registration<T: Driver>() -> DriverRegistration {
     DriverRegistration {
-        version: DRIVER_REGISTRATION_VERSION_1 as u64,
+        version: DRIVER_REGISTRATION_VERSION_1,
         v1: DriverRegistration_driver_registration_v1 {
             initialize: Some(DriverServer::<T>::initialize),
             destroy: Some(DriverServer::<T>::destroy),
