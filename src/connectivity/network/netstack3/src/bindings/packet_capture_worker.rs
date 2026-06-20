@@ -5,13 +5,17 @@
 //! A Netstack3 worker to serve fuchsia.net.debug.PacketCaptureProvider API
 //! requests.
 
+use std::pin::pin;
+
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_net_debug as fnet_debug;
 use fidl_fuchsia_posix_socket_packet as fppacket;
 use fuchsia_async as fasync;
+use fuchsia_async::scope::ScopeActiveGuard;
 
 use chunked_ringbuf::RingBuffer;
-use futures::TryStreamExt as _;
+use futures::channel::oneshot;
+use futures::{FutureExt as _, TryStreamExt as _};
 use log::warn;
 use pcap::LinkType;
 use vfs::file::File as _;
@@ -19,16 +23,72 @@ use vfs::file::File as _;
 use crate::bindings::bpf::{SocketFilterProgram, ValidVerifiedProgram};
 use crate::bindings::devices::HasDeviceName as _;
 use crate::bindings::socket::packet::SocketState;
-use crate::bindings::util::{RemoveResourceResultExt as _, ResultExt as _, ScopeExt as _};
+use crate::bindings::util::{ErrorLogExt as _, RemoveResourceResultExt as _, ResultExt as _};
 use crate::bindings::{BindingId, BindingsCtx, Ctx};
 use netstack3_core::device::DeviceId;
 use netstack3_core::device_socket::{Protocol, SocketId, TargetDevice};
 use netstack3_core::sync::Mutex;
 
 #[derive(Debug)]
+struct CaptureData {
+    id: SocketId<BindingsCtx>,
+    pcap_headers: Vec<u8>,
+}
+
+/// The state of the single allowed rolling packet capture.
+///
+/// Netstack3 restricts packet captures to at most one active capture at a time
+/// to conserve memory.
+#[derive(Debug)]
 enum RollingCaptureState {
+    /// No packet capture is active.
     Empty,
-    Attached,
+    // TODO(https://fxbug.dev/485274945): When StopAndDownload can be called
+    // multiple times the Closing state will no longer be entered on the first
+    // call.
+    /// A packet capture is in the process of being torn down or waiting for
+    /// the client to download the capture so that resources can be freed.
+    ///
+    /// This state blocks other clients from starting a new packet capture.
+    Closing,
+    /// A packet capture is active and the client is currently connected.
+    ///
+    /// The lifetime of the packet capture is tied to the client's connection.
+    Attached { task: fasync::Task<Option<CaptureData>>, cancel: oneshot::Sender<()> },
+    /// A packet capture is active but has been detached from the client's
+    /// connection.
+    ///
+    /// The client is currently connected, but closing the connection will not
+    /// terminate the capture.
+    DetachedConnected {
+        name: String,
+        task: fasync::Task<Option<CaptureData>>,
+        cancel: oneshot::Sender<()>,
+    },
+    // TODO(https://fxbug.dev/485274945): Implement timeouts.
+    /// A packet capture is detached and there is no client connected.
+    ///
+    /// The server holds the captured data and is waiting for a reconnect
+    /// or a timeout.
+    Disconnected { name: String, data: CaptureData },
+}
+
+impl RollingCaptureState {
+    fn replace_with<O, F: FnOnce(Self) -> (Self, O)>(&mut self, f: F) -> O {
+        let old_state = std::mem::replace(self, RollingCaptureState::Empty);
+        let (new_state, retval) = f(old_state);
+        let _empty = std::mem::replace(self, new_state);
+        retval
+    }
+
+    #[track_caller]
+    fn transition_to_closing(&mut self) {
+        self.replace_with(|old| match old {
+            RollingCaptureState::Attached { .. }
+            | RollingCaptureState::DetachedConnected { .. } => (RollingCaptureState::Closing, ()),
+            old => unreachable!("transition to closing for teardown in unexpected state: {old:?}"),
+        })
+    }
 }
 
 pub(crate) struct PacketCaptures {
@@ -41,73 +101,200 @@ impl Default for PacketCaptures {
     }
 }
 
-type QuotaGuard = scopeguard::ScopeGuard<Ctx, fn(Ctx)>;
-
-fn release_quota_mutex(ctx: Ctx) {
-    let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
-    assert_matches::assert_matches!(*state_lock, RollingCaptureState::Attached);
-    *state_lock = RollingCaptureState::Empty;
+async fn remove_socket(ctx: &mut Ctx, id: SocketId<BindingsCtx>) -> SocketState {
+    let weak = id.downgrade();
+    ctx.api()
+        .device_socket()
+        .remove(id)
+        .map_deferred(|d| d.into_future("packet socket", &weak, ctx))
+        .into_future()
+        .await
 }
 
-async fn serve_rolling_packet_capture(
-    _guard: QuotaGuard,
+fn handle_detach(
+    ctx: &mut Ctx,
+    name: String,
+) -> Result<(), fnet_debug::RollingPacketCaptureDetachError> {
+    ctx.bindings_ctx().packet_captures.state.lock().replace_with(|old_state| match old_state {
+        RollingCaptureState::Attached { task, cancel } => {
+            (RollingCaptureState::DetachedConnected { name: name.clone(), task, cancel }, Ok(()))
+        }
+        s @ RollingCaptureState::DetachedConnected { .. } => {
+            (s, Err(fnet_debug::RollingPacketCaptureDetachError::AlreadyDetached))
+        }
+        RollingCaptureState::Empty
+        | RollingCaptureState::Closing
+        | RollingCaptureState::Disconnected { .. } => {
+            unreachable!("Detach called in unexpected state {old_state:?}");
+        }
+    })
+}
+
+/// Serves a rolling packet capture request stream.
+///
+/// Returns `Some(CaptureData)` if the packet capture is taken over
+/// via signalling on `takeover_cancel` due to handling a call to
+/// `ReconnectRolling`; `None` otherwise.
+async fn serve_rolling_packet_capture<Fut>(
     mut ctx: Ctx,
     mut rs: fnet_debug::RollingPacketCaptureRequestStream,
     id: SocketId<BindingsCtx>,
     pcap_headers: Vec<u8>,
-) -> Result<(), fidl::Error> {
-    let mut id = Some(id);
-    let mut pcap_headers = Some(pcap_headers);
-    while let Some(req) = rs.try_next().await? {
-        match req {
-            fnet_debug::RollingPacketCaptureRequest::Detach { .. } => {
-                // TODO(https://fxbug.dev/485274945): Add support for Detach.
-                warn!("Detach requested but unimplemented");
-                return Ok(());
+    scope_cancel_fut: Fut,
+    mut takeover_cancel: oneshot::Receiver<()>,
+) -> Option<CaptureData>
+where
+    Fut: futures::Future<Output = ()>,
+{
+    enum CloseType {
+        StreamClosed,
+        Takeover,
+        Canceled,
+        Terminate(fidl::endpoints::ServerEnd<fio::FileMarker>),
+        Discard(fnet_debug::RollingPacketCaptureDiscardResponder),
+    }
+    let mut scope_cancel_fut = pin!(scope_cancel_fut.fuse());
+    let close_type = loop {
+        let req = futures::select_biased! {
+            _ = scope_cancel_fut => {
+                break CloseType::Canceled;
             }
-            fnet_debug::RollingPacketCaptureRequest::Discard { .. } => {
-                // TODO(https://fxbug.dev/485274945): Add support for Discard.
-                warn!("Discard requested but unimplemented");
-                return Ok(());
+            _ = takeover_cancel => {
+                break CloseType::Takeover;
+            }
+            req = rs.try_next().fuse() => match req {
+                Ok(Some(req)) => req,
+                Ok(None) => break CloseType::StreamClosed,
+                Err(e) => {
+                    e.log("rolling packet capture stream error");
+                    break CloseType::StreamClosed;
+                }
+            },
+        };
+        match req {
+            fnet_debug::RollingPacketCaptureRequest::Detach { name, responder } => {
+                let ret = handle_detach(&mut ctx, name);
+                responder.send(ret).unwrap_or_log("failed to respond");
+            }
+            fnet_debug::RollingPacketCaptureRequest::Discard { responder } => {
+                break CloseType::Discard(responder);
             }
             fnet_debug::RollingPacketCaptureRequest::StopAndDownload { channel, .. } => {
-                // TODO(https://fxbug.dev/485274945): Support repeated calls to
-                // StopAndDownload.
-                let (Some(id), Some(pcap_headers)) = (id.take(), pcap_headers.take()) else {
-                    return channel.close_with_epitaph(zx::Status::BAD_STATE);
-                };
-                let weak = id.downgrade();
-                let socket_state = ctx
-                    .api()
-                    .device_socket()
-                    .remove(id)
-                    .map_deferred(|d| d.into_future("packet socket", &weak, &ctx))
-                    .into_future()
-                    .await;
-                let ring_buffer = socket_state.into_rolling_pcap_buffer();
-                let file = std::sync::Arc::new(PcapFile::new(ring_buffer, pcap_headers));
-                let scope = vfs::execution_scope::ExecutionScope::new();
-                let mut object_request = vfs::object_request::ObjectRequest::new(
-                    fio::PERM_READABLE,
-                    &fio::Options::default(),
-                    channel.into(),
-                );
-                match vfs::file::serve(
-                    file,
-                    scope.clone(),
-                    &fio::PERM_READABLE,
-                    &mut object_request,
-                ) {
-                    Ok(()) => {}
-                    Err(e) => warn!("failed to serve rolling packet capture file: {e}"),
-                }
-
-                let _: fasync::JoinHandle<_> =
-                    fasync::Scope::current().spawn(async move { scope.wait().await });
+                // TODO(https://fxbug.dev/485274945): Support multiple calls
+                // to StopAndDownload instead of it terminating the protocol.
+                break CloseType::Terminate(channel);
             }
         }
+    };
+
+    match close_type {
+        CloseType::Takeover => Some(CaptureData { id, pcap_headers }),
+        CloseType::StreamClosed => {
+            let socket_id = {
+                let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
+
+                // If takeover has been signalled, the state protected by the mutex now
+                // belongs to the new task, so we must check for this and hand over
+                // capture data correctly instead of overwriting state with Disconnected!
+                if let Some(()) = takeover_cancel
+                    .try_recv()
+                    .expect("takeover sender should not have been dropped")
+                {
+                    return Some(CaptureData { id, pcap_headers });
+                }
+
+                state_lock.replace_with(|old| match old {
+                    RollingCaptureState::DetachedConnected { name, .. } => (
+                        RollingCaptureState::Disconnected {
+                            name,
+                            data: CaptureData { id, pcap_headers },
+                        },
+                        None,
+                    ),
+                    RollingCaptureState::Attached { .. } => {
+                        (RollingCaptureState::Closing, Some(id))
+                    }
+                    old @ (RollingCaptureState::Empty
+                    | RollingCaptureState::Closing
+                    | RollingCaptureState::Disconnected { .. }) => {
+                        unreachable!("unexpected state at closure: {old:?}");
+                    }
+                })
+            };
+
+            if let Some(socket_id) = socket_id {
+                let _: SocketState = remove_socket(&mut ctx, socket_id).await;
+                let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
+                assert_matches::assert_matches!(*state_lock, RollingCaptureState::Closing);
+                *state_lock = RollingCaptureState::Empty;
+            }
+
+            None
+        }
+        CloseType::Discard(responder) => {
+            {
+                let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
+                state_lock.transition_to_closing();
+            }
+
+            let _: SocketState = remove_socket(&mut ctx, id).await;
+
+            {
+                let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
+                assert_matches::assert_matches!(*state_lock, RollingCaptureState::Closing);
+                *state_lock = RollingCaptureState::Empty;
+            }
+
+            responder.send().unwrap_or_log("failed to respond");
+            None
+        }
+        CloseType::Canceled => {
+            {
+                let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
+                state_lock.transition_to_closing();
+            }
+
+            let _: SocketState = remove_socket(&mut ctx, id).await;
+
+            {
+                let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
+                assert_matches::assert_matches!(*state_lock, RollingCaptureState::Closing);
+                *state_lock = RollingCaptureState::Empty;
+            }
+            None
+        }
+        CloseType::Terminate(channel) => {
+            {
+                let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
+                state_lock.transition_to_closing();
+            }
+
+            let socket_state = remove_socket(&mut ctx, id).await;
+
+            let ring_buffer = socket_state.into_rolling_pcap_buffer();
+            let file = std::sync::Arc::new(PcapFile::new(ring_buffer, pcap_headers));
+            let scope = vfs::execution_scope::ExecutionScope::new();
+            let mut object_request = vfs::object_request::ObjectRequest::new(
+                fio::PERM_READABLE,
+                &fio::Options::default(),
+                channel.into(),
+            );
+            match vfs::file::serve(file, scope.clone(), &fio::PERM_READABLE, &mut object_request) {
+                Ok(()) => {}
+                Err(e) => warn!("failed to serve rolling packet capture file: {e}"),
+            }
+
+            let ctx_clone = ctx.clone();
+            let _: fasync::JoinHandle<_> = fasync::Scope::current().spawn(async move {
+                scope.wait().await;
+                let mut state_lock = ctx_clone.bindings_ctx().packet_captures.state.lock();
+                assert_matches::assert_matches!(*state_lock, RollingCaptureState::Closing);
+                *state_lock = RollingCaptureState::Empty;
+            });
+
+            None
+        }
     }
-    Ok(())
 }
 
 // Serve a stream of fuchsia.net.debug.PacketCaptureProvider API requests for a single
@@ -116,6 +303,7 @@ fn handle_start_rolling(
     ctx: &mut Ctx,
     common_params: fnet_debug::CommonPacketCaptureParams,
     params: fnet_debug::RollingPacketCaptureParams,
+    guard: ScopeActiveGuard,
 ) -> Result<
     fidl::endpoints::ClientEnd<fnet_debug::RollingPacketCaptureMarker>,
     fnet_debug::PacketCaptureStartError,
@@ -127,19 +315,20 @@ fn handle_start_rolling(
         __source_breaking: _,
     } = common_params;
     let fnet_debug::RollingPacketCaptureParams { capture_size, __source_breaking: _ } = params;
-    {
-        let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
-        match *state_lock {
-            RollingCaptureState::Empty => {
-                *state_lock = RollingCaptureState::Attached;
-            }
-            RollingCaptureState::Attached => {
-                return Err(fnet_debug::PacketCaptureStartError::QuotaExceeded);
-            }
-        }
-    }
 
-    let guard = scopeguard::guard(ctx.clone(), release_quota_mutex as fn(Ctx));
+    let ctx_clone = ctx.clone();
+    // Note that this lock is held across the entirety of this function and the
+    // Attached state is written into the protected state at the end.
+    let mut state_lock = ctx_clone.bindings_ctx().packet_captures.state.lock();
+    match *state_lock {
+        RollingCaptureState::Attached { .. }
+        | RollingCaptureState::DetachedConnected { .. }
+        | RollingCaptureState::Disconnected { .. }
+        | RollingCaptureState::Closing => {
+            return Err(fnet_debug::PacketCaptureStartError::QuotaExceeded);
+        }
+        RollingCaptureState::Empty => {}
+    }
 
     let capture_size = match capture_size {
         None | Some(0) => fnet_debug::DEFAULT_BUFFER_SIZE,
@@ -257,29 +446,107 @@ fn handle_start_rolling(
     let mut pcap_headers = Vec::new();
     pcap::write_prelude(&mut pcap_headers, link_type, &device_name)
         .expect("failed to write pcap prelude");
-    fasync::Scope::current().spawn_request_stream_handler(request_stream, move |rs| {
-        serve_rolling_packet_capture(guard, ctx_clone, rs, id, pcap_headers)
+
+    let scope = fasync::Scope::current();
+    let (cancel_sender, cancel_receiver) = oneshot::channel::<()>();
+
+    let new_task = scope.compute(async move {
+        let scope_cancel = guard.on_cancel();
+        serve_rolling_packet_capture(
+            ctx_clone,
+            request_stream,
+            id,
+            pcap_headers,
+            scope_cancel,
+            cancel_receiver,
+        )
+        .await
     });
+
+    *state_lock = RollingCaptureState::Attached { task: new_task, cancel: cancel_sender };
+
     Ok(rolling_client)
+}
+
+fn handle_reconnect_rolling(
+    ctx: &mut Ctx,
+    name: String,
+    guard: ScopeActiveGuard,
+) -> Result<
+    fidl::endpoints::ClientEnd<fnet_debug::RollingPacketCaptureMarker>,
+    fnet_debug::PacketCaptureReconnectError,
+> {
+    let (rolling_client, rolling_server) =
+        fidl::endpoints::create_endpoints::<fnet_debug::RollingPacketCaptureMarker>();
+    let request_stream = rolling_server.into_stream();
+    let (cancel_sender, cancel_receiver) = oneshot::channel();
+    let ctx_clone = ctx.clone();
+    let scope = fasync::Scope::current();
+
+    let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
+
+    state_lock.replace_with(|old_state| {
+        let capture_data_fut = match old_state {
+            RollingCaptureState::Disconnected { name: n, data } if n == name => {
+                futures::future::ready(Some(data)).left_future()
+            }
+            RollingCaptureState::DetachedConnected { name: n, task, cancel } if n == name => {
+                cancel.send(()).expect(
+                    "cancel recevier should not have been dropped if in DetachedConnected state",
+                );
+                task.right_future()
+            }
+            old_state => {
+                return (old_state, Err(fnet_debug::PacketCaptureReconnectError::NotFound));
+            }
+        };
+
+        let new_task = scope.compute(async move {
+            let scope_cancel = guard.on_cancel();
+            let CaptureData { id, pcap_headers } = capture_data_fut.await?;
+            serve_rolling_packet_capture(
+                ctx_clone,
+                request_stream,
+                id,
+                pcap_headers,
+                scope_cancel,
+                cancel_receiver,
+            )
+            .await
+        });
+
+        (
+            RollingCaptureState::DetachedConnected {
+                name: name.clone(),
+                task: new_task,
+                cancel: cancel_sender,
+            },
+            Ok(rolling_client),
+        )
+    })
 }
 
 pub(crate) async fn serve_packet_captures(
     mut ctx: Ctx,
     mut rs: fnet_debug::PacketCaptureProviderRequestStream,
 ) -> Result<(), fidl::Error> {
+    let scope = fasync::Scope::current();
     while let Some(req) = rs.try_next().await? {
+        let Some(guard) = scope.active_guard() else {
+            warn!("aborted serving packet captures because scope is finished");
+            break;
+        };
         match req {
-            fnet_debug::PacketCaptureProviderRequest::ReconnectRolling { .. } => {
-                // TODO(https://fxbug.dev/485274945): Add support for ReconnectRolling.
-                warn!("ReconnectRolling requested but unimplemented");
-                return Ok(());
+            fnet_debug::PacketCaptureProviderRequest::ReconnectRolling { name, responder } => {
+                let result = handle_reconnect_rolling(&mut ctx, name, guard);
+                responder.send(result).unwrap_or_log("failed to respond");
             }
             fnet_debug::PacketCaptureProviderRequest::StartRolling {
                 common_params,
                 params,
                 responder,
             } => {
-                let result = handle_start_rolling(&mut ctx, common_params, params);
+                let result = handle_start_rolling(&mut ctx, common_params, params, guard);
                 responder.send(result).unwrap_or_log("failed to respond");
             }
         }
@@ -427,5 +694,55 @@ impl vfs::file::FileLike for PcapFile {
             object_request.take(),
         );
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bindings::integration_tests::{StackSetupBuilder, TestSetupBuilder};
+    use fuchsia_async as fasync;
+
+    #[fixture::teardown(crate::bindings::integration_tests::TestSetup::shutdown)]
+    #[fasync::run_singlethreaded(test)]
+    async fn test_scope_cancellation_resets_state() {
+        let t = TestSetupBuilder::new().add_stack(StackSetupBuilder::new()).build().await;
+
+        let test_stack = t.get(0);
+        let ns = test_stack.netstack();
+
+        let loopback_id = test_stack.wait_for_loopback_id().await;
+
+        let (provider_proxy, provider_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fnet_debug::PacketCaptureProviderMarker>();
+
+        let provider_scope = fasync::Scope::new_with_name("provider_scope");
+        let ns_clone = ns.clone();
+        let _ = provider_scope.spawn(async move {
+            let _ = serve_packet_captures(ns_clone.ctx, provider_stream).await;
+        });
+
+        let rolling_params = fnet_debug::RollingPacketCaptureParams::default();
+        let common_params = fnet_debug::CommonPacketCaptureParams {
+            interfaces: Some(fnet_debug::InterfaceSpecifier::InterfaceIds(vec![loopback_id.get()])),
+            ..fnet_debug::CommonPacketCaptureParams::default()
+        };
+
+        let rolling_proxy = provider_proxy
+            .start_rolling(common_params, &rolling_params)
+            .await
+            .expect("start_rolling FIDL error")
+            .expect("start_rolling error")
+            .into_proxy();
+
+        let capture_name = "test_capture";
+        rolling_proxy.detach(capture_name).await.expect("detach FIDL").expect("detach");
+
+        provider_scope.cancel().await;
+
+        let state_lock = ns.ctx.bindings_ctx().packet_captures.state.lock();
+        assert_matches::assert_matches!(*state_lock, RollingCaptureState::Empty);
+
+        t
     }
 }

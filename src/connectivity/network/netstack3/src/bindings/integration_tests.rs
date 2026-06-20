@@ -281,7 +281,7 @@ impl TestStack {
         }
     }
 
-    async fn wait_for_loopback_id(&self) -> BindingId {
+    pub(crate) async fn wait_for_loopback_id(&self) -> BindingId {
         let watcher = self.new_interfaces_watcher();
         loop {
             let event = watcher.watch().await.expect("failed to watch");

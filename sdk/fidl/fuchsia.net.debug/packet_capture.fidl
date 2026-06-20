@@ -81,9 +81,6 @@ type PacketCaptureStartError = flexible enum {
 type PacketCaptureReconnectError = flexible enum {
     /// No rolling packet capture with the provided name can be found.
     NOT_FOUND = 1;
-    /// A channel attached or connected to this packet capture already
-    /// exists.
-    ALREADY_CONNECTED = 2;
 };
 
 alias PacketCaptureName = string:64;
@@ -131,6 +128,9 @@ closed protocol PacketCaptureProvider {
     /// Reconnects to a packet capture previously started with
     /// [`PacketCaptureProvider/StartRolling`].
     ///
+    /// If another channel is already connected to the packet capture, it will be
+    /// closed to make room for this connection.
+    ///
     /// Note reconnecting does not reattach the lifetime of the packet capture to
     /// `channel`.
     strict ReconnectRolling(resource struct {
@@ -164,17 +164,25 @@ closed protocol RollingPacketCapture {
     /// capture.
     ///
     /// After calling `Detach`, closing the client end no longer results in
-    /// the packet capture from being terminated. The passed string names this
-    /// packet capture and can be used *once* to reconnect via
-    /// [`PacketCaptureProvider.ReconnectRolling`]. This gives the client the
-    /// option of ensuring the packet capture is resilient against
-    /// disconnections.
+    /// the packet capture from being terminated. The passed string names
+    /// this packet capture and can be used thereafter to reconnect via
+    /// [`PacketCaptureProvider.ReconnectRolling`]. The protocol is still
+    /// detached after reconnecting. This gives the client the option of
+    /// ensuring the packet capture is resilient against disconnections.
     ///
-    /// `Detach` can be called multiple times, but only the name passed in the
-    /// most recent call is valid and previously passed names are invalidated.
+    /// Only the first call to `Detach` over the lifetime of the packet
+    /// capture (note this is different from the lifetime of this protocol
+    /// since it's possible to disconnect and reconnect) is valid. Subsequent
+    /// calls cannot change the name of this capture.
+    ///
+    /// Once this method returns, it is guaranteed that this rolling packet
+    /// capture is detached.
     strict Detach(struct {
         name PacketCaptureName;
-    });
+    }) -> () error flexible enum {
+        /// Detach has already been called.
+        ALREADY_DETACHED = 1;
+    };
 
     /// Event emitted by the server when the packet capture ends.
     strict -> OnEnded(struct {
@@ -206,8 +214,9 @@ closed protocol RollingPacketCapture {
     /// Clients should call this method when they have successfully downloaded
     /// the packet capture, or if they no longer need it for any reason.
     ///
-    /// When this method is called, the server closes all readers initialized
-    /// via [`StopAndDownload`] and all future interactions on this protocol
-    /// are invalid.
-    strict Discard();
+    /// The server closes all readers initialized via [`StopAndDownload`]
+    /// and all future interactions on this protocol are invalid. When this
+    /// method returns, it is guaranteed that the packet capture has been
+    /// discarded and the usage quota has been released.
+    strict Discard() -> ();
 };

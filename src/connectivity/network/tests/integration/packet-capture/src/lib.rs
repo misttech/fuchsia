@@ -4,6 +4,7 @@
 
 #![cfg(test)]
 
+use fidl::endpoints::Proxy as _;
 use fidl_fuchsia_net as _;
 use fidl_fuchsia_net_debug as fnet_debug;
 use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
@@ -387,11 +388,12 @@ async fn rolling_packet_capture_quota_test(name: &str) {
     let rolling_params = fnet_debug::RollingPacketCaptureParams::default();
 
     // First call should succeed.
-    let _rolling_client1 = provider
+    let rolling_pcap = provider
         .start_rolling(create_common_params(), &rolling_params)
         .await
         .expect("start_rolling FIDL error 1")
-        .expect("start_rolling error 1");
+        .expect("start_rolling error 1")
+        .into_proxy();
 
     // Second call should fail with QUOTA_EXCEEDED.
     let res2 = provider
@@ -401,9 +403,36 @@ async fn rolling_packet_capture_quota_test(name: &str) {
 
     assert_eq!(res2, Err(fnet_debug::PacketCaptureStartError::QuotaExceeded));
 
-    // TODO(https://fxbug.dev/485274945): Verify that a third call succeeds after
-    // stopping the first capture. This logic should be added when discard is
-    // implemented.
+    let capture_name = "quota_test_capture";
+    rolling_pcap.detach(capture_name).await.expect("detach FIDL").expect("detach");
+    drop(rolling_pcap);
+
+    // Third call should also fail with QUOTA_EXCEEDED because the capture
+    // is detached but still active.
+    let res3 = provider
+        .start_rolling(create_common_params(), &rolling_params)
+        .await
+        .expect("start_rolling FIDL error 3");
+
+    assert_eq!(res3, Err(fnet_debug::PacketCaptureStartError::QuotaExceeded));
+
+    let channel = provider
+        .reconnect_rolling(capture_name)
+        .await
+        .expect("reconnect_rolling FIDL error")
+        .expect("reconnect_rolling error");
+    let rolling_pcap = channel.into_proxy();
+
+    let (file_client, file_server) = fidl::endpoints::create_endpoints();
+    rolling_pcap.stop_and_download(file_server).expect("stop_and_download failed");
+
+    let file_proxy = file_client.into_proxy();
+    let _bytes = fuchsia_fs::file::read(&file_proxy).await.expect("read file failed");
+
+    // TODO(https://fxbug.dev/485274945): Verify that a `start_rolling` call
+    // succeeds at the end here once `StopAndDownload` no longer terminates
+    // the channel and we can use `Discard` to synchronize and know that it
+    // is safe to start a new packet capture.
 }
 
 // Tests that the quota is not leaked if a request fails with an error (e.g. invalid buffer size).
@@ -450,4 +479,82 @@ async fn rolling_packet_capture_quota_leak_test(name: &str) {
     if let Err(e) = res2 {
         panic!("second call to start_rolling should have succeeded, got {e:?}");
     }
+}
+
+// Tests that we can detach from a rolling packet capture and reconnect to it.
+#[netstack_test]
+async fn rolling_packet_capture_detach_reconnect_test(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+
+    let provider = realm
+        .connect_to_protocol::<fnet_debug::PacketCaptureProviderMarker>()
+        .expect("connect to PacketCaptureProvider");
+
+    let fnet_interfaces_ext::Properties { id: loopback_id, .. } = realm
+        .loopback_properties()
+        .await
+        .expect("failed to get loopback properties")
+        .expect("loopback not found");
+
+    let create_common_params = || fnet_debug::CommonPacketCaptureParams {
+        interfaces: Some(fnet_debug::InterfaceSpecifier::InterfaceIds(vec![loopback_id.get()])),
+        ..Default::default()
+    };
+
+    let rolling_params = fnet_debug::RollingPacketCaptureParams::default();
+
+    let capture_name = "test_capture";
+    let rolling_proxy = provider
+        .start_rolling(create_common_params(), &rolling_params)
+        .await
+        .expect("start_rolling FIDL error")
+        .expect("start_rolling error")
+        .into_proxy();
+
+    rolling_proxy.detach(capture_name).await.expect("detach FIDL").expect("detach");
+
+    let payload = b"hello world";
+    let bind_addr = std::net::SocketAddr::new(
+        std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
+        12345,
+    );
+    send_and_recv_udp(&realm, bind_addr, payload).await;
+
+    let channel = provider
+        .reconnect_rolling(capture_name)
+        .await
+        .expect("reconnect_rolling FIDL error")
+        .expect("reconnect_rolling error");
+    // Verify that the old proxy was closed by the takeover.
+    assert_eq!(rolling_proxy.on_closed().await, Ok(zx::Signals::CHANNEL_PEER_CLOSED));
+    let rolling_proxy = channel.into_proxy();
+
+    // This reconnect takes over the previous proxy.
+    let channel = provider
+        .reconnect_rolling(capture_name)
+        .await
+        .expect("reconnect_rolling FIDL error dup")
+        .expect("reconnect_rolling error dup");
+    // Verify that the old proxy was closed by the takeover.
+    assert_eq!(rolling_proxy.on_closed().await, Ok(zx::Signals::CHANNEL_PEER_CLOSED));
+    let rolling_proxy = channel.into_proxy();
+
+    // Finally call StopAndDownload.
+    let (file_client, file_server) = fidl::endpoints::create_endpoints();
+    rolling_proxy.stop_and_download(file_server).expect("stop_and_download failed");
+
+    let file_proxy = file_client.into_proxy();
+    let bytes = fuchsia_fs::file::read(&file_proxy).await.expect("read file failed");
+    let cap = pcap::parse_pcapng(&bytes).expect("could not parse file with pcap library");
+
+    let expected_packets = [(net_ip_v4!("127.0.0.1"), 12345, payload.as_slice())];
+    assert_udp_packets(cap.packet_blocks(), &expected_packets);
+
+    // TODO(https://fxbug.dev/485274945): Long term we want to support reconnecting
+    // after StopAndDownload has been called (e.g. to download it again or discard it).
+    // Verify that reconnect fails after the capture was stopped.
+    let res =
+        provider.reconnect_rolling(capture_name).await.expect("reconnect_rolling FIDL error dup");
+    assert_eq!(res, Err(fnet_debug::PacketCaptureReconnectError::NotFound));
 }
