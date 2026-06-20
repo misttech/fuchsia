@@ -200,7 +200,16 @@ template("kernel_switchset") {
       # The kernel_config includes the use of the custom target.
       # The default config for --target=$rust_target would conflict.
       remove_common_configs = [ "//build/config/rust:target" ]
-      configs = [ "//zircon/kernel/switch:kernel_config" ]
+      configs = [
+        "//zircon/kernel/switch:abi",
+
+        # The :abi configs tree doesn't do all the work for Rust.  Instead,
+        # they contribute to the rules for creating the custom target JSON.
+        "//zircon/kernel/lib/rust:target",
+
+        # This rolls up configs that don't need to be separately removable.
+        "//zircon/kernel/switch:kernel_config",
+      ]
 
       # NOTE: kernel artifacts currently do not build under fuzzer
       # variants. This was also true with the Zircon build, but
@@ -245,10 +254,6 @@ template("kernel_switchset") {
       if (configs + _optimize_none - _optimize_none != configs) {
         configs -= _optimize_none
         configs += [ "//build/config:optimize_debug" ]
-      }
-
-      if (enable_rust_in_zircon) {
-        source_deps = [ "//zircon/kernel/switch:rust-target.deps" ]
       }
     }
   }

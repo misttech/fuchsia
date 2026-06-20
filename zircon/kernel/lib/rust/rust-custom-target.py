@@ -45,6 +45,7 @@ def main() -> int:
         "--output",
         metavar="PATH",
         type=Path,
+        action="append",
         help="Path of the new custom target JSON file to write",
         required=True,
     )
@@ -144,7 +145,14 @@ def main() -> int:
     output = apply_edits(original, edits)
     output["features"] = ",".join(features)
 
-    write_json_file(args.output, output)
+    write_json_file(args.output[0], output)
+
+    # The main file wasn't touched if it didn't change.  But it doesn't hurt to
+    # unconditionally recreate the hard links, since they just come back as the
+    # very same unchanged file.
+    for extra_output in args.output[1:]:
+        extra_output.unlink(missing_ok=True)
+        extra_output.hardlink_to(args.output[0])
 
     return 0
 

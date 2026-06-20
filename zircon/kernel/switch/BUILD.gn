@@ -288,25 +288,28 @@ config("instrumented-stack-size") {
 
 # This is the "top" compiler_config().  Its $compiler_configs must reach all
 # other compiler_config()s that could be reached in any way as normal config()s
-# in this toolchain.
+# in this toolchain.  It's paired with //zircon/kernel/lib/rust:kernel-target
+# to roll up the compiler_config() instructions for the custom Rust target.
 compiler_config("abi") {
-  visibility = [ ":*" ]
   compiler_configs = [
     "//zircon/kernel/arch/$zircon_cpu:abi",
     ":standalone",
   ]
 }
 
-# This is the top config for all kernel code.
-variant("kernel_config") {
-  configs = [ ":abi" ]
-  if (enable_rust_in_zircon) {
-    # The :abi configs tree doesn't do all the work for Rust.  Instead, they
-    # contribute to the rules for creating the custom target JSON file.
-    configs += [ ":rust-target" ]
-  }
+# These are referenced because :abi is listed in the toolchain definition.
+group("abi_deps") {
+}
+group("abi_executable_deps") {
+}
+group("abi_link_deps") {
+}
+group("abi_source_deps") {
+}
 
-  configs += [
+# This is the top config for all kernel code (after :abi).
+variant("kernel_config") {
+  configs = [
     ":jtrace_config",
     ":lock_dep",
     ":scheduler",
@@ -547,91 +550,4 @@ compiler_config("kernel_executable.config") {
     "//build/config/zircon:static-pie-compile",
     "//build/config/zircon:static-pie-link",
   ]
-}
-
-# Collect the edit steps defined by each compiler_config().
-generated_file("rust-target-edits") {
-  visibility = [ ":rust-custom-target" ]
-  outputs = [ "$root_gen_dir/rust-target-edits.json" ]
-  output_conversion = "json"
-  data_keys = [ "kernel_rust_target_edits" ]
-  deps = [ ":rust-target-edits.prologue" ]
-
-  # That must be first in the list!  Append the real deps separately.
-  deps += [ ":abi.rust-target-edits" ]
-}
-
-group("rust-target-edits.prologue") {
-  visibility = [ ":rust-target-edits" ]
-  metadata = {
-    # This winds up first in the collected list.  It's just the plain
-    # --target string.  Later elements are scopes to drive edits to that
-    # target's default JSON spec.
-    kernel_rust_target_edits = [ rust_target ]
-  }
-}
-
-rustlib_dir = "$root_gen_dir/lib/rustlib/kernel"
-
-# Generate the full target spec from the base target and the edits.
-action("rust-custom-target") {
-  visibility = [
-    ":*",
-    "//zircon/kernel/lib/rust:*",
-  ]
-
-  script = "rust-custom-target.py"
-
-  inputs = [ "$rustc_prefix/bin/rustc" ]
-  args = [ "--rustc=" + rebase_path(inputs[0], root_build_dir) ]
-
-  deps = [ ":rust-target-edits" ]
-  sources = get_target_outputs(deps[0])
-  args += [ "--edits=" + rebase_path(sources[0], root_build_dir) ]
-
-  outputs = [ "$rustlib_dir/target.json" ]
-  args += [ "--output=" + rebase_path(outputs[0], root_build_dir) ]
-
-  metadata = {
-    # This will roll up into the generated_file()s fed to the RBE wrapper so it
-    # knows what GN and Ninja know via the inputs list in the config() below.
-    rust_compilation_deps = rebase_path(outputs, root_build_dir)
-  }
-}
-
-# Apply the custom target.  This confers the Ninja file dependency on the
-# JSON file.  The toolchain machinery in kernel_switchset() has to ensure
-# that there are deps on :rust-target.deps to get it built the first time.
-config("rust-target") {
-  visibility = [ ":*" ]
-  inputs = get_target_outputs(":rust-custom-target")
-  rustflags = [
-    "-Zunstable-options",
-    "--sysroot=" + rebase_path(root_gen_dir, root_build_dir),
-
-    # TODO(https://gn.g-issues.chromium.org/issues/522275056): The GN
-    # parser does not recognize `--target=kernel`. This must be
-    # `--target kernel`.
-    "--target",
-    "kernel",
-  ]
-  if (rust_rbe_enable) {
-    rustflags += [
-      "--remote-flag=--clang-target=$current_target_tuple",
-      "--remote-inputs=" +
-          string_join(",", rebase_path(inputs, root_build_dir)),
-    ]
-  }
-}
-
-group("rust-target.deps") {
-  # This needs to be in public_deps so that it counts among "direct" deps for
-  # all the Rust compilation targets that have its outputs in their inputs via
-  # config("rust-target").
-  public_deps = [ ":rust-custom-target" ]
-
-  # This is just an ordering dep to get the custom target sysroot rlibs built.
-  # The rlib files aren't directly known to GN / Ninja as inputs, but will be
-  # picked up from rustc's depfile to take care of incremental rebuilds.
-  deps = [ "//zircon/kernel/lib/rust" ]
 }
