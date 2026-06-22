@@ -5,8 +5,8 @@
 use anyhow::{Result, format_err};
 use nom::Parser;
 use nom::branch::alt;
-use nom::bytes::complete::tag;
-use nom::character::complete::{alpha1, char};
+use nom::bytes::complete::{is_not, tag};
+use nom::character::complete::char;
 use nom::combinator::{map, map_res};
 
 use nom::multi::{separated_list0, separated_list1};
@@ -51,7 +51,7 @@ pub fn parse(bytes: Vec<u8>) -> Result<AtResponse> {
     let name_parser = tag("+CIND:");
 
     // The next line parses a double quote delimited name of an indicator.
-    let ag_indicator_name_parser = delimited(char('"'), alpha1, char('"'));
+    let ag_indicator_name_parser = delimited(char('"'), is_not("\""), char('"'));
 
     // Attempt to parse a parenthesis comma delimited list of integers such as "(0,1)"
     // or hyphen delimited range of integers such as "(0-1)".
@@ -256,6 +256,70 @@ mod tests {
                     AgIndicatorIndex::CallHeld,
                     AgIndicatorIndex::Vendor { name: "mycustom".to_string(), min: 0, max: 4 },
                 ]
+            }
+        )
+    }
+
+    #[fuchsia::test]
+    fn parse_with_custom_indicator_containing_underscore_and_space() {
+        let bytes = b"+CIND: (\"my_indicator \",(0,1))";
+        let parsed = parse(Vec::from(bytes)).expect("Parsing");
+        assert_eq!(
+            parsed,
+            AtResponse::CindTest {
+                ordered_indicators: vec![AgIndicatorIndex::Vendor {
+                    name: "my_indicator".to_string(),
+                    min: 0,
+                    max: 1
+                }]
+            }
+        )
+    }
+
+    #[fuchsia::test]
+    fn parse_with_custom_indicator_containing_trailing_underscore() {
+        let bytes = b"+CIND: (\"my_indicator_ \",(0,1))";
+        let parsed = parse(Vec::from(bytes)).expect("Parsing");
+        assert_eq!(
+            parsed,
+            AtResponse::CindTest {
+                ordered_indicators: vec![AgIndicatorIndex::Vendor {
+                    name: "my_indicator_".to_string(),
+                    min: 0,
+                    max: 1
+                }]
+            }
+        )
+    }
+
+    #[fuchsia::test]
+    fn parse_with_custom_indicator_containing_leading_space() {
+        let bytes = b"+CIND: (\" my_indicator\",(0,1))";
+        let parsed = parse(Vec::from(bytes)).expect("Parsing");
+        assert_eq!(
+            parsed,
+            AtResponse::CindTest {
+                ordered_indicators: vec![AgIndicatorIndex::Vendor {
+                    name: "my_indicator".to_string(),
+                    min: 0,
+                    max: 1
+                }]
+            }
+        )
+    }
+
+    #[fuchsia::test]
+    fn parse_with_custom_indicator_containing_leading_space_and_underscore() {
+        let bytes = b"+CIND: (\" _my_indicator\",(0,1))";
+        let parsed = parse(Vec::from(bytes)).expect("Parsing");
+        assert_eq!(
+            parsed,
+            AtResponse::CindTest {
+                ordered_indicators: vec![AgIndicatorIndex::Vendor {
+                    name: "_my_indicator".to_string(),
+                    min: 0,
+                    max: 1
+                }]
             }
         )
     }
