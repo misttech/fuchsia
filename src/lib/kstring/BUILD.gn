@@ -11,6 +11,7 @@ rustc_library("kstring") {
   edition = "2024"
 
   sources = [
+    "src/interned_category.rs",
     "src/interned_string.rs",
     "src/lib.rs",
   ]
@@ -27,7 +28,7 @@ fuchsia_unittest_package("kstring-test") {
 
 source_set("cpp_test_lib") {
   testonly = true
-  sources = [ "tests/cpp_interned_string.cc" ]
+  sources = [ "tests/cpp_interned.cc" ]
   public_deps = [ "//src/performance/lib/fxt" ]
 }
 

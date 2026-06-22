@@ -12,6 +12,23 @@ use proc_macro::{Delimiter, TokenStream, TokenTree};
 /// `#[interned_string_export_name("hello")]`.
 #[proc_macro_attribute]
 pub fn interned_string_export_name(attr: TokenStream, item: TokenStream) -> TokenStream {
+    generate_export_name_attr(attr, item, mangle_cpp_interned_string)
+}
+
+/// A procedural macro attribute that generates the C++ mangled symbol name for the
+/// given category string literal, and attaches it as `#[unsafe(export_name = "...")]`
+/// to the target static variable.
+#[proc_macro_attribute]
+pub fn interned_category_export_name(attr: TokenStream, item: TokenStream) -> TokenStream {
+    generate_export_name_attr(attr, item, mangle_cpp_interned_category)
+}
+
+// Common helper to parse the attribute string, run the mangler, and generate the
+// `export_name` attribute.
+fn generate_export_name_attr<F>(attr: TokenStream, item: TokenStream, mangle_fn: F) -> TokenStream
+where
+    F: FnOnce(&str) -> String,
+{
     let mut iter = attr.into_iter();
 
     let str_lit_tt = match iter.next() {
@@ -29,7 +46,7 @@ pub fn interned_string_export_name(attr: TokenStream, item: TokenStream) -> Toke
     }
     let actual_str = &str_val[1..str_val.len() - 1];
 
-    let cpp_symbol = mangle_cpp_interned_string(actual_str);
+    let cpp_symbol = mangle_fn(actual_str);
 
     let mut result = TokenStream::new();
     let export_name_attr = format!("#[unsafe(export_name = \"{}\")]", cpp_symbol);
@@ -83,5 +100,16 @@ fn mangle_cpp_interned_string(s: &str) -> String {
         result.push_str(&format!("Lc{}E", c as u32));
     }
     result.push_str("EE15interned_stringE");
+    result
+}
+
+// Generates the Itanium C++ ABI mangled name for the C++ template instantiation
+// `fxt::internal::InternedCategoryStorage<chars...>::interned_category`.
+fn mangle_cpp_interned_category(s: &str) -> String {
+    let mut result = String::from("_ZN3fxt8internal23InternedCategoryStorageIJ");
+    for c in s.chars() {
+        result.push_str(&format!("Lc{}E", c as u32));
+    }
+    result.push_str("EE17interned_categoryE");
     result
 }

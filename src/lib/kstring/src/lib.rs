@@ -4,7 +4,10 @@
 
 #![no_std]
 
+pub mod interned_category;
 pub mod interned_string;
 
+#[doc(hidden)]
+pub use kstring_macro::interned_category_export_name;
 #[doc(hidden)]
 pub use kstring_macro::interned_string_export_name;
