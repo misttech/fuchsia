@@ -37,6 +37,7 @@ fidl("fuchsia.hardware.usb.phy") {
   sources = [ "usb-phy.fidl" ]
   sdk_area = "Drivers"
   sdk_category = "partner"
+  enable_rust_next = true
   stable = false
   visibility = [ "*" ]
   public_deps = [
