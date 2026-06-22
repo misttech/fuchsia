@@ -152,14 +152,6 @@ subsystem usually has its own file in this directory (e.g. `fonts_config.rs` or
     )
     ```
 
-    **Common Flag Patterns:**
-
-    | Feature enabled in... | When product config sets... | OR When board config sets... |
-    | --------------------- | ----------------------------- | ---------------------------- |
-    | All `eng` products    | `platform.build_type = eng`   |                              |
-    | Specific products     | `platform.tandem.enabled = True` |                              |
-    | Products on capable boards |                               | `provided_features = [ "tandem_hw" ]` |
-
 ### 2. Define a new subsystem {:#define-subsystem}
 
 An **assembly subsystem** is a Rust module responsible for processing the
@@ -535,14 +527,15 @@ builder.kernel_arg(KernelArg::TandemEngDebug);
 
 ### 4. Enable the feature in a product/board {:#enable-feature}
 
-Once your subsystem is implemented, you can enable the feature by setting
-the flags you defined in [Step 1](#declare-feature-flags) in a product or board
-configuration file.
+Once you implement your subsystem, you can enable the feature across products
+and boards depending on your feature's requirements. The following examples
+cover the most common enablement patterns.
 
-#### Enable in product config
+#### Enable on specific products (product opt-in)
 
 To enable the "Tandem" feature for a specific product, modify its
-`fuchsia_product_configuration` target (usually in a `BUILD.bazel` file):
+`fuchsia_product_configuration` target (usually in a `BUILD.bazel` file) to set
+the flag defined in [Declare feature flags in config_schema](#declare-feature-flags):
 
 ```bazel
 fuchsia_product_configuration(
@@ -560,30 +553,87 @@ fuchsia_product_configuration(
 )
 ```
 
-#### Enable based on board features
+#### Enable on all products of a specific build type or feature set level
 
-Board features are a way for a board to declare that they support a
-particular piece of hardware. Platform subsystems can read board
-`context.board_config.provided_features` to conditionally enable or
-disable features.
+When you want to automatically include a feature on all products of a given
+build type (such as `eng`) or feature set level (such as `utility`), you do not
+need to define a product configuration flag. Note that `platform.build_type` in
+product configurations is used to *declare* whether a product is an `eng` or
+`user` build; it is not a setting used to enable individual features.
 
-If your subsystem logic checks for board features, ensure the
-board configuration (e.g., `//boards/my_board/BUILD.bazel`) includes it.
-For example:
+To enable a feature automatically for a build type or feature set level, you can use any of the following options:
+
+*   **Option A: Add to an existing bundle**: If your feature belongs in all
+    `eng` products, you can add your code directly to an existing bundle such as
+    `embeddable_eng`.
+*   **Option B: Configure `auto_include_in`**: In your Assembly Input Bundle
+    (`BUILD.gn`), specify the allowed build types and feature set levels:
+
+    ```gn
+    assembly_input_bundle("tandem_core") {
+      auto_include_in = [ "utility::eng" ]
+      # ...
+    }
+    ```
+
+*   **Option C: Check context in subsystem**: In your subsystem logic
+    (`define_configuration`), inspect `context.build_type` or
+    `context.feature_set_level`:
+
+    ```rust
+    if context.build_type == &BuildType::Eng {
+        builder.platform_bundle("tandem_core");
+    }
+    ```
+
+#### Enable on all products that use a capable board (board-driven)
+
+Board features are a way for a board to declare that they support a particular
+piece of hardware. Subsystems can check board features using `BoardFeature` enum
+constants via `context.board_config.provides_feature(...)`.
+
+If your feature requires specific hardware support, ensure the board
+configuration (for example, `//boards/my_board/BUILD.bazel`) includes it:
 
 ```bazel
 fuchsia_board_configuration(
     name = "my_board",
     provided_features = [
-        "tandem_hw",  # This will be seen by context.board_config.provided_features
+        "fuchsia::tandem_hw",
     ],
     # ...
 )
 ```
 
-After modifying the configuration, rebuilding the product bundle will
-include the Tandem feature and its configurations as defined in your
-subsystem.
+In your subsystem logic, check whether the board provides this feature using the
+corresponding `BoardFeature` constant:
+
+```rust
+if context.board_config.provides_feature(BoardFeature::TandemHw) {
+    builder.platform_bundle("tandem_core");
+}
+```
+
+Any product built using `my_board` (or any other board providing
+`fuchsia::tandem_hw`) automatically includes the feature.
+
+#### Enable on products with a capable board and explicit opt-in
+
+When a feature requires both capable hardware from the board and explicit opt-in
+from the product configuration (for example, an optional service that only works
+on capable boards), verify both conditions in your subsystem logic
+(`define_configuration`):
+
+```rust
+if tandem_config.enabled
+    && context.board_config.provides_feature(BoardFeature::TandemHw)
+{
+    builder.platform_bundle("tandem_core");
+}
+```
+
+After you modify the configuration and subsystem logic, rebuilding the product
+bundle includes the Tandem feature and its configurations as defined.
 
 <!-- Reference links -->
 
