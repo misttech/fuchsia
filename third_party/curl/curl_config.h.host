@@ -442,11 +442,7 @@
 /* Define to 1 if you have the memrchr function or macro. */
 /* #undef HAVE_MEMRCHR */
 
-/* Define to 1 if you have the MSG_NOSIGNAL flag. */
-/* #undef HAVE_MSG_NOSIGNAL */
 
-/* Define to 1 if you have the <msh3.h> header file. */
-/* #undef HAVE_MSH3_H */
 
 /* Define to 1 if you have the <netdb.h> header file. */
 #define HAVE_NETDB_H 1
@@ -478,9 +474,6 @@
 /* Define to 1 if you have the <ngtcp2/ngtcp2.h> header file. */
 /* #undef HAVE_NGTCP2_NGTCP2_H */
 
-/* if you have an old MIT Kerberos version, lacking GSS_C_NT_HOSTBASED_SERVICE
-   */
-/* #undef HAVE_OLD_GSSMIT */
 
 /* if you have opendir */
 #define HAVE_OPENDIR 1
@@ -504,8 +497,6 @@
 /* Define to 1 if you have the <openssl/ssl.h> header file. */
 #define HAVE_OPENSSL_SSL_H 1
 
-/* Define to 1 if you have the <openssl/x509.h> header file. */
-#define HAVE_OPENSSL_X509_H 1
 
 /* Define to 1 if you have the 'pipe' function. */
 #define HAVE_PIPE 1
@@ -525,8 +516,6 @@
 /* Define to 1 if you have the <proto/bsdsocket.h> header file. */
 /* #undef HAVE_PROTO_BSDSOCKET_H */
 
-/* if you have <pthread.h> */
-/* #undef HAVE_PTHREAD_H */
 
 /* Define to 1 if you have the <pwd.h> header file. */
 #define HAVE_PWD_H 1
@@ -564,8 +553,6 @@
 /* Define to 1 if you have the 'setlocale' function. */
 #define HAVE_SETLOCALE 1
 
-/* Define to 1 if you have the 'setmode' function. */
-/* #undef HAVE_SETMODE */
 
 /* Define to 1 if you have the 'setrlimit' function. */
 #define HAVE_SETRLIMIT 1
@@ -582,8 +569,6 @@
 /* Define to 1 if you have the sigsetjmp function or macro. */
 #define HAVE_SIGSETJMP 1
 
-/* Define to 1 if you have the 'snprintf' function. */
-#define HAVE_SNPRINTF 1
 
 /* Define to 1 if struct sockaddr_in6 has the sin6_scope_id member */
 #define HAVE_SOCKADDR_IN6_SIN6_SCOPE_ID 1
@@ -628,8 +613,6 @@
 /* Define to 1 if you have the strcmpi function. */
 /* #undef HAVE_STRCMPI */
 
-/* Define to 1 if you have the strdup function. */
-#define HAVE_STRDUP 1
 
 /* Define to 1 if you have the strerror_r function. */
 #define HAVE_STRERROR_R 1
@@ -721,8 +704,6 @@
 /* Define to 1 if you have the <uv.h> header file. */
 /* #undef HAVE_UV_H */
 
-/* Define to 1 if you have the <wolfssh/ssh.h> header file. */
-/* #undef HAVE_WOLFSSH_SSH_H */
 
 /* Define to 1 if you have the 'wolfSSL_BIO_new' function. */
 /* #undef HAVE_WOLFSSL_BIO_NEW */
@@ -733,8 +714,6 @@
 /* Define to 1 if you have the 'wolfSSL_CTX_GenerateEchConfig' function. */
 /* #undef HAVE_WOLFSSL_CTX_GENERATEECHCONFIG */
 
-/* Define to 1 if you have the 'wolfSSL_DES_ecb_encrypt' function. */
-/* #undef HAVE_WOLFSSL_DES_ECB_ENCRYPT */
 
 /* Define to 1 if you have the 'wolfSSL_get_peer_certificate' function. */
 /* #undef HAVE_WOLFSSL_GET_PEER_CERTIFICATE */
@@ -755,8 +734,6 @@
 /* Define to 1 if you have the <zstd.h> header file. */
 /* #undef HAVE_ZSTD_H */
 
-/* Define to 1 if you have the '_setmode' function. */
-/* #undef HAVE__SETMODE */
 
 /* Define to the sub-directory where libtool stores uninstalled libraries. */
 #define LT_OBJDIR ".libs/"
@@ -806,8 +783,6 @@
 /* Size of long in number of bytes */
 #define SIZEOF_LONG 8
 
-/* Size of long long in number of bytes */
-/* #undef SIZEOF_LONG_LONG */
 
 /* Size of off_t in number of bytes */
 #define SIZEOF_OFF_T 8
@@ -850,8 +825,6 @@
 /* if libpsl is in use */
 /* #undef USE_LIBPSL */
 
-/* if librtmp is in use */
-/* #undef USE_LIBRTMP */
 
 /* if libssh is in use */
 /* #undef USE_LIBSSH */
@@ -865,8 +838,6 @@
 /* if mbedTLS is enabled */
 /* #undef USE_MBEDTLS */
 
-/* if msh3 is in use */
-/* #undef USE_MSH3 */
 
 /* if nghttp2 is in use */
 /* #undef USE_NGHTTP2 */
@@ -883,8 +854,6 @@
 /* if OpenSSL is in use */
 #define USE_OPENSSL 1
 
-/* if openssl QUIC is in use */
-/* #undef USE_OPENSSL_QUIC */
 
 /* if quiche is in use */
 /* #undef USE_QUICHE */
@@ -898,11 +867,7 @@
 /* if SSL session export support is available */
 /* #undef USE_SSLS_EXPORT */
 
-/* if you want POSIX threaded DNS lookup */
-/* #undef USE_THREADS_POSIX */
 
-/* if you want Win32 threaded DNS lookup */
-/* #undef USE_THREADS_WIN32 */
 
 /* Use TLS-SRP authentication */
 /* #undef USE_TLS_SRP */
@@ -920,9 +885,6 @@
 /* Define to 1 if you have the `normaliz' (WinIDN) library (-lnormaliz). */
 /* #undef USE_WIN32_IDN */
 
-/* Define to 1 if you are building a Windows target with large file support.
-   */
-/* #undef USE_WIN32_LARGE_FILES */
 
 /* Use Windows LDAP implementation */
 /* #undef USE_WIN32_LDAP */
@@ -930,8 +892,6 @@
 /* to enable SSPI support */
 /* #undef USE_WINDOWS_SSPI */
 
-/* if wolfSSH is in use */
-/* #undef USE_WOLFSSH */
 
 /* if wolfSSL is enabled */
 /* #undef USE_WOLFSSL */
@@ -964,4 +924,13 @@
 
 /* the signed version of size_t */
 /* #undef ssize_t */
+
+/* Define to 1 if you have the memrchr function or macro. */
+#define HAVE_MEMRCHR 1
+
+/* if POSIX pthreads are supported */
+#define HAVE_THREADS_POSIX 1
+
+/* if you want threaded DNS lookup */
+#define USE_RESOLV_THREADED 1
 

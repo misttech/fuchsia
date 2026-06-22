@@ -38,6 +38,7 @@ if (is_fuchsia) {
 config("curl_config") {
   include_dirs = [
     "src/include",
+    "src/lib",
     "$target_gen_dir",
     "$target_gen_dir/curl",
   ]
@@ -71,6 +72,8 @@ target(default_library_type, "libcurl") {
     "src/lib/bufq.h",
     "src/lib/bufref.c",
     "src/lib/bufref.h",
+    "src/lib/cf-dns.c",
+    "src/lib/cf-dns.h",
     "src/lib/cf-h1-proxy.c",
     "src/lib/cf-h1-proxy.h",
     "src/lib/cf-h2-proxy.c",
@@ -87,7 +90,6 @@ target(default_library_type, "libcurl") {
     "src/lib/cfilters.h",
     "src/lib/config-mac.h",
     "src/lib/config-os400.h",
-    "src/lib/config-plan9.h",
     "src/lib/config-riscos.h",
     "src/lib/config-win32.h",
     "src/lib/conncache.c",
@@ -102,7 +104,6 @@ target(default_library_type, "libcurl") {
     "src/lib/cshutdn.h",
     "src/lib/curl_addrinfo.c",
     "src/lib/curl_addrinfo.h",
-    "src/lib/curl_config.h",
     "src/lib/curl_ctype.h",
     "src/lib/curl_endian.c",
     "src/lib/curl_endian.h",
@@ -120,21 +121,16 @@ target(default_library_type, "libcurl") {
     "src/lib/curl_ldap.h",
     "src/lib/curl_md4.h",
     "src/lib/curl_md5.h",
-    "src/lib/curl_memory.h",
     "src/lib/curl_memrchr.c",
     "src/lib/curl_memrchr.h",
-    "src/lib/curl_multibyte.h",
     "src/lib/curl_ntlm_core.c",
     "src/lib/curl_ntlm_core.h",
     "src/lib/curl_printf.h",
     "src/lib/curl_range.c",
     "src/lib/curl_range.h",
-    "src/lib/curl_rtmp.c",
-    "src/lib/curl_rtmp.h",
     "src/lib/curl_sasl.c",
     "src/lib/curl_sasl.h",
     "src/lib/curl_setup.h",
-    "src/lib/curl_setup_once.h",
     "src/lib/curl_sha256.h",
     "src/lib/curl_sha512_256.c",
     "src/lib/curl_sha512_256.h",
@@ -148,8 +144,6 @@ target(default_library_type, "libcurl") {
     "src/lib/curl_trc.h",
     "src/lib/curlx/base64.c",
     "src/lib/curlx/base64.h",
-    "src/lib/curlx/binmode.h",
-    "src/lib/curlx/curlx.h",
     "src/lib/curlx/dynbuf.c",
     "src/lib/curlx/dynbuf.h",
     "src/lib/curlx/fopen.c",
@@ -162,8 +156,12 @@ target(default_library_type, "libcurl") {
     "src/lib/curlx/multibyte.h",
     "src/lib/curlx/nonblock.c",
     "src/lib/curlx/nonblock.h",
+    "src/lib/curlx/snprintf.c",
+    "src/lib/curlx/snprintf.h",
     "src/lib/curlx/strcopy.c",
     "src/lib/curlx/strcopy.h",
+    "src/lib/curlx/strdup.c",
+    "src/lib/curlx/strdup.h",
     "src/lib/curlx/strerr.c",
     "src/lib/curlx/strerr.h",
     "src/lib/curlx/strparse.c",
@@ -186,6 +184,8 @@ target(default_library_type, "libcurl") {
     "src/lib/cw-pause.h",
     "src/lib/dict.c",
     "src/lib/dict.h",
+    "src/lib/dnscache.c",
+    "src/lib/dnscache.h",
     "src/lib/doh.c",
     "src/lib/doh.h",
     "src/lib/dynhds.c",
@@ -206,6 +206,7 @@ target(default_library_type, "libcurl") {
     "src/lib/fileinfo.h",
     "src/lib/formdata.c",
     "src/lib/formdata.h",
+    "src/lib/ftp-int.h",
     "src/lib/ftp.c",
     "src/lib/ftp.h",
     "src/lib/ftplistparser.c",
@@ -261,7 +262,6 @@ target(default_library_type, "libcurl") {
     "src/lib/md4.c",
     "src/lib/md5.c",
     "src/lib/memdebug.c",
-    "src/lib/memdebug.h",
     "src/lib/mime.c",
     "src/lib/mime.h",
     "src/lib/mprintf.c",
@@ -287,6 +287,8 @@ target(default_library_type, "libcurl") {
     "src/lib/pop3.h",
     "src/lib/progress.c",
     "src/lib/progress.h",
+    "src/lib/protocol.c",
+    "src/lib/protocol.h",
     "src/lib/psl.c",
     "src/lib/psl.h",
     "src/lib/rand.c",
@@ -325,10 +327,7 @@ target(default_library_type, "libcurl") {
     "src/lib/splay.h",
     "src/lib/strcase.c",
     "src/lib/strcase.h",
-    "src/lib/strdup.c",
-    "src/lib/strdup.h",
     "src/lib/strequal.c",
-    "src/lib/strequal.h",
     "src/lib/strerror.c",
     "src/lib/strerror.h",
     "src/lib/system_win32.c",
@@ -337,6 +336,10 @@ target(default_library_type, "libcurl") {
     "src/lib/telnet.h",
     "src/lib/tftp.c",
     "src/lib/tftp.h",
+    "src/lib/thrdpool.c",
+    "src/lib/thrdpool.h",
+    "src/lib/thrdqueue.c",
+    "src/lib/thrdqueue.h",
     "src/lib/transfer.c",
     "src/lib/transfer.h",
     "src/lib/uint-bset.c",
@@ -432,9 +435,6 @@ config("suppress_warnings") {
     "-Wno-conversion",
     "-Wno-implicit-fallthrough",
     "-Wno-unused-but-set-variable",
-
-    # TODO(https://fxbug.dev/432038197): update library to resolve this warning.
-    "-Wno-uninitialized-const-pointer",
   ]
 }
 
@@ -445,7 +445,6 @@ executable("curl_bin") {
     "src/lib/curl_setup.h",
     "src/lib/curlx/base64.c",
     "src/lib/curlx/base64.h",
-    "src/lib/curlx/binmode.h",
     "src/lib/curlx/dynbuf.c",
     "src/lib/curlx/dynbuf.h",
     "src/lib/curlx/fopen.c",
@@ -454,6 +453,8 @@ executable("curl_bin") {
     "src/lib/curlx/nonblock.h",
     "src/lib/curlx/strcopy.c",
     "src/lib/curlx/strcopy.h",
+    "src/lib/curlx/strdup.c",
+    "src/lib/curlx/strdup.h",
     "src/lib/curlx/strerr.c",
     "src/lib/curlx/strerr.h",
     "src/lib/curlx/strparse.c",
@@ -472,8 +473,6 @@ executable("curl_bin") {
     "src/src/slist_wc.h",
     "src/src/terminal.c",
     "src/src/terminal.h",
-    "src/src/tool_bname.c",
-    "src/src/tool_bname.h",
     "src/src/tool_cb_dbg.c",
     "src/src/tool_cb_dbg.h",
     "src/src/tool_cb_hdr.c",
@@ -538,8 +537,6 @@ executable("curl_bin") {
     "src/src/tool_ssls.h",
     "src/src/tool_stderr.c",
     "src/src/tool_stderr.h",
-    "src/src/tool_strdup.c",
-    "src/src/tool_strdup.h",
     "src/src/tool_urlglob.c",
     "src/src/tool_urlglob.h",
     "src/src/tool_util.c",
@@ -568,7 +565,7 @@ executable("curl_bin") {
   if (is_linux) {
     defines += [ "_GNU_SOURCE" ]
   }
-  include_dirs = [ "src/lib" ]
+  include_dirs = [ "src/src" ]
   configs += [ ":suppress_warnings" ]
 
   # Note that the curl binary explicitly defines CURL_NO_OLDIES in one of its
@@ -585,10 +582,7 @@ source_set("tool_hugehelp") {
   # Because we check this in directly to fuchsia.git instead of generating it
   # during the build, we have to tell it where to find the headers that it
   # expects to be generated alongside.
-  include_dirs = [
-    "src/lib",
-    "src/src",
-  ]
+  include_dirs = [ "src/src" ]
 
   deps = [ ":libcurl" ]
 
