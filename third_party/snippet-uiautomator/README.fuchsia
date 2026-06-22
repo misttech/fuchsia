@@ -1,7 +1,7 @@
 Name: snippet-uiautomator
 URL: https://github.com/google/snippet-uiautomator
 Upstream Git: https://github.com/google/snippet-uiautomator
-Revision: aaa3e43a8d6c9ebfb85ab89d98353f3d3a664773
+Revision: d16c233d4432db70b97551409f23b7eb8fa945ee
 Security Critical: no
 
 License File: src/LICENSE
