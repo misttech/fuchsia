@@ -29,6 +29,13 @@ pub fn format_operator_name(format: at::NetworkOperatorNameFormat, mut name: Str
     name
 }
 
+/// Returns true if the network operator name is valid.
+/// An operator name is valid if it does not contain control characters or double quotes.
+/// Note that *all* double quotes are rejected.
+pub fn is_valid_operator_name(name: &str) -> bool {
+    !name.chars().any(|c| c.is_ascii_control() || c == '"')
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum State {
     /// Initial state of the procedure.
@@ -97,9 +104,10 @@ impl Procedure for QueryOperatorProcedure {
             (State::Start, at::Command::CopsRead {})
             | (State::SetFormatRequest, at::Command::CopsRead {}) => {
                 self.state.transition(/* skip_set_format= */ self.state.is_start());
-                let response = Box::new(move |network_name: Option<_>| {
-                    let name =
-                        format_operator_name(format, network_name.unwrap_or_else(String::new));
+                let response = Box::new(move |network_name: Option<String>| {
+                    let name = network_name
+                        .map(|n| format!("\"{}\"", format_operator_name(format, n)))
+                        .unwrap_or_else(String::new);
                     AgUpdate::NetworkOperatorName(format, name)
                 });
                 SlcRequest::GetNetworkOperatorName { response }.into()
@@ -282,5 +290,102 @@ mod tests {
         };
         assert_matches!(p.ag_update(update2, &mut state), ProcedureRequest::SendMessages(_));
         assert!(p.is_terminated());
+    }
+
+    #[test]
+    fn valid_operator_name() {
+        assert!(is_valid_operator_name("T-Mobile"));
+        assert!(is_valid_operator_name(""));
+        assert!(!is_valid_operator_name("T-Mobile\r\n"));
+        assert!(!is_valid_operator_name("My\"Operator"));
+        assert!(is_valid_operator_name("T-Mobile, Inc."));
+    }
+
+    #[test]
+    fn operator_name_formatting_quoted() {
+        let mut p = QueryOperatorProcedure::new();
+        let mut state = SlcState::default();
+
+        let format = at::NetworkOperatorNameFormat::LongAlphanumeric;
+        let update1 = at::Command::Cops { three: 3, format };
+        let _ = p.hf_update(update1, &mut state);
+
+        let update2 = at::Command::CopsRead {};
+        let response_closure = match p.hf_update(update2, &mut state) {
+            ProcedureRequest::Request(SlcRequest::GetNetworkOperatorName { response }) => response,
+            x => panic!("Expected get network operator request but got: {:?}", x),
+        };
+
+        let result = response_closure(Some("T-Mobile".to_string()));
+        assert_matches!(
+            result,
+            AgUpdate::NetworkOperatorName(f, name) if f == format && name == "\"T-Mobile\""
+        );
+    }
+
+    #[test]
+    fn operator_name_formatting_long_truncated() {
+        let mut p = QueryOperatorProcedure::new();
+        let mut state = SlcState::default();
+
+        let format = at::NetworkOperatorNameFormat::LongAlphanumeric;
+        let update1 = at::Command::Cops { three: 3, format };
+        let _ = p.hf_update(update1, &mut state);
+
+        let update2 = at::Command::CopsRead {};
+        let response_closure = match p.hf_update(update2, &mut state) {
+            ProcedureRequest::Request(SlcRequest::GetNetworkOperatorName { response }) => response,
+            x => panic!("Expected get network operator request but got: {:?}", x),
+        };
+
+        let result = response_closure(Some("Fuchsia Telecom Network".to_string()));
+        assert_matches!(
+            result,
+            AgUpdate::NetworkOperatorName(f, name) if f == format && name == "\"Fuchsia Telecom \""
+        );
+    }
+
+    #[test]
+    fn operator_name_formatting_empty_quoted() {
+        let mut p = QueryOperatorProcedure::new();
+        let mut state = SlcState::default();
+
+        let format = at::NetworkOperatorNameFormat::LongAlphanumeric;
+        let update1 = at::Command::Cops { three: 3, format };
+        let _ = p.hf_update(update1, &mut state);
+
+        let update2 = at::Command::CopsRead {};
+        let response_closure = match p.hf_update(update2, &mut state) {
+            ProcedureRequest::Request(SlcRequest::GetNetworkOperatorName { response }) => response,
+            x => panic!("Expected get network operator request but got: {:?}", x),
+        };
+
+        let result = response_closure(Some("".to_string()));
+        assert_matches!(
+            result,
+            AgUpdate::NetworkOperatorName(f, name) if f == format && name == "\"\""
+        );
+    }
+
+    #[test]
+    fn operator_name_formatting_none_empty() {
+        let mut p = QueryOperatorProcedure::new();
+        let mut state = SlcState::default();
+
+        let format = at::NetworkOperatorNameFormat::LongAlphanumeric;
+        let update1 = at::Command::Cops { three: 3, format };
+        let _ = p.hf_update(update1, &mut state);
+
+        let update2 = at::Command::CopsRead {};
+        let response_closure = match p.hf_update(update2, &mut state) {
+            ProcedureRequest::Request(SlcRequest::GetNetworkOperatorName { response }) => response,
+            x => panic!("Expected get network operator request but got: {:?}", x),
+        };
+
+        let result = response_closure(None);
+        assert_matches!(
+            result,
+            AgUpdate::NetworkOperatorName(f, name) if f == format && name == ""
+        );
     }
 }

@@ -74,6 +74,10 @@ impl Number {
             return Err(NumberError::ControlCharacters);
         }
 
+        // It is valid for the phone number to be completely empty/omitted in HFP/AT.
+        if s.is_empty() {
+            return Ok(Self(String::from(s)));
+        }
         if !is_quoted(s) {
             return Err(NumberError::NotQuoted);
         }
@@ -140,8 +144,10 @@ mod tests {
 
     #[fuchsia::test]
     fn number_validation_success() {
+        assert!(Number::from_non_at_string("").is_ok());
         assert!(Number::from_non_at_string("123456").is_ok());
         assert!(Number::from_non_at_string("\"123456\"").is_ok());
+        assert!(Number::from_at_string("").is_ok());
         assert!(Number::from_at_string("\"123456\"").is_ok());
     }
 

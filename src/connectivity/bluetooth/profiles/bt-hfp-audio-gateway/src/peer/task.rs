@@ -28,7 +28,7 @@ use vigil::{DropWatch, Vigil};
 use super::calls::{Call, CallAction, Calls};
 use super::gain_control::GainControl;
 use super::indicators::{AgIndicator, AgIndicators, HfIndicator};
-use super::procedure::ProcedureMarker;
+use super::procedure::{ProcedureMarker, query_operator_selection};
 use super::ringer::Ringer;
 use super::service_level_connection::ServiceLevelConnection;
 use super::slc_request::SlcRequest;
@@ -427,6 +427,12 @@ impl PeerTask {
                 } else {
                     vec![]
                 };
+                // Validate and normalize the provided subscriber numbers.
+                let result = result
+                    .into_iter()
+                    .filter_map(|n| bt_hfp::call::Number::from_non_at_string(&n).ok())
+                    .map(|n| n.to_at_string())
+                    .collect();
                 self.connection.receive_ag_request(marker.unwrap(), response(result)).await;
             }
             SlcRequest::GetAgIndicatorStatus { response } => {
@@ -459,7 +465,13 @@ impl PeerTask {
                     None => None,
                 };
                 let name_option = match (name, format) {
-                    (Some(n), Some(_)) => Some(n),
+                    (Some(n), Some(_)) if query_operator_selection::is_valid_operator_name(&n) => {
+                        Some(n)
+                    }
+                    (Some(n), Some(_)) => {
+                        warn!("Operator name {:?} contains illegal characters, ignoring", n);
+                        None
+                    }
                     _ => None, // The format must be set before getting the network name.
                 };
                 // Update the procedure with the result of retrieving the AG network name.
@@ -976,6 +988,39 @@ mod tests {
         create_and_connect_slc, create_and_initialize_slc, expect_data_received_by_peer,
         expect_peer_ready, serialize_at_response,
     };
+
+    async fn expect_raw_bytes(remote: &mut Channel, expected_string: &str) {
+        let bytes = remote.next().await.unwrap().expect("packet expected");
+        let actual_string = String::from_utf8_lossy(&bytes);
+        assert_eq!(actual_string, expected_string);
+    }
+
+    async fn handle_subscriber_number_information(
+        stream: PeerHandlerRequestStream,
+        numbers: Vec<String>,
+    ) {
+        let mut stream = filtered_stream(stream, |item| match item {
+            PeerHandlerRequest::SubscriberNumberInformation { responder } => Ok(responder),
+            x => Err(x),
+        })
+        .await;
+
+        let responder = stream.next().await.expect("SubscriberNumberInformation request");
+        responder.send(&numbers).expect("Successfully send subscriber numbers");
+        futures::future::pending::<()>().await;
+    }
+
+    async fn handle_query_operator(stream: PeerHandlerRequestStream, name: Option<String>) {
+        let mut stream = filtered_stream(stream, |item| match item {
+            PeerHandlerRequest::QueryOperator { responder } => Ok(responder),
+            x => Err(x),
+        })
+        .await;
+
+        let responder = stream.next().await.expect("QueryOperator request");
+        responder.send(name.as_deref()).expect("Successfully send operator name");
+        futures::future::pending::<()>().await;
+    }
 
     fn arb_signal() -> impl Strategy<Value = Option<SignalStrength>> {
         proptest::option::of(prop_oneof![
@@ -2453,5 +2498,163 @@ mod tests {
         // The SCO connection should be removed after the PeerTask has handled the Terminated call
         // update.
         assert!(!peer.sco_state.is_active());
+    }
+
+    #[fuchsia::test]
+    fn subscriber_number_information_success() {
+        let mut exec = fasync::TestExecutor::new();
+        let (connection, mut remote) = create_and_initialize_slc(SlcState::default());
+        let (peer, mut sender, receiver, _profile_requests, _a2dp_requests) =
+            setup_peer_task(Some(connection));
+
+        // Spawn the PeerTask in the background on the local executor.
+        let peer_task_fut = Box::pin(peer.run(receiver));
+        let _peer_task_handle = fasync::Task::local(peer_task_fut);
+
+        // Create the Call Manager side of a PeerHandler.
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<PeerHandlerMarker>();
+        let numbers = vec![
+            "12345".to_string(),
+            "".to_string(),          // Valid (Empty)
+            "\"67890\"".to_string(), // Valid (Quoted)
+        ];
+        let call_manager_fut = handle_subscriber_number_information(stream, numbers);
+        let _call_manager_handle = fasync::Task::local(call_manager_fut);
+
+        // Wire up the HFP side of PeerHandler by passing the proxy into the PeerTask.
+        let handle_fut = sender.send(PeerRequest::Handle(proxy));
+        let mut handle_fut = pin!(handle_fut);
+        let _ = exec.run_until_stalled(&mut handle_fut);
+
+        // Yield to the executor to let the PeerTask process the Handle request and set up the handler.
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // Now simulate the HF sending AT+CNUM to trigger the procedure.
+        let command = b"AT+CNUM\r".to_vec();
+        let mut write_fut = remote.send(command);
+        let _ = exec.run_until_stalled(&mut write_fut).expect("ready").expect("ok");
+
+        let expected_string = "\r\n+CNUM: ,\"12345\",128,,4\r\n\r\n+CNUM: ,\"\",128,,4\r\n\r\n+CNUM: ,\"67890\",128,,4\r\n\r\nOK\r\n";
+        let mut expectation_fut = pin!(expect_raw_bytes(&mut remote, expected_string));
+
+        exec.run_singlethreaded(&mut expectation_fut);
+    }
+
+    #[fuchsia::test]
+    fn subscriber_number_information_validation_errors() {
+        let mut exec = fasync::TestExecutor::new();
+        let (connection, mut remote) = create_and_initialize_slc(SlcState::default());
+        let (peer, mut sender, receiver, _profile_requests, _a2dp_requests) =
+            setup_peer_task(Some(connection));
+
+        // Spawn the PeerTask in the background on the local executor.
+        let peer_task_fut = Box::pin(peer.run(receiver));
+        let _peer_task_handle = fasync::Task::local(peer_task_fut);
+
+        // Create the Call Manager side of a PeerHandler with invalid numbers.
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<PeerHandlerMarker>();
+        let numbers = vec![
+            "123\r\n45".to_string(), // Invalid (CRLF)
+            "123\"45".to_string(),   // Invalid (Internal quote)
+        ];
+        let call_manager_fut = handle_subscriber_number_information(stream, numbers);
+        let _call_manager_handle = fasync::Task::local(call_manager_fut);
+
+        // Wire up the HFP side of PeerHandler by passing the proxy into the PeerTask.
+        let handle_fut = sender.send(PeerRequest::Handle(proxy));
+        let mut handle_fut = pin!(handle_fut);
+        let _ = exec.run_until_stalled(&mut handle_fut);
+
+        // Yield to the executor to let the PeerTask process the Handle request and set up the handler.
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // Now simulate the HF sending AT+CNUM to trigger the procedure.
+        let command = b"AT+CNUM\r".to_vec();
+        let mut write_fut = remote.send(command);
+        let _ = exec.run_until_stalled(&mut write_fut).expect("ready").expect("ok");
+
+        // Expect only OK, since both invalid numbers must be filtered out.
+        let expected_string = "\r\nOK\r\n";
+        let mut expectation_fut = pin!(expect_raw_bytes(&mut remote, expected_string));
+
+        exec.run_singlethreaded(&mut expectation_fut);
+    }
+
+    fn make_query_operator_request(operator_name: Option<String>) -> String {
+        let mut exec = fasync::TestExecutor::new();
+        let (connection, mut remote) = create_and_initialize_slc(SlcState::default());
+        let (peer, mut sender, receiver, _profile_requests, _a2dp_requests) =
+            setup_peer_task(Some(connection));
+
+        // Spawn the PeerTask in the background.
+        let peer_task_fut = Box::pin(peer.run(receiver));
+        let peer_task_handle = fasync::Task::local(peer_task_fut);
+
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<PeerHandlerMarker>();
+        let call_manager_fut = handle_query_operator(stream, operator_name);
+        let call_manager_handle = fasync::Task::local(call_manager_fut);
+
+        let handle_fut = sender.try_send(PeerRequest::Handle(proxy));
+        assert!(handle_fut.is_ok());
+
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // Simulate HF setting format first
+        let command = b"AT+COPS=3,0\r".to_vec();
+        let mut write_fut = remote.send(command);
+        let _ = exec.run_until_stalled(&mut write_fut).expect("ready").expect("ok");
+
+        // Expect OK for COPS=3,0
+        {
+            let mut expectation_fut = pin!(expect_raw_bytes(&mut remote, "\r\nOK\r\n"));
+            exec.run_singlethreaded(&mut expectation_fut);
+        }
+
+        // Now query the operator
+        let command = b"AT+COPS?\r".to_vec();
+        let mut write_fut = remote.send(command);
+        let _ = exec.run_until_stalled(&mut write_fut).expect("ready").expect("ok");
+
+        // Read the response from the remote channel.
+        let mut read_fut = pin!(async {
+            let bytes = remote.next().await.unwrap().expect("packet expected");
+            String::from_utf8_lossy(&bytes).into_owned()
+        });
+        let response = exec.run_singlethreaded(&mut read_fut);
+
+        drop(call_manager_handle);
+        drop(peer_task_handle);
+
+        response
+    }
+
+    #[fuchsia::test]
+    fn query_operator_success() {
+        // Case 1: Valid operator name is accepted (quoted)
+        let response = make_query_operator_request(Some("T-Mobile".to_string()));
+        assert_eq!(response, "\r\n+COPS: 0,0,\"T-Mobile\"\r\n\r\nOK\r\n");
+
+        // Case 2: Empty operator name is accepted and quoted
+        let response = make_query_operator_request(Some("".to_string()));
+        assert_eq!(response, "\r\n+COPS: 0,0,\"\"\r\n\r\nOK\r\n");
+
+        // Case 3: None operator name is handled cleanly (unquoted empty)
+        let response = make_query_operator_request(None);
+        assert_eq!(response, "\r\n+COPS: 0,0\r\n\r\nOK\r\n");
+
+        // Case 4: Valid operator name with a comma is accepted and quoted
+        let response = make_query_operator_request(Some("T-Mobile, Inc.".to_string()));
+        assert_eq!(response, "\r\n+COPS: 0,0,\"T-Mobile, Inc.\"\r\n\r\nOK\r\n");
+    }
+
+    #[fuchsia::test]
+    fn query_operator_validation_errors() {
+        // Case 1: Invalid operator name (containing CRLF) is ignored (treated as None/empty)
+        let response = make_query_operator_request(Some("T-Mobile\r\n".to_string()));
+        assert_eq!(response, "\r\n+COPS: 0,0\r\n\r\nOK\r\n");
+
+        // Case 2: Invalid operator name (containing quotes) is ignored (treated as None/empty)
+        let response = make_query_operator_request(Some("My\"Operator".to_string()));
+        assert_eq!(response, "\r\n+COPS: 0,0\r\n\r\nOK\r\n");
     }
 }
