@@ -33,9 +33,9 @@ use netstack3_base::{
     AnyDevice, BidirectionalConverter, ContextPair, CoreTxMetadataContext, CounterContext,
     DeviceIdContext, Inspector, InspectorDeviceExt, InstantContext, IpSocketPropertiesMatcher,
     LocalAddressError, Mark, MarkDomain, Marks, MatcherBindingsTypes, NetworkParsingContext,
-    PortAllocImpl, ReferenceNotifiers, RemoveResourceResultWithContext,
-    ResourceCounterContext as _, RngContext, SettingsContext, SocketError, StrongDeviceIdentifier,
-    WeakDeviceIdentifier, ZonedAddressError,
+    PortAllocImpl, ReferenceNotifiers, RemoveResourceResultWithContext, ResourceCounterContext,
+    RngContext, SettingsContext, SocketError, StrongDeviceIdentifier, WeakDeviceIdentifier,
+    ZonedAddressError,
 };
 use netstack3_datagram::{
     self as datagram, BoundDatagramSocketMap, BoundSocketState as DatagramBoundSocketState,
@@ -1785,19 +1785,47 @@ fn receive_icmp_error<I, BC, CC>(
         + UdpCounterContext<I, CC::WeakDeviceId, BC>
         + UdpCounterContext<I::OtherVersion, CC::WeakDeviceId, BC>,
 {
-    // TODO(https://fxbug.dev/512048254): Add counters for ICMP errors.
     let icmp_err = err.into();
-    let Some(pending_err) = PendingDatagramSocketError::from_hard_icmp(icmp_err) else { return };
+    let Some(pending_err) = PendingDatagramSocketError::from_hard_icmp(icmp_err) else {
+        CounterContext::<UdpCountersWithoutSocket<I>>::counters(core_ctx)
+            .rx_icmp_error_soft
+            .increment();
+        return;
+    };
+
+    CounterContext::<UdpCountersWithoutSocket<I>>::counters(core_ctx)
+        .rx_icmp_error_hard
+        .increment();
 
     let mut buffer = original_udp_packet;
     let packet = match buffer.parse_with::<_, UdpPacketRaw<_>>(I::VERSION_MARKER) {
         Ok(p) => p,
-        Err(_) => return,
+        Err(_) => {
+            CounterContext::<UdpCountersWithoutSocket<I>>::counters(core_ctx)
+                .rx_icmp_error_hard_malformed
+                .increment();
+            return;
+        }
     };
 
-    let Some(orig_src_port) = packet.src_port() else { return };
-    let Some(orig_dst_port) = packet.dst_port() else { return };
-    let Some(orig_src_ip) = original_src_ip else { return };
+    let Some(orig_src_port) = packet.src_port() else {
+        CounterContext::<UdpCountersWithoutSocket<I>>::counters(core_ctx)
+            .rx_icmp_error_hard_malformed
+            .increment();
+        return;
+    };
+    let Some(orig_dst_port) = packet.dst_port() else {
+        CounterContext::<UdpCountersWithoutSocket<I>>::counters(core_ctx)
+            .rx_icmp_error_hard_malformed
+            .increment();
+        return;
+    };
+    let Some(orig_src_ip) = original_src_ip else {
+        CounterContext::<UdpCountersWithoutSocket<I>>::counters(core_ctx)
+            .rx_icmp_error_hard_malformed
+            .increment();
+        return;
+    };
     let orig_src_ip = match SocketIpAddr::try_from(orig_src_ip) {
         Ok(ip) => ip,
         Err(AddrIsMappedError {}) => {
@@ -1829,7 +1857,12 @@ fn receive_icmp_error<I, BC, CC>(
         )
     });
 
-    let Some(socket_id) = socket_id else { return };
+    let Some(socket_id) = socket_id else {
+        CounterContext::<UdpCountersWithoutSocket<I>>::counters(core_ctx)
+            .rx_icmp_error_hard_no_socket
+            .increment();
+        return;
+    };
 
     #[derive(GenericOverIp)]
     #[generic_over_ip(I, Ip)]
@@ -1855,9 +1888,16 @@ fn receive_icmp_error<I, BC, CC>(
 
     match dual_stack_outputs {
         DualStackOutputs::CurrentStack(socket_id) => {
+            core_ctx.increment_both(&socket_id, |c| &c.rx_icmp_error_hard_delivered);
             bindings_ctx.on_socket_error(&socket_id, pending_err);
         }
         DualStackOutputs::OtherStack(socket_id) => {
+            ResourceCounterContext::<
+                UdpSocketId<I::OtherVersion, CC::WeakDeviceId, BC>,
+                UdpCountersWithSocket<I::OtherVersion>,
+            >::increment_both(core_ctx, &socket_id, |c| {
+                &c.rx_icmp_error_hard_delivered
+            });
             bindings_ctx.on_socket_error(&socket_id, pending_err);
         }
     }
@@ -3596,6 +3636,9 @@ pub(crate) mod testutils {
             original_body: &[u8],
             err: I::ErrorCode,
         ) {
+            CounterContext::<UdpCountersWithoutSocket<I>>::counters(core_ctx)
+                .rx_icmp_error
+                .increment();
             receive_icmp_error::<I, _, _>(
                 core_ctx,
                 bindings_ctx,
@@ -8124,6 +8167,42 @@ mod tests {
         let (_, bindings_ctx) = api.contexts();
         assert_eq!(bindings_ctx.state.take_pending_error::<I>(&socket.downgrade()), expected_err);
         assert_eq!(bindings_ctx.state.take_pending_error::<I>(&socket.downgrade()), None);
+
+        let (core_ctx, _) = api.contexts();
+        let (with_socket_expects, without_socket_expects) = match expected_err {
+            Some(_) => (
+                CounterExpectationsWithSocket {
+                    rx_icmp_error_hard_delivered: 1,
+                    ..Default::default()
+                },
+                CounterExpectationsWithoutSocket {
+                    rx_icmp_error: 1,
+                    rx_icmp_error_hard: 1,
+                    ..Default::default()
+                },
+            ),
+            None => (
+                CounterExpectationsWithSocket::default(),
+                CounterExpectationsWithoutSocket {
+                    rx_icmp_error: 1,
+                    rx_icmp_error_soft: 1,
+                    ..Default::default()
+                },
+            ),
+        };
+        let per_socket_expects = match expected_err {
+            Some(_) => CounterExpectationsWithSocket {
+                rx_icmp_error_hard_delivered: 1,
+                ..Default::default()
+            },
+            None => CounterExpectationsWithSocket::default(),
+        };
+        assert_counters(
+            core_ctx,
+            with_socket_expects,
+            without_socket_expects,
+            [(&socket, per_socket_expects)],
+        );
     }
 
     #[test_case(
@@ -8244,5 +8323,112 @@ mod tests {
             bindings_ctx.state.take_pending_error::<Ipv6>(&socket.downgrade()),
             Some(PendingDatagramSocketError::PortUnreachable)
         );
+
+        let (core_ctx, _) = api.contexts();
+        assert_counters(
+            core_ctx,
+            CounterExpectationsWithSocket { rx_icmp_error_hard_delivered: 1, ..Default::default() },
+            CounterExpectationsWithoutSocket::default(),
+            [(
+                &socket,
+                CounterExpectationsWithSocket {
+                    rx_icmp_error_hard_delivered: 1,
+                    ..Default::default()
+                },
+            )],
+        );
+        assert_eq!(
+            CounterContext::<UdpCountersWithoutSocket<Ipv4>>::counters(core_ctx).cast(),
+            CounterExpectationsWithoutSocket {
+                rx_icmp_error: 1,
+                rx_icmp_error_hard: 1,
+                ..Default::default()
+            }
+        );
+    }
+
+    fn icmp_error_failed_counters_inner<I: TestIpExt>(icmp_err: I::ErrorCode) {
+        set_logger_for_test();
+
+        let mut ctx = FakeUdpCtx::with_core_ctx(FakeUdpCoreCtx::new_fake_device::<I>());
+        let mut api = UdpApi::<I, _>::new(ctx.as_mut());
+
+        let local_ip = local_ip::<I>();
+        let remote_ip = remote_ip::<I>();
+
+        // ICMP body too short
+
+        let malformed_body = vec![0u8; 4];
+        let (core_ctx, bindings_ctx) = api.contexts();
+
+        <UdpIpTransportContext as IpTransportContext<I, _, _>>::receive_icmp_error(
+            core_ctx,
+            bindings_ctx,
+            &FakeDeviceId,
+            Some(local_ip),
+            remote_ip,
+            &malformed_body,
+            icmp_err.clone(),
+        );
+
+        let (core_ctx, _) = api.contexts();
+        assert_eq!(
+            CounterContext::<UdpCountersWithoutSocket<I>>::counters(core_ctx).cast(),
+            CounterExpectationsWithoutSocket {
+                rx_icmp_error: 1,
+                rx_icmp_error_hard: 1,
+                rx_icmp_error_hard_malformed: 1,
+                ..Default::default()
+            }
+        );
+
+        // No matching socket
+
+        let mut no_socket_body = vec![0u8; 8];
+        no_socket_body[0..2].copy_from_slice(&LOCAL_PORT.get().to_be_bytes());
+        no_socket_body[2..4].copy_from_slice(&REMOTE_PORT.get().to_be_bytes());
+        no_socket_body[4..6].copy_from_slice(&8u16.to_be_bytes());
+
+        let (core_ctx, bindings_ctx) = api.contexts();
+        <UdpIpTransportContext as IpTransportContext<I, _, _>>::receive_icmp_error(
+            core_ctx,
+            bindings_ctx,
+            &FakeDeviceId,
+            Some(local_ip),
+            remote_ip,
+            &no_socket_body,
+            icmp_err,
+        );
+
+        let (core_ctx, _) = api.contexts();
+        assert_eq!(
+            CounterContext::<UdpCountersWithoutSocket<I>>::counters(core_ctx).cast(),
+            CounterExpectationsWithoutSocket {
+                rx_icmp_error: 2,
+                rx_icmp_error_hard: 2,
+                rx_icmp_error_hard_malformed: 1,
+                rx_icmp_error_hard_no_socket: 1,
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test_case(
+        Icmpv4ErrorCode::DestUnreachable(
+            Icmpv4DestUnreachableCode::DestPortUnreachable,
+            Default::default()
+        );
+        "v4 failed icmp counters"
+    )]
+    fn icmp_error_failed_counters_v4(icmp_err: Icmpv4ErrorCode) {
+        icmp_error_failed_counters_inner::<Ipv4>(icmp_err);
+    }
+
+    #[test_case(
+        Icmpv6ErrorCode::DestUnreachable(Icmpv6DestUnreachableCode::PortUnreachable);
+        "v6 failed icmp counters"
+    )]
+    fn icmp_error_failed_counters_v6(icmp_err: Icmpv6ErrorCode) {
+        icmp_error_failed_counters_inner::<Ipv6>(icmp_err);
     }
 }

@@ -48,6 +48,14 @@ pub type UdpCountersWithoutSocket<I> = IpMarked<I, UdpCountersWithoutSocketInner
 pub struct UdpCountersWithoutSocketInner<C = Counter> {
     /// Count of ICMP error messages received.
     pub rx_icmp_error: C,
+    /// Count of soft ICMP error messages received.
+    pub rx_icmp_error_soft: C,
+    /// Count of hard ICMP error messages received.
+    pub rx_icmp_error_hard: C,
+    /// Count of hard ICMP error messages received that were malformed or missing info.
+    pub rx_icmp_error_hard_malformed: C,
+    /// Count of hard ICMP error messages received that could not be dispatched to a socket.
+    pub rx_icmp_error_hard_no_socket: C,
     /// Count of UDP datagrams received from the IP layer, including error
     /// cases.
     pub rx: C,
@@ -96,6 +104,8 @@ pub struct UdpCountersWithSocketInner<C = Counter> {
     /// Count of outgoing UDP datagrams which failed to be sent out of the
     /// transport layer.
     pub tx_error: C,
+    /// Count of hard ICMP error messages successfully delivered to the socket.
+    pub rx_icmp_error_hard_delivered: C,
 }
 
 /// A composition of the UDP counters with and without a socket.
@@ -113,8 +123,13 @@ pub struct CombinedUdpCounters<'a, I: Ip> {
 impl<I: Ip> Inspectable for CombinedUdpCounters<'_, I> {
     fn record<II: Inspector>(&self, inspector: &mut II) {
         let CombinedUdpCounters { with_socket, without_socket } = self;
-        let UdpCountersWithSocketInner { rx_delivered, rx_queue_full, tx, tx_error } =
-            with_socket.as_ref();
+        let UdpCountersWithSocketInner {
+            rx_delivered,
+            rx_queue_full,
+            tx,
+            tx_error,
+            rx_icmp_error_hard_delivered,
+        } = with_socket.as_ref();
 
         // Note: Organize the "without socket" counters into helper struct to
         // make the optionality more ergonomic to handle.
@@ -128,12 +143,20 @@ impl<I: Ip> Inspectable for CombinedUdpCounters<'_, I> {
         }
         struct WithoutSocketError<'a> {
             rx_icmp_error: &'a Counter,
+            rx_icmp_error_soft: &'a Counter,
+            rx_icmp_error_hard: &'a Counter,
+            rx_icmp_error_hard_malformed: &'a Counter,
+            rx_icmp_error_hard_no_socket: &'a Counter,
         }
         let (without_socket_rx, without_socket_rx_error, without_socket_error) =
             match without_socket.map(AsRef::as_ref) {
                 None => (None, None, None),
                 Some(UdpCountersWithoutSocketInner {
                     rx_icmp_error,
+                    rx_icmp_error_soft,
+                    rx_icmp_error_hard,
+                    rx_icmp_error_hard_malformed,
+                    rx_icmp_error_hard_no_socket,
                     rx,
                     rx_mapped_addr,
                     rx_unknown_dest_port,
@@ -145,7 +168,13 @@ impl<I: Ip> Inspectable for CombinedUdpCounters<'_, I> {
                         rx_unknown_dest_port,
                         rx_malformed,
                     }),
-                    Some(WithoutSocketError { rx_icmp_error }),
+                    Some(WithoutSocketError {
+                        rx_icmp_error,
+                        rx_icmp_error_soft,
+                        rx_icmp_error_hard,
+                        rx_icmp_error_hard_malformed,
+                        rx_icmp_error_hard_no_socket,
+                    }),
                 ),
             };
         inspector.record_child("Rx", |inspector| {
@@ -155,6 +184,7 @@ impl<I: Ip> Inspectable for CombinedUdpCounters<'_, I> {
             }
             inspector.record_child("Errors", |inspector| {
                 inspector.record_counter("DroppedQueueFull", rx_queue_full);
+                inspector.record_counter("HardIcmpErrors", rx_icmp_error_hard_delivered);
                 if let Some(WithoutSocketRxError {
                     rx_mapped_addr,
                     rx_unknown_dest_port,
@@ -171,8 +201,21 @@ impl<I: Ip> Inspectable for CombinedUdpCounters<'_, I> {
             inspector.record_counter("Sent", tx);
             inspector.record_counter("Errors", tx_error);
         });
-        if let Some(WithoutSocketError { rx_icmp_error }) = without_socket_error {
-            inspector.record_counter("IcmpErrors", rx_icmp_error);
+        if let Some(WithoutSocketError {
+            rx_icmp_error,
+            rx_icmp_error_soft,
+            rx_icmp_error_hard,
+            rx_icmp_error_hard_malformed,
+            rx_icmp_error_hard_no_socket,
+        }) = without_socket_error
+        {
+            inspector.record_child("IcmpErrors", |inspector| {
+                inspector.record_counter("Count", rx_icmp_error);
+                inspector.record_counter("Soft", rx_icmp_error_soft);
+                inspector.record_counter("Hard", rx_icmp_error_hard);
+                inspector.record_counter("Malformed", rx_icmp_error_hard_malformed);
+                inspector.record_counter("NoSocket", rx_icmp_error_hard_no_socket);
+            });
         }
     }
 }

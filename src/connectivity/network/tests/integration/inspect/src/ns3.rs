@@ -796,6 +796,7 @@ async fn inspect_datagram_sockets<I: TestIpExt>(
                                 "Delivered": 0u64,
                                 Errors: {
                                     "DroppedQueueFull": 0u64,
+                                    "HardIcmpErrors": 0u64,
                                 }
                             },
                             Tx: {
@@ -2857,13 +2858,20 @@ async fn inspect_counters(name: &str) {
                             UnknownDstPort: 0u64,
                             Malformed: 0u64,
                             DroppedQueueFull: 0u64,
+                            HardIcmpErrors: 0u64,
                         },
                     },
                     "Tx": {
                         Sent: 1u64,
                         Errors: 0u64,
                     },
-                    IcmpErrors: 0u64,
+                    "IcmpErrors": {
+                        Count: 0u64,
+                        Soft: 0u64,
+                        Hard: 0u64,
+                        Malformed: 0u64,
+                        NoSocket: 0u64,
+                    },
                 },
                 "V6": {
                     "Rx": {
@@ -2874,13 +2882,20 @@ async fn inspect_counters(name: &str) {
                             UnknownDstPort: 0u64,
                             Malformed: 0u64,
                             DroppedQueueFull: 0u64,
+                            HardIcmpErrors: 0u64,
                         },
                     },
                     "Tx": {
                         Sent: 0u64,
                         Errors: 0u64,
                     },
-                    IcmpErrors: 0u64,
+                    "IcmpErrors": {
+                        Count: 0u64,
+                        Soft: 0u64,
+                        Hard: 0u64,
+                        Malformed: 0u64,
+                        NoSocket: 0u64,
+                    },
                 },
             },
             "TCP": {
