@@ -494,6 +494,7 @@ if (is_host) {
       "//build/assembly/tools/assembly_config:assembly_config_sdk",
       "//src/developer/ffx:bin_sdk",
       "//src/developer/ffx/plugins/product:sdk",
+      "//src/developer/ffx/plugins/product_bundle:sdk",
       "//src/developer/ffx/plugins/test:sdk",
       "//src/developer/ffx/tools/driver:sdk",
       "//tools/funnel:funnel_sdk",

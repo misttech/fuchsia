@@ -19,6 +19,7 @@ ffx_tool://tools/arm64/ffx_tools/ffx-log
 ffx_tool://tools/arm64/ffx_tools/ffx-package
 ffx_tool://tools/arm64/ffx_tools/ffx-process
 ffx_tool://tools/arm64/ffx_tools/ffx-product
+ffx_tool://tools/arm64/ffx_tools/ffx-product-bundle
 ffx_tool://tools/arm64/ffx_tools/ffx-profile
 ffx_tool://tools/arm64/ffx_tools/ffx-repository
 ffx_tool://tools/arm64/ffx_tools/ffx-scrutiny
@@ -41,6 +42,7 @@ ffx_tool://tools/x64/ffx_tools/ffx-log
 ffx_tool://tools/x64/ffx_tools/ffx-package
 ffx_tool://tools/x64/ffx_tools/ffx-process
 ffx_tool://tools/x64/ffx_tools/ffx-product
+ffx_tool://tools/x64/ffx_tools/ffx-product-bundle
 ffx_tool://tools/x64/ffx_tools/ffx-profile
 ffx_tool://tools/x64/ffx_tools/ffx-repository
 ffx_tool://tools/x64/ffx_tools/ffx-scrutiny
