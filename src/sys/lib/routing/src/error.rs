@@ -875,6 +875,14 @@ impl RouteRequestErrorInfo {
         self.availability
     }
 
+    pub fn name(&self) -> &Name {
+        &self.name
+    }
+
+    pub fn type_name(&self) -> &CapabilityTypeName {
+        &self.capability_type
+    }
+
     pub fn for_builtin(capability_type: CapabilityTypeName, name: &Name) -> Self {
         Self { capability_type, name: name.clone(), availability: Availability::Required }
     }

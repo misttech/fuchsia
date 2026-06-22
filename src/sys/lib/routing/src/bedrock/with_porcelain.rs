@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::WeakInstanceTokenExt;
 use crate::component_instance::{ComponentInstanceInterface, WeakExtendedInstanceInterface};
 use crate::error::{ErrorReporter, RouteRequestErrorInfo, RoutingError};
 use crate::rights::Rights;
@@ -22,6 +23,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 use strum::IntoEnumIterator;
 
+#[cfg(target_os = "fuchsia")]
+use fuchsia_trace as trace;
+
 struct PorcelainRouter<T: CapabilityBound, R, C: ComponentInstanceInterface, const D: bool> {
     router: Arc<Router<T>>,
     porcelain_type: CapabilityTypeName,
@@ -34,6 +38,8 @@ struct PorcelainRouter<T: CapabilityBound, R, C: ComponentInstanceInterface, con
     route_request: RouteRequestErrorInfo,
     error_reporter: R,
     should_log: bool,
+    #[allow(dead_code)]
+    tracing: bool,
 }
 
 #[async_trait]
@@ -45,7 +51,20 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
         request: RouteRequest,
         target: Arc<WeakInstanceToken>,
     ) -> Result<Option<Arc<T>>, RouterError> {
-        match self.route_inner(request, D, target).await {
+        #[allow(unused)]
+        let moniker: Option<ExtendedMoniker> = self
+            .tracing
+            .then(|| <Arc<WeakInstanceToken> as WeakInstanceTokenExt<C>>::moniker(&target));
+
+        #[cfg(target_os = "fuchsia")]
+        if self.tracing {
+            trace::duration_begin!("component_manager", "route_capability",
+                                   "target" => moniker.as_ref().unwrap().as_str(),
+                                   "type" => self.route_request.type_name().as_ref(),
+                                   "capability" => self.route_request.name().as_ref());
+        }
+
+        let result = match self.route_inner(request, D, target).await {
             Err(err) if self.should_log => {
                 self.error_reporter
                     .report(&self.route_request, &err, self.target.clone().into())
@@ -53,7 +72,17 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
                 Err(err)
             }
             other_result => other_result,
+        };
+
+        #[cfg(target_os = "fuchsia")]
+        if self.tracing {
+            trace::duration_end!("component_manager", "route_capability",
+                                 "target" => moniker.as_ref().unwrap().as_str(),
+                                 "type" => self.route_request.type_name().as_ref(),
+                                 "capability" => self.route_request.name().as_ref());
         }
+
+        result
     }
 
     async fn route_debug(
@@ -61,7 +90,20 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
         request: RouteRequest,
         target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
-        match self.route_debug_inner(request, D, target).await {
+        #[allow(unused)]
+        let moniker: Option<ExtendedMoniker> = self
+            .tracing
+            .then(|| <Arc<WeakInstanceToken> as WeakInstanceTokenExt<C>>::moniker(&target));
+
+        #[cfg(target_os = "fuchsia")]
+        if self.tracing {
+            trace::duration_begin!("component_manager", "route_capability_debug",
+                                   "target" => moniker.as_ref().unwrap().as_str(),
+                                   "type" => self.route_request.type_name().as_ref(),
+                                   "capability" => self.route_request.name().as_ref());
+        }
+
+        let result = match self.route_debug_inner(request, D, target).await {
             Err(err) if self.should_log => {
                 self.error_reporter
                     .report(&self.route_request, &err, self.target.clone().into())
@@ -69,7 +111,17 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
                 Err(err)
             }
             other_result => other_result,
+        };
+
+        #[cfg(target_os = "fuchsia")]
+        if self.tracing {
+            trace::duration_end!("component_manager", "route_capability_debug",
+                                 "target" => moniker.as_ref().unwrap().as_str(),
+                                 "type" => self.route_request.type_name().as_ref(),
+                                 "capability" => self.route_request.name().as_ref());
         }
+
+        result
     }
 }
 
@@ -113,6 +165,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
             route_request: _,
             error_reporter: _,
             should_log: _,
+            tracing: _,
         } = self;
         let mut request = if request != RouteRequest::default() {
             request
@@ -284,6 +337,8 @@ pub struct PorcelainBuilder<
     error_info: Option<RouteRequestErrorInfo>,
     error_reporter: Option<R>,
     should_log: bool,
+    #[allow(dead_code)]
+    tracing: bool,
 }
 
 impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'static, const D: bool>
@@ -302,11 +357,17 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
             error_info: None,
             error_reporter: None,
             should_log: false,
+            tracing: false,
         }
     }
 
     pub fn log_errors(mut self) -> Self {
         self.should_log = true;
+        self
+    }
+
+    pub fn with_tracing(mut self) -> Self {
+        self.tracing = true;
         self
     }
 
@@ -384,6 +445,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
             route_request: self.error_info.expect("must set route_request"),
             error_reporter: self.error_reporter.expect("must set error_reporter"),
             should_log: self.should_log,
+            tracing: self.tracing,
         })
     }
 }

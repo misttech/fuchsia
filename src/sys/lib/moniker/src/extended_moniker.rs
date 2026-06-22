@@ -50,6 +50,13 @@ impl ExtendedMoniker {
             Ok(ExtendedMoniker::ComponentInstance(Moniker::parse_str(rep)?))
         }
     }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::ComponentInstance(m) => m.as_str(),
+            Self::ComponentManager => EXTENDED_MONIKER_COMPONENT_MANAGER_STR,
+        }
+    }
 }
 
 impl TryFrom<&str> for ExtendedMoniker {

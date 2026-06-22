@@ -915,9 +915,9 @@ impl NativeIntoFidl<String> for CapabilityTypeName {
     }
 }
 
-impl fmt::Display for CapabilityTypeName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let display_name = match &self {
+impl AsRef<str> for CapabilityTypeName {
+    fn as_ref(&self) -> &str {
+        match self {
             CapabilityTypeName::Directory => "directory",
             CapabilityTypeName::EventStream => "event_stream",
             CapabilityTypeName::Protocol => "protocol",
@@ -927,8 +927,13 @@ impl fmt::Display for CapabilityTypeName {
             CapabilityTypeName::Storage => "storage",
             CapabilityTypeName::Dictionary => "dictionary",
             CapabilityTypeName::Config => "configuration",
-        };
-        write!(f, "{}", display_name)
+        }
+    }
+}
+
+impl fmt::Display for CapabilityTypeName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_ref())
     }
 }
 

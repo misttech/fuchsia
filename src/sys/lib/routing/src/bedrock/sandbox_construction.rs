@@ -1477,7 +1477,8 @@ fn extend_dict_with_use<T, C: ComponentInstanceInterface + 'static>(
         .target(&component)
         .error_info(use_)
         .error_reporter(error_reporter)
-        .log_errors();
+        .log_errors()
+        .with_tracing();
     if let cm_rust::UseDecl::Directory(decl) = use_ {
         router_builder = router_builder
             .rights(Some(decl.rights.into()))

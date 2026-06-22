@@ -31,6 +31,7 @@ use fidl_fuchsia_io as fio;
 use fidl_fuchsia_mem as fmem;
 use fidl_fuchsia_process as fprocess;
 use fuchsia_runtime::{HandleInfo, HandleType};
+use fuchsia_trace as trace;
 use futures::channel::oneshot;
 use hooks::{EventPayload, RuntimeInfo};
 use log::warn;
@@ -169,12 +170,16 @@ async fn do_start(
     mut incoming: IncomingCapabilities,
     abortable_scope: AbortableScope,
 ) -> Result<(), StartActionError> {
+    trace::duration!("component_manager", "Actions::Start", "moniker" => component.moniker.as_str());
+
     // Translates the error when a long running future is aborted.
     let abort_error =
         |_: AbortError| StartActionError::Aborted { moniker: component.moniker.clone() };
 
     // Resolve the component and find the runner to use.
     let (runner_router, runner_name, resolved_component, mut program_input_dict) = {
+        trace::duration!("component_manager", "Actions::Start::resolve_runner", "moniker" => component.moniker.as_str());
+
         // Obtain the runner declaration under a short lock, as `open_runner` may run for a long
         // time if components along the route need to be resolved.
         let resolved_state = component

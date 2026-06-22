@@ -92,6 +92,11 @@ impl Moniker {
         Ok(Self::new_unchecked(stripped))
     }
 
+    #[inline]
+    pub fn as_str(&self) -> &str {
+        &self.rep
+    }
+
     /// Concatenates other onto the end of this moniker.
     pub fn concat(&self, other: &Moniker) -> Self {
         let rep = if self.is_root() {

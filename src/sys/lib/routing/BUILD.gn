@@ -109,6 +109,7 @@ rustc_library("routing") {
   if (is_fuchsia) {
     deps += [
       "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
+      "//src/lib/trace/rust:trace",
       "//src/storage/lib/vfs/rust:vfs",
       "//src/sys/lib/cm_fidl_validator",
       "//src/sys/lib/mem_util",

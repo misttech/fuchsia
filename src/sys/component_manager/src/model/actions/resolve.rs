@@ -10,6 +10,7 @@ use ::routing::resolving::ComponentAddress;
 use async_trait::async_trait;
 use cm_util::{AbortError, AbortHandle, AbortableScope};
 use errors::{ActionError, ResolveActionError};
+use fuchsia_trace as trace;
 use hooks::EventPayload;
 use std::ops::DerefMut;
 use std::sync::Arc;
@@ -62,6 +63,8 @@ async fn do_resolve(
             });
         }
     }
+    trace::duration!("component_manager", "Actions::Resolve", "moniker" => component.moniker.as_str());
+
     let component_url = &component.component_url;
     let component_address =
         ComponentAddress::from_url(component_url, component).await.map_err(|err| {
