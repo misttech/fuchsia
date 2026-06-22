@@ -40,7 +40,7 @@ arrayref = "0.3.9"
 arrayvec = "0.7.6"
 ash = { version = "0.38.0", features = ["linked"], default-features = false }
 assert_matches = "1.5.0"
-async-channel = "1.8.0"
+async-channel = "2.5.0"
 async-lock = "3.4.2"
 async-ringbuf = "0.3.5"
 async-stream = "0.3.6"
@@ -51,7 +51,7 @@ bit-set = "0.10.0"
 bit-vec = { version = "0.9.1", features = [ "serde" ] }
 bitfield = "0.19.4"
 bitflags = { version = "2.13.0", features = ["serde", "std"] }
-blocking = "1.3"
+blocking = "1.6.2"
 bstr = { version = "1.12.1", default-features = false, features = [ "std" ] }
 bt-bap = "0.0.1"
 bt-bass = { version = "0.0.1", features = ["test-utils"] }

@@ -153,8 +153,9 @@ impl FidlPipe {
         };
 
         let (client, fdomain_task) = if let Some(fdomain_connection) = fdomain_connection {
-            let FDomainConnection { output, input, mut errors, main_task } = fdomain_connection;
+            let FDomainConnection { output, input, errors, main_task } = fdomain_connection;
             let error_send = async move {
+                let mut errors = std::pin::pin!(errors);
                 while let Some(error) = errors.next().await {
                     let Ok(()) = error_sender.send(error).await else { break };
                 }
@@ -391,7 +392,7 @@ mod test {
         // These sockets will do nothing of import.
         let (fidl_pipe, _node, _client) =
             FidlPipe::start_internal(AutoFailConnector).await.unwrap();
-        let mut errors = fidl_pipe.error_stream();
+        let mut errors = std::pin::pin!(fidl_pipe.error_stream());
         let err = errors.next().await.unwrap();
         assert_eq!(anyhow::anyhow!("boom").to_string(), err.to_string());
     }

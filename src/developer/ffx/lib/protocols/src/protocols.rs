@@ -50,7 +50,7 @@ use std::sync::Arc;
 /// you're unsure, make sure to consult the FFX team.
 ///
 #[async_trait(?Send)]
-pub trait FidlProtocol: Unpin + Default {
+pub trait FidlProtocol: Default {
     /// This determines the protocol the FidlProtocol will implement. This type
     /// determines the input of the [`FidlProtocol::serve`] and
     /// [`FidlProtocol::handle`] functions.

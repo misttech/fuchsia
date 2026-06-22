@@ -20,9 +20,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "async-fs",
-    package_url = "https://github.com/smol-rs/async-fs",
-    package_version = "2.2.0",
+    package_name = "piper",
+    package_url = "https://github.com/smol-rs/piper",
+    package_version = "0.2.5",
 )
 
 license(
@@ -35,7 +35,7 @@ license(
 )
 
 rust_library(
-    name = "async_fs",
+    name = "piper",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -52,14 +52,19 @@ rust_library(
             "WORKSPACE.bazel",
         ],
     ),
+    crate_features = [
+        "default",
+        "futures-io",
+        "std",
+    ],
     crate_root = "src/lib.rs",
-    edition = "2021",
+    edition = "2018",
     rustc_flags = [
         "--cap-lints=allow",
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=async-fs",
+        "crate-name=piper",
         "manual",
         "noclippy",
         "norustfmt",
@@ -71,10 +76,10 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "2.2.0",
+    version = "0.2.5",
     deps = [
-        "//third_party/rust_crates/vendor/async-lock-3.4.2:async_lock",
-        "//third_party/rust_crates/vendor/blocking-1.6.2:blocking",
-        "//third_party/rust_crates/vendor/futures-lite-2.6.1:futures_lite",
+        "//third_party/rust_crates/vendor/atomic-waker-1.1.2:atomic_waker",
+        "//third_party/rust_crates/vendor/fastrand-2.3.0:fastrand",
+        "//third_party/rust_crates/vendor/futures-io-0.3.31:futures_io",
     ],
 )

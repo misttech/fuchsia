@@ -90,7 +90,7 @@ impl<'a> TriggersWatcher<'a> {
                 let items: Vec<_> =
                     triggers.into_iter().filter_map(|i| TriggerSetItem::new(i)).collect();
                 let set: BTreeSet<TriggerSetItem> = items.iter().map(|t| t).cloned().collect();
-                let mut shutdown_fut = shutdown.recv().fuse();
+                let mut shutdown_fut = std::pin::pin!(shutdown.recv().fuse());
                 loop {
                     let mut watch_alert = controller.watch_alert().fuse();
                     futures::select! {
