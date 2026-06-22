@@ -1,0 +1,71 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/python/python_mobly_test.gni")
+import("//build/testing/environments.gni")
+
+if (is_host) {
+  python_mobly_test("usb_virtual_disconnect_test") {
+    main_source = "test_usb_disconnect.py"
+    libraries = [
+      "//src/testing/end_to_end/honeydew",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
+    ]
+    params = {
+      num_iterations = 10
+      disconnect_duration_sec = 10
+      reboot_to_fastboot = false
+    }
+    local_config_source = "UsbVirtualDisconnectTestbed.yaml"
+    environments = [ sorrel_env ]
+    timeout_secs = 600
+  }
+
+  python_mobly_test("usb_disconnect_test") {
+    main_source = "test_usb_disconnect.py"
+    libraries = [
+      "//src/testing/end_to_end/honeydew",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
+    ]
+    params = {
+      num_usb_disconnects = 1
+      reboot_to_fastboot = false
+    }
+    local_config_source = "UsbDisconnectTestbed.yaml"
+    environments = [
+      vim3_env,
+      nuc11_env,
+      nelson_env,
+      sherlock_env,
+    ]
+    timeout_secs = 600
+  }
+
+  group("tests") {
+    testonly = true
+    public_deps = [
+      ":usb_disconnect_test($host_toolchain)",
+      ":usb_virtual_disconnect_test($host_toolchain)",
+    ]
+  }
+} else {
+  # Redirection from target toolchain to host toolchain
+  group("usb_virtual_disconnect_test") {
+    testonly = true
+    public_deps = [ ":usb_virtual_disconnect_test($host_toolchain)" ]
+  }
+
+  group("usb_disconnect_test") {
+    testonly = true
+    public_deps = [ ":usb_disconnect_test($host_toolchain)" ]
+  }
+
+  group("tests") {
+    testonly = true
+    public_deps = [
+      ":usb_disconnect_test($host_toolchain)",
+      ":usb_virtual_disconnect_test($host_toolchain)",
+    ]
+  }
+}

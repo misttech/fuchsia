@@ -4,7 +4,7 @@
 
 import logging
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import asserts, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -70,6 +70,23 @@ class UsbTest(fuchsia_base_test.FuchsiaBaseTest):
     def test_usb_host_detected(self) -> None:
         """Verifies the host driver is loaded when in host mode."""
         self._verify_driver_loaded(_USB_HOST_API_NAME, _USB_HOST_NAME)
+
+    def test_usb_cli_diagnostics(self) -> None:
+        """Verifies 'usb-cli -a' runs successfully and returns diagnostics."""
+        _LOGGER.info("Executing 'usb-cli -a' command on target...")
+        output = self.dut.ffx.run_ssh_cmd("usb-cli -a")
+        _LOGGER.info(f"usb-cli -a output:\n{output}")
+
+        asserts.assert_in(
+            "=== Inspect:",
+            output,
+            "Expected to find Inspect header in usb-cli output",
+        )
+        asserts.assert_in(
+            "usb_state_history",
+            output,
+            "Expected to find usb_state_history in usb-cli output",
+        )
 
     def _verify_driver_loaded(self, required_api: str, name: str) -> None:
         """Helper to verify that a driver providing the API is loaded if the
