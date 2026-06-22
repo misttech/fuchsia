@@ -5,6 +5,7 @@
 #![cfg(test)]
 
 use fidl::endpoints::Proxy as _;
+use fidl_fuchsia_io as _;
 use fidl_fuchsia_net as _;
 use fidl_fuchsia_net_debug as fnet_debug;
 use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
@@ -131,6 +132,13 @@ async fn rolling_packet_capture_test(name: &str, use_bpf: bool) {
 
     let file_proxy = file_client.into_proxy();
     let bytes = fuchsia_fs::file::read(&file_proxy).await.expect("read file failed");
+
+    // Stop and download again.
+    let (file_client2, file_server2) = fidl::endpoints::create_endpoints();
+    rolling_client.stop_and_download(file_server2).expect("stop_and_download failed");
+    let file_proxy2 = file_client2.into_proxy();
+    let bytes2 = fuchsia_fs::file::read(&file_proxy2).await.expect("read file failed");
+    assert_eq!(bytes, bytes2);
     let cap = pcap::parse_pcapng(&bytes).unwrap_or_else(|_| {
         panic!("could not parse file with pcap library: {bytes:?}");
     });
@@ -429,10 +437,16 @@ async fn rolling_packet_capture_quota_test(name: &str) {
     let file_proxy = file_client.into_proxy();
     let _bytes = fuchsia_fs::file::read(&file_proxy).await.expect("read file failed");
 
-    // TODO(https://fxbug.dev/485274945): Verify that a `start_rolling` call
-    // succeeds at the end here once `StopAndDownload` no longer terminates
-    // the channel and we can use `Discard` to synchronize and know that it
-    // is safe to start a new packet capture.
+    rolling_pcap.discard().await.expect("discard failed");
+    assert_eq!(rolling_pcap.on_closed().await, Ok(zx::Signals::CHANNEL_PEER_CLOSED));
+    assert_eq!(file_proxy.on_closed().await, Ok(zx::Signals::CHANNEL_PEER_CLOSED));
+
+    // Fourth call should succeed because the capture was discarded.
+    let _ = provider
+        .start_rolling(create_common_params(), &rolling_params)
+        .await
+        .expect("start_rolling FIDL error 4")
+        .expect("start_rolling error 4");
 }
 
 // Tests that the quota is not leaked if a request fails with an error (e.g. invalid buffer size).
@@ -526,34 +540,44 @@ async fn rolling_packet_capture_detach_reconnect_test(name: &str) {
         .await
         .expect("reconnect_rolling FIDL error")
         .expect("reconnect_rolling error");
-    // Verify that the old proxy was closed by the takeover.
-    assert_eq!(rolling_proxy.on_closed().await, Ok(zx::Signals::CHANNEL_PEER_CLOSED));
     let rolling_proxy = channel.into_proxy();
 
-    // This reconnect takes over the previous proxy.
+    let (file_client1, file_server) = fidl::endpoints::create_endpoints();
+    rolling_proxy.stop_and_download(file_server).expect("stop_and_download failed");
+    let file_proxy1 = file_client1.into_proxy();
+    // Sync to ensure StopAndDownload was processed by the server.
+    let _ = file_proxy1
+        .sync()
+        .await
+        .expect("sync FIDL error")
+        .map_err(zx::Status::from_raw)
+        .expect("sync error");
+
     let channel = provider
         .reconnect_rolling(capture_name)
         .await
-        .expect("reconnect_rolling FIDL error dup")
-        .expect("reconnect_rolling error dup");
-    // Verify that the old proxy was closed by the takeover.
+        .expect("reconnect_rolling FIDL error")
+        .expect("reconnect_rolling error");
     assert_eq!(rolling_proxy.on_closed().await, Ok(zx::Signals::CHANNEL_PEER_CLOSED));
     let rolling_proxy = channel.into_proxy();
 
-    // Finally call StopAndDownload.
-    let (file_client, file_server) = fidl::endpoints::create_endpoints();
+    let (file_client2, file_server) = fidl::endpoints::create_endpoints();
     rolling_proxy.stop_and_download(file_server).expect("stop_and_download failed");
+    let file_proxy2 = file_client2.into_proxy();
+    for file_proxy in [&file_proxy1, &file_proxy2] {
+        let bytes = fuchsia_fs::file::read(file_proxy).await.expect("read file failed");
+        let cap = pcap::parse_pcapng(&bytes).expect("could not parse file with pcap library");
 
-    let file_proxy = file_client.into_proxy();
-    let bytes = fuchsia_fs::file::read(&file_proxy).await.expect("read file failed");
-    let cap = pcap::parse_pcapng(&bytes).expect("could not parse file with pcap library");
+        let expected_packets = [(net_ip_v4!("127.0.0.1"), 12345, payload.as_slice())];
+        assert_udp_packets(cap.packet_blocks(), &expected_packets);
+    }
 
-    let expected_packets = [(net_ip_v4!("127.0.0.1"), 12345, payload.as_slice())];
-    assert_udp_packets(cap.packet_blocks(), &expected_packets);
+    rolling_proxy.discard().await.expect("discard FIDL");
+    assert_eq!(rolling_proxy.on_closed().await, Ok(zx::Signals::CHANNEL_PEER_CLOSED));
+    for file_proxy in [file_proxy1, file_proxy2] {
+        assert_eq!(file_proxy.on_closed().await, Ok(zx::Signals::CHANNEL_PEER_CLOSED));
+    }
 
-    // TODO(https://fxbug.dev/485274945): Long term we want to support reconnecting
-    // after StopAndDownload has been called (e.g. to download it again or discard it).
-    // Verify that reconnect fails after the capture was stopped.
     let res =
         provider.reconnect_rolling(capture_name).await.expect("reconnect_rolling FIDL error dup");
     assert_eq!(res, Err(fnet_debug::PacketCaptureReconnectError::NotFound));

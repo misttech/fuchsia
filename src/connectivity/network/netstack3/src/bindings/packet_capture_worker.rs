@@ -6,6 +6,7 @@
 //! requests.
 
 use std::pin::pin;
+use std::sync::Arc;
 
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_net_debug as fnet_debug;
@@ -30,9 +31,29 @@ use netstack3_core::device_socket::{Protocol, SocketId, TargetDevice};
 use netstack3_core::sync::Mutex;
 
 #[derive(Debug)]
+enum Source {
+    Socket(SocketId<BindingsCtx>),
+    RingBuffer { buffer: Arc<RingBuffer>, download_scope: vfs::execution_scope::ExecutionScope },
+}
+
+impl Source {
+    async fn shutdown(self, ctx: &mut Ctx) {
+        match self {
+            Self::Socket(id) => {
+                let _: SocketState = remove_socket(ctx, id).await;
+            }
+            Self::RingBuffer { buffer: _, download_scope } => {
+                download_scope.shutdown();
+                download_scope.wait().await;
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
 struct CaptureData {
-    id: SocketId<BindingsCtx>,
-    pcap_headers: Vec<u8>,
+    source: Source,
+    pcap_headers: Arc<[u8]>,
 }
 
 /// The state of the single allowed rolling packet capture.
@@ -43,13 +64,10 @@ struct CaptureData {
 enum RollingCaptureState {
     /// No packet capture is active.
     Empty,
-    // TODO(https://fxbug.dev/485274945): When StopAndDownload can be called
-    // multiple times the Closing state will no longer be entered on the first
-    // call.
-    /// A packet capture is in the process of being torn down or waiting for
-    /// the client to download the capture so that resources can be freed.
+    /// A packet capture is in the process of being torn down.
     ///
-    /// This state blocks other clients from starting a new packet capture.
+    /// This state blocks other clients from starting a new packet capture
+    /// until all associated resources are freed.
     Closing,
     /// A packet capture is active and the client is currently connected.
     ///
@@ -82,10 +100,12 @@ impl RollingCaptureState {
     }
 
     #[track_caller]
-    fn transition_to_closing(&mut self) {
+    fn transition_to_closing(&mut self) -> fasync::Task<Option<CaptureData>> {
         self.replace_with(|old| match old {
-            RollingCaptureState::Attached { .. }
-            | RollingCaptureState::DetachedConnected { .. } => (RollingCaptureState::Closing, ()),
+            RollingCaptureState::Attached { task, cancel: _ }
+            | RollingCaptureState::DetachedConnected { task, name: _, cancel: _ } => {
+                (RollingCaptureState::Closing, task)
+            }
             old => unreachable!("transition to closing for teardown in unexpected state: {old:?}"),
         })
     }
@@ -138,19 +158,20 @@ fn handle_detach(
 async fn serve_rolling_packet_capture<Fut>(
     mut ctx: Ctx,
     mut rs: fnet_debug::RollingPacketCaptureRequestStream,
-    id: SocketId<BindingsCtx>,
-    pcap_headers: Vec<u8>,
+    data: CaptureData,
     scope_cancel_fut: Fut,
     mut takeover_cancel: oneshot::Receiver<()>,
 ) -> Option<CaptureData>
 where
     Fut: futures::Future<Output = ()>,
 {
+    let CaptureData { source, pcap_headers } = data;
+    let mut source = Some(source);
+
     enum CloseType {
         StreamClosed,
         Takeover,
         Canceled,
-        Terminate(fidl::endpoints::ServerEnd<fio::FileMarker>),
         Discard(fnet_debug::RollingPacketCaptureDiscardResponder),
     }
     let mut scope_cancel_fut = pin!(scope_cancel_fut.fuse());
@@ -180,17 +201,83 @@ where
                 break CloseType::Discard(responder);
             }
             fnet_debug::RollingPacketCaptureRequest::StopAndDownload { channel, .. } => {
-                // TODO(https://fxbug.dev/485274945): Support multiple calls
-                // to StopAndDownload instead of it terminating the protocol.
-                break CloseType::Terminate(channel);
+                let (ring_buffer, download_scope) = match source.take().expect("source missing") {
+                    Source::Socket(id) => {
+                        let socket_state = remove_socket(&mut ctx, id).await;
+                        let buf = Arc::new(socket_state.into_rolling_pcap_buffer());
+                        let download_scope = vfs::execution_scope::ExecutionScope::new();
+                        source = Some(Source::RingBuffer {
+                            buffer: buf.clone(),
+                            download_scope: download_scope.clone(),
+                        });
+                        (buf, download_scope)
+                    }
+                    Source::RingBuffer { buffer, download_scope } => {
+                        let b = buffer.clone();
+                        let s = download_scope.clone();
+                        source = Some(Source::RingBuffer { buffer, download_scope });
+                        (b, s)
+                    }
+                };
+
+                let file = Arc::new(PcapFile::new(ring_buffer, pcap_headers.clone()));
+                let mut object_request = vfs::object_request::ObjectRequest::new(
+                    fio::PERM_READABLE,
+                    &fio::Options::default(),
+                    channel.into(),
+                );
+                match vfs::file::serve(
+                    file,
+                    download_scope,
+                    &fio::PERM_READABLE,
+                    &mut object_request,
+                ) {
+                    Ok(()) => {}
+                    Err(e) => warn!("failed to serve rolling packet capture file: {e}"),
+                }
             }
         }
     };
 
+    let source = source.expect("packet capture source must be Some");
+
+    async fn cleanup(
+        mut ctx: Ctx,
+        source: Source,
+        responder: Option<fnet_debug::RollingPacketCaptureDiscardResponder>,
+    ) -> fasync::Task<Option<CaptureData>> {
+        let task = {
+            let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
+            state_lock.transition_to_closing()
+        };
+
+        source.shutdown(&mut ctx).await;
+
+        {
+            let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
+            assert_matches::assert_matches!(*state_lock, RollingCaptureState::Closing);
+            *state_lock = RollingCaptureState::Empty;
+        }
+
+        if let Some(responder) = responder {
+            responder.send().unwrap_or_log("failed to respond");
+        }
+
+        task
+    }
+
     match close_type {
-        CloseType::Takeover => Some(CaptureData { id, pcap_headers }),
+        CloseType::Discard(responder) => {
+            let _task = cleanup(ctx, source, Some(responder)).await;
+            None
+        }
+        CloseType::Canceled => {
+            let _task = cleanup(ctx, source, None).await;
+            None
+        }
+        CloseType::Takeover => Some(CaptureData { source, pcap_headers }),
         CloseType::StreamClosed => {
-            let socket_id = {
+            let (old_source, _task) = {
                 let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
 
                 // If takeover has been signalled, the state protected by the mutex now
@@ -200,19 +287,19 @@ where
                     .try_recv()
                     .expect("takeover sender should not have been dropped")
                 {
-                    return Some(CaptureData { id, pcap_headers });
+                    return Some(CaptureData { source, pcap_headers });
                 }
 
                 state_lock.replace_with(|old| match old {
-                    RollingCaptureState::DetachedConnected { name, .. } => (
+                    RollingCaptureState::DetachedConnected { name, task, cancel: _ } => (
                         RollingCaptureState::Disconnected {
                             name,
-                            data: CaptureData { id, pcap_headers },
+                            data: CaptureData { source, pcap_headers },
                         },
-                        None,
+                        (None, task),
                     ),
-                    RollingCaptureState::Attached { .. } => {
-                        (RollingCaptureState::Closing, Some(id))
+                    RollingCaptureState::Attached { task, cancel: _ } => {
+                        (RollingCaptureState::Closing, (Some(source), task))
                     }
                     old @ (RollingCaptureState::Empty
                     | RollingCaptureState::Closing
@@ -222,75 +309,13 @@ where
                 })
             };
 
-            if let Some(socket_id) = socket_id {
-                let _: SocketState = remove_socket(&mut ctx, socket_id).await;
+            if let Some(source) = old_source {
+                source.shutdown(&mut ctx).await;
+
                 let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
                 assert_matches::assert_matches!(*state_lock, RollingCaptureState::Closing);
                 *state_lock = RollingCaptureState::Empty;
             }
-
-            None
-        }
-        CloseType::Discard(responder) => {
-            {
-                let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
-                state_lock.transition_to_closing();
-            }
-
-            let _: SocketState = remove_socket(&mut ctx, id).await;
-
-            {
-                let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
-                assert_matches::assert_matches!(*state_lock, RollingCaptureState::Closing);
-                *state_lock = RollingCaptureState::Empty;
-            }
-
-            responder.send().unwrap_or_log("failed to respond");
-            None
-        }
-        CloseType::Canceled => {
-            {
-                let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
-                state_lock.transition_to_closing();
-            }
-
-            let _: SocketState = remove_socket(&mut ctx, id).await;
-
-            {
-                let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
-                assert_matches::assert_matches!(*state_lock, RollingCaptureState::Closing);
-                *state_lock = RollingCaptureState::Empty;
-            }
-            None
-        }
-        CloseType::Terminate(channel) => {
-            {
-                let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
-                state_lock.transition_to_closing();
-            }
-
-            let socket_state = remove_socket(&mut ctx, id).await;
-
-            let ring_buffer = socket_state.into_rolling_pcap_buffer();
-            let file = std::sync::Arc::new(PcapFile::new(ring_buffer, pcap_headers));
-            let scope = vfs::execution_scope::ExecutionScope::new();
-            let mut object_request = vfs::object_request::ObjectRequest::new(
-                fio::PERM_READABLE,
-                &fio::Options::default(),
-                channel.into(),
-            );
-            match vfs::file::serve(file, scope.clone(), &fio::PERM_READABLE, &mut object_request) {
-                Ok(()) => {}
-                Err(e) => warn!("failed to serve rolling packet capture file: {e}"),
-            }
-
-            let ctx_clone = ctx.clone();
-            let _: fasync::JoinHandle<_> = fasync::Scope::current().spawn(async move {
-                scope.wait().await;
-                let mut state_lock = ctx_clone.bindings_ctx().packet_captures.state.lock();
-                assert_matches::assert_matches!(*state_lock, RollingCaptureState::Closing);
-                *state_lock = RollingCaptureState::Empty;
-            });
 
             None
         }
@@ -443,24 +468,20 @@ fn handle_start_rolling(
     let request_stream = rolling_server.into_stream();
     let ctx_clone = ctx.clone();
     let device_name = device_id.device_name().clone();
-    let mut pcap_headers = Vec::new();
-    pcap::write_prelude(&mut pcap_headers, link_type, &device_name)
+    let mut headers = Vec::new();
+    pcap::write_prelude(&mut headers, link_type, &device_name)
         .expect("failed to write pcap prelude");
+    let pcap_headers = Arc::from(headers);
 
     let scope = fasync::Scope::current();
     let (cancel_sender, cancel_receiver) = oneshot::channel::<()>();
 
+    let data = CaptureData { source: Source::Socket(id), pcap_headers };
+
     let new_task = scope.compute(async move {
         let scope_cancel = guard.on_cancel();
-        serve_rolling_packet_capture(
-            ctx_clone,
-            request_stream,
-            id,
-            pcap_headers,
-            scope_cancel,
-            cancel_receiver,
-        )
-        .await
+        serve_rolling_packet_capture(ctx_clone, request_stream, data, scope_cancel, cancel_receiver)
+            .await
     });
 
     *state_lock = RollingCaptureState::Attached { task: new_task, cancel: cancel_sender };
@@ -503,12 +524,11 @@ fn handle_reconnect_rolling(
 
         let new_task = scope.compute(async move {
             let scope_cancel = guard.on_cancel();
-            let CaptureData { id, pcap_headers } = capture_data_fut.await?;
+            let data = capture_data_fut.await?;
             serve_rolling_packet_capture(
                 ctx_clone,
                 request_stream,
-                id,
-                pcap_headers,
+                data,
                 scope_cancel,
                 cancel_receiver,
             )
@@ -555,12 +575,12 @@ pub(crate) async fn serve_packet_captures(
 }
 
 struct PcapFile {
-    headers: Vec<u8>,
-    ring_buffer: RingBuffer,
+    headers: Arc<[u8]>,
+    ring_buffer: Arc<RingBuffer>,
 }
 
 impl PcapFile {
-    fn new(ring_buffer: RingBuffer, headers: Vec<u8>) -> Self {
+    fn new(ring_buffer: Arc<RingBuffer>, headers: Arc<[u8]>) -> Self {
         Self { headers, ring_buffer }
     }
 }
@@ -682,7 +702,7 @@ impl vfs::file::File for PcapFile {
 
 impl vfs::file::FileLike for PcapFile {
     fn open(
-        self: std::sync::Arc<Self>,
+        self: Arc<Self>,
         scope: vfs::execution_scope::ExecutionScope,
         options: vfs::file::FileOptions,
         object_request: vfs::ObjectRequestRef<'_>,
