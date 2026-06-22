@@ -1469,33 +1469,6 @@ compiled_action("test-list") {
   ]
 }
 
-action("python_ide_integration") {
-  testonly = true
-  script = "//build/python/create_pyright_base_config.py"
-
-  # The final file is symlinked to the root of the checkout directory, and the
-  # paths contained the file must be relative to that directory. For that
-  # reason, we need to pass the real build directory path so that each file path
-  # is relative to the final symlink location.
-  check_for_output_dir_leaks = false
-
-  deps = [ ":extra_python_dirs" ]
-
-  inputs = [ "//pyrightconfig.json" ] + get_target_outputs(deps[0])
-  outputs = [ "$root_build_dir/pyrightconfig.base.json" ]
-
-  args = [
-    "--extra_python_paths_file",
-    rebase_path(inputs[1], root_build_dir),
-    "--output_file",
-    rebase_path(outputs[0], root_build_dir),
-    "--top_level_pyright_file",
-    rebase_path(inputs[0], root_build_dir),
-    "--build_directory_path",
-    string_replace(root_build_dir, "//", ""),
-  ]
-}
-
 # test_durations.json contains historical test durations data to be used for
 # scheduling tests.
 #
@@ -2405,7 +2378,6 @@ group("default") {
     "//:build_only",
     "//:host",
     "//:product_bundles.check",
-    "//:python_ide_integration",
     "//:test-list",
     "//build:bazel2gn_dir_list",
     "//build/assembly:validate_product_defs",

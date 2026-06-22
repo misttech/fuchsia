@@ -26,8 +26,10 @@ _BUILD_BAZEL_SCRIPTS = _SCRIPT_DIR / ".." / "build" / "bazel" / "scripts"
 _BUILD_BAZEL_DIR = _SCRIPT_DIR / ".." / "build" / "bazel"
 # The directory that contains Python modules related to the IDK.
 _BUILD_SDK_SCRIPTS = _SCRIPT_DIR / ".." / "build" / "sdk"
+_BUILD_PYTHON_DIR = _SCRIPT_DIR / ".." / "build" / "python"
 sys.path.insert(0, str(_BUILD_BAZEL_SCRIPTS))
 sys.path.insert(0, str(_BUILD_BAZEL_DIR))
+sys.path.insert(0, str(_BUILD_PYTHON_DIR))
 sys.path.insert(0, str(_BUILD_SDK_SCRIPTS))
 sys.path.insert(0, str(_BUILD_SDK_SCRIPTS / "generate_prebuild_idk"))
 
@@ -38,6 +40,7 @@ import workspace_utils
 from bazel_action_file_copy_utils import write_file_if_changed
 from fuchsia_idk import generate_repository
 from idk_generator.idk_generator import IdkGenerator
+from pyright_config import create_pyright_base_config
 
 _DEFAULT_HOST_TAG = "linux-x64"
 
@@ -596,6 +599,14 @@ def main() -> int:
             with_bazel_host_tests=args_json.get(
                 "export_bazel_host_tests", False
             ),
+        )
+
+        time_profile.start(
+            "pyrightconfig.base.json", "Generating pyrightconfig.base.json."
+        )
+        extra_ninja_build_inputs |= create_pyright_base_config(
+            build_dir=build_dir,
+            fuchsia_dir=fuchsia_dir,
         )
 
         # Find all imported Python modules and set them as extra inputs
