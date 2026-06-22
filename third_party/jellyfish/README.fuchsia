@@ -1,9 +1,9 @@
 Name: jellyfish
 URL: https://github.com/jamesturk/jellyfish
-Revision: 7b65689a50bda2e23493f7701950f00647eb0e42
+Revision: 7d50927c7d63cf4ed8bb16286dd21e34f4bb5641
 License: MIT
 License File: jellyfish/LICENSE
-Version: v0.10.1
+Version: v1.2.1
 Description:
 jellyfish is a Python library supporting a number of fuzzy string matching
 metrics. It can be used to support suggestions for mistyped commands or

@@ -6,12 +6,8 @@ import("//build/python/python_library.gni")
 
 python_library("jellyfish") {
   enable_mypy = false
-  source_root = "jellyfish/jellyfish"
-  sources = [
-    "__init__.py",
-    "_jellyfish.py",
-    "porter.py",
-  ]
+  source_root = "jellyfish/python/jellyfish"
+  sources = [ "_jellyfish.py" ]
 }
 
 group("tests") {

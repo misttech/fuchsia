@@ -4,7 +4,7 @@
 # found in the LICENSE file.
 
 import unittest
-import jellyfish
+from jellyfish import _jellyfish as jellyfish
 
 
 class JellyfishTest(unittest.TestCase):

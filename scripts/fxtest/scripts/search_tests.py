@@ -17,8 +17,11 @@ from collections import defaultdict
 from multiprocessing import Pool
 
 import colorama
-import jellyfish
 from colorama import Fore, Style
+
+# Import Python implementation directly, bypassing need for compiled
+# Rust wheels.
+from jellyfish import _jellyfish as jellyfish
 
 colorama.init(strip=bool(os.getenv("NO_COLOR", None)))
 

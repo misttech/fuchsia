@@ -347,7 +347,7 @@
              path="third_party/jellyfish/jellyfish"
              remote="https://fuchsia.googlesource.com/third_party/github.com/jamesturk/jellyfish"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="7b65689a50bda2e23493f7701950f00647eb0e42"/>
+             revision="7d50927c7d63cf4ed8bb16286dd21e34f4bb5641"/>
     <project name="third_party/colorama"
              path="third_party/colorama/colorama"
              remote="https://fuchsia.googlesource.com/third_party/github.com/tartley/colorama"
