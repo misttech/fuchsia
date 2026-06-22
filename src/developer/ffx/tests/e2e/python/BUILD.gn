@@ -4,7 +4,6 @@
 
 import("//build/python/python_library.gni")
 import("//build/python/python_mobly_test.gni")
-import("//build/testing/host_test_data.gni")
 
 # This file can appear in e2e tests which are processed by more than just
 # the host toolchain.
@@ -30,20 +29,11 @@ if (is_host) {
       "//src/testing/end_to_end/honeydew",
       "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
     ]
-    test_data_deps = [ ":strict_example_files" ]
     environments = [
       emu_env,
       nuc7_env,
       nuc11_env,
     ]
-  }
-
-  host_test_data("strict_example_files") {
-    sources = [
-      "//src/developer/ffx/docs/examples/strict/ffx.py",
-      "//src/developer/ffx/docs/examples/strict/strict.py",
-    ]
-    outputs = [ "$root_out_dir/test_data/strict_example/{{source_file_part}}" ]
   }
 
   python_mobly_test("direct_conn_e2e_test") {
