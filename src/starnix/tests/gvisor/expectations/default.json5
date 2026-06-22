@@ -770,6 +770,11 @@
                 "NetdeviceTest.EthtoolGetTSInfo",
 
                 // socket_netlink_route_test
+                // TODO(https://fxbug.dev/526323480): getsockopt(SOL_NETLINK, NETLINK_LIST_MEMBERSHIPS) is unimplemented.
+                "NetlinkRouteTest.ListMembershipsSizeProbe",
+                "NetlinkRouteTest.ListMembershipsLargeBuffer",
+                "NetlinkRouteTest.ListMembershipsTruncated",
+
                 // TODO(https://issuetracker.google.com/290605547): support
                 // replacing addresses.
                 "NetlinkRouteTest.AddAndRemoveAddr",
