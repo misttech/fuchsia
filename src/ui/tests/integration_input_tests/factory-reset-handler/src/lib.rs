@@ -132,6 +132,7 @@ async fn assemble_realm(
             .capability(Capability::configuration("fuchsia.ui.SupportedInputDevices"))
             .capability(Capability::configuration("fuchsia.ui.ViewingDistance"))
             .capability(Capability::configuration("fuchsia.power.SuspendEnabled"))
+            .capability(Capability::configuration("fuchsia.ui.Prefetch"))
             .from(scene_manager_config.ref_())
             .to(scene_manager.ref_()),
     )

@@ -46,6 +46,9 @@ int dso_main_async(int argc, const char* argv[], const char* envp[], zx_handle_t
   zx::channel out_dir(directory_request_handle);
   zx::vmo config_vmo(config_handle);
   auto config = scenic_structured_config::Config::CreateFromVmo(std::move(config_vmo));
+  if (config.prefetch()) {
+    scenic_impl::PrefetchBinary(pkg_handle, "lib/libscenic.so");
+  }
 
   async::Loop render_loop(&kAsyncLoopConfigAttachToCurrentThread);
 

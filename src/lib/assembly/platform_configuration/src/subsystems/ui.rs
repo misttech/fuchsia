@@ -27,6 +27,10 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
             "fuchsia.ui.VisualDebuggingLevel",
             Config::new(ConfigValueType::Uint8, visual_debugging_level.into()),
         )?;
+        builder.set_config_capability(
+            "fuchsia.ui.Prefetch",
+            Config::new(ConfigValueType::Bool, ui_config.prefetch.into()),
+        )?;
 
         if !ui_config.enabled {
             return Ok(());

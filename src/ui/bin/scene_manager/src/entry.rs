@@ -32,5 +32,6 @@ async fn main() -> Result<(), Error> {
         fuchsia_runtime::take_startup_handle(HandleType::ComponentConfigVmo.into())
             .expect("no Config"),
     );
-    crate::top::start(incoming, outgoing_dir.into(), config, ROLE_NAME).await
+    crate::top::start(incoming, outgoing_dir.into(), config, ROLE_NAME, "/pkg/bin/scene_manager")
+        .await
 }

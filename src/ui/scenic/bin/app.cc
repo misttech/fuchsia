@@ -11,6 +11,7 @@
 #include <fuchsia/vulkan/loader/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/default.h>
+#include <lib/fdio/directory.h>
 #include <lib/fidl/cpp/hlcpp_conversion.h>
 #include <lib/syslog/cpp/macros.h>
 
@@ -781,6 +782,34 @@ void App::InitializeHeartbeat(display::Display& display) {
           flatland_engine_->SkipRender(std::move(frame_presented_callback));
         }
       });
+}
+
+void PrefetchBinary(zx_handle_t pkg_dir, const char* binary_path) {
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_io::File>::Create();
+  zx_status_t status = fdio_open3_at(
+      pkg_dir, binary_path,
+      static_cast<uint64_t>(fuchsia_io::wire::kPermReadable | fuchsia_io::wire::kPermExecutable),
+      server_end.TakeChannel().release());
+  FX_CHECK(status == ZX_OK) << "Failed to open " << binary_path << ": "
+                            << zx_status_get_string(status);
+
+  fidl::SyncClient file(std::move(client_end));
+  auto result = file->GetBackingMemory(fuchsia_io::wire::VmoFlags::kRead |
+                                       fuchsia_io::wire::VmoFlags::kExecute);
+  FX_CHECK(result.is_ok()) << "Failed to get backing memory for " << binary_path << ": "
+                           << result.error_value();
+
+  zx::vmo vmo = std::move(result->vmo());
+  uint64_t size;
+  status = vmo.get_size(&size);
+  FX_CHECK(status == ZX_OK) << "Failed to get VMO size for " << binary_path << ": "
+                            << zx_status_get_string(status);
+
+  status = vmo.op_range(ZX_VMO_OP_ALWAYS_NEED, 0, size, nullptr, 0);
+  FX_CHECK(status == ZX_OK) << "Failed to pin VMO for " << binary_path << ": "
+                            << zx_status_get_string(status);
+
+  FX_LOGS(INFO) << "Prefetched " << binary_path;
 }
 
 }  // namespace scenic_impl

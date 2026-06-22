@@ -24,6 +24,10 @@ pub struct PlatformUiConfig {
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub enabled: bool,
 
+    /// Whether to prefetch binary VMOs.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub prefetch: bool,
+
     /// The sensor config to provide to the input pipeline.
     #[schemars(schema_with = "crate::option_path_schema")]
     #[walk_paths]
@@ -110,6 +114,7 @@ impl Default for PlatformUiConfig {
     fn default() -> Self {
         Self {
             enabled: Default::default(),
+            prefetch: false,
             sensor_config: Default::default(),
             frame_scheduler_min_predicted_frame_duration_in_us: Default::default(),
             frame_prediction_margin_in_us: default_frame_prediction_margin_in_us(),

@@ -79,6 +79,7 @@
                 "fuchsia.scenic.MinDisplayVerticalResolutionPx",
                 "fuchsia.scenic.PointerAutoFocus",
                 "fuchsia.scenic.Renderer",
+                "fuchsia.ui.Prefetch",
                 "fuchsia.ui.VisualDebuggingLevel",
             ],
             from: "parent",

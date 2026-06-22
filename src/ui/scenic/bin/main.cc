@@ -67,14 +67,18 @@ int main(int argc, const char** argv) {
 
   zx::channel pkg_dir, pkg_server;
   zx::channel::create(0, &pkg_dir, &pkg_server);
-  const zx_status_t pkg_status =
-      fdio_open3("/pkg", static_cast<uint64_t>(fuchsia::io::PERM_READABLE), pkg_server.release());
+  const zx_status_t pkg_status = fdio_open3(
+      "/pkg", static_cast<uint64_t>(fuchsia::io::PERM_READABLE | fuchsia::io::PERM_EXECUTABLE),
+      pkg_server.release());
   FX_CHECK(pkg_status == ZX_OK) << "Failed to open /pkg: " << zx_status_get_string(pkg_status);
   const zx_handle_t directory_request_handle = zx_take_startup_handle(PA_DIRECTORY_REQUEST);
   zx::channel out_dir{directory_request_handle};
   const zx_handle_t config_handle = zx_take_startup_handle(PA_VMO_COMPONENT_CONFIG);
   zx::vmo config_vmo{config_handle};
   auto config = scenic_structured_config::Config::CreateFromVmo(std::move(config_vmo));
+  if (config.prefetch()) {
+    scenic_impl::PrefetchBinary(pkg_dir.get(), "bin/scenic");
+  }
 
   // Only use a dedicated input loop/dispatcher/thread if configured to do so.  Otherwise, use the
   // same dispatcher for rendering and input.

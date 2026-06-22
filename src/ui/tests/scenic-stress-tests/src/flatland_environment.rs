@@ -9,6 +9,8 @@ use crate::input_actor::InputActor;
 use async_trait::async_trait;
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_metrics::MetricEventLoggerFactoryMarker;
+use fidl_fuchsia_ui_composition as flatland;
+use fidl_fuchsia_ui_pointerinjector as pointerinjector;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use futures::lock::Mutex;
 use rand::SeedableRng;
@@ -17,7 +19,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use stress_test::actor::ActorRunner;
 use stress_test::environment::Environment;
-use {fidl_fuchsia_ui_composition as flatland, fidl_fuchsia_ui_pointerinjector as pointerinjector};
 
 /// Contains the running instance of scenic and the actors that operate on it.
 /// This object lives for the entire duration of the test.
@@ -98,6 +99,7 @@ impl FlatlandEnvironment {
                     ))
                     .capability(Capability::configuration("fuchsia.scenic.FrameCounterOverlay"))
                     .capability(Capability::configuration("fuchsia.ui.VisualDebuggingLevel"))
+                    .capability(Capability::configuration("fuchsia.ui.Prefetch"))
                     .from(&config)
                     .to(&scenic),
             )
@@ -121,6 +123,16 @@ impl FlatlandEnvironment {
             .add_route(
                 Route::new()
                     .capability(Capability::protocol_by_name("fuchsia.logger.LogSink"))
+                    .from(Ref::parent())
+                    .to(&scenic)
+                    .to(&fake_display_stack_host),
+            )
+            .await
+            .unwrap();
+
+        builder
+            .add_route(
+                Route::new()
                     .capability(Capability::protocol_by_name("fuchsia.vulkan.loader.Loader"))
                     .from(Ref::parent())
                     .to(&scenic),

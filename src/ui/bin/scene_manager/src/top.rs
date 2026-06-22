@@ -67,6 +67,7 @@ pub async fn start(
     outgoing_dir: fidl::endpoints::ServerEnd<fidl_fuchsia_io::DirectoryMarker>,
     config: zx::Vmo,
     role_name: &str,
+    binary_path: &str,
 ) -> Result<(), Error> {
     if let Err(e) = fuchsia_scheduler::set_role_for_root_vmar(role_name) {
         warn!(e:%; "failed to set vmar role");
@@ -171,8 +172,31 @@ pub async fn start(
         viewing_distance,
         attach_a11y_view,
         enable_merge_touch_events,
+        prefetch,
         ..
     } = Config::from_vmo(&config).expect("bad config vmo");
+
+    // TODO: get this working in dso configurations
+    if prefetch {
+        let file_proxy = fuchsia_fs::file::open_in_namespace(
+            binary_path,
+            fidl_fuchsia_io::PERM_READABLE | fidl_fuchsia_io::PERM_EXECUTABLE,
+        )
+        .context(format!("open {}", binary_path))?;
+
+        let vmo = file_proxy
+            .get_backing_memory(
+                fidl_fuchsia_io::VmoFlags::READ | fidl_fuchsia_io::VmoFlags::EXECUTE,
+            )
+            .await
+            .context("call get_backing_memory")?
+            .map_err(zx::Status::from_raw)
+            .context("get_backing_memory")?;
+        let size = vmo.get_size().context("get executable vmo size")?;
+        vmo.op_range(zx::VmoOp::ALWAYS_NEED, 0, size).context("pin executable vmo")?;
+
+        info!("Prefetched binary: {}", binary_path);
+    }
 
     let display_pixel_density = match display_pixel_density.trim().parse::<f32>() {
         Ok(density) => {

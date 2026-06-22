@@ -42,6 +42,7 @@ _scene_manager = {
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-fs",
     "//src/lib/trace/rust:trace-provider",
     "//src/ui/lib/focus_chain_provider:lib_with_includes",
     "//third_party/rust_crates:anyhow",
@@ -169,6 +170,7 @@ fuchsia_structured_config_values2("config_for_test") {
     suspend_enabled = false
     attach_a11y_view = true
     enable_merge_touch_events = false
+    prefetch = false
   }
 }
 

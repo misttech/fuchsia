@@ -105,6 +105,7 @@
                 "fuchsia.ui.DisplayPixelDensity",
                 "fuchsia.ui.EnableMergeTouchEvents",
                 "fuchsia.ui.IdleThresholdMs",
+                "fuchsia.ui.Prefetch",
                 "fuchsia.ui.SupportedInputDevices",
                 "fuchsia.ui.ViewingDistance",
             ],

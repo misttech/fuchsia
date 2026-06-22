@@ -67,6 +67,7 @@ Resulting product is not supported and may misbehave!
     {
         product_config.platform.kernel.oom.experimental_expand_memory_stall = true;
         product_config.platform.starnix.prefetch_kernel = true;
+        product_config.platform.ui.prefetch = true;
     }
 
     let mut board_config =

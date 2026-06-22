@@ -108,6 +108,11 @@
             key: "enable_merge_touch_events",
             type: "bool",
         },
+        {
+            config: "fuchsia.ui.Prefetch",
+            key: "prefetch",
+            type: "bool",
+        },
     ],
     expose: [
         {

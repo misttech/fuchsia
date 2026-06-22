@@ -6,6 +6,7 @@
 #define SRC_UI_SCENIC_BIN_APP_H_
 
 #include <fidl/fuchsia.io/cpp/fidl.h>
+#include <fidl/fuchsia.io/cpp/wire.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/async_patterns/cpp/dispatcher_bound.h>
 
@@ -145,6 +146,8 @@ class App {
   // (e.g., display_manager_, display_power_manager_).
   HealthInspector health_inspector_;
 };
+
+void PrefetchBinary(zx_handle_t pkg_dir, const char* binary_path);
 
 }  // namespace scenic_impl
 

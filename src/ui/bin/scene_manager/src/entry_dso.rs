@@ -27,5 +27,6 @@ async fn main(args: DsoAsyncArgs) -> Result<(), Error> {
     let incoming = Incoming::new(Arc::new(fdf_component::Incoming::from(args.incoming)));
     let outgoing_dir = args.outgoing_dir.expect("missing outgoing dir");
     let config = args.config.expect("missing config vmo");
-    crate::top::start(incoming, outgoing_dir, config, ROLE_NAME).await
+    crate::top::start(incoming, outgoing_dir, config, ROLE_NAME, "/pkg/lib/libscene_manager.so")
+        .await
 }
