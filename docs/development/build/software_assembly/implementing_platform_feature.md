@@ -371,9 +371,40 @@ builder.set_config_capability(
 )?;
 ```
 
-Assembly will add all default config capabilities to a config package in BootFS,
-therefore the capability will need to be routed from the `/root` component realm
-to your component.
+Assembly adds all default config capabilities to a config package in BootFS.
+Therefore, you must route the capability from the `/root` component realm down
+to your target component through any intermediate component manifests.
+
+##### Routing platform config capabilities
+
+Because the config package is instantiated as `#config` inside `/root`, the root
+manifest ([`//src/sys/root/root.cml`](/src/sys/root/root.cml)) must offer the capability to the
+appropriate child realm (such as `#bootstrap` or `#core`):
+
+```json5
+// In //src/sys/root/root.cml
+offer: [
+    {
+        config: [ "fuchsia.tandem.MaxConnections" ],
+        from: "#config",
+        to: "#bootstrap",
+    },
+]
+```
+
+Any intermediate realms (such as [`//src/sys/bootstrap/meta/bootstrap.cml`](/src/sys/bootstrap/meta/bootstrap.cml)) must
+then route the capability from `parent` to the target component:
+
+```json5
+// In //src/sys/bootstrap/meta/bootstrap.cml
+offer: [
+    {
+        config: [ "fuchsia.tandem.MaxConnections" ],
+        from: "parent",
+        to: "#tandem",
+    },
+]
+```
 
 ##### Using platform-defined config capabilities in components
 
