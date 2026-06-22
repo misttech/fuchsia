@@ -32,16 +32,11 @@ pub struct Gtk {
     key_rsc: u64,
 }
 
-/// PartialEq implementation is the same as the default derive(PartialEq)
-/// We explicitly implement it here because we have a custom Hash implementation, and clippy
-/// requires that both PartialEq and Hash are either derive together or have custom implementations
-/// together.
+/// PartialEq implementation explicitly excludes the RSC.
+/// Both PartialEq and Hash ignore the RSC to prevent key re-installation (KRACK) on retransmissions.
 impl PartialEq for Gtk {
     fn eq(&self, other: &Self) -> bool {
-        self.bytes == other.bytes
-            && self.tk_len == other.tk_len
-            && self.key_id == other.key_id
-            && self.key_rsc == other.key_rsc
+        self.bytes == other.bytes && self.tk_len == other.tk_len && self.key_id == other.key_id
     }
 }
 

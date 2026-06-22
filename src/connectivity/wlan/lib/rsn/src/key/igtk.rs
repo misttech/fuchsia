@@ -44,12 +44,28 @@ impl IgtkProvider {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Eq)]
 pub struct Igtk {
     pub igtk: Vec<u8>,
     pub key_id: u16,
     pub ipn: [u8; 6],
     pub cipher: Cipher,
+}
+
+/// PartialEq implementation explicitly excludes the IPN (Integrity Packet Number).
+/// Both PartialEq and Hash ignore the IPN to prevent key re-installation (KRACK) on retransmissions.
+impl PartialEq for Igtk {
+    fn eq(&self, other: &Self) -> bool {
+        self.igtk == other.igtk && self.key_id == other.key_id && self.cipher == other.cipher
+    }
+}
+
+impl std::hash::Hash for Igtk {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.igtk.hash(state);
+        self.key_id.hash(state);
+        self.cipher.hash(state);
+    }
 }
 
 impl Igtk {

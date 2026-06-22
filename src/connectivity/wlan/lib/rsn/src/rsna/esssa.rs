@@ -1700,4 +1700,81 @@ mod tests {
         let result = result.and_then(|_| send_eapol_conf(supplicant, &mut updates));
         (result, updates)
     }
+
+    #[test]
+    fn test_key_confirmed_gtk_replay_prevention() {
+        let mut supplicant = test_util::get_wpa2_supplicant();
+        let mut authenticator = test_util::get_wpa2_authenticator();
+        let mut updates = vec![];
+        supplicant.start(&mut updates).expect("Failed starting Supplicant");
+
+        // Run handshake to install initial GTK.
+        test_eapol_exchange(&mut supplicant, &mut authenticator, None, false);
+
+        // Clear updates from the handshake.
+        updates.clear();
+
+        // Extract the installed GTK from supplicant's ESSSA to get the correct bytes and key ID.
+        let installed_gtk = match &*supplicant.esssa.gtksa {
+            Gtksa::Established { installed_gtks, .. } => {
+                installed_gtks.iter().next().expect("no GTK installed").clone()
+            }
+            _ => panic!("GTKSA not established"),
+        };
+
+        // Try to install the SAME GTK but with a DIFFERENT RSC.
+        let gtk_reinstall = Gtk::from_bytes(
+            installed_gtk.bytes.clone(),
+            installed_gtk.cipher().clone(),
+            installed_gtk.key_id(),
+            installed_gtk.key_rsc() + 10, // Different RSC
+        )
+        .expect("failed to create GTK");
+
+        // Call on_key_confirmed.
+        let result = supplicant.esssa.on_key_confirmed(&mut updates, Key::Gtk(gtk_reinstall));
+        assert!(result.is_ok());
+
+        // Expect NO key update to be yielded because the key is already installed (RSC ignored in equality).
+        assert!(
+            updates.is_empty(),
+            "Expected no key update for reinstalled GTK with different RSC, got: {:?}",
+            updates
+        );
+    }
+
+    #[test]
+    fn test_key_confirmed_igtk_replay_prevention() {
+        let mut supplicant = test_util::get_wpa3_supplicant();
+
+        // Construct an IGTK.
+        let igtk_bytes = vec![0x11; 16];
+        let ipn1 = [0xaa; 6];
+        let cipher = wlan_common::ie::rsn::cipher::CIPHER_BIP_CMAC_128;
+
+        let igtk1 = Igtk { igtk: igtk_bytes.clone(), key_id: 4, ipn: ipn1, cipher: cipher.clone() };
+
+        let mut updates = vec![];
+
+        // First installation should succeed and yield a Key update.
+        let result = supplicant.esssa.on_key_confirmed(&mut updates, Key::Igtk(igtk1));
+        assert!(result.is_ok());
+        assert_eq!(updates.len(), 1);
+        assert_matches!(updates[0], SecAssocUpdate::Key(Key::Igtk(_)));
+
+        updates.clear();
+
+        // Second installation with SAME key bytes but DIFFERENT IPN should be ignored
+        // (no Key update yielded) because we omit IPN from Igtk equality.
+        let ipn2 = [0xbb; 6];
+        let igtk2 = Igtk { igtk: igtk_bytes, key_id: 4, ipn: ipn2, cipher };
+
+        let result = supplicant.esssa.on_key_confirmed(&mut updates, Key::Igtk(igtk2));
+        assert!(result.is_ok());
+        assert!(
+            updates.is_empty(),
+            "Expected no key update for reinstalled IGTK with different IPN, got: {:?}",
+            updates
+        );
+    }
 }
