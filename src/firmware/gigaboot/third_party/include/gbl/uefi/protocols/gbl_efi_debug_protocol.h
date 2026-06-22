@@ -29,7 +29,7 @@
 #include <stdint.h>
 
 #include <efi/types.h>
-#include <uefi/gbl_protocol_utils.h>
+#include <gbl/uefi/gbl_protocol_utils.h>
 
 static const uint64_t GBL_EFI_DEBUG_PROTOCOL_REVISION = GBL_PROTOCOL_REVISION(1, 0);
 

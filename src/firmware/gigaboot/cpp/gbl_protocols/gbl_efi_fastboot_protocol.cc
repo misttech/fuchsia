@@ -9,8 +9,8 @@
 #include <string_view>
 
 #include <gbl/gbl_efi_protocols.h>
+#include <gbl/uefi/protocols/gbl_efi_fastboot_protocol.h>
 #include <phys/efi/main.h>
-#include <uefi/protocols/gbl_efi_fastboot_protocol.h>
 
 #define GBL_EFI_FASTBOOT_PROTOCOL_GUID \
   {0xc67e48a0, 0x5eb8, 0x4127, {0xbe, 0x89, 0xdf, 0x2e, 0xd9, 0x3d, 0x8a, 0x9a}}

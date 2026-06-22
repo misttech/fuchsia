@@ -29,7 +29,7 @@
 #include <stdint.h>
 
 #include <efi/types.h>
-#include <uefi/gbl_protocol_utils.h>
+#include <gbl/uefi/gbl_protocol_utils.h>
 
 #define GBL_EFI_FASTBOOT_SERIAL_NUMBER_MAX_LEN_UTF8 32
 

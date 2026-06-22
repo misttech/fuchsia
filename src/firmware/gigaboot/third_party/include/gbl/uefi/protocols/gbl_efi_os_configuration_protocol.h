@@ -29,7 +29,7 @@
 #include <stdint.h>
 
 #include <efi/types.h>
-#include <uefi/gbl_protocol_utils.h>
+#include <gbl/uefi/gbl_protocol_utils.h>
 
 EFI_ENUM(GblEfiDeviceTreeType, uint32_t,
          // HLOS device tree.

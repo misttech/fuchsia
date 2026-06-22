@@ -26,11 +26,6 @@ source_set("lib") {
     "efi_variables.h",
     "fastboot.cc",
     "fastboot.h",
-    "gbl_dt.cc",
-    "gbl_loader.cc",
-    "gbl_loader.h",
-    "gbl_protocols/gbl_efi_boot_control_protocol.cc",
-    "gbl_protocols/gbl_efi_fastboot_protocol.cc",
     "gpt.cc",
     "gpt.h",
     "input.cc",
@@ -71,6 +66,7 @@ source_set("lib") {
 
   include_dirs = []
   include_dirs += [
+    ".",
     "../include",
     "../third_party/include/gbl",
   ]
@@ -162,6 +158,11 @@ template("gigaboot_esp") {
     sources = [
       "fastboot_tcp.cc",
       "fastboot_tcp.h",
+      "gbl_dt.cc",
+      "gbl_loader.cc",
+      "gbl_loader.h",
+      "gbl_protocols/gbl_efi_boot_control_protocol.cc",
+      "gbl_protocols/gbl_efi_fastboot_protocol.cc",
       "main.cc",
       "malloc.cc",
       "sysdeps.cc",
@@ -183,6 +184,11 @@ template("gigaboot_esp") {
     ]
 
     cflags = [ "-DAVB_COMPILATION" ]
+    include_dirs = [
+      ".",
+      "../include",
+      "../third_party/include",
+    ]
 
     _stop_in_fastboot =
         defined(invoker.stop_in_fastboot) && invoker.stop_in_fastboot

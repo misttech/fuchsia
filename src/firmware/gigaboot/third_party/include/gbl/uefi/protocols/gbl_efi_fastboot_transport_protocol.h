@@ -29,7 +29,7 @@
 #include <stdint.h>
 
 #include <efi/types.h>
-#include <uefi/gbl_protocol_utils.h>
+#include <gbl/uefi/gbl_protocol_utils.h>
 
 EFI_ENUM(GblEfiFastbootRxMode, uint32_t, GBL_EFI_FASTBOOT_RX_MODE_SINGLE_PACKET,
          GBL_EFI_FASTBOOT_RX_MODE_FIXED_LENGTH);
