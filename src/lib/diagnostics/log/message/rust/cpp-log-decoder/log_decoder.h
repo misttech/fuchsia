@@ -61,12 +61,21 @@ struct CppArray {
   const T *ptr;
 };
 
+/// Represents a UTF-8 encoded string for FFI purposes.
+/// This is equivalent to a CppArray<u8> as it is
+/// #[repr(transparent)], but with the additional
+/// constraint that the contents of the array
+/// is a valid UTF-8 string.
+struct CppString {
+  CppArray<uint8_t> inner;
+};
+
 /// Log message representation for FFI with C++
 struct LogMessage {
   /// Severity of a log message.
   uint8_t severity;
   /// Tags in a log message, guaranteed to be non-null.
-  CppArray<CppArray<uint8_t>> tags;
+  CppArray<CppString> tags;
   /// Process ID from a LogMessage, or 0 if unknown
   uint64_t pid;
   /// Thread ID from a LogMessage, or 0 if unknown
@@ -74,7 +83,7 @@ struct LogMessage {
   /// Number of dropped log messages.
   uint64_t dropped;
   /// The UTF-encoded log message, guaranteed to be valid UTF-8.
-  CppArray<uint8_t> message;
+  CppString message;
   /// Timestamp on the boot timeline of the log message,
   /// in nanoseconds.
   int64_t timestamp;

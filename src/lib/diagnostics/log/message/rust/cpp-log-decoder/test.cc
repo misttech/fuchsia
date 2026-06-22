@@ -38,12 +38,13 @@ TEST(LogDecoder, DecodesCorrectly) {
   fuchsia_free_decoded_log_message(const_cast<char*>(json));
 }
 
-int RustStrcmp(CppArray<uint8_t> rust_string, const char* c_str) {
+int RustStrcmp(CppString rust_string, const char* c_str) {
   size_t c_len = strlen(c_str);
-  if (rust_string.len != c_len) {
-    return rust_string.len < c_len ? -1 : 1;
+  if (rust_string.inner.len != c_len) {
+    return rust_string.inner.len < c_len ? -1 : 1;
   }
-  return strncmp(reinterpret_cast<const char*>(rust_string.ptr), c_str, rust_string.len);
+  return strncmp(reinterpret_cast<const char*>(rust_string.inner.ptr), c_str,
+                 rust_string.inner.len);
 }
 
 TEST(LogDecoder, DecodesArchivistArguments) {

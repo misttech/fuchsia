@@ -9,10 +9,10 @@
 namespace log_tester {
 
 // Creates a C++ string from a Rust string
-std::string StringFromRustString(CppArray<uint8_t> rust_string) {
+std::string StringFromRustString(CppString rust_string) {
   std::string ret;
-  if (rust_string.ptr) {
-    ret = std::string(reinterpret_cast<const char*>(rust_string.ptr), rust_string.len);
+  if (rust_string.inner.ptr) {
+    ret = std::string(reinterpret_cast<const char*>(rust_string.inner.ptr), rust_string.inner.len);
   }
   return ret;
 }

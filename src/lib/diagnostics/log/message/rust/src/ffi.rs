@@ -12,6 +12,7 @@ use flyweights::FlyStr;
 use static_assertions::const_assert;
 use std::fmt::Write;
 use std::marker::PhantomData;
+use std::ops::Deref;
 use std::str;
 use zx::BootInstant;
 
@@ -33,32 +34,54 @@ pub struct CppArray<'a, T> {
     phantom: PhantomData<&'a T>,
 }
 
+impl<T> Deref for CppArray<'_, T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: The `CPPArray` is constructed from valid slices or arrays,
+        // ensuring `self.ptr` points to `self.len` elements of type `T`.
+        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+    }
+}
+
 impl<T> Default for CppArray<'_, T> {
     fn default() -> Self {
         CppArray { len: 0, ptr: std::ptr::null(), phantom: PhantomData }
     }
 }
 
-impl CppArray<'_, u8> {
-    /// # Safety
-    ///
-    /// input must refer to a valid string, sized according to len.
-    /// A valid string consists of UTF-8 characters. The caller
-    /// is responsible for ensuring the byte sequence consists of valid UTF-8
-    /// characters.
-    ///
-    pub unsafe fn as_utf8_str(&self) -> &str {
-        unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(self.ptr, self.len)) }
-    }
-}
-
-impl<'a> From<&'a str> for CppArray<'a, u8> {
+impl<'a> From<&'a str> for CppString<'a> {
     fn from(value: &'a str) -> Self {
-        value.as_bytes().into()
+        Self { inner: CppArray { len: value.len(), ptr: value.as_ptr(), phantom: PhantomData } }
     }
 }
 
-impl<'a> From<Option<&'a str>> for CppArray<'a, u8> {
+/// Represents a UTF-8 encoded string for FFI purposes.
+/// This is equivalent to a CppArray<u8> as it is
+/// #[repr(transparent)], but with the additional
+/// constraint that the contents of the array
+/// is a valid UTF-8 string.
+#[derive(Default)]
+#[repr(transparent)]
+pub struct CppString<'a> {
+    inner: CppArray<'a, u8>,
+}
+
+impl Deref for CppString<'_> {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: CppString is always constructed from valid UTF-8.
+        unsafe {
+            std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+                self.inner.ptr,
+                self.inner.len,
+            ))
+        }
+    }
+}
+
+impl<'a> From<Option<&'a str>> for CppString<'a> {
     fn from(value: Option<&'a str>) -> Self {
         value.map(|v| v.into()).unwrap_or_default()
     }
@@ -70,7 +93,7 @@ impl<'a, T> From<&'a [T]> for CppArray<'a, T> {
     }
 }
 
-impl<'a> From<BumpaloString<'a>> for CppArray<'a, u8> {
+impl<'a> From<BumpaloString<'a>> for CppString<'a> {
     fn from(value: BumpaloString<'a>) -> Self {
         value.into_bump_str().into()
     }
@@ -82,7 +105,7 @@ pub struct LogMessage<'a> {
     /// Severity of a log message.
     severity: u8,
     /// Tags in a log message, guaranteed to be non-null.
-    tags: CppArray<'a, CppArray<'a, u8>>,
+    tags: CppArray<'a, CppString<'a>>,
     /// Process ID from a LogMessage, or 0 if unknown
     pid: u64,
     /// Thread ID from a LogMessage, or 0 if unknown
@@ -90,7 +113,7 @@ pub struct LogMessage<'a> {
     /// Number of dropped log messages.
     dropped: u64,
     /// The UTF-encoded log message, guaranteed to be valid UTF-8.
-    message: CppArray<'a, u8>,
+    message: CppString<'a>,
     /// Timestamp on the boot timeline of the log message,
     /// in nanoseconds.
     timestamp: i64,
@@ -239,8 +262,9 @@ impl<'a> CPPLogMessageBuilder<'a> {
             }
         }
 
-        let tags: &[_] =
-            self.allocator.alloc_slice_fill_iter(self.tags.drain(..).map(|s| s.into()));
+        let tags: &[_] = self
+            .allocator
+            .alloc_slice_fill_iter(self.tags.drain(..).map(|s| s.into_bump_str().into()));
 
         allocator.alloc(LogMessage {
             severity: self.severity,
@@ -248,7 +272,7 @@ impl<'a> CPPLogMessageBuilder<'a> {
             tags: tags.into(),
             pid: self.pid.unwrap_or(0),
             tid: self.tid.unwrap_or(0),
-            message: output.into(),
+            message: output.into_bump_str().into(),
             timestamp: self.timestamp,
         })
     }
@@ -437,8 +461,8 @@ mod test {
 
         let res = parser.parse_next(&bytes, &formatter).unwrap();
         assert!(res.0.is_some());
-        let log_message = res.0.unwrap();
-        assert_eq!(unsafe { log_message.message.as_utf8_str() }, "hello world");
+        let log_message = &res.0.unwrap();
+        assert_eq!(&*log_message.message, "hello world");
         assert_eq!(log_message.timestamp, 72);
         assert_eq!(log_message.severity, 0x30);
     }
@@ -468,10 +492,7 @@ mod test {
         let res = parser.parse_next(&bytes, &formatter).unwrap();
         assert!(res.0.is_some());
         let log_message = &res.0.unwrap();
-        assert_eq!(
-            unsafe { log_message.message.as_utf8_str() },
-            r#"hello world key="val\"with\\escapes""#
-        );
+        assert_eq!(&*log_message.message, r#"hello world key="val\"with\\escapes""#);
     }
 
     #[fuchsia::test]
@@ -556,7 +577,7 @@ mod test {
         assert!(log2.is_some());
 
         let tag_data2 = parser.tag_map.get(&tag_id).unwrap();
-        assert_eq!(unsafe { log2.unwrap().message.as_utf8_str() }, "rolled_out=5");
+        assert_eq!(&*log2.unwrap().message, "rolled_out=5");
         assert_eq!(tag_data2.moniker, ExtendedMoniker::parse_str("test/moniker").unwrap());
 
         let normal_record = Record {
@@ -577,11 +598,11 @@ mod test {
 
         let (log3, _) = parser.parse_next(&bytes3, &formatter).unwrap();
 
-        let log_msg3 = log3.unwrap();
-        assert_eq!(unsafe { log_msg3.message.as_utf8_str() }, "some log with tag");
-        assert_eq!(log_msg3.tags.len, 1);
-        let tag_str = unsafe { (*log_msg3.tags.ptr).as_utf8_str() };
-        assert_eq!(tag_str, "moniker");
+        let log_msg3 = &log3.unwrap();
+        assert_eq!(&*log_msg3.message, "some log with tag");
+        let tags = &*log_msg3.tags;
+        assert_eq!(tags.len(), 1);
+        assert_eq!(&*tags[0], "moniker");
     }
 
     #[fuchsia::test]
@@ -610,10 +631,7 @@ mod test {
         let res = parser.parse_next(&bytes, &formatter).unwrap();
         assert!(res.0.is_some());
         let log_message = res.0.unwrap();
-        assert_eq!(
-            unsafe { log_message.message.as_utf8_str() },
-            "A message key1=\"value1\" key2=123"
-        );
+        assert_eq!(&*log_message.message, "A message key1=\"value1\" key2=123");
     }
 
     #[fuchsia::test]
@@ -644,10 +662,7 @@ mod test {
         let res = parser.parse_next(&bytes, &formatter).unwrap();
         assert!(res.0.is_some());
         let log_message = res.0.unwrap();
-        assert_eq!(
-            unsafe { log_message.message.as_utf8_str() },
-            "[src/file.rs(42)] Another message temp=30.5 valid=true"
-        );
+        assert_eq!(&*log_message.message, "[src/file.rs(42)] Another message temp=30.5 valid=true");
     }
 
     #[fuchsia::test]
@@ -672,6 +687,6 @@ mod test {
         let res = parser.parse_next(&bytes, &formatter).unwrap();
         assert!(res.0.is_some());
         let log_message = res.0.unwrap();
-        assert_eq!(unsafe { log_message.message.as_utf8_str() }, "status=\"ok\" code=200");
+        assert_eq!(&*log_message.message, "status=\"ok\" code=200");
     }
 }
