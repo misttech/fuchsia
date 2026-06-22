@@ -5536,7 +5536,7 @@ rustc_library("cipher-v0_4_4") {
 
   deps = []
   deps += [ ":crypto-common-v0_1_6" ]
-  deps += [ ":inout-v0_1_3" ]
+  deps += [ ":inout-v0_1_4" ]
 
   rustenv = []
 
@@ -10927,18 +10927,18 @@ rustc_library("inotify-sys-v0_1_5") {
   applicable_licenses = [ ":inotify-sys-v0_1_5.license" ]
 }
 
-license("inout-v0_1_3.license") {
+license("inout-v0_1_4.license") {
   public_package_name = "inout"
   license_files = [
-    "//third_party/rust_crates/vendor/inout-0.1.3/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/inout-0.1.3/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/inout-0.1.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/inout-0.1.4/LICENSE-MIT",
   ]
 }
 
-rustc_library("inout-v0_1_3") {
+rustc_library("inout-v0_1_4") {
   crate_name = "inout"
-  source_root = "//third_party/rust_crates/vendor/inout-0.1.3/src/lib.rs"
-  output_name = "inout-b2a05e3eedfe4536"
+  source_root = "//third_party/rust_crates/vendor/inout-0.1.4/src/lib.rs"
+  output_name = "inout-9e53ce384e144a67"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -10952,14 +10952,14 @@ rustc_library("inout-v0_1_3") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=b2a05e3eedfe4536",
-    "-Cextra-filename=-b2a05e3eedfe4536",
+    "-Cmetadata=9e53ce384e144a67",
+    "-Cextra-filename=-9e53ce384e144a67",
     "--cfg=feature=\"block-padding\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":inout-v0_1_3.license" ]
+  applicable_licenses = [ ":inout-v0_1_4.license" ]
 }
 
 license("instant-v0_1_13.license") {
