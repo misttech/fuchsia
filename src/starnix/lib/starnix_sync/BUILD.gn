@@ -55,6 +55,8 @@ rustc_library("starnix_sync") {
     "src/lock_traits.rs",
     "src/locks.rs",
     "src/port_event.rs",
+    "src/rw_seq_lock.rs",
+    "src/thread_affinity.rs",
   ]
 
   configs += [ "//src/starnix/build:kernel_library_config" ]

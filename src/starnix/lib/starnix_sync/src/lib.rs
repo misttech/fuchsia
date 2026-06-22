@@ -14,6 +14,8 @@ mod lock_sequence;
 mod lock_traits;
 mod locks;
 mod port_event;
+mod rw_seq_lock;
+mod thread_affinity;
 
 pub use atomic_time::*;
 pub use condvar::*;
@@ -26,6 +28,8 @@ pub use lock_sequence::*;
 pub use lock_traits::*;
 pub use locks::*;
 pub use port_event::*;
+pub use rw_seq_lock::*;
+pub use thread_affinity::*;
 
 // This allows lock_ordering! macro to use paths within this crate
 // by referring to them by the external crate name.

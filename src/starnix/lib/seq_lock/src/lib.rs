@@ -50,6 +50,10 @@ pub unsafe trait SeqLockable: IntoBytes + Immutable {
 /// The value T can optionally include the sequence param as its first field (HAS_INLINE_SEQUENCE).
 /// If you choose not to do that, [`SeqLock`] will place a u32 atomic sequence number
 /// in between the header and value, in a VMO, shifting the value payload by `SEQUENCE_SIZE`.
+///
+/// This seqlock is used to synchronize data across address spaces via a VMO. For
+/// synchronizing threads within the same address space, use `RwSeqLock` in
+/// `//src/starnix/lib/starnix_sync/`.
 pub struct SeqLock<H: IntoBytes + Immutable, T: SeqLockable> {
     map_addr: usize,
     readonly_vmo: Arc<zx::Vmo>,
