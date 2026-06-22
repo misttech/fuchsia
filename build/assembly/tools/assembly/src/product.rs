@@ -61,7 +61,7 @@ Resulting product is not supported and may misbehave!
 
     #[cfg(feature = "experimental_dso")]
     {
-        product_config.platform.ui.enable_experimental_dso = true;
+        product_config.platform.ui.enable_dso = true;
     }
     #[cfg(feature = "experimental_memory_opt")]
     {

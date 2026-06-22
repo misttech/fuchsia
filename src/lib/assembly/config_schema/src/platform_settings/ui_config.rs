@@ -99,10 +99,11 @@ pub struct PlatformUiConfig {
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub enable_merge_touch_events: bool,
 
-    /// Enables experimental "clown car" configuration to cohost certain components in dso_runner
+    /// Enables cohosting a subset of ui components in dso_runner, currently scene_manager and
+    /// scenic
     /// (https://fxbug.dev/403545512)
     #[serde(skip_serializing_if = "crate::common::is_default")]
-    pub enable_experimental_dso: bool,
+    pub enable_dso: bool,
 }
 
 impl Default for PlatformUiConfig {
@@ -126,7 +127,7 @@ impl Default for PlatformUiConfig {
             visual_debugging_level: Default::default(),
             attach_a11y_view: true,
             enable_merge_touch_events: false,
-            enable_experimental_dso: false,
+            enable_dso: false,
         }
     }
 }

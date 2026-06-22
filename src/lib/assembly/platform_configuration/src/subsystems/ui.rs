@@ -32,7 +32,7 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
             return Ok(());
         }
 
-        if ui_config.enable_experimental_dso {
+        if ui_config.enable_dso {
             // Supports ui_*_dso bundles below
             builder.platform_bundle("dso_runner")?;
         }
@@ -40,7 +40,7 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
         match context.build_type {
             BuildType::Eng => {
                 builder.platform_bundle("ui")?;
-                if ui_config.enable_experimental_dso {
+                if ui_config.enable_dso {
                     builder.icu_platform_bundle("ui_eng_dso")?;
                 } else {
                     builder.icu_platform_bundle("ui_eng")?;
@@ -58,7 +58,7 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
             }
             BuildType::UserDebug => {
                 builder.platform_bundle("ui")?;
-                if ui_config.enable_experimental_dso {
+                if ui_config.enable_dso {
                     builder.icu_platform_bundle("ui_userdebug_dso")?;
                 } else {
                     builder.icu_platform_bundle("ui_user_and_userdebug")?;
@@ -76,7 +76,7 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
             }
             BuildType::User => {
                 ensure!(
-                    !ui_config.enable_experimental_dso,
+                    !ui_config.enable_dso,
                     "experimental dso must not be enabled on user builds"
                 );
                 builder.platform_bundle("ui")?;
