@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <dirent.h>
 #include <fcntl.h>
 #include <fidl/fuchsia.driver.test/cpp/wire.h>
 #include <fidl/fuchsia.hardware.nand/cpp/wire.h>
@@ -12,6 +13,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <algorithm>
+#include <iterator>
+#include <set>
 #include <utility>
 
 #include <bind/fuchsia/platform/cpp/bind.h>
@@ -71,10 +75,9 @@ class NandDevice {
  public:
   static zx::result<NandDevice> Create(
       fuchsia_hardware_nand::wire::RamNandInfo config = BuildConfig()) {
-    std::optional<ramdevice_client::RamNand> ram_nand;
-    if (zx_status_t status = ramdevice_client::RamNand::Create(std::move(config), &ram_nand);
-        status != ZX_OK) {
-      return zx::error(status);
+    zx::result ram_nand = ramdevice_client::RamNand::Create(std::move(config));
+    if (ram_nand.is_error()) {
+      return ram_nand.take_error();
     }
     return zx::ok(NandDevice(std::move(ram_nand.value())));
   }
@@ -141,4 +144,56 @@ TEST_F(RamNandIntegrationTest, CreateFailure) {
   ASSERT_STATUS(device.status_value(), ZX_ERR_INVALID_ARGS);
 }
 
+namespace {
+std::set<std::string> GetNandDevices() {
+  std::set<std::string> devices;
+  DIR* dir = opendir("/dev/class/nand");
+  if (!dir) {
+    return devices;
+  }
+  struct dirent* de;
+  while ((de = readdir(dir)) != nullptr) {
+    if (std::string_view(de->d_name) == "." || std::string_view(de->d_name) == "..") {
+      continue;
+    }
+    devices.insert(de->d_name);
+  }
+  closedir(dir);
+  return devices;
+}
+}  // namespace
+
+TEST_F(RamNandIntegrationTest, ServiceInstancesRemoved) {
+  std::set<std::string> before = GetNandDevices();
+
+  std::string class_filename;
+  {
+    zx::result result = NandDevice::Create();
+    ASSERT_OK(result.status_value());
+
+    // Wait for the new device to appear in /dev/class/nand.
+    bool found = false;
+    for (int i = 0; i < 50; ++i) {
+      std::set<std::string> after = GetNandDevices();
+      std::vector<std::string> diff;
+      std::set_difference(after.begin(), after.end(), before.begin(), before.end(),
+                          std::back_inserter(diff));
+      if (!diff.empty()) {
+        class_filename = diff[0];
+        found = true;
+        break;
+      }
+      zx::nanosleep(zx::deadline_after(zx::msec(100)));
+    }
+    ASSERT_TRUE(found) << "Timeout waiting for class node to appear";
+  }
+
+  // Synchronously check that the class node is gone.
+  std::string path = std::string("/dev/class/nand/") + class_filename;
+  fbl::unique_fd fd(open(path.c_str(), O_RDONLY));
+  EXPECT_FALSE(fd) << "Class node still exists after destruction: " << path;
+  EXPECT_EQ(errno, ENOENT);
+}
+
+// Force rebuild comment.
 }  // namespace ram_nand::testing

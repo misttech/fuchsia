@@ -9,6 +9,7 @@
 #include <fidl/fuchsia.hardware.nand/cpp/wire.h>
 #include <inttypes.h>
 #include <lib/zx/channel.h>
+#include <lib/zx/result.h>
 #include <zircon/compiler.h>
 
 #include <memory>
@@ -32,9 +33,8 @@ namespace ramdevice_client {
 //     .nand_class = fuchsia_hardware_nand::wire::Class::FTL,
 //   }
 // }
-// std::optional<ramdevice_client::RamNand> ram_nand;
-// ASSERT_EQ(ZX_OK,
-//           ramdevice_client::RamNand::Create(std::move(ram_nand_config), &ram_nand));
+// auto ram_nand = ramdevice_client::RamNand::Create(std::move(ram_nand_config));
+// ASSERT_TRUE(ram_nand.is_ok());
 // ```
 class RamNand {
  public:
@@ -42,8 +42,13 @@ class RamNand {
   static constexpr char kBasePath[] = "/dev/sys/platform/ram-nand/nand-ctl";
 
   // Creates a ram_nand under ram_nand_ctl running under the main devmgr.
-  static zx_status_t Create(fuchsia_hardware_nand::wire::RamNandInfo config,
-                            std::optional<RamNand>* out);
+  static zx::result<RamNand> Create(fuchsia_hardware_nand::wire::RamNandInfo config);
+
+  // Creates a RamNand from an existing Controller channel.
+  // This will connect to the RamNand FIDL protocol.
+  static zx::result<RamNand> Create(fidl::ClientEnd<fuchsia_device::Controller> controller,
+                                    std::optional<fbl::String> path = std::nullopt,
+                                    std::optional<fbl::String> filename = std::nullopt);
 
   // Not copyable.
   RamNand(const RamNand&) = delete;
@@ -78,17 +83,13 @@ class RamNand {
     return nullptr;
   }
 
-  // Create a ramnand client from an existing connection. This will not populate the path or
-  // filename for this object.
-  explicit RamNand(fidl::ClientEnd<fuchsia_device::Controller> controller)
-      : controller_(std::move(controller)), path_(std::nullopt), filename_(std::nullopt) {}
-
  private:
-  RamNand(fidl::ClientEnd<fuchsia_device::Controller> controller, fbl::String path,
-          fbl::String filename)
-      : controller_(std::move(controller)), path_(path), filename_(filename) {}
+  RamNand(fidl::ClientEnd<fuchsia_device::Controller> controller,
+          fidl::ClientEnd<fuchsia_hardware_nand::RamNand> ram_nand, std::optional<fbl::String> path,
+          std::optional<fbl::String> filename);
 
   fidl::ClientEnd<fuchsia_device::Controller> controller_;
+  fidl::ClientEnd<fuchsia_hardware_nand::RamNand> ram_nand_;
   bool unbind = true;
 
   // Only valid if not spawned in an isolated devmgr.

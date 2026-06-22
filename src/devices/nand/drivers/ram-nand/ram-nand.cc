@@ -208,6 +208,7 @@ zx::result<std::string> NandDevice::Init(
 
   fuchsia_driver_framework::DevfsAddArgs devfs({
       .connector = std::move(connector.value()),
+      .class_name = "nand",
       .connector_supports = fuchsia_device_fs::ConnectionType::kController,
   });
 
@@ -231,19 +232,35 @@ zx::result<std::string> NandDevice::Init(
   }
   child_ = std::move(child.value());
 
+  child_node_wait_.set_object(child_.channel().get());
+  child_node_wait_.set_trigger(ZX_CHANNEL_PEER_CLOSED);
+  if (zx_status_t status = child_node_wait_.Begin(dispatcher_); status != ZX_OK) {
+    fdf::error("Failed to start wait on child node: {}", zx_status_get_string(status));
+    return zx::error(status);
+  }
+
   return zx::ok(device_name_);
 }
 
 void NandDevice::Unlink(UnlinkCompleter::Sync& completer) {
-  {
-    fbl::AutoLock lock(&lock_);
-    if (dead_) {
-      completer.Close(ZX_ERR_BAD_STATE);
-      return;
+  unlink_completer_ = completer.ToAsync();
+  if (child_) {
+    auto result = fidl::WireCall(child_)->Remove();
+    if (!result.ok()) {
+      fdf::error("Failed to call Remove on child node: {}", result.status_string());
+      unlink_completer_->Reply(ZX_OK);
+      unlink_completer_.reset();
+      if (on_unlink_) {
+        std::move(on_unlink_)();
+      }
+    }
+  } else {
+    unlink_completer_->Reply(ZX_OK);
+    unlink_completer_.reset();
+    if (on_unlink_) {
+      std::move(on_unlink_)();
     }
   }
-  completer.Reply(ZX_OK);
-  on_unlink_();
 }
 
 void NandDevice::NandQuery(nand_info_t* info_out, size_t* nand_op_size_out) {
@@ -512,6 +529,28 @@ zx_status_t NandDevice::Erase(nand_operation_t* operation) {
 
 void NandDevice::DevfsConnect(fidl::ServerEnd<fuchsia_hardware_nand::RamNand> server) {
   bindings_.AddBinding(dispatcher_, std::move(server), this, fidl::kIgnoreBindingClosure);
+}
+
+void NandDevice::OnChildNodeClosed(async_dispatcher_t* dispatcher, async::WaitBase* wait,
+                                   zx_status_t status, const zx_packet_signal_t* signal) {
+  if (status != ZX_OK) {
+    if (status != ZX_ERR_CANCELED) {
+      fdf::error("Child node wait error: {}", zx_status_get_string(status));
+    }
+    if (unlink_completer_) {
+      unlink_completer_->Reply(ZX_OK);
+      unlink_completer_.reset();
+    }
+    return;
+  }
+  fdf::info("Child node closed, destroying ram-nand device {}", device_name_);
+  if (unlink_completer_) {
+    unlink_completer_->Reply(ZX_OK);
+    unlink_completer_.reset();
+  }
+  if (on_unlink_) {
+    std::move(on_unlink_)();
+  }
 }
 
 }  // namespace ram_nand

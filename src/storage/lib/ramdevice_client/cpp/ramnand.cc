@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <zircon/assert.h>
 #include <zircon/types.h>
 
 #include <utility>
@@ -22,23 +23,22 @@
 namespace ramdevice_client {
 
 __EXPORT
-zx_status_t RamNand::Create(fuchsia_hardware_nand::wire::RamNandInfo config,
-                            std::optional<RamNand>* out) {
+zx::result<RamNand> RamNand::Create(fuchsia_hardware_nand::wire::RamNandInfo config) {
   zx::result ctl = component::Connect<fuchsia_hardware_nand::RamNandCtl>(kBasePath);
   if (ctl.is_error()) {
     fprintf(stderr, "could not connect to RamNandCtl: %s\n", ctl.status_string());
-    return ctl.status_value();
+    return ctl.take_error();
   }
 
   const fidl::WireResult result = fidl::WireCall(ctl.value())->CreateDevice(std::move(config));
   if (!result.ok()) {
     fprintf(stderr, "could not create ram_nand device: %s\n", result.status_string());
-    return result.status();
+    return zx::error(result.status());
   }
   const fidl::WireResponse response = result.value();
   if (zx_status_t status = response.status; status != ZX_OK) {
     fprintf(stderr, "could not create ram_nand device: %s\n", zx_status_get_string(status));
-    return status;
+    return zx::error(status);
   }
   const std::string name(response.name.get());
 
@@ -49,36 +49,70 @@ zx_status_t RamNand::Create(fuchsia_hardware_nand::wire::RamNandInfo config,
           ram_nand_ctl.reset_and_get_address());
       status != ZX_OK) {
     fprintf(stderr, "Could not open ram_nand_ctl: %s\n", zx_status_get_string(status));
-    return status;
+    return zx::error(status);
   }
 
   std::string controller_path = name + "/device_controller";
   zx::result controller =
       device_watcher::RecursiveWaitForFile(ram_nand_ctl.get(), controller_path.c_str());
   if (controller.is_error()) {
-    fprintf(stderr, "could not open ram_nand at '%s': %s\n", name.c_str(),
+    fprintf(stderr, "could not open ram_nand controller at '%s': %s\n", name.c_str(),
             controller.status_string());
-    return controller.error_value();
+    return controller.take_error();
   }
 
-  *out = RamNand(fidl::ClientEnd<fuchsia_device::Controller>(std::move(controller.value())),
-                 fbl::String::Concat({kBasePath, "/", name}), name);
-
-  return ZX_OK;
+  zx::result ram_nand =
+      Create(fidl::ClientEnd<fuchsia_device::Controller>(std::move(controller.value())),
+             fbl::String::Concat({kBasePath, "/", name}), fbl::String(name.c_str()));
+  if (ram_nand.is_error()) {
+    return ram_nand.take_error();
+  }
+  return ram_nand;
 }
+
+__EXPORT
+zx::result<RamNand> RamNand::Create(fidl::ClientEnd<fuchsia_device::Controller> controller,
+                                    std::optional<fbl::String> path,
+                                    std::optional<fbl::String> filename) {
+  if (!controller) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+  auto [client, server] = fidl::Endpoints<fuchsia_hardware_nand::RamNand>::Create();
+  const fidl::OneWayStatus connect_result =
+      fidl::WireCall(controller)->ConnectToDeviceFidl(server.TakeChannel());
+  if (!connect_result.ok()) {
+    fprintf(stderr, "Failed to connect to device FIDL: %s\n",
+            connect_result.FormatDescription().c_str());
+    return zx::error(connect_result.status());
+  }
+  return zx::ok(RamNand(std::move(controller), std::move(client), path, filename));
+}
+
+RamNand::RamNand(fidl::ClientEnd<fuchsia_device::Controller> controller,
+                 fidl::ClientEnd<fuchsia_hardware_nand::RamNand> ram_nand,
+                 std::optional<fbl::String> path, std::optional<fbl::String> filename)
+    : controller_(std::move(controller)),
+      ram_nand_(std::move(ram_nand)),
+      path_(path),
+      filename_(filename) {}
 
 __EXPORT
 RamNand::~RamNand() {
   if (unbind && controller_) {
-    const fidl::WireResult result = fidl::WireCall(controller_)->ScheduleUnbind();
+    const fidl::WireResult result = fidl::WireCall(ram_nand_)->Unlink();
     if (!result.ok()) {
-      fprintf(stderr, "Could not call unbind ram_nand: %s\n", result.FormatDescription().c_str());
+      fprintf(stderr, "Could not call unlink ram_nand: %s\n", result.FormatDescription().c_str());
       return;
     }
-    const fit::result response = result.value();
-    if (response.is_error()) {
-      fprintf(stderr, "Could not unbind ram_nand: %s\n",
-              zx_status_get_string(response.error_value()));
+    if (zx_status_t status = result.value().status; status != ZX_OK) {
+      fprintf(stderr, "Could not unlink ram_nand: %s\n", zx_status_get_string(status));
+    }
+    zx_signals_t pending;
+    zx_status_t status =
+        ram_nand_.channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite(), &pending);
+    if (status != ZX_OK) {
+      fprintf(stderr, "Failed to wait for ram_nand to unlink: %s\n",
+              zx_status_get_string(status));
     }
   }
 }

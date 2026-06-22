@@ -192,12 +192,12 @@ zx::result<std::pair<ramdevice_client::RamNand, std::string>> CreateRamNand(
       .fail_after = options.fail_after,
       .wear_vmo = std::move(wear_vmo),
   };
-  if (zx::result status =
-          zx::make_result(ramdevice_client::RamNand::Create(std::move(config), &ram_nand));
-      status.is_error()) {
-    std::cout << "RamNand::Create failed: " << status.status_string() << "\n";
-    return status.take_error();
+  zx::result ram_nand_result = ramdevice_client::RamNand::Create(std::move(config));
+  if (ram_nand_result.is_error()) {
+    std::cout << "RamNand::Create failed: " << ram_nand_result.status_string() << "\n";
+    return ram_nand_result.take_error();
   }
+  ram_nand = std::move(ram_nand_result.value());
 
   const char* kServiceName = fuchsia_hardware_block_volume::Service::Name;
   auto svc_root = component::OpenServiceRoot();

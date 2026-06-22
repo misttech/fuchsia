@@ -70,7 +70,13 @@ zx_status_t RamNandCtl::CreateRamNand(fuchsia_hardware_nand::wire::RamNandInfo c
   }
   fidl::ClientEnd<fuchsia_device::Controller> client_end(std::move(channel.value()));
 
-  *out = ramdevice_client::RamNand(std::move(client_end));
+  zx::result ram_nand = ramdevice_client::RamNand::Create(std::move(client_end), path,
+                                                          fbl::String(response.name.get()));
+  if (ram_nand.is_error()) {
+    fprintf(stderr, "Failed to create RamNand: %s\n", ram_nand.status_string());
+    return ram_nand.error_value();
+  }
+  *out = std::move(ram_nand.value());
   return ZX_OK;
 }
 

@@ -10,6 +10,7 @@
 #include <fidl/fuchsia.hardware.nand/cpp/fidl.h>
 #include <fuchsia/hardware/nand/c/banjo.h>
 #include <fuchsia/hardware/nand/cpp/banjo.h>
+#include <lib/async/cpp/wait.h>
 #include <lib/driver/compat/cpp/banjo_server.h>
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/devfs/cpp/connector.h>
@@ -103,6 +104,8 @@ class NandDevice : public ddk::NandProtocol<NandDevice>,
   };
   static_assert(sizeof(RamNandOp) >= sizeof(nand_operation_t));
 
+  void OnChildNodeClosed(async_dispatcher_t* dispatcher, async::WaitBase* wait, zx_status_t status,
+                         const zx_packet_signal_t* signal);
   void DevfsConnect(fidl::ServerEnd<fuchsia_hardware_nand::RamNand> server);
 
   zx::result<> AddPendingOperation(nand_operation_t* operation, nand_queue_callback completion_cb,
@@ -156,6 +159,8 @@ class NandDevice : public ddk::NandProtocol<NandDevice>,
   driver_devfs::Connector<fuchsia_hardware_nand::RamNand> devfs_connector_{
       fit::bind_member<&NandDevice::DevfsConnect>(this)};
   fidl::ClientEnd<fuchsia_driver_framework::NodeController> child_;
+  async::WaitMethod<NandDevice, &NandDevice::OnChildNodeClosed> child_node_wait_{this};
+  std::optional<UnlinkCompleter::Async> unlink_completer_;
 
   async_dispatcher_t* dispatcher_;
 
