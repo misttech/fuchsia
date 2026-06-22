@@ -124,7 +124,7 @@ if (toolchain_environment == "kernel") {
     ]
     deps = [
       ":common",
-      "rust:kernel-tests",
+      "rustlang-support:kernel-tests",
       "//zircon/kernel/arch/$zircon_cpu:kernel-tests",
       "//zircon/kernel/dev:kernel-tests",
       "//zircon/kernel/hypervisor:kernel-tests",
@@ -163,9 +163,13 @@ if (toolchain_environment == "kernel") {
     source_set("rust-based-kernel-tests") {
       visibility = [ ":*" ]
       testonly = true
-      sources = [ "arch_rs_tests.cc" ]
+      sources = [
+        "arch_rs_tests.cc",
+        "ksync-tests.cc",
+      ]
       deps = [
         ":arch_rs_tests",
+        "//src/lib/ksync:ksync-kernel-tests",
         "//zircon/kernel/lib/unittest",
       ]
     }
