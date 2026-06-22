@@ -10,16 +10,23 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2021"
-rust-version = "1.60"
+edition = "2024"
+rust-version = "1.85"
 name = "base64ct"
-version = "1.6.0"
+version = "1.8.3"
 authors = ["RustCrypto Developers"]
+build = false
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = """
 Pure Rust implementation of Base64 (RFC 4648) which avoids any usages of
-data-dependent branches/LUTs and thereby provides portable \"best effort\"
+data-dependent branches/LUTs and thereby provides portable "best effort"
 constant-time operation and embedded-friendly no_std support
 """
+homepage = "https://github.com/RustCrypto/formats/tree/master/base64ct"
 documentation = "https://docs.rs/base64ct"
 readme = "README.md"
 keywords = [
@@ -35,7 +42,8 @@ categories = [
     "parser-implementations",
 ]
 license = "Apache-2.0 OR MIT"
-repository = "https://github.com/RustCrypto/formats/tree/master/base64ct"
+repository = "https://github.com/RustCrypto/formats"
+resolver = "2"
 
 [package.metadata.docs.rs]
 all-features = true
@@ -44,12 +52,50 @@ rustdoc-args = [
     "docsrs",
 ]
 
-[dev-dependencies.base64]
-version = "0.21"
-
-[dev-dependencies.proptest]
-version = "1"
-
 [features]
 alloc = []
 std = ["alloc"]
+
+[lib]
+name = "base64ct"
+path = "src/lib.rs"
+
+[[test]]
+name = "bcrypt"
+path = "tests/bcrypt.rs"
+
+[[test]]
+name = "crypt"
+path = "tests/crypt.rs"
+
+[[test]]
+name = "pbkdf2"
+path = "tests/pbkdf2.rs"
+
+[[test]]
+name = "proptests"
+path = "tests/proptests.rs"
+
+[[test]]
+name = "shacrypt"
+path = "tests/shacrypt.rs"
+
+[[test]]
+name = "standard"
+path = "tests/standard.rs"
+
+[[test]]
+name = "url"
+path = "tests/url.rs"
+
+[[bench]]
+name = "mod"
+path = "benches/mod.rs"
+
+[dev-dependencies.base64]
+version = "0.22"
+
+[dev-dependencies.proptest]
+version = "1.6"
+features = ["std"]
+default-features = false

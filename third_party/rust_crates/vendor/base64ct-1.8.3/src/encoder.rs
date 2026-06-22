@@ -74,7 +74,7 @@ impl<'o, E: Encoding> Encoder<'o, E> {
     /// Encode the provided buffer as Base64, writing it to the output buffer.
     ///
     /// # Returns
-    /// - `Ok(bytes)` if the expected amount of data was read
+    /// - `Ok(())` if the expected amount of data was read
     /// - `Err(Error::InvalidLength)` if there is insufficient space in the output buffer
     pub fn encode(&mut self, mut input: &[u8]) -> Result<(), Error> {
         // If there's data in the block buffer, fill it
@@ -153,7 +153,7 @@ impl<'o, E: Encoding> Encoder<'o, E> {
 
     /// Perform Base64 encoding operation.
     fn perform_encode(&mut self, input: &[u8]) -> Result<usize, Error> {
-        let mut len = E::encode(input, self.remaining())?.as_bytes().len();
+        let mut len = E::encode(input, self.remaining())?.len();
 
         // Insert newline characters into the output as needed
         if let Some(line_wrapper) = &mut self.line_wrapper {
@@ -166,7 +166,7 @@ impl<'o, E: Encoding> Encoder<'o, E> {
 }
 
 #[cfg(feature = "std")]
-impl<'o, E: Encoding> io::Write for Encoder<'o, E> {
+impl<E: Encoding> io::Write for Encoder<'_, E> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.encode(buf)?;
         Ok(buf.len())
@@ -279,7 +279,7 @@ impl LineWrapper {
             .ok_or(InvalidLength)?;
 
         // The `wrap_blocks` function should ensure the buffer is no larger than a Base64 block
-        debug_assert!(buffer_len <= 4, "buffer too long: {}", buffer_len);
+        debug_assert!(buffer_len <= 4, "buffer too long: {buffer_len}");
 
         // Ensure space in buffer to add newlines
         let buffer_end = buffer_len
@@ -304,8 +304,9 @@ impl LineWrapper {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
-    use crate::{alphabet::Alphabet, test_vectors::*, Base64, Base64Unpadded, Encoder, LineEnding};
+    use crate::{Base64, Base64Unpadded, Encoder, LineEnding, alphabet::Alphabet, test_vectors::*};
 
     #[test]
     fn encode_padded() {

@@ -1,12 +1,13 @@
 //! Base64 alphabets.
 
 // TODO(tarcieri): explicitly checked/wrapped arithmetic
-#![allow(clippy::integer_arithmetic)]
+#![allow(clippy::arithmetic_side_effects)]
 
 use core::{fmt::Debug, ops::RangeInclusive};
 
 pub mod bcrypt;
 pub mod crypt;
+pub mod pbkdf2;
 pub mod shacrypt;
 pub mod standard;
 pub mod url;

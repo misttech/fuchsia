@@ -4044,19 +4044,19 @@ rustc_library("base64-v0_22_1") {
   applicable_licenses = [ ":base64-v0_22_1.license" ]
 }
 
-license("base64ct-v1_6_0.license") {
+license("base64ct-v1_8_3.license") {
   public_package_name = "base64ct"
   license_files = [
-    "//third_party/rust_crates/vendor/base64ct-1.6.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/base64ct-1.6.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/base64ct-1.8.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/base64ct-1.8.3/LICENSE-MIT",
   ]
 }
 
-rustc_library("base64ct-v1_6_0") {
+rustc_library("base64ct-v1_8_3") {
   crate_name = "base64ct"
-  source_root = "//third_party/rust_crates/vendor/base64ct-1.6.0/src/lib.rs"
-  output_name = "base64ct-ba441f89d782df0a"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/vendor/base64ct-1.8.3/src/lib.rs"
+  output_name = "base64ct-4d0cdb00a17f86ff"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -4067,14 +4067,14 @@ rustc_library("base64ct-v1_6_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=ba441f89d782df0a",
-    "-Cextra-filename=-ba441f89d782df0a",
+    "-Cmetadata=4d0cdb00a17f86ff",
+    "-Cextra-filename=-4d0cdb00a17f86ff",
     "--cfg=feature=\"alloc\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":base64ct-v1_6_0.license" ]
+  applicable_licenses = [ ":base64ct-v1_8_3.license" ]
 }
 
 license("basic-toml-v0_1_10.license") {
@@ -13836,7 +13836,7 @@ rustc_library("pem-rfc7468-v0_6_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":base64ct-v1_6_0" ]
+  deps += [ ":base64ct-v1_8_3" ]
 
   rustenv = []
 
@@ -13870,7 +13870,7 @@ rustc_library("pem-rfc7468-v0_7_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":base64ct-v1_6_0" ]
+  deps += [ ":base64ct-v1_8_3" ]
 
   rustenv = []
 
@@ -19935,7 +19935,7 @@ rustc_library("spki-v0_6_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":base64ct-v1_6_0" ]
+  deps += [ ":base64ct-v1_8_3" ]
   deps += [ ":der-v0_6_1" ]
 
   rustenv = []
@@ -19972,7 +19972,7 @@ rustc_library("spki-v0_7_3") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":base64ct-v1_6_0" ]
+  deps += [ ":base64ct-v1_8_3" ]
   deps += [ ":der-v0_7_10" ]
 
   rustenv = []

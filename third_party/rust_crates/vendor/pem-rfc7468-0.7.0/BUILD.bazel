@@ -76,6 +76,6 @@ rust_library(
     }),
     version = "0.7.0",
     deps = [
-        "//third_party/rust_crates/vendor/base64ct-1.6.0:base64ct",
+        "//third_party/rust_crates/vendor/base64ct-1.8.3:base64ct",
     ],
 )
