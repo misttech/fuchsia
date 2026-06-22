@@ -843,7 +843,10 @@ zx::result<> Minfs::PurgeUnlinked() {
   ino_t unlinked_count = 0;
 
   if (next_ino == 0) {
-    ZX_DEBUG_ASSERT(Info().unlinked_tail == 0);
+    if (Info().unlinked_tail != 0) {
+      FX_LOGS(ERROR) << "minfs: unlinked_head is 0, but unlinked_tail is " << Info().unlinked_tail;
+      return zx::error(ZX_ERR_IO_DATA_INTEGRITY);
+    }
     return zx::ok();
   }
 
@@ -855,6 +858,10 @@ zx::result<> Minfs::PurgeUnlinked() {
   }
   vn = *std::move(recreated);
   ZX_DEBUG_ASSERT(vn->GetInode()->last_inode == 0);
+  if (vn->GetInode()->last_inode != 0) {
+    FX_LOGS(ERROR) << "minfs: last_inode is not 0: " << vn->GetInode()->last_inode;
+    return zx::error(ZX_ERR_IO_DATA_INTEGRITY);
+  }
 
   do {
     auto transaction_or = BeginTransaction(0, 0);
@@ -875,6 +882,11 @@ zx::result<> Minfs::PurgeUnlinked() {
 
     if (next_ino == 0) {
       ZX_DEBUG_ASSERT(Info().unlinked_tail == last_ino);
+      if (Info().unlinked_tail != last_ino) {
+        FX_LOGS(ERROR) << "minfs: last_ino is " << last_ino << ", but unlinked_tail is "
+                       << Info().unlinked_tail;
+        return zx::error(ZX_ERR_IO_DATA_INTEGRITY);
+      }
       sb_->MutableInfo()->unlinked_tail = 0;
     } else {
       // Fix the last_inode pointer in the next inode.
@@ -884,6 +896,11 @@ zx::result<> Minfs::PurgeUnlinked() {
       }
       vn = *std::move(recreated);
       ZX_DEBUG_ASSERT(vn->GetInode()->last_inode == last_ino);
+      if (vn->GetInode()->last_inode != last_ino) {
+        FX_LOGS(ERROR) << "minfs: last_ino is " << last_ino << ", but inode says "
+                       << vn->GetInode()->last_inode;
+        return zx::error(ZX_ERR_IO_DATA_INTEGRITY);
+      }
       vn->GetMutableInode()->last_inode = 0;
       auto update_status = InodeUpdate(transaction_or.value().get(), next_ino, vn->GetInode());
       if (update_status.is_error()) {
