@@ -443,7 +443,8 @@ pub fn new_memfd(
         let tmpfs = TmpFs::new_fs(locked, current_task.kernel());
         security::file_system_resolve_security(locked, &current_task, &tmpfs)
             .expect("resolve fs security");
-        let mount = Mount::new(WhatToMount::Fs(tmpfs.clone()), Default::default());
+        let mounts_guard = current_task.kernel().mounts_lock.lock();
+        let mount = Mount::new(&mounts_guard, WhatToMount::Fs(tmpfs.clone()), Default::default());
         MemFdTmpfs { tmpfs, mount }
     });
 

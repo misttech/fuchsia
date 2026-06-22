@@ -49,7 +49,8 @@ use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{SyscallLogFilter, log_debug, log_error, log_info, log_warn};
 use starnix_sync::{
     ComponentControllerLock, FileOpsCore, KernelSwapFiles, LockDepMutex, LockDepRwLock,
-    LockEqualOrBefore, Locked, OrderedMutex, PidToKoidMapLock, RwLock, SyscallLogFiltersLock,
+    LockEqualOrBefore, Locked, MountsLevel, OrderedMutex, PidToKoidMapLock, RwLock, RwSeqLock,
+    SyscallLogFiltersLock,
 };
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{Errno, errno};
@@ -151,6 +152,18 @@ pub struct ArgNameAndValue<'a> {
     pub value: Option<&'a str>,
 }
 
+/// A proof token representing the global lock over the namespace mount topology.
+///
+/// Functions that take `&MountsWriteToken` require the caller to hold the
+/// `Kernel::mounts_lock` to ensure safe modification of the global mount tree.
+pub struct MountsWriteToken(());
+
+impl MountsWriteToken {
+    fn new() -> Self {
+        Self(())
+    }
+}
+
 /// The shared, mutable state for the entire Starnix kernel.
 ///
 /// The `Kernel` object holds all kernel threads, userspace tasks, and file system resources for a
@@ -210,6 +223,16 @@ pub struct Kernel {
     /// For example, "/svc" to the respective proxy. Only the namespace entries
     /// which were known at component startup will be available by the kernel.
     pub container_namespace: ContainerNamespace,
+
+    /// The global lock for the mount tree.
+    ///
+    /// This lock protects against concurrent modifications to the mount topology. It uses
+    /// an `RwSeqLock` to allow readers (like path walking traversing mount points) to get a
+    /// consistent, lock-free snapshot of the RCU-protected mount table using `read_seq`.
+    /// Writers must acquire the lock before mutating filesystems, moving mounts, or
+    /// propagating peer groups. The returned `MountsWriteToken` is used as a proof token
+    /// throughout the `namespace` module to statically enforce exclusive write access.
+    pub mounts_lock: RwSeqLock<LockDepMutex<MountsWriteToken, MountsLevel>>,
 
     /// The registry of block devices backed by a remote fuchsia.io file.
     pub remote_block_device_registry: Arc<RemoteBlockDeviceRegistry>,
@@ -454,6 +477,7 @@ impl Kernel {
             security_state,
             device_registry: Default::default(),
             container_namespace,
+            mounts_lock: RwSeqLock::new(MountsWriteToken::new().into()),
             remote_block_device_registry: Default::default(),
             iptables: OnceLock::new(),
             shared_futexes: Arc::<FutexTable<SharedFutexKey>>::default(),

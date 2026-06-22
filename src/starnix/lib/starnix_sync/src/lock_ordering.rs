@@ -103,6 +103,7 @@ lock_ordering! {
     Terminal(IoUringStateLock),
     Terminal(MapInfoCacheBufLock),
     Terminal(MemoryAttributionPublisherLock),
+    Terminal(MountsLevel),
     Terminal(NamespaceFlagsLock),
     Terminal(PagerFilesByInodeLock),
     Terminal(PagerFilesystemsLock),

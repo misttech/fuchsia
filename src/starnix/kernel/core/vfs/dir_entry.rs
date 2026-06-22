@@ -1192,7 +1192,7 @@ impl DirEntry {
     fn require_no_mounts(self: &Arc<Self>, parent_mount: &MountInfo) -> Result<(), Errno> {
         if self.has_mounts() {
             if let Some(mount) = parent_mount.as_ref() {
-                if mount.read().has_submount(self) {
+                if mount.has_submount(self) {
                     return error!(EBUSY);
                 }
             }

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::security;
-use crate::task::CurrentTask;
+use crate::task::{CurrentTask, MountsWriteToken};
 use crate::vfs::{ActiveNamespaceNode, CheckAccessReason, Namespace, NamespaceNode};
 use starnix_logging::log_trace;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, RwLock};
@@ -37,11 +37,15 @@ struct FsContextState {
 }
 
 impl FsContextState {
-    fn set_namespace(&mut self, new_ns: Arc<Namespace>) -> Result<(), Errno> {
+    fn set_namespace(
+        &mut self,
+        new_ns: Arc<Namespace>,
+        mounts_guard: &MountsWriteToken,
+    ) -> Result<(), Errno> {
         log_trace!("updating namespace");
-        let new_root = Namespace::translate_node(self.root.to_passive(), &new_ns)
+        let new_root = Namespace::translate_node(self.root.to_passive(), &new_ns, mounts_guard)
             .ok_or_else(|| errno!(EINVAL))?;
-        let new_cwd = Namespace::translate_node(self.cwd.to_passive(), &new_ns)
+        let new_cwd = Namespace::translate_node(self.cwd.to_passive(), &new_ns, mounts_guard)
             .ok_or_else(|| errno!(EINVAL))?;
 
         // Only perform a mutation if the rebased nodes both exist in the target namespace.
@@ -161,17 +165,21 @@ impl FsContext {
 
     pub fn set_namespace(&self, new_ns: Arc<Namespace>) -> Result<(), Errno> {
         let mut state = self.state.write();
-        state.set_namespace(new_ns)?;
+        let kernel = state.namespace.kernel();
+        let mounts_guard = kernel.mounts_lock.lock();
+        state.set_namespace(new_ns, &mounts_guard)?;
         Ok(())
     }
 
     pub fn unshare_namespace(&self) {
         let mut state = self.state.write();
-        // TODO(https:://https://fxbug.dev/42080384): Implement better locking to make these failures
-        // impossible. These expects can only fail if another thread changes mounts between the
-        // clone_namespace and the translate_node calls, making the cwd or root disappear or move.
-        let cloned = state.namespace.clone_namespace();
-        state.set_namespace(cloned).expect("nodes should exist in the cloned namespace");
+        let kernel = state.namespace.kernel();
+        let mounts_guard = kernel.mounts_lock.lock();
+
+        let cloned = state.namespace.clone_namespace(&mounts_guard);
+        state
+            .set_namespace(cloned, &mounts_guard)
+            .expect("nodes should exist in the cloned namespace");
     }
 
     pub fn namespace(&self) -> Arc<Namespace> {
