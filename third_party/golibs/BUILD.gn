@@ -435,16 +435,14 @@ go_library("github.com/google/go-cmp") {
     "cmp/cmpopts/struct_filter.go",
     "cmp/cmpopts/xform.go",
     "cmp/compare.go",
-    "cmp/export_panic.go",
-    "cmp/export_unsafe.go",
+    "cmp/export.go",
     "cmp/internal/diff/debug_disable.go",
     "cmp/internal/diff/debug_enable.go",
     "cmp/internal/diff/diff.go",
     "cmp/internal/flags/flags.go",
     "cmp/internal/function/func.go",
     "cmp/internal/value/name.go",
-    "cmp/internal/value/pointer_purego.go",
-    "cmp/internal/value/pointer_unsafe.go",
+    "cmp/internal/value/pointer.go",
     "cmp/internal/value/sort.go",
     "cmp/options.go",
     "cmp/path.go",
@@ -469,8 +467,7 @@ go_library("github.com/google/go-cmp/cmp") {
   ]
   sources = [
     "compare.go",
-    "export_panic.go",
-    "export_unsafe.go",
+    "export.go",
     "options.go",
     "path.go",
     "report.go",
@@ -527,8 +524,7 @@ go_library("github.com/google/go-cmp/cmp/internal/value") {
   source_dir = "vendor/github.com/google/go-cmp/cmp/internal/value"
   sources = [
     "name.go",
-    "pointer_purego.go",
-    "pointer_unsafe.go",
+    "pointer.go",
     "sort.go",
   ]
 }
