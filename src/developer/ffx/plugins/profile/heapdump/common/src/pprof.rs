@@ -12,6 +12,15 @@ use std::collections::HashSet;
 use std::collections::hash_map::{Entry, HashMap};
 use std::io::Write;
 
+// NOTE(nathaniel): it would be nice if this were available on `HashMap`
+// itself; that would spare callers the keystrokes of ignoring the values
+// in the comparison function.
+fn iter_sorted_by_key<K: Ord, V>(
+    map: impl IntoIterator<Item = (K, V)>,
+) -> impl Iterator<Item = (K, V)> {
+    Itertools::sorted_by(map.into_iter(), |(castor, _), (pollux, _)| Ord::cmp(castor, pollux))
+}
+
 // Tries to create a `Symbolizer` to resolve addresses in the given snapshot.
 //
 // Returns `Err` if any of the `ExecutableRegion`s in the snapshot necessary
@@ -134,13 +143,13 @@ impl<'c> PProfProfileBuilder<'c> {
             let next_id = (self.pprof.mapping.len() + 1) as u64;
             let mut builder = pprof::ModuleMapBuilder::new(next_id);
 
-            for (address, info) in &snapshot.executable_regions {
-                let limit = *address + info.size;
-                let filename_string_index = self.st.intern(&info.name);
-                let build_id_string_index = self.st.intern_build_id(&info.build_id);
+            for (address, region) in iter_sorted_by_key(&snapshot.executable_regions) {
+                let limit = *address + region.size;
+                let filename_string_index = self.st.intern(&region.name);
+                let build_id_string_index = self.st.intern_build_id(&region.build_id);
                 builder.add_mapping(
                     *address..limit,
-                    info.file_offset,
+                    region.file_offset,
                     filename_string_index,
                     build_id_string_index,
                 )?;
@@ -290,7 +299,7 @@ impl<'c> PProfProfileBuilder<'c> {
                     addresses_to_location_ids(&allocation_info.stack_trace.program_addresses)
                 });
 
-            for (location_ids, allocations_info) in grouped_allocations {
+            for (location_ids, allocations_info) in iter_sorted_by_key(grouped_allocations) {
                 // Compute totals and cast into pprof-friendly types.
                 let size = allocations_info.iter().map(|alloc| alloc.size).sum::<u64>() as i64;
                 let count = allocations_info.iter().map(|alloc| alloc.count).sum::<u64>() as i64;
@@ -385,7 +394,6 @@ mod tests {
     use super::*;
     use fidl::MonotonicInstant;
     use heapdump_snapshot_fdomain::{Allocation, ExecutableRegion, StackTrace, ThreadInfo};
-    use itertools::MinMaxResult::MinMax;
     use maplit::hashmap;
     use std::io::{Read, Seek};
     use std::rc::Rc;
@@ -628,48 +636,47 @@ mod tests {
                 Some(&format!("{}[{}]", ALLOC_3_THREAD_NAME, ALLOC_3_THREAD_KOID))
             );
         } else {
-            // Verify that the samples were aggregated by stack trace correctly.
+            // Verify that the samples were aggregated by stack trace correctly and
+            // also verify that they are sorted by location ID.
             assert_eq!(profile.sample.len(), 2);
-            let MinMax(group1, group2) = profile.sample.iter().minmax_by_key(|e| e.value[0]) else {
-                unreachable!();
-            };
-            assert_eq!(group1.value[0], ALLOC_1_COUNT as i64);
-            assert_eq!(group1.value[1], ALLOC_1_SIZE);
-            assert_eq!(group1.location_id.len(), STACK_TRACE_A.len());
-            assert_eq!(loc(group1.location_id[0]).address, STACK_TRACE_A[0]);
-            assert_eq!(loc(group1.location_id[1]).address, STACK_TRACE_A[1]);
-            assert_eq!(loc(group1.location_id[2]).address, STACK_TRACE_A[2]);
-            assert_eq!(group2.value[0], (ALLOC_2_COUNT + ALLOC_3_COUNT) as i64);
-            assert_eq!(group2.value[1], ALLOC_2_SIZE + ALLOC_3_SIZE);
-            assert_eq!(group2.location_id.len(), STACK_TRACE_B.len());
-            assert_eq!(loc(group2.location_id[0]).address, STACK_TRACE_B[0]);
-            assert_eq!(loc(group2.location_id[1]).address, STACK_TRACE_B[1]);
-            assert_eq!(loc(group2.location_id[2]).address, STACK_TRACE_B[2]);
+            assert_eq!(profile.sample[0].value[0], ALLOC_1_COUNT as i64);
+            assert_eq!(profile.sample[0].value[1], ALLOC_1_SIZE);
+            assert_eq!(profile.sample[0].location_id.len(), STACK_TRACE_A.len());
+            assert_eq!(loc(profile.sample[0].location_id[0]).address, STACK_TRACE_A[0]);
+            assert_eq!(loc(profile.sample[0].location_id[1]).address, STACK_TRACE_A[1]);
+            assert_eq!(loc(profile.sample[0].location_id[2]).address, STACK_TRACE_A[2]);
+            assert_eq!(profile.sample[1].value[0], (ALLOC_2_COUNT + ALLOC_3_COUNT) as i64);
+            assert_eq!(profile.sample[1].value[1], ALLOC_2_SIZE + ALLOC_3_SIZE);
+            assert_eq!(profile.sample[1].location_id.len(), STACK_TRACE_B.len());
+            assert_eq!(loc(profile.sample[1].location_id[0]).address, STACK_TRACE_B[0]);
+            assert_eq!(loc(profile.sample[1].location_id[1]).address, STACK_TRACE_B[1]);
+            assert_eq!(loc(profile.sample[1].location_id[2]).address, STACK_TRACE_B[2]);
         }
 
-        // Identify the mappings from their addresses and verify them.
+        // Identify the mappings from their addresses and verify them as well as
+        // that they are sorted by their starting address.
         assert_eq!(profile.mapping.len(), 2);
         assert_eq!(profile.mapping.iter().filter(|m| m.id == 0).next(), None, "ID 0 is reserved");
-        let mapping1 = profile.mapping.iter().find(|m| m.memory_start == MAP_1_ADDRESS).unwrap();
-        assert_eq!(mapping1.memory_limit, MAP_1_ADDRESS + MAP_1_SIZE);
-        assert_eq!(mapping1.file_offset, MAP_1_FILE_OFFSET);
-        assert_eq!(st(mapping1.filename), MAP_1_NAME);
-        assert_eq!(st(mapping1.build_id), MAP_1_BUILD_ID);
-        let mapping2 = profile.mapping.iter().find(|m| m.memory_start == MAP_2_ADDRESS).unwrap();
-        assert_eq!(mapping2.memory_limit, MAP_2_ADDRESS + MAP_2_SIZE);
-        assert_eq!(mapping2.file_offset, MAP_2_FILE_OFFSET);
-        assert_eq!(st(mapping2.filename), MAP_2_NAME);
-        assert_eq!(st(mapping2.build_id), MAP_2_BUILD_ID);
+        assert_eq!(profile.mapping[0].memory_start, MAP_1_ADDRESS);
+        assert_eq!(profile.mapping[0].memory_limit, MAP_1_ADDRESS + MAP_1_SIZE);
+        assert_eq!(profile.mapping[0].file_offset, MAP_1_FILE_OFFSET);
+        assert_eq!(st(profile.mapping[0].filename), MAP_1_NAME);
+        assert_eq!(st(profile.mapping[0].build_id), MAP_1_BUILD_ID);
+        assert_eq!(profile.mapping[1].memory_start, MAP_2_ADDRESS);
+        assert_eq!(profile.mapping[1].memory_limit, MAP_2_ADDRESS + MAP_2_SIZE);
+        assert_eq!(profile.mapping[1].file_offset, MAP_2_FILE_OFFSET);
+        assert_eq!(st(profile.mapping[1].filename), MAP_2_NAME);
+        assert_eq!(st(profile.mapping[1].build_id), MAP_2_BUILD_ID);
 
         // Identify the locations from their addresses and verify them.
         assert_eq!(profile.location.len(), 5);
         assert_eq!(profile.location.iter().filter(|l| l.id == 0).next(), None, "ID 0 is reserved");
         let loc1 = profile.location.iter().find(|l| l.address == LOC_1_ADDRESS).unwrap();
-        assert_eq!(loc1.mapping_id, mapping1.id, "LOC_1_ADDRESS belongs to mapping 1");
+        assert_eq!(loc1.mapping_id, profile.mapping[0].id, "LOC_1_ADDRESS belongs to mapping 1");
         let loc2 = profile.location.iter().find(|l| l.address == LOC_2_ADDRESS).unwrap();
-        assert_eq!(loc2.mapping_id, mapping2.id, "LOC_2_ADDRESS belongs to mapping 2");
+        assert_eq!(loc2.mapping_id, profile.mapping[1].id, "LOC_2_ADDRESS belongs to mapping 2");
         let loc3 = profile.location.iter().find(|l| l.address == LOC_3_ADDRESS).unwrap();
-        assert_eq!(loc3.mapping_id, mapping2.id, "LOC_3_ADDRESS belongs to mapping 2");
+        assert_eq!(loc3.mapping_id, profile.mapping[1].id, "LOC_3_ADDRESS belongs to mapping 2");
         let loc4 = profile.location.iter().find(|l| l.address == LOC_4_ADDRESS).unwrap();
         assert_eq!(loc4.mapping_id, 0, "LOC_4_ADDRESS does not belong to any mapping");
         let loc5 = profile.location.iter().find(|l| l.address == LOC_5_ADDRESS).unwrap();
@@ -821,48 +828,47 @@ mod tests {
             assert_eq!(loc(allocation3.location_id[1]).address, STACK_TRACE_B[1]);
             assert_eq!(loc(allocation2.location_id[2]).address, STACK_TRACE_B[2]);
         } else {
-            // Verify that the samples were aggregated by stack trace correctly.
+            // Verify that the samples were aggregated by stack trace correctly and
+            // also verify that they are sorted by location ID.
             assert_eq!(profile.sample.len(), 2);
-            let MinMax(group1, group2) = profile.sample.iter().minmax_by_key(|e| e.value[0]) else {
-                unreachable!();
-            };
-            assert_eq!(group1.value[0], ALLOC_1_COUNT as i64);
-            assert_eq!(group1.value[1], ALLOC_1_SIZE);
-            assert_eq!(group1.location_id.len(), STACK_TRACE_A.len());
-            assert_eq!(loc(group1.location_id[0]).address, STACK_TRACE_A[0]);
-            assert_eq!(loc(group1.location_id[1]).address, STACK_TRACE_A[1]);
-            assert_eq!(loc(group1.location_id[2]).address, STACK_TRACE_A[2]);
-            assert_eq!(group2.value[0], (ALLOC_2_COUNT + ALLOC_3_COUNT) as i64);
-            assert_eq!(group2.value[1], ALLOC_2_SIZE + ALLOC_3_SIZE);
-            assert_eq!(group2.location_id.len(), STACK_TRACE_B.len());
-            assert_eq!(loc(group2.location_id[0]).address, STACK_TRACE_B[0]);
-            assert_eq!(loc(group2.location_id[1]).address, STACK_TRACE_B[1]);
-            assert_eq!(loc(group2.location_id[2]).address, STACK_TRACE_B[2]);
+            assert_eq!(profile.sample[0].value[0], ALLOC_1_COUNT as i64);
+            assert_eq!(profile.sample[0].value[1], ALLOC_1_SIZE);
+            assert_eq!(profile.sample[0].location_id.len(), STACK_TRACE_A.len());
+            assert_eq!(loc(profile.sample[0].location_id[0]).address, STACK_TRACE_A[0]);
+            assert_eq!(loc(profile.sample[0].location_id[1]).address, STACK_TRACE_A[1]);
+            assert_eq!(loc(profile.sample[0].location_id[2]).address, STACK_TRACE_A[2]);
+            assert_eq!(profile.sample[1].value[0], (ALLOC_2_COUNT + ALLOC_3_COUNT) as i64);
+            assert_eq!(profile.sample[1].value[1], ALLOC_2_SIZE + ALLOC_3_SIZE);
+            assert_eq!(profile.sample[1].location_id.len(), STACK_TRACE_B.len());
+            assert_eq!(loc(profile.sample[1].location_id[0]).address, STACK_TRACE_B[0]);
+            assert_eq!(loc(profile.sample[1].location_id[1]).address, STACK_TRACE_B[1]);
+            assert_eq!(loc(profile.sample[1].location_id[2]).address, STACK_TRACE_B[2]);
         }
 
-        // Identify the mappings from their addresses and verify them.
+        // Identify the mappings from their addresses and verify them as well as
+        // that they are sorted by their starting address.
         assert_eq!(profile.mapping.len(), 2);
         assert_eq!(profile.mapping.iter().filter(|m| m.id == 0).next(), None, "ID 0 is reserved");
-        let mapping1 = profile.mapping.iter().find(|m| m.memory_start == MAP_1_ADDRESS).unwrap();
-        assert_eq!(mapping1.memory_limit, MAP_1_ADDRESS + MAP_1_SIZE);
-        assert_eq!(mapping1.file_offset, MAP_1_FILE_OFFSET);
-        assert_eq!(st(mapping1.filename), MAP_1_NAME);
-        assert_eq!(st(mapping1.build_id), MAP_1_BUILD_ID);
-        let mapping2 = profile.mapping.iter().find(|m| m.memory_start == MAP_2_ADDRESS).unwrap();
-        assert_eq!(mapping2.memory_limit, MAP_2_ADDRESS + MAP_2_SIZE);
-        assert_eq!(mapping2.file_offset, MAP_2_FILE_OFFSET);
-        assert_eq!(st(mapping2.filename), MAP_2_NAME);
-        assert_eq!(st(mapping2.build_id), MAP_2_BUILD_ID);
+        assert_eq!(profile.mapping[0].memory_start, MAP_1_ADDRESS);
+        assert_eq!(profile.mapping[0].memory_limit, MAP_1_ADDRESS + MAP_1_SIZE);
+        assert_eq!(profile.mapping[0].file_offset, MAP_1_FILE_OFFSET);
+        assert_eq!(st(profile.mapping[0].filename), MAP_1_NAME);
+        assert_eq!(st(profile.mapping[0].build_id), MAP_1_BUILD_ID);
+        assert_eq!(profile.mapping[1].memory_start, MAP_2_ADDRESS);
+        assert_eq!(profile.mapping[1].memory_limit, MAP_2_ADDRESS + MAP_2_SIZE);
+        assert_eq!(profile.mapping[1].file_offset, MAP_2_FILE_OFFSET);
+        assert_eq!(st(profile.mapping[1].filename), MAP_2_NAME);
+        assert_eq!(st(profile.mapping[1].build_id), MAP_2_BUILD_ID);
 
         // Identify the locations from their addresses and verify them.
         assert_eq!(profile.location.len(), 5);
         assert_eq!(profile.location.iter().filter(|l| l.id == 0).next(), None, "ID 0 is reserved");
         let loc1 = profile.location.iter().find(|l| l.address == LOC_1_ADDRESS).unwrap();
-        assert_eq!(loc1.mapping_id, mapping1.id, "LOC_1_ADDRESS belongs to mapping 1");
+        assert_eq!(loc1.mapping_id, profile.mapping[0].id, "LOC_1_ADDRESS belongs to mapping 1");
         let loc2 = profile.location.iter().find(|l| l.address == LOC_2_ADDRESS).unwrap();
-        assert_eq!(loc2.mapping_id, mapping2.id, "LOC_2_ADDRESS belongs to mapping 2");
+        assert_eq!(loc2.mapping_id, profile.mapping[1].id, "LOC_2_ADDRESS belongs to mapping 2");
         let loc3 = profile.location.iter().find(|l| l.address == LOC_3_ADDRESS).unwrap();
-        assert_eq!(loc3.mapping_id, mapping2.id, "LOC_3_ADDRESS belongs to mapping 2");
+        assert_eq!(loc3.mapping_id, profile.mapping[1].id, "LOC_3_ADDRESS belongs to mapping 2");
         let loc4 = profile.location.iter().find(|l| l.address == LOC_4_ADDRESS).unwrap();
         assert_eq!(loc4.mapping_id, 0, "LOC_4_ADDRESS does not belong to any mapping");
         let loc5 = profile.location.iter().find(|l| l.address == LOC_5_ADDRESS).unwrap();
