@@ -452,19 +452,21 @@ void AudioRenderer::RealizeVolume(VolumeCommand volume_command) {
                         << volume_command.gain_db_adjustment << "db)";
         }
 
-        link.mix_domain->PostTask([link, volume_command, gain_db, reporter = &reporter()]() {
-          auto& gain = link.mixer->gain;
+        // shared_from_this: ensure this object lives long enough for the async task to run
+        link.mix_domain->PostTask(
+            [self = shared_from_this(), link, volume_command, gain_db, reporter = &reporter()]() {
+              auto& gain = link.mixer->gain;
 
-          // Stop any in-progress ramping; use this new ramp or gain_db instead
-          if (volume_command.ramp.has_value()) {
-            gain.SetDestGainWithRamp(gain_db, volume_command.ramp->duration,
-                                     volume_command.ramp->ramp_type);
-          } else {
-            gain.SetDestGain(gain_db);
-          }
+              // Stop any in-progress ramping; use this new ramp or gain_db instead
+              if (volume_command.ramp.has_value()) {
+                gain.SetDestGainWithRamp(gain_db, volume_command.ramp->duration,
+                                         volume_command.ramp->ramp_type);
+              } else {
+                gain.SetDestGain(gain_db);
+              }
 
-          reporter->SetCompleteGain(link.mixer->gain.GetUnadjustedGainDb());
-        });
+              reporter->SetCompleteGain(link.mixer->gain.GetUnadjustedGainDb());
+            });
       });
 }
 
@@ -497,7 +499,9 @@ void AudioRenderer::PostStreamGainMute(StreamGainCommand gain_command) {
       }
     }
 
-    link.mix_domain->PostTask([link, gain_command, reporter = &reporter()]() mutable {
+    // shared_from_this: ensure this object lives long enough for the async task to run
+    link.mix_domain->PostTask([self = shared_from_this(), link, gain_command,
+                               reporter = &reporter()]() mutable {
       auto& gain = link.mixer->gain;
       switch (gain_command.control) {
         case StreamGainCommand::Control::ADJUSTMENT:
