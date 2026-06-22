@@ -49,10 +49,7 @@ typedef uint32_t zbi_kernel_driver_t;
 #define ZBI_KERNEL_DRIVER_DW8250_UART ((zbi_kernel_driver_t)(0x44573855u))
 
 // 'RMLH' (typoed, originally intended to by 'AMLR')
-#define ZBI_KERNEL_DRIVER_AMLOGIC_RNG_V1 ((zbi_kernel_driver_t)(0x484c4d52u))
-
-// 'AMLR'
-#define ZBI_KERNEL_DRIVER_AMLOGIC_RNG_V2 ((zbi_kernel_driver_t)(0x524c4d41u))
+#define ZBI_KERNEL_DRIVER_AMLOGIC_RNG ((zbi_kernel_driver_t)(0x484c4d52u))
 
 // 'WD32'
 #define ZBI_KERNEL_DRIVER_GENERIC32_WATCHDOG ((zbi_kernel_driver_t)(0x32334457u))
@@ -229,8 +226,7 @@ typedef struct {
   uint64_t hdmitx_phys;
 } zbi_dcfg_amlogic_hdcp_driver_t;
 
-// for ZBI_KERNEL_DRIVER_AMLOGIC_RNG_V1
-// for ZBI_KERNEL_DRIVER_AMLOGIC_RNG_V2
+// for ZBI_KERNEL_DRIVER_AMLOGIC_RNG
 typedef struct {
   uint64_t rng_data_phys;
   uint64_t rng_status_phys;

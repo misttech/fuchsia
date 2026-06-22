@@ -39,10 +39,7 @@ type KernelDriver = enum : uint32 {
     Dw8250Uart = 0x44573855;
 
     /// 'RMLH' (typoed, originally intended to by 'AMLR')
-    AmlogicRngV1 = 0x484c4d52;
-
-    /// 'AMLR'
-    AmlogicRngV2 = 0x524c4d41;
+    AmlogicRng = 0x484c4d52;
 
     /// 'WD32'
     Generic32Watchdog = 0x32334457;
@@ -212,8 +209,7 @@ type DcfgAmlogicHdcpDriver = struct {
     hdmitx_phys uint64;
 };
 
-/// for ZBI_KERNEL_DRIVER_AMLOGIC_RNG_V1
-/// for ZBI_KERNEL_DRIVER_AMLOGIC_RNG_V2
+/// for ZBI_KERNEL_DRIVER_AMLOGIC_RNG
 type DcfgAmlogicRngDriver = struct {
     rng_data_phys uint64;
     rng_status_phys uint64;

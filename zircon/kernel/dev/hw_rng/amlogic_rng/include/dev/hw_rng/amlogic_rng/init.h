@@ -10,9 +10,7 @@
 
 #include <lib/zbi-format/driver-config.h>
 
-#include <phys/arch/arch-handoff.h>
-
 // Initializes the driver.
-void AmlogicRngInit(const ZbiAmlogicRng& config);
+void AmlogicRngInit(const zbi_dcfg_amlogic_rng_driver_t& config);
 
 #endif  // ZIRCON_KERNEL_DEV_HW_RNG_AMLOGIC_RNG_INCLUDE_DEV_HW_RNG_AMLOGIC_RNG_INIT_H_
