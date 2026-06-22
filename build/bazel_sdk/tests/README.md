@@ -33,7 +33,7 @@ The simplest way to run the test suite is to use the following
   useful during development of the Bazel rules themselves, or
   when modifying the content of the IDK/SDK.
 
-  Note that no tests are ever run against the `@sdk_internal`
+  Note that no tests are ever run against the `@internal_sdk`
   repository of the in-tree Bazel workspace.
 
 - `fx build //sdk:final_fuchsia_idk.validation`:
