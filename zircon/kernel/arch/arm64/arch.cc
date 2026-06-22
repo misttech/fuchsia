@@ -60,7 +60,7 @@ constexpr uint64_t PMCR_EL0_ENABLE_BIT = 1 << 0;
 constexpr uint64_t PMCR_EL0_LONG_COUNTER_BIT = 1 << 6;
 
 // Performance Monitors User Enable Regiser, EL0.
-constexpr uint64_t PMUSERENR_EL0_ENABLE = 1 << 0;  // Enable EL0 access to cycle counter.
+constexpr uint64_t PMUSERENR_EL0_CR_ENABLE = 1 << 2;  // Enable EL0 access to cycle counter.
 
 // Whether or not to allow access to the PCT (physical counter) from EL0, in
 // addition to allowing access to the VCT (virtual counter).  This decision
@@ -344,7 +344,7 @@ void arm64_cpu_early_init() {
     __isb(ARM_MB_SY);
 
     // Enable user space access to cycle counter.
-    __arm_wsr64("pmuserenr_el0", PMUSERENR_EL0_ENABLE);
+    __arm_wsr64("pmuserenr_el0", PMUSERENR_EL0_CR_ENABLE);
     __isb(ARM_MB_SY);
   }
 
