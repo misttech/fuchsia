@@ -82,6 +82,10 @@ void arch_invalidate_cache_range(vaddr_t start, size_t len) {
 void arch_sync_cache_range(vaddr_t start, size_t len) {
   LTRACEF("start %#lx, len %zu\n", start, len);
 
+  if (is_kernel_address(start)) {
+    arch_clean_cache_range(start, len);
+  }
+
   // Shootdown on all cores.  Using mp_sync_exec instead of an SBI remote fence to handle race
   // conditions with cores going offline.
   auto fencei = [](void*) { __asm__ volatile("fence.i"); };

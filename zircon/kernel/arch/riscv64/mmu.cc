@@ -1803,6 +1803,10 @@ void Riscv64VmICacheConsistencyManager::SyncAddr(vaddr_t start, size_t len) {
   // Validate we are operating on a kernel address range.
   DEBUG_ASSERT(is_kernel_address(start));
 
+  // Clean the data cache to ensure the instructions are written back to main memory
+  // (or PoC) before fence.i is executed.
+  arch_clean_cache_range(start, len);
+
   // Track that we'll need to fence.i at the end, the address is not important.
   need_invalidate_ = true;
 }
@@ -1813,8 +1817,10 @@ void Riscv64VmICacheConsistencyManager::Finish() {
     return;
   }
 
-  // Sync any address, since fence.i will dump the entire icache (for now).
-  arch_sync_cache_range(KERNEL_ASPACE_BASE, kPageSize);
+  // Shootdown on all cores.  Using mp_sync_exec instead of an SBI remote fence to handle race
+  // conditions with cores going offline.
+  auto fencei = [](void*) { __asm__ volatile("fence.i"); };
+  mp_sync_exec(mp_ipi_target::ALL, /* cpu_mask */ 0, fencei, nullptr);
 
   need_invalidate_ = false;
 }
