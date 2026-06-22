@@ -219,22 +219,18 @@ impl Isolate {
             target_addr = Option::Some(Cow::Owned(addr + ":0"));
             mdns_discovery = false;
         }
-        let log_target_levels = env_context.get("log.target_levels")?;
-        // Propagate log configuration information to the isolate.
-        // TODO(396473745): we should propagate _all_ log values,
-        // except possibly log.dir (which may be set above from
-        // FUCHSIA_TEST_OUTDIR)
-        let log_level = env_context.get("log.level")?;
+        let mut log_config: Value = env_context
+            .get::<Value, _>("log")
+            .ok()
+            .filter(|val| val.is_object())
+            .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+        if let Some(obj) = log_config.as_object_mut() {
+            obj.insert("dir".to_string(), Value::String(log_dir.to_string_lossy().into_owned()));
+            obj.insert("enabled".to_string(), Value::Bool(true));
+        }
 
-        let user_config = UserConfig::for_test(
-            log_dir.to_string_lossy(),
-            log_level,
-            log_target_levels,
-            target_addr,
-            mdns_discovery,
-            search_paths,
-            sdk_config,
-        );
+        let user_config =
+            UserConfig::for_test(log_config, target_addr, mdns_discovery, search_paths, sdk_config);
         let user_config_str = serde_json::to_string(&user_config)?;
         std::fs::write(tmpdir.path().join(".ffx_user_config.json"), user_config_str)
             .map_err(|e| IsolateError::WriteFile(tmpdir.path().join(".ffx_user_config.json"), e))?;
@@ -391,27 +387,12 @@ impl Isolate {
 #[derive(Serialize, Debug)]
 struct UserConfig<'a> {
     daemon: UserConfigDaemon,
-    log: UserConfigLog<'a>,
+    log: Value,
     test: UserConfigTest,
     targets: UserConfigTargets<'a>,
     discovery: UserConfigDiscovery,
     ffx: UserConfigFfx<'a>,
     sdk: Option<FfxSdkConfig>,
-}
-
-#[derive(Serialize, Debug)]
-struct UserConfigLog<'a> {
-    enabled: bool,
-    level: Option<String>,
-    // For target_levels, we'd like to use a HashMap<String, String> or even
-    // a serde_json::Map<String, String>, but ffx_config doesn't returning
-    // support maps -- TODO(https://fxbug.dev/42075137). So for now we're stuck with getting a
-    // serde_json::Value directly, and hoping it's the right type.  At least
-    // we're no worse off than our caller is, since if target_levels isn't a
-    // String=>String map, then nothing using this config entry was going to
-    // work anyway.
-    target_levels: Option<Value>,
-    dir: Cow<'a, str>,
 }
 
 #[derive(Serialize, Debug)]
@@ -448,9 +429,7 @@ struct UserConfigDaemon {
 
 impl<'a> UserConfig<'a> {
     fn for_test(
-        log_dir: Cow<'a, str>,
-        log_level: Option<String>,
-        log_target_levels: Option<Value>,
+        log: Value,
         target: Option<Cow<'a, str>>,
         discovery: bool,
         subtool_search_paths: Vec<Cow<'a, Path>>,
@@ -461,12 +440,7 @@ impl<'a> UserConfig<'a> {
             manual_targets.insert(target.unwrap(), None);
         }
         Self {
-            log: UserConfigLog {
-                enabled: true,
-                level: log_level,
-                target_levels: log_target_levels,
-                dir: log_dir,
-            },
+            log,
             test: UserConfigTest { is_isolated: true },
             targets: UserConfigTargets { manual: manual_targets },
             discovery: UserConfigDiscovery { mdns: UserConfigMdns { enabled: discovery } },
@@ -487,5 +461,62 @@ struct FfxEnvConfig<'a> {
 impl<'a> FfxEnvConfig<'a> {
     fn for_test(user: Cow<'a, str>) -> Self {
         Self { user, build: None, global: None }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ffx_config::ConfigMap;
+    use serde_json::json;
+
+    #[fuchsia::test]
+    async fn test_log_config_propagation() {
+        let env_vars = HashMap::new();
+        let mut config_map = ConfigMap::new();
+        config_map.insert(
+            "log".to_string(),
+            json!({
+                "level": "debug",
+                "rotations": 42,
+                "rotate_size": 12345,
+            }),
+        );
+
+        let parent_context = EnvironmentContext::isolated(
+            ffx_config::environment::ExecutableKind::Test,
+            std::env::current_dir().unwrap(),
+            env_vars,
+            config_map,
+            None,
+            None,
+            false,
+        )
+        .unwrap();
+
+        let tempdir = tempfile::TempDir::new().unwrap();
+        let ssh_key = tempdir.path().join("ssh_key");
+        std::fs::write(&ssh_key, "private-key-data").unwrap();
+
+        let ffx_path = tempdir.path().join("ffx");
+        let isolate = Isolate::new_with_search(
+            "test_propagation",
+            SearchContext::Runtime { ffx_path, sdk_root: None, subtool_search_paths: vec![] },
+            ssh_key,
+            &parent_context,
+        )
+        .await
+        .unwrap();
+
+        let user_config_path = isolate.dir().join(".ffx_user_config.json");
+        let user_config_str = std::fs::read_to_string(&user_config_path).unwrap();
+        let user_config: Value = serde_json::from_str(&user_config_str).unwrap();
+
+        let log = user_config.get("log").unwrap();
+        assert_eq!(log["enabled"], true);
+        assert_eq!(log["level"], "debug");
+        assert_eq!(log["rotations"], 42);
+        assert_eq!(log["rotate_size"], 12345);
+        assert_eq!(log["dir"], isolate.log_dir().to_str().unwrap());
     }
 }

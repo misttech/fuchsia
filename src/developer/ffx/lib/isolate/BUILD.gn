@@ -26,6 +26,8 @@ rustc_library("lib") {
     "//third_party/rust_crates:thiserror",
   ]
 
+  test_deps = [ "//src/lib/fuchsia" ]
+
   _subtool_search_test_data =
       rebase_path(ffx_test_host_tools_out_dir, root_build_dir)
   _subtool_search_host_tools = rebase_path(host_tools_dir, root_build_dir)
