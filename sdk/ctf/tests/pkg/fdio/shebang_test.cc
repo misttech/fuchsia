@@ -27,20 +27,24 @@ static constexpr char kUseResolveFromShebangBin[] = "/pkg/bin/use_resolve_from_s
 
 class ShebangTest : public ::zxtest::Test {
  protected:
-  void RunTest(const char* path, const char** argv, const char* expected) {
+  void RunTestWithActions(const char* path, const char** argv, const char* expected,
+                          size_t action_count = 0, const fdio_spawn_action_t* actions = nullptr) {
     int fd;
     zx::socket socket;
     zx_status_t status = fdio_pipe_half(&fd, socket.reset_and_get_address());
     ASSERT_OK(status);
 
     int flags = FDIO_SPAWN_CLONE_ALL & ~FDIO_SPAWN_CLONE_STDIO;
-    fdio_spawn_action_t action = {.action = FDIO_SPAWN_ACTION_TRANSFER_FD,
-                                  .fd = {.local_fd = fd, .target_fd = STDOUT_FILENO}};
+    std::vector<fdio_spawn_action_t> combined_actions(actions, actions + action_count);
+    combined_actions.push_back({
+        .action = FDIO_SPAWN_ACTION_TRANSFER_FD,
+        .fd = {.local_fd = fd, .target_fd = STDOUT_FILENO},
+    });
 
     zx::process process;
     char err_msg[FDIO_SPAWN_ERR_MSG_MAX_LENGTH];
-    status = fdio_spawn_etc(ZX_HANDLE_INVALID, flags, path, argv, NULL, 1, &action,
-                            process.reset_and_get_address(), err_msg);
+    status = fdio_spawn_etc(ZX_HANDLE_INVALID, flags, path, argv, NULL, combined_actions.size(),
+                            combined_actions.data(), process.reset_and_get_address(), err_msg);
     if (status != ZX_OK) {
       fprintf(stderr, "fdio_spawn_etc failed: %s\n", err_msg);
     }
@@ -58,6 +62,10 @@ class ShebangTest : public ::zxtest::Test {
     buf[actual] = '\0';
     ASSERT_STREQ(buf, expected);
   }
+
+  void RunTest(const char* path, const char** argv, const char* expected) {
+    RunTestWithActions(path, argv, expected, 0, nullptr);
+  }
 };
 
 // Should be able to spawn a shell script, assuming it uses a shell that is packaged
@@ -68,6 +76,30 @@ TEST_F(ShebangTest, SpawnShellScriptPath) {
       "/pkg/bin/echo_arguments_bin\n/pkg/bin/shebang_echo_arguments\n"
       "original_arg1\noriginal_arg2\n";
   RunTest(path, argv, expected);
+}
+
+// Spawning a shell script with a relative argv[0] should still pass the resolved (absolute) path
+// of the script to the interpreter.
+TEST_F(ShebangTest, SpawnShellScriptRelativeArgv0) {
+  const char* path = kShebangEchoArgumentsBin;
+  const char* argv[] = {"shebang_echo_arguments", "original_arg1", "original_arg2", nullptr};
+  const char* expected =
+      "/pkg/bin/echo_arguments_bin\n/pkg/bin/shebang_echo_arguments\n"
+      "original_arg1\noriginal_arg2\n";
+  RunTest(path, argv, expected);
+}
+
+// Spawning a shell script with an empty argv array (argv[0] == nullptr) should
+// still pass the resolved path of the script to the interpreter and not crash.
+TEST_F(ShebangTest, SpawnShellScriptEmptyArgv) {
+  const char* path = kShebangEchoArgumentsBin;
+  const char* argv[] = {nullptr};
+  const char* expected = "/pkg/bin/echo_arguments_bin\n/pkg/bin/shebang_echo_arguments\n";
+  fdio_spawn_action_t action = {
+      .action = FDIO_SPAWN_ACTION_SET_NAME,
+      .name = {.data = "test_process_name"},
+  };
+  RunTestWithActions(path, argv, expected, 1, &action);
 }
 
 // Multiple #! directives should be resolved

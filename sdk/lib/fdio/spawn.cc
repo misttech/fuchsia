@@ -232,9 +232,11 @@ zx_status_t parse_interp_spec(char* line, char** interp_start, char** args_start
 // updated based on the resolved directives. executable must always be valid, and ldsvc must be
 // valid at minimum for the 2nd case above, though it should generally always be valid as well when
 // calling this.
-zx_status_t handle_interpreters(zx::vmo* executable, zx::channel* ldsvc,
-                                std::list<std::string>* extra_args, char* err_msg) {
+zx_status_t handle_interpreters(zx::vmo* executable, zx::channel* ldsvc, const char* resolved_path,
+                                const char* argv0, std::list<std::string>* extra_args,
+                                size_t* argv_start_index, char* err_msg) {
   extra_args->clear();
+  *argv_start_index = 0;
 
   // Mixing #!resolve and general #! within a single spawn is unsupported so that the #!
   // interpreters can simply be loaded from the current namespace.
@@ -320,6 +322,21 @@ zx_status_t handle_interpreters(zx::vmo* executable, zx::channel* ldsvc,
         extra_args->emplace_front(args_start);
       }
       extra_args->emplace_front(interp_start);
+
+      // Mixing #!resolve and general #! is unsupported (enforced above), so
+      // the first general shebang can only be encountered at depth == 0.
+      if (depth == 0) {
+        const char* script_path = resolved_path;
+        if (script_path == nullptr) {
+          script_path = argv0;
+        }
+        if (script_path != nullptr) {
+          extra_args->emplace_back(script_path);
+        }
+        if (argv0 != nullptr) {
+          *argv_start_index = 1;
+        }
+      }
 
       // Load the specified interpreter from the current namespace.
       char path_msg[FDIO_SPAWN_ERR_MSG_MAX_LENGTH];
@@ -643,6 +660,11 @@ zx_status_t send_handles_and_namespace(const fidl::WireSyncClient<fprocess::Laun
   return ZX_OK;
 }
 
+zx_status_t spawn_vmo_impl(zx_handle_t job, uint32_t flags, zx::vmo executable_vmo,
+                           const char* resolved_path, const char* const* argv,
+                           const char* const* explicit_environ, SpawnActions& spawn_actions,
+                           zx_handle_t* process_out, char* err_msg);
+
 }  // namespace
 
 __EXPORT
@@ -656,6 +678,10 @@ zx_status_t fdio_spawn_etc(zx_handle_t job, uint32_t flags, const char* path,
                            const char* const* argv, const char* const* explicit_environ,
                            size_t action_count, const fdio_spawn_action_t* actions,
                            zx_handle_t* process_out, char* err_msg) {
+  if (action_count > 0 && !actions) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
   zx::vmo executable;
 
   char path_msg[FDIO_SPAWN_ERR_MSG_MAX_LENGTH];
@@ -668,13 +694,17 @@ zx_status_t fdio_spawn_etc(zx_handle_t job, uint32_t flags, const char* path,
     err_msg = nullptr;
   }
 
-  // Always call fdio_spawn_vmo to clean up arguments. If |executable| is
-  // |ZX_HANDLE_INVALID|, then |fdio_spawn_vmo| will generate an error.
-  zx_status_t spawn_status =
-      fdio_spawn_vmo(job, flags, executable.release(), argv, explicit_environ, action_count,
-                     actions, process_out, err_msg);
+  // Always call spawn_vmo_impl to clean up arguments. If |executable| is
+  // |ZX_HANDLE_INVALID|, then |spawn_vmo_impl| will generate an error.
+  SpawnActions spawn_actions(actions, action_count);
+  zx_status_t spawn_status = spawn_vmo_impl(job, flags, std::move(executable), path, argv,
+                                            explicit_environ, spawn_actions, process_out, err_msg);
 
-  // Use |status| if we already had an error before calling |fdio_spawn_vmo|.
+  if (status == ZX_OK && spawn_status == ZX_ERR_NOT_FOUND) {
+    spawn_status = ZX_ERR_INTERNAL;
+  }
+
+  // Use |status| if we already had an error before calling |spawn_vmo_impl|.
   // Otherwise, we'll always return |ZX_ERR_INVALID_ARGS| rather than the more
   // useful status from |load_path|.
   return status != ZX_OK ? status : spawn_status;
@@ -711,8 +741,9 @@ void filter_flat_namespace(fdio_flat_namespace_t* flat,
 }
 
 zx_status_t spawn_vmo_impl(zx_handle_t job, uint32_t flags, zx::vmo executable_vmo,
-                           const char* const* argv, const char* const* explicit_environ,
-                           SpawnActions& spawn_actions, zx_handle_t* process_out, char* err_msg) {
+                           const char* resolved_path, const char* const* argv,
+                           const char* const* explicit_environ, SpawnActions& spawn_actions,
+                           zx_handle_t* process_out, char* err_msg) {
   // We intentionally don't fill in |err_msg| for invalid args.
   if (!executable_vmo.is_valid() || !argv) {
     return ZX_ERR_INVALID_ARGS;
@@ -816,12 +847,14 @@ zx_status_t spawn_vmo_impl(zx_handle_t job, uint32_t flags, zx::vmo executable_v
       .executable = std::move(executable_vmo),
   };
   std::list<std::string> extra_args;
+  size_t argv_start_index = 0;
   // resolve any '#!' directives that are present, updating executable and ldsvc as needed
-  if (zx_status_t status =
-          handle_interpreters(&launch_info.executable, &ldsvc, &extra_args, err_msg);
+  if (zx_status_t status = handle_interpreters(&launch_info.executable, &ldsvc, resolved_path,
+                                               argv[0], &extra_args, &argv_start_index, err_msg);
       status != ZX_OK) {
     return status;
   }
+
   if (ldsvc.is_valid()) {
     ++handle_capacity;
   }
@@ -845,7 +878,7 @@ zx_status_t spawn_vmo_impl(zx_handle_t job, uint32_t flags, zx::vmo executable_v
   // send any extra arguments from handle_interpreters, then the normal arguments.
   {
     size_t capacity = extra_args.size();
-    for (auto it = argv; *it; ++it) {
+    for (auto it = argv + argv_start_index; *it; ++it) {
       ++capacity;
     }
 
@@ -855,7 +888,7 @@ zx_status_t spawn_vmo_impl(zx_handle_t job, uint32_t flags, zx::vmo executable_v
       auto ptr = const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(arg.data()));
       args.emplace_back(fidl::VectorView<uint8_t>::FromExternal(ptr, arg.length()));
     }
-    for (auto it = argv; *it; ++it) {
+    for (auto it = argv + argv_start_index; *it; ++it) {
       auto ptr = const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(*it));
       args.emplace_back(fidl::VectorView<uint8_t>::FromExternal(ptr, strlen(*it)));
     }
@@ -995,8 +1028,8 @@ zx_status_t fdio_spawn_vmo(zx_handle_t job, uint32_t flags, zx_handle_t executab
   }
 
   SpawnActions spawn_actions(actions, action_count);
-  zx_status_t status = spawn_vmo_impl(job, flags, std::move(executable), argv, explicit_environ,
-                                      spawn_actions, process_out, err_msg);
+  zx_status_t status = spawn_vmo_impl(job, flags, std::move(executable), nullptr, argv,
+                                      explicit_environ, spawn_actions, process_out, err_msg);
 
   // If we observe ZX_ERR_NOT_FOUND in the VMO spawn, it really means a
   // dependency of launching could not be fulfilled, but clients of spawn_etc
