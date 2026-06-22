@@ -101,6 +101,44 @@ hcrx_bits .req x11
   msr hcrx_el2, hcrx_bits
 .Lno_hcx:
 
+  // Sanitize EL2 registers to prevent traps to EL2.
+  // Since we are dropping to EL1 and disabling the EL2 monitor (setting vbar_el2 to 0),
+  // any trap to EL2 will result in a crash.
+
+  // MDCR_EL2: Monitor Debug Configuration Register.
+  // Clear all trap bits (like TDOSA which traps OSLAR_EL1) but preserve PMCR_EL0.N
+  // in HPMN to allow EL1 access to all physical performance counters.
+  mrs scratch, pmcr_el0
+  ubfx scratch, scratch, #11, #5
+  msr mdcr_el2, scratch
+
+  // HSTR_EL2: Hypervisor System Trap Register.
+  // Zeroing this disables trapping of CP15 system register accesses to EL2.
+  msr hstr_el2, xzr
+
+  // CNTHP_CTL_EL2: Counter-timer Hypervisor Physical Timer Control.
+  // Zeroing this disables the EL2 physical timer and its interrupts.
+  msr cnthp_ctl_el2, xzr
+
+  // Check for FEAT_FGT (Fine-Grained Traps).
+  // If supported, we zero the fine-grained trap registers to ensure a defined state.
+  // Note: While 0 in FGT registers technically enables traps if FGT is enabled,
+  // we disable FGT globally via HCR_EL2.FGTEN = 0 (which is cleared when we write
+  // HCR_EL2_RW to hcr_el2 above). Zeroing these registers prevents info leaks
+  // and ensures they are in a default state.
+  mrs_tst id_aa64mmfr0_el1, #ID_AA64MMFR0_EL1_FGT
+  beq .Lno_fgt
+
+  .arch armv8.7-a
+  // Zero fine-grained read/write/instruction trap registers.
+  msr hfgrtr_el2, xzr
+  msr hfgwtr_el2, xzr
+  msr hfgitr_el2, xzr
+  // Zero debug fine-grained read/write trap registers.
+  msr hdfgrtr_el2, xzr
+  msr hdfgwtr_el2, xzr
+.Lno_fgt:
+
   // Set EL1 to 64-bit, ensuring also that E2H is clear, as the assumed
   // layouts of CNTHCTL_EL2 and CPTR_EL2 depend on that. Also, ensure
   // that TSC is clear so that `smc` traps in EL3.
