@@ -111,6 +111,22 @@ impl HostDevice {
         self.0.info.read().addresses[0]
     }
 
+    /// Validates that the raw FIDL bonding data is well-formed and that its
+    /// `local_address` matches this host adapter's public controller address.
+    /// Returns the converted internal `BondingData` type if successful.
+    fn validate_bond_data(&self, fidl_data: sys::BondingData) -> types::Result<BondingData> {
+        let data: BondingData = fidl_data.try_into()?;
+        let public_address = self.public_address();
+        if data.local_address != public_address {
+            return Err(fuchsia_bluetooth::Error::FailedConversion(format!(
+                "mismatched local_address {:?} (expected {:?})",
+                data.local_address, public_address
+            ))
+            .into());
+        }
+        Ok(data)
+    }
+
     /// Convenience method to produce a type for easy debug printing of the main identifiers for the
     /// host device, namely: The device path, the host address and the host id.
     pub fn debug_identifiers(&self) -> HostDebugIdentifiers {
@@ -283,17 +299,18 @@ impl HostDevice {
         }
     }
 
-    fn watch_bonds<H: HostListener>(
+    pub(crate) fn watch_bonds<H: HostListener>(
         &self,
         mut listener: H,
     ) -> impl Future<Output = types::Result<()>> + use<H> {
         let bonding_delegate_proxy = self.0.bonding_delegate_proxy.clone();
+        let host = self.clone();
         async move {
             loop {
                 match bonding_delegate_proxy.watch_bonds().await {
                     Ok(BondingDelegateWatchBondsResponse::Updated(data)) => {
                         info!("Received bonding data");
-                        let data: BondingData = match data.try_into() {
+                        let data = match host.validate_bond_data(data) {
                             Err(e) => {
                                 error!("Invalid bonding data, ignoring: {:#?}", e);
                                 continue;
