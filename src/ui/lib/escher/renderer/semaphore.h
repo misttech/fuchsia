@@ -5,33 +5,41 @@
 #ifndef SRC_UI_LIB_ESCHER_RENDERER_SEMAPHORE_H_
 #define SRC_UI_LIB_ESCHER_RENDERER_SEMAPHORE_H_
 
+#include "src/lib/fxl/macros.h"
+#include "src/ui/lib/escher/base/reffable.h"
+
 #include <vulkan/vulkan.hpp>
 
-#include "src/lib/fxl/macros.h"
-#include "src/lib/fxl/memory/ref_counted.h"
-
 namespace escher {
+
+class SemaphorePool;
 
 class Semaphore;
 typedef fxl::RefPtr<Semaphore> SemaphorePtr;
 
-// TODO: perhaps return semaphores to a pool instead of destroying them.
-// TODO: make this a subclass of Reffable.
-class Semaphore : public fxl::RefCountedThreadSafe<Semaphore> {
+class Semaphore : public Reffable {
  public:
-  explicit Semaphore(vk::Device device);
-  Semaphore(vk::Device device, bool exportable);
-  ~Semaphore();
+  explicit Semaphore(vk::Device device, SemaphorePool* pool = nullptr);
+  ~Semaphore() override;
 
   // Convenient.
-  static SemaphorePtr New(vk::Device device);
-  static SemaphorePtr NewExportableSem(vk::Device device);
+  static SemaphorePtr New(vk::Device device, SemaphorePool* pool = nullptr);
 
   vk::Semaphore vk_semaphore() const { return value_; }
 
+  bool is_imported() const { return is_imported_; }
+  void set_is_imported(bool is_imported) { is_imported_ = is_imported; }
+
+ protected:
+  bool OnZeroRefCount() override;
+
  private:
+  friend class SemaphorePool;
+
   vk::Device device_;
   vk::Semaphore value_;
+  SemaphorePool* pool_ = nullptr;
+  bool is_imported_ = false;
 
   FXL_DISALLOW_COPY_AND_ASSIGN(Semaphore);
 };
