@@ -56,6 +56,7 @@ fuchsia_unittest_package("spmi-hwreg-next-rust-test") {
 group("tests") {
   testonly = true
   deps = [
+    ":spmi-hwreg",
     ":spmi-hwreg-next-rust-test",
     ":spmi-hwreg-rust-test",
   ]
