@@ -337,7 +337,7 @@ void QualcommExtension::SetInterconnectBandwidths(State state) {
                   {BusPath::kDdrUsb, {1'000, 1'000}},
               },
           },
-      };
+  };
 
   const auto& votes = kVoteMap.at(state);
   sync_completion_t completion;
@@ -491,6 +491,11 @@ zx::result<> Dwc3::Start(fdf::DriverContext context) {
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   power_element_runner_ = context.take_power_element_runner();
 #endif
+
+  if (zx::result result = InitializeSuspend(dispatcher(), *incoming_, "dwc3"); result.is_error()) {
+    fdf::error("Failed to initialize suspend: {}", result.status_string());
+    return result.take_error();
+  }
 
   auto phy_result = incoming()->Connect<fphy::Service::Device>("dwc3-phy");
   if (phy_result.is_ok()) {
