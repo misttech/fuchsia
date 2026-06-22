@@ -6,15 +6,16 @@ pub mod component;
 pub mod serde;
 
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_component_runner as fcrunner;
 #[cfg(fuchsia_api_level_at_least = "HEAD")]
 use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_component_sandbox as _;
+use fidl_fuchsia_data as fdata;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_mem as fmem;
+use fidl_fuchsia_process as fprocess;
 use std::path::Path;
 use thiserror::Error;
-use {
-    fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_component_sandbox as _,
-    fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio, fidl_fuchsia_mem as fmem,
-    fidl_fuchsia_process as fprocess,
-};
 
 const ARGS_KEY: &str = "args";
 const BINARY_KEY: &str = "binary";
@@ -403,6 +404,14 @@ impl From<StartInfo> for fcrunner::ComponentStartInfo {
             numbered_handles: Some(start_info.numbered_handles),
             encoded_config: start_info.encoded_config,
             break_on_start: start_info.break_on_start,
+
+            #[cfg(fuchsia_api_level_at_least = "HEAD")]
+            component_instance: start_info.component_instance,
+            #[cfg(fuchsia_api_level_at_least = "HEAD")]
+            escrowed_dictionary: start_info.escrowed_dictionary,
+            #[cfg(fuchsia_api_level_at_least = "HEAD")]
+            escrowed_dictionary_handle: start_info.escrowed_dictionary_handle,
+
             ..Default::default()
         }
     }
