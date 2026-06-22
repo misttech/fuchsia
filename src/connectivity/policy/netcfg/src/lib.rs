@@ -2450,6 +2450,16 @@ impl<'a> NetCfg<'a> {
                                 )
                                     .await;
 
+                                // The NDP RDNSS watcher is registered
+                                // unconditionally when the interface is
+                                // added. We must remove the watcher prior
+                                // to removing the DHCPv6 client state
+                                // to avoid leaking the watcher.
+                                dns::remove_rdnss_watcher(
+                                    &lookup_admin, dns_servers,
+                                    dns_server_watch_responders,
+                                    netpol_networks_service, interface_id, watchers,
+                                ).await;
 
                                 let dhcpv6::ClientState {
                                     sockaddr,
@@ -2478,15 +2488,7 @@ impl<'a> NetCfg<'a> {
                                 )
                                 .await;
 
-                                Ok(dns::remove_rdnss_watcher(
-                                    &lookup_admin,
-                                    dns_servers,
-                                    dns_server_watch_responders,
-                                    netpol_networks_service,
-                                    interface_id,
-                                    watchers,
-                                )
-                                .await)
+                                Ok(())
                             }
                             InterfaceConfigState::WlanAp(WlanApInterfaceState {
                                 interface_naming_id: _,
