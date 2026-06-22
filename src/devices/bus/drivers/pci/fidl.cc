@@ -16,13 +16,12 @@
 #include "src/devices/bus/drivers/pci/device.h"
 
 #define RETURN_STATUS(level, status, format, ...)                                   \
-  ({                                                                                \
+  do {                                                                              \
     zx_status_t _status = (status);                                                 \
     zxlogf(level, "[%s] %s(" format ") = %s", device_->config()->addr(),            \
            __FUNCTION__ __VA_OPT__(, ) __VA_ARGS__, zx_status_get_string(_status)); \
-    _status;                                                                        \
     return;                                                                         \
-  })
+  } while (0)
 
 #define RETURN_DEBUG(status, format...) RETURN_STATUS(DEBUG, status, format)
 #define RETURN_TRACE(status, format...) RETURN_STATUS(TRACE, status, format)
