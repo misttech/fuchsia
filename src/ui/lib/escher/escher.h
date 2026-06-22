@@ -143,11 +143,6 @@ class Escher final {
 
   DefaultShaderProgramFactory* shader_program_factory() { return shader_program_factory_.get(); }
 
-#ifdef __Fuchsia__
-  // Pool for recycling Vulkan semaphores.
-  SemaphorePool* semaphore_pool() { return semaphore_pool_.get(); }
-#endif
-
   PipelineBuilder* pipeline_builder() const { return pipeline_builder_.get(); }
 
   // Check if GPU performance profiling is supported.
@@ -177,9 +172,6 @@ class Escher final {
 
   std::unique_ptr<ResourceRecycler> resource_recycler_;
   std::unique_ptr<impl::ImageCache> image_cache_;
-#ifdef __Fuchsia__
-  std::unique_ptr<SemaphorePool> semaphore_pool_;
-#endif
   std::unique_ptr<BufferCache> buffer_cache_;
   std::unique_ptr<SamplerCache> sampler_cache_;
 

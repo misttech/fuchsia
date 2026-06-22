@@ -17,7 +17,6 @@
 #include "src/ui/lib/escher/flatland/rectangle_compositor.h"
 #include "src/ui/lib/escher/forward_declarations.h"
 #include "src/ui/lib/escher/impl/naive_image.h"
-#include "src/ui/lib/escher/impl/semaphore_pool.h"
 #include "src/ui/lib/escher/impl/vulkan_utils.h"
 #include "src/ui/lib/escher/renderer/batch_gpu_uploader.h"
 #include "src/ui/lib/escher/renderer/render_funcs.h"
@@ -968,13 +967,25 @@ void VkRenderer::Render(const ImageMetadata& render_target, const std::vector<En
       FX_DCHECK(status == ZX_OK);
     }
 
-    const auto sema = escher_->semaphore_pool()->AllocateAndImport(std::move(fence_copy));
+    const auto sema = escher::Semaphore::New(escher_->vk_device());
+    vk::ImportSemaphoreZirconHandleInfoFUCHSIA info;
+    info.semaphore = sema->vk_semaphore();
+    info.zirconHandle = fence_copy.release();
+    info.handleType = vk::ExternalSemaphoreHandleTypeFlagBits::eZirconEventFUCHSIA;
+
+    {
+      TRACE_DURATION("gfx", "VkRenderer::Render[importSemaphoreZirconHandleFUCHSIA]");
+      const auto result = escher_->vk_device().importSemaphoreZirconHandleFUCHSIA(
+          info, escher_->device()->dispatch_loader());
+      FX_DCHECK(result == vk::Result::eSuccess);
+    }
 
     // Create a flow event that ends in the magma system driver.
     if (TRACE_ENABLED()) {
+      const zx::event semaphore_event = GetEventForSemaphore(escher_->device(), sema);
       zx_info_handle_basic_t koid_info;
-      fence_original.get_info(ZX_INFO_HANDLE_BASIC, &koid_info, sizeof(koid_info), nullptr,
-                              nullptr);
+      semaphore_event.get_info(ZX_INFO_HANDLE_BASIC, &koid_info, sizeof(koid_info), nullptr,
+                               nullptr);
       TRACE_FLOW_BEGIN("gfx", "semaphore", koid_info.koid);
     }
 

@@ -35,6 +35,20 @@ std::pair<escher::SemaphorePtr, zx::event> NewSemaphoreEventPair(escher::Escher*
   return std::make_pair(std::move(sema), std::move(event));
 }
 
+zx::event GetEventForSemaphore(VulkanDeviceQueues* device, const escher::SemaphorePtr& semaphore) {
+  vk::SemaphoreGetZirconHandleInfoFUCHSIA info(
+      semaphore->vk_semaphore(), vk::ExternalSemaphoreHandleTypeFlagBits::eZirconEventFUCHSIA);
+
+  auto result =
+      device->vk_device().getSemaphoreZirconHandleFUCHSIA(info, device->dispatch_loader());
+
+  if (result.result != vk::Result::eSuccess) {
+    FX_LOGS(WARNING) << "unable to export semaphore";
+    return zx::event();
+  }
+  return zx::event(result.value);
+}
+
 escher::SemaphorePtr GetSemaphoreForEvent(VulkanDeviceQueues* device, zx::event event) {
   auto sema = escher::Semaphore::New(device->vk_device());
 

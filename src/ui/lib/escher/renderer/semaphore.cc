@@ -4,31 +4,36 @@
 
 #include "src/ui/lib/escher/renderer/semaphore.h"
 
-#include "src/ui/lib/escher/impl/semaphore_pool.h"
 #include "src/ui/lib/escher/impl/vulkan_utils.h"
 #include "src/ui/lib/escher/util/trace_macros.h"
 
 namespace escher {
 
-Semaphore::Semaphore(vk::Device device, SemaphorePool* pool) : device_(device), pool_(pool) {
+Semaphore::Semaphore(vk::Device device) : Semaphore(device, false) {}
+
+Semaphore::Semaphore(vk::Device device, bool exportable) : device_(device) {
   TRACE_DURATION("gfx", "escher::Semaphore::New");
   vk::SemaphoreCreateInfo info;
+
+#ifdef __Fuchsia__
+  vk::ExternalSemaphoreHandleTypeFlags flags(
+      vk::ExternalSemaphoreHandleTypeFlagBits::eZirconEventFUCHSIA);
+  vk::ExportSemaphoreCreateInfoKHR export_info(flags);
+  if (exportable) {
+    info.pNext = &export_info;
+  }
+#else
+  FX_DCHECK(!exportable) << "semaphore export not supported on this platform";
+#endif
   value_ = ESCHER_CHECKED_VK_RESULT(device_.createSemaphore(info));
 }
 
 Semaphore::~Semaphore() { device_.destroySemaphore(value_); }
 
-SemaphorePtr Semaphore::New(vk::Device device, SemaphorePool* pool) {
-  return fxl::MakeRefCounted<Semaphore>(device, pool);
-}
+SemaphorePtr Semaphore::New(vk::Device device) { return fxl::MakeRefCounted<Semaphore>(device); }
 
-bool Semaphore::OnZeroRefCount() {
-  if (pool_) {
-    // Retain the ref-count to prevent immediate deletion during ReturnSemaphore execution.
-    pool_->ReturnSemaphore(SemaphorePtr(this));
-    return false;  // Defer destruction!
-  }
-  return true;  // Destroy if unpooled.
+SemaphorePtr Semaphore::NewExportableSem(vk::Device device) {
+  return fxl::MakeRefCounted<Semaphore>(device, true);
 }
 
 }  // namespace escher

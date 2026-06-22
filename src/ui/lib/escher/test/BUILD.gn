@@ -113,7 +113,6 @@ if (is_linux && !has_prebuilt_vulkan_runtime) {
         "flib/util.cc",
         "flib/util.h",
         "fs/spirv_file_util_unittest.cc",
-        "impl/semaphore_pool_unittest.cc",
       ]
       deps += [
         "//sdk/lib/async:async-cpp",

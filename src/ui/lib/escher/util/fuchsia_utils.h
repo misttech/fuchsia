@@ -21,6 +21,9 @@ namespace escher {
 // of the pair will be null.
 std::pair<escher::SemaphorePtr, zx::event> NewSemaphoreEventPair(escher::Escher* escher);
 
+// Exports a Semaphore into an event.
+zx::event GetEventForSemaphore(VulkanDeviceQueues* device, const escher::SemaphorePtr& semaphore);
+
 // Imports an event into a Semaphore.
 escher::SemaphorePtr GetSemaphoreForEvent(VulkanDeviceQueues* device, zx::event event);
 
