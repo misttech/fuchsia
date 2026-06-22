@@ -36,8 +36,9 @@ void ResourceRenewer::Renew(const DnsResource& resource, Media media, IpVersions
   FX_DCHECK(resource.time_to_live_ != 0);
 
   Query(resource.type_, resource.name_, media, ip_versions,
-        now() + zx::msec(resource.time_to_live_ * kFirstQueryPerThousand),
-        zx::msec(resource.time_to_live_ * kQueryIntervalPerThousand), 1, kQueriesToAttempt);
+        now() + zx::msec(static_cast<uint64_t>(resource.time_to_live_) * kFirstQueryPerThousand),
+        zx::msec(static_cast<uint64_t>(resource.time_to_live_) * kQueryIntervalPerThousand), 1,
+        kQueriesToAttempt);
 }
 
 void ResourceRenewer::Query(DnsType type, const DnsName& name, Media media, IpVersions ip_versions,

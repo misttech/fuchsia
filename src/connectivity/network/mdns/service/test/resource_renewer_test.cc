@@ -375,5 +375,30 @@ TEST_F(ResourceRenewerTest, SuccessfulQuery) {
   ExpectNoOther();
 }
 
+// Tests behavior of the requestor when renewing a resource with a very large TTL.
+TEST_F(ResourceRenewerTest, OverflowProtection) {
+  ResourceRenewer under_test(this);
+  SetAgent(under_test);
+
+  under_test.Start(kLocalHostFullName);
+  ExpectNoOther();
+
+  DnsResource resource(kLocalHostFullName, inet::IpAddress(192, 168, 1, 1));
+  // A large TTL that would cause an integer overflow in 32-bit arithmetic when
+  // multiplied by 800.
+  // 16777216 * 800 = 13421772800 (> 2^32 - 1)
+  constexpr uint32_t kLargeTimeToLiveSeconds = 16777216;
+  resource.time_to_live_ = kLargeTimeToLiveSeconds;
+  under_test.Renew(resource, Media::kBoth, IpVersions::kBoth);
+
+  // First renewal is at 80% of TTL.
+  zx::duration interval = zx::msec(static_cast<uint64_t>(kLargeTimeToLiveSeconds) * 800);
+  ExpectPostTaskForTimeAndInvoke(interval, interval);
+
+  auto message = ExpectOutboundMessage(ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth));
+  ExpectQuestion(message.get(), kLocalHostFullName, DnsType::kA);
+  ExpectNoOtherQuestionOrResource(message.get());
+}
+
 }  // namespace test
 }  // namespace mdns
