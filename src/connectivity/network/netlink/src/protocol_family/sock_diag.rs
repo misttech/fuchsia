@@ -50,7 +50,7 @@ impl MulticastCapableNetlinkFamily for NetlinkSockDiag {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 // TODO(https://fxbug.dev/470079735): Support multicast socket closure
 // notifications.
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub(crate) enum NetlinkSockDiagNotifiedGroup {
     TcpV4Destroy,
     TcpV6Destroy,

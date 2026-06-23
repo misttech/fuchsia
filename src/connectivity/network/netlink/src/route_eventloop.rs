@@ -140,7 +140,7 @@ pub(crate) enum EventLoopComponent<T, Absence: EventLoopOptionality> {
     Present(T),
     /// Never constructed outside of tests. This variant is uninstantiable when `Absence` is
     /// [`Required`], as [`Required`] is itself uninstantiable.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), expect(dead_code))]
     Absent(Absence),
 }
 

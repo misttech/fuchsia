@@ -251,9 +251,7 @@ pub struct NetlinkWorkerParams<H, C: NetlinkContext> {
     route_async_work_receiver:
         futures::channel::mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkRoute>>,
     /// Receiver of newly created `NETLINK_SOCK_DIAG` clients.
-    #[allow(dead_code)]
     sock_diag_client_receiver: UnboundedReceiver<ClientWithReceiver<C, NetlinkSockDiag>>,
-    #[allow(dead_code)]
     sock_diag_async_work_receiver:
         futures::channel::mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkSockDiag>>,
 }

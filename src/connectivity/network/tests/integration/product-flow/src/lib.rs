@@ -41,7 +41,6 @@ use packet_formats::icmp::ndp::options::{NdpOptionBuilder, PrefixInformation};
 use std::pin::pin;
 use test_case::test_case;
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum IpSupported {
     Ipv4Only,

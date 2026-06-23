@@ -8,7 +8,7 @@ use netstack3_sync::rc::ResourceToken;
 
 /// A resource identifier that can be used as an argument for trace events.
 pub struct TraceResourceId<'a> {
-    #[cfg_attr(not(target_os = "fuchsia"), allow(unused))]
+    #[cfg_attr(not(target_os = "fuchsia"), expect(unused))]
     token: ResourceToken<'a>,
 }
 

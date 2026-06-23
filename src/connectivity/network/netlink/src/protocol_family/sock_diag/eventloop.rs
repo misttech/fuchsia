@@ -34,8 +34,6 @@ use crate::protocol_family::ProtocolFamily;
 
 /// The argument(s) for a [`Request`].
 #[derive(Clone, Debug, PartialEq)]
-// TODO(https://fxbug.dev/323590076): Remove allowance once used.
-#[allow(dead_code)]
 pub(crate) enum RequestArgs {
     Get(Vec<fnet_sockets_ext::IpSocketMatcher>, fnet_sockets::Extensions, bool),
     Destroy(Vec<fnet_sockets_ext::IpSocketMatcher>),
@@ -44,7 +42,7 @@ pub(crate) enum RequestArgs {
 /// An error encountered while handling a [`Request`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 // TODO(https://fxbug.dev/323590076): Remove allowance once used.
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub(crate) enum RequestError {
     NotFound,
     InvalidRequest,
@@ -53,8 +51,6 @@ pub(crate) enum RequestError {
 }
 
 impl RequestError {
-    // TODO(https://fxbug.dev/323590076): Remove allowance once used.
-    #[allow(dead_code)]
     pub(crate) fn into_errno(self) -> Errno {
         match self {
             RequestError::NotFound => Errno::ENOENT,
@@ -90,7 +86,7 @@ pub(crate) struct SockDiagEventLoop<
     pub(crate) request_stream: mpsc::Receiver<Request<S>>,
     // TODO(https://fxbug.dev/470079735): Support multicast socket destruction
     // notifications.
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub(crate) async_work_receiver: mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkSockDiag>>,
 }
 

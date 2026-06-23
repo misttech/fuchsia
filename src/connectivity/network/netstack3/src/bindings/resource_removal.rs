@@ -141,9 +141,9 @@ fn item_stream(item: ResourceItem) -> impl Stream<Item = StreamResult> {
 }
 
 #[derive(Debug, Clone)]
-// Allow unused because this structure is used as a container for printing
+// Expect unused because this structure is used as a container for printing
 // debug information.
-#[allow(unused)]
+#[expect(unused)]
 struct ResourceItemInfo {
     typename: &'static str,
     debug_refs: DynDebugReferences,

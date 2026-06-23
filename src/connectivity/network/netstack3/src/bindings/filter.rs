@@ -186,7 +186,7 @@ impl UpdateDispatcherInner {
             struct Counts {
                 // This field is seen as dead code by rustc because the `Default` and `Debug` impls
                 // are ignored during dead code analysis.
-                #[allow(dead_code)]
+                #[expect(dead_code)]
                 namespaces: usize,
                 routines: usize,
                 jump_actions: usize,

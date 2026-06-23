@@ -2908,7 +2908,6 @@ mod test {
         validate_message(&discover_options, &client_config, &reply)
     }
 
-    #[allow(clippy::unused_unit)]
     #[test_case(false ; "with no garbage traffic on link")]
     #[test_case(true ; "ignoring garbage replies to discover")]
     fn do_selecting_good_offer(reply_to_discover_with_garbage: bool) {

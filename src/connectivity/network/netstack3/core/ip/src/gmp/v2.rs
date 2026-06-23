@@ -271,7 +271,7 @@ impl<I: Ip> From<NotAMemberErr<I>> for QueryError<I> {
 pub(super) trait VerifiedReportGroupRecord<A: IpAddress>: GmpReportGroupRecord<A> {
     // NB: We don't have any use for this method. It exists as a statement that
     // the type implementing it holds a reference to GmpEnabledGroup.
-    #[allow(unused)]
+    #[expect(unused)]
     fn gmp_enabled_group_addr(&self) -> &GmpEnabledGroup<A>;
 }
 

@@ -143,7 +143,6 @@ pub(crate) enum AddressRequestArgs {
     /// RTM_NEWADDR
     New(NewAddressArgs),
     /// RTM_DELADDR
-    #[allow(unused)]
     Del(DelAddressArgs),
 }
 

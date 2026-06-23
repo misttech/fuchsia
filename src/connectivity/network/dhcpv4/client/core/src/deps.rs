@@ -120,12 +120,7 @@ pub trait Instant:
 
 impl Instant for fasync::MonotonicInstant {
     fn add(&self, duration: std::time::Duration) -> Self {
-        // On host builds, fasync::MonotonicDuration is simply an alias for
-        // std::time::Duration, making the `duration.into()` appear useless.
-        #[allow(clippy::useless_conversion)]
-        {
-            *self + duration.into()
-        }
+        *self + duration.into()
     }
 
     fn average(&self, other: Self) -> Self {
