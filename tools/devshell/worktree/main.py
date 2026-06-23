@@ -70,7 +70,11 @@ def main() -> None:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser_add.add_argument("name", help="Name of the worktree to create")
+    parser_add.add_argument(
+        "name",
+        nargs="?",
+        help="Name of the worktree to create (optional, auto-generated if omitted)",
+    )
     parser_add.add_argument(
         "--set",
         action="append",

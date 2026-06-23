@@ -4,10 +4,92 @@
 
 import os
 import random
+import secrets
 from pathlib import Path
 
 from utils import run_jiri
 from worktree import NoFreeWorktreesError, Worktree, WorktreeState
+
+ADJECTIVES = (
+    "amber",
+    "blue",
+    "bold",
+    "calm",
+    "cool",
+    "coral",
+    "crisp",
+    "cyan",
+    "dawn",
+    "dry",
+    "dune",
+    "echo",
+    "fast",
+    "firm",
+    "gray",
+    "green",
+    "hazy",
+    "jade",
+    "keen",
+    "lime",
+    "mint",
+    "mist",
+    "navy",
+    "neat",
+    "pale",
+    "pink",
+    "pure",
+    "quiet",
+    "red",
+    "rich",
+    "sage",
+    "slate",
+    "solar",
+    "stone",
+    "swift",
+    "teal",
+    "vivid",
+    "warm",
+    "wild",
+    "yellow",
+)
+
+NOUNS = (
+    "badger",
+    "basalt",
+    "canyon",
+    "cavern",
+    "crag",
+    "crest",
+    "falcon",
+    "field",
+    "forest",
+    "glacier",
+    "groove",
+    "harbor",
+    "haven",
+    "heron",
+    "island",
+    "lagoon",
+    "meadow",
+    "mesa",
+    "moss",
+    "orchard",
+    "osprey",
+    "otter",
+    "pebble",
+    "pine",
+    "prairie",
+    "quarry",
+    "rapids",
+    "ravine",
+    "reef",
+    "ridge",
+    "river",
+    "summit",
+    "thicket",
+    "tundra",
+    "valley",
+)
 
 
 class WorktreeRegistry:
@@ -61,7 +143,20 @@ class WorktreeRegistry:
             raise NoFreeWorktreesError("No free worktrees available")
         return random.choice(free_worktrees)
 
-    def add_worktree(self, name: str) -> Worktree:
+    def _generate_random_pool_name(self) -> str:
+        existing = {wt.name for wt in self.get_worktrees()}
+        for _ in range(100):
+            candidate = f"{random.choice(ADJECTIVES)}-{random.choice(NOUNS)}"
+            if (
+                candidate not in existing
+                and not (self.worktrees_dir / candidate).exists()
+            ):
+                return candidate
+        return f"slot-{secrets.token_hex(3)}"
+
+    def add_worktree(self, name: str | None = None) -> Worktree:
+        if name is None:
+            name = self._generate_random_pool_name()
         wt_path = self.worktrees_dir / name
         if wt_path.exists():
             raise FileExistsError(f"Worktree path '{wt_path}' already exists")

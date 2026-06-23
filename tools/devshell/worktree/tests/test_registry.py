@@ -17,7 +17,7 @@ import argparse
 from subcommands import add as add_cmd
 from subcommands import lease as lease_cmd
 from worktree import NoFreeWorktreesError, WorktreeState
-from worktree_registry import WorktreeRegistry
+from worktree_registry import ADJECTIVES, NOUNS, WorktreeRegistry
 
 
 class TestWorktreeRegistry(unittest.TestCase):
@@ -79,6 +79,13 @@ class TestWorktreeRegistry(unittest.TestCase):
         mock_run_git.assert_called_once_with(
             wt.path, ["checkout", "--detach"], quiet=True, check=True
         )
+
+    def test_generate_random_pool_name(self) -> None:
+        name = self.registry._generate_random_pool_name()
+        self.assertIn("-", name)
+        adj, noun = name.split("-", 1)
+        self.assertIn(adj, ADJECTIVES)
+        self.assertIn(noun, NOUNS)
 
 
 class TestLeaseSubcommand(unittest.TestCase):
