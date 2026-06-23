@@ -7476,7 +7476,7 @@ VmCowReclaimResult VmCowPages::ReclaimPageForCompression(vm_page_t* page, uint64
         // but avoids needing to reason about whether reclamation could be manually attempted on
         // pages that might otherwise not end up in the reclaimable queues.
         SetNotPinnedLocked(page, offset);
-        // TODO(https://fxbug.dev/42138396): Marking this page as failing reclamation will prevent
+        // TODO(https://fxbug.dev/525876000): Marking this page as failing reclamation will prevent
         // it from ever being tried again. As compression might succeed if the contents changes, we
         // should consider moving the page out of this queue if it is modified.
         pmm_page_queues()->CompressFailed(page);
