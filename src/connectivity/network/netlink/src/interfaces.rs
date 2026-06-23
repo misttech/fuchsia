@@ -11,7 +11,9 @@ use std::fmt::Debug;
 use std::net::IpAddr;
 use std::num::{NonZeroU32, NonZeroU64};
 
+use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext::IntoExt as _;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
 use fidl_fuchsia_net_interfaces_admin::{
     self as fnet_interfaces_admin, AddressRemovalReason, InterfaceRemovedReason,
 };
@@ -19,10 +21,7 @@ use fidl_fuchsia_net_interfaces_ext::admin::{
     AddressStateProviderError, TerminalError, wait_for_address_added_event,
 };
 use fidl_fuchsia_net_interfaces_ext::{self as fnet_interfaces_ext, Update as _};
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_root as fnet_root,
-};
+use fidl_fuchsia_net_root as fnet_root;
 
 use derivative::Derivative;
 use either::Either;

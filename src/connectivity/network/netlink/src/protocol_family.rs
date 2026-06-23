@@ -1780,6 +1780,8 @@ mod test {
     use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 
     use assert_matches::assert_matches;
+    use fidl_fuchsia_net as fnet;
+    use fuchsia_async as fasync;
     use futures::SinkExt;
     use futures::channel::mpsc;
     use futures::future::FutureExt as _;
@@ -1797,7 +1799,6 @@ mod test {
     };
     use net_types::{SpecifiedAddr, Witness as _};
     use netlink_packet_core::{NLM_F_ACK, NLM_F_CREATE, NLM_F_DUMP, NLM_F_REPLACE, NetlinkHeader};
-    use {fidl_fuchsia_net as fnet, fuchsia_async as fasync};
 
     use netlink_packet_route::address::{AddressAttribute, AddressFlags, AddressMessage};
     use netlink_packet_route::link::{InfoKind, LinkAttribute, LinkFlags, LinkInfo, LinkMessage};

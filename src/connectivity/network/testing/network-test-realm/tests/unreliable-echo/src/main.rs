@@ -3,9 +3,10 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
+use fidl_fuchsia_net_test_realm as fntr;
+use fuchsia_async as fasync;
 use futures::{StreamExt as _, TryStreamExt as _};
 use log::info;
-use {fidl_fuchsia_net_test_realm as fntr, fuchsia_async as fasync};
 
 #[fuchsia::main]
 async fn main() {

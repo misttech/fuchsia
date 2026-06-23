@@ -9,13 +9,18 @@ use bstr::BString;
 use diagnostics_assertions::AnyUintProperty;
 use fidl::endpoints;
 use fidl::endpoints::Responder as _;
+use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_dhcp::{
     self as fnet_dhcp, ClientEvent, ClientExitReason, ClientMarker, ClientProviderMarker,
     NewClientParams,
 };
 use fidl_fuchsia_net_dhcp_ext::{self as fnet_dhcp_ext, ClientProviderExt as _};
 use fidl_fuchsia_net_ext::{self as fnet_ext, IntoExt as _};
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_netemul_network as fnetemul_network;
 use fnet_dhcp_ext::ClientExt;
+use fuchsia_async as fasync;
 use futures::future::ready;
 use futures::{FutureExt, StreamExt, TryStreamExt, join};
 use net_declare::std_ip_v4;
@@ -28,11 +33,6 @@ use netstack_testing_common::{annotate, dhcpv4 as dhcpv4_helper};
 use netstack_testing_macros::netstack_test;
 use std::pin::pin;
 use test_case::test_case;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_netemul_network as fnetemul_network, fuchsia_async as fasync,
-};
 
 const MAC: net_types::ethernet::Mac = net_declare::net_mac!("00:00:00:00:00:01");
 const SERVER_MAC: net_types::ethernet::Mac = net_declare::net_mac!("02:02:02:02:02:02");
