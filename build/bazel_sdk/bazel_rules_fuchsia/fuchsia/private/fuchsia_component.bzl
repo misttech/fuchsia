@@ -47,6 +47,7 @@ def fuchsia_component(
             file. If a cml file is provided it will be compiled into a cm file.
             If component_name is provided the cm file will inherit that name,
             otherwise it will keep the same basename.
+            TODO(http://b/525461025): Implement the `component_name` behavior for the `.cm` file.
 
             If you need to have more control over the compilation of the .cm file
             we suggest you create a fuchsia_component_manifest target.

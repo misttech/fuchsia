@@ -79,12 +79,19 @@ def _check_component_name_test_impl(ctx):
         ctx.attr.component_name,
     )
 
+    asserts.equals(
+        env,
+        component_info.manifest.basename,
+        ctx.attr.cm_file_name,
+    )
+
     return analysistest.end(env)
 
 _check_component_name_test = analysistest.make(
     _check_component_name_test_impl,
     attrs = {
         "component_name": attr.string(),
+        "cm_file_name": attr.string(),
     },
 )
 
@@ -172,6 +179,7 @@ def _test_setting_component_names():
         name = "check_component_name_taken_from_compiled_manifest_without_component_name_attribute",
         target_under_test = ":package_to_wrap_component_foo",
         component_name = "foo",
+        cm_file_name = "foo.cm",
     )
 
     # 2) Check that the component name is taken from the `component_name`
@@ -198,6 +206,7 @@ def _test_setting_component_names():
         name = "check_component_name_taken_from_compiled_manifest_with_component_name_attribute",
         target_under_test = ":package_to_wrap_component_A",
         component_name = "component_A",
+        cm_file_name = "component_A.cm",
     )
 
     # 3) Check that the component name is taken from the `component_name`
@@ -219,6 +228,9 @@ def _test_setting_component_names():
         name = "check_component_name_taken_from_component_name_attribute_not_from_compiled_manifest_without_component_name_attribute",
         target_under_test = ":package_to_wrap_component_R",
         component_name = "component_R",
+        # TODO(http://b/525461025): Fix the implementation such that this is
+        # "component_R" per the `fuchsia_component()` docstring.
+        cm_file_name = "foo.cm",
     )
 
     # 4) Check that the component name is taken from the `component_name`
@@ -240,6 +252,9 @@ def _test_setting_component_names():
         name = "check_component_name_taken_from_component_name_attribute_not_from_compiled_manifest_with_component_name_attribute",
         target_under_test = ":package_to_wrap_component_S",
         component_name = "component_S",
+        # TODO(http://b/525461025): Fix the implementation such that this is
+        # "component_S" per the `fuchsia_component()` docstring.
+        cm_file_name = "component_A.cm",
     )
 
     # 5) Check that the component name is taken from the basename of the
@@ -266,6 +281,7 @@ def _test_setting_component_names():
         name = "check_component_name_taken_from_uncompiled_cml_manifest_file_when_component_name_attribute_not_specified",
         target_under_test = ":package_to_wrap_component_B",
         component_name = "component_B",
+        cm_file_name = "component_B.cm",
     )
 
     # 6) Check that the component name is taken from the `component_name`
@@ -292,6 +308,9 @@ def _test_setting_component_names():
         name = "check_component_name_taken_from_component_name_attribute_not_from_uncompiled_cml_manifest_file",
         target_under_test = ":package_to_wrap_component_D",
         component_name = "component_D",
+        # TODO(http://b/525461025): Fix the implementation such that this is
+        # "component_D" per the `fuchsia_component()` docstring.
+        cm_file_name = "component_C.cm",
     )
 
 # Entry point from the BUILD file; macro for running each test case's macro and
