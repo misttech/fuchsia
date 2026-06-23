@@ -405,6 +405,12 @@ group("non_hermetic_deps") {
   # Exporting @rules_fuchsia for OOT usage creates a directory with
   # unpredictable content.
   visibility += [ "//:rules_fuchsia.export" ]
+
+  # distribution_manifest_copy() uses.
+  visibility += [
+    "//sdk/lib/ld/test/modules/*",
+    "//zircon/kernel/lib/rust/*",
+  ]
 }
 
 # Build targets that use the legacy zx_library and zx_host_tool templates

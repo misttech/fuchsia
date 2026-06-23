@@ -47,7 +47,9 @@ def main() -> None:
     for dst, src in files.items():
         # Create any intermediate subdirectories needed.
         dst.parent.mkdir(parents=True, exist_ok=True)
-        dst.hardlink_to(src)
+        # Use an actual copy rather than a hard link to avoid strange anomalies
+        # sometimes observed on bots when using hard links.
+        shutil.copy2(src, dst)
 
     inputs = " ".join([str(f) for f in files.values()] + [str(args.manifest)])
     args.depfile.write_text(f"{args.output}: {inputs}\n")

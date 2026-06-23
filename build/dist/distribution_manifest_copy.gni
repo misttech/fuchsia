@@ -59,5 +59,13 @@ template("distribution_manifest_copy") {
       "--manifest=" + rebase_path(sources[0], root_build_dir),
       "--depfile=" + rebase_path(depfile, root_build_dir),
     ]
+
+    # This action is in fact hermetic enough.  Its inputs are all accounted for
+    # in the depfile.  It does have individual output _files_ that are not
+    # known statically, but they are all inside the the output directory that
+    # itself is the sole output of the action in aggregate.  **NOTE:** This
+    # requires each and every use of this template to be included in the
+    # //build:non_hermetic_deps visibility list.
+    hermetic_action_ignored_prefixes = outputs
   }
 }
