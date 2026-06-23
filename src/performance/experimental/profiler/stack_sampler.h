@@ -27,7 +27,7 @@ class StackSampler : public Sampler {
   void CollectSamples(async_dispatcher_t* dispatcher, async::TaskBase* task, zx_status_t status);
   static void PopulateRestrictedStateAddrs(const ProcessTarget& target);
   static zx::result<> RefreshMappings(const ProcessTarget& target);
-  static void GetRestrictedSP(const zx_restricted_state_t& restricted_state, uint64_t& sp);
+  static uint64_t GetRestrictedSP(const zx_restricted_state_t& restricted_state);
   async::TaskMethod<profiler::StackSampler, &profiler::StackSampler::CollectSamples> sample_task_{
       this};
 };

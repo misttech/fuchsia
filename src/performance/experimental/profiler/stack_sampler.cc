@@ -28,6 +28,20 @@ namespace profiler {
 
 constexpr size_t kStackCaptureSize = 4096ul * 4;  // 16 kib
 
+#if defined(__aarch64__)
+// CPSR/SPSR M[4]: set when a thread is executing in AArch32 mode.
+constexpr uint64_t kCpsrArch32Mask = uint64_t{1} << 4;
+#endif
+
+template <typename T>
+bool IsAarch32(const T& state) {
+#ifdef __aarch64__
+  return state.cpsr & kCpsrArch32Mask;
+#else
+  return false;
+#endif
+}
+
 zx::result<> StackSampler::Start(size_t buffer_size_mb) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
 
@@ -141,13 +155,17 @@ zx::result<> StackSampler::RefreshMappings(const ProcessTarget& target) {
   return zx::ok();
 }
 
-void StackSampler::GetRestrictedSP(const zx_restricted_state_t& restricted_state, uint64_t& sp) {
+uint64_t StackSampler::GetRestrictedSP(const zx_restricted_state_t& restricted_state) {
 #if defined(__aarch64__)
-  sp = restricted_state.sp;
+  // On targets running in aarch32 mode, the stack pointer is stored in x13 rather than sp.
+  if (IsAarch32(restricted_state)) {
+    return restricted_state.x[13];
+  }
+  return restricted_state.sp;
 #elif defined(__x86_64__)
-  sp = restricted_state.rsp;
+  return restricted_state.rsp;
 #elif defined(__riscv)
-  sp = restricted_state.sp;
+  return restricted_state.sp;
 #else
 #error "unsupported architecture"
 #endif
@@ -161,8 +179,8 @@ void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBas
     return;
   }
 
-  zx::result res = targets_.ForEachProcess([this](std::span<const zx_koid_t>,
-                                                  const ProcessTarget& target) -> zx::result<> {
+  (void)targets_.ForEachProcess([this](std::span<const zx_koid_t>,
+                                       const ProcessTarget& target) -> zx::result<> {
     TRACE_DURATION("cpu_profiler", "StackSampler::CollectSamples/ForEachProcess");
 
     for (const auto& [tid, thread] : target.threads) {
@@ -245,8 +263,18 @@ void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBas
       unwinder::Registers registers = unwinder::FromFuchsiaRegisters(regs);
 
       uint64_t sp = 0;
-      if (registers.GetSP(sp).has_err()) {
-        continue;
+#ifdef __aarch64__
+      // For a thread executing in AArch32 mode (CPSR M[4] set), the stack
+      // pointer is R13, reported in r[13]; the sp field holds SP_EL0, which
+      // AArch32 execution never updates and is therefore stale.
+      if (IsAarch32(regs)) {
+        sp = regs.r[13];
+      } else
+#endif
+      {
+        if (registers.GetSP(sp).has_err()) {
+          continue;
+        }
       }
 
       BufferedStackMemory stack_memory(target.handle.borrow(), {}, target.cached_mappings);
@@ -261,7 +289,7 @@ void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBas
           // Read from local buffer
           if (!stack_memory.ReadBytes(restricted_base, sizeof(restricted_state), &restricted_state)
                    .has_err()) {
-            GetRestrictedSP(restricted_state, sp);
+            sp = GetRestrictedSP(restricted_state);
             stack_memory.CaptureStack(sp, kStackCaptureSize);
           } else {
             thread.restricted_state_addr.reset();
@@ -311,11 +339,6 @@ void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBas
   zx::time end_time = zx::clock::get_monotonic();
   zx::duration total_dur = end_time - zx::time(start_time.get());
   FX_LOGS(DEBUG) << "CollectSamples pass finished in " << total_dur.to_msecs() << " ms";
-
-  if (res.is_error()) {
-    FX_PLOGS(ERROR, res.status_value()) << "Stack Sampling Failed";
-    return;
-  }
 
   zx::duration period = zx::msec(10);
   if (!sample_specs_.empty() && sample_specs_[0].period().has_value()) {
