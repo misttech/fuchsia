@@ -65,4 +65,57 @@ TEST(RiscvFeatureTests, SetMany) {
   EXPECT_TRUE(features[arch::RiscvFeature::kZicboz]);
 }
 
+TEST(RiscvFeatureTests, ParseSizes) {
+  {
+    arch::RiscvFeatures features;
+    features.SetMany("rv64imafdc_zicbom64_zicboz128");
+    EXPECT_TRUE(features[arch::RiscvFeature::kZicbom]);
+    EXPECT_EQ(features.cbom_size(), 64);
+    EXPECT_TRUE(features[arch::RiscvFeature::kZicboz]);
+    EXPECT_EQ(features.cboz_size(), 128);
+  }
+
+  {
+    arch::RiscvFeatures features;
+    features.SetMany("rv64imafdc_zicbom_zicboz");
+    EXPECT_TRUE(features[arch::RiscvFeature::kZicbom]);
+    EXPECT_EQ(features.cbom_size(), 0);
+    EXPECT_TRUE(features[arch::RiscvFeature::kZicboz]);
+    EXPECT_EQ(features.cboz_size(), 0);
+  }
+
+  {
+    arch::RiscvFeatures features;
+    features.SetMany("rv64imafdc_zicbom_zicbom32");
+    EXPECT_TRUE(features[arch::RiscvFeature::kZicbom]);
+    EXPECT_EQ(features.cbom_size(), 32);
+  }
+}
+
+TEST(RiscvFeatureTests, SizeAggregation) {
+  arch::RiscvFeatures a, b, c;
+
+  a.SetMany("rv64imafdc_zicbom64_zicboz128");
+  b.SetMany("rv64imafdc_zicbom32_zicboz256");
+  c.SetMany("rv64imafdc_zicbom_zicboz");
+
+  {
+    arch::RiscvFeatures res = a;
+    res &= b;
+    EXPECT_TRUE(res[arch::RiscvFeature::kZicbom]);
+    EXPECT_EQ(res.cbom_size(), 32);
+    EXPECT_TRUE(res[arch::RiscvFeature::kZicboz]);
+    EXPECT_EQ(res.cboz_size(), 128);
+  }
+
+  {
+    arch::RiscvFeatures res = a;
+    res &= c;
+    EXPECT_TRUE(res[arch::RiscvFeature::kZicbom]);
+    EXPECT_EQ(res.cbom_size(), 0);
+    EXPECT_TRUE(res[arch::RiscvFeature::kZicboz]);
+    EXPECT_EQ(res.cboz_size(), 0);
+  }
+}
+
 }  // namespace

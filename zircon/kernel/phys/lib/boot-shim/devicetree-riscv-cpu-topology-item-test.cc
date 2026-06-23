@@ -1102,7 +1102,7 @@ TEST_F(RiscvDevicetreeCpuTopologyItemTest, HifiveSifiveUnmatched) {
 
 TEST_F(RiscvDevicetreeCpuTopologyItemTest, BananaPiF3) {
   constexpr std::string_view kHart0IsaString =
-      "rv64imafdcv_zicsr_zifencei_zicbom_zicboz_zicbop_zihintpause_zicond_zba_zbb_zbc_zbs_svpbmt_sstc_sscofpmf";  // strtab index 1
+      "rv64imafdcv_zicsr_zifencei_zicbom_zicboz_zicbop_zihintpause_zicond_zba_zbb_zbc_zbs_svpbmt_sstc_sscofpmf_zicbom64";  // strtab index 1
   constexpr std::array
       kExpectedTopology =
           {
@@ -1323,7 +1323,7 @@ TEST_F(RiscvDevicetreeCpuTopologyItemTest, BananaPiF3) {
                       },
                   .parent_index = 5,
               },
-          };
+  };
 
   std::array<std::byte, 1024> image_buffer;
   zbitl::Image<cpp20::span<std::byte>> image(image_buffer);

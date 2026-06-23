@@ -7,6 +7,8 @@
 #include <lib/boot-shim/devicetree.h>
 #include <lib/fit/defer.h>
 
+#include <cstdio>
+#include <cstring>
 #include <functional>
 #include <span>
 
@@ -50,11 +52,47 @@ void RiscvDevicetreeCpuTopologyItemBase::OnDone() {
   size_t isa_strtab_size = 1;  // Account for the initial NUL entry.
   for (const CpuEntry& cpu : cpu_entries()) {
     devicetree::PropertyDecoder decoder(cpu.properties);
-    auto reg = decoder.FindAndDecodeProperty<&devicetree::PropertyValue::AsUint32>("reg");
+    std::optional<uint32_t> reg =
+        decoder.FindAndDecodeProperty<&devicetree::PropertyValue::AsUint32>("reg");
     ZX_DEBUG_ASSERT(reg);  // Validated in the arch info checker.
     auto isa_string =
         decoder.FindAndDecodeProperty<&devicetree::PropertyValue::AsString>("riscv,isa");
     ZX_DEBUG_ASSERT(isa_string);  // Validated in the arch info checker.
+
+    std::optional<uint32_t> cbom =
+        decoder.FindAndDecodeProperty<&devicetree::PropertyValue::AsUint32>(
+            "riscv,cbom-block-size");
+    std::optional<uint32_t> cboz =
+        decoder.FindAndDecodeProperty<&devicetree::PropertyValue::AsUint32>(
+            "riscv,cboz-block-size");
+
+    std::string_view formatted_isa = *isa_string;
+    if (cbom || cboz) {
+      size_t max_len = isa_string->size() + 25;
+      char* buf = Allocate<char>(max_len, ac).data();
+      if (!ac.check()) {
+        return;
+      }
+      char* ptr = buf;
+      size_t len = isa_string->size();
+      memcpy(ptr, isa_string->data(), len);
+      ptr += len;
+
+      size_t remaining = max_len - len;
+      int written = 0;
+      if (cbom) {
+        written = snprintf(ptr, remaining, "_zicbom%" PRIu32, *cbom);
+        ptr += written;
+        remaining -= static_cast<size_t>(written);
+      }
+      if (cboz) {
+        written = snprintf(ptr, remaining, "_zicboz%" PRIu32, *cboz);
+        ptr += written;
+        remaining -= static_cast<size_t>(written);
+      }
+      formatted_isa = std::string_view(buf, static_cast<size_t>(ptr - buf));
+    }
+
     auto map_hart_to_index = [this, &ac](uint32_t id, size_t index) {
       auto* hashable = Allocate<IsaStrtabIndex>(ac);
       if (!ac.check()) {
@@ -66,7 +104,7 @@ void RiscvDevicetreeCpuTopologyItemBase::OnDone() {
       return true;
     };
 
-    if (auto it = isa_strings.find(*isa_string); it != isa_strings.end()) {
+    if (auto it = isa_strings.find(formatted_isa); it != isa_strings.end()) {
       if (!map_hart_to_index(*reg, it->strtab_index)) {
         OnError("Failed to allocate hart ID to ISA string hash map entry");
         return;
@@ -77,11 +115,11 @@ void RiscvDevicetreeCpuTopologyItemBase::OnDone() {
     if (!ac.check()) {
       return;
     }
-    hashable->value = *isa_string;
+    hashable->value = formatted_isa;
     hashable->strtab_index = isa_strtab_size;
     isa_strings.insert(hashable);
     map_hart_to_index(*reg, isa_strtab_size);
-    isa_strtab_size += isa_string->size() + 1;  // +1 for NUL.
+    isa_strtab_size += formatted_isa.size() + 1;  // +1 for NUL.
   }
 
   // Now that we know the size and would-be contents of the table, we can build

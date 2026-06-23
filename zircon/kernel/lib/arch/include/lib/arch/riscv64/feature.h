@@ -7,6 +7,8 @@
 #ifndef ZIRCON_KERNEL_LIB_ARCH_INCLUDE_LIB_ARCH_RISCV64_FEATURE_H_
 #define ZIRCON_KERNEL_LIB_ARCH_INCLUDE_LIB_ARCH_RISCV64_FEATURE_H_
 
+#include <zircon/assert.h>
+
 #include <bitset>
 #include <string_view>
 
@@ -53,6 +55,8 @@ class RiscvFeatures {
 
   RiscvFeatures& operator&=(const RiscvFeatures& other) {
     bits_ &= other.bits_;
+    cbom_size_ = (cbom_size_ < other.cbom_size_) ? cbom_size_ : other.cbom_size_;
+    cboz_size_ = (cboz_size_ < other.cboz_size_) ? cboz_size_ : other.cboz_size_;
     return *this;
   }
 
@@ -65,8 +69,25 @@ class RiscvFeatures {
   // Sets all features referenced in an ISA string.
   RiscvFeatures& SetMany(std::string_view isa_string);
 
+  uint16_t cbom_size() const { return cbom_size_; }
+  uint16_t cboz_size() const { return cboz_size_; }
+
+  RiscvFeatures& SetCbomSize(uint16_t size) {
+    ZX_DEBUG_ASSERT((*this)[RiscvFeature::kZicbom]);
+    cbom_size_ = size;
+    return *this;
+  }
+
+  RiscvFeatures& SetCbozSize(uint16_t size) {
+    ZX_DEBUG_ASSERT((*this)[RiscvFeature::kZicboz]);
+    cboz_size_ = size;
+    return *this;
+  }
+
  private:
   std::bitset<static_cast<size_t>(RiscvFeature::kMax)> bits_;
+  uint16_t cbom_size_ = 0;
+  uint16_t cboz_size_ = 0;
 };
 
 }  // namespace arch

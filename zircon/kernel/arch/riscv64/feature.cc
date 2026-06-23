@@ -26,6 +26,16 @@ uint64_t riscv_vlenb = 0;
 void riscv64_feature_early_init() {
   gRiscvFeatures = gPhysHandoff->arch_handoff.cpu_features;
 
+  riscv_cbom_size = gPhysHandoff->arch_handoff.cpu_features.cbom_size();
+  if (riscv_cbom_size == 0) {
+    riscv_cbom_size = 64;
+  }
+
+  riscv_cboz_size = gPhysHandoff->arch_handoff.cpu_features.cboz_size();
+  if (riscv_cboz_size == 0) {
+    riscv_cboz_size = 64;
+  }
+
   if (gRiscvFeatures[arch::RiscvFeature::kVector]) {
     // We need vectors to have been enabled in order to read vlenb, but cannot
     // assume that they have been enabled at this point. Here is a good enough
