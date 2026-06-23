@@ -33,6 +33,12 @@ pub fn is_agent_env() -> bool {
     is_invoked_by_agent(&SystemEnvironment)
 }
 
+impl<V> EnvironmentSource for std::collections::HashMap<String, V> {
+    fn has_var(&self, key: &str) -> bool {
+        self.contains_key(key)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

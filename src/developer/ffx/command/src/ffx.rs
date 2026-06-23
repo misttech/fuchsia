@@ -469,7 +469,11 @@ impl Ffx {
         let overrides = self.runtime_config_overrides();
         let mut runtime_args = ffx_config::runtime::populate_runtime(&*self.config, overrides)
             .map_err(anyhow::Error::from)?;
-        if self.direct {
+        let is_agent = agents::is_invoked_by_agent(&env_vars);
+        if self.direct || is_agent {
+            if is_agent && !self.direct {
+                log::info!("ffx is invoked by an agent, enabling direct connection mode");
+            }
             // If "-d" is passed, insert "connectivity.direct=true"
             // Note: "--direct" will take precedence over "-c connectivity.direct=false"
             let mut connectivity = serde_json::Map::new();
@@ -1265,6 +1269,34 @@ mod test {
         let teletechternacon: bool =
             context.get("connectivity.teletechternacon").expect("config get");
         assert!(!teletechternacon);
+    }
+
+    #[test]
+    fn agent_env_updates_runtime_config() {
+        let isolate_dir = tempdir().expect("isolate dir");
+
+        // Defaults to unset
+        let args = ["ffx"].map(String::from);
+        let mut cmd_line =
+            FfxCommandLine::new(Some("ffx"), &args).expect("Command line should parse");
+        cmd_line.global.isolate_dir = Some(isolate_dir.path().to_owned());
+        let context = cmd_line.global.load_context(ExecutableKind::Test).expect("load_context");
+        let direct: Option<bool> = context.get(DIRECT_CONNECTIONS).expect("config get");
+        assert!(direct.is_none());
+
+        // Gets overridden to true when agent env var is set
+        let args = ["ffx"].map(String::from);
+        let mut cmd_line =
+            FfxCommandLine::new(Some("ffx"), &args).expect("Command line should parse");
+        cmd_line.global.isolate_dir = Some(isolate_dir.path().to_owned());
+
+        let env_vars = HashMap::from_iter([("ANTIGRAVITY_AGENT".to_owned(), "1".to_owned())]);
+        let context = cmd_line
+            .global
+            .load_context_with_env(ExecutableKind::Test, env_vars)
+            .expect("load_context");
+        let direct: bool = context.get(DIRECT_CONNECTIONS).expect("config get");
+        assert!(direct);
     }
 
     #[test]

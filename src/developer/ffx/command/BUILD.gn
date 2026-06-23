@@ -88,6 +88,7 @@ if (is_host) {
       "//src/developer/ffx/lib/netext:lib",
       "//src/developer/ffx/lib/timeout:lib",
       "//src/developer/lib/writer:lib",
+      "//src/lib/agents:lib",
       "//src/lib/analytics/rust:lib",
       "//src/lib/fuchsia-async",
       "//third_party/rust_crates:anyhow",
