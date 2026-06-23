@@ -8,6 +8,9 @@ from worktree_pool import WorktreePool
 
 
 def run(args: Any, pool: WorktreePool) -> None:
-    wt = pool.get_worktree_by_name(args.name)
+    wt = pool.find_worktree(args.name)
     wt.release_lease()
-    print(f"Successfully released worktree '{args.name}'")
+    symlink_path = pool.worktrees_dir / args.name
+    if symlink_path.is_symlink():
+        symlink_path.unlink()
+    print(f"Successfully removed worktree '{args.name}'")

@@ -6,13 +6,13 @@
 import argparse
 import sys
 
-from subcommands import lease as lease_cmd
+from subcommands import add as add_cmd
 from subcommands import list as list_cmd
 from subcommands import locate as locate_cmd
 from subcommands import pool_add as pool_add_cmd
 from subcommands import pool_list as pool_list_cmd
 from subcommands import pool_remove as pool_remove_cmd
-from subcommands import release as release_cmd
+from subcommands import remove as remove_cmd
 from worktree_pool import WorktreePool
 
 
@@ -20,6 +20,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         prog="fx worktree",
         description="Manage Fuchsia worktrees for parallel development.",
+        epilog=(
+            "Worktree Pool Lifecycle & Command Comparison:\n"
+            "  Unlike standard git worktrees, 'fx worktree' maintains a pool of reusable checkouts\n"
+            "  with 2 distinct states: free (available) and leased (in active use).\n"
+            "\n"
+            "  • Physical Disk Management (pool add / pool remove):\n"
+            "      pool add       Create a new physical checkout on disk under .jiri_root/worktrees/<name>\n"
+            "                     and register it in the pool as 'free'.\n"
+            "      pool remove    Permanently delete a worktree directory and its build artifacts from disk.\n"
+            "\n"
+            "  • Active Task Allocation (add / remove):\n"
+            "      add            Temporarily allocate a 'free' worktree for active use (e.g. by an AI agent),\n"
+            "                     marking it 'leased' to prevent concurrent modifications by other tasks.\n"
+            "      remove         End active use of a worktree, restore backed-up GN build arguments, and return\n"
+            "                     the checkout to the pool as 'free'."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
@@ -37,7 +53,7 @@ def main() -> None:
     parser_pool_list = pool_subparsers.add_parser(
         "list",
         help="List all physical worktrees in the pool",
-        description="List all physical worktrees in the pool along with lease status and physical paths.",
+        description="List all physical worktrees in the pool along with state and physical paths.",
     )
 
     parser_pool_add = pool_subparsers.add_parser(
@@ -69,27 +85,30 @@ def main() -> None:
     # Subcommand 'list'
     subparsers.add_parser(
         "list",
-        help="List all worktrees in the pool",
-        description="List all worktrees in the pool.",
+        help="List all active worktrees",
+        description="List all active worktrees and their git branches.",
     )
 
-    # Subcommand 'lease'
-    parser_lease = subparsers.add_parser(
-        "lease",
-        help="Temporarily claim a free worktree for an active task",
+    # Subcommand 'add'
+    parser_add = subparsers.add_parser(
+        "add",
+        help="Add an active worktree checkout for development",
     )
-    parser_lease.add_argument("name", nargs="?", help="Name of worktree")
-    parser_lease.add_argument("--json", action="store_true", help="Output JSON")
-    parser_lease.add_argument("--sync", action="store_true", help="Sync")
-    parser_lease.add_argument("--task-id", help="Task metadata")
-    parser_lease.add_argument("--any", action="store_true", help="Lease any")
+    parser_add.add_argument("name", help="Name of worktree / branch")
+    parser_add.add_argument(
+        "--sync", action="store_true", help="Sync after adding"
+    )
+    parser_add.add_argument(
+        "--pool-name", help="Specific pool slot to allocate"
+    )
+    parser_add.add_argument("--json", action="store_true", help="Output JSON")
 
-    # Subcommand 'release'
-    parser_release = subparsers.add_parser(
-        "release",
-        help="Release a leased worktree back to the pool",
+    # Subcommand 'remove'
+    parser_remove = subparsers.add_parser(
+        "remove",
+        help="Remove an active worktree and return it to the pool",
     )
-    parser_release.add_argument("name", help="Name of worktree")
+    parser_remove.add_argument("name", help="Name of worktree to remove")
 
     args = parser.parse_args()
     pool = WorktreePool()
@@ -106,10 +125,10 @@ def main() -> None:
             locate_cmd.run(args, pool)
         elif args.subcommand == "list":
             list_cmd.run(args, pool)
-        elif args.subcommand == "lease":
-            lease_cmd.run(args, pool)
-        elif args.subcommand == "release":
-            release_cmd.run(args, pool)
+        elif args.subcommand == "add":
+            add_cmd.run(args, pool)
+        elif args.subcommand == "remove":
+            remove_cmd.run(args, pool)
         else:
             print(f"Unknown subcommand: {args.subcommand}", file=sys.stderr)
             sys.exit(1)

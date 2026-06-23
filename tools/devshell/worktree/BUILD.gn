@@ -11,13 +11,13 @@ if (is_host) {
     source_root = "subcommands"
     sources = [
       "__init__.py",
-      "lease.py",
+      "add.py",
       "list.py",
       "locate.py",
       "pool_add.py",
       "pool_list.py",
       "pool_remove.py",
-      "release.py",
+      "remove.py",
     ]
   }
 

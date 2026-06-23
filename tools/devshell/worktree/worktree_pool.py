@@ -133,6 +133,16 @@ class WorktreePool:
                 return wt
         raise KeyError(f"Worktree '{name}' not found")
 
+    def find_worktree(self, identifier: str) -> Worktree:
+        for wt in self.get_worktrees():
+            if wt.name == identifier:
+                return wt
+            if wt.get_state() == WorktreeState.LEASED:
+                lease = wt.get_lease_info()
+                if lease and lease.task_id == identifier:
+                    return wt
+        raise KeyError(f"Worktree '{identifier}' not found")
+
     def get_any_free_worktree(self) -> Worktree:
         free_worktrees = [
             wt

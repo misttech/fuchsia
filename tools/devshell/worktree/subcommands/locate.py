@@ -8,5 +8,5 @@ from worktree_pool import WorktreePool
 
 
 def run(args: Any, pool: WorktreePool) -> None:
-    wt = pool.get_worktree_by_name(args.name)
+    wt = pool.find_worktree(args.name)
     print(wt.path)
