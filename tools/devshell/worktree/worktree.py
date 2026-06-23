@@ -5,6 +5,7 @@
 import json
 import os
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -195,6 +196,14 @@ class Worktree:
 
         for bd in self.build_dirs:
             bd.restore_args()
+
+        try:
+            run_git(self.path, ["checkout", "--detach"], quiet=True, check=True)
+        except Exception as e:
+            print(
+                f"Warning: failed to detach branch in worktree '{self.name}': {e}",
+                file=sys.stderr,
+            )
 
         try:
             if self.lease_file.exists():

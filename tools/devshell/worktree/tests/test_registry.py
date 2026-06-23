@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 worktree_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, worktree_dir)
@@ -64,6 +65,19 @@ class TestWorktreeRegistry(unittest.TestCase):
 
         wt = self.registry.get_any_free_worktree()
         self.assertEqual(wt.name, "wt1")
+
+    @patch("worktree.run_git")
+    def test_release_detaches_head(self, mock_run_git: MagicMock) -> None:
+        wt_path = self.jiri_root / "worktrees" / "wt1"
+        wt_path.mkdir(parents=True, exist_ok=True)
+        with open(self.registry.registry_file, "w") as f:
+            f.write(f"{wt_path}\n")
+        wt = self.registry.get_worktrees()[0]
+        wt.acquire_lease("my-task")
+        wt.release_lease()
+        mock_run_git.assert_called_once_with(
+            wt.path, ["checkout", "--detach"], quiet=True, check=True
+        )
 
 
 class TestLeaseSubcommand(unittest.TestCase):
