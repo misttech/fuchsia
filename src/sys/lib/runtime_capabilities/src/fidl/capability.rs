@@ -40,11 +40,9 @@ impl TryFrom<fsandbox::Capability> for Capability {
             fsandbox::Capability::Handle(handle) => {
                 Ok(Capability::Handle(crate::Handle::new(handle)))
             }
-            fsandbox::Capability::Data(data_capability) => {
-                Ok(Capability::Data(Arc::new(<crate::Data as std::convert::TryFrom<
-                    fsandbox::Data,
-                >>::try_from(data_capability)?)))
-            }
+            fsandbox::Capability::Data(data_capability) => Ok(Capability::Data(
+                <crate::Data as std::convert::TryFrom<fsandbox::Data>>::try_from(data_capability)?,
+            )),
             fsandbox::Capability::Dictionary(dict) => {
                 let any = try_from_handle_in_registry(dict.token.as_handle_ref())?;
                 match &any {
@@ -114,7 +112,7 @@ impl Capability {
             Self::DirConnectorRouter(s) => s.try_into_directory_entry(scope, token),
             Self::DataRouter(s) => s.try_into_directory_entry(scope, token),
             Self::Dictionary(s) => s.try_into_directory_entry(scope, token),
-            Self::Data(s) => s.try_into_directory_entry(scope, token),
+            Self::Data(s) => Arc::new(s).try_into_directory_entry(scope, token),
             Self::Handle(s) => s.try_into_directory_entry(scope, token),
             Self::Instance(s) => s.try_into_directory_entry(scope, token),
         }

@@ -218,8 +218,7 @@ impl ComponentEnvironment {
 
     /// Sets the stop timeout (in milliseconds) for this environment.
     pub fn set_stop_timeout(&self, timeout: i64) {
-        let _ =
-            self.0.insert(STOP_TIMEOUT.clone(), Capability::Data(Arc::new(Data::Int64(timeout))));
+        let _ = self.0.insert(STOP_TIMEOUT.clone(), Capability::Data(Data::Int64(timeout)));
     }
 
     /// Returns the stop timeout (in milliseconds) for this environment.
@@ -227,7 +226,7 @@ impl ComponentEnvironment {
         let Some(Capability::Data(data_cap)) = self.0.get(&*STOP_TIMEOUT) else {
             return None;
         };
-        let Data::Int64(timeout) = &*data_cap else {
+        let Data::Int64(timeout) = &data_cap else {
             return None;
         };
         Some(*timeout)
@@ -235,9 +234,7 @@ impl ComponentEnvironment {
 
     /// Sets the name for this environment.
     pub fn set_name(&self, name: &Name) {
-        let _ = self
-            .0
-            .insert(NAME.clone(), Capability::Data(Arc::new(Data::String(name.as_str().into()))));
+        let _ = self.0.insert(NAME.clone(), Capability::Data(Data::String(name.as_str().into())));
     }
 
     /// Returns the name for this environment.
@@ -245,7 +242,7 @@ impl ComponentEnvironment {
         let Some(Capability::Data(data_cap)) = self.0.get(&*NAME) else {
             return None;
         };
-        let Data::String(name) = &*data_cap else {
+        let Data::String(name) = &data_cap else {
             return None;
         };
         Some(Name::new(name).unwrap())

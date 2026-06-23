@@ -536,7 +536,7 @@ impl ResolvedInstanceState {
                 continue;
             };
             let capability_name = match dictionary.get("event_stream_name") {
-                Some(Capability::Data(data_arc)) => match &*data_arc {
+                Some(Capability::Data(data)) => match &data {
                     Data::String(name) => name.clone(),
                     other_value => {
                         panic!(
@@ -556,7 +556,7 @@ impl ResolvedInstanceState {
             }
             let cap = dictionary.get("event_stream_route_metadata").expect("missing metadata");
             let bytes = match cap {
-                Capability::Data(data_arc) => match &*data_arc {
+                Capability::Data(data) => match &data {
                     Data::Bytes(bytes) => bytes.clone(),
                     _ => panic!("invalid event route metadata"),
                 },

@@ -457,7 +457,7 @@ impl RootInputBuilder {
                 let request_metadata = Dictionary::new();
                 let _ = request_metadata.insert(
                     Name::new("event_stream_name").unwrap(),
-                    Capability::Data(Arc::new(Data::String(self.event_type.to_string().into()))),
+                    Capability::Data(Data::String(self.event_type.to_string().into())),
                 );
                 let esrm = finternal::EventStreamRouteMetadata {
                     scope_moniker: request.event_stream_scope_moniker,
@@ -466,9 +466,9 @@ impl RootInputBuilder {
                 };
                 let _ = request_metadata.insert(
                     Name::new("event_stream_route_metadata").unwrap(),
-                    Capability::Data(Arc::new(Data::Bytes(
+                    Capability::Data(Data::Bytes(
                         fidl::persist(&esrm).expect("failed to persist metadata").into(),
-                    ))),
+                    )),
                 );
                 Ok(Some(request_metadata))
             }

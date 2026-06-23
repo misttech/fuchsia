@@ -504,7 +504,7 @@ pub mod tests {
     #[fuchsia::test]
     async fn get_with_request_ok() {
         let bar = Dictionary::new();
-        let data = Arc::new(Data::String("hello".into()));
+        let data = Data::String("hello".into());
         assert!(bar.insert_capability(&RelativePath::new("data").unwrap(), data.into()).is_none());
         let bar_router = Router::<Dictionary>::new_ok(bar);
 
@@ -533,8 +533,8 @@ pub mod tests {
             .await;
         assert_matches!(
             cap,
-            Ok(Some(Capability::Data(data_arc)))
-                if matches!(&*data_arc, Data::String(str) if &**str == "hello")
+            Ok(Some(Capability::Data(data)))
+                if matches!(&data, Data::String(str) if &**str == "hello")
         );
     }
 
@@ -825,7 +825,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn lazy_get() {
-        let source = Capability::Data(Arc::new(Data::String("hello".into())));
+        let source = Capability::Data(Data::String("hello".into()));
         let dict1 = Dictionary::new();
         let prev = dict1.insert("source".parse().unwrap(), source);
         assert!(prev.is_none(), "dict entry already exists");
@@ -853,7 +853,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn lazy_get_deep() {
-        let source = Capability::Data(Arc::new(Data::String("hello".into())));
+        let source = Capability::Data(Data::String("hello".into()));
         let dict1 = Dictionary::new();
         let prev = dict1.insert("source".parse().unwrap(), source);
         assert!(prev.is_none(), "dict entry already exists");
@@ -890,7 +890,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn get_router_or_not_found() {
-        let source = Router::<Data>::new_ok(Arc::new(Data::String("hello".into())));
+        let source = Router::<Data>::new_ok(Data::String("hello".into()));
         let dict1 = Dictionary::new();
         let prev = dict1.insert("source".parse().unwrap(), source.into());
         assert!(prev.is_none(), "dict entry already exists");

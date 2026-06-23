@@ -591,7 +591,7 @@ mod tests {
         let handle = ch.into_handle();
         let handle_koid = handle.as_handle_ref().koid().unwrap();
         let cap1 = Capability::Handle(Handle::new(handle));
-        let cap2 = Capability::Data(Arc::new(Data::Int64(42)));
+        let cap2 = Capability::Data(Data::Int64(42));
         store
             .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
             .await
@@ -624,7 +624,7 @@ mod tests {
             serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
-        let cap1 = Capability::Data(Arc::new(Data::Int64(42)));
+        let cap1 = Capability::Data(Data::Int64(42));
         store
             .import(1, cap1.clone().into_fsandbox_capability(WeakInstanceToken::new_invalid()))
             .await
@@ -655,7 +655,7 @@ mod tests {
             serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
-        let cap1 = Capability::Data(Arc::new(Data::Int64(42)));
+        let cap1 = Capability::Data(Data::Int64(42));
         store
             .import(1, cap1.clone().into_fsandbox_capability(WeakInstanceToken::new_invalid()))
             .await
@@ -681,7 +681,7 @@ mod tests {
         let handle = ch.into_handle();
         let handle_koid = handle.as_handle_ref().koid().unwrap();
         let cap1 = Capability::Handle(Handle::new(handle));
-        let cap2 = Capability::Data(Arc::new(Data::Int64(42)));
+        let cap2 = Capability::Data(Data::Int64(42));
         store
             .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
             .await
@@ -705,7 +705,7 @@ mod tests {
         );
 
         // Id 2 can be reused.
-        let cap2 = Capability::Data(Arc::new(Data::Int64(84)));
+        let cap2 = Capability::Data(Data::Int64(84));
         store
             .import(2, cap2.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
             .await
@@ -726,7 +726,7 @@ mod tests {
             serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
-        let cap1 = Capability::Data(Arc::new(Data::Int64(42)));
+        let cap1 = Capability::Data(Data::Int64(42));
         store
             .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
             .await

@@ -86,7 +86,7 @@ pub enum Capability {
     Connector(Arc<crate::Connector>),
     DirConnector(Arc<crate::DirConnector>),
     Dictionary(Arc<crate::Dictionary>),
-    Data(Arc<crate::Data>),
+    Data(crate::Data),
     Handle(Arc<crate::Handle>),
     ConnectorRouter(Arc<crate::Router<crate::Connector>>),
     DictionaryRouter(Arc<crate::Router<crate::Dictionary>>),
@@ -152,7 +152,7 @@ impl TryFrom<Capability> for Arc<crate::Dictionary> {
     }
 }
 
-impl TryFrom<Capability> for Arc<crate::Data> {
+impl TryFrom<Capability> for crate::Data {
     type Error = ();
 
     fn try_from(c: Capability) -> Result<Self, Self::Error> {

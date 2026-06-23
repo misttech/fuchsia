@@ -156,7 +156,7 @@ impl EventStreamUseReceiver {
         for (dictionary, filter) in &self.routed_dictionaries {
             let cap = dictionary.get("event_stream_route_metadata").expect("missing metadata");
             let bytes = match cap {
-                Capability::Data(data_arc) => match &*data_arc {
+                Capability::Data(data) => match &data {
                     Data::Bytes(bytes) => bytes.clone(),
                     _ => panic!("invalid event route metadata"),
                 },
@@ -165,7 +165,7 @@ impl EventStreamUseReceiver {
             let route_metadata: finternal::EventStreamRouteMetadata =
                 fidl::unpersist(&bytes).expect("invalid event stream route metadata");
             let capability_name = match dictionary.get("event_stream_name") {
-                Some(Capability::Data(data_arc)) => match &*data_arc {
+                Some(Capability::Data(data)) => match &data {
                     Data::String(name) => name.clone(),
                     other_value => {
                         panic!(

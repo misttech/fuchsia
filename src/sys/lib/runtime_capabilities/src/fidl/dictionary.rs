@@ -240,7 +240,7 @@ mod tests {
             serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
-        let cap = Capability::Data(Arc::new(Data::Int64(42)));
+        let cap = Capability::Data(Data::Int64(42));
         assert_matches!(
             store
                 .import(1, cap.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
@@ -303,7 +303,7 @@ mod tests {
         let (dict_ch, server) = fidl::Channel::create();
         store.dictionary_legacy_export(10, server).await.unwrap().unwrap();
 
-        let cap1 = Capability::Data(Arc::new(Data::Int64(42)));
+        let cap1 = Capability::Data(Data::Int64(42));
         store
             .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
             .await
@@ -370,7 +370,7 @@ mod tests {
         // The entry that was inserted should now be in `entries`.
         let cap = dict.remove(&*CAP_KEY).expect("not in entries after insert");
         let Capability::Data(data) = cap else { panic!("Bad capability type: {:#?}", cap) };
-        assert_eq!(&*data, &Data::Int64(1));
+        assert_eq!(&data, &Data::Int64(1));
     }
 
     #[fuchsia::test]
@@ -442,7 +442,7 @@ mod tests {
         let dict = new_dict(test_type);
 
         // Insert a Data into the Dictionary.
-        assert!(dict.insert(CAP_KEY.clone(), Capability::Data(Arc::new(Data::Int64(1)))).is_none());
+        assert!(dict.insert(CAP_KEY.clone(), Capability::Data(Data::Int64(1))).is_none());
         assert_eq!(adjusted_len(&dict, test_type), 1);
 
         let dict_ref = Capability::Dictionary(dict.clone())
@@ -524,7 +524,7 @@ mod tests {
 
         let dict = new_dict(test_type);
 
-        assert!(dict.insert(CAP_KEY.clone(), Capability::Data(Arc::new(Data::Int64(1)))).is_none());
+        assert!(dict.insert(CAP_KEY.clone(), Capability::Data(Data::Int64(1))).is_none());
         assert_eq!(adjusted_len(&dict, test_type), 1);
         let (ch, _) = fidl::Channel::create();
         let handle = Handle::new(ch.into_handle());
@@ -595,10 +595,7 @@ mod tests {
 
         // Create a Dictionary with a Data inside, and copy the Dictionary.
         let dict = new_dict(test_type);
-        assert!(
-            dict.insert("data1".parse().unwrap(), Capability::Data(Arc::new(Data::Int64(1))))
-                .is_none()
-        );
+        assert!(dict.insert("data1".parse().unwrap(), Capability::Data(Data::Int64(1))).is_none());
         store
             .import(
                 1,
@@ -919,11 +916,8 @@ mod tests {
         let dict = Dictionary::new();
         for i in 0..NUM_ENTRIES {
             assert!(
-                dict.insert(
-                    format!("{}", i).parse().unwrap(),
-                    Capability::Data(Arc::new(Data::Int64(1)))
-                )
-                .is_none()
+                dict.insert(format!("{}", i).parse().unwrap(), Capability::Data(Data::Int64(1)))
+                    .is_none()
             );
         }
 
@@ -982,11 +976,8 @@ mod tests {
         let dict = Dictionary::new();
         for i in 0..NUM_ENTRIES {
             assert!(
-                dict.insert(
-                    format!("{}", i).parse().unwrap(),
-                    Capability::Data(Arc::new(Data::Int64(1)))
-                )
-                .is_none()
+                dict.insert(format!("{}", i).parse().unwrap(), Capability::Data(Data::Int64(1)))
+                    .is_none()
             );
         }
 
@@ -1138,7 +1129,7 @@ mod tests {
     #[fuchsia::test]
     async fn try_into_open_error_not_supported() {
         let dict = Dictionary::new();
-        assert!(dict.insert(CAP_KEY.clone(), Capability::Data(Arc::new(Data::Int64(1)))).is_none());
+        assert!(dict.insert(CAP_KEY.clone(), Capability::Data(Data::Int64(1))).is_none());
         let scope = ExecutionScope::new();
         assert_matches!(
             dict.try_into_directory_entry(scope, WeakInstanceToken::new_invalid()).err(),
@@ -1730,7 +1721,7 @@ mod tests {
                     assert!(
                         dict.insert(
                             format!("_{i}").parse().unwrap(),
-                            Capability::Data(Arc::new(Data::Int64(1)))
+                            Capability::Data(Data::Int64(1))
                         )
                         .is_none()
                     );
