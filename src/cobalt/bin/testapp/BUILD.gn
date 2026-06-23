@@ -61,7 +61,6 @@ cc_test_executable("cobalt_testapp") {
     "//sdk/lib/sys/component/cpp/testing:cpp",
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
-    "//src/cobalt/bin/utils:base64",
     "//src/cobalt/bin/utils:error_utils",
     "//src/lib/fsl",
     "//src/lib/fxl:fxl_cli",
