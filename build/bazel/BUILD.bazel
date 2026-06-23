@@ -13,21 +13,22 @@ exports_files([
 # Expose current build configuration's info through a CurrentPlatformInfo provider.
 define_current_platform_info(name = "current_platform")
 
-# The target API level of the current build.
+# The target API level of the current build configuration.
 #
-# For the default platform build, the API level is "PLATFORM".
+# The default is "PLATFORM", which corresponds to the platform build configuration.
 #
-# If this is _not_ set to "PLATFORM", then it must be set to "NEXT", "HEAD",
-# or a positive integer corresponding to a currently Supported (not Sunset)
-# API level. In that case, the build will target the given API level.
+# Other valid values are "NEXT", "HEAD", or a string that is the decimal
+# representation of a positive integer corresponding to a currently Supported
+# (not Sunset) API level.
 #
-# This is intended for use with code that is included in IDK sub-builds. Not
-# all targets support the non-default value, and other uses are unsupported.
+# Only IDK build logic and related tests should change this setting.
+# Only a limited set of macros and toolchain rules should reference it as these
+# apply it correctly for affected targets.
 #
-# Note: This flag is distinct from similar concepts in the Bazel SDK, including
-# the flags (`@fuchsia_sdk//flags:fuchsia_api_level` and
-# `@fuchsia_sdk//flags:repository_default_fuchsia_api_level`) and
-# the private `fuchsia_api_level` rule and `get_fuchsia_api_level()` function.
+# Note: This flag is distinct from similar Fuchsia Bazel SDK concepts,
+# including the flags (`@fuchsia_sdk//flags:fuchsia_api_level` and
+# `@fuchsia_sdk//flags:repository_default_fuchsia_api_level`) and the private
+# `fuchsia_api_level()` rule and `get_fuchsia_api_level()` function.
 # It should not be necessary to reference these and this flag in the same file
 # or build. If you encounter such a situation, please contact the build team.
 string_flag(

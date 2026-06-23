@@ -3,16 +3,22 @@
 # found in the LICENSE file.
 
 declare_args() {
-  # The target API level of the current build.
+  # The target API level of the current build or sub-build.
   #
-  # For the default platform build, the API level is "PLATFORM".
+  # The default is "PLATFORM", which corresponds to the main platform build.
   #
-  # If this is _not_ set to "PLATFORM", then it must be set to "NEXT", "HEAD",
-  # or a positive integer corresponding to a currently Supported (not Sunset)
-  # API level. In that case, the build will target the given API level.
+  # Other valid values are "NEXT", "HEAD", or a string that is the decimal
+  # representation of a positive integer corresponding to a currently Supported
+  # (not Sunset) API level.
   #
-  # This is intended for use with code that is included in IDK sub-builds. Not
-  # all targets support the non-default value, and other uses are unsupported.
+  # It should only be set to values other than "PLATFORM" by IDK sub-builds,
+  # which configure a narrow GN graph. See //sdk/working_with_subbuilds.md.
+  # Targets outside that graph may fail when it is set to a non-default value.
+  #
+  # The arg is used by templates that generate artifacts for the IDK. Other
+  # uses, including by individual target definitions, are discouraged, and IDK
+  # atom target definitions MUST NOT use this GN arg. See
+  # https://fxbug.dev/448185526 for details.
   current_build_target_api_level = "PLATFORM"
 
   # Deprecated name for the variable above that is still used by obsolete bots.
