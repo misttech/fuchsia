@@ -479,4 +479,98 @@ TEST_F(FocaltechTest, Touch) {
   driver_test().runtime().RunUntilIdle();
 }
 
+TEST_F(FocaltechTest, TouchWithGap) {
+  static const fuchsia_hardware_input_focaltech::Metadata kFt6336Metadata({
+      .device_id = fuchsia_hardware_input_focaltech::DeviceId::kFt6336,
+      .needs_firmware = false,
+  });
+  StartDriver(kFt6336Metadata);
+
+  auto reader_endpoints = fidl::Endpoints<fuchsia_input_report::InputReportsReader>::Create();
+  fidl::OneWayStatus status =
+      input_device()->GetInputReportsReader(std::move(reader_endpoints.server));
+  ASSERT_EQ(ZX_OK, status.status());
+  fidl::WireClient<fuchsia_input_report::InputReportsReader> reader(
+      std::move(reader_endpoints.client),
+      driver_test().runtime().GetForegroundDispatcher()->async_dispatcher());
+
+  driver_test().runtime().RunUntilIdle();
+
+  // clang-format off
+  static const std::array<uint8_t, 61> kExpectedReport = {
+      0x02,  // contact_count reported by hardware (slots 0 and 1)
+
+      // Contact 0 (UP event = 0x40), should be ignored
+      0x40, 0x01,  // x = 0x001
+      0x00, 0x13,  // y = 0x013
+      0x00, 0x00,
+
+      // Contact 1 (CONTACT event = 0x80), finger_id = 1
+      0x80, 0x31,  // x = 0x031
+      0x10, 0x00,  // y = 0x000
+      0x00, 0x00,
+
+      // Remaining slots empty
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  };
+  // clang-format on
+  driver_test().RunInEnvironmentTypeContext([](FtDeviceTestEnvironment& env) {
+    for (size_t i = 0; i < sizeof(kExpectedReport); i += 8) {
+      env.i2c().ExpectReport(
+          static_cast<uint8_t>(i + FTS_REG_CURPOINT),
+          std::vector<uint8_t>(kExpectedReport.begin() + i,
+                               kExpectedReport.begin() + std::min(i + 8, sizeof(kExpectedReport))));
+    }
+  });
+  interrupt().trigger(0, zx::clock::get_boot());
+
+  reader->ReadInputReports().ThenExactlyOnce(
+      [](fidl::WireUnownedResult<fuchsia_input_report::InputReportsReader::ReadInputReports>&
+             result) {
+        ASSERT_OK(result.status());
+        ASSERT_FALSE(result.value().is_error());
+        const fidl::VectorView<::fuchsia_input_report::wire::InputReport>& reports =
+            result.value().value()->reports;
+
+        ASSERT_EQ(size_t(1), reports.size());
+        const fuchsia_input_report::wire::InputReport& report = reports[0];
+
+        ASSERT_TRUE(report.has_event_time());
+        ASSERT_TRUE(report.has_touch());
+        const fuchsia_input_report::wire::TouchInputReport& touch_report = report.touch();
+
+        ASSERT_TRUE(touch_report.has_contacts());
+        ASSERT_EQ(touch_report.contacts().size(), size_t(1));
+        EXPECT_EQ(touch_report.contacts()[0].contact_id(), uint32_t(1));
+        EXPECT_EQ(touch_report.contacts()[0].position_x(), 0x031);
+        EXPECT_EQ(touch_report.contacts()[0].position_y(), 0x000);
+      });
+  driver_test().runtime().RunUntilIdle();
+}
+
+TEST(TouchRecordTest, XYDecode) {
+  TouchRecord record;
+
+  record.x_high = 0x01;  // event_flag 0 (DOWN), x_high 1
+  record.x_low = 0x23;   // x_low 0x23
+  record.y_high = 0x74;  // touch_id 7, y_high 4
+  record.y_low = 0x56;   // y_low 0x56
+
+  // x = 0x123 (high bits [11:8] 0x01, low bits [7:0] 0x23)
+  // y = 0x456 (high bits [11:8] 0x04, low bits [7:0] 0x56)
+  // finger_id = 7
+
+  EXPECT_EQ(record.x(), 0x123);
+  EXPECT_EQ(record.y(), 0x456);
+  EXPECT_EQ(record.finger_id(), 7);
+  EXPECT_EQ(record.event_type(), FtTouchEventType::kDown);
+}
+
 }  // namespace ft

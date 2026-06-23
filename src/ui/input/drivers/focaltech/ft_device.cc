@@ -9,6 +9,7 @@
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/fit/defer.h>
+#include <lib/stdcompat/inplace_vector.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/process.h>
 #include <lib/zx/profile.h>
@@ -27,6 +28,7 @@
 #include <fbl/auto_lock.h>
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
+#include <hwreg/bitfields.h>
 
 #include "lib/device-protocol/display-panel.h"
 #include "src/devices/i2c/lib/i2c-channel/i2c-channel.h"
@@ -58,22 +60,14 @@ constexpr size_t kFt5726YMax = 1280;
 constexpr size_t kFt5336XMax = 1080;
 constexpr size_t kFt5336YMax = 1920;
 
-constexpr uint8_t kFtTouchEventTypeMask = 0xC0;
-constexpr uint8_t kFtTouchEventTypeShift = 6;
-enum FtTouchEventType : uint8_t {
-  DOWN = 0,
-  UP = 1,
-  CONTACT = 2,
-};
-
 }  // namespace
 
 void FtDevice::FtInputReport::ToFidlInputReport(
     fidl::WireTableBuilder<::fuchsia_input_report::wire::InputReport>& input_report,
     fidl::AnyArena& allocator) const {
   fidl::VectorView<fuchsia_input_report::wire::ContactInputReport> contact_rpt(allocator,
-                                                                               contact_count);
-  for (size_t i = 0; i < contact_count; i++) {
+                                                                               contacts.size());
+  for (size_t i = 0; i < contacts.size(); i++) {
     contact_rpt[i] = fuchsia_input_report::wire::ContactInputReport::Builder(allocator)
                          .contact_id(contacts[i].finger_id)
                          .position_x(contacts[i].x)
@@ -88,18 +82,19 @@ void FtDevice::FtInputReport::ToFidlInputReport(
 
 FtDevice::FtInputReport FtDevice::ParseReport(std::span<const uint8_t> buf) {
   FtInputReport report;
-  const uint8_t contact_count = std::min(buf[0], static_cast<uint8_t>(report.contacts.max_size()));
-  report.contact_count = 0;
-  for (size_t i = 0; i < contact_count; i++) {
-    const std::span touch_record = buf.subspan(1 + (i * kFingerRptSize), 3);
-    if (((touch_record[0] & kFtTouchEventTypeMask) >> kFtTouchEventTypeShift) !=
-        FtTouchEventType::CONTACT) {
+  const int contact_count = std::min(int{buf[0]}, int{report.contacts.capacity()});
+  for (int i = 0; i < contact_count; i++) {
+    const int touch_record_offset = 1 + (i * kTouchRecordSize);
+    const TouchRecord* touch_record =
+        reinterpret_cast<const TouchRecord*>(&buf[touch_record_offset]);
+    if (touch_record->event_type() != FtTouchEventType::kContact) {
       continue;
     }
-    report.contacts[i].x = static_cast<uint16_t>(((touch_record[0] & 0x0f) << 8) + touch_record[1]);
-    report.contacts[i].y = static_cast<uint16_t>(((touch_record[2] & 0x0f) << 8) + touch_record[3]);
-    report.contacts[i].finger_id = static_cast<uint8_t>(touch_record[2] >> 4);
-    report.contact_count++;
+    report.contacts.push_back(FtInputReport::Contact{
+        .finger_id = touch_record->touch_id(),
+        .x = touch_record->x(),
+        .y = touch_record->y(),
+    });
   }
   return report;
 }
@@ -113,7 +108,7 @@ void FtDevice::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx
     return;
   }
   TRACE_DURATION("input", "FtDevice Read");
-  std::array<uint8_t, (kMaxPoints * kFingerRptSize) + 1> read_buf;
+  std::array<uint8_t, (kMaxPoints * kTouchRecordSize) + 1> read_buf;
   zx::result result = Read(FTS_REG_CURPOINT, read_buf);
   if (result.is_ok()) {
     auto timestamp = zx::time(interrupt->timestamp);

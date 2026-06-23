@@ -15,6 +15,7 @@
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/input_report_reader/reader.h>
 #include <lib/inspect/cpp/inspect.h>
+#include <lib/stdcompat/inplace_vector.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zx/interrupt.h>
 #include <lib/zx/result.h>
@@ -23,6 +24,7 @@
 #include <zircon/types.h>
 
 #include <fbl/mutex.h>
+#include <hwreg/bitfields.h>
 
 #include "src/devices/i2c/lib/i2c-channel/i2c-channel.h"
 
@@ -64,6 +66,48 @@
 // clang-format on
 
 namespace ft {
+
+enum class FtTouchEventType : uint8_t {
+  kDown = 0,
+  kUp = 1,
+  kContact = 2,
+};
+
+// FocalTech FT3x27 CTPM Application Note Rev 0.1, Section 3.1 "Working Mode",
+// pages 9-11.
+struct TouchRecord {
+  // Application note name: TOUCHx_XH
+  uint8_t x_high;
+
+  // Application note name: TOUCHx_XL
+  uint8_t x_low;
+
+  // Application note name: TOUCHx_YH
+  uint8_t y_high;
+
+  // Application note name: TOUCHx_YL
+  uint8_t y_low;
+
+  // Application note name: TOUCHx_WEIGHT
+  uint8_t weight;
+
+  // Application note name: TOUCHx_MISC
+  uint8_t misc;
+
+  DEF_ENUM_SUBFIELD(x_high, FtTouchEventType, 7, 6, event_type);
+  DEF_SUBFIELD(x_high, 3, 0, x_position11_8);
+  DEF_SUBFIELD(x_low, 7, 0, x_position7_0);
+  DEF_SUBFIELD(y_high, 7, 4, touch_id);
+  DEF_SUBFIELD(y_high, 3, 0, y_position11_8);
+  DEF_SUBFIELD(y_low, 7, 0, y_position7_0);
+  DEF_SUBFIELD(weight, 7, 0, touch_pressure);
+  DEF_SUBFIELD(misc, 7, 4, touch_area);
+
+  uint16_t x() const { return static_cast<uint16_t>((x_position11_8() << 8) | x_position7_0()); }
+  uint16_t y() const { return static_cast<uint16_t>((y_position11_8() << 8) | y_position7_0()); }
+  uint8_t finger_id() const { return touch_id(); }
+};
+static_assert(sizeof(TouchRecord) == 6);
 
 class FtDevice : public fdf::DriverBase2,
                  public fidl::WireServer<fuchsia_input_report::InputDevice> {
@@ -114,19 +158,18 @@ class FtDevice : public fdf::DriverBase2,
   static constexpr uint32_t kMaxPoints = 10;
   // Size of each individual touch record (note: there are kMaxPoints of
   //  them) on the i2c bus.  This is not the HID report size.
-  static constexpr uint32_t kFingerRptSize = 6;
+  static constexpr uint32_t kTouchRecordSize = 6;
 
   static constexpr size_t kMaxI2cTransferLength = 8;
 
   struct FtInputReport {
     zx::time event_time = zx::time(ZX_TIME_INFINITE_PAST);
-    uint8_t contact_count;
     struct Contact {
-      uint8_t finger_id;
-      uint16_t x;
-      uint16_t y;
+      uint8_t finger_id = 0;
+      uint16_t x = 0;
+      uint16_t y = 0;
     };
-    std::array<Contact, kMaxPoints> contacts;
+    cpp26::inplace_vector<Contact, kMaxPoints> contacts;
 
     void ToFidlInputReport(
         fidl::WireTableBuilder<::fuchsia_input_report::wire::InputReport>& input_report,
