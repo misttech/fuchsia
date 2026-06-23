@@ -125,7 +125,9 @@ void RouteGraph::AddRenderer(std::shared_ptr<AudioObject> renderer) {
 void RouteGraph::SetRendererRoutingProfile(const AudioObject& renderer, RoutingProfile profile) {
   TRACE_DURATION("audio", "RouteGraph::SetRendererRoutingProfile");
   FX_DCHECK(renderer.is_audio_renderer());
-  FX_LOGS(DEBUG) << "Setting renderer route profile: " << &renderer;
+  if constexpr (kLogRoutingChanges) {
+    FX_LOGS(INFO) << "Setting renderer route profile: " << &renderer;
+  }
 
   auto it = renderers_.find(&renderer);
   if (it == renderers_.end()) {
@@ -167,7 +169,9 @@ void RouteGraph::RemoveRenderer(const AudioObject& renderer) {
 
   auto it = renderers_.find(&renderer);
   if (it == renderers_.end()) {
-    FX_LOGS(INFO) << "Renderer " << &renderer << " was not present in graph.";
+    if constexpr (kLogRoutingChanges) {
+      FX_LOGS(INFO) << "Renderer " << &renderer << " was not present in graph.";
+    }
     return;
   }
 
@@ -208,7 +212,9 @@ void RouteGraph::AddCapturer(std::shared_ptr<AudioObject> capturer) {
 void RouteGraph::SetCapturerRoutingProfile(const AudioObject& capturer, RoutingProfile profile) {
   TRACE_DURATION("audio", "RouteGraph::SetCapturerRoutingProfile");
   FX_DCHECK(capturer.is_audio_capturer());
-  FX_LOGS(DEBUG) << "Setting capturer route profile: " << &capturer;
+  if constexpr (kLogRoutingChanges) {
+    FX_LOGS(INFO) << "Setting capturer route profile: " << &capturer;
+  }
 
   auto it = capturers_.find(&capturer);
   if (it == capturers_.end()) {
@@ -250,7 +256,9 @@ void RouteGraph::RemoveCapturer(const AudioObject& capturer) {
 
   auto it = capturers_.find(&capturer);
   if (it == capturers_.end()) {
-    FX_LOGS(WARNING) << "Capturer " << &capturer << " was not present in graph.";
+    if constexpr (kLogRoutingChanges) {
+      FX_LOGS(WARNING) << "Capturer " << &capturer << " was not present in graph.";
+    }
     return;
   }
 

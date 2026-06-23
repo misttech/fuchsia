@@ -1079,5 +1079,17 @@ TEST_F(RouteGraphUltrasoundTest, LinkUltrasoundRendererToDeviceWithSufficientRat
               UnorderedElementsAreArray(std::vector<AudioObject*>{output.get()}));
 }
 
+// For renderers not added to the route graph, setting their routing profiles should do nothing.
+TEST_F(RouteGraphTest, SetRendererRoutingProfileUnregisteredRendererIgnored) {
+  auto renderer = FakeAudioObject::FakeRenderer();
+  const RoutingProfile kProfile{
+      .routable = true,
+      .usage = StreamUsage::WithRenderUsage(RenderUsage::MEDIA),
+  };
+
+  under_test_.SetRendererRoutingProfile(*renderer, kProfile);
+  EXPECT_THAT(DestLinks(*renderer), IsEmpty());
+}
+
 }  // namespace
 }  // namespace media::audio

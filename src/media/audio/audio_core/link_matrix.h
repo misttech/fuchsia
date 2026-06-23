@@ -13,7 +13,6 @@
 #include <unordered_set>
 
 #include "src/media/audio/audio_core/audio_object.h"
-#include "src/media/audio/audio_core/logging_flags.h"
 #include "src/media/audio/audio_core/loudness_transform.h"
 #include "src/media/audio/audio_core/threading_model.h"
 
@@ -37,7 +36,7 @@ class LinkMatrix {
   zx_status_t LinkObjects(std::shared_ptr<AudioObject> source, std::shared_ptr<AudioObject> dest,
                           std::shared_ptr<const LoudnessTransform> loudness_transform);
 
-  void Unlink(AudioObject& object);
+  void Unlink(AudioObject& key);
 
   void ForEachDestLink(const AudioObject& object, fit::function<void(LinkHandle)> f);
   void ForEachSourceLink(const AudioObject& object, fit::function<void(LinkHandle)> f);
@@ -54,18 +53,19 @@ class LinkMatrix {
   bool AreLinked(const AudioObject& source, AudioObject& dest);
 
   // For debugging purposes.
+  static std::string UsageStrFromPair(const AudioObject* source, const AudioObject* dest);
   void DisplayCurrentRouting() FXL_LOCKS_EXCLUDED(lock_);
 
  private:
   struct Link {
     explicit Link(const AudioObject* _key) : key(_key) {}
 
-    Link(std::shared_ptr<AudioObject> _object,
+    Link(const std::shared_ptr<AudioObject>& _object,
          std::shared_ptr<const LoudnessTransform> _loudness_transform,
          std::shared_ptr<ReadableStream> _stream, std::shared_ptr<Mixer> _mixer,
          ExecutionDomain* _mix_domain)
         : key(_object.get()),
-          object(std::move(_object)),
+          object(_object),
           loudness_transform(std::move(_loudness_transform)),
           stream(std::move(_stream)),
           mixer(std::move(_mixer)),
@@ -97,7 +97,7 @@ class LinkMatrix {
   //
   // We can remove this filter if there is a mechanism to enforce that dropped object immediately
   // remove themselves.
-  void OnlyStrongLinks(LinkSet& link_set, std::vector<LinkHandle>* store);
+  static void OnlyStrongLinks(LinkSet& link_set, std::vector<LinkHandle>* store);
 
   // Returns the link source set for the object. Inserts the key if it
   // is not already present in the matrix.

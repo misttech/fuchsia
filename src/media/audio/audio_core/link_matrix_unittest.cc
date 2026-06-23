@@ -428,5 +428,15 @@ TEST_F(LinkMatrixTest, LinkCounts) {
   EXPECT_EQ(under_test.DestLinkCount(*source2), 0u);
 }
 
+// Validate the UsageStrFromPair helper with a few special-cases.
+TEST_F(LinkMatrixTest, UsageStrFromPair) {
+  auto source = std::make_shared<MockObject>(AudioObject::Type::AudioRenderer);
+  auto dest = std::make_shared<MockObject>(AudioObject::Type::Output);
+
+  EXPECT_EQ(LinkMatrix::UsageStrFromPair(source.get(), dest.get()), "Unknown source usage");
+  EXPECT_EQ(LinkMatrix::UsageStrFromPair(nullptr, dest.get()), "No source");
+  EXPECT_EQ(LinkMatrix::UsageStrFromPair(source.get(), nullptr), "No dest");
+}
+
 }  // namespace
 }  // namespace media::audio
