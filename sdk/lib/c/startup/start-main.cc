@@ -10,6 +10,7 @@
 #include <zircon/startup.h>
 
 #include <cassert>
+#include <iterator>
 #include <mutex>
 
 #include "../threads/thread-list.h"
@@ -97,6 +98,26 @@ zx_startup_arguments_t PreMain(void* hook, zx_handle_t svc_server_end) {
 
   // Now finish core libc initialization.
   zx_startup_arguments_t args = _zx_startup_get_arguments(hook);
+  if (args.argc == 0) {
+    static char* empty_argv[] = {nullptr};
+    args.argv = empty_argv;
+  } else {
+    ZX_DEBUG_ASSERT(args.argv);
+    ZX_DEBUG_ASSERT(!args.argv[args.argc]);
+  }
+  if (!args.envp) {
+    static char* empty_envp[] = {nullptr};
+    args.envp = empty_envp;
+  } else {
+    ZX_DEBUG_ASSERT(([](char** ep) {
+                      int n = 0;
+                      while (*ep++) {
+                        ++n;
+                      }
+                      return n;
+                    }(args.envp)) >= 0);
+  }
+
   BeforeCtors(std::move(deferred_svc), args);
 
   // Do any final initialization that's contingent on the bootstrap protocol.

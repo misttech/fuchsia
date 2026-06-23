@@ -101,8 +101,14 @@ void _zx_startup_preinit(void* hook) {
   ZX_ASSERT(hook == &gHook);
 }
 
-int main() {
+int main(int argc, char** argv, char** envp) {
   Check(kMain);
+
+  ZX_ASSERT(argc == 0);
+  ZX_ASSERT(argv != nullptr);
+  ZX_ASSERT(argv[0] == nullptr);
+  ZX_ASSERT(envp != nullptr);
+  ZX_ASSERT(envp[0] == nullptr);
 
   __sanitizer_log_write(kLog.data(), kLog.size());
 
