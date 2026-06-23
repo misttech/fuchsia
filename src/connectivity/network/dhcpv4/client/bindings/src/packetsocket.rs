@@ -352,6 +352,7 @@ mod test {
                     mtu: netemul::DEFAULT_MTU,
                     mac: Some(Box::new(fnet_ext::MacAddress { octets: MAC_A.bytes() }.into())),
                     port_class: fidl_fuchsia_hardware_network::PortClass::Virtual,
+                    checksum_offload: false,
                 },
                 netemul::InterfaceConfig { name: Some("iface_a".into()), ..Default::default() },
             )
@@ -365,6 +366,7 @@ mod test {
                     mtu: netemul::DEFAULT_MTU,
                     mac: Some(Box::new(fnet_ext::MacAddress { octets: MAC_B.bytes() }.into())),
                     port_class: fidl_fuchsia_hardware_network::PortClass::Virtual,
+                    checksum_offload: false,
                 },
                 netemul::InterfaceConfig { name: Some("iface_b".into()), ..Default::default() },
             )
@@ -442,6 +444,7 @@ mod test {
                     mtu: netemul::DEFAULT_MTU,
                     mac: Some(Box::new(fnet_ext::MacAddress { octets: MAC.bytes() }.into())),
                     port_class: fidl_fuchsia_hardware_network::PortClass::Virtual,
+                    checksum_offload: false,
                 },
                 netemul::InterfaceConfig { name: Some("iface".into()), ..Default::default() },
             )

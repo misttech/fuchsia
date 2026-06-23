@@ -4,9 +4,10 @@
 
 #![cfg(test)]
 
-use fidl_fuchsia_net as _;
+use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_debug as fnet_debug;
 use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use test_case::test_case;
 
 use fuchsia_async as fasync;
 use futures::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -34,6 +35,9 @@ use packet_formats::udp::{
 
 const PORT: u16 = 9875;
 const PAYLOAD: [u8; 4] = [1, 2, 3, 4];
+
+const CLIENT_MAC: fnet::MacAddress = fnet::MacAddress { octets: [2, 0, 0, 0, 0, 1] };
+const SERVER_MAC: fnet::MacAddress = fnet::MacAddress { octets: [2, 0, 0, 0, 0, 2] };
 
 async fn send_and_recv_udp(
     realm: &netemul::TestRealm<'_>,
@@ -392,7 +396,9 @@ async fn test_local_delivery_checksum_skipped_tcp<I: TestIpExt>(name: &str) {
 
 #[netstack_test]
 #[variant(I, Ip)]
-async fn test_remote_delivery_checksum_computed_udp<I: TestIpExt>(name: &str) {
+#[test_case(false; "computed")]
+#[test_case(true; "offloaded")]
+async fn test_remote_delivery_checksum_udp<I: TestIpExt>(name: &str, checksum_offload: bool) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let net = sandbox.create_network("net").await.expect("create network");
 
@@ -403,27 +409,32 @@ async fn test_remote_delivery_checksum_computed_udp<I: TestIpExt>(name: &str) {
         .create_netstack_realm::<Netstack3, _>(format!("{}_server", name))
         .expect("failed to create server realm");
 
+    let mut client_config = netemul::new_endpoint_config(netemul::DEFAULT_MTU, Some(CLIENT_MAC));
+    client_config.checksum_offload = checksum_offload;
     let client_iface = client_realm
-        .join_network_with(
-            &net,
-            "client",
-            netemul::new_endpoint_config(netemul::DEFAULT_MTU, None),
-            Default::default(),
-        )
+        .join_network_with(&net, "client", client_config, Default::default())
         .await
         .expect("client failed to join network");
     client_iface.add_address_and_subnet_route(I::LOCAL_SUBNET).await.expect("configure address");
 
+    let mut server_config = netemul::new_endpoint_config(netemul::DEFAULT_MTU, Some(SERVER_MAC));
+    server_config.checksum_offload = checksum_offload;
     let server_iface = server_realm
-        .join_network_with(
-            &net,
-            "server",
-            netemul::new_endpoint_config(netemul::DEFAULT_MTU, None),
-            Default::default(),
-        )
+        .join_network_with(&net, "server", server_config, Default::default())
         .await
         .expect("server failed to join network");
     server_iface.add_address_and_subnet_route(I::REMOTE_SUBNET).await.expect("configure address");
+
+    // Skip NUD because packets queued during address resolution bypass checksum
+    // offloading.
+    client_realm
+        .add_neighbor_entry(client_iface.id(), I::REMOTE_SUBNET.addr, SERVER_MAC)
+        .await
+        .expect("add neighbor entry");
+    server_realm
+        .add_neighbor_entry(server_iface.id(), I::LOCAL_SUBNET.addr, CLIENT_MAC)
+        .await
+        .expect("add neighbor entry");
 
     let traffic_fut = async {
         let server_sock =
@@ -453,9 +464,10 @@ async fn test_remote_delivery_checksum_computed_udp<I: TestIpExt>(name: &str) {
     capture_and_verify_udp::<I>(
         &client_realm,
         client_iface.id(),
-        // Packets destined for a remote host should have their full checksum
-        // computed, so checksum validation should pass.
-        true,
+        // If checksum offloading is enabled, the packet should be sent with a
+        // partial checksum and checksum validation should fail. Otherwise, the
+        // full checksum should be computed and validation should pass.
+        !checksum_offload,
         traffic_fut,
     )
     .await;
@@ -463,7 +475,9 @@ async fn test_remote_delivery_checksum_computed_udp<I: TestIpExt>(name: &str) {
 
 #[netstack_test]
 #[variant(I, Ip)]
-async fn test_remote_delivery_checksum_computed_tcp<I: TestIpExt>(name: &str) {
+#[test_case(false; "computed")]
+#[test_case(true; "offloaded")]
+async fn test_remote_delivery_checksum_tcp<I: TestIpExt>(name: &str, checksum_offload: bool) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let net = sandbox.create_network("net").await.expect("create network");
 
@@ -474,27 +488,32 @@ async fn test_remote_delivery_checksum_computed_tcp<I: TestIpExt>(name: &str) {
         .create_netstack_realm::<Netstack3, _>(format!("{}_server", name))
         .expect("failed to create server realm");
 
+    let mut client_config = netemul::new_endpoint_config(netemul::DEFAULT_MTU, Some(CLIENT_MAC));
+    client_config.checksum_offload = checksum_offload;
     let client_iface = client_realm
-        .join_network_with(
-            &net,
-            "client",
-            netemul::new_endpoint_config(netemul::DEFAULT_MTU, None),
-            Default::default(),
-        )
+        .join_network_with(&net, "client", client_config, Default::default())
         .await
         .expect("client failed to join network");
     client_iface.add_address_and_subnet_route(I::LOCAL_SUBNET).await.expect("configure address");
 
+    let mut server_config = netemul::new_endpoint_config(netemul::DEFAULT_MTU, Some(SERVER_MAC));
+    server_config.checksum_offload = checksum_offload;
     let server_iface = server_realm
-        .join_network_with(
-            &net,
-            "server",
-            netemul::new_endpoint_config(netemul::DEFAULT_MTU, None),
-            Default::default(),
-        )
+        .join_network_with(&net, "server", server_config, Default::default())
         .await
         .expect("server failed to join network");
     server_iface.add_address_and_subnet_route(I::REMOTE_SUBNET).await.expect("configure address");
+
+    // Skip NUD because packets queued during address resolution bypass checksum
+    // offloading.
+    client_realm
+        .add_neighbor_entry(client_iface.id(), I::REMOTE_SUBNET.addr, SERVER_MAC)
+        .await
+        .expect("add neighbor entry");
+    server_realm
+        .add_neighbor_entry(server_iface.id(), I::LOCAL_SUBNET.addr, CLIENT_MAC)
+        .await
+        .expect("add neighbor entry");
 
     let traffic_fut = async {
         let listener =
@@ -526,9 +545,10 @@ async fn test_remote_delivery_checksum_computed_tcp<I: TestIpExt>(name: &str) {
     capture_and_verify_tcp::<I>(
         &client_realm,
         client_iface.id(),
-        // Packets destined for a remote host should have their full checksum
-        // computed, so checksum validation should pass.
-        true,
+        // If checksum offloading is enabled, the packet should be sent with a
+        // partial checksum and checksum validation should fail. Otherwise, the
+        // full checksum should be computed and validation should pass.
+        !checksum_offload,
         traffic_fut,
     )
     .await;

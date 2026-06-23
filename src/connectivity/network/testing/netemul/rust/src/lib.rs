@@ -74,6 +74,7 @@ pub fn new_endpoint_config(
         mtu,
         mac: mac.map(Box::new),
         port_class: fnetwork::PortClass::Virtual,
+        checksum_offload: false,
     }
 }
 

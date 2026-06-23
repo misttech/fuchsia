@@ -20,6 +20,7 @@ class BasePortConfig {
   std::vector<fuchsia_hardware_network::wire::FrameType> rx_types;
   std::vector<fuchsia_hardware_network::wire::FrameTypeSupport> tx_types;
   fuchsia_hardware_network::wire::PortClass port_class;
+  bool rx_checksum_offload = false;
 };
 
 class DevicePortConfig : public BasePortConfig {

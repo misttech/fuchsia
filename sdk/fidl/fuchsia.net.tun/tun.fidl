@@ -74,6 +74,11 @@ type BasePortConfig = table {
     ///
     /// If not set, interpreted as `VIRTUAL`.
     5: port_class fuchsia.hardware.network.PortClass;
+    /// Simulate receive-side checksum offloading.
+    ///
+    /// If true, the port will report `FULL_CHECKSUMS_VERIFIED` on all received
+    /// frames.
+    6: rx_checksum_offload bool;
 };
 
 /// Base device configuration.

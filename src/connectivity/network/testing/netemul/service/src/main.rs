@@ -2095,6 +2095,7 @@ mod tests {
                     mtu: 1500,
                     mac: None,
                     port_class: fidl_fuchsia_hardware_network::PortClass::Virtual,
+                    checksum_offload: false,
                 },
             )
             .await
@@ -2107,7 +2108,8 @@ mod tests {
             fnetemul_network::EndpointConfig {
                 mtu: 1500,
                 mac: None,
-                port_class: fidl_fuchsia_hardware_network::PortClass::Virtual
+                port_class: fidl_fuchsia_hardware_network::PortClass::Virtual,
+                checksum_offload: false,
             }
         );
     }
@@ -2648,6 +2650,7 @@ mod tests {
                 mtu: 1500,
                 mac: None,
                 port_class: fidl_fuchsia_hardware_network::PortClass::Virtual,
+                checksum_offload: false,
             },
         )
         .await;
@@ -2724,6 +2727,7 @@ mod tests {
                 mtu: 1500,
                 mac: None,
                 port_class: fidl_fuchsia_hardware_network::PortClass::Virtual,
+                checksum_offload: false,
             },
         )
         .await;
@@ -2809,6 +2813,7 @@ mod tests {
                 mtu: 1500,
                 mac: None,
                 port_class: fidl_fuchsia_hardware_network::PortClass::Virtual,
+                checksum_offload: false,
             },
         )
         .await;
@@ -2846,6 +2851,7 @@ mod tests {
                 mtu: 1500,
                 mac: None,
                 port_class: fidl_fuchsia_hardware_network::PortClass::Virtual,
+                checksum_offload: false,
             },
         )
         .await;
@@ -2909,6 +2915,7 @@ mod tests {
                 mtu: 1500,
                 mac: None,
                 port_class: fidl_fuchsia_hardware_network::PortClass::Virtual,
+                checksum_offload: false,
             },
         )
         .await;
@@ -2948,6 +2955,7 @@ mod tests {
                 mtu: 1500,
                 mac: None,
                 port_class: fidl_fuchsia_hardware_network::PortClass::Virtual,
+                checksum_offload: false,
             },
         )
         .await;
@@ -3040,6 +3048,7 @@ mod tests {
                 mtu: 1500,
                 mac: None,
                 port_class: fidl_fuchsia_hardware_network::PortClass::Virtual,
+                checksum_offload: false,
             },
         )
         .await;
@@ -3265,6 +3274,7 @@ mod tests {
                 mtu: 1500,
                 mac: None,
                 port_class: fidl_fuchsia_hardware_network::PortClass::Virtual,
+                checksum_offload: false,
             },
         )
         .await;

@@ -76,6 +76,13 @@ type EndpointConfig = struct {
     mac box<fuchsia.net.MacAddress>;
     /// Port class of the endpoint.
     port_class fuchsia.hardware.network.PortClass;
+    /// Simulate hardware checksum offloading. Transport-layer checksums are
+    /// neither computed nor verified.
+    ///
+    /// Note: this does not simulate the actual hardware offloading logic so
+    /// packets may be sent with invalid checksums. This property should be set
+    /// on both the sender and receiver to avoid dropped packets.
+    checksum_offload bool;
 };
 
 /// Manages virtual endpoints.

@@ -225,6 +225,7 @@ async fn test_filtering_udp<M: Manager, N: Netstack>(
                 mtu: netemul::DEFAULT_MTU,
                 mac: None,
                 port_class,
+                checksum_offload: false,
             }),
         )
         .await;
@@ -969,6 +970,7 @@ async fn test_wlan_ap_dhcp_server<M: Manager, N: Netstack>(name: &str) {
                     mtu: netemul::DEFAULT_MTU,
                     mac: None,
                     port_class: fhardware_network::PortClass::WlanAp,
+                    checksum_offload: false,
                 },
             )
             .await
@@ -2871,6 +2873,7 @@ async fn dhcpv4_client_restarts_after_delay() {
                                 fnet_ext::MacAddress { octets: SERVER_MAC.bytes() }.into(),
                             )),
                             port_class: fhardware_network::PortClass::Virtual,
+                            checksum_offload: false,
                         },
                         netemul::InterfaceConfig {
                             name: Some("serveriface".into()),

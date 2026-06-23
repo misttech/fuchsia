@@ -76,6 +76,7 @@ class NetworkServiceTest : public gtest::RealLoopFixture {
   static Endpoint::Config GetDefaultEndpointConfig() {
     Endpoint::Config ret;
     ret.mtu = 1500;
+    ret.checksum_offload = false;
     return ret;
   }
 

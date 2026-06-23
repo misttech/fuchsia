@@ -25,6 +25,7 @@ pub(crate) struct Endpoint {
     mac: Option<fnet_ext::MacAddress>,
     mtu: u16,
     up: bool,
+    checksum_offload: bool,
 }
 
 impl Endpoint {
@@ -34,6 +35,10 @@ impl Endpoint {
 
     const fn default_link_up() -> bool {
         true
+    }
+
+    const fn default_checksum_offload() -> bool {
+        false
     }
 }
 
@@ -199,10 +204,16 @@ impl TryFrom<Dictionary> for Endpoint {
             .map_err(|e| anyhow!("`up` is not a string: {:?}", e))?
             .context("parse `up`")?;
 
+        let checksum_offload = dict
+            .try_take_str_into::<bool>("checksum_offload")
+            .unwrap_or_else(|| Ok(Ok(Endpoint::default_checksum_offload())))
+            .map_err(|e| anyhow!("`checksum_offload` is not a string: {:?}", e))?
+            .context("parse `checksum_offload`")?;
+
         dict.into_empty()
             .map_err(|e| anyhow!("unrecognized fields in endpoint `{}`: {:?}", name, e))?;
 
-        Ok(Endpoint { name, mac, mtu, up })
+        Ok(Endpoint { name, mac, mtu, up, checksum_offload })
     }
 }
 
@@ -457,7 +468,7 @@ impl Config {
                 .create_network(name.clone())
                 .await
                 .with_context(|| format!("create network `{}`", name))?;
-            for Endpoint { name, mac, mtu, up } in endpoints {
+            for Endpoint { name, mac, mtu, up, checksum_offload } in endpoints {
                 let endpoint = network
                     .create_endpoint_with(
                         name.clone(),
@@ -465,6 +476,7 @@ impl Config {
                             mac: mac.map(Into::into).map(Box::new),
                             mtu,
                             port_class: fidl_fuchsia_hardware_network::PortClass::Virtual,
+                            checksum_offload,
                         },
                     )
                     .await
@@ -603,18 +615,21 @@ mod tests {
                         mac: Some(fidl_mac!("aa:bb:cc:dd:ee:ff").into()),
                         mtu: 999,
                         up: false,
+                        checksum_offload: false,
                     },
                     Endpoint {
                         name: "local-ep2".to_string(),
                         mac: None,
                         mtu: Endpoint::default_mtu(),
                         up: Endpoint::default_link_up(),
+                        checksum_offload: false,
                     },
                     Endpoint {
                         name: "remote-ep".to_string(),
                         mac: None,
                         mtu: Endpoint::default_mtu(),
                         up: Endpoint::default_link_up(),
+                        checksum_offload: false,
                     },
                 ],
             }],
@@ -827,12 +842,14 @@ mod tests {
                             mac: None,
                             mtu: Endpoint::default_mtu(),
                             up: Endpoint::default_link_up(),
+                            checksum_offload: false,
                         },
                         Endpoint {
                             name: "ep".to_string(),
                             mac: None,
                             mtu: Endpoint::default_mtu(),
                             up: Endpoint::default_link_up(),
+                            checksum_offload: false,
                         },
                     ],
                 },
@@ -854,6 +871,7 @@ mod tests {
                             mac: None,
                             mtu: Endpoint::default_mtu(),
                             up: Endpoint::default_link_up(),
+                            checksum_offload: false,
                         },
                     ],
                 },
@@ -906,6 +924,7 @@ mod tests {
                             mac: None,
                             mtu: Endpoint::default_mtu(),
                             up: Endpoint::default_link_up(),
+                            checksum_offload: false,
                         },
                     ],
                 },

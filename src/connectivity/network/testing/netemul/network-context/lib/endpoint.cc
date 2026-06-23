@@ -121,11 +121,16 @@ class NetworkDeviceImpl : public EndpointImpl, public fuchsia::device::Controlle
     port_config.mutable_base()->set_id(Endpoint::kPortId);
     port_config.mutable_base()->set_mtu(config().mtu);
     port_config.mutable_base()->set_rx_types({Endpoint::kFrameType});
+    auto supported_flags = fuchsia::hardware::network::TxFlags();
+    if (config().checksum_offload) {
+      supported_flags |= fuchsia::hardware::network::TxFlags::COMPUTE_GENERIC_CHECKSUM;
+    }
     port_config.mutable_base()->set_tx_types({fuchsia::hardware::network::FrameTypeSupport{
         .type = Endpoint::kFrameType,
         .features = fuchsia::hardware::network::FRAME_FEATURES_RAW,
-        .supported_flags = fuchsia::hardware::network::TxFlags()}});
+        .supported_flags = supported_flags}});
     port_config.mutable_base()->set_port_class(config().port_class);
+    port_config.mutable_base()->set_rx_checksum_offload(config().checksum_offload);
     if (config().mac) {
       status = config().mac->Clone(port_config.mutable_mac());
       if (status != ZX_OK) {

@@ -65,6 +65,7 @@ class PortAdapter : public fdf::WireServer<fuchsia_hardware_network_driver::Netw
   uint32_t mtu() const { return config_.mtu; }
   const std::unique_ptr<MacAdapter>& mac() const { return mac_; }
   uint8_t id() const { return config_.port_id; }
+  bool rx_checksum_offload() const { return config_.rx_checksum_offload; }
 
  private:
   std::array<fuchsia_hardware_network::wire::FrameType,

@@ -430,6 +430,11 @@ void DeviceAdapter::EnqueueRx(uint8_t port_id, fuchsia_hardware_network::wire::F
   if (meta) {
     ret.meta.flags = meta->flags;
   }
+  if (port_rx_checksum_offload_[port_id]) {
+    ret.meta.flags |=
+        static_cast<uint32_t>(fuchsia_hardware_network::wire::RxFlags::kFullChecksumsVerified);
+    ret.full_csums_verified = 0;  // Number of verified checksums minus one.
+  }
 }
 
 void DeviceAdapter::CommitRx() {
@@ -479,6 +484,9 @@ DeviceAdapter::DeviceAdapter(DeviceAdapterParent* parent,
   for (std::atomic_bool& p : port_online_status_) {
     p = false;
   }
+  for (std::atomic_bool& p : port_rx_checksum_offload_) {
+    p = false;
+  }
 }
 
 zx::result<RxBuffer> DeviceAdapter::AllocRxSpace(size_t length) __TA_REQUIRES(rx_lock_) {
@@ -525,6 +533,7 @@ void DeviceAdapter::OnPortStatusChanged(uint8_t port_id, const PortStatus& new_s
 }
 
 zx_status_t DeviceAdapter::AddPort(PortAdapter& port) {
+  port_rx_checksum_offload_[port.id()] = port.rx_checksum_offload();
   libsync::Completion completion;
   zx_status_t status;
   fdf::Arena arena(0u);
@@ -546,6 +555,7 @@ zx_status_t DeviceAdapter::AddPort(PortAdapter& port) {
 }
 
 void DeviceAdapter::RemovePort(uint8_t port_id) {
+  port_rx_checksum_offload_[port_id] = false;
   fdf::Arena arena(0u);
   fidl::OneWayStatus status = device_iface_.buffer(arena)->RemovePort(port_id);
   if (!status.ok()) {

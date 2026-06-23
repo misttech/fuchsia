@@ -39,6 +39,9 @@ std::optional<BasePortConfig> BasePortConfig::Create(
   if (tx_types.empty()) {
     return std::nullopt;
   }
+  if (config.has_rx_checksum_offload() && config.rx_checksum_offload()) {
+    out.rx_checksum_offload = true;
+  }
   std::copy(tx_types.begin(), tx_types.end(), std::back_inserter(out.tx_types));
   return out;
 }

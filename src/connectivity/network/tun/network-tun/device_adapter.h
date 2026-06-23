@@ -188,6 +188,7 @@ class DeviceAdapter : public fdf::WireServer<fuchsia_hardware_network_driver::Ne
       __TA_GUARDED(tx_lock_);
   fdf::WireSharedClient<fuchsia_hardware_network_driver::NetworkDeviceIfc> device_iface_;
   std::array<std::atomic_bool, fuchsia_hardware_network::wire::kMaxPorts> port_online_status_;
+  std::array<std::atomic_bool, fuchsia_hardware_network::wire::kMaxPorts> port_rx_checksum_offload_;
   DeviceInterfaceDispatchers dispatchers_;
   fdf::UnownedUnsynchronizedDispatcher netdev_dispatcher_;
 };
