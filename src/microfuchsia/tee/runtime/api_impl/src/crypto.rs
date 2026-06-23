@@ -9,11 +9,10 @@ use std::iter;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
+use aes::cipher::{KeyInit, KeyIvInit};
 use aes::{Aes128, Aes192, Aes256};
 use cbc::{Decryptor as CbcDecryptor, Encryptor as CbcEncryptor};
 use cmac::Cmac;
-use crypto_common::{KeyInit, KeyIvInit};
-use digest::DynDigest as Digest;
 use ecb::{Decryptor as EcbDecryptor, Encryptor as EcbEncryptor};
 use hmac::Hmac;
 use rand_core::{CryptoRng, RngCore};
@@ -21,7 +20,8 @@ use rsa::traits::{
     PaddingScheme as RsaPaddingScheme, PublicKeyParts as _, SignatureScheme as RsaSignatureScheme,
 };
 use rsa::{Oaep, Pss, RsaPrivateKey};
-use sha1::Sha1;
+use sha1::digest::{DynDigest as Digest, crypto_common};
+use sha1::{Sha1, digest};
 use sha2::{Sha224, Sha256, Sha384, Sha512};
 use tee_internal::{
     Algorithm, Attribute, EccCurve, Error, Mode, OperationHandle, Result as TeeResult, Usage,

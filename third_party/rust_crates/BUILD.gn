@@ -570,11 +570,11 @@ group("difference-2.0.0") {
 }
 
 group("digest") {
-  public_deps = [ ":digest-v0_10_7" ]
+  public_deps = [ ":digest-v0_11_3" ]
 }
 
-group("digest-0.10.7") {
-  public_deps = [ ":digest-v0_10_7" ]
+group("digest-0.11.3") {
+  public_deps = [ ":digest-v0_11_3" ]
 }
 
 group("downcast-rs") {
@@ -4456,6 +4456,40 @@ rustc_library("block-buffer-v0_10_4") {
   applicable_licenses = [ ":block-buffer-v0_10_4.license" ]
 }
 
+license("block-buffer-v0_12_1.license") {
+  public_package_name = "block_buffer"
+  license_files = [
+    "//third_party/rust_crates/vendor/block-buffer-0.12.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/block-buffer-0.12.1/LICENSE-MIT",
+  ]
+}
+
+rustc_library("block-buffer-v0_12_1") {
+  crate_name = "block_buffer"
+  source_root =
+      "//third_party/rust_crates/vendor/block-buffer-0.12.1/src/lib.rs"
+  output_name = "block_buffer-1e5007bcfdecd1af"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":hybrid-array-v0_4_12" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=1e5007bcfdecd1af",
+    "-Cextra-filename=-1e5007bcfdecd1af",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":block-buffer-v0_12_1.license" ]
+}
+
 license("block-padding-v0_3_3.license") {
   public_package_name = "block_padding"
   license_files = [
@@ -5760,6 +5794,38 @@ rustc_library("cmac-v0_7_2") {
   applicable_licenses = [ ":cmac-v0_7_2.license" ]
 }
 
+license("cmov-v0_5_4.license") {
+  public_package_name = "cmov"
+  license_files = [
+    "//third_party/rust_crates/vendor/cmov-0.5.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/cmov-0.5.4/LICENSE-MIT",
+  ]
+}
+
+rustc_library("cmov-v0_5_4") {
+  crate_name = "cmov"
+  source_root = "//third_party/rust_crates/vendor/cmov-0.5.4/src/lib.rs"
+  output_name = "cmov-a1d52d75d34cd0de"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=a1d52d75d34cd0de",
+    "-Cextra-filename=-a1d52d75d34cd0de",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":cmov-v0_5_4.license" ]
+}
+
 license("concurrent-queue-v2_5_0.license") {
   public_package_name = "concurrent_queue"
   license_files = [
@@ -6599,6 +6665,40 @@ rustc_library("crypto-common-v0_1_6") {
   applicable_licenses = [ ":crypto-common-v0_1_6.license" ]
 }
 
+license("crypto-common-v0_2_2.license") {
+  public_package_name = "crypto_common"
+  license_files = [
+    "//third_party/rust_crates/vendor/crypto-common-0.2.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/crypto-common-0.2.2/LICENSE-MIT",
+  ]
+}
+
+rustc_library("crypto-common-v0_2_2") {
+  crate_name = "crypto_common"
+  source_root =
+      "//third_party/rust_crates/vendor/crypto-common-0.2.2/src/lib.rs"
+  output_name = "crypto_common-990cf5fb13530b22"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":hybrid-array-v0_4_12" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=990cf5fb13530b22",
+    "-Cextra-filename=-990cf5fb13530b22",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":crypto-common-v0_2_2.license" ]
+}
+
 license("cstr-v0_2_12.license") {
   public_package_name = "cstr"
   license_files = [ "//third_party/rust_crates/vendor/cstr-0.2.12/LICENSE" ]
@@ -6749,6 +6849,39 @@ rustc_library("ctr-v0_9_2") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":ctr-v0_9_2.license" ]
+}
+
+license("ctutils-v0_4_2.license") {
+  public_package_name = "ctutils"
+  license_files = [
+    "//third_party/rust_crates/vendor/ctutils-0.4.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/ctutils-0.4.2/LICENSE-MIT",
+  ]
+}
+
+rustc_library("ctutils-v0_4_2") {
+  crate_name = "ctutils"
+  source_root = "//third_party/rust_crates/vendor/ctutils-0.4.2/src/lib.rs"
+  output_name = "ctutils-9253178295ce98d9"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":cmov-v0_5_4" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=9253178295ce98d9",
+    "-Cextra-filename=-9253178295ce98d9",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":ctutils-v0_4_2.license" ]
 }
 
 license("darling-v0_20_11.license") {
@@ -7437,6 +7570,47 @@ rustc_library("digest-v0_10_7") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":digest-v0_10_7.license" ]
+}
+
+license("digest-v0_11_3.license") {
+  public_package_name = "digest"
+  license_files = [
+    "//third_party/rust_crates/vendor/digest-0.11.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/digest-0.11.3/LICENSE-MIT",
+  ]
+}
+
+rustc_library("digest-v0_11_3") {
+  crate_name = "digest"
+  source_root = "//third_party/rust_crates/vendor/digest-0.11.3/src/lib.rs"
+  output_name = "digest-1aee8a53cc1c4f65"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":block-buffer-v0_12_1" ]
+  deps += [ ":crypto-common-v0_2_2" ]
+  deps += [ ":ctutils-v0_4_2" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=1aee8a53cc1c4f65",
+    "-Cextra-filename=-1aee8a53cc1c4f65",
+    "--cfg=feature=\"block-api\"",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"mac\"",
+  ]
+
+  aliased_deps = {
+    common = ":crypto-common-v0_2_2.actual"
+  }
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":digest-v0_11_3.license" ]
 }
 
 license("downcast-v0_11_0.license") {
@@ -10506,6 +10680,40 @@ rustc_library("humansize-v2_1_3") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":humansize-v2_1_3.license" ]
+}
+
+license("hybrid-array-v0_4_12.license") {
+  public_package_name = "hybrid_array"
+  license_files = [
+    "//third_party/rust_crates/vendor/hybrid-array-0.4.12/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/hybrid-array-0.4.12/LICENSE-MIT",
+  ]
+}
+
+rustc_library("hybrid-array-v0_4_12") {
+  crate_name = "hybrid_array"
+  source_root =
+      "//third_party/rust_crates/vendor/hybrid-array-0.4.12/src/lib.rs"
+  output_name = "hybrid_array-75a3a315d2299789"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":typenum-v1_20_1" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=75a3a315d2299789",
+    "-Cextra-filename=-75a3a315d2299789",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":hybrid-array-v0_4_12.license" ]
 }
 
 license("hyper-v0_14_19.license") {
@@ -22364,6 +22572,7 @@ rustc_library("typenum-v1_20_1") {
     "--cap-lints=allow",
     "-Cmetadata=dd983d0800755d48",
     "-Cextra-filename=-dd983d0800755d48",
+    "--cfg=feature=\"const-generics\"",
   ]
 
   visibility = [ ":*" ]

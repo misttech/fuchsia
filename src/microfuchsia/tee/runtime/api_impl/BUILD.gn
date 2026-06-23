@@ -60,8 +60,6 @@ rustc_library("api_impl") {
     "//third_party/rust_crates:cbc",
     "//third_party/rust_crates:cipher",
     "//third_party/rust_crates:cmac",
-    "//third_party/rust_crates:crypto-common",
-    "//third_party/rust_crates:digest",
     "//third_party/rust_crates:ecb",
     "//third_party/rust_crates:hmac",
     "//third_party/rust_crates:libc",

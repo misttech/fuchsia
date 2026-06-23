@@ -823,14 +823,14 @@ alias(
 )
 
 alias(
-    name = "digest-0.10.7",
-    actual = "//third_party/rust_crates/vendor/digest-0.10.7:digest",
+    name = "digest-0.11.3",
+    actual = "//third_party/rust_crates/vendor/digest-0.11.3:digest",
     tags = ["manual"],
 )
 
 alias(
     name = "digest",
-    actual = "//third_party/rust_crates/vendor/digest-0.10.7:digest",
+    actual = "//third_party/rust_crates/vendor/digest-0.11.3:digest",
     tags = ["manual"],
 )
 

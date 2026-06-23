@@ -103,7 +103,7 @@ data-encoding = "2.11.0"
 derivative = { version = "2.2.0", features = ["use_core"] }
 derive_builder = "0.20.2"
 difference = "2.0.0"
-digest = "0.10.7"
+digest = { version = "0.11.3", features = ["mac"] }
 downcast-rs = "2.0.2"
 dyn-clone = "1.0.20"
 ecb = "0.1.2"
