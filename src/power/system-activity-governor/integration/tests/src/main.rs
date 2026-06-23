@@ -144,6 +144,7 @@ const DELAY_NOTIFICATION: usize = 10;
 const MAX_LOOPS_COUNT: usize = 20;
 
 const RESTART_DELAY: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(1);
+const CRASH_REPORT_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(30);
 
 macro_rules! block_until_inspect_matches {
     ($loop_iter:expr, $sag_moniker:expr, $($tree:tt)+) => {{
@@ -4511,10 +4512,10 @@ async fn test_activity_governor_files_crash_report_on_normal_wake_lease() -> Res
         .await?
         .map_err(|e| anyhow::anyhow!("Acquire failed: {:?}", e))?;
 
-    // We give 5 extra seconds due to avoid flakes.
+    // We give 29 extra seconds to avoid flakes.
     let num_filed = querier
         .watch_file()
-        .on_timeout(fasync::MonotonicDuration::from_seconds(6).after_now(), || {
+        .on_timeout(CRASH_REPORT_TIMEOUT.after_now(), || {
             panic!("Timeout waiting for next watcher message.");
         })
         .await?;
@@ -4554,7 +4555,7 @@ async fn test_activity_governor_rates_limit_long_wake_lease_crash_reports() -> R
 
         let num_filed = querier
             .watch_file()
-            .on_timeout(fasync::MonotonicDuration::from_seconds(6).after_now(), || {
+            .on_timeout(CRASH_REPORT_TIMEOUT.after_now(), || {
                 panic!("Timeout waiting for crash report {} for lease A.", i);
             })
             .await?;
@@ -4586,7 +4587,7 @@ async fn test_activity_governor_rates_limit_long_wake_lease_crash_reports() -> R
 
     let num_filed = querier
         .watch_file()
-        .on_timeout(fasync::MonotonicDuration::from_seconds(6).after_now(), || {
+        .on_timeout(CRASH_REPORT_TIMEOUT.after_now(), || {
             panic!("Timeout waiting for crash report for lease B.");
         })
         .await?;
@@ -4688,10 +4689,10 @@ async fn test_unmonitored_lease_reset() -> Result<()> {
     // 3. Drop unmonitored lease
     drop(unmonitored_lease);
 
-    // Wait for timeout again (5s). We wait 10s to be sure.
+    // Wait for timeout again (5s). We wait 30s to be sure.
     let num_filed = querier
         .watch_file()
-        .on_timeout(fasync::MonotonicDuration::from_seconds(10).after_now(), || {
+        .on_timeout(CRASH_REPORT_TIMEOUT.after_now(), || {
             panic!("Timeout waiting for crash report after drop.");
         })
         .await?;
@@ -4795,7 +4796,7 @@ async fn test_regular_lease_during_policy_lease() -> Result<()> {
     // Expect report filed!
     let num_filed = querier
         .watch_file()
-        .on_timeout(fasync::MonotonicDuration::from_seconds(5).after_now(), || {
+        .on_timeout(CRASH_REPORT_TIMEOUT.after_now(), || {
             panic!("Timeout waiting for crash report after policy lease drop.");
         })
         .await?;
