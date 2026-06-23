@@ -328,6 +328,7 @@ func (r *TestOrchestrator) reachDevice(ctx context.Context) error {
 		if err := r.ffx.TargetAdd(ctx, addr); err != nil {
 			return fmt.Errorf("ffx target add: %w", err)
 		}
+		r.ffx.SetDefaultTarget(&addr)
 	}
 
 	if _, err := r.ffx.TargetList(ctx); err != nil {

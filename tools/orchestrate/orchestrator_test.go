@@ -356,6 +356,9 @@ func runOrchestratorScenario(t *testing.T, isEmulator bool, runInput *RunInput, 
 	if deviceConfig != nil && !isEmulator {
 		mockFfx.expectCall("TargetAdd", deviceConfig.Network.IPv4)
 	}
+	if deviceConfig != nil {
+		mockFfx.expectCall("SetDefaultTarget", deviceConfig.Network.IPv4)
+	}
 	mockFfx.expectCall("TargetList")
 	mockFfx.expectCall("TargetWait")
 	mockFfx.expectCall("TargetShow")

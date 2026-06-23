@@ -99,10 +99,8 @@ class FfxTest(ffxtestcase.FfxTestCase):
         asserts.assert_equal(
             output_json["message"],
             (
-                "Failed to create remote control proxy: "
-                'Timeout attempting to reach target "this-should-not-exist". '
-                "Please check the connection to the target; "
-                "`ffx doctor -v` may help diagnose the issue."
+                'non-fatal error encountered: Target specification "this-should-not-exist" was not found. '
+                "Use `ffx target list` to list known targets, and use a different target query."
             ),
         )
         asserts.assert_equal(output_json["code"], 1)

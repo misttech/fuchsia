@@ -396,7 +396,6 @@ pub fn target_interface(env: &fho::FhoEnvironment) -> FhoTargetEnvironment {
 mod tests {
     use super::*;
     use ffx_config::environment::ExecutableKind;
-    use ffx_config::keys::DIRECT_CONNECTIONS;
     use ffx_config::{ConfigMap, test_env};
 
     #[fuchsia::test]
@@ -414,7 +413,7 @@ mod tests {
         let env = test_env().build().unwrap();
         let target_env = FhoTargetEnvironment::default();
         let behavior = target_env.init_connection_behavior(&env.context).await.unwrap();
-        assert!(matches!(*behavior, ConnectionBehavior::DaemonConnector(_)));
+        assert!(matches!(*behavior, ConnectionBehavior::DirectConnector(_)));
     }
 
     #[fuchsia::test]
@@ -434,11 +433,7 @@ mod tests {
     }
     #[fuchsia::test]
     async fn test_direct_connection_behavior() {
-        let env = test_env()
-            .runtime_config(DIRECT_CONNECTIONS, true)
-            .runtime_config("target.default", "127.0.0.1")
-            .build()
-            .unwrap();
+        let env = test_env().runtime_config("target.default", "127.0.0.1").build().unwrap();
         let target_env = FhoTargetEnvironment::default();
         let behavior = target_env.init_connection_behavior(&env.context).await.unwrap();
         assert!(matches!(*behavior, ConnectionBehavior::DirectConnector(_)));
@@ -464,11 +459,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn set_daemon_behavior_will_not_override_previous_direct() {
-        let env = test_env()
-            .runtime_config(DIRECT_CONNECTIONS, true)
-            .runtime_config("target.default", "127.0.0.1")
-            .build()
-            .unwrap();
+        let env = test_env().runtime_config("target.default", "127.0.0.1").build().unwrap();
         let target_env = FhoTargetEnvironment::default();
         let _behavior = target_env.init_direct_connection_behavior(&env.context).await.unwrap();
         let returned_behavior =

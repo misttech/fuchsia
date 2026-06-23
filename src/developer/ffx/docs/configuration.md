@@ -30,7 +30,7 @@ ffx config env get
     | Configuration Value                     | Documentation                      |
     | --------------------------------------- | ---------------------------------- |
     | `connectivity.direct`                   | Support direct target connections. |
-    |                                         | Defaults to `false`.               |
+    |                                         | Defaults to `true`.                |
     | `connectivity.enable_network`           | Enable using MDNS to discover      |
     |                                         | targets and SSH to connect to      |
     |                                         | them. Defaults to `true`.          |

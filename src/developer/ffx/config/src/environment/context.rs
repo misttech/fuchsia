@@ -654,11 +654,11 @@ impl EnvironmentContext {
     }
 
     /// Returns whether we are configured to make a direct connection to the
-    /// target, rather than going through the daemon. Defaults to false if
-    /// not overridden on the command line with "-d"/"--direct", or with the
-    /// `connectivity.direct` config option.
+    /// target, rather than going through the daemon. Defaults to true. Can be
+    /// overridden by setting the config option `connectivity.direct` (e.g. with
+    /// `-c connectivity.direct=false` on the command line).
     pub fn get_direct_connection_mode(&self) -> bool {
-        self.get(crate::keys::DIRECT_CONNECTIONS).unwrap_or(false)
+        self.get(crate::keys::DIRECT_CONNECTIONS).unwrap_or(true)
     }
 
     /// Set a specific target spec. Used in unusual circumstances (e.g. in `ffx
@@ -836,11 +836,11 @@ mod test {
 
     #[fuchsia::test]
     fn direct_connection_mode() {
-        // Defaults to false
+        // Defaults to true
         let ctx =
             EnvironmentContext::no_context(ExecutableKind::Test, ConfigMap::new(), None, true)
                 .unwrap();
-        assert!(!ctx.get_direct_connection_mode());
+        assert!(ctx.get_direct_connection_mode());
 
         // True if connectivity.direct=true
         let mut connectivity = ConfigMap::new();

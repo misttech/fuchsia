@@ -335,7 +335,7 @@ pub struct Ffx {
     pub strict: bool,
 
     #[argh(switch, short = 'd', long = "direct")]
-    /// connect directly to the target.
+    /// connect directly to the target. Unnecessary, as this is now the default.
     pub direct: bool,
 }
 

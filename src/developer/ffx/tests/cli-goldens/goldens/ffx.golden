@@ -168,7 +168,7 @@
       "optionality": "optional",
       "long": "--direct",
       "short": "d",
-      "description": "connect directly to the target.",
+      "description": "connect directly to the target. Unnecessary, as this is now the default.",
       "hidden": false
     }
   ],
