@@ -954,7 +954,7 @@ void Element::RecordDaiInterconnectElementState(
   }
 
   SaveIntToNodeStringProperty(*type_specific_state_node_, external_delay_prop_,
-                              std::string(kExternalDelay), *dai_interconnect_state.external_delay(),
+                              std::string(kExternalDelay), dai_interconnect_state.external_delay(),
                               kNone);
 }
 

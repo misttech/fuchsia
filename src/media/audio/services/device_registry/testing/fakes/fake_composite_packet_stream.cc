@@ -158,7 +158,9 @@ void FakeCompositePacketStream::RegisterVmos(RegisterVmosRequest& request,
       completer.Reply(fit::error(ZX_ERR_INVALID_ARGS));
       return;
     }
-    status = record.mapper.Map(*vmo_info.vmo(), 0, size, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE);
+    zx_vm_option_t perms =
+        ZX_VM_PERM_READ | ((info.rights & ZX_RIGHT_WRITE) ? ZX_VM_PERM_WRITE : 0);
+    status = record.mapper.Map(*vmo_info.vmo(), 0, size, perms);
     if (status != ZX_OK) {
       completer.Reply(fit::error(status));
       return;

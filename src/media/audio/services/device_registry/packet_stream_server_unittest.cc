@@ -28,6 +28,9 @@ namespace fha = fuchsia_hardware_audio;
 
 class PacketStreamServerTest : public AudioDeviceRegistryServerTestBase,
                                public fidl::AsyncEventHandler<fad::PacketStream> {
+ public:
+  void handle_unknown_event(fidl::UnknownEventMetadata<fad::PacketStream> metadata) override;
+
  protected:
   std::pair<fidl::Client<fad::PacketStream>, fidl::ServerEnd<fad::PacketStream>>
   CreatePacketStreamClient();
@@ -48,11 +51,6 @@ class PacketStreamServerTest : public AudioDeviceRegistryServerTestBase,
   std::pair<std::unique_ptr<TestServerAndNaturalAsyncClient<ControlServer>>,
             fidl::Client<fad::PacketStream>>
   SetupForCleanShutdownTesting(ElementId element_id);
-
-  void handle_unknown_event(fidl::UnknownEventMetadata<fad::PacketStream> metadata) override {
-    FX_LOGS(WARNING) << "PacketStreamServerTest: unknown event (PacketStream) ordinal "
-                     << metadata.event_ordinal;
-  }
 };
 
 std::pair<fidl::Client<fad::PacketStream>, fidl::ServerEnd<fad::PacketStream>>
@@ -95,6 +93,12 @@ PacketStreamServerTest::SetupForCleanShutdownTesting(ElementId element_id) {
   return std::make_pair(std::move(control), std::move(packet_stream_client));
 }
 
+void PacketStreamServerTest::handle_unknown_event(
+    fidl::UnknownEventMetadata<fad::PacketStream> metadata) {
+  FX_LOGS(WARNING) << "PacketStreamServerTest: unknown event (PacketStream) ordinal "
+                   << metadata.event_ordinal;
+}
+
 TEST_F(PacketStreamServerTest, ClientDropsPacketStreamControl) {
   auto fake_driver = CreateAndEnableDriverWithDefaults();
   auto registry = CreateTestRegistryServer();
@@ -113,9 +117,9 @@ TEST_F(PacketStreamServerTest, ClientDropsPacketStreamControl) {
 
   control->client()
       ->CreatePacketStream({{
-          element_id,
-          fad::PacketStreamOptions{{.format = format}},
-          std::move(packet_stream_server_end),
+          .element_id = element_id,
+          .options = fad::PacketStreamOptions{{.format = format}},
+          .packet_stream_server = std::move(packet_stream_server_end),
       }})
       .Then([&received_callback](fidl::Result<fad::Control::CreatePacketStream>& result) {
         ASSERT_TRUE(result.is_ok()) << result.error_value();
@@ -153,7 +157,9 @@ TEST_F(PacketStreamServerTest, DriverDropsPacketStreamControl) {
   control->client()
       ->CreatePacketStream({{
           .element_id = element_id,
-          .options = fad::PacketStreamOptions{{.format = format}},
+          .options = fad::PacketStreamOptions{{
+              .format = format,
+          }},
           .packet_stream_server = std::move(packet_stream_server_end),
       }})
       .Then([&received_callback](fidl::Result<fad::Control::CreatePacketStream>& result) {
@@ -205,9 +211,11 @@ TEST_F(PacketStreamServerTest, CreatePacketStreamReturnParameters) {
 
   control->client()
       ->CreatePacketStream({{
-          element_id,
-          fad::PacketStreamOptions{{.format = format}},
-          std::move(packet_stream_server_end),
+          .element_id = element_id,
+          .options = fad::PacketStreamOptions{{
+              .format = format,
+          }},
+          .packet_stream_server = std::move(packet_stream_server_end),
       }})
       .Then([&received_callback, format](fidl::Result<fad::Control::CreatePacketStream>& result) {
         ASSERT_TRUE(result.is_ok()) << result.error_value();
@@ -246,9 +254,11 @@ TEST_F(PacketStreamServerTest, DriverDropsComposite) {
 
   control->client()
       ->CreatePacketStream({{
-          element_id,
-          fad::PacketStreamOptions{{.format = format}},
-          std::move(packet_stream_server_end),
+          .element_id = element_id,
+          .options = fad::PacketStreamOptions{{
+              .format = format,
+          }},
+          .packet_stream_server = std::move(packet_stream_server_end),
       }})
       .Then([&received_callback](fidl::Result<fad::Control::CreatePacketStream>& result) {
         ASSERT_TRUE(result.is_ok()) << result.error_value();
@@ -283,9 +293,11 @@ TEST_F(PacketStreamServerTest, SetBuffers) {
 
   control->client()
       ->CreatePacketStream({{
-          element_id,
-          fad::PacketStreamOptions{{.format = format}},
-          std::move(packet_stream_server_end),
+          .element_id = element_id,
+          .options = fad::PacketStreamOptions{{
+              .format = format,
+          }},
+          .packet_stream_server = std::move(packet_stream_server_end),
       }})
       .Then([&received_callback](fidl::Result<fad::Control::CreatePacketStream>& result) {
         ASSERT_TRUE(result.is_ok()) << result.error_value();
@@ -315,6 +327,73 @@ TEST_F(PacketStreamServerTest, SetBuffers) {
   EXPECT_TRUE(received_callback);
 }
 
+TEST_F(PacketStreamServerTest, SetBuffersStripsResizeAndSetPropertyRights) {
+  auto fake_driver = CreateAndEnableDriverWithDefaults();
+  auto registry = CreateTestRegistryServer();
+  auto added_id = WaitForAddedDeviceTokenId(registry->client());
+  ASSERT_TRUE(added_id);
+  auto [presence, device] = adr_service()->FindDeviceByTokenId(*added_id);
+  ASSERT_EQ(presence, AudioDeviceRegistry::DevicePresence::Active);
+
+  auto control = CreateTestControlServer(device);
+  auto [packet_stream_client, packet_stream_server_end] = CreatePacketStreamClient();
+  bool received_callback = false;
+
+  auto element_id = *device->packet_stream_ids().begin();
+  auto format = SafePacketStreamFormats(element_id, device->packet_stream_format_sets()).front();
+
+  control->client()
+      ->CreatePacketStream({{
+          .element_id = element_id,
+          .options = fad::PacketStreamOptions{{
+              .format = format,
+          }},
+          .packet_stream_server = std::move(packet_stream_server_end),
+      }})
+      .Then([&received_callback](fidl::Result<fad::Control::CreatePacketStream>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        received_callback = true;
+      });
+
+  RunLoopUntilIdle();
+  ASSERT_TRUE(received_callback);
+  received_callback = false;
+
+  zx::vmo vmo, vmo_for_request;
+  ASSERT_EQ(ZX_OK, zx::vmo::create(8192, 0, &vmo));
+  ASSERT_EQ(ZX_OK, vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &vmo_for_request));
+
+  zx_info_handle_basic_t initial_info;
+  ASSERT_EQ(ZX_OK, vmo.get_info(ZX_INFO_HANDLE_BASIC, &initial_info, sizeof(initial_info), nullptr,
+                                nullptr));
+  EXPECT_TRUE(initial_info.rights & ZX_RIGHT_SET_PROPERTY);
+
+  fad::PacketStreamSetBuffersRequest request;
+  fha::RegisterVmosConfig register_vmos_config;
+  fha::VmoInfo vmo_info;
+  vmo_info.id(0);
+  vmo_info.vmo(std::move(vmo_for_request));
+  std::vector<fha::VmoInfo> vmo_infos;
+  vmo_infos.push_back(std::move(vmo_info));
+  register_vmos_config.vmo_infos(std::move(vmo_infos));
+  request.vmo_info(
+      fad::PacketStreamSetupVmoInfo::WithRegisterInfo(std::move(register_vmos_config)));
+
+  packet_stream_client->SetBuffers(std::move(request))
+      .Then([&received_callback](fidl::Result<fad::PacketStream::SetBuffers>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        received_callback = true;
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(received_callback);
+
+  auto rights = fake_driver->PacketStreamVmoRights(element_id, 0);
+  ASSERT_TRUE(rights.has_value());
+  EXPECT_FALSE(*rights & ZX_RIGHT_SET_PROPERTY);
+  EXPECT_FALSE(*rights & ZX_RIGHT_RESIZE);
+}
+
 TEST_F(PacketStreamServerTest, StartAndStop) {
   auto fake_driver = CreateAndEnableDriverWithDefaults();
   auto registry = CreateTestRegistryServer();
@@ -333,9 +412,11 @@ TEST_F(PacketStreamServerTest, StartAndStop) {
 
   control->client()
       ->CreatePacketStream({{
-          element_id,
-          fad::PacketStreamOptions{{.format = format}},
-          std::move(packet_stream_server_end),
+          .element_id = element_id,
+          .options = fad::PacketStreamOptions{{
+              .format = format,
+          }},
+          .packet_stream_server = std::move(packet_stream_server_end),
       }})
       .Then([&received_callback](fidl::Result<fad::Control::CreatePacketStream>& result) {
         ASSERT_TRUE(result.is_ok()) << result.error_value();

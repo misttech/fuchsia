@@ -274,7 +274,8 @@ void VirtualAudioPacketStream::PutPacket(PutPacketRequest& request,
     uint64_t size = *transfer.payload_size();
     auto& mapper = registered_vmos_.at(*transfer.vmo_id());
 
-    if (offset + size > mapper.size()) {
+    // size+offset must <= mapper.size(). Make this comparison in a way that cannot overflow.
+    if (offset > mapper.size() || size > mapper.size() - offset) {
       fdf::error("PutPacket: Out of bounds. offset={}, size={}, map_size={}", offset, size,
                  mapper.size());
       completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));

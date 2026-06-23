@@ -29,8 +29,8 @@ const uint32_t kMinSupportedPacketStreamFrameRate = 1000;
 const uint32_t kMaxSupportedRingBufferFrameRate = 192000;
 const uint32_t kMaxSupportedPacketStreamFrameRate = 192000;
 
-constexpr zx_rights_t kRequiredIncomingVmoRights = ZX_RIGHT_TRANSFER | ZX_RIGHT_READ | ZX_RIGHT_MAP;
-constexpr zx_rights_t kRequiredOutgoingVmoRights = kRequiredIncomingVmoRights | ZX_RIGHT_WRITE;
+constexpr zx_rights_t kRequiredVmoRightsForRead = ZX_RIGHT_TRANSFER | ZX_RIGHT_READ | ZX_RIGHT_MAP;
+constexpr zx_rights_t kRequiredVmoRightsForReadWrite = kRequiredVmoRightsForRead | ZX_RIGHT_WRITE;
 
 // Utility functions to validate direct responses from audio drivers.
 bool ClientIsValidForDeviceType(const fuchsia_audio_device::DeviceType& device_type,

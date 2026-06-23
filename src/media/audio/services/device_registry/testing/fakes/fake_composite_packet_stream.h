@@ -60,6 +60,16 @@ class FakeCompositePacketStream final
   // To be used during run-time
   bool started() const { return started_; }
   zx::time mono_start_time() const { return mono_start_time_; }
+  std::optional<zx_rights_t> vmo_rights(uint64_t vmo_id) const {
+    if (auto it = vmos_.find(vmo_id); it != vmos_.end()) {
+      zx_info_handle_basic_t info;
+      if (it->second.vmo.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr) ==
+          ZX_OK) {
+        return info.rights;
+      }
+    }
+    return std::nullopt;
+  }
 
   static uint64_t count() { return count_; }
   FakeComposite* parent() { return parent_; }

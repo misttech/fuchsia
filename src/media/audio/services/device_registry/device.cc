@@ -3112,7 +3112,7 @@ void Device::GetRingBufferVmo(ElementId element_id, uint32_t min_frames,
           vmo_is_incoming = info()->is_input().value_or(true);
         }
         zx_rights_t required_rights =
-            vmo_is_incoming ? kRequiredIncomingVmoRights : kRequiredOutgoingVmoRights;
+            vmo_is_incoming ? kRequiredVmoRightsForRead : kRequiredVmoRightsForReadWrite;
         if (!ValidateRingBufferVmo(result->ring_buffer(), result->num_frames(),
                                    *ring_buffer.driver_format, required_rights)) {
           FX_PLOGS(ERROR, ZX_ERR_INVALID_ARGS) << "Error in RingBuffer/GetVmo response";
@@ -3122,23 +3122,38 @@ void Device::GetRingBufferVmo(ElementId element_id, uint32_t min_frames,
         ring_buffer.ring_buffer_vmo = std::move(result->ring_buffer());
         ring_buffer.num_ring_buffer_frames = result->num_frames();
 
+        uint64_t total_ring_buffer_bytes =
+            *ring_buffer.num_ring_buffer_frames * ring_buffer.bytes_per_frame;
+
         // Re-calculate the size of the client "zone" (if the driver over-allocates, this is
         // considered client space).
         if (vmo_is_incoming) {
+          if (total_ring_buffer_bytes < ring_buffer.ring_buffer_producer_bytes) {
+            FX_PLOGS(ERROR, ZX_ERR_INVALID_ARGS)
+                << "RingBuffer/GetVmo: num_frames (" << *ring_buffer.num_ring_buffer_frames
+                << ") is smaller than driver_transfer_bytes implies";
+            OnError(ZX_ERR_INVALID_ARGS);
+            return;
+          }
           uint64_t previous_consumer_bytes = ring_buffer.ring_buffer_consumer_bytes;
           ring_buffer.ring_buffer_consumer_bytes =
-              (*ring_buffer.num_ring_buffer_frames * ring_buffer.bytes_per_frame) -
-              ring_buffer.ring_buffer_producer_bytes;
+              total_ring_buffer_bytes - ring_buffer.ring_buffer_producer_bytes;
           if (previous_consumer_bytes != ring_buffer.ring_buffer_consumer_bytes) {
             ADR_WARN_OBJECT() << "ring_buffer.ring_buffer_consumer_bytes was "
                               << previous_consumer_bytes << ", is now "
                               << ring_buffer.ring_buffer_consumer_bytes;
           }
         } else {
+          if (total_ring_buffer_bytes < ring_buffer.ring_buffer_consumer_bytes) {
+            FX_PLOGS(ERROR, ZX_ERR_INVALID_ARGS)
+                << "RingBuffer/GetVmo: num_frames (" << *ring_buffer.num_ring_buffer_frames
+                << ") is smaller than driver_transfer_bytes implies";
+            OnError(ZX_ERR_INVALID_ARGS);
+            return;
+          }
           uint64_t previous_producer_bytes = ring_buffer.ring_buffer_producer_bytes;
           ring_buffer.ring_buffer_producer_bytes =
-              (*ring_buffer.num_ring_buffer_frames * ring_buffer.bytes_per_frame) -
-              ring_buffer.ring_buffer_consumer_bytes;
+              total_ring_buffer_bytes - ring_buffer.ring_buffer_consumer_bytes;
           if (previous_producer_bytes != ring_buffer.ring_buffer_producer_bytes) {
             ADR_WARN_OBJECT() << "ring_buffer.ring_buffer_producer_bytes was "
                               << previous_producer_bytes << ", is now "
@@ -3689,8 +3704,12 @@ void Device::SetPacketStreamBuffers(
   FX_CHECK(current_topology_id_.has_value());
   bool vmo_is_incoming =
       ElementHasIncomingEdges(sig_proc_topology_map_.at(*current_topology_id_), element_id);
-  zx_rights_t required_rights =
-      vmo_is_incoming ? kRequiredIncomingVmoRights : kRequiredOutgoingVmoRights;
+  // Driver allocates VMOs: client must only read incoming buffers but must write outgoing ones.
+  zx_rights_t allocate_required_rights =
+      vmo_is_incoming ? kRequiredVmoRightsForRead : kRequiredVmoRightsForReadWrite;
+  // Client allocates (driver registers) VMOs: driver must write incoming but only read outgoing.
+  zx_rights_t register_required_rights =
+      vmo_is_incoming ? kRequiredVmoRightsForReadWrite : kRequiredVmoRightsForRead;
 
   if (setup_vmo_info.Which() == fad::PacketStreamSetupVmoInfo::Tag::kAllocateInfo) {
     auto& allocate_info = setup_vmo_info.allocate_info().value();
@@ -3701,8 +3720,8 @@ void Device::SetPacketStreamBuffers(
     SetCommandTimeout(kDefaultShortCmdTimeout, "AllocateVmos");
     ps_record.packet_stream_client.value()
         ->AllocateVmos(allocate_info)
-        .Then([this, element_id, cb = std::move(set_buffers_callback), buffer_type, required_rights,
-               expected_vmo_count,
+        .Then([this, element_id, cb = std::move(set_buffers_callback), buffer_type,
+               allocate_required_rights, expected_vmo_count,
                min_vmo_size](fidl::Result<fha::PacketStreamControl::AllocateVmos>& result) mutable {
           ClearCommandTimeout();
 
@@ -3738,8 +3757,8 @@ void Device::SetPacketStreamBuffers(
           }
 
           for (uint32_t i = 0; i < result.value().vmos().size(); ++i) {
-            if (auto status = ValidatePacketStreamVmo(result.value().vmos()[i], required_rights,
-                                                      min_vmo_size);
+            if (auto status = ValidatePacketStreamVmo(result.value().vmos()[i],
+                                                      allocate_required_rights, min_vmo_size);
                 status != ZX_OK) {
               ADR_WARN_OBJECT() << "AllocateVmos returned invalid VMO at index " << i << ": "
                                 << status;
@@ -3767,7 +3786,8 @@ void Device::SetPacketStreamBuffers(
     auto& register_info = setup_vmo_info.register_info().value();
     for (uint32_t i = 0; i < register_info.vmo_infos()->size(); ++i) {
       auto& vmo_info = register_info.vmo_infos()->at(i);
-      if (auto status = ValidatePacketStreamVmo(vmo_info, required_rights, 0); status != ZX_OK) {
+      if (auto status = ValidatePacketStreamVmo(vmo_info, register_required_rights, 0);
+          status != ZX_OK) {
         ADR_WARN_METHOD() << "SetupVmoInfo::RegisterInfo Config contains invalid VMO at index "
                           << i;
         auto error = fad::PacketStreamSetBufferError::kBadVmoConfig;
@@ -3779,6 +3799,18 @@ void Device::SetPacketStreamBuffers(
         set_buffers_callback(fit::error(error));
         return;
       }
+      // Harden the handle before it crosses into driver_host: replace it with a
+      // duplicate carrying only the rights the driver actually needs (no RESIZE,
+      // no SET_PROPERTY), so the client cannot shrink/grow the VMO under the
+      // driver's recorded mapping size.
+      zx::vmo rights_reduced;
+      if (auto s = vmo_info.vmo()->replace(register_required_rights | ZX_RIGHT_DUPLICATE,
+                                           &rights_reduced);
+          s != ZX_OK) {
+        set_buffers_callback(fit::error(fad::PacketStreamSetBufferError::kBadVmoConfig));
+        return;
+      }
+      vmo_info.vmo(std::move(rights_reduced));
     }
 
     auto vmo_infos_to_register = std::move(*register_info.vmo_infos());

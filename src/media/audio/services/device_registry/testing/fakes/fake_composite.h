@@ -373,6 +373,11 @@ class FakeComposite final
   static const fuchsia_hardware_audio_signalprocessing::Topology kSourceDualSupportPsOutputTopology;
   static const std::vector<fuchsia_hardware_audio_signalprocessing::Topology> kTopologies;
 
+  FakeComposite(const FakeComposite&) = delete;
+  FakeComposite(FakeComposite&&) = delete;
+  FakeComposite& operator=(const FakeComposite&) = delete;
+  FakeComposite& operator=(FakeComposite&&) = delete;
+
   FakeComposite(zx::channel server_end, zx::channel client_end, async_dispatcher_t* dispatcher);
   ~FakeComposite() override;
 
@@ -459,6 +464,7 @@ class FakeComposite final
 
   bool PacketStreamStarted(ElementId element_id) const;
   zx::time PacketStreamMonoStartTime(ElementId element_id) const;
+  std::optional<zx_rights_t> PacketStreamVmoRights(ElementId element_id, uint64_t vmo_id) const;
 
   // fuchsia_hardware_audio::Composite implementation
   void Reset(ResetCompleter::Sync& completer) override;

@@ -1235,6 +1235,15 @@ zx::time FakeComposite::PacketStreamMonoStartTime(ElementId element_id) const {
   return zx::time::infinite_past();
 }
 
+std::optional<zx_rights_t> FakeComposite::PacketStreamVmoRights(ElementId element_id,
+                                                                uint64_t vmo_id) const {
+  FX_CHECK(is_element_type(element_id, fhasp::ElementType::kPacketStream));
+  if (auto it = packet_streams_.find(element_id); it != packet_streams_.end()) {
+    return it->second->vmo_rights(vmo_id);
+  }
+  return std::nullopt;
+}
+
 void FakeComposite::RingBufferInjectDelayUpdate(ElementId element_id,
                                                 std::optional<zx::duration> internal_delay,
                                                 std::optional<zx::duration> external_delay) {

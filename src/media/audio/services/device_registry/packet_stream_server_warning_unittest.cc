@@ -15,6 +15,7 @@
 #include "src/media/audio/services/device_registry/packet_stream_server.h"
 #include "src/media/audio/services/device_registry/testing/fakes/fake_composite.h"
 #include "src/media/audio/services/device_registry/testing/fakes/fake_composite_packet_stream.h"
+#include "src/media/audio/services/device_registry/validate.h"
 
 namespace media_audio {
 namespace {
@@ -518,6 +519,66 @@ TEST_F(PacketStreamServerCompositeWarningTest, SetBuffersAllocateVmosMissingFiel
   // Missing vmo_count and min_vmo_size
   request.vmo_info(
       fad::PacketStreamSetupVmoInfo::WithAllocateInfo(std::move(allocate_vmos_config)));
+
+  packet_stream_client->SetBuffers(std::move(request))
+      .Then([&received_callback](fidl::Result<fad::PacketStream::SetBuffers>& result) {
+        ASSERT_TRUE(result.is_error());
+        EXPECT_TRUE(result.error_value().is_domain_error());
+        EXPECT_EQ(result.error_value().domain_error(),
+                  fad::PacketStreamSetBufferError::kBadVmoConfig);
+        received_callback = true;
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(received_callback);
+  EXPECT_TRUE(packet_stream_client.is_valid());
+  EXPECT_TRUE(control->client().is_valid());
+}
+
+// Test SetBuffers when RegisterInfo VMO lacks ZX_RIGHT_DUPLICATE
+TEST_F(PacketStreamServerCompositeWarningTest, SetBuffersRegisterVmosMissingDuplicateRight) {
+  auto fake_driver = CreateFakeComposite();
+  auto element_id = FakeComposite::kMaxPacketStreamElementId;
+  auto device = EnableDriverAndAddDevice(fake_driver);
+  auto format = SafePcmPacketStreamFormat(element_id, device->packet_stream_format_sets());
+  auto registry = CreateTestRegistryServer();
+
+  auto token_id = WaitForAddedDeviceTokenId(registry->client());
+  ASSERT_TRUE(token_id);
+  auto [status, added_device] = adr_service()->FindDeviceByTokenId(*token_id);
+  auto control = CreateTestControlServer(added_device);
+  auto [packet_stream_client, packet_stream_server_end] = CreatePacketStreamClient();
+  bool received_callback = false;
+
+  control->client()
+      ->CreatePacketStream({{
+          element_id,
+          fad::PacketStreamOptions{{.format = format}},
+          std::move(packet_stream_server_end),
+      }})
+      .Then([&received_callback](fidl::Result<fad::Control::CreatePacketStream>& result) {
+        received_callback = true;
+      });
+
+  RunLoopUntilIdle();
+  ASSERT_TRUE(received_callback);
+
+  received_callback = false;
+
+  zx::vmo vmo, vmo_no_dup;
+  ASSERT_EQ(ZX_OK, zx::vmo::create(8192, 0, &vmo));
+  ASSERT_EQ(ZX_OK, vmo.replace(kRequiredVmoRightsForRead, &vmo_no_dup));
+
+  fad::PacketStreamSetBuffersRequest request;
+  fha::RegisterVmosConfig register_vmos_config;
+  fha::VmoInfo vmo_info;
+  vmo_info.id(0);
+  vmo_info.vmo(std::move(vmo_no_dup));
+  std::vector<fha::VmoInfo> vmo_infos;
+  vmo_infos.push_back(std::move(vmo_info));
+  register_vmos_config.vmo_infos(std::move(vmo_infos));
+  request.vmo_info(
+      fad::PacketStreamSetupVmoInfo::WithRegisterInfo(std::move(register_vmos_config)));
 
   packet_stream_client->SetBuffers(std::move(request))
       .Then([&received_callback](fidl::Result<fad::PacketStream::SetBuffers>& result) {

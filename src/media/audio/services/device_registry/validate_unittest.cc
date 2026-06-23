@@ -580,22 +580,24 @@ TEST(ValidateTest, ValidateRingBufferVmoOutgoing) {
   zx::vmo vmo, outgoing;
   auto status = zx::vmo::create(kVmoContentSize, 0, &vmo);
   ASSERT_EQ(status, ZX_OK) << "could not create VMO for test input";
-  status = vmo.replace(kRequiredOutgoingVmoRights, &outgoing);
+  status = vmo.replace(kRequiredVmoRightsForReadWrite, &outgoing);
   ASSERT_EQ(status, ZX_OK) << "could not change VMO rights for test input";
 
-  EXPECT_TRUE(
-      ValidateRingBufferVmo(outgoing, kNumFrames, kRingBufferFormat, kRequiredOutgoingVmoRights));
+  // For VMOs we will fill with outgoing audio to the driver, they must be writable.
+  EXPECT_TRUE(ValidateRingBufferVmo(outgoing, kNumFrames, kRingBufferFormat,
+                                    kRequiredVmoRightsForReadWrite));
 }
 
 TEST(ValidateTest, ValidateRingBufferVmoIncoming) {
   zx::vmo vmo, incoming;
   auto status = zx::vmo::create(kVmoContentSize, 0, &vmo);
   ASSERT_EQ(status, ZX_OK) << "could not create VMO for test input";
-  status = vmo.replace(kRequiredIncomingVmoRights, &incoming);
+  status = vmo.replace(kRequiredVmoRightsForRead, &incoming);
   ASSERT_EQ(status, ZX_OK) << "could not change VMO rights for test input";
 
+  // For VMOs of incoming audio from the driver, we only need to read the data (not write).
   EXPECT_TRUE(
-      ValidateRingBufferVmo(incoming, kNumFrames, kRingBufferFormat, kRequiredIncomingVmoRights));
+      ValidateRingBufferVmo(incoming, kNumFrames, kRingBufferFormat, kRequiredVmoRightsForRead));
 }
 
 TEST(ValidateTest, ValidateDelayInfo) {

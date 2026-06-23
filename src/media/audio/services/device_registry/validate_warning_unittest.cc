@@ -561,35 +561,35 @@ TEST(ValidateWarningTest, RingBufferVmoInvalid) {
 
   // Bad VMO (get_size failed)
   EXPECT_FALSE(
-      ValidateRingBufferVmo(zx::vmo(), kNumFrames, kRingBufferFormat, kRequiredIncomingVmoRights))
+      ValidateRingBufferVmo(zx::vmo(), kNumFrames, kRingBufferFormat, kRequiredVmoRightsForRead))
       << "invalid VMO";
 
   // VMO has insufficient rights (incoming)
   zx::vmo cannot_map;
-  status = vmo.duplicate(kRequiredIncomingVmoRights & ~ZX_RIGHT_MAP, &cannot_map);
+  status = vmo.duplicate(kRequiredVmoRightsForRead & ~ZX_RIGHT_MAP, &cannot_map);
   ASSERT_EQ(status, ZX_OK) << "Could not change rights for vmo";
   EXPECT_FALSE(
-      ValidateRingBufferVmo(cannot_map, kNumFrames, kRingBufferFormat, kRequiredIncomingVmoRights))
+      ValidateRingBufferVmo(cannot_map, kNumFrames, kRingBufferFormat, kRequiredVmoRightsForRead))
       << "invalid VMO cannot MAP";
   zx::vmo cannot_read;
-  status = vmo.duplicate(kRequiredIncomingVmoRights & ~ZX_RIGHT_READ, &cannot_read);
+  status = vmo.duplicate(kRequiredVmoRightsForRead & ~ZX_RIGHT_READ, &cannot_read);
   ASSERT_EQ(status, ZX_OK) << "Could not change rights for vmo";
   EXPECT_FALSE(
-      ValidateRingBufferVmo(cannot_read, kNumFrames, kRingBufferFormat, kRequiredIncomingVmoRights))
+      ValidateRingBufferVmo(cannot_read, kNumFrames, kRingBufferFormat, kRequiredVmoRightsForRead))
       << "invalid VMO cannot READ";
 
   // VMO has insufficient rights (outgoing)
   zx::vmo cannot_write;
-  status = vmo.duplicate(kRequiredOutgoingVmoRights & ~ZX_RIGHT_WRITE, &cannot_write);
+  status = vmo.duplicate(kRequiredVmoRightsForReadWrite & ~ZX_RIGHT_WRITE, &cannot_write);
   ASSERT_EQ(status, ZX_OK) << "Could not change rights for vmo";
   EXPECT_FALSE(ValidateRingBufferVmo(cannot_write, kNumFrames, kRingBufferFormat,
-                                     kRequiredOutgoingVmoRights))
+                                     kRequiredVmoRightsForReadWrite))
       << "invalid VMO cannot WRITE";
   zx::vmo cannot_duplicate;
-  status = vmo.replace(kRequiredIncomingVmoRights & ~ZX_RIGHT_DUPLICATE, &cannot_duplicate);
+  status = vmo.replace(kRequiredVmoRightsForRead & ~ZX_RIGHT_DUPLICATE, &cannot_duplicate);
   ASSERT_EQ(status, ZX_OK) << "Could not change rights for vmo";
   EXPECT_FALSE(ValidateRingBufferVmo(cannot_duplicate, kNumFrames, kRingBufferFormat,
-                                     kRequiredOutgoingVmoRights))
+                                     kRequiredVmoRightsForReadWrite))
       << "invalid VMO cannot DUPLICATE";
 }
 
@@ -601,22 +601,22 @@ TEST(ValidateWarningTest, RingBufferVmoParamsInvalid) {
 
   // bad num_frames (too large for VMO)
   EXPECT_FALSE(
-      ValidateRingBufferVmo(vmo, kNumFrames + 1, kRingBufferFormat, kRequiredIncomingVmoRights))
+      ValidateRingBufferVmo(vmo, kNumFrames + 1, kRingBufferFormat, kRequiredVmoRightsForRead))
       << "num_frames too large";
 
   // Bad format (flagged by the encapsulated ValidateRingBufferFormat)
   fha::Format2 mutable_format = kRingBufferFormat;
   mutable_format.pcm_format().value().frame_rate() = kMinSupportedRingBufferFrameRate - 1;
-  EXPECT_FALSE(ValidateRingBufferVmo(vmo, kNumFrames, mutable_format, kRequiredIncomingVmoRights))
+  EXPECT_FALSE(ValidateRingBufferVmo(vmo, kNumFrames, mutable_format, kRequiredVmoRightsForRead))
       << "frame_rate too low";
   mutable_format.pcm_format().value().frame_rate() = kMaxSupportedRingBufferFrameRate + 1;
-  EXPECT_FALSE(ValidateRingBufferVmo(vmo, kNumFrames, mutable_format, kRequiredIncomingVmoRights))
+  EXPECT_FALSE(ValidateRingBufferVmo(vmo, kNumFrames, mutable_format, kRequiredVmoRightsForRead))
       << "frame_rate too high";
 
   // Bad format (flagged by the encapsulated ValidateSampleFormatCompatibility)
   mutable_format.pcm_format().value().frame_rate() = 48000;
   mutable_format.pcm_format().value().sample_format() = fha::SampleFormat::kPcmFloat;
-  EXPECT_FALSE(ValidateRingBufferVmo(vmo, kNumFrames, mutable_format, kRequiredIncomingVmoRights));
+  EXPECT_FALSE(ValidateRingBufferVmo(vmo, kNumFrames, mutable_format, kRequiredVmoRightsForRead));
 }
 
 // Negative-test ValidateDelayInfo for internal_delay
