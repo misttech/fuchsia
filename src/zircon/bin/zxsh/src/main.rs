@@ -5,6 +5,9 @@
 #![allow(dead_code)]
 
 mod collections;
+mod errors;
 mod serialization;
+mod sort;
+mod tty;
 
 fn main() {}

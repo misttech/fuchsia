@@ -11,13 +11,24 @@ rustc_binary("bin") {
   with_unit_tests = true
   sources = [
     "src/collections.rs",
+    "src/errors.rs",
     "src/main.rs",
     "src/serialization.rs",
+    "src/sort.rs",
     "src/tests/collections.rs",
+    "src/tests/errors.rs",
     "src/tests/mod.rs",
     "src/tests/serialization.rs",
+    "src/tests/sort.rs",
+    "src/tty.rs",
   ]
-  deps = [ "//third_party/rust_crates:bstr" ]
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_rust",
+    "//sdk/rust/zx",
+    "//src/lib/fdio/rust:fdio",
+    "//third_party/rust_crates:bstr",
+    "//third_party/rust_crates:libc",
+  ]
 }
 
 fuchsia_package("zxsh") {
