@@ -15,6 +15,21 @@ extern std::string DoPrePolicyLoadWork() { return "capabilities_policy"; }
 
 namespace {
 
+/// Returns a header and data struct of the type required by `capget` and `capset`
+/// populated with the Linux capability version preferred by Starnix.
+/// The caps are properly zeroed out.
+std::pair<__user_cap_header_struct, std::array<__user_cap_data_struct, _LINUX_CAPABILITY_U32S_3>>
+NewCapStructs() {
+  __user_cap_header_struct header;
+  memset(&header, 0, sizeof(header));
+  header.version = _LINUX_CAPABILITY_VERSION_3;
+
+  std::array<__user_cap_data_struct, _LINUX_CAPABILITY_U32S_3> caps;
+  memset(caps.data(), 0, sizeof(caps));
+
+  return {header, caps};
+}
+
 /// When the `getcap` process class permission is granted, the `capget` syscall succeeds
 /// when the header is valid and the user data argument is non-null.
 TEST(CapabilitiesTest, GetCapAllowed) {

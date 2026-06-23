@@ -22,6 +22,7 @@
 #include "gmock/gmock.h"
 #include "src/lib/files/file.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 
 uint64_t valid_tracepoint_id = 1;
@@ -633,9 +634,7 @@ TEST(PerfEventTest, OpenEventsWithSelinuxButNoCapabilityFails) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_all_permissions_t:s0", [&] {
-    auto [header, caps] = NewCapStructs();
-    // Attempt to drop all capabilities.
-    EXPECT_THAT(syscall(SYS_capset, &header, caps.data()), SyscallSucceeds());
+    test_helper::DropAllCapabilities();
 
     auto pe =
         GetPerfEventAttr(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_CLOCK, /*exclude_kernel=*/false);
@@ -660,9 +659,7 @@ TEST(PerfEventTest, PermissiveOpenEventsNoCapabilities) {
   auto enforce = ScopedEnforcement::SetPermissive();
 
   ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_no_permissions_t:s0", [&] {
-    auto [header, caps] = NewCapStructs();
-    // Attempt to drop all capabilities.
-    EXPECT_THAT(syscall(SYS_capset, &header, caps.data()), SyscallSucceeds());
+    test_helper::DropAllCapabilities();
 
     auto pe =
         GetPerfEventAttr(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_CLOCK, /*exclude_kernel=*/false);
