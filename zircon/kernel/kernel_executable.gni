@@ -20,9 +20,9 @@ _kernel_executable_cpu_deps = {
   x64 = [ "//zircon/kernel/platform/pc" ]
 }
 
-# TODO(https://fxbug.dev/518907861): Remove the variable when it's always true
-# and we're confident the setting won't need to be reverted.
-_rust_kernel = enable_rust_in_zircon
+# TODO(https://fxbug.dev/518907861): Remove the variable when we're confident
+# the setting won't need to be reverted.
+_rust_kernel = true
 
 # Represents a kernel executable (i.e., a kernel in ELF form) evaluated under
 # the current switchset.
