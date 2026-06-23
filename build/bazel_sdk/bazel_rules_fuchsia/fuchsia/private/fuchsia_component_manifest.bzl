@@ -146,11 +146,8 @@ def _compile_component_manifest(ctx, manifest_in, component_name, includes_in):
     ]
 
 def _fuchsia_component_manifest_impl(ctx):
-    if not (ctx.file.src or ctx.attr.content):
-        fail("Either 'src' or 'content' needs to be specified.")
-
-    if ctx.file.src and ctx.attr.content:
-        fail("Only one of 'src' and 'content' can be specified.")
+    if bool(ctx.file.src) == bool(ctx.attr.content):
+        fail("Exactly one of 'src' and 'content' must be specified.")
 
     if ctx.attr.content and not ctx.attr.component_name:
         fail("When 'content' is specified, 'component_name' must also be specified.")
@@ -180,22 +177,25 @@ src file and included in the includes attribute.
     include: ["foo.cml", "some_dir/bar.cml"]
 }
 ```
+
+If `component_name` is provided, the generated `.cm` file will inherit that
+name. Otherwise, it will keep the same basename as the source file.
 """,
     implementation = _fuchsia_component_manifest_impl,
     toolchains = [FUCHSIA_TOOLCHAIN_DEFINITION],
     attrs = {
         "src": attr.label(
-            doc = "The source manifest to compile",
+            doc = "The source manifest file to compile. Either it or `content` must be specified.",
             allow_single_file = [".cml"],
         ),
         "content": attr.string(
-            doc = "Inline content for the manifest",
+            doc = "Inline content for the manifest. Either it or `src` must be specified.",
         ),
         "component_name": attr.string(
-            doc = "Name of the component for inline manifests",
+            doc = "Name of the component for inline manifests. Must be specified when 'content' is specified.",
         ),
         "includes": attr.label_list(
-            doc = "A list of dependencies which are included in the src cml",
+            doc = "A list of dependencies that are included in the `src` cml file.",
             providers = [FuchsiaComponentManifestShardInfo],
         ),
     } | COMPATIBILITY.HOST_ATTRS | _COMMON_CMC_ATTRIBUTES,
