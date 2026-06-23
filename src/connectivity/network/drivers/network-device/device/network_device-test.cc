@@ -1524,6 +1524,38 @@ TEST_F(NetworkDeviceTest, RejectsInvalidVmoIds) {
   ASSERT_EQ(res->error_value(), ZX_ERR_INVALID_ARGS);
 }
 
+TEST_F(NetworkDeviceTest, RejectsInvalidDescriptorLength) {
+  ASSERT_OK(CreateDeviceWithPort13());
+  fidl::WireSyncClient<netdev::Device> device = OpenConnection();
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(4096, 0, &vmo));
+
+  fidl::Arena alloc;
+
+  auto data_vmo =
+      netdev::wire::DataVmo::Builder(alloc).id(0).vmo(std::move(vmo)).num_rx_buffers(1).Build();
+
+  std::vector<netdev::wire::DataVmo> data_vmos = {data_vmo};
+
+  zx::vmo descriptors_vmo;
+  ASSERT_OK(zx::vmo::create(4096, 0, &descriptors_vmo));
+
+  auto session_info = netdev::wire::SessionInfo::Builder(alloc)
+                          .data(fidl::VectorView<netdev::wire::DataVmo>(alloc, data_vmos))
+                          .descriptors(std::move(descriptors_vmo))
+                          .descriptor_version(NETWORK_DEVICE_DESCRIPTOR_VERSION)
+                          .descriptor_length(static_cast<uint8_t>(
+                              sizeof(buffer_descriptor_t) / sizeof(uint64_t) - 1))
+                          .descriptor_count(16)
+                          .Build();
+
+  auto res = device->OpenSession(fidl::StringView::FromExternal("test_session"), session_info);
+  ASSERT_OK(res.status());
+  ASSERT_TRUE(res->is_error());
+  ASSERT_EQ(res->error_value(), ZX_ERR_INVALID_ARGS);
+}
+
 TEST_F(NetworkDeviceTest, TxBadPorts) {
   // Test that attempting tx with bad port values causes the buffer to be
   // returned with an error.

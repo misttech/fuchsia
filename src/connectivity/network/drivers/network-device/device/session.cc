@@ -54,6 +54,10 @@ zx::result<std::pair<std::unique_ptr<Session>, netdev::wire::Fifos>> Session::Cr
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
+  if (info.descriptor_length() * sizeof(uint64_t) != sizeof(buffer_descriptor_t)) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
   fbl::AllocChecker ac;
   std::unique_ptr<Session> session(new (&ac) Session(dispatcher, info, name, parent));
   if (!ac.check()) {
