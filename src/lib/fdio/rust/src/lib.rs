@@ -199,6 +199,19 @@ pub fn create_fd(handle: zx::NullableHandle) -> Result<OwnedFd, zx::Status> {
     Ok(f)
 }
 
+/// Create a null file descriptor.
+///
+/// The file descriptor behaves like `/dev/null`.
+pub fn create_fd_null() -> Option<OwnedFd> {
+    let fd = unsafe { fdio_sys::fdio_fd_create_null() };
+    if fd < 0 {
+        return None;
+    }
+    // Safety: The fd is new and owned by fdio.
+    let f = unsafe { OwnedFd::from_raw_fd(fd) };
+    Some(f)
+}
+
 /// Bind a handle to a specific file descriptor.
 ///
 /// Afterward, the handle is owned by fdio, and will close when the file descriptor is closed.
@@ -959,5 +972,15 @@ mod tests {
 
         let _: File = open_fd_at(&pkg_fd, "bin", fio::PERM_READABLE)
             .expect("Failed to open bin/ subdirectory using fdio_open_fd_at");
+    }
+
+    #[test]
+    fn test_create_fd_null() {
+        let fd = create_fd_null().expect("failed to create null fd");
+        use std::io::{Read, Write};
+        let mut file = std::fs::File::from(fd);
+        assert!(file.write_all(b"hello").is_ok());
+        let mut buf = [0; 10];
+        assert_eq!(file.read(&mut buf).unwrap(), 0);
     }
 }
