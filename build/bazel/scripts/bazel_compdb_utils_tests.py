@@ -16,7 +16,7 @@ import bazel_compdb_utils
 class BazelCompdbUtilsTests(unittest.TestCase):
     """Tests for bazel_compdb_utils."""
 
-    def test_extract_file_from_args(self):
+    def test_extract_file_from_args(self) -> None:
         self.assertEqual(
             bazel_compdb_utils.extract_file_from_args(
                 ["gcc", "-c", "foo.cc", "-o", "foo.o"]
@@ -40,7 +40,7 @@ class BazelCompdbUtilsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             bazel_compdb_utils.extract_file_from_args([])
 
-    def test_action_init(self):
+    def test_action_init(self) -> None:
         action_dict = {
             "targetId": 1,
             "actionKey": "key",
@@ -56,7 +56,7 @@ class BazelCompdbUtilsTests(unittest.TestCase):
         self.assertEqual(action.environment_vars, {})
         self.assertEqual(action.file, "foo.cc")
 
-    def test_action_is_external(self):
+    def test_action_is_external(self) -> None:
         action_dict = {
             "targetId": 1,
             "actionKey": "key",
@@ -74,7 +74,7 @@ class BazelCompdbUtilsTests(unittest.TestCase):
         self.assertFalse(internal_action.is_external())
         self.assertTrue(external_action.is_external())
 
-    def test_compdb_formatter_init(self):
+    def test_compdb_formatter_init(self) -> None:
         formatter = bazel_compdb_utils.CompDBFormatter(
             "/build_dir", "/output_base", "/output_path"
         )
@@ -84,7 +84,7 @@ class BazelCompdbUtilsTests(unittest.TestCase):
         self.assertEqual(formatter.output_base_rel, "../output_base")
         self.assertEqual(formatter.output_path_rel, "../output_path")
 
-    def test_compdb_formatter_rewrite_file(self):
+    def test_compdb_formatter_rewrite_file(self) -> None:
         formatter = bazel_compdb_utils.CompDBFormatter(
             "/build", "/build/out/base", "/build/out/path"
         )
@@ -115,7 +115,7 @@ class BazelCompdbUtilsTests(unittest.TestCase):
             formatter.rewrite_file(action_int), "../../internal/file.cc"
         )
 
-    def test_compdb_formatter_maybe_rewrite_path(self):
+    def test_compdb_formatter_maybe_rewrite_path(self) -> None:
         formatter = bazel_compdb_utils.CompDBFormatter(
             "/build", "/build/out/base", "/build/out/path"
         )
@@ -172,8 +172,10 @@ class BazelCompdbUtilsTests(unittest.TestCase):
     @mock.patch("bazel_compdb_utils.CompDBFormatter.maybe_rewrite_path")
     @mock.patch("bazel_compdb_utils.CompDBFormatter.rewrite_file")
     def test_compdb_formatter_action_to_compile_commands(
-        self, mock_rewrite_file, mock_maybe_rewrite_path
-    ):
+        self,
+        mock_rewrite_file: mock.MagicMock,
+        mock_maybe_rewrite_path: mock.MagicMock,
+    ) -> None:
         formatter = bazel_compdb_utils.CompDBFormatter(
             "/build", "/build/out/base", "/build/out/path"
         )
@@ -212,7 +214,7 @@ class BazelCompdbUtilsTests(unittest.TestCase):
             any_order=True,
         )
 
-    def test_collect_actions(self):
+    def test_collect_actions(self) -> None:
         action_graph = {
             "targets": [
                 {"id": 1, "label": "//foo:bar"},
@@ -244,7 +246,7 @@ class BazelCompdbUtilsTests(unittest.TestCase):
         self.assertEqual(actions[1].label, "//baz:qux")
         self.assertEqual(actions[1].file, "baz.cc")
 
-    def test_collect_actions_empty(self):
+    def test_collect_actions_empty(self) -> None:
         self.assertEqual(bazel_compdb_utils.collect_actions({}), [])
         self.assertEqual(
             bazel_compdb_utils.collect_actions({"targets": [], "actions": []}),
@@ -253,7 +255,11 @@ class BazelCompdbUtilsTests(unittest.TestCase):
 
     @mock.patch("bazel_compdb_utils.run")
     @mock.patch("bazel_compdb_utils.get_action_graph_from_labels")
-    def test_compdb_for_labels(self, mock_get_actions, mock_run):
+    def test_compdb_for_labels(
+        self,
+        mock_get_actions: mock.MagicMock,
+        mock_run: mock.MagicMock,
+    ) -> None:
         mock_run.return_value = (
             "output_base: /build/out/base\noutput_path: /build/out/path"
         )
@@ -303,7 +309,7 @@ class BazelCompdbUtilsTests(unittest.TestCase):
             "bazel", "info", "output_base", "output_path"
         )
 
-    def test_dedupe(self):
+    def test_dedupe(self) -> None:
         compdb = [
             {"file": "a.cc", "arguments": ["gcc", "a.cc"]},
             {"file": "b.cc", "arguments": ["gcc", "b.cc"]},
@@ -318,7 +324,7 @@ class BazelCompdbUtilsTests(unittest.TestCase):
             ],
         )
 
-    def test_dedupe_empty(self):
+    def test_dedupe_empty(self) -> None:
         self.assertEqual(bazel_compdb_utils.dedupe([]), [])
 
 

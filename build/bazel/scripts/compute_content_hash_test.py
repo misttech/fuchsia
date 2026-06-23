@@ -72,7 +72,7 @@ def _setup_second_git_dir(git_dir: Path, submodule_path: Path) -> str:
 
 
 class ComputeContentHashTest(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self._td = tempfile.TemporaryDirectory()
         self._dir = Path(self._td.name)
         self.datadir = self._dir / "data"
@@ -89,10 +89,10 @@ class ComputeContentHashTest(unittest.TestCase):
             "version 1.0"
         )
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self._td.cleanup()
 
-    def _setup_git_repos(self):
+    def _setup_git_repos(self) -> None:
         self.gitdir1 = self._dir / "git_project1"
         self.first_commit, self.second_commit = _setup_first_git_dir(
             self.gitdir1
@@ -101,19 +101,19 @@ class ComputeContentHashTest(unittest.TestCase):
         self.gitdir2 = self._dir / "git_project2"
         self.first_commit2 = _setup_second_git_dir(self.gitdir2, self.gitdir1)
 
-    def test_file_content_hash(self):
+    def test_file_content_hash(self) -> None:
         fstate = cch.FileState()
         descriptor = fstate.process_source_path(self.datadir / "README.txt")
         self.assertEqual(
             descriptor, "F49d18153ca1983adefbe9c3a2cb91676c73b1024"
         )
 
-    def test_symlink_content_hash(self):
+    def test_symlink_content_hash(self) -> None:
         fstate = cch.FileState()
         descriptor = fstate.process_source_path(self.datadir / "data.link")
         self.assertEqual(descriptor, "Ssubdir/data")
 
-    def test_directory_content_hash(self):
+    def test_directory_content_hash(self) -> None:
         fstate = cch.FileState()
         descriptor = fstate.process_source_path(self.datadir)
         self.assertEqual(
@@ -125,7 +125,7 @@ class ComputeContentHashTest(unittest.TestCase):
 """,
         )
 
-    def test_cipd_content_hash(self):
+    def test_cipd_content_hash(self) -> None:
         fstate = cch.FileState()
         descriptor = fstate.process_source_path(self.prebuiltdir)
         self.assertEqual(
@@ -140,7 +140,7 @@ class ComputeContentHashTest(unittest.TestCase):
             descriptor, "F105a6be87e08ee0d67f397a498315de3afaba803"
         )
 
-    def test_git_content_hash_no_submodules(self):
+    def test_git_content_hash_no_submodules(self) -> None:
         self._setup_git_repos()
 
         # on branch on first git repository.

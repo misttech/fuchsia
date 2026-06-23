@@ -80,11 +80,11 @@ class NoSubmodulesTest(unittest.TestCase):
             self._dir
         )
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self._td.cleanup()
 
-    def _cmd(self, args: T.Sequence[str]) -> "subprocess.CompletedProcess[str]":
-        return subprocess.run(
+    def _cmd(self, args: T.Sequence[str]) -> subprocess.CompletedProcess[str]:
+        ret = subprocess.run(
             args, cwd=self._dir, capture_output=True, text=True
         )
         if ret.returncode != 0:
@@ -148,11 +148,11 @@ class WithSubmodulesTest(unittest.TestCase):
         self._dir = self._top_dir / "second_dir"
         self._first_commit2 = _setup_second_git_dir(self._dir, self._first_dir)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self._td.cleanup()
 
-    def _cmd(self, args: T.Sequence[str]) -> "subprocess.CompletedProcess[str]":
-        return subprocess.run(
+    def _cmd(self, args: T.Sequence[str]) -> subprocess.CompletedProcess[str]:
+        ret = subprocess.run(
             args, cwd=self._dir, capture_output=True, text=True
         )
         if ret.returncode != 0:
@@ -191,7 +191,7 @@ class WithSubmodulesTest(unittest.TestCase):
 
     def test_on_branch_with_packed_refs(self) -> None:
         git_dir = self._dir / "sub1"
-        self._cmd(["git", "-C", git_dir, "pack-refs", "--all"])
+        self._cmd(["git", "-C", str(git_dir), "pack-refs", "--all"])
 
         current_head = gghc.get_git_head_commit(git_dir)
         self.assertEqual(current_head, self._second_commit)
@@ -212,7 +212,7 @@ class WithSubmodulesTest(unittest.TestCase):
 
     def test_detached_state(self) -> None:
         git_dir = self._dir / "sub1"
-        self._cmd(["git", "-C", git_dir, "checkout", "main^"])
+        self._cmd(["git", "-C", str(git_dir), "checkout", "main^"])
         current_head = gghc.get_git_head_commit(self._dir / "sub1")
         self.assertEqual(current_head, self._first_commit)
 
@@ -249,7 +249,7 @@ class WithWorktreeTest(unittest.TestCase):
             self._base_dir, ["worktree", "add", self._dir, "-b", "wt-branch"]
         )
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self._td.cleanup()
 
     def _cmd(self, args: T.Sequence[str]) -> "subprocess.CompletedProcess[str]":

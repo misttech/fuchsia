@@ -46,7 +46,7 @@ class RepoMappingTest(unittest.TestCase):
         ]
     )
 
-    def test_parse_repo_mapping(self):
+    def test_parse_repo_mapping(self) -> None:
         _TEST_CASES = [
             (
                 "bazel8_bzlmod_with_module_extension",
@@ -94,7 +94,7 @@ class RepoMappingTest(unittest.TestCase):
             result = RepoMapping.parse_repo_mapping(content)
             self.assertEqual(result, expected, name)
 
-    def test_map_apparent_name(self):
+    def test_map_apparent_name(self) -> None:
         _TEST_CASES = [
             (
                 "bazel8_bzlmod_with_module_extension",
@@ -154,7 +154,7 @@ class RepoMappingTest(unittest.TestCase):
                     f"{name}.{apparent_name} in {source_name}",
                 )
 
-    def test_map_input_path(self):
+    def test_map_input_path(self) -> None:
         _TEST_CASES = [
             (
                 "bazel8_bzlmod_with_module_extension",
@@ -269,7 +269,7 @@ class RepoMappingTest(unittest.TestCase):
 
 
 class RunfilesManifestTest(unittest.TestCase):
-    def test_escape(self):
+    def test_escape(self) -> None:
         TEST_CASES = {
             "a path with spaces": "a\\spath\\swith\\sspaces",
             "a\npath\nwith\nnewlines": "a\\npath\\nwith\\nnewlines",
@@ -280,7 +280,7 @@ class RunfilesManifestTest(unittest.TestCase):
         for path, expected in TEST_CASES.items():
             self.assertEqual(expected, RunfilesManifest.escape(path))
 
-    def test_unescape(self):
+    def test_unescape(self) -> None:
         TEST_CASES = {
             "a\\spath\\swith\\sspaces": "a path with spaces",
             "a\\npath\\nwith\\nnewlines": "a\npath\nwith\nnewlines",
@@ -292,7 +292,7 @@ class RunfilesManifestTest(unittest.TestCase):
         for path, expected in TEST_CASES.items():
             self.assertEqual(expected, RunfilesManifest.unescape(path))
 
-    def test_parse_manifest(self):
+    def test_parse_manifest(self) -> None:
         VALID_TEST_CASES = {
             "foo bar": {"foo": "bar"},
             "foo bar\nqux zoo\n": {"foo": "bar", "qux": "zoo"},
@@ -313,7 +313,7 @@ class RunfilesManifestTest(unittest.TestCase):
 
         self.assertEqual(str(cm.exception), error, content)
 
-    def test_as_dict(self):
+    def test_as_dict(self) -> None:
         TEST_CASES = {
             "foo bar": {"foo": "bar"},
             "foo bar\nqux zoo\n": {"foo": "bar", "qux": "zoo"},
@@ -325,10 +325,10 @@ class RunfilesManifestTest(unittest.TestCase):
             manifest = RunfilesManifest.CreateFrom(content)
             self.assertDictEqual(manifest.as_dict(), expected_dict, msg=content)
 
-    def test_generate_runtime_deps_json(self):
+    def test_generate_runtime_deps_json(self) -> None:
         pass
 
-    def test_generate_content(self):
+    def test_generate_content(self) -> None:
         TEST_CASES = [
             ({"foo": "bar"}, "foo bar\n"),
             ({"foo": "bar", "bar": "zoo"}, "bar zoo\nfoo bar\n"),

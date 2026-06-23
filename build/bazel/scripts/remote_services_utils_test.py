@@ -8,6 +8,7 @@
 import os
 import sys
 import tempfile
+import typing as T
 import unittest
 from pathlib import Path
 
@@ -18,7 +19,7 @@ import remote_services_utils
 
 
 class RemoteServicesUtilsTest(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self._td = tempfile.TemporaryDirectory()
         self._dir = Path(self._td.name)
         self.source_dir = self._dir / "source"
@@ -42,10 +43,10 @@ class RemoteServicesUtilsTest(unittest.TestCase):
             "platform=container-image=docker://gcr.io/test_project/debian11,something_else\n"
         )
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self._td.cleanup()
 
-    def test_generate_rbe_config(self):
+    def test_generate_rbe_config(self) -> None:
         config_dict, input_files = remote_services_utils.generate_rbe_config(
             self.source_dir
         )
@@ -58,8 +59,8 @@ class RemoteServicesUtilsTest(unittest.TestCase):
         )
         self.assertSetEqual(input_files, set([self.cfg_file1, self.cfg_file2]))
 
-    def test_generate_rbe_template_substitutions(self):
-        _TEST_CASES = [
+    def test_generate_rbe_template_substitutions(self) -> None:
+        _TEST_CASES: list[dict[str, T.Any]] = [
             {
                 "name": "simple_project",
                 "config_dict": {
@@ -82,7 +83,7 @@ class RemoteServicesUtilsTest(unittest.TestCase):
             )
             self.assertDictEqual(result, test_case["expected"], msg=msg)
 
-    def test_generate_remote_services_bazelrc(self):
+    def test_generate_remote_services_bazelrc(self) -> None:
         output_file = self._dir / "remote_services.bazelrc"
 
         template_file = (
