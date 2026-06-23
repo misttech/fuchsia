@@ -201,6 +201,74 @@ def _test_setting_component_names():
     )
 
     # 3) Check that the component name is taken from the `component_name`
+    # attribute passed to `fuchsia_component()` and not the basename of the
+    # `.cml` manifest file passed to `fuchsia_component_manifest()`.
+    fuchsia_component(
+        name = "component_with_name_specified_named_component_R",
+        manifest = ":component_manifest_for_foo_cml_without_component_name_attribute",
+        component_name = "component_R",
+    )
+    fuchsia_package(
+        name = "package_to_wrap_component_R",
+        components = [
+            ":component_with_name_specified_named_component_R",
+        ],
+        fuchsia_api_level = "HEAD",
+    )
+    _check_component_name_test(
+        name = "check_component_name_taken_from_component_name_attribute_not_from_compiled_manifest_without_component_name_attribute",
+        target_under_test = ":package_to_wrap_component_R",
+        component_name = "component_R",
+    )
+
+    # 4) Check that the component name is taken from the `component_name`
+    # attribute passed to`fuchsia_component()` and not the `component_name`
+    # attribute passed to `fuchsia_component_manifest()`.
+    fuchsia_component(
+        name = "component_with_name_specified_named_component_S",
+        manifest = ":component_manifest_for_foo_cml_with_component_name_A",
+        component_name = "component_S",
+    )
+    fuchsia_package(
+        name = "package_to_wrap_component_S",
+        components = [
+            ":component_with_name_specified_named_component_S",
+        ],
+        fuchsia_api_level = "HEAD",
+    )
+    _check_component_name_test(
+        name = "check_component_name_taken_from_component_name_attribute_not_from_compiled_manifest_with_component_name_attribute",
+        target_under_test = ":package_to_wrap_component_S",
+        component_name = "component_S",
+    )
+
+    # 5) Check that the component name is taken from the basename of the
+    # uncompiled `.cml` manifest file passed as the `manifest` attribute to
+    # `fuchsia_component()` when `component_name` is not passed.
+    make_file(
+        name = "generated_component_manifest_component_B",
+        filename = "component_B.cml",
+        tags = ["manual"],
+    )
+    fuchsia_component(
+        name = "component_with_name_specified_named_component_B",
+        manifest = ":generated_component_manifest_component_B",
+        # `component_name` is not specified.
+    )
+    fuchsia_package(
+        name = "package_to_wrap_component_B",
+        components = [
+            ":component_with_name_specified_named_component_B",
+        ],
+        fuchsia_api_level = "HEAD",
+    )
+    _check_component_name_test(
+        name = "check_component_name_taken_from_uncompiled_cml_manifest_file_when_component_name_attribute_not_specified",
+        target_under_test = ":package_to_wrap_component_B",
+        component_name = "component_B",
+    )
+
+    # 6) Check that the component name is taken from the `component_name`
     # attribute passed to `fuchsia_component()` when an uncompiled `.cml`
     # manifest file is passed as the `manifest` attribute.
     make_file(
@@ -242,6 +310,9 @@ def fuchsia_component_test_suite(name, **kwargs):
             # _test_setting_component_names
             ":check_component_name_taken_from_compiled_manifest_without_component_name_attribute",
             ":check_component_name_taken_from_compiled_manifest_with_component_name_attribute",
+            ":check_component_name_taken_from_component_name_attribute_not_from_compiled_manifest_without_component_name_attribute",
+            ":check_component_name_taken_from_component_name_attribute_not_from_compiled_manifest_with_component_name_attribute",
+            ":check_component_name_taken_from_uncompiled_cml_manifest_file_when_component_name_attribute_not_specified",
             ":check_component_name_taken_from_component_name_attribute_not_from_uncompiled_cml_manifest_file",
         ],
         **kwargs
