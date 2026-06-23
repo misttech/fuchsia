@@ -1,5 +1,6 @@
 Name: stardoc
 URL: https://github.com/bazelbuild/stardoc
+Version: 0.8.1
 Revision: 58f90b8c564891b0888929e56c8c0116c9420eb4
 
 License File: LICENSE.txt
