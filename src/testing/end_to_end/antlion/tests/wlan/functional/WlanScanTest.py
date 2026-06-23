@@ -113,17 +113,15 @@ class WlanScanTest(base_test.WifiBaseTest):
                 "Requires at least one access point and one Fuchsia device"
             )
 
-        for fd in self.fuchsia_devices:
-            fd.configure_wlan(association_mechanism="drivers")
+        self.dut = self.fuchsia_devices[0]
+        self.dut.configure_wlan(association_mechanism="drivers")
 
     def on_fail(self, record: TestResultRecord) -> None:
-        for fd in self.fuchsia_devices:
-            self.on_device_fail(fd, record)
-            fd.configure_wlan(association_mechanism="drivers")
+        self.on_device_fail(self.dut, record)
+        self.dut.configure_wlan(association_mechanism="drivers")
 
     def teardown_test(self) -> None:
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_core_deprecated_sync.disconnect()
+        self.dut.honeydew_fd.wlan_core_deprecated_sync.disconnect()
         if self.access_point:
             self.access_point.stop_all_aps()
 
@@ -187,35 +185,34 @@ class WlanScanTest(base_test.WifiBaseTest):
             protocol=protocol, credentials=credentials
         )
 
-        for fd in self.fuchsia_devices:
-            name = fd.honeydew_fd.device_name
+        name = self.dut.honeydew_fd.device_name
 
-            self.log.info('[%s] Scanning for ssid "%s"', name, ssid)
-            scan_results = (
-                fd.honeydew_fd.wlan_core_deprecated_sync.scan_for_bss_info()
-            )
-            asserts.assert_in(
-                ssid, scan_results, f'Scan results did not include "{ssid}"'
-            )
-            target_bss = scan_results[ssid]
-            asserts.assert_equal(
-                len(target_bss),
-                1,
-                f'Expected 1 BSS for "{ssid}", got {len(target_bss)}',
-            )
+        self.log.info('[%s] Scanning for ssid "%s"', name, ssid)
+        scan_results = (
+            self.dut.honeydew_fd.wlan_core_deprecated_sync.scan_for_bss_info()
+        )
+        asserts.assert_in(
+            ssid, scan_results, f'Scan results did not include "{ssid}"'
+        )
+        target_bss = scan_results[ssid]
+        asserts.assert_equal(
+            len(target_bss),
+            1,
+            f'Expected 1 BSS for "{ssid}", got {len(target_bss)}',
+        )
 
-            self.log.info('[%s] Connecting to ssid "%s"', name, ssid)
-            asserts.assert_true(
-                fd.honeydew_fd.wlan_core_deprecated_sync.connect(
-                    ssid,
-                    target_bss[0],
-                    authentication,
-                ),
-                f"Expected connect to {ssid} to succeed",
-            )
+        self.log.info('[%s] Connecting to ssid "%s"', name, ssid)
+        asserts.assert_true(
+            self.dut.honeydew_fd.wlan_core_deprecated_sync.connect(
+                ssid,
+                target_bss[0],
+                authentication,
+            ),
+            f"Expected connect to {ssid} to succeed",
+        )
 
-            self.log.info('[%s] Scanning while connected to "%s"', name, ssid)
-            self.basic_scan_request(fd, ssid)
+        self.log.info('[%s] Scanning while connected to "%s"', name, ssid)
+        self.basic_scan_request(self.dut, ssid)
 
     def basic_scan_request(self, fd: FuchsiaDevice, ssid: str) -> None:
         """Verify ssid is discoverable.
@@ -266,8 +263,7 @@ class WlanScanTest(base_test.WifiBaseTest):
                     password=None,
                 ),
             )
-        for fd in self.fuchsia_devices:
-            self.basic_scan_request(fd, ssid)
+        self.basic_scan_request(self.dut, ssid)
 
 
 if __name__ == "__main__":
