@@ -122,6 +122,38 @@ class TestActiveAddSubcommand(unittest.TestCase):
         assert lease is not None
         self.assertEqual(lease.task_id, "my-feat")
 
+    @patch("subcommands.add.run_jiri")
+    def test_add_with_sync_order(self, mock_run_jiri: MagicMock) -> None:
+        wt_path = self.jiri_root / "worktrees" / "wt1"
+        wt_path.mkdir(parents=True, exist_ok=True)
+        self.pool.registry_file.write_text(f"{wt_path}\n")
+
+        args = argparse.Namespace(
+            name="my-feat", pool_name=None, sync=True, json=False
+        )
+        manager = MagicMock()
+        manager.attach_mock(self.mock_git, "mock_git")
+        manager.attach_mock(mock_run_jiri, "mock_run_jiri")
+
+        with patch("sys.stdout", new_callable=StringIO):
+            add_cmd.run(args, self.pool)
+
+        expected_calls = [
+            unittest.mock.call.mock_git(
+                wt_path,
+                ["checkout", "my-feat"],
+                check=True,
+                stdout=unittest.mock.ANY,
+                stderr=unittest.mock.ANY,
+            ),
+            unittest.mock.call.mock_run_jiri(
+                self.jiri_root,
+                ["worktree", "sync", str(wt_path)],
+                check=True,
+            ),
+        ]
+        self.assertEqual(manager.mock_calls, expected_calls)
+
     @patch("worktree.run_git")
     def test_remove_by_task_id(self, mock_run_git: MagicMock) -> None:
         wt_path = self.jiri_root / "worktrees" / "wt1"
