@@ -540,8 +540,8 @@ void DriverRunner::handle_unknown_method(
 
 void DriverRunner::CreateAllDriversPowerElement() {
   ZX_ASSERT_MSG(SuspendEnabled(), "Suspend must be enabled to create AllDrivers power element");
-  ZX_ASSERT_MSG(all_drivers_ == std::nullopt, "AllDrivers power element already created");
-  all_drivers_.emplace(this, root_node_);
+  ZX_ASSERT_MSG(!all_drivers_, "AllDrivers power element already created");
+  all_drivers_ = std::make_shared<AllDriversElement>(this, root_node_);
 
   zx::event all_drivers_token;
   if (zx::event::create(0, &all_drivers_token) != ZX_OK) {

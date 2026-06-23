@@ -374,7 +374,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   bool wait_for_storage_token_from_driver_;
 
   std::optional<fuchsia_power_broker::DependencyToken> all_drivers_token_;
-  std::optional<AllDriversElement> all_drivers_;
+  std::shared_ptr<AllDriversElement> all_drivers_;
 };
 
 Collection ToCollection(const Node& node, fuchsia_driver_framework::DriverPackageType package_type);
