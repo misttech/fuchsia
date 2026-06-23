@@ -208,11 +208,6 @@
 	url = https://fuchsia.googlesource.com/third_party/luci-go
 	name = third_party/luci-go
 	ignore = all
-[submodule "third_party/lz4"]
-	path = third_party/lz4
-	url = https://fuchsia.googlesource.com/third_party/lz4
-	name = third_party/lz4
-	ignore = all
 [submodule "third_party/mako"]
 	path = third_party/mako
 	url = https://fuchsia.googlesource.com/third_party/mako
@@ -737,4 +732,9 @@
 	path = third_party/pylibs/typing_inspection/src
 	url = https://fuchsia.googlesource.com/third_party/github.com/pydantic/typing-inspection
 	name = third_party/pylibs/typing_inspection
+	ignore = all
+[submodule "third_party/lz4/src"]
+	path = third_party/lz4/src
+	url = https://fuchsia.googlesource.com/third_party/lz4
+	name = third_party/lz4
 	ignore = all
