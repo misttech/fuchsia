@@ -16,6 +16,16 @@
 void Allocation::Init(ktl::span<memalloc::Range> mem_ranges,
                       ktl::span<memalloc::Range> special_ranges,
                       memalloc::Pool::AccessCallback access_callback) {
+  // We page-align the special ranges (rounding down start addresses and
+  // rounding up sizes) since these ranges in practice are handed off to the
+  // kernel as page-aligned VMOs. Aligning them here prevents avoiding
+  // unintended inclusions in tail and arena selection complications (which
+  // also deals in whole pages).
+  const uint64_t page_size = PageSize();
+  for (auto& range : special_ranges) {
+    range = range.AlignTo(page_size);
+  }
+
   // Use fbl::NoDestructor to avoid generation of static destructors,
   // which fails in the phys environment.
   static fbl::NoDestructor<memalloc::Pool> pool;

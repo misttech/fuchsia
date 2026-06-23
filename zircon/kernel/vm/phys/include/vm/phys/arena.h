@@ -145,16 +145,10 @@ constexpr void SelectPmmArenas(std::span<const memalloc::Range> ranges,       //
 // that fall within an arena.
 template <uint64_t PageSize, typename Callback>
 void ForEachAlignedAllocationOrHole(std::span<const memalloc::Range> ranges, Callback&& cb) {
-  auto align = [](memalloc::Range& range) {
-    uint64_t start = range.addr & -PageSize;
-    range.size = ((range.addr - start) + range.size + PageSize - 1) & -PageSize;
-    range.addr = start;
-  };
-
   std::optional<memalloc::Range> prev;
   for (memalloc::Range range : ranges) {
     if (range.type != memalloc::Type::kFreeRam) {
-      align(range);
+      range = range.AlignTo(PageSize);
     }
 
     if (prev) {
@@ -177,7 +171,7 @@ void ForEachAlignedAllocationOrHole(std::span<const memalloc::Range> ranges, Cal
             .size = range.addr - prev->end(),
             .type = memalloc::Type::kReserved,
         };
-        align(hole);
+        hole = hole.AlignTo(PageSize);
         if (!cb(hole)) {
           return;
         }

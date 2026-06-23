@@ -743,6 +743,63 @@ TEST(PmmArenaSelectionTests, Nelson) {
   ExpectArenasInPractice({kRanges}, {kExpected});
 }
 
+TEST(PmmArenaSelectionTests, SplitArenaBoundaryIssue) {
+  // A regression test for the issue where an unaligned allocated range (like the
+  // ZBI) could end just past the end of a split arena, causing PMM initialization
+  // to fail. This demonstrates the behavior of SelectPmmArenas that caused the
+  // mismatch: it rounds down the arena size (to 0x54000), leaving the end of the
+  // unaligned ZBI (0x54f00) dangling outside the arena.
+  constexpr memalloc::Range kRanges[] = {
+      // free RAM: [0, 0x1000) (1 page)
+      {
+          .addr = 0x0,
+          .size = 0x1000,
+          .type = memalloc::Type::kFreeRam,
+      },
+      // kernel: [0x1000, 0x53000)
+      {
+          .addr = 0x1000,
+          .size = 0x52000,
+          .type = memalloc::Type::kKernel,
+      },
+      // data ZBI (unaligned): [0x53000, 0x54f00)
+      {
+          .addr = 0x53000,
+          .size = 0x1f00,
+          .type = memalloc::Type::kDataZbi,
+      },
+      // A large hole to force an arena split!
+      // free RAM: [0x200000, 0x201000)
+      {
+          .addr = 0x200000,
+          .size = 0x1000,
+          .type = memalloc::Type::kFreeRam,
+      },
+  };
+
+  constexpr PmmArenaSelection kExpected[] = {
+      {
+          .arena = {.base = 0x0, .size = 0x54000},
+          .bookkeeping = {.base = 0x0, .size = 0x1000},
+          .wasted_bytes = 0,
+      },
+  };
+
+  constexpr PmmArenaSelectionError kExpectedErrors[] = {
+      {
+          .range =
+              {
+                  .addr = 0x200000,
+                  .size = 0x1000,
+                  .type = memalloc::Type::kFreeRam,
+              },
+          .type = PmmArenaSelectionError::Type::kTooSmall,
+      },
+  };
+
+  ExpectArenas({kRanges}, {kExpected}, {kExpectedErrors});
+}
+
 TEST(ForEachAlignedAllocationOrHoleTests, Empty) { ExpectAlignedAllocationsOrHoles({}, {}); }
 
 TEST(ForEachAlignedAllocationOrHoleTests, AlreadyAlignedRegions) {

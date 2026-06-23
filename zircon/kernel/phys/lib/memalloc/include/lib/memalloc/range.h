@@ -171,6 +171,18 @@ struct Range {
   // has been normalized to not overflow.
   constexpr uint64_t end() const { return addr + size; }
 
+  // Returns a new range aligned outward to the given alignment: The start
+  // address is rounded down, and the end address is rounded up.
+  constexpr Range AlignTo(uint64_t alignment) const {
+    uint64_t aligned_addr = addr & -alignment;
+    uint64_t aligned_end = (end() + alignment - 1) & -alignment;
+    return {
+        .addr = aligned_addr,
+        .size = aligned_end - aligned_addr,
+        .type = type,
+    };
+  }
+
   constexpr bool operator==(const Range& other) const {
     return addr == other.addr && size == other.size && type == other.type;
   }
