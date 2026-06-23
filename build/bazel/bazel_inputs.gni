@@ -26,7 +26,7 @@ import("//build/licenses/generated_licenses_spdx.gni")
 # For example, consider an action //src/lib:gen_foo that generates some
 # outputs that needs to be exposed to the Bazel graph. This would look like:
 #
-#     # //src/lib/BUILD.bazel
+#     # //src/lib/BUILD.gn
 #     action("gen_foo") {       # generating action
 #       outputs = [ ... ]
 #     }
@@ -45,7 +45,9 @@ import("//build/licenses/generated_licenses_spdx.gni")
 #     # //src/bar/BUILD.bazel
 #     process_file(
 #        name = "process_foo",
-#        input = "@gn_targets//src/lib:foo_outputs",  # use outputs.
+#        # The input target name is `gn_targets_name` if specified and the name
+#        # of the `generator` target otherwise.
+#        input = "@gn_targets//src/lib:gen_foo",
 #        output = "foo_processed_by_bazel",
 #     )
 #
