@@ -37,7 +37,7 @@ class LeaseInfo:
     worktree_id: str
     pid: int
     timestamp_sec: int
-    agent_id: str | None = None
+    task_id: str | None = None
 
 
 class Worktree:
@@ -73,7 +73,7 @@ class Worktree:
                 worktree_id=content.get("worktree_id", self.name),
                 pid=content.get("pid", 0),
                 timestamp_sec=content.get("timestamp_sec", 0),
-                agent_id=content.get("agent_id"),
+                task_id=content.get("task_id"),
             )
         except Exception:
             return None
@@ -159,7 +159,7 @@ class Worktree:
         except (subprocess.CalledProcessError, FileNotFoundError):
             return SyncStatus.UNKNOWN, 0, 0
 
-    def acquire_lease(self, agent_id: str | None = None) -> None:
+    def acquire_lease(self, task_id: str | None = None) -> None:
         state = self.get_state()
         if state != WorktreeState.FREE:
             raise RuntimeError(
@@ -175,8 +175,8 @@ class Worktree:
                 "timestamp_sec": int(time.time()),
                 "path": str(self.path),
             }
-            if agent_id:
-                lease_data["agent_id"] = agent_id
+            if task_id:
+                lease_data["task_id"] = task_id
             with os.fdopen(fd, "w") as f:
                 json.dump(lease_data, f, separators=(",", ":"))
         except FileExistsError:

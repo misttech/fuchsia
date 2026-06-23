@@ -48,12 +48,12 @@ class TestWorktreeRegistry(unittest.TestCase):
             wt.release_lease()
 
         # Lease it
-        wt.acquire_lease(agent_id=None)
+        wt.acquire_lease(task_id=None)
         self.assertEqual(wt.get_state(), WorktreeState.LEASED)
 
         # Cannot lease again
         with self.assertRaises(RuntimeError):
-            wt.acquire_lease(agent_id=None)
+            wt.acquire_lease(task_id=None)
 
     def test_get_any_free_worktree(self) -> None:
         with self.assertRaises(NoFreeWorktreesError):
@@ -99,7 +99,7 @@ class TestLeaseSubcommand(unittest.TestCase):
             f.write(f"{wt_path}\n")
 
         args = argparse.Namespace(
-            name="wt1", any=False, sync=False, agent_id=None, json=False
+            name="wt1", any=False, sync=False, task_id=None, json=False
         )
         lease_cmd.run(args, self.registry)
         wt = self.registry.get_worktree_by_name("wt1")
@@ -117,7 +117,7 @@ class TestLeaseSubcommand(unittest.TestCase):
         wt1.acquire_lease(None)
 
         args = argparse.Namespace(
-            name=None, any=True, sync=False, agent_id=None, json=False
+            name=None, any=True, sync=False, task_id=None, json=False
         )
         lease_cmd.run(args, self.registry)
         self.assertEqual(wt1.get_state(), WorktreeState.LEASED)
@@ -126,14 +126,14 @@ class TestLeaseSubcommand(unittest.TestCase):
 
     def test_lease_mutually_exclusive_error(self) -> None:
         args = argparse.Namespace(
-            name="wt1", any=True, sync=False, agent_id=None, json=False
+            name="wt1", any=True, sync=False, task_id=None, json=False
         )
         with self.assertRaises(SystemExit):
             lease_cmd.run(args, self.registry)
 
     def test_lease_missing_args_error(self) -> None:
         args = argparse.Namespace(
-            name=None, any=False, sync=False, agent_id=None, json=False
+            name=None, any=False, sync=False, task_id=None, json=False
         )
         with self.assertRaises(SystemExit):
             lease_cmd.run(args, self.registry)
@@ -147,7 +147,7 @@ class TestLeaseSubcommand(unittest.TestCase):
         wt1.acquire_lease(None)
 
         args = argparse.Namespace(
-            name=None, any=True, sync=False, agent_id=None, json=False
+            name=None, any=True, sync=False, task_id=None, json=False
         )
         with self.assertRaises(NoFreeWorktreesError):
             lease_cmd.run(args, self.registry)

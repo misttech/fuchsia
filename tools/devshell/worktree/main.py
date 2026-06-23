@@ -129,8 +129,8 @@ def main() -> None:
         help="Sync the worktree (jiri worktree sync) after leasing",
     )
     parser_lease.add_argument(
-        "--agent-id",
-        help="Metadata identifying the agent/task leasing the worktree; automatically creates and checks out git branch 'feat/<agent-id>'",
+        "--task-id",
+        help="Metadata identifying the agent/task leasing the worktree; automatically creates and checks out git branch 'feat/<task-id>'",
     )
     parser_lease.add_argument(
         "--any", action="store_true", help="Lease any free worktree"

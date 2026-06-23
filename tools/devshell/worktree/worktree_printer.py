@@ -54,8 +54,8 @@ class WorktreePrinter:
 
                 if state == WorktreeState.LEASED:
                     lease = wt.get_lease_info()
-                    if lease and lease.agent_id:
-                        state_str = f"In Use ({lease.agent_id})"
+                    if lease and lease.task_id:
+                        state_str = f"In Use ({lease.task_id})"
                     else:
                         state_str = "In Use"
                     state_color = Colors.YELLOW

@@ -31,7 +31,7 @@ def run(args: Any, registry: WorktreeRegistry) -> None:
         for attempt in range(max_attempts):
             try:
                 wt = registry.get_any_free_worktree()
-                wt.acquire_lease(agent_id=args.agent_id)
+                wt.acquire_lease(task_id=args.task_id)
                 break
             except NoFreeWorktreesError:
                 raise
@@ -40,7 +40,7 @@ def run(args: Any, registry: WorktreeRegistry) -> None:
                     raise
     else:
         wt = registry.get_worktree_by_name(args.name)
-        wt.acquire_lease(agent_id=args.agent_id)
+        wt.acquire_lease(task_id=args.task_id)
 
     if args.sync:
         try:
@@ -54,8 +54,8 @@ def run(args: Any, registry: WorktreeRegistry) -> None:
             wt.release_lease()
             sys.exit(1)
 
-    if args.agent_id:
-        branch_name = f"feat/{args.agent_id}"
+    if args.task_id:
+        branch_name = f"feat/{args.task_id}"
         try:
             run_git(
                 wt.path,
