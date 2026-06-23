@@ -8,11 +8,11 @@ import sys
 from typing import Any
 
 from utils import run_fx
-from worktree_registry import WorktreeRegistry
+from worktree_pool import WorktreePool
 
 
-def run(args: Any, registry: WorktreeRegistry) -> None:
-    wt = registry.add_worktree(args.name)
+def run(args: Any, pool: WorktreePool) -> None:
+    wt = pool.add_worktree(args.name)
 
     if args.set is not None:
         for s in args.set:

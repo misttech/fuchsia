@@ -92,7 +92,7 @@ NOUNS = (
 )
 
 
-class WorktreeRegistry:
+class WorktreePool:
     def __init__(self, fuchsia_dir: str | None = None):
         if fuchsia_dir is None:
             fuchsia_dir = os.environ.get("FUCHSIA_DIR")

@@ -9,10 +9,10 @@ from typing import Any
 
 from utils import run_git, run_jiri
 from worktree import NoFreeWorktreesError
-from worktree_registry import WorktreeRegistry
+from worktree_pool import WorktreePool
 
 
-def run(args: Any, registry: WorktreeRegistry) -> None:
+def run(args: Any, pool: WorktreePool) -> None:
     if args.any and args.name:
         print(
             "Error: Cannot specify both a worktree name and --any",
@@ -30,7 +30,7 @@ def run(args: Any, registry: WorktreeRegistry) -> None:
         max_attempts = 5
         for attempt in range(max_attempts):
             try:
-                wt = registry.get_any_free_worktree()
+                wt = pool.get_any_free_worktree()
                 wt.acquire_lease(task_id=args.task_id)
                 break
             except NoFreeWorktreesError:
@@ -39,13 +39,13 @@ def run(args: Any, registry: WorktreeRegistry) -> None:
                 if attempt == max_attempts - 1:
                     raise
     else:
-        wt = registry.get_worktree_by_name(args.name)
+        wt = pool.get_worktree_by_name(args.name)
         wt.acquire_lease(task_id=args.task_id)
 
     if args.sync:
         try:
             run_jiri(
-                registry.jiri_root,
+                pool.jiri_root,
                 ["worktree", "sync", str(wt.path)],
                 check=True,
             )

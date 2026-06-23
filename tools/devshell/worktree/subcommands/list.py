@@ -4,9 +4,9 @@
 
 from typing import Any
 
+from worktree_pool import WorktreePool
 from worktree_printer import WorktreePrinter
-from worktree_registry import WorktreeRegistry
 
 
-def run(args: Any, registry: WorktreeRegistry) -> None:
-    WorktreePrinter.print_worktrees(registry.get_worktrees())
+def run(args: Any, pool: WorktreePool) -> None:
+    WorktreePrinter.print_worktrees(pool.get_worktrees())

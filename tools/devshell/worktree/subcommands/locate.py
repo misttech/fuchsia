@@ -4,9 +4,9 @@
 
 from typing import Any
 
-from worktree_registry import WorktreeRegistry
+from worktree_pool import WorktreePool
 
 
-def run(args: Any, registry: WorktreeRegistry) -> None:
-    wt = registry.get_worktree_by_name(args.name)
+def run(args: Any, pool: WorktreePool) -> None:
+    wt = pool.get_worktree_by_name(args.name)
     print(wt.path)

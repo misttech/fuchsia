@@ -11,12 +11,13 @@ if (is_host) {
     source_root = "subcommands"
     sources = [
       "__init__.py",
-      "add.py",
       "lease.py",
       "list.py",
       "locate.py",
+      "pool_add.py",
+      "pool_list.py",
+      "pool_remove.py",
       "release.py",
-      "remove.py",
     ]
   }
 
@@ -25,11 +26,11 @@ if (is_host) {
     "main.py",
     "tests/run_all.py",
     "tests/test_build_dir.py",
-    "tests/test_registry.py",
+    "tests/test_pool.py",
     "utils.py",
     "worktree.py",
+    "worktree_pool.py",
     "worktree_printer.py",
-    "worktree_registry.py",
   ]
 
   python_host_test("worktree_test") {
