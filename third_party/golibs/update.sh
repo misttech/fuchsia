@@ -8,7 +8,7 @@
 # allows `go mod` to operate in that directory to update and vendor those
 # dependencies.
 
-set -euo pipefail
+set -eo pipefail
 
 cd "$(dirname "$0")"
 

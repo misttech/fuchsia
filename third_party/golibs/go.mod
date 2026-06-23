@@ -23,7 +23,7 @@ require (
 	golang.org/x/crypto v0.18.0
 	golang.org/x/exp v0.0.0-20230725093048-515e97ebf090
 	golang.org/x/net v0.20.0
-	golang.org/x/sync v0.6.0
+	golang.org/x/sync v0.11.0
 	golang.org/x/sys v0.17.0
 	gonum.org/v1/gonum v0.12.0
 	google.golang.org/api v0.103.0
