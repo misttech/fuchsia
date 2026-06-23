@@ -4,6 +4,7 @@
 
 """Non-SDK version of fuchsia_package rule for platform building."""
 
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load(
     "@fuchsia_rules_common//debug_symbols:debug_symbols.bzl",
     "find_and_process_unstripped_binaries",
@@ -25,10 +26,6 @@ load(
     "@fuchsia_rules_common//packages:resources.bzl",
     "fuchsia_find_all_package_resources",
 )
-load(
-    "//build/bazel:fuchsia_api_level.bzl",
-    "get_integer_for_api_level",
-)
 
 def fx_package(
         *,
@@ -36,7 +33,6 @@ def fx_package(
         package_name = None,
         archive_name = None,
         platform = None,
-        fuchsia_api_level = str(get_integer_for_api_level("PLATFORM")),
         components = [],
         resources = [],
         tools = [],
@@ -74,7 +70,6 @@ def fx_package(
           components included will be include in the parent package.
         package_name: An optional name to use for this package, defaults to name.
         archive_name: An option name for the far file.
-        fuchsia_api_level: The API level to build for.
         platform: Optionally override the platform to build the package for.
         tags: Forward additional tags to all generated targets.
         **kwargs: extra attributes to pass along to the build rule.
@@ -108,7 +103,6 @@ def fx_package(
         subpackages_to_flatten = subpackages_to_flatten,
         package_name = package_name or name,
         archive_name = archive_name,
-        fuchsia_api_level = fuchsia_api_level,
         platform = platform,
         tags = tags + ["manual"],
         **kwargs
@@ -125,7 +119,7 @@ def _build_fuchsia_package_impl(ctx):
         meta_content_append_tool = ctx.executable._meta_content_append_tool,
         validate_component_manifests_tool = ctx.executable._validate_component_manifests,
         fuchsia_debug_symbol_info = fuchsia_debug_symbol_info,
-        api_level = ctx.attr.fuchsia_api_level,
+        api_level = ctx.attr._current_api_level[BuildSettingInfo].value,
     )
 
 _build_fuchsia_package = rule(
@@ -155,6 +149,9 @@ _build_fuchsia_package = rule(
             default = "@fuchsia_rules_common//packages/tools:validate_component_manifests",
             executable = True,
             cfg = "exec",
+        ),
+        "_current_api_level": attr.label(
+            default = "@//build/bazel:fuchsia_api_level",
         ),
     },
 )
