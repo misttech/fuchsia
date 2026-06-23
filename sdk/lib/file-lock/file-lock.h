@@ -6,6 +6,7 @@
 #define LIB_FILE_LOCK_FILE_LOCK_H_
 
 #include <lib/fit/function.h>
+#include <zircon/compiler.h>
 #include <zircon/types.h>
 
 #include <map>
@@ -35,29 +36,27 @@ class LockRequest final {
 
 class FileLock final {
  public:
-  FileLock() : exclusive_(ZX_KOID_INVALID), running_(true) {}
+  FileLock() = default;
   ~FileLock();
 
-  void Lock(zx_koid_t owner, LockRequest& req, lock_completer_t& completer);
-  bool Forget(zx_koid_t owner);
-  bool NoLocksHeld();
+  void Lock(zx_koid_t owner, LockRequest& req, lock_completer_t& completer)
+      __TA_EXCLUDES(lock_mtx_);
+  void Forget(zx_koid_t owner) __TA_EXCLUDES(lock_mtx_);
+  bool NoLocksHeld() __TA_EXCLUDES(lock_mtx_);
 
  private:
   std::mutex lock_mtx_;
 
-  std::map<zx_koid_t, lock_completer_t> pending_shared_;
-  std::map<zx_koid_t, lock_completer_t> pending_exclusive_;
+  std::map<zx_koid_t, lock_completer_t> pending_shared_ __TA_GUARDED(lock_mtx_);
+  std::map<zx_koid_t, lock_completer_t> pending_exclusive_ __TA_GUARDED(lock_mtx_);
 
   // shared lock <= shared.size() > 0
   // exclusive lock <= exclusive_ != ZX_KOID_INVALID
-  std::set<zx_koid_t> shared_;
-  zx_koid_t exclusive_;
-  bool running_;
+  std::set<zx_koid_t> shared_ __TA_GUARDED(lock_mtx_);
+  zx_koid_t exclusive_ __TA_GUARDED(lock_mtx_) = ZX_KOID_INVALID;
 
-  bool LockInProgress(zx_koid_t owner) {
-    return pending_exclusive_.find(owner) != pending_exclusive_.end() ||
-           pending_shared_.find(owner) != pending_shared_.end();
-  }
+  void LockLocked(zx_koid_t owner, LockRequest& req, lock_completer_t& completer)
+      __TA_REQUIRES(lock_mtx_);
 };
 
 }  // namespace file_lock

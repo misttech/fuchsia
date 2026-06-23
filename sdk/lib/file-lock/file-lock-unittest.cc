@@ -3,10 +3,13 @@
 // found in the LICENSE file.
 
 #include <lib/file-lock/file-lock.h>
+#include <zircon/errors.h>
+#include <zircon/types.h>
 
 #include <zxtest/zxtest.h>
 
 namespace file_lock {
+namespace {
 
 class CallbackState {
  public:
@@ -354,4 +357,135 @@ TEST(FileLock, UnlockWhileBlocked) {
   ASSERT_RETURN(client1, ZX_OK);
 }
 
+TEST(FileLock, ForgetPendingWriteLock) {
+  FileLock lock;
+  DummyLockClient client1(lock, 1);
+  DummyLockClient client2(lock, 2);
+
+  client1.DoLock(LockType::WRITE);
+  ASSERT_RETURN(client1, ZX_OK);
+
+  client2.DoLock(LockType::WRITE);
+  ASSERT_BLOCK(client2);
+
+  lock.Forget(2);
+  ASSERT_RETURN(client2, ZX_ERR_CANCELED);
+
+  client1.DoLock(LockType::UNLOCK);
+  ASSERT_RETURN(client1, ZX_OK);
+
+  EXPECT_TRUE(lock.NoLocksHeld());
+}
+
+TEST(FileLock, ForgetPendingReadLock) {
+  FileLock lock;
+  DummyLockClient client1(lock, 1);
+  DummyLockClient client2(lock, 2);
+
+  client1.DoLock(LockType::WRITE);
+  ASSERT_RETURN(client1, ZX_OK);
+
+  client2.DoLock(LockType::READ);
+  ASSERT_BLOCK(client2);
+
+  lock.Forget(2);
+  ASSERT_RETURN(client2, ZX_ERR_CANCELED);
+
+  client1.DoLock(LockType::UNLOCK);
+  ASSERT_RETURN(client1, ZX_OK);
+
+  EXPECT_TRUE(lock.NoLocksHeld());
+}
+
+TEST(FileLock, ForgetWriteLock) {
+  FileLock lock;
+  DummyLockClient client1(lock, 1);
+  DummyLockClient client2(lock, 2);
+
+  client1.DoLock(LockType::WRITE);
+  ASSERT_RETURN(client1, ZX_OK);
+
+  client2.DoLock(LockType::WRITE);
+  ASSERT_BLOCK(client2);
+
+  lock.Forget(1);
+  ASSERT_RETURN(client2, ZX_OK);
+
+  client2.DoLock(LockType::UNLOCK);
+  ASSERT_RETURN(client2, ZX_OK);
+
+  EXPECT_TRUE(lock.NoLocksHeld());
+}
+
+TEST(FileLock, ForgetReadLock) {
+  FileLock lock;
+  DummyLockClient client1(lock, 1);
+  DummyLockClient client2(lock, 2);
+  DummyLockClient client3(lock, 3);
+
+  client1.DoLock(LockType::READ);
+  ASSERT_RETURN(client1, ZX_OK);
+
+  client2.DoLock(LockType::READ);
+  ASSERT_RETURN(client2, ZX_OK);
+
+  client3.DoLock(LockType::WRITE);
+  ASSERT_BLOCK(client3);
+
+  lock.Forget(1);
+  ASSERT_BLOCK(client3);
+
+  lock.Forget(2);
+  ASSERT_RETURN(client3, ZX_OK);
+
+  client3.DoLock(LockType::UNLOCK);
+  ASSERT_RETURN(client3, ZX_OK);
+
+  EXPECT_TRUE(lock.NoLocksHeld());
+}
+
+TEST(FileLock, DestructorCancelsPending) {
+  auto lock = std::make_unique<FileLock>();
+
+  CallbackState client1_state;
+  CallbackState client2_state;
+  CallbackState client3_state;
+
+  lock_completer_t client1_completer = [&client1_state](zx_status_t status) {
+    client1_state.Callback(status);
+  };
+  lock_completer_t client2_completer = [&client2_state](zx_status_t status) {
+    client2_state.Callback(status);
+  };
+  lock_completer_t client3_completer = [&client3_state](zx_status_t status) {
+    client3_state.Callback(status);
+  };
+
+  // Client 1 gets exclusive lock
+  LockRequest req_write(LockType::WRITE, true);
+  lock->Lock(1, req_write, client1_completer);
+  ASSERT_TRUE(client1_state.status_valid());
+  ASSERT_EQ(ZX_OK, client1_state.status());
+
+  // Client 2 blocks on write (pending exclusive)
+  LockRequest req_write2(LockType::WRITE, true);
+  lock->Lock(2, req_write2, client2_completer);
+  ASSERT_FALSE(client2_state.status_valid());
+
+  // Client 3 blocks on read (pending shared)
+  LockRequest req_read(LockType::READ, true);
+  lock->Lock(3, req_read, client3_completer);
+  ASSERT_FALSE(client3_state.status_valid());
+
+  // Destroy the lock, which should cancel pending
+  lock.reset();
+
+  ASSERT_TRUE(client2_state.status_valid());
+  ASSERT_EQ(ZX_ERR_CANCELED, client2_state.status());
+
+  ASSERT_TRUE(client3_state.status_valid());
+  ASSERT_EQ(ZX_ERR_CANCELED, client3_state.status());
+}
+
+}  // namespace
 }  // namespace file_lock

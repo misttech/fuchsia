@@ -45,13 +45,18 @@ namespace fio = fuchsia_io;
 namespace fs {
 
 #ifdef __Fuchsia__
-std::mutex Vnode::gLockAccess;
-std::map<const Vnode*, std::shared_ptr<file_lock::FileLock>> Vnode::gLockMap;
+namespace {
+std::mutex gFileLockMutex;
+std::map<const Vnode*, std::shared_ptr<file_lock::FileLock>> gFileLockMap
+    __TA_GUARDED(gFileLockMutex);
+}  // namespace
 #endif
 
 #ifdef __Fuchsia__
 Vnode::~Vnode() {
-  ZX_DEBUG_ASSERT_MSG(!gLockMap.contains(this), "lock entry in gLockMap not cleaned up for Vnode");
+  std::scoped_lock lock(gFileLockMutex);
+  ZX_DEBUG_ASSERT_MSG(!gFileLockMap.contains(this),
+                      "lock entry in gFileLockMap not cleaned up for Vnode");
 }
 #else
 Vnode::~Vnode() = default;
@@ -90,38 +95,25 @@ void Vnode::OpenRemote(fuchsia_io::wire::DirectoryOpenRequest request) const {
 }
 
 std::shared_ptr<file_lock::FileLock> Vnode::GetVnodeFileLock() {
-  std::lock_guard lock_access(gLockAccess);
-  auto lock = gLockMap.find(this);
-  if (lock == gLockMap.end()) {
-    auto inserted = gLockMap.emplace(std::pair(this, std::make_shared<file_lock::FileLock>()));
-    if (inserted.second) {
-      lock = inserted.first;
-    } else {
-      return nullptr;
-    }
+  std::scoped_lock lock_access(gFileLockMutex);
+  auto file_lock_it = gFileLockMap.find(this);
+  if (file_lock_it != gFileLockMap.end()) {
+    return file_lock_it->second;
+  } else {
+    auto inserted = gFileLockMap.emplace(this, std::make_shared<file_lock::FileLock>());
+    return inserted.first->second;
   }
-  return lock->second;
 }
 
-bool Vnode::DeleteFileLock(zx_koid_t owner) {
-  std::lock_guard lock_access(gLockAccess);
-  bool deleted = false;
-  auto lock = gLockMap.find(this);
-  if (lock != gLockMap.end()) {
-    deleted = lock->second->Forget(owner);
-    if (lock->second->NoLocksHeld()) {
-      gLockMap.erase(this);
+void Vnode::DeleteFileLockInConnectionTeardown(zx_koid_t owner) {
+  std::scoped_lock lock_access(gFileLockMutex);
+  auto file_lock_it = gFileLockMap.find(this);
+  if (file_lock_it != gFileLockMap.end()) {
+    file_lock_it->second->Forget(owner);
+    if (file_lock_it->second->NoLocksHeld()) {
+      gFileLockMap.erase(this);
     }
   }
-  return deleted;
-}
-
-// There is no guard here, as the connection is in teardown.
-bool Vnode::DeleteFileLockInTeardown(zx_koid_t owner) {
-  if (!gLockMap.contains(this)) {
-    return false;
-  }
-  return DeleteFileLock(owner);
 }
 
 #endif  // __Fuchsia__

@@ -213,11 +213,9 @@ class Vnode : public VnodeRefCounted<Vnode>, public fbl::Recyclable<Vnode> {
   // memory overhead for all other |Vnode| types.
   std::shared_ptr<file_lock::FileLock> GetVnodeFileLock();
 
-  bool DeleteFileLock(zx_koid_t owner);
-
-  // This is the same as |DeleteFileLock|, but if there is no
-  // lock, do not acquire |gLockAccess|.
-  bool DeleteFileLockInTeardown(zx_koid_t owner);
+  // Removes any locks held by |owner|. This should only be called when tearing down a connection
+  // and |owner| should be the koid of the connection.
+  void DeleteFileLockInConnectionTeardown(zx_koid_t owner);
 #endif  // __Fuchsia__
 
   // Closes the vnode. Will be called once for each successful Open().
@@ -344,11 +342,6 @@ class Vnode : public VnodeRefCounted<Vnode>, public fbl::Recyclable<Vnode> {
 
  private:
   size_t open_count_ __TA_GUARDED(mutex_) = 0;
-
-#ifdef __Fuchsia__
-  static std::mutex gLockAccess;
-  static std::map<const Vnode*, std::shared_ptr<file_lock::FileLock>> gLockMap;
-#endif
 };
 
 // Opens a vnode by reference.

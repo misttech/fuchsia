@@ -125,7 +125,7 @@ class Connection : public fbl::DoublyLinkedListable<Connection*> {
   zx::result<> CloseVnode(zx_koid_t file_lock_koid) {
     zx::result<> result = zx::ok();
     if (vnode_) {
-      vnode_->DeleteFileLockInTeardown(file_lock_koid);
+      vnode_->DeleteFileLockInConnectionTeardown(file_lock_koid);
       result = zx::make_result(vnode_->Close());
       vnode_ = nullptr;
     }

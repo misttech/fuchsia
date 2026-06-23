@@ -4,25 +4,33 @@
 
 #include "file-lock.h"
 
+#include <zircon/assert.h>
+#include <zircon/errors.h>
+#include <zircon/types.h>
+
+#include <map>
+#include <mutex>
+#include <utility>
+
 namespace file_lock {
 
-typedef std::pair<zx_koid_t, lock_completer_t> lock_pending_t;
-
 FileLock::~FileLock() {
-  running_ = false;
-  const std::lock_guard<std::mutex> lock(lock_mtx_);
+  const std::scoped_lock lock(lock_mtx_);
   for (auto& client : pending_shared_) {
     client.second(ZX_ERR_CANCELED);
   }
-  for (auto& client : pending_shared_) {
+  for (auto& client : pending_exclusive_) {
     client.second(ZX_ERR_CANCELED);
   }
 }
 
 void FileLock::Lock(zx_koid_t owner, LockRequest& req, lock_completer_t& completer) {
-  const std::lock_guard<std::mutex> lock(lock_mtx_);
+  const std::scoped_lock lock(lock_mtx_);
+  LockLocked(owner, req, completer);
+}
 
-  if (!running_ || LockInProgress(owner)) {
+void FileLock::LockLocked(zx_koid_t owner, LockRequest& req, lock_completer_t& completer) {
+  if (pending_exclusive_.contains(owner) || pending_shared_.contains(owner)) {
     completer(ZX_ERR_BAD_STATE);
     return;
   }
@@ -78,7 +86,7 @@ void FileLock::Lock(zx_koid_t owner, LockRequest& req, lock_completer_t& complet
       switch (req.type()) {
         case LockType::READ: {
           if (req.wait()) {
-            pending_shared_.emplace(std::make_pair(owner, std::move(completer)));
+            pending_shared_.emplace(owner, std::move(completer));
           } else {
             completer(ZX_ERR_SHOULD_WAIT);
           }
@@ -86,7 +94,7 @@ void FileLock::Lock(zx_koid_t owner, LockRequest& req, lock_completer_t& complet
         }
         case LockType::WRITE: {
           if (req.wait()) {
-            pending_exclusive_.emplace(std::make_pair(owner, std::move(completer)));
+            pending_exclusive_.emplace(owner, std::move(completer));
           } else {
             completer(ZX_ERR_SHOULD_WAIT);
           }
@@ -113,7 +121,7 @@ void FileLock::Lock(zx_koid_t owner, LockRequest& req, lock_completer_t& complet
           completer(ZX_OK);
         } else {
           if (req.wait()) {
-            pending_exclusive_.emplace(std::make_pair(owner, std::move(completer)));
+            pending_exclusive_.emplace(owner, std::move(completer));
           } else {
             // if we had a lock, we lost it
             completer(ZX_ERR_SHOULD_WAIT);
@@ -142,22 +150,23 @@ void FileLock::Lock(zx_koid_t owner, LockRequest& req, lock_completer_t& complet
   }
 }
 
-bool FileLock::Forget(zx_koid_t owner) {
-  LockRequest req(LockType::UNLOCK, false);
-
-  bool forgotten = false;
-  lock_completer_t completer([&forgotten](zx_status_t status) {
-    if (status == ZX_OK) {
-      forgotten = true;
-    }
-  });
-
-  Lock(owner, req, completer);
-
-  return forgotten;
+void FileLock::Forget(zx_koid_t owner) {
+  std::scoped_lock lock(lock_mtx_);
+  if (exclusive_ == owner || shared_.contains(owner)) {
+    LockRequest req(LockType::UNLOCK, false);
+    lock_completer_t completer([](zx_status_t status) { ZX_DEBUG_ASSERT(status == ZX_OK); });
+    LockLocked(owner, req, completer);
+  }
+  if (auto node = pending_exclusive_.extract(owner); !node.empty()) {
+    node.mapped()(ZX_ERR_CANCELED);
+  }
+  if (auto node = pending_shared_.extract(owner); !node.empty()) {
+    node.mapped()(ZX_ERR_CANCELED);
+  }
 }
 
 bool FileLock::NoLocksHeld() {
+  std::scoped_lock lock(lock_mtx_);
   return exclusive_ == ZX_KOID_INVALID && shared_.empty() && pending_exclusive_.empty() &&
          pending_shared_.empty();
 }
