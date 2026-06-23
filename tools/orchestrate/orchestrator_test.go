@@ -325,7 +325,9 @@ func runOrchestratorScenario(t *testing.T, isEmulator bool, runInput *RunInput, 
 		mockFfx.expectCall("ProductDownload", targetRunInput.TransferURL, productBundleDir, "")
 	} else if targetRunInput.LocalPB != "" {
 		productBundleDir = targetRunInput.LocalPB
-		// No ffx call for local product bundle, just uses the path.
+		if !filepath.IsAbs(productBundleDir) {
+			productBundleDir = filepath.Join(wd, productBundleDir)
+		}
 	}
 
 	if isEmulator {
@@ -458,6 +460,31 @@ func TestOrchestrator_Run_EmulatorUnit(t *testing.T) {
 		},
 	}
 	runOrchestratorScenario(t, true, runInput, nil)
+}
+
+func TestOrchestrator_Run_EmulatorLocalPB(t *testing.T) {
+	runInput := &RunInput{
+		Emulator: TargetRunInput{
+			LocalPB:  "relative/path/to/pb",
+			BuildIds: []string{"abc1234"},
+		},
+	}
+	runOrchestratorScenario(t, true, runInput, nil)
+}
+
+func TestOrchestrator_Run_HardwareLocalPB(t *testing.T) {
+	deviceConfig := &DeviceConfig{
+		FastbootSerial: "serial123",
+		Network:        DeviceNetworkConfig{IPv4: "192.168.1.10"},
+	}
+	runInput := &RunInput{
+		Hardware: TargetRunInput{
+			LocalPB:         "relative/path/to/pb",
+			PackageArchives: []string{"/tmp/pkg1.far"},
+			BuildIds:        []string{"abc1234"},
+		},
+	}
+	runOrchestratorScenario(t, false, runInput, deviceConfig)
 }
 
 // TestInstantiateFfx_PathResolution verifies that instantiateFfx correctly resolves ffx_path.

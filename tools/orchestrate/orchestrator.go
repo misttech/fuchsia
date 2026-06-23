@@ -83,12 +83,10 @@ func (r *TestOrchestrator) instantiateFfx(ctx context.Context, in *RunInput) err
 	if ffxPath == "" {
 		return fmt.Errorf("ffx path is empty")
 	}
-	if !filepath.IsAbs(ffxPath) {
-		wd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("os.Getwd: %w", err)
-		}
-		ffxPath = filepath.Join(wd, ffxPath)
+	var err error
+	ffxPath, err = filepath.Abs(ffxPath)
+	if err != nil {
+		return fmt.Errorf("resolving ffx path: %w", err)
 	}
 
 	outputsDir := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
@@ -152,7 +150,11 @@ func (r *TestOrchestrator) Run(ctx context.Context, in *RunInput, testCmd []stri
 			}
 		} else if in.Target().LocalPB != "" {
 			fmt.Println("=== orchestrate - Local Product Bundle (2/6) ===")
-			productDir = in.Target().LocalPB
+			var err error
+			productDir, err = filepath.Abs(in.Target().LocalPB)
+			if err != nil {
+				return fmt.Errorf("resolving local_pb path: %w", err)
+			}
 		}
 		if in.IsHardware() {
 			fmt.Println("=== orchestrate - Flashing Device (3/6) ===")
