@@ -14,6 +14,7 @@ sys.path.insert(0, worktree_dir)
 
 import argparse
 
+from subcommands import add as add_cmd
 from subcommands import lease as lease_cmd
 from worktree import NoFreeWorktreesError, WorktreeState
 from worktree_registry import WorktreeRegistry
@@ -150,6 +151,36 @@ class TestLeaseSubcommand(unittest.TestCase):
         )
         with self.assertRaises(NoFreeWorktreesError):
             lease_cmd.run(args, self.registry)
+
+
+class TestAddSubcommand(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.fuchsia_dir = Path(self.temp_dir.name)
+        self.jiri_root = self.fuchsia_dir / ".jiri_root"
+        self.jiri_root.mkdir(parents=True, exist_ok=True)
+        self.registry = WorktreeRegistry(fuchsia_dir=str(self.fuchsia_dir))
+        self.patcher_jiri = patch("worktree_registry.run_jiri")
+        self.patcher_fx = patch("subcommands.add.run_fx")
+        self.mock_jiri = self.patcher_jiri.start()
+        self.mock_fx = self.patcher_fx.start()
+
+    def tearDown(self) -> None:
+        self.patcher_jiri.stop()
+        self.patcher_fx.stop()
+        self.temp_dir.cleanup()
+
+    def test_add_multiple_set_args(self) -> None:
+        wt_path = self.registry.worktrees_dir / "wt1"
+        self.registry.registry_file.write_text(f"{wt_path}\n")
+        args = argparse.Namespace(
+            name="wt1",
+            set=["core.x64 --out out/core", "workbench.arm64 --out out/wb"],
+        )
+        add_cmd.run(args, self.registry)
+        self.assertEqual(self.mock_fx.call_count, 2)
+        wt = self.registry.get_worktree_by_name("wt1")
+        self.assertEqual(wt.name, "wt1")
 
 
 if __name__ == "__main__":

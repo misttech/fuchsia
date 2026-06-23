@@ -15,13 +15,12 @@ def run(args: Any, registry: WorktreeRegistry) -> None:
     wt = registry.add_worktree(args.name)
 
     if args.set is not None:
-        set_args = []
         for s in args.set:
-            set_args.extend(shlex.split(s))
-        try:
-            run_fx(wt.path, ["set"] + set_args, check=True)
-        except FileNotFoundError as e:
-            print(f"Warning: {e}, cannot run fx set", file=sys.stderr)
-        except subprocess.CalledProcessError as e:
-            print(f"Failed to run fx set: {e}", file=sys.stderr)
-            sys.exit(1)
+            set_args = shlex.split(s)
+            try:
+                run_fx(wt.path, ["set"] + set_args, check=True)
+            except FileNotFoundError as e:
+                print(f"Warning: {e}, cannot run fx set", file=sys.stderr)
+            except subprocess.CalledProcessError as e:
+                print(f"Failed to run fx set '{s}': {e}", file=sys.stderr)
+                sys.exit(1)
