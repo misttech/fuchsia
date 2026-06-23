@@ -2178,11 +2178,11 @@ if (!(current_os == "fuchsia")) {
 }
 
 group("tempfile") {
-  public_deps = [ ":tempfile-v3_27_0" ]
+  public_deps = [ ":tempfile-v3_2_0" ]
 }
 
-group("tempfile-3.27.0") {
-  public_deps = [ ":tempfile-v3_27_0" ]
+group("tempfile-3.2.0") {
+  public_deps = [ ":tempfile-v3_2_0" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -7823,14 +7823,14 @@ rustc_library("equivalent-v1_0_2") {
 license("errno-v0_3_14.license") {
   public_package_name = "errno"
   license_files = [
-    "//third_party/rust_crates/forks/errno-0.3.14/LICENSE-APACHE",
-    "//third_party/rust_crates/forks/errno-0.3.14/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/errno-0.3.14/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/errno-0.3.14/LICENSE-MIT",
   ]
 }
 
 rustc_library("errno-v0_3_14") {
   crate_name = "errno"
-  source_root = "//third_party/rust_crates/forks/errno-0.3.14/src/lib.rs"
+  source_root = "//third_party/rust_crates/vendor/errno-0.3.14/src/lib.rs"
   output_name = "errno-cbf9273b968ba4e"
   edition = "2018"
   disable_clippy = true
@@ -8039,7 +8039,6 @@ rustc_library("fastrand-v2_3_0") {
     "-Cmetadata=7306759726945126",
     "-Cextra-filename=-7306759726945126",
     "--cfg=feature=\"alloc\"",
-    "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
@@ -15263,7 +15262,7 @@ rustc_library("proptest-v1_11_0") {
   deps += [ ":rand_xorshift-v0_4_0" ]
   deps += [ ":regex-syntax-v0_8_10" ]
   deps += [ ":rusty-fork-v0_3_0" ]
-  deps += [ ":tempfile-v3_27_0" ]
+  deps += [ ":tempfile-v3_2_0" ]
   deps += [ ":unarray-v0_1_4" ]
 
   rustenv = []
@@ -15383,7 +15382,7 @@ rustc_library("prost-build-v0_11_1") {
   deps += [ ":prost-types-v0_11_1" ]
   deps += [ ":prost-v0_11_0" ]
   deps += [ ":regex-v1_12_3" ]
-  deps += [ ":tempfile-v3_27_0" ]
+  deps += [ ":tempfile-v3_2_0" ]
   deps += [ ":which-v4_0_2" ]
 
   rustenv = []
@@ -16986,6 +16985,42 @@ rustc_macro("remain-v0_2_15") {
   applicable_licenses = [ ":remain-v0_2_15.license" ]
 }
 
+license("remove_dir_all-v0_5_3.license") {
+  public_package_name = "remove_dir_all"
+  license_files = [
+    "//third_party/rust_crates/vendor/remove_dir_all-0.5.3/LICENCE-APACHE",
+    "//third_party/rust_crates/vendor/remove_dir_all-0.5.3/LICENCE-MIT",
+  ]
+}
+
+rustc_library("remove_dir_all-v0_5_3") {
+  crate_name = "remove_dir_all"
+  source_root =
+      "//third_party/rust_crates/vendor/remove_dir_all-0.5.3/src/lib.rs"
+  output_name = "remove_dir_all-9dc9d5dadcb217ad"
+  edition = "2015"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  if (false) {
+    deps += [ ":winapi-v0_3_9" ]
+  }
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=9dc9d5dadcb217ad",
+    "-Cextra-filename=-9dc9d5dadcb217ad",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":remove_dir_all-v0_5_3.license" ]
+}
+
 license("rend-v0_5_3.license") {
   public_package_name = "rend"
   license_files = [ "//third_party/rust_crates/vendor/rend-0.5.3/LICENSE" ]
@@ -17823,8 +17858,12 @@ rustc_library("rustfix-v0_9_5") {
 
 license("rustix-v1_1_4.license") {
   public_package_name = "rustix"
-  license_files =
-      [ "//third_party/rust_crates/vendor/rustix-1.1.4/LICENSE-APACHE" ]
+  license_files = [
+    "//third_party/rust_crates/vendor/rustix-1.1.4/COPYRIGHT",
+    "//third_party/rust_crates/vendor/rustix-1.1.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/rustix-1.1.4/LICENSE-Apache-2.0_WITH_LLVM-exception",
+    "//third_party/rust_crates/vendor/rustix-1.1.4/LICENSE-MIT",
+  ]
 }
 
 rustc_library("rustix-v1_1_4") {
@@ -17887,7 +17926,6 @@ rustc_library("rustix-v1_1_4") {
     "-Cmetadata=72d085604b025605",
     "-Cextra-filename=-72d085604b025605",
     "--cfg=feature=\"alloc\"",
-    "--cfg=feature=\"default\"",
     "--cfg=feature=\"fs\"",
     "--cfg=feature=\"std\"",
   ]
@@ -18090,7 +18128,7 @@ rustc_library("rusty-fork-v0_3_0") {
   deps = []
   deps += [ ":fnv-v1_0_7" ]
   deps += [ ":quick-error-v1_2_3" ]
-  deps += [ ":tempfile-v3_27_0" ]
+  deps += [ ":tempfile-v3_2_0" ]
   deps += [ ":wait-timeout-v0_2_1" ]
 
   rustenv = []
@@ -20447,49 +20485,51 @@ rustc_library("tar-v0_4_46") {
   applicable_licenses = [ ":tar-v0_4_46.license" ]
 }
 
-license("tempfile-v3_27_0.license") {
+license("tempfile-v3_2_0.license") {
   public_package_name = "tempfile"
   license_files = [
-    "//third_party/rust_crates/vendor/tempfile-3.27.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/tempfile-3.27.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/tempfile-3.2.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/tempfile-3.2.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("tempfile-v3_27_0") {
+rustc_library("tempfile-v3_2_0") {
   crate_name = "tempfile"
-  source_root = "//third_party/rust_crates/vendor/tempfile-3.27.0/src/lib.rs"
-  output_name = "tempfile-f9561777927da45b"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/vendor/tempfile-3.2.0/src/lib.rs"
+  output_name = "tempfile-713baaf360fa1fa9"
+  edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":fastrand-v2_3_0" ]
-  deps += [ ":once_cell-v1_21_3" ]
-  if (true || false) {
-    deps += [ ":rustix-v1_1_4" ]
+  deps += [ ":cfg-if-v1_0_4" ]
+  deps += [ ":rand-v0_8_4" ]
+  deps += [ ":remove_dir_all-v0_5_3" ]
+  if (false) {
+    deps += [ ":redox_syscall-v0_2_13" ]
   }
-  if (true || false || false) {
-    deps += [ ":getrandom-v0_3_3" ]
+  if (true) {
+    deps += [ ":libc-v0_2_186" ]
   }
   if (false) {
-    deps += [ ":windows-sys-v0_61_2" ]
+    deps += [ ":winapi-v0_3_9" ]
   }
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=f9561777927da45b",
-    "-Cextra-filename=-f9561777927da45b",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"getrandom\"",
+    "-Cmetadata=713baaf360fa1fa9",
+    "-Cextra-filename=-713baaf360fa1fa9",
   ]
 
+  aliased_deps = {
+    syscall = ":redox_syscall-v0_2_13.actual"
+  }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":tempfile-v3_27_0.license" ]
+  applicable_licenses = [ ":tempfile-v3_2_0.license" ]
 }
 
 license("term-v0_5_1.license") {
@@ -21969,7 +22009,7 @@ rustc_library("tuf-v0_3_0-beta14") {
   deps += [ ":percent-encoding-v2_3_1" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_149" ]
-  deps += [ ":tempfile-v3_27_0" ]
+  deps += [ ":tempfile-v3_2_0" ]
   deps += [ ":thiserror-v2_0_18" ]
   deps += [ ":untrusted-v0_9_0" ]
   deps += [ ":url-v2_3_1" ]
@@ -23472,6 +23512,7 @@ rustc_library("winapi-v0_3_9") {
     "--cfg=feature=\"processenv\"",
     "--cfg=feature=\"processthreadsapi\"",
     "--cfg=feature=\"profileapi\"",
+    "--cfg=feature=\"std\"",
     "--cfg=feature=\"winbase\"",
     "--cfg=feature=\"wincon\"",
     "--cfg=feature=\"windef\"",
@@ -23726,7 +23767,6 @@ rustc_library("windows-sys-v0_61_2") {
     "--cfg=feature=\"Win32_Security_Authentication_Identity\"",
     "--cfg=feature=\"Win32_Security_Credentials\"",
     "--cfg=feature=\"Win32_Security_Cryptography\"",
-    "--cfg=feature=\"Win32_Storage_FileSystem\"",
     "--cfg=feature=\"Win32_System_Com\"",
     "--cfg=feature=\"Win32_System_Diagnostics_Debug\"",
     "--cfg=feature=\"Win32_System_LibraryLoader\"",

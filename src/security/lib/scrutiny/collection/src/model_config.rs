@@ -62,7 +62,7 @@ impl ModelConfig {
             .prefix("scrutiny_blobs_uncompressed_")
             .tempdir()
             .context("Creating temp dir for uncompressed blobs")?
-            .keep();
+            .into_path();
 
         product_bundle
             .extract_blobs(

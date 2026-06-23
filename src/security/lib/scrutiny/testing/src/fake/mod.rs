@@ -13,7 +13,7 @@ use tempfile::tempdir;
 /// Creates a simple fake model configuration that uses an in memory uri and
 /// tempdata() directories for the required build locations.
 pub fn fake_model_config() -> ModelConfig {
-    let dir_path = tempdir().unwrap().keep();
+    let dir_path = tempdir().unwrap().into_path();
     let update_package_path = dir_path.join("update.far");
     let blobs_directory = dir_path.join("blobs");
     ModelConfig {

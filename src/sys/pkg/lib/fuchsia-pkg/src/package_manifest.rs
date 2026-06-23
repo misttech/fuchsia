@@ -1585,15 +1585,17 @@ mod tests {
 
     #[test]
     fn test_from_package_archive_bogus() {
-        let temp_blobs = TempDir::new().unwrap();
-        let temp_manifest = TempDir::new().unwrap();
-        let temp_archive = TempDir::new().unwrap();
+        let temp = TempDir::new().unwrap();
+        let temp_blobs_dir = temp.into_path();
 
-        let result = PackageManifest::from_archive(
-            temp_archive.path(),
-            temp_blobs.path(),
-            temp_manifest.path(),
-        );
+        let temp = TempDir::new().unwrap();
+        let temp_manifest_dir = temp.into_path();
+
+        let temp_archive = TempDir::new().unwrap();
+        let temp_archive_dir = temp_archive.path();
+
+        let result =
+            PackageManifest::from_archive(temp_archive_dir, &temp_blobs_dir, &temp_manifest_dir);
         assert!(result.is_err())
     }
 
@@ -1642,8 +1644,7 @@ mod tests {
         let sub_metafar_path = sub_outdir.as_path().join("meta.far");
         let sub_manifest = sub_builder.build(&sub_outdir, &sub_metafar_path).unwrap();
 
-        let manifest_tempdir = TempDir::new().unwrap();
-        let manifest_outdir = manifest_tempdir.path();
+        let manifest_outdir = TempDir::new().unwrap().into_path();
         let subpackage_manifest_path =
             manifest_outdir.join(format!("{}_package_manifest.json", sub_manifest.hash()));
 
@@ -1697,11 +1698,10 @@ mod tests {
         let archive_file = File::create(archive_path.clone()).unwrap();
         manifest.clone().archive(&outdir, &archive_file).await.unwrap();
 
-        let blobs_tempdir = TempDir::new().unwrap();
-        let blobs_outdir = blobs_tempdir.path();
+        let blobs_outdir = TempDir::new().unwrap().into_path();
 
         let manifest_2 =
-            PackageManifest::from_archive(&archive_path, blobs_outdir, manifest_outdir).unwrap();
+            PackageManifest::from_archive(&archive_path, &blobs_outdir, &manifest_outdir).unwrap();
         assert_eq!(manifest_2.package_path(), manifest.package_path());
 
         let (_blob1_info, all_blobs_1) = manifest.package_and_subpackage_blobs().unwrap();

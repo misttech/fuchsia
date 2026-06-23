@@ -6,8 +6,6 @@ use crate::setup::DevhostConfig;
 use anyhow::{Context, Error, bail, format_err};
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_buildinfo::ProviderMarker as BuildInfoMarker;
-use fidl_fuchsia_io as fio;
-use fuchsia_async as fasync;
 use fuchsia_component::client;
 use futures::prelude::*;
 use hyper::Uri;
@@ -18,6 +16,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::directory::immutable::simple::Simple;
+use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 const PATH_TO_CONFIGS_DIR: &'static str = "/config/data/ota-configs";
 const SERVE_FLAGS: fio::Flags =
@@ -160,7 +159,7 @@ impl OtaEnvBuilder {
         let tmp_file = File::create(file).context("Creating file")?;
         serde_json::to_writer(tmp_file, &config_for_resolver).context("Writing JSON")?;
 
-        Ok(File::open(tempdir.keep()).context("Opening tmpdir")?)
+        Ok(File::open(tempdir.into_path()).context("Opening tmpdir")?)
     }
 
     async fn get_wellknown_config(&self) -> Result<File, Error> {

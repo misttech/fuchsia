@@ -25,7 +25,7 @@ struct TestFilesystemInner {
 
 impl TestFilesystem {
     pub fn new() -> Self {
-        let benchmark_dir = TempDir::new_in("/tmp").unwrap().keep();
+        let benchmark_dir = TempDir::new_in("/tmp").unwrap().into_path();
         Self {
             inner: Arc::new(Mutex::new(TestFilesystemInner {
                 fs: Some(Box::new(MountedFilesystemInstance::new(&benchmark_dir))),

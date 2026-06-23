@@ -1122,7 +1122,7 @@ mod tests {
         let result = compile_test(
             in_path,
             out_path,
-            Some(tmp_dir.keep()),
+            Some(tmp_dir.into_path()),
             json!({ "include": [ "doesnt_exist.cml" ] }),
             default_component_decl(),
             &FeatureSet::empty(),
@@ -1147,7 +1147,7 @@ mod tests {
         compile_test(
             in_path,
             out_path,
-            Some(tmp_dir.keep()),
+            Some(tmp_dir.into_path()),
             json!({
                 "include": [ "foo.cml" ],
                 "program": { "binary": "bin/test" },
@@ -1256,7 +1256,7 @@ mod tests {
         compile_test_with_required_protocols(
             in_path,
             out_path,
-            Some(tmp_dir.keep()),
+            Some(tmp_dir.into_path()),
             main_input,
             expected_output,
             &FeatureSet::empty(),
@@ -1280,7 +1280,7 @@ mod tests {
         compile_test_with_forced_runner(
             in_path,
             out_path,
-            Some(tmp_dir.keep()),
+            Some(tmp_dir.into_path()),
             json!({
                 "include": [ "foo.cml" ],
                 "program": { "binary": "bin/test" },
@@ -1327,7 +1327,7 @@ mod tests {
         compile_test(
             in_path,
             out_path,
-            Some(tmp_dir.keep()),
+            Some(tmp_dir.into_path()),
             json!({
                 "include": [ "foo.cml" ],
                 "program": { "binary": "bin/test" },
@@ -1373,7 +1373,7 @@ mod tests {
         let result = compile_test(
             in_path,
             out_path,
-            Some(tmp_dir.keep()),
+            Some(tmp_dir.into_path()),
             json!({
                 "include": [ "foo.cml" ],
                 "program": {
@@ -1414,7 +1414,7 @@ mod tests {
         let result = compile_test(
             in_path,
             out_path,
-            Some(tmp_dir.keep()),
+            Some(tmp_dir.into_path()),
             json!({
                 "include": [ "foo.cml", "bar.cml" ],
                 "program": {
@@ -1452,7 +1452,7 @@ mod tests {
         let result = compile_test(
             in_path,
             out_path,
-            Some(tmp_dir.keep()),
+            Some(tmp_dir.into_path()),
             json!({
                 "include": [ "foo1.cml", "foo2.cml" ],
                 "program": {

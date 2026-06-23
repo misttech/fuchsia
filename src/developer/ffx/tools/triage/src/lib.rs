@@ -78,7 +78,7 @@ async fn triage_impl(
             let data_provider_proxy =
                 data_provider_proxy.ok_or_else(|| anyhow!("Unable to get data provider."))?;
             let _ = snapshot::create_snapshot(data_provider_proxy, snapshot_tempdir.path()).await?;
-            snapshot_tempdir.keep()
+            snapshot_tempdir.into_path()
         }
     };
 

@@ -354,7 +354,7 @@ async fn preprocess_flash_cmd(
     // Download product bundle from gs:// if necessary.
     if let Some(product_bundle) = &cmd.product_bundle {
         if product_bundle.starts_with("gs://") {
-            let dir = TempDir::new().map_err(ProductBundleError::Io)?.keep();
+            let dir = TempDir::new().map_err(ProductBundleError::Io)?.into_path();
             let url = Url::parse(product_bundle)?;
             let bucket = url.host_str().filter(|h| !h.is_empty()).ok_or_else(|| {
                 ProductBundleError::GcsUrlMissingHost { url: product_bundle.clone() }

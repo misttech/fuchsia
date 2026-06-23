@@ -2905,14 +2905,14 @@ alias(
 )
 
 alias(
-    name = "tempfile-3.27.0",
-    actual = "//third_party/rust_crates/vendor/tempfile-3.27.0:tempfile",
+    name = "tempfile-3.2.0",
+    actual = "//third_party/rust_crates/vendor/tempfile-3.2.0:tempfile",
     tags = ["manual"],
 )
 
 alias(
     name = "tempfile",
-    actual = "//third_party/rust_crates/vendor/tempfile-3.27.0:tempfile",
+    actual = "//third_party/rust_crates/vendor/tempfile-3.2.0:tempfile",
     tags = ["manual"],
 )
 

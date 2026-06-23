@@ -145,7 +145,7 @@ impl Drop for TempTestEnv {
                 &mut self.root,
                 TempDir::new().expect("Need to replace temp directory to keep it (keep() failed)."),
             );
-            let path = owned.keep();
+            let path = owned.into_path();
             let notes = format!(
                 "Keeping temp dir {:?} for debugging: \
                 Consider using `rm -rf {:?}` when you're done.",

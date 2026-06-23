@@ -797,7 +797,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
 
         let pb = make_sample_pbv2("generic-x64", None);
-        let pb_filename = tmp.path().join("pb.zip");
+        let pb_filename = tmp.into_path().join("pb.zip");
         let pb_file = File::create(pb_filename.clone())?;
 
         let mut zip = ZipWriter::new(pb_file);
@@ -817,7 +817,7 @@ mod tests {
     fn test_zip_product_bundle_into() -> anyhow::Result<()> {
         let tmp = TempDir::new().unwrap();
         let pb = make_sample_pbv2("generic-x64", None);
-        let pb_filename = tmp.path().join("pb.zip");
+        let pb_filename = tmp.into_path().join("pb.zip");
         let pb_file = File::create(pb_filename.clone())?;
 
         let mut zip = ZipWriter::new(pb_file);
@@ -838,7 +838,7 @@ mod tests {
     fn test_zip_from_product_bundle_deref() -> anyhow::Result<()> {
         let tmp = TempDir::new().unwrap();
         let pb = make_sample_pbv2("generic-x64", None);
-        let pb_filename = tmp.path().join("pb.zip");
+        let pb_filename = tmp.into_path().join("pb.zip");
         let pb_file = File::create(pb_filename.clone())?;
 
         let mut zip = ZipWriter::new(pb_file);
@@ -866,7 +866,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
 
         let pb = make_sample_pbv2("generic-x64", None);
-        let pb_filename = tmp.path().join("pb.zip");
+        let pb_filename = tmp.into_path().join("pb.zip");
         let pb_file = File::create(pb_filename.clone())?;
 
         let mut zip = ZipWriter::new(pb_file);
@@ -888,7 +888,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
 
         let pb = make_sample_pbv2("generic-x64", None);
-        let pb_filename = tmp.path().join("pb.zip");
+        let pb_filename = tmp.into_path().join("pb.zip");
         let pb_file = File::create(pb_filename.clone())?;
 
         let mut zip = ZipWriter::new(pb_file);
@@ -910,7 +910,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
 
         let pb = make_sample_pbv2("generic-x64", None);
-        let pb_filename = tmp.path().join("pb.zip");
+        let pb_filename = tmp.into_path().join("pb.zip");
         let pb_file = File::create(pb_filename.clone())?;
 
         let mut zip = ZipWriter::new(pb_file);
@@ -932,7 +932,7 @@ mod tests {
     fn test_parse_v1_from_zip_fails() -> anyhow::Result<()> {
         let tmp = TempDir::new().unwrap();
         let pb = make_sample_pbv1("generic-x64");
-        let pb_filename = tmp.path().join("pb.zip");
+        let pb_filename = tmp.into_path().join("pb.zip");
         let pb_file = File::create(pb_filename.clone())?;
 
         let mut zip = ZipWriter::new(pb_file);
