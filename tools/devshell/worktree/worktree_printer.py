@@ -5,7 +5,7 @@
 from typing import Callable, Iterable
 
 from utils import Colors, colorize
-from worktree import SyncStatus, Worktree, WorktreeState
+from worktree import SyncStatus, Worktree
 
 
 def format_time_ago(sec: float | None) -> str:
@@ -34,7 +34,6 @@ class WorktreePrinter:
     def print_worktrees(
         worktrees: Iterable[Worktree],
         title_fn: Callable[[Worktree], str] | None = None,
-        show_state: bool = True,
     ) -> None:
         wt_list = list(worktrees)
         if not wt_list:
@@ -46,30 +45,6 @@ class WorktreePrinter:
         for wt in wt_list:
             display_name = title_fn(wt) if title_fn else wt.name
             parts = []
-
-            if show_state:
-                state = wt.get_state()
-                state_str = state.value.capitalize()
-                state_color = None
-
-                if state == WorktreeState.LEASED:
-                    lease = wt.get_lease_info()
-                    if lease and lease.task_id:
-                        state_str = f"In Use ({lease.task_id})"
-                    else:
-                        state_str = "In Use"
-                    state_color = Colors.YELLOW
-                elif state == WorktreeState.FREE:
-                    state_color = Colors.GREEN
-                elif state == WorktreeState.RESERVED:
-                    state_color = Colors.BLUE
-
-                state_formatted = (
-                    colorize(state_str, state_color)
-                    if state_color
-                    else state_str
-                )
-                parts.append(state_formatted)
 
             sync_status, behind, new = wt.get_sync_status()
             if (

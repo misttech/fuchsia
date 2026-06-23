@@ -22,6 +22,4 @@ def run(args: Any, pool: WorktreePool) -> None:
         for wt in pool.get_worktrees()
         if wt.get_state() == WorktreeState.LEASED
     ]
-    WorktreePrinter.print_worktrees(
-        active_wts, title_fn=_format_active_title, show_state=False
-    )
+    WorktreePrinter.print_worktrees(active_wts, title_fn=_format_active_title)
