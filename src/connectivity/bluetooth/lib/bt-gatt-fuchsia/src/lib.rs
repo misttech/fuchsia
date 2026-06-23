@@ -31,6 +31,9 @@ mod test;
 
 pub mod pii;
 
+mod periodic_advertising;
+pub use periodic_advertising::PeriodicAdvertising;
+
 pub struct FuchsiaTypes {}
 
 impl bt_gatt::GattTypes for FuchsiaTypes {
@@ -60,22 +63,6 @@ impl bt_gatt::ServerTypes for FuchsiaTypes {
     type ReadResponder = ReadResponder;
     type WriteResponder = WriteResponder;
     type IndicateConfirmationStream = IndicateConfirmationStream;
-}
-
-#[derive(Clone)]
-pub struct PeriodicAdvertising;
-
-impl bt_gatt::periodic_advertising::PeriodicAdvertising for PeriodicAdvertising {
-    type SyncFut = Ready<bt_gatt::Result<Self::SyncStream>>;
-    type SyncStream =
-        futures::stream::Pending<bt_gatt::Result<bt_gatt::periodic_advertising::SyncReport>>;
-    fn sync_to_advertising_reports(
-        _peer_id: PeerId,
-        _adv_sid: u8,
-        _config: bt_gatt::periodic_advertising::SyncConfiguration,
-    ) -> Self::SyncFut {
-        futures::future::ready(Err("Unimplemented".to_owned().into()))
-    }
 }
 
 #[derive(Clone)]
@@ -113,7 +100,7 @@ fn filter_into_fidl(filter: &central::ScanFilter) -> fidl_le::Filter {
     fidl_filter
 }
 
-fn to_fidl_uuid(uuid: &Uuid) -> fidl_fuchsia_bluetooth::Uuid {
+pub(crate) fn to_fidl_uuid(uuid: &Uuid) -> fidl_fuchsia_bluetooth::Uuid {
     let uuid: uuid::Uuid = (*uuid).into();
     let uuid: fuchsia_bluetooth::types::Uuid = uuid.into();
     uuid.into()
@@ -134,7 +121,7 @@ impl bt_gatt::Central<FuchsiaTypes> for Central {
     fn periodic_advertising(
         &self,
     ) -> bt_gatt::Result<<FuchsiaTypes as GattTypes>::PeriodicAdvertising> {
-        Err("Unimplemented".to_owned().into())
+        Ok(PeriodicAdvertising { proxy: self.proxy.clone() })
     }
 
     fn connect(&self, peer_id: PeerId) -> <FuchsiaTypes as GattTypes>::ConnectFuture {

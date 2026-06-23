@@ -556,6 +556,7 @@ dependencies = [
  "bt-common",
  "bt-gatt",
  "futures",
+ "log",
  "num",
  "parking_lot 0.12.5",
  "thiserror 2.0.18",

@@ -285,9 +285,14 @@ impl<T: bt_gatt::GattTypes> BroadcastAudioScanServiceClient<T> {
         self.write_to_bascp(op).await
     }
 
-    /// Requests the BASS server to add or update Metadata for the Broadcast
-    /// Source, and/or to request the server to synchronize to, or to stop
-    /// synchronization to, a PA and/or a BIS.
+    /// Requests the Scan Delegator to modify a Broadcast Source's
+    /// synchronization state and/or metadata.
+    ///
+    /// This method writes a **Modify Source** operation to the Broadcast Audio
+    /// Scan Control Point. It reads the current state of the Broadcast
+    /// Source from the local cache (the BRS characteristic value), applies
+    /// the requested modifications, and sends the complete updated subgroup
+    /// list to the server.
     ///
     /// # Arguments
     ///
@@ -308,48 +313,46 @@ impl<T: bt_gatt::GattTypes> BroadcastAudioScanServiceClient<T> {
         bis_map: HashMap<SubgroupIndex, BisSync>,
         metadata_map: Option<HashMap<SubgroupIndex, Vec<Metadata>>>,
     ) -> Result<(), Error> {
-        let op = {
-            let mut state = self
-                .get_broadcast_source_state(&broadcast_id)
-                .ok_or(Error::UnknownBroadcastSource(broadcast_id))?;
+        let mut state = self
+            .get_broadcast_source_state(&broadcast_id)
+            .ok_or(Error::UnknownBroadcastSource(broadcast_id))?;
 
-            // Update BIS_Sync param for BIGs if applicable.
+        // Update BIS_Sync param for BIGs if applicable.
+        for (big_index, group) in state.subgroups.iter_mut().enumerate() {
+            if let Some(bis_sync) = bis_map.get(&(big_index as u8)) {
+                group.bis_sync = bis_sync.clone();
+            }
+        }
+
+        // Update metadata for BIGs if applicable.
+        if let Some(mut m) = metadata_map {
             for (big_index, group) in state.subgroups.iter_mut().enumerate() {
-                if let Some(bis_sync) = bis_map.get(&(big_index as u8)) {
-                    group.bis_sync = bis_sync.clone();
+                if let Some(metadata) = m.remove(&(big_index as u8)) {
+                    group.metadata = metadata;
                 }
             }
 
-            // Update metadata for BIGs if applicable.
-            if let Some(mut m) = metadata_map {
-                for (big_index, group) in state.subgroups.iter_mut().enumerate() {
-                    if let Some(metadata) = m.remove(&(big_index as u8)) {
-                        group.metadata = metadata;
-                    }
+            // Left over metadata values are new subgroups that are to be added. New
+            // subgroups can only be added if the subgroup index is
+            // contiguous to existing subgroups.
+            let mut new_big_indices: Vec<&u8> = m.keys().collect();
+            new_big_indices.sort();
+            for big_index in new_big_indices {
+                if (*big_index as usize) != state.subgroups.len() {
+                    warn!("cannot add new [{big_index}th] subgroup");
+                    break;
                 }
-
-                // Left over metadata values are new subgroups that are to be added. New
-                // subgroups can only be added if the subgroup index is
-                // contiguous to existing subgroups.
-                let mut new_big_indices: Vec<&u8> = m.keys().collect();
-                new_big_indices.sort();
-                for big_index in new_big_indices {
-                    if (*big_index as usize) != state.subgroups.len() {
-                        warn!("cannot add new [{big_index}th] subgroup");
-                        break;
-                    }
-                    let new_subgroup = BigSubgroup::new(None).with_metadata(m[big_index].clone());
-                    state.subgroups.push(new_subgroup);
-                }
+                let new_subgroup = BigSubgroup::new(None).with_metadata(m[big_index].clone());
+                state.subgroups.push(new_subgroup);
             }
+        }
 
-            ModifySourceOperation::new(
-                state.source_id,
-                pa_sync,
-                pa_interval.unwrap_or(PeriodicAdvertisingInterval::unknown()),
-                state.subgroups,
-            )
-        };
+        let op = ModifySourceOperation::new(
+            state.source_id,
+            pa_sync,
+            pa_interval.unwrap_or(PeriodicAdvertisingInterval::unknown()),
+            state.subgroups,
+        );
         self.write_to_bascp(op).await
     }
 

@@ -50,7 +50,7 @@ impl FromStr for AddressType {
 }
 
 /// Advertising Set ID which is 1 byte long.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AdvertisingSetId(pub u8);
 
 impl AdvertisingSetId {

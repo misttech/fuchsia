@@ -4692,6 +4692,7 @@ rustc_library("bt-broadcast-assistant-v0_0_1") {
   deps += [ ":bt-common-v0_0_1" ]
   deps += [ ":bt-gatt-v0_0_1" ]
   deps += [ ":futures-v0_3_31" ]
+  deps += [ ":log-v0_4_29" ]
   deps += [ ":num-v0_4_3" ]
   deps += [ ":parking_lot-v0_12_5" ]
   deps += [ ":thiserror-v2_0_18" ]

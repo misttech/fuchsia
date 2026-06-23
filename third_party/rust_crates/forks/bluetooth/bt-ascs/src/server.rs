@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use bt_common::core::ltv::LtValue;
 use bt_common::core::CodecId;
+use bt_common::generic_audio::metadata_ltv::Metadata;
 use bt_common::packet_encoding::Encodable;
 use bt_common::{PeerId, Uuid};
 use bt_gatt::server::{LocalService, Server, ServiceDefinition, ServiceId};
@@ -143,15 +145,18 @@ impl AseControlOperationAction {
             return None;
         }
         let mut notification = Vec::with_capacity(2 + self.response_codes.len() * 3);
-        // Opcode and Number_of_ASEs
+        // Opcode
         notification.push(self.opcode.unwrap().into());
-        if self.response_codes[0].ase_id_value() == 0x00 {
+        if let ResponseCode::InvalidLength { .. } | ResponseCode::UnsupportedOpcode { .. } =
+            self.response_codes[0]
+        {
             // UnsupportedOpcode or InvalidLength. Number_of_ASEs shall be set to 0xFF
             // See ASCS v1.0.1 Table 4.7.  We only include the first response_code.
             notification.push(0xFF);
             notification.extend(self.response_codes[0].notify_value());
             return Some(notification);
         }
+        // Number_of_ASEs
         notification.push(self.response_codes.len() as u8);
         for response in &self.response_codes {
             notification.extend(response.notify_value());
@@ -295,8 +300,41 @@ impl<T: bt_gatt::ServerTypes> AudioStreamControlServiceServer<T> {
         Ok(())
     }
 
-    pub fn release(&mut self, _id: AseId) -> Result<(), Error> {
-        unimplemented!()
+    pub fn cis_established(
+        &mut self,
+        peer_id: PeerId,
+        ase_id: AseId,
+        cis: (CigId, CisId),
+    ) -> Result<(), Error> {
+        let endpoints =
+            self.client_endpoints.get_mut(&peer_id).ok_or(Error::UnknownPeer(peer_id))?;
+        endpoints.established_cis(ase_id, cis);
+        for operation in endpoints.autonomous_operations() {
+            self.queue_operation_unpin(peer_id, operation);
+        }
+        Ok(())
+    }
+
+    pub fn cis_released(
+        &mut self,
+        peer_id: PeerId,
+        ase_id: AseId,
+        cis: (CigId, CisId),
+    ) -> Result<(), Error> {
+        let endpoints =
+            self.client_endpoints.get_mut(&peer_id).ok_or(Error::UnknownPeer(peer_id))?;
+        endpoints.released_cis(ase_id, cis);
+        for operation in endpoints.autonomous_operations() {
+            self.queue_operation_unpin(peer_id, operation);
+        }
+        Ok(())
+    }
+
+    fn queue_operation_unpin(&mut self, peer_id: PeerId, op: AseControlOperation) {
+        let (events, fut) =
+            op.apply(peer_id, self.client_endpoints.get(&peer_id).unwrap().endpoints.clone());
+        self.outgoing_events.extend(events);
+        self.responses.push(fut);
     }
 
     fn queue_operation(self: std::pin::Pin<&mut Self>, peer_id: PeerId, op: AseControlOperation) {
@@ -364,7 +402,6 @@ impl From<&AudioDirection> for bt_common::Uuid {
 enum AseAdditionalParameters {
     /// When in states with no additional parameters: Idle, Releasing
     None,
-    /// When CodecConfigured
     CodecConfigured {
         framing: Framing,
         preferred_phys: Vec<Phy>,
@@ -374,6 +411,16 @@ enum AseAdditionalParameters {
         codec_id: CodecId,
         codec_config: Vec<u8>,
     },
+    QosConfigured {
+        configuration: QosConfiguration,
+    },
+    /// When Enabling, Streaming, or Disabling
+    Streaming {
+        cig_id: CigId,
+        cis_id: CisId,
+        metadata: Vec<Metadata>,
+        qos_configured: QosConfiguration,
+    },
 }
 
 impl AseAdditionalParameters {
@@ -382,6 +429,10 @@ impl AseAdditionalParameters {
             AseAdditionalParameters::None => 0,
             AseAdditionalParameters::CodecConfigured { codec_config, .. } => {
                 23 + codec_config.len()
+            }
+            AseAdditionalParameters::QosConfigured { .. } => 15,
+            AseAdditionalParameters::Streaming { metadata, .. } => {
+                metadata.iter().fold(3, |total, m| total + m.encoded_len() as usize)
             }
         }
     }
@@ -409,7 +460,50 @@ impl AseAdditionalParameters {
                 value.extend(codec_config.clone());
                 value
             }
+            AseAdditionalParameters::QosConfigured {
+                configuration:
+                    QosConfiguration {
+                        cig_id,
+                        cis_id,
+                        sdu_interval,
+                        framing,
+                        phy,
+                        max_sdu,
+                        retransmission_number,
+                        max_transport_latency,
+                        presentation_delay,
+                        ..
+                    },
+            } => {
+                let mut value = Vec::with_capacity(self.char_size());
+                value.resize(self.char_size(), 0);
+                cig_id.encode(&mut value[0..]).unwrap();
+                cis_id.encode(&mut value[1..]).unwrap();
+                sdu_interval.encode(&mut value[2..]).unwrap();
+                framing.encode(&mut value[5..]).unwrap();
+                value[6] = Phy::to_bits(phy.iter());
+                max_sdu.encode(&mut value[7..]).unwrap();
+                value[9] = *retransmission_number;
+                max_transport_latency.encode(&mut value[10..]).unwrap();
+                presentation_delay.encode(&mut value[12..]).unwrap();
+                value
+            }
+            AseAdditionalParameters::Streaming { cig_id, cis_id, metadata, .. } => {
+                let mut value = Vec::with_capacity(self.char_size());
+                value.resize(self.char_size(), 0);
+                cig_id.encode(&mut value[0..]).unwrap();
+                cis_id.encode(&mut value[1..]).unwrap();
+                value[2] = metadata.iter().fold(0usize, |acc, i| acc + i.encoded_len()) as u8;
+                LtValue::encode_all(metadata.clone().into_iter(), &mut value[3..]).unwrap();
+                value
+            }
         }
+    }
+}
+
+impl From<QosConfiguration> for AseAdditionalParameters {
+    fn from(value: QosConfiguration) -> Self {
+        Self::QosConfigured { configuration: value }
     }
 }
 
@@ -429,6 +523,16 @@ impl AudioStreamEndpoint {
         value.push(self.state.into());
         value.extend(self.additional.into_char_value());
         value
+    }
+
+    fn get_cis(&self) -> Option<(CigId, CisId)> {
+        match &self.additional {
+            AseAdditionalParameters::QosConfigured { configuration } => {
+                Some((configuration.cig_id, configuration.cis_id))
+            }
+            AseAdditionalParameters::Streaming { cig_id, cis_id, .. } => Some((*cig_id, *cis_id)),
+            _ => None,
+        }
     }
 }
 
@@ -450,6 +554,7 @@ impl From<&AudioStreamEndpoint> for Characteristic {
 struct ClientEndpoints {
     endpoints: HashMap<AseId, AudioStreamEndpoint>,
     handles: HashMap<Handle, AseId>,
+    established: HashMap<AseId, Vec<(CigId, CisId)>>,
 }
 
 impl ClientEndpoints {
@@ -478,12 +583,46 @@ impl ClientEndpoints {
                 )
             })
             .unzip();
-        Self { endpoints, handles }
+        Self { endpoints, handles, established: Default::default() }
     }
 
     fn clone_for_peer(&self, _peer_id: PeerId) -> Self {
         // TODO: Randomize the ASE_IDs.  Handles need to stay the same.
-        Self { endpoints: self.endpoints.clone(), handles: self.handles.clone() }
+        Self {
+            endpoints: self.endpoints.clone(),
+            handles: self.handles.clone(),
+            established: Default::default(),
+        }
+    }
+
+    fn established_cis(&mut self, ase_id: AseId, cis: (CigId, CisId)) {
+        self.established.entry(ase_id).or_default().push(cis);
+    }
+
+    fn released_cis(&mut self, ase_id: AseId, cis: (CigId, CisId)) {
+        self.established.get_mut(&ase_id).map(|established| established.retain(|i| i != &cis));
+    }
+
+    fn autonomous_operations(&self) -> Vec<AseControlOperation> {
+        let mut operations = Vec::new();
+        for endpoint in self.endpoints.values() {
+            match endpoint.state {
+                AseState::Enabling
+                    if self.established.get(&endpoint.ase_id).is_some_and(|e| !e.is_empty()) =>
+                {
+                    operations.push(AseControlOperation::ReceiverStartReady {
+                        ases: vec![endpoint.ase_id],
+                    });
+                }
+                AseState::Releasing
+                    if self.established.get(&endpoint.ase_id).is_some_and(|e| e.is_empty()) =>
+                {
+                    operations.push(AseControlOperation::Released { ase_id: endpoint.ase_id });
+                }
+                _ => continue,
+            }
+        }
+        operations
     }
 }
 
@@ -529,8 +668,164 @@ impl CodecConfigureResponder {
 }
 
 #[derive(Debug)]
+pub struct QosConfigureResponder {
+    endpoint: AudioStreamEndpoint,
+    configuration: QosConfiguration,
+    sender: futures::channel::oneshot::Sender<Result<AudioStreamEndpoint, ResponseCode>>,
+}
+
+impl QosConfigureResponder {
+    pub fn reject(self, err: ResponseCode) {
+        let _ = self.sender.send(Err(err));
+    }
+
+    pub fn accept(mut self) {
+        self.endpoint.state = AseState::QosConfigured;
+        self.endpoint.additional = self.configuration.into();
+        let _ = self.sender.send(Ok(self.endpoint));
+    }
+}
+
+#[derive(Debug)]
+pub struct EnableResponder {
+    endpoint: AudioStreamEndpoint,
+    metadata: Vec<Metadata>,
+    sender: futures::channel::oneshot::Sender<Result<AudioStreamEndpoint, ResponseCode>>,
+}
+
+impl EnableResponder {
+    pub fn reject(self, err: ResponseCode) {
+        let _ = self.sender.send(Err(err));
+    }
+
+    pub fn accept(mut self) {
+        let AseAdditionalParameters::QosConfigured { configuration, .. } = self.endpoint.additional
+        else {
+            // Shouldn't happen
+            let _ = self
+                .sender
+                .send(Err(ResponseCode::UnspecifiedError { ase_id: self.endpoint.ase_id }));
+            return;
+        };
+        self.endpoint.state = AseState::Enabling;
+        self.endpoint.additional = AseAdditionalParameters::Streaming {
+            cig_id: configuration.cig_id,
+            cis_id: configuration.cis_id,
+            metadata: self.metadata,
+            qos_configured: configuration,
+        };
+        let _ = self.sender.send(Ok(self.endpoint));
+    }
+}
+
+#[derive(Debug)]
+pub struct DisableResponder {
+    endpoint: AudioStreamEndpoint,
+    sender: futures::channel::oneshot::Sender<Result<AudioStreamEndpoint, ResponseCode>>,
+}
+
+impl DisableResponder {
+    pub fn reject(self, err: ResponseCode) {
+        let _ = self.sender.send(Err(err));
+    }
+
+    pub fn accept(mut self) {
+        let AseAdditionalParameters::Streaming { qos_configured, .. } = self.endpoint.additional
+        else {
+            unreachable!();
+        };
+        self.endpoint.state = AseState::QosConfigured;
+        self.endpoint.additional = qos_configured.into();
+        let _ = self.sender.send(Ok(self.endpoint));
+    }
+}
+
+#[derive(Debug)]
+pub struct UpdateMetadataResponder {
+    endpoint: AudioStreamEndpoint,
+    metadata: Vec<Metadata>,
+    sender: futures::channel::oneshot::Sender<Result<AudioStreamEndpoint, ResponseCode>>,
+}
+
+impl UpdateMetadataResponder {
+    pub fn reject(self, err: ResponseCode) {
+        let _ = self.sender.send(Err(err));
+    }
+
+    pub fn accept(mut self) {
+        let AseAdditionalParameters::Streaming { metadata, .. } = &mut self.endpoint.additional
+        else {
+            unreachable!();
+        };
+        *metadata = self.metadata;
+        let _ = self.sender.send(Ok(self.endpoint));
+    }
+}
+
+#[derive(Debug)]
 pub enum ServiceEvent {
-    CodecConfigure { configuration: CodecConfiguration, responder: CodecConfigureResponder },
+    CodecConfigure {
+        configuration: CodecConfiguration,
+        responder: CodecConfigureResponder,
+    },
+    QosConfigure {
+        /// Peer configuring this stream
+        peer_id: PeerId,
+        /// Stream ID of the stream being configured
+        /// This ID is unique to the peer
+        // TODO: Consider replacing with source or sink, AseId should map to (Peer, Cig, Cis) at
+        // this point
+        target_configuration: QosConfiguration,
+        responder: QosConfigureResponder,
+    },
+    Enable {
+        /// Peer enabling this stream
+        peer_id: PeerId,
+        /// Stream ID of the stream being configured
+        ase_id: AseId,
+        /// Stream that this is being tied to.
+        /// This CIS may already be established after QosConfigure and will
+        /// match the QosConfigured value.
+        cis: (CigId, CisId),
+        /// Additional Metadata provided
+        /// Also available using
+        /// AudioStreamControlServiceServer::get_metadata(peer_id, ase_id)
+        metadata: Vec<Metadata>,
+        /// Responder.  Responding positively to this will start streaming if
+        /// the StreamEndpoint is a sink endpoint.  For a source
+        /// endpoint, an additional Start event will be generated to
+        /// indicate when the client is ready to receive data.
+        responder: EnableResponder,
+    },
+    /// Ok to start streaming.
+    /// Sent only for Source Endpoints.
+    /// No responder, this event has already been accepted.
+    Start {
+        peer_id: PeerId,
+        ase_id: AseId,
+        cis: (CigId, CisId),
+    },
+    /// Disable this stream.
+    /// Stop sending data on the CisId and CigId listed, or expect the client to
+    /// stop sending audio data.
+    Disable {
+        /// Peer disabling this stream
+        peer_id: PeerId,
+        /// Stream ID of this stream
+        ase_id: AseId,
+        /// Isochronous Stream that was previously in use.
+        cis: (CigId, CisId),
+        /// Responder.  Responding positively will indicate to the client that
+        /// data has ceased being sent.
+        responder: DisableResponder,
+    },
+    /// Update Metadata
+    UpdateMetadata {
+        peer_id: PeerId,
+        ase_id: AseId,
+        metadata: Vec<Metadata>,
+        responder: UpdateMetadataResponder,
+    },
 }
 
 impl CodecConfiguration {
@@ -551,6 +846,25 @@ impl CodecConfiguration {
     }
 }
 
+impl QosConfiguration {
+    fn into_event(
+        self,
+        peer_id: PeerId,
+        endpoint: AudioStreamEndpoint,
+        sender: oneshot::Sender<Result<AudioStreamEndpoint, ResponseCode>>,
+    ) -> crate::server::ServiceEvent {
+        ServiceEvent::QosConfigure {
+            peer_id,
+            target_configuration: self.clone(),
+            responder: crate::server::QosConfigureResponder {
+                endpoint,
+                configuration: self,
+                sender,
+            },
+        }
+    }
+}
+
 impl AseControlOperation {
     fn apply(
         self,
@@ -560,6 +874,7 @@ impl AseControlOperation {
         let mut current_response_codes = Vec::new();
         let mut waiting = Vec::new();
         let mut events: Vec<crate::server::ServiceEvent> = Vec::new();
+        let mut endpoints = Vec::new();
         let opcode: Option<AseControlPointOpcode> = (&self).try_into().ok();
         match self {
             Self::ConfigCodec { codec_configurations, mut responses } => {
@@ -581,7 +896,205 @@ impl AseControlOperation {
                     events.push(codec_configuration.into_event(endpoint.clone(), send));
                 }
             }
-            _ => todo!(),
+            Self::ConfigQos { qos_configurations, mut responses } => {
+                current_response_codes.append(&mut responses);
+                for configuration in qos_configurations {
+                    let ase_id = configuration.ase_id;
+                    let Some(endpoint) = endpoint_map.get(&ase_id) else {
+                        current_response_codes
+                            .push(ResponseCode::InvalidAseId { value: ase_id.into() });
+                        continue;
+                    };
+                    if !opcode.unwrap().allowed_in_state(&endpoint.state) {
+                        current_response_codes
+                            .push(ResponseCode::InvalidAseStateMachineTransition { ase_id });
+                        continue;
+                    }
+                    let (send, recv) = oneshot::channel();
+                    waiting.push(recv);
+                    events.push(configuration.into_event(peer_id, endpoint.clone(), send));
+                }
+            }
+            Self::Enable { ases_with_metadata, mut responses } => {
+                current_response_codes.append(&mut responses);
+                for AseIdWithMetadata { ase_id, metadata } in ases_with_metadata {
+                    let Some(endpoint) = endpoint_map.get(&ase_id) else {
+                        current_response_codes
+                            .push(ResponseCode::InvalidAseId { value: ase_id.into() });
+                        continue;
+                    };
+                    if !opcode.unwrap().allowed_in_state(&endpoint.state) {
+                        current_response_codes
+                            .push(ResponseCode::InvalidAseStateMachineTransition { ase_id });
+                        continue;
+                    }
+                    let (sender, recv) = oneshot::channel();
+                    waiting.push(recv);
+                    let cis = endpoint.get_cis().unwrap();
+                    let event = ServiceEvent::Enable {
+                        ase_id,
+                        cis,
+                        peer_id,
+                        metadata: metadata.clone(),
+                        responder: EnableResponder { endpoint: endpoint.clone(), metadata, sender },
+                    };
+                    events.push(event);
+                }
+            }
+            Self::ReceiverStartReady { ases } => {
+                for ase_id in ases {
+                    let Some(endpoint) = endpoint_map.get(&ase_id) else {
+                        current_response_codes
+                            .push(ResponseCode::InvalidAseId { value: ase_id.into() });
+                        continue;
+                    };
+                    if !opcode.unwrap().allowed_in_state(&endpoint.state) {
+                        current_response_codes
+                            .push(ResponseCode::InvalidAseStateMachineTransition { ase_id });
+                        continue;
+                    }
+                    if endpoint.direction != AudioDirection::Source {
+                        current_response_codes.push(ResponseCode::InvalidAseDirection { ase_id });
+                        continue;
+                    }
+                    let cis = endpoint.get_cis().unwrap();
+                    // Automatically accept.
+                    let mut endpoint = endpoint.clone();
+                    endpoint.state = AseState::Streaming;
+                    endpoints.push(endpoint);
+                    current_response_codes.push(ResponseCode::Success { ase_id });
+                    events.push(ServiceEvent::Start { peer_id, ase_id, cis });
+                }
+            }
+            Self::Disable { ases } => {
+                for ase_id in ases {
+                    let Some(endpoint) = endpoint_map.get(&ase_id) else {
+                        current_response_codes
+                            .push(ResponseCode::InvalidAseId { value: ase_id.into() });
+                        continue;
+                    };
+                    if !opcode.unwrap().allowed_in_state(&endpoint.state) {
+                        current_response_codes
+                            .push(ResponseCode::InvalidAseStateMachineTransition { ase_id });
+                        continue;
+                    }
+                    let AseAdditionalParameters::Streaming { cig_id, cis_id, .. } =
+                        endpoint.additional
+                    else {
+                        unreachable!();
+                    };
+                    if endpoint.direction == AudioDirection::Source {
+                        // Accept automatically, and wait for the ReceiverStopReady to send Disable
+                        // event.
+                        let mut endpoint = endpoint.clone();
+                        endpoint.state = AseState::Disabling;
+                        endpoints.push(endpoint);
+                        current_response_codes.push(ResponseCode::Success { ase_id });
+                        continue;
+                    }
+                    let (sender, recv) = oneshot::channel();
+                    waiting.push(recv);
+                    events.push(ServiceEvent::Disable {
+                        peer_id,
+                        ase_id,
+                        cis: (cig_id, cis_id),
+                        responder: DisableResponder { endpoint: endpoint.clone(), sender },
+                    });
+                }
+            }
+            Self::ReceiverStopReady { ases } => {
+                for ase_id in ases {
+                    let Some(endpoint) = endpoint_map.get(&ase_id) else {
+                        current_response_codes
+                            .push(ResponseCode::InvalidAseId { value: ase_id.into() });
+                        continue;
+                    };
+                    if !opcode.unwrap().allowed_in_state(&endpoint.state) {
+                        current_response_codes
+                            .push(ResponseCode::InvalidAseStateMachineTransition { ase_id });
+                        continue;
+                    }
+                    if endpoint.direction != AudioDirection::Source {
+                        current_response_codes.push(ResponseCode::InvalidAseDirection { ase_id });
+                        continue;
+                    }
+                    let AseAdditionalParameters::Streaming { cig_id, cis_id, .. } =
+                        endpoint.additional
+                    else {
+                        unreachable!();
+                    };
+                    let (sender, recv) = oneshot::channel();
+                    waiting.push(recv);
+                    events.push(ServiceEvent::Disable {
+                        peer_id,
+                        ase_id,
+                        cis: (cig_id, cis_id),
+                        responder: DisableResponder { endpoint: endpoint.clone(), sender },
+                    });
+                }
+            }
+            Self::Release { ases } => {
+                for ase_id in ases {
+                    let Some(endpoint) = endpoint_map.get(&ase_id) else {
+                        current_response_codes
+                            .push(ResponseCode::InvalidAseId { value: ase_id.into() });
+                        continue;
+                    };
+                    if !opcode.unwrap().allowed_in_state(&endpoint.state) {
+                        current_response_codes
+                            .push(ResponseCode::InvalidAseStateMachineTransition { ase_id });
+                        continue;
+                    }
+                    // Automatically accept.  We will automatically perform the Released operation
+                    // on the next poll.
+                    let mut endpoint = endpoint.clone();
+                    endpoint.state = AseState::Releasing;
+                    endpoint.additional = AseAdditionalParameters::None;
+                    current_response_codes.push(ResponseCode::Success { ase_id });
+                    endpoints.push(endpoint);
+                }
+            }
+            Self::Released { ase_id } => {
+                // Should only happen when we detect a link loss and are told so by the client.
+                // Therefore we can transition immediately.
+                // If there is no endpoint by that ase_id, we do nothing.
+                if let Some(mut endpoint) = endpoint_map.get(&ase_id).cloned() {
+                    // TODO(b/433287917): implement caching with either preferred or cached
+                    // configurations
+                    endpoint.state = AseState::Idle;
+                    endpoint.additional = AseAdditionalParameters::None;
+                    endpoints.push(endpoint);
+                } else {
+                    log::warn!("Received Released for unknown endpoint: {ase_id:?}");
+                }
+            }
+            Self::UpdateMetadata { ases_with_metadata, mut responses } => {
+                current_response_codes.append(&mut responses);
+                for AseIdWithMetadata { ase_id, metadata } in ases_with_metadata {
+                    let Some(endpoint) = endpoint_map.get(&ase_id) else {
+                        current_response_codes
+                            .push(ResponseCode::InvalidAseId { value: ase_id.into() });
+                        continue;
+                    };
+                    if ![AseState::Enabling, AseState::Streaming].contains(&endpoint.state) {
+                        current_response_codes
+                            .push(ResponseCode::InvalidAseStateMachineTransition { ase_id });
+                        continue;
+                    }
+                    let (sender, recv) = oneshot::channel();
+                    waiting.push(recv);
+                    events.push(ServiceEvent::UpdateMetadata {
+                        peer_id,
+                        ase_id,
+                        metadata: metadata.clone(),
+                        responder: UpdateMetadataResponder {
+                            endpoint: endpoint.clone(),
+                            metadata,
+                            sender,
+                        },
+                    });
+                }
+            }
         }
         (
             events,
@@ -589,7 +1102,7 @@ impl AseControlOperation {
                 peer_id,
                 opcode,
                 current_response_codes,
-                endpoints: Vec::new(),
+                endpoints,
                 waiting: waiting.into_iter().collect(),
             },
         )

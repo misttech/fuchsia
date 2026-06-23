@@ -11,6 +11,8 @@
 
 use bt_common::core::Phy;
 use futures::{Future, Stream};
+
+use crate::central::AdvertisingDatum;
 use thiserror::Error;
 
 use bt_common::PeerId;
@@ -35,6 +37,7 @@ pub trait PeriodicAdvertising {
     /// On success, returns the SyncStream which can be used to receive
     /// SyncReports.
     fn sync_to_advertising_reports(
+        &self,
         peer_id: PeerId,
         advertising_sid: u8,
         config: SyncConfiguration,
@@ -54,7 +57,7 @@ pub struct SyncConfiguration {
 #[derive(Debug, Clone)]
 pub struct PeriodicAdvertisingReport {
     pub rssi: i8,
-    pub data: Vec<u8>,
+    pub data: Vec<AdvertisingDatum>,
     /// The event counter of the event that the advertising packet was received
     /// in.
     pub event_counter: Option<u16>,

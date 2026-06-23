@@ -15,7 +15,7 @@ use bt_bass::client::BroadcastAudioScanServiceClient;
 #[cfg(any(test, feature = "debug"))]
 use bt_bass::types::BroadcastReceiveState;
 use bt_bass::types::{BisSync, PaSync};
-use bt_common::core::PeriodicAdvertisingInterval;
+use bt_common::core::{AdvertisingSetId, PeriodicAdvertisingInterval};
 use bt_common::packet_encoding::Error as PacketError;
 use bt_common::PeerId;
 #[cfg(any(test, feature = "debug"))]
@@ -103,13 +103,14 @@ impl<T: bt_gatt::GattTypes> Peer<T> {
     pub async fn add_broadcast_source(
         &self,
         source_peer_id: PeerId,
+        advertising_sid: AdvertisingSetId,
         address_lookup: &impl GetPeerAddr,
         pa_sync: PaSync,
         bis_sync: HashMap<u8, BisSync>,
     ) -> Result<(), Error> {
         let mut broadcast_source = self
             .broadcast_sources
-            .get_by_peer_id(&source_peer_id)
+            .get_by_key(source_peer_id, advertising_sid)
             .ok_or(Error::DoesNotExist(source_peer_id))?;
 
         let (broadcast_addr, broadcast_addr_type) = address_lookup
@@ -118,7 +119,7 @@ impl<T: bt_gatt::GattTypes> Peer<T> {
             .map_err(|err| Error::AddressLookupError(source_peer_id, err))?;
         broadcast_source.with_address(broadcast_addr).with_address_type(broadcast_addr_type);
 
-        if !broadcast_source.into_add_source() {
+        if !broadcast_source.is_ready_to_add() {
             return Err(Error::NotEnoughInfo(source_peer_id));
         }
 
@@ -127,7 +128,7 @@ impl<T: bt_gatt::GattTypes> Peer<T> {
                 broadcast_source.broadcast_id.unwrap(),
                 broadcast_source.address_type.unwrap(),
                 broadcast_source.address.unwrap(),
-                broadcast_source.advertising_sid.unwrap(),
+                advertising_sid,
                 pa_sync,
                 broadcast_source
                     .periodic_advertising_interval
@@ -286,6 +287,7 @@ pub(crate) mod tests {
         {
             let fut = peer.add_broadcast_source(
                 PeerId(1001),
+                AdvertisingSetId(1),
                 &FakeGetPeerAddr,
                 PaSync::SyncPastUnavailable,
                 HashMap::new(),
@@ -296,10 +298,8 @@ pub(crate) mod tests {
         }
 
         let _ = broadcast_source.merge_broadcast_source_data(
-            &PeerId(1001),
-            &BroadcastSource::default()
-                .with_advertising_sid(AdvertisingSetId(1))
-                .with_broadcast_id(BroadcastId::try_from(1001).unwrap()),
+            &(PeerId(1001), AdvertisingSetId(1)),
+            &BroadcastSource::default().with_broadcast_id(BroadcastId::try_from(1001).unwrap()),
         );
 
         // Should fail because peer address couldn't be looked up.
@@ -308,6 +308,7 @@ pub(crate) mod tests {
                 StaticPeerAddr::new_for_peer(PeerId(1002), [1, 2, 3, 4, 5, 6], AddressType::Public);
             let fut = peer.add_broadcast_source(
                 PeerId(1001),
+                AdvertisingSetId(1),
                 &address_lookup,
                 PaSync::SyncPastUnavailable,
                 HashMap::new(),
@@ -323,6 +324,7 @@ pub(crate) mod tests {
                 StaticPeerAddr::new_for_peer(PeerId(1001), [1, 2, 3, 4, 5, 6], AddressType::Public);
             let fut = peer.add_broadcast_source(
                 PeerId(1001),
+                AdvertisingSetId(1),
                 &address_lookup,
                 PaSync::SyncPastUnavailable,
                 HashMap::new(),

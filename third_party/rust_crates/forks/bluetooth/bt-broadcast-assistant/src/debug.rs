@@ -10,7 +10,8 @@ use bt_bass::types::{BisSync, PaSync, SubgroupIndex};
 #[cfg(any(test, feature = "debug"))]
 use bt_common::core::ltv::LtValue;
 #[cfg(any(test, feature = "debug"))]
-use bt_common::core::{AddressType, AdvertisingSetId};
+use bt_common::core::AddressType;
+use bt_common::core::AdvertisingSetId;
 use bt_common::debug_command::CommandRunner;
 use bt_common::debug_command::CommandSet;
 use bt_common::gen_commandset;
@@ -39,15 +40,15 @@ gen_commandset! {
         Connect = ("connect", [], ["peer_id"], "Attempt connection to scan delegator"),
         Disconnect = ("disconnect", [], [], "Disconnect from connected scan delegator"),
         SendBroadcastCode = ("set-broadcast-code", [], ["broadcast_id", "broadcast_code"], "Attempt to send decryption key for a particular broadcast source to the scan delegator"),
-        AddBroadcastSource = ("add-broadcast-source", [], ["broadcast_source_pid", "PaSyncOff|PaSyncPast|PaSyncNoPast", "[bis_sync]"], "Attempt to add a particular broadcast source to the scan delegator"),
+        AddBroadcastSource = ("add-broadcast-source", [], ["source_peer_id", "advertising_sid", "PaSyncOff|PaSyncPast|PaSyncNoPast", "[bis_sync]"], "Attempt to add a particular broadcast source to the scan delegator"),
         UpdatePaSync = ("update-pa-sync", [], ["broadcast_id", "PaSyncOff|PaSyncPast|PaSyncNoPast", "[bis_sync]"], "Attempt to update the scan delegator's desired pa sync to a particular broadcast source"),
         RemoveBroadcastSource = ("remove-broadcast-source", [], ["broadcast_id"], "Attempt to remove a particular broadcast source to the scan delegator"),
         RemoteScanStarted = ("inform-scan-started", [], [], "Inform the scan delegator that we have started scanning on behalf of it"),
         RemoteScanStopped = ("inform-scan-stopped", [], [], "Inform the scan delegator that we have stopped scanning on behalf of it"),
         // TODO(http://b/433285146): Once PA scanning is implemented, remove bottom 3 commands.
-        ForceDiscoverBroadcastSource = ("force-discover-broadcast-source", [], ["broadcast_source_pid", "address", "Public|Random", "advertising_sid"], "Force the broadcast assistant to become aware of the provided broadcast source"),
-        ForceDiscoverSourceMetadata = ("force-discover-source-metadata", [], ["broadcast_source_pid", "comma_separated_raw_metadata"], "Force the broadcast assistant to become aware of the provided metadata, each BIG's metadata is comma separated"),
-        ForceDiscoverEmptySourceMetadata = ("force-discover-empty-source-metadata", [], ["broadcast_source_pid", "num_big"], "Force the broadcast assistant to become aware of the provided empty metadata, as many as # BIGs specified"),
+        ForceDiscoverBroadcastSource = ("force-discover-broadcast-source", [], ["source_peer_id", "address", "Public|Random", "advertising_sid"], "Force the broadcast assistant to become aware of the provided broadcast source"),
+        ForceDiscoverSourceMetadata = ("force-discover-source-metadata", [], ["source_peer_id", "advertising_sid", "metadata_big1", "[metadata_big_n]..."], "Force the broadcast assistant to become aware of the provided metadata, each BIG's metadata is comma separated"),
+        ForceDiscoverEmptySourceMetadata = ("force-discover-empty-source-metadata", [], ["source_peer_id", "advertising_sid", "num_big"], "Force the broadcast assistant to become aware of the provided empty metadata, as many as # BIGs specified"),
     }
 }
 
@@ -225,7 +226,7 @@ where
                     let known = self.assistant.known_broadcast_sources();
                     println!("Known Broadcast Sources:");
                     for (id, s) in known {
-                        println!("PeerId ({id}), source: {s:?}");
+                        println!("({id:?}): {s:?}");
                     }
                 }
                 AssistantCmd::Connect => {
@@ -286,17 +287,23 @@ where
                     .await;
                 }
                 AssistantCmd::AddBroadcastSource => {
-                    if args.len() < 2 {
+                    if args.len() < 3 {
                         eprintln!("usage: {}", AssistantCmd::AddBroadcastSource.help_simple());
                         return Ok(());
                     }
 
-                    let Ok(broadcast_source_pid) = parse_peer_id(&args[0]) else {
-                        eprintln!("invalid broadcast id: {}", args[0]);
+                    let Ok(source_peer_id) = parse_peer_id(&args[0]) else {
+                        eprintln!("invalid peer id: {}", args[0]);
                         return Ok(());
                     };
 
-                    let pa_sync: PaSync = match args[1].parse() {
+                    let Ok(sid_val) = parse_int::<u8>(&args[1]) else {
+                        eprintln!("invalid advertising sid: {}", args[1]);
+                        return Ok(());
+                    };
+                    let advertising_sid = AdvertisingSetId(sid_val);
+
+                    let pa_sync: PaSync = match args[2].parse() {
                         Ok(sync) => sync,
                         Err(e) => {
                             eprintln!("invalid pa_sync: {e:?}");
@@ -305,11 +312,12 @@ where
                     };
 
                     let bis_sync =
-                        if args.len() == 3 { parse_bis_sync(&args[2]) } else { HashMap::new() };
+                        if args.len() == 4 { parse_bis_sync(&args[3]) } else { HashMap::new() };
 
                     self.with_peer(|peer| async move {
                         peer.add_broadcast_source(
-                            broadcast_source_pid,
+                            source_peer_id,
+                            advertising_sid,
                             &self.peer_addr_getter,
                             pa_sync,
                             bis_sync,
@@ -381,7 +389,7 @@ where
                         return Ok(());
                     }
 
-                    let Ok(peer_id) = parse_peer_id(&args[0]) else {
+                    let Ok(source_peer_id) = parse_peer_id(&args[0]) else {
                         eprintln!("invalid peer id: {}", args[0]);
                         return Ok(());
                     };
@@ -406,7 +414,7 @@ where
                     let advertising_sid = AdvertisingSetId(raw_ad_sid);
 
                     match self.assistant.force_discover_broadcast_source(
-                        peer_id,
+                        source_peer_id,
                         address,
                         address_type,
                         advertising_sid,
@@ -421,7 +429,7 @@ where
                 }
                 #[cfg(feature = "debug")]
                 AssistantCmd::ForceDiscoverSourceMetadata => {
-                    if args.len() < 2 {
+                    if args.len() < 3 {
                         eprintln!(
                             "usage: {}",
                             AssistantCmd::ForceDiscoverSourceMetadata.help_simple()
@@ -429,13 +437,19 @@ where
                         return Ok(());
                     }
 
-                    let Ok(peer_id) = parse_peer_id(&args[0]) else {
+                    let Ok(source_peer_id) = parse_peer_id(&args[0]) else {
                         eprintln!("invalid peer id: {}", args[0]);
                         return Ok(());
                     };
 
+                    let Ok(raw_ad_sid) = parse_int::<u8>(&args[1]) else {
+                        eprintln!("invalid advertising sid: {}", args[1]);
+                        return Ok(());
+                    };
+                    let advertising_sid = AdvertisingSetId(raw_ad_sid);
+
                     let mut all_big_metadata = Vec::new();
-                    for i in 1..args.len() {
+                    for i in 2..args.len() {
                         let raw_metadata: Vec<u8> = args[i]
                             .split(',')
                             .map(|t| parse_int(t))
@@ -457,17 +471,18 @@ where
                         }
                     }
 
-                    match self
-                        .assistant
-                        .force_discover_broadcast_source_metadata(peer_id, all_big_metadata)
-                    {
+                    match self.assistant.force_discover_broadcast_source_metadata(
+                        source_peer_id,
+                        advertising_sid,
+                        all_big_metadata,
+                    ) {
                         Ok(source) => println!("broadcast source with metadata: {source:?}"),
                         Err(e) => eprintln!("failed to enter in broadcast source metadata: {e:?}"),
                     }
                 }
                 #[cfg(feature = "debug")]
                 AssistantCmd::ForceDiscoverEmptySourceMetadata => {
-                    if args.len() != 2 {
+                    if args.len() != 3 {
                         eprintln!(
                             "usage: {}",
                             AssistantCmd::ForceDiscoverEmptySourceMetadata.help_simple()
@@ -475,13 +490,19 @@ where
                         return Ok(());
                     }
 
-                    let Ok(peer_id) = parse_peer_id(&args[0]) else {
+                    let Ok(source_peer_id) = parse_peer_id(&args[0]) else {
                         eprintln!("invalid peer id: {}", args[0]);
                         return Ok(());
                     };
 
-                    let Ok(num_big) = parse_int::<usize>(&args[1]) else {
-                        eprintln!("invalid # of bigs: {}", args[1]);
+                    let Ok(raw_ad_sid) = parse_int::<u8>(&args[1]) else {
+                        eprintln!("invalid advertising sid: {}", args[1]);
+                        return Ok(());
+                    };
+                    let advertising_sid = AdvertisingSetId(raw_ad_sid);
+
+                    let Ok(num_big) = parse_int::<usize>(&args[2]) else {
+                        eprintln!("invalid # of bigs: {}", args[2]);
                         return Ok(());
                     };
 
@@ -490,10 +511,11 @@ where
                         all_big_metadata.push(vec![]);
                     }
 
-                    match self
-                        .assistant
-                        .force_discover_broadcast_source_metadata(peer_id, all_big_metadata)
-                    {
+                    match self.assistant.force_discover_broadcast_source_metadata(
+                        source_peer_id,
+                        advertising_sid,
+                        all_big_metadata,
+                    ) {
                         Ok(source) => println!("broadcast source with metadata: {source:?}"),
                         Err(e) => {
                             eprintln!("failed to enter in empty broadcast source metadata: {e:?}")

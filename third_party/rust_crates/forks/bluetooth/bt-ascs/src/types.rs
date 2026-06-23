@@ -22,6 +22,8 @@ pub enum Error {
     PublishError(bt_gatt::types::Error),
     #[error("Unsupported configuration: {0}")]
     Unsupported(String),
+    #[error("Unknown Peer: {0}")]
+    UnknownPeer(bt_common::PeerId),
 }
 
 #[non_exhaustive]
@@ -220,7 +222,7 @@ impl AseControlPointOpcode {
             Self::Enable { .. } => &[AseState::QosConfigured],
             Self::ReceiverStartReady { .. } => &[AseState::Enabling],
             Self::ReceiverStopReady { .. } => &[AseState::Disabling],
-            Self::Disable { .. } => &[AseState::Streaming],
+            Self::Disable { .. } => &[AseState::Streaming, AseState::Enabling],
             Self::UpdateMetadata { .. } => &[AseState::Enabling, AseState::Streaming],
             Self::Release { .. } => &[
                 AseState::Enabling,
@@ -255,7 +257,7 @@ pub enum AseControlOperation {
     // The only possible error here is InvalidLength
     Release { ases: Vec<AseId> },
     // This is only initiated by the server
-    Released,
+    Released { ase_id: AseId },
 }
 
 impl AseControlOperation {
@@ -287,7 +289,7 @@ impl TryFrom<&AseControlOperation> for u8 {
             AseControlOperation::ReceiverStopReady { .. } => Ok(0x06),
             AseControlOperation::UpdateMetadata { .. } => Ok(0x07),
             AseControlOperation::Release { .. } => Ok(0x08),
-            AseControlOperation::Released => Err(Error::ServerOnlyOperation),
+            AseControlOperation::Released { .. } => Err(Error::ServerOnlyOperation),
         }
     }
 }
@@ -642,6 +644,20 @@ impl From<CigId> for u8 {
     }
 }
 
+impl Encodable for CigId {
+    type Error = bt_common::packet_encoding::Error;
+    fn encoded_len(&self) -> core::primitive::usize {
+        Self::BYTE_SIZE
+    }
+    fn encode(&self, buf: &mut [u8]) -> core::result::Result<(), Self::Error> {
+        if buf.len() < Self::BYTE_SIZE {
+            return Err(Self::Error::BufferTooSmall);
+        }
+        buf[0] = self.0;
+        Ok(())
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct CisId(u8);
 
@@ -667,6 +683,20 @@ impl From<CisId> for u8 {
     }
 }
 
+impl Encodable for CisId {
+    type Error = bt_common::packet_encoding::Error;
+    fn encoded_len(&self) -> core::primitive::usize {
+        Self::BYTE_SIZE
+    }
+    fn encode(&self, buf: &mut [u8]) -> core::result::Result<(), Self::Error> {
+        if buf.len() < Self::BYTE_SIZE {
+            return Err(Self::Error::BufferTooSmall);
+        }
+        buf[0] = self.0;
+        Ok(())
+    }
+}
+
 /// SDU Inteval parameter
 /// This value is 24 bits long and little-endian on the wire.
 /// It is stored native-endian here.
@@ -686,10 +716,24 @@ impl Decodable for SduInterval {
             return (Err(Self::Error::BufferTooSmall), buf.len());
         }
         let val = u32::from_le_bytes([buf[0], buf[1], buf[2], 0]);
-        if val < 0xFF || val > 0x0FFFFF {
+        if (val < 0xFF) || (val > 0x0FFFFF) {
             return (Err(Self::Error::OutOfRange), Self::BYTE_SIZE);
         }
         (Ok(SduInterval(val)), Self::BYTE_SIZE)
+    }
+}
+
+impl Encodable for SduInterval {
+    type Error = bt_common::packet_encoding::Error;
+    fn encoded_len(&self) -> core::primitive::usize {
+        Self::BYTE_SIZE
+    }
+    fn encode(&self, buf: &mut [u8]) -> core::result::Result<(), Self::Error> {
+        if buf.len() < Self::BYTE_SIZE {
+            return Err(Self::Error::BufferTooSmall);
+        }
+        [buf[0], buf[1], buf[2], _] = self.0.to_le_bytes();
+        Ok(())
     }
 }
 
@@ -702,6 +746,20 @@ pub enum Framing<u8, bt_common::packet_encoding::Error, OutOfRange> {
 
 impl Framing {
     const BYTE_SIZE: usize = 1;
+}
+
+impl Encodable for Framing {
+    type Error = bt_common::packet_encoding::Error;
+    fn encoded_len(&self) -> core::primitive::usize {
+        Self::BYTE_SIZE
+    }
+    fn encode(&self, buf: &mut [u8]) -> core::result::Result<(), Self::Error> {
+        if buf.len() < Self::BYTE_SIZE {
+            return Err(Self::Error::BufferTooSmall);
+        }
+        buf[0] = (*self).into();
+        Ok(())
+    }
 }
 
 /// Max SDU parameter value.
@@ -719,6 +777,20 @@ impl TryFrom<[u8; 2]> for MaxSdu {
             return Err(Self::Error::OutOfRange);
         }
         Ok(MaxSdu(value))
+    }
+}
+
+impl Encodable for MaxSdu {
+    type Error = bt_common::packet_encoding::Error;
+    fn encoded_len(&self) -> core::primitive::usize {
+        Self::BYTE_SIZE
+    }
+    fn encode(&self, buf: &mut [u8]) -> core::result::Result<(), Self::Error> {
+        if buf.len() < Self::BYTE_SIZE {
+            return Err(Self::Error::BufferTooSmall);
+        }
+        [buf[0], buf[1]] = self.0.to_le_bytes();
+        Ok(())
     }
 }
 
@@ -1017,6 +1089,26 @@ mod tests {
         assert_eq!(codec_config.target_phy, TargetPhy::Le2MPhy);
         assert_eq!(codec_config.codec_id, CodecId::Assigned(bt_common::core::CodingFormat::Lc3));
         assert_eq!(codec_config.codec_specific_configuration.len(), 0x10);
+
+        #[rustfmt::skip]
+        let encoded_qos = &[
+            0x02, 0x01, // Qos OpCode, 1 number_of_ases
+            0x03, // ASE_ID,
+            0x00, // CIG_ID,
+            0x00, // CIS_ID,
+            0x10, 0x27, 0x00, // SduInterval
+            0x01, 0x02, 0x28, 0x00, 0x02, 0xf4,
+            0x01, 0x18, 0x00, 0x80,
+        ];
+        assert_eq!(QosConfiguration::BYTE_SIZE, encoded_qos.len() - 2);
+        let (qos_config, consumed) = QosConfiguration::decode(&encoded_qos[2..]);
+        assert!(qos_config.is_ok());
+        assert_eq!(consumed, encoded_qos.len() - 2);
+        let encoded_qos: Vec<u8> = encoded_qos.into_iter().copied().collect();
+        let operation = AseControlOperation::try_from(encoded_qos);
+        let Ok(_operation) = operation else {
+            panic!("Expected decode to work correctly, for {operation:?}");
+        };
     }
 
     #[test]

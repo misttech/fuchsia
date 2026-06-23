@@ -335,24 +335,46 @@ impl ServerTypes for FakeTypes {
     type IndicateConfirmationStream = UnboundedReceiver<Result<server::ConfirmationEvent>>;
 }
 
-pub struct FakePeriodicAdvertising;
+#[derive(Default)]
+struct FakePeriodicAdvertisingInner {
+    sync_registry: HashMap<PeerId, UnboundedSender<Result<SyncReport>>>,
+}
+
+#[derive(Clone, Default)]
+pub struct FakePeriodicAdvertising {
+    inner: Arc<Mutex<FakePeriodicAdvertisingInner>>,
+}
+
+impl FakePeriodicAdvertising {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn get_sender(&self, peer_id: PeerId) -> Option<UnboundedSender<Result<SyncReport>>> {
+        self.inner.lock().sync_registry.get(&peer_id).cloned()
+    }
+}
 
 impl PeriodicAdvertising for FakePeriodicAdvertising {
     type SyncFut = Ready<Result<Self::SyncStream>>;
-    type SyncStream = futures::stream::Empty<Result<SyncReport>>;
+    type SyncStream = UnboundedReceiver<Result<SyncReport>>;
 
     fn sync_to_advertising_reports(
-        _peer_id: PeerId,
+        &self,
+        peer_id: PeerId,
         _advertising_sid: u8,
         _config: crate::periodic_advertising::SyncConfiguration,
     ) -> Self::SyncFut {
-        unimplemented!()
+        let (tx, rx) = unbounded();
+        self.inner.lock().sync_registry.insert(peer_id, tx);
+        ready(Ok(rx))
     }
 }
 
 #[derive(Default)]
 pub struct FakeCentralInner {
     clients: HashMap<PeerId, FakeClient>,
+    pub(crate) periodic_advertising: FakePeriodicAdvertising,
 }
 
 #[derive(Clone)]
@@ -385,7 +407,7 @@ impl crate::Central<FakeTypes> for FakeCentral {
     }
 
     fn periodic_advertising(&self) -> Result<<FakeTypes as GattTypes>::PeriodicAdvertising> {
-        unimplemented!()
+        Ok(self.inner.lock().periodic_advertising.clone())
     }
 }
 

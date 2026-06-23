@@ -4,8 +4,8 @@
 
 use bt_bap::types::*;
 use bt_bass::types::{BigSubgroup, BisSync};
+use bt_common::core::PeriodicAdvertisingInterval;
 use bt_common::core::{Address, AddressType};
-use bt_common::core::{AdvertisingSetId, PeriodicAdvertisingInterval};
 use bt_common::packet_encoding::Error as PacketError;
 use std::collections::HashMap;
 
@@ -17,20 +17,20 @@ use std::collections::HashMap;
 pub struct BroadcastSource {
     pub(crate) address: Option<Address>,
     pub(crate) address_type: Option<AddressType>,
-    pub(crate) advertising_sid: Option<AdvertisingSetId>,
     pub(crate) broadcast_id: Option<BroadcastId>,
     pub(crate) periodic_advertising_interval: Option<PeriodicAdvertisingInterval>,
     pub(crate) endpoint: Option<BroadcastAudioSourceEndpoint>,
+    pub(crate) broadcast_name: Option<String>,
 }
 
 impl BroadcastSource {
     /// Returns whether or not this BroadcastSource has enough information
     /// to be added by the Broadcast Assistant.
-    pub(crate) fn into_add_source(&self) -> bool {
+    pub(crate) fn is_ready_to_add(&self) -> bool {
         // Address and PA interval information are not necessary since
         // default value can be used for PA interval and Address is looked up
         // when the add source operation is triggered.
-        self.advertising_sid.is_some() && self.broadcast_id.is_some() && self.endpoint.is_some()
+        self.broadcast_id.is_some() && self.endpoint.is_some()
     }
 
     pub fn with_address(&mut self, address: [u8; 6]) -> &mut Self {
@@ -48,11 +48,6 @@ impl BroadcastSource {
         self
     }
 
-    pub fn with_advertising_sid(&mut self, sid: AdvertisingSetId) -> &mut Self {
-        self.advertising_sid = Some(sid);
-        self
-    }
-
     pub fn with_periodic_advertising_interval(
         &mut self,
         interval: PeriodicAdvertisingInterval,
@@ -63,6 +58,11 @@ impl BroadcastSource {
 
     pub fn with_endpoint(&mut self, endpoint: BroadcastAudioSourceEndpoint) -> &mut Self {
         self.endpoint = Some(endpoint);
+        self
+    }
+
+    pub fn with_broadcast_name(&mut self, name: String) -> &mut Self {
+        self.broadcast_name = Some(name);
         self
     }
 
@@ -77,9 +77,6 @@ impl BroadcastSource {
         if let Some(address_type) = other.address_type {
             self.address_type = Some(address_type);
         }
-        if let Some(advertising_sid) = other.advertising_sid {
-            self.advertising_sid = Some(advertising_sid);
-        }
         if let Some(broadcast_id) = other.broadcast_id {
             self.broadcast_id = Some(broadcast_id);
         }
@@ -88,6 +85,9 @@ impl BroadcastSource {
         }
         if let Some(endpoint) = &other.endpoint {
             self.endpoint = Some(endpoint.clone());
+        }
+        if let Some(broadcast_name) = &other.broadcast_name {
+            self.broadcast_name = Some(broadcast_name.clone());
         }
     }
 
@@ -131,13 +131,10 @@ mod tests {
     #[test]
     fn broadcast_source() {
         let mut b = BroadcastSource::default();
-        assert!(!b.into_add_source());
-
-        b.with_advertising_sid(AdvertisingSetId(0x1));
-        assert!(!b.into_add_source());
+        assert!(!b.is_ready_to_add());
 
         b.with_broadcast_id(BroadcastId::try_from(0x010203).unwrap());
-        assert!(!b.into_add_source());
+        assert!(!b.is_ready_to_add());
 
         b.endpoint_to_big_subgroups(HashMap::from([(0, BisSync::sync(vec![1]).unwrap())]))
             .expect_err("should fail no endpoint data");
@@ -155,7 +152,7 @@ mod tests {
             }],
         });
 
-        assert!(b.into_add_source());
+        assert!(b.is_ready_to_add());
         let subgroups = b
             .endpoint_to_big_subgroups(HashMap::from([
                 (0, BisSync::sync(vec![1]).unwrap()),
