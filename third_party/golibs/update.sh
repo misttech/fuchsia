@@ -47,6 +47,10 @@ if ignored=$(git check-ignore ./*); then
   echo "$ignored" | xargs --no-run-if-empty -I % mv % "$TMP"/%
 fi
 
+# Prevent Go from trying to download newer toolchain versions, always use the
+# local toolchain.
+export GOTOOLCHAIN=local
+
 GOROOTBIN=$(fx-command-run go env GOROOT)/bin
 GO=$GOROOTBIN/go
 GOFMT=$GOROOTBIN/gofmt
