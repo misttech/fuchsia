@@ -4,6 +4,7 @@
 
 //! Contexts for packet parsing and serialization in netstack3.
 
+use crate::inspect::{Inspectable, Inspector};
 use bitflags::bitflags;
 use core::num::NonZeroU16;
 use net_types::ip::IpInvariant;
@@ -190,6 +191,32 @@ impl ChecksumOffloadSpec {
             },
             generic: acc.generic.or(spec.generic),
         })
+    }
+}
+
+impl Inspectable for ChecksumOffloadSpec {
+    fn record<I: Inspector>(&self, inspector: &mut I) {
+        inspector.record_bool("TxChecksumOffloadGeneric", self.generic.is_some());
+        if let Some(protocol_specific) = &self.protocol_specific {
+            inspector.record_child("TxChecksumOffloadProtocolSpecific", |inspector| {
+                inspector.record_bool(
+                    "EthIpv4Udp",
+                    protocol_specific.contains(ProtocolSpecificOffloadSpec::ETH_IPV4_UDP),
+                );
+                inspector.record_bool(
+                    "EthIpv4Tcp",
+                    protocol_specific.contains(ProtocolSpecificOffloadSpec::ETH_IPV4_TCP),
+                );
+                inspector.record_bool(
+                    "EthIpv6Udp",
+                    protocol_specific.contains(ProtocolSpecificOffloadSpec::ETH_IPV6_UDP),
+                );
+                inspector.record_bool(
+                    "EthIpv6Tcp",
+                    protocol_specific.contains(ProtocolSpecificOffloadSpec::ETH_IPV6_TCP),
+                );
+            });
+        }
     }
 }
 
@@ -464,6 +491,11 @@ impl NetworkParsingContext {
     /// Creates a new `NetworkParsingContext`.
     pub fn new(checksum_offload: ChecksumRxOffloading) -> Self {
         NetworkParsingContext { checksum_offload }
+    }
+
+    /// Returns the checksum offload status.
+    pub fn checksum_offload(&self) -> ChecksumRxOffloading {
+        self.checksum_offload
     }
 }
 

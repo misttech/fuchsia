@@ -205,15 +205,30 @@ pub struct EthernetDeviceCounters {
     pub recv_unsupported_ethertype: Counter,
     /// Count of incoming frames dropped due to an empty ethertype.
     pub recv_no_ethertype: Counter,
+    /// Count of incoming frames with a single checksum offloaded.
+    pub recv_single_csum_offloaded: Counter,
+    /// Count of incoming frames with multiple checksums offloaded.
+    pub recv_multiple_csums_offloaded: Counter,
+    /// Count of incoming frames with all checksums offloaded.
+    pub recv_all_csums_offloaded: Counter,
 }
 
 impl Inspectable for EthernetDeviceCounters {
     fn record<I: Inspector>(&self, inspector: &mut I) {
         inspector.record_child("Ethernet", |inspector| {
-            let Self { recv_no_ethertype, recv_unsupported_ethertype } = self;
+            let Self {
+                recv_no_ethertype,
+                recv_unsupported_ethertype,
+                recv_single_csum_offloaded,
+                recv_multiple_csums_offloaded,
+                recv_all_csums_offloaded,
+            } = self;
             inspector.record_child("Rx", |inspector| {
                 inspector.record_counter("NoEthertype", recv_no_ethertype);
                 inspector.record_counter("UnsupportedEthertype", recv_unsupported_ethertype);
+                inspector.record_counter("SingleCsumOffloaded", recv_single_csum_offloaded);
+                inspector.record_counter("MultipleCsumsOffloaded", recv_multiple_csums_offloaded);
+                inspector.record_counter("AllCsumsOffloaded", recv_all_csums_offloaded);
             });
         })
     }
@@ -221,10 +236,30 @@ impl Inspectable for EthernetDeviceCounters {
 
 /// Counters for pure IP devices.
 #[derive(Default)]
-pub struct PureIpDeviceCounters {}
+pub struct PureIpDeviceCounters {
+    /// Count of incoming frames with a single checksum offloaded.
+    pub recv_single_csum_offloaded: Counter,
+    /// Count of incoming frames with multiple checksums offloaded.
+    pub recv_multiple_csums_offloaded: Counter,
+    /// Count of incoming frames with all checksums offloaded.
+    pub recv_all_csums_offloaded: Counter,
+}
 
 impl Inspectable for PureIpDeviceCounters {
-    fn record<I: Inspector>(&self, _inspector: &mut I) {}
+    fn record<I: Inspector>(&self, inspector: &mut I) {
+        inspector.record_child("PureIp", |inspector| {
+            let Self {
+                recv_single_csum_offloaded,
+                recv_multiple_csums_offloaded,
+                recv_all_csums_offloaded,
+            } = self;
+            inspector.record_child("Rx", |inspector| {
+                inspector.record_counter("SingleCsumOffloaded", recv_single_csum_offloaded);
+                inspector.record_counter("MultipleCsumsOffloaded", recv_multiple_csums_offloaded);
+                inspector.record_counter("AllCsumsOffloaded", recv_all_csums_offloaded);
+            });
+        })
+    }
 }
 
 /// Counters for blackhole devices.

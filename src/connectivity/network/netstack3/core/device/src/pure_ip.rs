@@ -12,10 +12,10 @@ use log::debug;
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6, Mtu};
 use netstack3_base::sync::{Mutex, RwLock};
 use netstack3_base::{
-    BroadcastIpExt, CoreTimerContext, Device, DeviceIdContext, NetworkParsingContext,
-    NetworkSerializer, ReceivableFrameMeta, RecvFrameContext, RecvIpFrameMeta,
-    ResourceCounterContext, SendFrameError, SendFrameErrorReason, SendableFrameMeta, TimerContext,
-    TxMetadataBindingsTypes, WeakDeviceIdentifier,
+    BroadcastIpExt, ChecksumOffloadSpec, CoreTimerContext, Device, DeviceIdContext,
+    NetworkParsingContext, NetworkSerializer, ReceivableFrameMeta, RecvFrameContext,
+    RecvIpFrameMeta, ResourceCounterContext, SendFrameError, SendFrameErrorReason,
+    SendableFrameMeta, TimerContext, TxMetadataBindingsTypes, WeakDeviceIdentifier,
 };
 use netstack3_ip::{DeviceIpLayerMetadata, IpPacketDestination};
 use packet::BufferMut;
@@ -146,6 +146,12 @@ impl DeviceStateSpec for PureIpDevice {
             tx_queue: TransmitQueue::new(tx_allocator, tx_offload_spec),
             counters: PureIpDeviceCounters::default(),
         }
+    }
+
+    fn tx_offload_spec<BT: DeviceLayerTypes>(
+        state: &Self::State<BT>,
+    ) -> Option<ChecksumOffloadSpec> {
+        Some(state.tx_queue.tx_offload_spec())
     }
 }
 

@@ -1424,6 +1424,9 @@ async fn inspect_devices_ipv6_disabled(name: &str) {
                 IPv6Enabled: true,
                 MTU: 65536u64,
                 Loopback: true,
+                TxOffloadSpec: {
+                    TxChecksumOffloadGeneric: true,
+                },
                 IPv4: {
                     Addresses: {
                         "127.0.0.1/8": {
@@ -1498,6 +1501,9 @@ async fn inspect_devices_ipv6_disabled(name: &str) {
                         Rx: {
                             NoEthertype: 0u64,
                             UnsupportedEthertype: 0u64,
+                            SingleCsumOffloaded: 0u64,
+                            MultipleCsumsOffloaded: 0u64,
+                            AllCsumsOffloaded: 0u64,
                         },
                     },
                     IPv4: {
@@ -1653,6 +1659,9 @@ async fn inspect_devices_ipv6_disabled(name: &str) {
                 IPv6Enabled: false,
                 MTU: u64::from(netemul::DEFAULT_MTU),
                 Loopback: false,
+                TxOffloadSpec: {
+                    TxChecksumOffloadGeneric: false,
+                },
                 IPv4: {
                     "Addresses": {
                         "192.168.0.1/24": {
@@ -1716,6 +1725,9 @@ async fn inspect_devices_ipv6_disabled(name: &str) {
                         Rx: {
                             NoEthertype: 0u64,
                             UnsupportedEthertype: 0u64,
+                            SingleCsumOffloaded: 0u64,
+                            MultipleCsumsOffloaded: 0u64,
+                            AllCsumsOffloaded: 0u64,
                         },
                     },
                     IPv4: {
@@ -1923,6 +1935,9 @@ async fn inspect_devices(name: &str) {
                 IPv6Enabled: true,
                 MTU: 65536u64,
                 Loopback: true,
+                TxOffloadSpec: {
+                    TxChecksumOffloadGeneric: true,
+                },
                 IPv4: {
                     Addresses: {
                         "127.0.0.1/8": {
@@ -1997,6 +2012,9 @@ async fn inspect_devices(name: &str) {
                         Rx: {
                             NoEthertype: 0u64,
                             UnsupportedEthertype: 0u64,
+                            SingleCsumOffloaded: 0u64,
+                            MultipleCsumsOffloaded: 0u64,
+                            AllCsumsOffloaded: 0u64,
                         },
                     },
                     IPv4: {
@@ -2152,6 +2170,9 @@ async fn inspect_devices(name: &str) {
                 IPv6Enabled: true,
                 MTU: u64::from(netemul::DEFAULT_MTU),
                 Loopback: false,
+                TxOffloadSpec: {
+                    TxChecksumOffloadGeneric: false,
+                },
                 IPv4: {
                     "Addresses": {
                         "192.168.0.1/24": {
@@ -2235,6 +2256,9 @@ async fn inspect_devices(name: &str) {
                         Rx: {
                             NoEthertype: 0u64,
                             UnsupportedEthertype: 0u64,
+                            SingleCsumOffloaded: 0u64,
+                            MultipleCsumsOffloaded: 0u64,
+                            AllCsumsOffloaded: 0u64,
                         },
                     },
                     IPv4: {
@@ -2465,6 +2489,9 @@ async fn inspect_counters(name: &str) {
                     "Rx": {
                         NoEthertype: 0u64,
                         UnsupportedEthertype: 0u64,
+                        SingleCsumOffloaded: 0u64,
+                        MultipleCsumsOffloaded: 0u64,
+                        AllCsumsOffloaded: 1u64,
                     },
                 },
             },

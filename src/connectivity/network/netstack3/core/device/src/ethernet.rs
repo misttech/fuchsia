@@ -15,11 +15,11 @@ use net_types::{MulticastAddr, UnicastAddr, Witness};
 use netstack3_base::ref_counted_hash_map::{InsertResult, RefCountedHashSet, RemoveResult};
 use netstack3_base::sync::{Mutex, RwLock};
 use netstack3_base::{
-    BroadcastIpExt, CoreTimerContext, Device, DeviceIdContext, EventContext, FrameDestination,
-    HandleableTimer, LinkDevice, NestedIntoCoreTimerCtx, NetworkParsingContext, NetworkSerializer,
-    ReceivableFrameMeta, RecvFrameContext, RecvIpFrameMeta, ResourceCounterContext, RngContext,
-    SendFrameError, SendFrameErrorReason, SendableFrameMeta, TimerContext, TimerHandler,
-    TxMetadataBindingsTypes, WeakDeviceIdentifier, WrapBroadcastMarker,
+    BroadcastIpExt, ChecksumOffloadSpec, CoreTimerContext, Device, DeviceIdContext, EventContext,
+    FrameDestination, HandleableTimer, LinkDevice, NestedIntoCoreTimerCtx, NetworkParsingContext,
+    NetworkSerializer, ReceivableFrameMeta, RecvFrameContext, RecvIpFrameMeta,
+    ResourceCounterContext, RngContext, SendFrameError, SendFrameErrorReason, SendableFrameMeta,
+    TimerContext, TimerHandler, TxMetadataBindingsTypes, WeakDeviceIdentifier, WrapBroadcastMarker,
 };
 use netstack3_ip::nud::{LinkResolutionContext, NudHandler, NudState, NudTimerId, NudUserConfig};
 use netstack3_ip::{DeviceIpLayerMetadata, IpCounters, IpPacketDestination};
@@ -947,6 +947,12 @@ impl DeviceStateSpec for EthernetLinkDevice {
     }
     const IS_LOOPBACK: bool = false;
     const DEBUG_TYPE: &'static str = "Ethernet";
+
+    fn tx_offload_spec<BT: DeviceLayerTypes>(
+        state: &Self::State<BT>,
+    ) -> Option<ChecksumOffloadSpec> {
+        Some(state.tx_queue.tx_offload_spec())
+    }
 }
 
 #[cfg(any(test, feature = "testutils"))]

@@ -11,7 +11,8 @@ use lock_order::lock::{OrderedLockAccess, OrderedLockRef};
 use net_types::ip::{Ipv4, Ipv6};
 use netstack3_base::sync::{RwLock, WeakRc};
 use netstack3_base::{
-    CoreTimerContext, Device, DeviceIdContext, Inspectable, TimerContext, WeakDeviceIdentifier,
+    ChecksumOffloadSpec, CoreTimerContext, Device, DeviceIdContext, Inspectable, TimerContext,
+    WeakDeviceIdentifier,
 };
 use netstack3_ip::RawMetric;
 use netstack3_ip::device::{DualStackIpDeviceState, IpDeviceTimerId};
@@ -51,6 +52,11 @@ pub trait DeviceStateSpec: Device + Sized + Send + Sync + 'static {
     const IS_LOOPBACK: bool;
     /// Marker used to print debug information for device identifiers.
     const DEBUG_TYPE: &'static str;
+
+    /// Returns the TX checksum offload specification for the device, if it has one.
+    fn tx_offload_spec<BT: DeviceLayerTypes>(
+        state: &Self::State<BT>,
+    ) -> Option<ChecksumOffloadSpec>;
 }
 
 /// Groups state kept by weak device references.
@@ -125,4 +131,12 @@ impl<T, BT: DeviceLayerTypes> OrderedLockAccess<HeldDeviceSockets<BT>>
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.sockets)
     }
+}
+
+/// Context for getting the TX checksum offload specification for a device.
+pub trait DeviceTxOffloadSpecContext<D: DeviceStateSpec, BT: DeviceLayerTypes>:
+    DeviceIdContext<D>
+{
+    /// Returns the TX checksum offload specification for `device`, if it has one.
+    fn tx_offload_spec(&self, device: &Self::DeviceId) -> Option<ChecksumOffloadSpec>;
 }

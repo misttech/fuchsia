@@ -18,10 +18,11 @@ use net_types::ip::{
 };
 use net_types::{MulticastAddr, SpecifiedAddr, UnicastAddr, Witness as _, map_ip_twice};
 use netstack3_base::{
-    AnyDevice, BroadcastIpExt, CounterContext, DeviceIdContext, ExistsError, IpAddressId,
-    IpDeviceAddressIdContext, Ipv4DeviceAddr, Ipv6DeviceAddr, NetworkSerializer, NotFoundError,
-    ReceivableFrameMeta, RecvIpFrameMeta, ReferenceNotifiersExt, RemoveResourceResultWithContext,
-    ResourceCounterContext, SendFrameError, WeakDeviceIdentifier,
+    AnyDevice, BroadcastIpExt, ChecksumOffloadSpec, ChecksumRxOffloading, CounterContext,
+    DeviceIdContext, ExistsError, IpAddressId, IpDeviceAddressIdContext, Ipv4DeviceAddr,
+    Ipv6DeviceAddr, NetworkSerializer, NotFoundError, ReceivableFrameMeta, RecvIpFrameMeta,
+    ReferenceNotifiersExt, RemoveResourceResultWithContext, ResourceCounterContext, SendFrameError,
+    WeakDeviceIdentifier,
 };
 use netstack3_device::blackhole::{BlackholeDeviceCounters, BlackholeDeviceId};
 use netstack3_device::ethernet::{
@@ -34,9 +35,9 @@ use netstack3_device::queue::TransmitQueueHandler;
 use netstack3_device::socket::{DeviceSocketCounters, DeviceSocketId, HeldDeviceSockets};
 use netstack3_device::{
     ArpCounters, BaseDeviceId, DeviceCollectionContext, DeviceConfigurationContext, DeviceCounters,
-    DeviceId, DeviceLayerState, DeviceStateSpec, Devices, DevicesIter, IpLinkDeviceState,
-    IpLinkDeviceStateInner, Ipv6DeviceLinkLayerAddr, OriginTracker, OriginTrackerContext,
-    WeakDeviceId, for_any_device_id,
+    DeviceId, DeviceLayerState, DeviceStateSpec, DeviceTxOffloadSpecContext, Devices, DevicesIter,
+    IpLinkDeviceState, IpLinkDeviceStateInner, Ipv6DeviceLinkLayerAddr, OriginTracker,
+    OriginTrackerContext, WeakDeviceId, for_any_device_id,
 };
 use netstack3_filter::ProofOfEgressCheck;
 use netstack3_ip::device::{
@@ -157,6 +158,69 @@ where
     }
 }
 
+fn update_rx_checksum_offload_counters<BC: BindingsContext, L>(
+    core_ctx: &CoreCtx<'_, BC, L>,
+    device: &DeviceId<BC>,
+    checksum_offload: ChecksumRxOffloading,
+) {
+    match checksum_offload {
+        ChecksumRxOffloading::FullyOffloaded => match device {
+            DeviceId::Ethernet(id) => {
+                core_ctx
+                    .increment_both(id, |c: &EthernetDeviceCounters| &c.recv_all_csums_offloaded);
+            }
+            DeviceId::Loopback(id) => {
+                core_ctx
+                    .increment_both(id, |c: &EthernetDeviceCounters| &c.recv_all_csums_offloaded);
+            }
+            DeviceId::PureIp(id) => {
+                core_ctx.increment_both(id, |c: &PureIpDeviceCounters| &c.recv_all_csums_offloaded);
+            }
+            DeviceId::Blackhole(_) => {}
+        },
+        ChecksumRxOffloading::Offloaded(Some(n)) => {
+            let validated = n.get();
+            match device {
+                DeviceId::Ethernet(id) => {
+                    if validated == 1 {
+                        core_ctx.increment_both(id, |c: &EthernetDeviceCounters| {
+                            &c.recv_single_csum_offloaded
+                        });
+                    } else {
+                        core_ctx.increment_both(id, |c: &EthernetDeviceCounters| {
+                            &c.recv_multiple_csums_offloaded
+                        });
+                    }
+                }
+                DeviceId::Loopback(id) => {
+                    if validated == 1 {
+                        core_ctx.increment_both(id, |c: &EthernetDeviceCounters| {
+                            &c.recv_single_csum_offloaded
+                        });
+                    } else {
+                        core_ctx.increment_both(id, |c: &EthernetDeviceCounters| {
+                            &c.recv_multiple_csums_offloaded
+                        });
+                    }
+                }
+                DeviceId::PureIp(id) => {
+                    if validated == 1 {
+                        core_ctx.increment_both(id, |c: &PureIpDeviceCounters| {
+                            &c.recv_single_csum_offloaded
+                        });
+                    } else {
+                        core_ctx.increment_both(id, |c: &PureIpDeviceCounters| {
+                            &c.recv_multiple_csums_offloaded
+                        });
+                    }
+                }
+                DeviceId::Blackhole(_) => {}
+            }
+        }
+        ChecksumRxOffloading::Offloaded(None) => {}
+    }
+}
+
 impl<I, D, L, BC> ReceivableFrameMeta<CoreCtx<'_, BC, L>, BC>
     for RecvIpFrameMeta<D, DeviceIpLayerMetadata<BC>, I>
 where
@@ -179,6 +243,7 @@ where
             parsing_context,
         } = self;
         let device = device.into();
+        update_rx_checksum_offload_counters(core_ctx, &device, parsing_context.checksum_offload());
         match I::VERSION {
             IpVersion::V4 => ip::receive_ipv4_packet(
                 core_ctx,
@@ -1247,5 +1312,19 @@ where
 impl<BT: BindingsTypes, L> CounterContext<ArpCounters> for CoreCtx<'_, BT, L> {
     fn counters(&self) -> &ArpCounters {
         &self.unlocked_access::<crate::lock_ordering::UnlockedState>().device.arp_counters
+    }
+}
+
+impl<'a, D, BT, L> DeviceTxOffloadSpecContext<D, BT> for CoreCtx<'a, BT, L>
+where
+    D: DeviceStateSpec,
+    BT: BindingsTypes,
+    CoreCtx<'a, BT, L>: DeviceIdContext<D, DeviceId = BaseDeviceId<D, BT>>,
+{
+    fn tx_offload_spec(&self, device: &BaseDeviceId<D, BT>) -> Option<ChecksumOffloadSpec> {
+        let state = device.device_state(
+            &self.unlocked_access::<crate::lock_ordering::UnlockedState>().device.origin,
+        );
+        D::tx_offload_spec(&state.link)
     }
 }

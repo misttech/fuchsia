@@ -41,7 +41,9 @@ use crate::internal::id::{
 use crate::internal::loopback::LoopbackDevice;
 use crate::internal::pure_ip::PureIpDevice;
 use crate::internal::queue::DeviceBufferSpec;
-use crate::internal::state::{BaseDeviceState, DeviceStateSpec, IpLinkDeviceStateInner};
+use crate::internal::state::{
+    BaseDeviceState, DeviceStateSpec, DeviceTxOffloadSpecContext, IpLinkDeviceStateInner,
+};
 
 /// Pending device configuration update.
 ///
@@ -305,6 +307,12 @@ where
         device: &BaseDeviceId<D, C::BindingsContext>,
         inspector: &mut N,
     ) {
+        if let Some(tx_offload_spec) = self.core_ctx().tx_offload_spec(device) {
+            inspector.record_child("TxOffloadSpec", |inspector| {
+                inspector.delegate_inspectable(&tx_offload_spec);
+            });
+        }
+
         inspector.record_child("Counters", |inspector| {
             inspector.delegate_inspectable(
                 ResourceCounterContext::<_, DeviceCounters>::per_resource_counters(
@@ -471,6 +479,7 @@ pub trait DeviceApiCoreContext<
     + ResourceCounterContext<Self::DeviceId, IgmpCounters>
     + ResourceCounterContext<Self::DeviceId, MldCounters>
     + CoreTimerContext<D::TimerId<Self::WeakDeviceId>, BC>
+    + DeviceTxOffloadSpecContext<D, BC>
 {
 }
 
@@ -489,7 +498,8 @@ where
         + ResourceCounterContext<Self::DeviceId, IpCounters<Ipv6>>
         + ResourceCounterContext<Self::DeviceId, IgmpCounters>
         + ResourceCounterContext<Self::DeviceId, MldCounters>
-        + CoreTimerContext<D::TimerId<Self::WeakDeviceId>, BC>,
+        + CoreTimerContext<D::TimerId<Self::WeakDeviceId>, BC>
+        + DeviceTxOffloadSpecContext<D, BC>,
 {
 }
 

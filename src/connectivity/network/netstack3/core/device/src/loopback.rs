@@ -106,6 +106,12 @@ impl DeviceStateSpec for LoopbackDevice {
 
     const IS_LOOPBACK: bool = true;
     const DEBUG_TYPE: &'static str = "Loopback";
+
+    fn tx_offload_spec<BT: DeviceLayerTypes>(
+        state: &Self::State<BT>,
+    ) -> Option<ChecksumOffloadSpec> {
+        Some(state.tx_queue.tx_offload_spec())
+    }
 }
 
 /// Properties used to create a loopback device.

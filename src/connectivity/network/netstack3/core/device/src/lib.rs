@@ -127,7 +127,9 @@ pub use internal::config::{
     NdpConfigurationUpdate,
 };
 pub use internal::id::{BaseDeviceId, DeviceId, DeviceProvider, WeakDeviceId};
-pub use internal::state::{DeviceStateSpec, IpLinkDeviceState, IpLinkDeviceStateInner};
+pub use internal::state::{
+    DeviceStateSpec, DeviceTxOffloadSpecContext, IpLinkDeviceState, IpLinkDeviceStateInner,
+};
 
 /// Device layer test utilities.
 #[cfg(any(test, feature = "testutils"))]

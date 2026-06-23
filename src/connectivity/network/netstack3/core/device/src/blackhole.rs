@@ -6,7 +6,7 @@
 
 use core::convert::Infallible as Never;
 
-use netstack3_base::{Device, NeverBuffer};
+use netstack3_base::{ChecksumOffloadSpec, Device, NeverBuffer};
 
 use crate::internal::base::{BlackholeDeviceCounters, DeviceReceiveFrameSpec};
 use crate::internal::id::{BaseDeviceId, BasePrimaryDeviceId, BaseWeakDeviceId};
@@ -84,6 +84,12 @@ impl DeviceStateSpec for BlackholeDevice {
     const IS_LOOPBACK: bool = false;
 
     const DEBUG_TYPE: &'static str = "Blackhole";
+
+    fn tx_offload_spec<BT: crate::DeviceLayerTypes>(
+        _state: &Self::State<BT>,
+    ) -> Option<ChecksumOffloadSpec> {
+        None
+    }
 }
 
 impl DeviceReceiveFrameSpec for BlackholeDevice {

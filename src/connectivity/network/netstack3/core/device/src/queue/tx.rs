@@ -56,6 +56,10 @@ impl<Meta, Buffer, Allocator> TransmitQueue<Meta, Buffer, Allocator> {
             }),
         }
     }
+
+    pub(crate) fn tx_offload_spec(&self) -> ChecksumOffloadSpec {
+        self.queue.lock().checksum_offload_spec.clone()
+    }
 }
 
 /// The bindings context for the transmit queue.
