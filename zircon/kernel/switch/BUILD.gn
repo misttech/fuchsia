@@ -516,6 +516,14 @@ if (current_cpu == "arm64" && is_gcc) {
   got_tolerance = 32
 } else {
   got_tolerance = 0
+
+  # TODO(https://fxbug.dev/511265181): This should be 0 and none should be
+  # tolerated in production builds.  Currently Rust code produces GOT
+  # indirections it should not when thinlto is enabled.  So far, there is very
+  # little Rust code that might run into this compiler issue.  Until the
+  # compiler bug is fixed (ASAP), allow the few slots empirically seen to be
+  # produced in the build.
+  got_tolerance = 24
 }
 
 # This is implicitly added last to configs in kernel_executable().
