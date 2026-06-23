@@ -142,7 +142,7 @@ TEST(ZbiTests, RelocateKernelToTail) {
   size_t buffer_size = sizeof(buffer);
   void* entry = RelocateKernelToTail(reinterpret_cast<zbi_header_t*>(buffer), &buffer_size);
   ASSERT_EQ(entry, buffer + offsetof(RelocateToTailExpectedLayout, relocated) + kKernelEntryValue);
-  memcpy(&actual, buffer, sizeof(actual));
+  memcpy(&actual, buffer, sizeof(buffer));
   // Original container remains the same.
   ASSERT_EQ(memcmp(&actual.image, &test_kernel, sizeof(test_kernel)), 0);
   // Relocated container header is updated to required boot size (factoring in reserved memory).
