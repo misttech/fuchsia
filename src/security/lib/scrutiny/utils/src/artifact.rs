@@ -271,7 +271,8 @@ mod tests {
 
     #[test]
     fn test_basic() {
-        let dir = tempdir().unwrap().into_path();
+        let temp = tempdir().unwrap();
+        let dir = temp.path();
         let mut loader = FileArtifactReader::new(&dir, &dir, DeliveryBlobType::Reserved);
         let mut file = File::create(dir.join("foo")).unwrap();
         file.write_all(b"test_data").unwrap();
@@ -284,7 +285,8 @@ mod tests {
 
     #[test]
     fn test_compressed() {
-        let dir = tempdir().unwrap().into_path();
+        let temp = tempdir().unwrap();
+        let dir = temp.path();
 
         // Write out a delivery blob
         let mut file = File::create(dir.join("foo")).unwrap();
@@ -302,7 +304,8 @@ mod tests {
 
     #[test]
     fn test_deps() {
-        let build_path = tempdir().unwrap().into_path();
+        let temp = tempdir().unwrap();
+        let build_path = temp.path();
         let artifact_path_buf = build_path.join("artifacts");
         let artifact_path = artifact_path_buf.as_path();
         create_dir(&artifact_path).unwrap();

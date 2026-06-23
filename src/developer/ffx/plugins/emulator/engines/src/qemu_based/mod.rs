@@ -1851,7 +1851,7 @@ mod tests {
 
         let root = setup_files(&mut emu_config.guest, &temp, DiskImageFormat::Fvm).await?;
 
-        let tempdir = temp.into_path();
+        let tempdir = temp.path();
         let key_path = tempdir.join("atx_psk.pem");
         let metadata_path = tempdir.join("avb_atx_metadata.bin");
         std::fs::write(&key_path, VBMETA_TEST_KEY).expect("write test key file");
@@ -1878,7 +1878,7 @@ mod tests {
 
         let _root = setup_files(&mut emu_config.guest, &temp, DiskImageFormat::Fvm).await?;
 
-        let tempdir = temp.into_path();
+        let tempdir = temp.path();
         let testkey = "some test key";
 
         let keyfile = tempdir.join("key");

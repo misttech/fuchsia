@@ -61,6 +61,7 @@ class MatchConditions(object):
     prefixes: FrozenSet[str] = dataclasses.field(default_factory=set)
     suffixes: FrozenSet[str] = dataclasses.field(default_factory=set)
     components: FrozenSet[str] = dataclasses.field(default_factory=set)
+    component_prefixes: FrozenSet[str] = dataclasses.field(default_factory=set)
 
     def matches(self, path: str) -> bool:
         """Returns true if path matches any of the conditions."""
@@ -68,7 +69,13 @@ class MatchConditions(object):
             return True
         if any(path.endswith(suffix) for suffix in self.suffixes):
             return True
-        if set(path.split(os.path.sep)).intersection(self.components):
+        parts = path.split(os.path.sep)
+        if set(parts).intersection(self.components):
+            return True
+        if any(
+            any(part.startswith(cp) for cp in self.component_prefixes)
+            for part in parts
+        ):
             return True
         return False
 
@@ -148,7 +155,9 @@ class FSAccess(object):
         return f"({self.op} {self.path})"
 
     def should_check(
-        self, ignore_conditions: MatchConditions, required_path_prefix: str = ""
+        self,
+        ignore_conditions: MatchConditions,
+        required_path_prefix: str = "",
     ) -> bool:
         """Predicate function use to filter out FSAccesses.
 
@@ -1066,6 +1075,12 @@ def main() -> int:
         # accesses to them.
         "__untraced_dart_kernel__",
     }
+    ignored_path_part_prefixes = {
+        # The Rust and Python tempfile crates create temporary files and directories
+        # in arbitrary intermediate build directories with names like .tmpXXXXXX.
+        "tmp",
+        ".tmp",
+    }
     # It's ok to access */.git/* if your action is sensitive to .git contents.
     for args_input in args.inputs:
         if ".git" in args_input.split(os.sep):
@@ -1102,6 +1117,7 @@ def main() -> int:
         prefixes=ignored_prefixes,
         suffixes=ignored_suffixes,
         components=ignored_path_parts,
+        component_prefixes=ignored_path_part_prefixes,
     )
 
     exit_code = 0

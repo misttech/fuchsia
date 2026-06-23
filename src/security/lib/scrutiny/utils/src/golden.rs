@@ -190,7 +190,8 @@ mod tests {
 
     #[test]
     fn test_required_golden_files() {
-        let golden_path = tempdir().unwrap().into_path().join("golden.txt");
+        let temp = tempdir().unwrap();
+        let golden_path = temp.path().join("golden.txt");
         let mut golden_file = File::create(&golden_path).expect("failed to create golden");
         writeln!(golden_file, "foo").expect("failed to write");
         writeln!(golden_file, "bar").expect("failed to write");
@@ -229,7 +230,8 @@ mod tests {
 
     #[test]
     fn test_optional_golden_files() {
-        let golden_path = tempdir().unwrap().into_path().join("golden.txt");
+        let temp = tempdir().unwrap();
+        let golden_path = temp.path().join("golden.txt");
         let mut golden_file = File::create(&golden_path).expect("failed to create golden");
         writeln!(golden_file, "foo").expect("failed to write");
         writeln!(golden_file, "bar").expect("failed to write");
@@ -254,9 +256,10 @@ mod tests {
 
     #[test]
     fn test_from_files() {
+        let temp = tempdir().unwrap();
         let mut golden_files = Vec::<PathBuf>::new();
         for i in 0..3 {
-            let golden_path = tempdir().unwrap().into_path().join(format!("golden_{}.txt", i));
+            let golden_path = temp.path().join(format!("golden_{}.txt", i));
             let mut golden_file = File::create(&golden_path).expect("failed to create golden");
             writeln!(golden_file, "foo_{}", i).expect("failed to write");
             drop(golden_file);

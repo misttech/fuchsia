@@ -19,9 +19,8 @@ async fn main() {
     service_fs.dir("svc").add_fidl_service(IncomingRequest::PkgResolver);
     service_fs.take_and_serve_directory_handle().unwrap();
 
-    // Create a temp directory and put a file `foo` inside it.
     let temp_dir = TempDir::new().unwrap();
-    let temp_dir_path = temp_dir.into_path();
+    let temp_dir_path = temp_dir.path();
     let file_path = temp_dir_path.join("foo");
     std::fs::write(&file_path, "hippos").unwrap();
     let temp_dir_path = temp_dir_path.display().to_string();
