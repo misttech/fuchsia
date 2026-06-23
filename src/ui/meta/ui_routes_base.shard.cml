@@ -110,6 +110,7 @@
                 "fuchsia.scenic.MinDisplayVerticalResolutionPx",
                 "fuchsia.scenic.PointerAutoFocus",
                 "fuchsia.scenic.Renderer",
+                "fuchsia.scenic.UseSeparateInputThread",
                 "fuchsia.session.AutoLaunch",
                 "fuchsia.ui.AttachA11yView",
                 "fuchsia.ui.DisplayPixelDensity",

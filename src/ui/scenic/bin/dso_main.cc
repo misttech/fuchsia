@@ -34,11 +34,6 @@ int dso_main_async(int argc, const char* argv[], const char* envp[], zx_handle_t
   }
   zx::channel lifecycle(lifecycle_handle);
 
-  async_dispatcher_t* const input_dispatcher = fdf_dispatcher_get_async_dispatcher(fdf_dispatcher);
-  if (input_dispatcher == nullptr) {
-    return 2;
-  }
-
   // This call creates ComponentContext, but does not start serving immediately. Outgoing directory
   // is served by App, after App::InitializeServices() is completed.
   auto svc_dir = std::make_shared<sys::ServiceDirectory>(zx::channel(svc_handle));
@@ -48,6 +43,16 @@ int dso_main_async(int argc, const char* argv[], const char* envp[], zx_handle_t
   auto config = scenic_structured_config::Config::CreateFromVmo(std::move(config_vmo));
   if (config.prefetch()) {
     scenic_impl::PrefetchBinary(pkg_handle, "lib/libscenic.so");
+  }
+
+  if (!config.use_separate_input_thread()) {
+    FX_LOGS(ERROR) << "Scenic DSO requires use_separate_input_thread to be true";
+    return 8;
+  }
+
+  async_dispatcher_t* const input_dispatcher = fdf_dispatcher_get_async_dispatcher(fdf_dispatcher);
+  if (input_dispatcher == nullptr) {
+    return 2;
   }
 
   async::Loop render_loop(&kAsyncLoopConfigAttachToCurrentThread);

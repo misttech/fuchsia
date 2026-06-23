@@ -145,7 +145,8 @@ void LogConfig(const scenic_structured_config::Config& values) {
                 << " i_can_haz_display_mode: " << GetDisplayMode(values).value_or(0)
                 << " display_rotation: " << GetDisplayRotation(values)
                 << " visual_debugging_level: " << static_cast<int>(values.visual_debugging_level())
-                << " enable_frame_counter_overlay: " << values.enable_frame_counter_overlay();
+                << " enable_frame_counter_overlay: " << values.enable_frame_counter_overlay()
+                << " use_separate_input_thread: " << values.use_separate_input_thread();
 }
 
 // Interval at which we log that Scenic is waiting for Vulkan or display.

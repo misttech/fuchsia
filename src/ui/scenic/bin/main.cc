@@ -84,9 +84,7 @@ int main(int argc, const char** argv) {
   // same dispatcher for rendering and input.
   std::unique_ptr<async::Loop> input_loop;
   async_dispatcher_t* input_dispatcher = render_loop.dispatcher();
-  // Placeholder.  We can enable this unconditionally later, add a new structured config value, etc.
-  constexpr bool kUseSeparateInputThread = false;
-  if (kUseSeparateInputThread) {
+  if (config.use_separate_input_thread()) {
     input_loop = std::make_unique<async::Loop>(&kAsyncLoopConfigNoAttachToCurrentThread);
     zx_status_t input_thread_status = input_loop->StartThread("scenic.input");
     FX_CHECK(input_thread_status == ZX_OK)

@@ -345,6 +345,7 @@ void UITestRealm::ConfigureScenic() {
               component_testing::Config{.name = "fuchsia.scenic.MinDisplayVerticalResolutionPx"},
               component_testing::Config{.name = "fuchsia.scenic.PointerAutoFocus"},
               component_testing::Config{.name = "fuchsia.scenic.Renderer"},
+              component_testing::Config{.name = "fuchsia.scenic.UseSeparateInputThread"},
               component_testing::Config{.name = "fuchsia.ui.VisualDebuggingLevel"},
               component_testing::Config{.name = "fuchsia.ui.Prefetch"},
           },

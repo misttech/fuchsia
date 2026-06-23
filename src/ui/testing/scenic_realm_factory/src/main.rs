@@ -133,10 +133,11 @@ async fn assemble_realm(
     builder
         .add_route(
             Route::new()
+                .capability(Capability::configuration("fuchsia.scenic.FrameCounterOverlay"))
+                .capability(Capability::configuration("fuchsia.scenic.FramePredictionMarginInUs"))
                 .capability(Capability::configuration(
                     "fuchsia.scenic.FrameSchedulerMinPredictedFrameDurationInUs",
                 ))
-                .capability(Capability::configuration("fuchsia.scenic.FramePredictionMarginInUs"))
                 .capability(Capability::configuration("fuchsia.scenic.ICanHazDisplayId"))
                 .capability(Capability::configuration("fuchsia.scenic.ICanHazDisplayMode"))
                 .capability(Capability::configuration(
@@ -158,7 +159,7 @@ async fn assemble_realm(
                     "fuchsia.scenic.MinDisplayVerticalResolutionPx",
                 ))
                 .capability(Capability::configuration("fuchsia.scenic.PointerAutoFocus"))
-                .capability(Capability::configuration("fuchsia.scenic.FrameCounterOverlay"))
+                .capability(Capability::configuration("fuchsia.scenic.UseSeparateInputThread"))
                 .capability(Capability::configuration("fuchsia.ui.Prefetch"))
                 .capability(Capability::configuration("fuchsia.ui.VisualDebuggingLevel"))
                 .from(&config)

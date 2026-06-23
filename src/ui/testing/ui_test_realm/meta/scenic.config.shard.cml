@@ -26,6 +26,7 @@
                 "fuchsia.scenic.MinDisplayVerticalResolutionPx",
                 "fuchsia.scenic.PointerAutoFocus",
                 "fuchsia.scenic.Renderer",
+                "fuchsia.scenic.UseSeparateInputThread",
                 "fuchsia.ui.Prefetch",
                 "fuchsia.ui.VisualDebuggingLevel",
             ],

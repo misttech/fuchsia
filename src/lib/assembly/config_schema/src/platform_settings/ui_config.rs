@@ -48,6 +48,11 @@ pub struct PlatformUiConfig {
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub pointer_auto_focus: bool,
 
+    /// Only use a dedicated input loop/dispatcher/thread if configured to do so.
+    /// Otherwise, use the same dispatcher for rendering and input.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub use_separate_input_thread: bool,
+
     /// Scenic attempts to delegate composition of client images to the display controller, with
     /// GPU/Vulkan composition as the fallback. If false, GPU/Vulkan composition is always used.
     #[serde(skip_serializing_if = "crate::common::is_default")]
@@ -119,6 +124,7 @@ impl Default for PlatformUiConfig {
             frame_scheduler_min_predicted_frame_duration_in_us: Default::default(),
             frame_prediction_margin_in_us: default_frame_prediction_margin_in_us(),
             pointer_auto_focus: true,
+            use_separate_input_thread: false,
             display_composition: false,
             supported_input_devices: Default::default(),
             display_rotation: Default::default(),
