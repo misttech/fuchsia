@@ -201,6 +201,7 @@ cat >> "${_INVOCATION_BAZELRC}" <<EOF
 # Logs for this specific invocation.
 common --experimental_workspace_rules_log_file=${_BAZEL_INVOCATION_LOG_DIR}/workspace_events.log
 common:exec_log --execution_log_compact_file=${_BAZEL_INVOCATION_LOG_DIR}/exec_log.pb.zstd
+common:_profiling --profile=${_BAZEL_INVOCATION_LOG_DIR}/command.profile.gz
 EOF
 
 # Save a copy of the final invocation.bazelrc for debugging.
@@ -300,6 +301,7 @@ _BAZEL_PRE_COMMAND_ARGS+=(
 [[ -n "${bazel_command_does_configuration}" ]] &&
   _BAZEL_EXTRA_ARGS+=(
     "${use_gcert_auth[@]}"
+    --config=_profiling
   )
 
 # Setting $USER so `bazel` won't fail in environments with fake UIDs. Even if
