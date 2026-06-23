@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use assert_matches::assert_matches;
 use fidl::Error::ClientChannelClosed;
+use fidl::endpoints::Proxy as _;
 use fidl_fuchsia_net_ext::IntoExt as _;
 use fidl_fuchsia_net_sockets::IpSocketState;
 use futures::TryStreamExt as _;
@@ -124,7 +125,7 @@ async fn invalid_matcher(name: &str) {
     assert_matches!(proxy.next().await, Err(ClientChannelClosed { .. }));
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum Protocol {
     Udp,
     Tcp,
@@ -828,4 +829,162 @@ async fn diagnostics_tcp_info<I: Ip>(name: &str) {
                 tcpi_last_ack_recv_msec,
                 last_ack_recv + u32::try_from(SLEEP_MS).unwrap()
     ));
+}
+
+#[netstack_test]
+#[variant(I, Ip)]
+#[test_case(Protocol::Udp)]
+#[test_case(Protocol::Tcp)]
+async fn diagnostics_recent_destructions<I: Ip>(name: &str, protocol: Protocol) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+
+    let local_addr = std::net::SocketAddr::new(I::LOOPBACK_ADDRESS.to_ip_addr().into(), LOCAL_PORT);
+    let domain = match I::VERSION {
+        IpVersion::V4 => fposix_socket::Domain::Ipv4,
+        IpVersion::V6 => fposix_socket::Domain::Ipv6,
+    };
+
+    let diagnostics = realm
+        .connect_to_protocol::<fnet_sockets::DiagnosticsMarker>()
+        .expect("connect to protocol");
+    let (watcher, server_end) =
+        fidl::endpoints::create_proxy::<fnet_sockets::DestructionWatcherMarker>();
+    diagnostics
+        .get_destruction_watcher(server_end)
+        .await
+        .expect("get_destruction_watcher should succeed");
+
+    // Create an unbound socket and immediately close/drop it. We don't expect
+    // to get a notification for this.
+    {
+        let _unbound = match protocol {
+            Protocol::Udp => realm
+                .datagram_socket(domain, fposix_socket::DatagramSocketProtocol::Udp)
+                .await
+                .expect("UDP socket creation should succeed"),
+            Protocol::Tcp => realm
+                .stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp)
+                .await
+                .expect("TCP socket creation should succeed"),
+        };
+    }
+
+    let cookie = {
+        let socket = match protocol {
+            Protocol::Udp => {
+                let socket = realm
+                    .datagram_socket(domain, fposix_socket::DatagramSocketProtocol::Udp)
+                    .await
+                    .expect("UDP socket creation should succeed");
+                socket.bind(&local_addr.into()).expect("bind should succeed");
+                socket
+            }
+            Protocol::Tcp => {
+                let socket = realm
+                    .stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp)
+                    .await
+                    .expect("TCP socket creation should succeed");
+                socket.bind(&local_addr.into()).expect("bind should succeed");
+                socket.listen(LISTEN_BACKLOG).expect("listen should succeed");
+                socket
+            }
+        };
+        let proxy = socket_proxy(&socket).await;
+        proxy.get_cookie().await.expect("failed to get cookie").expect("get_cookie should succeed")
+    };
+    // Socket is dropped here.
+
+    let sockets: Vec<fnet_sockets::IpSocketState> =
+        watcher.watch().await.expect("watch should succeed");
+
+    assert_eq!(sockets.len(), 1);
+    let socket = &sockets[0];
+    assert_eq!(socket.cookie, Some(cookie));
+
+    let transport = socket.transport.as_ref().expect("transport is missing");
+    match transport {
+        fnet_sockets::IpSocketTransportState::Tcp(tcp) => {
+            assert_eq!(protocol, Protocol::Tcp);
+            let tcp_info = tcp.tcp_info.as_ref().expect("tcp_info is missing");
+            assert_eq!(tcp_info.state, Some(fnet_tcp::State::Close));
+        }
+        fnet_sockets::IpSocketTransportState::Udp(udp) => {
+            assert_eq!(protocol, Protocol::Udp);
+            assert_eq!(udp.state, Some(fnet_udp::State::Bound));
+        }
+        _ => panic!("unexpected transport state: {transport:?}"),
+    }
+}
+
+#[netstack_test]
+async fn diagnostics_recent_destructions_concurrent_watch(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+
+    let diagnostics = realm
+        .connect_to_protocol::<fnet_sockets::DiagnosticsMarker>()
+        .expect("connect to protocol");
+    let (watcher, server_end) =
+        fidl::endpoints::create_proxy::<fnet_sockets::DestructionWatcherMarker>();
+    diagnostics
+        .get_destruction_watcher(server_end)
+        .await
+        .expect("get_destruction_watcher should succeed");
+
+    let first_watch = watcher.watch();
+    let second_watch = watcher.watch();
+
+    assert_matches!(
+        futures::join!(first_watch, second_watch),
+        (
+            Err(fidl::Error::ClientChannelClosed { status: zx::Status::ALREADY_EXISTS, .. }),
+            Err(fidl::Error::ClientChannelClosed { status: zx::Status::ALREADY_EXISTS, .. }),
+        )
+    );
+
+    assert_eq!(watcher.on_closed().await, Ok(zx::Signals::CHANNEL_PEER_CLOSED));
+}
+
+#[netstack_test]
+#[variant(I, Ip)]
+async fn diagnostics_recent_destructions_queue_limit<I: Ip>(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+
+    let local_addr = std::net::SocketAddr::new(I::LOOPBACK_ADDRESS.to_ip_addr().into(), 0);
+    let domain = match I::VERSION {
+        IpVersion::V4 => fposix_socket::Domain::Ipv4,
+        IpVersion::V6 => fposix_socket::Domain::Ipv6,
+    };
+
+    let diagnostics = realm
+        .connect_to_protocol::<fnet_sockets::DiagnosticsMarker>()
+        .expect("connect to protocol");
+    let (watcher, server_end) =
+        fidl::endpoints::create_proxy::<fnet_sockets::DestructionWatcherMarker>();
+    diagnostics
+        .get_destruction_watcher(server_end)
+        .await
+        .expect("get_destruction_watcher should succeed");
+
+    let queue_capacity = usize::try_from(fnet_sockets::MAX_IP_SOCKET_BATCH_SIZE).unwrap() * 5;
+    // We need +2 here because in addition to the buffer, there is one element
+    // reserved for each sender (which in this case is 1). This is due to the
+    // internal use of the futures::mpsc::channel buffer to enforce the limit.
+    for _ in 0..(queue_capacity + 2) {
+        let socket = realm
+            .datagram_socket(domain, fposix_socket::DatagramSocketProtocol::Udp)
+            .await
+            .expect("UDP socket creation should succeed");
+        socket.bind(&local_addr.into()).expect("bind should succeed");
+    }
+
+    let signals = watcher.on_closed().await.expect("on_closed should succeed");
+    assert!(signals.contains(zx::Signals::CHANNEL_PEER_CLOSED));
+
+    assert_matches!(
+        watcher.watch().await,
+        Err(fidl::Error::ClientChannelClosed { status: zx::Status::NO_RESOURCES, .. })
+    );
 }

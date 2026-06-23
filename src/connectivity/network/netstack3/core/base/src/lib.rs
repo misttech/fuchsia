@@ -95,8 +95,10 @@ pub use resource_references::{
     DeferredResourceRemovalContext, ReferenceNotifiers, ReferenceNotifiersExt,
     RemoveResourceResult, RemoveResourceResultWithContext,
 };
+
 pub use rng::RngContext;
 pub use settings::{BufferSizeSettings, SettingsContext};
+pub use socket::SocketDiagnosticsSeed;
 pub use tcp::base::{Control, EffectiveMss, FragmentedPayload, Mss, MssSizeLimiters};
 pub use tcp::segment::{
     HandshakeOptions, MalformedFlags, Options, Payload, PayloadLen, ResetOptions, SackBlock,
@@ -145,8 +147,8 @@ pub mod socket {
         EitherStack, FoundSockets, IncompatibleError, InsertError, Inserter, Listener,
         ListenerAddrInfo, MaybeDualStack, NotDualStackCapableError, RemoveResult, ReusePortOption,
         SetDualStackEnabledError, SharingDomain, Shutdown, ShutdownType, SocketAddrType,
-        SocketDeviceUpdate, SocketDeviceUpdateNotAllowedError, SocketInfo, SocketIpAddrExt,
-        SocketIpExt, SocketMapAddrSpec, SocketMapAddrStateSpec,
+        SocketDeviceUpdate, SocketDeviceUpdateNotAllowedError, SocketDiagnosticsSeed, SocketInfo,
+        SocketIpAddrExt, SocketIpExt, SocketMapAddrSpec, SocketMapAddrStateSpec,
         SocketMapAddrStateUpdateSharingSpec, SocketMapConflictPolicy, SocketMapStateSpec,
         SocketMapUpdateSharingPolicy, SocketStateEntry, SocketZonedAddrExt, UpdateSharingError,
     };

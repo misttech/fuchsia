@@ -96,10 +96,42 @@ closed protocol Diagnostics {
         /// NOTE: Only the first matcher error encountered is returned.
         2: invalid_matcher InvalidMatcher;
     });
+
+    /// Creates a watcher for recently destroyed sockets.
+    ///
+    /// The watcher is guaranteed to be registered by the time the call returns.
+    strict GetDestructionWatcher(resource struct {
+        watcher server_end:DestructionWatcher;
+    }) -> ();
+};
+
+/// Protocol for watching socket destruction events.
+open protocol DestructionWatcher {
+    /// Hanging get for destroyed sockets.
+    ///
+    /// Returns sockets destroyed since the last call to this method. Blocks
+    /// until at least one event is available.
+    ///
+    /// A "destroyed" socket is one that no longer has any references inside the
+    /// Netstack. Especially for TCP sockets (because of TIME-WAIT), this may
+    /// happen long after `close` has returned.
+    ///
+    /// Sockets destroyed before the watcher was created are not returned.
+    /// Unbound sockets are not returned.
+    ///
+    /// Only one call to `Watch` may be active at a time. Concurrency is not
+    /// allowed and will result in the channel being closed with
+    /// `ALREADY_EXISTS`.
+    ///
+    /// If the client doesn't read events fast enough, the channel is closed
+    /// with `NO_RESOURCES`.
+    strict Watch() -> (struct {
+        sockets vector<IpSocketState>:MAX_IP_SOCKET_BATCH_SIZE;
+    });
 };
 
 /// The largest number of results that can be returned in one call to
-/// `IpIterator.Next`.
+/// `IpIterator.Next` or `DestructionWatcher.Watch`.
 ///
 /// This limit is calculated to fit the maximum number of items into a single
 /// 64 KiB Zircon channel message. In the current FIDL wire format, the fixed

@@ -5,27 +5,33 @@
 //! FIDL Worker for the `fuchsia.net.sockets` API.
 
 use std::convert::Infallible as Never;
+use std::sync::Arc;
 
-use fidl::endpoints::ProtocolMarker;
-use fidl_fuchsia_net_sockets::{self as fnet_sockets};
+use fidl::endpoints::{ControlHandle as _, ProtocolMarker, RequestStream as _, Responder as _};
+use fidl_fuchsia_net_sockets as fnet_sockets;
 use fidl_fuchsia_net_sockets_ext as fnet_sockets_ext;
 use fidl_fuchsia_net_sockets_ext::IpSocketMatcherError;
 use fidl_fuchsia_net_tcp as fnet_tcp;
 use fidl_fuchsia_net_udp as fnet_udp;
 use fuchsia_async as fasync;
-use futures::TryStreamExt;
+use futures::channel::mpsc;
+use futures::future::{FusedFuture as _, OptionFuture};
+use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6};
 use netstack3_core::socket::{IpSocketMatcher, SocketTransportProtocolMatcher};
-use netstack3_core::tcp::{TcpSocketDiagnostics, TcpSocketState};
+use netstack3_core::sync::Mutex;
+use netstack3_core::tcp::{
+    CongestionControlState, TcpSocketDestructionContext, TcpSocketDiagnostics, TcpSocketInfo,
+    TcpSocketState,
+};
 use netstack3_core::udp::{UdpSocketDiagnosticTuple, UdpSocketDiagnostics};
-use netstack3_core::{Instant as _, MatcherBindingsTypes};
+use netstack3_core::{Instant as _, MatcherBindingsTypes, SocketDiagnosticsSeed};
 
 use crate::bindings::time::StackTime;
 use crate::bindings::util::{
-    IntoCore as _, IntoFidl as _, IntoFidlExtender, ScopeExt as _, TryFromFidl, TryIntoFidl,
+    IntoCore as _, IntoFidl, IntoFidlExtender, ScopeExt as _, TryFromFidl, TryIntoFidl,
 };
 use crate::bindings::{BindingsCtx, Ctx};
-use netstack3_core::tcp::{CongestionControlState, TcpSocketInfo};
 
 pub(crate) async fn serve_diagnostics(
     mut stream: fnet_sockets::DiagnosticsRequestStream,
@@ -49,6 +55,15 @@ pub(crate) async fn serve_diagnostics(
                 }
                 Err(err) => responder.send(&fnet_sockets::IterateIpResult::InvalidMatcher(err))?,
             },
+            fidl_fuchsia_net_sockets::DiagnosticsRequest::GetDestructionWatcher {
+                watcher,
+                responder,
+            } => {
+                let dispatcher = ctx.bindings_ctx().destruction_dispatcher.clone();
+                fasync::Scope::current().spawn_server_end(watcher, move |watcher| {
+                    serve_watcher(watcher.into_stream(), dispatcher, responder)
+                });
+            }
         }
     }
 
@@ -122,6 +137,203 @@ async fn serve_ipiterator(
     }
 
     Ok(())
+}
+
+pub(crate) async fn serve_watcher(
+    stream: fnet_sockets::DestructionWatcherRequestStream,
+    dispatcher: SocketDestructionDispatcher,
+    responder: fidl_fuchsia_net_sockets::DiagnosticsGetDestructionWatcherResponder,
+) -> Result<(), fidl::Error> {
+    let (sender, receiver) = mpsc::channel(fnet_sockets::MAX_IP_SOCKET_BATCH_SIZE as usize * 5);
+    let cancel = async_utils::event::Event::new();
+
+    let id = dispatcher.add_client(sender, cancel.clone());
+    let _cleanup = scopeguard::guard((dispatcher, id), |(d, id)| {
+        d.remove_client(id);
+    });
+    // Send the response after adding the dispatcher so the client will get all
+    // notifications once the call returns.
+    responder.send()?;
+
+    let mut receiver = receiver.ready_chunks(fnet_sockets::MAX_IP_SOCKET_BATCH_SIZE as usize);
+    let control_handle = stream.control_handle();
+    let mut stream = stream.fuse();
+    let mut cancel_fut = cancel.wait().fuse();
+
+    let mut pending_watch = OptionFuture::default();
+
+    /// State for responding to a call to `Watch()` that blocked because there
+    /// were no destruction events available.
+    #[derive(Debug)]
+    struct CompletedPendingWatchEvent {
+        responder: fnet_sockets::DestructionWatcherWatchResponder,
+        event_batch: Option<Vec<fnet_sockets::IpSocketState>>,
+    }
+
+    #[derive(Debug)]
+    enum WatcherEvent {
+        Canceled,
+        Request(Result<Option<fnet_sockets::DestructionWatcherRequest>, fidl::Error>),
+        CompletedPendingWatchEvent(CompletedPendingWatchEvent),
+    }
+
+    loop {
+        let event = futures::select_biased! {
+            () = cancel_fut => WatcherEvent::Canceled,
+            request = stream.try_next() => WatcherEvent::Request(request),
+            res = pending_watch => WatcherEvent::CompletedPendingWatchEvent(
+                res.expect("event sender is never dropped")
+            ),
+        };
+
+        match event {
+            WatcherEvent::Canceled => {
+                log::warn!("Watcher pipeline canceled due to full buffer");
+                control_handle.shutdown_with_epitaph(fidl::Status::NO_RESOURCES);
+                break;
+            }
+            WatcherEvent::Request(request) => match request? {
+                Some(fnet_sockets::DestructionWatcherRequest::Watch { responder }) => {
+                    if !pending_watch.is_terminated() {
+                        responder
+                            .control_handle()
+                            .shutdown_with_epitaph(fidl::Status::ALREADY_EXISTS);
+                        break;
+                    }
+                    pending_watch = Some(receiver.next().map(move |chunk| {
+                        CompletedPendingWatchEvent { responder, event_batch: chunk }
+                    }))
+                    .into();
+                }
+                Some(fnet_sockets::DestructionWatcherRequest::_UnknownMethod {
+                    ordinal, ..
+                }) => {
+                    log::warn!("Received unknown method ({ordinal}) on DestructionWatcher");
+                }
+                None => break,
+            },
+            WatcherEvent::CompletedPendingWatchEvent(CompletedPendingWatchEvent {
+                responder,
+                event_batch,
+            }) => {
+                match event_batch {
+                    Some(events) => {
+                        responder.send(&events)?;
+                        pending_watch = None.into();
+                    }
+                    // The cancel event is signalled before the sender is
+                    // dropped so it should not be possible for this task to
+                    // observe the closure.
+                    None => unreachable!(),
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Default, Clone)]
+pub(crate) struct SocketDestructionDispatcher(Arc<Mutex<SocketDestructionDispatcherInner>>);
+
+impl SocketDestructionDispatcher {
+    pub(crate) fn add_client(
+        &self,
+        sender: mpsc::Sender<fnet_sockets::IpSocketState>,
+        cancel: async_utils::event::Event,
+    ) -> u64 {
+        self.0.lock().add_client(sender, cancel)
+    }
+
+    pub(crate) fn remove_client(&self, id: u64) {
+        self.0.lock().remove_client(id)
+    }
+
+    pub(crate) fn notify<S>(&self, seed: S)
+    where
+        S: SocketDiagnosticsSeed,
+        S::Output: IntoFidl<fnet_sockets_ext::IpSocketState>,
+    {
+        self.0.lock().notify(seed)
+    }
+}
+
+#[derive(Default)]
+struct SocketDestructionDispatcherInner {
+    clients: Vec<WatcherSink>,
+    next_id: u64,
+}
+
+struct WatcherSink {
+    id: u64,
+    sender: mpsc::Sender<fnet_sockets::IpSocketState>,
+    cancel: async_utils::event::Event,
+}
+
+impl WatcherSink {
+    fn try_send(&mut self, state: fnet_sockets::IpSocketState) {
+        self.sender.try_send(state).unwrap_or_else(|e| {
+            if e.is_full() {
+                let _: bool = self.cancel.signal();
+            }
+        });
+    }
+}
+
+impl Drop for WatcherSink {
+    fn drop(&mut self) {
+        // This ensures that the task can never observe the sender being closed
+        // on drop.
+        let _: bool = self.cancel.signal();
+    }
+}
+
+impl SocketDestructionDispatcherInner {
+    fn add_client(
+        &mut self,
+        sender: mpsc::Sender<fnet_sockets::IpSocketState>,
+        cancel: async_utils::event::Event,
+    ) -> u64 {
+        let Self { clients, next_id } = self;
+
+        let id = *next_id;
+        *next_id = next_id.checked_add(1).expect("shouldn't have u64::MAX watchers");
+        clients.push(WatcherSink { id, sender, cancel });
+
+        id
+    }
+
+    fn remove_client(&mut self, id: u64) {
+        let Self { clients, next_id: _ } = self;
+
+        if let Some(idx) = clients.iter().position(|c| c.id == id) {
+            let _: WatcherSink = clients.swap_remove(idx);
+        } else {
+            unreachable!("watcher ID wasn't in the list")
+        }
+    }
+
+    fn notify<S>(&mut self, seed: S)
+    where
+        S: SocketDiagnosticsSeed,
+        S::Output: IntoFidl<fnet_sockets_ext::IpSocketState>,
+    {
+        let Self { clients, next_id: _ } = self;
+
+        if !clients.is_empty() {
+            if let Some(diag) = seed.resolve() {
+                let state_ext: fnet_sockets_ext::IpSocketState = diag.into_fidl();
+                let state: fnet_sockets::IpSocketState = state_ext.into();
+
+                if let Some((last, rest)) = clients.split_last_mut() {
+                    for client in rest {
+                        client.try_send(state.clone());
+                    }
+                    last.try_send(state);
+                }
+            }
+        }
+    }
 }
 
 pub(crate) async fn serve_control(
@@ -236,6 +448,35 @@ fn matching_families_and_protocols(
     }
 
     MatchingFamiliesAndProtocols { tcp, udp, ipv4, ipv6 }
+}
+
+impl TcpSocketDestructionContext for BindingsCtx {
+    fn defer_tcp_socket_destruction<I, S>(
+        &self,
+        result: netstack3_core::sync::RemoveResourceResultWithContext<S, Self>,
+    ) where
+        I: Ip,
+        S: SocketDiagnosticsSeed<Output = TcpSocketDiagnostics<I, StackTime>> + Send + 'static,
+    {
+        match result {
+            netstack3_core::sync::RemoveResourceResult::Removed(seed) => {
+                self.destruction_dispatcher.notify(seed);
+            }
+            netstack3_core::sync::RemoveResourceResult::Deferred(receiver) => {
+                let crate::bindings::reference_notifier::ReferenceReceiver {
+                    receiver,
+                    debug_references,
+                } = receiver;
+                let bindings_ctx = self.clone();
+
+                self.resource_removal.defer_removal(
+                    debug_references,
+                    receiver.map(|r| r.expect("sender dropped without notifying receiver")),
+                    move |seed| bindings_ctx.destruction_dispatcher.notify(seed),
+                );
+            }
+        }
+    }
 }
 
 impl TryFromFidl<fnet_sockets_ext::IpSocketMatcher>

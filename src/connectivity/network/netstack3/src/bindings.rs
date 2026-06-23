@@ -98,6 +98,8 @@ use crate::bindings::interfaces_watcher::AddressPropertiesUpdate;
 use crate::bindings::packet_capture_worker::PacketCaptures;
 use crate::bindings::settings::Settings;
 use crate::bindings::socket::queue::NoSpace;
+
+use crate::bindings::sockets_fidl::SocketDestructionDispatcher;
 use crate::bindings::stats_sampler::StatsSampler;
 use crate::bindings::time::{AtomicStackTime, StackTime};
 use crate::bindings::util::{ScopeExt as _, fidl_mark_domain_to_core};
@@ -143,6 +145,7 @@ mod ctx {
     use thiserror::Error;
 
     /// Provides an implementation of [`BindingsContext`].
+    #[derive(Clone)]
     pub(crate) struct BindingsCtx(Arc<BindingsCtxInner>);
 
     impl Deref for BindingsCtx {
@@ -184,6 +187,7 @@ mod ctx {
             multicast_admin: MulticastAdminEventSinks,
             ndp_ra_sink: ndp_watcher::WorkerRouterAdvertisementSink,
             power: PowerWorkerSink,
+            destruction_dispatcher: SocketDestructionDispatcher,
         ) -> Self {
             let mut bindings_ctx = BindingsCtx(Arc::new(BindingsCtxInner::new(
                 config,
@@ -193,6 +197,7 @@ mod ctx {
                 multicast_admin,
                 ndp_ra_sink,
                 power,
+                destruction_dispatcher,
             )));
             let persistence::State { opaque_iid_secret_key } =
                 persistence::State::load_or_create(&mut bindings_ctx.rng());
@@ -265,6 +270,8 @@ mod ctx {
                 multicast_admin::new_workers_and_sinks();
             let (ndp_watcher_worker, ndp_watcher_sink, ndp_ra_sink) = ndp_watcher::Worker::new();
             let (power_worker, power_sink) = PowerWorker::new();
+            let destruction_dispatcher = SocketDestructionDispatcher::default();
+
             let ctx = Ctx::new(
                 config,
                 &interface_config,
@@ -273,6 +280,7 @@ mod ctx {
                 multicast_admin_sinks,
                 ndp_ra_sink,
                 power_sink,
+                destruction_dispatcher,
             );
             let (neighbor_worker, neighbor_watcher_sink, neighbor_event_sink) =
                 neighbor_worker::new_worker();
@@ -412,6 +420,7 @@ pub(crate) struct BindingsCtxInner {
     power: PowerWorkerSink,
     wake_groups: waker::WakeGroups,
     settings: Settings,
+    destruction_dispatcher: SocketDestructionDispatcher,
 }
 
 impl BindingsCtxInner {
@@ -423,6 +432,7 @@ impl BindingsCtxInner {
         multicast_admin: MulticastAdminEventSinks,
         ndp_ra_sink: ndp_watcher::WorkerRouterAdvertisementSink,
         power: PowerWorkerSink,
+        destruction_dispatcher: SocketDestructionDispatcher,
     ) -> Self {
         Self {
             timers: Default::default(),
@@ -438,6 +448,7 @@ impl BindingsCtxInner {
             power,
             wake_groups: waker::WakeGroups::default(),
             settings: Settings::new(interface_config),
+            destruction_dispatcher,
         }
     }
 }

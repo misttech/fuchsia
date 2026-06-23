@@ -7,8 +7,12 @@ use core::num::NonZeroU16;
 
 use net_types::Witness as _;
 use net_types::ip::{Ip, IpAddress as _};
-use netstack3_base::{IpSocketProperties, Marks, Matcher, WeakDeviceIdentifier};
+use netstack3_base::{
+    InstantBindingsTypes, IpSocketProperties, Marks, Matcher, SocketDiagnosticsSeed,
+    WeakDeviceIdentifier,
+};
 
+use crate::TcpCountersWithSocket;
 use crate::internal::socket::{
     BoundState, DualStackIpExt, Listener, SocketCookie, TcpBindingsTypes, TcpSocketId,
     TcpSocketState, TcpSocketStateInner, Unbound,
@@ -167,6 +171,36 @@ pub struct TcpSocketDiagnostics<I: Ip, Instant> {
     pub marks: Marks,
     /// The socket's extended info.
     pub tcp_info: Option<TcpSocketInfo<Instant>>,
+}
+
+/// All of the information required to compute [`TcpSocketDiagnostics`]. Gives
+/// the owner control over when (or if) the transformation happens.
+pub struct TcpSocketDiagnosticsSeed<I, D, BT>
+where
+    I: DualStackIpExt,
+    D: WeakDeviceIdentifier,
+    BT: TcpBindingsTypes,
+{
+    pub(crate) state: TcpSocketState<I, D, BT>,
+    pub(crate) counters: TcpCountersWithSocket<I>,
+    pub(crate) cookie: SocketCookie,
+}
+
+impl<I, D, BT> SocketDiagnosticsSeed for TcpSocketDiagnosticsSeed<I, D, BT>
+where
+    I: DualStackIpExt,
+    D: WeakDeviceIdentifier,
+    BT: TcpBindingsTypes,
+{
+    type Output = TcpSocketDiagnostics<I, <BT as InstantBindingsTypes>::Instant>;
+
+    fn resolve(self) -> Option<Self::Output> {
+        let Self { state, counters, cookie } = self;
+
+        state.get_diagnostics(&counters, true).map(|(tuple, state_machine, marks, tcp_info)| {
+            TcpSocketDiagnostics { tuple, state_machine, cookie, marks, tcp_info }
+        })
+    }
 }
 
 /// The tuple of a TCP socket.

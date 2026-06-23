@@ -90,6 +90,11 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> ReferenceState<I,
         &self.external_data
     }
 
+    /// Consumes the socket and returns the inner state and external data.
+    pub fn into_state_and_external_data(self) -> (SocketState<I, D, S>, S::ExternalData<I>) {
+        (self.state.into_inner(), self.external_data)
+    }
+
     /// Provides access to the socket state sidestepping lock ordering.
     #[cfg(any(test, feature = "testutils"))]
     pub fn state(&self) -> &RwLock<SocketState<I, D, S>> {
@@ -3852,11 +3857,16 @@ where
             .with_all_sockets(|socket_set| socket_set.keys().map(|s| s.clone().into()).collect())
     }
 
-    /// Closes the socket.
-    pub fn close(
+    /// Closes the socket and returns a custom payload.
+    pub fn close<O, F>(
         &mut self,
         id: DatagramApiSocketId<I, C, S>,
-    ) -> RemoveResourceResultWithContext<S::ExternalData<I>, C::BindingsContext> {
+        map: F,
+    ) -> RemoveResourceResultWithContext<O, C::BindingsContext>
+    where
+        O: Send,
+        F: Send + Clone + 'static + FnOnce(ReferenceState<I, DatagramApiWeakDeviceId<C>, S>) -> O,
+    {
         let (core_ctx, bindings_ctx) = self.contexts();
         // Remove the socket from the list first to prevent double close.
         let primary = core_ctx.with_all_sockets_mut(|all_sockets| {
@@ -3898,12 +3908,12 @@ where
                 leave_all_joined_groups(core_ctx, bindings_ctx, &ip_options.multicast_memberships)
             });
         });
+
         // Drop the (hopefully last) strong ID before unwrapping the primary
         // reference.
         core::mem::drop(id);
         <C::BindingsContext as ReferenceNotifiersExt>::unwrap_or_notify_with_new_reference_notifier(
-            primary,
-            |ReferenceState { external_data, .. }| external_data,
+            primary, map,
         )
     }
 
@@ -6424,7 +6434,7 @@ mod test {
 
         // Verify the device can be unset.
         // NB: Close socket2 first, otherwise socket 1 will conflict with it.
-        api.close(socket2).into_removed();
+        api.close(socket2, |_: ReferenceState<_, _, _>| ()).into_removed();
         api.set_device(&socket1, None).expect("set device should succeed");
         assert_eq!(api.get_bound_device(&socket1), None,);
     }

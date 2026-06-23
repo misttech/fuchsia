@@ -56,12 +56,13 @@ use netstack3_base::{
     AnyDevice, BidirectionalConverter as _, ContextPair, Control, CoreTimerContext,
     CoreTxMetadataContext, CtxPair, DeferredResourceRemovalContext, DeviceIdContext,
     EitherDeviceId, ExistsError, HandleableTimer, IcmpErrorCode, Inspector, InspectorDeviceExt,
-    InspectorExt, InstantBindingsTypes, InstantContext as _, IpDeviceAddr, IpExt,
+    InspectorExt, InstantBindingsTypes, InstantContext, IpDeviceAddr, IpExt,
     IpSocketPropertiesMatcher, LocalAddressError, Mark, MarkDomain, Marks, MatcherBindingsTypes,
-    Mss, OwnedOrRefsBidirectionalConverter, PortAllocImpl, ReferenceNotifiersExt as _,
-    RemoveResourceResult, ResourceCounterContext as _, RngContext, Segment, SeqNum,
-    SettingsContext, StrongDeviceIdentifier, TimerBindingsTypes, TimerContext,
-    TxMetadataBindingsTypes, WeakDeviceIdentifier, ZonedAddressError,
+    Mss, OwnedOrRefsBidirectionalConverter, PortAllocImpl, ReferenceNotifiers,
+    ReferenceNotifiersExt as _, RemoveResourceResultWithContext, ResourceCounterContext as _,
+    RngContext, Segment, SeqNum, SettingsContext, SocketDiagnosticsSeed, StrongDeviceIdentifier,
+    TimerBindingsTypes, TimerContext, TxMetadataBindingsTypes, WeakDeviceIdentifier,
+    ZonedAddressError,
 };
 use netstack3_filter::{FilterIpExt, SocketOpsFilterBindingContext, Tuple};
 use netstack3_hashmap::{HashMap, hash_map};
@@ -88,7 +89,9 @@ use crate::internal::counters::{
 use crate::internal::settings::TcpSettings;
 use crate::internal::socket::accept_queue::{AcceptQueue, ListenerNotifier};
 use crate::internal::socket::demux::tcp_serialize_segment;
-use crate::internal::socket::diagnostics::{TcpSocketDiagnostics, TcpSocketStateForMatching};
+use crate::internal::socket::diagnostics::{
+    TcpSocketDiagnostics, TcpSocketDiagnosticsSeed, TcpSocketStateForMatching,
+};
 
 use crate::internal::socket::generators::{IsnGenerator, TimestampOffsetGenerator};
 use crate::internal::state::info::TcpSocketInfo;
@@ -495,6 +498,18 @@ pub trait TcpBindingsTypes:
     ) -> (Self::ReceiveBuffer, Self::SendBuffer, Self::ReturnedBuffers);
 }
 
+/// Allows passing a TCP socket to bindings, which can wait for it to
+/// be destroyed and then receive diagnostics information.
+pub trait TcpSocketDestructionContext: ReferenceNotifiers + InstantContext {
+    /// Takes ownership of waiting for the last reference to the TCP
+    /// socket to be dropped and then possibly generates diagnostics
+    /// from the seed.
+    fn defer_tcp_socket_destruction<I, S>(&self, result: RemoveResourceResultWithContext<S, Self>)
+    where
+        I: Ip,
+        S: SocketDiagnosticsSeed<Output = TcpSocketDiagnostics<I, Self::Instant>> + Send;
+}
+
 /// The bindings context for TCP.
 ///
 /// TCP timers are scoped by weak device IDs.
@@ -506,6 +521,7 @@ pub trait TcpBindingsContext<D>:
     + TcpBindingsTypes
     + SocketOpsFilterBindingContext<D>
     + SettingsContext<TcpSettings>
+    + TcpSocketDestructionContext
 {
 }
 
@@ -517,6 +533,7 @@ impl<D, BC> TcpBindingsContext<D> for BC where
         + TcpBindingsTypes
         + SocketOpsFilterBindingContext<D>
         + SettingsContext<TcpSettings>
+        + TcpSocketDestructionContext
 {
 }
 
@@ -4570,9 +4587,8 @@ fn destroy_socket<I, CC, BC>(
     CC: TcpContext<I, BC>,
     BC: TcpBindingsContext<CC::DeviceId>,
 {
-    let weak = id.downgrade();
-
     core_ctx.with_all_sockets_mut(move |all_sockets| {
+        let cookie = id.socket_cookie();
         let TcpSocketId(rc) = &id;
         let debug_refs = StrongRc::debug_references(rc);
         let entry = all_sockets.entry(id);
@@ -4624,15 +4640,16 @@ fn destroy_socket<I, CC, BC>(
         // race between two `destroy_socket` calls may result in
         // `TcpSocketSetEntry::DeadOnArrival` being left in the socket set.
         let remove_result =
-            BC::unwrap_or_notify_with_new_reference_notifier(primary, |state| state);
-        match remove_result {
-            RemoveResourceResult::Removed(state) => debug!("destroyed {weak:?} {state:?}"),
-            RemoveResourceResult::Deferred(receiver) => {
-                debug!("deferred removal {weak:?}");
-                bindings_ctx.defer_removal(receiver)
-            }
-        }
-    })
+            BC::unwrap_or_notify_with_new_reference_notifier(primary, move |state| {
+                TcpSocketDiagnosticsSeed {
+                    state: state.locked_state.into_inner(),
+                    counters: state.counters,
+                    cookie,
+                }
+            });
+
+        bindings_ctx.defer_tcp_socket_destruction(remove_result);
+    });
 }
 
 // Shuts down the listener socket and returns the pending connections and the
@@ -6141,6 +6158,20 @@ mod tests {
     }
 
     impl<D: FakeStrongDeviceId> AlwaysDefaultsSettingsContext for TcpBindingsCtx<D> {}
+
+    impl<D: FakeStrongDeviceId> TcpSocketDestructionContext for TcpBindingsCtx<D> {
+        fn defer_tcp_socket_destruction<I, S>(
+            &self,
+            _result: RemoveResourceResultWithContext<S, Self>,
+        ) where
+            I: Ip,
+            S: SocketDiagnosticsSeed<Output = TcpSocketDiagnostics<I, Self::Instant>>
+                + Send
+                + 'static,
+        {
+            // Do nothing since we don't care about these notifications in unit tests.
+        }
+    }
 
     const LINK_MTU: Mtu = Mtu::new(1500);
 

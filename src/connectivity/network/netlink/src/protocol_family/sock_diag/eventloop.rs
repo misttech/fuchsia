@@ -428,6 +428,7 @@ mod tests {
                 matchers: _,
                 responder,
             } => (s, responder),
+            fnet_sockets::DiagnosticsRequest::GetDestructionWatcher { .. } => unreachable!(),
         };
 
         let mut stream = iterator.into_stream();

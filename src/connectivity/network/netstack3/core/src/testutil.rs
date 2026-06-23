@@ -39,8 +39,9 @@ use netstack3_base::{
     AddressResolutionFailed, CtxPair, DeferredResourceRemovalContext, EventContext,
     InstantBindingsTypes, InstantContext, IpDeviceAddr, LinkDevice, LocalFrameDestination,
     MarkDomain, Marks, MatcherBindingsTypes, NetworkParsingContext, NotFoundError,
-    ReferenceNotifiers, RemoveResourceResult, RngContext, TimerBindingsTypes, TimerContext,
-    TimerHandler, TxMetadataBindingsTypes, WorkQueueReport,
+    ReferenceNotifiers, RemoveResourceResult, RemoveResourceResultWithContext, RngContext,
+    SocketDiagnosticsSeed, TimerBindingsTypes, TimerContext, TimerHandler, TxMetadataBindingsTypes,
+    WorkQueueReport,
 };
 use netstack3_datagram::PendingDatagramSocketError;
 use netstack3_device::ethernet::{
@@ -79,7 +80,9 @@ use netstack3_ip::{
     ResolveRouteError, ResolvedRoute, RoutableIpAddr, RouterAdvertisementEvent,
 };
 use netstack3_tcp::testutil::{ClientBuffers, ProvidedBuffers, RingBuffer, TestSendBuffer};
-use netstack3_tcp::{BufferSizes, TcpBindingsTypes};
+use netstack3_tcp::{
+    BufferSizes, TcpBindingsTypes, TcpSocketDestructionContext, TcpSocketDiagnostics,
+};
 use netstack3_udp::{
     ReceiveUdpError, UdpBindingsTypes, UdpPacketMeta, UdpReceiveBindingsContext, UdpSocketId,
 };
@@ -1565,6 +1568,16 @@ impl From<RouterAdvertisementEvent<DeviceId<FakeBindingsCtx>>> for DispatchedEve
     fn from(e: RouterAdvertisementEvent<DeviceId<FakeBindingsCtx>>) -> DispatchedEvent {
         let e = e.map_device(|d| d.downgrade());
         DispatchedEvent::RouterAdvertisement(e)
+    }
+}
+
+impl TcpSocketDestructionContext for FakeBindingsCtx {
+    fn defer_tcp_socket_destruction<I, S>(&self, _result: RemoveResourceResultWithContext<S, Self>)
+    where
+        I: Ip,
+        S: SocketDiagnosticsSeed<Output = TcpSocketDiagnostics<I, Self::Instant>> + Send + 'static,
+    {
+        // Do nothing since we don't care about these notifications in unit tests.
     }
 }
 

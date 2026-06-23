@@ -112,15 +112,16 @@ pub trait ReferenceNotifiersExt: ReferenceNotifiers {
     fn unwrap_or_notify_with_new_reference_notifier<
         S: Send + Sync + 'static,
         O: Send,
-        F: Send + Copy + 'static + FnOnce(S) -> O,
+        F: Send + Clone + 'static + FnOnce(S) -> O,
     >(
         primary: PrimaryRc<S>,
         map: F,
     ) -> RemoveResourceResultWithContext<O, Self> {
         let debug_references = PrimaryRc::debug_references(&primary).into_dyn();
-        match PrimaryRc::unwrap_or_notify_with(primary, || {
+        let map_clone = map.clone();
+        match PrimaryRc::unwrap_or_notify_with(primary, move || {
             let (notifier, receiver) = Self::new_reference_notifier::<O>(debug_references);
-            let notifier = MapRcNotifier::new(notifier, map);
+            let notifier = MapRcNotifier::new(notifier, map_clone);
             (notifier, receiver)
         }) {
             Ok(state) => RemoveResourceResult::Removed(map(state)),

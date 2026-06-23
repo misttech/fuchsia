@@ -5,14 +5,17 @@
 use core::convert::Infallible as Never;
 use core::num::NonZeroU16;
 
+use net_types::Witness as _;
 use net_types::ip::Ip;
 use netstack3_base::socket::SocketCookie;
 use netstack3_base::{
-    Marks, Matcher, MaybeSocketTransportProperties, SocketTransportProtocolMatcher,
-    UdpSocketProperties, UdpSocketState as UdpSocketMatcherState, WeakDeviceIdentifier,
+    Marks, Matcher, MaybeSocketTransportProperties, SocketDiagnosticsSeed,
+    SocketTransportProtocolMatcher, UdpSocketProperties, UdpSocketState as UdpSocketMatcherState,
+    WeakDeviceIdentifier,
 };
 use netstack3_datagram::{
-    DatagramSocketDiagnosticsSpec, IpExt, SocketInfo, SocketState as DatagramSocketState,
+    ConnInfo, DatagramSocketDiagnosticsSpec, IpExt, ListenerInfo, SocketInfo,
+    SocketState as DatagramSocketState,
 };
 
 use crate::internal::base::{Udp, UdpBindingsTypes, UdpSocketId, UdpSocketState};
@@ -30,6 +33,44 @@ pub struct UdpSocketDiagnostics<I: Ip> {
     pub marks: Marks,
 }
 
+impl<I: IpExt> UdpSocketDiagnostics<I> {
+    pub(crate) fn from_parts<D: WeakDeviceIdentifier, BT: UdpBindingsTypes>(
+        socket_state: &UdpSocketState<I, D, BT>,
+        cookie: SocketCookie,
+    ) -> Option<Self> {
+        let state = UdpSocketDiagnosticTuple::from_socket_info(socket_state.to_socket_info())?;
+        let marks = *socket_state.options().marks();
+
+        Some(Self { state, cookie, marks })
+    }
+}
+
+/// All of the information required to compute [`UdpSocketDiagnostics`]. Gives
+/// the owner control over when (or if) the transformation happens.
+pub struct UdpSocketDiagnosticsSeed<I, D, BT>
+where
+    I: IpExt,
+    D: WeakDeviceIdentifier,
+    BT: UdpBindingsTypes,
+{
+    pub(crate) state: UdpSocketState<I, D, BT>,
+    pub(crate) cookie: SocketCookie,
+}
+
+impl<I, D, BT> SocketDiagnosticsSeed for UdpSocketDiagnosticsSeed<I, D, BT>
+where
+    I: IpExt,
+    D: WeakDeviceIdentifier,
+    BT: UdpBindingsTypes,
+{
+    type Output = UdpSocketDiagnostics<I>;
+
+    fn resolve(self) -> Option<UdpSocketDiagnostics<I>> {
+        let Self { state, cookie } = self;
+        UdpSocketDiagnostics::from_parts(&state, cookie)
+    }
+}
+
 /// UDP socket tuple information for diagnostics.
 #[derive(Debug)]
 #[cfg_attr(any(test, feature = "testutils"), derive(PartialEq, Eq))]
@@ -40,6 +81,31 @@ pub enum UdpSocketDiagnosticTuple<I: Ip> {
 }
 
 impl<I: Ip> UdpSocketDiagnosticTuple<I> {
+    fn from_socket_info<D: WeakDeviceIdentifier>(info: SocketInfo<I::Addr, D>) -> Option<Self> {
+        match info {
+            // We don't return unbound sockets to match Linux's behavior (for
+            // now, at least).
+            SocketInfo::Unbound => None,
+            SocketInfo::Listener(ListenerInfo { local_ip, local_identifier }) => {
+                Some(Self::Bound {
+                    src_addr: local_ip.map(|ip| ip.into_inner().addr().get()),
+                    src_port: local_identifier,
+                })
+            }
+            SocketInfo::Connected(ConnInfo {
+                local_ip,
+                local_identifier,
+                remote_ip,
+                remote_identifier,
+            }) => Some(Self::Connected {
+                src_addr: local_ip.into_inner().addr().get(),
+                src_port: local_identifier,
+                dst_addr: remote_ip.into_inner().addr().get(),
+                dst_port: remote_identifier,
+            }),
+        }
+    }
+
     /// Returns the source address of the socket.
     pub fn src_addr(&self) -> Option<I::Addr> {
         match self {

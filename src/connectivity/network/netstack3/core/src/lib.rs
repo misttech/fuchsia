@@ -249,7 +249,8 @@ pub mod tcp {
         DEFAULT_FIN_WAIT2_TIMEOUT, IntoBuffers, ListenError, ListenerNotifier, NoConnection,
         OriginalDestinationError, ReceiveBuffer, SendBuffer, SetDeviceError, SetReuseAddrError,
         SocketAddr, SocketInfo, SocketOptions, TcpBindingsTypes, TcpSettings,
-        TcpSocketDiagnosticTuple, TcpSocketDiagnostics, TcpSocketId, TcpSocketInfo, UnboundInfo,
+        TcpSocketDestructionContext, TcpSocketDiagnosticTuple, TcpSocketDiagnostics, TcpSocketId,
+        TcpSocketInfo, UnboundInfo,
     };
 }
 
@@ -282,7 +283,7 @@ pub use netstack3_base::{
     DeferredResourceRemovalContext, EventContext, InstantBindingsTypes, InstantContext,
     MapDerefExt, MatcherBindingsTypes, NetworkParsingContext, NetworkSerializationContext,
     ProtocolSpecificOffloadSpec, ReferenceNotifiers, RngContext, SettingsContext,
-    TimerBindingsTypes, TimerContext, TxMetadata, TxMetadataBindingsTypes,
+    SocketDiagnosticsSeed, TimerBindingsTypes, TimerContext, TxMetadata, TxMetadataBindingsTypes,
 };
 pub use netstack3_datagram::PendingDatagramSocketError;
 pub use state::{StackState, StackStateBuilder};

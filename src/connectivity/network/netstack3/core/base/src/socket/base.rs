@@ -1452,6 +1452,16 @@ impl ReusePortOption {
     }
 }
 
+/// A trait abstracting over the data required to calculate socket
+/// diagnostics. Allows delaying the computation arbitrarily long.
+pub trait SocketDiagnosticsSeed {
+    /// The concrete output type.
+    type Output;
+
+    /// Completes the diagnostics construction.
+    fn resolve(self) -> Option<Self::Output>;
+}
+
 #[cfg(test)]
 mod tests {
     use alloc::vec;

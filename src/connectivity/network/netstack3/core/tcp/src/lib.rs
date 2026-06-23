@@ -46,15 +46,17 @@ pub use internal::counters::{
 pub use internal::settings::TcpSettings;
 pub use internal::socket::accept_queue::ListenerNotifier;
 pub use internal::socket::demux::DualStackTcpSocketId;
-pub use internal::socket::diagnostics::{TcpSocketDiagnosticTuple, TcpSocketDiagnostics};
+pub use internal::socket::diagnostics::{
+    TcpSocketDiagnosticTuple, TcpSocketDiagnostics, TcpSocketDiagnosticsSeed,
+};
 pub use internal::socket::generators::{IsnGenerator, TimestampOffsetGenerator};
 pub use internal::socket::{
     AcceptError, BindError, BoundInfo, ConnectError, ConnectionInfo, DemuxState,
     DualStackDemuxIdConverter, DualStackIpExt, Ipv6Options, Ipv6SocketIdToIpv4DemuxIdConverter,
     ListenError, NoConnection, OriginalDestinationError, SetDeviceError, SetReuseAddrError,
     SocketAddr, SocketInfo, Sockets, TcpApi, TcpBindingsContext, TcpBindingsTypes, TcpContext,
-    TcpDemuxContext, TcpDualStackContext, TcpIpTransportContext, TcpSocketId, TcpSocketSet,
-    TcpSocketState, TcpTimerId, UnboundInfo, WeakTcpSocketId,
+    TcpDemuxContext, TcpDualStackContext, TcpIpTransportContext, TcpSocketDestructionContext,
+    TcpSocketId, TcpSocketSet, TcpSocketState, TcpTimerId, UnboundInfo, WeakTcpSocketId,
 };
 pub use internal::state::info::{CongestionControlState, TcpSocketInfo};
 

@@ -950,7 +950,10 @@ where
         <C::BindingsContext as IcmpEchoBindingsTypes>::ExternalData<I>,
         C::BindingsContext,
     > {
-        self.datagram().close(id)
+        self.datagram().close(id, |state| {
+            let (_state, external_data) = state.into_state_and_external_data();
+            external_data
+        })
     }
 
     /// Gets unicast IP hop limit for ICMP sockets.

@@ -1239,6 +1239,7 @@ mod tests {
                         fnet_sockets::InvalidMatcher { index: 0 },
                     ))
                     .unwrap(),
+                fnet_sockets::DiagnosticsRequest::GetDestructionWatcher { .. } => unreachable!(),
             };
         }
 
@@ -1284,6 +1285,7 @@ mod tests {
                     s.close_with_epitaph(zx_status::Status::PEER_CLOSED).unwrap();
                     responder.send(&fnet_sockets::IterateIpResult::Ok(fnet_sockets::Empty)).unwrap()
                 }
+                fnet_sockets::DiagnosticsRequest::GetDestructionWatcher { .. } => unreachable!(),
             }
         }
 
@@ -1338,6 +1340,7 @@ mod tests {
                         }
                     }
                 }
+                fnet_sockets::DiagnosticsRequest::GetDestructionWatcher { .. } => unreachable!(),
             }
         }
 
@@ -1467,6 +1470,7 @@ mod tests {
                         }
                     }
                 }
+                fnet_sockets::DiagnosticsRequest::GetDestructionWatcher { .. } => unreachable!(),
             };
         };
 

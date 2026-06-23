@@ -39,17 +39,17 @@ use netstack3_base::{
 };
 use netstack3_datagram::{
     self as datagram, BoundDatagramSocketMap, BoundSocketState as DatagramBoundSocketState,
-    BoundSocketStateType as DatagramBoundSocketStateType, ConnInfo, ConnectError, DatagramApi,
+    BoundSocketStateType as DatagramBoundSocketStateType, ConnectError, DatagramApi,
     DatagramBindingsTypes, DatagramBoundStateContext, DatagramFlowId,
     DatagramIpSpecificSocketOptions, DatagramSocketMapSpec, DatagramSocketSet, DatagramSocketSpec,
     DatagramSpecBoundStateContext, DatagramSpecStateContext, DatagramStateContext,
     DualStackBaseIpExt, DualStackConnState, DualStackConverter, DualStackDatagramBoundStateContext,
     DualStackDatagramSpecBoundStateContext, DualStackIpExt, EitherIpSocket, ExpectedConnError,
-    ExpectedUnboundError, InUseError, IpExt, IpOptions, ListenerInfo,
-    MulticastMembershipInterfaceSelector, NonDualStackConverter,
-    NonDualStackDatagramBoundStateContext, NonDualStackDatagramSpecBoundStateContext,
-    PendingDatagramSocketError, SendError as DatagramSendError, SetMulticastMembershipError,
-    SocketInfo, SocketState as DatagramSocketState, SocketStateInner as DatagramSocketStateInner,
+    ExpectedUnboundError, InUseError, IpExt, IpOptions, MulticastMembershipInterfaceSelector,
+    NonDualStackConverter, NonDualStackDatagramBoundStateContext,
+    NonDualStackDatagramSpecBoundStateContext, PendingDatagramSocketError,
+    SendError as DatagramSendError, SetMulticastMembershipError, SocketInfo,
+    SocketState as DatagramSocketState, SocketStateInner as DatagramSocketStateInner,
     WrapOtherStackIpOptions, WrapOtherStackIpOptionsMut,
 };
 use netstack3_filter::{SocketIngressFilterResult, SocketOpsFilter, SocketOpsFilterBindingContext};
@@ -74,7 +74,7 @@ use thiserror::Error;
 use crate::internal::counters::{
     CombinedUdpCounters, UdpCounterContext, UdpCountersWithSocket, UdpCountersWithoutSocket,
 };
-use crate::internal::diagnostics::{UdpSocketDiagnosticTuple, UdpSocketDiagnostics};
+use crate::internal::diagnostics::{UdpSocketDiagnostics, UdpSocketDiagnosticsSeed};
 use crate::internal::settings::UdpSettings;
 
 /// Convenience alias to make names shorter.
@@ -484,6 +484,7 @@ pub enum UdpSerializeError {
 
 impl<BT: UdpBindingsTypes> DatagramSocketSpec for Udp<BT> {
     const NAME: &'static str = "UDP";
+
     type AddrSpec = UdpAddrSpec;
     type SocketId<I: IpExt, D: WeakDeviceIdentifier> = UdpSocketId<I, D, BT>;
     type WeakSocketId<I: IpExt, D: WeakDeviceIdentifier> = WeakUdpSocketId<I, D, BT>;
@@ -2088,36 +2089,7 @@ where
                 return;
             }
 
-            let udp_state = match state.to_socket_info() {
-                // We don't return unbound sockets to match Linux's behavior
-                // (for now, at least).
-                SocketInfo::Unbound => return,
-                SocketInfo::Listener(ListenerInfo { local_ip, local_identifier }) => {
-                    UdpSocketDiagnosticTuple::Bound {
-                        src_addr: local_ip.map(|ip| ip.into_inner().addr().get()),
-                        src_port: local_identifier,
-                    }
-                }
-                SocketInfo::Connected(ConnInfo {
-                    local_ip,
-                    local_identifier,
-                    remote_ip,
-                    remote_identifier,
-                }) => UdpSocketDiagnosticTuple::Connected {
-                    src_addr: local_ip.into_inner().addr().get(),
-                    src_port: local_identifier,
-                    dst_addr: remote_ip.into_inner().addr().get(),
-                    dst_port: remote_identifier,
-                },
-            };
-
-            let options = state.options();
-
-            results.extend(core::iter::once(UdpSocketDiagnostics {
-                state: udp_state,
-                cookie: id.socket_cookie(),
-                marks: *options.marks(),
-            }));
+            results.extend(UdpSocketDiagnostics::from_parts(state, id.socket_cookie()));
         });
     }
 
@@ -2755,11 +2727,22 @@ where
         &mut self,
         id: UdpApiSocketId<I, C>,
     ) -> RemoveResourceResultWithContext<
-        <C::BindingsContext as UdpBindingsTypes>::ExternalData<I>,
+        (
+            UdpSocketDiagnosticsSeed<
+                I,
+                <C::CoreContext as DeviceIdContext<AnyDevice>>::WeakDeviceId,
+                C::BindingsContext,
+            >,
+            <C::BindingsContext as UdpBindingsTypes>::ExternalData<I>,
+        ),
         C::BindingsContext,
     > {
         debug!("close {id:?}");
-        self.datagram().close(id)
+        let cookie = id.socket_cookie();
+        self.datagram().close(id, move |reference_state| {
+            let (state, external_data) = reference_state.into_state_and_external_data();
+            (UdpSocketDiagnosticsSeed { state, cookie }, external_data)
+        })
     }
 
     /// Gets the [`SocketInfo`] associated with the UDP socket referenced by
@@ -5785,7 +5768,7 @@ mod tests {
 
         // Once the first listener is removed, the second socket can be
         // connected.
-        api.close(listener).into_removed();
+        let _: (UdpSocketDiagnosticsSeed<I, _, _>, ()) = api.close(listener).into_removed();
 
         listen_unbound(&mut api, &unbound).expect("listen should succeed");
     }
@@ -5903,7 +5886,7 @@ mod tests {
         let socket = api.create();
         api.listen(&socket, Some(local_ip), Some(LOCAL_PORT)).unwrap();
         api.connect(&socket, Some(remote_ip), REMOTE_PORT.into()).expect("connect failed");
-        api.close(socket).into_removed();
+        let _: (UdpSocketDiagnosticsSeed<I, _, _>, ()) = api.close(socket).into_removed();
     }
 
     /// Tests [`remove_udp`]
@@ -5916,12 +5899,12 @@ mod tests {
         // Test removing a specified listener.
         let specified = api.create();
         api.listen(&specified, Some(local_ip), Some(LOCAL_PORT)).expect("listen_udp failed");
-        api.close(specified).into_removed();
+        let _: (UdpSocketDiagnosticsSeed<I, _, _>, ()) = api.close(specified).into_removed();
 
         // Test removing a wildcard listener.
         let wildcard = api.create();
         api.listen(&wildcard, None, Some(LOCAL_PORT)).expect("listen_udp failed");
-        api.close(wildcard).into_removed();
+        let _: (UdpSocketDiagnosticsSeed<I, _, _>, ()) = api.close(wildcard).into_removed();
     }
 
     fn try_join_leave_multicast<I: TestIpExt>(
@@ -6195,7 +6178,7 @@ mod tests {
             HashMap::from([((MultipleDevicesId::A, group), NonZeroUsize::new(1).unwrap())])
         );
 
-        api.close(unbound).into_removed();
+        let _: (UdpSocketDiagnosticsSeed<I, _, _>, ()) = api.close(unbound).into_removed();
         assert_eq!(
             api.core_ctx().bound_sockets.ip_socket_ctx.state.multicast_memberships::<I>(),
             HashMap::default()
@@ -6239,7 +6222,7 @@ mod tests {
             ])
         );
 
-        api.close(socket).into_removed();
+        let _: (UdpSocketDiagnosticsSeed<I, _, _>, ()) = api.close(socket).into_removed();
         assert_eq!(
             api.core_ctx().bound_sockets.ip_socket_ctx.state.multicast_memberships::<I>(),
             HashMap::default()
@@ -6288,7 +6271,7 @@ mod tests {
             ])
         );
 
-        api.close(socket).into_removed();
+        let _: (UdpSocketDiagnosticsSeed<I, _, _>, ()) = api.close(socket).into_removed();
         assert_eq!(
             api.core_ctx().bound_sockets.ip_socket_ctx.state.multicast_memberships::<I>(),
             HashMap::default()
@@ -6368,7 +6351,7 @@ mod tests {
 
         api.listen(&first, Some(ZonedAddr::Unzoned(local_ip::<I>())), None).expect("listen failed");
         assert_eq!(api.get_posix_reuse_port(&first), true);
-        api.close(first).into_removed();
+        let _: (UdpSocketDiagnosticsSeed<I, _, _>, ()) = api.close(first).into_removed();
 
         let second = api.create();
         api.set_posix_reuse_port(&second, ReusePortOption::Enabled(sharing_domain))
@@ -6974,7 +6957,7 @@ mod tests {
         let mut ctx = UdpFakeDeviceCtx::with_core_ctx(UdpFakeDeviceCoreCtx::new_fake_device::<I>());
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
         let unbound = api.create();
-        api.close(unbound).into_removed();
+        let _: (UdpSocketDiagnosticsSeed<I, _, _>, ()) = api.close(unbound).into_removed();
     }
 
     #[ip_test(I)]
@@ -7407,7 +7390,7 @@ mod tests {
                 Ok(())
             );
 
-            api.close(listener).into_removed();
+            let _: (UdpSocketDiagnosticsSeed<Ipv6, _, _>, ()) = api.close(listener).into_removed();
         };
 
         // The first time should succeed because the state is empty.
@@ -7445,7 +7428,7 @@ mod tests {
                 Ok(())
             );
 
-            api.close(socket).into_removed();
+            let _: (UdpSocketDiagnosticsSeed<Ipv6, _, _>, ()) = api.close(socket).into_removed();
         };
 
         // The first time should succeed because the state is empty.

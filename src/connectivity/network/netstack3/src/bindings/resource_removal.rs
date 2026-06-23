@@ -162,16 +162,21 @@ pub(crate) struct ResourceRemovalSink {
 
 impl ResourceRemovalSink {
     #[cfg_attr(feature = "instrumented", track_caller)]
-    pub(crate) fn defer_removal<T, F: Future<Output = T> + Send + Sync + 'static>(
+    pub(crate) fn defer_removal<
+        T: Send + 'static,
+        F: Future<Output = T> + Send + Sync + 'static,
+        CB: FnOnce(T) + Send + 'static,
+    >(
         &self,
         debug_refs: DynDebugReferences,
         fut: F,
+        callback: CB,
     ) {
-        // Drop the result of the future and box it so we can type-erase it.
+        // Map the future with the callback and box it so we can type-erase it.
         // Deferred resource removal doesn't happen in the fast path and we can
         // deal with the extra allocation here in exchange for lower code
         // complexity.
-        let fut = fut.map(|_: T| ()).boxed();
+        let fut = fut.map(callback).boxed();
         // We do use the T parameter to extract some debug information.
         let typename = std::any::type_name::<T>();
 
@@ -200,6 +205,7 @@ impl ResourceRemovalSink {
         self.defer_removal(
             debug_references,
             receiver.map(|r| r.expect("sender dropped without notifying receiver")),
+            |_: T| {},
         );
     }
 
@@ -315,7 +321,11 @@ mod tests {
         let debug_references = PrimaryRc::debug_references(&primary).into_dyn();
         drop(primary);
         let (sender, receiver) = oneshot::channel();
-        sink.defer_removal(debug_references, receiver.map(|r| r.expect("dropped sender")));
+        sink.defer_removal(
+            debug_references,
+            receiver.map(|r| r.expect("dropped sender")),
+            |_: T| {},
+        );
         sender
     }
 

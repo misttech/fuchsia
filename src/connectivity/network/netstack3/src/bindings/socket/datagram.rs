@@ -489,13 +489,15 @@ where
 
     async fn close(ctx: &mut Ctx, id: Self::SocketId) {
         let weak = id.downgrade();
-        let DatagramSocketExternalData { message_queue: _, sharing_domain_token: _ } = ctx
+        let (seed, _external_data) = ctx
             .api()
             .udp()
             .close(id)
             .map_deferred(|d| d.into_future("udp socket", &weak, ctx))
             .into_future()
             .await;
+
+        ctx.bindings_ctx().destruction_dispatcher.notify(seed);
     }
 
     fn set_socket_device(
@@ -876,7 +878,7 @@ where
 
     async fn close(ctx: &mut Ctx, id: Self::SocketId) {
         let weak = id.downgrade();
-        let DatagramSocketExternalData { message_queue: _, sharing_domain_token: _ } = ctx
+        let _external_data = ctx
             .api()
             .icmp_echo()
             .close(id)
