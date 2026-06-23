@@ -24,6 +24,7 @@ use fidl_fuchsia_mem as fmem;
 use fidl_fuchsia_memory_attribution as fattribution;
 use fidl_fuchsia_starnix_binder as fbinder;
 use fidl_fuchsia_starnix_container as fstarcontainer;
+use fidl_fuchsia_sysinfo as fsysinfo;
 use fidl_fuchsia_time_external::AdjustMarker;
 use fuchsia_async as fasync;
 use fuchsia_async::DurationExt;
@@ -565,6 +566,16 @@ async fn get_bootitems() -> Result<std::vec::Vec<u8>, Error> {
     Ok(bytes)
 }
 
+async fn get_serial_number() -> Result<String, Error> {
+    let sysinfo = connect_to_protocol::<fsysinfo::SysInfoMarker>()
+        .context("Failed to connect to fuchsia.sysinfo.SysInfo")?;
+    sysinfo
+        .get_serial_number()
+        .await
+        .context("FIDL: Failed to get serial number")?
+        .map_err(|status| anyhow!("Failed to get serial number: {:?}", status))
+}
+
 async fn create_container(
     start_info: &mut ContainerStartInfo,
     kernel_extra_features: &[String],
@@ -595,6 +606,10 @@ async fn create_container(
     let mut kernel_cmdline = BString::from(start_info.program.kernel_cmdline.as_bytes());
     let mut android_provided_bootreason = None;
 
+    let mut bootargs_has_serialno = false;
+    // TODO(https://fxbug.dev/526770691): Newer versions of Android replace the 'androidboot.*'
+    // kernel parameters with 'bootconfig'. We should expose this to the container to avoid having
+    // to manage 'androidboot.*' parameters here.
     if features.android_serialno {
         if let Some(device_tree) = &device_tree {
             match get_bootargs(device_tree).await {
@@ -603,6 +618,9 @@ async fn create_container(
                         if item.starts_with("androidboot.force_normal_boot") {
                             // TODO(https://fxbug.dev/424152964): Support force_normal_boot.
                             continue;
+                        }
+                        if item.starts_with("androidboot.serialno") {
+                            bootargs_has_serialno = true;
                         }
                         if item.starts_with("androidboot.bootreason") && features.android_bootreason
                         {
@@ -623,6 +641,19 @@ async fn create_container(
             }
         } else {
             log_warn!("No devicetree available to get bootargs for android.serialno");
+        }
+
+        if !bootargs_has_serialno {
+            match get_serial_number().await {
+                Ok(serial) => {
+                    log_info!("Fell back to sysinfo serial number: {}", serial);
+                    kernel_cmdline.extend(b" androidboot.serialno=");
+                    kernel_cmdline.extend(serial.bytes());
+                }
+                Err(err) => {
+                    log_warn!("Could not get serial number from sysinfo: {err:?}");
+                }
+            }
         }
     }
     if features.android_bootreason {
