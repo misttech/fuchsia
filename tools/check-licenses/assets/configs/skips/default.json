@@ -180,8 +180,7 @@
         },
         {
             "paths": [
-                "prebuilt/third_party/python3/linux-x64/lib/python3.8/idlelib/CREDITS.txt",
-                "prebuilt/third_party/vpython/2.7/lib/python2.7/idlelib/CREDITS.txt",
+                "prebuilt/third_party/python3/linux-x64/lib/python3.11/idlelib/CREDITS.txt",
                 "prebuilt/third_party/vpython/3.11/lib/python3.11/idlelib/CREDITS.txt",
                 "prebuilt/third_party/vpython/3.8/lib/python3.8/idlelib/CREDITS.txt",
                 "third_party/grpc/src/src/php/ext/grpc/CREDITS",
