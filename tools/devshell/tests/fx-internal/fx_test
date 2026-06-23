@@ -294,4 +294,22 @@ TEST_fx-target-long-flag-specified-with-env-test() {
   BT_EXPECT_FILE_CONTAINS "${out}" "<foo,>"
 }
 
+TEST_fx-antigravity-quiet-build() {
+  local subcommand="mycommand1"
+  _create_subcommand "${subcommand}" "tools/devshell" "FX_BUILD_QUIET=\${FX_BUILD_QUIET}"
+
+  # Case 1: Running in antigravity, no verbose flags -> FX_BUILD_QUIET should be 1
+  local out
+  out=$(ANTIGRAVITY_AGENT=1 "${fx}" "${subcommand}")
+  BT_EXPECT_EQ "${out}" "FX_BUILD_QUIET=1"
+
+  # Case 2: Running in antigravity, with FUCHSIA_DEVSHELL_VERBOSITY=1 -> FX_BUILD_QUIET should not be 1
+  out=$(ANTIGRAVITY_AGENT=1 FUCHSIA_DEVSHELL_VERBOSITY=1 "${fx}" "${subcommand}")
+  BT_EXPECT_EQ "${out}" "FX_BUILD_QUIET="
+
+  # Case 3: Running in antigravity, with -x flag -> FX_BUILD_QUIET should not be 1
+  out=$(ANTIGRAVITY_AGENT=1 "${fx}" -x "${subcommand}")
+  BT_EXPECT_EQ "${out}" "FX_BUILD_QUIET="
+}
+
 BT_RUN_TESTS "$@"
