@@ -137,6 +137,8 @@ type Behavior = flexible enum : uint32 {
     /// Apply a gain to mute one of the streams. (-160.0db)
     MUTE = 2;
 };
+@available(added=NEXT)
+const BEHAVIOR_COUNT uint8 = 3;
 
 // TODO(https://fxbug.dev/384934089): deprecate and remove |AudioRenderUsage| (and |Usage|)
 @strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")

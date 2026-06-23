@@ -37,11 +37,16 @@ zx_koid_t GetKoid(const zx::vmo& vmo) {
   return info.koid;
 }
 
-}  // namespace
+// }  // namespace
 
 class FakeAudio : public fuchsia::media::Audio {
  public:
   FakeAudio() : binding_(this) {}
+
+  FakeAudio(const FakeAudio&) = delete;
+  FakeAudio(FakeAudio&&) = delete;
+  FakeAudio& operator=(const FakeAudio&) = delete;
+  FakeAudio& operator=(FakeAudio&&) = delete;
 
   fuchsia::media::AudioPtr NewPtr() { return binding_.NewBinding().Bind(); }
 
@@ -161,19 +166,26 @@ class SoundPlayerTests : public gtest::RealLoopFixture {
 TEST_F(SoundPlayerTests, Buffer) {
   auto [buffer, koid, stream_type] = CreateTestSound(kPayloadSize);
 
-  SetRendererExpectations({{
-      .payload_buffer_ = koid,
-      .packets_ = {{.pts = fuchsia::media::NO_TIMESTAMP,
-                    .payload_buffer_id = 0,
-                    .payload_offset = 0,
-                    .payload_size = kPayloadSize,
-                    .flags = 0,
-                    .buffer_config = 0,
-                    .stream_segment_id = 0}},
-      .stream_type_ = fidl::Clone(stream_type),
-      .usage_ = kUsage,
-      .block_completion_ = false,
-  }});
+  SetRendererExpectations({
+      {
+          .payload_buffer_ = koid,
+          .packets_ =
+              {
+                  {
+                      .pts = fuchsia::media::NO_TIMESTAMP,
+                      .payload_buffer_id = 0,
+                      .payload_offset = 0,
+                      .payload_size = kPayloadSize,
+                      .flags = 0,
+                      .buffer_config = 0,
+                      .stream_segment_id = 0,
+                  },
+              },
+          .stream_type_ = fidl::Clone(stream_type),
+          .usage_ = kUsage,
+          .block_completion_ = false,
+      },
+  });
 
   under_test().AddSoundBuffer(0, std::move(buffer), stream_type);
   bool play_sound_completed = false;
@@ -193,19 +205,26 @@ TEST_F(SoundPlayerTests, MaxSinglePacketBuffer) {
   auto [buffer, koid, stream_type] =
       CreateTestSound(fuchsia::media::MAX_FRAMES_PER_RENDERER_PACKET * kFrameSize);
 
-  SetRendererExpectations({{
-      .payload_buffer_ = koid,
-      .packets_ = {{.pts = fuchsia::media::NO_TIMESTAMP,
-                    .payload_buffer_id = 0,
-                    .payload_offset = 0,
-                    .payload_size = fuchsia::media::MAX_FRAMES_PER_RENDERER_PACKET * kFrameSize,
-                    .flags = 0,
-                    .buffer_config = 0,
-                    .stream_segment_id = 0}},
-      .stream_type_ = fidl::Clone(stream_type),
-      .usage_ = kUsage,
-      .block_completion_ = false,
-  }});
+  SetRendererExpectations({
+      {
+          .payload_buffer_ = koid,
+          .packets_ =
+              {
+                  {
+                      .pts = fuchsia::media::NO_TIMESTAMP,
+                      .payload_buffer_id = 0,
+                      .payload_offset = 0,
+                      .payload_size = fuchsia::media::MAX_FRAMES_PER_RENDERER_PACKET * kFrameSize,
+                      .flags = 0,
+                      .buffer_config = 0,
+                      .stream_segment_id = 0,
+                  },
+              },
+          .stream_type_ = fidl::Clone(stream_type),
+          .usage_ = kUsage,
+          .block_completion_ = false,
+      },
+  });
 
   under_test().AddSoundBuffer(0, std::move(buffer), stream_type);
   bool play_sound_completed = false;
@@ -225,26 +244,35 @@ TEST_F(SoundPlayerTests, TwoPacketBuffer) {
   auto [buffer, koid, stream_type] =
       CreateTestSound((fuchsia::media::MAX_FRAMES_PER_RENDERER_PACKET + 1) * kFrameSize);
 
-  SetRendererExpectations({{
-      .payload_buffer_ = koid,
-      .packets_ = {{.pts = fuchsia::media::NO_TIMESTAMP,
-                    .payload_buffer_id = 0,
-                    .payload_offset = 0,
-                    .payload_size = fuchsia::media::MAX_FRAMES_PER_RENDERER_PACKET * kFrameSize,
-                    .flags = 0,
-                    .buffer_config = 0,
-                    .stream_segment_id = 0},
-                   {.pts = fuchsia::media::NO_TIMESTAMP,
-                    .payload_buffer_id = 0,
-                    .payload_offset = fuchsia::media::MAX_FRAMES_PER_RENDERER_PACKET * kFrameSize,
-                    .payload_size = kFrameSize,
-                    .flags = 0,
-                    .buffer_config = 0,
-                    .stream_segment_id = 0}},
-      .stream_type_ = fidl::Clone(stream_type),
-      .usage_ = kUsage,
-      .block_completion_ = false,
-  }});
+  SetRendererExpectations({
+      {
+          .payload_buffer_ = koid,
+          .packets_ =
+              {
+                  {
+                      .pts = fuchsia::media::NO_TIMESTAMP,
+                      .payload_buffer_id = 0,
+                      .payload_offset = 0,
+                      .payload_size = fuchsia::media::MAX_FRAMES_PER_RENDERER_PACKET * kFrameSize,
+                      .flags = 0,
+                      .buffer_config = 0,
+                      .stream_segment_id = 0,
+                  },
+                  {
+                      .pts = fuchsia::media::NO_TIMESTAMP,
+                      .payload_buffer_id = 0,
+                      .payload_offset = fuchsia::media::MAX_FRAMES_PER_RENDERER_PACKET * kFrameSize,
+                      .payload_size = kFrameSize,
+                      .flags = 0,
+                      .buffer_config = 0,
+                      .stream_segment_id = 0,
+                  },
+              },
+          .stream_type_ = fidl::Clone(stream_type),
+          .usage_ = kUsage,
+          .block_completion_ = false,
+      },
+  });
 
   under_test().AddSoundBuffer(0, std::move(buffer), stream_type);
   bool play_sound_completed = false;
@@ -261,24 +289,31 @@ TEST_F(SoundPlayerTests, TwoPacketBuffer) {
 
 // Plays a sound from a wav file.
 TEST_F(SoundPlayerTests, WavFile) {
-  SetRendererExpectations({{
-      .payload_buffer_ = ZX_KOID_INVALID,
-      .packets_ = {{.pts = fuchsia::media::NO_TIMESTAMP,
-                    .payload_buffer_id = 0,
-                    .payload_offset = 0,
-                    .payload_size = kWavFilePayloadSize,
-                    .flags = 0,
-                    .buffer_config = 0,
-                    .stream_segment_id = 0}},
-      .stream_type_ =
-          {
-              .sample_format = fuchsia::media::AudioSampleFormat::SIGNED_16,
-              .channels = kWavFileChannels,
-              .frames_per_second = kWavFramesPerSecond,
-          },
-      .usage_ = kUsage,
-      .block_completion_ = false,
-  }});
+  SetRendererExpectations({
+      {
+          .payload_buffer_ = ZX_KOID_INVALID,
+          .packets_ =
+              {
+                  {
+                      .pts = fuchsia::media::NO_TIMESTAMP,
+                      .payload_buffer_id = 0,
+                      .payload_offset = 0,
+                      .payload_size = kWavFilePayloadSize,
+                      .flags = 0,
+                      .buffer_config = 0,
+                      .stream_segment_id = 0,
+                  },
+              },
+          .stream_type_ =
+              {
+                  .sample_format = fuchsia::media::AudioSampleFormat::SIGNED_16,
+                  .channels = kWavFileChannels,
+                  .frames_per_second = kWavFramesPerSecond,
+              },
+          .usage_ = kUsage,
+          .block_completion_ = false,
+      },
+  });
 
   under_test().AddSoundFromFile(0, ResourceFile("sfx.wav"),
                                 [](fuchsia::media::sounds::Player_AddSoundFromFile_Result result) {
@@ -302,13 +337,18 @@ TEST_F(SoundPlayerTests, WavFileTwice) {
   SetRendererExpectations({
       {
           .payload_buffer_ = ZX_KOID_INVALID,
-          .packets_ = {{.pts = fuchsia::media::NO_TIMESTAMP,
-                        .payload_buffer_id = 0,
-                        .payload_offset = 0,
-                        .payload_size = kWavFilePayloadSize,
-                        .flags = 0,
-                        .buffer_config = 0,
-                        .stream_segment_id = 0}},
+          .packets_ =
+              {
+                  {
+                      .pts = fuchsia::media::NO_TIMESTAMP,
+                      .payload_buffer_id = 0,
+                      .payload_offset = 0,
+                      .payload_size = kWavFilePayloadSize,
+                      .flags = 0,
+                      .buffer_config = 0,
+                      .stream_segment_id = 0,
+                  },
+              },
           .stream_type_ =
               {
                   .sample_format = fuchsia::media::AudioSampleFormat::SIGNED_16,
@@ -320,13 +360,18 @@ TEST_F(SoundPlayerTests, WavFileTwice) {
       },
       {
           .payload_buffer_ = ZX_KOID_INVALID,
-          .packets_ = {{.pts = fuchsia::media::NO_TIMESTAMP,
-                        .payload_buffer_id = 0,
-                        .payload_offset = 0,
-                        .payload_size = kWavFilePayloadSize,
-                        .flags = 0,
-                        .buffer_config = 0,
-                        .stream_segment_id = 0}},
+          .packets_ =
+              {
+                  {
+                      .pts = fuchsia::media::NO_TIMESTAMP,
+                      .payload_buffer_id = 0,
+                      .payload_offset = 0,
+                      .payload_size = kWavFilePayloadSize,
+                      .flags = 0,
+                      .buffer_config = 0,
+                      .stream_segment_id = 0,
+                  },
+              },
           .stream_type_ =
               {
                   .sample_format = fuchsia::media::AudioSampleFormat::SIGNED_16,
@@ -367,24 +412,31 @@ TEST_F(SoundPlayerTests, WavFileTwice) {
 
 // Plays and stops a sound from a wav file.
 TEST_F(SoundPlayerTests, WavFileStop) {
-  SetRendererExpectations({{
-      .payload_buffer_ = ZX_KOID_INVALID,
-      .packets_ = {{.pts = fuchsia::media::NO_TIMESTAMP,
-                    .payload_buffer_id = 0,
-                    .payload_offset = 0,
-                    .payload_size = kWavFilePayloadSize,
-                    .flags = 0,
-                    .buffer_config = 0,
-                    .stream_segment_id = 0}},
-      .stream_type_ =
-          {
-              .sample_format = fuchsia::media::AudioSampleFormat::SIGNED_16,
-              .channels = kWavFileChannels,
-              .frames_per_second = kWavFramesPerSecond,
-          },
-      .usage_ = kUsage,
-      .block_completion_ = true,
-  }});
+  SetRendererExpectations({
+      {
+          .payload_buffer_ = ZX_KOID_INVALID,
+          .packets_ =
+              {
+                  {
+                      .pts = fuchsia::media::NO_TIMESTAMP,
+                      .payload_buffer_id = 0,
+                      .payload_offset = 0,
+                      .payload_size = kWavFilePayloadSize,
+                      .flags = 0,
+                      .buffer_config = 0,
+                      .stream_segment_id = 0,
+                  },
+              },
+          .stream_type_ =
+              {
+                  .sample_format = fuchsia::media::AudioSampleFormat::SIGNED_16,
+                  .channels = kWavFileChannels,
+                  .frames_per_second = kWavFramesPerSecond,
+              },
+          .usage_ = kUsage,
+          .block_completion_ = true,
+      },
+  });
 
   under_test().AddSoundFromFile(0, ResourceFile("sfx.wav"),
                                 [](fuchsia::media::sounds::Player_AddSoundFromFile_Result result) {
@@ -413,13 +465,18 @@ TEST_F(SoundPlayerTests, WavFileTwiceStopSecond) {
   SetRendererExpectations({
       {
           .payload_buffer_ = ZX_KOID_INVALID,
-          .packets_ = {{.pts = fuchsia::media::NO_TIMESTAMP,
-                        .payload_buffer_id = 0,
-                        .payload_offset = 0,
-                        .payload_size = kWavFilePayloadSize,
-                        .flags = 0,
-                        .buffer_config = 0,
-                        .stream_segment_id = 0}},
+          .packets_ =
+              {
+                  {
+                      .pts = fuchsia::media::NO_TIMESTAMP,
+                      .payload_buffer_id = 0,
+                      .payload_offset = 0,
+                      .payload_size = kWavFilePayloadSize,
+                      .flags = 0,
+                      .buffer_config = 0,
+                      .stream_segment_id = 0,
+                  },
+              },
           .stream_type_ =
               {
                   .sample_format = fuchsia::media::AudioSampleFormat::SIGNED_16,
@@ -431,13 +488,18 @@ TEST_F(SoundPlayerTests, WavFileTwiceStopSecond) {
       },
       {
           .payload_buffer_ = ZX_KOID_INVALID,
-          .packets_ = {{.pts = fuchsia::media::NO_TIMESTAMP,
-                        .payload_buffer_id = 0,
-                        .payload_offset = 0,
-                        .payload_size = kWavFilePayloadSize,
-                        .flags = 0,
-                        .buffer_config = 0,
-                        .stream_segment_id = 0}},
+          .packets_ =
+              {
+                  {
+                      .pts = fuchsia::media::NO_TIMESTAMP,
+                      .payload_buffer_id = 0,
+                      .payload_offset = 0,
+                      .payload_size = kWavFilePayloadSize,
+                      .flags = 0,
+                      .buffer_config = 0,
+                      .stream_segment_id = 0,
+                  },
+              },
           .stream_type_ =
               {
                   .sample_format = fuchsia::media::AudioSampleFormat::SIGNED_16,
@@ -483,24 +545,31 @@ TEST_F(SoundPlayerTests, WavFileTwiceStopSecond) {
 
 // Tests that bogus stop requests work (or don't) as expected.
 TEST_F(SoundPlayerTests, WavFileBogusStops) {
-  SetRendererExpectations({{
-      .payload_buffer_ = ZX_KOID_INVALID,
-      .packets_ = {{.pts = fuchsia::media::NO_TIMESTAMP,
-                    .payload_buffer_id = 0,
-                    .payload_offset = 0,
-                    .payload_size = kWavFilePayloadSize,
-                    .flags = 0,
-                    .buffer_config = 0,
-                    .stream_segment_id = 0}},
-      .stream_type_ =
-          {
-              .sample_format = fuchsia::media::AudioSampleFormat::SIGNED_16,
-              .channels = kWavFileChannels,
-              .frames_per_second = kWavFramesPerSecond,
-          },
-      .usage_ = kUsage,
-      .block_completion_ = false,
-  }});
+  SetRendererExpectations({
+      {
+          .payload_buffer_ = ZX_KOID_INVALID,
+          .packets_ =
+              {
+                  {
+                      .pts = fuchsia::media::NO_TIMESTAMP,
+                      .payload_buffer_id = 0,
+                      .payload_offset = 0,
+                      .payload_size = kWavFilePayloadSize,
+                      .flags = 0,
+                      .buffer_config = 0,
+                      .stream_segment_id = 0,
+                  },
+              },
+          .stream_type_ =
+              {
+                  .sample_format = fuchsia::media::AudioSampleFormat::SIGNED_16,
+                  .channels = kWavFileChannels,
+                  .frames_per_second = kWavFramesPerSecond,
+              },
+          .usage_ = kUsage,
+          .block_completion_ = false,
+      },
+  });
 
   under_test().AddSoundFromFile(0, ResourceFile("sfx.wav"),
                                 [](fuchsia::media::sounds::Player_AddSoundFromFile_Result result) {
@@ -537,24 +606,31 @@ TEST_F(SoundPlayerTests, WavFileBogusStops) {
 
 // Plays a sound from an ogg/opus file.
 TEST_F(SoundPlayerTests, FileOggOpus) {
-  SetRendererExpectations({{
-      .payload_buffer_ = ZX_KOID_INVALID,
-      .packets_ = {{.pts = fuchsia::media::NO_TIMESTAMP,
-                    .payload_buffer_id = 0,
-                    .payload_offset = 0,
-                    .payload_size = kOggOpusFilePayloadSize,
-                    .flags = 0,
-                    .buffer_config = 0,
-                    .stream_segment_id = 0}},
-      .stream_type_ =
-          {
-              .sample_format = fuchsia::media::AudioSampleFormat::SIGNED_16,
-              .channels = kOggOpusFileChannels,
-              .frames_per_second = kOggOpusFramesPerSecond,
-          },
-      .usage_ = kUsage,
-      .block_completion_ = false,
-  }});
+  SetRendererExpectations({
+      {
+          .payload_buffer_ = ZX_KOID_INVALID,
+          .packets_ =
+              {
+                  {
+                      .pts = fuchsia::media::NO_TIMESTAMP,
+                      .payload_buffer_id = 0,
+                      .payload_offset = 0,
+                      .payload_size = kOggOpusFilePayloadSize,
+                      .flags = 0,
+                      .buffer_config = 0,
+                      .stream_segment_id = 0,
+                  },
+              },
+          .stream_type_ =
+              {
+                  .sample_format = fuchsia::media::AudioSampleFormat::SIGNED_16,
+                  .channels = kOggOpusFileChannels,
+                  .frames_per_second = kOggOpusFramesPerSecond,
+              },
+          .usage_ = kUsage,
+          .block_completion_ = false,
+      },
+  });
 
   under_test().AddSoundFromFile(0, ResourceFile("testfile.ogg"),
                                 [](fuchsia::media::sounds::Player_AddSoundFromFile_Result result) {
@@ -578,19 +654,26 @@ TEST_F(SoundPlayerTests, WhenReady) {
   auto [buffer, koid, stream_type] = CreateTestSound(kPayloadSize);
 
   SetBlockWarmup();
-  SetRendererExpectations({{
-      .payload_buffer_ = koid,
-      .packets_ = {{.pts = fuchsia::media::NO_TIMESTAMP,
-                    .payload_buffer_id = 0,
-                    .payload_offset = 0,
-                    .payload_size = kPayloadSize,
-                    .flags = 0,
-                    .buffer_config = 0,
-                    .stream_segment_id = 0}},
-      .stream_type_ = fidl::Clone(stream_type),
-      .usage_ = kUsage,
-      .block_completion_ = false,
-  }});
+  SetRendererExpectations({
+      {
+          .payload_buffer_ = koid,
+          .packets_ =
+              {
+                  {
+                      .pts = fuchsia::media::NO_TIMESTAMP,
+                      .payload_buffer_id = 0,
+                      .payload_offset = 0,
+                      .payload_size = kPayloadSize,
+                      .flags = 0,
+                      .buffer_config = 0,
+                      .stream_segment_id = 0,
+                  },
+              },
+          .stream_type_ = fidl::Clone(stream_type),
+          .usage_ = kUsage,
+          .block_completion_ = false,
+      },
+  });
 
   // We use |under_test_ptr()| here, because invocation of methods is deferred by deferring
   // the channel bind. If we call the implementation directly, we bypass the warmup.
@@ -613,24 +696,31 @@ TEST_F(SoundPlayerTests, WhenReady) {
 
 // Plays a sound from a wav file. The audio renderer closes the connection on |AddPayloadBuffer|.
 TEST_F(SoundPlayerTests, WavFileCloseConnection) {
-  SetRendererExpectations({{
-      .payload_buffer_ = ZX_KOID_INVALID,
-      .packets_ = {{.pts = fuchsia::media::NO_TIMESTAMP,
-                    .payload_buffer_id = 0,
-                    .payload_offset = 0,
-                    .payload_size = kWavFilePayloadSize,
-                    .flags = 0,
-                    .buffer_config = 0,
-                    .stream_segment_id = 0}},
-      .stream_type_ =
-          {
-              .sample_format = fuchsia::media::AudioSampleFormat::SIGNED_16,
-              .channels = kWavFileChannels,
-              .frames_per_second = kWavFramesPerSecond,
-          },
-      .usage_ = kUsage,
-      .close_on_add_payload_buffer_ = true,
-  }});
+  SetRendererExpectations({
+      {
+          .payload_buffer_ = ZX_KOID_INVALID,
+          .packets_ =
+              {
+                  {
+                      .pts = fuchsia::media::NO_TIMESTAMP,
+                      .payload_buffer_id = 0,
+                      .payload_offset = 0,
+                      .payload_size = kWavFilePayloadSize,
+                      .flags = 0,
+                      .buffer_config = 0,
+                      .stream_segment_id = 0,
+                  },
+              },
+          .stream_type_ =
+              {
+                  .sample_format = fuchsia::media::AudioSampleFormat::SIGNED_16,
+                  .channels = kWavFileChannels,
+                  .frames_per_second = kWavFramesPerSecond,
+              },
+          .usage_ = kUsage,
+          .close_on_add_payload_buffer_ = true,
+      },
+  });
 
   under_test().AddSoundFromFile(0, ResourceFile("sfx.wav"),
                                 [](fuchsia::media::sounds::Player_AddSoundFromFile_Result result) {
@@ -649,5 +739,47 @@ TEST_F(SoundPlayerTests, WavFileCloseConnection) {
   under_test().RemoveSound(0);
   RunLoopUntilIdle();
 }
+
+TEST_F(SoundPlayerTests, PlaySound2UnknownFlexibleEnum) {
+  auto unknown_usage = static_cast<fuchsia::media::AudioRenderUsage2>(42);
+  auto [buffer, koid, stream_type] = CreateTestSound(kPayloadSize);
+
+  SetRendererExpectations({
+      {
+          .payload_buffer_ = koid,
+          .packets_ =
+              {
+                  {
+                      .pts = fuchsia::media::NO_TIMESTAMP,
+                      .payload_buffer_id = 0,
+                      .payload_offset = 0,
+                      .payload_size = kPayloadSize,
+                      .flags = 0,
+                      .buffer_config = 0,
+                      .stream_segment_id = 0,
+                  },
+              },
+          .stream_type_ = fidl::Clone(stream_type),
+          .usage_ = unknown_usage,
+          .block_completion_ = false,
+      },
+  });
+
+  under_test().AddSoundBuffer(0, std::move(buffer), stream_type);
+  bool play_sound_completed = false;
+  under_test().PlaySound2(
+      0, unknown_usage,
+      [&play_sound_completed](fuchsia::media::sounds::Player_PlaySound2_Result result) {
+        EXPECT_TRUE(result.is_err());
+        EXPECT_EQ(fuchsia::media::sounds::PlaySoundError::RENDERER_FAILED, result.err());
+        play_sound_completed = true;
+      });
+  RunLoopUntil([&play_sound_completed]() { return play_sound_completed; });
+
+  under_test().RemoveSound(0);
+  RunLoopUntilIdle();
+}
+
+}  // namespace
 
 }  // namespace soundplayer::test

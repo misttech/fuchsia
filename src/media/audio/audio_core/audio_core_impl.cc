@@ -4,6 +4,7 @@
 
 #include "src/media/audio/audio_core/audio_core_impl.h"
 
+#include <fuchsia/media/audio/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
 #include <lib/syslog/cpp/macros.h>
 
@@ -92,6 +93,10 @@ void AudioCoreImpl::SetRenderUsageGain(fuchsia::media::AudioRenderUsage render_u
 void AudioCoreImpl::SetRenderUsageGain2(fuchsia::media::AudioRenderUsage2 render_usage,
                                         float gain_db) {
   TRACE_DURATION("audio", "AudioCoreImpl::SetRenderUsageGain2");
+  if (render_usage >= fuchsia::media::RENDER_USAGE2_COUNT) {
+    FX_LOGS(WARNING) << "Invalid render usage for SetRenderUsageGain2";
+    return;
+  }
   context_.volume_manager().SetUsageGain(
       fuchsia::media::Usage2::WithRenderUsage(fidl::Clone(render_usage)), gain_db);
 }
@@ -105,6 +110,10 @@ void AudioCoreImpl::SetCaptureUsageGain(fuchsia::media::AudioCaptureUsage captur
 void AudioCoreImpl::SetCaptureUsageGain2(fuchsia::media::AudioCaptureUsage2 capture_usage,
                                          float gain_db) {
   TRACE_DURATION("audio", "AudioCoreImpl::SetCaptureUsageGain2");
+  if (capture_usage >= fuchsia::media::CAPTURE_USAGE2_COUNT) {
+    FX_LOGS(WARNING) << "Invalid render usage for SetCaptureUsageGain2";
+    return;
+  }
   context_.volume_manager().SetUsageGain(
       fuchsia::media::Usage2::WithCaptureUsage(fidl::Clone(capture_usage)), gain_db);
 }
@@ -120,10 +129,21 @@ void AudioCoreImpl::BindUsageVolumeControl2(
     fuchsia::media::Usage2 usage,
     fidl::InterfaceRequest<fuchsia::media::audio::VolumeControl> volume_control) {
   TRACE_DURATION("audio", "AudioCoreImpl::BindUsageVolumeControl2");
+
   if (usage.is_render_usage()) {
-    context_.volume_manager().BindUsageVolumeClient(std::move(usage), std::move(volume_control));
+    if (usage.render_usage() >= fuchsia::media::RENDER_USAGE2_COUNT) {
+      FX_LOGS(WARNING) << "Invalid render usage for BindUsageVolumeControl2";
+      volume_control.Close(ZX_ERR_INVALID_ARGS);
+    } else {
+      context_.volume_manager().BindUsageVolumeClient(std::move(usage), std::move(volume_control));
+    }
   } else {
-    volume_control.Close(ZX_ERR_NOT_SUPPORTED);
+    if (usage.capture_usage() >= fuchsia::media::CAPTURE_USAGE2_COUNT) {
+      FX_LOGS(WARNING) << "Invalid capture usage for BindUsageVolumeControl2";
+      volume_control.Close(ZX_ERR_INVALID_ARGS);
+    } else {
+      volume_control.Close(ZX_ERR_NOT_SUPPORTED);
+    }
   }
 }
 
@@ -134,6 +154,20 @@ void AudioCoreImpl::GetDbFromVolume(fuchsia::media::Usage usage, float volume,
 
 void AudioCoreImpl::GetDbFromVolume2(fuchsia::media::Usage2 usage, float volume,
                                      GetDbFromVolume2Callback callback) {
+  if (usage.is_render_usage()) {
+    if (usage.render_usage() >= fuchsia::media::RENDER_USAGE2_COUNT) {
+      FX_LOGS(WARNING) << "Invalid render usage for GetDbFromVolume2";
+      callback(fpromise::ok(fuchsia::media::audio::MUTED_GAIN_DB));
+      return;
+    }
+  } else {
+    if (usage.capture_usage() >= fuchsia::media::CAPTURE_USAGE2_COUNT) {
+      FX_LOGS(WARNING) << "Invalid capture usage for GetDbFromVolume2";
+      callback(fpromise::ok(fuchsia::media::audio::MUTED_GAIN_DB));
+      return;
+    }
+  }
+
   callback(fpromise::ok(GetDbFromVolumeBase(usage, volume)));
 }
 
@@ -152,6 +186,19 @@ void AudioCoreImpl::GetVolumeFromDb(fuchsia::media::Usage usage, float gain_db,
 
 void AudioCoreImpl::GetVolumeFromDb2(fuchsia::media::Usage2 usage, float gain_db,
                                      GetVolumeFromDb2Callback callback) {
+  if (usage.is_render_usage()) {
+    if (usage.render_usage() >= fuchsia::media::RENDER_USAGE2_COUNT) {
+      FX_LOGS(WARNING) << "Invalid render usage for GetVolumeFromDb2";
+      callback(fpromise::ok(fuchsia::media::audio::MIN_VOLUME));
+      return;
+    }
+  } else {
+    if (usage.capture_usage() >= fuchsia::media::CAPTURE_USAGE2_COUNT) {
+      FX_LOGS(WARNING) << "Invalid capture usage for GetVolumeFromDb2";
+      callback(fpromise::ok(fuchsia::media::audio::MIN_VOLUME));
+      return;
+    }
+  }
   callback(fpromise::ok(GetVolumeFromDbBase(usage, gain_db)));
 }
 
@@ -172,6 +219,23 @@ void AudioCoreImpl::SetInteraction(fuchsia::media::Usage active, fuchsia::media:
 void AudioCoreImpl::SetInteraction2(fuchsia::media::Usage2 active, fuchsia::media::Usage2 affected,
                                     fuchsia::media::Behavior behavior) {
   TRACE_DURATION("audio", "AudioCoreImpl::SetInteraction2");
+  if ((active.is_render_usage() && active.render_usage() >= fuchsia::media::RENDER_USAGE2_COUNT) ||
+      (affected.is_render_usage() &&
+       affected.render_usage() >= fuchsia::media::RENDER_USAGE2_COUNT)) {
+    FX_LOGS(WARNING) << "Invalid render usage for SetInteraction2";
+    return;
+  }
+  if ((active.is_capture_usage() &&
+       active.capture_usage() >= fuchsia::media::CAPTURE_USAGE2_COUNT) ||
+      (affected.is_capture_usage() &&
+       affected.capture_usage() >= fuchsia::media::CAPTURE_USAGE2_COUNT)) {
+    FX_LOGS(WARNING) << "Invalid capture usage for SetInteraction2";
+    return;
+  }
+  if (behavior >= fuchsia::media::BEHAVIOR_COUNT) {
+    FX_LOGS(WARNING) << "Invalid behavior enum for SetInteraction2";
+    return;
+  }
   context_.audio_admin().SetInteraction(std::move(active), std::move(affected), behavior);
 }
 

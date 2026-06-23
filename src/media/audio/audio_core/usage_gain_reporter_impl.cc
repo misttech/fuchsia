@@ -4,6 +4,8 @@
 
 #include "src/media/audio/audio_core/usage_gain_reporter_impl.h"
 
+#include <algorithm>
+
 #include "src/media/audio/audio_core/device_id.h"
 
 namespace media::audio {
@@ -23,6 +25,14 @@ void UsageGainReporterImpl::RegisterListener(
 void UsageGainReporterImpl::RegisterListener2(
     std::string device_unique_id, fuchsia::media::Usage2 usage,
     fidl::InterfaceHandle<fuchsia::media::UsageGainListener> usage_gain_listener_handler) {
+  if (usage.is_render_usage() && usage.render_usage() >= fuchsia::media::RENDER_USAGE2_COUNT) {
+    FX_LOGS(WARNING) << "Invalid render usage for RegisterListener2; ignoring.";
+    return;
+  }
+  if (usage.is_capture_usage() && usage.capture_usage() >= fuchsia::media::CAPTURE_USAGE2_COUNT) {
+    FX_LOGS(WARNING) << "Invalid capture usage for RegisterListener2; ignoring.";
+    return;
+  }
   const auto deserialize_result = DeviceUniqueIdFromString(device_unique_id);
   if (deserialize_result.is_error()) {
     FX_LOGS(WARNING) << "UsageGainReporter client provided invalid device id";
@@ -31,7 +41,7 @@ void UsageGainReporterImpl::RegisterListener2(
   const auto& deserialized_id = deserialize_result.value();
 
   auto devices = device_lister_.GetDeviceInfos();
-  const auto it = std::find_if(devices.begin(), devices.end(), [&device_unique_id](auto candidate) {
+  const auto it = std::ranges::find_if(devices, [&device_unique_id](const auto& candidate) {
     return candidate.unique_id == device_unique_id;
   });
   if (it == devices.end()) {

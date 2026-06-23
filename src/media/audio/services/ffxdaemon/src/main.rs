@@ -17,6 +17,9 @@ use wav_socket::WavSocket;
 
 use anyhow::{Context, Error, anyhow};
 use error::ControllerError;
+use fidl_fuchsia_audio_controller as fac;
+use fidl_fuchsia_media as fmedia;
+use fuchsia_async as fasync;
 use fuchsia_audio::Format;
 use fuchsia_audio::device::Selector;
 use fuchsia_component::server::ServiceFs;
@@ -27,7 +30,6 @@ use futures::{StreamExt, TryStreamExt};
 use log::error;
 use std::sync::Arc;
 use std::time::Duration;
-use {fidl_fuchsia_audio_controller as fac, fuchsia_async as fasync};
 
 /// Wraps all hosted protocols into a single type that can be matched against and dispatched.
 enum IncomingRequest {
@@ -43,6 +45,20 @@ pub async fn handle_play_request(
     let destination = request.destination.ok_or_else(|| {
         ControllerError::new(fac::Error::ArgumentsMissing, format!("destination missing"))
     })?;
+
+    if let fac::PlayDestination::Renderer(fac::RendererConfig::StandardRenderer(ref std_ren)) =
+        destination
+    {
+        if let Some(ref usage) = std_ren.usage {
+            if usage.into_primitive() >= fmedia::RENDER_USAGE2_COUNT as u32 {
+                return Err(ControllerError::new(
+                    fac::Error::InvalidArguments,
+                    format!("Invalid AudioRenderUsage2: usage is >= RENDER_USAGE2_COUNT"),
+                ));
+            }
+        }
+    }
+
     let mut wav_socket = {
         let wav_source = request.wav_source.ok_or_else(|| {
             ControllerError::new(fac::Error::ArgumentsMissing, format!("wav_source missing"))
@@ -116,6 +132,17 @@ pub async fn handle_record_request(
     let source = request.source.ok_or_else(|| {
         ControllerError::new(fac::Error::ArgumentsMissing, format!("source missing"))
     })?;
+    if let fac::RecordSource::Capturer(fac::CapturerConfig::StandardCapturer(ref std_cap)) = source
+    {
+        if let Some(ref usage) = std_cap.usage {
+            if usage.into_primitive() >= fmedia::CAPTURE_USAGE2_COUNT as u32 {
+                return Err(ControllerError::new(
+                    fac::Error::InvalidArguments,
+                    format!("Invalid CaptureUsage2: usage is >= CAPTURE_USAGE2_COUNT"),
+                ));
+            }
+        }
+    }
     let stream_type = request.stream_type.ok_or_else(|| {
         ControllerError::new(fac::Error::ArgumentsMissing, format!("stream_type missing"))
     })?;
@@ -125,8 +152,8 @@ pub async fn handle_record_request(
         })?;
         WavSocket(fasync::Socket::from_socket(wav_data))
     };
-    let duration = request.duration.map(|duration| Duration::from_nanos(duration as u64));
 
+    let duration = request.duration.map(|duration| Duration::from_nanos(duration as u64));
     let format = Format::from(stream_type);
 
     match source {
@@ -275,4 +302,48 @@ async fn main() -> Result<(), Error> {
         .await;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_play_unknown_render_usage() {
+        let connector = Arc::new(Mutex::new(DeviceControlConnector::new()));
+        let request = fac::PlayerPlayRequest {
+            wav_source: Some(fidl::Socket::create_stream().0),
+            destination: Some(fac::PlayDestination::Renderer(
+                fac::RendererConfig::StandardRenderer(fac::StandardRendererConfig {
+                    usage: Some(fmedia::AudioRenderUsage2::from_primitive_allow_unknown(42)),
+                    ..Default::default()
+                }),
+            )),
+            ..Default::default()
+        };
+        let res = handle_play_request(connector, request).await;
+        assert!(res.is_err());
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_record_unknown_capture_usage() {
+        let connector = Arc::new(Mutex::new(DeviceControlConnector::new()));
+        let request = fac::RecorderRecordRequest {
+            wav_data: Some(fidl::Socket::create_stream().0),
+            source: Some(fac::RecordSource::Capturer(fac::CapturerConfig::StandardCapturer(
+                fac::StandardCapturerConfig {
+                    usage: Some(fmedia::AudioCaptureUsage2::from_primitive_allow_unknown(68)),
+                    ..Default::default()
+                },
+            ))),
+            stream_type: Some(fmedia::AudioStreamType {
+                sample_format: fmedia::AudioSampleFormat::Signed16,
+                channels: 1,
+                frames_per_second: 8000,
+            }),
+            ..Default::default()
+        };
+        let res = handle_record_request(connector, request).await;
+        assert!(res.is_err());
+    }
 }

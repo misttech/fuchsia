@@ -102,6 +102,11 @@ void AudioRenderer::SetUsage(fuchsia::media::AudioRenderUsage usage) {
 
 void AudioRenderer::SetUsage2(fuchsia::media::AudioRenderUsage2 usage) {
   TRACE_DURATION("audio", "AudioRenderer::SetUsage2");
+  if (usage >= fuchsia::media::RENDER_USAGE2_COUNT) {
+    FX_LOGS(ERROR) << "Invalid render usage for SetUsage2.";
+    context().route_graph().RemoveRenderer(*this);
+    return;
+  }
   if (format_) {
     FX_LOGS(ERROR) << "SetUsage called after SetPcmStreamType.";
     context().route_graph().RemoveRenderer(*this);

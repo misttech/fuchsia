@@ -11,6 +11,7 @@
 #include "src/media/audio/lib/clock/clone_mono.h"
 
 namespace media::audio::test {
+namespace {
 
 using fuchsia::media::AudioRenderUsage2;
 
@@ -337,6 +338,12 @@ TEST_F(AudioRendererFormatUsageErrorTest, SetUsageAfterOperatingShouldDisconnect
   ExpectDisconnect(audio_renderer());
 }
 
+// Calling SetUsage2 with an unknown AudioRenderUsage2 should cause the AudioRenderer to disconnect
+TEST_F(AudioRendererFormatUsageErrorTest, SetUsage2UnknownFlexibleEnumShouldDisconnect) {
+  audio_renderer()->SetUsage2(static_cast<AudioRenderUsage2>(42));
+  ExpectDisconnect(audio_renderer());
+}
+
 // Once the format has been set, SetUsage2 may no longer be called any time thereafter.
 TEST_F(AudioRendererFormatUsageErrorTest, SetUsage2AfterFormatShouldDisconnect) {
   audio_renderer()->SetPcmStreamType(kTestStreamType);
@@ -469,4 +476,5 @@ TEST_F(AudioRendererTransportErrorTest, PauseWithoutBufferShouldDisconnect) {
   ExpectDisconnect(audio_renderer());
 }
 
+}  // namespace
 }  // namespace media::audio::test

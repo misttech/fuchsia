@@ -6,6 +6,7 @@
 #include <fuchsia/media/cpp/fidl.h>
 
 #include <memory>
+#include <utility>
 
 #include "src/media/audio/audio_core/stream_usage.h"
 #include "src/media/audio/audio_core/testing/integration/hermetic_audio_test.h"
@@ -20,19 +21,20 @@ using fuchsia::media::AudioRenderUsage2;
 namespace {
 class FakeGainListener : public fuchsia::media::UsageGainListener {
  public:
-  explicit FakeGainListener(TestFixture* fixture) : binding_(this) {
-    fixture->AddErrorHandler(binding_, "FakeGainListener");
-  }
+  explicit FakeGainListener(TestFixture* fixture) : fixture_(fixture), binding_(this) {}
 
   fidl::InterfaceHandle<fuchsia::media::UsageGainListener> NewBinding() {
-    return binding_.NewBinding();
+    auto handle = binding_.NewBinding();
+    fixture_->AddErrorHandler(binding_, "FakeGainListener");
+    return handle;
   }
+
+  void ExpectDisconnect() { fixture_->ExpectDisconnects({fixture_->ErrorHandlerFor(binding_)}); }
 
   using Handler = std::function<void(bool muted, float gain_db)>;
 
-  void SetNextHandler(Handler h) { next_handler_ = h; }
+  void SetNextHandler(Handler h) { next_handler_ = std::move(h); }
 
- private:
   // |fuchsia::media::UsageGainListener|
   void OnGainMuteChanged(bool muted, float gain_db, OnGainMuteChangedCallback callback) final {
     if (next_handler_) {
@@ -42,14 +44,18 @@ class FakeGainListener : public fuchsia::media::UsageGainListener {
     callback();
   }
 
+ private:
+  TestFixture* fixture_;
   fidl::Binding<fuchsia::media::UsageGainListener> binding_;
   Handler next_handler_;
 };
-}  // namespace
 
 class UsageGainReporterTest : public HermeticAudioTest {
- public:
-  void SetUp() {
+ protected:
+  // TODO(https://fxbug.dev/42132524): SetMute(true) events are broken
+  static constexpr bool kSetMuteWorking = false;
+
+  void SetUp() override {
     HermeticAudioTest::SetUp();
 
     // We need to create an output device to listen on.
@@ -60,6 +66,7 @@ class UsageGainReporterTest : public HermeticAudioTest {
     CreateOutput(device_id_array_, format, kSampleRate /* 1s buffer */);
   }
 
+ public:
   struct Controller {
     explicit Controller(TestFixture* fixture) : fake_listener(fixture) {}
 
@@ -129,10 +136,12 @@ class UsageGainReporterTest : public HermeticAudioTest {
 
   // The device ID is arbitrary.
   const std::string device_id_string_ = "ff000000000000000000000000000000";
-  const audio_stream_unique_id_t device_id_array_ = {{
-      0xff,
-      0x00,
-  }};
+  const audio_stream_unique_id_t device_id_array_ = {
+      {
+          0xff,
+          0x00,
+      },
+  };
 };
 
 TEST_F(UsageGainReporterTest, SetVolumeAndMute) {
@@ -169,20 +178,20 @@ TEST_F(UsageGainReporterTest, SetVolumeAndMute) {
   EXPECT_FLOAT_EQ(last_gain_db, 0);
 
   // TODO(https://fxbug.dev/42132524): SetMute(true) events are broken
-#if 0
-  set_callback("SetMute(true)");
-  c->volume_control->SetMute(true);
-  ExpectCallbacks();
-  EXPECT_TRUE(last_muted);
-  EXPECT_FLOAT_EQ(last_gain_db, fuchsia::media::audio::MUTED_GAIN_DB);
+  if constexpr (kSetMuteWorking) {
+    set_callback("SetMute(true)");
+    c->volume_control->SetMute(true);
+    ExpectCallbacks();
+    EXPECT_TRUE(last_muted);
+    EXPECT_FLOAT_EQ(last_gain_db, fuchsia::media::audio::MUTED_GAIN_DB);
 
-  // Unmute should restore the volume.
-  set_callback("SetMute(false)");
-  c->volume_control->SetMute(false);
-  ExpectCallbacks();
-  EXPECT_FALSE(last_muted);
-  EXPECT_FLOAT_EQ(last_gain_db, 0);
-#endif
+    // Unmute should restore the volume.
+    set_callback("SetMute(false)");
+    c->volume_control->SetMute(false);
+    ExpectCallbacks();
+    EXPECT_FALSE(last_muted);
+    EXPECT_FLOAT_EQ(last_gain_db, 0);
+  }
 }
 
 TEST_F(UsageGainReporterTest, SetVolumeAndMute2) {
@@ -219,20 +228,20 @@ TEST_F(UsageGainReporterTest, SetVolumeAndMute2) {
   EXPECT_FLOAT_EQ(last_gain_db, 0);
 
   // TODO(https://fxbug.dev/42132524): SetMute(true) events are broken
-#if 0
-  set_callback("SetMute(true)");
-  c->volume_control->SetMute(true);
-  ExpectCallbacks();
-  EXPECT_TRUE(last_muted);
-  EXPECT_FLOAT_EQ(last_gain_db, fuchsia::media::audio::MUTED_GAIN_DB);
+  if constexpr (kSetMuteWorking) {
+    set_callback("SetMute(true)");
+    c->volume_control->SetMute(true);
+    ExpectCallbacks();
+    EXPECT_TRUE(last_muted);
+    EXPECT_FLOAT_EQ(last_gain_db, fuchsia::media::audio::MUTED_GAIN_DB);
 
-  // Unmute should restore the volume.
-  set_callback("SetMute(false)");
-  c->volume_control->SetMute(false);
-  ExpectCallbacks();
-  EXPECT_FALSE(last_muted);
-  EXPECT_FLOAT_EQ(last_gain_db, 0);
-#endif
+    // Unmute should restore the volume.
+    set_callback("SetMute(false)");
+    c->volume_control->SetMute(false);
+    ExpectCallbacks();
+    EXPECT_FALSE(last_muted);
+    EXPECT_FLOAT_EQ(last_gain_db, 0);
+  }
 }
 
 TEST_F(UsageGainReporterTest, RoutedCorrectly) {
@@ -350,5 +359,35 @@ TEST_F(UsageGainReporterTest, SetCaptureUsageGain2) {
   EXPECT_FALSE(last_muted);
   EXPECT_FLOAT_EQ(last_gain_db, capture_usage_gain_db);
 }
+
+// When RegisterListener2 is called with an unknown RenderUsage2 enum, the passed-in listener should
+// disconnect without causing the preexisting UsageGainReporter connection to disconnect.
+TEST_F(UsageGainReporterTest, RegisterListener2UnknownFlexibleEnumRenderUsage2) {
+  FakeGainListener fake_listener(this);
+  fuchsia::media::UsageGainReporterPtr gain_reporter;
+  realm().Connect(gain_reporter.NewRequest());
+  AddErrorHandler(gain_reporter, "GainReporter");
+
+  auto usage = fuchsia::media::Usage2::WithRenderUsage(static_cast<AudioRenderUsage2>(68));
+  gain_reporter->RegisterListener2(device_id_string_, std::move(usage), fake_listener.NewBinding());
+  fake_listener.ExpectDisconnect();
+  EXPECT_TRUE(gain_reporter.is_bound());
+}
+
+// When RegisterListener2 is called with an unknown CaptureUsage2 enum, the passed-in listener
+// should disconnect without causing the preexisting UsageGainReporter connection to disconnect.
+TEST_F(UsageGainReporterTest, RegisterListener2UnknownFlexibleEnumCaptureUsage2) {
+  FakeGainListener fake_listener(this);
+  fuchsia::media::UsageGainReporterPtr gain_reporter;
+  realm().Connect(gain_reporter.NewRequest());
+  AddErrorHandler(gain_reporter, "GainReporter");
+
+  auto usage = fuchsia::media::Usage2::WithCaptureUsage(static_cast<AudioCaptureUsage2>(42));
+  gain_reporter->RegisterListener2(device_id_string_, std::move(usage), fake_listener.NewBinding());
+  fake_listener.ExpectDisconnect();
+  EXPECT_TRUE(gain_reporter.is_bound());
+}
+
+}  // namespace
 
 }  // namespace media::audio::test

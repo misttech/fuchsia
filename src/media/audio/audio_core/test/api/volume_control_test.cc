@@ -12,6 +12,7 @@ using fuchsia::media::AudioCaptureUsage2;
 using fuchsia::media::AudioRenderUsage2;
 
 namespace media::audio::test {
+namespace {
 
 class VolumeControlTest : public HermeticAudioTest {
  protected:
@@ -86,6 +87,22 @@ TEST_F(VolumeControlTest, RoutedCorrectly) {
   ExpectCallbacks();
 }
 
+// If BindUsageVolumeControl2 is called with an unknown RenderUsage2, the client should not connect
+// (ZX_ERR_INVALID_ARGS) but the preexisting AudioCore connection should not be affected.
+TEST_F(VolumeControlTest, FailToConnectToUnknownRenderUsageVolume) {
+  fuchsia::media::audio::VolumeControlPtr client;
+  audio_core_->BindUsageVolumeControl2(
+      fuchsia::media::Usage2::WithRenderUsage(static_cast<AudioRenderUsage2>(68)),
+      client.NewRequest());
+  AddErrorHandler(client, "VolumeControl");
+
+  ExpectError(client, ZX_ERR_INVALID_ARGS);
+  RunLoopUntilIdle();
+  EXPECT_TRUE(audio_core_.is_bound());
+}
+
+// If BindUsageVolumeControl2 is called with a CaptureUsage, the client should not connect
+// (ZX_ERR_NOT_SUPPORTED) but the preexisting AudioCore connection should not be affected.
 TEST_F(VolumeControlTest, FailToConnectToCaptureUsageVolume) {
   fuchsia::media::audio::VolumeControlPtr client;
   audio_core_->BindUsageVolumeControl2(ToFidlUsage2(CaptureUsage::SYSTEM_AGENT),
@@ -93,6 +110,22 @@ TEST_F(VolumeControlTest, FailToConnectToCaptureUsageVolume) {
   AddErrorHandler(client, "VolumeControl");
 
   ExpectError(client, ZX_ERR_NOT_SUPPORTED);
+  RunLoopUntilIdle();
+  EXPECT_TRUE(audio_core_.is_bound());
+}
+
+// If BindUsageVolumeControl2 is called with an unknown CaptureUsage2, the client should not connect
+// (ZX_ERR_INVALID_ARGS) but the preexisting AudioCore connection should not be affected.
+TEST_F(VolumeControlTest, FailToConnectToUnknownCaptureUsageVolume) {
+  fuchsia::media::audio::VolumeControlPtr client;
+  audio_core_->BindUsageVolumeControl2(
+      fuchsia::media::Usage2::WithCaptureUsage(static_cast<AudioCaptureUsage2>(42)),
+      client.NewRequest());
+  AddErrorHandler(client, "VolumeControl");
+
+  ExpectError(client, ZX_ERR_INVALID_ARGS);
+  RunLoopUntilIdle();
+  EXPECT_TRUE(audio_core_.is_bound());
 }
 
 TEST_F(VolumeControlTest, VolumeCurveLookups) {
@@ -170,4 +203,5 @@ TEST_F(VolumeControlTest, Volume2CurveLookups) {
   EXPECT_EQ(volume_lookup, 1.0f);
 }
 
+}  // namespace
 }  // namespace media::audio::test

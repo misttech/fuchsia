@@ -216,20 +216,21 @@ impl Player {
         published_sender: oneshot::Sender<()>,
     ) -> Result<Self> {
         let inspect_state = inspect_handle.create_child("state");
-        let usage2: Option<AudioRenderUsage2> =
-            // If client did not explicitly set 'usage2', set it from 'usage'.
-            registration.usage2.or(match registration.usage {
+        let usage2 = registration
+            .usage2
+            .filter(|u| u.into_primitive() < RENDER_USAGE2_COUNT as u32)
+            .or(match registration.usage {
+                // If client did not explicitly set 'usage2', set it from 'usage'.
                 Some(AudioRenderUsage::Background) => Some(AudioRenderUsage2::Background),
                 Some(AudioRenderUsage::Communication) => Some(AudioRenderUsage2::Communication),
                 Some(AudioRenderUsage::Interruption) => Some(AudioRenderUsage2::Interruption),
                 Some(AudioRenderUsage::Media) => Some(AudioRenderUsage2::Media),
                 Some(AudioRenderUsage::SystemAgent) => Some(AudioRenderUsage2::SystemAgent),
                 None => None,
-            });
+            })
+            .unwrap_or(AudioRenderUsage2::Media);
         let mut valid_registration = ValidPlayerRegistration::try_from(registration)?;
-        if usage2.is_some() {
-            valid_registration.usage2 = usage2.unwrap();
-        }
+        valid_registration.usage2 = usage2;
         Ok(Player {
             id,
             inner: client_end.into_proxy(),
@@ -247,6 +248,11 @@ impl Player {
 
     pub fn id(&self) -> SessionId {
         self.id.get()
+    }
+
+    #[cfg(test)]
+    pub fn usage2(&self) -> AudioRenderUsage2 {
+        self.registration.usage2
     }
 
     /// Notify any listeners on the other side of the `published_sender` oneshot channel that it's
@@ -657,6 +663,27 @@ mod test {
             test_player: {state: { player_capabilities: "ValidPlayerCapabilities { flags: PlayerCapabilityFlags(PLAY | PAUSE) }"}}
         });
 
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn new_player_with_unknown_usage2_falls_back_to_default() -> Result<()> {
+        let (player_client, _player_server) = create_endpoints::<PlayerMarker>();
+        let inspector = Inspector::default();
+        let (player_published_sink, _player_published_receiver) = oneshot::channel();
+        let player = Player::new(
+            Id::new().expect("Creating id for test player"),
+            player_client,
+            PlayerRegistration {
+                domain: Some(TEST_DOMAIN.to_string()),
+                usage2: Some(AudioRenderUsage2::from_primitive_allow_unknown(42)),
+                ..Default::default()
+            },
+            inspector.root().create_child("test_player"),
+            player_published_sink,
+        )
+        .expect("Creating player");
+        assert_eq!(player.usage2(), AudioRenderUsage2::Media);
         Ok(())
     }
 }

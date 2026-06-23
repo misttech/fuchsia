@@ -4,6 +4,7 @@
 
 #include "src/media/sounds/soundplayer/sound_player_impl.h"
 
+#include <fuchsia/media/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/default.h>
 #include <lib/fdio/fd.h>
@@ -46,7 +47,7 @@ void SoundPlayerImpl::handle_unknown_method(uint64_t ordinal, bool method_has_re
 void SoundPlayerImpl::AddSoundFromFile(uint32_t id,
                                        fidl::InterfaceHandle<class fuchsia::io::File> file,
                                        AddSoundFromFileCallback callback) {
-  if (sounds_by_id_.find(id) != sounds_by_id_.end()) {
+  if (sounds_by_id_.contains(id)) {
     FX_LOGS(WARNING) << "AddSoundFromFile called with id " << id
                      << " already in use, closing client connection";
     DeleteThis();
@@ -69,7 +70,7 @@ void SoundPlayerImpl::AddSoundFromFile(uint32_t id,
 
 void SoundPlayerImpl::AddSoundBuffer(uint32_t id, fuchsia::mem::Buffer buffer,
                                      fuchsia::media::AudioStreamType stream_type) {
-  if (sounds_by_id_.find(id) != sounds_by_id_.end()) {
+  if (sounds_by_id_.contains(id)) {
     FX_LOGS(WARNING) << "AddSoundBuffer called with id " << id
                      << " already in use, closing client connection";
     DeleteThis();
@@ -118,6 +119,12 @@ void SoundPlayerImpl::PlaySound(uint32_t id, fuchsia::media::AudioRenderUsage _u
 }
 void SoundPlayerImpl::PlaySound2(uint32_t id, fuchsia::media::AudioRenderUsage2 usage,
                                  PlaySound2Callback callback) {
+  if (usage >= fuchsia::media::RENDER_USAGE2_COUNT) {
+    FX_LOGS(WARNING) << "Invalid render usage for PlaySound2";
+    callback(fuchsia::media::sounds::Player_PlaySound2_Result::WithErr(
+        fuchsia::media::sounds::PlaySoundError::RENDERER_FAILED));
+    return;
+  }
   auto iter = sounds_by_id_.find(id);
   if (iter == sounds_by_id_.end()) {
     callback(fuchsia::media::sounds::Player_PlaySound2_Result::WithErr(
@@ -173,10 +180,11 @@ void SoundPlayerImpl::DeleteThis() {
 void SoundPlayerImpl::WhenAudioServiceIsWarm(fit::closure callback) {
   audio_service_->CreateAudioRenderer(audio_renderer_.NewRequest());
 
-  audio_renderer_->SetPcmStreamType(
-      fuchsia::media::AudioStreamType{.sample_format = fuchsia::media::AudioSampleFormat::SIGNED_16,
-                                      .channels = 1,
-                                      .frames_per_second = 48000});
+  audio_renderer_->SetPcmStreamType(fuchsia::media::AudioStreamType{
+      .sample_format = fuchsia::media::AudioSampleFormat::SIGNED_16,
+      .channels = 1,
+      .frames_per_second = 48000,
+  });
 
   audio_renderer_->EnableMinLeadTimeEvents(true);
   audio_renderer_.events().OnMinLeadTimeChanged =

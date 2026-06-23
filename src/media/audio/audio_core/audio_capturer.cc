@@ -166,6 +166,11 @@ void AudioCapturer::SetUsage(fuchsia::media::AudioCaptureUsage usage) {
 
 void AudioCapturer::SetUsage2(fuchsia::media::AudioCaptureUsage2 usage) {
   TRACE_DURATION("audio", "AudioCapturer::SetUsage2");
+  if (usage >= fuchsia::media::CAPTURE_USAGE2_COUNT) {
+    FX_LOGS(ERROR) << "Invalid capture usage for SetUsage2.";
+    context().route_graph().RemoveCapturer(*this);
+    return;
+  }
   if (usage_ == ToCaptureUsage(usage)) {
     return;
   }

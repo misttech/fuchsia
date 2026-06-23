@@ -46,6 +46,8 @@ const char* ToString(const RenderUsage& usage) {
     return "RenderUsage::" #U;
     EXPAND_EACH_RENDER_USAGE
 #undef EXPAND_RENDER_USAGE
+    default:
+      return "RenderUsage::UNKNOWN";
   }
 }
 
@@ -56,6 +58,8 @@ const char* ToString(const CaptureUsage& usage) {
     return "CaptureUsage::" #U;
     EXPAND_EACH_CAPTURE_USAGE
 #undef EXPAND_CAPTURE_USAGE
+    default:
+      return "CaptureUsage::UNKNOWN";
   }
 }
 
@@ -66,7 +70,7 @@ const char* StreamUsage::ToString() const {
   if (is_capture_usage()) {
     return media::audio::ToString(capture_usage());
   }
-  return "(empty usage)";
+  return "StreamUsage::UNKNOWN";
 }
 
 // StreamUsage

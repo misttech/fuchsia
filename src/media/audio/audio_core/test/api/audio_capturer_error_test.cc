@@ -9,6 +9,7 @@
 #include "src/media/audio/lib/clock/clone_mono.h"
 
 namespace media::audio::test {
+namespace {
 
 class AudioCapturerErrorTestOldAPI : public AudioCapturerTestOldAPI {};
 class AudioCapturerErrorTest : public AudioCapturerTest {};
@@ -288,4 +289,11 @@ TEST_F(AudioCapturerClockTestOldAPI, SetRefClockAfterAsyncCaptureShouldDisconnec
   ExpectDisconnect(audio_capturer());
 }
 
+// Calling SetUsage2 with an unknown AudioCaptureUsage2 should cause the AudioCapturer to disconnect
+TEST_F(AudioCapturerErrorTestOldAPI, SetUsage2UnknownFlexibleEnumShouldDisconnect) {
+  audio_capturer()->SetUsage2(static_cast<fuchsia::media::AudioCaptureUsage2>(42));
+  ExpectDisconnect(audio_capturer());
+}
+
+}  // namespace
 }  // namespace media::audio::test

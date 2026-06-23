@@ -94,17 +94,21 @@ enum class RenderUsage : uint32_t {
 #undef EXPAND_RENDER_USAGE
 };
 
-constexpr std::array<RenderUsage, fuchsia::media::RENDER_USAGE2_COUNT> kFidlRenderUsages = {{
+constexpr std::array<RenderUsage, fuchsia::media::RENDER_USAGE2_COUNT> kFidlRenderUsages = {
+    {
 #define EXPAND_RENDER_USAGE(U) RenderUsage::U,
-    EXPAND_EACH_FIDL_RENDER_USAGE
+        EXPAND_EACH_FIDL_RENDER_USAGE
 #undef EXPAND_RENDER_USAGE
-}};
+    },
+};
 
-constexpr std::array<RenderUsage, kStreamRenderUsageCount> kRenderUsages = {{
+constexpr std::array<RenderUsage, kStreamRenderUsageCount> kRenderUsages = {
+    {
 #define EXPAND_RENDER_USAGE(U) RenderUsage::U,
-    EXPAND_EACH_RENDER_USAGE
+        EXPAND_EACH_RENDER_USAGE
 #undef EXPAND_RENDER_USAGE
-}};
+    },
+};
 
 static constexpr uint32_t kStreamCaptureUsageCount =
     fuchsia::media::CAPTURE_USAGE2_COUNT + kStreamInternalCaptureUsageCount;
@@ -117,17 +121,21 @@ enum class CaptureUsage : uint32_t {
 #undef EXPAND_CAPTURE_USAGE
 };
 
-constexpr std::array<CaptureUsage, fuchsia::media::CAPTURE_USAGE2_COUNT> kFidlCaptureUsages = {{
+constexpr std::array<CaptureUsage, fuchsia::media::CAPTURE_USAGE2_COUNT> kFidlCaptureUsages = {
+    {
 #define EXPAND_CAPTURE_USAGE(U) CaptureUsage::U,
-    EXPAND_EACH_FIDL_CAPTURE_USAGE
+        EXPAND_EACH_FIDL_CAPTURE_USAGE
 #undef EXPAND_CAPTURE_USAGE
-}};
+    },
+};
 
-constexpr std::array<CaptureUsage, kStreamCaptureUsageCount> kCaptureUsages = {{
+constexpr std::array<CaptureUsage, kStreamCaptureUsageCount> kCaptureUsages = {
+    {
 #define EXPAND_CAPTURE_USAGE(U) CaptureUsage::U,
-    EXPAND_EACH_CAPTURE_USAGE
+        EXPAND_EACH_CAPTURE_USAGE
 #undef EXPAND_CAPTURE_USAGE
-}};
+    },
+};
 
 static constexpr uint32_t kStreamUsageCount = kStreamRenderUsageCount + kStreamCaptureUsageCount;
 
@@ -141,7 +149,6 @@ static constexpr uint32_t kStreamUsageCount = kStreamRenderUsageCount + kStreamC
 RenderUsage ToRenderUsage(fuchsia::media::AudioRenderUsage u);
 RenderUsage ToRenderUsage(fuchsia_media::AudioRenderUsage u);
 RenderUsage ToRenderUsage(fuchsia::media::AudioRenderUsage2 u);
-RenderUsage ToRenderUsage(fuchsia_media::AudioRenderUsage2 u);
 RenderUsage ToRenderUsage(fuchsia_media::AudioRenderUsage2 u);
 
 // CaptureUsage
@@ -201,14 +208,16 @@ class StreamUsage {
   Usage usage_;
 };
 
-constexpr std::array<StreamUsage, kStreamUsageCount> kStreamUsages = {{
+constexpr std::array<StreamUsage, kStreamUsageCount> kStreamUsages = {
+    {
 #define EXPAND_RENDER_USAGE(U) StreamUsage::WithRenderUsage(RenderUsage::U),
-    EXPAND_EACH_RENDER_USAGE
+        EXPAND_EACH_RENDER_USAGE
 #undef EXPAND_RENDER_USAGE
 #define EXPAND_CAPTURE_USAGE(U) StreamUsage::WithCaptureUsage(CaptureUsage::U),
-        EXPAND_EACH_CAPTURE_USAGE
+            EXPAND_EACH_CAPTURE_USAGE
 #undef EXPAND_CAPTURE_USAGE
-}};
+    },
+};
 
 // Guaranteed to be dense, with values ranging from 0 to kStreamUsageCount inclusive.
 static constexpr uint32_t HashStreamUsage(const StreamUsage& u) {

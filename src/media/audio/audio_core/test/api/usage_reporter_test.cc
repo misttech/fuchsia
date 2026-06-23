@@ -14,22 +14,25 @@ using fuchsia::media::AudioRenderUsage2;
 using fuchsia::media::AudioSampleFormat;
 
 namespace media::audio::test {
-
 namespace {
+
 class FakeUsageWatcher : public fuchsia::media::UsageWatcher {
  public:
-  explicit FakeUsageWatcher(TestFixture* fixture) : binding_(this) {
-    fixture->AddErrorHandler(binding_, "FakeUsageWatcher");
+  explicit FakeUsageWatcher(TestFixture* fixture) : fixture_(fixture), binding_(this) {}
+
+  fidl::InterfaceHandle<fuchsia::media::UsageWatcher> NewBinding() {
+    auto handle = binding_.NewBinding();
+    fixture_->AddErrorHandler(binding_, "FakeUsageWatcher");
+    return handle;
   }
 
-  fidl::InterfaceHandle<fuchsia::media::UsageWatcher> NewBinding() { return binding_.NewBinding(); }
+  void ExpectDisconnect() { fixture_->ExpectDisconnects({fixture_->ErrorHandlerFor(binding_)}); }
 
   using Handler =
       std::function<void(fuchsia::media::Usage2 usage, fuchsia::media::UsageState usage_state)>;
 
   void SetNextHandler(Handler h) { next_handler_ = std::move(h); }
 
- private:
   void OnStateChanged(fuchsia::media::Usage _usage, fuchsia::media::UsageState usage_state,
                       OnStateChangedCallback callback) override {
     auto usage = ToFidlUsage2(_usage);
@@ -40,26 +43,29 @@ class FakeUsageWatcher : public fuchsia::media::UsageWatcher {
     callback();
   }
 
+ private:
+  TestFixture* fixture_;
   fidl::Binding<fuchsia::media::UsageWatcher> binding_;
   Handler next_handler_;
 };
 
 class FakeUsageWatcher2 : public fuchsia::media::UsageWatcher2 {
  public:
-  explicit FakeUsageWatcher2(TestFixture* fixture) : binding_(this) {
-    fixture->AddErrorHandler(binding_, "FakeUsageWatcher2");
-  }
+  explicit FakeUsageWatcher2(TestFixture* fixture) : fixture_(fixture), binding_(this) {}
 
   fidl::InterfaceHandle<fuchsia::media::UsageWatcher2> NewBinding() {
-    return binding_.NewBinding();
+    auto handle = binding_.NewBinding();
+    fixture_->AddErrorHandler(binding_, "FakeUsageWatcher2");
+    return handle;
   }
+
+  void ExpectDisconnect() { fixture_->ExpectDisconnects({fixture_->ErrorHandlerFor(binding_)}); }
 
   using Handler =
       std::function<void(fuchsia::media::Usage2 usage, fuchsia::media::UsageState usage_state)>;
 
   void SetNextHandler(Handler h) { next_handler_ = std::move(h); }
 
- private:
   void OnStateChanged(fuchsia::media::Usage2 usage, fuchsia::media::UsageState usage_state,
                       OnStateChangedCallback callback) override {
     if (next_handler_) {
@@ -69,10 +75,11 @@ class FakeUsageWatcher2 : public fuchsia::media::UsageWatcher2 {
     callback();
   }
 
+ private:
+  TestFixture* fixture_;
   fidl::Binding<fuchsia::media::UsageWatcher2> binding_;
   Handler next_handler_;
 };
-}  // namespace
 
 class UsageReporterTest : public HermeticAudioTest {
  protected:
@@ -316,4 +323,21 @@ TEST_F(UsageReporterTest, CaptureUsage2Ducked) { TestCaptureDucked<Controller2>(
 TEST_F(UsageReporterTest, CaptureUsageMuted) { TestCaptureMuted<Controller>(); }
 TEST_F(UsageReporterTest, CaptureUsage2Muted) { TestCaptureMuted<Controller2>(); }
 
+// When Watch2 is called with an unknown RenderUsage2 enum, the passed-in watcher should disconnect
+// without causing the primary UsageReporter connection to disconnect.
+TEST_F(UsageReporterTest, Watch2UnknownFlexibleEnumRenderUsage2) {
+  auto c = CreateController<Controller2>(static_cast<AudioRenderUsage2>(42));
+  c->fake_watcher.ExpectDisconnect();
+  EXPECT_TRUE(c->usage_reporter.is_bound());
+}
+
+// When Watch2 is called with an unknown CaptureUsage2 enum, the passed-in watcher should disconnect
+// without causing the primary UsageReporter connection to disconnect.
+TEST_F(UsageReporterTest, Watch2UnknownFlexibleEnumCaptureUsage2) {
+  auto c = CreateController<Controller2>(static_cast<AudioCaptureUsage2>(68));
+  c->fake_watcher.ExpectDisconnect();
+  EXPECT_TRUE(c->usage_reporter.is_bound());
+}
+
+}  // namespace
 }  // namespace media::audio::test

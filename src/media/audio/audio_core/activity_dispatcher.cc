@@ -37,7 +37,7 @@ std::vector<AudioRenderUsage2> ActivityToRenderUsage2Vector(
 
   for (uint8_t i = 0u; i < fuchsia::media::RENDER_USAGE2_COUNT; i++) {
     if (activity[i]) {
-      usage_vector.push_back(AudioRenderUsage2(i));
+      usage_vector.emplace_back(i);
     }
   }
   return usage_vector;
@@ -63,7 +63,7 @@ std::vector<AudioCaptureUsage2> ActivityToCaptureUsage2Vector(
 
   for (uint8_t i = 0u; i < fuchsia::media::CAPTURE_USAGE2_COUNT; i++) {
     if (activity[i]) {
-      usage_vector.push_back(AudioCaptureUsage2(i));
+      usage_vector.emplace_back(i);
     }
   }
   return usage_vector;
@@ -86,21 +86,23 @@ class ActivityDispatcherImpl::ActivityReporterImpl : public fuchsia::media::Acti
   // Handle unresponsive client.
   void OnClientError();
 
- private:
-  // The legacy WatchRenderActivity method is only aware of the first
-  // five render usages. For those two methods only, we mask off
-  // any other usages from the vectors we return.
-  static constexpr uint8_t kLegacyRenderActivityBitmask = 0b00011111;
-
   // |fuchsia::media::ActivityReporter|
   void WatchRenderActivity(WatchRenderActivityCallback callback) override;
   void WatchCaptureActivity(WatchCaptureActivityCallback callback) override;
   void WatchRenderActivity2(WatchRenderActivity2Callback callback) override;
   void WatchCaptureActivity2(WatchCaptureActivity2Callback callback) override;
+
+ protected:
   void handle_unknown_method(uint64_t ordinal, bool method_has_response) override {
     FX_LOGS(ERROR) << "ActivityReporterImpl: ActivityReporter::handle_unknown_method(ordinal "
                    << ordinal << ", method_has_response " << method_has_response << ")";
   }
+
+ private:
+  // The legacy WatchRenderActivity method is only aware of the first
+  // five render usages. For those two methods only, we mask off
+  // any other usages from the vectors we return.
+  static constexpr uint8_t kLegacyRenderActivityBitmask = 0b00011111;
 
   void MaybeSendRenderActivity();
   void MaybeSendCaptureActivity();
@@ -233,7 +235,7 @@ void ActivityDispatcherImpl::ActivityReporterImpl::MaybeSendRenderActivity() {
   last_known_legacy_render_activity &= kLegacyRenderActivityBitmask;
 
   if (last_sent_render_activity_.has_value() &&
-      (last_sent_render_activity_.value() == last_known_legacy_render_activity)) {
+      last_sent_render_activity_.value() == last_known_legacy_render_activity) {
     return;
   }
 
@@ -252,7 +254,7 @@ void ActivityDispatcherImpl::ActivityReporterImpl::MaybeSendCaptureActivity() {
   }
 
   if (last_sent_capture_activity_.has_value() &&
-      (last_sent_capture_activity_.value() == last_known_capture_activity_)) {
+      last_sent_capture_activity_.value() == last_known_capture_activity_) {
     return;
   }
 
@@ -275,7 +277,7 @@ void ActivityDispatcherImpl::ActivityReporterImpl::MaybeSendRenderActivity2() {
   }
 
   if (last_sent_render_activity_2_.has_value() &&
-      (last_sent_render_activity_2_.value() == last_known_render_activity_)) {
+      last_sent_render_activity_2_.value() == last_known_render_activity_) {
     return;
   }
 
@@ -297,7 +299,7 @@ void ActivityDispatcherImpl::ActivityReporterImpl::MaybeSendCaptureActivity2() {
   }
 
   if (last_sent_capture_activity_2_.has_value() &&
-      (last_sent_capture_activity_2_.value() == last_known_capture_activity_)) {
+      last_sent_capture_activity_2_.value() == last_known_capture_activity_) {
     return;
   }
 

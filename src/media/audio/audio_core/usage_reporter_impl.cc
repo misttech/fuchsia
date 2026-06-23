@@ -4,6 +4,7 @@
 
 #include "src/media/audio/audio_core/usage_reporter_impl.h"
 
+#include <fuchsia/media/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 
 namespace media::audio {
@@ -33,6 +34,15 @@ void UsageReporterImpl::Watch(
 void UsageReporterImpl::Watch2(
     fuchsia::media::Usage2 usage,
     fidl::InterfaceHandle<fuchsia::media::UsageWatcher2> usage_state_watcher) {
+  if (usage.is_render_usage() && usage.render_usage() >= fuchsia::media::RENDER_USAGE2_COUNT) {
+    FX_LOGS(WARNING) << "Invalid render usage for Watch2; ignoring.";
+    return;
+  }
+  if (usage.is_capture_usage() && usage.capture_usage() >= fuchsia::media::CAPTURE_USAGE2_COUNT) {
+    FX_LOGS(WARNING) << "Invalid capture usage for Watch2; ignoring.";
+    return;
+  }
+
   auto watcher = usage_state_watcher.Bind();
   auto& set = watcher_set2(usage);
   int current_id = next_watcher_id_++;

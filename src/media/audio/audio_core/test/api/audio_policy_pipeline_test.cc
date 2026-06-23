@@ -13,8 +13,8 @@
 #include "src/media/audio/audio_core/testing/integration/renderer_shim.h"
 
 namespace media::audio::test {
-
 namespace {
+
 constexpr auto kSampleFormat = fuchsia::media::AudioSampleFormat::SIGNED_16;
 constexpr int32_t kSampleRate = 8000;
 constexpr int kChannelCount = 1;
@@ -27,7 +27,6 @@ const int kRingBufferBytes = kRingBufferFrames * kFormat.bytes_per_frame();
 // Extra delay in Play() calls to account for scheduling latency.
 // This is intentionally set higher than likely necessary to reduce the chance of flakes.
 constexpr auto kPlayLeadTimeTolerance = zx::msec(30);
-}  // namespace
 
 using fuchsia::media::AudioCaptureUsage2;
 using fuchsia::media::AudioRenderUsage2;
@@ -39,10 +38,6 @@ using fuchsia::media::Usage2;
 // Base Class for testing simple playback and capture with policy rules.
 class AudioAdminTest : public HermeticAudioTest {
  protected:
-  // We add this duration, in MS, to our lead time to make sure mixing has
-  // completed.  5ms had a 0.5% failure rate when running in a loop.
-  static const int kSampleDelayAddition = 5;
-
   static constexpr int16_t kInitialCaptureData = 0x7fff;
   static constexpr int16_t kPlaybackData1 = 0x1111;
   static constexpr int16_t kDuckedPlaybackData1 = 0x4e;  // reduced by 35dB
@@ -101,8 +96,26 @@ void AudioAdminTest::TearDown() {
   HermeticAudioTest::TearDown();
 }
 
-constexpr audio_stream_unique_id_t kUniqueId{{0x4a, 0x41, 0x49, 0x4a, 0x4a, 0x41, 0x49, 0x4a, 0x4a,
-                                              0x41, 0x49, 0x4a, 0x4a, 0x41, 0x49, 0x4a}};
+constexpr audio_stream_unique_id_t kUniqueId{
+    {
+        0x4a,
+        0x41,
+        0x49,
+        0x4a,
+        0x4a,
+        0x41,
+        0x49,
+        0x4a,
+        0x4a,
+        0x41,
+        0x49,
+        0x4a,
+        0x4a,
+        0x41,
+        0x49,
+        0x4a,
+    },
+};
 
 // SetUpVirtualAudioOutput
 //
@@ -112,8 +125,26 @@ void AudioAdminTest::SetUpVirtualAudioOutput() {
 }
 
 void AudioAdminTest::SetUpVirtualAudioInput() {
-  const audio_stream_unique_id_t kUniqueId{{0x4a, 0x41, 0x49, 0x4a, 0x4a, 0x41, 0x49, 0x4a, 0x4a,
-                                            0x41, 0x49, 0x4a, 0x4a, 0x41, 0x49, 0x4b}};
+  const audio_stream_unique_id_t kUniqueId{
+      {
+          0x4a,
+          0x41,
+          0x49,
+          0x4a,
+          0x4a,
+          0x41,
+          0x49,
+          0x4a,
+          0x4a,
+          0x41,
+          0x49,
+          0x4a,
+          0x4a,
+          0x41,
+          0x49,
+          0x4b,
+      },
+  };
 
   auto input = CreateInput(kUniqueId, kFormat, kRingBufferFrames);
 
@@ -749,4 +780,40 @@ TEST_F(AudioAdminTest, DISABLED_DualCaptureStreamMute) {
   ExpectPacketContains("captured2", *captured2, 10, 0x0);
 }
 
+// Calling SetInteraction2 with unknown Usage2 or Behavior should be ignored (should not disconnect)
+TEST_F(AudioAdminTest, SetInteractionUnknownEnums) {
+  audio_core_->ResetInteractions();
+
+  fuchsia::media::Usage2 unknown_render_usage =
+      fuchsia::media::Usage2::WithRenderUsage(static_cast<fuchsia::media::AudioRenderUsage2>(42));
+  fuchsia::media::Usage2 unknown_capture_usage =
+      fuchsia::media::Usage2::WithCaptureUsage(static_cast<fuchsia::media::AudioCaptureUsage2>(68));
+  fuchsia::media::Behavior unknown_behavior = static_cast<fuchsia::media::Behavior>(100);
+
+  audio_core_->SetInteraction2(fidl::Clone(unknown_render_usage),
+                               fuchsia::media::Usage2::WithRenderUsage(
+                                   fidl::Clone(fuchsia::media::AudioRenderUsage2::SYSTEM_AGENT)),
+                               fuchsia::media::Behavior::DUCK);
+
+  audio_core_->SetInteraction2(fuchsia::media::Usage2::WithRenderUsage(
+                                   fidl::Clone(fuchsia::media::AudioRenderUsage2::ACCESSIBILITY)),
+                               fidl::Clone(unknown_capture_usage), fuchsia::media::Behavior::MUTE);
+
+  audio_core_->SetInteraction2(fuchsia::media::Usage2::WithRenderUsage(
+                                   fidl::Clone(fuchsia::media::AudioRenderUsage2::MEDIA)),
+                               fuchsia::media::Usage2::WithRenderUsage(
+                                   fidl::Clone(fuchsia::media::AudioRenderUsage2::BACKGROUND)),
+                               unknown_behavior);
+
+  // Perform a two-way round-trip, to verify that the channel remains open and the invalid
+  // interactions were safely ignored without causing our AudioCore connection to disconnect.
+  float db_lookup = 0.0f;
+  audio_core_->GetDbFromVolume(
+      *ToFidlUsageTry(AudioRenderUsage2::MEDIA), 1.0f,
+      AddCallback("GetDbFromVolume", [&db_lookup](float db) { db_lookup = db; }));
+  ExpectCallbacks();
+  EXPECT_FLOAT_EQ(db_lookup, 0.0f);
+}
+
+}  // namespace
 }  // namespace media::audio::test
