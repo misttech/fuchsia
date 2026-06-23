@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use elliptic_curve::sec1::FromEncodedPoint;
+use p256::elliptic_curve::sec1::FromEncodedPoint;
 use p256::{EncodedPoint, FieldBytes, PublicKey, SecretKey};
 use sha2::{Digest, Sha256};
 
@@ -60,7 +60,7 @@ pub fn aes_from_anti_spoofing_and_public(
 ) -> Result<SharedSecret, Error> {
     // The shared secret is computed via the DH algorithm. This uses the local Secret Key and the
     // remote Public key.
-    let shared_secret = elliptic_curve::ecdh::diffie_hellman(
+    let shared_secret = p256::elliptic_curve::ecdh::diffie_hellman(
         local_secret_key.to_nonzero_scalar(),
         remote_public_key.as_affine(),
     );
@@ -128,7 +128,7 @@ pub(crate) mod tests {
         let local_private_key =
             private_key_from_bytes(LOCAL_PRIVATE_KEY_BYTES.to_vec()).expect("valid private key");
 
-        let shared_secret = elliptic_curve::ecdh::diffie_hellman(
+        let shared_secret = p256::elliptic_curve::ecdh::diffie_hellman(
             local_private_key.to_nonzero_scalar(),
             remote_public_key.as_affine(),
         );

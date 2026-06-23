@@ -602,11 +602,11 @@ group("ecb-0.1.2") {
 }
 
 group("ecdsa") {
-  public_deps = [ ":ecdsa-v0_14_8" ]
+  public_deps = [ ":ecdsa-v0_16_9" ]
 }
 
-group("ecdsa-0.14.8") {
-  public_deps = [ ":ecdsa-v0_14_8" ]
+group("ecdsa-0.16.9") {
+  public_deps = [ ":ecdsa-v0_16_9" ]
 }
 
 group("either") {
@@ -618,11 +618,11 @@ group("either-1.15.0") {
 }
 
 group("elliptic-curve") {
-  public_deps = [ ":elliptic-curve-v0_12_3" ]
+  public_deps = [ ":elliptic-curve-v0_13_8" ]
 }
 
-group("elliptic-curve-0.12.3") {
-  public_deps = [ ":elliptic-curve-v0_12_3" ]
+group("elliptic-curve-0.13.8") {
+  public_deps = [ ":elliptic-curve-v0_13_8" ]
 }
 
 group("enumn") {
@@ -6520,6 +6520,46 @@ rustc_library("crypto-bigint-v0_4_9") {
   applicable_licenses = [ ":crypto-bigint-v0_4_9.license" ]
 }
 
+license("crypto-bigint-v0_5_5.license") {
+  public_package_name = "crypto_bigint"
+  license_files = [
+    "//third_party/rust_crates/vendor/crypto-bigint-0.5.5/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/crypto-bigint-0.5.5/LICENSE-MIT",
+  ]
+}
+
+rustc_library("crypto-bigint-v0_5_5") {
+  crate_name = "crypto_bigint"
+  source_root =
+      "//third_party/rust_crates/vendor/crypto-bigint-0.5.5/src/lib.rs"
+  output_name = "crypto_bigint-236776db25e8857a"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":generic-array-v0_14_9" ]
+  deps += [ ":rand_core-v0_6_4" ]
+  deps += [ ":subtle-v2_6_1" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=236776db25e8857a",
+    "-Cextra-filename=-236776db25e8857a",
+    "--cfg=feature=\"generic-array\"",
+    "--cfg=feature=\"rand_core\"",
+    "--cfg=feature=\"zeroize\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":crypto-bigint-v0_5_5.license" ]
+}
+
 license("crypto-common-v0_1_6.license") {
   public_package_name = "crypto_common"
   license_files = [
@@ -7581,6 +7621,46 @@ rustc_library("ecdsa-v0_14_8") {
   applicable_licenses = [ ":ecdsa-v0_14_8.license" ]
 }
 
+license("ecdsa-v0_16_9.license") {
+  public_package_name = "ecdsa"
+  license_files = [
+    "//third_party/rust_crates/vendor/ecdsa-0.16.9/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/ecdsa-0.16.9/LICENSE-MIT",
+  ]
+}
+
+rustc_library("ecdsa-v0_16_9") {
+  crate_name = "ecdsa"
+  source_root = "//third_party/rust_crates/vendor/ecdsa-0.16.9/src/lib.rs"
+  output_name = "ecdsa-d6567e2e26f842ac"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":der-v0_7_10" ]
+  deps += [ ":digest-v0_10_7" ]
+  deps += [ ":elliptic-curve-v0_13_8" ]
+  deps += [ ":signature-v2_2_0" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=d6567e2e26f842ac",
+    "-Cextra-filename=-d6567e2e26f842ac",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"der\"",
+    "--cfg=feature=\"digest\"",
+    "--cfg=feature=\"pkcs8\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":ecdsa-v0_16_9.license" ]
+}
+
 license("either-v1_15_0.license") {
   public_package_name = "either"
   license_files = [
@@ -7678,6 +7758,59 @@ rustc_library("elliptic-curve-v0_12_3") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":elliptic-curve-v0_12_3.license" ]
+}
+
+license("elliptic-curve-v0_13_8.license") {
+  public_package_name = "elliptic_curve"
+  license_files = [
+    "//third_party/rust_crates/vendor/elliptic-curve-0.13.8/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/elliptic-curve-0.13.8/LICENSE-MIT",
+  ]
+}
+
+rustc_library("elliptic-curve-v0_13_8") {
+  crate_name = "elliptic_curve"
+  source_root =
+      "//third_party/rust_crates/vendor/elliptic-curve-0.13.8/src/lib.rs"
+  output_name = "elliptic_curve-d729f255f442efc8"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":base16ct-v0_2_0" ]
+  deps += [ ":crypto-bigint-v0_5_5" ]
+  deps += [ ":digest-v0_10_7" ]
+  deps += [ ":ff-v0_13_1" ]
+  deps += [ ":generic-array-v0_14_9" ]
+  deps += [ ":group-v0_13_0" ]
+  deps += [ ":hkdf-v0_12_4" ]
+  deps += [ ":pkcs8-v0_10_2" ]
+  deps += [ ":rand_core-v0_6_4" ]
+  deps += [ ":sec1-v0_7_3" ]
+  deps += [ ":subtle-v2_6_1" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=d729f255f442efc8",
+    "-Cextra-filename=-d729f255f442efc8",
+    "--cfg=feature=\"arithmetic\"",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"digest\"",
+    "--cfg=feature=\"ecdh\"",
+    "--cfg=feature=\"ff\"",
+    "--cfg=feature=\"group\"",
+    "--cfg=feature=\"pkcs8\"",
+    "--cfg=feature=\"sec1\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":elliptic-curve-v0_13_8.license" ]
 }
 
 license("encode_unicode-v0_3_6.license") {
@@ -8151,6 +8284,40 @@ rustc_library("ff-v0_12_1") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":ff-v0_12_1.license" ]
+}
+
+license("ff-v0_13_1.license") {
+  public_package_name = "ff"
+  license_files = [
+    "//third_party/rust_crates/vendor/ff-0.13.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/ff-0.13.1/LICENSE-MIT",
+  ]
+}
+
+rustc_library("ff-v0_13_1") {
+  crate_name = "ff"
+  source_root = "//third_party/rust_crates/vendor/ff-0.13.1/src/lib.rs"
+  output_name = "ff-3ba408af30a022f3"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":rand_core-v0_6_4" ]
+  deps += [ ":subtle-v2_6_1" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=3ba408af30a022f3",
+    "-Cextra-filename=-3ba408af30a022f3",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":ff-v0_13_1.license" ]
 }
 
 license("filetime-v0_2_14.license") {
@@ -9126,6 +9293,7 @@ rustc_library("generic-array-v0_14_9") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":zeroize-v1_8_1" ]
   deps += [ ":typenum-v1_20_1" ]
 
   rustenv = []
@@ -9135,6 +9303,7 @@ rustc_library("generic-array-v0_14_9") {
     "-Cmetadata=b9a26d4a850f87d7",
     "-Cextra-filename=-b9a26d4a850f87d7",
     "--cfg=feature=\"more_lengths\"",
+    "--cfg=feature=\"zeroize\"",
     "--cfg=relaxed_coherence",
   ]
 
@@ -9561,6 +9730,42 @@ rustc_library("group-v0_12_1") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":group-v0_12_1.license" ]
+}
+
+license("group-v0_13_0.license") {
+  public_package_name = "group"
+  license_files = [
+    "//third_party/rust_crates/vendor/group-0.13.0/COPYRIGHT",
+    "//third_party/rust_crates/vendor/group-0.13.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/group-0.13.0/LICENSE-MIT",
+  ]
+}
+
+rustc_library("group-v0_13_0") {
+  crate_name = "group"
+  source_root = "//third_party/rust_crates/vendor/group-0.13.0/src/lib.rs"
+  output_name = "group-58682b1ad86e084a"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":ff-v0_13_1" ]
+  deps += [ ":rand_core-v0_6_4" ]
+  deps += [ ":subtle-v2_6_1" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=58682b1ad86e084a",
+    "-Cextra-filename=-58682b1ad86e084a",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":group-v0_13_0.license" ]
 }
 
 license("half-v2_7_1.license") {
@@ -13498,6 +13703,7 @@ rustc_library("p256-v0_11_1") {
     "--cfg=feature=\"arithmetic\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"digest\"",
+    "--cfg=feature=\"ecdh\"",
     "--cfg=feature=\"ecdsa\"",
     "--cfg=feature=\"ecdsa-core\"",
     "--cfg=feature=\"pem\"",
@@ -18691,6 +18897,7 @@ rustc_library("sec1-v0_7_3") {
   deps += [ ":der-v0_7_10" ]
   deps += [ ":generic-array-v0_14_9" ]
   deps += [ ":pkcs8-v0_10_2" ]
+  deps += [ ":subtle-v2_6_1" ]
 
   rustenv = []
 
@@ -18703,6 +18910,7 @@ rustc_library("sec1-v0_7_3") {
     "--cfg=feature=\"der\"",
     "--cfg=feature=\"pkcs8\"",
     "--cfg=feature=\"point\"",
+    "--cfg=feature=\"subtle\"",
     "--cfg=feature=\"zeroize\"",
   ]
 

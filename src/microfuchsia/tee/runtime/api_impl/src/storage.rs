@@ -10,9 +10,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::{Bound, Deref, DerefMut};
 use std::rc::Rc;
 
-use elliptic_curve::sec1::ToEncodedPoint as _;
 use num_traits::FromPrimitive as _;
-use p256::NistP256;
+use p256::elliptic_curve::sec1::ToEncodedPoint as _;
 use rsa::traits::{PrivateKeyParts as _, PublicKeyParts as _};
 use rsa::{BigUint, RsaPrivateKey};
 use tee_internal::{
@@ -25,7 +24,7 @@ use thiserror::Error;
 use crate::ErrorWithSize;
 use crate::crypto::Rng;
 
-type P256SecretKey = elliptic_curve::SecretKey<NistP256>;
+type P256SecretKey = p256::SecretKey;
 
 pub struct Storage {
     persistent_objects: PersistentObjects,

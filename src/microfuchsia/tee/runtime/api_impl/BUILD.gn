@@ -63,7 +63,6 @@ rustc_library("api_impl") {
     "//third_party/rust_crates:crypto-common",
     "//third_party/rust_crates:digest",
     "//third_party/rust_crates:ecb",
-    "//third_party/rust_crates:elliptic-curve",
     "//third_party/rust_crates:hmac",
     "//third_party/rust_crates:libc",
     "//third_party/rust_crates:num-traits",

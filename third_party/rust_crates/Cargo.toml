@@ -107,9 +107,9 @@ digest = "0.10.7"
 downcast-rs = "2.0.2"
 dyn-clone = "1.0.20"
 ecb = "0.1.2"
-ecdsa = { version = "0.14.3", features = ["pkcs8"] }
+ecdsa = { version = "0.16.9", features = ["pkcs8"] }
 either = "1.15.0"
-elliptic-curve = { version = "0.12.3", features = [ "ecdh" ] }
+elliptic-curve = { version = "0.13.8", features = [ "ecdh" ] }
 enumn = "0.1.14"
 eui48 = { version = "1.1.0", default-features = false, features = ["serde", "disp_hexstring"] }
 event-listener = "5.4.1"
@@ -176,7 +176,7 @@ num-traits = "0.2.19"
 omaha_client = "0.3.8"
 once_cell = "1.21.3"
 overload = "0.1.1"
-p256 = { version = "0.11.1", features = ["pem", "serde"] }
+p256 = { version = "0.11.1", features = ["ecdh", "pem", "serde"] }
 paste = "1.0.15"
 pathdiff = { version = "0.2.3", features = ["camino"] }
 pem = "3.0.6"

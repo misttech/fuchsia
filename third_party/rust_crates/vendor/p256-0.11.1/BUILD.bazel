@@ -59,6 +59,7 @@ rust_library(
         "arithmetic",
         "default",
         "digest",
+        "ecdh",
         "ecdsa",
         "ecdsa-core",
         "pem",

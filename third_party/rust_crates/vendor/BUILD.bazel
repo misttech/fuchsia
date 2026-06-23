@@ -871,14 +871,14 @@ alias(
 )
 
 alias(
-    name = "ecdsa-0.14.8",
-    actual = "//third_party/rust_crates/vendor/ecdsa-0.14.8:ecdsa",
+    name = "ecdsa-0.16.9",
+    actual = "//third_party/rust_crates/vendor/ecdsa-0.16.9:ecdsa",
     tags = ["manual"],
 )
 
 alias(
     name = "ecdsa",
-    actual = "//third_party/rust_crates/vendor/ecdsa-0.14.8:ecdsa",
+    actual = "//third_party/rust_crates/vendor/ecdsa-0.16.9:ecdsa",
     tags = ["manual"],
 )
 
@@ -895,14 +895,14 @@ alias(
 )
 
 alias(
-    name = "elliptic-curve-0.12.3",
-    actual = "//third_party/rust_crates/vendor/elliptic-curve-0.12.3:elliptic_curve",
+    name = "elliptic-curve-0.13.8",
+    actual = "//third_party/rust_crates/vendor/elliptic-curve-0.13.8:elliptic_curve",
     tags = ["manual"],
 )
 
 alias(
     name = "elliptic-curve",
-    actual = "//third_party/rust_crates/vendor/elliptic-curve-0.12.3:elliptic_curve",
+    actual = "//third_party/rust_crates/vendor/elliptic-curve-0.13.8:elliptic_curve",
     tags = ["manual"],
 )
 
