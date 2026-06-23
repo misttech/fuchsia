@@ -41,12 +41,8 @@ pub(crate) enum RequestArgs {
 
 /// An error encountered while handling a [`Request`].
 #[derive(Clone, Debug, PartialEq, Eq)]
-// TODO(https://fxbug.dev/323590076): Remove allowance once used.
-#[expect(dead_code)]
 pub(crate) enum RequestError {
     NotFound,
-    InvalidRequest,
-    Unsupported,
     Internal,
 }
 
@@ -54,8 +50,6 @@ impl RequestError {
     pub(crate) fn into_errno(self) -> Errno {
         match self {
             RequestError::NotFound => Errno::ENOENT,
-            RequestError::InvalidRequest => Errno::EINVAL,
-            RequestError::Unsupported => Errno::ENOTSUP,
             RequestError::Internal => Errno::EINVAL,
         }
     }

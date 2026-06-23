@@ -50,28 +50,6 @@ const HERMETIC_NETWORK_V3_URL: &'static str = "#meta/hermetic_network_v3.cm";
 /// the metric only needs to be a sensible value.
 const DEFAULT_METRIC: u32 = 100;
 
-#[allow(dead_code)]
-trait ResultExt<T> {
-    /// Converts from `Result<T, E>` to `Option<T>`.
-    ///
-    /// If there is an error, then the `msg` with the error appended is logged
-    /// as a warning and `Option::None` is returned. Otherwise, `Option::Some`
-    /// is returned with the value.
-    fn ok_or_log_err(self, msg: &str) -> Option<T>;
-}
-
-impl<T, E: std::fmt::Debug> ResultExt<T> for Result<T, E> {
-    fn ok_or_log_err(self, msg: &str) -> Option<T> {
-        match self {
-            Ok(val) => Some(val),
-            Err(e) => {
-                warn!("{}: {:?}", msg, e);
-                None
-            }
-        }
-    }
-}
-
 /// Installs a netdevice with the provided `name` on the hermetic Netstack.
 ///
 /// The `port_proxy` corresponds to a system netdevice.

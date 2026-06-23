@@ -735,7 +735,7 @@ impl<I: IpExt, E, BT: FilterBindingsTypes> Connection<I, E, BT> {
     }
 
     /// Returns a copy of the internal connection state
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn state(&self) -> ConnectionState<BT> {
         match self {
             Connection::Exclusive(c) => c.state.clone(),
