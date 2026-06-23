@@ -123,6 +123,7 @@ group("tests_no_e2e") {
     "//tools/power_config:tests",
     "//tools/pretty_serial:tests",
     "//tools/qemu:tests($host_toolchain)",
+    "//tools/readme_fuchsia:tests($host_toolchain)",
     "//tools/rfc:tests",
     "//tools/rust_test_parser:tests($host_toolchain)",
     "//tools/sdk-tools:tests($host_toolchain)",
