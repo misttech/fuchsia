@@ -70,14 +70,6 @@ compiler_config("compiler") {
           rebase_path("$gcc_tool_dir/$clang_cpu-elf-ld", root_build_dir) ]
   }
 
-  if (defined(zircon_toolchain.version_string) &&
-      zircon_toolchain.version_string != "") {
-    # Nothing uses this define, but its presence on compilation command
-    # lines ensures that Ninja will rebuild things when a new compiler
-    # version arrives.
-    defines += [ "TOOLCHAIN_VERSION=${zircon_toolchain.version_string}" ]
-  }
-
   # This is the default already on Fuchsia and maybe others, but never hurts.
   cflags = [ "-fno-common" ]
 
@@ -87,6 +79,7 @@ compiler_config("compiler") {
     "//build/config:call-graph-section",
     "//build/config:stack-size-section",
     "//build/config:rust-depinfo",
+    "//build/config:toolchain_version_stamp",
   ]
   if (!is_gcc) {
     configs += [
