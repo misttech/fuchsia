@@ -7,7 +7,6 @@
 #include "physboot.h"
 
 #include <inttypes.h>
-#include <lib/arch/cache.h>
 #include <lib/boot-options/boot-options.h>
 #include <lib/code-patching/code-patches.h>
 #include <lib/fit/function.h>

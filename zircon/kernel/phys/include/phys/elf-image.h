@@ -7,6 +7,7 @@
 #ifndef ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_ELF_IMAGE_H_
 #define ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_ELF_IMAGE_H_
 
+#include <lib/arch/cache.h>
 #include <lib/arch/paging.h>
 #include <lib/code-patching/code-patching.h>
 #include <lib/elfldltl/init-fini.h>
@@ -144,6 +145,10 @@ class ElfImage {
     static_assert(ktl::is_invocable_r_v<fit::result<Error>, Callback, code_patching::Patcher&, Id,
                                         ktl::span<ktl::byte>, PrintPatchFunction>);
     fit::result<Error> result = fit::ok();
+    if (patches().empty()) {
+      return result;
+    }
+    arch::GlobalCacheConsistencyContext cache;
     for (const code_patching::Directive& patch : patches()) {
       ktl::span<ktl::byte> bytes = GetBytesToPatch(patch);
       auto print = [this, &patch](ktl::initializer_list<ktl::string_view> strings) {
@@ -153,6 +158,7 @@ class ElfImage {
       if (result.is_error()) {
         break;
       }
+      cache.SyncRange(reinterpret_cast<uintptr_t>(bytes.data()), bytes.size());
     }
     return result;
   }
