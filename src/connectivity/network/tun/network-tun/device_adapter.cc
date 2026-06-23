@@ -483,9 +483,12 @@ DeviceAdapter::DeviceAdapter(DeviceAdapterParent* parent,
 
 zx::result<RxBuffer> DeviceAdapter::AllocRxSpace(size_t length) __TA_REQUIRES(rx_lock_) {
   RxBuffer buffer = vmos_.MakeEmptyRxBuffer();
-  while (!rx_buffers_.empty()) {
+  size_t parts_added = 0;
+  while (!rx_buffers_.empty() &&
+         parts_added < fuchsia_hardware_network_driver::wire::kMaxBufferParts) {
     const auto& space = rx_buffers_.front();
     buffer.PushRxSpace(space);
+    parts_added++;
     uint64_t space_length = space.region.length;
     rx_buffers_.pop();
     if (space_length >= length) {
@@ -493,7 +496,8 @@ zx::result<RxBuffer> DeviceAdapter::AllocRxSpace(size_t length) __TA_REQUIRES(rx
     }
     length -= space_length;
   }
-  // Ran out of rx buffers and didn't find what we wanted, need to reclaim the space from buffer.
+  // The available rx buffers weren't sufficient to allocate the required space,
+  // so we need to reclaim the space from the buffer.
   ReclaimRxSpace(std::move(buffer));
   return zx::error(ZX_ERR_SHOULD_WAIT);
 }

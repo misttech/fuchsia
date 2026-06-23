@@ -1103,6 +1103,58 @@ TEST_F(TunTest, SimpleRxTx) {
   EXPECT_EQ(data[1], 0xBB);
 }
 
+TEST_F(TunTest, OneByteTxBuffers) {
+  fuchsia_net_tun::wire::DeviceConfig device_config = DefaultDeviceConfig();
+  fuchsia_net_tun::wire::DevicePortConfig port_config = DefaultDevicePortConfig();
+  port_config.set_online(true);
+  device_config.set_blocking(false);
+
+  zx::result device_and_port =
+      CreateDeviceAndPort(std::move(device_config), std::move(port_config));
+  ASSERT_OK(device_and_port.status_value());
+  auto [device_client_end, port_client_end] = std::move(device_and_port.value());
+
+  zx::result maybe_port_id = GetPortId(port_client_end);
+  ASSERT_OK(maybe_port_id.status_value());
+  const fuchsia_hardware_network::wire::PortId port_id = maybe_port_id.value();
+
+  fidl::WireSyncClient tun{std::move(device_client_end)};
+
+  SimpleClient client;
+  zx::result request = client.NewRequest();
+  ASSERT_OK(request.status_value());
+  ASSERT_OK(tun->GetDevice(std::move(request.value())).status());
+  ASSERT_OK(client.OpenSession());
+  ASSERT_OK(client.AttachPort(port_id));
+
+  // Queue 10 one-byte RX buffers.
+  std::vector<uint16_t> rx_descs;
+  for (uint16_t i = 0; i < 10; i++) {
+    auto* desc = client.ResetDescriptor(i);
+    desc->data_length = 1;
+    desc->tail_length = 0;
+    rx_descs.push_back(i);
+  }
+  ASSERT_OK(client.SendRx(rx_descs, false));
+
+  // Try to write a frame of 5 bytes.
+  // This should not crash, and should return SHOULD_WAIT because 4 one-byte
+  // buffers (capped) cannot satisfy the 5-byte requirement.
+  {
+    fuchsia_net_tun::wire::Frame frame(alloc_);
+    frame.set_frame_type(fuchsia_hardware_network::wire::FrameType::kEthernet);
+    frame.set_port(kDefaultTestPort);
+    uint8_t data[] = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE};
+    frame.set_data(alloc_, fidl::VectorView<uint8_t>::FromExternal(data));
+    fidl::WireResult write_frame_wire_result = tun->WriteFrame(std::move(frame));
+    ASSERT_OK(write_frame_wire_result.status());
+
+    const fit::result<int32_t>& write_frame_result = write_frame_wire_result.value();
+    ASSERT_TRUE(write_frame_result.is_error());
+    ASSERT_STATUS(write_frame_result.error_value(), ZX_ERR_SHOULD_WAIT);
+  }
+}
+
 TEST_F(TunTest, PairRxTx) {
   SimpleClient left, right;
 

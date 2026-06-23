@@ -65,7 +65,7 @@ RxBuffer VmoStore::MakeRxSpaceBuffer(
 RxBuffer VmoStore::MakeEmptyRxBuffer() { return RxBuffer(this); }
 
 void Buffer::PushPart(const BufferPart& part) {
-  ZX_DEBUG_ASSERT(parts_count_ < parts_.size());
+  ZX_ASSERT(parts_count_ < parts_.size());
   parts_[parts_count_++] = part;
   total_length_ += part.region.length;
 }
