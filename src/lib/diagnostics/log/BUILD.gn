@@ -4,6 +4,7 @@
 
 group("log") {
   deps = [
+    "contrib/rust:fuchsia-log-contrib",
     "encoding",
     "rust",
   ]
