@@ -86,8 +86,7 @@ async fn test_tx() {
     .await;
 }
 
-// Receives buffer from session and echoes back. It copies the content from
-// half of the buffers, round robin on index.
+// Receives buffer from session and echoes back.
 async fn echo(session: Session, port: Port, frame_count: u32) {
     for i in 0..frame_count {
         let buffer = session.recv().await.expect("failed to recv from session");
@@ -95,17 +94,11 @@ async fn echo(session: Session, port: Port, frame_count: u32) {
         let mut bytes = [0u8; DATA_LEN];
         assert_eq!(buffer.io().read(&mut bytes[..]).unwrap(), DATA_LEN);
         assert_eq!(u32::from_le_bytes(bytes), i);
-        if i % 2 == 0 {
-            let buffer = buffer.into_tx().await;
-            session.send(buffer);
-        } else {
-            let mut buffer =
-                session.alloc_tx_buffer(DATA_LEN).await.expect("no tx buffer available");
-            buffer.set_frame_type(netdev::FrameType::Ethernet);
-            buffer.set_port(port);
-            assert_eq!(buffer.io_mut().write(&bytes).unwrap(), DATA_LEN);
-            session.send(buffer);
-        }
+        let mut buffer = session.alloc_tx_buffer(DATA_LEN).await.expect("no tx buffer available");
+        buffer.set_frame_type(netdev::FrameType::Ethernet);
+        buffer.set_port(port);
+        assert_eq!(buffer.io_mut().write(&bytes).unwrap(), DATA_LEN);
+        session.send(buffer);
     }
 }
 

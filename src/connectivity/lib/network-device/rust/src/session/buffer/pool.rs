@@ -149,9 +149,7 @@ impl Pool {
     /// It will block if there are not enough descriptors. Note that the
     /// descriptors are not initialized, you need to call [`AllocGuard::init()`]
     /// on the returned [`AllocGuard`] if you want to send it to the driver
-    /// later. See [`AllocGuard<Rx>::into_tx()`] for an example where
-    /// [`AllocGuard::init()`] is not needed because the tx allocation will be
-    /// returned to the pool immediately and won't be sent to the driver.
+    /// later.
     pub(in crate::session) async fn alloc_tx(
         self: &Arc<Self>,
         num_parts: ChainLength,
@@ -566,12 +564,6 @@ pub enum ChecksumRxOffloading {
 // methods if the `descriptor()` call isn't optimized out on consecutive method
 // calls.
 impl Buffer<Rx> {
-    /// Turns an rx buffer into a tx one.
-    pub async fn into_tx(self) -> Buffer<Tx> {
-        let Buffer { alloc } = self;
-        Buffer { alloc: alloc.into_tx().await }
-    }
-
     /// Retrieves RxFlags of an Rx Buffer.
     pub fn rx_flags(&self) -> Result<netdev::RxFlags> {
         self.alloc.descriptor().rx_flags()
@@ -733,26 +725,6 @@ where
             }
         }
         total
-    }
-}
-
-impl AllocGuard<Rx> {
-    /// Turns a tx allocation into an rx one.
-    ///
-    /// To achieve this we have to convert the same amount of descriptors from
-    /// the tx pool to the rx pool to compensate for us being converted to tx
-    /// descriptors from rx ones.
-    async fn into_tx(mut self) -> AllocGuard<Tx> {
-        let mut tx = self.pool.alloc_tx(self.descs.len).await;
-        // [MaybeUninit<DescId<Tx>; 4] and [MaybeUninit<DescId<Rx>; 4] have the
-        // same memory layout because DescId is repr(transparent). So it is safe
-        // to transmute and swap the values between the storages. After the swap
-        // the drop implementation of self will return the descriptors back to
-        // rx pool.
-        std::mem::swap(&mut self.descs.storage, unsafe {
-            std::mem::transmute(&mut tx.descs.storage)
-        });
-        tx
     }
 }
 
