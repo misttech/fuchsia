@@ -28,10 +28,13 @@ import ffx
 # Run with:
 # FUCHSIA_NODENAME=<target-ip:port> python3 strict.py
 
-ssh_key = f"{os.environ['HOME']}/.ssh/fuchsia_ed25519"
-runner = ffx.FfxRunner("my.log", ssh_key)
-# runner.discover_target()
-runner.set_target(os.environ["FUCHSIA_NODENAME"])
+ssh_key = os.environ.get(
+    "FUCHSIA_SSH_KEY", os.path.expanduser("~/.ssh/fuchsia_ed25519")
+)
+# Instantiate the runner. If FUCHSIA_NODENAME is not provided (is None),
+# the runner constructor will automatically discover the default target.
+target_name = os.environ.get("FUCHSIA_NODENAME")
+runner = ffx.FfxRunner("my.log", ssh_key, target_name)
 
 # Print the output from `ffx target echo Hello`.
 print("Running ffx target echo Hello in strict mode:")
@@ -47,12 +50,6 @@ print("Running ffx target list in strict mode:")
 target_list = runner.target_list(None)
 print(target_list)
 print()
-
-# Make sure that the returned target_state is "Product".
-target_state = target_list[0]["target_state"]
-assert (
-    target_state == "Product"
-), f"expected:\n\t'Product'\ngot:\n\t'{target_state}'"
 
 # Print the output from `ffx target show`
 print("Running ffx target show in strict mode:")

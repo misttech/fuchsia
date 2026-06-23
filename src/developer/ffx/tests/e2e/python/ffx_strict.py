@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 import tempfile
 import zipfile
 from pathlib import Path
@@ -400,6 +401,66 @@ class FfxStrictTest(ffxtestcase.FfxTestCase):
             "raw",
         )
         asserts.assert_equal(stdout, "foo")
+
+    def test_strict_example_script(self) -> None:
+        """Runs the strict.py example script and checks its execution."""
+        self._get_ssh_private_key()
+        asserts.assert_is_not_none(self.ssh_private_key)
+        # Standard assert is required to narrow type from Optional[str] to str for Mypy.
+        assert self.ssh_private_key is not None
+
+        # Locate the test data directory.
+        ffx_path = self.dut.ffx.config.binary_path
+        test_data_dir = Path(ffx_path).parent / "test_data" / "strict_example"
+        if not test_data_dir.exists():
+            # Fallback to searching under the build directory when ffx_path points
+            # to a symlink directory like host-tools instead of the concrete toolchain dir.
+            build_dir = Path(ffx_path).parent.parent
+            for path in build_dir.iterdir():
+                if (
+                    path.name.startswith("host_")
+                    and (path / "test_data" / "strict_example").exists()
+                ):
+                    test_data_dir = path / "test_data" / "strict_example"
+                    break
+
+        asserts.assert_true(
+            test_data_dir.exists(),
+            f"Could not locate strict_example test data directory under {Path(ffx_path).parent}",
+        )
+        strict_py = test_data_dir / "strict.py"
+
+        # Prepare environment variables for strict.py
+        environ = dict(os.environ)
+        environ["FUCHSIA_NODENAME"] = str(self.dut_ssh_address)
+        environ["FUCHSIA_SSH_KEY"] = self.ssh_private_key
+        # Add ffx binary directory to PATH so the script's `subprocess.run(["ffx", ...])` works.
+        environ["PATH"] = os.pathsep.join(
+            filter(None, [str(Path(ffx_path).parent), environ.get("PATH")])
+        )
+
+        # Run the strict.py script in a temporary directory to avoid writing log files
+        # to a potentially read-only test data directory.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            _LOGGER.info(
+                "Running strict.py example script in %s: %s", tmp_dir, strict_py
+            )
+            result = subprocess.run(
+                [sys.executable, str(strict_py)],
+                capture_output=True,
+                text=True,
+                env=environ,
+                cwd=tmp_dir,
+            )
+
+        _LOGGER.info("strict.py stdout:\n%s", result.stdout)
+        _LOGGER.info("strict.py stderr:\n%s", result.stderr)
+
+        asserts.assert_equal(
+            result.returncode,
+            0,
+            f"strict.py failed with exit code {result.returncode}.\nStderr:\n{result.stderr}",
+        )
 
 
 if __name__ == "__main__":
