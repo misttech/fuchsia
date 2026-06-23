@@ -134,6 +134,8 @@ tables_generator_tests_*.txt
 /third_party/scudo/gwp_asan
 !/third_party/zstd/
 /third_party/zstd/src
+!/third_party/lz4/
+/third_party/lz4/src
 !/third_party/ogg-migrating/
 /third_party/ogg-migrating/src/
 !/third_party/parameterized

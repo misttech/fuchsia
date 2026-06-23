@@ -304,7 +304,7 @@
              remote="https://fuchsia.googlesource.com/third_party/luci-go"
              gerrithost="https://fuchsia-review.googlesource.com"/>
     <project name="third_party/lz4"
-             path="third_party/lz4"
+             path="third_party/lz4/src"
              remote="https://fuchsia.googlesource.com/third_party/lz4"
              gerrithost="https://fuchsia-review.googlesource.com"
              revision="5ff839680134437dbf4678f3d0c7b371d84f4964"/>

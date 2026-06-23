@@ -5,7 +5,7 @@
 import("//build/zircon/migrated_targets.gni")
 
 # Note this leads to "$root_out_dir/obj/ABS_PATH/..." files in the build.
-lz4_lib = "//third_party/lz4/lib"
+lz4_lib = "//third_party/lz4/src/lib"
 
 zx_library("lz4") {
   sdk = "source"
@@ -32,7 +32,7 @@ zx_library("lz4") {
 
     # lz4frame.h doesn't let you just predefine LZ4FLIB_API like you can
     # LZ4LIB_VISIBILITY, so this kludge works with how its macros are
-    # defined so the //third_party/lz4 sources don't need to be touched.
+    # defined so the //third_party/lz4/src sources don't need to be touched.
     "LZ4_DLL_IMPORT=1",
     "__declspec(x)=",
   ]
