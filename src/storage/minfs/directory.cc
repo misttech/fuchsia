@@ -390,7 +390,7 @@ zx::result<Directory::IteratorCommand> Directory::NextDirent(Dirent* de, Directo
 }
 
 zx::result<> Directory::AppendDirent(DirArgs* args) {
-  DirentBuffer dirent_buffer;
+  DirentBuffer dirent_buffer = {};
   Dirent* de = &dirent_buffer.dirent;
 
   size_t r;
@@ -467,7 +467,7 @@ zx::result<> Directory::AppendDirent(DirArgs* args) {
 //          Since 'func' may create / remove surrounding dirents, it is responsible for
 //          updating the offset information to access the next dirent.
 zx::result<bool> Directory::ForEachDirent(DirArgs* args, const DirentCallback func) {
-  DirentBuffer dirent_buffer;
+  DirentBuffer dirent_buffer = {};
   Dirent* de = &dirent_buffer.dirent;
 
   args->offs.off = 0;
@@ -582,7 +582,7 @@ zx_status_t Directory::Readdir(fs::VdirCookie* cookie, void* dirents, size_t len
     size_t off = dc->off;
     size_t r;
 
-    DirentBuffer dirent_buffer;
+    DirentBuffer dirent_buffer = {};
     Dirent* de = &dirent_buffer.dirent;
     bool entry_did_not_fit = false;
 
