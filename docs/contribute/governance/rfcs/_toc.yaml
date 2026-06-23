@@ -584,3 +584,5 @@ toc:
     path: /docs/contribute/governance/rfcs/0282_zircon_membarrier.md
   - title: "RFC-0283: Add support for C++23"
     path: /docs/contribute/governance/rfcs/0283_add_support_for_c++23.md
+  - title: "RFC-0284: Blob-based Update Manifest"
+    path: /docs/contribute/governance/rfcs/0284_blob_based_update_manifest.md

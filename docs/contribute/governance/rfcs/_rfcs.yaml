@@ -3730,3 +3730,16 @@
   reviewers: ['mcgrathr@google.com', 'phosek@google.com']
   submitted: '2026-03-19'
   reviewed: '2026-05-05'
+
+- name: 'RFC-0284'
+  title: 'Blob-based Update Manifest'
+  short_description: 'Add support for a new blob-based system update manifest format to reduce dependency on package resolution.'
+  authors: ['senj@google.com', 'galbanum@google.com']
+  file: '0284_blob_based_update_manifest.md'
+  area: ['Software Delivery']
+  issue: ['479283380']
+  gerrit_change_id: ['1592391']
+  status: 'Accepted'
+  reviewers: ['alizhang@google.com', 'awolter@google.com', 'etryzelaar@google.com', 'gtsai@google.com']
+  submitted: '2026-04-28'
+  reviewed: '2026-06-23'
