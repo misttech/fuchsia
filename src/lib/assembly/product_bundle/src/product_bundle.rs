@@ -1097,6 +1097,13 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_pb_32_99991231_0_1() {
+        let pb_json = include_str!("../test_data/32.99991231.0.1/product_bundle.json");
+        let pb = try_load_product_bundle(pb_json.as_bytes()).unwrap();
+        assert!(matches!(pb, ProductBundle::V2 { .. }));
+    }
+
+    #[test]
     fn test_supports_extract_blobs() -> Result<()> {
         let temp_dir = tempfile::TempDir::new().expect("creating temp dir");
         let pb_dir = make_pb_v2_in!(temp_dir, "generic-x64");

@@ -5,6 +5,7 @@
 import("//build/host.gni")
 import("//build/icu/config.gni")
 import("//build/rust/rustc_library.gni")
+import("//build/testing/host_test_data.gni")
 
 assert(is_host, "Assembly libraries are host-only")
 
@@ -15,6 +16,24 @@ generated_file("git_info_json") {
   outputs = [ "${target_gen_dir}/icu_git_info.json" ]
   contents = icu_git_info
   output_conversion = "json"
+}
+
+host_test_data("test_data") {
+  sources = [
+    "test_data/32.99991231.0.1/board_configuration.json",
+    "test_data/32.99991231.0.1/filesystems/vbmeta/key/testkey_atx_psk.pem",
+    "test_data/32.99991231.0.1/filesystems/vbmeta/key_metadata/atx_metadata.bin",
+    "test_data/32.99991231.0.1/partitions_config/partitions_config.json",
+    "test_data/maximal_board/board_configuration.json",
+    "test_data/maximal_board/devicetree.dtb",
+    "test_data/maximal_board/devicetree_overlay.dtbo",
+    "test_data/maximal_board/keys/vbmeta_key.pem",
+    "test_data/maximal_board/keys/vbmeta_key_metadata.bin",
+    "test_data/maximal_board/partitions_config/partitions_config.json",
+    "test_data/maximal_board/scripts/input1.txt",
+    "test_data/maximal_board/scripts/postprocess.sh",
+    "test_data/maximal_board/zbi_extra_items.zbi",
+  ]
 }
 
 rustc_library("config_schema") {
@@ -28,6 +47,7 @@ rustc_library("config_schema") {
     # the root_build_dir. We provide the path into `_git_info_path`.
     # See `src/platform_config/icu_config.rs` for the inclusion details.
     "ICU_GIT_INFO_JSON_FILE=${_git_info_path}",
+    "TEST_DATA_DIR=" + rebase_path(".", root_build_dir),
   ]
 
   inputs = [ _git_info ]
@@ -55,6 +75,8 @@ rustc_library("config_schema") {
   ]
 
   test_deps = [
+    ":test_data",
+    "//src/lib/assembly/partitions_config",
     "//src/lib/assembly/util",
     "//third_party/rust_crates:tempfile",
   ]

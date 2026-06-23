@@ -119,6 +119,7 @@ rustc_test("product_bundle_test") {
       "test_data/27.20250401.0.1/product_bundle.json",
       "test_data/29.20251001.0.1/product_bundle.json",
       "test_data/31.20260301.0.1/product_bundle.json",
+      "test_data/32.99991231.0.1/product_bundle.json",
     ]
   }
 }

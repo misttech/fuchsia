@@ -619,4 +619,52 @@ mod test {
             &DirectoryPathBuf::new("path/to/independent/bib".into())
         );
     }
+
+    #[test]
+    fn test_deserialize_historical_board() {
+        use assembly_partitions_config::PartitionsConfig;
+
+        let test_data_dir =
+            camino::Utf8PathBuf::from(env!("TEST_DATA_DIR")).join("test_data/32.99991231.0.1");
+
+        // Load BoardConfig
+        let board_config = BoardConfig::from_dir(&test_data_dir).unwrap();
+        assert_eq!(board_config.name, "x64");
+
+        // Load PartitionsConfig from the resolved path
+        let resolved_partitions_path =
+            board_config.partitions_config.as_ref().unwrap().as_utf8_path_buf();
+        let partitions_config = PartitionsConfig::from_dir(resolved_partitions_path).unwrap();
+        assert_eq!(partitions_config.hardware_revision, "x64");
+    }
+
+    #[test]
+    fn test_deserialize_maximal_board() {
+        use assembly_partitions_config::PartitionsConfig;
+
+        let test_data_dir =
+            camino::Utf8PathBuf::from(env!("TEST_DATA_DIR")).join("test_data/maximal_board");
+
+        // Load BoardConfig
+        let board_config = BoardConfig::from_dir(&test_data_dir).unwrap();
+        assert_eq!(board_config.name, "maximal_board");
+        assert_eq!(board_config.arch, Architecture::ARM64);
+
+        // Verify some fields to ensure they parsed correctly
+        assert_eq!(board_config.hardware_info.name, Some("maximal_hw".into()));
+        assert_eq!(board_config.hardware_info.vendor_id, Some(42));
+        assert_eq!(board_config.hardware_info.product_id, Some(43));
+        assert_eq!(board_config.hardware_info.revision, Some(44));
+
+        assert_eq!(
+            board_config.provided_features,
+            vec!["feature1".to_string(), "feature2".to_string()]
+        );
+
+        // Load PartitionsConfig from the resolved path
+        let resolved_partitions_path =
+            board_config.partitions_config.as_ref().unwrap().as_utf8_path_buf();
+        let partitions_config = PartitionsConfig::from_dir(resolved_partitions_path).unwrap();
+        assert_eq!(partitions_config.hardware_revision, "x64"); // copied from x64
+    }
 }
