@@ -1411,6 +1411,50 @@ pub fn check_tun_dev_create_access(current_task: &CurrentTask) -> Result<(), Err
     })
 }
 
+/// Updates credentials based on the executable file (e.g., SUID/SGID, capabilities).
+///
+/// Corresponds to the `bprm_creds_from_file` LSM hook.
+pub fn bprm_creds_from_file(
+    current_task: &CurrentTask,
+    elf_state: &mut ResolvedElf,
+) -> Result<(), Errno> {
+    track_hook_duration!("security.hooks.bprm_creds_from_file");
+
+    let (no_new_privs, is_ptraced) = {
+        let state = current_task.read();
+        (state.no_new_privs(), state.is_ptraced())
+    };
+
+    let enable_suid = current_task.kernel().features.enable_suid && !no_new_privs && !is_ptraced;
+    if enable_suid {
+        elf_state.file.name.apply_suid_and_sgid(&mut elf_state.creds);
+    }
+
+    // On exec, the filesystem UIDs are always reset to the effective UIDs.
+    elf_state.creds.fsuid = elf_state.creds.euid;
+    elf_state.creds.fsgid = elf_state.creds.egid;
+
+    // The effective user ID of the process is copied to the saved set-
+    // user-ID; similarly, the effective group ID is copied to the saved
+    // set-group-ID. This copying takes place after any effective ID
+    // changes that occur because of the set-user-ID and set-group-ID
+    // mode bits.
+    elf_state.creds.saved_uid = elf_state.creds.euid;
+    elf_state.creds.saved_gid = elf_state.creds.egid;
+
+    let prev = current_task.current_creds();
+    let file_is_privileged = elf_state.creds.euid != prev.euid || elf_state.creds.egid != prev.egid;
+    let is_secure_exec = file_is_privileged
+        || elf_state.creds.uid != elf_state.creds.euid
+        || elf_state.creds.gid != elf_state.creds.egid;
+
+    elf_state.secure_exec |= is_secure_exec;
+
+    common_cap::bprm_creds_from_file(current_task, elf_state)?;
+
+    Ok(())
+}
+
 /// Checks if exec is allowed and if so, checks permissions related to the transition
 /// (if any) from the pre-exec security context to the post-exec context. Updates the `Credentials`
 /// in the `elf_state` with the appropriate security state.

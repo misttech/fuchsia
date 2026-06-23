@@ -1041,27 +1041,9 @@ impl CurrentTask {
         //
         //   * the calling thread has a non-zero "no-new-privs" attribute
         //     (see prctl(2));
-        let (no_new_privs, is_ptraced) = {
-            let state = self.read();
-            (state.no_new_privs(), state.is_ptraced())
-        };
 
-        let enable_suid = self.kernel().features.enable_suid && !no_new_privs && !is_ptraced;
-        if enable_suid {
-            resolved_elf.file.name.apply_suid_and_sgid(&mut resolved_elf.creds);
-        }
-
-        resolved_elf.secure_exec |= resolved_elf.creds.exec(&self.current_creds());
-
-        // TODO(tbodt): Check whether capability xattrs are set on the file, and grant/limit
-        // capabilities accordingly.
-        //
-        // TODO(https://fxbug.dev/503338788) - Migrate this (and other capabilities wrangling)
-        // into a `common_cap::bprm_creds_from_file()` implementation.
-        if no_new_privs {
-            resolved_elf.creds.cap_permitted &= self.current_creds().cap_permitted;
-            resolved_elf.creds.cap_effective &= resolved_elf.creds.cap_permitted;
-        }
+        // LSM hook: Update credentials based on the executable file.
+        security::bprm_creds_from_file(self, &mut resolved_elf)?;
 
         // LSM hook: Perform access checks and allow LSM to update credentials.
         security::bprm_creds_for_exec(self, &executable.name, &mut resolved_elf)?;
