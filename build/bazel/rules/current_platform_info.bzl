@@ -57,7 +57,7 @@ _current_platform_info = rule(
     },
 )
 
-def define_current_platform_info(name):
+def define_current_platform_info(*, name):
     """Define a target providing a CurrentPlatformInfo provider.
 
     Dependents of this target will be able to access the provider

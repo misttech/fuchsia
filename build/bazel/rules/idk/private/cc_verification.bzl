@@ -40,6 +40,7 @@ verify_no_pragma_once = rule(
 )
 
 def create_verify_pragma_once_target(
+        *,
         name,
         files,
         testonly,
@@ -64,6 +65,7 @@ def create_verify_pragma_once_target(
     return ":%s" % target_name
 
 def create_verify_no_duplicate_files_target(
+        *,
         name,
         hdrs,
         hdrs_for_internal_use,

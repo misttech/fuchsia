@@ -47,10 +47,9 @@ def _idk_host_tool_atom_impl(
     # Verify the allowlist here to catch cases where this macro is used but
     # there is no dependency on the atom target.
     verify_target_is_in_allowlist(
-        # This is a unique case where "_idk" has already been appended to the name.
-        name.removesuffix("_idk"),
-        atom_type,
-        category,
+        name = name.removesuffix("_idk"),
+        type = atom_type,
+        category = category,
         stable = True,
         testonly = False,
     )
@@ -192,6 +191,7 @@ idk_cc_binary_host_tool = macro(
 # This must be a legacy macro with `**kwargs` because go_binary_host_tool is a
 # legacy macro, which cannot be used with `inherit_attrs` in a symbolic macro.
 def idk_go_binary_host_tool(
+        *,
         name,
         idk_name,
         category,

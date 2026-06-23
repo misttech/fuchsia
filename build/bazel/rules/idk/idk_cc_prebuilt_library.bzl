@@ -20,6 +20,7 @@ load(
 )
 
 def idk_cc_shared_library(
+        *,
         name,
         idk_name,
         category,
@@ -43,13 +44,18 @@ def idk_cc_shared_library(
         idk_name = idk_name,
         category = category,
         stable = stable,
-        api_file_path = get_api_file_path(idk_name, stable, api_file_path),
+        api_file_path = get_api_file_path(
+            idk_name = idk_name,
+            stable = stable,
+            api_file_path = api_file_path,
+        ),
         output_name = output_name,
         ifs_golden_file = get_golden_file(_get_ifs_golden_file_name(output_name), support_platform = True),
         **kwargs
     )
 
 def idk_cc_static_library(
+        *,
         idk_name,
         category,
         api_file_path = None,
@@ -68,11 +74,16 @@ def idk_cc_static_library(
         idk_name = idk_name,
         category = category,
         stable = stable,
-        api_file_path = get_api_file_path(idk_name, stable, api_file_path),
+        api_file_path = get_api_file_path(
+            idk_name = idk_name,
+            stable = stable,
+            api_file_path = api_file_path,
+        ),
         **kwargs
     )
 
 def idk_cc_shared_library_zx(
+        *,
         name,
         idk_name,
         category,
@@ -96,13 +107,18 @@ def idk_cc_shared_library_zx(
         idk_name = idk_name,
         category = category,
         stable = stable,
-        api_file_path = get_api_file_path(idk_name, stable, api_file_path),
+        api_file_path = get_api_file_path(
+            idk_name = idk_name,
+            stable = stable,
+            api_file_path = api_file_path,
+        ),
         output_name = output_name,
         ifs_golden_file = get_golden_file(_get_ifs_golden_file_name(output_name), support_platform = True),
         **kwargs
     )
 
 def idk_cc_static_library_zx(
+        *,
         idk_name,
         category,
         api_file_path = None,
@@ -121,6 +137,10 @@ def idk_cc_static_library_zx(
         idk_name = idk_name,
         category = category,
         stable = stable,
-        api_file_path = get_api_file_path(idk_name, stable, api_file_path),
+        api_file_path = get_api_file_path(
+            idk_name = idk_name,
+            stable = stable,
+            api_file_path = api_file_path,
+        ),
         **kwargs
     )

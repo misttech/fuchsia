@@ -39,6 +39,7 @@ _product_configuration = rule(
 )
 
 def product_configuration(
+        *,
         name,
         product_config_json = None,
         bootfs_packages = None,

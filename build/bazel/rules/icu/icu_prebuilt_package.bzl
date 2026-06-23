@@ -16,7 +16,7 @@ load(
     "icu_flavored_name",
 )
 
-def icu_prebuilt_package(name, archive, **kwargs):
+def icu_prebuilt_package(*, name, archive, **kwargs):
     """Declares a prebuilt_package that comes in icu flavored versions as well as the standard.
 
     See prebuilt_package() for further documentation.

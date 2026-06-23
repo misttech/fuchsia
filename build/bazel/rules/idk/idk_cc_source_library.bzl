@@ -15,6 +15,7 @@ load(
 )
 
 def idk_cc_source_library(
+        *,
         idk_name,
         category,
         stable,
@@ -32,11 +33,16 @@ def idk_cc_source_library(
         idk_name = idk_name,
         category = category,
         stable = stable,
-        api_file_path = get_api_file_path(idk_name, stable, api_file_path),
+        api_file_path = get_api_file_path(
+            idk_name = idk_name,
+            stable = stable,
+            api_file_path = api_file_path,
+        ),
         **kwargs
     )
 
 def idk_cc_source_library_zx(
+        *,
         idk_name,
         category,
         stable,
@@ -54,6 +60,10 @@ def idk_cc_source_library_zx(
         idk_name = idk_name,
         category = category,
         stable = stable,
-        api_file_path = get_api_file_path(idk_name, stable, api_file_path),
+        api_file_path = get_api_file_path(
+            idk_name = idk_name,
+            stable = stable,
+            api_file_path = api_file_path,
+        ),
         **kwargs
     )

@@ -66,6 +66,7 @@ cc_binary_host_tool = macro(
 # `go_binary()` rule in a legacy macro, which cannot be used with
 # `inherit_attrs` in a symbolic macro.
 def go_binary_host_tool(
+        *,
         name,
         target_compatible_with,
         **kwargs):
@@ -98,6 +99,7 @@ def go_binary_host_tool(
 # rules_python is a legacy macro, which cannot be used with `inherit_attrs` in
 # a symbolic macro.
 def py_binary_host_tool(
+        *,
         name,
         target_compatible_with,
         **kwargs):

@@ -121,6 +121,7 @@ _fidl_api_compatibility_check = rule(
 
 # LINT.IfChange(compatibility_test)
 def fidl_compatibility_test(
+        *,
         name,
         library_name,
         fidl_library_target_name,

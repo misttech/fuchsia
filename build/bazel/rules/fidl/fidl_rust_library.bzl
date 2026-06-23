@@ -7,6 +7,7 @@
 load("@rules_rust//rust:defs.bzl", "rust_library")
 
 def fidl_rust_library(
+        *,
         name,
         fidl_library_name,
         fidl_ir_json,

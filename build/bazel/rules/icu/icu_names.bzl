@@ -4,6 +4,11 @@
 
 load("@fuchsia_icu_config//:constants.bzl", "icu_commits")
 
+visibility([
+    "//bundles/assembly/...",
+    "//build/bazel/rules/icu/...",
+])
+
 def icu_flavored_name(name, icu_flavor):
     """Given a name, create an new name with a suffix containing the flavor and commit."""
     return "%s.icu_%s_%s" % (name, icu_flavor, icu_commits[icu_flavor])

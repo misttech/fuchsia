@@ -17,6 +17,7 @@ load(
 )
 
 def icu_assembly_input_bundle(
+        *,
         name,
         icu_base_packages = [],
         icu_cache_packages = [],

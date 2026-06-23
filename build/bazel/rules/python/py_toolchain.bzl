@@ -13,7 +13,7 @@ PY_TOOLCHAIN_ATTRS = {
     ),
 }
 
-def find_python_interpreter_and_runfiles(ctx):
+def _find_python_interpreter_and_runfiles(ctx):
     """Finds the Python interpreter and its runfiles.
 
     Args:
@@ -32,7 +32,14 @@ def find_python_interpreter_and_runfiles(ctx):
     python3_runfiles = ctx.runfiles(transitive_files = toolchain_info.py3_runtime.files)
     return python3_executable, python3_runfiles
 
-def generate_python_build_action(ctx, py_script, inputs, outputs, arguments = [], **kwargs):
+def generate_python_build_action(
+        ctx,
+        *,
+        py_script,
+        inputs,
+        outputs,
+        arguments = [],
+        **kwargs):
     """Generates an action invoking a Python script directly with the Python interpreter.
 
     In practice this is much faster than using a py_binary(), which will wrap everything with an
@@ -52,7 +59,7 @@ def generate_python_build_action(ctx, py_script, inputs, outputs, arguments = []
     """
     # Get Python3 interpreter and its runfiles.
 
-    python3_executable, python3_runfiles = find_python_interpreter_and_runfiles(ctx)
+    python3_executable, python3_runfiles = _find_python_interpreter_and_runfiles(ctx)
 
     runfiles = ctx.runfiles(
         files = [py_script] + inputs,

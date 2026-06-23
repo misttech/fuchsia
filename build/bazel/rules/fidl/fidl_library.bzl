@@ -402,7 +402,13 @@ def _fidl_library_impl(
 
         # Verify the allowlist here to catch cases where this macro is used but
         # there is no dependency on the atom target.
-        verify_target_is_in_allowlist(name, atom_type, category, stable, testonly)
+        verify_target_is_in_allowlist(
+            name = name,
+            type = atom_type,
+            category = category,
+            stable = stable,
+            testonly = testonly,
+        )
 
         # LINT.IfChange(idk_name)
         idk_name = library_name
@@ -639,7 +645,14 @@ If not specified, appropriate values will be determined based on the target API 
     },
 )
 
-def fidl_library(name, library_name = "", category = "", stable = False, api_file_path = None, **kwargs):
+def fidl_library(
+        *,
+        name,
+        library_name = "",
+        category = "",
+        stable = False,
+        api_file_path = None,
+        **kwargs):
     """Declares a FIDL library.
 
     This is a wrapper around `_fidl_library()` that supports a default value
@@ -655,7 +668,11 @@ def fidl_library(name, library_name = "", category = "", stable = False, api_fil
         library_name = library_name,
         category = category,
         stable = stable,
-        api_file_path = get_api_file_path(library_name, stable, api_file_path),
+        api_file_path = get_api_file_path(
+            idk_name = library_name,
+            stable = stable,
+            api_file_path = api_file_path,
+        ),
         hlcpp_lib_deps = select({
             "@platforms//os:fuchsia": ["//sdk/lib/fidl/hlcpp"],
             "//conditions:default": ["//sdk/lib/fidl/hlcpp:hlcpp_base"],

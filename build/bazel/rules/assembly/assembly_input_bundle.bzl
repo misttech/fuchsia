@@ -347,6 +347,7 @@ _assembly_input_bundle = rule(
 )
 
 def assembly_input_bundle(
+        *,
         name,
         allowed_in = [],
         scrutiny_required = [],

@@ -38,14 +38,18 @@ This allows the dictionary to be passed to a `string_dict` attribute.
     """
     return {k: json.encode(v) for k, v in dict.items()}
 
-def select_for(condition, condition_value, default_value = []):
+def select_for(condition, condition_value, *, default_value = []):
     return select({
         condition: condition_value,
         "//conditions:default": default_value,
     })
 
-def select_for_fuchsia(fuchsia_value, non_fuchsia_value = []):
-    return select_for("@platforms//os:fuchsia", fuchsia_value, non_fuchsia_value)
+def select_for_fuchsia(fuchsia_value, *, non_fuchsia_value = []):
+    return select_for(
+        "@platforms//os:fuchsia",
+        fuchsia_value,
+        default_value = non_fuchsia_value,
+    )
 
 def _get_idk_label(label_str):
     # Ensure the label is relative to the `BUILD` file, not this `.bzl` file
@@ -64,6 +68,7 @@ def get_idk_deps(underlying_deps):
     return [_get_idk_label(dep) for dep in underlying_deps]
 
 def verify_target_is_in_allowlist(
+        *,
         name,
         type,
         category,
@@ -92,15 +97,16 @@ def verify_target_is_in_allowlist(
             Only applies to "cc_prebuilt_library" type atoms.
     """
     return verify_atom_is_in_allowlist(
-        _get_idk_label(name),
-        type,
-        category,
-        stable,
-        testonly,
-        prebuilt_library_format,
+        label = _get_idk_label(name),
+        type = type,
+        category = category,
+        stable = stable,
+        testonly = testonly,
+        prebuilt_library_format = prebuilt_library_format,
     )
 
 def verify_atom_is_in_allowlist(
+        *,
         label,
         type,
         category,
@@ -187,7 +193,7 @@ def verify_atom_is_in_allowlist(
         fail("Target `%s` is not in the allowlist for type='%s', category='%s', stable='%s'" %
              (label_str, type, category, stable))
 
-def get_atom_visibility(target_visibility, is_fidl_library = False):
+def get_atom_visibility(target_visibility, *, is_fidl_library = False):
     """Returns the visibility to use for an atom target.
 
     The atom's visibility should allow IDK contents/definition rules to depend
@@ -215,7 +221,7 @@ def get_atom_visibility(target_visibility, is_fidl_library = False):
 
     return atom_visibility
 
-def get_api_file_path(idk_name, stable, api_file_path):
+def get_api_file_path(*, idk_name, stable, api_file_path):
     """Returns the string path to the API file for the given IDK atom.
 
     If `stable` is False, `api_file_path` must be `None` and `None` is returned.
@@ -282,7 +288,7 @@ def _get_api_level_condition(api_level):
     """
     return "//build/bazel:is_api_level_" + api_level
 
-def get_golden_file(golden_file_name, support_platform = False):
+def get_golden_file(golden_file_name, *, support_platform = False):
     """Returns a `select()` statement for the golden file for the current API level.
 
     The `select()` statement maps each API level to the label for the

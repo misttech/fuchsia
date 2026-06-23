@@ -62,7 +62,7 @@ _rustc_embed_files_gen = rule(
     },
 )
 
-def rustc_embed_files(name, files, **kwargs):
+def rustc_embed_files(*, name, files, **kwargs):
     """Defines a Rust library that embeds the contents of some files as constants.
 
     Args:

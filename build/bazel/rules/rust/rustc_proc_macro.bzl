@@ -8,7 +8,15 @@ load("@rules_rust//rust:defs.bzl", "rust_proc_macro")
 load("//build/bazel/rules/rust:common.bzl", "with_fuchsia_rustc_flags")
 load("//build/bazel/rules/rust:generate_unit_tests.bzl", "generate_unit_tests")
 
-def _rustc_proc_macro_impl(name, with_host_unit_tests, with_unit_tests, test_deps, lint_config, rustc_flags, visibility = None, **kwargs):
+def _rustc_proc_macro_impl(
+        name,
+        with_host_unit_tests,
+        with_unit_tests,
+        test_deps,
+        lint_config,
+        rustc_flags,
+        visibility,
+        **kwargs):
     if lint_config == None:
         lint_config = "//build/config/rust/lints:clippy_warn_production"
 
@@ -22,7 +30,16 @@ def _rustc_proc_macro_impl(name, with_host_unit_tests, with_unit_tests, test_dep
         **kwargs
     )
 
-    generate_unit_tests(name, with_host_unit_tests, with_unit_tests, test_deps, lint_config, rustc_flags, visibility, **kwargs)
+    generate_unit_tests(
+        name = name,
+        with_host_unit_tests = with_host_unit_tests,
+        with_unit_tests = with_unit_tests,
+        test_deps = test_deps,
+        lint_config = lint_config,
+        rustc_flags = rustc_flags,
+        visibility = visibility,
+        **kwargs
+    )
 
 rustc_proc_macro = macro(
     doc = """`rustc_proc_macro` wrapper that optionally defines a test target.

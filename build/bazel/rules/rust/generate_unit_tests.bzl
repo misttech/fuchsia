@@ -5,7 +5,16 @@
 load("//build/bazel/host_tests:host_rustc_test.bzl", "host_rustc_test")
 load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 
-def generate_unit_tests(name, with_host_unit_tests, with_unit_tests, test_deps, lint_config, rustc_flags, visibility, **kwargs):
+def generate_unit_tests(
+        *,
+        name,
+        with_host_unit_tests,
+        with_unit_tests,
+        test_deps,
+        lint_config,
+        rustc_flags,
+        visibility,
+        **kwargs):
     if with_host_unit_tests and with_unit_tests:
         fail("Cannot specify both with_host_unit_tests and with_unit_tests on {}".format(name))
 

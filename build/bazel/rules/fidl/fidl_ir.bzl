@@ -303,6 +303,7 @@ _validated_ir_file = rule(
 )
 
 def fidl_ir(
+        *,
         name,
         fidl_library_target_name,
         srcs,

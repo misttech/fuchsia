@@ -75,6 +75,7 @@ def _get_root_path(bindings_flavor):
     return "bindings/" + bindings_flavor
 
 def fidl_cpp_family(
+        *,
         name,
         fidl_library_name,
         fidl_ir_json,

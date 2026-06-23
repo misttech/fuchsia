@@ -171,7 +171,10 @@ def _idk_cc_source_library_impl(
         name = name,
         srcs = srcs_for_bazel_library,
         hdrs = hdrs_for_bazel_library,
-        deps = deps + select_for_fuchsia(fuchsia_deps, non_fuchsia_deps),
+        deps = deps + select_for_fuchsia(
+            fuchsia_deps,
+            non_fuchsia_value = non_fuchsia_deps,
+        ),
         # TODO(https://fxbug.dev/428229472): If we must support
         # `non_idk_implementation_deps`, include it below.
         implementation_deps = implementation_deps + select_for_fuchsia(fuchsia_implementation_deps),
@@ -254,7 +257,13 @@ def _idk_cc_source_library_impl(
 
     # Verify the allowlist here to catch cases where this macro is used but
     # there is no dependency on the atom target.
-    verify_target_is_in_allowlist(name, atom_type, category, stable, testonly)
+    verify_target_is_in_allowlist(
+        name = name,
+        type = atom_type,
+        category = category,
+        stable = stable,
+        testonly = testonly,
+    )
 
     idk_atom(
         name = name + "_idk",
