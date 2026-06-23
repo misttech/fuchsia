@@ -19,6 +19,10 @@ The Rust driver source code should be in a `src` subdirectory in a file called
 `lib.rs`. The Rust source code should use the [fdf\_component library][fdf-component]
 to define the driver.
 
+The module structure should use a flat file module landing (e.g., `src/foo.rs`)
+instead of `mod.rs` in a folder (e.g., `src/foo/mod.rs`). Submodules
+should be placed in a sibling folder (e.g., `src/foo/bar.rs`).
+
 The driver must be defined as a struct that implements the
 [fdf\_component::Driver trait][driver-trait]. The implemented
 [start method][start-method] receives a [DriverContext][driver-context] struct
@@ -70,6 +74,15 @@ following targets:
 * `fuchsia_driver_bind_bytecode`
 * `fuchsia_rust_driver`
 * `fuchsia_driver_component`
+
+All Rust driver targets are encouraged to enforce strict lints by including the
+following configs in their GN definition:
+
+```gn
+configs += [
+  "//build/config/rust/lints:clippy_warn_all",
+]
+```
 
 ## Driver communication
 
@@ -161,6 +174,8 @@ Do not detach tasks using [`.detach()`][task-detach]. Instead, initialize a
 [`fuchsia_async::Scope`][fasync-scope-struct] within the driver's `start` method
 and use it to spawn concurrent work. The driver must retain ownership of the
 `Scope`.
+
+Prefer `Mutex` and `RwLock` from the `fuchsia_sync` crate to `std::sync`.
 
 ## Testing
 

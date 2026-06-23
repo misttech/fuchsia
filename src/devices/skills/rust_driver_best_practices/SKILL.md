@@ -63,6 +63,15 @@ When defining a Rust driver in your `BUILD.gn`, use the following targets:
   the component manifest (`.cml`), and the bind rules (`.bind`) into a single
   driver component that the Driver Framework can load.
 
+### Lints
+All Rust driver targets should enforce strict lints by including the following
+configs:
+```gn
+  configs += [
+    "//build/config/rust/lints:clippy_warn_all",
+  ]
+```
+
 ## 3. Style and Naming Conventions
 
 For generic Rust style, naming conventions, and best practices (like `use`
@@ -97,6 +106,53 @@ preferences, etc.), please refer to the `rust_best_practices` skill.
 * **Visibility in standalone binaries:** In standalone drivers or executables
   (not libraries), prefer standard `pub` over `pub(crate)` as it is not consumed
   externally anyway.
+* **Module Architecture & Structure**: Always use the modern Rust approach of
+  using a flat file module landing (e.g., `src/foo.rs`) instead of the older
+  `mod.rs` in a folder (e.g., `src/foo/mod.rs`). Place submodule implementations
+  in a sibling folder (e.g., `src/foo/bar.rs`).
+* **No Dead Code Blanket Suppressions**: Never use `#![allow(dead_code)]` or
+  `#[allow(dead_code)]` blanket overrides. For scaffolded or unused structs,
+  fields, and constants, always use `#[expect(unused)]` (or
+  `#[expect(dead_code)]`) directly on the symbols to ensure clean
+  compiler-driven warnings.
+* **Inlined Format Arguments**: Always prefer inlining format arguments inside
+  format strings and macros (e.g., `log::error!("Failed: {error:?}");`) rather
+  than passing them as trailing positional arguments (e.g.,
+  `log::error!("Failed: {:?}", error);`), unless formatting a complex
+  expression.
+* **No Exclamation Marks in Logs**: Avoid utilizing exclamation marks (`!`) in
+  all logging statements (e.g., `log::info!`, `log::error!`, `log::warn!`). Keep
+  logging strings objective, descriptive, and direct.
+* **Type-Safe Casting**: Avoid unsafe or silent `as` casts (e.g., `bar.size as
+  usize`) unless strictly required by hot-path performance constraints. Always
+  prefer type-safe conversions:
+  * Use `usize::from(...)` where the conversion is guaranteed to succeed.
+  * Use `usize::try_from(...).unwrap()` where the conversion could fail,
+    ensuring loud and explicit panic crashes in case of overflow.
+* **Type-Annotating Unused Results**: When discarding non-trivial results (like
+  Zircon/FDF syscall `Result`s or handles) via `let _ = ...`, always explicitly
+  annotate the _whole_ ignored type (e.g., `let _: Result<(), zx::Status> = ..`)
+  to ensure type clarity and prevent silent mistakes.
+* **Mandatory Unsafe Safety Comments**: All `unsafe` blocks must be preceded by
+  a descriptive `// SAFETY: <explanation>` comment detailing exactly why the
+  unsafe call is valid, how the preconditions are met, and why it is guaranteed
+  to be safe.
+* **Import macros from log**: Always import the used macros from the log crate
+  instead of using fully qualified names at call site.
+* **No numbered comment lists**: Don't use comments with numbered stages in
+  function bodies like `// 1. Foo`, `// 2. Bar`. Keep the section comments as
+  simple sentences but avoid the numbering.
+* **Importing types**: By default, types and traits should be referenced in code
+  without using their module path, e.g., code should use `Regex`, not
+  `regex::Regex,` with a `use regex::Regex` at the top of the file or
+  potentially in the relevant function. Exceptions:
+  * In cases where there are ambiguities, it is acceptable to directly reference
+    types with common names like `io::Error` or rename (`as IoError`).
+  * In cases where you have a large "group" of types, e.g. the `hir` module in
+    rustc which contains a large number of HIR types.
+  * In macros and generated code.
+  * In code with lots of dependencies, where importing everything would lead to
+    a very large import block with little benefit.
 
 **Driver-Specific Guidelines:**
 
@@ -105,6 +161,9 @@ preferences, etc.), please refer to the `rust_best_practices` skill.
   hardware specification or a reference driver (e.g., from the Linux kernel),
   include a comment referencing that source so it can be easily looked up by
   future maintainers.
+* **No Inline Comments**: Prefer descriptive doc comments on public constants
+  and symbols above their definitions, rather than brief inline or end-of-line
+  comments.
 * **Missing Libraries**: If a utility library seems to be missing in Rust when
   porting from C++, try to find the equivalent library in the C++
   implementation. It might be trivial to implement the logic directly in Rust
@@ -202,6 +261,29 @@ parents.
 
 ## 6. Safe Hardware Register Access and `pdev`
 
+### Context & Citations
+Always document hardware registers and blocks with explicit doc comments
+detailing their purpose, alongside **verbatim file path and function citations
+or page/section numbers** from the reference source codebase or programming
+guide.
+
+### Shared Memory & Hardware Descriptors
+Any struct representing a hardware-shared memory descriptor layout (such as
+GPDs, BDs, and ring buffers) **must** derive standard Fuchsia `zerocopy` traits
+to guarantee memory safety and alignment during serialization/deserialization.
+
+Always import the `zerocopy` traits (`FromBytes`, `IntoBytes`, `Immutable`,
+`KnownLayout`) into the module namespace rather than utilizing verbose fully
+qualified macro paths. This keeps derives clean and concise:
+
+```rust
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+
+#[derive(Copy, Clone, Debug, Default, FromBytes, IntoBytes, Immutable, KnownLayout)]
+#[repr(C)]
+pub struct GeneralPacketDescriptor { ... }
+```
+
 ### Using Macros for MMIO
 Never perform manual bitwise operations (e.g., `val |= 1 << 5;`) on raw integers
 when accessing MMIO registers. Instead, use the `mmio::register!` and
@@ -257,6 +339,9 @@ bitfield! {
 
 Modern Fuchsia drivers should avoid heavy synchronization like `Mutex` when
 possible, preferring actor pattern when it makes sense.
+
+### Locks
+Prefer `Mutex` and `RwLock` from the `fuchsia_sync` crate, not `std::sync`.
 
 ### Patterns to avoid Mutex/Arc:
 - **Task-Local State**: Own the state in a local task spawned on the driver's
