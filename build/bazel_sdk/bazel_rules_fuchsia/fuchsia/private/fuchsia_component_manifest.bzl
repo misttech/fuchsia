@@ -21,6 +21,10 @@ _COMMON_CMC_ATTRIBUTES = {
 }
 
 def _component_name_from_cml_file(cml_file):
+    if not cml_file.basename.endswith(".cml"):
+        fail('The component manifest file\'s basename must end with ".cml", but got "{}".'.format(
+            cml_file.basename,
+        ))
     return cml_file.basename[:-4]
 
 def _fuchsia_component_manifest_shard_collection_impl(ctx):

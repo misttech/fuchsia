@@ -199,7 +199,7 @@ def _test_setting_component_names():
     # component_name if specified
     make_file(
         name = "generated_component_manifest_comnponent_C",
-        filename = "component_C.cm",
+        filename = "component_C.cml",
         tags = ["manual"],
     )
     fuchsia_component(
