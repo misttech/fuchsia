@@ -8,7 +8,7 @@ import normalize_rustc_args
 
 
 class TestNormalizeRustcArgs(unittest.TestCase):
-    def test_normalize_rustc_arg(self):
+    def test_normalize_rustc_arg(self) -> None:
         # Basic args
         self.assertEqual(
             normalize_rustc_args.normalize_rustc_arg("params.rs"), "params.rs"

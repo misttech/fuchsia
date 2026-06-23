@@ -13,7 +13,7 @@ import ninja_artifacts
 
 
 class TestBuildCommandQueryUtils(unittest.TestCase):
-    def test_query_ninja_commands(self):
+    def test_query_ninja_commands(self) -> None:
         mock_ninja = ninja_artifacts.MockNinjaRunner(
             pathlib.Path("/fuchsia/out/default"),
             "rustc --crate-name bar obj/foo/bar.o\n"
@@ -49,7 +49,7 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
             ["-t", "commands", "-s", "obj/foo/bar.o", "obj/foo/baz.o"],
         )
 
-    def test_query_ninja_commands_empty_labels(self):
+    def test_query_ninja_commands_empty_labels(self) -> None:
         mock_ninja = mock.Mock()
         self.assertEqual(
             build_command_query_utils.query_ninja_commands(
@@ -59,7 +59,7 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
         )
         mock_ninja.run_and_extract_output.assert_not_called()
 
-    def test_query_ninja_commands_ninja_error(self):
+    def test_query_ninja_commands_ninja_error(self) -> None:
         mock_ninja = mock.Mock()
         mock_ninja.run_and_extract_output.side_effect = Exception(
             "Ninja failed"
@@ -78,7 +78,7 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
                     ["//foo:bar"],
                 )
 
-    def test_query_ninja_commands_mismatch(self):
+    def test_query_ninja_commands_mismatch(self) -> None:
         mock_ninja = ninja_artifacts.MockNinjaRunner(
             pathlib.Path("/fuchsia/out/default"),
             "rustc --crate-name bar obj/foo/BLOOP.o\n"
@@ -103,7 +103,7 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
                     ["//foo:bar", "//foo:baz"],
                 )
 
-    def test_query_ninja_commands_missing_command(self):
+    def test_query_ninja_commands_missing_command(self) -> None:
         mock_ninja = ninja_artifacts.MockNinjaRunner(
             pathlib.Path("/fuchsia/out/default"),
             "rustc --crate-name bar obj/foo/bar.o\n",
@@ -126,7 +126,7 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
                     ["//foo:bar", "//foo:baz"],
                 )
 
-    def test_query_ninja_commands_missing_label(self):
+    def test_query_ninja_commands_missing_label(self) -> None:
         mock_ninja = mock.Mock()
         with mock.patch(
             "pathlib.Path.open",
@@ -143,7 +143,7 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
                     ["//foo:baz"],
                 )
 
-    def test_query_bazel_commands(self):
+    def test_query_bazel_commands(self) -> None:
         mock_bazel_launcher = build_utils.MockBazelLauncher()
         mock_bazel_launcher.push_expected_outputs(
             [
@@ -191,7 +191,7 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
             ],
         )
 
-    def test_query_bazel_commands_error(self):
+    def test_query_bazel_commands_error(self) -> None:
         mock_bazel_launcher = build_utils.MockBazelLauncher()
         mock_bazel_launcher.command_runner.push_result(returncode=1)
 
@@ -200,7 +200,7 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
                 mock_bazel_launcher, ["//foo:bar"]
             )
 
-    def test_query_bazel_commands_empty_labels(self):
+    def test_query_bazel_commands_empty_labels(self) -> None:
         mock_launcher = build_utils.MockBazelLauncher()
         self.assertDictEqual(
             build_command_query_utils.query_bazel_commands(mock_launcher, []),
@@ -208,7 +208,7 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
         )
         self.assertEqual(len(mock_launcher.command_runner.results), 0)
 
-    def test_query_bazel_commands_invalid_json(self):
+    def test_query_bazel_commands_invalid_json(self) -> None:
         mock_launcher = build_utils.MockBazelLauncher()
         mock_launcher.push_expected_outputs(["invalid json"])
         with self.assertRaises(json.decoder.JSONDecodeError):
@@ -216,7 +216,7 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
                 mock_launcher, ["//foo:bar"]
             )
 
-    def test_query_bazel_commands_missing_actions(self):
+    def test_query_bazel_commands_missing_actions(self) -> None:
         mock_launcher = build_utils.MockBazelLauncher()
         mock_launcher.push_expected_outputs(
             [
@@ -232,7 +232,7 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
                 mock_launcher, ["//foo:bar"]
             )
 
-    def test_query_bazel_commands_target_not_in_results(self):
+    def test_query_bazel_commands_target_not_in_results(self) -> None:
         mock_launcher = build_utils.MockBazelLauncher()
         mock_launcher.push_expected_outputs(
             [
@@ -251,7 +251,7 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
                 mock_launcher, ["//foo:bar"]
             )
 
-    def test_query_bazel_commands_empty_arguments(self):
+    def test_query_bazel_commands_empty_arguments(self) -> None:
         mock_launcher = build_utils.MockBazelLauncher()
         mock_launcher.push_expected_outputs(
             [

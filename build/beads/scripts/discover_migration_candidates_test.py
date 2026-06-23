@@ -10,7 +10,7 @@ import discover_migration_candidates
 
 
 class TestDiscoverMigrationCandidates(unittest.TestCase):
-    def test_complexity_calculator_third_party(self):
+    def test_complexity_calculator_third_party(self) -> None:
         calc = discover_migration_candidates.ComplexityCalculator(
             pathlib.Path("/root"), [], []
         )
@@ -24,7 +24,7 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
         with self.assertRaises(ValueError):
             calc._is_third_party_target("not/fully/qualified/label")
 
-    def test_complexity_calculator_bazel(self):
+    def test_complexity_calculator_bazel(self) -> None:
         calc = discover_migration_candidates.ComplexityCalculator(
             pathlib.Path("/root"), [], []
         )
@@ -44,7 +44,7 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
             mock_exists.return_value = False
             self.assertFalse(calc._is_bazel_target("//root/a:t1"))
 
-    def test_complexity_for_label(self):
+    def test_complexity_for_label(self) -> None:
         root = pathlib.Path("/root")
         calc = discover_migration_candidates.ComplexityCalculator(root, [], [])
 
@@ -64,7 +64,7 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
                 discover_migration_candidates._UNKNOWN_DEP_COMPLEXITY,
             )
 
-    def test_complexity_for_label_calculation(self):
+    def test_complexity_for_label_calculation(self) -> None:
         root = pathlib.Path("/root")
         calc = discover_migration_candidates.ComplexityCalculator(root, [], [])
 
@@ -94,7 +94,7 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
         ):
             self.assertEqual(calc.complexity_for_label("//root:t1"), 0)
 
-    def test_complexity_for_file(self):
+    def test_complexity_for_file(self) -> None:
         root = pathlib.Path("/root")
 
         content = """
@@ -146,7 +146,7 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
             self.assertEqual(result3["targets"][2]["name"], "t3")
             self.assertEqual(result3["targets"][2]["complexity"], 1)
 
-    def test_end_pos_for_single_target(self):
+    def test_end_pos_for_single_target(self) -> None:
         content = 'target("name") { deps = [] }'
         # Start after '{'
         start_pos = content.find("{") + 1
@@ -168,7 +168,7 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
         with self.assertRaises(ValueError):
             discover_migration_candidates.end_pos_for_target(content, start_pos)
 
-    def test_end_pos_for_multiple_targets(self):
+    def test_end_pos_for_multiple_targets(self) -> None:
         content = """target("name1") {
             deps = []
         }
@@ -195,7 +195,7 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
         self.assertEqual(content[end_pos_name2 - 1], "}")
         self.assertEqual(end_pos_name2, len(content))
 
-    def test_deps_from_target_body(self):
+    def test_deps_from_target_body(self) -> None:
         body = 'deps = [ "//a", "//b" ]'
         deps = discover_migration_candidates.deps_from_target_body(body, {})
         self.assertEqual(deps, ["//a", "//b"])
@@ -262,7 +262,7 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
             ],
         )
 
-    def test_shared_variables_from(self):
+    def test_shared_variables_from(self) -> None:
         context = ""
         shared_variables = discover_migration_candidates.shared_variables_from(
             context
@@ -287,7 +287,7 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
             },
         )
 
-    def test_fields_from_target_body(self):
+    def test_fields_from_target_body(self) -> None:
         body = 'sources = ["a.cc"]\nconfigs += ["//c"]'
         fields = discover_migration_candidates.fields_from_target_body(body)
         self.assertEqual(sorted(fields), ["configs", "sources"])
@@ -296,7 +296,7 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
         fields = discover_migration_candidates.fields_from_target_body(body)
         self.assertEqual(sorted(fields), ["inputs"])
 
-    def test_targets_from_gn_file(self):
+    def test_targets_from_gn_file(self) -> None:
         content = """
         source_set("lib") {
             sources = ["lib.cc"]
@@ -330,7 +330,7 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
                 ],
             )
 
-    def test_complexity_calculator_initialization(self):
+    def test_complexity_calculator_initialization(self) -> None:
         root = pathlib.Path("/root")
         gn_file = pathlib.Path("src/BUILD.gn")
         content = 'executable("foo") { }'
@@ -346,7 +346,7 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
                 calc._target_cache[expected_label]["type"], "executable"
             )
 
-    def test_to_fully_qualified_label(self):
+    def test_to_fully_qualified_label(self) -> None:
         calc = discover_migration_candidates.ComplexityCalculator(
             pathlib.Path("/root"), [], []
         )
