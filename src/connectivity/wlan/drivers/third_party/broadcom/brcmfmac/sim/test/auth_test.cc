@@ -158,6 +158,8 @@ class AuthTest : public SimTest {
   uint32_t wsec_;
   uint16_t auth_;
   uint32_t wpa_auth_;
+  uint32_t mfp_ = 0;
+  uint16_t rsn_cap_override_ = 12;
   struct brcmf_wsec_key_le wsec_key_;
   SecurityType sec_type_;
   SaeAuthState sae_auth_state_ = COMMIT;
@@ -364,9 +366,9 @@ void AuthTest::StartConnect() {
     offset += TLV_OUI_LEN;
     security_ie_[offset++] = RSN_AKM_PSK;  // Set auth management suite.
 
-    // These two bytes indicate RSN capabilities, in this case is \x0c\x00.
-    security_ie_[offset++] = 12;  // Lower byte
-    security_ie_[offset++] = 0;   // Higher byte
+    // These two bytes indicate RSN capabilities.
+    security_ie_[offset++] = rsn_cap_override_ & 0xFF;         // Lower byte
+    security_ie_[offset++] = (rsn_cap_override_ >> 8) & 0xFF;  // Higher byte
 
     security_ie_count = offset;
     ASSERT_EQ(security_ie_count, (const uint32_t)(security_ie_[TLV_LEN_OFF] + TLV_HDR_LEN));
@@ -399,9 +401,9 @@ void AuthTest::StartConnect() {
     offset += TLV_OUI_LEN;
     security_ie_[offset++] = RSN_AKM_SAE_PSK;  // Set auth management suite.
 
-    // These two bytes indicate RSN capabilities, in this case is \x0c\x00.
-    security_ie_[offset++] = 12;  // Lower byte
-    security_ie_[offset++] = 0;   // Higher byte
+    // These two bytes indicate RSN capabilities.
+    security_ie_[offset++] = rsn_cap_override_ & 0xFF;         // Lower byte
+    security_ie_[offset++] = (rsn_cap_override_ >> 8) & 0xFF;  // Higher byte
 
     security_ie_count = offset;
     ASSERT_EQ(security_ie_count, (const uint32_t)(security_ie_[TLV_LEN_OFF] + TLV_HDR_LEN));
@@ -445,6 +447,9 @@ void AuthTest::OnConnectConf(const wlan_fullmac_wire::WlanFullmacImplIfcConnectC
     EXPECT_EQ(status, ZX_OK);
 
     status = brcmf_fil_bsscfg_int_get(ifp, "wpa_auth", &wpa_auth_);
+    EXPECT_EQ(status, ZX_OK);
+
+    status = brcmf_fil_bsscfg_int_get(ifp, "mfp", &mfp_);
     EXPECT_EQ(status, ZX_OK);
 
     // The wsec_key iovar is only meaningful for WEP security
@@ -945,6 +950,51 @@ TEST_F(AuthTest, WPA3WrongBssid) {
   VerifyAuthFrames();
   EXPECT_EQ(connect_status_, wlan_ieee80211::StatusCode::kRejectedSequenceTimeout);
   EXPECT_EQ(sae_auth_state_, COMMIT);
+}
+
+// Verify that MFP Required RSN capability sets MFP to BRCMF_MFP_REQUIRED in firmware.
+TEST_F(AuthTest, WPA2MfpRequired) {
+  Init();
+  sec_type_ = SEC_TYPE_WPA2;
+  rsn_cap_override_ = RSN_CAP_MFPR_MASK;
+  ap_.SetSecurity({.auth_handling_mode = simulation::AUTH_TYPE_OPEN,
+                   .sec_type = simulation::SEC_PROTO_TYPE_WPA2});
+  env_->ScheduleNotification(std::bind(&AuthTest::StartConnect, this), zx::msec(10));
+
+  env_->Run(kTestDuration);
+
+  EXPECT_EQ(connect_status_, wlan_ieee80211::StatusCode::kSuccess);
+  EXPECT_EQ(mfp_, BRCMF_MFP_REQUIRED);
+}
+
+// Verify that MFP Capable RSN capability sets MFP to BRCMF_MFP_CAPABLE in firmware.
+TEST_F(AuthTest, WPA2MfpCapable) {
+  Init();
+  sec_type_ = SEC_TYPE_WPA2;
+  rsn_cap_override_ = RSN_CAP_MFPC_MASK;
+  ap_.SetSecurity({.auth_handling_mode = simulation::AUTH_TYPE_OPEN,
+                   .sec_type = simulation::SEC_PROTO_TYPE_WPA2});
+  env_->ScheduleNotification(std::bind(&AuthTest::StartConnect, this), zx::msec(10));
+
+  env_->Run(kTestDuration);
+
+  EXPECT_EQ(connect_status_, wlan_ieee80211::StatusCode::kSuccess);
+  EXPECT_EQ(mfp_, BRCMF_MFP_CAPABLE);
+}
+
+// Verify that no MFP RSN capabilities sets MFP to BRCMF_MFP_NONE in firmware.
+TEST_F(AuthTest, WPA2MfpNone) {
+  Init();
+  sec_type_ = SEC_TYPE_WPA2;
+  rsn_cap_override_ = 0;
+  ap_.SetSecurity({.auth_handling_mode = simulation::AUTH_TYPE_OPEN,
+                   .sec_type = simulation::SEC_PROTO_TYPE_WPA2});
+  env_->ScheduleNotification(std::bind(&AuthTest::StartConnect, this), zx::msec(10));
+
+  env_->Run(kTestDuration);
+
+  EXPECT_EQ(connect_status_, wlan_ieee80211::StatusCode::kSuccess);
+  EXPECT_EQ(mfp_, BRCMF_MFP_NONE);
 }
 
 }  // namespace wlan::brcmfmac

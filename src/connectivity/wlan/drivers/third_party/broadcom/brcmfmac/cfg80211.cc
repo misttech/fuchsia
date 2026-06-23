@@ -1788,9 +1788,18 @@ static zx_status_t brcmf_configure_wpaie(struct brcmf_if* ifp, const struct brcm
           goto exit;
         }
       }
-    } else if (wpa_auth & (WPA3_AUTH_SAE_PSK | WPA2_AUTH_PSK)) {
-      // Set mfp to capable if it's a wpa2 or wpa3 assocation.
-      mfp = BRCMF_MFP_CAPABLE;
+    } else {
+      // Client path: honour the RSN-capabilities word SME placed in
+      // security_ie (MFPR/MFPC) so the firmware "mfp" knob matches what the
+      // host actually negotiated. Mirrors bcmdhd wl_set_key_mgmt().
+      if ((static_cast<int32_t>(offset) + RSN_CAP_LEN) <= len) {
+        rsn_cap = data[offset] + (data[offset + 1] << 8);
+        if (rsn_cap & RSN_CAP_MFPR_MASK) {
+          mfp = BRCMF_MFP_REQUIRED;
+        } else if (rsn_cap & RSN_CAP_MFPC_MASK) {
+          mfp = BRCMF_MFP_CAPABLE;
+        }
+      }
     }
   }
 

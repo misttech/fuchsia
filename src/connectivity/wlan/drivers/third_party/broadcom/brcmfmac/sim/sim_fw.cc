@@ -202,6 +202,8 @@ zx_status_t SimFirmware::SetupIovarTable() {
        &SimFirmware::IovarIfaceVarGet, offsetof(sim_iface_entry_t, wpa_auth)},
       {"wsec", sizeof(sim_iface_entry_t::wsec), &SimFirmware::IovarIfaceVarSet,
        &SimFirmware::IovarIfaceVarGet, offsetof(sim_iface_entry_t, wsec)},
+      {"mfp", sizeof(sim_iface_entry_t::mfp), &SimFirmware::IovarIfaceVarSet,
+       &SimFirmware::IovarIfaceVarGet, offsetof(sim_iface_entry_t, mfp)},
       {"wsec_key", sizeof(brcmf_wsec_key_le), &SimFirmware::IovarWsecKeySet,
        &SimFirmware::IovarWsecKeyGet},
       {"wstats_counters", sizeof(wl_wstats_cnt_t), nullptr, &SimFirmware::IovarWstatsCountersGet},

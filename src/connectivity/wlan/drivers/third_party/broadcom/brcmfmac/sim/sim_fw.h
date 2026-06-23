@@ -487,6 +487,7 @@ class SimFirmware {
     uint32_t tlv = 0;
     uint16_t auth_type = BRCMF_AUTH_MODE_OPEN;
     uint32_t allmulti = 0;
+    uint32_t mfp = 0;
   } sim_iface_entry_t;
 
   // This value is specific to firmware, and drives some behavior (notably the interpretation
