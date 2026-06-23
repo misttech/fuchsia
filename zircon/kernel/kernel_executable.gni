@@ -20,6 +20,10 @@ _kernel_executable_cpu_deps = {
   x64 = [ "//zircon/kernel/platform/pc" ]
 }
 
+# TODO(https://fxbug.dev/518907861): Remove the variable when it's always true
+# and we're confident the setting won't need to be reverted.
+_rust_kernel = enable_rust_in_zircon
+
 # Represents a kernel executable (i.e., a kernel in ELF form) evaluated under
 # the current switchset.
 #
@@ -59,7 +63,7 @@ template("kernel_executable") {
     _kernel_deps += invoker.deps
   }
 
-  if (enable_rust_in_zircon) {
+  if (_rust_kernel) {
     # kernel_rust_crate() leaves metadata breadcrumbs to be collected here.
 
     extern_crate_decls_file = "$target_out_dir/$target_name.extern-crates.rs"
@@ -113,7 +117,7 @@ template("kernel_executable") {
 
     validations = [ ":$validate_symbols_target" ]
 
-    if (enable_rust_in_zircon) {
+    if (_rust_kernel) {
       # GN will consider an executable() target to be C++ regardless of what
       # mix of Rust and C++ link inputs are in the deps graph, unless it
       # directly lists Rust source files.  So inject a single Rust source file
@@ -143,6 +147,10 @@ template("kernel_executable") {
       # provides the Ninja file dependency.
       inputs += [ extern_crate_flags_file ]
       rustflags = [ "@" + rebase_path(extern_crate_flags_file, root_build_dir) ]
+      if (rust_rbe_enable) {
+        rustflags += [ "--remote-inputs=" +
+                       string_join(",", rebase_path(inputs, root_build_dir)) ]
+      }
     }
   }
 
