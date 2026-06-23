@@ -134,8 +134,19 @@ impl Header {
             "Invalid current_lba {}",
             self.current_lba
         );
-        let expected_backup_lba = if self.current_lba == 1 { block_count - 1 } else { 1 };
-        ensure!(self.backup_lba == expected_backup_lba, "Invalid backup_lba {}", self.backup_lba);
+        if self.current_lba == 1 {
+            // We tolerate a backup_lba which is lesser than block_count, since a resizable disk
+            // might have grown past the backup header.  This is arguably an invalid GPT (the backup
+            // header can no longer be found for recovery), but it happens in practice in some
+            // cases, such as an emulator which grows its disk.
+            ensure!(
+                self.backup_lba < block_count,
+                "backup_lba out of bounds {} (block_count {block_count})",
+                self.backup_lba,
+            );
+        } else {
+            ensure!(self.backup_lba == 1, "Invalid backup_lba {}", self.backup_lba);
+        }
         let (first_lba, second_lba) = if self.current_lba == 1 {
             (self.current_lba, self.backup_lba)
         } else {
@@ -303,5 +314,62 @@ mod tests {
         header.num_parts = 2;
 
         header.ensure_integrity(nblocks, 512).expect_err("Header should be invalid");
+    }
+
+    #[fuchsia::test]
+    fn test_backup_lba_validation() {
+        let nblocks = 10;
+        let partition_table_nblocks = 1;
+        let mut header = Header {
+            signature: [0x45, 0x46, 0x49, 0x20, 0x50, 0x41, 0x52, 0x54],
+            revision: 0x10000,
+            header_size: GPT_HEADER_SIZE as u32,
+            crc32: 0,
+            reserved: 0,
+            current_lba: 1,
+            backup_lba: nblocks - 1,
+            first_usable: 2 + partition_table_nblocks,
+            last_usable: nblocks - (2 + partition_table_nblocks),
+            disk_guid: [0u8; 16],
+            part_start: 2,
+            num_parts: 1,
+            part_size: 128,
+            crc32_parts: 0,
+            zerocopy_padding: 0,
+        };
+
+        // 1. Primary header (current_lba == 1):
+        // backup_lba == nblocks - 1 should be valid.
+        header.crc32 = header.compute_checksum();
+        header.ensure_integrity(nblocks, 512).expect("Header should be valid");
+
+        // backup_lba < nblocks - 1 should be valid.
+        header.backup_lba = nblocks - 2;
+        header.last_usable = 6;
+        header.crc32 = header.compute_checksum();
+        header
+            .ensure_integrity(nblocks, 512)
+            .expect("Header should be valid with relaxed backup_lba");
+
+        // backup_lba >= nblocks should be invalid.
+        header.backup_lba = nblocks;
+        header.last_usable = nblocks - (2 + partition_table_nblocks);
+        header.crc32 = header.compute_checksum();
+        header.ensure_integrity(nblocks, 512).expect_err("backup_lba >= nblocks should be invalid");
+
+        // 2. Backup header (current_lba == nblocks - 1):
+        header.current_lba = nblocks - 1;
+        header.backup_lba = 1;
+        header.part_start = header.last_usable + 1;
+        header.crc32 = header.compute_checksum();
+        header
+            .ensure_integrity(nblocks, 512)
+            .expect("Backup header should be valid with backup_lba == 1");
+
+        header.backup_lba = 2;
+        header.crc32 = header.compute_checksum();
+        header
+            .ensure_integrity(nblocks, 512)
+            .expect_err("Backup header should be invalid with backup_lba != 1");
     }
 }
