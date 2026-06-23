@@ -20,7 +20,7 @@ from generate_repository import (
 
 
 class SplitPathToPackageNameTest(unittest.TestCase):
-    def test_build_id_paths(self):
+    def test_build_id_paths(self) -> None:
         _TEST_CASES = {
             ".build-id": ("", ".build-id"),
             ".build-id/foo": (".build-id", "foo"),
@@ -30,7 +30,7 @@ class SplitPathToPackageNameTest(unittest.TestCase):
         for path, expected in _TEST_CASES.items():
             self.assertEqual(split_path_to_package_name(path), expected)
 
-    def test_arch_paths(self):
+    def test_arch_paths(self) -> None:
         _TEST_CASES = {
             "arch/cpu/sysroot/usr/lib/libfoo.so": (
                 "arch/cpu/sysroot",
@@ -49,7 +49,7 @@ class SplitPathToPackageNameTest(unittest.TestCase):
             str(cm.exception), "Unexpected arch-related path arch/libfoo.so"
         )
 
-    def test_packages_paths(self):
+    def test_packages_paths(self) -> None:
         _TEST_CASES = {
             "packages/blobs/0123456789abcdef": (
                 "packages/blobs",
@@ -76,11 +76,11 @@ class OutputPackageInfoTest(unittest.TestCase):
 package(default_visibility = ["//visibility:public"])
 """
 
-    def test_empty(self):
+    def test_empty(self) -> None:
         info = OutputPackageInfo()
         self.assertEqual(info.generate_build_bazel(), self.HEADER)
 
-    def test_exports(self):
+    def test_exports(self) -> None:
         info = OutputPackageInfo()
         info.add_export("foo_exported")
         info.add_export("bar_exported")
@@ -96,7 +96,7 @@ exports_files([
 """,
         )
 
-    def test_filegroup(self):
+    def test_filegroup(self) -> None:
         info = OutputPackageInfo()
         info.add_filegroup("foo", ["libfoo.h", "libfoo.cc"])
         info.add_filegroup("bin", ["main.cc"])
@@ -119,7 +119,7 @@ filegroup(
 """,
         )
 
-    def test_aliases(self):
+    def test_aliases(self) -> None:
         info = OutputPackageInfo()
         info.add_alias("foo", "foo_lib")
         info.add_alias("bin", "bin_program")
@@ -139,7 +139,7 @@ alias(
 """,
         )
 
-    def test_all(self):
+    def test_all(self) -> None:
         info = OutputPackageInfo()
         info.add_export("foo_exported")
         info.add_filegroup("foo", ["libfoo.h", "libfoo.cc"])
@@ -183,7 +183,7 @@ alias(
 """,
         )
 
-    def test_duplicate_names(self):
+    def test_duplicate_names(self) -> None:
         info = OutputPackageInfo()
         info.add_filegroup("foo", [])
 
@@ -203,7 +203,7 @@ alias(
 
 
 class OutputIdkTest(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         # self._tempdir = tempfile.TemporaryDirectory(prefix='OutputIdkTest-')
         self._tempdir = tempfile.mkdtemp(prefix="OutputIdkTest-")
         self.src_dir = Path(self._tempdir) / "src"
@@ -214,7 +214,7 @@ class OutputIdkTest(unittest.TestCase):
 
         self.out_idk = OutputIdk(self.out_dir)
 
-    def test_symlinks(self):
+    def test_symlinks(self) -> None:
         self.out_idk.add_symlink("link_one", self.src_dir / "target_one")
         self.out_idk.add_symlink("subdir/link_two", self.src_dir / "target_two")
 
@@ -228,7 +228,7 @@ class OutputIdkTest(unittest.TestCase):
         self.assertTrue(link_two.is_symlink())
         self.assertEqual(str(link_two.readlink()), "../../src/target_two")
 
-    def test_add_file(self):
+    def test_add_file(self) -> None:
         self.out_idk.add_file("subdir/file_one", "first content")
         self.out_idk.add_json_file(
             "second.json",
@@ -261,7 +261,7 @@ class OutputIdkTest(unittest.TestCase):
 }""",
         )
 
-    def test_add_package(self):
+    def test_add_package(self) -> None:
         package_info = self.out_idk.get_package_info_for("package")
         package_info.add_alias("foo", "foo_actual")
         self.out_idk.write_all()
