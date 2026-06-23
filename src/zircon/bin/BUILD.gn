@@ -7,5 +7,6 @@ group("tests") {
   deps = [
     "hwstress:tests",
     "role_manager:tests",
+    "zxsh:tests",
   ]
 }
