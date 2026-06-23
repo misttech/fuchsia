@@ -383,17 +383,22 @@ pub(crate) fn build_discovery_builder(
     sources: DiscoverySources,
     ctx: &EnvironmentContext,
 ) -> DiscoveryBuilder {
-    // Note that if there is an error getting these two config options, they
-    // will simply be ignored. The alternative is to throw an error, which,
-    // e.g. will cause ffx-strict to fail under certain circumstances if either
-    // default config option is not overridden.
-    let emu_instance_root = ctx.get(ffx_config::keys::EMU_INSTANCE_ROOT_DIR).ok();
-    let fastboot_file_path = ctx.get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
     let mut builder = DiscoveryBuilder::default()
         .set_source(sources)
-        .with_fastboot_devices_file_path(fastboot_file_path)
-        .with_emulator_instance_root(emu_instance_root)
         .with_timeout_msecs(ctx.get(ffx_config::keys::LOCAL_DISCOVERY_TIMEOUT).ok());
+
+    if sources.contains(DiscoverySources::EMULATOR) {
+        // If there is an error getting the config option, it is ignored to prevent
+        // ffx-strict from failing when default configuration is not overridden.
+        let emu_instance_root = ctx.get(ffx_config::keys::EMU_INSTANCE_ROOT_DIR).ok();
+        builder = builder.with_emulator_instance_root(emu_instance_root);
+    }
+    if sources.contains(DiscoverySources::FASTBOOT_FILE) {
+        // If there is an error getting the config option, it is ignored to prevent
+        // ffx-strict from failing when default configuration is not overridden.
+        let fastboot_file_path = ctx.get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
+        builder = builder.with_fastboot_devices_file_path(fastboot_file_path);
+    }
 
     if sources.contains(DiscoverySources::USB_VSOCK) {
         let usb_driver_socket = ctx.get(usb_driver_api::CONFIG_USB_SOCKET_PATH).ok();
@@ -413,6 +418,9 @@ pub fn build_discovery(sources: DiscoverySources, ctx: &EnvironmentContext) -> D
 
 pub fn build_discovery_from_config(ctx: &EnvironmentContext) -> Discovery {
     let mut sources = DiscoverySources::all();
+    // Fastboot targets (bootloaders) are not ssh-able and do not support target
+    // address resolution, so we exclude them from configuration-based discovery.
+    sources.remove(DiscoverySources::USB_FASTBOOT | DiscoverySources::FASTBOOT_FILE);
     if !ctx.get(ffx_config::keys::USB_ENABLED).unwrap_or(false) {
         sources.remove(DiscoverySources::USB_VSOCK);
     }
@@ -1411,5 +1419,14 @@ mod test {
                 .await
                 .unwrap();
         assert_eq!(target_spec, addr_spec);
+    }
+
+    #[fuchsia::test]
+    async fn test_build_discovery_from_config_default() {
+        let test_env = ffx_config::test_env().build().unwrap();
+        let discovery = build_discovery_from_config(&test_env.context);
+        let sources = discovery.sources();
+        assert!(!sources.contains(DiscoverySources::USB_FASTBOOT));
+        assert!(!sources.contains(DiscoverySources::FASTBOOT_FILE));
     }
 }
