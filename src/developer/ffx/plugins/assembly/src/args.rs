@@ -46,11 +46,6 @@ pub struct CreateUpdateArgs {
     #[argh(option)]
     pub system_r: Option<Utf8PathBuf>,
 
-    /// name of the board.
-    /// Fuchsia will reject an Update Package with a different board name.
-    #[argh(option)]
-    pub board_name: String,
-
     /// file containing the version of the Fuchsia system.
     #[argh(option)]
     pub version_file: Utf8PathBuf,

@@ -8,7 +8,6 @@ import("//src/developer/ffx/build/ffx_action.gni")
 
 template("update_package") {
   assert(defined(invoker.partitions), "Need to define partitions")
-  assert(defined(invoker.board_name), "Need to define board_name")
   assert(defined(invoker.version_file), "Need to define version_file")
   assert(defined(invoker.epoch), "Need to define epoch")
 
@@ -134,8 +133,6 @@ template("update_package") {
       rebase_path(files.outdir, root_build_dir),
       "--gendir",
       rebase_path(files.gendir, root_build_dir),
-      "--board-name",
-      invoker.board_name,
       "--epoch",
       invoker.epoch,
       "--version-file",

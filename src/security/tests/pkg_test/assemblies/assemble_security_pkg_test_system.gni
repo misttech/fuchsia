@@ -314,7 +314,6 @@ template("assemble_security_pkg_test_system") {
     deps = [ ":${labels.assembly_image_assembler}" ]
     partitions = ":${labels.assembly_partitions_config}"
     system_a = directories.assembly_out
-    board_name = board_name
     version_file = invoker.system_version_file
     epoch = "1"
 

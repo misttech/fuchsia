@@ -34,8 +34,6 @@ def _fuchsia_update_package_impl(ctx):
         "create-update",
         "--partitions",
         partitions_configuration.directory,
-        "--board-name",
-        ctx.attr.board_name,
         "--version-file",
         ctx.file.update_version_file.path,
         "--epoch",
@@ -95,8 +93,8 @@ fuchsia_update_package = rule(
             providers = [FuchsiaProductImageInfo],
         ),
         "board_name": attr.string(
-            doc = "Name of the board this update package runs on. E.g. x64.",
-            mandatory = True,
+            doc = """Name of the board this update package runs on. E.g. x64.
+            This attribute is currently unused but is kept for a soft transition.""",
         ),
         "partitions_config": attr.label(
             doc = "Partitions config to use.",

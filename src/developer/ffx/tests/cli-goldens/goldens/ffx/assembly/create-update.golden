@@ -50,18 +50,6 @@
     {
       "kind": {
         "Option": {
-          "arg_name": "board-name"
-        }
-      },
-      "optionality": "required",
-      "long": "--board-name",
-      "short": null,
-      "description": "name of the board. Fuchsia will reject an Update Package with a different board name.",
-      "hidden": false
-    },
-    {
-      "kind": {
-        "Option": {
           "arg_name": "version-file"
         }
       },
