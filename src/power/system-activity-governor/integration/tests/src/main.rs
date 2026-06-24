@@ -1865,6 +1865,8 @@ async fn test_activity_governor_take_application_activity_lease() -> Result<()> 
 #[fuchsia::test]
 async fn test_activity_governor_add_application_activity_dependency() -> Result<()> {
     let (realm, _activity_governor_moniker) = create_realm().await?;
+    let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
+    set_up_default_suspender(&suspend_device).await;
     let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
     let execution_state_manager =
         realm.connect_to_protocol::<fsystem::ExecutionStateManagerMarker>().await?;
@@ -1922,21 +1924,13 @@ async fn test_activity_governor_add_application_activity_dependency() -> Result<
         }
     });
 
-    // Verify initial level is 0.
+    // Confirm the Application Activity dependency on the test element:
+    //  1. Verify the test element starts at level 0.
+    //  2. Take an Application Activity lease.
+    //  3. Confirm that the test element rises to level 1.
+    //  4. Drop the lease.
+    //  5. Confirm that the test element drops to level 0.
     assert_eq!(status_client.watch_power_level().await?.unwrap(), 0);
-
-    // Trigger "boot complete" signal.
-    {
-        let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
-        let () =
-            boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
-    }
-
-    // Confirm the Application Activity dependency:
-    //  1. Take an Application Activity lease.
-    //  2. Confirm that the test element rises to level 1.
-    //  3. Drop the lease.
-    //  4. Confirm that the test element drops to level 0.
     let lease_name = "test_app_activity_lease";
     let lease = activity_governor.take_application_activity_lease(lease_name).await?;
     assert_eq!(status_client.watch_power_level().await?.unwrap(), 1);
@@ -1944,9 +1938,20 @@ async fn test_activity_governor_add_application_activity_dependency() -> Result<
     assert_eq!(status_client.watch_power_level().await?.unwrap(), 0);
 
     // Confirm the dependency on Execution State:
-    //  1. Confirm that Execution State starts at Inactive.
-    //  2. Lease the test element.
-    //  3. Confirm that Execution State rises to Active.
+    //  1. Lease the test element, and wait for it to reach level 1.
+    //  2. Trigger the boot complete signal.
+    //  3. Confirm that Execution State is at Active.
+    //  4. Drop the lease.
+    //  5. Confirm that a suspend call is issued.
+    let test_element_lease = self::lease(&test_element, 1).await?;
+    assert_eq!(status_client.watch_power_level().await?.unwrap(), 1);
+
+    {
+        let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
+        let () =
+            boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
+    }
+
     let element_info_provider = realm
         .connect_to_service_instance::<fbroker::ElementInfoProviderServiceMarker>(
             &"system_activity_governor",
@@ -1963,24 +1968,14 @@ async fn test_activity_governor_add_application_activity_dependency() -> Result<
         .map(|s| (s.identifier.unwrap(), s.status.unwrap().into_proxy()))
         .collect();
     let es_status = status_endpoints.get("execution_state").unwrap();
-
-    // Wait for execution state to become Inactive. Depending on timing, we may see it in
-    // Active and Suspending.
-    let mut level = 0;
-    for _ in 0..2 {
-        level = es_status.watch_power_level().await?.unwrap();
-        if level == fsystem::ExecutionStateLevel::Inactive.into_primitive() {
-            break;
-        }
-    }
-    assert_eq!(level, fsystem::ExecutionStateLevel::Inactive.into_primitive());
-
-    let test_element_lease = self::lease(&test_element, 1).await?;
     assert_eq!(
         es_status.watch_power_level().await?.unwrap(),
         fsystem::ExecutionStateLevel::Active.into_primitive()
     );
+
     drop(test_element_lease);
+
+    assert_eq!(0, suspend_device.await_suspend().await.unwrap().unwrap().state_index.unwrap());
 
     Ok(())
 }
