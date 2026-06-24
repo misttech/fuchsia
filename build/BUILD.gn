@@ -348,8 +348,6 @@ group("non_hermetic_deps") {
     "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:iwlwifi.package",
     "//src/connectivity/wlan/tools/third_party/broadcom:wl_pkg",
     "//src/connectivity/wlan/tools/third_party/broadcom:wl_pkg.package",
-    "//src/devices/rtc/drivers/nxp:pcf8563",
-    "//src/devices/rtc/drivers/nxp:pcf8563.package",
     "//src/diagnostics/archivist/tests/pipeline_test:*",
     "//src/graphics/drivers/arm-mali/icd:libvulkan_arm_g52_r0p0",
     "//src/graphics/drivers/arm-mali/icd:libvulkan_arm_g52_r0p0.package",

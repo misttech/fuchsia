@@ -153,6 +153,17 @@ bazel_test_package_group("bazel_tests") {
     },
     {
       test_package_target =
+          "//src/devices/rtc/drivers/nxp/pcf8563:pcf8563-tests"
+      test_package_name = "pcf8563_test"
+      test_component_names = [ "pcf8563_test" ]
+      test_specs = {
+        log_settings = {
+          max_severity = "ERROR"
+        }
+      }
+    },
+    {
+      test_package_target =
           "//src/devices/usb/drivers/aml-usb-phy:aml-usb-phy-test-package"
       test_package_name = "aml-usb-phy-test"
       test_component_names = [ "aml-usb-phy-test-bin" ]

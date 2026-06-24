@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DRIVERS_PCF8563_PCF8563_SERVER_H_
-#define SRC_DRIVERS_PCF8563_PCF8563_SERVER_H_
+#ifndef SRC_DEVICES_RTC_DRIVERS_NXP_PCF8563_PCF8563_SERVER_H_
+#define SRC_DEVICES_RTC_DRIVERS_NXP_PCF8563_PCF8563_SERVER_H_
 
 #include <fidl/fuchsia.hardware.rtc/cpp/fidl.h>
 
@@ -35,4 +35,4 @@ class RtcServer : public fidl::Server<fuchsia_hardware_rtc::Device> {
 
 }  // namespace pcf8563
 
-#endif  // SRC_DRIVERS_PCF8563_PCF8563_SERVER_H_
+#endif  // SRC_DEVICES_RTC_DRIVERS_NXP_PCF8563_PCF8563_SERVER_H_

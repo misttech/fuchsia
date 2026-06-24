@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DRIVERS_PCF8563_BCD_H_
-#define SRC_DRIVERS_PCF8563_BCD_H_
+#ifndef SRC_DEVICES_RTC_DRIVERS_NXP_PCF8563_BCD_H_
+#define SRC_DEVICES_RTC_DRIVERS_NXP_PCF8563_BCD_H_
 
 #include <cstdint>
 
@@ -13,4 +13,4 @@ uint8_t to_bcd(uint8_t binary) {
 
 uint8_t from_bcd(uint8_t bcd) { return ((bcd >> 4) * 10) + (bcd & 0xf); }
 
-#endif  // SRC_DRIVERS_PCF8563_BCD_H_
+#endif  // SRC_DEVICES_RTC_DRIVERS_NXP_PCF8563_BCD_H_

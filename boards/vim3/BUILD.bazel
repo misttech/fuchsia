@@ -9,7 +9,6 @@ load(
     "fuchsia_board_input_bundle",
     "fuchsia_board_input_bundle_set",
     "fuchsia_prebuilt_board_input_bundle",
-    "fuchsia_prebuilt_board_input_bundle_set",
 )
 load(
     ":vim3_features.bzl",
@@ -36,18 +35,11 @@ fuchsia_prebuilt_board_input_bundle(
     files = "@gn_targets//boards/vim3:vulkan_arm_mali",
 )
 
-fuchsia_prebuilt_board_input_bundle(
-    name = "rtc_driver",
-    files = "@gn_targets//boards/vim3:rtc_driver",
-)
-
-fuchsia_prebuilt_board_input_bundle_set(
-    name = "rtc_driver_bibs",
-    files = "//:rtc_driver_bib_set",
-)
-
 fuchsia_board_input_bundle(
     name = "bazel_drivers_base",
+    base_driver_packages = [
+        "//src/devices/rtc/drivers/nxp/pcf8563:pkg",
+    ],
     bootfs_driver_packages = [
         "//src/devices/board/drivers/vim3-devicetree",
         "//src/devices/clock/drivers/vim3-clk",
@@ -120,7 +112,6 @@ fuchsia_board_configuration(
     name = "vim3",
     board_input_bundle_sets = [
         ":vim3_bibs",
-        ":rtc_driver_bibs",
     ],
     board_input_bundles = _COMMON_BOARD_INPUT_BUNDLES,
     board_name = "vim3",
@@ -139,7 +130,6 @@ fuchsia_board_configuration(
     name = "reduced_perf_variation",
     board_input_bundle_sets = [
         ":vim3_bibs",
-        ":rtc_driver_bibs",
     ],
     board_input_bundles = _COMMON_BOARD_INPUT_BUNDLES,
     board_name = "vim3",
@@ -164,7 +154,6 @@ fuchsia_board_configuration(
     name = "vim3_recovery",
     board_input_bundle_sets = [
         ":vim3_base_bibs",
-        ":rtc_driver_bibs",
     ],
     board_input_bundles = _COMMON_BOARD_INPUT_BUNDLES,
     board_name = "vim3",

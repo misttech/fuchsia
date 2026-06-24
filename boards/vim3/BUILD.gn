@@ -17,7 +17,6 @@ group("bazel_inputs") {
   deps = [
     ":devicetree_board_driver.bazel_inputs",
     ":main_bundle.bazel_inputs",
-    ":rtc_driver.bazel_inputs",
     ":vulkan_arm_mali.bazel_inputs",
     "//src/devices/board/drivers/vim3-devicetree:vim3-dtb",
   ]
@@ -179,17 +178,6 @@ board_input_bundle("devicetree_board_driver") {
 board_input_bundle("vulkan_arm_mali") {
   base_packages =
       [ "//src/graphics/drivers/arm-mali/icd:libvulkan_arm_g52_r0p0" ]
-  version = build_info_version
-}
-
-board_input_bundle("rtc_driver") {
-  drivers = [
-    {
-      package_target = "//src/devices/rtc/drivers/nxp:pcf8563"
-      package_set = "base"
-      driver_components = [ "meta/pcf8563.cm" ]
-    },
-  ]
   version = build_info_version
 }
 
