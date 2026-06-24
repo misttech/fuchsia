@@ -804,6 +804,11 @@ impl LpmTrie {
         LpmTrieStore::new(&self.buffer, self.layout)
     }
 
+    // All callers pass keys of length layout.key_size (>= LPM_KEY_PREFIX_SIZE + 1)
+    fn is_valid_key(&self, key: &[u8]) -> bool {
+        key.key_len() <= 8 * (self.layout.key_size as usize - 4)
+    }
+
     #[cfg(test)]
     fn is_empty(&self) -> bool {
         let state = self.store().trie().read();
@@ -813,6 +818,9 @@ impl LpmTrie {
 
 impl MapImpl for LpmTrie {
     fn lookup<'a>(&'a self, key: &[u8]) -> Option<MapValueRef<'a>> {
+        if !self.is_valid_key(key) {
+            return None;
+        }
         let state = self.store().trie().read();
         let mut longest_match = None;
         let mut current_node = state.root();
@@ -842,9 +850,8 @@ impl MapImpl for LpmTrie {
     fn update(&self, key: &[u8], value: EbpfBufferPtr<'_>, flags: u64) -> Result<(), MapError> {
         let state = self.store().trie().write();
 
-        // Validate the key.
         assert!(key.len() == self.layout.key_size as usize);
-        if key.key_len() > 8 * (self.layout.key_size as usize - 4) {
+        if !self.is_valid_key(key) {
             return Err(MapError::InvalidKey);
         }
 
@@ -916,6 +923,9 @@ impl MapImpl for LpmTrie {
     }
 
     fn delete(&self, key: &[u8]) -> Result<(), MapError> {
+        if !self.is_valid_key(key) {
+            return Err(MapError::InvalidKey);
+        }
         let state = self.store().trie().write();
         let (node, mut path, bits_match) = find_target_node(&state, key, 2);
 
@@ -948,6 +958,11 @@ impl MapImpl for LpmTrie {
     }
 
     fn get_next_key(&self, key: Option<&[u8]>) -> Result<MapKey, MapError> {
+        if let Some(key) = key {
+            if !self.is_valid_key(key) {
+                return Err(MapError::InvalidKey);
+            }
+        }
         let state = self.store().trie().read();
 
         fn get_leftmost_node<'a>(
@@ -1153,6 +1168,72 @@ mod test {
         // Once a value is removed it should be possible to insert another one.
         trie.delete(key2.as_slice()).expect("Failed to delete map entry");
         trie.update(&key10, (&mut [10, 1, 2, 3]).into(), 0).expect("Failed to insert map entry");
+    }
+
+    #[fuchsia::test]
+    fn test_invalid_prefix_len_lookup() {
+        let trie = LpmTrie::new(
+            &MapSchema {
+                map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_LPM_TRIE,
+                key_size: std::mem::size_of::<Key>() as u32,
+                value_size: 4,
+                max_entries: 10,
+                flags: MapFlags::NoPrealloc,
+            },
+            "test",
+        )
+        .unwrap();
+
+        let valid_key = serialize_key(32, &[192, 168, 1, 0]);
+        trie.update(&valid_key, (&mut [1, 2, 3, 4]).into(), 0).unwrap();
+
+        // Lookup with out of range prefix_len must not panic
+        let bogus_key = serialize_key(u32::MAX, &[192, 168, 1, 0]);
+        assert!(trie.lookup(&bogus_key).is_none());
+    }
+
+    #[fuchsia::test]
+    fn test_invalid_prefix_len_delete() {
+        let trie = LpmTrie::new(
+            &MapSchema {
+                map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_LPM_TRIE,
+                key_size: std::mem::size_of::<Key>() as u32,
+                value_size: 4,
+                max_entries: 10,
+                flags: MapFlags::NoPrealloc,
+            },
+            "test",
+        )
+        .unwrap();
+
+        let valid_key = serialize_key(32, &[192, 168, 1, 0]);
+        trie.update(&valid_key, (&mut [1, 2, 3, 4]).into(), 0).unwrap();
+
+        // Delete with out of range prefix_len must not panic
+        let bogus_key = serialize_key(u32::MAX, &[192, 168, 1, 0]);
+        assert_eq!(trie.delete(&bogus_key), Err(MapError::InvalidKey));
+    }
+
+    #[fuchsia::test]
+    fn test_invalid_prefix_len_get_next_key() {
+        let trie = LpmTrie::new(
+            &MapSchema {
+                map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_LPM_TRIE,
+                key_size: std::mem::size_of::<Key>() as u32,
+                value_size: 4,
+                max_entries: 10,
+                flags: MapFlags::NoPrealloc,
+            },
+            "test",
+        )
+        .unwrap();
+
+        let valid_key = serialize_key(32, &[192, 168, 1, 0]);
+        trie.update(&valid_key, (&mut [1, 2, 3, 4]).into(), 0).unwrap();
+
+        // get_next_key with out of range prefix_len must not panic
+        let bogus_key = serialize_key(u32::MAX, &[192, 168, 1, 0]);
+        assert_eq!(trie.get_next_key(Some(&bogus_key)), Err(MapError::InvalidKey));
     }
 
     fn get_short_key(id: usize) -> Vec<u8> {
