@@ -62,7 +62,9 @@ message Image {
     // A standard system asset like ZBI or VBMETA.
     AssetType asset = 1;
 
-    // A firmware image, with the field value specifying the firmware type.
+    // A firmware image, with the field value specifying the board specific
+    // firmware type, which will be passed to paver verbatim. If paver doesn't
+    // support the firmware type, the firmware image will be skipped.
     string firmware = 2;
   }
 
