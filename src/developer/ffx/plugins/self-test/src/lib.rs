@@ -16,7 +16,6 @@ mod component;
 mod config;
 mod daemon;
 mod experiment;
-// mod log;
 mod target;
 mod test;
 
@@ -57,12 +56,8 @@ pub async fn selftest(context: &EnvironmentContext, cmd: SelftestCommand) -> Res
         daemon::test_cleanup_on_signal,
     ];
 
-    let mut target_tests = tests![
-        // TODO(bbosak): re-enable once proactive-logging is disabled (https://fxbug.dev/42076295)
-        // log::include_log::test_log_run_normal,
-        component::include_target::test_list,
-        target::include_target::test_target_show
-    ];
+    let mut target_tests =
+        tests![component::include_target::test_list, target::include_target::test_target_show];
 
     let mut tests = default_tests;
     if cmd.include_target {
