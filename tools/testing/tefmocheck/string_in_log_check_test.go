@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	botanistconstants "go.fuchsia.dev/fuchsia/tools/botanist/constants"
 	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 )
@@ -704,6 +705,10 @@ func TestStringInLogsChecks(t *testing.T) {
 		// people to reorder checks in ways that might degrade tefmocheck's
 		// ability to root-cause failures.
 		expected := append(fuchsiaLogChecks(), infraToolLogChecks()...)
+		expected = append(expected, &stringInLogCheck{
+			String: fmt.Sprintf("botanist ERROR: %s", botanistconstants.BotanistFailedMsg),
+			Type:   swarmingOutputType,
+		})
 		got := StringInLogsChecks()
 		// Crude check to make sure someone doesn't accidentally strip out most
 		// of StringInLogsChecks .
@@ -715,6 +720,17 @@ func TestStringInLogsChecks(t *testing.T) {
 		got = got[len(got)-len(expected):]
 		if diff := cmp.Diff(expected, got, cmp.AllowUnexported(stringInLogCheck{}, logBlock{})); diff != "" {
 			t.Errorf("StringInLogsChecks() returned diff (-want +got): %s", diff)
+		}
+	})
+
+	t.Run("botanist failed check is last in StringInLogsChecks", func(t *testing.T) {
+		checks := StringInLogsChecks()
+		if len(checks) == 0 {
+			t.Fatalf("StringInLogsChecks returned no checks")
+		}
+		lastCheck := checks[len(checks)-1]
+		if !strings.Contains(lastCheck.Name(), "botanist_failed") {
+			t.Errorf("Expected last check to be botanist_failed, got %q", lastCheck.Name())
 		}
 	})
 }

@@ -830,7 +830,7 @@ func (r *RunCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) sub
 	}
 
 	if err := r.execute(ctx, args); err != nil {
-		logger.Errorf(ctx, "%s", err)
+		logger.Errorf(ctx, "%s: %s", constants.BotanistFailedMsg, err)
 		return subcommands.ExitFailure
 	}
 	return subcommands.ExitSuccess

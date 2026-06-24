@@ -16,6 +16,7 @@ const (
 	FailedToServeMsg               = "[package server] failed to serve"
 	FailedToCaptureSyslogMsg       = "failed to capture syslog"
 	FailedToDeriveSshConnectionMsg = "failed to derive $SSH_CONNECTION"
+	BotanistFailedMsg              = "botanist failed"
 
 	NodenameEnvKey             = "FUCHSIA_NODENAME"
 	SSHKeyEnvKey               = "FUCHSIA_SSH_KEY"

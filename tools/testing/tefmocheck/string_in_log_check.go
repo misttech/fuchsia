@@ -444,6 +444,17 @@ func StringInLogsChecks() []FailureModeCheck {
 	// cause as possible.
 	ret = append(ret, fuchsiaLogChecks()...)
 	ret = append(ret, infraToolLogChecks()...)
+
+	// For top-level botanist execution failures (https://fxbug.dev/526592940).
+	// This check is very generic and catches all unhandled botanist errors, so
+	// it should always be the last check in StringInLogsChecks to ensure that
+	// other checks have had a chance to identify more specific root causes
+	// before falling back to this check.
+	ret = append(ret, &stringInLogCheck{
+		String: fmt.Sprintf("botanist ERROR: %s", botanistconstants.BotanistFailedMsg),
+		Type:   swarmingOutputType,
+	})
+
 	return ret
 }
 
