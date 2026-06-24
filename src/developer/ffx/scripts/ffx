@@ -62,6 +62,30 @@ fi
 #   //scripts/zsh-completion/_fx,
 # )
 
+# If --strict is present, locate and run the compiled ffx binary directly
+for arg in "$@"; do
+  if [[ "${arg}" == "--strict" ]]; then
+    if [[ -f "${fuchsia_dir}/.fx-build-dir" ]]; then
+      build_dir="$(<"${fuchsia_dir}/.fx-build-dir")"
+      if [[ "${build_dir}" != /* ]]; then
+        build_dir="${fuchsia_dir}/${build_dir}"
+      fi
+      if [[ -x "${build_dir}/host-tools/ffx" ]]; then
+        exec "${build_dir}/host-tools/ffx" "$@"
+      else
+        echo "Error: --strict requested, but ffx binary not found or not executable at: ${build_dir}/host-tools/ffx" >&2
+        echo "Please run 'fx build' first." >&2
+        exit 1
+      fi
+    else
+      echo "Error: --strict requested, but .fx-build-dir is missing." >&2
+      echo "Please run 'fx set' and 'fx build' first." >&2
+      exit 1
+    fi
+    break
+  fi
+done
+
 # This script is usually used to invoke `ffx` directly while in-tree without
 # explicitly wrapping it in `fx` (ie. `fx ffx --help`). If we don't set a
 # wrapper here, the `fx`'s ffx subscript will override it and produce confusing
