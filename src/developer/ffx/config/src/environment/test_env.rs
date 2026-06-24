@@ -209,7 +209,10 @@ pub fn test_env() -> TestEnvBuilder {
 /// Creates a TestEnvBuilder that inherits environment variables from the real
 /// test environment.
 fn test_builder_with_envs() -> TestEnvBuilder {
-    TestEnvBuilder { env_vars: HashMap::from_iter(std::env::vars()), ..Default::default() }
+    let env_vars: HashMap<String, String> = std::env::vars()
+        .filter(|(key, _)| !key.starts_with("FFX_") && !key.starts_with("FUCHSIA_"))
+        .collect();
+    TestEnvBuilder { env_vars, ..Default::default() }
 }
 
 impl TestEnvBuilder {

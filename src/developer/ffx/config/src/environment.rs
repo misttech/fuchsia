@@ -542,4 +542,35 @@ mod test {
             panic!("No build configurations set after setting a configuration value");
         }
     }
+
+    #[fuchsia::test]
+    fn test_env_does_not_inherit_ffx_or_fuchsia_vars() {
+        // SAFETY: `std::env::set_var` is unsafe because it can race with concurrent reads
+        // or writes of the environment in other threads. This test modifies unique, test-specific
+        // variables that are not accessed by other tests, minimizing the risk of practical races.
+        unsafe {
+            std::env::set_var("FFX_TEST_VAR_FOR_TEST", "1");
+            std::env::set_var("FUCHSIA_TEST_VAR_FOR_TEST", "2");
+            std::env::set_var("OTHER_TEST_VAR_FOR_TEST", "3");
+        }
+
+        let test_env = test_init().expect("initializing test environment");
+
+        // SAFETY: `std::env::remove_var` is unsafe for the same reasons as `set_var`.
+        // We are removing the same unique, test-specific variables we set above to clean up
+        // the process environment.
+        unsafe {
+            std::env::remove_var("FFX_TEST_VAR_FOR_TEST");
+            std::env::remove_var("FUCHSIA_TEST_VAR_FOR_TEST");
+            std::env::remove_var("OTHER_TEST_VAR_FOR_TEST");
+        }
+
+        let context = test_env.context;
+        let env_vars = context.env_vars.expect("env_vars should be set");
+
+        assert!(!env_vars.contains_key("FFX_TEST_VAR_FOR_TEST"));
+        assert!(!env_vars.contains_key("FUCHSIA_TEST_VAR_FOR_TEST"));
+        assert!(env_vars.contains_key("OTHER_TEST_VAR_FOR_TEST"));
+        assert_eq!(env_vars.get("OTHER_TEST_VAR_FOR_TEST").unwrap(), "3");
+    }
 }
