@@ -20,7 +20,7 @@ To avoid racing with the auto-mounter, it is recommended to run this
 test with the assembly override:
 
 ```
---assembly-override '//build/images/fuchsia/*=//local:disable_automount'
+--assembly-override '//products/core/*=//local:disable_automount'
 ```
 
 with a `//local/BUILD.gn` file as follows:

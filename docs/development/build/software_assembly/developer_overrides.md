@@ -74,7 +74,7 @@ target matches the same assembly target.
     to the `zedboot` assembly, you would run the following:
 
     ```posix-terminal
-    fx set core.x64 --assembly-override '//build/images/zedboot/*=//local:zedboot_overrides'
+    fx set core.x64 --assembly-override '//products/zedboot/*=//local:zedboot_overrides'
     ```
 
 For more information, see the following sections:
@@ -152,7 +152,7 @@ import("//boards/....")
 product_assembly_overrides = [
   {
     # zedboot
-    assembly = "//build/images/zedboot/*"
+    assembly = "//products/zedboot/*"
     overrides = "//local:zedboot_overrides"
   },
   {
@@ -161,8 +161,7 @@ product_assembly_overrides = [
     overrides = "//local:minimal_overrides"
   },
   {
-    # core or terminal products:
-    assembly = "//build/images/fuchsia/*"
+    assembly = "//products/core/*"
     overrides = "//local:enable_kernel_debug"
   },
 ]

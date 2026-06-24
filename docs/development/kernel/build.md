@@ -67,7 +67,7 @@ A slightly more verbose mechanism is required for assemblies other than the
 done using a wildcard-based pattern-match:
 
 ```posix-terminal
-fx set ... --assembly-override '//build/images/zedboot/*=//local:custom_kernel_args'
+fx set ... --assembly-override '//products/zedboot/*=//local:custom_kernel_args'
 ```
 
 or
@@ -82,12 +82,12 @@ directly in `args.gn`:
 ```gn
 product_assembly_overrides = [
   {
-    # core products:
-    assembly = "//build/images/fuchsia/*"
+    # For assemblies in Bazel, use their product label
+    assembly = "//products/core/*"
     overrides = "//local:custom_kernel_args"
   },
   {
-    assembly = "//build/images/zedboot/*"
+    assembly = "//products/zedboot/*"
     overrides = "//local:zedboot_overrides"
   },
   {
