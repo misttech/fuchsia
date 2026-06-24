@@ -6388,16 +6388,6 @@ Controls whether we should output GSYM files for Fuchsia binaries.
 
 From //build/config/BUILDCONFIG.gn:36
 
-### override_target_api_level
-
-Deprecated name for the variable above that is still used by obsolete bots.
-TODO(https://fxbug.dev/330709069): Remove after turning down the
-core.x64-sdk_source_sets_and_shlibs-api*-build_only bots.
-
-**Current value (from the default):** `false`
-
-From //build/config/fuchsia/target_api_level.gni:27
-
 ### package_flavor_selections
 
 Used to configure the set of package flavors desired.
