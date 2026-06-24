@@ -132,10 +132,7 @@ template("generate_idk_targets") {
     }
   }
 
-  if (current_build_target_api_level == "PLATFORM" ||
-      # Handle core.x64-sdk_source_sets_and_shlibs-apiXX-build_only builders.
-      # TODO(https://fxbug.dev/42082833): Remove this.
-      override_target_api_level != false) {
+  if (current_build_target_api_level == "PLATFORM") {
     # These rules are processed at least once for the primary target CPU,
     # which may not match the host_cpu. They may also be processed for
     # additional CPU architectures when building the IDK.

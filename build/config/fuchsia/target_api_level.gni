@@ -20,18 +20,6 @@ declare_args() {
   # atom target definitions MUST NOT use this GN arg. See
   # https://fxbug.dev/448185526 for details.
   current_build_target_api_level = "PLATFORM"
-
-  # Deprecated name for the variable above that is still used by obsolete bots.
-  # TODO(https://fxbug.dev/330709069): Remove after turning down the
-  # core.x64-sdk_source_sets_and_shlibs-api*-build_only bots.
-  override_target_api_level = false
-}
-
-if (override_target_api_level != false) {
-  print(
-      "Obsolete GN arg `override_target_api_level` specified. Replace with `current_build_target_api_level`.")
-  assert(current_build_target_api_level == "PLATFORM")
-  current_build_target_api_level = override_target_api_level
 }
 
 # Numerical values associated with special API levels, as defined in
