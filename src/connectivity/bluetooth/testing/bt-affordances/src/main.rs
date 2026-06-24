@@ -9,11 +9,10 @@ use fidl_fuchsia_bluetooth_affordances::{
     GattClientControllerDiscoverServicesResponse, GattClientControllerRequest,
     GattClientControllerRequestStream, HostControllerRequest, HostControllerRequestStream,
     HostControllerSetConnectabilityRequest, HostControllerSetDeviceClassRequest,
-    HostControllerSetDiscoverabilityRequest, HostSelector, PeerControllerRequest,
-    PeerControllerRequestStream, PeerControllerSetDiscoveryRequest, PeerSelector,
-    PeripheralControllerAdvertiseRequest, PeripheralControllerAdvertiseResponse,
-    PeripheralControllerRequest, PeripheralControllerRequestStream,
-    ScanResultListenerOnPeersDiscoveredRequest,
+    HostControllerSetDiscoverabilityRequest, PeerControllerRequest, PeerControllerRequestStream,
+    PeerControllerSetDiscoveryRequest, PeerSelector, PeripheralControllerAdvertiseRequest,
+    PeripheralControllerAdvertiseResponse, PeripheralControllerRequest,
+    PeripheralControllerRequestStream, ScanResultListenerOnPeersDiscoveredRequest,
 };
 use fuchsia_bt_test_affordances::WorkThread;
 use fuchsia_component::server::ServiceFs;
@@ -33,19 +32,6 @@ macro_rules! selector_to_peer_id {
     ($method:expr, $selector:expr, $responder:expr) => {
         match $selector {
             PeerSelector { id: Some(id), .. } => id,
-            _ => {
-                $responder
-                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::MissingParameters))?;
-                return Ok(());
-            }
-        }
-    };
-}
-
-macro_rules! selector_to_host_id {
-    ($method:expr, $selector:expr, $responder:expr) => {
-        match $selector {
-            HostSelector { id: Some(id), .. } => id,
             _ => {
                 $responder
                     .send(Err(fidl_fuchsia_bluetooth_affordances::Error::MissingParameters))?;
@@ -182,17 +168,9 @@ async fn handle_single_host_request(
                 }
             }
         }
-        HostControllerRequest::SetActiveHost { payload, responder } => {
-            let id = selector_to_host_id!("SetActiveHost", payload, responder);
-            match worker.set_active_host(id).await {
-                Ok(_) => {
-                    responder.send(Ok(()))?;
-                }
-                Err(err) => {
-                    error!("SetActiveHost encountered error: {err}");
-                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
-                }
-            }
+        HostControllerRequest::SetActiveHost { payload: _, responder } => {
+            warn!("SetActiveHost is being deprecated and no-op");
+            responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
         }
         HostControllerRequest::SetLocalName { payload, responder } => {
             let fidl_fuchsia_bluetooth_affordances::HostControllerSetLocalNameRequest {

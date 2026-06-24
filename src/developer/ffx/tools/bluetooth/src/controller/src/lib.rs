@@ -5,15 +5,14 @@
 use ::async_trait::async_trait;
 use ::fho::{AvailabilityFlag, FfxMain, FfxTool, Result};
 use fdomain_fuchsia_bluetooth::HostId as FidlHostId;
-use fdomain_fuchsia_bluetooth_affordances::{HostControllerProxy, HostSelector};
-use ffx_writer::{SimpleWriter, ToolIO as _};
-use target_holders::fdomain::toolbox;
-
+use fdomain_fuchsia_bluetooth_affordances::HostControllerProxy;
+use fdomain_fuchsia_bluetooth_sys::HostWatcherProxy;
 use ffx_bluetooth_controller_args::{ControllerCommand, ControllerSubCommand};
-
+use ffx_writer::{SimpleWriter, ToolIO as _};
 use fuchsia_bluetooth::types::{HostId, HostInfo, addresses_to_custom_string};
 use prettytable::format::FormatBuilder;
 use prettytable::{Table, cell, row};
+use target_holders::fdomain::toolbox;
 
 pub mod device_class;
 pub mod local_name;
@@ -25,6 +24,8 @@ pub struct ControllerTool {
     cmd: ControllerCommand,
     #[with(toolbox())]
     host_controller: HostControllerProxy,
+    #[with(toolbox())]
+    host_watcher_proxy: HostWatcherProxy,
 }
 
 fho::embedded_plugin!(ControllerTool);
@@ -89,15 +90,14 @@ impl ControllerTool {
 
     async fn set_active_host(&self, host_id: HostId) -> Result<()> {
         let fidl_host_id: FidlHostId = host_id.into();
-        let selector = HostSelector { id: Some(fidl_host_id), ..Default::default() };
         Ok(self
-            .host_controller
-            .set_active_host(&selector)
+            .host_watcher_proxy
+            .set_active(&fidl_host_id)
             .await
             .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
             .map_err(|err| {
                 fho::Error::Unexpected(anyhow::anyhow!(
-                    "fuchsia.bluetooth.affordances.HostController error: {err:?}"
+                    "fuchsia.bluetooth.sys.HostWatcher/SetActive error: {err:?}"
                 ))
             })?)
     }

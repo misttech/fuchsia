@@ -4,7 +4,7 @@
 
 use anyhow::anyhow;
 use fidl::endpoints::ClientEnd;
-use fidl_fuchsia_bluetooth::{DeviceClass, HostId, PeerId, Uuid};
+use fidl_fuchsia_bluetooth::{DeviceClass, PeerId, Uuid};
 use fidl_fuchsia_bluetooth_gatt2::{Characteristic, ServiceHandle, ServiceInfo};
 use fidl_fuchsia_bluetooth_le::{AdvertisingParameters, ConnectionMarker};
 use fidl_fuchsia_bluetooth_sys::{HostInfo, Peer};
@@ -37,7 +37,6 @@ enum Request {
     SetDiscovery(bool, oneshot::Sender<Result<(), anyhow::Error>>),
     SetDiscoverability(bool, oneshot::Sender<Result<(), anyhow::Error>>),
     SetConnectability(bool, oneshot::Sender<Result<(), anyhow::Error>>),
-    SetActiveHost(HostId, oneshot::Sender<Result<(), anyhow::Error>>),
     SetLocalName(String, oneshot::Sender<Result<(), anyhow::Error>>),
     SetDeviceClass(DeviceClass, oneshot::Sender<Result<(), anyhow::Error>>),
     StartLeScan(
@@ -187,9 +186,6 @@ impl WorkThread {
                     result_sender
                         .send(sys::set_connectability(&proxies, connectable).await)
                         .unwrap();
-                }
-                Request::SetActiveHost(host_id, result_sender) => {
-                    result_sender.send(sys::set_active_host(&proxies, host_id).await).unwrap();
                 }
                 Request::SetLocalName(name, result_sender) => {
                     result_sender.send(sys::set_local_name(&proxies, name)).unwrap();
@@ -377,13 +373,6 @@ impl WorkThread {
     pub async fn set_connectability(&self, connectable: bool) -> Result<(), anyhow::Error> {
         let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
         self.sender.clone().unbounded_send(Request::SetConnectability(connectable, sender))?;
-        receiver.await?
-    }
-
-    // Set active host.
-    pub async fn set_active_host(&self, host_id: HostId) -> Result<(), anyhow::Error> {
-        let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
-        self.sender.clone().unbounded_send(Request::SetActiveHost(host_id, sender))?;
         receiver.await?
     }
 

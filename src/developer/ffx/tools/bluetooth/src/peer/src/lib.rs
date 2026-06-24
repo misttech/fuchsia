@@ -235,7 +235,7 @@ impl PeerTool {
             .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
             .map_err(|err| {
                 fho::Error::Unexpected(anyhow::anyhow!(
-                    "fuchsia.bluetooth.affordances.PeerController error: {err:?}"
+                    "fuchsia.bluetooth.sys.Access/Forget error: {err:?}"
                 ))
             })?)
     }

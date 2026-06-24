@@ -4,7 +4,7 @@
 
 use crate::proxies::Proxies;
 use anyhow::anyhow;
-use fidl_fuchsia_bluetooth::{DeviceClass, HostId, PeerId};
+use fidl_fuchsia_bluetooth::{DeviceClass, PeerId};
 use fidl_fuchsia_bluetooth_sys::{AccessSetConnectionPolicyRequest, HostInfo, Peer};
 use fuchsia_async::{TimeoutExt, Timer};
 use fuchsia_sync::Mutex;
@@ -170,24 +170,6 @@ pub(crate) async fn set_connectability(
     }
     *proxies.suppress_connections_session.lock() = Some(token);
     Ok(())
-}
-
-pub(crate) async fn set_active_host(
-    proxies: &Proxies,
-    host_id: HostId,
-) -> Result<(), anyhow::Error> {
-    proxies
-        .host_watcher_proxy
-        .set_active(&host_id)
-        .await
-        .map_err(|fidl_error| {
-            anyhow!("fuchsia.bluetooth.sys.HostWatcher/SetActive error: {fidl_error}")
-        })
-        .and_then(|set_active_result| {
-            set_active_result.map_err(|zx_status| {
-                anyhow!("fuchsia.bluetooth.sys.HostWatcher/SetActive returned status: {zx_status}")
-            })
-        })
 }
 
 pub(crate) fn set_local_name(proxies: &Proxies, name: String) -> Result<(), anyhow::Error> {

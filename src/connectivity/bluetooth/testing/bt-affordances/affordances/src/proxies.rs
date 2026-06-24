@@ -24,7 +24,6 @@ pub(crate) struct Proxies {
     pub(crate) central_proxy: CentralProxy,
     pub(crate) gatt_server_proxy: Server_Proxy,
     pub(crate) peripheral_proxy: PrivilegedPeripheralProxy,
-    pub(crate) host_watcher_proxy: HostWatcherProxy,
     pub(crate) address_lookup_proxy: AddressLookupProxy,
     pub(crate) host_watcher_stream: HangingGetStream<HostWatcherProxy, Vec<HostInfo>>,
     pub(crate) peer_watcher_stream: HangingGetStream<AccessProxy, (Vec<Peer>, Vec<PeerId>)>,
@@ -47,9 +46,10 @@ impl Proxies {
         let central_proxy = connect_to_protocol::<CentralMarker>()?;
         let gatt_server_proxy = connect_to_protocol::<Server_Marker>()?;
         let peripheral_proxy = connect_to_protocol::<PrivilegedPeripheralMarker>()?;
-        let host_watcher_proxy = connect_to_protocol::<HostWatcherMarker>()?;
-        let host_watcher_stream =
-            HangingGetStream::new_with_fn_ptr(host_watcher_proxy.clone(), HostWatcherProxy::watch);
+        let host_watcher_stream = HangingGetStream::new_with_fn_ptr(
+            connect_to_protocol::<HostWatcherMarker>()?,
+            HostWatcherProxy::watch,
+        );
         let address_lookup_proxy = connect_to_protocol::<AddressLookupMarker>()?;
         let peer_watcher_stream =
             HangingGetStream::new_with_fn_ptr(access_proxy.clone(), AccessProxy::watch_peers);
@@ -60,7 +60,6 @@ impl Proxies {
             central_proxy,
             gatt_server_proxy,
             peripheral_proxy,
-            host_watcher_proxy,
             address_lookup_proxy,
             host_watcher_stream,
             peer_watcher_stream,
