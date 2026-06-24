@@ -46,7 +46,7 @@ class ChannelStrip {
         if (i % 16 == 0) {
           ss << "\n[ " << i << "\t]";
         }
-        ss << "\t" << channel_strip.data_[chan * channel_strip.frame_count_ + i];
+        ss << "\t" << channel_strip.data_[(chan * channel_strip.frame_count_) + i];
       }
       ss << "\n";
     }
@@ -69,9 +69,11 @@ class ChannelStrip {
 
   // Returns a span containing audio data for a given `channel`.
   cpp20::span<float> operator[](size_t channel) {
+    FX_DCHECK(channel < static_cast<size_t>(channel_count_));
     return cpp20::span{&data_[channel * frame_count_], static_cast<size_t>(frame_count_)};
   }
   cpp20::span<const float> operator[](size_t channel) const {
+    FX_DCHECK(channel < static_cast<size_t>(channel_count_));
     return cpp20::span{&data_[channel * frame_count_], static_cast<size_t>(frame_count_)};
   }
 

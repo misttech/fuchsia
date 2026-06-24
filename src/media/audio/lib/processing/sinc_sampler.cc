@@ -121,9 +121,15 @@ class SincSamplerImpl : public SincSampler {
                      next_cache_idx_to_fill);
     }
 
+    if (next_cache_idx_to_fill < 0 || next_cache_idx_to_fill >= channel_strip->frame_count()) {
+      return;
+    }
+    const int64_t actual_frames_needed =
+        std::min(frames_needed, channel_strip->frame_count() - next_cache_idx_to_fill);
+
     const SourceSampleType* source_ptr = static_cast<const SourceSampleType*>(source_void_ptr);
     for (int64_t source_idx = next_source_idx_to_copy;
-         source_idx < next_source_idx_to_copy + frames_needed;
+         source_idx < next_source_idx_to_copy + actual_frames_needed;
          ++source_idx, ++next_cache_idx_to_fill) {
       const SourceSampleType* source_frame = &source_ptr[source_idx * SourceChannelCount];
       for (size_t dest_chan = 0; dest_chan < DestChannelCount; ++dest_chan) {
@@ -213,7 +219,8 @@ class SincSamplerImpl : public SincSampler {
         }
 
         // idx of the earliest cached frame we must retain == the amount by which we can left-shift.
-        const auto num_frames_to_shift = Sampler::Ceiling(frac_cache_offset - frac_filter_width);
+        const auto num_frames_to_shift = std::clamp<int64_t>(
+            Sampler::Ceiling(frac_cache_offset - frac_filter_width), 0, kDataCacheLength);
         working_data_.ShiftBy(num_frames_to_shift);
 
         cache_center_idx -= num_frames_to_shift;
