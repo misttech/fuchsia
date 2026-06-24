@@ -231,6 +231,9 @@ class OpenWrtAP:
         self.ssh.run(
             f"uci set wireless.{section_name}.encryption='{encryption}'"
         )
+        self.ssh.run(
+            f"uci set wireless.{section_name}.ieee80211w='{bss.security.pmf_support.value}'"
+        )
 
         if bss.password and not isinstance(bss.security, SecurityOpen):
             if isinstance(bss.security, SecurityWep):

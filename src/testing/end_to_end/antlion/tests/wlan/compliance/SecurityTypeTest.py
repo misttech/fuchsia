@@ -35,6 +35,8 @@ from openwrt_access_point.lib.access_point_config import (
     SecurityWep,
     SecurityWpa,
     SecurityWpa2,
+    SecurityWpa2Wpa3Mixed,
+    SecurityWpa3,
     SecurityWpaWpa2Mixed,
 )
 from openwrt_access_point.lib.access_point_config_mapper import (
@@ -56,6 +58,12 @@ class WepTestParams:
 @dataclass
 class WpaTestParams:
     security: SecurityWpa | SecurityWpa2 | SecurityWpaWpa2Mixed
+    band: Band
+
+
+@dataclass
+class Wpa3TestParams:
+    security: SecurityWpa2Wpa3Mixed | SecurityWpa3
     band: Band
 
 
@@ -155,6 +163,40 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             test_logic=self._run_wpa_test,
             name_func=generate_wpa_test_name,
             arg_sets=wpa_args,
+        )
+
+        wpa3_args: list[tuple[Wpa3TestParams]] = []
+        wpa3_securities: list[
+            type[SecurityWpa2Wpa3Mixed] | type[SecurityWpa3]
+        ] = [
+            SecurityWpa2Wpa3Mixed,
+            SecurityWpa3,
+        ]
+        wpa3_ciphers: list[Literal["ccmp", "ccmp+tkip"]] = ["ccmp", "ccmp+tkip"]
+
+        for security_cls in wpa3_securities:
+            for cipher in wpa3_ciphers:
+                wpa3_args.append(
+                    (
+                        Wpa3TestParams(
+                            security=security_cls(cipher=cipher),
+                            band=self.rng.choice([Band.BAND_2G, Band.BAND_5G]),
+                        ),
+                    )
+                )
+
+        def generate_wpa3_test_name(params: Wpa3TestParams) -> str:
+            band_name = _get_band_name(params.band)
+            name = (
+                f"test_associate_{band_name}_{params.security.uci_encryption}"
+            )
+            self.log.info(f"Generated test case: {name}")
+            return name
+
+        self.generate_tests(
+            test_logic=self._run_wpa3_test,
+            name_func=generate_wpa3_test_name,
+            arg_sets=wpa3_args,
         )
 
     async def setup_class(self) -> None:
@@ -288,14 +330,17 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
             self.openwrt_ap.configure_wifi(config)
         elif self.access_point:
-            assert params.security.cipher is not None
+            assert security.cipher is not None
             legacy_security = DeprecatedSecurity(
                 security_mode=AccessPointConfigMapper.to_hostapd_security(
-                    params.security
+                    security
                 ),
                 password=password,
                 wpa_cipher=AccessPointConfigMapper.to_hostapd_cipher(
-                    params.security.cipher
+                    security.cipher
+                ),
+                wpa2_cipher=AccessPointConfigMapper.to_hostapd_cipher(
+                    security.cipher
                 ),
             )
 
@@ -316,6 +361,73 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         await self.dut.wlan_policy.connect(
             ssid,
             SecurityType.from_fidl(params.security.to_fidl_wlan_policy()),
+        )
+
+    async def _run_wpa3_test(self, params: Wpa3TestParams) -> None:
+        """Helper to run a WPA3 / Transition mode test case with static band selection."""
+        band = params.band
+        password = AccessPointConfig.random_string(length=10)
+        ssid = AccessPointConfig.random_string(SSID_LENGTH_DEFAULT)
+        self.log.info(
+            f"Running WPA3 test case {self.current_test_info.name} "
+            f"on band {band} via seed {self.seed} "
+            f"with SSID: {ssid}, password: {password}"
+        )
+
+        security = params.security
+
+        if self.openwrt_ap:
+            channel = band.default_bss_channel
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig(
+                        channel=channel,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=ssid,
+                                security=security,
+                                password=password,
+                            )
+                        ],
+                    )
+                ]
+            )
+            self.openwrt_ap.configure_wifi(config)
+        elif self.access_point:
+            legacy_security_mode = AccessPointConfigMapper.to_hostapd_security(
+                security
+            )
+
+            assert security.cipher is not None
+            legacy_security = DeprecatedSecurity(
+                security_mode=legacy_security_mode,
+                password=password,
+                wpa_cipher=AccessPointConfigMapper.to_hostapd_cipher(
+                    security.cipher
+                ),
+                wpa2_cipher=AccessPointConfigMapper.to_hostapd_cipher(
+                    security.cipher
+                ),
+            )
+
+            setup_ap(
+                access_point=self.access_point,
+                profile_name=AP_11ABG_PROFILE_NAME,
+                channel=band.default_channel,
+                ssid=ssid,
+                security=legacy_security,
+                pmf_support=security.pmf_support,
+                force_wmm=False,
+            )
+
+        await self.dut.wlan_policy.save_network(
+            ssid,
+            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+            target_pwd=password,
+        )
+        await self.dut.wlan_policy.connect(
+            ssid,
+            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
         )
 
 

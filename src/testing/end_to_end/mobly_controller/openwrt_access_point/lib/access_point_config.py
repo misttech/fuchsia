@@ -15,6 +15,14 @@ from openwrt_access_point.lib.uci_bss_options import UciBssOptions
 from openwrt_access_point.lib.uci_radio_options import UciRadioOptions
 
 
+class Pmf(enum.IntEnum):
+    """Protected Management Frames (PMF) configuration."""
+
+    DISABLED = 0
+    OPTIONAL = 1
+    REQUIRED = 2
+
+
 class Band(enum.StrEnum):
     """The Wi-Fi frequency band."""
 
@@ -59,9 +67,16 @@ class Security(Protocol):
         """Returns the Fuchsia WLAN Policy FIDL SecurityType corresponding to this mode."""
         ...
 
+    @property
+    def pmf_support(self) -> Pmf:
+        """Returns the PMF support level."""
+        ...
+
 
 @dataclasses.dataclass(frozen=True)
 class SecurityOpen:
+    pmf_support: Literal[Pmf.DISABLED] = Pmf.DISABLED
+
     @property
     def uci_encryption(self) -> str:
         return "none"
@@ -73,6 +88,7 @@ class SecurityOpen:
 @dataclasses.dataclass(frozen=True)
 class SecurityWpa:
     cipher: Literal["ccmp", "tkip", "ccmp+tkip"] | None = None
+    pmf_support: Literal[Pmf.DISABLED] = Pmf.DISABLED
 
     @property
     def uci_encryption(self) -> str:
@@ -87,6 +103,7 @@ class SecurityWpa:
 @dataclasses.dataclass(frozen=True)
 class SecurityWpa2:
     cipher: Literal["ccmp", "tkip", "ccmp+tkip"] | None = None
+    pmf_support: Pmf = Pmf.DISABLED
 
     @property
     def uci_encryption(self) -> str:
@@ -100,9 +117,14 @@ class SecurityWpa2:
 
 @dataclasses.dataclass(frozen=True)
 class SecurityWpa3:
+    cipher: Literal["ccmp", "ccmp+tkip"] | None = None
+    pmf_support: Literal[Pmf.REQUIRED] = Pmf.REQUIRED
+
     @property
     def uci_encryption(self) -> str:
-        return "sae"
+        if self.cipher is None:
+            return "sae"
+        return f"sae+{self.cipher}"
 
     def to_fidl_wlan_policy(self) -> f_wlan_policy.SecurityType:
         return f_wlan_policy.SecurityType.WPA3
@@ -111,6 +133,7 @@ class SecurityWpa3:
 @dataclasses.dataclass(frozen=True)
 class SecurityWpaWpa2Mixed:
     cipher: Literal["ccmp", "tkip", "ccmp+tkip"] | None = None
+    pmf_support: Pmf = Pmf.DISABLED
 
     @property
     def uci_encryption(self) -> str:
@@ -124,7 +147,8 @@ class SecurityWpaWpa2Mixed:
 
 @dataclasses.dataclass(frozen=True)
 class SecurityWpa2Wpa3Mixed:
-    cipher: Literal["ccmp", "tkip", "ccmp+tkip"] | None = None
+    cipher: Literal["ccmp", "ccmp+tkip"] | None = None
+    pmf_support: Literal[Pmf.OPTIONAL, Pmf.REQUIRED] = Pmf.OPTIONAL
 
     @property
     def uci_encryption(self) -> str:
@@ -139,6 +163,7 @@ class SecurityWpa2Wpa3Mixed:
 @dataclasses.dataclass(frozen=True)
 class SecurityWep:
     auth_mode: Literal["open", "shared"] = "open"
+    pmf_support: Literal[Pmf.DISABLED] = Pmf.DISABLED
 
     @property
     def uci_encryption(self) -> str:
