@@ -22,6 +22,8 @@ namespace audio {
 
 namespace audio_fidl = fuchsia_hardware_audio;
 
+namespace {
+
 audio_fidl::wire::PcmFormat GetDefaultPcmFormat() {
   audio_fidl::wire::PcmFormat format;
   format.number_of_channels = 2;
@@ -53,7 +55,7 @@ class MockSimpleAudio : public SimpleAudioStream {
   static constexpr uint32_t kTestPositionNotify = 4;
   static constexpr float kTestGain = 1.2345f;
 
-  MockSimpleAudio(zx_device_t* parent) : SimpleAudioStream(parent, false /* is input */) {}
+  explicit MockSimpleAudio(zx_device_t* parent) : SimpleAudioStream(parent, false /* is input */) {}
 
   void PostSetPlugState(bool plugged, zx::duration delay) {
     async::PostDelayedTask(
@@ -137,6 +139,9 @@ class MockSimpleAudio : public SimpleAudioStream {
 
   zx_status_t GetBuffer(const audio_proto::RingBufGetBufferReq& req, uint32_t* out_num_rb_frames,
                         zx::vmo* out_buffer) __TA_REQUIRES(domain_token()) override {
+    if (req.min_ring_buffer_frames > MockSimpleAudio::kTestFrameRate * 2) {
+      return ZX_ERR_NO_MEMORY;
+    }
     zx::vmo rb;
     *out_num_rb_frames = req.min_ring_buffer_frames;
     zx::vmo::create(*out_num_rb_frames * 2 * 2, 0, &rb);
@@ -370,7 +375,9 @@ TEST_F(SimpleAudioTest, SetAndGetMute) {
 
 TEST_F(SimpleAudioTest, SetMuteWhenDisabled) {
   struct MockSimpleAudioLocal : public MockSimpleAudio {
-    MockSimpleAudioLocal(zx_device_t* parent) : MockSimpleAudio(parent) {}
+    explicit MockSimpleAudioLocal(zx_device_t* parent) : MockSimpleAudio(parent) {}
+
+   protected:
     zx_status_t Init() __TA_REQUIRES(domain_token()) override {
       auto status = MockSimpleAudio::Init();
       cur_gain_state_.can_mute = false;
@@ -432,7 +439,9 @@ TEST_F(SimpleAudioTest, Enumerate1) {
 
 TEST_F(SimpleAudioTest, Enumerate2) {
   struct MockSimpleAudioLocal : public MockSimpleAudio {
-    MockSimpleAudioLocal(zx_device_t* parent) : MockSimpleAudio(parent) {}
+    explicit MockSimpleAudioLocal(zx_device_t* parent) : MockSimpleAudio(parent) {}
+
+   protected:
     zx_status_t Init() __TA_REQUIRES(domain_token()) override {
       auto status = MockSimpleAudio::Init();
 
@@ -509,7 +518,9 @@ TEST_F(SimpleAudioTest, Enumerate2) {
 
 TEST_F(SimpleAudioTest, EnumerateMultipleRateFamilies) {
   struct MockSimpleAudioLocal : public MockSimpleAudio {
-    MockSimpleAudioLocal(zx_device_t* parent) : MockSimpleAudio(parent) {}
+    explicit MockSimpleAudioLocal(zx_device_t* parent) : MockSimpleAudio(parent) {}
+
+   protected:
     zx_status_t Init() __TA_REQUIRES(domain_token()) override {
       auto status = MockSimpleAudio::Init();
 
@@ -580,7 +591,9 @@ TEST_F(SimpleAudioTest, CreateRingBuffer1) {
 
 TEST_F(SimpleAudioTest, CreateRingBuffer2) {
   struct MockSimpleAudioLocal : public MockSimpleAudio {
-    MockSimpleAudioLocal(zx_device_t* parent) : MockSimpleAudio(parent) {}
+    explicit MockSimpleAudioLocal(zx_device_t* parent) : MockSimpleAudio(parent) {}
+
+   protected:
     zx_status_t Init() __TA_REQUIRES(domain_token()) override {
       SimpleAudioStream::SupportedFormat format = {};
       format.range.min_channels = 1;
@@ -922,11 +935,7 @@ TEST_F(SimpleAudioTest, MultipleChannelsGainStateNotify) {
                           .gain_db(MockSimpleAudio::kTestGain)
                           .Build();
     auto result = (*stream_client)->SetGain(gain_state);
-    if (result.ok()) {
-      return 0;
-    } else {
-      return -1;
-    }
+    return result.ok() ? 0 : 1;
   };
   thrd_t th;
   ASSERT_OK(thrd_create_with_name(&th, f, &stream_client1, "test-thread"));
@@ -972,7 +981,7 @@ TEST_F(SimpleAudioTest, RingBufferTests) {
   auto vmo = fidl::WireCall(local)->GetVmo(kMinFrames, kNumberOfPositionNotifications);
   ASSERT_OK(vmo.status());
   uint32_t frames_expected =
-      kMinFrames + (MockSimpleAudio::kTestDriverTransferBytes + frame_size - 1) / frame_size;
+      kMinFrames + ((MockSimpleAudio::kTestDriverTransferBytes + frame_size - 1) / frame_size);
   ASSERT_EQ(vmo->value()->num_frames, frames_expected);
 
   constexpr uint64_t kSomeActiveChannelsMask = 0xc3;
@@ -1067,6 +1076,65 @@ TEST_F(SimpleAudioTest, RingBufferStartBeforeGetVmo) {
   // Start() before GetVmo() must result in channel closure
   auto start = fidl::WireCall(local)->Start();
   ASSERT_EQ(ZX_ERR_PEER_CLOSED, start.status());  // We get a channel close.
+
+  loop_.Shutdown();
+  server->DdkAsyncRemove();
+  mock_ddk::ReleaseFlaggedDevices(root_.get());
+}
+
+TEST_F(SimpleAudioTest, RingBufferStartAfterFailedGetVmo) {
+  auto server = SimpleAudioStream::Create<MockSimpleAudio>(root_.get());
+  ASSERT_NOT_NULL(server);
+
+  auto stream_client = GetStreamClient(GetClient(server.get()));
+  ASSERT_TRUE(stream_client.is_valid());
+  auto [local, remote] = fidl::Endpoints<audio_fidl::RingBuffer>::Create();
+
+  fidl::Arena allocator;
+  auto format =
+      audio_fidl::wire::Format::Builder(allocator).pcm_format(GetDefaultPcmFormat()).Build();
+
+  auto rb = stream_client->CreateRingBuffer(format, std::move(remote));
+  ASSERT_OK(rb.status());
+
+  // First GetVmo succeeds.
+  auto vmo1 = fidl::WireCall(local)->GetVmo(MockSimpleAudio::kTestFrameRate, 0);
+  ASSERT_OK(vmo1.status());
+
+  // Second GetVmo requests a large frame count exceeding driver limits, causing GetBuffer to fail.
+  auto vmo2 = fidl::WireCall(local)->GetVmo(MockSimpleAudio::kTestFrameRate * 10, 0);
+  ASSERT_TRUE(vmo2.ok());
+  ASSERT_TRUE(vmo2.value().is_error());
+
+  // Calling Start() after a failed GetVmo() must not start the driver and must close the channel.
+  auto start = fidl::WireCall(local)->Start();
+  ASSERT_EQ(ZX_ERR_PEER_CLOSED, start.status());
+
+  loop_.Shutdown();
+  server->DdkAsyncRemove();
+  mock_ddk::ReleaseFlaggedDevices(root_.get());
+}
+
+TEST_F(SimpleAudioTest, RingBufferGetVmoExceedingSizeCap) {
+  auto server = SimpleAudioStream::Create<MockSimpleAudio>(root_.get());
+  ASSERT_NOT_NULL(server);
+
+  auto stream_client = GetStreamClient(GetClient(server.get()));
+  ASSERT_TRUE(stream_client.is_valid());
+  auto [local, remote] = fidl::Endpoints<audio_fidl::RingBuffer>::Create();
+
+  fidl::Arena allocator;
+  auto format =
+      audio_fidl::wire::Format::Builder(allocator).pcm_format(GetDefaultPcmFormat()).Build();
+
+  auto rb = stream_client->CreateRingBuffer(format, std::move(remote));
+  ASSERT_OK(rb.status());
+
+  // Requesting frames exceeding 4 MiB cap returns kInvalidArgs.
+  auto vmo = fidl::WireCall(local)->GetVmo(2'000'000, 0);
+  ASSERT_TRUE(vmo.ok());
+  ASSERT_TRUE(vmo.value().is_error());
+  ASSERT_EQ(audio_fidl::wire::GetVmoError::kInvalidArgs, vmo.value().error_value());
 
   loop_.Shutdown();
   server->DdkAsyncRemove();
@@ -1365,7 +1433,8 @@ TEST_F(SimpleAudioTest, NonPrivileged) {
     ASSERT_OK(ret1.status());
   }
   fidl::WireSyncClient<audio_fidl::RingBuffer> ringbuffer1(std::move(endpoints1.client));
-  auto vmo1 = ringbuffer1->GetVmo(MockSimpleAudio::kTestFrameRate, /* notifs_per_sec = */ 0);
+  auto vmo1 = ringbuffer1->GetVmo(MockSimpleAudio::kTestFrameRate,
+                                  /* clock_recovery_notifications_per_ring = */ 0);
   ASSERT_OK(vmo1.status());
 
   auto endpoints2 = fidl::Endpoints<audio_fidl::RingBuffer>::Create();
@@ -1400,5 +1469,7 @@ TEST_F(SimpleAudioTest, NonPrivileged) {
   server->DdkAsyncRemove();
   mock_ddk::ReleaseFlaggedDevices(root_.get());
 }
+
+}  // namespace
 
 }  // namespace audio

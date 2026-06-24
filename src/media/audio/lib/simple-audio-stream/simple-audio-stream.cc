@@ -283,6 +283,7 @@ void SimpleAudioStream::DeactivateRingBufferChannel(const Channel* channel) {
       rb_started_ = false;
       state_.Set("deactivated");
     }
+    RingBufferShutdown();
     rb_vmo_fetched_ = false;
     delay_info_updated_ = false;
     // Any pending LLCPP completer must be either replied to or closed before we destroy it.
@@ -786,10 +787,19 @@ void SimpleAudioStream::GetVmo(GetVmoRequestView request, GetVmoCompleter::Sync&
   uint32_t num_ring_buffer_frames = 0;
   audio_proto::RingBufGetBufferReq req = {};
   // The ring buffer must be at least min_frames + fifo_frames.
-  req.min_ring_buffer_frames =
-      request->min_frames + ((driver_transfer_bytes_ + frame_size_ - 1) / frame_size_);
+  uint64_t req_frames = static_cast<uint64_t>(request->min_frames) +
+                        ((driver_transfer_bytes_ + frame_size_ - 1) / frame_size_);
+  if (req_frames > std::numeric_limits<uint32_t>::max() ||
+      req_frames * frame_size_ > 4 * 1024 * 1024) {
+    zxlogf(ERROR, "Requested ring buffer too large (min_frames %u, frame_size %u)",
+           request->min_frames, frame_size_);
+    completer.ReplyError(audio_fidl::wire::GetVmoError::kInvalidArgs);
+    return;
+  }
+  req.min_ring_buffer_frames = static_cast<uint32_t>(req_frames);
   req.notifications_per_ring = request->clock_recovery_notifications_per_ring;
   zx::vmo buffer;
+  rb_vmo_fetched_ = false;
   auto status = GetBuffer(req, &num_ring_buffer_frames, &buffer);
   if (status != ZX_OK) {
     expected_notifications_per_ring_.store(0);
