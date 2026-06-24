@@ -14,8 +14,8 @@ mod test;
 mod vbmeta;
 
 pub use descriptor::{
-    Descriptor, HashDescriptor, HashDescriptorBuilder, KernelCmdlineDescriptor, PropertyDescriptor,
-    Salt, SaltError,
+    ChainPartitionDescriptor, Descriptor, HashDescriptor, HashDescriptorBuilder,
+    KernelCmdlineDescriptor, PropertyDescriptor, Salt, SaltError,
 };
 pub use header::Header;
 pub use key::{Key, KeyError, SIGNATURE_SIZE, SignFailure, Signature};

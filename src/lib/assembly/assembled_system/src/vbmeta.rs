@@ -556,6 +556,9 @@ mod tests {
                     Descriptor::KernelCmdline(_) => {
                         panic!("Unexpected KernelCmdline descriptor");
                     }
+                    Descriptor::ChainPartition(_) => {
+                        panic!("Unexpected ChainPartition descriptor");
+                    }
                 }
             }
             assert!(kernel_hash_seen);
