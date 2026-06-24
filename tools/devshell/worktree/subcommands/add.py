@@ -7,7 +7,7 @@ import subprocess
 import sys
 from typing import Any
 
-from utils import run_git, run_jiri
+from utils import run_jiri
 from worktree import NoFreeWorktreesError
 from worktree_pool import WorktreePool
 
@@ -37,26 +37,6 @@ def run(args: Any, pool: WorktreePool) -> None:
     except (KeyError, RuntimeError, FileExistsError) as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
-
-    branch_name = task_name
-    try:
-        run_git(
-            wt.path,
-            ["checkout", branch_name],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except subprocess.CalledProcessError:
-        try:
-            run_git(wt.path, ["checkout", "-b", branch_name], check=True)
-        except subprocess.CalledProcessError as e:
-            print(
-                f"Failed to manage git branch '{branch_name}': {e}",
-                file=sys.stderr,
-            )
-            wt.release_lease()
-            sys.exit(1)
 
     if getattr(args, "sync", False):
         try:

@@ -98,11 +98,8 @@ class TestActiveAddSubcommand(unittest.TestCase):
         self.jiri_root = self.fuchsia_dir / ".jiri_root"
         self.jiri_root.mkdir(parents=True, exist_ok=True)
         self.pool = WorktreePool(fuchsia_dir=str(self.fuchsia_dir))
-        self.patcher_git = patch("subcommands.add.run_git")
-        self.mock_git = self.patcher_git.start()
 
     def tearDown(self) -> None:
-        self.patcher_git.stop()
         self.temp_dir.cleanup()
 
     def test_add_claims_slot(self) -> None:
@@ -132,20 +129,12 @@ class TestActiveAddSubcommand(unittest.TestCase):
             name="my-feat", pool_name=None, sync=True, json=False
         )
         manager = MagicMock()
-        manager.attach_mock(self.mock_git, "mock_git")
         manager.attach_mock(mock_run_jiri, "mock_run_jiri")
 
         with patch("sys.stdout", new_callable=StringIO):
             add_cmd.run(args, self.pool)
 
         expected_calls = [
-            unittest.mock.call.mock_git(
-                wt_path,
-                ["checkout", "my-feat"],
-                check=True,
-                stdout=unittest.mock.ANY,
-                stderr=unittest.mock.ANY,
-            ),
             unittest.mock.call.mock_run_jiri(
                 self.jiri_root,
                 ["worktree", "sync", str(wt_path)],
