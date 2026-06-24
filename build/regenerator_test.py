@@ -8,6 +8,7 @@
 import os
 import sys
 import tempfile
+import typing as T
 import unittest
 from pathlib import Path
 
@@ -18,7 +19,7 @@ import regenerator
 
 
 class ContentHashTest(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self._td = tempfile.TemporaryDirectory()
         self._dir = Path(self._td.name)
         self.source_dir = self._dir / "source"
@@ -37,12 +38,15 @@ class ContentHashTest(unittest.TestCase):
             "#!/bin/sh\necho 42\n"
         )
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self._td.cleanup()
 
     def _test(
-        self, content_hashes, expected_input_paths, expected_hash_filenames
-    ):
+        self,
+        content_hashes: list[dict[str, T.Any]],
+        expected_input_paths: list[Path],
+        expected_hash_filenames: list[str],
+    ) -> None:
         input_paths = regenerator.generate_bazel_content_hash_files(
             self.source_dir, self.build_dir, self.output_dir, content_hashes
         )
@@ -52,8 +56,8 @@ class ContentHashTest(unittest.TestCase):
         hash_filenames = sorted(os.listdir(self.output_dir))
         self.assertListEqual(hash_filenames, expected_hash_filenames)
 
-    def test_generate_bazel_content_hash_files(self):
-        _TEST_CASES = [
+    def test_generate_bazel_content_hash_files(self) -> None:
+        _TEST_CASES: list[dict[str, T.Any]] = [
             {
                 "name": "empty",
                 "content_hashes": [],
@@ -156,8 +160,8 @@ class ContentHashTest(unittest.TestCase):
                 hash_filenames, test_case["expected_hash_filenames"], msg=msg
             )
 
-    def test_interpret_gn_path(self):
-        _TEST_CASES = [
+    def test_interpret_gn_path(self) -> None:
+        _TEST_CASES: list[dict[str, T.Any]] = [
             {
                 "name": "source path",
                 "gn_path": "//src/foo",

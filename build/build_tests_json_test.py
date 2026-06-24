@@ -20,7 +20,7 @@ from build_utils import BazelPaths, CommandRunner, MockCommandRunner
 
 
 class BuildTestsJsonTest(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self._td = tempfile.TemporaryDirectory()
         self._dir = Path(self._td.name)
         self.source_dir = self._dir / "source"
@@ -42,30 +42,30 @@ class BuildTestsJsonTest(unittest.TestCase):
             self.build_dir,
         )
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self._td.cleanup()
 
     def _test(
         self,
-        tests_from_metadata: T.Dict,
-        test_groups: T.Dict,
-        product_bundles: T.Dict,
+        tests_from_metadata: list[T.Any],
+        test_groups: list[T.Any],
+        product_bundles: list[T.Any],
         with_bazel_host_tests: bool = False,
         command_runner: T.Optional[CommandRunner] = None,
-    ) -> (T.Set[Path], T.Dict):
-        tests_from_metadata = json.dumps(tests_from_metadata)
+    ) -> tuple[set[Path], list[T.Any]]:
+        tests_from_metadata_str = json.dumps(tests_from_metadata)
         tests_from_metadata_path = self.build_dir / "tests_from_metadata.json"
-        tests_from_metadata_path.write_text(tests_from_metadata)
+        tests_from_metadata_path.write_text(tests_from_metadata_str)
 
-        test_groups = json.dumps(test_groups)
+        test_groups_str = json.dumps(test_groups)
         test_groups_path = (
             self.build_dir / "obj" / "tests" / "product_bundle_test_groups.json"
         )
-        test_groups_path.write_text(test_groups)
+        test_groups_path.write_text(test_groups_str)
 
-        product_bundles = json.dumps(product_bundles)
+        product_bundles_str = json.dumps(product_bundles)
         product_bundles_path = self.build_dir / "product_bundles.json"
-        product_bundles_path.write_text(product_bundles)
+        product_bundles_path.write_text(product_bundles_str)
 
         inputs = build_tests_json.build_tests_json(
             self.build_dir, with_bazel_host_tests, command_runner
@@ -76,7 +76,7 @@ class BuildTestsJsonTest(unittest.TestCase):
 
         return (inputs, tests)
 
-    def test_only_tests_from_metadata_no_environments(self):
+    def test_only_tests_from_metadata_no_environments(self) -> None:
         tests_from_metadata = [
             {"test": {"name": "test1"}},
             {"test": {"name": "test2"}},
@@ -85,11 +85,11 @@ class BuildTestsJsonTest(unittest.TestCase):
         (_, tests) = self._test(tests_from_metadata, [], product_bundles)
         self.assertEqual(tests_from_metadata, tests)
 
-    def test_only_test_groups(self):
+    def test_only_test_groups(self) -> None:
         tests_json = [{"test": {"name": "test1"}}, {"test": {"name": "test2"}}]
-        tests_json = json.dumps(tests_json)
+        tests_json_str = json.dumps(tests_json)
         tests_json_path = self.build_dir / "pb_tests.json"
-        tests_json_path.write_text(tests_json)
+        tests_json_path.write_text(tests_json_str)
 
         test_groups = [
             {"product_bundle_name": "my_pb", "tests_json": str(tests_json_path)}
@@ -103,11 +103,11 @@ class BuildTestsJsonTest(unittest.TestCase):
         ]
         self.assertEqual(expected_tests_json, tests)
 
-    def test_incorrect_product_bundle_name(self):
+    def test_incorrect_product_bundle_name(self) -> None:
         tests_json = [{"test": {"name": "test1"}}, {"test": {"name": "test2"}}]
-        tests_json = json.dumps(tests_json)
+        tests_json_str = json.dumps(tests_json)
         tests_json_path = self.build_dir / "pb_tests.json"
-        tests_json_path.write_text(tests_json)
+        tests_json_path.write_text(tests_json_str)
 
         test_groups = [
             {
@@ -120,15 +120,15 @@ class BuildTestsJsonTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self._test([], test_groups, product_bundles)
 
-    def test_metadata_and_product_bundles(self):
+    def test_metadata_and_product_bundles(self) -> None:
         tests_from_metadata = [
             {"test": {"name": "test1"}},
             {"test": {"name": "test2"}},
         ]
         tests_json = [{"test": {"name": "test1"}}, {"test": {"name": "test2"}}]
-        tests_json = json.dumps(tests_json)
+        tests_json_str = json.dumps(tests_json)
         tests_json_path = self.build_dir / "pb_tests.json"
-        tests_json_path.write_text(tests_json)
+        tests_json_path.write_text(tests_json_str)
         product_bundles = [{"name": "my_pb"}]
 
         env = {"dimensions": {"device_type": "Vim3"}}
@@ -162,7 +162,7 @@ class BuildTestsJsonTest(unittest.TestCase):
         ]
         self.assertEqual(expected_tests_json, tests)
 
-    def test_bazel_host_tests(self):
+    def test_bazel_host_tests(self) -> None:
         # Prepare mock runner for bazel cquery
         mock_runner = MockCommandRunner()
         test1 = {
@@ -210,7 +210,7 @@ class BuildTestsJsonTest(unittest.TestCase):
             command_runner=mock_runner,
         )
 
-        expected_tests_json = [
+        expected_tests_json: list[dict[str, T.Any]] = [
             dummy_host_test,
             {
                 "environments": [
@@ -258,7 +258,7 @@ class BuildTestsJsonTest(unittest.TestCase):
         self.assertDictEqual(expected_tests_json[0], tests[0])
         self.assertDictEqual(expected_tests_json[1], tests[1])
 
-    def test_full(self):
+    def test_full(self) -> None:
         tests_from_metadata = [
             {
                 "test": {"name": "test1"},
@@ -267,9 +267,9 @@ class BuildTestsJsonTest(unittest.TestCase):
             {"test": {"name": "test2"}},
         ]
         tests_json = [{"test": {"name": "test1"}}, {"test": {"name": "test2"}}]
-        tests_json = json.dumps(tests_json)
+        tests_json_str = json.dumps(tests_json)
         tests_json_path = self.build_dir / "pb_tests.json"
-        tests_json_path.write_text(tests_json)
+        tests_json_path.write_text(tests_json_str)
         product_bundles = [{"name": "my_pb"}]
 
         env = {"dimensions": {"device_type": "Vim3"}}
@@ -302,7 +302,7 @@ class BuildTestsJsonTest(unittest.TestCase):
             command_runner=mock_runner,
         )
 
-        expected_tests_json = [
+        expected_tests_json: list[dict[str, T.Any]] = [
             {
                 "test": {"name": "test1"},
                 "environments": [{"dimensions": {"os": "Linux"}}],
@@ -341,7 +341,7 @@ class BuildTestsJsonTest(unittest.TestCase):
         ]
         self.assertEqual(expected_tests_json, tests)
 
-    def test_ninja_inputs(self):
+    def test_ninja_inputs(self) -> None:
         (inputs, _) = self._test([], [], [])
         self.assertEqual(
             {
@@ -356,7 +356,7 @@ class BuildTestsJsonTest(unittest.TestCase):
             inputs,
         )
 
-    def test_only_write_if_changed(self):
+    def test_only_write_if_changed(self) -> None:
         tests_from_metadata = [
             {"test": {"name": "test1"}},
             {"test": {"name": "test2"}},
