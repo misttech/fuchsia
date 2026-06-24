@@ -10,6 +10,7 @@ import("//build/host.gni")
 if (is_host) {
   go_library("readme_fuchsia_lib") {
     sources = [
+      "fields.go",
       "formatter.go",
       "parser.go",
       "types.go",
@@ -32,6 +33,7 @@ if (is_host) {
   go_test("readme_fuchsia_test") {
     embed = [ ":readme_fuchsia_lib" ]
     sources = [
+      "fields_test.go",
       "formatter_test.go",
       "parser_test.go",
     ]
