@@ -37,6 +37,7 @@ user_basic_redirect("vdso") {
     # output. But making it a dependency here ensures that a kernel can't be
     # built with a vDSO that doesn't have a verified ABI.
     ":verify-abi",
+    ":verify-segments",
   ]
 }
 
@@ -183,5 +184,27 @@ if (toolchain_environment == "user.basic") {
     metadata = {
       link_output_barrier = []
     }
+  }
+
+  link_output_rspfile("libzircon.rsp") {
+    visibility = [ ":*" ]
+    outputs = [ "$target_gen_dir/$target_name" ]
+    deps = [ ":libzircon" ]
+  }
+
+  toolchain_utils_action("verify-segments") {
+    visibility = [ ":*" ]
+    script = "//build/toolchain/verify-undefined-symbols.py"
+    utils = [ "llvm-readelf" ]
+    deps = [ ":libzircon.rsp" ]
+    sources = get_target_outputs(deps[0])
+    outputs = [ "$target_out_dir/$target_name.txt" ]
+    depfile = "$target_out_dir/$target_name.d"
+    args = [
+      "--stamp=" + rebase_path(outputs[0], root_build_dir),
+      "--depfile=" + rebase_path(depfile, root_build_dir),
+      "--rspfile=" + rebase_path(sources[0], root_build_dir),
+      "--read-only-segments",
+    ]
   }
 }
