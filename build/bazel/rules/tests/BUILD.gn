@@ -4,19 +4,31 @@
 
 import("//build/bazel/bazel_build_action.gni")
 
-# Used in "//:root_targets" to ensure the test targets are always available.
+# The GN test targets are not part of a `bazel_build_group()`, so they should
+# only be built manually.
+visibility = [ ":*" ]
+
+# All the test targets defined in this file.
 group("all") {
   testonly = true
   deps = [
     ":quick_tests",
     ":tests",
   ]
-  visibility = [ "//:root_targets" ]
+  visibility += [
+    # Ensures the test targets are always available.
+    "//:root_targets",
+
+    # A small number of build bots build all the tests, accepting the bazel
+    # action overhead. These bots should run all the GN build test targets even
+    # if some underlying Bazel targets are subsets of others. Building all the
+    # GN Bazel action targets ensures, for example, that they are configured
+    # with all the necessary Bazel inputs.
+    "//bundles/buildbot/*",
+  ]
 }
 
 bazel_build_action("tests") {
-  # Should only be run manually as it is not part of a bazel_build_group()`.
-  visibility = [ ":*" ]
   testonly = true
   bazel_target = ":tests"
   copy_outputs = [
@@ -37,8 +49,6 @@ bazel_build_action("tests") {
 }
 
 bazel_build_action("quick_tests") {
-  # Should only be run manually as it is not part of a bazel_build_group()`.
-  visibility = [ ":*" ]
   testonly = true
   bazel_target = ":quick_tests"
   copy_outputs = [

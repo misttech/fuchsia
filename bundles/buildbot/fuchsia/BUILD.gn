@@ -4,7 +4,7 @@
 
 group("fuchsia") {
   testonly = true
-  deps = []
+  deps = [ "//build/bazel/rules/tests:all" ]
   if (current_cpu == "arm64") {
     deps += [ "//bundles/buildbot/minimal/arm64($host_toolchain)" ]
   }
