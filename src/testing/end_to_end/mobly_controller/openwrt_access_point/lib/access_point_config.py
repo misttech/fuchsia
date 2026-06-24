@@ -9,6 +9,7 @@ import re
 import string
 from typing import Literal, Optional, Protocol, TypeAlias
 
+import fidl_fuchsia_wlan_policy as f_wlan_policy
 from openwrt_access_point.lib.hostapd_options import HostapdOptions
 from openwrt_access_point.lib.uci_bss_options import UciBssOptions
 from openwrt_access_point.lib.uci_radio_options import UciRadioOptions
@@ -19,6 +20,28 @@ class Band(enum.StrEnum):
 
     BAND_2G = "2G"
     BAND_5G = "5G"
+
+    @property
+    def default_channel(self) -> int:
+        """Returns the default channel number for this band."""
+        match self:
+            case Band.BAND_2G:
+                return DEFAULT_2G_CHANNEL.number
+            case Band.BAND_5G:
+                return DEFAULT_5G_CHANNEL.number
+            case _:
+                raise ValueError(f"Unsupported band: {self}")
+
+    @property
+    def default_bss_channel(self) -> "BssChannel":
+        """Returns the default BssChannel configuration for this band."""
+        match self:
+            case Band.BAND_2G:
+                return DEFAULT_2G_CHANNEL
+            case Band.BAND_5G:
+                return DEFAULT_5G_CHANNEL
+            case _:
+                raise ValueError(f"Unsupported band: {self}")
 
 
 # TODO(https://fxbug.dev/487800358): Create to_fidl function.
@@ -32,12 +55,19 @@ class Security(Protocol):
         """Returns the string used for OpenWrt's wireless 'encryption' setting."""
         ...
 
+    def to_fidl_wlan_policy(self) -> f_wlan_policy.SecurityType:
+        """Returns the Fuchsia WLAN Policy FIDL SecurityType corresponding to this mode."""
+        ...
+
 
 @dataclasses.dataclass(frozen=True)
 class SecurityOpen:
     @property
     def uci_encryption(self) -> str:
         return "none"
+
+    def to_fidl_wlan_policy(self) -> f_wlan_policy.SecurityType:
+        return f_wlan_policy.SecurityType.NONE
 
 
 @dataclasses.dataclass(frozen=True)
@@ -50,6 +80,9 @@ class SecurityWpa:
             return "psk"
         return f"psk+{self.cipher}"
 
+    def to_fidl_wlan_policy(self) -> f_wlan_policy.SecurityType:
+        return f_wlan_policy.SecurityType.WPA
+
 
 @dataclasses.dataclass(frozen=True)
 class SecurityWpa2:
@@ -61,12 +94,18 @@ class SecurityWpa2:
             return "psk2"
         return f"psk2+{self.cipher}"
 
+    def to_fidl_wlan_policy(self) -> f_wlan_policy.SecurityType:
+        return f_wlan_policy.SecurityType.WPA2
+
 
 @dataclasses.dataclass(frozen=True)
 class SecurityWpa3:
     @property
     def uci_encryption(self) -> str:
         return "sae"
+
+    def to_fidl_wlan_policy(self) -> f_wlan_policy.SecurityType:
+        return f_wlan_policy.SecurityType.WPA3
 
 
 @dataclasses.dataclass(frozen=True)
@@ -79,6 +118,9 @@ class SecurityWpaWpa2Mixed:
             return "psk-mixed"
         return f"psk-mixed+{self.cipher}"
 
+    def to_fidl_wlan_policy(self) -> f_wlan_policy.SecurityType:
+        return f_wlan_policy.SecurityType.WPA2
+
 
 @dataclasses.dataclass(frozen=True)
 class SecurityWpa2Wpa3Mixed:
@@ -90,6 +132,9 @@ class SecurityWpa2Wpa3Mixed:
             return "sae-mixed"
         return f"sae-mixed+{self.cipher}"
 
+    def to_fidl_wlan_policy(self) -> f_wlan_policy.SecurityType:
+        return f_wlan_policy.SecurityType.WPA3
+
 
 @dataclasses.dataclass(frozen=True)
 class SecurityWep:
@@ -98,6 +143,9 @@ class SecurityWep:
     @property
     def uci_encryption(self) -> str:
         return f"wep+{self.auth_mode}"
+
+    def to_fidl_wlan_policy(self) -> f_wlan_policy.SecurityType:
+        return f_wlan_policy.SecurityType.WEP
 
 
 Bandwidth: TypeAlias = Literal[20, 40, 80, 160, 320]

@@ -55,6 +55,19 @@ class AccessPointConfigMapper:
         raise ValueError(f"Unsupported security mode: {security}")
 
     @staticmethod
+    def to_hostapd_cipher(cipher: str) -> str:
+        """Maps OpenWrt-style cipher string to hostapd format."""
+        mapping = {
+            "tkip": "TKIP",
+            "ccmp": "CCMP",
+            "ccmp+tkip": "TKIP CCMP",
+            "tkip+ccmp": "TKIP CCMP",
+        }
+        if cipher not in mapping:
+            raise ValueError(f"Unsupported cipher: {cipher}")
+        return mapping[cipher]
+
+    @staticmethod
     def to_hostapd_n_cap(cap: str) -> object:
         """Maps a generic capability string to its hostapd_constants equivalent."""
         from antlion.controllers.ap_lib import hostapd_constants

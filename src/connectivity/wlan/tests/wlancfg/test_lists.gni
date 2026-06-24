@@ -48,6 +48,7 @@ wlancfg_tests_for_fyi = [
   "//src/connectivity/wlan/tests/wlancfg:vape_interop_test",
   "//src/connectivity/wlan/tests/wlancfg:wlan_misc_scenario_test",
   "//src/connectivity/wlan/tests/wlancfg:wlan_target_security_test",
+  "//src/testing/end_to_end/antlion/tests/wlan/compliance:wlan_security_type_test",
 ]
 
 # Tests longer than ~20 minutes consume significant resources and significantly

@@ -485,6 +485,12 @@ antlion_host_test("wlan_security_compliance_11bg_test") {
   timeout_secs = 1800
 }
 
+antlion_host_test("wlan_security_type_test") {
+  main_source = "SecurityTypeTest.py"
+  environments = wlan_ap_envs
+  timeout_secs = 1800
+}
+
 antlion_host_test("wlan_phy_compliance_abg_test") {
   main_source = "WlanPhyComplianceABGTest.py"
   environments = wlan_ap_envs

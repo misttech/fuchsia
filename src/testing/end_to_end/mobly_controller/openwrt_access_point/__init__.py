@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import string
 import time
 from dataclasses import dataclass
 from enum import StrEnum
@@ -27,6 +28,7 @@ from openwrt_access_point.lib.access_point_config import (
     Band,
     BssSettings,
     SecurityOpen,
+    SecurityWep,
 )
 from openwrt_access_point.lib.dhcp_config import DhcpConfig as DhcpConfig
 from openwrt_access_point.lib.dhcp_config import Dnsmasq as Dnsmasq
@@ -41,6 +43,9 @@ MOBLY_CONTROLLER_CONFIG_NAME: str = "OpenWrtAP"
 
 PHY_2G: str = "phy0"
 PHY_5G: str = "phy1"
+
+_WEP_HEX_LENGTH: list[int] = [10, 26, 32, 58]
+_WEP_STR_LENGTH: list[int] = [5, 13, 16]
 
 
 def create(configs: List[ControllerConfig]) -> List["OpenWrtAP"]:
@@ -162,6 +167,53 @@ class OpenWrtAP:
         """Returns the default 5G wireless interface."""
         return f"{PHY_5G}-ap0"
 
+    def _get_wep_key(self, password: str) -> str:
+        """Returns the WEP key formatted for hostapd (quoted for ASCII, unquoted for Hex).
+
+        Raises:
+            ValueError: If the password does not match any valid WEP key lengths.
+        """
+        if len(password) in _WEP_HEX_LENGTH:
+            if all(c in string.hexdigits for c in password):
+                return password
+        if len(password) in _WEP_STR_LENGTH:
+            return f'"{password}"'
+        raise ValueError(
+            f"WEP key must be a hex string of {_WEP_HEX_LENGTH} characters "
+            f"or an ASCII string of {_WEP_STR_LENGTH} characters."
+        )
+
+    def _configure_wep(self, section_name: str, bss: BssSettings) -> None:
+        """Configures WEP parameters directly in hostapd to bypass fragile UCI translation.
+
+        Args:
+            section_name: The UCI wireless interface section name.
+            bss: The BSS configuration containing the WEP security and password.
+        """
+        if not bss.password:
+            return
+        if not isinstance(bss.security, SecurityWep):
+            raise TypeError(
+                f"Expected SecurityWep security configuration, got {type(bss.security)}"
+            )
+
+        auth_algs = 2 if bss.security.auth_mode == "shared" else 1
+        wep_key = self._get_wep_key(bss.password)
+
+        # Standard OpenWrt UCI WEP settings (e.g. key1, key) are deprecated or
+        # ignored in modern OpenWrt releases.
+        # Direct hostapd injection via hostapd_bss_options is used instead to
+        # ensure robust, version-independent configuration.
+        self.ssh.run(
+            f"uci add_list wireless.{section_name}.hostapd_bss_options='wep_default_key=0'"
+        )
+        self.ssh.run(
+            f"uci add_list wireless.{section_name}.hostapd_bss_options='wep_key0={wep_key}'"
+        )
+        self.ssh.run(
+            f"uci add_list wireless.{section_name}.hostapd_bss_options='auth_algs={auth_algs}'"
+        )
+
     def _configure_bss(self, bss: BssSettings, radio: Radio) -> None:
         """Configures a BSS on the Access Point.
 
@@ -181,9 +233,12 @@ class OpenWrtAP:
         )
 
         if bss.password and not isinstance(bss.security, SecurityOpen):
-            self.ssh.run(
-                f"uci set wireless.{section_name}.key='{bss.password}'"
-            )
+            if isinstance(bss.security, SecurityWep):
+                self._configure_wep(section_name, bss)
+            else:
+                self.ssh.run(
+                    f"uci set wireless.{section_name}.key='{bss.password}'"
+                )
 
         hidden = "1" if bss.hidden else "0"
         self.ssh.run(f"uci set wireless.{section_name}.hidden='{hidden}'")
