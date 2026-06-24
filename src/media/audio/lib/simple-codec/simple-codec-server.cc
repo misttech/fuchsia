@@ -79,9 +79,7 @@ zx_status_t SimpleCodecServer::CreateAndAddToDdkInternal() {
     zxlogf(ERROR, "Failed to add service to the outgoing directory");
     return result.status_value();
   }
-  std::array offers = {
-      fuchsia_hardware_audio::CodecService::Name,
-  };
+  std::array offers = {fuchsia_hardware_audio::CodecService::Name};
 
   if (driver_ids_.instance_count != 0) {
     if (!info.unique_id) {
@@ -155,6 +153,7 @@ void SimpleCodecServerInternal<T>::Reset(Codec::ResetCallback callback,
     instance->binding_.Unbind();
     fbl::AutoLock lock(&instances_lock_);
     instances_.erase(*instance);
+    return;
   }
   callback();
 }
@@ -168,9 +167,9 @@ void SimpleCodecServerInternal<T>::Stop(Codec::StopCallback callback,
     instance->binding_.Unbind();
     fbl::AutoLock lock(&instances_lock_);
     instances_.erase(*instance);
-  } else {
-    static_cast<T*>(this)->state_.Set("stopped");
+    return;
   }
+  static_cast<T*>(this)->state_.Set("stopped");
   callback(zx::clock::get_monotonic().get());
 }
 
@@ -183,9 +182,9 @@ void SimpleCodecServerInternal<T>::Start(Codec::StartCallback callback,
     instance->binding_.Unbind();
     fbl::AutoLock lock(&instances_lock_);
     instances_.erase(*instance);
-  } else {
-    static_cast<T*>(this)->state_.Set("started");
+    return;
   }
+  static_cast<T*>(this)->state_.Set("started");
   int64_t start_time = zx::clock::get_monotonic().get();
   static_cast<T*>(this)->start_time_.Set(start_time);
   callback(start_time);
@@ -525,6 +524,7 @@ void SimpleCodecServerInternal<T>::WatchPlugState(Codec::WatchPlugStateCallback 
     instance->plug_callback_.reset();
     fbl::AutoLock lock(&instances_lock_);
     instances_.erase(*instance);
+    return;
   }
 
   // Since the library only advertises a hardwired codec, it returns that the codec is always
@@ -536,6 +536,8 @@ void SimpleCodecServerInternal<T>::WatchPlugState(Codec::WatchPlugStateCallback 
     plug_state.set_plugged(true);
     plug_state.set_plug_state_time(plug_time_);
     callback(std::move(plug_state));
+  } else {
+    instance->plug_callback_ = std::move(callback);
   }
 }
 

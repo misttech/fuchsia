@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/async-loop/cpp/loop.h>
+#include <lib/async-loop/default.h>
 #include <lib/inspect/testing/cpp/zxtest/inspect.h>
 #include <lib/simple-codec/simple-codec-client.h>
 #include <lib/simple-codec/simple-codec-server.h>
@@ -13,19 +15,19 @@
 
 #include "src/devices/testing/mock-ddk/mock-device.h"
 
-namespace {
-const std::array<uint8_t, fuchsia::hardware::audio::UNIQUE_ID_SIZE> kTestUniqueId = {
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
-static const char* kExpectedUniqueIdStr = "000102030405060708090A0B0C0D0E0F";
-static const char* kTestManufacturer = "test man";
-static const char* kTestProduct = "test prod";
-static const uint32_t kTestInstanceCount = 123;
-}  // namespace
-
 namespace audio {
 
 namespace audio_fidl = ::fuchsia::hardware::audio;
 namespace signal_fidl = ::fuchsia::hardware::audio::signalprocessing;
+
+namespace {
+const std::array<uint8_t, fuchsia::hardware::audio::UNIQUE_ID_SIZE> kTestUniqueId = {
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+};
+const char* kExpectedUniqueIdStr = "000102030405060708090A0B0C0D0E0F";
+const char* kTestManufacturer = "test man";
+const char* kTestProduct = "test prod";
+const uint32_t kTestInstanceCount = 123;
 
 class SimpleCodecTest : public inspect::InspectTestHelper, public zxtest::Test {};
 
@@ -165,12 +167,13 @@ class TestCodecWithSignalProcessing final : public SimpleCodecServer,
   GainState GetGainState() override { return gain_state_; }
   void SetGainState(GainState state) override { gain_state_ = state; }
 
+  bool agl_mode() const { return agl_mode_; }
+  inspect::Inspector& inspect() { return SimpleCodecServer::inspect(); }
+
+ protected:
   void handle_unknown_method(uint64_t ordinal, bool method_has_response) override {
     zxlogf(ERROR, "Unknown method with ordinal %zd", ordinal);
   }
-
-  bool agl_mode() { return agl_mode_; }
-  inspect::Inspector& inspect() { return SimpleCodecServer::inspect(); }
 
  private:
   static constexpr uint64_t kAglPeId = 1;
@@ -352,8 +355,10 @@ TEST_F(SimpleCodecTest, SetDaiFormat) {
   SimpleCodecClient client;
   client.SetCodec(std::move(*codec_client_end));
 
-  DaiFormat format = {.sample_format = audio_fidl::DaiSampleFormat::PCM_SIGNED,
-                      .frame_format = FrameFormat::I2S};
+  DaiFormat format = {
+      .sample_format = audio_fidl::DaiSampleFormat::PCM_SIGNED,
+      .frame_format = FrameFormat::I2S,
+  };
   zx::result<CodecFormatInfo> codec_format_info = client.SetDaiFormat(format);
   ASSERT_EQ(codec_format_info.status_value(), ZX_ERR_NOT_SUPPORTED);
 }
@@ -392,6 +397,40 @@ TEST_F(SimpleCodecTest, PlugStateHardwired) {
     ASSERT_EQ(out_plug_state.plugged(), true);
     ASSERT_GT(out_plug_state.plug_state_time(), 0);
   }
+}
+
+TEST_F(SimpleCodecTest, WatchPlugStateWhilePending) {
+  auto fake_parent = MockDevice::FakeRootParent();
+
+  ASSERT_OK(SimpleCodecServer::CreateAndAddToDdk<TestCodec>(fake_parent.get()));
+  auto* child_dev = fake_parent->GetLatestChild();
+  ASSERT_NOT_NULL(child_dev);
+  auto codec = child_dev->GetDeviceContext<TestCodec>();
+
+  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+
+  zx::channel channel_remote, channel_local;
+  ASSERT_OK(zx::channel::create(0, &channel_local, &channel_remote));
+  ASSERT_OK(codec->CodecConnect(std::move(channel_remote)));
+  audio_fidl::CodecPtr codec_client;
+  codec_client.Bind(std::move(channel_local), loop.dispatcher());
+
+  std::atomic<bool> closed = false;
+  codec_client.set_error_handler([&closed](zx_status_t status) {
+    EXPECT_EQ(ZX_ERR_BAD_STATE, status);
+    closed = true;
+  });
+
+  codec_client->WatchPlugState([](audio_fidl::PlugState plug_state) {});
+  codec_client->WatchPlugState([](audio_fidl::PlugState plug_state) {});
+  codec_client->WatchPlugState([](audio_fidl::PlugState plug_state) {});
+
+  zx::time deadline = zx::deadline_after(zx::sec(5));
+  while (!closed.load() && zx::clock::get_monotonic() < deadline) {
+    loop.RunUntilIdle();
+    zx::nanosleep(zx::deadline_after(zx::msec(10)));
+  }
+  EXPECT_TRUE(closed.load());
 }
 
 TEST_F(SimpleCodecTest, GainWithClientViaSignalProcessingApi) {
@@ -697,5 +736,7 @@ TEST_F(SimpleCodecTest, RebindClient) {
     }
   }
 }
+
+}  // namespace
 
 }  // namespace audio
