@@ -124,7 +124,7 @@ impl Default for PlatformUiConfig {
             frame_scheduler_min_predicted_frame_duration_in_us: Default::default(),
             frame_prediction_margin_in_us: default_frame_prediction_margin_in_us(),
             pointer_auto_focus: true,
-            use_separate_input_thread: false,
+            use_separate_input_thread: true,
             display_composition: false,
             supported_input_devices: Default::default(),
             display_rotation: Default::default(),
