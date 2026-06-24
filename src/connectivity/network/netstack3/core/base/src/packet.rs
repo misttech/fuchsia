@@ -353,6 +353,9 @@ impl NetworkSerializationContext {
 
     fn transport_checksum_action(&mut self, csum_offset: u16) -> TransportChecksumAction {
         if self.csum_offload_result.is_some() {
+            // TODO(https://fxbug.dev/527140547): implement Local Checksum
+            // Offload (LCO) for offloading outer checksums of encapsulated
+            // packets.
             TransportChecksumAction::ComputeFull
         } else {
             self.csum_offload_result = self.csum_offload_state.try_offload(csum_offset);
