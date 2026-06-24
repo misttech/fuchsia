@@ -713,6 +713,14 @@
                     "Not actually third party code, these are targets that redirect to ",
                     "targets in //third_party."
                 ]
+            },
+            {
+                "notes": [
+                    "Skip nested third_party directory in tink-cc."
+                ],
+                "paths": [
+                    "third_party/tink-cc/src/third_party"
+                ]
             }
         ]
     }

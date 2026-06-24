@@ -237,6 +237,8 @@ tables_generator_tests_*.txt
 /third_party/Vulkan-Tools/src
 !/third_party/Vulkan-ValidationLayers
 /third_party/Vulkan-ValidationLayers/src
+!/third_party/tink-cc
+/third_party/tink-cc/src
 
 /tmp/
 /vendor/
