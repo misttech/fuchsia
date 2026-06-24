@@ -90,8 +90,8 @@ class PlatformBus : public fdf::DriverBase2,
 
   zx::result<> RegisterInterruptController(
       uint32_t id, fidl::ClientEnd<fuchsia_hardware_interrupt::Controller> controller);
-  zx::result<> RegisterInterrupt(const fuchsia_hardware_platform_bus::UserspaceIrq& irq,
-                                 uint32_t flags, zx::interrupt interrupt);
+  void RegisterInterrupt(const fuchsia_hardware_platform_bus::UserspaceIrq& irq, uint32_t flags,
+                         zx::interrupt interrupt, PlatformDevice::GetInterruptCallback callback);
 
   zx::unowned_resource GetIrqResource() const;
   zx::unowned_resource GetMmioResource() const;
@@ -177,7 +177,7 @@ class PlatformBus : public fdf::DriverBase2,
   std::map<uint32_t, zx::iommu> iommu_handles_;
 
   // Maps interrupt controller IDs to FIDL clients.
-  std::map<uint32_t, fidl::WireSyncClient<fuchsia_hardware_interrupt::Controller>>
+  std::map<uint32_t, fidl::WireClient<fuchsia_hardware_interrupt::Controller>>
       interrupt_controllers_;
 
   std::map<std::pair<uint32_t, uint32_t>, zx::bti> cached_btis_;

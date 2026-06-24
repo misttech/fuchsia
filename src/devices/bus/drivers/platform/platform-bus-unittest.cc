@@ -487,12 +487,18 @@ TEST_F(PlatformBusTest, UserspaceInterrupts) {
   ASSERT_TRUE(get_interrupt_result.ok());
   EXPECT_TRUE(get_interrupt_result->is_ok());
 
-  const auto registered_interrupts =
-      driver_test()
-          .RunInEnvironmentTypeContext<std::vector<FakeInterruptController::RegisteredInterrupt>>(
-              [](TestEnvironment& env) {
-                return env.fake_controller().take_registered_interrupts();
-              });
+  std::vector<FakeInterruptController::RegisteredInterrupt> registered_interrupts;
+  // Interrupts are registered on the environment dispatcher, which may not have finished processing
+  // the registration request by the time GetInterruptById() returns.
+  driver_test().runtime().RunUntil([&]() {
+    registered_interrupts =
+        driver_test()
+            .RunInEnvironmentTypeContext<std::vector<FakeInterruptController::RegisteredInterrupt>>(
+                [](TestEnvironment& env) {
+                  return env.fake_controller().take_registered_interrupts();
+                });
+    return !registered_interrupts.empty();
+  });
 
   ASSERT_EQ(registered_interrupts.size(), 1u);
   const FakeInterruptController::RegisteredInterrupt& interrupt = registered_interrupts[0];

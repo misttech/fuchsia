@@ -12,6 +12,7 @@
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
+#include <lib/fit/function.h>
 #include <lib/fpromise/promise.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/zx/bti.h>
@@ -29,6 +30,19 @@ class PlatformBus;
 class PlatformDevice : public fidl::WireServer<fuchsia_hardware_platform_device::Device>,
                        public fidl::WireServer<fuchsia_hardware_interrupt::ControllerRegistry> {
  public:
+  using GetInterruptCallback = fit::callback<void(zx::result<zx::interrupt>)>;
+
+  template <typename T>
+  static GetInterruptCallback MakeGetInterruptCallback(T& completer) {
+    return [completer = completer.ToAsync()](zx::result<zx::interrupt> irq) mutable {
+      if (irq.is_error()) {
+        completer.ReplyError(irq.status_value());
+      } else {
+        completer.ReplySuccess(std::move(irq.value()));
+      }
+    };
+  }
+
   // Creates a new PlatformDevice instance.
   // *flags* contains zero or more PDEV_ADD_* flags from the platform bus protocol.
   static zx::result<std::unique_ptr<PlatformDevice>> Create(
@@ -77,7 +91,7 @@ class PlatformDevice : public fidl::WireServer<fuchsia_hardware_platform_device:
   };
 
   zx::result<Mmio> GetMmio(uint32_t index) const;
-  zx::result<zx::interrupt> GetInterrupt(uint32_t index, uint32_t flags);
+  void GetInterrupt(uint32_t index, uint32_t flags, GetInterruptCallback callback);
   zx::result<zx::bti> GetBti(uint32_t index) const;
   zx::result<zx::resource> GetSmc(uint32_t index) const;
   DeviceInfo GetDeviceInfo() const;

@@ -173,14 +173,16 @@ zx::result<PlatformDevice::Mmio> PlatformDevice::GetMmio(uint32_t index) const {
   });
 }
 
-zx::result<zx::interrupt> PlatformDevice::GetInterrupt(uint32_t index, uint32_t flags) {
+void PlatformDevice::GetInterrupt(uint32_t index, uint32_t flags, GetInterruptCallback callback) {
   if (node_.irq() == std::nullopt || index >= node_.irq()->size()) {
-    return zx::error(ZX_ERR_OUT_OF_RANGE);
+    callback(zx::error(ZX_ERR_OUT_OF_RANGE));
+    return;
   }
 
   const auto& irq = node_.irq().value()[index];
   if (unlikely(!IsValid(irq))) {
-    return zx::error(ZX_ERR_INTERNAL);
+    callback(zx::error(ZX_ERR_INTERNAL));
+    return;
   }
 
   const fuchsia_hardware_platform_bus::IrqSpec& irq_spec = irq.irq().value();
@@ -193,7 +195,8 @@ zx::result<zx::interrupt> PlatformDevice::GetInterrupt(uint32_t index, uint32_t 
     vector = irq_spec.userspace_irq()->irq();
   } else {
     fdf::error("IRQ type is neither kernel nor userspace");
-    return zx::error(ZX_ERR_INTERNAL);
+    callback(zx::error(ZX_ERR_INTERNAL));
+    return;
   }
 
   // If the driver chose "default" for the IRQ mode, use the configuration we have instead.
@@ -219,7 +222,8 @@ zx::result<zx::interrupt> PlatformDevice::GetInterrupt(uint32_t index, uint32_t 
 
   if (flags & ZX_INTERRUPT_WAKE_VECTOR) {
     fdf::error("Client passing in ZX_INTERRUPT_WAKE_VECTOR. Not allowed");
-    return zx::error(ZX_ERR_INVALID_ARGS);
+    callback(zx::error(ZX_ERR_INVALID_ARGS));
+    return;
   }
   if (bus_->suspend_enabled() && irq.wake_vector().has_value() && irq.wake_vector().value()) {
     flags |= ZX_INTERRUPT_WAKE_VECTOR;
@@ -237,7 +241,8 @@ zx::result<zx::interrupt> PlatformDevice::GetInterrupt(uint32_t index, uint32_t 
   }
   if (status != ZX_OK) {
     fdf::error("zx_interrupt_create failed {}", zx_status_get_string(status));
-    return zx::error(status);
+    callback(zx::error(status));
+    return;
   }
   interrupt_vectors_.insert(vector);
 
@@ -247,19 +252,11 @@ zx::result<zx::interrupt> PlatformDevice::GetInterrupt(uint32_t index, uint32_t 
   interrupt_koids_.insert(info.koid);
 
   if (is_kernel_interrupt) {
-    return zx::ok(std::move(out_irq));
+    callback(zx::ok(std::move(out_irq)));
+  } else {
+    bus_->RegisterInterrupt(irq_spec.userspace_irq().value(), flags, std::move(out_irq),
+                            std::move(callback));
   }
-
-  zx::interrupt controller_irq;
-  status = out_irq.duplicate(ZX_RIGHT_SAME_RIGHTS, &controller_irq);
-  if (status != ZX_OK) {
-    fdf::error("zx_handle_duplicate failed {}", zx_status_get_string(status));
-    return zx::error(status);
-  }
-
-  zx::result<> result =
-      bus_->RegisterInterrupt(irq_spec.userspace_irq().value(), flags, std::move(controller_irq));
-  return zx::make_result(result.status_value(), std::move(out_irq));
 }
 
 zx::result<zx::bti> PlatformDevice::GetBti(uint32_t index) const {
@@ -700,12 +697,7 @@ void PlatformDevice::GetMmioByName(GetMmioByNameRequestView request,
 
 void PlatformDevice::GetInterruptById(GetInterruptByIdRequestView request,
                                       GetInterruptByIdCompleter::Sync& completer) {
-  zx::result interrupt = GetInterrupt(request->index, request->flags);
-  if (interrupt.is_ok()) {
-    completer.ReplySuccess(std::move(interrupt.value()));
-  } else {
-    completer.ReplyError(interrupt.status_value());
-  }
+  GetInterrupt(request->index, request->flags, MakeGetInterruptCallback(completer));
 }
 
 void PlatformDevice::GetInterruptByName(GetInterruptByNameRequestView request,
@@ -717,12 +709,8 @@ void PlatformDevice::GetInterruptByName(GetInterruptByNameRequestView request,
   if (!index.has_value()) {
     return completer.ReplyError(ZX_ERR_OUT_OF_RANGE);
   }
-  zx::result interrupt = GetInterrupt(index.value(), request->flags);
-  if (interrupt.is_ok()) {
-    completer.ReplySuccess(std::move(interrupt.value()));
-  } else {
-    completer.ReplyError(interrupt.status_value());
-  }
+
+  GetInterrupt(index.value(), request->flags, MakeGetInterruptCallback(completer));
 }
 
 void PlatformDevice::GetBtiById(GetBtiByIdRequestView request,

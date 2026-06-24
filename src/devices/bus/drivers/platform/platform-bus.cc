@@ -250,17 +250,27 @@ zx::result<> PlatformBus::RegisterInterruptController(
     fdf::error("Interrupt controller with ID {} already registered", id);
     return zx::error(ZX_ERR_ALREADY_BOUND);
   }
-  interrupt_controllers_.emplace(
-      id, fidl::WireSyncClient<fuchsia_hardware_interrupt::Controller>(std::move(controller)));
+  interrupt_controllers_.emplace(id, fidl::WireClient<fuchsia_hardware_interrupt::Controller>(
+                                         std::move(controller), dispatcher()));
   return zx::ok();
 }
 
-zx::result<> PlatformBus::RegisterInterrupt(const fuchsia_hardware_platform_bus::UserspaceIrq& irq,
-                                            uint32_t flags, zx::interrupt interrupt) {
+void PlatformBus::RegisterInterrupt(const fuchsia_hardware_platform_bus::UserspaceIrq& irq,
+                                    uint32_t flags, zx::interrupt interrupt,
+                                    PlatformDevice::GetInterruptCallback callback) {
   auto it = interrupt_controllers_.find(irq.controller_id());
   if (it == interrupt_controllers_.end()) {
     fdf::error("Controller ID {} not present for interrupt {}", irq.controller_id(), irq.irq());
-    return zx::error(ZX_ERR_NOT_FOUND);
+    callback(zx::error(ZX_ERR_NOT_FOUND));
+    return;
+  }
+
+  zx::interrupt controller_interrupt;
+  zx_status_t status = interrupt.duplicate(ZX_RIGHT_SAME_RIGHTS, &controller_interrupt);
+  if (status != ZX_OK) {
+    fdf::error("zx_handle_duplicate failed {}", zx_status_get_string(status));
+    callback(zx::error(status));
+    return;
   }
 
   const auto& [id, controller] = *it;
@@ -275,17 +285,21 @@ zx::result<> PlatformBus::RegisterInterrupt(const fuchsia_hardware_platform_bus:
   const auto mode = static_cast<fuchsia_hardware_platform_bus::ZirconInterruptMode>(
       flags & ZX_INTERRUPT_MODE_MASK);
 
-  auto result = controller->RegisterInterrupt(irq.irq(), mode, options, std::move(interrupt));
-  if (!result.ok()) {
-    fdf::error("Call to RegisterInterrupt failed: {}", result.error());
-    return zx::error(result.error().status());
-  }
-  if (result->is_error()) {
-    fdf::error("RegisterInterrupt failed: {}", zx_status_get_string(result->error_value()));
-    return zx::error(result->error_value());
-  }
-
-  return zx::ok();
+  controller->RegisterInterrupt(irq.irq(), mode, options, std::move(controller_interrupt))
+      .ThenExactlyOnce(
+          [irq = irq.irq(),
+           id](fidl::WireUnownedResult<fuchsia_hardware_interrupt::Controller::RegisterInterrupt>&
+                   result) mutable {
+            if (!result.ok()) {
+              fdf::error("Call to RegisterInterrupt {} on controller {} failed: {}", irq, id,
+                         result.error());
+            } else if (result->is_error()) {
+              fdf::error("RegisterInterrupt {} on controller {} failed: {}", irq, id,
+                         zx_status_get_string(result->error_value()));
+            }
+          });
+  // Eagerly return the interrupt that we just requested to register.
+  callback(zx::ok(std::move(interrupt)));
 }
 
 void PlatformBus::GetBoardName(GetBoardNameCompleter::Sync& completer) {

@@ -16,12 +16,7 @@
 namespace platform_bus {
 
 void PlatformInterruptFragment::Get(GetCompleter::Sync& completer) {
-  zx::result irq = pdev_->GetInterrupt(index_, 0);
-  if (irq.is_error()) {
-    completer.ReplyError(irq.status_value());
-  } else {
-    completer.ReplySuccess(std::move(irq.value()));
-  }
+  pdev_->GetInterrupt(index_, 0, PlatformDevice::MakeGetInterruptCallback(completer));
 }
 
 zx::result<> PlatformInterruptFragment::Add(std::string_view name, PlatformDevice* pdev,
