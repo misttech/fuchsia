@@ -6,7 +6,7 @@ use ::async_trait::async_trait;
 use ::fho::{AvailabilityFlag, FfxMain, FfxTool, Result};
 use fdomain_fuchsia_bluetooth::HostId as FidlHostId;
 use fdomain_fuchsia_bluetooth_affordances::HostControllerProxy;
-use fdomain_fuchsia_bluetooth_sys::HostWatcherProxy;
+use fdomain_fuchsia_bluetooth_sys::{AccessProxy, HostWatcherProxy};
 use ffx_bluetooth_controller_args::{ControllerCommand, ControllerSubCommand};
 use ffx_writer::{SimpleWriter, ToolIO as _};
 use fuchsia_bluetooth::types::{HostId, HostInfo, addresses_to_custom_string};
@@ -26,6 +26,8 @@ pub struct ControllerTool {
     host_controller: HostControllerProxy,
     #[with(toolbox())]
     host_watcher_proxy: HostWatcherProxy,
+    #[with(toolbox())]
+    access_proxy: AccessProxy,
 }
 
 fho::embedded_plugin!(ControllerTool);

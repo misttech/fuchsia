@@ -37,7 +37,6 @@ enum Request {
     SetDiscovery(bool, oneshot::Sender<Result<(), anyhow::Error>>),
     SetDiscoverability(bool, oneshot::Sender<Result<(), anyhow::Error>>),
     SetConnectability(bool, oneshot::Sender<Result<(), anyhow::Error>>),
-    SetLocalName(String, oneshot::Sender<Result<(), anyhow::Error>>),
     SetDeviceClass(DeviceClass, oneshot::Sender<Result<(), anyhow::Error>>),
     StartLeScan(
         futures::channel::mpsc::UnboundedSender<
@@ -186,9 +185,6 @@ impl WorkThread {
                     result_sender
                         .send(sys::set_connectability(&proxies, connectable).await)
                         .unwrap();
-                }
-                Request::SetLocalName(name, result_sender) => {
-                    result_sender.send(sys::set_local_name(&proxies, name)).unwrap();
                 }
                 Request::SetDeviceClass(device_class, result_sender) => {
                     result_sender.send(sys::set_device_class(&proxies, device_class)).unwrap();
@@ -373,13 +369,6 @@ impl WorkThread {
     pub async fn set_connectability(&self, connectable: bool) -> Result<(), anyhow::Error> {
         let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
         self.sender.clone().unbounded_send(Request::SetConnectability(connectable, sender))?;
-        receiver.await?
-    }
-
-    // Set local name.
-    pub async fn set_local_name(&self, name: String) -> Result<(), anyhow::Error> {
-        let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
-        self.sender.clone().unbounded_send(Request::SetLocalName(name, sender))?;
         receiver.await?
     }
 

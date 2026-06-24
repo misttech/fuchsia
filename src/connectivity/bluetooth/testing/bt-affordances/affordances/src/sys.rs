@@ -172,12 +172,6 @@ pub(crate) async fn set_connectability(
     Ok(())
 }
 
-pub(crate) fn set_local_name(proxies: &Proxies, name: String) -> Result<(), anyhow::Error> {
-    proxies.access_proxy.set_local_name(name.as_str()).map_err(|fidl_error| {
-        anyhow!("fuchsia.bluetooth.sys.Access/SetLocalName error: {fidl_error}")
-    })
-}
-
 pub(crate) fn set_device_class(
     proxies: &Proxies,
     device_class: DeviceClass,

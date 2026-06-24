@@ -172,25 +172,9 @@ async fn handle_single_host_request(
             warn!("SetActiveHost is being deprecated and no-op");
             responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
         }
-        HostControllerRequest::SetLocalName { payload, responder } => {
-            let fidl_fuchsia_bluetooth_affordances::HostControllerSetLocalNameRequest {
-                name: Some(name),
-                ..
-            } = payload
-            else {
-                responder
-                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::MissingParameters))?;
-                return Ok(());
-            };
-            match worker.set_local_name(name).await {
-                Ok(_) => {
-                    responder.send(Ok(()))?;
-                }
-                Err(err) => {
-                    error!("SetLocalName encountered error: {err}");
-                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
-                }
-            }
+        HostControllerRequest::SetLocalName { payload: _, responder } => {
+            warn!("SetLocalName is being deprecated and no-op");
+            responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
         }
         HostControllerRequest::StartPairingDelegate { payload: _, responder } => {
             warn!("StartPairingDelegate is being deprecated and no-op");
