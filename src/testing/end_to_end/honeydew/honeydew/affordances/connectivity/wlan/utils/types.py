@@ -11,7 +11,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol, Self
 
-import fidl_fuchsia_wlan_common as f_wlan_common
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_ieee80211 as f_wlan_ieee80211
 import fidl_fuchsia_wlan_policy as f_wlan_policy
@@ -145,51 +144,6 @@ class DisconnectStatus(enum.StrEnum):
                 return DisconnectStatus.CONNECTION_FAILED
             case _:
                 raise TypeError(f"Unknown DisconnectStatus: {fidl}")
-
-
-# TODO(http://b/346424966): Only necessary because Python does not have static
-# typing for FIDL. Once these static types are available and the SL4F affordance
-# is removed, replace with the statically generated FIDL equivalent.
-class BssType(enum.StrEnum):
-    """BssType
-
-    Defined by https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/sl4f/src/wlan/types.rs
-    """
-
-    UNKNOWN = "Unknown"
-    INFRASTRUCTURE = "Infrastructure"
-    INDEPENDENT = "Independent"
-    MESH = "Mesh"
-    PERSONAL = "Personal"
-
-    @staticmethod
-    def from_fidl(fidl: f_wlan_common.BssType) -> "BssType":
-        match fidl:
-            case f_wlan_common.BssType.UNKNOWN:
-                return BssType.UNKNOWN
-            case f_wlan_common.BssType.INFRASTRUCTURE:
-                return BssType.INFRASTRUCTURE
-            case f_wlan_common.BssType.INDEPENDENT:
-                return BssType.INDEPENDENT
-            case f_wlan_common.BssType.MESH:
-                return BssType.MESH
-            case f_wlan_common.BssType.PERSONAL:
-                return BssType.PERSONAL
-            case _:
-                raise TypeError(f"Unknown BssType FIDL value: {fidl}")
-
-    def to_fidl(self) -> f_wlan_common.BssType:
-        match self:
-            case BssType.UNKNOWN:
-                return f_wlan_common.BssType.UNKNOWN
-            case BssType.INFRASTRUCTURE:
-                return f_wlan_common.BssType.INFRASTRUCTURE
-            case BssType.INDEPENDENT:
-                return f_wlan_common.BssType.INDEPENDENT
-            case BssType.MESH:
-                return f_wlan_common.BssType.MESH
-            case BssType.PERSONAL:
-                return f_wlan_common.BssType.PERSONAL
 
 
 # TODO(http://b/346424966): Only necessary because Python does not have static
