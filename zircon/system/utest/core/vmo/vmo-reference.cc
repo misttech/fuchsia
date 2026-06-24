@@ -499,7 +499,7 @@ TEST(VmoReference, UnsupportedResize) {
 
   zx::vmo noresizeref;
   ASSERT_EQ(
-      ZX_ERR_NOT_SUPPORTED,
+      ZX_ERR_ACCESS_DENIED,
       noresize.create_child(ZX_VMO_CHILD_REFERENCE | ZX_VMO_CHILD_RESIZABLE, 0, 0, &noresizeref));
 
   // Can create a non-resizable reference of a non-resizable VMO.

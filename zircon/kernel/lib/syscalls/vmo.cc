@@ -299,6 +299,14 @@ zx_status_t sys_vmo_create_child(zx_handle_t handle, uint32_t options, uint64_t 
     options &= ~ZX_VMO_CHILD_NO_WRITE;
   }
 
+  // Reference children share their size with the parent, so attempts to resize them "pass through"
+  // and resize the parent. Require ZX_RIGHT_RESIZE on the parent handle to create resizable
+  // reference children, as they functionally allow the caller to resize parent VMOs.
+  const bool would_resize_pass_through =
+      (options & ZX_VMO_CHILD_RESIZABLE) && (options & ZX_VMO_CHILD_REFERENCE);
+  const zx_rights_t desired_rights =
+      ZX_RIGHT_DUPLICATE | ZX_RIGHT_READ | (would_resize_pass_through ? ZX_RIGHT_RESIZE : 0);
+
   // lookup the dispatcher from handle, save a copy of the rights for later. We must hold onto
   // the refptr of this VMO up until we create the dispatcher. The reason for this is that
   // VmObjectDispatcher::Create sets the user_id and page_attribution_id in the created child
@@ -307,8 +315,8 @@ zx_status_t sys_vmo_create_child(zx_handle_t handle, uint32_t options, uint64_t 
   // any destruction from occurring.
   fbl::RefPtr<VmObjectDispatcher> vmo;
   zx_rights_t in_rights;
-  status = up->handle_table().GetDispatcherWithRights(
-      *up, handle, ZX_RIGHT_DUPLICATE | ZX_RIGHT_READ, &vmo, &in_rights);
+  status =
+      up->handle_table().GetDispatcherWithRights(*up, handle, desired_rights, &vmo, &in_rights);
   if (status != ZX_OK)
     return status;
 

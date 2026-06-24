@@ -881,7 +881,9 @@ closed protocol Vmo {
     /// further specify the child's behavior:
     ///
     /// - `ZX_VMO_CHILD_RESIZABLE` - Create a resizable child VMO. This is incompatible with
-    ///                                `ZX_VMO_CHILD_SLICE`.
+    ///                                `ZX_VMO_CHILD_SLICE`. This is compatible with
+    ///                                `ZX_VMO_CHILD_REFERENCE` only when the parent handle
+    ///                                has `ZX_RIGHT_RESIZE`.
     ///
     /// - `ZX_VMO_CHILD_NO_WRITE` - Create a child that cannot be written to. This is incompatible with
     ///                               `ZX_VMO_CHILD_RESIZABLE`.

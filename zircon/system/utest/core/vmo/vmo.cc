@@ -3270,4 +3270,34 @@ TEST(VmoTestCase, UnmapLoanedcontiguousWhileFaulting) {
 }
 #endif
 
+// Test that we cannot circumvent the resize right by creating a resizable reference or slice VMO.
+// Regression test for https://fxbug.dev/520618980.
+TEST(VmoTestCase, CreateChildMintResize) {
+  zx::vmo vmo_with_resize;
+  ASSERT_OK(zx::vmo::create(2 * zx_system_get_page_size(), ZX_VMO_RESIZABLE, &vmo_with_resize));
+
+  // If the parent has ZX_RIGHT_RESIZE, we can create a resizable reference child.
+  zx::vmo child_with_resize;
+  EXPECT_OK(vmo_with_resize.create_child(ZX_VMO_CHILD_REFERENCE | ZX_VMO_CHILD_RESIZABLE, 0, 0,
+                                         &child_with_resize));
+  EXPECT_OK(child_with_resize.set_size(zx_system_get_page_size()));
+
+  // Without ZX_RIGHT_RESIZE on the parent handle, we cannot create the child.
+  zx::vmo vmo_no_resize;
+  zx_info_handle_basic_t info;
+  ASSERT_OK(vmo_with_resize.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
+  ASSERT_OK(vmo_with_resize.duplicate(info.rights & ~ZX_RIGHT_RESIZE, &vmo_no_resize));
+
+  EXPECT_STATUS(ZX_ERR_ACCESS_DENIED,
+                vmo_no_resize.create_child(ZX_VMO_CHILD_REFERENCE | ZX_VMO_CHILD_RESIZABLE, 0, 0,
+                                           &child_with_resize));
+
+  // The ZX_VMO_CHILD_SLICE option is always incompatible with ZX_VMO_CHILD_RESIZABLE, even when the
+  // parent handle is resizable. Check here anyway so that this restriction is interpreted in the
+  // same security context as the restriction on reference VMOs.
+  EXPECT_STATUS(ZX_ERR_INVALID_ARGS,
+                vmo_no_resize.create_child(ZX_VMO_CHILD_SLICE | ZX_VMO_CHILD_RESIZABLE, 0,
+                                           zx_system_get_page_size(), &child_with_resize));
+}
+
 }  // namespace
