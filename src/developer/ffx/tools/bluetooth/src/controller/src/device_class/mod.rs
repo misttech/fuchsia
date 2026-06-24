@@ -4,7 +4,6 @@
 
 use crate::ControllerTool;
 use fdomain_fuchsia_bluetooth::DeviceClass as FidlDeviceClass;
-use fdomain_fuchsia_bluetooth_affordances::HostControllerSetDeviceClassRequest;
 use ffx_bluetooth_controller_args::device_class::{
     DeviceClassCommand, DeviceClassSubCommand, MajorClass,
 };
@@ -40,20 +39,10 @@ pub async fn handle_device_class(
 
 impl ControllerTool {
     async fn set_device_class(&self, device_class: FidlDeviceClass) -> Result<()> {
-        let request = HostControllerSetDeviceClassRequest {
-            device_class: Some(device_class),
-            ..Default::default()
-        };
         Ok(self
-            .host_controller
-            .set_device_class(&request)
-            .await
-            .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
-            .map_err(|err| {
-                fho::Error::Unexpected(anyhow::anyhow!(
-                    "fuchsia.bluetooth.affordances.HostController error: {err:?}"
-                ))
-            })?)
+            .access_proxy
+            .set_device_class(&device_class)
+            .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?)
     }
 }
 

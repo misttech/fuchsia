@@ -4,7 +4,7 @@
 
 use crate::proxies::Proxies;
 use anyhow::anyhow;
-use fidl_fuchsia_bluetooth::{DeviceClass, PeerId};
+use fidl_fuchsia_bluetooth::PeerId;
 use fidl_fuchsia_bluetooth_sys::{AccessSetConnectionPolicyRequest, HostInfo, Peer};
 use fuchsia_async::{TimeoutExt, Timer};
 use fuchsia_sync::Mutex;
@@ -170,13 +170,4 @@ pub(crate) async fn set_connectability(
     }
     *proxies.suppress_connections_session.lock() = Some(token);
     Ok(())
-}
-
-pub(crate) fn set_device_class(
-    proxies: &Proxies,
-    device_class: DeviceClass,
-) -> Result<(), anyhow::Error> {
-    proxies.access_proxy.set_device_class(&device_class).map_err(|fidl_error| {
-        anyhow!("fuchsia.bluetooth.sys.Access/SetDeviceClass error: {fidl_error}")
-    })
 }

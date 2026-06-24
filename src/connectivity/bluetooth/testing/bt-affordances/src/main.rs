@@ -8,11 +8,11 @@ use fidl_fuchsia_bluetooth_affordances::{
     CentralControllerRequest, CentralControllerRequestStream,
     GattClientControllerDiscoverServicesResponse, GattClientControllerRequest,
     GattClientControllerRequestStream, HostControllerRequest, HostControllerRequestStream,
-    HostControllerSetConnectabilityRequest, HostControllerSetDeviceClassRequest,
-    HostControllerSetDiscoverabilityRequest, PeerControllerRequest, PeerControllerRequestStream,
-    PeerControllerSetDiscoveryRequest, PeerSelector, PeripheralControllerAdvertiseRequest,
-    PeripheralControllerAdvertiseResponse, PeripheralControllerRequest,
-    PeripheralControllerRequestStream, ScanResultListenerOnPeersDiscoveredRequest,
+    HostControllerSetConnectabilityRequest, HostControllerSetDiscoverabilityRequest,
+    PeerControllerRequest, PeerControllerRequestStream, PeerControllerSetDiscoveryRequest,
+    PeerSelector, PeripheralControllerAdvertiseRequest, PeripheralControllerAdvertiseResponse,
+    PeripheralControllerRequest, PeripheralControllerRequestStream,
+    ScanResultListenerOnPeersDiscoveredRequest,
 };
 use fuchsia_bt_test_affordances::WorkThread;
 use fuchsia_component::server::ServiceFs;
@@ -184,23 +184,9 @@ async fn handle_single_host_request(
             warn!("StopPairingDelegate is being deprecated and no-op");
             responder.send()?;
         }
-        HostControllerRequest::SetDeviceClass { payload, responder } => {
-            let HostControllerSetDeviceClassRequest { device_class: Some(device_class), .. } =
-                payload
-            else {
-                responder
-                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::MissingParameters))?;
-                return Ok(());
-            };
-            match worker.set_device_class(device_class).await {
-                Ok(_) => {
-                    responder.send(Ok(()))?;
-                }
-                Err(err) => {
-                    error!("SetDeviceClass encountered error: {err}");
-                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
-                }
-            }
+        HostControllerRequest::SetDeviceClass { payload: _, responder } => {
+            warn!("SetDeviceClass is being deprecated and no-op");
+            responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
         }
         HostControllerRequest::_UnknownMethod { ordinal, .. } => {
             error!("HostControllerRequest: unknown method received with ordinal {ordinal}");

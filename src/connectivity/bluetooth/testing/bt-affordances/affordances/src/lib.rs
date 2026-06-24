@@ -4,7 +4,7 @@
 
 use anyhow::anyhow;
 use fidl::endpoints::ClientEnd;
-use fidl_fuchsia_bluetooth::{DeviceClass, PeerId, Uuid};
+use fidl_fuchsia_bluetooth::{PeerId, Uuid};
 use fidl_fuchsia_bluetooth_gatt2::{Characteristic, ServiceHandle, ServiceInfo};
 use fidl_fuchsia_bluetooth_le::{AdvertisingParameters, ConnectionMarker};
 use fidl_fuchsia_bluetooth_sys::{HostInfo, Peer};
@@ -37,7 +37,6 @@ enum Request {
     SetDiscovery(bool, oneshot::Sender<Result<(), anyhow::Error>>),
     SetDiscoverability(bool, oneshot::Sender<Result<(), anyhow::Error>>),
     SetConnectability(bool, oneshot::Sender<Result<(), anyhow::Error>>),
-    SetDeviceClass(DeviceClass, oneshot::Sender<Result<(), anyhow::Error>>),
     StartLeScan(
         futures::channel::mpsc::UnboundedSender<
             Vec<fidl_fuchsia_bluetooth_affordances::ScannedPeer>,
@@ -185,9 +184,6 @@ impl WorkThread {
                     result_sender
                         .send(sys::set_connectability(&proxies, connectable).await)
                         .unwrap();
-                }
-                Request::SetDeviceClass(device_class, result_sender) => {
-                    result_sender.send(sys::set_device_class(&proxies, device_class)).unwrap();
                 }
                 Request::StartLeScan(sender, result_sender) => {
                     result_sender.send(le::start_le_scan(&mut proxies, sender).await).unwrap();
@@ -369,13 +365,6 @@ impl WorkThread {
     pub async fn set_connectability(&self, connectable: bool) -> Result<(), anyhow::Error> {
         let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
         self.sender.clone().unbounded_send(Request::SetConnectability(connectable, sender))?;
-        receiver.await?
-    }
-
-    // Set device class.
-    pub async fn set_device_class(&self, device_class: DeviceClass) -> Result<(), anyhow::Error> {
-        let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
-        self.sender.clone().unbounded_send(Request::SetDeviceClass(device_class, sender))?;
         receiver.await?
     }
 
