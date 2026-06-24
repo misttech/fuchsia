@@ -1211,7 +1211,15 @@ mod fxblob {
             fixture.realm.root.connect_to_protocol_at_exposed_dir().expect(
                 "connect_to_protocol_at_exposed_dir failed for the StarnixVolumeProvider protocol",
             );
+        // Check should succeed when there's no volume
         let (crypt, _crypt_management) = fixture.setup_starnix_crypt().await;
+        volume_provider
+            .check(crypt.into_client_end().unwrap())
+            .await
+            .expect("fidl transport error")
+            .expect("check with absent volume failed");
+
+        let crypt = fixture.connect_to_crypt();
         let (exposed_dir_proxy, exposed_dir_server) =
             fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
         volume_provider
@@ -1281,6 +1289,13 @@ mod fxblob {
                 "connect_to_protocol_at_exposed_dir failed for the StarnixVolumeProvider protocol",
             );
         let (crypt, _crypt_management) = fixture.setup_starnix_crypt().await;
+        volume_provider
+            .check(crypt.into_client_end().unwrap())
+            .await
+            .expect("fidl transport error")
+            .expect("check failed");
+
+        let crypt = fixture.connect_to_crypt();
         let (exposed_dir_proxy, exposed_dir_server) =
             fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
         volume_provider

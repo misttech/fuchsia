@@ -107,6 +107,10 @@ pub trait Environment: Send + Sync {
 
     /// When called, attempt to provision the device with Fxfs.
     async fn provision_fxfs(&mut self, device: &mut dyn Device) -> Result<(), Error>;
+
+    /// Reports a filesystem corruption for a `format` filesystem with `error`.  Files a crash
+    /// report.
+    fn report_corruption(&self, format: &str, error: &Error);
 }
 
 enum BufferedDirectory {
@@ -702,6 +706,10 @@ impl Environment for FshostEnvironment {
             .map_err(|err| panic!("Failed to provision Fxfs: {:?}.", zx::Status::from_raw(err)))?;
 
         Ok(())
+    }
+
+    fn report_corruption(&self, format: &str, error: &Error) {
+        self.launcher.report_corruption(format, error);
     }
 }
 

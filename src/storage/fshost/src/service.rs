@@ -6,7 +6,7 @@ use crate::environment::Environment;
 use crate::recovery::{FilesystemCorrupt, RecoveryOps};
 use anyhow::{Context, Error, anyhow};
 use fidl::endpoints::{ClientEnd, RequestStream, ServerEnd};
-use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions};
+use fidl_fuchsia_fs_startup::{CheckOptions, CreateOptions, MountOptions};
 use fidl_fuchsia_fshost as fshost;
 use fidl_fuchsia_fxfs as ffxfs;
 use fidl_fuchsia_io as fio;
@@ -41,6 +41,47 @@ impl FshostShutdownResponder {
 }
 
 const STARNIX_TEST_VOLUME_NAME: &str = "starnix_test_volume";
+
+async fn check_main_starnix_volume(
+    environment: &Arc<Mutex<dyn Environment>>,
+    volume_name: &str,
+    crypt: ClientEnd<ffxfs::CryptMarker>,
+) -> Result<(), zx::Status> {
+    let mut env = environment.lock().await;
+    if let Some(multi_vol_fs) = env.get_container() {
+        if multi_vol_fs.has_volume(volume_name).await.map_err(|err| {
+            log::error!(err:?; "has_volume failed");
+            zx::Status::INTERNAL
+        })? {
+            multi_vol_fs
+                .check_volume(
+                    volume_name,
+                    CheckOptions { crypt: Some(crypt), ..CheckOptions::default() },
+                )
+                .await
+                .map_err(|err| {
+                    env.report_corruption("fxfs", &err);
+                    zx::Status::IO_DATA_INTEGRITY
+                })
+        } else {
+            Ok(())
+        }
+    } else {
+        Err(zx::Status::BAD_STATE)
+    }
+}
+
+async fn check_starnix_volume(
+    environment: &Arc<Mutex<dyn Environment>>,
+    config: &fshost_config::Config,
+    crypt: ClientEnd<ffxfs::CryptMarker>,
+) -> Result<(), zx::Status> {
+    if config.starnix_volume_name.is_empty() || !config.check_filesystems {
+        Ok(())
+    } else {
+        check_main_starnix_volume(environment, &config.starnix_volume_name, crypt).await
+    }
+}
 
 async fn open_or_create_starnix_volume(
     environment: &Arc<Mutex<dyn Environment>>,
@@ -94,6 +135,13 @@ pub fn fshost_volume_provider(
         async move {
             while let Some(request) = stream.next().await {
                 match request {
+                    Ok(fshost::StarnixVolumeProviderRequest::Check { crypt, responder }) => {
+                        log::info!("volume provider check");
+                        let res = check_starnix_volume(&env, &config, crypt).await;
+                        responder.send(res.map_err(|e| e.into_raw())).unwrap_or_else(|error| {
+                            log::error!(error:?; "failed to send fidl response");
+                        });
+                    }
                     Ok(fshost::StarnixVolumeProviderRequest::Mount {
                         crypt,
                         mode,

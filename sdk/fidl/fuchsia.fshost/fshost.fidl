@@ -121,6 +121,14 @@ type MountMode = strict enum {
 /// Provides access to the volume which will be used by Starnix to store its data.
 @discoverable
 closed protocol StarnixVolumeProvider {
+    /// Checks the integrity of the main starnix volume if it exists.
+    ///
+    /// Silently succeeds if the volume is absent, or if fshost is not configured to check
+    /// filesystems (fuchsia.fshost.CheckFilesystems).
+    strict Check(resource struct {
+        crypt client_end:fuchsia.fxfs.Crypt;
+    }) -> () error zx.Status;
+
     /// Mounts the main starnix volume using `crypt`. `exposed_dir` will be connected to the
     /// exposed directory of the mounted starnix volume.
     ///

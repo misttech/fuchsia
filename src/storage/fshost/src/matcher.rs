@@ -836,13 +836,16 @@ mod tests {
                 "Unexpected call to register_filesystem"
             );
         }
-
         async fn provision_fxfs(&mut self, _device: &mut dyn Device) -> Result<(), Error> {
             Ok(())
         }
 
         async fn shred_data_online(&mut self) -> Result<(), Error> {
             Ok(())
+        }
+
+        fn report_corruption(&self, _format: &str, _error: &Error) {
+            unreachable!()
         }
     }
 

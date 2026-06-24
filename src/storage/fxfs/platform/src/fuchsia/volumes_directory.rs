@@ -23,6 +23,7 @@ use fuchsia_async as fasync;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryStreamExt};
 use fxfs::errors::FxfsError;
+use fxfs::filesystem::FxFilesystem;
 use fxfs::fsck;
 use fxfs::log::*;
 use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
@@ -189,6 +190,26 @@ impl MountedVolumesGuard<'_> {
             Ok((volume.clone(), is_blob))
         } else {
             Err(zx::Status::UNAVAILABLE)
+        }
+    }
+
+    // Verifies the integrity of `name` if it exists.  Returns Ok otherwise.
+    async fn check_volume(
+        &mut self,
+        filesystem: &FxFilesystem,
+        name: &str,
+        crypt: Option<Arc<dyn Crypt>>,
+    ) -> Result<Option<Arc<ObjectStore>>, Error> {
+        if let Ok(store) = self
+            .volumes_directory
+            .root_volume
+            .volume(name, StoreOptions { crypt: crypt.clone() })
+            .await
+        {
+            fsck::fsck_volume(filesystem, store.store_object_id(), crypt).await?;
+            Ok(Some(store))
+        } else {
+            Ok(None)
         }
     }
 
@@ -613,6 +634,22 @@ impl VolumesDirectory {
         as_blob: bool,
     ) -> Result<FxVolumeAndRoot, Error> {
         self.lock().await.create_or_mount_volume(name, crypt, Mode::Mount, as_blob).await
+    }
+
+    /// Checks the integrity of volume `name`, or succeeds silently if the volume doesn't exist.
+    pub async fn check_volume(
+        self: &Arc<Self>,
+        name: &str,
+        crypt: Option<Arc<dyn Crypt>>,
+    ) -> Result<(), Error> {
+        let fs = self.root_volume.volume_directory().store().filesystem();
+        let store = self.lock().await.check_volume(fs.as_ref(), name, crypt).await?;
+        if let Some(store) = store {
+            if store.is_unlocked() {
+                let _ = store.lock().await;
+            }
+        }
+        Ok(())
     }
 
     /// Removes a volume. The volume must exist but encrypted volume keys are not required.

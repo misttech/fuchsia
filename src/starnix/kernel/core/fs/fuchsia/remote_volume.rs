@@ -264,7 +264,9 @@ pub fn new_remote_vol(
         .map_err(|_| errno!(ENOENT))?
         .into_sync_proxy();
 
+    // We need one crypt instance for fsck, the other for mounting.
     let (crypt_client_end, crypt_proxy) = fidl::endpoints::create_endpoints::<CryptMarker>();
+    let (crypt2_client_end, crypt2_proxy) = fidl::endpoints::create_endpoints::<CryptMarker>();
 
     let key_location = match options.params.get(FsStr::new(b"keylocation")) {
         Some(path) => str::from_utf8(path.as_bytes()).map_err(|_| errno!(EINVAL))?,
@@ -310,24 +312,46 @@ pub fn new_remote_vol(
     let (exposed_dir_client_end, exposed_dir_server) =
         fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
 
-    {
-        let crypt_service = Arc::clone(&crypt_service);
-        let closure = async move |_: LockedAndTask<'_>| {
-            if let Err(e) = crypt_service.handle_connection(crypt_proxy.into_stream()).await {
-                log_error!("Error while handling a Crypt request {e}");
+    let crypt_service_clone = Arc::clone(&crypt_service);
+    let closure = async move |_: LockedAndTask<'_>| {
+        let (r1, r2) = futures::join!(
+            crypt_service_clone.handle_connection(crypt_proxy.into_stream()),
+            crypt_service_clone.handle_connection(crypt2_proxy.into_stream())
+        );
+        match (r1, r2) {
+            (Err(e1), Err(e2)) => {
+                log_error!("Error while handling Crypt connections: {e1:?}, {e2:?}")
             }
-        };
-        let req = SpawnRequestBuilder::new()
-            .with_debug_name("remote-volume-crypt")
-            .with_role(CRYPT_THREAD_ROLE)
-            .with_async_closure(closure)
-            .build();
-        kernel.kthreads.spawner().spawn_from_request(req);
-    }
+            (Err(e), Ok(())) => log_error!("Error while handling Crypt connection: {e:?}"),
+            (Ok(()), Err(e)) => log_error!("Error while handling Crypt2 connection: {e:?}"),
+            (Ok(()), Ok(())) => {}
+        }
+    };
+    let req = SpawnRequestBuilder::new()
+        .with_debug_name("remote-volume-crypt")
+        .with_role(CRYPT_THREAD_ROLE)
+        .with_async_closure(closure)
+        .build();
+    kernel.kthreads.spawner().spawn_from_request(req);
 
     let mode = if created_key_file {
         fidl_fuchsia_fshost::MountMode::AlwaysCreate
     } else {
+        // If fsck fails, return an error.  This might trigger a reboot, which is OK -- the device
+        // should eventually land back into recovery mode.
+        volume_provider
+            .check(crypt2_client_end, zx::MonotonicInstant::INFINITE)
+            .map_err(|e| {
+                log_error!("FIDL transport error on StarnixVolumeProvider.Check {:?}", e);
+                errno!(ENOENT)
+            })?
+            .map_err(|e| {
+                let error = from_status_like_fdio!(zx::Status::from_raw(e));
+                log_error!(
+                    error:?;
+                    "Volume check failed. The filesystem might be corrupt!");
+                error
+            })?;
         fidl_fuchsia_fshost::MountMode::MaybeCreate
     };
     let guid = volume_provider
