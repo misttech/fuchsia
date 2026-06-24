@@ -4150,13 +4150,50 @@ async fn test_activity_governor_captures_inspect_event_buffer_stats() -> Result<
     let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
     let () = boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
 
-    // Allow standard suspend-resume cycles to continue (as the artificial workload), until the
-    // event buffer reaches capacity, at which time we will see the field
-    // "at_capacity_history_duration_seconds" appear in the events stats struct.
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
 
-    let custom_max_loops_count = 1000; // Run more times to ensure we fill the event buffer.
+    let inspect = get_diagnostics_hierarchy_for(&activity_governor_moniker).await?;
+    let max_suspend_events_to_log = inspect
+        .get_property_by_path(&["config", "max_suspend_events_to_log"])
+        .expect("property max_suspend_events_to_log not found")
+        .uint()
+        .expect("max_suspend_events_to_log is not a uint");
+
+    // Rapidly acquire and drop wake leases in batches to prevent handle/lease pile-up in SAG.
+    let batch_size = 1000;
+    let mut futures = Vec::new();
+    for i in 0..max_suspend_events_to_log {
+        futures.push(activity_governor.acquire_wake_lease(&format!("wake_lease{}", i)));
+        if futures.len() == batch_size {
+            // Wait for all acquisitions in this batch to resolve in parallel.
+            let leases = futures::future::try_join_all(std::mem::take(&mut futures)).await?;
+            // Drop them all to release the leases.
+            drop(leases);
+
+            // Wait for all of the batched wake leases to be dropped and processed.
+            block_until_inspect_matches!(
+                activity_governor_moniker,
+                root: contains {
+                    ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
+                }
+            );
+        }
+    }
+
+    // Process any remaining futures in the final incomplete batch.
+    if !futures.is_empty() {
+        let leases = futures::future::try_join_all(futures).await?;
+        drop(leases);
+
+        block_until_inspect_matches!(
+            activity_governor_moniker,
+            root: contains {
+                ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
+            }
+        );
+    }
+
     block_until_inspect_matches!(
-        custom_max_loops_count,
         activity_governor_moniker,
         root: contains {
             booting: false,
