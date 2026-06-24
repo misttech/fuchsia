@@ -5,25 +5,28 @@
 
 import json
 import sys
+import typing as T
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, Path(__file__).parent)
+sys.path.insert(0, str(Path(__file__).parent))
 import build_api_filter
 
 
 class BuildApiModulesFilterTest(unittest.TestCase):
-    def _setup_build_dir(self, build_dir, api_files):
+    def _setup_build_dir(
+        self, build_dir: Path, api_files: dict[str, T.Any]
+    ) -> None:
         api_list = sorted(api_files.keys())
         with (build_dir / "api.json").open("w") as f:
             json.dump(api_list, f, indent=2)
 
         for api_module, json_value in api_files.items():
-            (build_dir / f"{api_file}.json").write_text(
+            (build_dir / f"{api_module}.json").write_text(
                 json.dumps(json_value, indent=2)
             )
 
-    def test_filter(self):
+    def test_filter(self) -> None:
         ninja_artifacts = [
             "obj/foo",
             "gen/bar",

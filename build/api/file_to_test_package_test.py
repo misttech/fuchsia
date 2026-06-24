@@ -7,6 +7,7 @@ import os
 import sys
 import tempfile
 import time
+import typing as T
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -18,7 +19,7 @@ import file_to_test_package
 
 
 class TestFileToTestPackageFinder(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.build_dir = Path(self.tmp_dir.name)
         self.fuchsia_dir = self.build_dir / "fuchsia"
@@ -41,7 +42,7 @@ class TestFileToTestPackageFinder(unittest.TestCase):
         )
         self.mock_run_gn_refs = self.run_gn_refs_patcher.start()
 
-        def gn_refs_side_effect(target):
+        def gn_refs_side_effect(target: str) -> set[str]:
             if target == "//src:lib":
                 return {"//src:lib_test", "//src:pkg"}
             if target == "//src:foo":
@@ -55,16 +56,18 @@ class TestFileToTestPackageFinder(unittest.TestCase):
         self.mock_run_gn_refs.side_effect = gn_refs_side_effect
         self.addCleanup(self.run_gn_refs_patcher.stop)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.tmp_dir.cleanup()
 
     @mock.patch("builtins.open")
     @mock.patch("pathlib.Path.exists", autospec=True)
-    def test_find_test_packages_fast_rust(self, mock_exists, mock_open):
+    def test_find_test_packages_fast_rust(
+        self, mock_exists: mock.MagicMock, mock_open: mock.MagicMock
+    ) -> None:
         source_path = "src/lib.rs"
         abs_source = self.fuchsia_dir / source_path
 
-        def exists_side_effect(path):
+        def exists_side_effect(path: Path) -> bool:
             if path == self.build_dir / "rust-project.json":
                 return True
             if path == self.build_dir / "tests.json":
@@ -96,7 +99,11 @@ class TestFileToTestPackageFinder(unittest.TestCase):
             }
         ]
 
-        def open_side_effect(path, *args, **kwargs):
+        def open_side_effect(
+            path: Path | str,
+            *args: T.Any,
+            **kwargs: T.Any,
+        ) -> mock.MagicMock:
             p = str(path)
             m = mock.MagicMock()
             if "rust-project.json" in p:
@@ -121,7 +128,7 @@ class TestFileToTestPackageFinder(unittest.TestCase):
 
             self.mock_run_gn_refs.side_effect = None
 
-            def gn_refs_side_effect(target):
+            def gn_refs_side_effect(target: str) -> set[str]:
                 if target == "//src:lib_test":
                     return {"//src:lib_test_pkg", "//src:lib_test"}
                 if target == "//src:lib":
@@ -146,12 +153,15 @@ class TestFileToTestPackageFinder(unittest.TestCase):
     @mock.patch("builtins.open")
     @mock.patch("pathlib.Path.exists", autospec=True)
     def test_find_test_packages_fast_cpp_compile_commands(
-        self, mock_exists, mock_open, mock_json_load
-    ):
+        self,
+        mock_exists: mock.MagicMock,
+        mock_open: mock.MagicMock,
+        mock_json_load: mock.MagicMock,
+    ) -> None:
         source_path = "src/foo.cc"
         abs_source = self.fuchsia_dir / source_path
 
-        def exists_side_effect(self_path):
+        def exists_side_effect(self_path: Path) -> bool:
             p = str(self_path)
             if "rust-project.json" in p:
                 return False
@@ -178,7 +188,11 @@ class TestFileToTestPackageFinder(unittest.TestCase):
             "tests.json": tests_content,
         }
 
-        def open_side_effect(path, *args, **kwargs):
+        def open_side_effect(
+            path: Path | str,
+            *args: T.Any,
+            **kwargs: T.Any,
+        ) -> mock.MagicMock:
             p = str(path)
             m = mock.MagicMock()
             if "cache" in p:
@@ -205,12 +219,15 @@ class TestFileToTestPackageFinder(unittest.TestCase):
     @mock.patch("builtins.open")
     @mock.patch("pathlib.Path.exists", autospec=True)
     def test_find_test_packages_fast_cpp_o_attached(
-        self, mock_exists, mock_open, mock_json_load
-    ):
+        self,
+        mock_exists: mock.MagicMock,
+        mock_open: mock.MagicMock,
+        mock_json_load: mock.MagicMock,
+    ) -> None:
         source_path = "src/complex.cc"
         abs_source = self.fuchsia_dir / source_path
 
-        def exists_side_effect(path):
+        def exists_side_effect(path: Path) -> bool:
             p = str(path)
             if "rust-project.json" in p:
                 return False
@@ -240,7 +257,11 @@ class TestFileToTestPackageFinder(unittest.TestCase):
         mock_json_load.side_effect = [cc_content, tests_content]
 
         # Handle cache open failure
-        def open_se(path, *args, **kwargs):
+        def open_se(
+            path: Path | str,
+            *args: T.Any,
+            **kwargs: T.Any,
+        ) -> mock.MagicMock:
             if "cache" in str(path):
                 raise OSError
             return mock_file
@@ -259,12 +280,15 @@ class TestFileToTestPackageFinder(unittest.TestCase):
     @mock.patch("builtins.open")
     @mock.patch("pathlib.Path.exists", autospec=True)
     def test_find_test_packages_fast_cpp_multiple_o(
-        self, mock_exists, mock_open, mock_json_load
-    ):
+        self,
+        mock_exists: mock.MagicMock,
+        mock_open: mock.MagicMock,
+        mock_json_load: mock.MagicMock,
+    ) -> None:
         source_path = "src/multi.cc"
         abs_source = self.fuchsia_dir / source_path
 
-        def exists_side_effect(path):
+        def exists_side_effect(path: Path) -> bool:
             p = str(path)
             if "rust-project.json" in p:
                 return False
@@ -292,7 +316,11 @@ class TestFileToTestPackageFinder(unittest.TestCase):
 
         mock_json_load.side_effect = [cc_content, tests_content]
 
-        def open_se(path, *args, **kwargs):
+        def open_se(
+            path: Path | str,
+            *args: T.Any,
+            **kwargs: T.Any,
+        ) -> mock.MagicMock:
             if "cache" in str(path):
                 raise OSError
             return mock_file
@@ -309,13 +337,16 @@ class TestFileToTestPackageFinder(unittest.TestCase):
     @mock.patch("builtins.open")
     @mock.patch("pathlib.Path.exists", autospec=True)
     def test_missing_tests_json_fallback(
-        self, mock_exists, mock_open, mock_json_load
-    ):
+        self,
+        mock_exists: mock.MagicMock,
+        mock_open: mock.MagicMock,
+        mock_json_load: mock.MagicMock,
+    ) -> None:
         source_path = "src/lib.rs"
         abs_source = self.fuchsia_dir / source_path
 
         # rust-project.json exists, tests.json does NOT
-        def exists_side_effect(path):
+        def exists_side_effect(path: Path) -> bool:
             p = str(path)
             if "rust-project.json" in p:
                 return True
@@ -323,7 +354,7 @@ class TestFileToTestPackageFinder(unittest.TestCase):
                 return False
             return False
 
-        def simple_exists(obj):
+        def simple_exists(obj: Path | str) -> bool:
             p = str(obj)
             return "rust-project.json" in p
 
@@ -355,7 +386,12 @@ class TestFileToTestPackageFinder(unittest.TestCase):
     @mock.patch("json.load")
     @mock.patch("builtins.open")
     @mock.patch("pathlib.Path.exists", autospec=True)
-    def test_corrupted_tests_json(self, mock_exists, mock_open, mock_json_load):
+    def test_corrupted_tests_json(
+        self,
+        mock_exists: mock.MagicMock,
+        mock_open: mock.MagicMock,
+        mock_json_load: mock.MagicMock,
+    ) -> None:
         source_path = "src/lib.rs"
         abs_source = self.fuchsia_dir / source_path
         mock_exists.return_value = True
@@ -396,8 +432,11 @@ class TestFileToTestPackageFinder(unittest.TestCase):
     @mock.patch("builtins.open")
     @mock.patch("pathlib.Path.exists", autospec=True)
     def test_corrupted_rust_project_json(
-        self, mock_exists, mock_open, mock_json_load
-    ):
+        self,
+        mock_exists: mock.MagicMock,
+        mock_open: mock.MagicMock,
+        mock_json_load: mock.MagicMock,
+    ) -> None:
         source_path = "src/lib.rs"
         self.fuchsia_dir / source_path
         mock_exists.return_value = True
@@ -405,7 +444,7 @@ class TestFileToTestPackageFinder(unittest.TestCase):
         mock_file = mock.MagicMock()
         mock_open.return_value.__enter__.return_value = mock_file
 
-        def json_side_effect(f):
+        def json_side_effect(f: T.Any) -> list[T.Any]:
             call_args = mock_open.call_args[0]
             path = str(call_args[0])
             if "rust-project.json" in path:
@@ -431,7 +470,7 @@ class TestFileToTestPackageFinder(unittest.TestCase):
             found_error, "Did not find expected rust-project.json failure log"
         )
 
-    def test_gn_refs_integration(self):
+    def test_gn_refs_integration(self) -> None:
         # We want to test the actual _run_gn_refs method, so stop the patcher that mocks it
         self.run_gn_refs_patcher.stop()
 
@@ -482,7 +521,7 @@ class TestFileToTestPackageFinder(unittest.TestCase):
         self.assertIn("mapping", data)
         self.assertEqual(data["mapping"]["//src:lib"], ["//src:lib_test"])
 
-    def test_heuristic_prefers_local(self):
+    def test_heuristic_prefers_local(self) -> None:
         # We want to test the actual _run_gn_refs method, so stop the patcher that mocks it
         self.run_gn_refs_patcher.stop()
 
@@ -531,7 +570,7 @@ class TestFileToTestPackageFinder(unittest.TestCase):
         # Verify mostly local test is returned
         self.assertEqual(result, {"//src/foo:lib_test"})
 
-    def test_cache_hit(self):
+    def test_cache_hit(self) -> None:
         source_path = "src/lib.rs"
         (self.fuchsia_dir / "src").mkdir(parents=True, exist_ok=True)
         (self.fuchsia_dir / source_path).touch()
@@ -584,7 +623,7 @@ class TestFileToTestPackageFinder(unittest.TestCase):
         # Verify no commands run (gn refs mocked)
         self.assertEqual(len(self.mock_runner.commands), 0)
 
-    def test_heuristic_prefers_local_implicit_target(self):
+    def test_heuristic_prefers_local_implicit_target(self) -> None:
         """Test that heuristic works for targets like //src/foo (no colon)."""
         # We want to test the actual _run_gn_refs method, so stop the patcher that mocks it
         self.run_gn_refs_patcher.stop()

@@ -539,7 +539,7 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
 
         mock_ninja_runner = MockNinjaRunner(self.build_dir, "")
 
-        target_to_bzl_map = {
+        target_to_bzl_map: dict[str, list[str]] = {
             "@@//src/bazel:test1": [],
             "@@//src/bazel:test2": ["@@//src/bazel:foo.bzl"],
             "@@//src/bazel:test3": [],
