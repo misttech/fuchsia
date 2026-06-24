@@ -23,9 +23,11 @@ driver_bind_rules("ufs-pdev-bind") {
   tests = "meta/bind_tests_pdev.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib",
+    "//sdk/fidl/fuchsia.hardware.interconnect:fuchsia.hardware.interconnect_bindlib",
     "//sdk/fidl/fuchsia.hardware.ufs.phy:fuchsia.hardware.ufs.phy_bindlib",
     "//src/devices/bind/fuchsia.devicetree",
     "//src/devices/bind/fuchsia.gpio",
+    "//src/devices/bind/fuchsia.interconnect",
   ]
 }
 
@@ -46,6 +48,7 @@ group("e2e_tests") {
 _common_deps = [
   ":ufs-config",
   "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
+  "//sdk/fidl/fuchsia.hardware.interconnect:fuchsia.hardware.interconnect_cpp",
   "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
   "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_cpp",
   "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp",

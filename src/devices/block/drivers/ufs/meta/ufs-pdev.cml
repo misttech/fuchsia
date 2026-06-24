@@ -9,6 +9,7 @@
     program: {
         binary: "driver/ufs-pdev.so",
         bind: "meta/bind/ufs-pdev-bind.bindbc",
+        service_connect_validation: "true",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
     capabilities: [
@@ -21,6 +22,7 @@
             type: "bool",
         },
         { service: "fuchsia.hardware.ufs.phy.Service" },
+        { service: "fuchsia.hardware.interconnect.PathService" },
         { protocol: "fuchsia.power.broker.Topology" },
         {
             protocol: [

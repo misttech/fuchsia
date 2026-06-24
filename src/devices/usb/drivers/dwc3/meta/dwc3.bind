@@ -42,6 +42,11 @@ optional parent "interconnect-ddr-usb" {
   fuchsia.interconnect.PATH_NAME == "ddr-usb";
 }
 
+optional parent "usb-interconnect" {
+  fuchsia.hardware.interconnect.PathService == fuchsia.hardware.interconnect.PathService.ZirconTransport;
+  fuchsia.interconnect.PATH_NAME == "usb-interconnect";
+}
+
 optional parent "core-clk" {
   fuchsia.clock.FUNCTION == "fuchsia.clock.FUNCTION.core-clk";
 }

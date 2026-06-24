@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.interconnect/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.dci/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
@@ -465,6 +466,7 @@ class Dwc3 : public fdf::DriverBase2,
   std::unique_ptr<PlatformExtension> platform_extension_;
 
   fidl::SyncClient<fuchsia_hardware_usb_phy::UsbPhy> phy_;
+  fidl::SyncClient<fuchsia_hardware_interconnect::Path> interconnect_client_;
   fidl::Client<fuchsia_hardware_usb_phy::ConnectionWatcher> connection_watcher_;
   zx::eventpair connection_lease_;
 

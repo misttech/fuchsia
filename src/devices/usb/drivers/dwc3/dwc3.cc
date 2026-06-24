@@ -502,6 +502,28 @@ zx::result<> Dwc3::Start(fdf::DriverContext context) {
     phy_ = fidl::SyncClient<fuchsia_hardware_usb_phy::UsbPhy>(std::move(phy_result.value()));
   }
 
+  auto interconnect_result =
+      incoming()->Connect<fuchsia_hardware_interconnect::PathService::Path>("usb-interconnect");
+  if (interconnect_result.is_ok()) {
+    interconnect_client_ = fidl::SyncClient<fuchsia_hardware_interconnect::Path>(
+        std::move(interconnect_result.value()));
+    // Note: Other bandwidth options based on connection speed:
+    // High Speed (HS): 40 MB/s (40'000'000 B/s)
+    // Super Speed (SS): 400 MB/s (400'000'000 B/s)
+    // Super Speed Plus (SSP): 1000 MB/s (1'000'000'000 B/s)
+    // We vote for the highest (SSP) by default.
+    fuchsia_hardware_interconnect::BandwidthRequest request{{
+        .average_bandwidth_bps = 1'000'000'000,
+        .peak_bandwidth_bps = 1'000'000'000,
+        .tag = 'USB ',
+    }};
+    auto result = interconnect_client_->SetBandwidth(request);
+    if (result.is_error()) {
+      fdf::error("SetBandwidth failed on interconnect: {}",
+                 result.error_value().FormatDescription());
+    }
+  }
+
   // Set up Inspect data.
   metrics_.Init();
   dwc3_root_ = inspector().root().CreateLazyNode("dwc3", [this] {

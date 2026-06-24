@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_UFS_UFS_PDEV_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_UFS_UFS_PDEV_H_
 
+#include <fidl/fuchsia.hardware.interconnect/cpp/wire.h>
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
 #include <fidl/fuchsia.hardware.ufs.phy/cpp/fidl.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -39,6 +40,7 @@ class UfsPdev final : public Ufs, public fidl::Server<fuchsia_hardware_ufs_phy::
 
  private:
   fidl::WireSyncClient<fuchsia_hardware_ufs_phy::UfsPhy> ufs_phy_;
+  fidl::WireSyncClient<fuchsia_hardware_interconnect::Path> interconnect_client_;
 
   fdf::Dispatcher ufshci_dispatcher_;
   libsync::Completion ufshci_dispatcher_shutdown_completion_;

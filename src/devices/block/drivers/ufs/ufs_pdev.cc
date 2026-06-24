@@ -10,6 +10,7 @@
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/zx/time.h>
+#include <zircon/errors.h>
 
 #include "src/devices/block/drivers/ufs/uic/uic_commands.h"
 
@@ -63,6 +64,27 @@ zx::result<> UfsPdev::InitResources() {
       ufs_phy_.Bind(std::move(default_phy_client_end.value()));
     } else {
       fdf::warn("Could not connect to UFS PHY service: {}", default_phy_client_end);
+    }
+  }
+
+  auto interconnect_result =
+      driver_incoming()->Connect<fuchsia_hardware_interconnect::PathService::Path>(
+          "ufs-interconnect");
+  if (interconnect_result.is_ok()) {
+    interconnect_client_.Bind(std::move(interconnect_result.value()));
+
+    fidl::Arena arena;
+    auto request = fuchsia_hardware_interconnect::wire::BandwidthRequest::Builder(arena)
+                       .average_bandwidth_bps(1'000'000'000)
+                       .peak_bandwidth_bps(1'000'000'000)
+                       .tag('UFS ')
+                       .Build();
+    auto result = interconnect_client_->SetBandwidth(request);
+    if (!result.ok()) {
+      fdf::error("SetBandwidth failed on interconnect: {}", zx_status_get_string(result.status()));
+    } else if (result->is_error()) {
+      fdf::error("SetBandwidth failed on interconnect: {}",
+                 zx_status_get_string(result->error_value()));
     }
   }
 
