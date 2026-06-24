@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.boot/cpp/wire.h>
 #include <fidl/fuchsia.hardware.interrupt/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.interrupt/cpp/wire.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
 #include <fidl/fuchsia.sysinfo/cpp/wire.h>
@@ -145,6 +146,24 @@ class PlatformBus : public fdf::DriverBase2,
     PlatformDevice::GetInterruptCallback callback;
   };
 
+  class ControllerEventHandler
+      : public fidl::WireAsyncEventHandler<fuchsia_hardware_interrupt::Controller> {
+   public:
+    ControllerEventHandler(PlatformBus* bus, uint32_t id) : bus_(bus), id_(id) {}
+    void on_fidl_error(fidl::UnbindInfo info) override;
+    void handle_unknown_event(
+        fidl::UnknownEventMetadata<fuchsia_hardware_interrupt::Controller> metadata) override;
+
+   private:
+    PlatformBus* const bus_;
+    const uint32_t id_;
+  };
+
+  struct InterruptController {
+    fidl::WireClient<fuchsia_hardware_interrupt::Controller> client;
+    std::unique_ptr<ControllerEventHandler> event_handler;
+  };
+
   template <typename Protocol>
   zx::unowned_resource GetResource() const {
     static zx::resource resource;
@@ -173,6 +192,8 @@ class PlatformBus : public fdf::DriverBase2,
       const fuchsia_hardware_platform_bus::UserspaceIrq& irq, uint32_t flags,
       zx::interrupt interrupt, PlatformDevice::GetInterruptCallback callback);
 
+  void OnControllerDisconnect(uint32_t controller_id);
+
   fidl::ClientEnd<fuchsia_boot::Items> items_svc_;
 
   fuchsia_hardware_platform_bus::TemporaryBoardInfo board_info_ = {};
@@ -190,8 +211,7 @@ class PlatformBus : public fdf::DriverBase2,
   std::map<uint32_t, zx::iommu> iommu_handles_;
 
   // Maps interrupt controller IDs to FIDL clients.
-  std::map<uint32_t, fidl::WireClient<fuchsia_hardware_interrupt::Controller>>
-      interrupt_controllers_;
+  std::map<uint32_t, InterruptController> interrupt_controllers_;
 
   std::map<uint32_t, std::vector<PendingInterruptRequest>> pending_interrupts_;
 

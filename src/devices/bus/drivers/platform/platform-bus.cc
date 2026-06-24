@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.kernel/cpp/fidl.h>
 #include <fidl/fuchsia.system.state/cpp/fidl.h>
+#include <lib/async/cpp/task.h>
 #include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/component/cpp/composite_node_spec.h>
@@ -250,15 +251,21 @@ zx::result<> PlatformBus::RegisterInterruptController(
     fdf::error("Interrupt controller with ID {} already registered", id);
     return zx::error(ZX_ERR_ALREADY_BOUND);
   }
+  auto event_handler = std::make_unique<ControllerEventHandler>(this, id);
+  fidl::WireClient<fuchsia_hardware_interrupt::Controller> client(
+      std::move(controller), dispatcher(), event_handler.get());
+
   auto [it, inserted] =
-      interrupt_controllers_.emplace(id, fidl::WireClient<fuchsia_hardware_interrupt::Controller>(
-                                             std::move(controller), dispatcher()));
+      interrupt_controllers_.emplace(id, InterruptController{
+                                             .client = std::move(client),
+                                             .event_handler = std::move(event_handler),
+                                         });
 
   // Process pending interrupt requests for this controller.
   auto pending_it = pending_interrupts_.find(id);
   if (pending_it != pending_interrupts_.end()) {
     for (PendingInterruptRequest& pending : pending_it->second) {
-      RegisterInterruptWithController(it->second, pending.irq, pending.flags,
+      RegisterInterruptWithController(it->second.client, pending.irq, pending.flags,
                                       std::move(pending.interrupt), std::move(pending.callback));
     }
     pending_interrupts_.erase(pending_it);
@@ -277,8 +284,7 @@ void PlatformBus::RegisterInterrupt(const fuchsia_hardware_platform_bus::Userspa
     pending_interrupts_[irq.controller_id()].emplace_back(irq, flags, std::move(interrupt),
                                                           std::move(callback));
   } else {
-    const auto& [id, controller] = *it;
-    RegisterInterruptWithController(controller, irq, flags, std::move(interrupt),
+    RegisterInterruptWithController(it->second.client, irq, flags, std::move(interrupt),
                                     std::move(callback));
   }
 }
@@ -886,6 +892,20 @@ void PlatformBus::RegisterInterruptWithController(
           });
   // Eagerly return the interrupt that we just requested to register.
   callback(zx::ok(std::move(interrupt)));
+}
+
+void PlatformBus::OnControllerDisconnect(uint32_t id) {
+  fdf::info("Interrupt controller {} disconnected", id);
+  interrupt_controllers_.erase(id);
+}
+
+void PlatformBus::ControllerEventHandler::on_fidl_error(fidl::UnbindInfo info) {
+  bus_->OnControllerDisconnect(id_);
+}
+
+void PlatformBus::ControllerEventHandler::handle_unknown_event(
+    fidl::UnknownEventMetadata<fuchsia_hardware_interrupt::Controller> metadata) {
+  fdf::error("Unknown event received for interrupt controller {}", id_);
 }
 
 }  // namespace platform_bus

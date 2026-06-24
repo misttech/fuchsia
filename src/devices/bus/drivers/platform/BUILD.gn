@@ -116,6 +116,11 @@ test("platform-bus-unittest") {
 fuchsia_unittest_package("platform-bus-unittest-package") {
   package_name = "platform-bus-unittest"
   deps = [ ":platform-bus-unittest" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }
 
 group("tests") {

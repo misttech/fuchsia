@@ -610,6 +610,60 @@ TEST_F(PlatformBusTest, GetUserspaceInterruptDeferred) {
   EXPECT_EQ(info.koid, expected_koid);
 }
 
+TEST_F(PlatformBusTest, InterruptControllerDisconnect) {
+  constexpr std::string_view kControllerName = "fake-interrupt-controller";
+  const fuchsia_hardware_platform_bus::Node kControllerNode{{
+      .name{kControllerName},
+      .interrupt_controller_id = 1,
+  }};
+
+  fdf::Arena arena{'PBUS'};
+  fdf::WireUnownedResult add_result =
+      pbus().buffer(arena)->NodeAdd(fidl::ToWire(arena, kControllerNode));
+  ASSERT_TRUE(add_result.ok());
+  EXPECT_TRUE(add_result->is_ok());
+
+  zx::result registry_client_end =
+      driver_test().Connect<fuchsia_hardware_interrupt::ControllerRegistryService::Registry>(
+          kControllerName);
+  ASSERT_TRUE(registry_client_end.is_ok());
+
+  fidl::WireSyncClient<fuchsia_hardware_interrupt::ControllerRegistry> registry(
+      std::move(registry_client_end.value()));
+
+  auto [client_end1, server_end1] =
+      fidl::Endpoints<fuchsia_hardware_interrupt::Controller>::Create();
+
+  // Register first controller.
+  {
+    auto result = registry->RegisterController(std::move(client_end1));
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+  }
+
+  auto [client_end2, server_end2] =
+      fidl::Endpoints<fuchsia_hardware_interrupt::Controller>::Create();
+
+  // Trying to register another one with same ID should fail.
+  {
+    auto result = registry->RegisterController(std::move(client_end2));
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_error());
+    EXPECT_EQ(result->error_value(), ZX_ERR_ALREADY_BOUND);
+  }
+
+  // Now disconnect the first one.
+  server_end1.reset();
+
+  // Wait for the disconnect to propagate and register again.
+  driver_test().runtime().RunUntil([&registry]() {
+    auto [client_end, server_end] =
+        fidl::Endpoints<fuchsia_hardware_interrupt::Controller>::Create();
+    auto result = registry->RegisterController(std::move(client_end));
+    return result.ok() && result->is_ok();
+  });
+}
+
 TEST(PlatformBusTest2, GetMmioIndex) {
   const std::vector<fuchsia_hardware_platform_bus::Mmio> mmios{
       {{
