@@ -135,6 +135,10 @@ impl Terminal {
         self.send_signals(locked, signals);
     }
 
+    pub fn flush(&self, is_main: bool, arg: u32) -> Result<(), Errno> {
+        self.write().flush(is_main, arg)
+    }
+
     /// `close` implementation of the main side of the terminal.
     pub fn main_close(&self) {
         // Remove the entry in the file system.
@@ -310,6 +314,15 @@ impl TerminalMutableState<Base = Terminal> {
             self.notify_waiters();
         }
         signals
+    }
+
+    pub fn flush(&mut self, is_main: bool, arg: u32) -> Result<(), Errno> {
+        self.line_discipline.flush(is_main, arg)?;
+        self.main_wait_queue
+            .notify_fd_events(FdEvents::POLLIN | FdEvents::POLLOUT | FdEvents::POLLHUP);
+        self.replica_wait_queue
+            .notify_fd_events(FdEvents::POLLIN | FdEvents::POLLOUT | FdEvents::POLLHUP);
+        Ok(())
     }
 
     /// `close` implementation of the main side of the terminal.

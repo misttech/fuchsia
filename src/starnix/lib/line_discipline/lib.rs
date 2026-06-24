@@ -174,6 +174,32 @@ impl LineDiscipline {
         }
     }
 
+    /// Flushes input and/or output queues according to `arg` (TCIFLUSH, TCOFLUSH, TCIOFLUSH).
+    pub fn flush(&mut self, is_main: bool, queue_selector: u32) -> Result<(), Errno> {
+        let (flush_input, flush_output) = match queue_selector {
+            uapi::TCIFLUSH => (true, false),
+            uapi::TCOFLUSH => (false, true),
+            uapi::TCIOFLUSH => (true, true),
+            _ => return error!(EINVAL),
+        };
+        let (flush_input_queue, flush_output_queue) = if is_main {
+            // For main, input is output_queue (data from replica), output is input_queue (data to
+            // replica).
+            (flush_output, flush_input)
+        } else {
+            // For replica, input is input_queue (data from main), output is output_queue (data to
+            // main).
+            (flush_input, flush_output)
+        };
+        if flush_input_queue {
+            self.input_queue.as_mut().unwrap().flush();
+        }
+        if flush_output_queue {
+            self.output_queue.as_mut().unwrap().flush();
+        }
+        Ok(())
+    }
+
     /// `close` implementation of the main side of the terminal.
     pub fn main_close(&mut self) {
         self.main_references = self.main_references.map(|v| v - 1);

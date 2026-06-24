@@ -761,8 +761,8 @@ where
             error!(ENOSYS)
         }
         TCFLSH => {
-            track_stub!(TODO("https://fxbug.dev/322893703"), "devpts ioctl TCFLSH", is_main);
-            error!(ENOSYS)
+            terminal.flush(is_main, u32::from(arg))?;
+            Ok(SUCCESS)
         }
         TIOCEXCL => {
             track_stub!(TODO("https://fxbug.dev/322893449"), "devpts ioctl TIOCEXCL", is_main);
