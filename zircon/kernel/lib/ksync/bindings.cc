@@ -90,6 +90,27 @@ static_assert(alignof(interrupt_saved_state_t) == kExpectedInterruptSavedStateAl
 
 extern "C" {
 
+void cpp_mutex_init(Mutex* mutex);
+void cpp_mutex_destroy(Mutex* mutex);
+void cpp_mutex_acquire(Mutex* mutex, lockdep::LockClassId lcid, void* entry_storage);
+void cpp_mutex_release(Mutex* mutex, void* entry_storage);
+void cpp_critical_mutex_init(CriticalMutex* mutex);
+void cpp_critical_mutex_destroy(CriticalMutex* mutex);
+bool cpp_critical_mutex_acquire(CriticalMutex* mutex, lockdep::LockClassId lcid,
+                                void* entry_storage);
+void cpp_critical_mutex_release(CriticalMutex* mutex, void* entry_storage, bool should_clear);
+void cpp_spinlock_init(SpinLock* lock);
+void cpp_spinlock_destroy(SpinLock* lock);
+interrupt_saved_state_t cpp_spinlock_acquire_irqsave(SpinLock* lock, lockdep::LockClassId lcid,
+                                                     void* entry_storage);
+void cpp_spinlock_release_irqrestore(SpinLock* lock, void* entry_storage,
+                                     interrupt_saved_state_t state);
+void cpp_event_init(Event* event, bool initial);
+void cpp_event_destroy(Event* event);
+void cpp_event_signal(Event* event, zx_status_t wait_result);
+void cpp_event_unsignal(Event* event);
+zx_status_t cpp_event_wait(Event* event, zx_instant_mono_t deadline);
+
 void cpp_mutex_init(Mutex* mutex) { new (mutex) Mutex(); }
 
 void cpp_mutex_destroy(Mutex* mutex) { mutex->~Mutex(); }

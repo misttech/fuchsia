@@ -11,6 +11,13 @@
 
 extern "C" {
 
+void* rust_thread_create_default(const char* name, thread_start_routine entry, void* arg);
+void rust_thread_resume(void* thread);
+zx_status_t rust_thread_join(void* thread, int* out_retcode, zx_instant_mono_t deadline);
+void rust_thread_yield();
+void rust_thread_kill(void* thread);
+bool rust_thread_is_blocked(void* thread);
+
 void* rust_thread_create_default(const char* name, thread_start_routine entry, void* arg) {
   return Thread::Create(name, entry, arg, DEFAULT_PRIORITY);
 }
