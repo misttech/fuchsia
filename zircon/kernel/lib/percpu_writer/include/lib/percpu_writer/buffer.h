@@ -27,6 +27,45 @@ using fxt::operator""_intern;
 class Buffer {
  public:
   using BufferImpl = SpscBuffer<KernelAspaceAllocator, const char*>;
+
+  // This struct keeps track of the duration, number, and size of trace records dropped when the
+  // buffer is full. These statistics are emitted to the trace buffer as a duration as soon as
+  // space is available to do so, at which point the values are reset to 0, or false in the case
+  // of has_dropped.
+  struct DroppedRecordStats {
+    zx_instant_boot_ticks_t first_dropped{0};
+    zx_instant_boot_ticks_t last_dropped{0};
+
+    // By storing num_dropped and bytes_dropped in 32-bit values, we ensure that they can each
+    // be stored in a single 64-bit word in the FXT record we emit when space is available.
+    uint32_t num_dropped{0};
+    uint32_t bytes_dropped{0};
+    bool has_dropped{false};
+
+    void Reset() {
+      first_dropped = 0;
+      last_dropped = 0;
+      num_dropped = 0;
+      bytes_dropped = 0;
+      has_dropped = false;
+    }
+
+    void Track(zx_instant_boot_ticks_t now, uint32_t size) {
+      if (!has_dropped) {
+        first_dropped = now;
+        has_dropped = true;
+      }
+      last_dropped = now;
+      num_dropped++;
+      bytes_dropped += size;
+    }
+
+    bool HasDropped() const { return has_dropped; }
+  };
+  static_assert(sizeof(DroppedRecordStats) == 32);
+
+  const DroppedRecordStats& drop_stats() const { return drop_stats_; }
+
   // Reservation encapsulates a pending write to the buffer.
   //
   // This class implements the fxt::Writer::Reservation trait, which is required by the FXT
@@ -117,6 +156,9 @@ class Buffer {
   // Returns a pointer to the underlying SpscBuffer.
   BufferImpl* spsc_buffer() { return &buffer_; }
 
+  // Returns a pointer to the dropped record statistics.
+  DroppedRecordStats* drop_stats_ptr() { return &drop_stats_; }
+
   // We interpose ourselves in the Reserve path to ensure that we can emit a record containing
   // the dropped records statistics if we need to.
   zx::result<Reservation> Reserve(uint64_t header) {
@@ -135,8 +177,7 @@ class Buffer {
     // DroppedRecordDurationEvent record, and then write the statistics into the first part of
     // the reservation before returning it.
     uint32_t total_size = size;
-    if (first_dropped_.has_value()) {
-      DEBUG_ASSERT(last_dropped_.has_value());
+    if (drop_stats_.HasDropped()) {
       total_size += sizeof(DroppedRecordDurationEvent);
     }
 
@@ -151,8 +192,8 @@ class Buffer {
     }
 
     // If we need to write a dropped record duration event, do that here.
-    DEBUG_ASSERT(first_dropped_.has_value() || total_size == size);
-    if (first_dropped_.has_value()) {
+    DEBUG_ASSERT(drop_stats_.HasDropped() || total_size == size);
+    if (drop_stats_.HasDropped()) {
       DroppedRecordDurationEvent record = SerializeDropStats();
       res->Write(ktl::span<ktl::byte>(reinterpret_cast<ktl::byte*>(&record), sizeof(record)));
       // We've successfully written out the dropped record stats, so reset them for the next run.
@@ -165,8 +206,8 @@ class Buffer {
   // If we're not tracking a run of dropped records, this is a no-op.
   zx_status_t EmitDropStats() {
     DEBUG_ASSERT(arch_ints_disabled());
-    if (!first_dropped_.has_value()) {
-      DEBUG_ASSERT(!last_dropped_.has_value());
+    if (!drop_stats_.HasDropped()) {
+      DEBUG_ASSERT(drop_stats_.last_dropped == 0);
       return ZX_OK;
     }
 
@@ -191,12 +232,7 @@ class Buffer {
 
   // Resets the dropped records statistics to their initial values.
   // This is used to clear the stats after they've been emitted to a trace buffer.
-  void ResetDropStats() {
-    first_dropped_ = ktl::nullopt;
-    last_dropped_ = ktl::nullopt;
-    num_dropped_ = 0;
-    bytes_dropped_ = 0;
-  }
+  void ResetDropStats() { drop_stats_.Reset(); }
 
   uint32_t Size() const { return size_; }
 
@@ -223,16 +259,18 @@ class Buffer {
   // Serializes the dropped record statistics into a DroppedRecordDurationEvent.
   DroppedRecordDurationEvent SerializeDropStats() const {
     // This method should only be called if we are currently tracking a run of dropped records.
-    DEBUG_ASSERT(first_dropped_.has_value());
-    DEBUG_ASSERT(last_dropped_.has_value());
+    DEBUG_ASSERT(drop_stats_.HasDropped());
+    DEBUG_ASSERT(drop_stats_.last_dropped != 0);
 
     constexpr fxt::WordSize record_size =
         fxt::WordSize::FromBytes(sizeof(DroppedRecordDurationEvent));
     const fxt::StringRef<fxt::RefType::kId> name_ref = fxt::StringRef{"drop_stats"_intern};
     const fxt::StringRef<fxt::RefType::kId> category_ref = fxt::StringRef{"kernel:meta"_intern};
     constexpr uint64_t num_args = 2;
-    const fxt::Argument num_dropped_arg = fxt::Argument{"num_records"_intern, num_dropped_};
-    const fxt::Argument bytes_dropped_arg = fxt::Argument{"num_bytes"_intern, bytes_dropped_};
+    const fxt::Argument num_dropped_arg =
+        fxt::Argument{"num_records"_intern, drop_stats_.num_dropped};
+    const fxt::Argument bytes_dropped_arg =
+        fxt::Argument{"num_bytes"_intern, drop_stats_.bytes_dropped};
     const uint64_t header =
         fxt::MakeHeader(fxt::RecordType::kEvent, record_size) |
         fxt::EventRecordFields::EventType::Make(
@@ -244,39 +282,24 @@ class Buffer {
 
     return {
         .header = header,
-        .start = first_dropped_.value(),
+        .start = drop_stats_.first_dropped,
         .process_id = cpu_ref_.process().koid,
         .thread_id = cpu_ref_.thread().koid,
         .num_dropped_arg = num_dropped_arg.Header(),
         .bytes_dropped_arg = bytes_dropped_arg.Header(),
-        .end = last_dropped_.value(),
+        .end = drop_stats_.last_dropped,
     };
   }
 
   // Adds a dropped record of the given size to the tracked statistics.
-  void TrackDroppedRecord(uint32_t size) {
-    if (!first_dropped_.has_value()) {
-      first_dropped_ = ktl::optional(current_boot_ticks());
-    }
-    last_dropped_ = ktl::optional(current_boot_ticks());
-    num_dropped_++;
-    bytes_dropped_ += size;
-  }
+  void TrackDroppedRecord(uint32_t size) { drop_stats_.Track(current_boot_ticks(), size); }
 
   // The underlying SpscBuffer.
   BufferImpl buffer_;
 
-  // This class keeps track of the duration, number, and size of trace records dropped when the
-  // buffer is full. These statistics are emitted to the trace buffer as a duration as soon as
-  // space is available to do so, at which point the values are reset to ktl::nullopt, in the
-  // case of first_dropped_ and last_dropped_, or zero in the case of num_dropped_
-  // and bytes_dropped_.
-  ktl::optional<zx_instant_boot_ticks_t> first_dropped_;
-  ktl::optional<zx_instant_boot_ticks_t> last_dropped_;
-  // By storing num_dropped_ and bytes_dropped_ in 32-bit values, we ensure that they can each
-  // be stored in a single 64-bit word in the FXT record we emit when space is available.
-  uint32_t num_dropped_{0};
-  uint32_t bytes_dropped_{0};
+ private:
+  // Track stats of trace records dropped when the buffer is full.
+  DroppedRecordStats drop_stats_;
   uint32_t size_{0};
   fxt::ThreadRef<fxt::RefType::kInline> cpu_ref_{0, 0};
 };
