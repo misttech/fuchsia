@@ -229,7 +229,7 @@ mod tests {
 
     use ip_test_macro::ip_test;
     use net_types::ip::Subnet;
-    use net_types::{Witness as _, ZonedAddr};
+    use net_types::{ZonedAddr};
     use netstack3_base::testutil::{FakeDeviceId, set_logger_for_test};
     use netstack3_base::{
         AddressMatcher, AddressMatcherEither, AddressMatcherType, BoundAddressMatcherEither,
