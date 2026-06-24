@@ -149,61 +149,6 @@ class DisconnectStatus(enum.StrEnum):
 # TODO(http://b/346424966): Only necessary because Python does not have static
 # typing for FIDL. Once these static types are available and the SL4F affordance
 # is removed, replace with the statically generated FIDL equivalent.
-class ChannelBandwidth(enum.StrEnum):
-    """Channel Bandwidth
-
-    Defined by https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/sl4f/src/wlan/types.rs
-    """
-
-    CBW20 = "Cbw20"
-    CBW40 = "Cbw40"
-    CBW40BELOW = "Cbw40Below"
-    CBW80 = "Cbw80"
-    CBW160 = "Cbw160"
-    CBW80P80 = "Cbw80P80"
-    UNKNOWN = "Unknown"
-
-    @staticmethod
-    def from_fidl(
-        fidl: f_wlan_ieee80211.ChannelBandwidth,
-    ) -> "ChannelBandwidth":
-        match fidl:
-            case f_wlan_ieee80211.ChannelBandwidth.CBW20:
-                return ChannelBandwidth.CBW20
-            case f_wlan_ieee80211.ChannelBandwidth.CBW40:
-                return ChannelBandwidth.CBW40
-            case f_wlan_ieee80211.ChannelBandwidth.CBW40_BELOW:
-                return ChannelBandwidth.CBW40BELOW
-            case f_wlan_ieee80211.ChannelBandwidth.CBW80:
-                return ChannelBandwidth.CBW80
-            case f_wlan_ieee80211.ChannelBandwidth.CBW80_P80:
-                return ChannelBandwidth.CBW80P80
-            case _:
-                raise TypeError(f"Unknown ChannelBandwidth FIDL value: {fidl}")
-
-    def to_fidl(self) -> f_wlan_ieee80211.ChannelBandwidth:
-        match self:
-            case ChannelBandwidth.CBW20:
-                return f_wlan_ieee80211.ChannelBandwidth.CBW20
-            case ChannelBandwidth.CBW40:
-                return f_wlan_ieee80211.ChannelBandwidth.CBW40
-            case ChannelBandwidth.CBW40BELOW:
-                return f_wlan_ieee80211.ChannelBandwidth.CBW40_BELOW
-            case ChannelBandwidth.CBW80:
-                return f_wlan_ieee80211.ChannelBandwidth.CBW80
-            case ChannelBandwidth.CBW160:
-                return f_wlan_ieee80211.ChannelBandwidth.CBW160
-            case ChannelBandwidth.CBW80P80:
-                return f_wlan_ieee80211.ChannelBandwidth.CBW80_P80
-            case ChannelBandwidth.UNKNOWN:
-                raise TypeError(
-                    "ChannelBandwidth.UNKNOWN doesn't have FIDL equivalent"
-                )
-
-
-# TODO(http://b/346424966): Only necessary because Python does not have static
-# typing for FIDL. Once these static types are available and the SL4F affordance
-# is removed, replace with the statically generated FIDL equivalent.
 class Protection(enum.IntEnum):
     """Protection
 
@@ -475,7 +420,7 @@ class WlanChannel:
     """
 
     primary: int
-    cbw: ChannelBandwidth
+    cbw: f_wlan_ieee80211.ChannelBandwidth
     secondary80: int
 
     @staticmethod
@@ -483,9 +428,7 @@ class WlanChannel:
         """Parse from a fuchsia.wlan.common/WlanChannel."""
         return WlanChannel(
             primary=fidl.primary,
-            cbw=ChannelBandwidth.from_fidl(
-                f_wlan_ieee80211.ChannelBandwidth(fidl.cbw)
-            ),
+            cbw=f_wlan_ieee80211.ChannelBandwidth(fidl.cbw),
             secondary80=fidl.secondary80,
         )
 
@@ -493,7 +436,7 @@ class WlanChannel:
         """Convert to a fuchsia.wlan.common/WlanChannel."""
         return f_wlan_ieee80211.WlanChannel(
             primary=self.primary,
-            cbw=self.cbw.to_fidl(),
+            cbw=self.cbw,
             secondary80=self.secondary80,
         )
 

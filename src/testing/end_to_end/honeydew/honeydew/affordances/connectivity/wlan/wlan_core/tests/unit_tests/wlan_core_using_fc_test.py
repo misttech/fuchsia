@@ -24,7 +24,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
-    ChannelBandwidth,
     ClientStatusConnected,
     ClientStatusConnecting,
     ClientStatusIdle,
@@ -120,7 +119,11 @@ _TEST_CLIENT_STATUS_CONNECTED = ClientStatusConnected(
     ssid=_TEST_SSID_BYTES,
     rssi_dbm=4,
     snr_db=5,
-    channel=WlanChannel(primary=1, cbw=ChannelBandwidth.CBW20, secondary80=3),
+    channel=WlanChannel(
+        primary=1,
+        cbw=f_wlan_ieee80211.ChannelBandwidth.CBW20,
+        secondary80=3,
+    ),
     protection=Protection.WPA2_PERSONAL,
 )
 
