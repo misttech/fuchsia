@@ -28,7 +28,7 @@ pub use create::create_cmd;
 pub use destroy::destroy_cmd;
 pub use doctor::{doctor_cmd_print, doctor_cmd_serialized};
 pub use explore::explore_cmd;
-pub use graph::{GraphFilter, GraphOrientation, graph_cmd};
+pub use graph::{GraphFilter, GraphOrientation, GraphResult, graph_cmd};
 pub use list::{ListFilter, list_cmd_print, list_cmd_serialized};
 pub use reload::reload_cmd;
 pub use resolve::resolve_cmd;

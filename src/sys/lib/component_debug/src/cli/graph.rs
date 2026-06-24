@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::realm::{get_all_instances, Instance};
+use crate::realm::{Instance, get_all_instances};
 use anyhow::Result;
 use std::collections::HashSet;
 use std::fmt::Write;
@@ -48,13 +48,16 @@ impl FromStr for GraphFilter {
                 "relative" | "relatives" => Ok(Self::Relative(arg.to_string())),
                 _ => Err("unknown function for list filter."),
             },
-            None => Err("list filter should be 'ancestors:<component_name>', 'descendants:<component_name>', or 'relatives:<component_name>'."),
+            None => Err(
+                "list filter should be 'ancestors:<component_name>', 'descendants:<component_name>', or 'relatives:<component_name>'.",
+            ),
         }
     }
 }
 
 /// Determines the visual orientation of the graph's nodes.
-#[derive(Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum GraphOrientation {
     /// The graph's nodes should be ordered from top to bottom.
     TopToBottom,
@@ -74,12 +77,25 @@ impl FromStr for GraphOrientation {
     }
 }
 
-pub async fn graph_cmd<W: std::io::Write>(
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, Clone)]
+pub struct GraphResult {
+    pub instances: Vec<Instance>,
+    pub orientation: GraphOrientation,
+}
+
+impl std::fmt::Display for GraphResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let output = create_dot_graph(&self.instances, self.orientation);
+        write!(f, "{}", output)
+    }
+}
+
+pub async fn graph_cmd(
     filter: Option<GraphFilter>,
     orientation: GraphOrientation,
     realm_query: fsys::RealmQueryProxy,
-    mut writer: W,
-) -> Result<()> {
+) -> Result<GraphResult> {
     let mut instances = get_all_instances(&realm_query).await?;
 
     instances = match filter {
@@ -89,10 +105,7 @@ pub async fn graph_cmd<W: std::io::Write>(
         _ => instances,
     };
 
-    let output = create_dot_graph(instances, orientation);
-    writeln!(writer, "{}", output)?;
-
-    Ok(())
+    Ok(GraphResult { instances, orientation })
 }
 
 fn filter_ancestors(instances: Vec<Instance>, child_str: String) -> Vec<Instance> {
@@ -195,7 +208,7 @@ fn construct_codesearch_url(component_url: &str) -> String {
 }
 
 /// Create a graphviz dot graph from component instance information.
-pub fn create_dot_graph(instances: Vec<Instance>, orientation: GraphOrientation) -> String {
+pub fn create_dot_graph(instances: &[Instance], orientation: GraphOrientation) -> String {
     let mut output = GRAPHVIZ_START.to_string();
 
     // Switch the orientation of the graph.
@@ -204,7 +217,7 @@ pub fn create_dot_graph(instances: Vec<Instance>, orientation: GraphOrientation)
         GraphOrientation::LeftToRight => writeln!(output, r#"    rankdir = "LR""#).unwrap(),
     };
 
-    for instance in &instances {
+    for instance in instances {
         let moniker = instance.moniker.to_string();
         let label = if let Some(leaf) = instance.moniker.leaf() {
             leaf.to_string()
@@ -240,8 +253,7 @@ pub fn create_dot_graph(instances: Vec<Instance>, orientation: GraphOrientation)
         if let Some(parent_moniker) = instance.moniker.parent() {
             if let Some(parent) = instances.iter().find(|i| i.moniker == parent_moniker) {
                 // Connect parent to component
-                writeln!(output, r#"    "{}" -> "{}""#, parent.moniker, moniker)
-                    .unwrap();
+                writeln!(output, r#"    "{}" -> "{}""#, parent.moniker, moniker).unwrap();
             }
         }
     }
@@ -331,7 +343,7 @@ mod test {
     async fn test_graph_orientation(orientation: GraphOrientation, expected_rankdir: &str) {
         let instances = instances_for_test();
 
-        let graph = create_dot_graph(instances, orientation);
+        let graph = create_dot_graph(&instances, orientation);
         pretty_assertions::assert_eq!(
             graph,
             format!(

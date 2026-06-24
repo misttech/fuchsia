@@ -206,6 +206,7 @@ if (is_host) {
       "//sdk/lib/device-watcher/rust:*",
       "//src/developer/ffx/lib/target/behavior:*",
       "//src/developer/ffx/playground:*",
+      "//src/developer/ffx/plugins/component/debug:*",
       "//src/developer/ffx/tools/playground:*",
       "//src/lib/fuchsia-fs:*",
       "//src/storage/fvm:*",

@@ -90,7 +90,10 @@ pub async fn exec() -> Result<()> {
             list_cmd_print(args.filter, args.verbose, realm_query, writer).await
         }
         ComponentSubcommand::Graph(args) => {
-            graph_cmd(args.filter, args.orientation, realm_query, writer).await
+            use std::io::Write as _;
+            let result = graph_cmd(args.filter, args.orientation, realm_query).await?;
+            writeln!(writer, "{}", result)?;
+            Ok(())
         }
         ComponentSubcommand::Run(args) => {
             let config_overrides = resolve_raw_config_overrides(

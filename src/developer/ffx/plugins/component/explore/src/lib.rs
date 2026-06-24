@@ -8,7 +8,7 @@ use errors::ffx_error;
 use fdomain_fuchsia_dash::LauncherProxy;
 use ffx_component::rcs::connect_to_realm_query_f;
 use ffx_component_explore_args::ExploreComponentCommand;
-use ffx_writer::SimpleWriter;
+use ffx_writer::MachineWriter;
 use fho::{FfxMain, FfxTool};
 use socket_to_stdio::Stdout;
 use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
@@ -27,7 +27,11 @@ fho::embedded_plugin!(ExploreTool);
 // TODO(https://fxbug.dev/42053815): This plugin needs E2E tests.
 #[async_trait(?Send)]
 impl FfxMain for ExploreTool {
-    type Writer = SimpleWriter;
+    // We use `MachineWriter<()>` to allow the `--machine` flag, which enables
+    // JSON-formatted error output from the FFX framework. We do not produce
+    // a success payload because this command is either interactive or streams
+    // its output directly to stdout.
+    type Writer = MachineWriter<()>;
 
     type Error = ::fho::Error;
 
