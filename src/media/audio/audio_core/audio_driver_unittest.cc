@@ -236,5 +236,35 @@ TEST_F(AudioDriverTest, RingBufferPropsEmpty) {
   ASSERT_EQ(zx::nsec(0), driver_->internal_delay());
 }
 
+TEST_F(AudioDriverTest, RingBufferCallbackSurvivesDriverTeardown) {
+  remote_driver_->Start();
+  RunLoopUntilIdle();
+
+  ASSERT_EQ(ZX_OK, driver_->GetDriverInfo());
+  RunLoopUntilIdle();
+
+  fuchsia::media::AudioStreamType fidl_format;
+  fidl_format.sample_format = kSampleFormat;
+  fidl_format.channels = kChannelCount;
+  fidl_format.frames_per_second = kFramesPerSec;
+
+  auto format = Format::Create(fidl_format);
+  ASSERT_TRUE(format.is_ok());
+  ASSERT_EQ(ZX_OK, driver_->Configure(format.value(), kRingBufferMinDuration));
+  RunLoopUntilIdle();
+
+  // Obtain shared_ptr to writable ring buffer (simulate surviving ring buffer held by mix thread).
+  auto writable_ring_buffer = driver_->writable_ring_buffer();
+  ASSERT_TRUE(writable_ring_buffer);
+
+  // Destroy the AudioOutput device and AudioDriver (simulate concurrent teardown on FIDL thread).
+  device_.reset();
+  driver_.reset();
+
+  // Attempt WriteLock on surviving ring buffer; should return nullopt (no Use-After-Free or crash).
+  auto buffer = writable_ring_buffer->WriteLock(0, 10);
+  EXPECT_FALSE(buffer.has_value());
+}
+
 }  // namespace
 }  // namespace media::audio

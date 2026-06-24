@@ -585,15 +585,20 @@ void AudioDriver::RequestRingBufferVmo(int64_t min_frames_64) {
 
         OBTAIN_EXECUTION_DOMAIN_TOKEN(token, &owner_->mix_domain());
         {
-          std::lock_guard<std::mutex> lock(ring_buffer_state_lock_);
+          std::scoped_lock lock(ring_buffer_state_lock_);
           auto format = GetFormat();
           if (owner_->is_input()) {
             readable_ring_buffer_ = BaseRingBuffer::CreateReadableHardwareBuffer(
                 *format, versioned_ref_time_to_frac_presentation_frame_, reference_clock(),
-                std::move(result.response().ring_buffer), result.response().num_frames, [this]() {
+                std::move(result.response().ring_buffer), result.response().num_frames,
+                [this, owner_weak = owner_->weak_from_this()]() -> int64_t {
+                  auto owner = owner_weak.lock();
+                  if (!owner) {
+                    return 0;
+                  }
                   OBTAIN_EXECUTION_DOMAIN_TOKEN(token, &owner_->mix_domain());
                   auto t = reference_clock()->now();
-                  // Safe-read position: ring-buffer readers should never BEYOND this frame.
+                  // Safe-read position: ring-buffer readers should never read beyond this frame.
                   // We Floor any fractional-frame position to be conservative ("safe").
                   return Fixed::FromRaw(ref_time_to_frac_safe_read_or_write_frame_.Apply(t.get()))
                       .Floor();
@@ -601,7 +606,12 @@ void AudioDriver::RequestRingBufferVmo(int64_t min_frames_64) {
           } else {
             writable_ring_buffer_ = BaseRingBuffer::CreateWritableHardwareBuffer(
                 *format, versioned_ref_time_to_frac_presentation_frame_, reference_clock(),
-                std::move(result.response().ring_buffer), result.response().num_frames, [this]() {
+                std::move(result.response().ring_buffer), result.response().num_frames,
+                [this, owner_weak = owner_->weak_from_this()]() -> int64_t {
+                  auto owner = owner_weak.lock();
+                  if (!owner) {
+                    return 0;
+                  }
                   OBTAIN_EXECUTION_DOMAIN_TOKEN(token, &owner_->mix_domain());
                   auto t = reference_clock()->now();
                   // Safe-write position: ring-buffer writers should always write AT/BEYOND this
