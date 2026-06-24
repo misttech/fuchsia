@@ -955,7 +955,9 @@
                 "RawSocketNoCapTest.CreationFailsWithEPERM",
                 "RawSocketTest.SolIPSetSockOptOnRawV6SocketFails",
 
-                // TODO(https://fxbug.dev/507795191): Fix and re-enable.
+                // TODO(https://fxbug.dev/507795191): Blocked on a refactor of how Starnix handles
+                // tracking file references and emitting inotify events, specifically with regards
+                // to how open file descriptors impact the DELETE_SELF inotify event.
                 "Inotify.RmdirWithOpenDirFdDefersDeleteSelfUntilClose",
 
                 // TODO(https://fxbug.dev/507799657): Fix and re-enable.
