@@ -1,0 +1,466 @@
+# Rubric for display drivers written in Rust
+
+## Numeric types
+
+**Guideline:** Follow [the Rust guidance][rust-book-integers] to default to
+`i32` and use explicitly sized signed and unsigned integer types when
+appropriate.
+
+**Explanation:** Most driver writers come from a C / C++ background, where
+unsized signed integers are often used for arithmetic.
+
+**Guideline:** Use `std::num::NonZero` types when the constraint holds.
+
+**Explanation:** Ensures we handle zero as a special case. Enables
+[Option representation optimizations][rust-option-representation].
+
+**Guideline:** Use `Option<std::num::NonZero<T>>` types when zero represents a
+special case.
+
+**Explanation:** Ensures we handle zero as a special case. Nudges us to handle
+the special case higher in the stack and pass a bare non-zero type to lower
+levels.
+
+**Guideline:** Use `std::num::NonZero<usize>` for logical memory addresses that
+will be turned into non-nullable pointers, and
+`Option<std::num::NonZero<usize>>` for nullable pointers.
+
+**Explanation:** Straightforward conclusion from the guidelines above. The
+`Option` type forces code that uses nullable pointers to be explicit about the
+null case handling. Using the created pointers is unsafe Rust, and is
+discouraged in a later section.
+
+**Guideline:** Use `zx_sys::zx_paddr_t` for CPU physical memory addresses that
+are passed to / obtained from Zircon.
+
+**Explanation:** Clearly communicates intended usage, matches the type expected
+by Zircon APIs.
+
+**Guideline:** Use `u32` (or `std::num::NonZero<u32>` if a non-zero assumption
+applies) / `u64` (or `std::num::NonZero<u64>`) for CPU or device physical memory
+addresses that will be written to registers.
+
+Examples:
+
+```rust
+use std::num::NonZero;
+use zx_sys::zx_paddr_t;
+
+// Useful displays have at least one pixel.
+let display_width: NonZero<u16>;
+
+// Our FIDL APIs use 0 as an invalid ID.
+let imported_image_id: Option<NonZero<u64>>;
+
+// To be obtained from a memory pinning API.
+let mut image_physical_address: zx_paddr_t;
+
+// Will be written into a register.
+let image_physical_address: NonZero<u32>;
+
+// [`None`] when the plane is disabled.
+let image_physical_address_reg_value: Option<NonZero<u32>>;
+```
+
+## Instance creation
+
+**Guideline:** Default to naming factory functions `new()`. This default applies
+to fallible and async functions.
+
+**Explanation:** Matches current prevailing Rust usage.
+
+Examples:
+
+```rust
+use zx::Status;
+
+struct Data {}
+
+impl Data {
+    pub async fn new() -> Result<Data, Status> {
+        // ...
+    }
+}
+```
+
+**Guideline:** Use the `try_new()` name for a fallible factory function when a
+type also exposes an infallible factory function.
+
+**Explanation:** Matches current prevailing Rust usage. (This is a rare case,
+though.)
+
+**Guideline:** Implement `From<OtherType>` or `TryFrom<OtherType>` for
+infallible / fallible conversion from other types. Do not provide constructors
+that effectively do type conversions.
+
+**Explanation:** Helps distinguish between conversion and more involved instance
+creation.
+
+## FIDL bindings
+
+**Guideline:** Exclusively use the fidl_next bindings.
+
+**Explanation:** fidl_next bindings are required for the driver transport.
+Standardizing on them saves (human and AI) developers from context-switching
+between two bindings.
+
+**Guideline:** Alias each fidl_next binding module. Use the `fidl_` prefix for
+all aliases. Use the alias to qualify access to both structs and functions.
+
+Example:
+
+```rust
+use fidl_next_fuchsia_sysmem2 as fidl_sysmem2;
+
+pub async fn use_buffer_collection(
+    sysmem_buffer_collection: &mut fidl_next::Client<fidl_sysmem2::BufferCollection>,
+) {}
+```
+
+## Unused code
+
+**Guideline:** Use `#[expect(dead_code)]` with an explanatory comment. Do not
+use `#[allow(dead_code)]`.
+
+**Explanation:** The `#[expect]` version is enforced by the compiler, and
+therefore protected from falling out of date.
+
+**Guideline:** Do not use the underscore (`_`) variable name prefix where
+`#[expect(dead_code)]` can be used instead.
+
+**Explanation:** The underscore prefix is equivalent to `#[allow(dead_code)]`,
+so the reasoning above applies.
+
+**Guideline:** Use the underscore expression where it applies. Explain the
+reasoning behind discarding values (like `Result`) when it's not immediately
+obvious.
+
+**Explanation:** The underscore expression is a different language construct
+from the underscore prefix in variable names.
+
+Examples:
+
+```rust
+use fdf_component::Driver;
+
+struct DisplayDriver {
+    // We must keep the Node alive for the lifetime of the driver.
+    #[expect(dead_code)]
+    device_node: Node,
+}
+
+impl Driver for DisplayDriver {
+    async fn stop(&self) {
+        // Intentionally ignoring failure during device shutdown. There's
+        // nothing we can do at this point.
+        let _ = fallible_function_that_logs();
+    }
+}
+```
+
+## Representation
+
+**Guideline:** Place `#[repr(...)]` attributes above all other attributes.
+
+**Explanation:** Having the representation defined early makes it more likely
+that macros operating on the structure use the correct data layout.
+
+**Guideline:** Stick to the default representation (`rust`) unless one of the
+exceptions below applies.
+
+**Explanation:** Preserves opportunities for optimization.
+
+**Guideline:** Use `#[repr(transparent)]` for Rust "newtypes" that implement a
+non-composite value in an ABI between the driver and its target hardware.
+
+**Explanation:** `#[repr(transparent)]` encodes the "newtype" intent. The
+compiler enforces that the struct wraps a single non-zero-sized type field.
+
+**Guideline:** Use `#[repr(C)]` for multi-field composite types that implement
+an ABI, such as a command structure.
+
+**Explanation:** `#[repr(C)]` encodes the intent to produce a composite type
+with deterministic field offsets and alignments.
+
+**Guideline:** For every type implementing a part of an ABI, have unit tests
+checking each type's size and alignment, and each type member's offset.
+
+**Explanation:** Translating from vendor documentation to Rust is non-trivial,
+and we use tests to reduce the risk of errors.
+
+**Guideline:** When specifying a custom representation, `#[derive()]` the
+following traits: `Copy`, `Clone`, `zerocopy::FromBytes`, `zerocopy::Immutable`,
+`zerocopy::IntoBytes`, `zerocopy::KnownLayout`.
+
+**Explanation:**
+
+* `Copy` makes it easy to reason about pointer operations
+* `Clone` is required by `Copy`
+* `zerocopy::FromBytes` proves that the type can be used to read any bit pattern
+* `zerocopy::FromZeros` is implied by `zerocopy::FromBytes`
+* `zerocopy::Immutable` proves that the type does not use interior mutability
+* `zerocopy::IntoBytes` proves that the type can be treated as a sequence of bytes
+* `zerocopy::KnownLayout` is required by other `zerocopy` derived traits
+
+Examples:
+
+```rust
+use bitfield::bitfield;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+
+bitfield! {
+    #[repr(transparent)]
+    #[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+    struct CommandFlags(u32) {}
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+struct Command {
+    pub flags: CommandFlags;
+    pub id: u32;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::mem::{align_of, offset_of, size_of};
+
+    #[fuchsia::test]
+    fn test_command_abi() {
+        assert_eq!(size_of::<Command>(), 8);
+        assert_eq!(align_of::<Command>(), 4);
+        assert_eq!(offset_of!(Command, flags), 0);
+        assert_eq!(offset_of!(Command, id), 4);
+    }
+}
+```
+
+## Pointers and shared memory
+
+**Guideline:** Use pointers to access memory that is shared with hardware.
+
+**Explanation:** The Rust memory model’s assumptions trigger on reference creation,
+and do not require references to be accessed.
+
+**Guideline:** Immediately convert a `usize` returned by a system call to a
+`std::num::NonZero<usize>`.
+
+**Explanation:** Forcing function to assert that the system call returns a
+non-null pointer on success.
+
+**Guideline:** When a pointer’s target can be expressed by a Rust type,
+immediately convert `std::num::NonZero<usize>` into a `std::ptr::NonNull` to the
+type.
+
+**Explanation:** Minimize the potential for errors.
+
+**Guideline:** When pointer arithmetic is necessary, immediately convert
+`std::num::NonZero<usize>` into `std::ptr::NonNull`, then use methods like
+`add()` / `byte_add()` and `cast()`.
+
+**Explanation:** Reduced potential for errors. Pointer provenance is maintained.
+
+Examples:
+
+```rust
+use std::num::NonZero;
+use std::ptr::NonNull;
+use zx::Status;
+
+#[repr(...)]
+#[derive(...)]
+struct Header { /* ... */ }
+
+#[repr(...)]
+#[derive(...)]
+struct Trailer { /* ... */ }
+
+struct SharedMemory {
+    header_ptr: NonNull<Header>,
+    trailer_ptr: NonNull<Trailer>,
+}
+
+pub fn new_shared_memory() -> Result<SharedMemory, Status> {
+    let data_address = fuchsia_runtime::vmar_root_self().map(...)?;
+    let data_address = NonZero::<usize>::new(data_address)
+        .expect("zx::vmar::map() returned null address");
+
+    // [`Option::unwrap()`] is guaranteed not to panic. The [`NonZero::new()`]
+    // call above already checked that the pointer is non-null.
+    let header_ptr = NonNull::new(
+        std::ptr::with_exposed_provenance_mut(data_address.get())
+    ).unwrap();
+
+    // SAFETY: The memory allocation covers both [`Header`] and [`Trailer`].
+    let trailer_ptr = unsafe { header_ptr.add(1) }.cast::<Trailer>();
+
+    Ok(SharedMemory { header_ptr, trailer_ptr })
+}
+```
+
+## Logging
+
+**Guideline:** Only use the ERROR level to report conditions caused by bugs in
+Fuchsia. Do not assume that the ERROR level is always appropriate when returning
+an error.
+
+**Explanation:** Corrects a popular misunderstanding of [RFC-0003][logging-rfc].
+
+**Guideline:** Use the WARNING level to report hardware failures that can occur
+assuming correct driver operation.
+
+**Explanation:** Follows from RFC-0003.
+
+**Guideline:** Bring the logging functions into the module’s scope. Do not use a
+`log::` qualifier.
+
+**Explanation:** [The Rust Book section on idiomatic use paths][rust-book-idiomatic-paths]
+recommends module qualifiers on function calls, with an exception for common
+functions that are close to language-level features. Logging falls under the
+exception.
+
+Examples:
+
+```rust
+use log::warn;
+use zx::Status;
+
+/// Errors if the hardware returns an invalid version.
+///
+/// All error conditions are logged.
+pub fn read_version() -> Result<u32, Status> {
+    let version_value: u32 = read_from_register();
+    if version_value == 0 {
+        warn!("Invalid version, device probably powered off: {}", version_value);
+        // ...
+    }
+    // ...
+}
+```
+
+## Use the try operator
+
+**Guideline:** Prefer the try operator (`?`) over all other error handling
+alternatives. Prioritize your callers’ ability to use the try operator when
+designing function interfaces.
+
+**Explanation:** Concise error handling lets readers focus on the higher-level
+picture. The try operator matches the error handling in C++ display drivers,
+where `zx::result<>` errors are bubbled up the stack.
+
+**Guideline:** Design the errors used in returned value types to facilitate the
+use of `?`. In particular, prefer using `zx::Status` as the error type in a
+`Result`.
+
+**Explanation:** For now, follow the same error handling approach as the C++
+display drivers.
+
+**Guideline:** Clearly document when a function logs a condition that produces
+an error result.
+
+**Explanation:** Developers who are assured that the condition is logged can use
+the try operator. This produces more concise code, and reduces redundant
+logging.
+
+Examples:
+
+```rust
+use zx::Status;
+
+/// Errors if the hardware returns an invalid version.
+///
+/// All error conditions are logged.
+pub fn read_version() -> Result<u32, Status> {
+    // ...
+    Ok(version_value)
+}
+```
+
+## Naming: length vs size vs capacity
+
+**Guideline:** Use `length` to name variables that count the number of elements
+in a collection. Use `len()` for functions.
+
+**Explanation:** Matches Rust common practice, such as `Vec::len()`.
+
+**Guideline:** Use `size_bytes` to name variables and functions that count the
+number of bytes used to store or transmit something. Do not create functions
+that would be redundant with invocations of `core::mem::size_of`.
+
+**Explanation:** "Size" is idiomatically used in Rust to name this concept.
+However, the "size" term shows up a lot in hardware-related documents. The
+"\_bytes" suffix helps disambiguate.
+
+**Guideline:** Use `capacity` to name variables and functions that report the
+maximum number of elements supported by the memory backing a collection. In
+particular, a collection whose backing storage never changes has fixed capacity,
+and its length changes as elements are inserted and removed.
+
+**Explanation:** Matches Rust common practice, such as `Vec::capacity`.
+
+## Links in documentation
+
+**Guideline:** Link all identifiers supported by
+[Rustdoc’s link-by-name feature][rustdoc-link-by-name].
+
+**Explanation:** Recommended by
+[Rust API guidelines on documentation][rust-api-guidelines-documentation-links].
+[rust-analyzer][rust-analyzer] can navigate the links.
+
+Curated list of disambiguator prefixes that suggest what Rustdoc can link to:
+value, constant, primitive, module, function, type, typealias, struct, field,
+method, trait, enum, variant, union, macro, derive.
+
+Example:
+
+```rust
+/// See [`DeviceBuilder`] for obtaining instances.
+pub struct Device {}
+```
+
+## Minimize nesting level
+
+**Guideline:** After calling a fallible function, immediately check for errors,
+optionally log the error, and return.
+
+**Explanation:** Human reviewers prefer reading a process laid out as a sequence
+of steps, rather than nested conditional blocks.
+
+**Guideline:** Extract non-trivial error handling to a dedicated function.
+Trivial error handling is logging and returning.
+
+**Explanation:** Human reviewers have an easier time analyzing functions that
+implement a single process.
+
+## Field visibility
+
+**Guideline:** Fields on composite types must be all public - this means `pub`
+or `pub(crate)` or all private.
+
+**Explanation:** Public fields are not amenable to invariants.
+
+## Additional guides
+
+This document focuses on issues commonly encountered while reviewing code
+produced by AI agents.
+
+Display drivers also follow the best practices below.
+
+* [The Rust API Guidelines][rust-api-guidelines]
+* [The Rust Style Guide][rust-style-guide] as implemented by `fx format-code`
+* [The rustdoc book][rustdoc-howto]
+* [The Rustonomicon][rustonomicon] (mostly informative, covers `unsafe` code)
+
+[google-cpp-style-integers]: https://google.github.io/styleguide/cppguide.html#Integer_Types
+[logging-rfc]: /docs/contribute/governance/rfcs/0003_logging.md
+[rust-analyzer]: https://rust-analyzer.github.io/
+[rust-api-guidelines]: https://rust-lang.github.io/api-guidelines/
+[rust-api-guidelines-documentation-links]: https://rust-lang.github.io/api-guidelines/documentation.html#prose-contains-hyperlinks-to-relevant-things-c-link
+[rust-book-idiomatic-paths]: https://doc.rust-lang.org/book/ch07-04-bringing-paths-into-scope-with-the-use-keyword.html#creating-idiomatic-use-paths
+[rust-book-integers]: https://doc.rust-lang.org/book/ch03-02-data-types.html#integer-types
+[rust-option-representation]: https://doc.rust-lang.org/std/option/#representation
+[rust-style-guide]: https://doc.rust-lang.org/style-guide/
+[rustdoc-howto]: https://doc.rust-lang.org/rustdoc/how-to-write-documentation.html
+[rustdoc-link-by-name]: https://doc.rust-lang.org/rustdoc/write-documentation/linking-to-items-by-name.html
+[rustonomicon]: https://doc.rust-lang.org/nomicon/
