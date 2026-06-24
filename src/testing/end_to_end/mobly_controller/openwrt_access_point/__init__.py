@@ -263,6 +263,7 @@ class OpenWrtAP:
         Args:
             config: The Wi-Fi configuration containing multiple radios.
         """
+        _LOGGER.info(f"Configuring Wi-Fi with config: {config}")
         self.reset_wifi_config()
 
         for radio_config in config.radios:
@@ -398,25 +399,33 @@ class OpenWrtAP:
 
     def _is_ap_enabled(
         self, band: Band, expected_ssids: list[str] | None = None
-    ) -> bool:
-        """Checks if the active hostapd instances for a specific band are reporting 'ENABLED' status."""
+    ) -> tuple[bool, dict[str, dict[str, Any]]]:
+        """Checks if the active hostapd instances for a specific band are reporting 'ENABLED' status.
+
+        Returns:
+            A tuple containing:
+                - A boolean indicating if all interfaces are enabled and matching.
+                - A dictionary mapping interface name to its status data.
+        """
+        status_map = {}
         try:
             interfaces = self._get_hostapd_interfaces(band)
             if not interfaces:
-                return False
+                return False, {}
             for iface in interfaces:
                 status_res = self.ssh.run(
                     f"ubus call hostapd.{iface} get_status"
                 )
                 status_data = json.loads(status_res.stdout.decode("utf-8"))
+                status_map[iface] = status_data
                 if status_data.get("status") != "ENABLED":
-                    return False
+                    return False, status_map
                 ssid = status_data.get("ssid")
                 if expected_ssids and ssid not in expected_ssids:
-                    return False
-            return True
+                    return False, status_map
+            return True, status_map
         except Exception:
-            return False
+            return False, status_map
 
     def get_sta_status(self, mac: str, band: Band) -> dict[str, StationStatus]:
         """Get station status for a specific band on OpenWrt."""
@@ -595,9 +604,14 @@ class OpenWrtAP:
         start_time = time.time()
         end_time = start_time + timeout_sec
         while time.time() < end_time:
-            if self._is_ap_enabled(
-                band, configured_ssids
-            ) and self._is_ap_broadcasting(interface, configured_ssids):
+            is_enabled, status_map = self._is_ap_enabled(band, configured_ssids)
+            if is_enabled and self._is_ap_broadcasting(
+                interface, configured_ssids
+            ):
+                for iface, status_data in status_map.items():
+                    _LOGGER.info(
+                        f"Verified Wi-Fi status for {iface}: {status_data}"
+                    )
                 return
             time.sleep(1)
         raise RuntimeError(
