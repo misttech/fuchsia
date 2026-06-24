@@ -1,16 +1,16 @@
-// Copyright 2021 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 use zerocopy::byteorder::big_endian::{U32 as BigEndianU32, U64 as BigEndianU64};
 
-use super::{ALGORITHM, HASH_DESCRIPTOR_TAG, HashDescriptor, HashDescriptorHeader, Salt};
+use super::hash::{ALGORITHM, HASH_DESCRIPTOR_TAG, HashDescriptor, HashDescriptorHeader, Salt};
 
 /// A builder for `HashDescriptor` that is able to more flexibly create a HashDescriptor. This
 /// can create HashDescriptors with omitted fields (e.g. one that has a name and size, but no
 /// salt or digest).
 #[derive(Debug, Default)]
-pub struct RawHashDescriptorBuilder {
+pub struct HashDescriptorBuilder {
     name: Option<String>,
     size: Option<u64>,
     salt: Option<Salt>,
@@ -19,7 +19,7 @@ pub struct RawHashDescriptorBuilder {
     min_avb_version: Option<[u32; 2]>,
 }
 
-impl RawHashDescriptorBuilder {
+impl HashDescriptorBuilder {
     /// Provide the minimum avb version for the descriptor
     pub fn min_avb_version(self, min_avb_version: [u32; 2]) -> Self {
         Self { min_avb_version: Some(min_avb_version), ..self }

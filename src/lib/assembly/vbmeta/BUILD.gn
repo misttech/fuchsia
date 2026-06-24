@@ -35,7 +35,10 @@ rustc_library("vbmeta") {
 
   sources = [
     "src/descriptor.rs",
-    "src/descriptor/builder.rs",
+    "src/descriptor/hash.rs",
+    "src/descriptor/hash_builder.rs",
+    "src/descriptor/kernel_cmdline.rs",
+    "src/descriptor/property.rs",
     "src/footer.rs",
     "src/header.rs",
     "src/key.rs",

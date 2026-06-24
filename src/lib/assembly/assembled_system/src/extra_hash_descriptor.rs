@@ -5,7 +5,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
-use vbmeta::{HashDescriptor, RawHashDescriptorBuilder, Salt};
+use vbmeta::{HashDescriptor, HashDescriptorBuilder, Salt};
 
 /// Used to deserialize a JSON representation of a HashDescriptor.
 #[derive(Debug, Deserialize)]
@@ -30,7 +30,7 @@ pub struct ExtraHashDescriptor {
 
 impl From<ExtraHashDescriptor> for HashDescriptor {
     fn from(val: ExtraHashDescriptor) -> Self {
-        let builder = RawHashDescriptorBuilder::default();
+        let builder = HashDescriptorBuilder::default();
         let builder = match val.name {
             Some(name) => builder.name(name),
             _ => builder,

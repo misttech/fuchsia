@@ -168,8 +168,7 @@ fn generate_auth_data(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::descriptor::builder::RawHashDescriptorBuilder;
-    use crate::descriptor::{HashDescriptor, PropertyDescriptor, Salt};
+    use crate::descriptor::{HashDescriptor, HashDescriptorBuilder, PropertyDescriptor, Salt};
     use crate::test;
 
     use zerocopy::Ref;
@@ -388,7 +387,7 @@ mod tests {
         let salt = Salt::try_from(&[0xAA; 32][..]).expect("new salt");
         let hash = Descriptor::Hash(HashDescriptor::new("image_name", &[0xBB; 32], salt));
         let hash_from_raw = Descriptor::Hash(
-            RawHashDescriptorBuilder::default()
+            HashDescriptorBuilder::default()
                 .min_avb_version([1, 2])
                 .name("other_image")
                 .size(123456789)
