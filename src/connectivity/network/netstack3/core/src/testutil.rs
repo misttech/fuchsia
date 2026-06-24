@@ -309,6 +309,27 @@ where
         buffer: B,
         marks: Marks,
     ) {
+        self.receive_ip_packet_with_marks_and_context::<I, B>(
+            device,
+            frame_dst,
+            buffer,
+            marks,
+            NetworkParsingContext::default(),
+        )
+    }
+
+    /// Receive an IP packet from a device with given marks and parsing context.
+    ///
+    /// `receive_ip_packet_with_marks_and_context` injects a packet directly at
+    /// the IP layer for this context with the given marks and parsing context.
+    pub fn receive_ip_packet_with_marks_and_context<I: Ip, B: BufferMut>(
+        &mut self,
+        device: &DeviceId<BC>,
+        frame_dst: Option<LocalFrameDestination>,
+        buffer: B,
+        marks: Marks,
+        parsing_context: NetworkParsingContext,
+    ) {
         let (core_ctx, bindings_ctx) = self.contexts();
         match I::VERSION {
             IpVersion::V4 => ip::receive_ipv4_packet(
@@ -317,9 +338,7 @@ where
                 device,
                 frame_dst,
                 DeviceIpLayerMetadata::with_marks(marks),
-                // TODO(https://fxbug.dev/512101182): Support receiving an IP
-                // packet with a user-supplied parsing context.
-                NetworkParsingContext::default(),
+                parsing_context,
                 buffer,
             ),
             IpVersion::V6 => ip::receive_ipv6_packet(
@@ -328,9 +347,7 @@ where
                 device,
                 frame_dst,
                 DeviceIpLayerMetadata::with_marks(marks),
-                // TODO(https://fxbug.dev/512101182): Support receiving an IP
-                // packet with a user-supplied parsing context.
-                NetworkParsingContext::default(),
+                parsing_context,
                 buffer,
             ),
         }
