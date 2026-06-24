@@ -51,8 +51,9 @@ zx::result<fbl::RefPtr<iommu::Pmt>> SmmuBti::Map(PinnedVmObject pinned_vmo, uint
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  // TODO(johngro): Resolve this.  Right now, DWC3 tries to make write only
-  // mappings.  If we tell them no, things spiral out of control rapidly.
+  // TODO(https://fxbug.dev/520619827): Resolve this.  Right now, DWC3 tries to
+  // make write only mappings.  If we tell them no, things spiral out of control
+  // rapidly.
   //
   // 1) The driver does not come up.  This is obvious and expected.
   // 2) Someone ends up closing their BTI.  This is not right.  DF is supposed
