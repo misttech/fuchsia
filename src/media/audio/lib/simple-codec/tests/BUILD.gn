@@ -21,8 +21,7 @@ test("simple-codec-unittest-bin") {
   ]
 }
 
-fuchsia_unittest_package("test-package") {
-  package_name = "simple-codec-unittest"
+fuchsia_unittest_package("audio_lib_simple_codec_unittests") {
   deps = [ ":simple-codec-unittest-bin" ]
   test_specs = {
     environments = basic_envs

@@ -33,5 +33,5 @@ source_set("simple-audio-stream") {
 
 group("tests") {
   testonly = true
-  deps = [ "tests:test-package" ]
+  deps = [ "tests:audio_lib_simple_audio_stream_unittests" ]
 }

@@ -43,5 +43,5 @@ zx_library("simple-codec") {
 
 group("tests") {
   testonly = true
-  deps = [ "tests:test-package" ]
+  deps = [ "tests:audio_lib_simple_codec_unittests" ]
 }
