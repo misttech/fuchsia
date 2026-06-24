@@ -31,7 +31,7 @@ unsafe extern "C" {
 fn test_cpp_rust_symbol_merging() {
     unsafe {
         let cpp_ptr = get_cpp_hello_ptr();
-        let rust_ptr = &RUST_HELLO as *const InternedString;
+        let rust_ptr = RUST_HELLO as *const InternedString;
         assert!(!cpp_ptr.is_null());
         assert!(!rust_ptr.is_null());
         assert_eq!(cpp_ptr, rust_ptr, "C++ and Rust pointers did not match!");
@@ -55,7 +55,7 @@ fn test_cpp_rust_symbol_merging() {
 fn test_cpp_rust_category_symbol_merging() {
     unsafe {
         let cpp_ptr = get_cpp_category_ptr();
-        let rust_ptr = &RUST_CATEGORY as *const InternedCategory;
+        let rust_ptr = RUST_CATEGORY as *const InternedCategory;
         assert!(!cpp_ptr.is_null());
         assert!(!rust_ptr.is_null());
         assert_eq!(cpp_ptr, rust_ptr, "C++ and Rust category pointers did not match!");

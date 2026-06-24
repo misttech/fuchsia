@@ -336,7 +336,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
 
             #[unsafe(link_section = "rust_lock_classes")]
             #[used]
-            static #reg_ident: ::ksync::LockClassRegistration = ::ksync::LockClassRegistration::new(&#string_reg_ident);
+            static #reg_ident: ::ksync::LockClassRegistration = ::ksync::LockClassRegistration::new(#string_reg_ident);
 
             impl ::ksync::LockClass for #class_ident {
                 const ID: *mut ::core::ffi::c_void = #reg_ident.get();

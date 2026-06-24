@@ -30,23 +30,13 @@ where
     F: FnOnce(&str) -> String,
 {
     let mut iter = attr.into_iter();
-
-    let str_lit_tt = match iter.next() {
-        Some(tt) => unwrap_token_tree(tt),
-        _ => panic!("Expected string literal as attribute argument"),
+    let tt = match iter.next() {
+        Some(tt) => tt,
+        None => panic!("Expected string literal as attribute argument"),
     };
-    let str_lit = match str_lit_tt {
-        TokenTree::Literal(lit) => lit,
-        _ => panic!("Expected string literal as attribute argument, got: {}", str_lit_tt),
-    };
+    let actual_str = extract_string_literal(tt, "attribute argument");
 
-    let str_val = str_lit.to_string();
-    if !str_val.starts_with('"') || !str_val.ends_with('"') {
-        panic!("Attribute argument must be a double-quoted string literal");
-    }
-    let actual_str = &str_val[1..str_val.len() - 1];
-
-    let cpp_symbol = mangle_fn(actual_str);
+    let cpp_symbol = mangle_fn(&actual_str);
 
     let mut result = TokenStream::new();
     let export_name_attr = format!("#[unsafe(export_name = \"{}\")]", cpp_symbol);
@@ -55,13 +45,10 @@ where
     result
 }
 
-// Recursively unwraps `TokenTree::Group`s with a `None` delimiter containing a single token.
-//
-// This is necessary because when `macro_rules!` macros pass arguments (like `$str_lit` or
-// `$var_name`) to a procedural macro, the compiler wraps them in an invisible group to
-// preserve span and parsing boundaries. Unwrapping them allows direct matching on the
-// underlying `Literal` or `Ident` tokens.
-fn unwrap_token_tree(mut tt: TokenTree) -> TokenTree {
+// Extracts and validates the raw string content from a double-quoted string literal token tree,
+// recursively unwrapping invisible `Delimiter::None` groups that the compiler wraps around
+// macro arguments to preserve spans and boundaries.
+fn extract_string_literal(mut tt: TokenTree, context: &str) -> String {
     while let TokenTree::Group(group) = &tt {
         if group.delimiter() == Delimiter::None {
             let mut iter = group.stream().into_iter();
@@ -74,7 +61,17 @@ fn unwrap_token_tree(mut tt: TokenTree) -> TokenTree {
         }
         break;
     }
-    tt
+
+    let lit = match tt {
+        TokenTree::Literal(lit) => lit,
+        _ => panic!("Expected string literal as {}, got: {}", context, tt),
+    };
+
+    let str_val = lit.to_string();
+    if !str_val.starts_with('"') || !str_val.ends_with('"') {
+        panic!("{} must be a double-quoted string literal", context);
+    }
+    str_val[1..str_val.len() - 1].to_string()
 }
 
 // Generates the Itanium C++ ABI mangled name for the C++ template instantiation
@@ -112,4 +109,72 @@ fn mangle_cpp_interned_category(s: &str) -> String {
     }
     result.push_str("EE17interned_categoryE");
     result
+}
+
+/// A function-like procedural macro that generates an `unsafe extern "C"` block importing
+/// the C++ mangled category symbol for the given string literal.
+///
+/// Usage:
+/// `import_category!(VAR_NAME, "category.name");`
+#[proc_macro]
+pub fn import_category(input: TokenStream) -> TokenStream {
+    generate_import_block(
+        input,
+        "::kstring::interned_category::InternedCategory",
+        mangle_cpp_interned_category,
+    )
+}
+
+/// A function-like procedural macro that generates an `unsafe extern "C"` block importing
+/// the C++ mangled string symbol for the given string literal.
+///
+/// Usage:
+/// `import_string!(VAR_NAME, "string.value");`
+#[proc_macro]
+pub fn import_string(input: TokenStream) -> TokenStream {
+    generate_import_block(
+        input,
+        "::kstring::interned_string::InternedString",
+        mangle_cpp_interned_string,
+    )
+}
+
+// Common helper to parse the macro inputs (an identifier and a string literal),
+// run the mangling function, and generate the `unsafe extern "C"` block with the type.
+fn generate_import_block<F>(input: TokenStream, type_path: &str, mangle_fn: F) -> TokenStream
+where
+    F: FnOnce(&str) -> String,
+{
+    let mut iter = input.into_iter();
+
+    // Parse the identifier
+    let var_name = match iter.next() {
+        Some(TokenTree::Ident(ident)) => ident,
+        _ => panic!("Expected identifier as first argument to import macro"),
+    };
+
+    // Parse the comma separator
+    match iter.next() {
+        Some(TokenTree::Punct(punct)) if punct.as_char() == ',' => {}
+        _ => panic!("Expected comma separator between identifier and string literal"),
+    };
+
+    // Parse and extract the string literal
+    let str_lit_tt = match iter.next() {
+        Some(tt) => tt,
+        None => panic!("Expected string literal as second argument to import macro"),
+    };
+    let actual_str = extract_string_literal(str_lit_tt, "second argument to import macro");
+
+    let cpp_symbol = mangle_fn(&actual_str);
+
+    let expanded = format!(
+        "unsafe extern \"C\" {{
+            #[link_name = \"{}\"]
+            pub static {}: {};
+        }}",
+        cpp_symbol, var_name, type_path
+    );
+
+    expanded.parse::<TokenStream>().unwrap()
 }

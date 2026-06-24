@@ -63,24 +63,52 @@ impl InternedString {
     }
 }
 
-/// Statically declares a new `InternedString` and allocates it inside the special
+/// Statically declares a new `InternedString`.
+///
+/// By default, this macro allocates the string inside the special
 /// `__fxt_interned_string_table` linker section.
 ///
-/// # Example
+/// If the `extern` parameter is provided, the macro instead references an external
+/// symbol (e.g. C++ template-allocated) with the C++ mangled name for the string,
+/// preventing duplicate physical allocation in the linker section.
+///
+/// # Examples
+///
+/// Local allocation:
 /// ```rust
 /// declare_interned_string!(MY_STRING, "hello.world");
+/// ```
+///
+/// External reference (references C++ symbol, avoids physical duplicates):
+/// ```rust
+/// declare_interned_string!(MY_STRING, "drop_stats", extern);
 /// ```
 #[macro_export]
 macro_rules! declare_interned_string {
     ($var_name:ident, $str_lit:literal) => {
-        #[$crate::interned_string_export_name($str_lit)]
-        #[unsafe(link_section = "__fxt_interned_string_table")]
-        #[used]
-        pub static $var_name: $crate::interned_string::InternedString = unsafe {
-            // Append a null byte to the string literal at compile time to satisfy
-            // the C++ const char* expectations.
-            $crate::interned_string::InternedString::new_raw(concat!($str_lit, "\0").as_ptr())
-        };
+        #[allow(non_snake_case)]
+        mod $var_name {
+            #[$crate::interned_string_export_name($str_lit)]
+            #[unsafe(link_section = "__fxt_interned_string_table")]
+            #[used]
+            pub static STRING: $crate::interned_string::InternedString = unsafe {
+                // Append a null byte to the string literal at compile time to satisfy
+                // the C++ const char* expectations.
+                $crate::interned_string::InternedString::new_raw(concat!($str_lit, "\0").as_ptr())
+            };
+        }
+
+        pub static $var_name: &$crate::interned_string::InternedString = &$var_name::STRING;
+    };
+
+    ($var_name:ident, $str_lit:literal, extern) => {
+        #[allow(non_snake_case)]
+        mod $var_name {
+            $crate::import_string!(STRING, $str_lit);
+        }
+
+        pub static $var_name: &$crate::interned_string::InternedString =
+            unsafe { &$var_name::STRING };
     };
 }
 
@@ -141,8 +169,8 @@ mod tests {
         assert!(diff >= 2, "Expected at least 2 entries in the table, found {diff}");
 
         // Verify our static variables reside strictly within the linker bounds
-        let p1 = &TEST_STR_1 as *const InternedString;
-        let p2 = &TEST_STR_2 as *const InternedString;
+        let p1 = TEST_STR_1 as *const InternedString;
+        let p2 = TEST_STR_2 as *const InternedString;
 
         assert!(
             p1 >= start_ptr && p1 < stop_ptr,
@@ -159,8 +187,8 @@ mod tests {
         assert!(TEST_STR_1.id() > 0);
         assert!(TEST_STR_2.id() > 0);
 
-        let p1 = &TEST_STR_1 as *const InternedString;
-        let p2 = &TEST_STR_2 as *const InternedString;
+        let p1 = TEST_STR_1 as *const InternedString;
+        let p2 = TEST_STR_2 as *const InternedString;
         let expected_diff = unsafe { p2.offset_from(p1) };
         let actual_diff = (TEST_STR_2.id() as isize) - (TEST_STR_1.id() as isize);
         assert_eq!(actual_diff, expected_diff);
@@ -176,7 +204,7 @@ mod tests {
         }
 
         let p_expected = unsafe { &EXPECTED_SYMBOL as *const InternedString };
-        let p_actual = &TEST_STR_1 as *const InternedString;
+        let p_actual = TEST_STR_1 as *const InternedString;
         assert_eq!(p_actual, p_expected);
     }
 }

@@ -66,12 +66,25 @@ impl InternedCategory {
     }
 }
 
-/// Statically declares a new `InternedCategory` and allocates it inside the special
+/// Statically declares a new `InternedCategory`.
+///
+/// By default, this macro allocates the category inside the special
 /// `__fxt_interned_category_table` linker section.
 ///
-/// # Example
+/// If the `extern` parameter is provided, the macro instead references an external
+/// symbol (e.g. C++ template-allocated) with the C++ mangled name for the category,
+/// preventing duplicate physical allocation in the linker section.
+///
+/// # Examples
+///
+/// Local allocation:
 /// ```rust
-/// declare_interned_category!(MY_CATEGORY, "kernel:meta");
+/// declare_interned_category!(MY_CATEGORY, "kernel:sched");
+/// ```
+///
+/// External reference (references C++ symbol, avoids physical duplicates):
+/// ```rust
+/// declare_interned_category!(MY_CATEGORY, "kernel:meta", extern);
 /// ```
 #[macro_export]
 macro_rules! declare_interned_category {
@@ -79,13 +92,25 @@ macro_rules! declare_interned_category {
         #[allow(non_snake_case)]
         mod $var_name {
             $crate::declare_interned_string!(STRING, $str_lit);
+
+            #[$crate::interned_category_export_name($str_lit)]
+            #[unsafe(link_section = "__fxt_interned_category_table")]
+            #[used]
+            pub static CATEGORY: $crate::interned_category::InternedCategory =
+                $crate::interned_category::InternedCategory::new(&STRING);
         }
 
-        #[$crate::interned_category_export_name($str_lit)]
-        #[unsafe(link_section = "__fxt_interned_category_table")]
-        #[used]
-        pub static $var_name: $crate::interned_category::InternedCategory =
-            $crate::interned_category::InternedCategory::new(&$var_name::STRING);
+        pub static $var_name: &$crate::interned_category::InternedCategory = &$var_name::CATEGORY;
+    };
+
+    ($var_name:ident, $str_lit:literal, extern) => {
+        #[allow(non_snake_case)]
+        mod $var_name {
+            $crate::import_category!(CATEGORY, $str_lit);
+        }
+
+        pub static $var_name: &$crate::interned_category::InternedCategory =
+            unsafe { &$var_name::CATEGORY };
     };
 }
 
@@ -138,8 +163,8 @@ mod tests {
         assert!(diff >= 2, "Expected at least 2 entries in the table, found {diff}");
 
         // Verify our static variables reside strictly within the linker bounds
-        let p1 = &TEST_CAT_1 as *const InternedCategory;
-        let p2 = &TEST_CAT_2 as *const InternedCategory;
+        let p1 = TEST_CAT_1 as *const InternedCategory;
+        let p2 = TEST_CAT_2 as *const InternedCategory;
 
         assert!(
             p1 >= start_ptr && p1 < stop_ptr,
@@ -161,7 +186,7 @@ mod tests {
         }
 
         let p_expected = unsafe { &EXPECTED_SYMBOL as *const InternedCategory };
-        let p_actual = &TEST_CAT_1 as *const InternedCategory;
+        let p_actual = TEST_CAT_1 as *const InternedCategory;
         assert_eq!(p_actual, p_expected);
     }
 }
