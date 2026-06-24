@@ -303,6 +303,7 @@ template("rustc_binary") {
                              "pool",
                              "quiet_clippy",
                              "rustenv",
+                             "rustflags",
                              "sources",
                              "testonly",
                              "validations",
