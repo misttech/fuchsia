@@ -6,8 +6,13 @@
 
 mod collections;
 mod errors;
+mod parser;
 mod serialization;
 mod sort;
+mod string;
 mod tty;
 
 fn main() {}
+
+#[cfg(test)]
+mod tests;

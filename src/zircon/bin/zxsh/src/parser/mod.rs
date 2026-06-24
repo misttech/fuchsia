@@ -2,8 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-pub mod collections;
-pub mod errors;
-pub mod serialization;
-pub mod sort;
+pub mod error;
+pub mod token;
 pub mod tokenizer;
+
+pub use error::{IncompleteReason, ParseError};
+pub use token::{RawWordPart, Token};
+#[allow(unused_imports)]
+pub use tokenizer::tokenize;
