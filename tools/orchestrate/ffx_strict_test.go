@@ -236,6 +236,158 @@ func TestParsePort(t *testing.T) {
 	}
 }
 
+func TestFFXStrictClient_RepositoryServer_Restart(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	fakeFfx := createSmartFakeFfx(t, tmpDir)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	target := "fake-target"
+	client.SetDefaultTarget(&target)
+
+	repoName := "test-repo"
+	repoDir := filepath.Join(tmpDir, "repo")
+
+	// 1. First Start
+	err = client.RepositoryServerStart(ctx, repoName, repoDir, "localhost:0")
+	if err != nil {
+		t.Fatalf("First RepositoryServerStart failed: %v", err)
+	}
+
+	// 2. Stop
+	err = client.RepositoryServerStop(ctx, repoName)
+	if err != nil {
+		t.Fatalf("RepositoryServerStop failed: %v", err)
+	}
+
+	// 3. Second Start
+	err = client.RepositoryServerStart(ctx, repoName, repoDir, "localhost:0")
+	if err != nil {
+		t.Fatalf("Second RepositoryServerStart failed: %v", err)
+	}
+}
+
+func TestFFXStrictClient_RepositoryServer_Restart_ExplicitPort(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	fakeFfx := createSmartFakeFfx(t, tmpDir)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	target := "fake-target"
+	client.SetDefaultTarget(&target)
+
+	repoName := "test-repo"
+	repoDir := filepath.Join(tmpDir, "repo")
+
+	// 1. First Start
+	err = client.RepositoryServerStart(ctx, repoName, repoDir, "localhost:8084")
+	if err != nil {
+		t.Fatalf("First RepositoryServerStart failed: %v", err)
+	}
+
+	// 2. Stop
+	err = client.RepositoryServerStop(ctx, repoName)
+	if err != nil {
+		t.Fatalf("RepositoryServerStop failed: %v", err)
+	}
+
+	// 3. Second Start
+	err = client.RepositoryServerStart(ctx, repoName, repoDir, "localhost:8084")
+	if err != nil {
+		t.Fatalf("Second RepositoryServerStart failed: %v", err)
+	}
+}
+
+func TestFFXStrictClient_RepositoryServer_Timeout(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	fakeFfx := createSmartFakeFfx(t, tmpDir)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "timeout-repo")
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	repoDir := filepath.Join(tmpDir, "repo")
+
+	// Start should timeout after 5 seconds because the server hangs
+	err = client.RepositoryServerStart(ctx, "timeout-repo", repoDir, "localhost:0")
+	if err == nil {
+		t.Fatalf("Expected timeout error, got nil")
+	}
+	if !strings.Contains(err.Error(), "timed out waiting for repository server to start") {
+		t.Fatalf("Expected timeout error, got: %v", err)
+	}
+
+	// Verify the process is cleaned up and we can start a normal repo afterwards
+	err = client.RepositoryServerStart(ctx, "test-repo", repoDir, "localhost:0")
+	if err != nil {
+		t.Fatalf("Failed to start normal repo after timeout cleanup: %v", err)
+	}
+	client.RepositoryServerStop(ctx, "test-repo")
+}
+
+func TestFFXStrictClient_RepositoryServer_StaleServer(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	fakeFfx := createSmartFakeFfx(t, tmpDir)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "stale-repo")
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	repoDir := filepath.Join(tmpDir, "repo")
+
+	// is_list will return a stale entry first, but IsPackageServerRunning should ignore it and keep polling
+	err = client.RepositoryServerStart(ctx, "stale-repo", repoDir, "localhost:0")
+	if err != nil {
+		t.Fatalf("RepositoryServerStart failed to ignore stale server: %v", err)
+	}
+	client.RepositoryServerStop(ctx, "stale-repo")
+}
+
+func TestFFXStrictClient_RepositoryServer_BadJson(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	fakeFfx := createSmartFakeFfx(t, tmpDir)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "bad-json-repo")
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	repoDir := filepath.Join(tmpDir, "repo")
+
+	// is_list will return bad json, causing IsPackageServerRunning to fail cleanly
+	// The polling loop logs the error and continues until the 5 second timeout.
+	err = client.RepositoryServerStart(ctx, "bad-json-repo", repoDir, "localhost:0")
+	if err == nil {
+		t.Fatalf("Expected timeout error due to bad json, got nil")
+	}
+	if !strings.Contains(err.Error(), "timed out waiting for repository server to start") {
+		t.Fatalf("Expected timeout error, got: %v", err)
+	}
+}
+
 func createSmartFakeFfx(t *testing.T, tmpDir string) string {
 	script := fmt.Sprintf(`#!/bin/bash
 # Find log.dir in arguments to know where to write state
@@ -273,39 +425,73 @@ for arg in "$@"; do
     fi
 done
 
-if $is_start; then
-    PORT="8083" # default port
-    for ((i=1; i<=$#; i++)); do
-        if [ "${!i}" = "--address" ]; then
-            next=$((i+1))
-            PORT=$(echo "${!next}" | cut -d: -f2)
-            if [ "$PORT" = "0" ]; then
-                PORT="8083"
-            fi
-        fi
-    done
+	if $is_start; then
+		PORT="8083" # default port
+		PORT_PATH=""
+		for ((i=1; i<=$#; i++)); do
+			if [ "${!i}" = "--address" ]; then
+				next=$((i+1))
+				PORT=$(echo "${!next}" | cut -d: -f2)
+				if [ "$PORT" = "0" ]; then
+					PORT="8083"
+				fi
+			elif [ "${!i}" = "--port-path" ]; then
+				next=$((i+1))
+				PORT_PATH="${!next}"
+			fi
+		done
 
-    is_fail_later=false
-    for arg in "$@"; do
-        if [ "$arg" = "fail-later-repo" ]; then
-            is_fail_later=true
-        fi
-    done
+		is_fail_later=false
+		is_timeout=false
+		REPO_NAME="test-repo"
+		for ((i=1; i<=$#; i++)); do
+			if [ "${!i}" = "--repository" ]; then
+				next=$((i+1))
+				REPO_NAME="${!next}"
+			fi
+		done
+		for arg in "$@"; do
+			if [ "$arg" = "fail-later-repo" ]; then
+				is_fail_later=true
+			elif [ "$arg" = "timeout-repo" ]; then
+				is_timeout=true
+			fi
+		done
 
-    if $is_fail_later; then
-         echo "{\"port\": $PORT}" > "$STATE_FILE"
-         sleep 0.1
-         exit 1
-    fi
+		echo "$REPO_NAME" > "$STATE_DIR/repo_name.txt"
 
-    echo "{\"port\": $PORT}" > "$STATE_FILE"
-    while true; do
-        sleep 1
-    done
+		if $is_timeout; then
+			while true; do sleep 1; done
+		fi
+
+		if [ -n "$PORT_PATH" ]; then
+			echo "$PORT" > "$PORT_PATH"
+		fi
+
+		if $is_fail_later; then
+			 echo "{\"port\": $PORT}" > "$STATE_FILE"
+			 sleep 0.1
+			 exit 1
+		fi
+
+		echo "{\"port\": $PORT}" > "$STATE_FILE"
+		while true; do
+			sleep 1
+		done
 elif $is_list; then
     if [ -f "$STATE_FILE" ]; then
         PORT=$(grep -o '"port": *[0-9]*' "$STATE_FILE" | grep -o '[0-9]*')
-        echo "{\"ok\":{\"data\":[{\"name\":\"test-repo\",\"address\":\"[::]:$PORT\"},{\"name\":\"fail-later-repo\",\"address\":\"[::]:$PORT\"}]}}"
+        REPO_NAME=""
+        if [ -f "$STATE_DIR/repo_name.txt" ]; then
+            REPO_NAME=$(cat "$STATE_DIR/repo_name.txt")
+        fi
+
+        if [ "$REPO_NAME" = "bad-json-repo" ]; then
+            echo "{\"ok\":{\"data\":[invalid json"
+            exit 0
+        fi
+
+        echo "{\"ok\":{\"data\":[{\"name\":\"test-repo\",\"address\":\"[::]:$PORT\"},{\"name\":\"fail-later-repo\",\"address\":\"[::]:$PORT\"},{\"name\":\"stale-repo\",\"address\":\"[::]:9999\"},{\"name\":\"stale-repo\",\"address\":\"[::]:$PORT\"}]}}"
     else
         echo '{"ok":{"data":[]}}'
     fi
