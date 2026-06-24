@@ -70,11 +70,11 @@ for archive in "${sorted_archives[@]}"; do
   noext="${base%.tar.gz}"
 
   # Extracts the package name from a base directory, removing trailing version number i.e mypy-1.6.0.
-  pkg="$(sed -r 's/-[0-9]+\.[0-9]+(\.[0-9]+)?//g' <<<"${noext}")"
+  pkg="$(sed -r 's/-[0-9]+(\.[0-9]+)+//g' <<<"${noext}")"
 
   # Extracts the version number (major.minor(.patch)) from the base directory,
   # handling both "major.minor.patch" and "major.minor" patterns i.e mypy-1.6.0, mypy-0.1
-  version="$(sed -r 's/^.*-([0-9]+\.[0-9]+(\.[0-9]+)?).*/\1/g' <<<"${noext}")"
+  version="$(sed -r 's/^.*-([0-9]+(\.[0-9]+)+).*/\1/g' <<<"${noext}")"
 
   unzip_dir="$(mktemp -d)"
   tar -xzf "${archive}" -C "${unzip_dir}"

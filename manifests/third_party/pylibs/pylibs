@@ -21,11 +21,11 @@
         remote="https://fuchsia.googlesource.com/third_party/github.com/pylint-dev/astroid"
         revision="0375d1a22262b4d7a4327aad5d770b2cd262c4ef"
         gerrithost="https://fuchsia-review.googlesource.com"/>
-    <!-- autoflake-2.3.1 -->
+    <!-- autoflake-2.3.3 -->
     <project name="third_party/pylibs/autoflake"
         path="third_party/pylibs/autoflake/src"
         remote="https://fuchsia.googlesource.com/third_party/github.com/PyCQA/autoflake"
-        revision="0544741e2b4a22b472d9d93e37d4ea9153820bb1"
+        revision="2d3853a9f31d97783fb2e181d41cd82a6babd666"
         gerrithost="https://fuchsia-review.googlesource.com"/>
     <!-- coverage-7.6.1 -->
     <project name="third_party/pylibs/coverage"
