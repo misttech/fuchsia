@@ -147,6 +147,7 @@ load(
 load(
     "//fuchsia/private/assembly:fuchsia_virtual_device.bzl",
     _ARCH = "ARCH",
+    _DEFAULT_PORTS = "DEFAULT_PORTS",
     _fuchsia_virtual_device = "fuchsia_virtual_device",
 )
 load(
@@ -208,6 +209,7 @@ PARTITION_TYPE = _PARTITION_TYPE
 INCLUDE_IN = _INCLUDE_IN
 SLOT = _SLOT
 ARCH = _ARCH
+DEFAULT_PORTS = _DEFAULT_PORTS
 INPUT_DEVICE_TYPE = _INPUT_DEVICE_TYPE
 DELIVERY_BLOB_TYPE = _DELIVERY_BLOB_TYPE
 SCRUTINY_VERIFIERS = _SCRUTINY_VERIFIERS

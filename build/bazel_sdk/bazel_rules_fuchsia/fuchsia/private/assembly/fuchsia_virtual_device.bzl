@@ -12,6 +12,14 @@ ARCH = struct(
     X64 = "x64",
 )
 
+# Note: Due to bazel limitations, port numbers need to be passed as strings.
+DEFAULT_PORTS = {
+    "ssh": "22",
+    "mdns": "5353",
+    "debug": "2345",
+    "adb": "5555",
+}
+
 def _fuchsia_virtual_device_impl(ctx):
     # Use Label name for output file to avoid conflicts. It's possible for different virtual device
     # targets to share the same device name.
@@ -51,12 +59,7 @@ def _fuchsia_virtual_device_impl(ctx):
                     "units": ctx.attr.storage_unit,
                 },
             },
-            "ports": {
-                "ssh": 22,
-                "mdns": 5353,
-                "debug": 2345,
-                "adb": 5555,
-            },
+            "ports": {k: int(v) for k, v in ctx.attr.ports.items()},
         },
     }
     ctx.actions.write(virtual_device_file, json.encode(virtual_device))
@@ -132,6 +135,10 @@ fuchsia_virtual_device = rule(
             # Touch is the default to avoid issues with mouse capture
             # especially with cloudtops.
             default = "touch",
+        ),
+        "ports": attr.string_dict(
+            doc = "Dictionary of port names to port numbers which should be exposed to the host.",
+            default = DEFAULT_PORTS,
         ),
     },
 )
