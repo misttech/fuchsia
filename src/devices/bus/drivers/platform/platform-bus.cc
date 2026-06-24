@@ -22,6 +22,7 @@
 #include <zircon/process.h>
 #include <zircon/status.h>
 #include <zircon/syscalls/iommu.h>
+#include <zircon/system/public/zircon/syscalls-next.h>
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
@@ -240,6 +241,50 @@ zx::result<> PlatformBus::NodeAddInternal(fhpb::Node& node) {
   }
 
   devices_.push_back(std::move(dev.value()));
+  return zx::ok();
+}
+
+zx::result<> PlatformBus::RegisterInterruptController(
+    uint32_t id, fidl::ClientEnd<fuchsia_hardware_interrupt::Controller> controller) {
+  if (interrupt_controllers_.contains(id)) {
+    fdf::error("Interrupt controller with ID {} already registered", id);
+    return zx::error(ZX_ERR_ALREADY_BOUND);
+  }
+  interrupt_controllers_.emplace(
+      id, fidl::WireSyncClient<fuchsia_hardware_interrupt::Controller>(std::move(controller)));
+  return zx::ok();
+}
+
+zx::result<> PlatformBus::RegisterInterrupt(const fuchsia_hardware_platform_bus::UserspaceIrq& irq,
+                                            uint32_t flags, zx::interrupt interrupt) {
+  auto it = interrupt_controllers_.find(irq.controller_id());
+  if (it == interrupt_controllers_.end()) {
+    fdf::error("Controller ID {} not present for interrupt {}", irq.controller_id(), irq.irq());
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+
+  const auto& [id, controller] = *it;
+
+  fuchsia_hardware_interrupt::InterruptOptions options = {};
+  if (flags & ZX_INTERRUPT_TIMESTAMP_MONO) {
+    options |= fuchsia_hardware_interrupt::InterruptOptions::kTimestampMono;
+  }
+  if (flags & ZX_INTERRUPT_WAKE_VECTOR) {
+    options |= fuchsia_hardware_interrupt::InterruptOptions::kWakeable;
+  }
+  const auto mode = static_cast<fuchsia_hardware_platform_bus::ZirconInterruptMode>(
+      flags & ZX_INTERRUPT_MODE_MASK);
+
+  auto result = controller->RegisterInterrupt(irq.irq(), mode, options, std::move(interrupt));
+  if (!result.ok()) {
+    fdf::error("Call to RegisterInterrupt failed: {}", result.error());
+    return zx::error(result.error().status());
+  }
+  if (result->is_error()) {
+    fdf::error("RegisterInterrupt failed: {}", zx_status_get_string(result->error_value()));
+    return zx::error(result->error_value());
+  }
+
   return zx::ok();
 }
 

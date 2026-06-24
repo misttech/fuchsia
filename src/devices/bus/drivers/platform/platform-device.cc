@@ -182,15 +182,23 @@ zx::result<zx::interrupt> PlatformDevice::GetInterrupt(uint32_t index, uint32_t 
   if (unlikely(!IsValid(irq))) {
     return zx::error(ZX_ERR_INTERNAL);
   }
+
   const fuchsia_hardware_platform_bus::IrqSpec& irq_spec = irq.irq().value();
-  if (!irq_spec.irq().has_value()) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
+  const bool is_kernel_interrupt = irq_spec.irq().has_value();
+
+  uint32_t vector;
+  if (is_kernel_interrupt) {
+    vector = irq_spec.irq().value();
+  } else if (irq_spec.userspace_irq().has_value()) {
+    vector = irq_spec.userspace_irq()->irq();
+  } else {
+    fdf::error("IRQ type is neither kernel nor userspace");
+    return zx::error(ZX_ERR_INTERNAL);
   }
 
   // If the driver chose "default" for the IRQ mode, use the configuration we have instead.
   const uint32_t cfg_mode = static_cast<uint32_t>(irq.mode().value()) & ZX_INTERRUPT_MODE_MASK;
   const uint32_t drv_mode = flags & ZX_INTERRUPT_MODE_MASK;
-  const auto vector = irq_spec.irq().value();
 
   if (drv_mode == ZX_INTERRUPT_MODE_DEFAULT) {
     fdf::info(
@@ -219,7 +227,14 @@ zx::result<zx::interrupt> PlatformDevice::GetInterrupt(uint32_t index, uint32_t 
   fdf::info("Creating interrupt with vector {} (flags {:#08x}) for platform device \"{}\"", vector,
             flags, name_);
   zx::interrupt out_irq;
-  zx_status_t status = zx::interrupt::create(*bus_->GetIrqResource(), vector, flags, &out_irq);
+
+  zx_status_t status;
+  if (is_kernel_interrupt) {
+    status = zx::interrupt::create(*bus_->GetIrqResource(), vector, flags, &out_irq);
+  } else {
+    status = zx::interrupt::create(
+        zx::resource(), 0, ZX_INTERRUPT_VIRTUAL | (flags & ZX_INTERRUPT_TIMESTAMP_MONO), &out_irq);
+  }
   if (status != ZX_OK) {
     fdf::error("zx_interrupt_create failed {}", zx_status_get_string(status));
     return zx::error(status);
@@ -231,7 +246,20 @@ zx::result<zx::interrupt> PlatformDevice::GetInterrupt(uint32_t index, uint32_t 
   ZX_ASSERT(status == ZX_OK);
   interrupt_koids_.insert(info.koid);
 
-  return zx::ok(std::move(out_irq));
+  if (is_kernel_interrupt) {
+    return zx::ok(std::move(out_irq));
+  }
+
+  zx::interrupt controller_irq;
+  status = out_irq.duplicate(ZX_RIGHT_SAME_RIGHTS, &controller_irq);
+  if (status != ZX_OK) {
+    fdf::error("zx_handle_duplicate failed {}", zx_status_get_string(status));
+    return zx::error(status);
+  }
+
+  zx::result<> result =
+      bus_->RegisterInterrupt(irq_spec.userspace_irq().value(), flags, std::move(controller_irq));
+  return zx::make_result(result.status_value(), std::move(out_irq));
 }
 
 zx::result<zx::bti> PlatformDevice::GetBti(uint32_t index) const {
@@ -820,8 +848,18 @@ void PlatformDevice::handle_unknown_method(
 
 void PlatformDevice::RegisterController(RegisterControllerRequestView request,
                                         RegisterControllerCompleter::Sync& completer) {
-  // TODO(519918279): Save this controller and use it to fulfill GetInterrupt requests.
-  completer.ReplySuccess();
+  if (!node_.interrupt_controller_id().has_value()) {
+    fdf::error(
+        "RegisterController called on device \"{}\" which is not configured as an interrupt controller",
+        name_);
+    completer.ReplyError(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+
+  const uint32_t controller_id = node_.interrupt_controller_id().value();
+  zx::result<> result =
+      bus_->RegisterInterruptController(controller_id, std::move(request->controller));
+  completer.Reply(result);
 }
 
 void PlatformDevice::handle_unknown_method(

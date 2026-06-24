@@ -4,6 +4,7 @@
 #include "src/devices/bus/drivers/platform/platform-bus.h"
 
 #include <fidl/fuchsia.boot/cpp/wire.h>
+#include <fidl/fuchsia.hardware.interrupt/cpp/fidl.h>
 #include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/testing/cpp/driver_test.h>
@@ -194,6 +195,59 @@ void BootItems::GetBootloaderFile(GetBootloaderFileRequestView request,
   completer.Reply(zx::vmo());
 }
 
+class FakeInterruptController : public fidl::Server<fuchsia_hardware_interrupt::Controller> {
+ public:
+  struct RegisteredInterrupt {
+    uint32_t irq;
+    fuchsia_hardware_platform_bus::ZirconInterruptMode mode;
+    fuchsia_hardware_interrupt::InterruptOptions options;
+    zx::interrupt interrupt;
+  };
+
+  void RegisterController(
+      fidl::ClientEnd<fuchsia_hardware_interrupt::ControllerRegistry> registry_client_end) {
+    auto [controller_client_end, controller_server_end] =
+        fidl::Endpoints<fuchsia_hardware_interrupt::Controller>::Create();
+
+    bindings_.AddBinding(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                         std::move(controller_server_end), this, fidl::kIgnoreBindingClosure);
+
+    fidl::WireSyncClient<fuchsia_hardware_interrupt::ControllerRegistry> registry(
+        std::move(registry_client_end));
+
+    fidl::WireResult result = registry->RegisterController(std::move(controller_client_end));
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+  }
+
+  void RegisterInterrupt(RegisterInterruptRequest& request,
+                         RegisterInterruptCompleter::Sync& completer) override {
+    registered_interrupts.push_back({
+        .irq = request.irq(),
+        .mode = request.mode(),
+        .options = request.options(),
+        .interrupt = std::move(request.interrupt()),
+    });
+    completer.Reply(fit::ok());
+  }
+
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_interrupt::Controller> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {
+    FAIL();
+  }
+
+  std::vector<RegisteredInterrupt> take_registered_interrupts() {
+    std::vector<RegisteredInterrupt> interrupts = std::move(registered_interrupts);
+    registered_interrupts.clear();
+    return interrupts;
+  }
+
+ private:
+  fidl::ServerBindingGroup<fuchsia_hardware_interrupt::Controller> bindings_;
+  std::vector<RegisteredInterrupt> registered_interrupts;
+};
+
 class TestEnvironment : public fdf_testing::Environment {
  public:
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
@@ -204,8 +258,11 @@ class TestEnvironment : public fdf_testing::Environment {
 
   BootItems& boot_items() { return boot_items_; }
 
+  FakeInterruptController& fake_controller() { return fake_controller_; }
+
  private:
   BootItems boot_items_;
+  FakeInterruptController fake_controller_;
 };
 
 class TestConfig final {
@@ -373,6 +430,87 @@ TEST_F(PlatformBusTest, PartitionMapMetadata) {
   EXPECT_EQ(partition2.name(), "partition 2");
   EXPECT_THAT(partition2.type_guid(), ::testing::ElementsAreArray(kPartition2TypeGuid));
   EXPECT_THAT(partition2.unique_guid(), ::testing::ElementsAreArray(kPartition2UniqueGuid));
+}
+
+TEST_F(PlatformBusTest, UserspaceInterrupts) {
+  constexpr std::string_view kControllerName = "fake-interrupt-controller";
+  const fuchsia_hardware_platform_bus::Node kControllerNode{{
+      .name{kControllerName},
+      .interrupt_controller_id = 1,
+  }};
+
+  fdf::Arena arena{'PBUS'};
+  fdf::WireUnownedResult result =
+      pbus().buffer(arena)->NodeAdd(fidl::ToWire(arena, kControllerNode));
+  ASSERT_TRUE(result.ok());
+  EXPECT_TRUE(result->is_ok());
+
+  zx::result registry_client_end =
+      driver_test().Connect<fuchsia_hardware_interrupt::ControllerRegistryService::Registry>(
+          kControllerName);
+  ASSERT_TRUE(registry_client_end.is_ok());
+
+  driver_test().RunInEnvironmentTypeContext(
+      [registry_client_end = std::move(registry_client_end)](TestEnvironment& env) mutable {
+        env.fake_controller().RegisterController(std::move(registry_client_end.value()));
+      });
+
+  constexpr std::string_view kDeviceName = "test-device";
+  fuchsia_hardware_platform_bus::UserspaceIrq userspace_irq{{
+      .irq = 10,
+      .controller_id = 1,
+  }};
+
+  const fuchsia_hardware_platform_bus::Node kDeviceNode{{
+      .name{kDeviceName},
+      .irq = std::vector<fuchsia_hardware_platform_bus::Irq>{{
+          {
+              .irq = fuchsia_hardware_platform_bus::IrqSpec::WithUserspaceIrq(
+                  std::move(userspace_irq)),
+              .mode = fuchsia_hardware_platform_bus::ZirconInterruptMode::kEdgeHigh,
+          },
+      }},
+  }};
+
+  result = pbus().buffer(arena)->NodeAdd(fidl::ToWire(arena, kDeviceNode));
+  ASSERT_TRUE(result.ok());
+  EXPECT_TRUE(result->is_ok());
+
+  zx::result device_client_end =
+      driver_test().Connect<fuchsia_hardware_platform_device::Service::Device>(kDeviceName);
+  ASSERT_OK(device_client_end);
+
+  fidl::WireSyncClient<fuchsia_hardware_platform_device::Device> device(
+      std::move(device_client_end.value()));
+
+  fidl::WireResult get_interrupt_result = device->GetInterruptById(0, ZX_INTERRUPT_TIMESTAMP_MONO);
+  ASSERT_TRUE(get_interrupt_result.ok());
+  EXPECT_TRUE(get_interrupt_result->is_ok());
+
+  const auto registered_interrupts =
+      driver_test()
+          .RunInEnvironmentTypeContext<std::vector<FakeInterruptController::RegisteredInterrupt>>(
+              [](TestEnvironment& env) {
+                return env.fake_controller().take_registered_interrupts();
+              });
+
+  ASSERT_EQ(registered_interrupts.size(), 1u);
+  const FakeInterruptController::RegisteredInterrupt& interrupt = registered_interrupts[0];
+
+  EXPECT_EQ(interrupt.irq, 10u);
+  EXPECT_EQ(interrupt.mode, fuchsia_hardware_platform_bus::ZirconInterruptMode::kEdgeHigh);
+  EXPECT_EQ(interrupt.options, fuchsia_hardware_interrupt::InterruptOptions::kTimestampMono);
+
+  // Verify that the interrupt controller and interrupt consumer got handles to the same interrupt
+  // object.
+  zx_info_handle_basic_t info{};
+  EXPECT_OK(get_interrupt_result->value()->irq.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info),
+                                                        nullptr, nullptr));
+  const zx_koid_t expected_koid = info.koid;
+
+  EXPECT_OK(
+      interrupt.interrupt.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
+  EXPECT_EQ(info.koid, expected_koid);
 }
 
 TEST(PlatformBusTest2, GetMmioIndex) {

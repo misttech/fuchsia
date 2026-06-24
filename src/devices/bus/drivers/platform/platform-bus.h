@@ -6,6 +6,7 @@
 #define SRC_DEVICES_BUS_DRIVERS_PLATFORM_PLATFORM_BUS_H_
 
 #include <fidl/fuchsia.boot/cpp/wire.h>
+#include <fidl/fuchsia.hardware.interrupt/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
 #include <fidl/fuchsia.sysinfo/cpp/wire.h>
@@ -21,6 +22,8 @@
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 #include <zircon/types.h>
+
+#include <map>
 
 #include <fbl/array.h>
 
@@ -84,6 +87,11 @@ class PlatformBus : public fdf::DriverBase2,
   void GetSerialNumber(GetSerialNumberCompleter::Sync& completer) override;
 
   zx::result<zx::bti> GetBti(uint32_t iommu_id, uint32_t bti_id, std::string_view name);
+
+  zx::result<> RegisterInterruptController(
+      uint32_t id, fidl::ClientEnd<fuchsia_hardware_interrupt::Controller> controller);
+  zx::result<> RegisterInterrupt(const fuchsia_hardware_platform_bus::UserspaceIrq& irq,
+                                 uint32_t flags, zx::interrupt interrupt);
 
   zx::unowned_resource GetIrqResource() const;
   zx::unowned_resource GetMmioResource() const;
@@ -167,6 +175,10 @@ class PlatformBus : public fdf::DriverBase2,
 
   // Map of iommu ids to iommu handles.
   std::map<uint32_t, zx::iommu> iommu_handles_;
+
+  // Maps interrupt controller IDs to FIDL clients.
+  std::map<uint32_t, fidl::WireSyncClient<fuchsia_hardware_interrupt::Controller>>
+      interrupt_controllers_;
 
   std::map<std::pair<uint32_t, uint32_t>, zx::bti> cached_btis_;
 
