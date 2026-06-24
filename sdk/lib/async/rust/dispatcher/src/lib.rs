@@ -17,8 +17,10 @@ use std::sync::Arc;
 use zx_status::Status;
 use zx_types::zx_time_t;
 
+mod current_dispatcher;
 mod task;
 
+pub use current_dispatcher::*;
 pub use task::*;
 
 /// A reference to a dispatcher that supports the v4 async api's reference counting operations,
@@ -294,14 +296,20 @@ struct TaskFunc {
 }
 
 impl TaskFunc {
-    extern "C" fn call(_dispatcher: *mut async_dispatcher, task: *mut async_task, status: i32) {
+    extern "C" fn call(dispatcher: *mut async_dispatcher, task: *mut async_task, status: i32) {
+        // SAFETY: The async api will only call this function on a valid dispatcher (even if it's
+        // shutting down).
+        let dispatcher =
+            unsafe { AsyncDispatcherRef::from_raw(NonNull::new_unchecked(dispatcher)) };
         // SAFETY: the async api promises that this function will only be called
         // up to once, so we can reconstitute the `Arc` and let it get dropped.
         let task = unsafe { Arc::from_raw(task as *const UnsafeCell<Self>) };
         // SAFETY: if we can't get a mut ref from the arc, then the task is already
         // being cancelled, so we don't want to call it.
         if let Ok(task) = Arc::try_unwrap(task) {
-            (task.into_inner().func)(Status::from_raw(status));
+            CurrentDispatcher::with(&dispatcher, move || {
+                (task.into_inner().func)(Status::from_raw(status));
+            });
         }
     }
 }

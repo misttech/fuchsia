@@ -15,6 +15,7 @@ rustc_library("dispatcher") {
 
   deps = [
     "//sdk/lib/async",
+    "//sdk/lib/async-default",
     "//sdk/lib/async/rust/sys",
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
@@ -23,6 +24,7 @@ rustc_library("dispatcher") {
   ]
 
   sources = [
+    "src/current_dispatcher.rs",
     "src/lib.rs",
     "src/task.rs",
   ]

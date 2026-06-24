@@ -17,6 +17,7 @@ rustc_library("sys") {
 
   sources = [
     "src/bindings.rs",
+    "src/default.rs",
     "src/lib.rs",
   ]
 
