@@ -2661,7 +2661,7 @@ template("_fuchsia_binary") {
 
           # libstd depends on fdio and expects it to be available in the linker
           # search path, so provide it here.
-          deps += [ "//sdk/lib/fdio" ]
+          deps += [ "//src/lib/fdio/rust:fdio_for_rust_stdlib" ]
         }
         if (!defined(inputs)) {
           inputs = []
