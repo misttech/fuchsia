@@ -863,7 +863,7 @@ impl PortHandler {
                 tx.set_generic_csum_offload(partial.start, partial.offset);
             }
             Some(ChecksumOffloadResult::ProtocolSpecific(_)) => {
-                // TODO(https://fxbug.dev/512101182): Expose protocol-specific
+                // TODO(https://fxbug.dev/527139703): Expose protocol-specific
                 // TX checksum offloading in the netdevice API.
                 todo!("protocol-specific TX checksum offloading not yet supported");
             }
