@@ -45,6 +45,8 @@ from openwrt_access_point.lib.access_point_config_mapper import (
 
 AP_11ABG_PROFILE_NAME = "whirlwind_11ag_legacy"
 SSID_LENGTH_DEFAULT = 15
+MAX_WPA_PASSWORD_LENGTH = 63
+WPA_HEX_PSK_LENGTH = 64
 
 
 @dataclass
@@ -64,6 +66,13 @@ class WpaTestParams:
 @dataclass
 class Wpa3TestParams:
     security: SecurityWpa2Wpa3Mixed | SecurityWpa3
+    band: Band
+
+
+@dataclass
+class BoundaryTestParams:
+    security: SecurityWpa | SecurityWpa2 | SecurityWpa3 | SecurityWpa2Wpa3Mixed
+    password_type: Literal["max_length_password", "max_length_psk"]
     band: Band
 
 
@@ -197,6 +206,50 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             test_logic=self._run_wpa3_test,
             name_func=generate_wpa3_test_name,
             arg_sets=wpa3_args,
+        )
+
+        boundary_args: list[tuple[BoundaryTestParams]] = []
+        boundary_securities: list[
+            SecurityWpa | SecurityWpa2 | SecurityWpa3 | SecurityWpa2Wpa3Mixed
+        ] = [
+            SecurityWpa(cipher="ccmp"),
+            SecurityWpa2(cipher="ccmp"),
+            SecurityWpa3(cipher="ccmp"),
+            SecurityWpa2Wpa3Mixed(cipher="ccmp"),
+        ]
+        for boundary_security in boundary_securities:
+            boundary_args.append(
+                (
+                    BoundaryTestParams(
+                        security=boundary_security,
+                        password_type="max_length_password",
+                        band=self.rng.choice([Band.BAND_2G, Band.BAND_5G]),
+                    ),
+                )
+            )
+            # Any pre-shared key mode (WPA, WPA2, and mixed modes) supports hex PSK,
+            # while pure WPA3-SAE does not.
+            if not isinstance(boundary_security, SecurityWpa3):
+                boundary_args.append(
+                    (
+                        BoundaryTestParams(
+                            security=boundary_security,
+                            password_type="max_length_psk",
+                            band=self.rng.choice([Band.BAND_2G, Band.BAND_5G]),
+                        ),
+                    )
+                )
+
+        def generate_boundary_test_name(params: BoundaryTestParams) -> str:
+            band_name = _get_band_name(params.band)
+            name = f"test_associate_{band_name}_{params.password_type}_{params.security.uci_encryption}"
+            self.log.info(f"Generated test case: {name}")
+            return name
+
+        self.generate_tests(
+            test_logic=self._run_boundary_test,
+            name_func=generate_boundary_test_name,
+            arg_sets=boundary_args,
         )
 
     async def setup_class(self) -> None:
@@ -370,6 +423,81 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         ssid = AccessPointConfig.random_string(SSID_LENGTH_DEFAULT)
         self.log.info(
             f"Running WPA3 test case {self.current_test_info.name} "
+            f"on band {band} via seed {self.seed} "
+            f"with SSID: {ssid}, password: {password}"
+        )
+
+        security = params.security
+
+        if self.openwrt_ap:
+            channel = band.default_bss_channel
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig(
+                        channel=channel,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=ssid,
+                                security=security,
+                                password=password,
+                            )
+                        ],
+                    )
+                ]
+            )
+            self.openwrt_ap.configure_wifi(config)
+        elif self.access_point:
+            legacy_security_mode = AccessPointConfigMapper.to_hostapd_security(
+                security
+            )
+
+            assert security.cipher is not None
+            legacy_security = DeprecatedSecurity(
+                security_mode=legacy_security_mode,
+                password=password,
+                wpa_cipher=AccessPointConfigMapper.to_hostapd_cipher(
+                    security.cipher
+                ),
+                wpa2_cipher=AccessPointConfigMapper.to_hostapd_cipher(
+                    security.cipher
+                ),
+            )
+
+            setup_ap(
+                access_point=self.access_point,
+                profile_name=AP_11ABG_PROFILE_NAME,
+                channel=band.default_channel,
+                ssid=ssid,
+                security=legacy_security,
+                pmf_support=security.pmf_support,
+                force_wmm=False,
+            )
+
+        await self.dut.wlan_policy.save_network(
+            ssid,
+            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+            target_pwd=password,
+        )
+        await self.dut.wlan_policy.connect(
+            ssid,
+            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+        )
+
+    async def _run_boundary_test(self, params: BoundaryTestParams) -> None:
+        """Helper to run a boundary test case (WPA/WPA2/WPA3) with static band selection."""
+        band = params.band
+        if params.password_type == "max_length_password":
+            password = AccessPointConfig.random_string(MAX_WPA_PASSWORD_LENGTH)
+        elif params.password_type == "max_length_psk":
+            password = AccessPointConfig.random_hex_string(
+                WPA_HEX_PSK_LENGTH
+            ).lower()
+        else:
+            raise ValueError(f"Unknown password type: {params.password_type}")
+
+        ssid = AccessPointConfig.random_string(SSID_LENGTH_DEFAULT)
+        self.log.info(
+            f"Running boundary test case {self.current_test_info.name} "
             f"on band {band} via seed {self.seed} "
             f"with SSID: {ssid}, password: {password}"
         )
