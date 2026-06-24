@@ -116,11 +116,13 @@ rustc_library("kernel-rs") {
   source_root = "lib.rs"
   sources = [
     "lib.rs",
+    "relaxed_atomic.rs",
     "thread.rs",
   ]
   deps = [
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
+    "//third_party/rust_crates:paste",
   ]
   non_rust_deps = [ ":ffi" ]
 }

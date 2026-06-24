@@ -4,4 +4,5 @@
 
 #![no_std]
 
+pub mod relaxed_atomic;
 pub mod thread;
