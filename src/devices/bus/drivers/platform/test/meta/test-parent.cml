@@ -13,5 +13,7 @@
         default_dispatcher_opts: [ "allow_sync_calls" ],
         colocate: "true",
     },
-    use: [],
+    use: [
+        { service: "fuchsia.hardware.platform.device.Service" },
+    ],
 }

@@ -24,6 +24,7 @@
 #include <zircon/types.h>
 
 #include <map>
+#include <vector>
 
 #include <fbl/array.h>
 
@@ -137,6 +138,13 @@ class PlatformBus : public fdf::DriverBase2,
   const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
 
  private:
+  struct PendingInterruptRequest {
+    fuchsia_hardware_platform_bus::UserspaceIrq irq;
+    uint32_t flags;
+    zx::interrupt interrupt;
+    PlatformDevice::GetInterruptCallback callback;
+  };
+
   template <typename Protocol>
   zx::unowned_resource GetResource() const {
     static zx::resource resource;
@@ -160,6 +168,11 @@ class PlatformBus : public fdf::DriverBase2,
 
   zx::result<> NodeAddInternal(fuchsia_hardware_platform_bus::Node& node);
 
+  static void RegisterInterruptWithController(
+      const fidl::WireClient<fuchsia_hardware_interrupt::Controller>& controller,
+      const fuchsia_hardware_platform_bus::UserspaceIrq& irq, uint32_t flags,
+      zx::interrupt interrupt, PlatformDevice::GetInterruptCallback callback);
+
   fidl::ClientEnd<fuchsia_boot::Items> items_svc_;
 
   fuchsia_hardware_platform_bus::TemporaryBoardInfo board_info_ = {};
@@ -179,6 +192,8 @@ class PlatformBus : public fdf::DriverBase2,
   // Maps interrupt controller IDs to FIDL clients.
   std::map<uint32_t, fidl::WireClient<fuchsia_hardware_interrupt::Controller>>
       interrupt_controllers_;
+
+  std::map<uint32_t, std::vector<PendingInterruptRequest>> pending_interrupts_;
 
   std::map<std::pair<uint32_t, uint32_t>, zx::bti> cached_btis_;
 

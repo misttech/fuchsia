@@ -21,6 +21,16 @@ zx_status_t TestBoard::TestInit() {
   test_dev.pid() = PDEV_PID_PBUS_TEST;
   test_dev.did() = PDEV_DID_TEST_PARENT;
 
+  fpbus::UserspaceIrq irq_spec{{
+      .irq = 42,
+      .controller_id = 1,
+  }};
+  fpbus::Irq irq{{
+      .irq = fpbus::IrqSpec::WithUserspaceIrq(std::move(irq_spec)),
+      .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
+  }};
+  test_dev.irq() = std::vector<fpbus::Irq>{std::move(irq)};
+
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('TEST');
   auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, test_dev));

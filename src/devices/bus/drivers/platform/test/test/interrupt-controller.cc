@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.hardware.interrupt/cpp/wire.h>
+#include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
+#include <lib/zx/time.h>
 
 namespace interrupt_controller {
 
@@ -22,9 +24,7 @@ class TestInterruptControllerDriver
 
   // fuchsia.hardware.interrupt.Controller implementation.
   void RegisterInterrupt(RegisterInterruptRequestView request,
-                         RegisterInterruptCompleter::Sync& completer) override {
-    completer.Reply(fit::ok());
-  }
+                         RegisterInterruptCompleter::Sync& completer) override;
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_interrupt::Controller> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {}
@@ -72,6 +72,27 @@ zx::result<> TestInterruptControllerDriver::Start(fdf::DriverContext context) {
 
   child_ = std::move(child.value());
   return zx::ok();
+}
+
+void TestInterruptControllerDriver::RegisterInterrupt(RegisterInterruptRequestView request,
+                                                      RegisterInterruptCompleter::Sync& completer) {
+  // Hardcoded in the board driver.
+  if (request->irq != 42) {
+    completer.Reply(zx::error(ZX_ERR_NOT_FOUND));
+    return;
+  }
+  if (request->mode != fuchsia_hardware_platform_bus::ZirconInterruptMode::kEdgeHigh) {
+    fdf::error("Unexpected mode {}", static_cast<uint32_t>(request->mode));
+    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+    return;
+  }
+
+  zx_status_t status = request->interrupt.trigger(0, zx::time_boot());
+  if (status != ZX_OK) {
+    completer.Reply(zx::error(status));
+  } else {
+    completer.Reply(zx::ok());
+  }
 }
 
 }  // namespace interrupt_controller

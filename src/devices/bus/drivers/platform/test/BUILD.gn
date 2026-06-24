@@ -130,6 +130,7 @@ fuchsia_cc_driver("test-interrupt-controller-driver") {
   deps = [
     ":test-interrupt-controller-bind",
     "//sdk/fidl/fuchsia.hardware.interrupt:fuchsia.hardware.interrupt_cpp",
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/logging/cpp",
     "//src/devices/lib/driver:driver_runtime",
@@ -257,7 +258,10 @@ foreach(driver, simple_drivers) {
   driver_bind_rules("test-${driver}-bind") {
     testonly = true
     rules = "meta/test-${driver}.bind"
-    deps = [ "//src/devices/bind/fuchsia.test.platform" ]
+    deps = [
+      "//src/devices/bind/fuchsia.platform",
+      "//src/devices/bind/fuchsia.test.platform",
+    ]
   }
 
   fuchsia_cc_driver("test-$driver-driver") {
@@ -267,7 +271,9 @@ foreach(driver, simple_drivers) {
     sources = [ "test/$driver.cc" ]
     deps = [
       ":test-${driver}-bind",
+      "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_cpp",
       "//sdk/lib/driver/component/cpp",
+      "//sdk/lib/driver/logging/cpp",
       "//src/devices/bind/fuchsia:fuchsia_cpp",
       "//src/devices/bind/fuchsia.test.platform:fuchsia.test.platform_cpp",
       "//src/devices/lib/driver:driver_runtime",

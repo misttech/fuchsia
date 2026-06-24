@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 
+fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
 fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.test.platform.BIND_PLATFORM_DEV_VID.TEST;
 fuchsia.BIND_PLATFORM_DEV_PID == fuchsia.test.platform.BIND_PLATFORM_DEV_PID.PBUS_TEST;
 fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.test.platform.BIND_PLATFORM_DEV_DID.PARENT;
