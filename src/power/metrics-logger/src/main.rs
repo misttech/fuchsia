@@ -19,22 +19,23 @@ use crate::sensor_logger::{
 use anyhow::{Error, Result};
 use argh::FromArgs;
 use fidl::endpoints::ProtocolMarker;
+use fidl_fuchsia_hardware_network as fhwnet;
 use fidl_fuchsia_power_metrics::{self as fmetrics, RecorderRequest};
+use fidl_fuchsia_ui_activity as factivity;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
+use fuchsia_inspect as inspect;
 use futures::future::join_all;
 use futures::stream::{FuturesUnordered, StreamExt, TryStreamExt};
 use futures::task::Context;
 use futures::{FutureExt, TryFutureExt};
 use log::{error, info, warn};
+use serde_json as json;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::rc::Rc;
-use {
-    fidl_fuchsia_hardware_network as fhwnet, fidl_fuchsia_ui_activity as factivity,
-    fuchsia_async as fasync, fuchsia_inspect as inspect, serde_json as json,
-};
 
 // Max number of clients that can log concurrently. This limit is chosen mostly arbitrarily to allow
 // a fixed number clients to keep memory use bounded.
@@ -1858,8 +1859,7 @@ mod tests {
     #[fuchsia::test]
     fn test_logging_network_activity_request_errors() {
         let runner_builder = RunnerBuilder::new();
-
-        let mut runner = runner_builder.build();
+        let mut runner = runner_builder.with_network_drivers(vec![]).build();
 
         let mut query = runner.proxy.start_logging(
             "test",

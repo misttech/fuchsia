@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use fidl_fuchsia_device as fdevice;
 use log::{error, info};
 use serde_derive::Deserialize;
@@ -42,7 +42,7 @@ pub async fn get_driver_topological_path(path: &str) -> Result<String> {
         .map_err(|raw| format_err!("zx error: {}", zx::Status::from_raw(raw)))
 }
 
-pub async fn list_drivers(path: &str) -> Vec<String> {
+pub async fn list_directory_entries(path: &str) -> Vec<String> {
     let dir = match fuchsia_fs::directory::open_in_namespace(path, fuchsia_fs::PERM_READABLE) {
         Ok(s) => s,
         Err(err) => {

@@ -3,8 +3,13 @@
 // found in the LICENSE file.
 
 use crate::MIN_INTERVAL_FOR_SYSLOG_MS;
-use crate::driver_utils::{Driver, connect_proxy, get_driver_topological_path, list_drivers};
+use crate::driver_utils::{
+    Driver, connect_proxy, get_driver_topological_path, list_directory_entries,
+};
 use anyhow::{Error, Result, format_err};
+use fidl_fuchsia_gpu_magma as fgpu;
+use fidl_fuchsia_power_metrics as fmetrics;
+use fuchsia_async as fasync;
 use fuchsia_inspect::{self as inspect, Property};
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
@@ -14,9 +19,6 @@ use std::collections::HashMap;
 use std::mem;
 use std::rc::Rc;
 use zerocopy::FromBytes;
-use {
-    fidl_fuchsia_gpu_magma as fgpu, fidl_fuchsia_power_metrics as fmetrics, fuchsia_async as fasync,
-};
 
 const GPU_SERVICE_DIRS: [&str; 1] = ["/dev/class/gpu"];
 
@@ -32,7 +34,7 @@ pub async fn generate_gpu_drivers(
     let mut drivers = Vec::new();
     // For each driver path, create a proxy for the service.
     for dir_path in GPU_SERVICE_DIRS {
-        let listed_drivers = list_drivers(dir_path).await;
+        let listed_drivers = list_directory_entries(dir_path).await;
         for driver in listed_drivers.iter() {
             let class_path = format!("{}/{}", dir_path, driver);
             let proxy = connect_proxy::<fgpu::DeviceMarker>(&class_path)?;

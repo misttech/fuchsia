@@ -3,10 +3,15 @@
 // found in the LICENSE file.
 
 use crate::MIN_INTERVAL_FOR_SYSLOG_MS;
-use crate::driver_utils::{Driver, connect_proxy, list_drivers};
+use crate::driver_utils::{Driver, connect_proxy, list_directory_entries};
 use anyhow::{Error, Result, format_err};
 use async_trait::async_trait;
 use diagnostics_hierarchy::LinearHistogramParams;
+use fidl_fuchsia_hardware_power_sensor as fpower;
+use fidl_fuchsia_hardware_temperature as ftemperature;
+use fidl_fuchsia_power_metrics as fmetrics;
+use fidl_fuchsia_ui_activity as factivity;
+use fuchsia_async as fasync;
 use fuchsia_component::client as fclient;
 use fuchsia_inspect::{
     self as inspect, ArrayProperty, HistogramProperty, IntLinearHistogramProperty, Property,
@@ -18,11 +23,6 @@ use std::cell::Cell;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
-use {
-    fidl_fuchsia_hardware_power_sensor as fpower,
-    fidl_fuchsia_hardware_temperature as ftemperature, fidl_fuchsia_power_metrics as fmetrics,
-    fidl_fuchsia_ui_activity as factivity, fuchsia_async as fasync,
-};
 
 // The fuchsia.hardware.temperature.Device is composed into fuchsia.hardware.thermal.Device, and
 // fuchsia.hardware.trippoint also provides temperature sensors so this driver is found in
@@ -48,7 +48,7 @@ pub async fn generate_temperature_drivers(
     let mut sensor_names: HashSet<String> = HashSet::new();
     // For each driver path, create a proxy for the service.
     for dir_path in TEMPERATURE_SERVICE_DIRS {
-        let listed_drivers = list_drivers(dir_path).await;
+        let listed_drivers = list_directory_entries(dir_path).await;
         for driver in listed_drivers.iter() {
             let class_path = format!("{}/{}", dir_path, driver);
             let proxy = connect_proxy::<ftemperature::DeviceMarker>(&class_path)?;
@@ -77,7 +77,7 @@ pub async fn generate_power_drivers(
     let mut drivers = Vec::new();
     // For each driver path, create a proxy for the service.
     for dir_path in POWER_SERVICE_DIRS {
-        let listed_drivers = list_drivers(dir_path).await;
+        let listed_drivers = list_directory_entries(dir_path).await;
         for driver in listed_drivers.iter() {
             let class_path = format!("{}/{}", dir_path, driver);
             let proxy = connect_proxy::<fpower::DeviceMarker>(&class_path)?;

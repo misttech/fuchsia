@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::MIN_INTERVAL_FOR_SYSLOG_MS;
-use crate::driver_utils::{connect_proxy, list_drivers};
+use crate::driver_utils::{connect_proxy, list_directory_entries};
 use anyhow::{Result, format_err};
 use fidl_fuchsia_hardware_network as fhwnet;
 use fidl_fuchsia_power_metrics as fmetrics;
@@ -17,14 +17,13 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 // TODO(didis): Use netstack API after https://fxbug.dev/42062536 is implemented.
-const NETWORK_SERVICE_DIR: &str = "/dev/class/network";
-
 // TODO(didis): This assumes the wifi device instance is already there. We should not depend on
 // implicit ordering as it might cause racing issues if this code is triggered too early.
 pub async fn generate_network_devices() -> Result<Vec<fhwnet::DeviceProxy>> {
     let mut proxies = Vec::new();
-    for driver in list_drivers(NETWORK_SERVICE_DIR).await {
-        let filepath = format!("{}/{}", NETWORK_SERVICE_DIR, driver);
+    let service_path = "/svc/fuchsia.hardware.network.Service";
+    for instance in list_directory_entries(service_path).await {
+        let filepath = format!("{}/{}/device", service_path, instance);
         let device_proxy = connect_proxy::<fhwnet::DeviceMarker>(&filepath)?;
         proxies.push(device_proxy);
     }
