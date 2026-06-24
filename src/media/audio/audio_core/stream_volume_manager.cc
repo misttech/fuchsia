@@ -144,7 +144,7 @@ void StreamVolumeManager::RemoveStream(StreamVolume* stream_volume) {
 }
 
 void StreamVolumeManager::SetUsageVolume(Usage2 usage, float volume) {
-  if (volume != usage_volume_settings_.GetUsageVolume(std::move(usage))) {
+  if (volume != usage_volume_settings_.GetUsageVolume(usage)) {
     usage_volume_settings_.SetUsageVolume(fidl::Clone(usage), volume);
     UpdateStreamsWithUsage(std::move(usage));
   }

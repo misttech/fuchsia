@@ -62,18 +62,8 @@ class BaseRenderer : public AudioObject,
   void PlayNoReply(int64_t ref_time, int64_t med_time) final { Play(ref_time, med_time, nullptr); }
   void Pause(PauseCallback callback) final;
   void PauseNoReply() final { Pause(nullptr); }
-  void handle_unknown_method(uint64_t ordinal, bool method_has_response) override {
-    FX_LOGS(ERROR) << "BaseRenderer: AudioRenderer::handle_unknown_method(ordinal " << ordinal
-                   << ", method_has_response " << method_has_response << ")";
-  }
 
   std::shared_ptr<Clock> reference_clock() { return clock_; }
-
- protected:
-  BaseRenderer(fidl::InterfaceRequest<fuchsia::media::AudioRenderer> audio_renderer_request,
-               Context* context);
-
-  Context& context() const { return context_; }
 
   // |media::audio::AudioObject|
   void OnLinkAdded() override;
@@ -81,11 +71,24 @@ class BaseRenderer : public AudioObject,
       const AudioObject& dest) override;
   void CleanupDestLink(const AudioObject& dest) override;
 
+ protected:
+  BaseRenderer(fidl::InterfaceRequest<fuchsia::media::AudioRenderer> audio_renderer_request,
+               Context* context);
+
+  Context& context() const { return context_; }
+
+  // |fuchsia::media::AudioRenderer|
+  void handle_unknown_method(uint64_t ordinal, bool method_has_response) override {
+    FX_LOGS(ERROR) << "BaseRenderer: AudioRenderer::handle_unknown_method(ordinal " << ordinal
+                   << ", method_has_response " << method_has_response << ")";
+  }
+
   void ReportStartIfStopped();
   void ReportStopIfStarted();
   // Extensible by children, but the parent must also be called
   virtual void ReportStart();
   virtual void ReportStop();
+  virtual void BeginShutdown();
 
   // Can be overridden by subclasses that need to wrap these methods.
   virtual void AddPayloadBufferInternal(uint32_t id, zx::vmo payload_buffer);
@@ -104,9 +107,6 @@ class BaseRenderer : public AudioObject,
   bool IsPlaying() const { return state_ == State::Playing; }
 
   void InvalidateConfiguration() { config_validated_ = false; }
-
-  // Minimum Lead Time state
-  zx::duration min_lead_time_;
 
   fidl::Binding<fuchsia::media::AudioRenderer>& binding() { return audio_renderer_binding_; }
 
@@ -137,6 +137,9 @@ class BaseRenderer : public AudioObject,
   // Only called when tracing is started and enabled for the "audio" category.
   bool CheckForSilentPacket(const void* packet_buffer, int64_t frame_count);
 
+  // Minimum Lead Time state
+  zx::duration min_lead_time_;
+
   Context& context_;
   fidl::Binding<fuchsia::media::AudioRenderer> audio_renderer_binding_;
 
@@ -159,7 +162,7 @@ class BaseRenderer : public AudioObject,
   bool pause_time_frac_frames_valid_ = false;
   TimelineRate frac_frames_per_ref_tick_;
 
-  enum class State { Playing, Paused };
+  enum class State : uint8_t { Playing, Paused };
   State state_ = State::Paused;
 
   std::optional<zx::time> pause_reference_time_ = std::nullopt;

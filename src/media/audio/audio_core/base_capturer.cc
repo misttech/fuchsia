@@ -10,6 +10,7 @@
 #include <lib/zx/clock.h>
 #include <zircon/errors.h>
 
+#include <algorithm>
 #include <iomanip>
 #include <memory>
 
@@ -32,9 +33,11 @@ const zx::duration kPresentationDelayPadding = zx::msec(3);
 constexpr int64_t kMaxTimePerCapture = ZX_MSEC(50);
 
 const Format kInitialFormat =
-    Format::Create({.sample_format = fuchsia::media::AudioSampleFormat::SIGNED_16,
-                    .channels = 1,
-                    .frames_per_second = 8000})
+    Format::Create({
+                       .sample_format = fuchsia::media::AudioSampleFormat::SIGNED_16,
+                       .channels = 1,
+                       .frames_per_second = 8000,
+                   })
         .take_value();
 
 }  // namespace
@@ -97,15 +100,16 @@ fpromise::promise<> BaseCapturer::Cleanup() {
   fpromise::bridge<> bridge;
   auto nonce = TRACE_NONCE();
   TRACE_FLOW_BEGIN("audio.debug", "BaseCapturer.capture_cleanup", nonce);
-  async::PostTask(
-      mix_domain_->dispatcher(),
-      [self = shared_from_this(), completer = std::move(bridge.completer), nonce]() mutable {
-        TRACE_DURATION("audio.debug", "BaseCapturer.cleanup_thunk");
-        TRACE_FLOW_END("audio.debug", "BaseCapturer.capture_cleanup", nonce);
-        OBTAIN_EXECUTION_DOMAIN_TOKEN(token, self->mix_domain_);
-        self->CleanupFromMixThread();
-        completer.complete_ok();
-      });
+  async::PostTask(mix_domain_->dispatcher(),
+                  [self = shared_from_this(), completer = std::move(bridge.completer),
+                   &fidl_domain = context_.threading_model().FidlDomain(), nonce]() mutable {
+                    TRACE_DURATION("audio.debug", "BaseCapturer.cleanup_thunk");
+                    TRACE_FLOW_END("audio.debug", "BaseCapturer.capture_cleanup", nonce);
+                    OBTAIN_EXECUTION_DOMAIN_TOKEN(token, self->mix_domain_);
+                    self->CleanupFromMixThread();
+                    completer.complete_ok();
+                    fidl_domain.PostTask([self = std::move(self)] {});
+                  });
 
   // After CleanupFromMixThread is done, no more work will happen on the mix dispatch thread. We
   // need to now ensure our ready_packets signal is De-asserted.
@@ -484,7 +488,7 @@ void BaseCapturer::RecomputePresentationDelay() {
   TRACE_DURATION("audio", "BaseCapturer::RecomputePresentationDelay");
 
   zx::duration cur_max{0};
-  context_.link_matrix().ForEachSourceLink(*this, [&cur_max](LinkMatrix::LinkHandle link) {
+  context_.link_matrix().ForEachSourceLink(*this, [&cur_max](const LinkMatrix::LinkHandle& link) {
     if (link.object->is_input()) {
       const auto& device = static_cast<const AudioDevice&>(*link.object);
       cur_max = std::max(cur_max, device.presentation_delay());
@@ -528,8 +532,6 @@ zx_status_t BaseCapturer::Process() {
         return ZX_OK;
 
       case State::SyncOperating:
-        break;
-
       case State::AsyncOperating:
         break;
 
@@ -577,9 +579,7 @@ zx_status_t BaseCapturer::Process() {
     }
 
     // Limit our job size to our max job size.
-    if (mix_state->frames > max_frames_per_capture_) {
-      mix_state->frames = max_frames_per_capture_;
-    }
+    mix_state->frames = std::min<size_t>(mix_state->frames, max_frames_per_capture_);
 
     // Establish the frame pointer.
     // We continue at the current frame pointer, unless there was a discontinuity,
@@ -603,7 +603,7 @@ zx_status_t BaseCapturer::Process() {
     auto dest_ref_safe_time = dest_ref_now - presentation_delay_;
     int64_t dest_safe_frame =
         Fixed::FromRaw(dest_ref_pts_to_frac_frame.Apply(dest_ref_safe_time.get())).Floor();
-    int64_t dest_last_frame = frame_pointer_ + mix_state->frames;
+    int64_t dest_last_frame = frame_pointer_ + static_cast<int64_t>(mix_state->frames);
     if (dest_last_frame > dest_safe_frame) {
       auto dest_ref_last_frame_time =
           zx::time(dest_ref_pts_to_frac_frame.Inverse().Apply(Fixed(dest_last_frame).raw_value()));

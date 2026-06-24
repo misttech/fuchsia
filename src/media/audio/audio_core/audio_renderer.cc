@@ -68,6 +68,11 @@ AudioRenderer::~AudioRenderer() {
   context().volume_manager().RemoveStream(this);
 }
 
+void AudioRenderer::BeginShutdown() {
+  context().volume_manager().RemoveStream(this);
+  BaseRenderer::BeginShutdown();
+}
+
 void AudioRenderer::OnLinkAdded() {
   // With a link, our Mixer and Gain objects have been created, so we can set initial gain levels.
   if (mute_ || stream_gain_db_ != 0.0f) {

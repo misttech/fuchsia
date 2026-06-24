@@ -53,7 +53,7 @@ BaseRenderer::BaseRenderer(
     TRACE_DURATION("audio", "BaseRenderer::audio_renderer_binding_.error_handler", "zx_status",
                    status);
     FX_LOGS(DEBUG) << "Client disconnected";
-    context_.route_graph().RemoveRenderer(*this);
+    BeginShutdown();
   });
 }
 
@@ -1034,6 +1034,8 @@ void BaseRenderer::ReportStop() {
   reporter_->StopSession(zx::clock::get_monotonic());
   state_ = State::Paused;
 }
+
+void BaseRenderer::BeginShutdown() { context_.route_graph().RemoveRenderer(*this); }
 
 void BaseRenderer::OnLinkAdded() { RecomputeMinLeadTime(); }
 

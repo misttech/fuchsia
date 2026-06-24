@@ -43,6 +43,13 @@ AudioCapturer::~AudioCapturer() {
   }
 }
 
+void AudioCapturer::BeginShutdown() {
+  if (!loopback_) {
+    context().volume_manager().RemoveStream(this);
+  }
+  BaseCapturer::BeginShutdown();
+}
+
 void AudioCapturer::ReportStart() {
   BaseCapturer::ReportStart();
   if (!loopback_) {

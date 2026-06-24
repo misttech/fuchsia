@@ -50,6 +50,7 @@ class AudioCapturer : public BaseCapturer,
   void SetMute(bool mute) final;
 
   // |media::audio::AudioObject|
+  void OnLinkAdded() override;
   std::optional<StreamUsage> usage() const override {
     return {StreamUsage::WithCaptureUsage(usage_)};
   }
@@ -62,11 +63,9 @@ class AudioCapturer : public BaseCapturer,
   // |media::audio::BaseCapturer|
   void ReportStart() final;
   void ReportStop() final;
+  void BeginShutdown() override;
   void OnStateChanged(State old_state, State new_state) override;
   void SetRoutingProfile(bool routable) override;
-
-  // |media::audio::AudioObject|
-  void OnLinkAdded() override;
 
  private:
   void NotifyGainMuteChanged();

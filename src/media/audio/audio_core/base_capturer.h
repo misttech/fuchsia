@@ -13,6 +13,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <utility>
 
 #include <fbl/intrusive_double_list.h>
 
@@ -37,6 +38,27 @@ class BaseCapturer : public AudioObject,
                      public std::enable_shared_from_this<BaseCapturer> {
  public:
   std::shared_ptr<Clock> reference_clock() { return audio_clock_; }
+
+  // |media::audio::AudioObject|
+  fpromise::result<std::pair<std::shared_ptr<Mixer>, ExecutionDomain*>, zx_status_t>
+  InitializeSourceLink(const AudioObject& source, std::shared_ptr<ReadableStream> stream) override;
+  void CleanupSourceLink(const AudioObject& source,
+                         std::shared_ptr<ReadableStream> stream) override;
+  void OnLinkAdded() override;
+
+  // |fuchsia::media::AudioCapturer|
+  void GetStreamType(GetStreamTypeCallback cbk) final;
+  void AddPayloadBuffer(uint32_t id, zx::vmo payload_buf_vmo) final;
+  void RemovePayloadBuffer(uint32_t id) final;
+  void GetReferenceClock(GetReferenceClockCallback callback) final;
+  void CaptureAt(uint32_t payload_buffer_id, uint32_t offset_frames, uint32_t num_frames,
+                 CaptureAtCallback cbk) final;
+  void ReleasePacket(fuchsia::media::StreamPacket packet) final;
+  void DiscardAllPackets(DiscardAllPacketsCallback cbk) final;
+  void DiscardAllPacketsNoReply() final;
+  void StartAsyncCapture(uint32_t frames_per_packet) final;
+  void StopAsyncCapture(StopAsyncCaptureCallback cbk) final;
+  void StopAsyncCaptureNoReply() final;
 
  protected:
   using RouteGraphRemover = void (RouteGraph::*)(const AudioObject&);
@@ -116,7 +138,7 @@ class BaseCapturer : public AudioObject,
   // :: Shutdown ::
   // AudioCapturers enter this state when the connection is closing. We might
   // transition to this state from any other state.
-  enum class State {
+  enum class State : uint8_t {
     WaitingForVmo,
     WaitingForRequest,
     SyncOperating,
@@ -136,23 +158,16 @@ class BaseCapturer : public AudioObject,
   void UpdateFormat(Format format) FXL_LOCKS_EXCLUDED(mix_domain_->token());
 
   // Removes the capturer from its owner, the route graph, triggering shutdown and drop.
-  void BeginShutdown();
+  virtual void BeginShutdown();
 
   virtual void ReportStart();
   virtual void ReportStop();
-  virtual void OnStateChanged(State old_state, State new_stage);
+  virtual void OnStateChanged(State old_state, State new_state);
   virtual void SetRoutingProfile(bool routable) = 0;
 
   static bool StateIsRoutable(BaseCapturer::State state) {
     return state != BaseCapturer::State::WaitingForVmo && state != BaseCapturer::State::Shutdown;
   }
-
-  // |media::audio::AudioObject|
-  fpromise::result<std::pair<std::shared_ptr<Mixer>, ExecutionDomain*>, zx_status_t>
-  InitializeSourceLink(const AudioObject& source, std::shared_ptr<ReadableStream> stream) override;
-  void CleanupSourceLink(const AudioObject& source,
-                         std::shared_ptr<ReadableStream> stream) override;
-  void OnLinkAdded() override;
 
   fidl::Binding<fuchsia::media::AudioCapturer>& binding() { return binding_; }
 
@@ -161,26 +176,14 @@ class BaseCapturer : public AudioObject,
 
   Reporter::Capturer& reporter() { return *reporter_; }
 
- private:
-  void UpdateState(State new_state);
-
   // |fuchsia::media::AudioCapturer|
-  void GetStreamType(GetStreamTypeCallback cbk) final;
-  void AddPayloadBuffer(uint32_t id, zx::vmo payload_buf_vmo) final;
-  void RemovePayloadBuffer(uint32_t id) final;
-  void GetReferenceClock(GetReferenceClockCallback callback) final;
-  void CaptureAt(uint32_t payload_buffer_id, uint32_t offset_frames, uint32_t num_frames,
-                 CaptureAtCallback cbk) final;
-  void ReleasePacket(fuchsia::media::StreamPacket packet) final;
-  void DiscardAllPackets(DiscardAllPacketsCallback cbk) final;
-  void DiscardAllPacketsNoReply() final;
-  void StartAsyncCapture(uint32_t frames_per_packet) final;
-  void StopAsyncCapture(StopAsyncCaptureCallback cbk) final;
-  void StopAsyncCaptureNoReply() final;
   void handle_unknown_method(uint64_t ordinal, bool method_has_response) final {
     FX_LOGS(ERROR) << "BaseCapturer: AudioCapturer::handle_unknown_method(ordinal " << ordinal
                    << ", method_has_response " << method_has_response << ")";
   }
+
+ private:
+  void UpdateState(State new_state);
 
   // Methods used by capture/mixer thread(s). Must be called from mix_domain.
   zx_status_t Process() FXL_EXCLUSIVE_LOCKS_REQUIRED(mix_domain_->token());
@@ -256,12 +259,12 @@ class BaseCapturer : public AudioObject,
   std::shared_ptr<CapturePacketQueue> packet_queue_ FXL_GUARDED_BY(packet_queue_lock_);
 
   std::shared_ptr<CapturePacketQueue> packet_queue() {
-    std::lock_guard<std::mutex> lock(packet_queue_lock_);
+    std::scoped_lock lock(packet_queue_lock_);
     return packet_queue_;
   }
   void set_packet_queue(std::shared_ptr<CapturePacketQueue> pq) {
-    std::lock_guard<std::mutex> lock(packet_queue_lock_);
-    packet_queue_ = pq;
+    std::scoped_lock lock(packet_queue_lock_);
+    packet_queue_ = std::move(pq);
   }
 
   // Intermediate mixing buffer and output producer

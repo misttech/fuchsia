@@ -180,7 +180,7 @@ fuchsia::media::Usage2 ToFidlUsage2(RenderUsage usage) {
 }
 fuchsia::media::Usage2 ToFidlUsage2(CaptureUsage usage) {
   auto underlying = static_cast<std::underlying_type_t<CaptureUsage>>(usage);
-  FX_CHECK(underlying < fuchsia::media::CAPTURE_USAGE_COUNT);
+  FX_CHECK(underlying < fuchsia::media::CAPTURE_USAGE2_COUNT);
   return fuchsia::media::Usage2::WithCaptureUsage(AudioCaptureUsage2(underlying));
 }
 

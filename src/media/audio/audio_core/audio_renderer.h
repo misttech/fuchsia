@@ -35,6 +35,7 @@ class AudioRenderer : public BaseRenderer,
   ~AudioRenderer() override;
 
   // |media::audio::AudioObject|
+  void OnLinkAdded() override;
   std::optional<Format> format() const final { return format_; }
   std::optional<StreamUsage> usage() const override {
     return {StreamUsage::WithRenderUsage(usage_)};
@@ -58,11 +59,10 @@ class AudioRenderer : public BaseRenderer,
   void SetMute(bool muted) final;
 
  protected:
-  void OnLinkAdded() override;
-
   // |media::audio::BaseRenderer|
   void ReportStart() final;
   void ReportStop() final;
+  void BeginShutdown() override;
   // Needed for ramped Play/Pause transitions
   void AddPayloadBufferInternal(uint32_t id, zx::vmo payload_buffer) final;
   void RemovePayloadBufferInternal(uint32_t id) final;
