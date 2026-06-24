@@ -42,6 +42,19 @@ TEST_F(LifecycleTest, CreateIfaceInvalidArgsFails) {
   ASSERT_EQ(result->error_value(), ZX_ERR_INVALID_ARGS);
 }
 
+TEST_F(LifecycleTest, CreateIfaceInvalidRoleFails) {
+  auto [local, _remote] = make_channel();
+  auto req = fuchsia_wlan_phyimpl::wire::WlanPhyImplCreateIfaceRequest::Builder(test_arena_)
+                 .role(static_cast<wlan_common::WlanMacRole>(999))
+                 .mlme_channel(std::move(local))
+                 .Build();
+  auto result = client_.buffer(test_arena_)->CreateIface(req);
+
+  ASSERT_TRUE(result.ok());
+  ASSERT_TRUE(result->is_error());
+  ASSERT_EQ(result->error_value(), ZX_ERR_INVALID_ARGS);
+}
+
 TEST_F(LifecycleTest, CreateMultipleClientIfaceFails) {
   uint16_t iface_id = 0;
   {

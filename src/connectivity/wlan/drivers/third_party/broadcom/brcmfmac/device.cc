@@ -338,6 +338,12 @@ void Device::CreateIface(CreateIfaceRequestView request, fdf::Arena& arena,
     return;
   }
 
+  if (request->role().IsUnknown()) {
+    BRCMF_ERR("Invalid MAC role %u", static_cast<uint32_t>(request->role()));
+    completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+
   // If we are operating with manufacturing firmware ensure SoftAP IF is also not present
   if (brcmf_feat_is_enabled(brcmf_pub_.get(), BRCMF_FEAT_MFG)) {
     if (ap_interface_ || client_interface_) {

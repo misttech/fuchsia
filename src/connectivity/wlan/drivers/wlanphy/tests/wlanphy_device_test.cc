@@ -400,6 +400,22 @@ TEST_F(WlanphyDeviceTest, CreateIfaceTestValidAddr) {
             result->value()->iface_id);
 }
 
+TEST_F(WlanphyDeviceTest, CreateIfaceTestInvalidRole) {
+  auto dummy_ends = fidl::CreateEndpoints<fuchsia_wlan_device::Phy>();
+  auto dummy_channel = dummy_ends->server.TakeChannel();
+
+  fuchsia_wlan_device::wire::CreateIfaceRequest req = {
+      .role = static_cast<fuchsia_wlan_common::wire::WlanMacRole>(999),
+      .mlme_channel = std::move(dummy_channel),
+      .init_sta_addr = FakeWlanPhyImpl::kValidStaAddr,
+  };
+
+  auto result = client_phy_->CreateIface(std::move(req));
+  ASSERT_TRUE(result.ok());
+  ASSERT_TRUE(result->is_error());
+  EXPECT_EQ(result->error_value(), ZX_ERR_INVALID_ARGS);
+}
+
 TEST_F(WlanphyDeviceTest, DestroyIface) {
   fuchsia_wlan_device::wire::DestroyIfaceRequest req = {
       .id = FakeWlanPhyImpl::kFakeIfaceId,

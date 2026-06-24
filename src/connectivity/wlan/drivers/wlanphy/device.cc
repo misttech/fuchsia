@@ -251,6 +251,12 @@ const fidl::Array<uint8_t, 6> NULL_MAC_ADDR{0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 void Device::CreateIface(CreateIfaceRequestView request, CreateIfaceCompleter::Sync& completer) {
   ltrace_fn();
+  if (request->req.role.IsUnknown()) {
+    lerror("CreateIface failed: invalid mac role %u", static_cast<uint32_t>(request->req.role));
+    completer.ReplyError(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+
   fdf::Arena fdf_arena(0u);
 
   fidl::Arena fidl_arena;

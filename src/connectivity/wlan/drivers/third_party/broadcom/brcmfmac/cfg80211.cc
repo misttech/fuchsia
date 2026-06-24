@@ -189,6 +189,11 @@ static const struct brcmf_tlv* brcmf_parse_tlvs(const void* buf, int buflen, uin
 static zx_status_t brcmf_vif_change_validate(struct brcmf_cfg80211_info* cfg,
                                              struct brcmf_cfg80211_vif* vif,
                                              fuchsia_wlan_common_wire::WlanMacRole new_type) {
+  if (new_type.IsUnknown()) {
+    BRCMF_ERR("Invalid mac role %u", static_cast<uint32_t>(new_type));
+    return ZX_ERR_INVALID_ARGS;
+  }
+
   struct brcmf_cfg80211_vif* pos;
   bool check_combos = false;
   zx_status_t ret = ZX_OK;
@@ -215,6 +220,11 @@ static zx_status_t brcmf_vif_change_validate(struct brcmf_cfg80211_info* cfg,
 
 static zx_status_t brcmf_vif_add_validate(struct brcmf_cfg80211_info* cfg,
                                           fuchsia_wlan_common_wire::WlanMacRole new_type) {
+  if (new_type.IsUnknown()) {
+    BRCMF_ERR("Invalid mac role %u", static_cast<uint32_t>(new_type));
+    return ZX_ERR_INVALID_ARGS;
+  }
+
   struct brcmf_cfg80211_vif* pos;
   struct iface_combination_params params = {
       .num_different_channels = 1,
