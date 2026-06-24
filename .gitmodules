@@ -738,3 +738,8 @@
 	url = https://fuchsia.googlesource.com/third_party/lz4
 	name = third_party/lz4
 	ignore = all
+[submodule "third_party/tink-cc/src"]
+	path = third_party/tink-cc/src
+	url = https://fuchsia.googlesource.com/third_party/github.com/tink-crypto/tink-cc
+	name = third_party/github.com/tink-crypto/tink-cc
+	ignore = all
