@@ -14,17 +14,29 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/readme_fuchsia"
 )
 
+func printUsage() {
+	fmt.Fprintf(os.Stderr, "Usage: %s <command> [args...]\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "Commands: validate, format, get, set, help\n")
+}
+
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <command> [args...]\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Commands: validate, get, set\n")
+		printUsage()
 		os.Exit(1)
 	}
 
 	command := os.Args[1]
 	switch command {
+	case "help", "-h", "--help":
+		printUsage()
+		os.Exit(0)
 	case "validate":
 		if err := runValidate(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	case "format":
+		if err := runFormat(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -40,6 +52,7 @@ func main() {
 		}
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
+		printUsage()
 		os.Exit(1)
 	}
 }
@@ -87,6 +100,41 @@ func runValidate(args []string) error {
 	}
 
 	fmt.Printf("Validation passed for %s\n", readmePath)
+	return nil
+}
+
+func runFormat(args []string) error {
+	fs := flag.NewFlagSet("format", flag.ExitOnError)
+	stdout := fs.Bool("stdout", false, "Print formatted content to stdout instead of modifying the file in-place")
+	fs.Parse(args)
+
+	if fs.NArg() > 1 {
+		return fmt.Errorf("usage: format [--stdout] [path/to/README.fuchsia]")
+	}
+
+	readmePath := "README.fuchsia"
+	if fs.NArg() == 1 {
+		readmePath = fs.Arg(0)
+	}
+
+	readmes, err := readme_fuchsia.ParseFile(readmePath)
+	if err != nil {
+		return fmt.Errorf("failed to parse %s: %w", readmePath, err)
+	}
+
+	formatted := readme_fuchsia.Format(readmes)
+
+	if *stdout {
+		fmt.Print(formatted)
+		return nil
+	}
+
+	err = os.WriteFile(readmePath, []byte(formatted), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write formatted content to %s: %w", readmePath, err)
+	}
+
+	fmt.Printf("Formatted %s\n", readmePath)
 	return nil
 }
 
