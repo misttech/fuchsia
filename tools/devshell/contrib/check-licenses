@@ -15,5 +15,13 @@ fx-config-read
 
 export PREBUILT_3P_DIR HOST_PLATFORM
 
-"$(get_host_tools_dir)/check-licenses" "$@"
+BINARY="$(get_host_tools_dir)/check-licenses"
+if [[ ! -x "${BINARY}" ]]; then
+  fx-error "check-licenses binary not found."
+  echo "Please build it first by running:"
+  echo "    fx build --host //tools/check-licenses:host"
+  exit 1
+fi
+
+"${BINARY}" "$@"
 
