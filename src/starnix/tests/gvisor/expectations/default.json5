@@ -228,9 +228,6 @@
                 // clock_nanosleep_test
                 "ClockNanosleepProcessTest.SleepFiveSeconds",
 
-                // eventfd_test - splice() isn't implemented https://fxbug.dev/42070385
-                "EventfdTest.SpliceReturnsEINVAL",
-
                 // exceptions_test
                 "ExceptionTest.AlignmentCheck",
 
@@ -1262,9 +1259,6 @@
 
                 // TODO(https://fxbug.dev/361175318): FUTEX_TRYLOCK_PI is not supported yet
                 "SharedPrivate/PrivateAndSharedFutexTest.PITryLock*",
-
-                // TODO(https://fxbug.dev/458243269): EventFd should return an error when write is not of size 8
-                "EventfdTest.BigWriteFails",
 
                 // TODO(https://fxbug.dev/468074994): Investigate and re-enable.
                 "NetlinkRouteTest.VethAdd",

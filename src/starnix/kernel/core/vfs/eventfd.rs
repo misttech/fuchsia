@@ -70,6 +70,9 @@ impl FileOps for EventFdFileObject {
     ) -> Result<usize, Errno> {
         debug_assert!(offset == 0);
         file.blocking_op(locked, current_task, FdEvents::POLLOUT | FdEvents::POLLHUP, None, |_| {
+            if data.available() != DATA_SIZE {
+                return error!(EINVAL);
+            }
             let written_data = data.read_to_array::<DATA_SIZE>()?;
             let add_value = u64::from_ne_bytes(written_data);
             if add_value == u64::MAX {
