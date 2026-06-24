@@ -9378,14 +9378,14 @@ mod test {
         let mut total_sent_rounds = 0;
 
         // Ensure the test doesn't run for too long.
-        let mut loops = 500;
+        let mut loops = 1000;
         let mut continue_running = |state: &mut State<_, _, _, _>| {
             loops -= 1;
             assert!(loops > 0, "test seems to have stalled");
 
             // Run the connection until we have crossed a number of interesting
             // congestion events.
-            const CONGESTION_EVENTS: u64 = 10;
+            const CONGESTION_EVENTS: u64 = 20;
             let event_count =
                 counters.stack_wide.timeouts.get() + counters.stack_wide.loss_recovered.get();
             let congestion_control = &state.assert_established().snd.congestion_control;

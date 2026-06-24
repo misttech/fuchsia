@@ -118,12 +118,13 @@ enum LossBasedAlgorithm<I> {
 impl<I: Instant> LossBasedAlgorithm<I> {
     /// Called when there is a loss detected.
     ///
-    /// Specifically, packet loss means
-    /// - either when the retransmission timer fired;
-    /// - or when we have received a certain amount of duplicate acks.
-    fn on_loss_detected(&mut self, params: &mut CongestionControlParams) {
+    /// Specifically, packet loss means we have received a certain amount of
+    /// duplicate acks.
+    fn on_loss_detected(&mut self, params: &mut CongestionControlParams, flight_size: u32) {
         match self {
-            LossBasedAlgorithm::Cubic(cubic) => cubic.on_loss_detected(params),
+            LossBasedAlgorithm::Cubic(cubic) => {
+                cubic.on_congestion_event(params, CongestionEvent::PacketLoss, flight_size)
+            }
         }
     }
 
@@ -139,9 +140,15 @@ impl<I: Instant> LossBasedAlgorithm<I> {
         }
     }
 
-    fn on_retransmission_timeout(&mut self, params: &mut CongestionControlParams) {
+    fn on_retransmission_timeout(
+        &mut self,
+        params: &mut CongestionControlParams,
+        flight_size: u32,
+    ) {
         match self {
-            LossBasedAlgorithm::Cubic(cubic) => cubic.on_retransmission_timeout(params),
+            LossBasedAlgorithm::Cubic(cubic) => {
+                cubic.on_congestion_event(params, CongestionEvent::Timeout, flight_size)
+            }
         }
     }
 }
@@ -239,6 +246,7 @@ impl<I: Instant> CongestionControl<I> {
         seg_ack: SeqNum,
         snd_nxt: SeqNum,
     ) -> Option<LossRecoveryMode> {
+        let flight_size = self.flight_size();
         let Self { params, algorithm, loss_recovery, sack_scoreboard } = self;
         match loss_recovery {
             None => {
@@ -247,7 +255,7 @@ impl<I: Instant> CongestionControl<I> {
                     let mut sack_recovery = SackRecovery::new();
                     let started_loss_recovery = sack_recovery
                         .on_dup_ack(seg_ack, snd_nxt, sack_scoreboard)
-                        .apply(params, algorithm);
+                        .apply(params, algorithm, flight_size);
                     *loss_recovery = Some(LossRecovery::SackRecovery(sack_recovery));
                     started_loss_recovery.then_some(LossRecoveryMode::SackRecovery)
                 } else {
@@ -257,10 +265,10 @@ impl<I: Instant> CongestionControl<I> {
             }
             Some(LossRecovery::SackRecovery(sack_recovery)) => sack_recovery
                 .on_dup_ack(seg_ack, snd_nxt, sack_scoreboard)
-                .apply(params, algorithm)
+                .apply(params, algorithm, flight_size)
                 .then_some(LossRecoveryMode::SackRecovery),
             Some(LossRecovery::FastRecovery(fast_recovery)) => fast_recovery
-                .on_dup_ack(params, algorithm, seg_ack)
+                .on_dup_ack(params, algorithm, seg_ack, flight_size)
                 .then_some(LossRecoveryMode::FastRecovery),
         }
     }
@@ -270,6 +278,7 @@ impl<I: Instant> CongestionControl<I> {
     /// `snd_nxt` is the value of SND.NXT _before_ it is rewound to SND.UNA as
     /// part of an RTO.
     pub(super) fn on_retransmission_timeout(&mut self, snd_nxt: SeqNum) {
+        let flight_size = self.flight_size();
         let Self { params, algorithm, loss_recovery, sack_scoreboard } = self;
         sack_scoreboard.on_retransmission_timeout();
         let discard_loss_recovery = match loss_recovery {
@@ -281,11 +290,26 @@ impl<I: Instant> CongestionControl<I> {
         if discard_loss_recovery {
             *loss_recovery = None;
         }
-        algorithm.on_retransmission_timeout(params);
+        algorithm.on_retransmission_timeout(params, flight_size);
     }
 
     pub(super) fn slow_start_threshold(&self) -> u32 {
         self.params.ssthresh
+    }
+
+    fn flight_size(&self) -> u32 {
+        // Per RFC 5681 (https://www.rfc-editor.org/rfc/rfc5681#section-2):
+        //    FLIGHT SIZE: The amount of data that has been sent but not yet
+        //    cumulatively acknowledged.
+        // The RFC text is not prescriptive on how to calculate the flight_size
+        // so we instead look to Linux's `tcp_packets_in_flight` function for
+        // inspiration. The equation used there is:
+        //     Packets sent once on transmission queue MINUS
+        //     Packets left network, but not honestly ACKed yet PLUS
+        //     Packets fast retransmitted
+        // This is effectively the same as how the `pipe` variable is calculated
+        // by the SACK scoreboard.
+        self.sack_scoreboard.pipe()
     }
 
     #[cfg(test)]
@@ -610,13 +634,14 @@ impl FastRecovery {
         params: &mut CongestionControlParams,
         loss_based: &mut LossBasedAlgorithm<I>,
         seg_ack: SeqNum,
+        flight_size: u32,
     ) -> bool {
         self.dup_acks = self.dup_acks.saturating_add(1);
 
         match self.dup_acks.get().cmp(&DUP_ACK_THRESHOLD) {
             Ordering::Less => false,
             Ordering::Equal => {
-                loss_based.on_loss_detected(params);
+                loss_based.on_loss_detected(params, flight_size);
                 // Per RFC 5681 (https://www.rfc-editor.org/rfc/rfc5681#section-3.2):
                 //   The lost segment starting at SND.UNA MUST be retransmitted
                 //   and cwnd set to ssthresh plus 3*SMSS.  This artificially
@@ -1052,13 +1077,24 @@ impl SackDupAckOutcome {
         self,
         params: &mut CongestionControlParams,
         algorithm: &mut LossBasedAlgorithm<I>,
+        flight_size: u32,
     ) -> bool {
         let Self(loss_recovery) = self;
         if loss_recovery {
-            algorithm.on_loss_detected(params);
+            algorithm.on_loss_detected(params, flight_size);
         }
         loss_recovery
     }
+}
+
+/// The various types of events that are indicative of congestion.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum CongestionEvent {
+    // Packet Loss was observed (e.g. via Duplicate Acknowledgements).
+    PacketLoss,
+    // A retransmission timeout occurred.
+    Timeout,
+    // TODO(https://fxbug.dev/352585572): Support ECN for TCP.
 }
 
 #[cfg(test)]
