@@ -20,10 +20,10 @@ use starnix_uapi::{
     LINUX_REBOOT_MAGIC2C, errno, error,
 };
 
-use crate::mm::MemoryAccessorExt;
-use crate::security;
-use crate::task::{CurrentTask, Kernel};
-use crate::vfs::FsString;
+use starnix_core::mm::MemoryAccessorExt;
+use starnix_core::security;
+use starnix_core::task::{CurrentTask, Kernel};
+use starnix_core::vfs::FsString;
 
 #[track_caller]
 fn panic_or_error(kernel: &Kernel, errno: Errno) -> Result<(), Errno> {

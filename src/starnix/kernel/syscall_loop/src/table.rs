@@ -84,11 +84,6 @@ pub fn dispatch_syscall(
         sys_rt_sigtimedwait, sys_rt_tgsigqueueinfo, sys_sigaltstack, sys_signalfd4, sys_tgkill,
         sys_tkill, sys_wait4, sys_waitid,
     };
-    use starnix_core::syscalls::misc::{
-        sys_delete_module, sys_getrandom, sys_personality, sys_sched_yield, sys_setdomainname,
-        sys_sethostname, sys_sysinfo, sys_uname, sys_unknown,
-    };
-    use starnix_core::syscalls::reboot::sys_reboot;
     use starnix_core::syscalls::time::{
         sys_clock_getres, sys_clock_gettime, sys_clock_nanosleep, sys_getitimer, sys_gettimeofday,
         sys_nanosleep, sys_setitimer, sys_settimeofday, sys_timer_create, sys_timer_delete,
@@ -135,6 +130,11 @@ pub fn dispatch_syscall(
     use starnix_modules_iouring::syscalls::{
         sys_io_uring_enter, sys_io_uring_register, sys_io_uring_setup,
     };
+    use starnix_modules_syscalls::misc::{
+        sys_delete_module, sys_getrandom, sys_personality, sys_sched_yield, sys_setdomainname,
+        sys_sethostname, sys_sysinfo, sys_uname, sys_unknown,
+    };
+    use starnix_modules_syscalls::reboot::sys_reboot;
     use starnix_modules_userfaultfd::syscalls::sys_userfaultfd;
 
     #[cfg(target_arch = "aarch64")]
@@ -169,11 +169,6 @@ pub fn dispatch_syscall(
             sys_rt_sigsuspend as sys_arch32_rt_sigsuspend, sys_tgkill as sys_arch32_tgkill,
             sys_wait4 as sys_arch32_wait4,
         };
-        pub use starnix_core::syscalls::misc::{
-            sys_arch32_sysinfo, sys_arch32_uname, sys_getrandom as sys_arch32_getrandom,
-            sys_personality as sys_arch32_personality, sys_sched_yield as sys_arch32_sched_yield,
-        };
-        pub use starnix_core::syscalls::reboot::sys_arch32_reboot;
         pub use starnix_core::syscalls::time::{
             sys_arch32_clock_getres, sys_arch32_clock_gettime, sys_arch32_clock_gettime64,
             sys_arch32_gettimeofday, sys_arch32_nanosleep, sys_arch32_setitimer,
@@ -254,6 +249,11 @@ pub fn dispatch_syscall(
         pub use starnix_modules_iouring::syscalls::{
             sys_arch32_io_uring_enter, sys_arch32_io_uring_register, sys_arch32_io_uring_setup,
         };
+        pub use starnix_modules_syscalls::misc::{
+            sys_arch32_sysinfo, sys_arch32_uname, sys_getrandom as sys_arch32_getrandom,
+            sys_personality as sys_arch32_personality, sys_sched_yield as sys_arch32_sched_yield,
+        };
+        pub use starnix_modules_syscalls::reboot::sys_arch32_reboot;
         pub use starnix_modules_userfaultfd::syscalls::sys_arch32_userfaultfd;
     }
     #[cfg(all(target_arch = "aarch64"))]

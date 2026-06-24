@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::arch::{ARCH_NAME, ARCH_NAME32};
-use crate::mm::{MemoryAccessor, MemoryAccessorExt, PAGE_SIZE};
-use crate::security;
-use crate::task::CurrentTask;
-use crate::vfs::FsString;
 use fidl_fuchsia_buildinfo as buildinfo;
 use fuchsia_component::client::connect_to_protocol_sync;
+use starnix_core::arch::{ARCH_NAME, ARCH_NAME32};
+use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt, PAGE_SIZE};
+use starnix_core::security;
+use starnix_core::task::CurrentTask;
+use starnix_core::vfs::FsString;
 use starnix_logging::{log_error, track_stub};
 use starnix_sync::{Locked, Unlocked};
 use starnix_syscalls::decls::SyscallDecl;

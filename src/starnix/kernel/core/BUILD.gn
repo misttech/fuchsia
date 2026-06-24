@@ -121,9 +121,7 @@ _starnix_core_sources = [
   "signals/signalfd.rs",
   "signals/syscalls.rs",
   "signals/types.rs",
-  "syscalls/misc.rs",
   "syscalls/mod.rs",
-  "syscalls/reboot.rs",
   "syscalls/time.rs",
   "task/abstract_socket_namespace.rs",
   "task/cgroup.rs",
@@ -235,7 +233,6 @@ _starnix_core_sources = [
 ]
 
 _starnix_core_deps = [
-  "//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_rust",
   "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
   "//sdk/fidl/fuchsia.cpu.profiler:fuchsia.cpu.profiler_rust",
   "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
@@ -245,7 +242,6 @@ _starnix_core_deps = [
   "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_rust",
   "//sdk/fidl/fuchsia.hardware.cpu.ctrl:fuchsia.hardware.cpu.ctrl_rust",
   "//sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption_rust",
-  "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
   "//sdk/fidl/fuchsia.hardware.qualcomm.router:fuchsia.hardware.qualcomm.router_rust",
   "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_rust",
   "//sdk/fidl/fuchsia.io:fuchsia.io_rust",

@@ -22,6 +22,7 @@ group("tests") {
     "nmfs:tests",
     "perfetto_consumer:tests",
     "selinuxfs:tests",
+    "syscalls:tests",
     "tracefs:tests",
   ]
 }
