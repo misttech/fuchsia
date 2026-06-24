@@ -99,6 +99,7 @@ inline constexpr std::string_view kCreateThreadSymbolsDriversAllowlist[] = {
     "#meta/intel-i2c.cm",
     "#meta/intel-spi-flash.cm",
     "#meta/iwlwifi.cm",
+    "#meta/libmsd_img_powervr.cm",
     "#meta/libmsd_intel.cm",
     "#meta/libmsd_intel_test.cm",
     "#meta/libmsd_vsi.cm",
