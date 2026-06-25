@@ -823,7 +823,7 @@ mod tests {
             Error::InvalidComponent {
                 path: format!("a/{}/b", long_component),
                 component: long_component.clone(),
-                error: name::ParseNameError::TooLong(long_component)
+                error: name::ParseNameError::TooLong
             }
         );
     }

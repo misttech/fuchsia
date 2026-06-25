@@ -12,50 +12,8 @@ use zx_status;
 
 #[derive(Error, Debug, Clone)]
 pub enum ConversionError {
-    #[error("invalid `fuchsia.io` node name: name `{0}` is too long")]
-    ParseNameErrorTooLong(String),
-
-    #[error("invalid `fuchsia.io` node name: name cannot be empty")]
-    ParseNameErrorEmpty,
-
-    #[error("invalid `fuchsia.io` node name: name cannot be `.`")]
-    ParseNameErrorDot,
-
-    #[error("invalid `fuchsia.io` node name: name cannot be `..`")]
-    ParseNameErrorDotDot,
-
-    #[error("invalid `fuchsia.io` node name: name cannot contain `/`")]
-    ParseNameErrorSlash,
-
-    #[error("invalid `fuchsia.io` node name: name cannot contain embedded NUL")]
-    ParseNameErrorEmbeddedNul,
-
     #[error("conversion to type is not supported")]
     NotSupported,
-
-    #[error("conversion failed because a capability could not be cloned")]
-    NotCloneable,
-
-    #[error("value at `{key}` could not be converted: {err}")]
-    Nested {
-        key: String,
-        #[source]
-        err: Box<ConversionError>,
-    },
-}
-
-#[cfg(target_os = "fuchsia")]
-impl From<vfs::name::ParseNameError> for ConversionError {
-    fn from(parse_name_error: vfs::name::ParseNameError) -> Self {
-        match parse_name_error {
-            vfs::name::ParseNameError::TooLong(s) => ConversionError::ParseNameErrorTooLong(s),
-            vfs::name::ParseNameError::Empty => ConversionError::ParseNameErrorEmpty,
-            vfs::name::ParseNameError::Dot => ConversionError::ParseNameErrorDot,
-            vfs::name::ParseNameError::DotDot => ConversionError::ParseNameErrorDotDot,
-            vfs::name::ParseNameError::Slash => ConversionError::ParseNameErrorSlash,
-            vfs::name::ParseNameError::EmbeddedNul => ConversionError::ParseNameErrorEmbeddedNul,
-        }
-    }
 }
 
 /// Errors arising from conversion between Rust and FIDL types.

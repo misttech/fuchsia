@@ -38,8 +38,8 @@ const_assert_eq!(MAX_NAME_LENGTH as u64, fio::MAX_NAME_LENGTH);
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum ParseNameError {
-    #[error("name `{0}` is too long")]
-    TooLong(String),
+    #[error("name is too long")]
+    TooLong,
 
     #[error("name cannot be empty")]
     Empty,
@@ -60,7 +60,7 @@ pub enum ParseNameError {
 impl From<ParseNameError> for Status {
     fn from(value: ParseNameError) -> Self {
         match value {
-            ParseNameError::TooLong(_) => Status::BAD_PATH,
+            ParseNameError::TooLong => Status::BAD_PATH,
             _ => Status::INVALID_ARGS,
         }
     }
@@ -87,7 +87,7 @@ pub fn parse_name(name: String) -> Result<Name, ParseNameError> {
 /// Check whether a string name will be a valid input to [Name].
 pub fn validate_name(name: &str) -> Result<(), ParseNameError> {
     if name.len() > MAX_NAME_LENGTH {
-        return Err(ParseNameError::TooLong(name.to_string()));
+        return Err(ParseNameError::TooLong);
     }
     if name.len() == 0 {
         return Err(ParseNameError::Empty);
@@ -142,14 +142,14 @@ mod tests {
 
     #[test]
     fn test_parse_name() {
-        assert_matches!(parse_name("a".repeat(1000)), Err(ParseNameError::TooLong(_)));
+        assert_matches!(parse_name("a".repeat(1000)), Err(ParseNameError::TooLong));
         assert_matches!(
             parse_name(
                 std::str::from_utf8(&vec![65; fio::MAX_NAME_LENGTH as usize + 1])
                     .unwrap()
                     .to_string()
             ),
-            Err(ParseNameError::TooLong(_))
+            Err(ParseNameError::TooLong)
         );
         assert_matches!(
             parse_name(
@@ -169,12 +169,12 @@ mod tests {
 
     #[test]
     fn test_validate_name() {
-        assert_matches!(validate_name(&"a".repeat(1000)), Err(ParseNameError::TooLong(_)));
+        assert_matches!(validate_name(&"a".repeat(1000)), Err(ParseNameError::TooLong));
         assert_matches!(
             validate_name(
                 std::str::from_utf8(&vec![65; fio::MAX_NAME_LENGTH as usize + 1]).unwrap()
             ),
-            Err(ParseNameError::TooLong(_))
+            Err(ParseNameError::TooLong)
         );
         assert_matches!(
             validate_name(std::str::from_utf8(&vec![65; fio::MAX_NAME_LENGTH as usize]).unwrap()),
@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn test_try_from() {
-        assert_matches!(Name::try_from("a".repeat(1000)), Err(ParseNameError::TooLong(_)));
+        assert_matches!(Name::try_from("a".repeat(1000)), Err(ParseNameError::TooLong));
         assert_matches!(Name::try_from("abc".to_string()), Ok(Name(name)) if &*name == "abc");
     }
 
