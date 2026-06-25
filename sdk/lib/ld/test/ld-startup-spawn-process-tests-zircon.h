@@ -8,11 +8,8 @@
 #include <lib/zx/vmo.h>
 
 #include <cstdint>
-#include <initializer_list>
 #include <optional>
-#include <string>
 #include <string_view>
-#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -43,6 +40,13 @@ class LdStartupSpawnProcessTests : public ::testing::Test, public LdLoadZirconPr
   }
 
   ~LdStartupSpawnProcessTests();
+
+ protected:
+  static void SetUpTestSuite() {
+    GTEST_SKIP() << "TODO(https://fxbug.dev/479521328): system program loader "
+                    "testing disabled due to stack size issues "
+                    "in startup dynamic linker";
+  }
 
  private:
   zx::vmo executable_;

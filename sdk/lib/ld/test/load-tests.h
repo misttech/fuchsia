@@ -27,20 +27,17 @@ using LdLoadTests = Fixture;
 template <class Fixture>
 using LdLoadFailureTests = Fixture;
 
-// This lists all the types that are compatible with both LdLoadTests and LdLoadFailureTests.
+// This lists all the types that are compatible with both LdLoadTests and
+// LdLoadFailureTests.
 template <class... Tests>
 using TestTypes = ::testing::Types<
-// TODO(https://fxbug.dev/479521328): LdStartupSpawnProcessTests is disabled on
-// Fuchsia due to stack size issues.
 #ifdef __Fuchsia__
     ld::testing::LdStartupCreateProcessTests<>,        //
     ld::testing::LdStartupCreateSharedProcessTests<>,  //
     ld::testing::LdRemoteProcessTests,                 //
-    ld::testing::LdRemoteSharedProcessTests,
-#else
-    ld::testing::LdStartupSpawnProcessTests,
+    ld::testing::LdRemoteSharedProcessTests,           //
 #endif
-    Tests...>;
+    ld::testing::LdStartupSpawnProcessTests, Tests...>;
 
 // These types are meaningul for the successful tests, LdLoadTests.
 using LoadTypes = TestTypes<ld::testing::LdStartupInProcessTests>;
