@@ -199,20 +199,6 @@ generated_file("gn_build_variables_for_bazel") {
   ]
 
   # LINT.IfChange
-  declaration = "//build/images/vbmeta.gni"
-  import(declaration)
-  contents += [
-    {
-      name = "use_vbmeta"
-      value = use_vbmeta
-      type = "bool"
-      location = declaration
-    },
-  ]
-
-  # LINT.ThenChange(//build/images/vbmeta.gni)
-
-  # LINT.IfChange
   declaration =
       "//src/connectivity/policy/netcfg/delegated_network_provisioning.gni"
   import(declaration)
@@ -245,12 +231,6 @@ generated_file("gn_build_variables_for_bazel") {
   declaration = "//build/info/info.gni"
   import(declaration)
   contents += [
-    {
-      name = "build_info_board"
-      value = build_info_board
-      type = "string"
-      location = declaration
-    },
     {
       name = "build_info_version"
       value = build_info_version
