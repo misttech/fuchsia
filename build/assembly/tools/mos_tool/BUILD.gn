@@ -15,6 +15,7 @@ rustc_binary("mos_tool") {
   deps = [
     "//src/developer/ffx/lib/pbms:lib",
     "//src/lib/assembly/artifact_cache",
+    "//src/lib/assembly/util",
     "//src/lib/fuchsia-async",
     "//src/lib/gcs",
     "//src/lib/structured_ui",

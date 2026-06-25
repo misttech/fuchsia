@@ -5,6 +5,7 @@
 use anyhow::{Context, Result};
 use argh::FromArgs;
 use assembly_artifact_cache::{Artifact, MOSClient, MOSIdentifier, mos};
+use assembly_util::sanitize_for_mos_apis;
 use gcs::client::Client as GcsClient;
 use pbms::{AuthFlowChoice, handle_new_access_token};
 use structured_ui;
@@ -75,7 +76,9 @@ async fn main() -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&result)?);
         }
         Command::GetPbReleaseInfo(args) => {
-            let result = client.get_pb_release_info(args.name, args.version).await?;
+            let name = sanitize_and_report("name", args.name);
+            let version = sanitize_and_report("version", args.version);
+            let result = client.get_pb_release_info(name, version).await?;
             println!("{}", serde_json::to_string_pretty(&result)?);
         }
         Command::Interpolate(args) => {
@@ -91,7 +94,27 @@ async fn main() -> Result<()> {
 
 fn parse_mos_id(s: &str) -> Result<MOSIdentifier> {
     match mos::parse_mos_artifact(s)? {
-        Some(Artifact::MOS(id)) => Ok(id),
+        Some(Artifact::MOS(id)) => Ok(sanitize_mos_id(s, id)),
         _ => anyhow::bail!("Invalid MOS ID: {}", s),
     }
+}
+
+fn sanitize_mos_id(original_str: &str, mut id: MOSIdentifier) -> MOSIdentifier {
+    let original = id.id();
+    id.repository = sanitize_for_mos_apis(&id.repository);
+    id.name = sanitize_for_mos_apis(&id.name);
+    id.version = sanitize_for_mos_apis(&id.version);
+    let sanitized = id.id();
+    if original != sanitized {
+        eprintln!("Sanitized MOS ID from '{}' to '{}'", original_str, sanitized);
+    }
+    id
+}
+
+fn sanitize_and_report(arg_name: &str, val: String) -> String {
+    let sanitized = sanitize_for_mos_apis(&val);
+    if sanitized != val {
+        eprintln!("Sanitized {} from '{}' to '{}'", arg_name, val, sanitized);
+    }
+    sanitized
 }
