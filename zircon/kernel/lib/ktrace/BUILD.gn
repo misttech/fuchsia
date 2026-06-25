@@ -26,6 +26,7 @@ group("tests") {
 
 group("kernel-tests") {
   testonly = true
+  deps = [ "tests" ]
 }
 
 group("phys-tests") {

@@ -14,6 +14,7 @@
 #include <lib/unittest/user_memory.h>
 #include <lib/zircon-internal/ktrace.h>
 
+#include <arch/interrupt.h>
 #include <arch/ops.h>
 
 // A test version of the per-CPU KTrace instance that disables diagnostic logs and overrides
@@ -272,10 +273,11 @@ class KTraceTests {
     ASSERT_OK(ktrace.Control(KTRACE_ACTION_START, 0xff));
     for (uint32_t i = 0; i < arch_max_num_cpus(); i++) {
       // Reserve and write a record of kPageSize to fill up the buffer.
-      zx::result<TestKTrace::PerCpuBuffer::Reservation> res =
-          ktrace.percpu_buffers_[i].Reserve(kPageSize);
+      InterruptDisableGuard irqd;
+      zx::result<percpu_writer::Buffer::Reservation> res =
+          ktrace.percpu_buffers_[i].Reserve(fxt::RecordFields::RecordSize::Make(kPageSize / 8));
       ASSERT_OK(res.status_value());
-      res->Write(ktl::span<ktl::byte>(data_buffer->data(), data_buffer->size()));
+      res->WriteBytes(data_buffer->data(), kPageSize - 8);
       res->Commit();
     }
 
@@ -321,8 +323,12 @@ class KTraceTests {
     ktl::byte* src = new (&ac) ktl::byte[total_bufsize];
     ASSERT_TRUE(ac.check());
     srand(4);
-    for (uint32_t i = 0; i < total_bufsize; i++) {
-      src[i] = static_cast<ktl::byte>(rand());
+    for (uint32_t i = 0; i < num_cpus; i++) {
+      const uint64_t header = fxt::RecordFields::RecordSize::Make(kPageSize / 8);
+      memcpy(src + (i * kPageSize), &header, sizeof(header));
+      for (size_t j = 8; j < kPageSize; j++) {
+        src[i * kPageSize + j] = static_cast<ktl::byte>(rand());
+      }
     }
 
     // Initialize a destination buffer to read data into.
@@ -341,10 +347,11 @@ class KTraceTests {
     // serially on a single test thread.
     ASSERT_OK(ktrace.Control(KTRACE_ACTION_START, 0xffff));
     for (uint32_t i = 0; i < num_cpus; i++) {
-      zx::result<TestKTrace::PerCpuBuffer::Reservation> res =
-          ktrace.percpu_buffers_[i].Reserve(kPageSize);
-      ASSERT_OK(result.status_value());
-      res->Write(ktl::span<ktl::byte>(src + (i * kPageSize), kPageSize));
+      InterruptDisableGuard irqd;
+      zx::result<percpu_writer::Buffer::Reservation> res =
+          ktrace.percpu_buffers_[i].Reserve(fxt::RecordFields::RecordSize::Make(kPageSize / 8));
+      ASSERT_OK(res.status_value());
+      res->WriteBytes(src + (i * kPageSize) + 8, kPageSize - 8);
       res->Commit();
     }
 
@@ -421,25 +428,36 @@ class KTraceTests {
       // Write record size is the number of bytes to write if the action is kWrite.
       const uint32_t write_record_size = static_cast<uint32_t>(rand()) % kPageSize;
 
+      const uint32_t expected_dropped_bytes = ((dropped_record_size + 15) / 8) * 8;
+      const uint32_t expected_write_bytes = ((write_record_size + 15) / 8) * 8;
+
       // Initialize an instance of ktrace and start tracing.
       TestKTrace ktrace;
       const uint32_t total_bufsize = kPageSize * arch_max_num_cpus();
       ktrace.Init(total_bufsize, 0xffff);
 
       // Fill the buffer on the first CPU up.
-      TestKTrace::PerCpuBuffer& pcb = ktrace.percpu_buffers_[0];
-      zx::result<TestKTrace::PerCpuBuffer::Reservation> res = pcb.Reserve(kPageSize);
-      ASSERT_OK(res.status_value());
-      res->Write(ktl::span<ktl::byte>(src, kPageSize));
-      res->Commit();
+      percpu_writer::Buffer& pcb = ktrace.percpu_buffers_[0];
+      {
+        InterruptDisableGuard irqd;
+        zx::result<percpu_writer::Buffer::Reservation> res =
+            pcb.Reserve(fxt::RecordFields::RecordSize::Make(kPageSize / 8));
+        ASSERT_OK(res.status_value());
+        res->WriteBytes(src, kPageSize - 8);
+        res->Commit();
+      }
 
       // Get the current time. This will be the lower bound for the start timestamp found in the
       // dropped record statistics.
       const zx_instant_boot_ticks_t start_lower_bound = TestKTrace::Timestamp();
 
       // Drop a record.
-      res = pcb.Reserve(dropped_record_size);
-      ASSERT_EQ(ZX_ERR_NO_SPACE, res.status_value());
+      {
+        InterruptDisableGuard irqd;
+        zx::result<percpu_writer::Buffer::Reservation> res =
+            pcb.Reserve(fxt::RecordFields::RecordSize::Make((dropped_record_size + 15) / 8));
+        ASSERT_EQ(ZX_ERR_NO_SPACE, res.status_value());
+      }
 
       // Drain the buffer if the test case said we should do so.
       if (tc.drain) {
@@ -449,10 +467,12 @@ class KTraceTests {
       // Perform the action.
       switch (tc.action) {
         case Action::kWrite: {
-          res = pcb.Reserve(write_record_size);
+          InterruptDisableGuard irqd;
+          zx::result<percpu_writer::Buffer::Reservation> res =
+              pcb.Reserve(fxt::RecordFields::RecordSize::Make((write_record_size + 15) / 8));
           if (tc.drain) {
             ASSERT_OK(res.status_value());
-            res->Write(ktl::span<ktl::byte>(src, write_record_size));
+            res->WriteBytes(src, write_record_size);
             res->Commit();
           } else {
             ASSERT_EQ(ZX_ERR_NO_SPACE, res.status_value());
@@ -489,7 +509,7 @@ class KTraceTests {
       // reset.
       if (tc.action == Action::kRewind) {
         ASSERT_EQ(0u, read_result.value());
-        ASSERT_TRUE(!pcb.first_dropped_.has_value());
+        ASSERT_TRUE(!pcb.drop_stats().HasDropped());
         continue;
       }
 
@@ -499,18 +519,18 @@ class KTraceTests {
       if (!tc.drain) {
         constexpr uint32_t expected_read_size = kPageSize;
         ASSERT_EQ(expected_read_size, read_result.value());
-        ASSERT_BYTES_EQ(reinterpret_cast<uint8_t*>(src), reinterpret_cast<uint8_t*>(dst),
-                        expected_read_size)
-        ASSERT_TRUE(pcb.first_dropped_.has_value())
-        ASSERT_LE(start_lower_bound, pcb.first_dropped_.value());
-        ASSERT_GE(end_upper_bound, pcb.last_dropped_.value());
+        ASSERT_BYTES_EQ(reinterpret_cast<uint8_t*>(src), reinterpret_cast<uint8_t*>(dst + 8),
+                        expected_read_size - 8);
+        ASSERT_TRUE(pcb.drop_stats().HasDropped());
+        ASSERT_LE(start_lower_bound, pcb.drop_stats().first_dropped);
+        ASSERT_GE(end_upper_bound, pcb.drop_stats().last_dropped);
 
         if (tc.action == Action::kWrite) {
-          ASSERT_EQ(2u, pcb.num_dropped_);
-          ASSERT_EQ(dropped_record_size + write_record_size, pcb.bytes_dropped_);
+          ASSERT_EQ(2u, pcb.drop_stats().num_dropped);
+          ASSERT_EQ(expected_dropped_bytes + expected_write_bytes, pcb.drop_stats().bytes_dropped);
         } else if (tc.action == Action::kStop) {
-          ASSERT_EQ(1u, pcb.num_dropped_);
-          ASSERT_EQ(dropped_record_size, pcb.bytes_dropped_);
+          ASSERT_EQ(1u, pcb.drop_stats().num_dropped);
+          ASSERT_EQ(expected_dropped_bytes, pcb.drop_stats().bytes_dropped);
         }
         continue;
       }
@@ -530,7 +550,7 @@ class KTraceTests {
       if (tc.action == Action::kStop) {
         ASSERT_EQ(sizeof(DurationCompleteEvent), read_result.value());
       } else if (tc.action == Action::kWrite) {
-        ASSERT_EQ(sizeof(DurationCompleteEvent) + write_record_size, read_result.value());
+        ASSERT_EQ(sizeof(DurationCompleteEvent) + expected_write_bytes, read_result.value());
       }
 
       // Validate the dropped records statistics that we read.
@@ -542,12 +562,12 @@ class KTraceTests {
       // All we want to verify is the actual value of the argument, which is found in the upper 32
       // bits.
       ASSERT_EQ(1u, drop_stats->num_dropped_arg >> 32);
-      ASSERT_EQ(dropped_record_size, drop_stats->bytes_dropped_arg >> 32);
+      ASSERT_EQ(expected_dropped_bytes, drop_stats->bytes_dropped_arg >> 32);
 
       // Finally, if we performed a write, validate that we also read the correct record after the
       // dropped records duration was emitted.
       if (tc.action == Action::kWrite) {
-        ASSERT_BYTES_EQ(reinterpret_cast<uint8_t*>(dst + sizeof(DurationCompleteEvent)),
+        ASSERT_BYTES_EQ(reinterpret_cast<uint8_t*>(dst + sizeof(DurationCompleteEvent) + 8),
                         reinterpret_cast<uint8_t*>(src), write_record_size);
       }
     }
