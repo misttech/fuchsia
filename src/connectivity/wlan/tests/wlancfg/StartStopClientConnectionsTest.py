@@ -15,7 +15,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
     ConnectionState,
-    DisconnectStatus,
     NetworkIdentifier,
     NetworkState,
     SecurityType,
@@ -195,7 +194,7 @@ class StartStopClientConnectionsTest(
                             self.ssid, self.security_type
                         ),
                         connection_state=ConnectionState.DISCONNECTED,
-                        disconnect_status=DisconnectStatus.CONNECTION_STOPPED,
+                        disconnect_status=f_wlan_policy.DisconnectStatus.CONNECTION_STOPPED,
                     )
                 ],
             ),
@@ -284,7 +283,7 @@ class StartStopClientConnectionsTest(
                             self.ssid, self.security_type
                         ),
                         connection_state=ConnectionState.DISCONNECTED,
-                        disconnect_status=DisconnectStatus.CONNECTION_STOPPED,
+                        disconnect_status=f_wlan_policy.DisconnectStatus.CONNECTION_STOPPED,
                     )
                 ],
             ),

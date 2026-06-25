@@ -6,6 +6,7 @@
 import time
 from typing import AsyncIterator
 
+import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
 from antlion.controllers import access_point
 from antlion.controllers.ap_lib import hostapd_constants
@@ -25,7 +26,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
     ConnectionState,
-    DisconnectStatus,
     NetworkConfig,
     NetworkIdentifier,
     NetworkState,
@@ -168,7 +168,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     NetworkState(
                         NetworkIdentifier(test_ssid, SecurityType.NONE),
                         ConnectionState.DISCONNECTED,
-                        DisconnectStatus.CONNECTION_STOPPED,
+                        f_wlan_policy.DisconnectStatus.CONNECTION_STOPPED,
                     )
                 ],
             ),
@@ -194,7 +194,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         await self.wait_for_network(
             test_ssid,
             ConnectionState.DISCONNECTED,
-            DisconnectStatus.CONNECTION_STOPPED,
+            f_wlan_policy.DisconnectStatus.CONNECTION_STOPPED,
         )
 
     async def test_save_network_with_client_connections_disabled(self) -> None:
@@ -315,7 +315,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         self,
         ssid: str,
         expected_state: ConnectionState,
-        expected_status: DisconnectStatus | None = None,
+        expected_status: f_wlan_policy.DisconnectStatus | None = None,
         expected_client_state: WlanClientState = WlanClientState.CONNECTIONS_ENABLED,
     ) -> None:
         """Assert the next update matches the specified network state."""
