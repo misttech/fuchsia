@@ -8,7 +8,7 @@ import logging
 
 import fuchsia_base_test
 from honeydew.auxiliary_devices.usb_power_hub import usb_power_hub
-from mobly import expects, test_runner
+from mobly import test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -16,9 +16,8 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 class UsbDisconnectTest(fuchsia_base_test.FuchsiaBaseTest):
     """Mobly test for testing USB disconnects.
 
-    Supports both physical disconnect (using hardware PDU/power hub and optionally
-    rebooting to fastboot as a workaround) and virtual disconnect (using software
-    authorization control).
+    Supports both physical disconnect (using hardware PDU/power hub) and virtual
+    disconnect (using software authorization control).
 
     Required Mobly Test Params:
         num_iterations (int, optional): Number of times to execute the test.
@@ -26,10 +25,6 @@ class UsbDisconnectTest(fuchsia_base_test.FuchsiaBaseTest):
         num_usb_disconnects (int, optional): Alias for num_iterations.
         disconnect_duration_sec (int, optional): How long to stay disconnected.
             Defaults to 10.
-        reboot_to_fastboot (bool, optional): Whether to reboot to fastboot mode
-            before disconnecting. Required for some devices (like Sorrel) where
-            USB data connection doesn't drop when powered off in Fuchsia mode.
-            Defaults to False.
     """
 
     async def pre_run(self) -> None:
@@ -69,56 +64,23 @@ class UsbDisconnectTest(fuchsia_base_test.FuchsiaBaseTest):
         disconnect_duration = int(
             self.user_params.get("disconnect_duration_sec", 10)
         )
-        reboot_to_fastboot = bool(
-            self.user_params.get("reboot_to_fastboot", False)
-        )
 
-        if reboot_to_fastboot:
-            # Physical disconnect workaround logic (e.g. for Sorrel)
-            await self.dut.fastboot.boot_to_fastboot_mode()
-            try:
-                self._usb_power_hub.power_off(port=self._usb_port)
-                _LOGGER.info(
-                    "Waiting %d seconds for the usb to disconnect",
-                    disconnect_duration,
-                )
+        await self.dut.wait_for_online()
+        try:
+            self._usb_power_hub.power_off(port=self._usb_port)
+            _LOGGER.info("Waiting for the device to go offline...")
+            await asyncio.to_thread(self.dut.wait_for_offline)
+            _LOGGER.info("Device is successfully offline.")
+
+            if disconnect_duration > 0:
+                _LOGGER.info("Sleeping for %d seconds...", disconnect_duration)
                 await asyncio.sleep(disconnect_duration)
-                expects.expect_false(
-                    await self.dut.fastboot.is_in_fastboot_mode(),
-                    "Fasboot device is still visible",
-                )
-            finally:
-                self._usb_power_hub.power_on(port=self._usb_port)
-                await self.dut.fastboot.wait_for_fastboot_mode()
-                try:
-                    # TODO(https://fxbug.dev/436414807): The `fastboot reboot` command sometimes
-                    # reports an error, despite the command actually succeeding. Once this is fixed,
-                    # we can remove the try/except block.
-                    await self.dut.fastboot.boot_to_fuchsia_mode()
-                except:
-                    await self.dut.fastboot.wait_for_fuchsia_mode()
-                    await self.dut.wait_for_online()
-                    await self.dut.on_device_boot()
-        else:
-            # Normal/Virtual disconnect logic
+        finally:
+            self._usb_power_hub.power_on(port=self._usb_port)
+            _LOGGER.info("Waiting for the device to go online...")
             await self.dut.wait_for_online()
-            try:
-                self._usb_power_hub.power_off(port=self._usb_port)
-                _LOGGER.info("Waiting for the device to go offline...")
-                await asyncio.to_thread(self.dut.wait_for_offline)
-                _LOGGER.info("Device is successfully offline.")
-
-                if disconnect_duration > 0:
-                    _LOGGER.info(
-                        "Sleeping for %d seconds...", disconnect_duration
-                    )
-                    await asyncio.sleep(disconnect_duration)
-            finally:
-                self._usb_power_hub.power_on(port=self._usb_port)
-                _LOGGER.info("Waiting for the device to go online...")
-                await self.dut.wait_for_online()
-                await self.dut.on_device_boot()
-                _LOGGER.info("Device is successfully back online.")
+            await self.dut.on_device_boot()
+            _LOGGER.info("Device is successfully back online.")
 
         _LOGGER.info(
             "Successfully ended the Usb Disconnect test iteration# %s",
