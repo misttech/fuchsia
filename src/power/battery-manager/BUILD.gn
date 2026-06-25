@@ -14,44 +14,47 @@ fuchsia_structured_config_rust_lib("battery-manager-config") {
   cm_label = ":manifest"
 }
 
+battery_manager_deps = [
+  ":battery-manager-config",
+  "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
+  "//sdk/fidl/fuchsia.hardware.power.battery:fuchsia.hardware.power.battery_rust",
+  "//sdk/fidl/fuchsia.hardware.power.source:fuchsia.hardware.power.source_rust",
+  "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
+  "//sdk/fidl/fuchsia.power.battery.test:fuchsia.power.battery.test_rust",
+  "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
+  "//sdk/lib/power/state_recorder/rust",
+  "//sdk/rust/zx",
+  "//src/lib/async-utils",
+  "//src/lib/diagnostics/inspect/contrib/rust",
+  "//src/lib/diagnostics/inspect/runtime/rust",
+  "//src/lib/diagnostics/inspect/rust",
+  "//src/lib/fidl/rust/fidl",
+  "//src/lib/fuchsia",
+  "//src/lib/fuchsia-async",
+  "//src/lib/fuchsia-component",
+  "//src/lib/fuchsia-runtime",
+  "//third_party/rust_crates:anyhow",
+  "//third_party/rust_crates:futures",
+  "//third_party/rust_crates:log",
+  "//third_party/rust_crates:strum",
+  "//third_party/rust_crates:strum_macros",
+]
+
+battery_manager_sources = [
+  "src/battery_manager.rs",
+  "src/battery_simulator.rs",
+  "src/history_logger.rs",
+  "src/main.rs",
+  "src/polisher.rs",
+]
+
 rustc_binary("bin") {
   output_name = "battery_manager"
   with_unit_tests = true
   edition = "2024"
 
-  deps = [
-    ":battery-manager-config",
-    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
-    "//sdk/fidl/fuchsia.hardware.power.battery:fuchsia.hardware.power.battery_rust",
-    "//sdk/fidl/fuchsia.hardware.power.source:fuchsia.hardware.power.source_rust",
-    "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
-    "//sdk/fidl/fuchsia.power.battery.test:fuchsia.power.battery.test_rust",
-    "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
-    "//sdk/lib/power/state_recorder/rust",
-    "//sdk/rust/zx",
-    "//src/lib/async-utils",
-    "//src/lib/diagnostics/inspect/contrib/rust",
-    "//src/lib/diagnostics/inspect/runtime/rust",
-    "//src/lib/diagnostics/inspect/rust",
-    "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-component",
-    "//src/lib/fuchsia-runtime",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:log",
-    "//third_party/rust_crates:strum",
-    "//third_party/rust_crates:strum_macros",
-  ]
-
-  sources = [
-    "src/battery_manager.rs",
-    "src/battery_simulator.rs",
-    "src/history_logger.rs",
-    "src/main.rs",
-    "src/polisher.rs",
-  ]
+  deps = battery_manager_deps
+  sources = battery_manager_sources
 
   test_deps = [
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
@@ -64,6 +67,23 @@ fuchsia_component("battery_manager") {
   component_name = "battery_manager"
   manifest = "meta/battery_manager.cml"
   deps = [ ":bin" ]
+}
+
+rustc_binary("bin_with_fake_time") {
+  testonly = true
+  output_name = "battery_manager_fake_time"
+  edition = "2024"
+
+  deps = battery_manager_deps
+  sources = battery_manager_sources
+  non_rust_deps = [ "//src/lib/fake-clock/lib:lib_with_utc" ]
+}
+
+fuchsia_component("battery_manager_fake_time") {
+  testonly = true
+  component_name = "battery_manager_fake_time"
+  manifest = "meta/battery_manager_fake_time.cml"
+  deps = [ ":bin_with_fake_time" ]
 }
 
 fuchsia_package("battery-manager") {

@@ -11,7 +11,7 @@ use fidl_test_hardwarepowercontrol as ftest_battery;
 
 use fidl_fuchsia_power_battery as fpower;
 use fidl_fuchsia_power_battery_test as spower;
-use fuchsia_async as fasync;
+use fidl_fuchsia_testing as ftesting;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
 use futures::StreamExt as _;
@@ -31,7 +31,8 @@ enum FidlRouteMode {
     Both,
 }
 
-const BATTERY_MANAGER_URL: &str = "#meta/battery_manager.cm";
+const BATTERY_MANAGER_URL: &str = "#meta/battery_manager_fake_time.cm";
+const FAKE_CLOCK_URL: &str = "#meta/fake_clock.cm";
 
 async fn setup_realm(mode: FidlRouteMode) -> Result<RealmInstance> {
     let builder = RealmBuilder::new().await?;
@@ -59,13 +60,36 @@ async fn setup_realm(mode: FidlRouteMode) -> Result<RealmInstance> {
     let battery_manager =
         builder.add_child("battery_manager", BATTERY_MANAGER_URL, ChildOptions::new()).await?;
 
-    // Route LogSink to battery_manager
+    let fake_clock = builder.add_child("fake_clock", FAKE_CLOCK_URL, ChildOptions::new()).await?;
+
+    // Route LogSink to battery_manager and fake_clock
     builder
         .add_route(
             Route::new()
                 .capability(Capability::protocol_by_name("fuchsia.logger.LogSink"))
                 .from(Ref::parent())
+                .to(&battery_manager)
+                .to(&fake_clock),
+        )
+        .await?;
+
+    // Route FakeClock to battery_manager
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol_by_name("fuchsia.testing.FakeClock"))
+                .from(&fake_clock)
                 .to(&battery_manager),
+        )
+        .await?;
+
+    // Expose FakeClockControl to parent (test runner)
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol_by_name("fuchsia.testing.FakeClockControl"))
+                .from(&fake_clock)
+                .to(Ref::parent()),
         )
         .await?;
 
@@ -278,9 +302,18 @@ async fn test_watch_dynamic_updates() -> Result<()> {
     assert_default_battery_info(&info);
     let t0 = info.timestamp.expect("timestamp missing from default info");
 
-    // Sleep for 10 seconds so the rate limiter has enough time to allow the level to rise
-    // from default 99% to 100.0% (requires 7.5s).
-    fasync::Timer::new(fasync::MonotonicInstant::after(zx::Duration::from_seconds(10))).await;
+    let fake_clock_control =
+        realm.root.connect_to_protocol_at_exposed_dir::<ftesting::FakeClockControlProxy>()?;
+
+    fake_clock_control.pause().await?;
+
+    // Advance fake time by 10 seconds.
+    fake_clock_control
+        .advance(&ftesting::Increment::Determined(
+            zx::MonotonicDuration::from_seconds(10).into_nanos(),
+        ))
+        .await?
+        .map_err(|e| anyhow::anyhow!("failed to advance fake clock: {:?}", e))?;
 
     // Now update fake battery using driver Control.
     // Raw level 99.1% maps to 100.0% scaled level after processing.
