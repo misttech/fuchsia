@@ -19,7 +19,7 @@ namespace driver_manager {
 namespace {
 
 zx::duration kBootupTimeoutDuration = zx::sec(2);
-zx::duration kLastUpdatedTimeoutDuration = zx::sec(10);
+zx::duration kLastUpdatedTimeoutDuration = zx::sec(20);
 zx::duration kMaxTimeoutDuration = zx::sec(60);
 
 }  // namespace
