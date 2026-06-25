@@ -343,6 +343,8 @@ template("escher_library") {
         "flib/fence_queue.h",
         "flib/fence_set_listener.cc",
         "flib/fence_set_listener.h",
+        "impl/semaphore_pool.cc",
+        "impl/semaphore_pool.h",
         "util/fuchsia_utils.cc",
         "util/fuchsia_utils.h",
       ]

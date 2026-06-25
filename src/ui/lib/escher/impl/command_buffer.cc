@@ -386,7 +386,6 @@ bool CommandBuffer::Retire() {
     callback_ = nullptr;
   }
 
-  // TODO: move semaphores to pool for reuse?
   wait_semaphores_.clear();
   wait_semaphore_stages_.clear();
   signal_semaphores_.clear();
