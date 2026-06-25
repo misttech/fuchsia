@@ -14,16 +14,18 @@
 //! [fuchsia_runtime::UtcClockTransform], which allows the heap invariants
 //! to be maintained.
 
+use fidl;
+use fidl_fuchsia_time_alarms as fta;
+use fuchsia_async as fasync;
+use fuchsia_runtime as fxr;
+use fuchsia_trace as trace;
 use log::error;
 use std::cell::RefCell;
 use std::cmp;
 use std::collections::{BTreeMap, BinaryHeap, HashSet};
 use std::rc::Rc;
 use time_pretty::{format_duration, format_timer};
-use {
-    fidl, fidl_fuchsia_time_alarms as fta, fuchsia_async as fasync, fuchsia_runtime as fxr,
-    fuchsia_trace as trace, zx,
-};
+use zx;
 
 pub(crate) trait Responder: std::fmt::Debug {
     fn send(
@@ -334,8 +336,9 @@ pub(crate) struct Heap {
     // And since there is a constant number of heaps to manage, we can present
     // a heap-like API to the union of the two heaps efficiently.
     utc_timers: BinaryHeap<Node>,
-    // IDs of all currently active timers.
-    active_timers: HashSet<Id>,
+    // IDs of all currently active timers, for indexing purposes. It is always the union of the IDs
+    // of timers in `boot_timers` and `utc_timers`.
+    active_timer_ids: HashSet<Id>,
     /// Needed for deadline conversions in std::cmp traits. The contents of
     /// `transform` will be mutated by other holders of the shared reference.
     transform: Rc<RefCell<fxr::UtcClockTransform>>,
@@ -356,7 +359,7 @@ impl Heap {
         Self {
             boot_timers: BinaryHeap::new(),
             utc_timers: BinaryHeap::new(),
-            active_timers: HashSet::new(),
+            active_timer_ids: HashSet::new(),
             transform,
         }
     }
@@ -395,8 +398,8 @@ impl Heap {
     pub fn push(&mut self, new_node: Node) {
         let new_id = new_node.id();
         let new_deadline = new_node.deadline;
-        self.active_timers.insert(new_id.clone());
-        if let Some(_) = self.active_timers.get(&new_id) {
+        self.active_timer_ids.insert(new_id.clone());
+        if let Some(_) = self.active_timer_ids.get(&new_id) {
             // Replace an existing node.
             // The deadline may be pushed out or pulled in.
             self.boot_timers.retain(|t| t.id() != new_node.id());
@@ -466,13 +469,13 @@ impl Heap {
     pub fn is_empty(&self) -> bool {
         let boot_empty = self.boot_timers.is_empty();
         let utc_empty = self.utc_timers.is_empty();
-        let empty = self.active_timers.is_empty();
+        let empty = self.active_timer_ids.is_empty();
 
         assert_eq!(
             empty,
             boot_empty && utc_empty,
             "broken invariant: {boot_empty},{utc_empty},{empty}:\n\tactive_timers={:?}\n\tboot_timers={:?}\n\tutc_timers={:?}",
-            self.active_timers,
+            self.active_timer_ids,
             self.boot_timers,
             self.utc_timers,
         );
@@ -502,11 +505,11 @@ impl Heap {
                 if Heap::expired(now, deadline.as_boot(&*transform.borrow())) {
                     match deadline {
                         Deadline::Boot(_) => self.boot_timers.pop().map(|node| {
-                            self.active_timers.remove(&node.id());
+                            self.active_timer_ids.remove(&node.id());
                             node
                         }),
                         Deadline::Utc(_) => self.utc_timers.pop().map(|node| {
-                            self.active_timers.remove(&node.id());
+                            self.active_timer_ids.remove(&node.id());
                             node
                         }),
                     }
@@ -517,10 +520,13 @@ impl Heap {
             .flatten()
     }
 
-    /// Removes an alarm by ID.  If the earliest alarm is the alarm to be removed,
-    /// it is returned.
+    /// Removes an alarm by ID.
+    ///
+    /// If the alarm matching the ID is the imminent (soonest to trigger), it
+    /// it is returned.  If no such alarm, this returns silently. It returns
+    /// silently also for non-imminent alarms.
     pub fn remove_by_id(&mut self, timer_id: &Id) -> Option<Node> {
-        self.active_timers.remove(timer_id);
+        self.active_timer_ids.remove(timer_id);
         let boot_ret = if let Some(t) = self.boot_timers.peek().map(|node| node.id()) {
             if *t == *timer_id { self.boot_timers.pop() } else { None }
         } else {
@@ -543,7 +549,7 @@ impl Heap {
     pub fn timer_count(&self) -> usize {
         let boot_count = self.boot_timers.len();
         let utc_count = self.utc_timers.len();
-        let count = self.active_timers.len();
+        let count = self.active_timer_ids.len();
         assert!(
             boot_count + utc_count == count,
             "broken invariant: {boot_count}+{utc_count}=={count}"

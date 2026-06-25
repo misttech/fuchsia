@@ -1331,7 +1331,8 @@ async fn wake_timer_loop(
                         hrtimer_status = None;
                     }
                 } else {
-                    debug!("wake_timer_loop: STOP: no active timer to stop: {}", timer_id);
+                    // Imminent: the soonest to trigger, based on its timeline.
+                    debug!("wake_timer_loop: STOP: removed non-imminent timer: {}", timer_id);
                 }
             }
             Cmd::Alarm { expired_deadline, keep_alive } => {
