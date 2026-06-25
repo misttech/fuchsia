@@ -379,16 +379,6 @@
             availability: "same_as_target",
         },
         {
-            // Routed to session-manager via account.core_shard.cml
-            protocol: [
-                "fuchsia.identity.account.AccountManager",
-                "fuchsia.identity.account.DeprecatedAccountManager",
-            ],
-            from: "parent",
-            to: "#session",
-            availability: "same_as_target",
-        },
-        {
             // Routed to session-manager via activity.core_shard.cml
             protocol: [
                 "fuchsia.ui.activity.control.Control",

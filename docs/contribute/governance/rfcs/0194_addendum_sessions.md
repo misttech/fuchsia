@@ -237,9 +237,7 @@ The session can access and manage system setting such as the software update cha
 
 The session is provided with the necessary capabilities to supply encrypted
 storage to components inside the session. These include encrypted device
-storage capabilities and the [account management](/sdk/fidl/fuchsia.identity.account/account_manager.fidl)
-service. The account management service may be used to perform authentication
-and access account encrypted storage.
+storage capabilities.
 
 ## Implementation
 

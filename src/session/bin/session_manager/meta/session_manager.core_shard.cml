@@ -510,20 +510,6 @@
             to: "#session-manager",
             source_availability: "unknown",
         },
-
-        // The following all originate from 'some_products_capabilities.core_shard.cml'
-        // and are needed by all products that today use the session-manager
-        // The routes listed below originate from other core components.
-        // Routes are sorted by source component name.
-        {
-            protocol: [
-                "fuchsia.identity.account.AccountManager",
-                "fuchsia.identity.account.DeprecatedAccountManager",
-            ],
-            from: "#account",
-            to: "#session-manager",
-            source_availability: "unknown",
-        },
         {
             protocol: [
                 "fuchsia.media.ActivityReporter",

@@ -8,10 +8,6 @@ of Fuchsia.
 - Integration tests should be placed in [//src/security/tests](//src/security/tests)
 
 ## Project Descriptions
-* [credential\_manager](//src/security/bin/credential_manager): Launched at
-  `/core/account/credential_manager` and serves the `fuchsia.identity.credential` FIDL
-  interfaces. The services provided by this component are consumed by the
-  `password_authenticator` for storing and retrieving user credentials.
 * [root\_ssl\_certificates](//src/security/bin/root_ssl_certificates): Fuchsia's
   TLS root CA certificates (a.k.a. truststore). It serves as a resource package
   for components that use TLS.
