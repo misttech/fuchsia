@@ -69,14 +69,14 @@ impl<'a> PermissionCheck<'a> {
         target_sid: SecurityId,
         permission: P,
     ) -> PermissionCheckResult {
-        has_permission(
-            self.security_server.is_enforcing(),
+        let result = has_permission(
             self.local_cache,
             self.access_vector_cache,
             source_sid,
             target_sid,
             permission.into(),
-        )
+        );
+        self.apply_enforcement(result)
     }
 
     /// Returns whether the `source_sid` has both a base permission (i.e. `ioctl` or `nlmsg`) and
@@ -103,7 +103,7 @@ impl<'a> PermissionCheck<'a> {
         xperm: u16,
     ) -> PermissionCheckResult {
         let permission: KernelPermission = permission.into();
-        self.local_cache.check_xperm(
+        let result = self.local_cache.check_xperm(
             xperms_kind,
             source_sid,
             target_sid,
@@ -111,7 +111,6 @@ impl<'a> PermissionCheck<'a> {
             xperm,
             || {
                 has_extended_permission(
-                    self.security_server.is_enforcing(),
                     self.access_vector_cache,
                     xperms_kind,
                     source_sid,
@@ -120,7 +119,22 @@ impl<'a> PermissionCheck<'a> {
                     xperm,
                 )
             },
-        )
+        );
+        self.apply_enforcement(result)
+    }
+
+    fn apply_enforcement(&self, mut result: PermissionCheckResult) -> PermissionCheckResult {
+        if !result.granted {
+            if !self.security_server.is_enforcing() {
+                result.permissive = true;
+                result.todo_bug = None;
+            } else if result.todo_bug.is_some() {
+                result.granted = true;
+            }
+        } else {
+            result.todo_bug = None;
+        }
+        result
     }
 
     // TODO: https://fxbug.dev/362699811 - Remove this once `SecurityServer` APIs such as `sid_to_security_context()`
@@ -180,7 +194,6 @@ impl<'a> PermissionCheck<'a> {
 
 /// Internal implementation of the `has_permission()` API, in terms of the `Query` trait.
 fn has_permission(
-    is_enforcing: bool,
     local_cache: &PerThreadCache,
     query: &impl Query,
     source_sid: SecurityId,
@@ -193,11 +206,7 @@ fn has_permission(
         // fd use checks are cached separately.
         return local_cache.lookup_fd_use(source_sid, target_sid, || {
             let decision = query.compute_access_decision(source_sid, target_sid, KernelClass::Fd);
-            access_decision_to_permission_check_result(
-                is_enforcing,
-                permission_access_vector,
-                decision,
-            )
+            access_decision_to_permission_check_result(permission_access_vector, decision)
         });
     }
 
@@ -205,40 +214,21 @@ fn has_permission(
         local_cache.lookup_access_decision(source_sid, target_sid, permission.class(), || {
             query.compute_access_decision(source_sid, target_sid, permission.class())
         });
-    let result = access_decision_to_permission_check_result(
-        is_enforcing,
-        permission_access_vector,
-        decision,
-    );
-
-    result
+    access_decision_to_permission_check_result(permission_access_vector, decision)
 }
 
 fn access_decision_to_permission_check_result(
-    is_enforcing: bool,
     permission_access_vector: AccessVector,
     decision: KernelAccessDecision,
 ) -> PermissionCheckResult {
     let permissive = decision.flags & SELINUX_AVD_FLAGS_PERMISSIVE != 0;
     let granted = permission_access_vector & decision.allow == permission_access_vector;
     let audit = permission_access_vector & decision.audit != AccessVector::NONE;
-    let mut result = PermissionCheckResult { granted, audit, permissive, todo_bug: None };
-
-    if !result.granted {
-        if !is_enforcing {
-            result.permissive = true;
-        } else if decision.todo_bug.is_some() {
-            result.granted = true;
-            result.todo_bug = decision.todo_bug;
-        }
-    }
-
-    result
+    PermissionCheckResult { granted, audit, permissive, todo_bug: decision.todo_bug }
 }
 
 /// Internal implementation of the `has_extended_permission()` API, in terms of the `Query` trait.
 fn has_extended_permission(
-    is_enforcing: bool,
     query: &impl Query,
     xperms_kind: XpermsKind,
     source_sid: SecurityId,
@@ -260,16 +250,12 @@ fn has_extended_permission(
     let permissive = xperms_decision.permissive;
     let mut result = PermissionCheckResult { granted, audit, permissive, todo_bug: None };
 
-    if !result.granted {
-        if !is_enforcing {
-            result.permissive = true;
-        } else if xperms_decision.has_todo {
-            // A todo_bug applies to this entry. Look up the base decision for details.
-            // This will re-compute the base decision if it is not cached.
-            let base_decision =
-                query.compute_access_decision(source_sid, target_sid, permission.class());
-            result.todo_bug = base_decision.todo_bug;
-        }
+    if !result.permit() && xperms_decision.has_todo {
+        // A todo_bug applies to this entry. Look up the base decision for details.
+        // This will re-compute the base decision if it is not cached.
+        let base_decision =
+            query.compute_access_decision(source_sid, target_sid, permission.class());
+        result.todo_bug = base_decision.todo_bug;
     }
 
     result
@@ -451,7 +437,6 @@ mod tests {
             let local_cache1 = PerThreadCache::default();
             // DenyAllPermissions denies.
             let result = has_permission(
-                /*is_enforcing=*/ true,
                 &local_cache1,
                 &deny_all,
                 *A_TEST_SID,
@@ -472,7 +457,6 @@ mod tests {
             let local_cache2 = PerThreadCache::default();
             // AllowAllPermissions allows.
             let result = has_permission(
-                /*is_enforcing=*/ true,
                 &local_cache2,
                 &allow_all,
                 *A_TEST_SID,
@@ -500,7 +484,6 @@ mod tests {
 
         // DenyAllPermissions denies.
         let result = has_extended_permission(
-            /*is_enforcing=*/ true,
             &deny_all,
             XpermsKind::Ioctl,
             *A_TEST_SID,
@@ -521,7 +504,6 @@ mod tests {
 
         // AllowAllPermissions allows.
         let result = has_extended_permission(
-            /*is_enforcing=*/ true,
             &allow_all,
             XpermsKind::Ioctl,
             *A_TEST_SID,
@@ -541,26 +523,48 @@ mod tests {
         assert!(result.permit());
     }
 
+    fn security_server_with_tests_policy() -> std::sync::Arc<SecurityServer> {
+        const POLICY: &[u8] =
+            include_bytes!("../testdata/micro_policies/security_server_tests_policy");
+        let security_server = SecurityServer::new_default();
+        assert!(security_server.load_policy(POLICY.into()).is_ok());
+        security_server
+    }
+
     #[test]
     fn has_ioctl_permission_not_enforcing() {
-        let deny_all = DenyAllPermissions::default();
-        let permission = CommonFsNodePermission::Ioctl.for_class(FileClass::File);
+        let security_server = security_server_with_tests_policy();
+        let enforcing_values = [true, false];
+        for enforcing in enforcing_values {
+            security_server.set_enforcing(enforcing);
 
-        // DenyAllPermissions denies, but the permission is allowed when the security server
-        // is not in enforcing mode. The decision should still be audited.
-        let result = has_extended_permission(
-            /*is_enforcing=*/ false,
-            &deny_all,
-            XpermsKind::Ioctl,
-            *A_TEST_SID,
-            *A_TEST_SID,
-            permission,
-            0xabcd,
-        );
-        assert_eq!(
-            result,
-            PermissionCheckResult { granted: false, audit: true, permissive: true, todo_bug: None }
-        );
-        assert!(result.permit());
+            let sid =
+                security_server.security_context_to_sid("user0:object_r:type0:s0".into()).unwrap();
+            let local_cache = PerThreadCache::default();
+            let permission_check = security_server.as_permission_check(&local_cache);
+
+            let permission = CommonFsNodePermission::Ioctl.for_class(FileClass::File);
+
+            // The test policy does not grant the permission, but when the security server
+            // is not in enforcing mode the permission will still be granted.
+            // Because the permission was not granted by policy, the check will be audit logged.
+            let result = permission_check.has_extended_permission(
+                XpermsKind::Ioctl,
+                sid,
+                sid,
+                permission,
+                0xabcd,
+            );
+            assert_eq!(
+                result,
+                PermissionCheckResult {
+                    granted: false,
+                    audit: true,
+                    permissive: !enforcing,
+                    todo_bug: None
+                }
+            );
+            assert_eq!(result.permit(), !enforcing);
+        }
     }
 }
