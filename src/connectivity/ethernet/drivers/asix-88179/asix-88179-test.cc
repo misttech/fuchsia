@@ -8,6 +8,7 @@
 #include <lib/async-loop/testing/cpp/real_loop.h>
 #include <lib/component/incoming/cpp/directory.h>
 #include <lib/component/incoming/cpp/protocol.h>
+#include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
 #include <lib/fdio/cpp/caller.h>
 #include <lib/fzl/vmo-mapper.h>
@@ -31,10 +32,13 @@ namespace ax88179 = fuchsia_hardware_ax88179;
 class UsbAx88179Test : public zxtest::Test, loop_fixture::RealLoop {
  public:
   void SetUp() override {
-    auto bus = BusLauncher::Create();
+    auto bus = BusLauncher::Create({
+        fuchsia_component_test::Capability::WithService(
+            fuchsia_component_test::Service{{.name = ax88179::Service::Name}}),
+    });
     ASSERT_OK(bus.status_value());
     bus_ = std::move(bus.value());
-    ASSERT_NO_FATAL_FAILURE(InitUsbAx88179(&dev_path_, &test_function_path_));
+    ASSERT_NO_FATAL_FAILURE(InitUsbAx88179(&dev_path_));
   }
 
   void TearDown() override {
@@ -43,7 +47,7 @@ class UsbAx88179Test : public zxtest::Test, loop_fixture::RealLoop {
     ASSERT_OK(bus_->Disable());
   }
 
-  void InitUsbAx88179(fbl::String* dev_path, fbl::String* test_function_path) {
+  void InitUsbAx88179(fbl::String* dev_path) {
     namespace usb_peripheral = fuchsia_hardware_usb_peripheral;
     using ConfigurationDescriptor =
         ::fidl::VectorView<fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor>;
@@ -78,17 +82,6 @@ class UsbAx88179Test : public zxtest::Test, loop_fixture::RealLoop {
       zx::result watch_result = device_watcher::WatchDirectoryForItems(
           directory.value(), [&dev_path](std::string_view devpath) {
             *dev_path = fbl::String::Concat({"class/network/", devpath});
-            return std::monostate{};
-          });
-      ASSERT_OK(watch_result);
-    }
-    {
-      zx::result directory =
-          component::OpenDirectoryAt(caller.directory(), "class/test-asix-function");
-      ASSERT_OK(directory);
-      zx::result watch_result = device_watcher::WatchDirectoryForItems(
-          directory.value(), [&test_function_path](std::string_view devpath) {
-            *test_function_path = fbl::String::Concat({"class/test-asix-function/", devpath});
             return std::monostate{};
           });
       ASSERT_OK(watch_result);
@@ -131,9 +124,8 @@ class UsbAx88179Test : public zxtest::Test, loop_fixture::RealLoop {
   }
 
   void SetDeviceOnline() {
-    fdio_cpp::UnownedFdioCaller caller(bus_->GetRootFd());
-    zx::result test_client_end =
-        component::ConnectAt<ax88179::Hooks>(caller.directory(), test_function_path_);
+    component::SyncServiceMemberWatcher<ax88179::Service::Hooks> watcher(bus_->GetExposedDir());
+    zx::result test_client_end = watcher.GetNextInstance(false);
     ASSERT_OK(test_client_end.status_value());
     fidl::WireSyncClient test_client{std::move(*test_client_end)};
 
@@ -173,7 +165,6 @@ class UsbAx88179Test : public zxtest::Test, loop_fixture::RealLoop {
  protected:
   std::optional<BusLauncher> bus_;
   fbl::String dev_path_;
-  fbl::String test_function_path_;
   std::unique_ptr<network::client::NetworkDeviceClient> client_;
   fuchsia_hardware_network::wire::PortId port_id_;
 };
