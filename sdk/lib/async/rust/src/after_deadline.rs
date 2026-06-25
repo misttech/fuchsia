@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::task::{Context, Poll};
 
+use libasync_dispatcher::{AsyncDispatcher, DetectDispatcher, GetAsyncDispatcher};
 use libasync_sys::{async_cancel_task, async_dispatcher, async_post_task, async_task};
 
 use futures::task::AtomicWaker;
@@ -15,27 +16,47 @@ use zx::Status;
 use zx::sys::{ZX_ERR_CANCELED, ZX_OK};
 
 use crate::callback_state::CallbackSharedState;
-use crate::{AsAsyncDispatcherRef, OnDispatcher};
 
 type SharedState = CallbackSharedState<async_task, AfterDeadlineState>;
 
 /// Implements methods used for setting and waiting on timers on a dispatcher.
-pub trait DispatcherTimerExt: OnDispatcher {
+pub trait DispatcherTimerExt {
     /// Returns a future that will fire when after the given deadline time.
     ///
     /// This can be used instead of the fuchsia-async timer primitives in situations where
     /// there isn't a currently active fuchsia-async executor running on that dispatcher for some
     /// reason (ie. the rust code does not own the dispatcher) or for cases where the small overhead
     /// of fuchsia-async compatibility is too much.
-    fn after_deadline(&self, deadline: zx::MonotonicInstant) -> AfterDeadline<Self>;
+    ///
+    /// # Panics
+    ///
+    /// If the dispatcher pointed to by `self` is not available right now (like [`CurrentDispatcher`])
+    /// on a thread with no current dispatcher set, this function will panic. You can use
+    /// [`Self::try_after_deadline`] to handle the condition where there is no current dispatcher,
+    /// or if you're trying to run it on the current dispatcher you may want to use [`AfterDeadline::new`]
+    /// instead.
+    fn after_deadline(&self, deadline: zx::MonotonicInstant) -> AfterDeadline;
+
+    /// Returns a future that will fire when after the given deadline time.
+    ///
+    /// This can be used instead of the fuchsia-async timer primitives in situations where
+    /// there isn't a currently active fuchsia-async executor running on that dispatcher for some
+    /// reason (ie. the rust code does not own the dispatcher) or for cases where the small overhead
+    /// of fuchsia-async compatibility is too much.
+    fn try_after_deadline(&self, deadline: zx::MonotonicInstant) -> Option<AfterDeadline>;
 }
 
 impl<T> DispatcherTimerExt for T
 where
-    T: OnDispatcher,
+    T: GetAsyncDispatcher,
 {
-    fn after_deadline(&self, deadline: zx::MonotonicInstant) -> AfterDeadline<Self> {
-        AfterDeadline::new(self, deadline)
+    fn after_deadline(&self, deadline: zx::MonotonicInstant) -> AfterDeadline {
+        self.try_after_deadline(deadline).expect("No current dispatcher")
+    }
+
+    fn try_after_deadline(&self, deadline: zx::MonotonicInstant) -> Option<AfterDeadline> {
+        let dispatcher = self.try_get_async_dispatcher()?;
+        Some(AfterDeadline::new_on(dispatcher, deadline))
     }
 }
 
@@ -68,24 +89,37 @@ impl AfterDeadlineState {
 /// A future that represents a deferral to a future time.
 ///
 /// See [`OnDispatcher::after_deadline`] for more information.
-pub struct AfterDeadline<D: OnDispatcher> {
-    dispatcher: D,
+pub struct AfterDeadline {
+    dispatcher: DetectDispatcher,
     state: Option<Arc<SharedState>>,
     deadline: zx::MonotonicInstant,
 }
 
-impl<D: OnDispatcher + Clone> AfterDeadline<D> {
-    pub(super) fn new(dispatcher: &D, deadline: zx::MonotonicInstant) -> Self {
-        let dispatcher = dispatcher.clone();
+impl AfterDeadline {
+    /// Creates a new timer object that will fire when the deadline has passed.
+    ///
+    /// This will get the current dispatcher on first poll. If you want to run it against a
+    /// specific dispatcher, use [`DispatcherTimerExt::after_deadline`].
+    pub fn new(deadline: zx::MonotonicInstant) -> Self {
         let state = None;
+        let dispatcher = DetectDispatcher::default();
+        Self { dispatcher, state, deadline }
+    }
+
+    fn new_on(dispatcher: AsyncDispatcher, deadline: zx::MonotonicInstant) -> Self {
+        let state = None;
+        let dispatcher = DetectDispatcher::new(dispatcher);
         Self { dispatcher, state, deadline }
     }
 }
 
-impl<D: OnDispatcher + Unpin> Future for AfterDeadline<D> {
+impl Future for AfterDeadline {
     type Output = Result<(), Status>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // if we didn't have a dispatcher when the future was created, return BAD_STATE.
+        let dispatcher = self.dispatcher.get_or_detect()?;
+
         // if we've already spawned a task then return based on the task's state.
         if let Some(state) = &self.state {
             let status = state.status.load(Ordering::Relaxed);
@@ -98,95 +132,79 @@ impl<D: OnDispatcher + Unpin> Future for AfterDeadline<D> {
         }
 
         let deadline = self.deadline;
-
-        let now = self.dispatcher.on_maybe_dispatcher(|dispatcher| Ok(dispatcher.now()));
-        match now {
-            Ok(now) if deadline < zx::MonotonicInstant::from_nanos(now) => {
-                return Poll::Ready(Ok(()));
-            }
-            Err(err) => {
-                return Poll::Ready(Err(err));
-            }
-            _ => {}
+        let now = dispatcher.now();
+        if deadline < zx::MonotonicInstant::from_nanos(now) {
+            return Poll::Ready(Ok(()));
         }
 
         // otherwise we want to wait for a callback
-        let state = self.dispatcher.on_maybe_dispatcher(move |dispatcher| {
-            // SAFETY: the fdf dispatcher is valid by construction and can provide an async dispatcher.
-            let async_dispatcher = dispatcher.inner();
+        let async_dispatcher = dispatcher.as_ptr();
 
-            let task = async_task {
-                handler: Some(AfterDeadlineState::call),
-                deadline: deadline.into_nanos(),
-                ..Default::default()
-            };
-            let state = AfterDeadlineState {
-                async_dispatcher,
-                waker: AtomicWaker::new(),
-                status: AtomicI32::new(Status::SHOULD_WAIT.into_raw()),
-            };
-            let state = SharedState::new(task, state);
-            state.waker.register(cx.waker());
+        let task = async_task {
+            handler: Some(AfterDeadlineState::call),
+            deadline: deadline.into_nanos(),
+            ..Default::default()
+        };
+        let state = AfterDeadlineState {
+            async_dispatcher,
+            waker: AtomicWaker::new(),
+            status: AtomicI32::new(Status::SHOULD_WAIT.into_raw()),
+        };
+        let state = SharedState::new(task, state);
+        state.waker.register(cx.waker());
 
-            let state_ptr = SharedState::make_raw_ptr(state.clone());
+        let state_ptr = SharedState::make_raw_ptr(state.clone());
 
-            // SAFETY: We know the `async_dispatcher` is valid because we're running inside
-            // `on_dispatcher` and we are giving ownership of the shared state object to the
-            // callback.
-            let res = Status::ok(unsafe { async_post_task(async_dispatcher.as_ptr(), state_ptr) });
-            match res {
-                Ok(_) => Ok(state),
-                Err(err) => {
-                    // SAFETY: Posting the task failed, so we now have an outstanding reference to
-                    // the state object that will never have a callback called on it.
-                    unsafe { SharedState::release_raw_ptr(state_ptr) };
-                    Err(err)
-                }
-            }
-        });
-
-        match state {
-            Ok(state) => {
+        // SAFETY: We know the `async_dispatcher` is valid because we're running inside
+        // `on_dispatcher` and we are giving ownership of the shared state object to the
+        // callback.
+        let res = Status::ok(unsafe { async_post_task(async_dispatcher.as_ptr(), state_ptr) });
+        match res {
+            Ok(_) => {
                 self.state = Some(state);
                 Poll::Pending
             }
-            Err(err) => Poll::Ready(Err(err)),
+            Err(err) => {
+                // SAFETY: Posting the task failed, so we now have an outstanding reference to
+                // the state object that will never have a callback called on it.
+                unsafe { SharedState::release_raw_ptr(state_ptr) };
+                Poll::Ready(Err(err))
+            }
         }
     }
 }
 
-impl<D: OnDispatcher> Drop for AfterDeadline<D> {
+impl Drop for AfterDeadline {
     fn drop(&mut self) {
         let Some(state) = self.state.take() else {
             // if we never spawned a task we can just return.
             return;
         };
-        self.dispatcher.on_dispatcher(|dispatcher| {
-            let Some(dispatcher) = dispatcher else {
-                // if the dispatcher is no longer alive then the callback will have been
-                // called with ZX_ERR_CANCELED and we can assume that freed the callback's
-                // Arc.
-                return;
-            };
-            if state.status.load(Ordering::Relaxed) != Status::SHOULD_WAIT.into_raw() {
-                // the callback has been called so we don't even need to try to cancel it.
-                return;
-            }
-            let async_dispatcher = dispatcher.inner();
-            if async_dispatcher != state.async_dispatcher {
-                panic!("Dropping a pending `AfterDeadline` future from a different dispatcher than the one it was awaited on.");
-            }
-            let state_ptr = SharedState::as_raw_ptr(&state);
-            // SAFETY: We know that the current async dispatcher is valid because we are running
-            // inside `on_dispatcher`, and we know the `state_ptr` is valid because the `Arc`
-            // holding it is still held.
-            let status = unsafe { async_cancel_task(async_dispatcher.as_ptr(), state_ptr) };
-            if Status::from_raw(status) == Status::OK {
-                // SAFETY: If the cancellation was successful, we know the callback won't be called
-                // so we need to deallocate the copy of the arc that was given to it.
-                unsafe { SharedState::release_raw_ptr(state_ptr) };
-            }
-        });
+        let Some(dispatcher) = self.dispatcher.get() else {
+            // if we never got a dispatcher or failed to get a dispatcher then we never
+            // registered a wait and we can just return.
+            return;
+        };
+        if state.status.load(Ordering::Relaxed) != Status::SHOULD_WAIT.into_raw() {
+            // the callback has been called so we don't even need to try to cancel it.
+            return;
+        }
+        let async_dispatcher = dispatcher.as_ptr();
+        if async_dispatcher != state.async_dispatcher {
+            panic!(
+                "Dropping a pending `AfterDeadline` future from a different dispatcher than the one it was awaited on."
+            );
+        }
+        let state_ptr = SharedState::as_raw_ptr(&state);
+        // SAFETY: We know that the current async dispatcher is valid because we are running
+        // inside `on_dispatcher`, and we know the `state_ptr` is valid because the `Arc`
+        // holding it is still held.
+        let status = unsafe { async_cancel_task(async_dispatcher.as_ptr(), state_ptr) };
+        if Status::from_raw(status) == Status::OK {
+            // SAFETY: If the cancellation was successful, we know the callback won't be called
+            // so we need to deallocate the copy of the arc that was given to it.
+            unsafe { SharedState::release_raw_ptr(state_ptr) };
+        }
     }
 }
 

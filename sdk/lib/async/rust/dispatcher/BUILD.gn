@@ -25,6 +25,7 @@ rustc_library("dispatcher") {
 
   sources = [
     "src/current_dispatcher.rs",
+    "src/detect_dispatcher.rs",
     "src/lib.rs",
     "src/task.rs",
   ]

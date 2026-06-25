@@ -18,9 +18,11 @@ use zx_status::Status;
 use zx_types::zx_time_t;
 
 mod current_dispatcher;
+mod detect_dispatcher;
 mod task;
 
 pub use current_dispatcher::*;
+pub use detect_dispatcher::*;
 pub use task::*;
 
 /// A reference to a dispatcher that supports the v4 async api's reference counting operations,
@@ -57,6 +59,19 @@ impl AsyncDispatcher {
         // reference.
         Status::ok(unsafe { libasync_sys::async_acquire_shared_ref(dispatcher.0.as_ptr()) })?;
         Ok(Self(dispatcher.0))
+    }
+
+    /// Returns the current time on the dispatcher's timeline
+    pub fn now(&self) -> zx_time_t {
+        let async_dispatcher = self.as_ptr().as_ptr();
+        // SAFETY: The dispatcher is a valid reference to a live dispatcher by construction, and
+        // this function does not touch any rust memory.
+        unsafe { async_now(async_dispatcher) }
+    }
+
+    /// Gets the inner pointer to the dispatcher struct.
+    pub fn as_ptr(&self) -> NonNull<async_dispatcher_t> {
+        self.0
     }
 }
 
@@ -140,14 +155,6 @@ pub trait AsAsyncDispatcherRef: Send + Sync {
             unsafe { Arc::decrement_strong_count(task_cell) }
         }
         res
-    }
-
-    /// Returns the current time on the dispatcher's timeline
-    fn now(&self) -> zx_time_t {
-        let async_dispatcher = self.as_async_dispatcher_ref().0.as_ptr();
-        // SAFETY: The dispatcher returned from self.as_async_dispatcher_ref() is valid by
-        // construction.
-        unsafe { async_now(async_dispatcher) }
     }
 }
 
