@@ -1,9 +1,6 @@
-#!/usr/bin/env python3.4
-#
-# Copyright 2025 The Fuchsia Authors
+# Copyright 2026 The Fuchsia Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-#
 """
 This test exercises basic scanning functionality to confirm expected behavior
 related to wlan scanning
@@ -13,6 +10,7 @@ import logging
 from datetime import datetime
 
 import fidl_fuchsia_wlan_internal as f_wlan_internal
+import fuchsia_wlan_base_test
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
@@ -20,10 +18,7 @@ from antlion.controllers.ap_lib.hostapd_security import (
 from antlion.controllers.ap_lib.hostapd_security import (
     SecurityMode as DeprecatedSecurityMode,
 )
-from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
-from mobly.config_parser import TestRunConfig
-from mobly.records import TestResultRecord
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
@@ -33,7 +28,7 @@ from openwrt_access_point.lib.access_point_config import (
 )
 
 
-class WlanScanTest(base_test.WifiBaseTest):
+class WlanScanTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     """WLAN scan test class.
 
     Test Bed Requirement:
@@ -42,12 +37,9 @@ class WlanScanTest(base_test.WifiBaseTest):
       network or a onHub/GoogleWifi
     """
 
-    def __init__(self, configs: TestRunConfig) -> None:
-        super().__init__(configs)
+    async def setup_class(self) -> None:
+        await super().setup_class()
         self.log = logging.getLogger()
-
-    def setup_class(self) -> None:
-        super().setup_class()
 
         if self.openwrt_aps:
             self.openwrt_ap = self.openwrt_aps[0]
@@ -59,24 +51,18 @@ class WlanScanTest(base_test.WifiBaseTest):
                 "Requires at least one access point and one Fuchsia device"
             )
 
-        self.dut = self.fuchsia_devices[0]
-        self.dut.configure_wlan(association_mechanism="drivers")
-
-    def on_fail(self, record: TestResultRecord) -> None:
-        self.on_device_fail(self.dut, record)
-        self.dut.configure_wlan(association_mechanism="drivers")
-
-    def teardown_test(self) -> None:
-        self.dut.honeydew_fd.wlan_core_deprecated_sync.disconnect()
+    async def teardown_test(self) -> None:
+        await self.dut.wlan_core.disconnect()
         if self.access_point:
             self.access_point.stop_all_aps()
+        await super().teardown_test()
 
-    def teardown_class(self) -> None:
-        self.download_logs()
+    async def teardown_class(self) -> None:
         if self.access_point:
             self.access_point.stop_all_aps()
+        await super().teardown_class()
 
-    def test_scan_while_connected(self) -> None:
+    async def test_scan_while_connected(self) -> None:
         """Connects to a specified network and initiates a scan."""
         ssid = AccessPointConfig.random_string(20)
         if self.openwrt_ap:
@@ -107,15 +93,13 @@ class WlanScanTest(base_test.WifiBaseTest):
             )
 
         authentication = f_wlan_internal.Authentication(
-            protocol=f_wlan_internal.Protocol.OPEN, credentials=None
+            f_wlan_internal.Protocol.OPEN, None
         )
 
-        name = self.dut.honeydew_fd.device_name
+        name = self.dut.device_name
 
         self.log.info('[%s] Scanning for ssid "%s"', name, ssid)
-        scan_results = (
-            self.dut.honeydew_fd.wlan_core_deprecated_sync.scan_for_bss_info()
-        )
+        scan_results = await self.dut.wlan_core.scan_for_bss_info()
         asserts.assert_in(
             ssid, scan_results, f'Scan results did not include "{ssid}"'
         )
@@ -128,19 +112,17 @@ class WlanScanTest(base_test.WifiBaseTest):
 
         self.log.info('[%s] Connecting to ssid "%s"', name, ssid)
         asserts.assert_true(
-            self.dut.honeydew_fd.wlan_core_deprecated_sync.connect(
-                ssid,
-                target_bss[0],
-                authentication,
+            await self.dut.wlan_core.connect(
+                ssid=ssid,
+                bss_desc=target_bss[0],
+                authentication=authentication,
             ),
             f"Expected connect to {ssid} to succeed",
         )
 
         self.log.info('[%s] Scanning while connected to "%s"', name, ssid)
         start_time = datetime.now()
-        scan_results = (
-            self.dut.honeydew_fd.wlan_core_deprecated_sync.scan_for_bss_info()
-        )
+        scan_results = await self.dut.wlan_core.scan_for_bss_info()
         self.log.info("Scan contained %d results", len(scan_results))
         self.log.debug("Scan results: %s", scan_results)
         total_time_ms = (datetime.now() - start_time).total_seconds() * 1000
