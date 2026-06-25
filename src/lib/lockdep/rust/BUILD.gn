@@ -30,9 +30,9 @@ rustc_library("lockdep") {
 
   if (is_kernel) {
     if (enable_lock_dep) {
-      cfgs = [ "lock_dep" ]
+      features = [ "lock_dep" ]
     } else if (enable_lock_dep_metadata_only) {
-      cfgs = [ "lock_metadata_only" ]
+      features = [ "lock_metadata_only" ]
     }
   }
 }

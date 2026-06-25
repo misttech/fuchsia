@@ -42,20 +42,16 @@ rustc_library("ksync") {
 
   if (is_kernel) {
     features = [ "kernel" ]
-    _cfgs = []
     if (enable_lock_dep) {
-      _cfgs += [ "lock_dep" ]
+      features += [ "lock_dep" ]
     } else if (enable_lock_dep_metadata_only) {
-      _cfgs += [ "lock_metadata_only" ]
+      features += [ "lock_metadata_only" ]
     }
     if (scheduler_lock_spin_tracing_enabled) {
-      _cfgs += [ "spin_lock_tracing" ]
+      features += [ "spin_lock_tracing" ]
     }
     if (lock_name_tracing_enabled || scheduler_lock_spin_tracing_enabled) {
-      _cfgs += [ "lock_name_tracing" ]
-    }
-    if (_cfgs != []) {
-      cfgs = _cfgs
+      features += [ "lock_name_tracing" ]
     }
     deps += [
       "//sdk/rust/zx-status",

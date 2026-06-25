@@ -18,7 +18,7 @@
 #if WITH_LOCK_DEP
 constexpr size_t kExpectedLockClassStateSize = sizeof(lockdep::ValidatorLockClassState);
 constexpr size_t kExpectedLockClassStateAlign = alignof(lockdep::ValidatorLockClassState);
-constexpr size_t kExpectedLockClassRegistrationSize = 856;
+constexpr size_t kExpectedLockClassRegistrationSize = 1624;
 constexpr size_t kExpectedStateStorageOffset = 16;
 #else
 constexpr size_t kExpectedLockClassStateSize = sizeof(lockdep::MetadataLockClassState);

@@ -17,19 +17,9 @@ constexpr bool kWithLockDep = true;
 constexpr bool kWithLockDep = false;
 #endif
 
-#if WITH_LOCK_DEP
-#if kSchedulerLockSpinTracingEnabled || kLockNameTracingEnabled
-constexpr size_t kExpectedMutexSize = 40;
-#else
-constexpr size_t kExpectedMutexSize = 32;
-#endif
-#else
-#if kSchedulerLockSpinTracingEnabled || kLockNameTracingEnabled
-constexpr size_t kExpectedMutexSize = 32;
-#else
-constexpr size_t kExpectedMutexSize = 24;
-#endif
-#endif
+constexpr size_t kExpectedMutexSize =
+    kWithLockDep ? ((kSchedulerLockSpinTracingEnabled || kLockNameTracingEnabled) ? 40 : 32)
+                 : ((kSchedulerLockSpinTracingEnabled || kLockNameTracingEnabled) ? 32 : 24);
 
 #if WITH_LOCK_DEP
 using SystemLockType = lockdep::LockDep<void, Mutex>;
@@ -46,19 +36,8 @@ using SystemSpinlockType = lockdep::LockDep<void, SpinLock>;
 using SystemSpinlockType = SpinLock;
 #endif
 
-#if WITH_LOCK_DEP
-#if kSchedulerLockSpinTracingEnabled
-constexpr size_t kExpectedSpinlockSize = 24;
-#else
-constexpr size_t kExpectedSpinlockSize = 16;
-#endif
-#else
-#if kSchedulerLockSpinTracingEnabled
-constexpr size_t kExpectedSpinlockSize = 16;
-#else
-constexpr size_t kExpectedSpinlockSize = 4;
-#endif
-#endif
+constexpr size_t kExpectedSpinlockSize = kWithLockDep ? (kSchedulerLockSpinTracingEnabled ? 24 : 16)
+                                                      : (kSchedulerLockSpinTracingEnabled ? 16 : 4);
 
 static_assert(sizeof(SystemSpinlockType) == kExpectedSpinlockSize,
               "Rust KSpinlock size mismatch with C++ size");

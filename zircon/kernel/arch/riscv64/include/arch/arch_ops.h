@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <zircon/features.h>
 
+#include <arch/arch_interrupt.h>
 #include <arch/riscv64/feature.h>
 #include <arch/riscv64/mp.h>
 

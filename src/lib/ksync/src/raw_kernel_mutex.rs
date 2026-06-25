@@ -6,9 +6,9 @@ use crate::raw_lock::RawLock;
 use core::ffi::c_void;
 use pin_init::{PinInit, pin_data};
 
-#[cfg(lock_name_tracing)]
+#[cfg(feature = "lock_name_tracing")]
 const RAW_MUTEX_SIZE: usize = 32;
-#[cfg(not(lock_name_tracing))]
+#[cfg(not(feature = "lock_name_tracing"))]
 const RAW_MUTEX_SIZE: usize = 24;
 
 unsafe extern "C" {
@@ -42,7 +42,7 @@ pub struct LockEntryStorage(zr::OpaqueBytes<40>);
 #[pin_data(PinnedDrop)]
 #[repr(C)]
 pub struct RawMutex {
-    #[cfg(lock_dep)]
+    #[cfg(feature = "lock_dep")]
     class_id: *const c_void,
     storage: RawMutexStorage,
 }
@@ -86,7 +86,7 @@ impl crate::RawLock for RawMutex {
 #[pin_data(PinnedDrop)]
 #[repr(C)]
 pub struct RawCriticalMutex {
-    #[cfg(lock_dep)]
+    #[cfg(feature = "lock_dep")]
     class_id: *const c_void,
     storage: RawMutexStorage,
 }
@@ -125,10 +125,10 @@ impl crate::RawLock for RawCriticalMutex {
 }
 
 const _: () = {
-    #[cfg(lock_dep)]
-    const EXPECTED_SIZE: usize = if cfg!(lock_name_tracing) { 40 } else { 32 };
-    #[cfg(not(lock_dep))]
-    const EXPECTED_SIZE: usize = if cfg!(lock_name_tracing) { 32 } else { 24 };
+    #[cfg(feature = "lock_dep")]
+    const EXPECTED_SIZE: usize = if cfg!(feature = "lock_name_tracing") { 40 } else { 32 };
+    #[cfg(not(feature = "lock_dep"))]
+    const EXPECTED_SIZE: usize = if cfg!(feature = "lock_name_tracing") { 32 } else { 24 };
 
     assert!(core::mem::size_of::<RawMutex>() == EXPECTED_SIZE);
     assert!(core::mem::align_of::<RawMutex>() == 8);

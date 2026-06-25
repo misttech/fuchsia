@@ -12,14 +12,14 @@ pub trait LockClass {
     const ID: *mut core::ffi::c_void;
 }
 
-#[cfg(any(lock_dep, lock_metadata_only))]
+#[cfg(any(feature = "lock_dep", feature = "lock_metadata_only"))]
 mod enabled {
     core::cfg_select! {
-        lock_dep => {
-            const LOCK_CLASS_STATE_SIZE: usize = 840;
-            const LOCK_CLASS_REGISTRATION_SIZE: usize = 856;
+        feature = "lock_dep" => {
+            const LOCK_CLASS_STATE_SIZE: usize = 1608;
+            const LOCK_CLASS_REGISTRATION_SIZE: usize = 1624;
         }
-        lock_metadata_only => {
+        feature = "lock_metadata_only" => {
             const LOCK_CLASS_STATE_SIZE: usize = 8;
             const LOCK_CLASS_REGISTRATION_SIZE: usize = 24;
         }
@@ -66,10 +66,10 @@ mod enabled {
     zr::static_assert!(core::mem::align_of::<LockClassRegistration>() == 8);
 }
 
-#[cfg(any(lock_dep, lock_metadata_only))]
+#[cfg(any(feature = "lock_dep", feature = "lock_metadata_only"))]
 pub use enabled::LockClassRegistration;
 
-#[cfg(not(any(lock_dep, lock_metadata_only)))]
+#[cfg(not(any(feature = "lock_dep", feature = "lock_metadata_only")))]
 mod disabled {
     /// A registration entry for a Rust lock class (stub for disabled lockdep).
     pub struct LockClassRegistration;
@@ -86,5 +86,5 @@ mod disabled {
     }
 }
 
-#[cfg(not(any(lock_dep, lock_metadata_only)))]
+#[cfg(not(any(feature = "lock_dep", feature = "lock_metadata_only")))]
 pub use disabled::LockClassRegistration;

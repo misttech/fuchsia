@@ -32,9 +32,9 @@ unsafe extern "C" {
     );
 }
 
-#[cfg(spin_lock_tracing)]
+#[cfg(feature = "spin_lock_tracing")]
 const RAW_SPINLOCK_SIZE: usize = 16;
-#[cfg(not(spin_lock_tracing))]
+#[cfg(not(feature = "spin_lock_tracing"))]
 const RAW_SPINLOCK_SIZE: usize = 4;
 
 #[repr(C, align(8))]
@@ -44,7 +44,7 @@ struct RawSpinlockStorage(zr::OpaqueBytes<RAW_SPINLOCK_SIZE>);
 #[pin_data(PinnedDrop)]
 #[repr(C)]
 pub struct RawSpinlock {
-    #[cfg(lock_dep)]
+    #[cfg(feature = "lock_dep")]
     class_id: *const c_void,
     storage: RawSpinlockStorage,
 }
@@ -83,9 +83,9 @@ impl crate::RawLock for RawSpinlock {
 }
 
 const _: () = {
-    #[cfg(lock_dep)]
+    #[cfg(feature = "lock_dep")]
     const BASE_SIZE: usize = 8;
-    #[cfg(not(lock_dep))]
+    #[cfg(not(feature = "lock_dep"))]
     const BASE_SIZE: usize = 0;
 
     const EXPECTED_SPINLOCK_SIZE: usize = BASE_SIZE + if RAW_SPINLOCK_SIZE == 4 { 8 } else { 16 };
