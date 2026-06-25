@@ -4,10 +4,11 @@
 
 use anyhow::Error;
 use async_trait::async_trait;
+use fidl_fuchsia_ui_app as ui_app;
+use fidl_fuchsia_ui_views as ui_views;
 use fidl_fuchsia_ui_views::ViewRef;
 use scene_management::{DisplayMetrics, InjectorViewportSubscriber, SceneManagerTrait};
 use std::cell::Cell;
-use {fidl_fuchsia_ui_app as ui_app, fidl_fuchsia_ui_views as ui_views};
 
 pub struct MockSceneManager {
     was_present_root_view_called: Cell<bool>,
@@ -44,7 +45,7 @@ impl MockSceneManager {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 #[allow(unused_variables)]
 impl SceneManagerTrait for MockSceneManager {
     fn present_root_view(&self) {
@@ -52,7 +53,7 @@ impl SceneManagerTrait for MockSceneManager {
     }
 
     async fn set_root_view(
-        &mut self,
+        &self,
         viewport_creation_token: ui_views::ViewportCreationToken,
         view_ref: Option<ui_views::ViewRef>,
     ) -> Result<(), Error> {
@@ -65,17 +66,17 @@ impl SceneManagerTrait for MockSceneManager {
     // Leave everything else unimplemented.
 
     async fn set_root_view_deprecated(
-        &mut self,
+        &self,
         view_provider: ui_app::ViewProviderProxy,
     ) -> Result<ui_views::ViewRef, Error> {
         unimplemented!()
     }
 
-    fn set_cursor_position(&mut self, position_physical_px: input_pipeline::Position) {
+    fn set_cursor_position(&self, position_physical_px: input_pipeline::Position) {
         unimplemented!()
     }
 
-    fn set_cursor_visibility(&mut self, visible: bool) {
+    fn set_cursor_visibility(&self, visible: bool) {
         unimplemented!()
     }
 

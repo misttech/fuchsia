@@ -32,9 +32,11 @@ use futures::channel::oneshot;
 use futures::prelude::*;
 use log::{error, info, warn};
 use math as fmath;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::ffi::CStr;
 use std::process;
+use std::rc::Rc;
 use std::sync::{Arc, Weak};
 
 /// Presentation messages.
@@ -256,25 +258,25 @@ pub struct SceneManager {
     // Holds a pair of IDs that are used to embed the system shell inside |scene_flatland|, a
     // TransformId identifying a transform in the scene graph, and a ContentId which identifies a
     // a viewport that is set as the content of that transform.
-    scene_root_viewport_ids: Option<TransformContentIdPair>,
+    scene_root_viewport_ids: RefCell<Option<TransformContentIdPair>>,
 
     // Generates a sequential stream of ContentIds and TransformIds.  By guaranteeing
     // uniqueness across all Flatland instances, we avoid potential confusion during debugging.
-    id_generator: scenic::flatland::IdGenerator,
+    id_generator: RefCell<scenic::flatland::IdGenerator>,
 
     // Supports callers of fuchsia.ui.pointerinjector.configuration.setup.WatchViewport(), allowing
     // each invocation to subscribe to changes in the viewport region.
-    viewport_hanging_get: Arc<Mutex<InjectorViewportHangingGet>>,
+    viewport_hanging_get: Rc<RefCell<InjectorViewportHangingGet>>,
 
     // Used to publish viewport changes to subscribers of |viewport_hanging_get|.
     // TODO(https://fxbug.dev/42168647): use this to publish changes to screen resolution.
-    _viewport_publisher: Arc<Mutex<InjectorViewportPublisher>>,
+    _viewport_publisher: Rc<RefCell<InjectorViewportPublisher>>,
 
     // Used to position the cursor.
     cursor_transform_id: Option<TransformId>,
 
     // Used to track cursor visibility.
-    cursor_visibility: bool,
+    cursor_visibility: Cell<bool>,
 
     // Used to track the display metrics for the root scene.
     display_metrics: DisplayMetrics,
@@ -283,6 +285,9 @@ pub struct SceneManager {
     //
     // (physical pixel) = (device_pixel_ratio) * (logical pixel)
     device_pixel_ratio: f32,
+
+    // Lock to serialize set_root_view calls and prevent interleaving race conditions.
+    set_root_view_lock: futures::lock::Mutex<()>,
 }
 
 /// A [SceneManager] manages a Scenic scene graph, and allows clients to add views to it.
@@ -299,15 +304,15 @@ pub struct SceneManager {
 /// scene_manager.set_root_view(viewport_token).await?;
 ///
 /// ```
-#[async_trait]
-pub trait SceneManagerTrait: Send {
+#[async_trait(?Send)]
+pub trait SceneManagerTrait {
     /// Sets the root view for the scene.
     ///
     /// ViewRef will be unset for Flatland views.
     ///
     /// Removes any previous root view, as well as all of its descendants.
     async fn set_root_view(
-        &mut self,
+        &self,
         viewport_creation_token: ui_views::ViewportCreationToken,
         view_ref: Option<ui_views::ViewRef>,
     ) -> Result<(), Error>;
@@ -317,7 +322,7 @@ pub trait SceneManagerTrait: Send {
     ///
     /// Removes any previous root view, as well as all of its descendants.
     async fn set_root_view_deprecated(
-        &mut self,
+        &self,
         view_provider: ui_app::ViewProviderProxy,
     ) -> Result<ui_views::ViewRef, Error>;
 
@@ -335,13 +340,13 @@ pub trait SceneManagerTrait: Send {
     /// If a custom cursor has not been set using `set_cursor_image` or `set_cursor_shape` a default
     /// cursor will be created and added to the scene.  The implementation of the `SceneManager` trait
     /// is responsible for translating the raw input position into "pips".
-    fn set_cursor_position(&mut self, position_physical_px: Position);
+    fn set_cursor_position(&self, position_physical_px: Position);
 
     /// Sets the visibility of the cursor in the current scene. The cursor is visible by default.
     ///
     /// # Parameters
     /// - `visible`: Boolean value indicating if the cursor should be visible.
-    fn set_cursor_visibility(&mut self, visible: bool);
+    fn set_cursor_visibility(&self, visible: bool);
 
     // Supports the implementation of fuchsia.ui.pointerinjector.configurator.Setup.GetViewRefs()
     fn get_pointerinjection_view_refs(&self) -> (ui_views::ViewRef, ui_views::ViewRef);
@@ -357,7 +362,7 @@ pub trait SceneManagerTrait: Send {
     fn get_display_metrics(&self) -> &DisplayMetrics;
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl SceneManagerTrait for SceneManager {
     /// Sets the root view for the scene.
     ///
@@ -365,10 +370,11 @@ impl SceneManagerTrait for SceneManager {
     ///
     /// Removes any previous root view, as well as all of its descendants.
     async fn set_root_view(
-        &mut self,
+        &self,
         viewport_creation_token: ui_views::ViewportCreationToken,
         _view_ref: Option<ui_views::ViewRef>,
     ) -> Result<(), Error> {
+        let _guard = self.set_root_view_lock.lock().await;
         self.set_root_view_internal(viewport_creation_token).await.map(|_view_ref| {})
     }
 
@@ -377,9 +383,10 @@ impl SceneManagerTrait for SceneManager {
     ///
     /// Removes any previous root view, as well as all of its descendants.
     async fn set_root_view_deprecated(
-        &mut self,
+        &self,
         view_provider: ui_app::ViewProviderProxy,
     ) -> Result<ui_views::ViewRef, Error> {
+        let _guard = self.set_root_view_lock.lock().await;
         let link_token_pair = scenic::flatland::ViewCreationTokenPair::new()?;
 
         // Use view provider to initiate creation of the view which will be connected to the
@@ -418,7 +425,7 @@ impl SceneManagerTrait for SceneManager {
     /// If a custom cursor has not been set using `set_cursor_image` or `set_cursor_shape` a default
     /// cursor will be created and added to the scene.  The implementation of the `SceneManager` trait
     /// is responsible for translating the raw input position into "pips".
-    fn set_cursor_position(&mut self, position_physical_px: Position) {
+    fn set_cursor_position(&self, position_physical_px: Position) {
         if let Some(cursor_transform_id) = self.cursor_transform_id {
             let position_logical = position_physical_px / self.device_pixel_ratio;
             let x =
@@ -439,10 +446,10 @@ impl SceneManagerTrait for SceneManager {
     ///
     /// # Parameters
     /// - `visible`: Boolean value indicating if the cursor should be visible.
-    fn set_cursor_visibility(&mut self, visible: bool) {
+    fn set_cursor_visibility(&self, visible: bool) {
         if let Some(cursor_transform_id) = self.cursor_transform_id {
-            if self.cursor_visibility != visible {
-                self.cursor_visibility = visible;
+            if self.cursor_visibility.get() != visible {
+                self.cursor_visibility.set(visible);
                 let flatland = self.root_flatland.flatland.lock();
                 if visible {
                     flatland
@@ -470,7 +477,7 @@ impl SceneManagerTrait for SceneManager {
     // Support the hanging get implementation of
     // fuchsia.ui.pointerinjector.configurator.Setup.WatchViewport().
     fn get_pointerinjector_viewport_watcher_subscription(&self) -> InjectorViewportSubscriber {
-        self.viewport_hanging_get.lock().new_subscriber()
+        self.viewport_hanging_get.borrow_mut().new_subscriber()
     }
 
     fn get_display_metrics(&self) -> &DisplayMetrics {
@@ -715,7 +722,7 @@ impl SceneManager {
 
         // Read device pixel ratio from layout info.
         let device_pixel_ratio = display_metrics.pixels_per_pip();
-        let viewport_hanging_get: Arc<Mutex<InjectorViewportHangingGet>> =
+        let viewport_hanging_get: Rc<RefCell<InjectorViewportHangingGet>> =
             create_viewport_hanging_get({
                 InjectorViewportSpec {
                     width: display_metrics.width_in_pixels() as f32,
@@ -725,7 +732,8 @@ impl SceneManager {
                     y_offset: 0.,
                 }
             });
-        let viewport_publisher = Arc::new(Mutex::new(viewport_hanging_get.lock().new_publisher()));
+        let viewport_publisher =
+            Rc::new(RefCell::new(viewport_hanging_get.borrow_mut().new_publisher()));
 
         let context_view_ref = scenic::duplicate_view_ref(&root_flatland.view_ref)?;
         let target_view_ref = scenic::duplicate_view_ref(&pointerinjector_flatland.view_ref)?;
@@ -747,37 +755,46 @@ impl SceneManager {
             _pointerinjector_flatland_presentation_sender:
                 pointerinjector_flatland_presentation_sender,
             scene_flatland_presentation_sender,
-            scene_root_viewport_ids: None,
-            id_generator,
+            scene_root_viewport_ids: RefCell::new(None),
+            id_generator: RefCell::new(id_generator),
             viewport_hanging_get,
             _viewport_publisher: viewport_publisher,
             cursor_transform_id: None,
-            cursor_visibility: true,
+            cursor_visibility: Cell::new(true),
             display_metrics,
             device_pixel_ratio,
+            set_root_view_lock: futures::lock::Mutex::new(()),
         })
     }
 
     async fn set_root_view_internal(
-        &mut self,
+        &self,
         viewport_creation_token: ui_views::ViewportCreationToken,
     ) -> Result<ui_views::ViewRef> {
         // Remove any existing viewport.
-        if let Some(ids) = &self.scene_root_viewport_ids {
-            let locked = self.scene_flatland.flatland.lock();
-            locked
-                .set_content(&ids.transform_id, &ContentId { value: 0 })
-                .context("could not set content")?;
-            locked.remove_child(&self.scene_flatland.root_transform_id, &ids.transform_id)?;
-            locked.release_transform(&ids.transform_id).context("could not release transform")?;
-            let _ = locked.release_viewport(&ids.content_id);
-            self.scene_root_viewport_ids = None;
+        {
+            let mut scene_root_viewport_ids = self.scene_root_viewport_ids.borrow_mut();
+            if let Some(ids) = &*scene_root_viewport_ids {
+                let locked = self.scene_flatland.flatland.lock();
+                locked
+                    .set_content(&ids.transform_id, &ContentId { value: 0 })
+                    .context("could not set content")?;
+                locked.remove_child(&self.scene_flatland.root_transform_id, &ids.transform_id)?;
+                locked
+                    .release_transform(&ids.transform_id)
+                    .context("could not release transform")?;
+                let _ = locked.release_viewport(&ids.content_id);
+            }
+            *scene_root_viewport_ids = None;
         }
 
         // Create new viewport.
-        let ids = TransformContentIdPair {
-            transform_id: self.id_generator.next_transform_id(),
-            content_id: self.id_generator.next_content_id(),
+        let ids = {
+            let mut id_generator = self.id_generator.borrow_mut();
+            TransformContentIdPair {
+                transform_id: id_generator.next_transform_id(),
+                content_id: id_generator.next_content_id(),
+            }
         };
         let (child_view_watcher, child_view_watcher_request) =
             create_proxy::<ui_comp::ChildViewWatcherMarker>();
@@ -799,7 +816,7 @@ impl SceneManager {
                 .set_content(&ids.transform_id, &ids.content_id)
                 .context("could not set content #2")?;
         }
-        self.scene_root_viewport_ids = Some(ids);
+        *self.scene_root_viewport_ids.borrow_mut() = Some(ids);
 
         // Present the previous scene graph mutations.  This MUST be done before awaiting the result
         // of get_view_ref() below, because otherwise the view won't become attached to the global
@@ -839,7 +856,7 @@ impl SceneManager {
 
 pub fn create_viewport_hanging_get(
     initial_spec: InjectorViewportSpec,
-) -> Arc<Mutex<InjectorViewportHangingGet>> {
+) -> Rc<RefCell<InjectorViewportHangingGet>> {
     let notify_fn: InjectorViewportChangeFn = Box::new(|viewport_spec, responder| {
         if let Err(fidl_error) = responder.send(&(*viewport_spec).into()) {
             info!("Viewport hanging get notification, FIDL error: {}", fidl_error);
@@ -848,7 +865,7 @@ pub fn create_viewport_hanging_get(
         true
     });
 
-    Arc::new(Mutex::new(hanging_get::HangingGet::new(initial_spec, notify_fn)))
+    Rc::new(RefCell::new(hanging_get::HangingGet::new(initial_spec, notify_fn)))
 }
 
 pub fn start_exit_on_scenic_closed_task(flatland_proxy: ui_comp::FlatlandDisplayProxy) {
@@ -986,18 +1003,17 @@ pub fn start_flatland_presentation_loop(
 
 pub fn handle_pointer_injector_configuration_setup_request_stream(
     mut request_stream: PointerInjectorConfigurationSetupRequestStream,
-    scene_manager: Arc<futures::lock::Mutex<dyn SceneManagerTrait>>,
+    scene_manager: Rc<dyn SceneManagerTrait>,
 ) {
     fasync::Task::local(async move {
-        let subscriber =
-            scene_manager.lock().await.get_pointerinjector_viewport_watcher_subscription();
+        let subscriber = scene_manager.get_pointerinjector_viewport_watcher_subscription();
 
         loop {
             let request = request_stream.try_next().await;
             match request {
                 Ok(Some(PointerInjectorConfigurationSetupRequest::GetViewRefs { responder })) => {
                     let (context_view_ref, target_view_ref) =
-                        scene_manager.lock().await.get_pointerinjection_view_refs();
+                        scene_manager.get_pointerinjection_view_refs();
                     if let Err(e) = responder.send(context_view_ref, target_view_ref) {
                         warn!("Failed to send GetViewRefs() response: {}", e);
                     }

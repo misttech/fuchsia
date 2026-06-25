@@ -38,13 +38,13 @@ use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::stats::InspectorExt;
 use fuchsia_inspect::{Inspector, InspectorConfig};
-use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
 use log::{error, info, warn};
 use scene_manager_structured_config::Config;
+use std::cell::RefCell;
 use std::fs::File;
 use std::io::Read;
-use std::sync::Arc;
+use std::rc::Rc;
 
 enum ExposedServices {
     ColorAdjustment(ColorAdjustmentRequestStream),
@@ -236,7 +236,7 @@ pub async fn start(
     } else {
         None
     };
-    let scene_manager: Arc<Mutex<dyn SceneManagerTrait>> = Arc::new(Mutex::new(
+    let scene_manager: Rc<dyn SceneManagerTrait> = Rc::new(
         SceneManager::new(
             flatland_display,
             singleton_display_info,
@@ -249,7 +249,7 @@ pub async fn start(
             viewing_distance,
         )
         .await?,
-    ));
+    );
 
     let (focus_chain_publisher, focus_chain_stream_handler) =
         focus_chain_provider::make_publisher_and_stream_handler();
@@ -285,7 +285,7 @@ pub async fn start(
     };
 
     let color_transform_manager =
-        create_color_transform_manager(&incoming, attach_a11y_view, Arc::clone(&scene_manager))
+        create_color_transform_manager(&incoming, attach_a11y_view, Rc::clone(&scene_manager))
             .await?;
 
     fs.serve_connection(outgoing_dir).context("serve outgoing dir")?;
@@ -297,7 +297,7 @@ pub async fn start(
             ExposedServices::ColorAdjustmentHandler(request_stream) => {
                 if attach_a11y_view {
                     ColorTransformManager::handle_color_adjustment_handler_request_stream(
-                        Arc::clone(color_transform_manager.as_ref().unwrap()),
+                        Rc::clone(color_transform_manager.as_ref().unwrap()),
                         request_stream,
                     );
                 } else {
@@ -307,7 +307,7 @@ pub async fn start(
             ExposedServices::ColorAdjustment(request_stream) => {
                 if attach_a11y_view {
                     ColorTransformManager::handle_color_adjustment_request_stream(
-                        Arc::clone(color_transform_manager.as_ref().unwrap()),
+                        Rc::clone(color_transform_manager.as_ref().unwrap()),
                         request_stream,
                     );
                 } else {
@@ -317,7 +317,7 @@ pub async fn start(
             ExposedServices::DisplayBacklight(request_stream) => {
                 if attach_a11y_view {
                     ColorTransformManager::handle_display_backlight_request_stream(
-                        Arc::clone(color_transform_manager.as_ref().unwrap()),
+                        Rc::clone(color_transform_manager.as_ref().unwrap()),
                         request_stream,
                     );
                 } else {
@@ -330,7 +330,7 @@ pub async fn start(
             ExposedServices::SceneManager(request_stream) => {
                 fasync::Task::local(handle_scene_manager_request_stream(
                     request_stream,
-                    Arc::clone(&scene_manager),
+                    Rc::clone(&scene_manager),
                 ))
                 .detach();
             }
@@ -402,7 +402,7 @@ pub async fn start(
             ExposedServices::GraphicalPresenter(stream) => {
                 fasync::Task::local(handle_graphical_presenter_request_stream(
                     stream,
-                    Arc::clone(&scene_manager),
+                    Rc::clone(&scene_manager),
                 ))
                 .detach();
             }
@@ -416,8 +416,8 @@ pub async fn start(
 pub async fn create_color_transform_manager(
     incoming: &Incoming,
     attach_a11y_view: bool,
-    scene_manager: Arc<Mutex<dyn SceneManagerTrait>>,
-) -> Result<Option<Arc<Mutex<ColorTransformManager>>>, Error> {
+    scene_manager: Rc<dyn SceneManagerTrait>,
+) -> Result<Option<Rc<RefCell<ColorTransformManager>>>, Error> {
     // Create and register a ColorTransformManager if we are attaching A11y View.
     if !attach_a11y_view {
         return Ok(None);
@@ -425,7 +425,7 @@ pub async fn create_color_transform_manager(
 
     let color_converter = incoming.connect_protocol::<color::ConverterProxy>()?;
     let color_transform_manager =
-        ColorTransformManager::new(color_converter, Arc::clone(&scene_manager));
+        ColorTransformManager::new(color_converter, Rc::clone(&scene_manager));
 
     let (color_transform_handler_client, color_transform_handler_server) =
         fidl::endpoints::create_request_stream::<ColorTransformHandlerMarker>();
@@ -441,7 +441,7 @@ pub async fn create_color_transform_manager(
             }
             Ok(()) => {
                 ColorTransformManager::handle_color_transform_request_stream(
-                    Arc::clone(&color_transform_manager),
+                    Rc::clone(&color_transform_manager),
                     color_transform_handler_server,
                 );
                 Ok(Some(color_transform_manager))
@@ -452,14 +452,13 @@ pub async fn create_color_transform_manager(
 
 pub async fn handle_scene_manager_request_stream(
     mut request_stream: SceneManagerRequestStream,
-    scene_manager: Arc<Mutex<dyn SceneManagerTrait>>,
+    scene_manager: Rc<dyn SceneManagerTrait>,
 ) {
     while let Ok(Some(request)) = request_stream.try_next().await {
         match request {
             SceneManagerRequest::SetRootView { view_provider, responder } => {
                 info!("Processing SceneManagerRequest::SetRootView().");
                 let proxy = view_provider.into_proxy();
-                let mut scene_manager = scene_manager.lock().await;
                 let set_root_view_result =
                     scene_manager.set_root_view_deprecated(proxy).await.map_err(|e| {
                         error!("Failed to obtain ViewRef from SetRootView(): {}", e);
@@ -483,7 +482,6 @@ pub async fn handle_scene_manager_request_stream(
             }
             SceneManagerRequest::PresentRootView { viewport_creation_token, responder } => {
                 info!("Processing SceneManagerRequest::PresentRootView().");
-                let mut scene_manager = scene_manager.lock().await;
                 let set_root_view_result =
                     scene_manager.set_root_view(viewport_creation_token, None).await.map_err(|e| {
                         error!("Failed to obtain ViewRef from PresentRootView(): {}", e);
@@ -499,7 +497,7 @@ pub async fn handle_scene_manager_request_stream(
 
 pub async fn handle_graphical_presenter_request_stream(
     mut request_stream: GraphicalPresenterRequestStream,
-    scene_manager: Arc<Mutex<dyn SceneManagerTrait>>,
+    scene_manager: Rc<dyn SceneManagerTrait>,
 ) {
     while let Ok(Some(request)) = request_stream.try_next().await {
         match request {
@@ -527,7 +525,6 @@ pub async fn handle_graphical_presenter_request_stream(
                         info!(
                             "Processing fuchsia.element.GraphicalPresenter/PresentView() with Flatland view tokens."
                         );
-                        let mut scene_manager = scene_manager.lock().await;
                         let set_root_view_result = scene_manager
                             .set_root_view(viewport_creation_token, None)
                             .await
@@ -566,8 +563,8 @@ mod tests {
     async fn handle_graphical_presenter_request_stream_present_view_gfx_errors() -> Result<(), Error>
     {
         let (proxy, stream) = create_proxy_and_stream::<GraphicalPresenterMarker>();
-        let scene_manager = Arc::new(Mutex::new(MockSceneManager::new()));
-        let mock_scene_manager = Arc::clone(&scene_manager);
+        let scene_manager = Rc::new(MockSceneManager::new());
+        let mock_scene_manager = Rc::clone(&scene_manager);
         fasync::Task::local(handle_graphical_presenter_request_stream(stream, mock_scene_manager))
             .detach();
 
@@ -598,8 +595,8 @@ mod tests {
     async fn handle_graphical_presenter_request_stream_presents_view_flatland() -> Result<(), Error>
     {
         let (proxy, stream) = create_proxy_and_stream::<GraphicalPresenterMarker>();
-        let scene_manager = Arc::new(Mutex::new(MockSceneManager::new()));
-        let mock_scene_manager = Arc::clone(&scene_manager);
+        let scene_manager = Rc::new(MockSceneManager::new());
+        let mock_scene_manager = Rc::clone(&scene_manager);
         fasync::Task::local(handle_graphical_presenter_request_stream(stream, mock_scene_manager))
             .detach();
 
@@ -618,7 +615,7 @@ mod tests {
             .await;
 
         let (recorded_viewport_creation_token, recorded_view_ref) =
-            scene_manager.lock().await.get_set_root_view_called_args();
+            scene_manager.get_set_root_view_called_args();
         assert_eq!(
             recorded_viewport_creation_token.value.koid(),
             expected_viewport_creation_token_koid
@@ -631,8 +628,7 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_create_color_transform_manager_attach_a11y_view_false() -> Result<(), Error> {
-        let scene_manager: Arc<Mutex<dyn SceneManagerTrait>> =
-            Arc::new(Mutex::new(MockSceneManager::new()));
+        let scene_manager: Rc<dyn SceneManagerTrait> = Rc::new(MockSceneManager::new());
         let result =
             create_color_transform_manager(&crate::lib::Incoming::new(), false, scene_manager)
                 .await?;

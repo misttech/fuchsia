@@ -14,10 +14,10 @@ use fidl_fuchsia_ui_brightness::{
 use fidl_fuchsia_ui_display_color as fidl_color;
 use fidl_fuchsia_ui_policy::{DisplayBacklightRequest, DisplayBacklightRequestStream};
 use fuchsia_async as fasync;
-use futures::lock::Mutex;
 use futures::stream::TryStreamExt;
 use log::{error, info, warn};
-use std::sync::Arc;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 const ZERO_OFFSET: [f32; 3] = [0., 0., 0.];
 
@@ -38,7 +38,7 @@ pub struct ColorTransformManager {
     // Used to set color correction on displays, as well as brightness.
     color_converter: fidl_color::ConverterProxy,
 
-    scene_manager: Arc<Mutex<dyn SceneManagerTrait>>,
+    scene_manager: Rc<dyn SceneManagerTrait>,
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -72,9 +72,9 @@ impl ColorTransformState {
 impl ColorTransformManager {
     pub fn new(
         color_converter: fidl_color::ConverterProxy,
-        scene_manager: Arc<Mutex<dyn SceneManagerTrait>>,
-    ) -> Arc<Mutex<Self>> {
-        Arc::new(Mutex::new(Self {
+        scene_manager: Rc<dyn SceneManagerTrait>,
+    ) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Self {
             current_color_transform: None,
             current_minimum_rgb: None,
             state: ColorTransformState {
@@ -88,13 +88,20 @@ impl ColorTransformManager {
 
     /// Sets the minimum value all pixel channels RGB can be from [0, 255] inclusive.
     /// Debounces duplicate requests.
-    async fn set_minimum_rgb(&mut self, minimum_rgb: u8) {
-        if self.current_minimum_rgb == Some(minimum_rgb) {
-            return;
-        }
-        self.current_minimum_rgb = Some(minimum_rgb);
+    async fn set_minimum_rgb(manager: Rc<RefCell<Self>>, minimum_rgb: u8) {
+        // The RefCell borrow is released before the await point to avoid holding it while suspended.
+        // This is safe because cloned proxies share the same underlying Zircon channel, ensuring
+        // strict FIFO ordering of requests on the Scenic side.
+        let (color_converter, scene_manager) = {
+            let mut this = manager.borrow_mut();
+            if this.current_minimum_rgb == Some(minimum_rgb) {
+                return;
+            }
+            this.current_minimum_rgb = Some(minimum_rgb);
+            (this.color_converter.clone(), this.scene_manager.clone())
+        };
 
-        let res = self.color_converter.set_minimum_rgb(minimum_rgb).await;
+        let res = color_converter.set_minimum_rgb(minimum_rgb).await;
         match res {
             Ok(true) => {}
             Ok(false) => {
@@ -105,20 +112,28 @@ impl ColorTransformManager {
             }
         }
 
-        let scene_manager = self.scene_manager.lock().await;
         scene_manager.present_root_view();
     }
 
     /// Sets the color transform matrix in Scenic.
     /// Debounces duplicate requests.
-    async fn set_scenic_color_conversion(&mut self, transform: ColorTransformMatrix) {
-        if self.current_color_transform == Some(transform) {
-            return;
-        }
-        self.current_color_transform = Some(transform);
+    async fn set_scenic_color_conversion(
+        manager: Rc<RefCell<Self>>,
+        transform: ColorTransformMatrix,
+    ) {
+        // The RefCell borrow is released before the await point to avoid holding it while suspended.
+        // This is safe because cloned proxies share the same underlying Zircon channel, ensuring
+        // strict FIFO ordering of requests on the Scenic side.
+        let (color_converter, scene_manager) = {
+            let mut this = manager.borrow_mut();
+            if this.current_color_transform == Some(transform) {
+                return;
+            }
+            this.current_color_transform = Some(transform);
+            (this.color_converter.clone(), this.scene_manager.clone())
+        };
 
-        let res = self
-            .color_converter
+        let res = color_converter
             .set_values(&fidl_color::ConversionProperties {
                 coefficients: Some(transform.matrix),
                 preoffsets: Some(transform.pre_offset),
@@ -136,12 +151,11 @@ impl ColorTransformManager {
             }
         }
 
-        let scene_manager = self.scene_manager.lock().await;
         scene_manager.present_root_view();
     }
 
     pub fn handle_color_transform_request_stream(
-        manager: Arc<Mutex<Self>>,
+        manager: Rc<RefCell<Self>>,
         mut request_stream: ColorTransformHandlerRequestStream,
     ) {
         fasync::Task::local(async move {
@@ -152,9 +166,8 @@ impl ColorTransformManager {
                         match (configuration.color_adjustment_matrix, configuration.color_adjustment_pre_offset, configuration.color_adjustment_post_offset) {
                             (Some(matrix), Some(pre_offset), Some(post_offset)) => {
                                 let transform = ColorTransformMatrix{matrix, pre_offset, post_offset};
-                                let mut manager = manager.lock().await;
-                                manager.state.update(configuration);
-                                manager.set_scenic_color_conversion(transform).await;
+                                manager.borrow_mut().state.update(configuration);
+                                Self::set_scenic_color_conversion(Rc::clone(&manager), transform).await;
                             }
                             _ => {
                                 warn!("Ignoring SetColorTransformConfiguration - missing matrix, pre_offset, or post_offset");
@@ -182,7 +195,7 @@ impl ColorTransformManager {
     }
 
     pub fn handle_color_adjustment_handler_request_stream(
-        manager: Arc<Mutex<Self>>,
+        manager: Rc<RefCell<Self>>,
         mut request_stream: ColorAdjustmentHandlerRequestStream,
     ) {
         fasync::Task::local(async move {
@@ -190,13 +203,13 @@ impl ColorTransformManager {
                 let request = request_stream.try_next().await;
                 match request {
                     Ok(Some(ColorAdjustmentHandlerRequest::SetColorAdjustment{ color_adjustment, control_handle: _})) => {
-                        let mut manager = manager.lock().await;
-                        if manager.state.is_active() {
+                        let is_active = manager.borrow().state.is_active();
+                        if is_active {
                             info!("Ignoring SetColorAdjustment because color correction is currently active.");
                             continue;
                         }
                         if let Some(matrix) = color_adjustment.matrix {
-                            manager.set_scenic_color_conversion(ColorTransformMatrix {
+                            Self::set_scenic_color_conversion(Rc::clone(&manager), ColorTransformMatrix {
                                 matrix,
                                 pre_offset: ZERO_OFFSET,
                                 post_offset: ZERO_OFFSET,
@@ -219,7 +232,7 @@ impl ColorTransformManager {
     }
 
     pub fn handle_color_adjustment_request_stream(
-        manager: Arc<Mutex<Self>>,
+        manager: Rc<RefCell<Self>>,
         mut request_stream: ColorAdjustmentRequestStream,
     ) {
         fasync::Task::local(async move {
@@ -227,26 +240,26 @@ impl ColorTransformManager {
               let request = request_stream.try_next().await;
               match request {
                   Ok(Some(ColorAdjustmentRequest::SetDiscreteColorAdjustment{ color_adjustment, responder})) => {
-                      let mut manager = manager.lock().await;
-                      if manager.state.is_active() {
+                      let is_active = manager.borrow().state.is_active();
+                      if is_active {
                           info!("Ignoring SetDiscreteColorAdjustment because color correction is currently active.");
                       } else {
-                      if let Some(matrix) = color_adjustment.matrix {
-                          manager.set_scenic_color_conversion(ColorTransformMatrix {
-                              matrix,
-                              pre_offset: ZERO_OFFSET,
-                              post_offset: ZERO_OFFSET,
-                          }).await;
-                      } else {
-                          warn!("Ignoring SetDiscreteColorAdjustment - `matrix` is empty.");
+                          if let Some(matrix) = color_adjustment.matrix {
+                              Self::set_scenic_color_conversion(Rc::clone(&manager), ColorTransformMatrix {
+                                  matrix,
+                                  pre_offset: ZERO_OFFSET,
+                                  post_offset: ZERO_OFFSET,
+                              }).await;
+                          } else {
+                              warn!("Ignoring SetDiscreteColorAdjustment - `matrix` is empty.");
+                          }
                       }
-                  }
-                  match responder.send() {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("Error responding to SetDiscreteColorAdjustment(): {}", e);
-                    }
-                }
+                      match responder.send() {
+                        Ok(_) => {}
+                        Err(e) => {
+                            error!("Error responding to SetDiscreteColorAdjustment(): {}", e);
+                        }
+                      }
                   }
                   Ok(Some(ColorAdjustmentRequest::_UnknownMethod { ordinal, .. })) => {
                     warn!("Unknown ColorAdjustmentRequest ordinal: {}", ordinal);
@@ -265,7 +278,7 @@ impl ColorTransformManager {
     }
 
     pub fn handle_display_backlight_request_stream(
-        manager: Arc<Mutex<Self>>,
+        manager: Rc<RefCell<Self>>,
         mut request_stream: DisplayBacklightRequestStream,
     ) {
         fasync::Task::local(async move {
@@ -273,7 +286,7 @@ impl ColorTransformManager {
                 let request = request_stream.try_next().await;
                 match request {
                     Ok(Some(DisplayBacklightRequest::SetMinimumRgb { minimum_rgb, responder })) => {
-                        manager.lock().await.set_minimum_rgb(minimum_rgb).await;
+                        Self::set_minimum_rgb(Rc::clone(&manager), minimum_rgb).await;
                         match responder.send() {
                             Ok(_) => {}
                             Err(e) => {
@@ -317,7 +330,7 @@ mod tests {
 
     #[derive(Clone, Default)]
     struct MockConverter {
-        state: Arc<Mutex<MockConverterState>>,
+        state: Rc<RefCell<MockConverterState>>,
     }
 
     #[derive(Default)]
@@ -332,19 +345,19 @@ mod tests {
 
     impl MockConverter {
         async fn run(&self, reqs: ConverterRequestStream) -> Result<()> {
-            reqs.try_for_each(|req| async {
-                let mut state = self.state.lock().await;
-                match req {
+            reqs.try_for_each(|req| {
+                let mut state = self.state.borrow_mut();
+                let res = match req {
                     ConverterRequest::SetMinimumRgb { minimum_rgb, responder } => {
                         state.requests.push_back(MockConverterRequest::SetMinimumRgb(minimum_rgb));
-                        responder.send(true)?;
+                        responder.send(true)
                     }
                     ConverterRequest::SetValues { properties, responder } => {
                         state.requests.push_back(MockConverterRequest::SetValues(properties));
-                        responder.send(zx::sys::ZX_OK)?;
+                        responder.send(zx::sys::ZX_OK)
                     }
-                }
-                Ok(())
+                };
+                future::ready(res)
             })
             .await?;
             Ok(())
@@ -352,7 +365,7 @@ mod tests {
 
         /// Assert that no new requests have gone out.
         async fn expect_no_requests(&self) {
-            assert!(self.state.lock().await.requests.is_empty());
+            assert!(self.state.borrow().requests.is_empty());
         }
 
         /// Waits for all background tasks to complete, then assert that no new
@@ -361,13 +374,12 @@ mod tests {
         fn expect_no_requests_sync(&self, exec: &mut fasync::TestExecutor) {
             let _ = exec.run_until_stalled(&mut future::pending::<()>());
 
-            let lock = self.state.try_lock().unwrap_or_else(|| panic!("Failed to get lock"));
-            assert!(lock.requests.is_empty());
+            assert!(self.state.borrow().requests.is_empty());
         }
 
         /// Assert that a SetMinimumRgb request went out.
         async fn expect_minimum_rgb(&mut self) -> u8 {
-            match self.state.lock().await.requests.pop_front().expect("No more requests") {
+            match self.state.borrow_mut().requests.pop_front().expect("No more requests") {
                 MockConverterRequest::SetValues(_) => {
                     panic!("Expected a SetMinimumRgb request, got a SetValues request");
                 }
@@ -377,7 +389,7 @@ mod tests {
 
         /// Assert that a SetValues request went out.
         async fn expect_set_values(&mut self) -> ConversionProperties {
-            match self.state.lock().await.requests.pop_front().expect("No more requests") {
+            match self.state.borrow_mut().requests.pop_front().expect("No more requests") {
                 MockConverterRequest::SetMinimumRgb(_) => {
                     panic!("Expected a SetValues request, got a SetMinimumRgb request");
                 }
@@ -394,8 +406,7 @@ mod tests {
         ) -> ConversionProperties {
             let _ = exec.run_until_stalled(&mut future::pending::<()>());
 
-            let mut lock = self.state.try_lock().unwrap_or_else(|| panic!("Failed to get lock"));
-            match lock.requests.pop_front().expect("No more requests") {
+            match self.state.borrow_mut().requests.pop_front().expect("No more requests") {
                 MockConverterRequest::SetMinimumRgb(_) => {
                     panic!("Expected a SetValues request, got a SetMinimumRgb request");
                 }
@@ -404,7 +415,7 @@ mod tests {
         }
     }
 
-    fn init() -> (Arc<Mutex<ColorTransformManager>>, MockConverter, Arc<Mutex<MockSceneManager>>) {
+    fn init() -> (Rc<RefCell<ColorTransformManager>>, MockConverter, Rc<MockSceneManager>) {
         let (client, server) = create_proxy_and_stream::<fidl_color::ConverterMarker>();
 
         let converter = MockConverter::default();
@@ -417,14 +428,14 @@ mod tests {
             .detach();
         }
 
-        let scene_manager = Arc::new(Mutex::new(MockSceneManager::new()));
-        let mock_scene_manager = Arc::clone(&scene_manager);
+        let scene_manager = Rc::new(MockSceneManager::new());
+        let mock_scene_manager = Rc::clone(&scene_manager);
 
         (ColorTransformManager::new(client, scene_manager), converter, mock_scene_manager)
     }
 
     fn create_display_backlight_stream(
-        manager: Arc<Mutex<ColorTransformManager>>,
+        manager: Rc<RefCell<ColorTransformManager>>,
     ) -> DisplayBacklightProxy {
         let (client, server) = create_proxy_and_stream::<DisplayBacklightMarker>();
         super::ColorTransformManager::handle_display_backlight_request_stream(manager, server);
@@ -432,7 +443,7 @@ mod tests {
     }
 
     fn create_color_adjustment_handler_stream(
-        manager: Arc<Mutex<ColorTransformManager>>,
+        manager: Rc<RefCell<ColorTransformManager>>,
     ) -> ColorAdjustmentHandlerProxy {
         let (client, server) = create_proxy_and_stream::<ColorAdjustmentHandlerMarker>();
         super::ColorTransformManager::handle_color_adjustment_handler_request_stream(
@@ -442,7 +453,7 @@ mod tests {
     }
 
     fn create_color_adjustment_stream(
-        manager: Arc<Mutex<ColorTransformManager>>,
+        manager: Rc<RefCell<ColorTransformManager>>,
     ) -> ColorAdjustmentProxy {
         let (client, server) = create_proxy_and_stream::<ColorAdjustmentMarker>();
         super::ColorTransformManager::handle_color_adjustment_request_stream(manager, server);
@@ -450,7 +461,7 @@ mod tests {
     }
 
     fn create_color_transform_stream(
-        manager: Arc<Mutex<ColorTransformManager>>,
+        manager: Rc<RefCell<ColorTransformManager>>,
     ) -> ColorTransformHandlerProxy {
         let (client, server) = create_proxy_and_stream::<ColorTransformHandlerMarker>();
         super::ColorTransformManager::handle_color_transform_request_stream(manager, server);
@@ -505,7 +516,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_color_transform_manager() -> Result<()> {
         let (manager, mut converter, _) = init();
-        let color_transform_proxy = create_color_transform_stream(Arc::clone(&manager));
+        let color_transform_proxy = create_color_transform_stream(Rc::clone(&manager));
 
         color_transform_proxy
             .set_color_transform_configuration(&color_transform_configuration())
@@ -522,7 +533,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_color_transform_manager_debounces() -> Result<()> {
         let (manager, mut converter, _) = init();
-        let color_transform_proxy = create_color_transform_stream(Arc::clone(&manager));
+        let color_transform_proxy = create_color_transform_stream(Rc::clone(&manager));
 
         color_transform_proxy
             .set_color_transform_configuration(&color_transform_configuration())
@@ -551,7 +562,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_color_transform_manager_rejects_bad_requests() -> Result<()> {
         let (manager, converter, _) = init();
-        let color_transform_proxy = create_color_transform_stream(Arc::clone(&manager));
+        let color_transform_proxy = create_color_transform_stream(Rc::clone(&manager));
 
         color_transform_proxy
             .set_color_transform_configuration(&ColorTransformConfiguration {
@@ -583,7 +594,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_color_adjustment() -> Result<()> {
         let (manager, mut converter, _) = init();
-        let color_adjustment_proxy = create_color_adjustment_stream(Arc::clone(&manager));
+        let color_adjustment_proxy = create_color_adjustment_stream(Rc::clone(&manager));
 
         color_adjustment_proxy
             .set_discrete_color_adjustment(&ColorAdjustmentTable {
@@ -605,7 +616,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_color_adjustment_rejects_bad_requests() -> Result<()> {
         let (manager, converter, _) = init();
-        let color_adjustment_proxy = create_color_adjustment_stream(Arc::clone(&manager));
+        let color_adjustment_proxy = create_color_adjustment_stream(Rc::clone(&manager));
 
         color_adjustment_proxy
             .set_discrete_color_adjustment(&ColorAdjustmentTable::default())
@@ -619,8 +630,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_color_adjustment_noop_when_a11y_active() -> Result<()> {
         let (manager, mut converter, _) = init();
-        let color_transform_proxy = create_color_transform_stream(Arc::clone(&manager));
-        let color_adjustment_proxy = create_color_adjustment_stream(Arc::clone(&manager));
+        let color_transform_proxy = create_color_transform_stream(Rc::clone(&manager));
+        let color_adjustment_proxy = create_color_adjustment_stream(Rc::clone(&manager));
 
         color_transform_proxy
             .set_color_transform_configuration(&color_transform_configuration())
@@ -668,7 +679,7 @@ mod tests {
     fn test_color_adjustment_handler() -> Result<()> {
         let mut exec = fasync::TestExecutor::new();
         let (manager, mut converter, _) = init();
-        let color_adjustment_proxy = create_color_adjustment_handler_stream(Arc::clone(&manager));
+        let color_adjustment_proxy = create_color_adjustment_handler_stream(Rc::clone(&manager));
 
         color_adjustment_proxy.set_color_adjustment(&ColorAdjustmentTable {
             matrix: Some([1.; 9]),
@@ -688,7 +699,7 @@ mod tests {
     fn test_color_adjustment_handler_rejects_bad_requests() -> Result<()> {
         let mut exec = fasync::TestExecutor::new();
         let (manager, converter, _) = init();
-        let color_adjustment_proxy = create_color_adjustment_handler_stream(Arc::clone(&manager));
+        let color_adjustment_proxy = create_color_adjustment_handler_stream(Rc::clone(&manager));
 
         color_adjustment_proxy.set_color_adjustment(&ColorAdjustmentTable::default())?;
 
@@ -700,8 +711,8 @@ mod tests {
     fn test_color_adjustment_handler_noop_when_a11y_active() -> Result<()> {
         let mut exec = fasync::TestExecutor::new();
         let (manager, mut converter, _) = init();
-        let color_transform_proxy = create_color_transform_stream(Arc::clone(&manager));
-        let color_adjustment_proxy = create_color_adjustment_handler_stream(Arc::clone(&manager));
+        let color_transform_proxy = create_color_transform_stream(Rc::clone(&manager));
+        let color_adjustment_proxy = create_color_adjustment_handler_stream(Rc::clone(&manager));
 
         let _ = color_transform_proxy
             .set_color_transform_configuration(&color_transform_configuration());
@@ -740,14 +751,14 @@ mod tests {
     #[fuchsia::test]
     async fn test_presents_frame_when_needed() -> Result<()> {
         let (manager, mut converter, mock_scene_manager) = init();
-        let color_transform_proxy = create_color_transform_stream(Arc::clone(&manager));
+        let color_transform_proxy = create_color_transform_stream(Rc::clone(&manager));
         let backlight_proxy = create_display_backlight_stream(manager);
 
         // Calling SetMinimumRgb should trigger a call to scene_manager.present_root_view.
         backlight_proxy.set_minimum_rgb(20).await?;
         converter.expect_minimum_rgb().await;
 
-        mock_scene_manager.lock().await.assert_present_root_view_called();
+        mock_scene_manager.assert_present_root_view_called();
 
         // Calling SetColorTransformConfiguration should also trigger a call to
         // scene_manager.present_root_view.
@@ -756,7 +767,7 @@ mod tests {
             .await?;
         converter.expect_set_values().await;
 
-        mock_scene_manager.lock().await.assert_present_root_view_called();
+        mock_scene_manager.assert_present_root_view_called();
 
         Ok(())
     }

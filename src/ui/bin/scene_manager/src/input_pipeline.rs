@@ -34,12 +34,10 @@ use focus_chain_provider::FocusChainProviderPublisher;
 use fsettings::LightProxy;
 use fuchsia_async as fasync;
 use fuchsia_inspect as inspect;
-use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
 use log::{error, info, warn};
 use sorted_vec_map::SortedVecSet;
 use std::rc::Rc;
-use std::sync::Arc;
 
 /// Begins handling input events. The returned future will complete when
 /// input events are no longer being handled.
@@ -55,7 +53,7 @@ use std::sync::Arc;
 /// - `light_sensor_configuration`: An optional configuration used for light sensor requests.
 pub async fn handle_input(
     incoming: &Incoming,
-    scene_manager: Arc<Mutex<dyn SceneManagerTrait>>,
+    scene_manager: Rc<dyn SceneManagerTrait>,
     input_device_registry_request_stream_receiver: futures::channel::mpsc::UnboundedReceiver<
         InputDeviceRegistryRequestStream,
     >,
@@ -218,7 +216,7 @@ pub async fn handle_input(
 }
 
 fn setup_pointer_injector_config_request_stream(
-    scene_manager: Arc<Mutex<dyn SceneManagerTrait>>,
+    scene_manager: Rc<dyn SceneManagerTrait>,
 ) -> SetupProxy {
     let (setup_proxy, setup_request_stream) = fidl::endpoints::create_proxy_and_stream::<
         fidl_fuchsia_ui_pointerinjector_configuration::SetupMarker,
@@ -234,12 +232,12 @@ fn setup_pointer_injector_config_request_stream(
 
 async fn create_touchscreen_handler(
     incoming: &Incoming,
-    scene_manager: Arc<Mutex<dyn SceneManagerTrait>>,
+    scene_manager: Rc<dyn SceneManagerTrait>,
     input_handlers_node: &inspect::Node,
     metrics_logger: metrics::MetricsLogger,
 ) -> Result<Rc<TouchInjectorHandler>, Error> {
     let setup_proxy = setup_pointer_injector_config_request_stream(scene_manager.clone());
-    let size = scene_manager.lock().await.get_pointerinjection_display_size();
+    let size = scene_manager.get_pointerinjection_display_size();
     let touch_handler = TouchInjectorHandler::new_with_config_proxy(
         incoming,
         setup_proxy,
@@ -262,14 +260,14 @@ async fn create_touchscreen_handler(
 
 async fn add_mouse_handler(
     incoming: &Incoming,
-    scene_manager: Arc<Mutex<dyn SceneManagerTrait>>,
+    scene_manager: Rc<dyn SceneManagerTrait>,
     mut assembly: InputPipelineAssembly,
     sender: futures::channel::mpsc::Sender<CursorMessage>,
     input_handlers_node: &inspect::Node,
     metrics_logger: metrics::MetricsLogger,
 ) -> InputPipelineAssembly {
     let setup_proxy = setup_pointer_injector_config_request_stream(scene_manager.clone());
-    let size = scene_manager.lock().await.get_pointerinjection_display_size();
+    let size = scene_manager.get_pointerinjection_display_size();
     let mouse_handler = MouseInjectorHandler::new_with_config_proxy(
         incoming,
         setup_proxy,
@@ -326,7 +324,7 @@ async fn register_keyboard_related_input_handlers(
 async fn register_mouse_related_input_handlers(
     incoming: &Incoming,
     assembly: InputPipelineAssembly,
-    scene_manager: Arc<Mutex<dyn SceneManagerTrait>>,
+    scene_manager: Rc<dyn SceneManagerTrait>,
     input_handlers_node: &inspect::Node,
     metrics_logger: metrics::MetricsLogger,
 ) -> InputPipelineAssembly {
@@ -346,9 +344,8 @@ async fn register_mouse_related_input_handlers(
     .await;
 
     let scene_manager = scene_manager.clone();
-    fasync::Task::spawn(async move {
+    fasync::Task::local(async move {
         while let Some(message) = receiver.next().await {
-            let mut scene_manager = scene_manager.lock().await;
             match message {
                 CursorMessage::SetPosition(position) => scene_manager.set_cursor_position(position),
                 CursorMessage::SetVisibility(visible) => {
@@ -363,7 +360,7 @@ async fn register_mouse_related_input_handlers(
 
 async fn build_input_pipeline_assembly(
     incoming: &Incoming,
-    scene_manager: Arc<Mutex<dyn SceneManagerTrait>>,
+    scene_manager: Rc<dyn SceneManagerTrait>,
     node: &inspect::Node,
     display_ownership_event: zx::Event,
     factory_reset_handler: Rc<FactoryResetHandler>,
