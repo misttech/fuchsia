@@ -32,6 +32,22 @@ namespace restricted_machine {
 
 namespace testing {
 
+// Expand ::restricted_machine::kSupportedMachines to include kNone as a analog
+// for use_normal_mode().
+constexpr static auto kSupportedMachines = std::to_array<MachineType>({
+    ::restricted_machine::MachineType::kNone,
+    ::restricted_machine::MachineType::kNative,
+#if defined(__aarch64__) && \
+    !(__has_feature(address_sanitizer) || __has_feature(hwaddress_sanitizer))
+    // Testing infrastructure expects to be able to map a shared VMO somewhere in the
+    // root vmar. If the test fixture is for an Arm32 machine, then the VMO will be
+    // mapped into the bottom 4GB of the root vmar. However, we can't do this for
+    // sanitized builds using shadow because shadow occupies the bottom eighth of the
+    // root vmar.
+    ::restricted_machine::MachineType::kArm,
+#endif
+});
+
 // SupportedMachinesTest provides a fixture base class for use with zxtest or
 // googletest parameterized testing.
 //
@@ -58,7 +74,7 @@ class SupportedMachinesTest : public TestWithParam<restricted_machine::MachineTy
       std::optional<uint64_t> address_limit = std::nullopt) {
     // Setup an environment per machine supported as there's no reason to reload
     // all the code for each testsuite run.
-    for (const auto &machine_type : ::restricted_machine::kSupportedMachines) {
+    for (const auto &machine_type : ::restricted_machine::testing::kSupportedMachines) {
       if (!::restricted_machine::Environment::HardwareSupported(machine_type)) {
         continue;
       }
@@ -134,21 +150,6 @@ class SupportedMachinesTest : public TestWithParam<restricted_machine::MachineTy
 std::unordered_map<::restricted_machine::MachineType,
                    fbl::RefPtr<::restricted_machine::Environment>>
     SupportedMachinesTest::environments_{};
-
-// Expand ::restricted_machine::kSupportedMachines to include kNone as a analog
-// for use_normal_mode().
-#if defined(__ARM_ACLE)
-constexpr static std::array<MachineType, 3> kSupportedMachines{
-    ::restricted_machine::MachineType::kNone,
-    ::restricted_machine::MachineType::kNative,
-    ::restricted_machine::MachineType::kArm,
-};
-#else
-constexpr static std::array<MachineType, 2> kSupportedMachines{
-    ::restricted_machine::MachineType::kNone,
-    ::restricted_machine::MachineType::kNative,
-};
-#endif
 
 }  // namespace testing
 }  // namespace restricted_machine
