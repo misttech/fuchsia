@@ -1,8 +1,8 @@
 // Copyright 2021 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
-#ifndef SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_LOG_CPP_INCLUDE_COMMON_WLAN_DRIVERS_LOG_H_
-#define SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_LOG_CPP_INCLUDE_COMMON_WLAN_DRIVERS_LOG_H_
+#ifndef SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_IWLWIFI_LOG_CPP_INCLUDE_COMMON_WLAN_DRIVERS_LOG_H_
+#define SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_IWLWIFI_LOG_CPP_INCLUDE_COMMON_WLAN_DRIVERS_LOG_H_
 
 #include <zircon/compiler.h>
 
@@ -70,4 +70,4 @@
   (wlan_drivers_log_ssid_bytes_to_string((ssid).data(), (ssid).size()).str)
 #endif
 
-#endif  // SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_LOG_CPP_INCLUDE_COMMON_WLAN_DRIVERS_LOG_H_
+#endif  // SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_IWLWIFI_LOG_CPP_INCLUDE_COMMON_WLAN_DRIVERS_LOG_H_

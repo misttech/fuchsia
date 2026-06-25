@@ -1,8 +1,8 @@
 // Copyright 2019 The Fuchsia Authors. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-#ifndef LIB_MOCK_FUNCTION_MOCK_FUNCTION_H_
-#define LIB_MOCK_FUNCTION_MOCK_FUNCTION_H_
+#ifndef SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_INTEL_IWLWIFI_TEST_MOCK_FUNCTION_H_
+#define SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_INTEL_IWLWIFI_TEST_MOCK_FUNCTION_H_
 
 #include <zircon/assert.h>
 
@@ -201,4 +201,4 @@ class MockFunction<void, Ts...> {
 
 }  // namespace mock_function
 
-#endif  // LIB_MOCK_FUNCTION_MOCK_FUNCTION_H_
+#endif  // SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_INTEL_IWLWIFI_TEST_MOCK_FUNCTION_H_

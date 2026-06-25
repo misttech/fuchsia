@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_CONNECTIVITY_WLAN_LIB_COMMON_CPP_INCLUDE_WLAN_COMMON_IEEE80211_H_
-#define SRC_CONNECTIVITY_WLAN_LIB_COMMON_CPP_INCLUDE_WLAN_COMMON_IEEE80211_H_
+#ifndef SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_IWLWIFI_WLAN_IEEE80211_H_
+#define SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_IWLWIFI_WLAN_IEEE80211_H_
 
 #include <net/ethernet.h>
 #include <stdbool.h>
@@ -384,4 +384,4 @@ static inline uint16_t ieee80211_sn_add(uint16_t sn1, uint16_t sn2) {
 // Increments the given sequence number by 1.
 static inline uint16_t ieee80211_sn_inc(uint16_t sn) { return ieee80211_sn_add(sn, 1); }
 
-#endif  // SRC_CONNECTIVITY_WLAN_LIB_COMMON_CPP_INCLUDE_WLAN_COMMON_IEEE80211_H_
+#endif  // SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_IWLWIFI_WLAN_IEEE80211_H_

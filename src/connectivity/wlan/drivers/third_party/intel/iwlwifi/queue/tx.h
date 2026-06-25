@@ -1,5 +1,5 @@
-/* Use of this code is governed by a BSD-style license that can be found in the LICENSE file. */
-/*
+/* Use of this code is governed by a BSD-style license that can be found in the LICENSE file.
+ *
  * Copyright (C) 2020-2022 Intel Corporation
  */
 #ifndef SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_INTEL_IWLWIFI_QUEUE_TX_H_
@@ -183,4 +183,4 @@ void iwl_txq_progress(struct iwl_txq *txq);
 void iwl_txq_free_tfd(struct iwl_trans *trans, struct iwl_txq *txq);
 int iwl_trans_txq_send_hcmd(struct iwl_trans *trans, struct iwl_host_cmd *cmd);
 
-#endif /* SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_INTEL_IWLWIFI_QUEUE_TX_H_ */
+#endif // SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_INTEL_IWLWIFI_QUEUE_TX_H_

@@ -1,9 +1,8 @@
-/* Use of this code is governed by a BSD-style license that can be found in the LICENSE file. */
-/*
+/* Use of this code is governed by a BSD-style license that can be found in the LICENSE file.
  * Copyright (C) 2020-2021 Intel Corporation
  */
-#ifndef __iwl_fw_api_rfi_h__
-#define __iwl_fw_api_rfi_h__
+#ifndef SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_INTEL_IWLWIFI_FW_API_RFI_H_
+#define SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_INTEL_IWLWIFI_FW_API_RFI_H_
 
 #define IWL_RFI_LUT_ENTRY_CHANNELS_NUM 15
 #define IWL_RFI_LUT_SIZE 24
@@ -65,4 +64,4 @@ struct iwl_rfi_freq_table_resp_cmd {
 struct iwl_rfi_deactivate_notif {
 	__le32 reason;
 } __packed; /* RFI_DEACTIVATE_NTF_S_VER_1 */
-#endif /* __iwl_fw_api_rfi_h__ */
+#endif // SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_INTEL_IWLWIFI_FW_API_RFI_H_

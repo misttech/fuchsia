@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_CONNECTIVITY_WLAN_LIB_COMMON_CPP_INCLUDE_WLAN_COMMON_CHANNEL_H_
-#define SRC_CONNECTIVITY_WLAN_LIB_COMMON_CPP_INCLUDE_WLAN_COMMON_CHANNEL_H_
+#ifndef SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_IWLWIFI_WLAN_CHANNEL_H_
+#define SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_IWLWIFI_WLAN_CHANNEL_H_
 
 #include <fidl/fuchsia.wlan.ieee80211/cpp/wire_types.h>
 
@@ -60,4 +60,4 @@ const char* CbwStr(fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw);
 }  // namespace common
 }  // namespace wlan
 
-#endif  // SRC_CONNECTIVITY_WLAN_LIB_COMMON_CPP_INCLUDE_WLAN_COMMON_CHANNEL_H_
+#endif  // SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_IWLWIFI_WLAN_CHANNEL_H_

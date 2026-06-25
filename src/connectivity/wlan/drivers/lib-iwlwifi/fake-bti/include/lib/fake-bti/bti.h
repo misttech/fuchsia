@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVICES_TESTING_FAKE_BTI_INCLUDE_LIB_FAKE_BTI_BTI_H_
-#define SRC_DEVICES_TESTING_FAKE_BTI_INCLUDE_LIB_FAKE_BTI_BTI_H_
+#ifndef SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_IWLWIFI_FAKE_BTI_INCLUDE_LIB_FAKE_BTI_BTI_H_
+#define SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_IWLWIFI_FAKE_BTI_INCLUDE_LIB_FAKE_BTI_BTI_H_
 
 #include <zircon/compiler.h>
 #include <zircon/limits.h>
@@ -58,4 +58,4 @@ zx_status_t fake_bti_get_phys_from_pinned_vmo(zx_handle_t bti, fake_bti_pinned_v
 
 __END_CDECLS
 
-#endif  // SRC_DEVICES_TESTING_FAKE_BTI_INCLUDE_LIB_FAKE_BTI_BTI_H_
+#endif  // SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_IWLWIFI_FAKE_BTI_INCLUDE_LIB_FAKE_BTI_BTI_H_

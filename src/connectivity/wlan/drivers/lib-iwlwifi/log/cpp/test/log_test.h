@@ -1,8 +1,8 @@
 // Copyright 2021 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
-#ifndef SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_LOG_CPP_TEST_LOG_TEST_H_
-#define SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_LOG_CPP_TEST_LOG_TEST_H_
+#ifndef SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_IWLWIFI_LOG_CPP_TEST_LOG_TEST_H_
+#define SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_IWLWIFI_LOG_CPP_TEST_LOG_TEST_H_
 
 #include <string>
 
@@ -59,4 +59,4 @@ class LogTest : public ::testing::Test {
 };
 }  // namespace wlan::drivers
 
-#endif  // SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_LOG_CPP_TEST_LOG_TEST_H_
+#endif  // SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_IWLWIFI_LOG_CPP_TEST_LOG_TEST_H_

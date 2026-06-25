@@ -1,12 +1,12 @@
-/* Use of this code is governed by a BSD-style license that can be found in the LICENSE file. */
-/******************************************************************************
+/* Use of this code is governed by a BSD-style license that can be found in the LICENSE file.
+ ******************************************************************************
  *
  * Copyright(c) 2020-2021 Intel Corporation
  *
  *****************************************************************************/
 
-#ifndef __IWL_PNVM_H__
-#define __IWL_PNVM_H__
+#ifndef SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_INTEL_IWLWIFI_FW_PNVM_H_
+#define SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_INTEL_IWLWIFI_FW_PNVM_H_
 
 #include "fw/notif-wait.h"
 
@@ -34,4 +34,4 @@ static inline void iwl_pnvm_get_fs_name(struct iwl_trans *trans, u8 *pnvm_name,
 		pnvm_name[pre_len - 1] = '.';
 }
 
-#endif /* __IWL_PNVM_H__ */
+#endif // SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_INTEL_IWLWIFI_FW_PNVM_H_

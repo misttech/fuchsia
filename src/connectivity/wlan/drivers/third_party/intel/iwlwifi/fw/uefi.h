@@ -1,9 +1,9 @@
-/* Use of this code is governed by a BSD-style license that can be found in the LICENSE file. */
-/*
+/* Use of this code is governed by a BSD-style license that can be found in the LICENSE file.
+ *
  * Copyright(c) 2021 Intel Corporation
  */
-#ifndef __iwl_fw_uefi__
-#define __iwl_fw_uefi__
+#ifndef SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_INTEL_IWLWIFI_FW_UEFI_H_
+#define SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_INTEL_IWLWIFI_FW_UEFI_H_
 
 #define IWL_UEFI_OEM_PNVM_NAME L"UefiCnvWlanOemSignedPnvm"
 #define IWL_UEFI_REDUCED_POWER_NAME L"UefiCnvWlanReducedPower"
@@ -62,4 +62,4 @@ static inline void iwl_uefi_get_sgom_table(struct iwl_trans *trans,
 {
 }
 #endif
-#endif /* __iwl_fw_uefi__ */
+#endif // SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_INTEL_IWLWIFI_FW_UEFI_H_
