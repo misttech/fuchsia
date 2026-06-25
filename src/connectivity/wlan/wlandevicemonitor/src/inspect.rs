@@ -118,6 +118,11 @@ impl IfacesTree {
         }
         tree.destroyed_nodes.push_back(destroyed_iface_node);
     }
+
+    #[cfg(test)]
+    pub fn has_iface(&self, iface_id: u16) -> bool {
+        self.0.lock().iface_nodes.contains_key(&iface_id)
+    }
 }
 
 #[cfg(test)]

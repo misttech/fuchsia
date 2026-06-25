@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, format_err};
+use fidl_fuchsia_wlan_device as fidl_wlan_dev;
+use fidl_fuchsia_wlan_sme as fidl_wlan_sme;
 use fuchsia_inspect_contrib::inspect_log;
 use futures::channel::mpsc;
 use futures::select;
@@ -11,7 +13,6 @@ use log::{error, info};
 use std::convert::Infallible;
 use std::pin::pin;
 use std::sync::Arc;
-use {fidl_fuchsia_wlan_device as fidl_wlan_dev, fidl_fuchsia_wlan_sme as fidl_wlan_sme};
 
 use crate::watchable_map::WatchableMap;
 use crate::{device_watch, inspect};
@@ -135,6 +136,31 @@ async fn serve_phy(
     }
     info!("phy removed: #{}", id);
     inspect_log!(inspect_tree.device_events.lock(), msg: format!("phy removed: #{}", id));
+}
+
+#[derive(Clone, Copy)]
+pub struct IfaceWrapper<'a> {
+    pub(crate) ifaces: &'a IfaceMap,
+    pub(crate) ifaces_tree: &'a inspect::IfacesTree,
+}
+
+impl<'a> IfaceWrapper<'a> {
+    pub fn new(ifaces: &'a IfaceMap, ifaces_tree: &'a inspect::IfacesTree) -> Self {
+        Self { ifaces, ifaces_tree }
+    }
+
+    pub fn insert(&self, id: u16, device: IfaceDevice, inspect_vmo: zx::Vmo) {
+        self.ifaces.insert(id, device);
+        self.ifaces_tree.add_iface(id, inspect_vmo);
+    }
+
+    pub fn remove(&self, id: u16, inspect_vmo: Option<zx::Vmo>) {
+        let existed = self.ifaces.get(&id).is_some();
+        self.ifaces.remove(&id);
+        if existed {
+            self.ifaces_tree.record_destroyed_iface(id, inspect_vmo);
+        }
+    }
 }
 
 #[cfg(test)]

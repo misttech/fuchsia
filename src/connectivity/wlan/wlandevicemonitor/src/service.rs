@@ -2,14 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::device::{self, IfaceDevice, IfaceMap, NewIface, PhyDevice, PhyMap};
-use crate::inspect::IfacesTree;
+use crate::device::{self, IfaceDevice, IfaceMap, IfaceWrapper, NewIface, PhyDevice, PhyMap};
 use crate::{phy_event_service, watcher_service};
 use anyhow::{Error, format_err};
 use core::sync::atomic::AtomicUsize;
 use fidl::endpoints::create_endpoints;
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_device as fidl_dev;
 use fidl_fuchsia_wlan_device_service::{self as fidl_svc, DeviceMonitorRequest};
+use fidl_fuchsia_wlan_internal as fidl_internal;
 use fidl_fuchsia_wlan_internal::TxPowerScenario;
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::stream::FuturesUnordered;
@@ -19,10 +22,6 @@ use log::{error, info, warn};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock};
 use wlan_fidl_ext::{ResponderExt, WithName};
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_device as fidl_dev,
-    fidl_fuchsia_wlan_internal as fidl_internal, fidl_fuchsia_wlan_sme as fidl_sme,
-};
 
 /// Thread-safe counter for spawned ifaces.
 pub struct IfaceCounter(AtomicUsize);
@@ -42,17 +41,18 @@ impl IfaceCounter {
 pub(crate) async fn handle_monitor_request(
     request: DeviceMonitorRequest,
     phys: &PhyMap,
-    ifaces: &IfaceMap,
+    iface_wrapper: &IfaceWrapper<'_>,
     watcher_service: &watcher_service::WatcherService<PhyDevice, IfaceDevice>,
     phy_event_service: &phy_event_service::PhyEventService,
     new_iface_sink: &mpsc::UnboundedSender<NewIface>,
     iface_counter: &IfaceCounter,
-    ifaces_tree: &IfacesTree,
     cfg: &wlandevicemonitor_config::Config,
 ) -> Result<(), Error> {
     match request {
         DeviceMonitorRequest::ListPhys { responder } => responder.send(&list_phys(phys))?,
-        DeviceMonitorRequest::ListIfaces { responder } => responder.send(&list_ifaces(ifaces))?,
+        DeviceMonitorRequest::ListIfaces { responder } => {
+            responder.send(&list_ifaces(iface_wrapper.ifaces))?
+        }
         DeviceMonitorRequest::GetDevPath { phy_id, responder } => {
             responder.send(get_dev_path(phys, phy_id).as_deref())?
         }
@@ -101,7 +101,7 @@ pub(crate) async fn handle_monitor_request(
             };
             let sta_address = MacAddr::from(sta_address);
 
-            let new_iface = match create_iface(
+            let (new_iface, inspect_vmo) = match create_iface(
                 new_iface_sink,
                 phys,
                 phy_id,
@@ -109,7 +109,6 @@ pub(crate) async fn handle_monitor_request(
                 sta_address,
                 iface_counter,
                 cfg,
-                ifaces_tree,
             )
             .await
             {
@@ -118,16 +117,17 @@ pub(crate) async fn handle_monitor_request(
                     responder.send(Err(fidl_svc::DeviceMonitorError::unknown()))?;
                     return Ok(());
                 }
-                Ok(new_iface) => new_iface,
+                Ok(x) => x,
             };
 
             info!("iface #{} started ({:?})", new_iface.id, new_iface.phy_ownership);
-            ifaces.insert(
+            iface_wrapper.insert(
                 new_iface.id,
                 IfaceDevice {
                     phy_ownership: new_iface.phy_ownership,
                     generic_sme: new_iface.generic_sme,
                 },
+                inspect_vmo,
             );
 
             let resp = fidl_svc::DeviceMonitorCreateIfaceResponse {
@@ -137,15 +137,15 @@ pub(crate) async fn handle_monitor_request(
             responder.send(Ok(&resp))?;
         }
         DeviceMonitorRequest::QueryIface { iface_id, responder } => {
-            let result = query_iface(ifaces, iface_id).await;
+            let result = query_iface(iface_wrapper.ifaces, iface_id).await;
             responder.send(result.as_ref().map_err(|e| e.into_raw()))?;
         }
         DeviceMonitorRequest::QueryIfaceCapabilities { iface_id, responder } => {
-            let result = query_device_capability(ifaces, iface_id).await;
+            let result = query_device_capability(iface_wrapper.ifaces, iface_id).await;
             responder.send(result.as_ref().map_err(|e| e.into_raw()))?;
         }
         DeviceMonitorRequest::DestroyIface { req, responder } => {
-            let result = destroy_iface(phys, ifaces, ifaces_tree, req.iface_id).await;
+            let result = destroy_iface(phys, iface_wrapper, req.iface_id).await;
             let status = into_status_and_opt(result).0;
             responder.send(status.into_raw())?;
         }
@@ -176,15 +176,15 @@ pub(crate) async fn handle_monitor_request(
             )?;
         }
         DeviceMonitorRequest::GetClientSme { iface_id, sme_server, responder } => {
-            let result = get_client_sme(ifaces, iface_id, sme_server).await;
+            let result = get_client_sme(iface_wrapper.ifaces, iface_id, sme_server).await;
             responder.send(result.map_err(|e| e.into_raw()))?;
         }
         DeviceMonitorRequest::GetApSme { iface_id, sme_server, responder } => {
-            let result = get_ap_sme(ifaces, iface_id, sme_server).await;
+            let result = get_ap_sme(iface_wrapper.ifaces, iface_id, sme_server).await;
             responder.send(result.map_err(|e| e.into_raw()))?;
         }
         DeviceMonitorRequest::GetSmeTelemetry { iface_id, telemetry_server, responder } => {
-            let result = get_sme_telemetry(ifaces, iface_id, telemetry_server).await;
+            let result = get_sme_telemetry(iface_wrapper.ifaces, iface_id, telemetry_server).await;
             responder.send(result.map_err(|e| e.into_raw()))?;
         }
         DeviceMonitorRequest::SetTxPowerScenario { phy_id, scenario, responder } => {
@@ -205,8 +205,7 @@ pub(crate) async fn handle_monitor_request(
 
 pub(crate) async fn handle_new_iface_stream(
     phys: &PhyMap,
-    ifaces: &IfaceMap,
-    ifaces_tree: &IfacesTree,
+    iface_wrapper: &IfaceWrapper<'_>,
     mut iface_stream: mpsc::UnboundedReceiver<NewIface>,
 ) -> Result<(), Error> {
     let mut futures_unordered = FuturesUnordered::new();
@@ -218,8 +217,7 @@ pub(crate) async fn handle_new_iface_stream(
                     futures_unordered.push(
                         handle_single_new_iface(
                             phys,
-                            ifaces,
-                            ifaces_tree,
+                            iface_wrapper,
                             new_iface
                         )
                     );
@@ -231,8 +229,7 @@ pub(crate) async fn handle_new_iface_stream(
 
 async fn handle_single_new_iface(
     phys: &PhyMap,
-    ifaces: &IfaceMap,
-    ifaces_tree: &IfacesTree,
+    iface_wrapper: &IfaceWrapper<'_>,
     new_iface: NewIface,
 ) {
     let mut event_stream = new_iface.generic_sme.take_event_stream().fuse();
@@ -262,7 +259,7 @@ async fn handle_single_new_iface(
             }
         }
     }
-    match destroy_iface(phys, ifaces, ifaces_tree, new_iface.id).await {
+    match destroy_iface(phys, iface_wrapper, new_iface.id).await {
         Ok(()) => info!("Destroyed iface {} after its SME event stream ended", new_iface.id),
         Err(e) if e == zx::Status::NOT_FOUND => {
             info!(
@@ -493,8 +490,7 @@ async fn create_iface(
     sta_address: MacAddr,
     iface_counter: &IfaceCounter,
     cfg: &wlandevicemonitor_config::Config,
-    ifaces_tree: &IfacesTree,
-) -> Result<NewIface, Error> {
+) -> Result<(NewIface, zx::Vmo), Error> {
     let phy = phys.get(&phy_id).ok_or_else(|| format_err!("PHY not found: phy_id {}", phy_id))?;
 
     // Create the bootstrap channel. This channel is only used for initial communication
@@ -537,7 +533,6 @@ async fn create_iface(
         bootstrap_result.await.map_err(|e| format_err!("Failed to bootstrap USME: {}", e))?;
 
     let iface_id = iface_counter.next_iface_id() as u16;
-    ifaces_tree.add_iface(iface_id, inspect_vmo);
 
     let new_iface = NewIface {
         id: iface_id,
@@ -568,7 +563,7 @@ async fn create_iface(
         );
     }
 
-    Ok(new_iface)
+    Ok((new_iface, inspect_vmo))
 }
 
 async fn query_iface(
@@ -602,8 +597,7 @@ async fn query_device_capability(
 
 async fn destroy_iface(
     phys: &PhyMap,
-    ifaces: &IfaceMap,
-    ifaces_tree: &IfacesTree,
+    iface_wrapper: &IfaceWrapper<'_>,
     id: u16,
 ) -> Result<(), zx::Status> {
     // There is a race between this function call returning and handle_single_new_iface realizing
@@ -619,10 +613,10 @@ async fn destroy_iface(
     let _guard = DESTROY_IFACE_LOCK.lock().await;
 
     info!("destroy_iface(id = {})", id);
-    let iface = ifaces.get(&id).ok_or(zx::Status::NOT_FOUND)?;
+    let iface = iface_wrapper.ifaces.get(&id).ok_or(zx::Status::NOT_FOUND)?;
 
     let (telemetry_proxy, telemetry_server) = fidl::endpoints::create_proxy();
-    let result = get_sme_telemetry(ifaces, id, telemetry_server).await;
+    let result = get_sme_telemetry(iface_wrapper.ifaces, id, telemetry_server).await;
     let destroyed_iface_vmo = match result {
         Ok(()) => match telemetry_proxy.clone_inspect_vmo().await {
             Ok(Ok(vmo)) => Some(vmo),
@@ -644,7 +638,7 @@ async fn destroy_iface(
     let phy = match phys.get(&phy_ownership.phy_id) {
         Some(phy) => phy,
         None => {
-            ifaces.remove(&id);
+            iface_wrapper.remove(id, destroyed_iface_vmo);
             error!(
                 "Attempting to remove interface (ID: {}) from non-existent PHY (ID: {})",
                 id, phy_ownership.phy_id
@@ -669,21 +663,22 @@ async fn destroy_iface(
         }
     };
 
-    // If the removal is successful or the interface cannot be found, update the internal
+    // If the removal is successful or the interface cannot be found, update the internal interface
     // accounting.
     match destroy_iface_result {
         Ok(()) => {
-            ifaces.remove(&id);
-            ifaces_tree.record_destroyed_iface(id, destroyed_iface_vmo);
+            iface_wrapper.remove(id, destroyed_iface_vmo);
             zx::Status::ok(zx::sys::ZX_OK)
         }
         Err(status) => {
-            if status == zx::sys::ZX_ERR_NOT_FOUND && ifaces.get_snapshot().contains_key(&id) {
+            if status == zx::sys::ZX_ERR_NOT_FOUND
+                && iface_wrapper.ifaces.get_snapshot().contains_key(&id)
+            {
                 info!(
                     "Encountered NOT_FOUND while removing iface #{}, potentially due to recovery.",
                     id
                 );
-                ifaces.remove(&id);
+                iface_wrapper.remove(id, destroyed_iface_vmo);
             }
             zx::Status::ok(status)
         }
@@ -760,8 +755,11 @@ fn phy_result_to_status(
 mod tests {
     use super::*;
     use crate::device::PhyOwnership;
+    use crate::inspect::IfacesTree;
     use assert_matches::assert_matches;
     use fidl::endpoints::{ControlHandle, create_proxy, create_proxy_and_stream};
+    use fidl_fuchsia_wlan_common as fidl_wlan_common;
+    use fuchsia_async as fasync;
     use fuchsia_inspect::Inspector;
     use futures::TryStreamExt;
     use futures::future::BoxFuture;
@@ -771,7 +769,8 @@ mod tests {
     use std::pin::pin;
     use std::sync::Arc;
     use test_case::test_case;
-    use {fidl_fuchsia_wlan_common as fidl_wlan_common, fuchsia_async as fasync};
+
+    const TEST_IFACE_ID: u16 = 42;
 
     struct TestValues {
         monitor_proxy: fidl_svc::DeviceMonitorProxy,
@@ -862,15 +861,15 @@ mod tests {
         cfg: &wlandevicemonitor_config::Config,
     ) {
         while let Some(request) = monitor_stream.try_next().await.unwrap() {
+            let iface_wrapper = IfaceWrapper::new(ifaces, ifaces_tree);
             handle_monitor_request(
                 request,
                 phys,
-                ifaces,
+                &iface_wrapper,
                 watcher_service,
                 phy_event_service,
                 new_iface_sink,
                 iface_counter,
-                ifaces_tree,
                 cfg,
             )
             .await
@@ -3369,8 +3368,6 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let iface_counter = Arc::new(IfaceCounter::new());
-        let inspector = Inspector::default();
-        let ifaces_tree = Arc::new(IfacesTree::new(inspector));
 
         let fut = super::create_iface(
             &test_values.new_iface_sink,
@@ -3380,7 +3377,6 @@ mod tests {
             NULL_ADDR,
             &iface_counter,
             &wlandevicemonitor_config::Config { wep_supported: true, wpa1_supported: true },
-            &ifaces_tree,
         );
         let mut fut = pin!(fut);
         assert_matches!(
@@ -3399,7 +3395,7 @@ mod tests {
         // Create a generic SME proxy but drop the server since we won't use it.
         let (proxy, _) = create_proxy::<fidl_sme::GenericSmeMarker>();
         iface_map.insert(
-            42,
+            TEST_IFACE_ID,
             device::IfaceDevice {
                 phy_ownership: PhyOwnership { phy_id: 10, phy_assigned_id: 0 },
                 generic_sme: proxy,
@@ -3414,12 +3410,12 @@ mod tests {
         let test_values = test_setup();
         let mut phy_stream = fake_destroy_iface_env(&test_values.phys, &test_values.ifaces);
 
-        let destroy_fut = super::destroy_iface(
-            &test_values.phys,
-            &test_values.ifaces,
-            &test_values.ifaces_tree,
-            42,
-        );
+        // Track the interface in inspect so we can verify it is removed.
+        test_values.ifaces_tree.add_iface(TEST_IFACE_ID, zx::Vmo::create(0).unwrap());
+        assert!(test_values.ifaces_tree.has_iface(TEST_IFACE_ID));
+
+        let iface_wrapper = IfaceWrapper::new(&test_values.ifaces, &test_values.ifaces_tree);
+        let destroy_fut = super::destroy_iface(&test_values.phys, &iface_wrapper, TEST_IFACE_ID);
         let mut destroy_fut = pin!(destroy_fut);
         assert_eq!(Poll::Pending, exec.run_until_stalled(&mut destroy_fut));
 
@@ -3434,7 +3430,10 @@ mod tests {
         assert_eq!(Poll::Ready(Ok(())), exec.run_until_stalled(&mut destroy_fut));
 
         // Verify iface was removed from available ifaces.
-        assert!(test_values.ifaces.get(&42u16).is_none(), "iface expected to be deleted");
+        assert!(test_values.ifaces.get(&TEST_IFACE_ID).is_none(), "iface expected to be deleted");
+
+        // Verify iface was removed from inspect tracking.
+        assert!(!test_values.ifaces_tree.has_iface(TEST_IFACE_ID));
     }
 
     #[fuchsia::test]
@@ -3443,12 +3442,12 @@ mod tests {
         let test_values = test_setup();
         let mut phy_stream = fake_destroy_iface_env(&test_values.phys, &test_values.ifaces);
 
-        let destroy_fut = super::destroy_iface(
-            &test_values.phys,
-            &test_values.ifaces,
-            &test_values.ifaces_tree,
-            42,
-        );
+        // Track the interface in inspect so we can verify it is removed.
+        test_values.ifaces_tree.add_iface(TEST_IFACE_ID, zx::Vmo::create(0).unwrap());
+        assert!(test_values.ifaces_tree.has_iface(TEST_IFACE_ID));
+
+        let iface_wrapper = IfaceWrapper::new(&test_values.ifaces, &test_values.ifaces_tree);
+        let destroy_fut = super::destroy_iface(&test_values.phys, &iface_wrapper, TEST_IFACE_ID);
         let mut destroy_fut = pin!(destroy_fut);
         assert_eq!(Poll::Pending, exec.run_until_stalled(&mut destroy_fut));
 
@@ -3466,7 +3465,13 @@ mod tests {
         );
 
         // Verify iface was not removed from available ifaces.
-        assert!(test_values.ifaces.get(&42u16).is_some(), "iface expected to not be deleted");
+        assert!(
+            test_values.ifaces.get(&TEST_IFACE_ID).is_some(),
+            "iface expected to not be deleted"
+        );
+
+        // Verify inspect contents: on failure, it should NOT be removed from active inspect tracking.
+        assert!(test_values.ifaces_tree.has_iface(TEST_IFACE_ID));
     }
 
     #[fuchsia::test]
@@ -3475,12 +3480,12 @@ mod tests {
         let test_values = test_setup();
         let mut phy_stream = fake_destroy_iface_env(&test_values.phys, &test_values.ifaces);
 
-        let destroy_fut = super::destroy_iface(
-            &test_values.phys,
-            &test_values.ifaces,
-            &test_values.ifaces_tree,
-            42,
-        );
+        // Track the interface in inspect so we can verify it is removed.
+        test_values.ifaces_tree.add_iface(TEST_IFACE_ID, zx::Vmo::create(0).unwrap());
+        assert!(test_values.ifaces_tree.has_iface(TEST_IFACE_ID));
+
+        let iface_wrapper = IfaceWrapper::new(&test_values.ifaces, &test_values.ifaces_tree);
+        let destroy_fut = super::destroy_iface(&test_values.phys, &iface_wrapper, TEST_IFACE_ID);
         let mut destroy_fut = pin!(destroy_fut);
         assert_eq!(Poll::Pending, exec.run_until_stalled(&mut destroy_fut));
 
@@ -3504,7 +3509,13 @@ mod tests {
         );
 
         // Verify iface was removed from available ifaces.
-        assert!(test_values.ifaces.get(&42u16).is_none(), "iface should have been removed.");
+        assert!(
+            test_values.ifaces.get(&TEST_IFACE_ID).is_none(),
+            "iface should have been removed."
+        );
+
+        // Verify inspect contents: in recovery, it should be removed from active inspect tracking.
+        assert!(!test_values.ifaces_tree.has_iface(TEST_IFACE_ID));
     }
 
     #[fuchsia::test]
@@ -3513,12 +3524,8 @@ mod tests {
         let test_values = test_setup();
         let _phy_stream = fake_destroy_iface_env(&test_values.phys, &test_values.ifaces);
 
-        let fut = super::destroy_iface(
-            &test_values.phys,
-            &test_values.ifaces,
-            &test_values.ifaces_tree,
-            43,
-        );
+        let iface_wrapper = IfaceWrapper::new(&test_values.ifaces, &test_values.ifaces_tree);
+        let fut = super::destroy_iface(&test_values.phys, &iface_wrapper, 43);
         let mut fut = pin!(fut);
         assert_eq!(Poll::Ready(Err(zx::Status::NOT_FOUND)), exec.run_until_stalled(&mut fut));
     }
@@ -3539,12 +3546,8 @@ mod tests {
         );
 
         // Destroy the interface that does not have a parent PHY ID.
-        let fut = super::destroy_iface(
-            &test_values.phys,
-            &test_values.ifaces,
-            &test_values.ifaces_tree,
-            1,
-        );
+        let iface_wrapper = IfaceWrapper::new(&test_values.ifaces, &test_values.ifaces_tree);
+        let fut = super::destroy_iface(&test_values.phys, &iface_wrapper, 1);
         let mut fut = pin!(fut);
         assert_eq!(Poll::Ready(Err(zx::Status::NOT_FOUND)), exec.run_until_stalled(&mut fut));
 
@@ -3557,12 +3560,8 @@ mod tests {
         let test_values = test_setup();
         let mut phy_stream = fake_destroy_iface_env(&test_values.phys, &test_values.ifaces);
 
-        let destroy_fut = super::destroy_iface(
-            &test_values.phys,
-            &test_values.ifaces,
-            &test_values.ifaces_tree,
-            42,
-        );
+        let iface_wrapper = IfaceWrapper::new(&test_values.ifaces, &test_values.ifaces_tree);
+        let destroy_fut = super::destroy_iface(&test_values.phys, &iface_wrapper, TEST_IFACE_ID);
         let mut destroy_fut = pin!(destroy_fut);
         assert_eq!(Poll::Pending, exec.run_until_stalled(&mut destroy_fut));
 
@@ -3576,7 +3575,7 @@ mod tests {
         assert_eq!(Poll::Ready(Ok(())), exec.run_until_stalled(&mut destroy_fut));
 
         // Verify iface was removed from available ifaces despite the closure.
-        assert!(test_values.ifaces.get(&42u16).is_none(), "iface expected to be deleted");
+        assert!(test_values.ifaces.get(&TEST_IFACE_ID).is_none(), "iface expected to be deleted");
     }
 
     #[fuchsia::test]
@@ -3590,18 +3589,19 @@ mod tests {
         if let Ok(Some(crate::watchable_map::MapEvent::KeyInserted(iface_id))) =
             iface_events.try_next()
         {
-            assert_eq!(iface_id, 42u16);
+            assert_eq!(iface_id, TEST_IFACE_ID);
         } else {
             panic!("No iface ID was added.")
         }
 
+        let iface_wrapper = IfaceWrapper::new(&iface_map, &test_values.ifaces_tree);
         // Create two simultaneous attempts to destroy the same interface.
         let first_destroy_fut =
-            super::destroy_iface(&test_values.phys, &iface_map, &test_values.ifaces_tree, 42);
+            super::destroy_iface(&test_values.phys, &iface_wrapper, TEST_IFACE_ID);
         let mut first_destroy_fut = pin!(first_destroy_fut);
 
         let second_destroy_fut =
-            super::destroy_iface(&test_values.phys, &iface_map, &test_values.ifaces_tree, 42);
+            super::destroy_iface(&test_values.phys, &iface_wrapper, TEST_IFACE_ID);
         let mut second_destroy_fut = pin!(second_destroy_fut);
 
         // Progress the first attempt so that it acquires the lock and issues a DestroyIface
@@ -3626,7 +3626,7 @@ mod tests {
         if let Ok(Some(crate::watchable_map::MapEvent::KeyRemoved(iface_id))) =
             iface_events.try_next()
         {
-            assert_eq!(iface_id, 42u16);
+            assert_eq!(iface_id, TEST_IFACE_ID);
         } else {
             panic!("No iface ID was removed.")
         }
@@ -3653,7 +3653,7 @@ mod tests {
             create_proxy_and_stream::<fidl_sme::GenericSmeMarker>();
 
         test_values.ifaces.insert(
-            42,
+            TEST_IFACE_ID,
             device::IfaceDevice {
                 phy_ownership: PhyOwnership { phy_id: 10, phy_assigned_id: 0 },
                 generic_sme: generic_sme_proxy,
@@ -3662,7 +3662,7 @@ mod tests {
 
         let (client_sme_proxy, client_sme_server) = create_proxy::<fidl_sme::ClientSmeMarker>();
 
-        let req_fut = super::get_client_sme(&test_values.ifaces, 42, client_sme_server);
+        let req_fut = super::get_client_sme(&test_values.ifaces, TEST_IFACE_ID, client_sme_server);
         let mut req_fut = pin!(req_fut);
         assert_eq!(Poll::Pending, exec.run_until_stalled(&mut req_fut));
 
@@ -3695,7 +3695,7 @@ mod tests {
         let (generic_sme_proxy, generic_sme_server) = create_proxy::<fidl_sme::GenericSmeMarker>();
 
         test_values.ifaces.insert(
-            42,
+            TEST_IFACE_ID,
             device::IfaceDevice {
                 phy_ownership: PhyOwnership { phy_id: 10, phy_assigned_id: 0 },
                 generic_sme: generic_sme_proxy,
@@ -3704,7 +3704,7 @@ mod tests {
 
         let (_client_sme_proxy, client_sme_server) = create_proxy::<fidl_sme::ClientSmeMarker>();
 
-        let req_fut = super::get_client_sme(&test_values.ifaces, 42, client_sme_server);
+        let req_fut = super::get_client_sme(&test_values.ifaces, TEST_IFACE_ID, client_sme_server);
         let mut req_fut = pin!(req_fut);
         assert_eq!(Poll::Pending, exec.run_until_stalled(&mut req_fut));
 
@@ -3728,7 +3728,7 @@ mod tests {
         let (generic_sme_proxy, _generic_sme_server) = create_proxy::<fidl_sme::GenericSmeMarker>();
 
         test_values.ifaces.insert(
-            42,
+            TEST_IFACE_ID,
             device::IfaceDevice {
                 phy_ownership: PhyOwnership { phy_id: 10, phy_assigned_id: 0 },
                 generic_sme: generic_sme_proxy,
@@ -3753,14 +3753,14 @@ mod tests {
             create_proxy_and_stream::<fidl_sme::GenericSmeMarker>();
 
         test_values.ifaces.insert(
-            42,
+            TEST_IFACE_ID,
             device::IfaceDevice {
                 phy_ownership: PhyOwnership { phy_id: 10, phy_assigned_id: 0 },
                 generic_sme: generic_sme_proxy,
             },
         );
 
-        let req_fut = super::query_iface(&test_values.ifaces, 42);
+        let req_fut = super::query_iface(&test_values.ifaces, TEST_IFACE_ID);
         let mut req_fut = pin!(req_fut);
         assert_eq!(Poll::Pending, exec.run_until_stalled(&mut req_fut));
 
@@ -3781,7 +3781,7 @@ mod tests {
             resp,
             fidl_svc::QueryIfaceResponse {
                 role: fidl_fuchsia_wlan_common::WlanMacRole::Client,
-                id: 42,
+                id: TEST_IFACE_ID,
                 phy_id: 10,
                 phy_assigned_id: 0,
                 sta_addr: [2; 6],
@@ -3802,7 +3802,7 @@ mod tests {
         let (generic_sme_proxy, mut generic_sme_stream) =
             create_proxy_and_stream::<fidl_sme::GenericSmeMarker>();
 
-        let iface_id = 42;
+        let iface_id = TEST_IFACE_ID;
         test_values.ifaces.insert(
             iface_id,
             device::IfaceDevice {
@@ -3855,10 +3855,10 @@ mod tests {
     fn new_iface_stream_epitaph(epitaph: zx::Status, expect_destroy_iface: bool) {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
+        let iface_wrapper = IfaceWrapper::new(&test_values.ifaces, &test_values.ifaces_tree);
         let new_iface_fut = handle_new_iface_stream(
             &test_values.phys,
-            &test_values.ifaces,
-            &test_values.ifaces_tree,
+            &iface_wrapper,
             test_values.new_iface_stream,
         );
         let mut new_iface_fut = pin!(new_iface_fut);
@@ -3867,7 +3867,7 @@ mod tests {
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
-        let id = 42;
+        let id = TEST_IFACE_ID;
         let phy_ownership = PhyOwnership { phy_id, phy_assigned_id: 0 };
 
         let (generic_sme_proxy, generic_sme_server) = create_proxy::<fidl_sme::GenericSmeMarker>();

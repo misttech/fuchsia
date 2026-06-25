@@ -11,6 +11,9 @@ mod watchable_map;
 mod watcher_service;
 
 use anyhow::Error;
+use fidl_fuchsia_wlan_device as fidl_wlan_dev;
+use fidl_fuchsia_wlan_device_service as fidl_svc;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::{Inspector, InspectorConfig};
 use futures::channel::mpsc;
@@ -18,10 +21,6 @@ use futures::future::{BoxFuture, try_join5};
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
 use log::{error, info};
 use std::sync::Arc;
-use {
-    fidl_fuchsia_wlan_device as fidl_wlan_dev, fidl_fuchsia_wlan_device_service as fidl_svc,
-    fuchsia_async as fasync,
-};
 
 const PHY_PATH: &str = "/dev/class/wlanphy";
 
@@ -77,27 +76,26 @@ async fn main() -> Result<(), Error> {
     // TODO(https://fxbug.dev/382306025): While the wlandevicemonitor component can support many
     // clients, we could simplify the design of the component by serving only one client at a time.
     const MAX_CONCURRENT: usize = 1000;
+    let ifaces_wrapper = device::IfaceWrapper::new(&ifaces, &ifaces_tree);
     let fidl_fut = fs.map(Ok).try_for_each_concurrent(MAX_CONCURRENT, {
         // Rebind these variables to borrows so the borrows can be moved into the FnMut.
         let phys = &phys;
-        let ifaces = &ifaces;
+        let ifaces_wrapper = &ifaces_wrapper;
         let watcher_service = &watcher_service;
         let phy_event_service = &phy_event_service;
         let new_iface_sink = &new_iface_sink;
         let iface_counter = &iface_counter;
-        let ifaces_tree = &ifaces_tree;
         let cfg = &cfg;
         move |mut s: fidl_svc::DeviceMonitorRequestStream| async move {
             while let Ok(Some(request)) = s.try_next().await {
                 service::handle_monitor_request(
                     request,
                     phys,
-                    ifaces,
+                    ifaces_wrapper,
                     watcher_service,
                     phy_event_service,
                     new_iface_sink,
                     iface_counter,
-                    ifaces_tree,
                     cfg,
                 )
                 .await?
@@ -106,8 +104,7 @@ async fn main() -> Result<(), Error> {
         }
     });
 
-    let new_iface_fut =
-        service::handle_new_iface_stream(&phys, &ifaces, &ifaces_tree, new_iface_stream);
+    let new_iface_fut = service::handle_new_iface_stream(&phys, &ifaces_wrapper, new_iface_stream);
 
     let ((), (), (), (), ()) = try_join5(
         fidl_fut,
