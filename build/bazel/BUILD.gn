@@ -252,12 +252,6 @@ generated_file("gn_build_variables_for_bazel") {
       location = declaration
     },
     {
-      name = "build_info_product"
-      value = build_info_product
-      type = "string"
-      location = declaration
-    },
-    {
       name = "build_info_version"
       value = build_info_version
       type = "string"

@@ -4,11 +4,10 @@
 
 """Build information used in the Bazel product configs."""
 
-load("@fuchsia_build_info//:args.bzl", "build_info_product", "build_info_version", "truncate_build_info_commit_date")
+load("@fuchsia_build_info//:args.bzl", "build_info_version", "truncate_build_info_commit_date")
 load("//build/bazel/rules/python:py_toolchain.bzl", "PY_TOOLCHAIN_ATTRS", "generate_python_build_action")
 
 DEFAULT_PRODUCT_BUILD_INFO = {
-    "name": build_info_product,
     "version": "LABEL(@//build/info:version)",
     "jiri_snapshot": "LABEL(@//build/info:jiri_snapshot)",
     "latest_commit_date": "LABEL(@//build/info:latest_commit_date)",
