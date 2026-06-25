@@ -104,19 +104,6 @@ creation.
 Standardizing on them saves (human and AI) developers from context-switching
 between two bindings.
 
-**Guideline:** Alias each fidl_next binding module. Use the `fidl_` prefix for
-all aliases. Use the alias to qualify access to both structs and functions.
-
-Example:
-
-```rust
-use fidl_next_fuchsia_sysmem2 as fidl_sysmem2;
-
-pub async fn use_buffer_collection(
-    sysmem_buffer_collection: &mut fidl_next::Client<fidl_sysmem2::BufferCollection>,
-) {}
-```
-
 ## Unused code
 
 **Guideline:** Use `#[expect(dead_code)]` with an explanatory comment. Do not
@@ -236,6 +223,56 @@ mod tests {
 }
 ```
 
+## `use` paths
+
+**Guide:** Follow the official defaults for idiomatic `use` paths:
+
+* Bring into scope: types, derive and attribute-like macros
+* Bring parent module into scope: functions, function-like macros
+
+**Explanation:** Matches the established recommendation in
+[The Rust Programming Book section on idiomatic use paths][rust-book-idiomatic-paths].
+
+**Guideline:** Bring into scope the parent module for register or ABI definition
+types.
+
+**Explanation:**
+[The Rust Programming Book section on idiomatic use paths][rust-book-idiomatic-paths]
+recommends solving type name conflicts by bringing into scope the parent modules
+for both types. Our variation on this rule recognizes that register and ABI type
+names are likely to overlap Rust driver type names, because they cover the same
+domain. We reuse the practice in C++ drivers that gave us a good tradeoff
+between clarity and conciseness.
+
+**Guideline:** Alias each fidl_next binding module. Use the `fidl_` prefix for
+all aliases. Use the alias to qualify access to both structs and functions.
+
+**Explanation:** Same reasoning as above. FIDL and Rust driver type names are
+likely to overlap.
+
+**Guideline:** Bring the logging macros into scope directly.
+
+**Explanation:** [The Rust Book section on idiomatic use paths][rust-book-idiomatic-paths]
+recommends module qualifiers on function calls, with an exception for common
+functions that are close to language-level features. Logging falls under the
+exception.
+
+Examples:
+
+```rust
+use fidl_next_fuchsia_sysmem2 as fidl_sysmem2;
+use fidl_next;
+use log::warn;
+
+pub async fn use_buffer_collection(
+    sysmem_buffer_collection: &mut fidl_next::Client<fidl_sysmem2::BufferCollection>,
+) {
+  /* ... */
+  warn!("Failed to retrieve hardware pixel formats, falling back to safe set");
+  /* ... */
+}
+```
+
 ## Pointers and shared memory
 
 **Guideline:** Use pointers to access memory that is shared with hardware.
@@ -311,14 +348,6 @@ an error.
 assuming correct driver operation.
 
 **Explanation:** Follows from RFC-0003.
-
-**Guideline:** Bring the logging functions into the module’s scope. Do not use a
-`log::` qualifier.
-
-**Explanation:** [The Rust Book section on idiomatic use paths][rust-book-idiomatic-paths]
-recommends module qualifiers on function calls, with an exception for common
-functions that are close to language-level features. Logging falls under the
-exception.
 
 Examples:
 
