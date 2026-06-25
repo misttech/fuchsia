@@ -14,33 +14,8 @@
         },
     ],
     use: [
-        {
-            // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
-            // been migrated to services. The service capability has been added below.
-            directory: "dev-mediacodec",
-            rights: [ "r*" ],
-            path: "/dev/class/media-codec",
-        },
-        {
-            // This service replaces the directory capability above.
-            service: "fuchsia.hardware.mediacodec.Service",
-        },
-        {
-            // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
-            // been migrated to services. The service capability has been added below.
-            directory: "dev-securemem",
-            rights: [ "r*" ],
-            path: "/dev/class/securemem",
-        },
-        {
-            // This service replaces the directory capability above.
-            service: "fuchsia.hardware.securemem.Service",
-        },
-        {
-            directory: "dev-sysmem",
-            rights: [ "r*" ],
-            path: "/dev/class/sysmem",
-        },
+        { service: "fuchsia.hardware.mediacodec.Service" },
+        { service: "fuchsia.hardware.securemem.Service" },
         {
             protocol: "fuchsia.mediacodec.CodecFactory",
             from: "#codec-factory",

@@ -42,9 +42,11 @@ source_set("use_media_decoder_source_set") {
   ]
 
   deps = [
+    "//sdk/fidl/fuchsia.hardware.securemem:fuchsia.hardware.securemem_cpp",
     "//sdk/fidl/fuchsia.hardware.securemem:fuchsia.hardware.securemem_hlcpp",
     "//sdk/lib/async",
     "//sdk/lib/async:async-cpp",
+    "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/syslog/cpp",
     "//src/media/audio/lib/wav",
     "//src/media/lib/raw_video_writer",

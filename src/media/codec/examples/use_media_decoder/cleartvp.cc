@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.hardware.securemem/cpp/fidl.h>
 #include <fuchsia/hardware/securemem/cpp/fidl.h>
+#include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/fdio/directory.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/channel.h>
@@ -11,6 +13,7 @@
 #include <zircon/types.h>
 
 #include <memory>
+#include <string>
 
 #include <fbl/algorithm.h>
 #include <tee-client-api/tee_client_api.h>
@@ -57,12 +60,14 @@ void ClearTvpSession::EnsureSessionClosed() {
 }
 
 zx_status_t ClearTvpSession::Init() {
-  zx_status_t status = fdio_service_connect("/dev/class/securemem/000",
-                                            securemem_.NewRequest().TakeChannel().release());
-  if (status != ZX_OK) {
-    FX_LOGS(ERROR) << "Connecting to securemem failed";
-    return status;
+  component::SyncServiceMemberWatcher<fuchsia_hardware_securemem::Service::Device> watcher;
+  zx::result<fidl::ClientEnd<fuchsia_hardware_securemem::Device>> watcher_result =
+      watcher.GetNextInstance(false);
+  if (watcher_result.is_error()) {
+    FX_LOGS(ERROR) << "Connecting to securemem failed: " << watcher_result.status_string();
+    return watcher_result.status_value();
   }
+  securemem_.Bind(watcher_result->TakeChannel());
   context_ = std::make_unique<TEEC_Context>();
   TEEC_Result result = TEEC_InitializeContext(NULL, context_.get());
   if (result != TEEC_SUCCESS) {
@@ -71,7 +76,7 @@ zx_status_t ClearTvpSession::Init() {
     return ZX_ERR_INVALID_ARGS;
   }
 
-  status = OpenSession();
+  zx_status_t status = OpenSession();
   if (status != ZX_OK) {
     FX_LOGS(ERROR) << "OpenSession() failed with status " << status;
     return status;
