@@ -2028,7 +2028,8 @@ fn do_mount_change_propagation_type(
     }
 
     let mount = target.mount_if_root()?;
-    mount.change_propagation(propagation_flag, flags.contains(MountFlags::REC));
+    let mounts_guard = current_task.kernel().mounts_lock.lock();
+    mount.change_propagation(&mounts_guard, propagation_flag, flags.contains(MountFlags::REC));
     Ok(())
 }
 

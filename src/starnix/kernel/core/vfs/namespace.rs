@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::mutable_state::{state_accessor, state_implementation};
 use crate::security;
 use crate::task::{
     CurrentTask, EventHandler, Kernel, MountsWriteToken, Task, WaitCanceler, Waiter,
@@ -19,15 +18,14 @@ use crate::vfs::{
     fileops_impl_delegate_read_write_and_seek, fileops_impl_nonseekable, fileops_impl_noop_sync,
     fs_node_impl_not_dir,
 };
-use fuchsia_rcu::{RcuArc, RcuReadScope};
+use fuchsia_rcu::{RcuBox, RcuReadScope};
 use fuchsia_rcu_collections::rcu_raw_hash_map::RcuRawHashMap;
-use macro_rules_attribute::apply;
 use ref_cast::RefCast;
 use starnix_logging::log_warn;
 use starnix_rcu::RcuHashMap;
 use starnix_sync::{
     BeforeFsNodeAppend, FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, NamespaceFlagsLock,
-    RwLock, Unlocked,
+    Unlocked,
 };
 use starnix_uapi::arc_key::{ArcKey, PtrKey, WeakKey};
 use starnix_uapi::auth::Credentials;
@@ -176,9 +174,6 @@ pub struct Mount {
     /// Stores the relationships to other mounts (mountpoint and submounts).
     /// Both require the `MountsWriteToken` to mutate.
     relations: MountRelations,
-
-    // Lock ordering: mount -> submount
-    state: RwLock<MountState>,
     // Mount used to contain a Weak<Namespace>. It no longer does because since the mount point
     // hash was moved from Namespace to Mount, nothing actually uses it. Now that
     // Namespace::clone_namespace() is implemented in terms of Mount::clone_mount_recursive, it
@@ -258,8 +253,14 @@ impl Into<MountInfo> for Option<MountHandle> {
 
 #[derive(Default)]
 struct MountRelations {
-    mountpoint: RcuArc<Option<(Weak<Mount>, DirEntryHandle)>>,
+    /// The parent mount and the directory entry in the parent where this mount is mounted.
+    mountpoint: RcuBox<Option<(Weak<Mount>, DirEntryHandle)>>,
+    /// The active submounts, keyed by the directory entry in this mount where they are mounted.
     submounts: RcuRawHashMap<ArcKey<DirEntry>, Arc<Submount>>,
+    /// The membership of this mount in its peer group.
+    peer_group: RcuBox<Option<(Arc<PeerGroup>, PtrKey<Mount>)>>,
+    /// The membership of this mount in a PeerGroup's downstream.
+    upstream: RcuBox<Option<(Weak<PeerGroup>, PtrKey<Mount>)>>,
 }
 
 impl MountRelations {
@@ -290,9 +291,10 @@ impl MountRelations {
         &self,
         _guard: &MountsWriteToken,
         key: &ArcKey<DirEntry>,
-    ) -> Option<Arc<Submount>> {
+    ) -> Result<(), Errno> {
         // SAFETY: The MountsWriteToken proves we have exclusive write access.
-        unsafe { self.submounts.remove(key) }
+        let submount = unsafe { self.submounts.remove(key) };
+        if submount.is_some() { Ok(()) } else { error!(EINVAL) }
     }
 
     fn iter_submounts<'a>(
@@ -318,7 +320,7 @@ impl MountRelations {
         _guard: &MountsWriteToken,
         mountpoint: Option<(Weak<Mount>, DirEntryHandle)>,
     ) {
-        self.mountpoint.update(Arc::new(mountpoint));
+        self.mountpoint.update(mountpoint);
     }
 
     fn mountpoint<'a>(
@@ -327,18 +329,21 @@ impl MountRelations {
     ) -> Option<&'a (Weak<Mount>, DirEntryHandle)> {
         self.mountpoint.as_ref(scope).as_ref()
     }
-}
 
-#[derive(Default)]
-pub struct MountState {
-    /// The membership of this mount in its peer group. Do not access directly. Instead use
-    /// peer_group(), take_from_peer_group(), and set_peer_group().
-    // TODO(tbodt): Refactor the links into, some kind of extra struct or something? This is hard
-    // because setting this field requires the Arc<Mount>.
-    peer_group_: Option<(Arc<PeerGroup>, PtrKey<Mount>)>,
-    /// The membership of this mount in a PeerGroup's downstream. Do not access directly. Instead
-    /// use upstream(), take_from_upstream(), and set_upstream().
-    upstream_: Option<(Weak<PeerGroup>, PtrKey<Mount>)>,
+    fn take_peer_group(
+        &self,
+        _guard: &MountsWriteToken,
+    ) -> Option<(Arc<PeerGroup>, PtrKey<Mount>)> {
+        let peer_group = self.peer_group.cloned();
+        self.peer_group.update(None);
+        peer_group
+    }
+
+    fn take_upstream(&self, _guard: &MountsWriteToken) -> Option<(Weak<PeerGroup>, PtrKey<Mount>)> {
+        let upstream = self.upstream.cloned();
+        self.upstream.update(None);
+        upstream
+    }
 }
 
 /// A group of mounts. Setting MS_SHARED on a mount puts it in its own peer group. Any bind mounts
@@ -347,12 +352,8 @@ pub struct MountState {
 #[derive(Default)]
 struct PeerGroup {
     id: u64,
-    state: RwLock<PeerGroupState>,
-}
-#[derive(Default)]
-struct PeerGroupState {
-    mounts: HashSet<WeakKey<Mount>>,
-    downstream: HashSet<WeakKey<Mount>>,
+    mounts: RcuRawHashMap<WeakKey<Mount>, ()>,
+    downstream: RcuRawHashMap<WeakKey<Mount>, ()>,
 }
 
 pub enum WhatToMount {
@@ -395,7 +396,6 @@ impl Mount {
             active_client_counter: Default::default(),
             fs,
             relations: Default::default(),
-            state: Default::default(),
         })
     }
 
@@ -417,10 +417,7 @@ impl Mount {
     ) {
         // Necessary to make a copy to prevent excess replication, see the comment on the
         // following Mount::new call.
-        let peers = {
-            let state = self.state.read();
-            state.peer_group().map(|g| g.copy_propagation_targets()).unwrap_or_default()
-        };
+        let peers = self.peer_group().map(|g| g.copy_propagation_targets()).unwrap_or_default();
 
         // Create the mount after copying the peer list, because in the case of creating a bind
         // mount inside itself, the new mount would get added to our peer group during the
@@ -431,8 +428,8 @@ impl Mount {
             WhatSubmount::New(what, flags) => Mount::new(mounts_guard, what, flags),
         };
 
-        if self.read().is_shared() {
-            mount.write().make_shared();
+        if self.is_shared() {
+            mount.make_shared(mounts_guard);
         }
 
         for peer in peers {
@@ -452,10 +449,7 @@ impl Mount {
         mount_hash_key: &ArcKey<DirEntry>,
     ) -> Result<(), Errno> {
         // create_submount explains why we need to make a copy of peers.
-        let peers = {
-            let state = self.state.read();
-            state.peer_group().map(|g| g.copy_propagation_targets()).unwrap_or_default()
-        };
+        let peers = self.peer_group().map(|g| g.copy_propagation_targets()).unwrap_or_default();
 
         for peer in peers {
             if Arc::ptr_eq(self, &peer) {
@@ -490,7 +484,7 @@ impl Mount {
 
         // First, disconnect the mount from its parent.
         {
-            if source_parent.read().peer_group().is_some() {
+            if source_parent.peer_group().is_some() {
                 // Sayeth mount(2):
                 // EINVAL A move operation (MS_MOVE) was attempted, but the parent mount of source
                 //        mount has propagation type MS_SHARED.
@@ -530,9 +524,9 @@ impl Mount {
         }
 
         // Put the clone in the same peer group
-        let peer_group = self.state.read().peer_group().map(Arc::clone);
+        let peer_group = self.peer_group();
         if let Some(peer_group) = peer_group {
-            clone.write().set_peer_group(peer_group);
+            clone.set_peer_group(mounts_guard, peer_group);
         }
 
         clone
@@ -544,23 +538,24 @@ impl Mount {
         self.clone_mount(mounts_guard, &self.root, MountFlags::REC)
     }
 
-    pub fn change_propagation(self: &MountHandle, flag: MountFlags, recursive: bool) {
-        {
-            let mut state = self.write();
-            match flag {
-                MountFlags::SHARED => state.make_shared(),
-                MountFlags::PRIVATE => state.make_private(),
-                MountFlags::DOWNSTREAM => state.make_downstream(),
-                _ => {
-                    log_warn!("mount propagation {:?}", flag);
-                    return;
-                }
+    pub fn change_propagation(
+        self: &MountHandle,
+        mounts_guard: &MountsWriteToken,
+        flag: MountFlags,
+        recursive: bool,
+    ) {
+        match flag {
+            MountFlags::SHARED => self.make_shared(mounts_guard),
+            MountFlags::PRIVATE => self.make_private(mounts_guard),
+            MountFlags::DOWNSTREAM => self.make_downstream(mounts_guard),
+            _ => {
+                log_warn!("mount propagation {:?}", flag);
             }
         }
 
         if recursive {
             for (_, submount) in self.relations.iter_submounts(&starnix_rcu::RcuReadScope::new()) {
-                submount.mount.change_propagation(flag, recursive);
+                submount.mount.change_propagation(mounts_guard, flag, recursive);
             }
         }
     }
@@ -637,8 +632,6 @@ impl Mount {
         self.fs.update_flags(current_task, flags)
     }
 
-    state_accessor!(Mount, state, Arc<Mount>);
-
     /// Returns true if there is a submount on top of `dir_entry`.
     pub fn has_submount(&self, dir_entry: &DirEntryHandle) -> bool {
         let scope = RcuReadScope::new();
@@ -655,7 +648,7 @@ impl Mount {
     /// Add a child mount *without propagating it to the peer group*. For internal use only.
     pub fn add_submount_internal(
         self: &MountHandle,
-        _guard: &MountsWriteToken,
+        guard: &MountsWriteToken,
         dir: &DirEntryHandle,
         mount: MountHandle,
     ) {
@@ -669,11 +662,11 @@ impl Mount {
             let scope = RcuReadScope::new();
             mount.relations.mountpoint(&scope).map(|x| x.clone())
         };
-        mount.relations.set_mountpoint(_guard, Some((Arc::downgrade(self), Arc::clone(dir))));
+        mount.relations.set_mountpoint(guard, Some((Arc::downgrade(self), Arc::clone(dir))));
         assert!(old_mountpoint.is_none(), "add_submount can only take a newly created mount");
 
         let old_mount = self.relations.insert_submount(
-            _guard,
+            guard,
             ArcKey::ref_cast(dir).clone(),
             Arc::new(submount),
         );
@@ -682,11 +675,11 @@ impl Mount {
             old_mount
                 .mount
                 .relations
-                .set_mountpoint(_guard, Some((Arc::downgrade(&mount), Arc::clone(dir))));
+                .set_mountpoint(guard, Some((Arc::downgrade(&mount), Arc::clone(dir))));
             let new_old_submount =
                 mount.kernel().mounts.register_mount(&mount.root, old_mount.mount.clone());
             mount.relations.insert_submount(
-                _guard,
+                guard,
                 ArcKey(mount.root.clone()),
                 Arc::new(new_old_submount),
             );
@@ -695,68 +688,90 @@ impl Mount {
 
     pub fn remove_submount_internal(
         self: &MountHandle,
-        _guard: &MountsWriteToken,
+        guard: &MountsWriteToken,
         mount_hash_key: &ArcKey<DirEntry>,
     ) -> Result<(), Errno> {
-        if self.relations.remove_submount(_guard, mount_hash_key).is_some() {
-            Ok(())
-        } else {
-            error!(EINVAL)
-        }
+        self.relations.remove_submount(guard, mount_hash_key)
     }
-}
 
-impl MountState {
     /// Return this mount's current peer group.
-    fn peer_group(&self) -> Option<&Arc<PeerGroup>> {
-        let (group, _) = self.peer_group_.as_ref()?;
-        Some(group)
+    fn peer_group(&self) -> Option<Arc<PeerGroup>> {
+        let scope = RcuReadScope::new();
+        self.relations.peer_group.as_ref(&scope).as_ref().map(|(g, _)| g.clone())
     }
 
-    /// Remove this mount from its peer group and return the peer group.
-    fn take_from_peer_group(&mut self) -> Option<Arc<PeerGroup>> {
-        let (old_group, old_mount) = self.peer_group_.take()?;
-        old_group.remove(old_mount);
-        if let Some(upstream) = self.take_from_upstream() {
-            let next_mount =
-                old_group.state.read().mounts.iter().next().map(|w| w.0.upgrade().unwrap());
-            if let Some(next_mount) = next_mount {
-                // TODO(https://fxbug.dev/42065259): Fix the lock ordering here. We've locked next_mount
-                // while self is locked, and since the propagation tree and mount tree are
-                // separate, this could violate the mount -> submount order previously established.
-                next_mount.write().set_upstream(upstream);
+    /// Handles unregistering from both peer group and upstream simultaneously.
+    /// This resolves forwarding the upstream to the next mount in the peer group if necessary.
+    fn unregister_from_peer_group_and_upstream(
+        guard: &MountsWriteToken,
+        peer_group: Option<(Arc<PeerGroup>, PtrKey<Mount>)>,
+        upstream: Option<(Weak<PeerGroup>, PtrKey<Mount>)>,
+    ) {
+        let upstream_group = match upstream {
+            Some((weak_group, mount)) => {
+                if let Some(group) = weak_group.upgrade() {
+                    group.remove_downstream(guard, mount);
+                    Some(group)
+                } else {
+                    None
+                }
+            }
+            None => None,
+        };
+
+        if let Some((group, mount)) = peer_group {
+            group.remove(guard, mount);
+
+            if let Some(upstream_group) = upstream_group {
+                let next_mount = {
+                    let scope = RcuReadScope::new();
+                    group.mounts.keys(&scope).next().map(|w| w.0.upgrade().unwrap())
+                };
+                if let Some(next_mount) = next_mount {
+                    next_mount.set_upstream(guard, upstream_group);
+                }
             }
         }
-        Some(old_group)
+    }
+
+    /// Remove this mount from its peer group.
+    fn take_from_peer_group(&self, guard: &MountsWriteToken) -> Option<Arc<PeerGroup>> {
+        let peer_group = self.relations.take_peer_group(guard);
+        if peer_group.is_none() {
+            return None;
+        }
+        let upstream = self.relations.take_upstream(guard);
+        let return_group = peer_group.as_ref().map(|(g, _)| g.clone());
+        Mount::unregister_from_peer_group_and_upstream(guard, peer_group, upstream);
+        return_group
     }
 
     fn upstream(&self) -> Option<Arc<PeerGroup>> {
-        self.upstream_.as_ref().and_then(|g| g.0.upgrade())
+        let scope = RcuReadScope::new();
+        let (group, _) = self.relations.upstream.as_ref(&scope).as_ref()?;
+        group.upgrade()
     }
 
-    fn take_from_upstream(&mut self) -> Option<Arc<PeerGroup>> {
-        let (old_upstream, old_mount) = self.upstream_.take()?;
-        // TODO(tbodt): Reason about whether the upgrade() could possibly return None, and what we
-        // should actually do in that case.
-        let old_upstream = old_upstream.upgrade()?;
-        old_upstream.remove_downstream(old_mount);
-        Some(old_upstream)
+    fn remove_from_upstream(&self, guard: &MountsWriteToken) {
+        let upstream = self.relations.take_upstream(guard);
+        if let Some((weak_group, mount)) = upstream {
+            if let Some(group) = weak_group.upgrade() {
+                group.remove_downstream(guard, mount);
+            }
+        }
     }
-}
 
-#[apply(state_implementation!)]
-impl MountState<Base = Mount, BaseType = Arc<Mount>> {
     /// Set this mount's peer group.
-    fn set_peer_group(&mut self, group: Arc<PeerGroup>) {
-        self.take_from_peer_group();
-        group.add(self.base);
-        self.peer_group_ = Some((group, Arc::as_ptr(self.base).into()));
+    fn set_peer_group(self: &Arc<Mount>, guard: &MountsWriteToken, group: Arc<PeerGroup>) {
+        self.take_from_peer_group(guard);
+        group.add(guard, self);
+        self.relations.peer_group.update(Some((group, Arc::as_ptr(self).into())));
     }
 
-    fn set_upstream(&mut self, group: Arc<PeerGroup>) {
-        self.take_from_upstream();
-        group.add_downstream(self.base);
-        self.upstream_ = Some((Arc::downgrade(&group), Arc::as_ptr(self.base).into()));
+    fn set_upstream(self: &Arc<Mount>, guard: &MountsWriteToken, group: Arc<PeerGroup>) {
+        self.remove_from_upstream(guard);
+        group.add_downstream(guard, self);
+        self.relations.upstream.update(Some((Arc::downgrade(&group), Arc::as_ptr(self).into())));
     }
 
     /// Is the mount in a peer group? Corresponds to MS_SHARED.
@@ -765,48 +780,59 @@ impl MountState<Base = Mount, BaseType = Arc<Mount>> {
     }
 
     /// Put the mount in a peer group. Implements MS_SHARED.
-    pub fn make_shared(&mut self) {
+    fn make_shared(self: &Arc<Mount>, guard: &MountsWriteToken) {
         if self.is_shared() {
             return;
         }
-        let kernel = self.base.kernel();
-        self.set_peer_group(PeerGroup::new(kernel.get_next_peer_group_id()));
+        let kernel = self.kernel();
+        self.set_peer_group(guard, PeerGroup::new(kernel.get_next_peer_group_id()))
     }
 
     /// Take the mount out of its peer group, also remove upstream if any. Implements MS_PRIVATE.
-    pub fn make_private(&mut self) {
-        self.take_from_peer_group();
-        self.take_from_upstream();
+    fn make_private(&self, guard: &MountsWriteToken) {
+        let peer_group = self.relations.take_peer_group(guard);
+        let upstream = self.relations.take_upstream(guard);
+        Mount::unregister_from_peer_group_and_upstream(guard, peer_group, upstream);
     }
 
     /// Take the mount out of its peer group and make it downstream instead. Implements
     /// MountFlags::DOWNSTREAM (MS_SLAVE).
-    pub fn make_downstream(&mut self) {
-        if let Some(peer_group) = self.take_from_peer_group() {
-            self.set_upstream(peer_group);
+    fn make_downstream(self: &Arc<Mount>, guard: &MountsWriteToken) {
+        if let Some(peer_group) = self.take_from_peer_group(guard) {
+            self.set_upstream(guard, peer_group);
         }
     }
 }
 
 impl PeerGroup {
     fn new(id: u64) -> Arc<Self> {
-        Arc::new(Self { id, state: Default::default() })
+        Arc::new(Self {
+            id,
+            mounts: RcuRawHashMap::default(),
+            downstream: RcuRawHashMap::default(),
+        })
     }
 
-    fn add(&self, mount: &Arc<Mount>) {
-        self.state.write().mounts.insert(WeakKey::from(mount));
+    fn add(&self, _guard: &MountsWriteToken, mount: &Arc<Mount>) {
+        // SAFETY: The MountsWriteToken proves we have exclusive write access.
+        unsafe { self.mounts.insert(&starnix_rcu::RcuReadScope::new(), WeakKey::from(mount), ()) };
     }
 
-    fn remove(&self, mount: PtrKey<Mount>) {
-        self.state.write().mounts.remove(&mount);
+    fn remove(&self, _guard: &MountsWriteToken, mount: PtrKey<Mount>) {
+        // SAFETY: The MountsWriteToken proves we have exclusive write access.
+        unsafe { self.mounts.remove(&mount) };
     }
 
-    fn add_downstream(&self, mount: &Arc<Mount>) {
-        self.state.write().downstream.insert(WeakKey::from(mount));
+    fn add_downstream(&self, _guard: &MountsWriteToken, mount: &Arc<Mount>) {
+        // SAFETY: The MountsWriteToken proves we have exclusive write access.
+        unsafe {
+            self.downstream.insert(&starnix_rcu::RcuReadScope::new(), WeakKey::from(mount), ())
+        };
     }
 
-    fn remove_downstream(&self, mount: PtrKey<Mount>) {
-        self.state.write().downstream.remove(&mount);
+    fn remove_downstream(&self, _guard: &MountsWriteToken, mount: PtrKey<Mount>) {
+        // SAFETY: The MountsWriteToken proves we have exclusive write access.
+        unsafe { self.downstream.remove(&mount) };
     }
 
     fn copy_propagation_targets(&self) -> Vec<MountHandle> {
@@ -817,37 +843,17 @@ impl PeerGroup {
 
     fn collect_propagation_targets(&self, buf: &mut Vec<MountHandle>) {
         let downstream_mounts: Vec<_> = {
-            let state = self.state.read();
-            buf.extend(state.mounts.iter().filter_map(|m| m.0.upgrade()));
-            state.downstream.iter().filter_map(|m| m.0.upgrade()).collect()
+            let scope = RcuReadScope::new();
+            buf.extend(self.mounts.keys(&scope).filter_map(|m| m.0.upgrade()));
+            self.downstream.keys(&scope).filter_map(|m| m.0.upgrade()).collect()
         };
         for mount in downstream_mounts {
-            let peer_group = mount.read().peer_group().map(Arc::clone);
+            let peer_group = mount.peer_group();
             match peer_group {
                 Some(group) => group.collect_propagation_targets(buf),
                 None => buf.push(mount),
             }
         }
-    }
-}
-
-impl Drop for Mount {
-    fn drop(&mut self) {
-        let state = self.state.get_mut();
-        state.take_from_peer_group();
-        state.take_from_upstream();
-    }
-}
-
-impl fmt::Debug for Mount {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let scope = RcuReadScope::new();
-        f.debug_struct("Mount")
-            .field("id", &(self as *const Mount))
-            .field("root", &self.root)
-            .field("mountpoint", &self.relations.mountpoint(&scope))
-            .field("submounts", &self.relations.iter_submounts(&scope).collect::<Vec<_>>())
-            .finish()
     }
 }
 
@@ -1019,10 +1025,10 @@ impl DynamicFileSource for ProcMountinfoFile {
                 mountpoint.path(&task_fs),
                 mount.mount_flags(),
             )?;
-            if let Some(peer_group) = mount.read().peer_group() {
+            if let Some(peer_group) = mount.peer_group() {
                 write!(sink, " shared:{}", peer_group.id)?;
             }
-            if let Some(upstream) = mount.read().upstream() {
+            if let Some(upstream) = mount.upstream() {
                 write!(sink, " master:{}", upstream.id)?;
             }
             writeln!(
@@ -2054,7 +2060,7 @@ impl Mounts {
         Submount { dir: ArcKey(dir_entry.clone()), mount }
     }
 
-    /// Unregisters the mount.  This is called by `Submount::drop`.
+    /// Unregisters the mount. This is called by `Submount::drop`.
     fn unregister_mount(&self, dir_entry: &Arc<DirEntry>, mount: &MountHandle) {
         let mut mounts = self.mounts.lock();
         let key = WeakKey::from(dir_entry);
@@ -2070,7 +2076,7 @@ impl Mounts {
         }
     }
 
-    /// Unmounts all mounts associated with `dir_entry`.  This is called when `dir_entry` is
+    /// Unmounts all mounts associated with `dir_entry`. This is called when `dir_entry` is
     /// unlinked (which would normally result in EBUSY, but not if it isn't mounted in the local
     /// namespace).
     pub fn unmount(&self, dir_entry: &DirEntry) {
@@ -2121,6 +2127,39 @@ impl Mounts {
             }
         }
         Ok(())
+    }
+}
+
+impl Drop for Mount {
+    fn drop(&mut self) {
+        // Updating the RCU object without lock is acceptable because this Mount is not available
+        // anymore by anything.
+        let kernel = self.kernel();
+        let peer_group = self.relations.peer_group.cloned();
+        let upstream = self.relations.upstream.cloned();
+        self.relations.peer_group.update(None);
+        self.relations.upstream.update(None);
+        if peer_group.is_some() || upstream.is_some() {
+            fuchsia_rcu::rcu_drop(scopeguard::guard(
+                (kernel, peer_group, upstream),
+                |(kernel, peer_group, upstream)| {
+                    let guard = kernel.mounts_lock.lock();
+                    Mount::unregister_from_peer_group_and_upstream(&guard, peer_group, upstream);
+                },
+            ));
+        }
+    }
+}
+
+impl fmt::Debug for Mount {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let scope = RcuReadScope::new();
+        f.debug_struct("Mount")
+            .field("id", &(self as *const Mount))
+            .field("root", &self.root)
+            .field("mountpoint", &self.relations.mountpoint(&scope))
+            .field("submounts", &self.relations.iter_submounts(&scope).collect::<Vec<_>>())
+            .finish()
     }
 }
 
