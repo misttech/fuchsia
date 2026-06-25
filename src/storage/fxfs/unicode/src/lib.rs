@@ -37,9 +37,16 @@ impl<I: Iterator<Item = char>> Iterator for CaseFoldIterator<I> {
     }
 }
 
-/// Wraps an Iterator<Item=char> so that it case folds.
 pub fn casefold<I: Iterator<Item = char>>(input: I) -> CaseFoldIterator<I> {
     CaseFoldIterator { input, buf: VecDeque::new() }
+}
+
+/// Helper function to convert a `char` to an iterator over its UTF-8 bytes
+/// without any heap allocations.
+pub fn utf8_bytes(c: char) -> impl Iterator<Item = u8> {
+    let mut buf = [0; 4];
+    let len = c.encode_utf8(&mut buf).len();
+    buf.into_iter().take(len)
 }
 
 /// A comparison function that:
@@ -93,6 +100,10 @@ impl CasefoldStr {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    pub fn casefold_normalized_chars(&self) -> impl Iterator<Item = char> + '_ {
+        nfd::nfd(casefold(self.0.chars()).filter(|x| !lookup::default_ignorable(*x)))
+    }
 }
 
 impl std::fmt::Debug for CasefoldStr {
@@ -132,9 +143,11 @@ impl ToOwned for CasefoldStr {
     }
 }
 
-impl std::hash::Hash for CasefoldStr {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        casefold_hash(self.as_str(), state);
+impl Hash for CasefoldStr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for ch in self.casefold_normalized_chars() {
+            ch.hash(state);
+        }
     }
 }
 
@@ -175,18 +188,11 @@ impl std::cmp::PartialOrd for CasefoldString {
     }
 }
 
-pub fn casefold_hash(s: &str, state: &mut impl Hasher) {
-    let normalized_chars = nfd::nfd(casefold(s.chars()).filter(|x| !lookup::default_ignorable(*x)));
-    for ch in normalized_chars {
-        ch.hash(state);
-    }
-}
-
 // Nb: This trait is provided for completeness but is NOT intended to be performant.
 impl Hash for CasefoldString {
     fn hash<H>(&self, state: &mut H)
     where
-        H: std::hash::Hasher,
+        H: Hasher,
     {
         (**self).hash(state);
     }
@@ -288,5 +294,23 @@ mod test {
         // Test Hash consistency
         assert_eq!(get_hash(&a), get_hash(borrowed_a));
         assert_eq!(get_hash(&owned_b), get_hash(b));
+    }
+
+    #[test]
+    fn test_casefold_str_normalized() {
+        // soft hyphen (ignorable), ohm sign (decomposes to omega)
+        let raw = "Hello\u{00AD} World\u{2126}";
+        let cf_str = CasefoldStr::new(raw);
+
+        let normalized_chars: String = cf_str.casefold_normalized_chars().collect();
+
+        // expected:
+        // "Hello" -> "hello"
+        // "\u{00AD}" -> stripped
+        // " " -> " "
+        // "World" -> "world"
+        // "\u{2126}" -> \u{03c9} (omega lowercase in NFD)
+        let expected_str = "hello world\u{03c9}";
+        assert_eq!(normalized_chars, expected_str);
     }
 }

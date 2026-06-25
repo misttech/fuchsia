@@ -89,7 +89,7 @@ impl ProxyFilename {
 
     /// Computes a non-casefolded hash code.
     pub fn compute_hash_code(raw_filename: &[u8]) -> u64 {
-        direntry::tea_hash_filename(raw_filename) as u64
+        direntry::tea_hash_filename(raw_filename.iter().copied()) as u64
     }
 
     /// Computes the sha256 part of the proxy name.

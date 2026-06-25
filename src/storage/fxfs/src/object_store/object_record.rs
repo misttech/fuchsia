@@ -246,8 +246,8 @@ impl ObjectKey {
     pub fn child(object_id: u64, name: &str, dir_type: DirType) -> Self {
         match dir_type {
             DirType::Casefold => {
-                let casefolded_name: String = fxfs_unicode::casefold(name.chars()).collect();
-                let hash_code = fscrypt::direntry::tea_hash_filename(casefolded_name.as_bytes());
+                let casefolded = fxfs_unicode::casefold(name.chars()).flat_map(fxfs_unicode::utf8_bytes);
+                let hash_code = fscrypt::direntry::tea_hash_filename(casefolded);
                 Self {
                     object_id,
                     data: ObjectKeyData::CasefoldChild { hash_code, name: name.into() },

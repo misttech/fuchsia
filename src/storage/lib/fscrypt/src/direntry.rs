@@ -29,42 +29,50 @@ fn tea(input: &[u32; 4], buf: &mut [u32; 2]) {
     buf[1] = buf[1].wrapping_add(v[1]);
 }
 
-fn str_hash(input: &[u8], padding: u32, out: &mut [u32; 4]) {
-    debug_assert!(input.len() <= out.len() * 4);
-    *out = [padding; 4];
-    let mut out_ix = 0;
-    let mut v = padding;
-    for i in 0..input.len() {
-        v = (input[i] as u32).wrapping_add(v << 8);
-        if i % 4 == 3 {
-            out[out_ix] = v;
-            out_ix += 1;
-            v = padding;
-        }
-    }
-    if out_ix < 4 {
-        out[out_ix] = v;
-    }
-}
-
 /// This is the function used unless both casefolding + encryption are enabled.
-pub fn tea_hash_filename(name: &[u8]) -> u32 {
+pub fn tea_hash_filename(name_bytes: impl IntoIterator<Item = u8>) -> u32 {
+    // The tea hash algorithm operates on groups of [4; u32], but the u32
+    // need to be big-endian.
     let mut buf = [0x67452301, 0xefcdab89];
-    let mut len = name.len() as u32;
-    name.chunks(16).for_each(|chunk| {
-        let mut k = [0; 4];
-        let padding = len | (len << 8) | (len << 16) | (len << 24);
-        len = len.wrapping_sub(16);
-        str_hash(chunk, padding, &mut k);
+    let mut done = false;
+    let mut name_bytes = name_bytes.into_iter();
+    let mut bytes = [0u8; 16];
+    while !done {
+        let mut out = 0;
+        while out < 16 {
+            let Some(c) = name_bytes.next() else {
+                if out == 0 {
+                    return buf[0];
+                }
+                // Pad the remainder of the last buffer with the length of this
+                // chunk.
+                bytes[out..].fill(out as u8);
+                done = true;
+                break;
+            };
+            bytes[out] = c;
+            out += 1;
+        }
+        let mut k = [
+            u32::from_be_bytes(bytes[0..4].try_into().unwrap()),
+            u32::from_be_bytes(bytes[4..8].try_into().unwrap()),
+            u32::from_be_bytes(bytes[8..12].try_into().unwrap()),
+            u32::from_be_bytes(bytes[12..16].try_into().unwrap()),
+        ];
+        if done {
+            // Due to a quirk of how the buffer is filled, the last u32 needs
+            // to be rotated.
+            k[out / 4] = k[out / 4].rotate_left(out as u32 % 4 * 8);
+        }
         tea(&k, &mut buf);
-    });
+    }
     buf[0]
 }
 
 // A stronger hash function is used if casefold + FBE are used together.
 // Nb: If encryption is used without casefolding, the hash_code is based on the encrypted filename.
-pub fn casefold_encrypt_hash_filename(name: &[u8], dirhash_key: &[u8; 16]) -> u32 {
+pub fn casefold_encrypt_hash_filename(name: &str, dirhash_key: &[u8; 16]) -> u32 {
     let mut hasher = SipHasher::new_with_key(dirhash_key);
-    hasher.write(name);
+    hasher.write(name.as_bytes());
     hasher.finish() as u32
 }

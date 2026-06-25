@@ -107,21 +107,28 @@ fn get_dir_entries(
                 while filename.last() == Some(&0) {
                     filename.pop();
                 }
+                let filename_str = if is_casefolded {
+                    // We must have valid UTF-8 for casefolding.
+                    String::from_utf8(filename).context("Bad UTF-8 in encrypted casefolded filename")?
+                } else {
+                    let filename_len = filename.len();
+                    String::from_utf8(filename)
+                        .unwrap_or_else(|_| format!("BAD_ENCRYPTED_FILENAME_len_{filename_len}"))
+                };
+
                 // If using both encryption and casefold, use hkdf-seeded hash instead.
                 let hash_code = if is_casefolded {
                     fscrypt::direntry::casefold_encrypt_hash_filename(
-                        filename.as_slice(),
+                        &filename_str,
                         &decryptor.dirhash_key(),
                     )
                 } else {
-                    fscrypt::direntry::tea_hash_filename(raw_filename.as_slice())
+                    fscrypt::direntry::tea_hash_filename(raw_filename.iter().copied())
                 };
 
                 let target = dentry[i].hash_code;
                 ensure!(target == hash_code, "hash_code doesn't match expectation");
-                let filename_len = filename.len();
-                String::from_utf8(filename)
-                    .unwrap_or_else(|_| format!("BAD_ENCRYPTED_FILENAME_len_{filename_len}"))
+                filename_str
             } else {
                 // TODO(b/457570701): need better coverage of casefold + encrypted in test image.
                 ProxyFilename::new_with_hash_code(entry.hash_code as u64, &raw_filename).into()

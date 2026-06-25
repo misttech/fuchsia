@@ -186,7 +186,7 @@ impl Hash for NameRef<'_> {
             }
             NameRef::CaseInsensitive(s) => {
                 1.hash(state);
-                fxfs_unicode::casefold_hash(s, state);
+                fxfs_unicode::CasefoldStr::new(s).hash(state);
             }
         }
     }

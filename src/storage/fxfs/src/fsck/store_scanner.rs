@@ -683,8 +683,8 @@ impl<'a> ScannedStore<'a> {
                             child_id,
                         ))?;
                     }
-                    let casefolded: String = fxfs_unicode::casefold(name.chars()).collect();
-                    let expected_hash = fscrypt::direntry::tea_hash_filename(casefolded.as_bytes());
+                    let casefolded = fxfs_unicode::casefold(name.chars()).flat_map(fxfs_unicode::utf8_bytes);
+                    let expected_hash = fscrypt::direntry::tea_hash_filename(casefolded);
                     if *hash_code != expected_hash {
                         self.fsck.error(FsckError::BadCasefoldHash(
                             self.store_id,
