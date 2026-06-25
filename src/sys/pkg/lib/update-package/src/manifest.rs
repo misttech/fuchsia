@@ -216,8 +216,8 @@ impl TryFrom<proto::image::ImageType> for ImageType {
     fn try_from(value: proto::image::ImageType) -> Result<Self, Self::Error> {
         match value {
             proto::image::ImageType::Asset(asset) => {
-                let asset_type = proto::AssetType::from_i32(asset)
-                    .ok_or_else(|| format!("unknown asset type: {asset}"))?;
+                let asset_type = proto::AssetType::try_from(asset)
+                    .map_err(|_| format!("unknown asset type: {asset}"))?;
                 Ok(ImageType::Asset(asset_type))
             }
             proto::image::ImageType::Firmware(firmware) => Ok(ImageType::Firmware(firmware)),

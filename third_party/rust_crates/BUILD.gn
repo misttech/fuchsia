@@ -1530,27 +1530,27 @@ group("proptest-derive-0.4.0") {
 }
 
 group("prost") {
-  public_deps = [ ":prost-v0_11_0" ]
+  public_deps = [ ":prost-v0_14_4" ]
 }
 
-group("prost-0.11.0") {
-  public_deps = [ ":prost-v0_11_0" ]
+group("prost-0.14.4") {
+  public_deps = [ ":prost-v0_14_4" ]
 }
 
 group("prost-build") {
-  public_deps = [ ":prost-build-v0_11_1" ]
+  public_deps = [ ":prost-build-v0_14_4" ]
 }
 
-group("prost-build-0.11.1") {
-  public_deps = [ ":prost-build-v0_11_1" ]
+group("prost-build-0.14.4") {
+  public_deps = [ ":prost-build-v0_14_4" ]
 }
 
 group("prost-types") {
-  public_deps = [ ":prost-types-v0_11_1" ]
+  public_deps = [ ":prost-types-v0_14_4" ]
 }
 
-group("prost-types-0.11.1") {
-  public_deps = [ ":prost-types-v0_11_1" ]
+group("prost-types-0.14.4") {
+  public_deps = [ ":prost-types-v0_14_4" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -8572,6 +8572,38 @@ rustc_library("fixedbitset-v0_4_2") {
   applicable_licenses = [ ":fixedbitset-v0_4_2.license" ]
 }
 
+license("fixedbitset-v0_5_7.license") {
+  public_package_name = "fixedbitset"
+  license_files = [
+    "//third_party/rust_crates/vendor/fixedbitset-0.5.7/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/fixedbitset-0.5.7/LICENSE-MIT",
+  ]
+}
+
+rustc_library("fixedbitset-v0_5_7") {
+  crate_name = "fixedbitset"
+  source_root = "//third_party/rust_crates/vendor/fixedbitset-0.5.7/src/lib.rs"
+  output_name = "fixedbitset-6382fd70532f352b"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=6382fd70532f352b",
+    "-Cextra-filename=-6382fd70532f352b",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":fixedbitset-v0_5_7.license" ]
+}
+
 license("flagset-v0_4_7.license") {
   public_package_name = "flagset"
   license_files = [ "//third_party/rust_crates/vendor/flagset-0.4.7/LICENSE" ]
@@ -8714,6 +8746,35 @@ rustc_library("fnv-v1_0_7") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":fnv-v1_0_7.license" ]
+}
+
+license("foldhash-v0_1_5.license") {
+  public_package_name = "foldhash"
+  license_files = [ "//third_party/rust_crates/vendor/foldhash-0.1.5/LICENSE" ]
+}
+
+rustc_library("foldhash-v0_1_5") {
+  crate_name = "foldhash"
+  source_root = "//third_party/rust_crates/vendor/foldhash-0.1.5/src/lib.rs"
+  output_name = "foldhash-a486377aaa9677e9"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=a486377aaa9677e9",
+    "-Cextra-filename=-a486377aaa9677e9",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":foldhash-v0_1_5.license" ]
 }
 
 license("foldhash-v0_2_0.license") {
@@ -10089,6 +10150,41 @@ rustc_library("hashbrown-v0_12_3") {
   applicable_licenses = [ ":hashbrown-v0_12_3.license" ]
 }
 
+license("hashbrown-v0_15_5.license") {
+  public_package_name = "hashbrown"
+  license_files = [
+    "//third_party/rust_crates/vendor/hashbrown-0.15.5/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/hashbrown-0.15.5/LICENSE-MIT",
+  ]
+}
+
+rustc_library("hashbrown-v0_15_5") {
+  crate_name = "hashbrown"
+  source_root = "//third_party/rust_crates/vendor/hashbrown-0.15.5/src/lib.rs"
+  output_name = "hashbrown-7df05e2e681ad14c"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":foldhash-v0_1_5" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=7df05e2e681ad14c",
+    "-Cextra-filename=-7df05e2e681ad14c",
+    "--cfg=feature=\"default-hasher\"",
+    "--cfg=feature=\"inline-more\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":hashbrown-v0_15_5.license" ]
+}
+
 license("hashbrown-v0_16_1.license") {
   public_package_name = "hashbrown"
   license_files = [
@@ -11321,42 +11417,6 @@ rustc_library("ipnet-v2_11_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":ipnet-v2_11_0.license" ]
-}
-
-license("itertools-v0_10_1.license") {
-  public_package_name = "itertools"
-  license_files = [
-    "//third_party/rust_crates/vendor/itertools-0.10.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/itertools-0.10.1/LICENSE-MIT",
-  ]
-}
-
-rustc_library("itertools-v0_10_1") {
-  crate_name = "itertools"
-  source_root = "//third_party/rust_crates/vendor/itertools-0.10.1/src/lib.rs"
-  output_name = "itertools-6923aac211951545"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":either-v1_15_0" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=6923aac211951545",
-    "-Cextra-filename=-6923aac211951545",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"use_alloc\"",
-    "--cfg=feature=\"use_std\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":itertools-v0_10_1.license" ]
 }
 
 license("itertools-v0_14_0.license") {
@@ -14515,6 +14575,42 @@ rustc_library("pest_meta-v2_8_6") {
   applicable_licenses = [ ":pest_meta-v2_8_6.license" ]
 }
 
+license("petgraph-v0_8_3.license") {
+  public_package_name = "petgraph"
+  license_files = [
+    "//third_party/rust_crates/forks/petgraph-0.8.3/LICENSE-APACHE",
+    "//third_party/rust_crates/forks/petgraph-0.8.3/LICENSE-MIT",
+  ]
+}
+
+rustc_library("petgraph-v0_8_3") {
+  crate_name = "petgraph"
+  source_root = "//third_party/rust_crates/forks/petgraph-0.8.3/src/lib.rs"
+  output_name = "petgraph-4d5dd37ae7770fc8"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":fixedbitset-v0_5_7" ]
+  deps += [ ":hashbrown-v0_15_5" ]
+  deps += [ ":indexmap-v2_13_0" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=4d5dd37ae7770fc8",
+    "-Cextra-filename=-4d5dd37ae7770fc8",
+    "--cfg=feature=\"std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":petgraph-v0_8_3.license" ]
+}
+
 license("petgraph-v0_6_2.license") {
   public_package_name = "petgraph"
   license_files = [
@@ -15463,6 +15559,41 @@ rustc_library("pretty_assertions-v1_2_1") {
   applicable_licenses = [ ":pretty_assertions-v1_2_1.license" ]
 }
 
+license("prettyplease-v0_2_37.license") {
+  public_package_name = "prettyplease"
+  license_files = [
+    "//third_party/rust_crates/vendor/prettyplease-0.2.37/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/prettyplease-0.2.37/LICENSE-MIT",
+  ]
+}
+
+rustc_library("prettyplease-v0_2_37") {
+  crate_name = "prettyplease"
+  source_root =
+      "//third_party/rust_crates/vendor/prettyplease-0.2.37/src/lib.rs"
+  output_name = "prettyplease-501430781da7d8d8"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":proc-macro2-v1_0_106" ]
+  deps += [ ":syn-v2_0_117" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=501430781da7d8d8",
+    "-Cextra-filename=-501430781da7d8d8",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":prettyplease-v0_2_37.license" ]
+}
+
 license("prettytable-rs-v0_8_0.license") {
   public_package_name = "prettytable"
   license_files =
@@ -15705,15 +15836,15 @@ rustc_macro("proptest-derive-v0_4_0") {
   applicable_licenses = [ ":proptest-derive-v0_4_0.license" ]
 }
 
-license("prost-v0_11_0.license") {
+license("prost-v0_14_4.license") {
   public_package_name = "prost"
-  license_files = [ "//third_party/rust_crates/vendor/prost-0.11.0/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/prost-0.14.4/LICENSE" ]
 }
 
-rustc_library("prost-v0_11_0") {
+rustc_library("prost-v0_14_4") {
   crate_name = "prost"
-  source_root = "//third_party/rust_crates/vendor/prost-0.11.0/src/lib.rs"
-  output_name = "prost-9d1b4fd120de6694"
+  source_root = "//third_party/rust_crates/vendor/prost-0.14.4/src/lib.rs"
+  output_name = "prost-5f9122d0280ee5e0"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -15721,78 +15852,78 @@ rustc_library("prost-v0_11_0") {
 
   deps = []
   deps += [ ":bytes-v1_11_1" ]
-  deps += [ ":prost-derive-v0_11_0($host_toolchain)" ]
+  deps += [ ":prost-derive-v0_14_4($host_toolchain)" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=9d1b4fd120de6694",
-    "-Cextra-filename=-9d1b4fd120de6694",
+    "-Cmetadata=5f9122d0280ee5e0",
+    "-Cextra-filename=-5f9122d0280ee5e0",
     "--cfg=feature=\"default\"",
-    "--cfg=feature=\"prost-derive\"",
+    "--cfg=feature=\"derive\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":prost-v0_11_0.license" ]
+  applicable_licenses = [ ":prost-v0_14_4.license" ]
 }
 
-license("prost-build-v0_11_1.license") {
+license("prost-build-v0_14_4.license") {
   public_package_name = "prost_build"
   license_files =
-      [ "//third_party/rust_crates/vendor/prost-build-0.11.1/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/prost-build-0.14.4/LICENSE" ]
 }
 
-rustc_library("prost-build-v0_11_1") {
+rustc_library("prost-build-v0_14_4") {
   crate_name = "prost_build"
-  source_root = "//third_party/rust_crates/vendor/prost-build-0.11.1/src/lib.rs"
-  output_name = "prost_build-82ee70f5a1cc1810"
+  source_root = "//third_party/rust_crates/vendor/prost-build-0.14.4/src/lib.rs"
+  output_name = "prost_build-748ebcd650565511"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":bytes-v1_11_1" ]
-  deps += [ ":heck-v0_4_1" ]
-  deps += [ ":itertools-v0_10_1" ]
-  deps += [ ":lazy_static-v1_5_0" ]
+  deps += [ ":petgraph-v0_8_3" ]
+  deps += [ ":heck-v0_5_0" ]
+  deps += [ ":itertools-v0_14_0" ]
   deps += [ ":log-v0_4_29" ]
   deps += [ ":multimap-v0_8_3" ]
-  deps += [ ":petgraph-v0_6_2" ]
-  deps += [ ":prost-types-v0_11_1" ]
-  deps += [ ":prost-v0_11_0" ]
+  deps += [ ":prettyplease-v0_2_37" ]
+  deps += [ ":prost-types-v0_14_4" ]
+  deps += [ ":prost-v0_14_4" ]
   deps += [ ":regex-v1_12_3" ]
+  deps += [ ":syn-v2_0_117" ]
   deps += [ ":tempfile-v3_2_0" ]
-  deps += [ ":which-v4_0_2" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=82ee70f5a1cc1810",
-    "-Cextra-filename=-82ee70f5a1cc1810",
+    "-Cmetadata=748ebcd650565511",
+    "-Cextra-filename=-748ebcd650565511",
     "--cfg=feature=\"default\"",
+    "--cfg=feature=\"format\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":prost-build-v0_11_1.license" ]
+  applicable_licenses = [ ":prost-build-v0_14_4.license" ]
 }
 
-license("prost-derive-v0_11_0.license") {
+license("prost-derive-v0_14_4.license") {
   public_package_name = "prost_derive"
   license_files =
-      [ "//third_party/rust_crates/vendor/prost-derive-0.11.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/prost-derive-0.14.4/LICENSE" ]
 }
 
-rustc_macro("prost-derive-v0_11_0") {
+rustc_macro("prost-derive-v0_14_4") {
   crate_name = "prost_derive"
   source_root =
-      "//third_party/rust_crates/vendor/prost-derive-0.11.0/src/lib.rs"
-  output_name = "prost_derive-1b1b4e5ceb7d715e"
+      "//third_party/rust_crates/vendor/prost-derive-0.14.4/src/lib.rs"
+  output_name = "prost_derive-62816e360d5fb915"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -15800,56 +15931,55 @@ rustc_macro("prost-derive-v0_11_0") {
 
   deps = []
   deps += [ ":anyhow-v1_0_102" ]
-  deps += [ ":itertools-v0_10_1" ]
+  deps += [ ":itertools-v0_14_0" ]
   deps += [ ":proc-macro2-v1_0_106" ]
   deps += [ ":quote-v1_0_45" ]
-  deps += [ ":syn-v1_0_109" ]
+  deps += [ ":syn-v2_0_117" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=1b1b4e5ceb7d715e",
-    "-Cextra-filename=-1b1b4e5ceb7d715e",
+    "-Cmetadata=62816e360d5fb915",
+    "-Cextra-filename=-62816e360d5fb915",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":prost-derive-v0_11_0.license" ]
+  applicable_licenses = [ ":prost-derive-v0_14_4.license" ]
 }
 
-license("prost-types-v0_11_1.license") {
+license("prost-types-v0_14_4.license") {
   public_package_name = "prost_types"
   license_files =
-      [ "//third_party/rust_crates/vendor/prost-types-0.11.1/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/prost-types-0.14.4/LICENSE" ]
 }
 
-rustc_library("prost-types-v0_11_1") {
+rustc_library("prost-types-v0_14_4") {
   crate_name = "prost_types"
-  source_root = "//third_party/rust_crates/vendor/prost-types-0.11.1/src/lib.rs"
-  output_name = "prost_types-811d56aba2bd75e4"
+  source_root = "//third_party/rust_crates/vendor/prost-types-0.14.4/src/lib.rs"
+  output_name = "prost_types-d675b741ffc334d1"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":bytes-v1_11_1" ]
-  deps += [ ":prost-v0_11_0" ]
+  deps += [ ":prost-v0_14_4" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=811d56aba2bd75e4",
-    "-Cextra-filename=-811d56aba2bd75e4",
+    "-Cmetadata=d675b741ffc334d1",
+    "-Cextra-filename=-d675b741ffc334d1",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":prost-types-v0_11_1.license" ]
+  applicable_licenses = [ ":prost-types-v0_14_4.license" ]
 }
 
 license("ptr_meta-v0_3_1.license") {

@@ -114,9 +114,9 @@ async fn console_out(
                 s => anyhow::bail!("Received unexpected stream in console_out: {:?}", s),
             },
             vsh::host_message::Msg::StatusMessage(status_message) => {
-                match vsh::ConnectionStatus::from_i32(status_message.status) {
-                    Some(vsh::ConnectionStatus::Ready) => {}
-                    Some(vsh::ConnectionStatus::Exited) => return Ok(status_message.code),
+                match vsh::ConnectionStatus::try_from(status_message.status) {
+                    Ok(vsh::ConnectionStatus::Ready) => {}
+                    Ok(vsh::ConnectionStatus::Exited) => return Ok(status_message.code),
                     _ => {
                         anyhow::bail!(
                             "Guest sent connection status: {}, and description: {}",

@@ -195,9 +195,9 @@ pretty_assertions = "1.2.1"
 prettytable-rs = "0.8.0"
 proptest = "1.11.0"
 proptest-derive = "0.4.0"
-prost = "0.11.0"
-prost-build = "0.11.1"
-prost-types = "0.11.1"
+prost = "0.14.4"
+prost-build = "0.14.4"
+prost-types = "0.14.4"
 rand = { version = "0.9.2", features = ["small_rng"] }
 rand_core = "0.9.3"
 rand_xorshift = "0.4"
@@ -445,6 +445,7 @@ num-bigint-dig = { path = "forks/num-bigint-dig" }
 # 1. https://github.com/sfackler/rust-openssl/pull/2372 already upstream waiting for the next quarterly release
 # 2. https://github.com/sfackler/rust-openssl/pull/2371 rejected upstream waiting to be inlined into KeyMint (https://fxbug.dev/398863191)
 openssl = { path = "forks/openssl-0.10.71" }
+petgraph = { path = "forks/petgraph-0.8.3" }
 pin-init = { path = "forks/pin-init" }
 # FIXME(118248): We can unfork once undefined behavior is resolved.
 prettytable-rs = { path = "forks/prettytable-rs" }
@@ -852,6 +853,9 @@ license_files = ["LICENSE-APACHE", "LICENSE-MIT"]
 
 [gn.package.pin-init-internal."0.3.0"]
 license_files = ["LICENSE-APACHE", "LICENSE-MIT"]
+
+[gn.package.prettyplease."0.2.37"]
+rustflags = []
 
 # "--cfg=use_fallback" is required in order to avoid using the unstable
 # proc_macro_diagnostic feature.
