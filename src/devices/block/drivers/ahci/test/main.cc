@@ -786,7 +786,11 @@ TEST_P(AhciTest, ShutdownWaitsForTransactionsInFlight) {
   ASSERT_NE(command, nullptr);
 
   zx::time time = zx::clock::get_monotonic();
-  driver_test().RunInDriverContext([](TestController& driver) { driver.Shutdown(); });
+  libsync::Completion shutdown_complete;
+  driver_test().RunInDriverContext([&shutdown_complete, this](TestController& driver) {
+    sata_device_->Shutdown([&shutdown_complete]() { shutdown_complete.Signal(); });
+  });
+  shutdown_complete.Wait();
   zx::duration shutdown_duration = zx::clock::get_monotonic() - time;
 
   // The shutdown duration should be around 5 seconds (+/-). Conservatively check for > 2.5 seconds.
@@ -798,7 +802,73 @@ TEST_P(AhciTest, ShutdownWaitsForTransactionsInFlight) {
   ASSERT_OK(fifo.read(sizeof(BlockFifoResponse), &response, 1, &count));
   EXPECT_EQ(count, 1u);
   EXPECT_EQ(response.reqid, 0u);
-  EXPECT_EQ(response.status, ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(response.status, ZX_ERR_CANCELED);
+}
+
+TEST_P(AhciTest, ShutdownWithHungDeviceClearsPortTransactions) {
+  auto [volume_client, volume_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
+  driver_test().RunInDriverContext([&volume_server, this](TestController& driver) mutable {
+    sata_device_->ServeRequests(std::move(volume_server));
+  });
+
+  auto [session_client, session_server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
+  ASSERT_OK(fidl::WireCall(volume_client)->OpenSession(std::move(session_server)).status());
+
+  auto fifo_result = fidl::WireCall(session_client)->GetFifo();
+  ASSERT_OK(fifo_result.status());
+  zx::fifo fifo = std::move(fifo_result.value()->fifo);
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+  zx::vmo dup;
+  ASSERT_OK(vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup));
+
+  auto vmo_result = fidl::WireCall(session_client)->AttachVmo(std::move(dup));
+  ASSERT_OK(vmo_result.status());
+  uint16_t vmoid = vmo_result.value()->vmoid.id;
+
+  BlockFifoRequest request = {
+      .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
+      .reqid = 0,
+      .group = 0,
+      .vmoid = vmoid,
+      .length = 1,
+      .total_compressed_bytes = 0,
+      .vmo_offset = 0,
+      .dev_offset = 0,
+  };
+
+  ASSERT_OK(fifo.write(sizeof(BlockFifoRequest), &request, 1, nullptr));
+
+  SataTransaction* command = nullptr;
+  while (true) {
+    driver_test().RunInDriverContext([&command](TestController& driver) {
+      Port* port = driver.port(FakeBus::kTestPortNumber);
+      command = port->TestGetRunning(0);
+      if (command != nullptr) {
+        command->timeout = zx::time::infinite();
+      }
+    });
+    if (command != nullptr) {
+      break;
+    }
+    zx::nanosleep(zx::deadline_after(zx::msec(1)));
+  }
+  ASSERT_NE(command, nullptr);
+
+  libsync::Completion shutdown_complete;
+  driver_test().RunInDriverContext([&shutdown_complete, this](TestController& driver) {
+    sata_device_->Shutdown([&shutdown_complete]() { shutdown_complete.Signal(); });
+  });
+
+  shutdown_complete.Wait();
+
+  driver_test().RunInDriverContext([](TestController& driver) { driver.sata_devices().clear(); });
+
+  driver_test().RunInDriverContext([](TestController& driver) {
+    Port* port = driver.port(FakeBus::kTestPortNumber);
+    port->Complete();
+  });
 }
 
 TEST_P(AhciTest, NodeToken) {

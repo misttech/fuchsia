@@ -101,7 +101,7 @@ void Controller::Queue(uint32_t portnr, SataTransaction* txn) {
   } else {
     fdf::info("ahci.{}: Failed to queue txn {}: {}", port->num(), static_cast<const void*>(txn),
               zx_status_get_string(status));
-    // TODO: close transaction.
+    txn->Complete(status);
   }
 }
 
@@ -310,6 +310,12 @@ void Controller::Shutdown() {
   {
     std::lock_guard<std::mutex> lock(lock_);
     shutdown_ = true;
+  }
+
+  for (uint32_t i = 0; i < AHCI_MAX_PORTS; i++) {
+    if (ports_[i].port_implemented()) {
+      ports_[i].Disable();
+    }
   }
 
   if (worker_dispatcher_.get() && !worker_shutdown_.load()) {

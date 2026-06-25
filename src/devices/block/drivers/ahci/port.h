@@ -62,6 +62,9 @@ class Port {
   // Returns true if there remain transactions in progress.
   bool Complete();
 
+  // Cancel all in-progress and queued transactions.
+  void CancelAll(zx_status_t status, bool unpin_pmts);
+
   // Process incoming transaction queue and run them.
   // Returns true if transactions were added (are now in progress)
   bool ProcessQueued();
@@ -92,6 +95,7 @@ class Port {
 
   // Peek at running transactions.
   const SataTransaction* TestGetRunning(uint32_t slot) const { return commands_[slot]; }
+  SataTransaction* TestGetRunning(uint32_t slot) { return commands_[slot]; }
 
  private:
   bool SlotBusyLocked(uint32_t slot);

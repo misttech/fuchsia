@@ -142,16 +142,19 @@ zx_status_t Port::Enable() {
 }
 
 void Port::Disable() {
+  bool unpin_pmts = true;
   uint32_t cmd = RegRead(kPortCommand);
-  if (!(cmd & AHCI_PORT_CMD_ST))
-    return;
-  cmd &= ~AHCI_PORT_CMD_ST;
-  RegWrite(kPortCommand, cmd);
-  zx_status_t status =
-      bus_->WaitForClear(reg_base_ + kPortCommand, AHCI_PORT_CMD_CR, zx::msec(500));
-  if (status) {
-    fdf::error("port {}: port disable timed out", num_);
+  if (cmd & AHCI_PORT_CMD_ST) {
+    cmd &= ~AHCI_PORT_CMD_ST;
+    RegWrite(kPortCommand, cmd);
+    zx_status_t status =
+        bus_->WaitForClear(reg_base_ + kPortCommand, AHCI_PORT_CMD_CR, zx::msec(500));
+    if (status) {
+      fdf::error("port {}: port disable timed out", num_);
+      unpin_pmts = false;
+    }
   }
+  CancelAll(ZX_ERR_CANCELED, unpin_pmts);
 }
 
 void Port::Reset() {
@@ -267,6 +270,49 @@ bool Port::Complete() {
   }
 
   return active_txns;
+}
+
+void Port::CancelAll(zx_status_t status, bool unpin_pmts) {
+  SataTransaction* txn_complete[AHCI_MAX_COMMANDS * 2];
+  size_t complete_count = 0;
+
+  {
+    std::lock_guard<std::mutex> lock(lock_);
+
+    for (uint32_t slot = 0; slot < AHCI_MAX_COMMANDS; slot++) {
+      SataTransaction* txn = commands_[slot];
+      if (txn != nullptr) {
+        commands_[slot] = nullptr;
+        uint32_t slot_bit = (1u << slot);
+        running_ &= ~slot_bit;
+        completed_ &= ~slot_bit;
+        txn_complete[complete_count++] = txn;
+      }
+    }
+
+    SataTransaction* txn;
+    while ((txn = list_peek_head_type(&txn_list_, SataTransaction, node)) != nullptr) {
+      list_delete(&txn->node);
+      txn_complete[complete_count++] = txn;
+    }
+
+    if (!running_) {
+      paused_cmd_issuing_ = false;
+    }
+  }
+
+  for (size_t i = 0; i < complete_count; i++) {
+    SataTransaction* txn = txn_complete[i];
+    if (txn->pmt != ZX_HANDLE_INVALID) {
+      if (unpin_pmts) {
+        zx_pmt_unpin(txn->pmt);
+      } else {
+        fdf::warn("port {}: leaking PMT due to port disable timeout", num_);
+      }
+      txn->pmt = ZX_HANDLE_INVALID;
+    }
+    txn->Complete(status);
+  }
 }
 
 bool Port::ProcessQueued() {
