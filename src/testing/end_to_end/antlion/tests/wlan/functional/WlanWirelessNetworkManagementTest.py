@@ -136,20 +136,17 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
         return list(ext_caps_dict.values())[0]
 
     def teardown_class(self) -> None:
-        self.dut.disconnect()
         if self.access_point:
             self.access_point.stop_all_aps()
         super().teardown_class()
 
     def teardown_test(self) -> None:
-        self.dut.disconnect()
         self.download_logs()
         if self.access_point:
             self.access_point.stop_all_aps()
         super().teardown_test()
 
     def on_fail(self, record: TestResultRecord) -> None:
-        self.dut.disconnect()
         if self.access_point:
             self.access_point.stop_all_aps()
         super().on_fail(record)
@@ -213,7 +210,9 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 "skipping test because BTM feature is present"
             )
 
-        ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
+        ssid = AccessPointConfig.random_string(
+            hostapd_constants.AP_SSID_LENGTH_2G
+        )
         wnm_features = frozenset(
             [hostapd_constants.WnmFeature.BSS_TRANSITION_MANAGEMENT]
         )
@@ -286,7 +285,9 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 "skipping test because BTM feature is not present"
             )
 
-        ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
+        ssid = AccessPointConfig.random_string(
+            hostapd_constants.AP_SSID_LENGTH_2G
+        )
 
         if self.openwrt_ap:
             channel = DEFAULT_2G_CHANNEL
@@ -358,7 +359,9 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 "skipping test because WNM feature is present"
             )
 
-        ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
+        ssid = AccessPointConfig.random_string(
+            hostapd_constants.AP_SSID_LENGTH_2G
+        )
         wnm_features = frozenset([hostapd_constants.WnmFeature.WNM_SLEEP_MODE])
         if self.openwrt_ap:
             channel = DEFAULT_2G_CHANNEL
@@ -431,11 +434,13 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 "skipping test because BTM feature is not present"
             )
 
-        ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
+        ssid = AccessPointConfig.random_string(
+            hostapd_constants.AP_SSID_LENGTH_2G
+        )
         password = None
         if not isinstance(test.security, SecurityOpen):
             # Length 13, so it can be used for WEP or WPA
-            password = utils.rand_ascii_str(13)
+            password = AccessPointConfig.random_string(13)
 
         wnm_features = frozenset(
             [hostapd_constants.WnmFeature.BSS_TRANSITION_MANAGEMENT]
@@ -630,7 +635,9 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 "skipping test because BTM feature is present"
             )
 
-        ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
+        ssid = AccessPointConfig.random_string(
+            hostapd_constants.AP_SSID_LENGTH_2G
+        )
         wnm_features = frozenset(
             [hostapd_constants.WnmFeature.BSS_TRANSITION_MANAGEMENT]
         )
@@ -791,7 +798,9 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 "skipping test because BTM feature is not present"
             )
 
-        ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
+        ssid = AccessPointConfig.random_string(
+            hostapd_constants.AP_SSID_LENGTH_2G
+        )
         wnm_features = frozenset(
             [hostapd_constants.WnmFeature.BSS_TRANSITION_MANAGEMENT]
         )
