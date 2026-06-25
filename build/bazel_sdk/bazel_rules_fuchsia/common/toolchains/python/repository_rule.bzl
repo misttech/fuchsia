@@ -195,7 +195,12 @@ def _compact_python_runtime_impl(repo_ctx):
             content = '''\
 #!/bin/bash
 # AUTO-GENERATED - DO NOT EDIT
-readonly _SCRIPT_DIR="$(dirname "${{BASH_SOURCE[0]}}")"
+
+# Find real location of Fuchsia's hermetic Python toolchain, in case this script
+# is run via a symlink, e.g. when symlinked into .venv by newer versions of
+# rules_python.
+readonly _REAL_SCRIPT="$(realpath "${{BASH_SOURCE[0]}}")"
+readonly _SCRIPT_DIR="$(dirname "${{_REAL_SCRIPT}}")"
 PYTHONHOME="${{_SCRIPT_DIR}}" \\
 PYTHONPATH="${{_SCRIPT_DIR}}/{lib_python_zip}:${{PYTHONPATH}}" \\
 exec "${{_SCRIPT_DIR}}/{python3_real}" -S -s "$@"
