@@ -2506,11 +2506,11 @@ group("walkdir-2.5.0") {
 }
 
 group("which") {
-  public_deps = [ ":which-v8_0_3" ]
+  public_deps = [ ":which-v8_0_4" ]
 }
 
-group("which-8.0.3") {
-  public_deps = [ ":which-v8_0_3" ]
+group("which-8.0.4") {
+  public_deps = [ ":which-v8_0_4" ]
 }
 
 group("winnow") {
@@ -23864,15 +23864,15 @@ rustc_library("which-v4_0_2") {
   applicable_licenses = [ ":which-v4_0_2.license" ]
 }
 
-license("which-v8_0_3.license") {
+license("which-v8_0_4.license") {
   public_package_name = "which"
-  license_files = [ "//third_party/rust_crates/vendor/which-8.0.3/LICENSE.txt" ]
+  license_files = [ "//third_party/rust_crates/vendor/which-8.0.4/LICENSE.txt" ]
 }
 
-rustc_library("which-v8_0_3") {
+rustc_library("which-v8_0_4") {
   crate_name = "which"
-  source_root = "//third_party/rust_crates/vendor/which-8.0.3/src/lib.rs"
-  output_name = "which-f6cae13da0862c8b"
+  source_root = "//third_party/rust_crates/vendor/which-8.0.4/src/lib.rs"
+  output_name = "which-77e19ac475a583bd"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -23887,15 +23887,15 @@ rustc_library("which-v8_0_3") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=f6cae13da0862c8b",
-    "-Cextra-filename=-f6cae13da0862c8b",
+    "-Cmetadata=77e19ac475a583bd",
+    "-Cextra-filename=-77e19ac475a583bd",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"real-sys\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":which-v8_0_3.license" ]
+  applicable_licenses = [ ":which-v8_0_4.license" ]
 }
 
 rustc_library("winapi-v0_3_9") {

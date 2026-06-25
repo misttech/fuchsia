@@ -270,7 +270,7 @@ valico = "2.4.2"
 vt100 = "0.16.2"
 vte = "0.15"
 walkdir = "2.5.0"
-which = "8.0.3"
+which = "8.0.4"
 winnow = "0.7.13"
 xml-rs = "0.8"
 zerocopy = { version = "0.8.48", features = ["derive", "simd"] }

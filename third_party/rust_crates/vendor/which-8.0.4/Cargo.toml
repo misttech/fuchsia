@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.70"
 name = "which"
-version = "8.0.3"
+version = "8.0.4"
 authors = ["Harry Fei <tiziyuanfang@gmail.com>, Jacob Kiesel <jake@bitcrafters.co>"]
 build = false
 autolib = false
@@ -53,6 +53,10 @@ path = "src/lib.rs"
 [[test]]
 name = "basic"
 path = "tests/basic.rs"
+
+[[test]]
+name = "windows_no_pathext"
+path = "tests/windows_no_pathext.rs"
 
 [dependencies.regex]
 version = "1.10.2"
