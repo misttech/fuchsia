@@ -1,0 +1,20 @@
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(default_visibility = ["//visibility:public"])
+
+# TODO(b/280675401): Remove library once these are available via sdk or other means
+cc_library(
+    name = "fake-bti",
+    srcs = ["fake-bti.cc"],
+    hdrs = [
+        "include/lib/fake-bti/bti.h",
+    ],
+    includes = ["include"],
+    deps = [
+        "//third_party/driver-lib/fake-object",
+        "@fuchsia_sdk//pkg/fdio",
+        "@fuchsia_sdk//pkg/zx",
+    ],
+)

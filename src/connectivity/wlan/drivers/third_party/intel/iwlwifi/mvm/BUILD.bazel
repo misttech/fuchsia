@@ -1,0 +1,53 @@
+# Copyright 2021 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(
+    default_applicable_licenses = ["//third_party/iwlwifi:license_intel"],
+    default_visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "mvm",
+    srcs = [
+        "binding.c",
+        "coex.c",
+        "fw.c",
+        "mac-ctxt.c",
+        "mac80211.c",
+        "nvm.c",
+        "ops.c",
+        "phy-ctxt.c",
+        "power.c",
+        "rateScaleMng.c",
+        "rs-ng.cc",
+        "rx.c",
+        "rxmq.c",
+        "scan.c",
+        "sta.c",
+        "time-event.c",
+        "tt.c",
+        "tx.c",
+        "utils.c",
+    ],
+    hdrs = [
+        "API_rates.h",
+        "_rateScaleMng.h",
+        "apiGroupDatapath.h",
+        "apiVersion.h",
+        "constants.h",
+        "fw-api.h",
+        "mvm.h",
+        "rs.h",
+        "rs-ng.h",
+        "sta.h",
+        "time-event.h",
+    ],
+    deps = [
+        "//third_party/iwlwifi:core",
+        "//third_party/iwlwifi/fw",
+        "//third_party/iwlwifi/fw:api",
+        "//third_party/iwlwifi/platform",
+        "@fuchsia_sdk//fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl_cpp_driver",
+    ],
+)

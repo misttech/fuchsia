@@ -1,0 +1,23 @@
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(
+    default_applicable_licenses = ["//third_party/iwlwifi:license_intel"],
+    default_visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "queue",
+    srcs = [
+        "tx.c",
+    ],
+    hdrs = [
+        "tx.h",
+    ],
+    deps = [
+        "//third_party/iwlwifi:headers",
+        "//third_party/iwlwifi/fw:api",
+        "//third_party/iwlwifi/platform",
+    ],
+)

@@ -1,0 +1,21 @@
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(
+    default_applicable_licenses = ["//:license_fuchsia"],
+    default_visibility = ["//visibility:public"],
+)
+
+# TODO(b/280675401): Remove library once these are available via sdk or other means
+cc_library(
+    name = "wlan",
+    srcs = ["channel.cc"],
+    hdrs = [
+        "channel.h",
+        "ieee80211.h",
+    ],
+    deps = [
+        "@fuchsia_sdk//fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_cpp_driver",
+    ],
+)

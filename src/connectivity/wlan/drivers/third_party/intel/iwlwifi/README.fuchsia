@@ -1,5 +1,5 @@
-Name: Intel iwlwifi
-Security Critical: yes
-
+License: BSD
 License File: LICENSE
-  License: BSD-3-Clause
+
+Modifications:
+ - added README.fuchsia and kept BSD license

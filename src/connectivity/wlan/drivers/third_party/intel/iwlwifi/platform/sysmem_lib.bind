@@ -1,0 +1,10 @@
+// Copyright 2024 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+library fuchsia.hardware.sysmem;
+
+// fuchsia.hardware.sysmem is currently not in the partner sdk so we cannot access its generated
+// bind library. This is a temporary workaround to refer to the sysmem protocol from the bind rules.
+// TODO(https://fxbug.dev/328828649): Remove this when fuchsia.hardware.sysmem is in the sdk.
+string Service;
