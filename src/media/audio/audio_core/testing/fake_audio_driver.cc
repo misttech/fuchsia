@@ -196,7 +196,11 @@ void FakeAudioDriver::GetVmo(uint32_t min_frames, uint32_t clock_recovery_notifi
 
 void FakeAudioDriver::Start(fuchsia::hardware::audio::RingBuffer::StartCallback callback) {
   EXPECT_TRUE(!is_running_);
-  mono_start_time_ = async::Now(dispatcher_);
+  if (mono_start_time_override_.has_value()) {
+    mono_start_time_ = *mono_start_time_override_;
+  } else {
+    mono_start_time_ = async::Now(dispatcher_);
+  }
   is_running_ = true;
 
   callback(mono_start_time_.get());

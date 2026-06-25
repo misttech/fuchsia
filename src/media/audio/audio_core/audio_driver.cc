@@ -754,7 +754,16 @@ zx_status_t AudioDriver::Start() {
                      << static_cast<uint32_t>(state_);
       return;
     }
-
+    auto start_limit = zx::clock::get_monotonic().get() + ZX_SEC(1);
+    if (start_time > start_limit) {
+      // The driver-returned start_time can only be as far as 1 second in the future, otherwise the
+      // clock might appear to run backward. Treat any far-future start_time as an error.
+      // If a driver sends a start_time in the past, we will handle that gracefully below.
+      FX_LOGS(WARNING) << "AudioDriver::RingBuffer::Start callback: start_time (" << start_time
+                       << ") too far in the future (cannot exceed " << start_limit << ")";
+      ShutdownSelf("Driver returned invalid start_time", ZX_ERR_INVALID_ARGS);
+      return;
+    }
     mono_start_time_ = zx::time(start_time);
     ref_start_time_ = reference_clock()->ReferenceTimeFromMonotonicTime(mono_start_time_);
 

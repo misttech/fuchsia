@@ -266,5 +266,33 @@ TEST_F(AudioDriverTest, RingBufferCallbackSurvivesDriverTeardown) {
   EXPECT_FALSE(buffer.has_value());
 }
 
+TEST_F(AudioDriverTest, StartFarFutureStartTime) {
+  remote_driver_->Start();
+  RunLoopUntilIdle();
+
+  ASSERT_EQ(ZX_OK, driver_->GetDriverInfo());
+  RunLoopUntilIdle();
+
+  fuchsia::media::AudioStreamType fidl_format;
+  fidl_format.sample_format = kSampleFormat;
+  fidl_format.channels = kChannelCount;
+  fidl_format.frames_per_second = kFramesPerSec;
+
+  auto format = Format::Create(fidl_format);
+  ASSERT_TRUE(format.is_ok());
+  ASSERT_EQ(ZX_OK, driver_->Configure(format.value(), kRingBufferMinDuration));
+  RunLoopUntilIdle();
+  ASSERT_EQ(driver_->state(), AudioDriver::State::Configured);
+
+  // Set a start time far in the future (> 1 second ahead of monotonic clock).
+  remote_driver_->set_mono_start_time(zx::clock::get_monotonic() + zx::min(2));
+
+  ASSERT_EQ(ZX_OK, driver_->Start());
+  RunLoopUntilIdle();
+
+  EXPECT_FALSE(device_->driver_start_complete());
+  EXPECT_EQ(driver_->state(), AudioDriver::State::Shutdown);
+}
+
 }  // namespace
 }  // namespace media::audio

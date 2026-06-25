@@ -52,6 +52,9 @@ class FakeAudioDriver final : public fuchsia::hardware::audio::StreamConfig,
   void set_driver_transfer_bytes(uint32_t driver_transfer_bytes) {
     driver_transfer_bytes_ = driver_transfer_bytes;
   }
+  void set_mono_start_time(zx::time mono_start_time) {
+    mono_start_time_override_ = mono_start_time;
+  }
 
   void clear_external_delay() { external_delay_ = std::nullopt; }
   void clear_internal_delay() { internal_delay_ = std::nullopt; }
@@ -138,6 +141,7 @@ class FakeAudioDriver final : public fuchsia::hardware::audio::StreamConfig,
 
   bool is_running_ = false;
   zx::time mono_start_time_{0};
+  std::optional<zx::time> mono_start_time_override_;
 
   async_dispatcher_t* dispatcher_;
   fidl::Binding<fuchsia::hardware::audio::StreamConfig> stream_binding_;

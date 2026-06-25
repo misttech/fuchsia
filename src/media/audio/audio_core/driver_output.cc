@@ -296,6 +296,11 @@ void DriverOutput::WriteMixOutput(int64_t start, int64_t frames_left, const floa
   int64_t offset = 0;
   while (frames_left > 0) {
     int64_t wr_ptr = (start + offset) % rb->frames();
+    // Signed rollover occurs if a driver returns start_time FAR in the future, leading modulo to
+    // return an incorrect negative value. Bound our calculated position into range.
+    if (wr_ptr < 0) {
+      wr_ptr += rb->frames();
+    }
     int64_t contig_space = rb->frames() - wr_ptr;
     int64_t to_send = frames_left;
     to_send = std::min(to_send, contig_space);
