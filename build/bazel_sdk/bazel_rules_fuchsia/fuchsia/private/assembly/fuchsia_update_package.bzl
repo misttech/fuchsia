@@ -92,10 +92,6 @@ fuchsia_update_package = rule(
             doc = "fuchsia product to put in slot R.",
             providers = [FuchsiaProductImageInfo],
         ),
-        "board_name": attr.string(
-            doc = """Name of the board this update package runs on. E.g. x64.
-            This attribute is currently unused but is kept for a soft transition.""",
-        ),
         "partitions_config": attr.label(
             doc = "Partitions config to use.",
             mandatory = True,
