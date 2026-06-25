@@ -542,7 +542,7 @@ _NORMAL_DEPENDENCIES = {
             "tokio-stream": Label("//third_party/rust_crates/vendor/tokio-stream-0.1.18:tokio_stream"),
             "wait-timeout": Label("//third_party/rust_crates/vendor/wait-timeout-0.2.1:wait_timeout"),
             "xattr": Label("//third_party/rust_crates/vendor/xattr-1.6.1:xattr"),
-            "zip": Label("//third_party/rust_crates/vendor/zip-0.5.5:zip"),
+            "zip": Label("//third_party/rust_crates/vendor/zip-8.6.0:zip"),
         },
         "cfg(target_os = \"fuchsia\")": {
             "coset": Label("//third_party/rust_crates/vendor/coset-0.3.8:coset"),

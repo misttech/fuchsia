@@ -113,7 +113,7 @@ impl UnlockCredentials {
 
         for i in 0..archive.len() {
             let mut archive_file = archive.by_index(i).map_err(FfxFastbootError::ZipArchiveRead)?;
-            let outpath = archive_file.sanitized_name();
+            let outpath = archive_file.mangled_name();
 
             let mut dest = PathBuf::new();
             dest.push(temp_dir.path());

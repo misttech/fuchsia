@@ -166,7 +166,7 @@ pub async fn from_local_product_bundle<F: FastbootInterface>(
             for i in 0..archive.len() {
                 let mut file = archive.by_index(i).map_err(FfxFastbootError::ZipArchiveRead)?;
                 if file.is_file() {
-                    let ofile_path = tdir_path.join(file.sanitized_name());
+                    let ofile_path = tdir_path.join(file.mangled_name());
                     if let Some(parent) = ofile_path.parent() {
                         std::fs::create_dir_all(parent)?;
                     }
@@ -501,7 +501,7 @@ mod test {
     async fn test_from_local_product_bundle_path_traversal() {
         use std::io::Write;
         use zip::CompressionMethod;
-        use zip::write::FileOptions;
+        use zip::write::SimpleFileOptions as FileOptions;
 
         let tmp_dir = tempfile::tempdir().unwrap();
         let zip_path = tmp_dir.path().join("traversal.zip");

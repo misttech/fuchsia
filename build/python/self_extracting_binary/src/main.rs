@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::fs::{create_dir_all, File};
-use std::io::{copy, Error};
+use std::fs::{File, create_dir_all};
+use std::io::{Error, copy};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
@@ -27,10 +27,10 @@ fn unpack_artifacts(current_exe: &Path, dir: &TempDir) -> Result<(), Error> {
     let mut zip = ZipArchive::new(&current_exe_file).expect("Unable to read archive.");
     for i in 0..zip.len() {
         let mut file = zip.by_index(i).expect("Unable to get file by index from archive.");
-        let outpath = file.sanitized_name();
+        let outpath = file.mangled_name();
         let dest = dir.path().join(outpath);
         // Ensure the paths we extract do not escape the temp dir.
-        // sanitized_name() already removes `..`, but we want to explicitly ensure that this behavior does not regress.
+        // mangled_name() already removes `..`, but we want to explicitly ensure that this behavior does not regress.
         assert_eq!(dest.starts_with(dir), true);
         if file.is_dir() {
             create_dir_all(&dest)?;

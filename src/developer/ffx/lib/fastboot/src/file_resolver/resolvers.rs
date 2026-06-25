@@ -113,7 +113,7 @@ impl FileResolver for ZipArchiveResolver {
 
         let mut outpath = PathBuf::new();
         outpath.push(self.temp_dir.path());
-        outpath.push(file.sanitized_name());
+        outpath.push(file.mangled_name());
         if let Some(p) = outpath.parent() {
             if !p.exists() {
                 create_dir_all(&p)?;
@@ -182,7 +182,7 @@ mod test {
     use std::io::{Read, Write};
     use std::str::FromStr;
     use zip::CompressionMethod;
-    use zip::write::{FileOptions, ZipWriter};
+    use zip::write::{SimpleFileOptions as FileOptions, ZipWriter};
 
     ////////////////////////////////////////////////////////////////////////////////
     // ZipArchiveResolver

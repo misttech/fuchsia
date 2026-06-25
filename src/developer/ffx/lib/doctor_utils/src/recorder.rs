@@ -8,7 +8,7 @@ use std::fs::File;
 use std::io::{Seek, SeekFrom, Write, copy};
 use std::path::PathBuf;
 use zip::CompressionMethod;
-use zip::write::{FileOptions, ZipWriter};
+use zip::write::{SimpleFileOptions as FileOptions, ZipWriter};
 
 const FILE_MAX_BYTES: i64 = 4_000_000; // 4MB
 

@@ -2579,13 +2579,13 @@ if (current_os == "fuchsia") {
 
 if (!(current_os == "fuchsia")) {
   group("zip") {
-    public_deps = [ ":zip-v0_5_5" ]
+    public_deps = [ ":zip-v8_6_0" ]
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("zip-0.5.5") {
-    public_deps = [ ":zip-v0_5_5" ]
+  group("zip-8.6.0") {
+    public_deps = [ ":zip-v8_6_0" ]
   }
 }
 
@@ -15163,38 +15163,6 @@ rustc_library("png-v0_18_1") {
   applicable_licenses = [ ":png-v0_18_1.license" ]
 }
 
-license("podio-v0_1_7.license") {
-  public_package_name = "podio"
-  license_files = [
-    "//third_party/rust_crates/vendor/podio-0.1.7/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/podio-0.1.7/LICENSE-MIT",
-  ]
-}
-
-rustc_library("podio-v0_1_7") {
-  crate_name = "podio"
-  source_root = "//third_party/rust_crates/vendor/podio-0.1.7/src/lib.rs"
-  output_name = "podio-28552b76529ff99e"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=28552b76529ff99e",
-    "-Cextra-filename=-28552b76529ff99e",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":podio-v0_1_7.license" ]
-}
-
 license("polyval-v0_6_2.license") {
   public_package_name = "polyval"
   license_files = [
@@ -22547,6 +22515,40 @@ rustc_macro("typed-builder-macro-v0_23_2") {
   applicable_licenses = [ ":typed-builder-macro-v0_23_2.license" ]
 }
 
+license("typed-path-v0_12_3.license") {
+  public_package_name = "typed_path"
+  license_files = [
+    "//third_party/rust_crates/vendor/typed-path-0.12.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/typed-path-0.12.3/LICENSE-MIT",
+  ]
+}
+
+rustc_library("typed-path-v0_12_3") {
+  crate_name = "typed_path"
+  source_root = "//third_party/rust_crates/vendor/typed-path-0.12.3/src/lib.rs"
+  output_name = "typed_path-ad065bc23da84aed"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=ad065bc23da84aed",
+    "-Cextra-filename=-ad065bc23da84aed",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":typed-path-v0_12_3.license" ]
+}
+
 license("typenum-v1_20_1.license") {
   public_package_name = "typenum"
   license_files = [
@@ -24617,38 +24619,40 @@ rustc_macro("zeroize_derive-v1_4_2") {
   applicable_licenses = [ ":zeroize_derive-v1_4_2.license" ]
 }
 
-license("zip-v0_5_5.license") {
+license("zip-v8_6_0.license") {
   public_package_name = "zip"
-  license_files = [ "//third_party/rust_crates/vendor/zip-0.5.5/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/zip-8.6.0/LICENSE" ]
 }
 
-rustc_library("zip-v0_5_5") {
+rustc_library("zip-v8_6_0") {
   crate_name = "zip"
-  source_root = "//third_party/rust_crates/vendor/zip-0.5.5/src/lib.rs"
-  output_name = "zip-ac1fb914318fbe66"
-  edition = "2018"
+  source_root = "//third_party/rust_crates/vendor/zip-8.6.0/src/lib.rs"
+  output_name = "zip-1d69b20bdca6db39"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":memchr-v2_8_0" ]
   deps += [ ":crc32fast-v1_5_0" ]
   deps += [ ":flate2-v1_1_9" ]
-  deps += [ ":podio-v0_1_7" ]
+  deps += [ ":indexmap-v2_13_0" ]
+  deps += [ ":typed-path-v0_12_3" ]
 
-  rustenv = []
+  rustenv = [ "CARGO_PKG_VERSION=8.6.0" ]
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=ac1fb914318fbe66",
-    "-Cextra-filename=-ac1fb914318fbe66",
-    "--cfg=feature=\"deflate\"",
-    "--cfg=feature=\"flate2\"",
+    "-Cmetadata=1d69b20bdca6db39",
+    "-Cextra-filename=-1d69b20bdca6db39",
+    "--cfg=feature=\"_deflate-any\"",
+    "--cfg=feature=\"deflate-flate2\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":zip-v0_5_5.license" ]
+  applicable_licenses = [ ":zip-v8_6_0.license" ]
 }
 
 license("zmij-v1_0_21.license") {

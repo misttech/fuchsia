@@ -38,7 +38,7 @@ fn unzip_file(zip_file: &Path, extract_dir: &Path) -> Result<()> {
 
     for i in 0..zip.len() {
         let mut file = zip.by_index(i).context("Unable to get file by index from archive.")?;
-        let outpath = file.sanitized_name();
+        let outpath = file.mangled_name();
         let mut dest = PathBuf::from(extract_dir);
         dest.push(outpath);
         let mut outfile = File::create(&dest).context("Unable to create output file.")?;

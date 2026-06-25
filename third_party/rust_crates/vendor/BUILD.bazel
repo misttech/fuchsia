@@ -3409,14 +3409,14 @@ alias(
 )
 
 alias(
-    name = "zip-0.5.5",
-    actual = "//third_party/rust_crates/vendor/zip-0.5.5:zip",
+    name = "zip-8.6.0",
+    actual = "//third_party/rust_crates/vendor/zip-8.6.0:zip",
     tags = ["manual"],
 )
 
 alias(
     name = "zip",
-    actual = "//third_party/rust_crates/vendor/zip-0.5.5:zip",
+    actual = "//third_party/rust_crates/vendor/zip-8.6.0:zip",
     tags = ["manual"],
 )
 

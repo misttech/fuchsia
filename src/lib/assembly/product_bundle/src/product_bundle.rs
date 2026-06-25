@@ -668,7 +668,7 @@ mod tests {
     use std::fs;
     use std::io::Write;
     use tempfile::TempDir;
-    use zip::write::FileOptions;
+    use zip::write::SimpleFileOptions as FileOptions;
     use zip::{CompressionMethod, ZipWriter};
 
     const VIRTUAL_DEVICE_VALID: &str =

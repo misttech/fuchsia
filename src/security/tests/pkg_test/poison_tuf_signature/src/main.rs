@@ -5,10 +5,10 @@
 use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
-use std::io::{copy, BufReader, BufWriter, Write as _};
-use zip::read::ZipArchive;
-use zip::write::{FileOptions, ZipWriter};
+use std::io::{BufReader, BufWriter, Write as _, copy};
 use zip::CompressionMethod;
+use zip::read::ZipArchive;
+use zip::write::{SimpleFileOptions as FileOptions, ZipWriter};
 
 /// Flags for poison_tuf_signature.
 #[derive(argh::FromArgs)]

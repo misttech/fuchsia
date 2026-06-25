@@ -72,7 +72,7 @@ async fn download_from_gs(gs_url: &str) -> Result<PathBuf> {
         let mut archive = zip::ZipArchive::new(file).context("reading zip archive")?;
         for i in 0..archive.len() {
             let mut file = archive.by_index(i).context("getting file from archive")?;
-            let outpath = file.sanitized_name();
+            let outpath = file.mangled_name();
             let outpath = dir.join(outpath);
 
             if file.is_dir() {
