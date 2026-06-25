@@ -5,7 +5,9 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/cpp/library_headers.gni")
+import("//build/rust/rustc_library.gni")
 import("//build/toolchain/toolchain_environment.gni")
+import("//zircon/kernel/kernel_rust_crate.gni")
 
 library_headers("headers") {
   headers = []
@@ -84,15 +86,61 @@ source_set("ctype") {
   deps = [ ":headers" ]
 }
 
+rustc_library("rust") {
+  # The crate_name is what's used in the Rust sources, and in practice the file
+  # name rustc finds has to be named "lib${crate_name}.rlib".  Usually the
+  # output_name would match the crate_name, but GN's default_output_prefix
+  # behavior interferes: the file names by default use "lib${output_name}..."
+  # _unless_ $output_name itself already starts with "lib".  So with
+  # output_name = "libc", we get "libc.rlib", but rustc wants "liblibc.rlib".
+  # The output_prefix_override flag tells GN not add the "lib" prefix at all,
+  # and thus also not to elide it from $output_name.  So with that and
+  # $output_name set to include the explicit prefix, it all works out.
+  crate_name = "libc"
+  output_name = "liblibc"
+  output_prefix_override = true
+
+  edition = "2024"
+  sources = [
+    "src/lib.rs",
+    "src/stdio.rs",
+  ]
+  configs -= [ "//build/config/rust:no_features" ]
+  configs += [ ":allow-ffi" ]
+  deps = [ "." ]
+}
+
+config("allow-ffi") {
+  visibility = [ ":*" ]
+  ffi_features = [
+    "c_size_t",
+    "ptr_metadata",
+  ]
+  rustflags = [ "-Zallow-features=" + string_join(",", ffi_features) ]
+}
+
+kernel_rust_crate("rust-libc-tests") {
+  visibility = [ ":*" ]
+  testonly = true
+  edition = "2024"
+  source_root = "rust-libc-tests.rs"
+  sources = [ source_root ]
+  deps = [ ":rust" ]
+}
+
 group("tests") {
   testonly = true
 }
 
 source_set("kernel-tests") {
   testonly = true
-  sources = [ "atomic_tests.cc" ]
+  sources = [
+    "atomic_tests.cc",
+    "rust-stdio-tests.cc",
+  ]
   deps = [
-    "//zircon/kernel/lib/ktl:headers",
+    ":rust-libc-tests",
+    "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/unittest",
   ]
 }
