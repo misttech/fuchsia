@@ -48,5 +48,11 @@
             from: "#network",
             to: "#sshd-host",
         },
+        {
+            service: "fuchsia.hardware.midi.Service",
+            from: "parent",
+            to: "#sshd-host",
+            availability: "optional",
+        },
     ],
 }

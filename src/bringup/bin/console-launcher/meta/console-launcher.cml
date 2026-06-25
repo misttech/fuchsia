@@ -335,5 +335,9 @@
             availability: "optional",
         },
         { service: "fuchsia.hardware.power.suspend.SuspendService" },
+        {
+            service: "fuchsia.hardware.midi.Service",
+            availability: "optional",
+        },
     ],
 }

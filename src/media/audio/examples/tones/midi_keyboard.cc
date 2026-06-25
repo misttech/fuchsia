@@ -4,14 +4,12 @@
 
 #include "src/media/audio/examples/tones/midi_keyboard.h"
 
-#include <dirent.h>
-#include <lib/component/incoming/cpp/protocol.h>
+#include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/fit/defer.h>
 #include <lib/syslog/cpp/macros.h>
 #include <unistd.h>
 
 #include <cstdio>
-#include <filesystem>
 #include <iostream>
 
 #include "src/media/audio/examples/tones/midi.h"
@@ -19,13 +17,15 @@
 
 namespace examples {
 
-static const char* const kDevMidiPath = "/dev/class/midi";
-
 zx::result<std::unique_ptr<MidiKeyboard>> MidiKeyboard::Create(Tones* owner) {
-  for (auto const& dir_entry : std::filesystem::directory_iterator{kDevMidiPath}) {
-    const char* devname = dir_entry.path().c_str();
-    zx::result controller = component::Connect<fuchsia_hardware_midi::Controller>(devname);
+  component::SyncServiceMemberWatcher<fuchsia_hardware_midi::Service::Controller> watcher;
+
+  while (true) {
+    zx::result controller = watcher.GetNextInstance(/*stop_at_idle=*/true);
     if (controller.is_error()) {
+      if (controller.status_value() == ZX_ERR_STOP) {
+        break;
+      }
       return controller.take_error();
     }
     auto [client, server] = fidl::Endpoints<fuchsia_hardware_midi::Device>::Create();
@@ -45,7 +45,7 @@ zx::result<std::unique_ptr<MidiKeyboard>> MidiKeyboard::Create(Tones* owner) {
     const fuchsia_hardware_midi::wire::Info& info = result.value().info;
 
     if (info.is_source) {
-      std::cout << "Creating MIDI source @ \"" << devname << "\"\n";
+      std::cout << "Creating MIDI source\n";
       std::unique_ptr<MidiKeyboard> keyboard(new MidiKeyboard(owner, std::move(client)));
       keyboard->IssueRead();
       return zx::ok(std::move(keyboard));

@@ -345,6 +345,12 @@
             to: "#console-launcher",
         },
         {
+            service: "fuchsia.hardware.midi.Service",
+            from: "#boot-drivers",
+            to: "#console-launcher",
+            availability: "optional",
+        },
+        {
             service: "fuchsia.gpu.magma.Service",
             from: "#boot-drivers",
             to: "#console-launcher",

@@ -41,5 +41,9 @@
             rights: [ "rw*" ],
             path: "/data",
         },
+        {
+            service: "fuchsia.hardware.midi.Service",
+            availability: "optional",
+        },
     ],
 }
