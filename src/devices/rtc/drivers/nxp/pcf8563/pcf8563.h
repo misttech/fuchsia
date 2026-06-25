@@ -8,7 +8,7 @@
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.i2c/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.rtc/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/zx/result.h>
 
@@ -25,15 +25,15 @@ constexpr uint8_t kI2cCsrRegister = 0x00;
 constexpr uint8_t kI2cDateRegister = 0x02;
 
 class RtcServer;
-class RtcDriver : public fdf::DriverBase {
+class RtcDriver : public fdf::DriverBase2 {
  public:
-  RtcDriver(fdf::DriverStartArgs args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase("pcf8563-rtc", std::move(args), std::move(dispatcher)),
+  RtcDriver()
+      : fdf::DriverBase2("pcf8563-rtc"),
         devfs_connector_(fit::bind_member<&RtcDriver::DevfsConnect>(this)) {}
 
   ~RtcDriver() override = default;
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   zx::result<fuchsia_hardware_rtc::Time> Read();
   zx::result<> Write(fuchsia_hardware_rtc::Time time);
@@ -55,8 +55,6 @@ class RtcDriver : public fdf::DriverBase {
   zx::result<> CreateDevfsNode();
 
   fidl::SyncClient<fuchsia_hardware_i2c::Device> i2c_;
-  fidl::SyncClient<fuchsia_driver_framework::Node> node_;
-  fidl::SyncClient<fuchsia_driver_framework::NodeController> node_controller_;
   driver_devfs::Connector<fuchsia_hardware_rtc::Device> devfs_connector_;
 
   std::unique_ptr<RtcServer> server_;

@@ -103,28 +103,16 @@ zx::result<> I2cBusVisitor::ParseChild(I2cController& controller, fdf_devicetree
     }
     channel.name() = std::move(child_name);
 
-    // TODO(https://fxbug.dev/339981930) : RTC driver for nxp,pcf8563 is frozen and needs this hack
-    // until it can be updated to devicetree new bind rules.
-    auto compatible = child.GetProperty<std::string>("compatible");
-    const bool is_nxp_pcf8563 = compatible.is_ok() && *compatible == "nxp,pcf8563";
-
-    if (is_nxp_pcf8563) {
-      channel.vid() = PDEV_VID_NXP;
-      channel.pid() = PDEV_PID_GENERIC;
-      channel.did() = PDEV_DID_PCF8563_RTC;
-    }
     controller.channels.emplace_back(channel);
     fdf::debug("I2c channel '{}' added at address {:#x} to controller '{}'", *channel.name(),
                address, parent.name());
 
-    if (!is_nxp_pcf8563) {
-      zx::result<> add_child_result = AddChildNodeSpec(child, controller.bus_id, address);
-      if (add_child_result.is_error()) {
-        fdf::error("Failed to add I2c node at address {:#x} to controller '{}': {}", address,
-                   parent.name(), add_child_result);
+    zx::result<> add_child_result = AddChildNodeSpec(child, controller.bus_id, address);
+    if (add_child_result.is_error()) {
+      fdf::error("Failed to add I2c node at address {:#x} to controller '{}': {}", address,
+                 parent.name(), add_child_result);
 
-        return add_child_result.take_error();
-      }
+      return add_child_result.take_error();
     }
   }
 

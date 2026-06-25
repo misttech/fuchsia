@@ -25,7 +25,10 @@ fuchsia_driver_bind_bytecode(
     name = "bind_bytecode",
     output = "pcf8563.bindbc",
     rules = "pcf8563.bind",
-    deps = ["@fuchsia_sdk//bind/fuchsia.nxp.platform"],
+    deps = [
+        "@fuchsia_sdk//bind/fuchsia.devicetree",
+        "@fuchsia_sdk//fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_bindlib",
+    ],
 )
 
 cc_library(

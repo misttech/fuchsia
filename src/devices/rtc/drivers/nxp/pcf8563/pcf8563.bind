@@ -2,7 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-using fuchsia.nxp.platform;
+composite pcf8563;
 
-fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.nxp.platform.BIND_PLATFORM_DEV_VID.NXP;
-fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.nxp.platform.BIND_PLATFORM_DEV_DID.RTC_PCF8563;
+primary parent "i2c" {
+  fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;
+}
+
+parent "devicetree" {
+  fuchsia.devicetree.FIRST_COMPATIBLE == "nxp,pcf8563";
+}

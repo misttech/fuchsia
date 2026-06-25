@@ -84,7 +84,7 @@ TEST_F(DeviceEnumerationTest, Vim3DeviceTreeTest) {
 
 #ifdef include_packaged_drivers
       // RTC
-      "i2c-5000.aml-i2c.i2c.i2c-0-81.rtc",
+      "i2c-5000.aml-i2c.i2c.i2c-0-81.rtc-51.rtc",
 
       // WLAN
       "mmc-ffe03000.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1.wifi.brcmfmac-wlanphyimpl",

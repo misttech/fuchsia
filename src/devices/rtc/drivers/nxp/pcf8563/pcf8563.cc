@@ -6,7 +6,7 @@
 
 #include <fidl/fuchsia.hardware.i2c/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.rtc/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/function.h>
 #include <lib/zx/result.h>
@@ -38,10 +38,10 @@ namespace frtc = fuchsia_hardware_rtc;
 
 }  // namespace
 
-zx::result<> RtcDriver::Start() {
-  zx::result i2c = incoming()->Connect<fi2c::Service::Device>();
+zx::result<> RtcDriver::Start(fdf::DriverContext context) {
+  zx::result i2c = context.incoming().Connect<fi2c::Service::Device>();
   if (i2c.is_error()) {
-    FDF_LOG(ERROR, "Connect(): %s", i2c.status_string());
+    fdf::error("Connect(): {}", i2c);
     return i2c.take_error();
   }
   i2c_.Bind(std::move(i2c.value()));
@@ -50,7 +50,7 @@ zx::result<> RtcDriver::Start() {
 
   zx::result serve = outgoing()->AddService<frtc::Service>(server_->GetInstanceHandler());
   if (serve.is_error()) {
-    FDF_LOG(ERROR, "AddService(): %s", serve.status_string());
+    fdf::error("AddService(): {}", serve);
     return serve.take_error();
   }
 
@@ -93,25 +93,25 @@ zx::result<> RtcDriver::Start() {
   // nonsensical value is stored.
   zx::result time0 = Read();
   if (time0.is_error()) {
-    FDF_LOG(ERROR, "Read(): %s", time0.status_string());
+    fdf::error("Read(): {}", time0);
     return time0.take_error();
   }
 
   if (IsInvalid(time0.value())) {
-    FDF_LOG(WARNING, "nonsensical startup datetime %d-%d-%dT%d:%d:%d", time0->year(),
-            time0->month(), time0->day(), time0->hours(), time0->minutes(), time0->seconds());
-    FDF_LOG(WARNING, "resetting rtc to 1900-01-01T00:00:00");
+    fdf::warn("nonsensical startup datetime {}-{}-{}T{}:{}:{}", time0->year(), time0->month(),
+              time0->day(), time0->hours(), time0->minutes(), time0->seconds());
+    fdf::warn("resetting rtc to 1900-01-01T00:00:00");
 
     zx::result write = I2cWriteRaw({kI2cDateRegister, 0, 0, 0, 1, 0, 1, 0});
     if (write.is_error()) {
-      FDF_LOG(ERROR, "Write(): %s", write.status_string());
+      fdf::error("Write(): {}", write);
       return write.take_error();
     }
   }
 
   zx::result devfs_node = CreateDevfsNode();
   if (devfs_node.is_error()) {
-    FDF_LOG(ERROR, "CreateDevfsNode(): %s", devfs_node.status_string());
+    fdf::error("CreateDevfsNode(): {}", devfs_node);
     return devfs_node.take_error();
   }
 
@@ -211,7 +211,7 @@ zx::result<std::vector<uint8_t>> RtcDriver::I2cReadRaw(uint8_t reg, uint8_t rx_s
 
   fidl::Result result = i2c_->Transfer({{.transactions = std::move(txns)}});
   if (result.is_error()) {
-    FDF_LOG(ERROR, "i2c_.Transfer(): %s", result.error_value().FormatDescription().c_str());
+    fdf::error("i2c_.Transfer(): {}", result.error_value().FormatDescription());
     if (result.error_value().is_framework_error()) {
       return zx::error(ZX_ERR_INTERNAL);
     }
@@ -229,7 +229,7 @@ zx::result<> RtcDriver::I2cWriteRaw(std::vector<uint8_t>&& tx_data) {
 
   fidl::Result result = i2c_->Transfer({{.transactions = std::move(txns)}});
   if (result.is_error()) {
-    FDF_LOG(ERROR, "i2c_.Transfer(): %s", result.error_value().FormatDescription().c_str());
+    fdf::error("i2c_.Transfer(): {}", result.error_value().FormatDescription());
     if (result.error_value().is_framework_error()) {
       return zx::error(ZX_ERR_INTERNAL);
     }
@@ -247,7 +247,7 @@ void RtcDriver::DevfsConnect(fidl::ServerEnd<frtc::Device> req) {
 zx::result<> RtcDriver::CreateDevfsNode() {
   zx::result connector = devfs_connector_.Bind(dispatcher());
   if (connector.is_error()) {
-    FDF_LOG(ERROR, "devfs_connector_.Bind(): %s", connector.status_string());
+    fdf::error("devfs_connector_.Bind(): {}", connector);
     return connector.take_error();
   }
 
@@ -255,36 +255,10 @@ zx::result<> RtcDriver::CreateDevfsNode() {
   devfs.connector(std::move(connector.value()));
   devfs.class_name("rtc");
 
-  fdf::NodeAddArgs args;
-  args.devfs_args(std::move(devfs));
-  args.name("rtc");
-
-  // server-end required by AddChild().
-  zx::result controller_eps = fidl::CreateEndpoints<fdf::NodeController>();
-  if (controller_eps.is_error()) {
-    FDF_LOG(ERROR, "fidl::CreateEndpoints<NodeController>(): %s", controller_eps.status_string());
-    return controller_eps.take_error();
-  }
-  node_controller_.Bind(std::move(controller_eps->client));
-
-  // server-end required by AddChild().
-  zx::result node_eps = fidl::CreateEndpoints<fdf::Node>();
-  if (node_eps.is_error()) {
-    FDF_LOG(ERROR, "fidl::CreateEndpoints<Node>(): %s", node_eps.status_string());
-    return node_eps.take_error();
-  }
-  node_.Bind(std::move(node_eps->client));
-
-  fidl::Result result = fidl::Call(node())->AddChild({{
-      .args = std::move(args),
-      .controller = std::move(controller_eps->server),
-      .node = std::move(node_eps->server),
-  }});
-
-  if (result.is_error()) {
-    FDF_LOG(ERROR, "AddChild(): %s", result.error_value().FormatDescription().c_str());
-    // Node API assumes bespoke error and does not use zx_status_t.
-    return zx::error(ZX_ERR_INTERNAL);
+  auto controller = AddChild("rtc", devfs, cpp20::span<const fdf::NodeProperty2>{}, {});
+  if (controller.is_error()) {
+    fdf::error("AddChild(): {}", controller);
+    return controller.take_error();
   }
 
   return zx::ok();
@@ -292,4 +266,4 @@ zx::result<> RtcDriver::CreateDevfsNode() {
 
 }  // namespace pcf8563
 
-FUCHSIA_DRIVER_EXPORT(pcf8563::RtcDriver);
+FUCHSIA_DRIVER_EXPORT2(pcf8563::RtcDriver);
