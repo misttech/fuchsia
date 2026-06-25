@@ -13,17 +13,51 @@
 
 namespace power_management {
 
-zx::result<fbl::RefPtr<PDevPowerLevelController>> PDevPowerLevelController::Create() {
+void PDevPowerLevelController::ResetForTest() {
+  Guard<Mutex> guard{InstanceLock::Get()};
+  instance_ = nullptr;
+}
+
+zx::result<fbl::RefPtr<PDevPowerLevelController>> PDevPowerLevelController::Get(
+    uint32_t domain_id) {
+  Guard<Mutex> guard{InstanceLock::Get()};
+  if (instance_) {
+    if (domain_id >= instance_->domain_count()) {
+      return zx::error(ZX_ERR_OUT_OF_RANGE);
+    }
+    return zx::ok(instance_);
+  }
+
+  const zx::result<size_t> domain_count = power_opp_get_domain_count();
+  if (domain_count.is_error()) {
+    return zx::error(domain_count.error_value());
+  }
+  if (domain_id >= domain_count.value()) {
+    return zx::error(ZX_ERR_OUT_OF_RANGE);
+  }
+
   fbl::AllocChecker ac;
-  fbl::RefPtr<PDevPowerLevelController> controller =
-      fbl::MakeRefCountedChecked<PDevPowerLevelController>(&ac, PrivateConstructorValue);
+  fbl::RefPtr<PDevPowerLevelController> instance =
+      fbl::MakeRefCountedChecked<PDevPowerLevelController>(&ac, PrivateConstructorValue,
+                                                           domain_count.value());
   if (!ac.check()) {
     return zx::error(ZX_ERR_NO_MEMORY);
   }
-  return zx::ok(std::move(controller));
+
+  instance_ = ktl::move(instance);
+  return zx::ok(instance_);
 }
 
 zx::result<uint32_t> PDevPowerLevelController::Post(const PowerLevelUpdateRequest& pending) {
+  // Validate the inputs as defense-in-depth in case the pdev driver does not
+  // validate them.
+  if (pending.control != ControlInterface::kCpuDriver) {
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
+  }
+  if (pending.domain_id >= domain_count()) {
+    return zx::error(ZX_ERR_OUT_OF_RANGE);
+  }
+
   const zx_status_t status = power_opp_set(pending.domain_id, pending.control_argument);
   if (status != ZX_OK) {
     return zx::error(status);
@@ -34,6 +68,11 @@ zx::result<uint32_t> PDevPowerLevelController::Post(const PowerLevelUpdateReques
 }
 
 zx::result<uint64_t> PDevPowerLevelController::GetCurrentPowerLevel(uint32_t domain_id) const {
+  // Validate the input as defense-in-depth in case the pdev driver does not
+  // validate it.
+  if (domain_id >= domain_count()) {
+    return zx::error(ZX_ERR_OUT_OF_RANGE);
+  }
   return power_opp_get(domain_id);
 }
 

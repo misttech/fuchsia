@@ -25,4 +25,6 @@ struct pdev_power_ops {
 
 void pdev_register_power(const pdev_power_ops* ops);
 
+const pdev_power_ops* pdev_swap_power_for_test(const pdev_power_ops* ops);
+
 #endif  // ZIRCON_KERNEL_DEV_PDEV_POWER_INCLUDE_PDEV_POWER_H_

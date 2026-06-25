@@ -12,16 +12,20 @@
 #include <zircon/assert.h>
 #include <zircon/types.h>
 
+#include <kernel/mutex.h>
+
 namespace power_management {
 
 class PDevPowerLevelController final : public PowerLevelController {
   enum PrivateConstructorTag : bool { PrivateConstructorValue };
 
  public:
-  static zx::result<fbl::RefPtr<PDevPowerLevelController>> Create();
+  static zx::result<fbl::RefPtr<PDevPowerLevelController>> Get(uint32_t domain_id);
 
-  explicit PDevPowerLevelController(PrivateConstructorTag tag)
-      : PowerLevelController(ControlInterface::kCpuDriver) {}
+  static void ResetForTest();
+
+  explicit PDevPowerLevelController(PrivateConstructorTag tag, size_t domain_count)
+      : PowerLevelController(ControlInterface::kCpuDriver), domain_count_{domain_count} {}
 
   ~PDevPowerLevelController() final = default;
 
@@ -42,8 +46,18 @@ class PDevPowerLevelController final : public PowerLevelController {
   bool is_fast_path() const final { return true; }
 
   static bool IsSupported();
+
+  size_t domain_count() const { return domain_count_; }
+
+ private:
+  DECLARE_SINGLETON_MUTEX(InstanceLock);
+
+  TA_GUARDED(InstanceLock::Get())
+  inline static fbl::RefPtr<PDevPowerLevelController> instance_;
+
+  const size_t domain_count_;
 };
 
 }  // namespace power_management
 
-#endif  // ZIRCON_KERNEL_LIB_POWER_MANAGEMENT_INCLUDE_LIB_POWER_MANAGEMENT_PORT_POWER_LEVEL_CONTROLLER_H_
+#endif  // ZIRCON_KERNEL_LIB_POWER_MANAGEMENT_INCLUDE_LIB_POWER_MANAGEMENT_PDEV_POWER_LEVEL_CONTROLLER_H_

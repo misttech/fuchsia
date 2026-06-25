@@ -68,6 +68,7 @@ if (is_kernel) {
     sources = [ "power-management-tests.cc" ]
     deps = [
       ":power-management",
+      "//zircon/kernel/dev/pdev/power",
       "//zircon/kernel/lib/unittest",
     ]
   }

@@ -60,3 +60,10 @@ void pdev_register_power(const struct pdev_power_ops* ops) {
   power_ops = ops;
   arch::ThreadMemoryBarrier();
 }
+
+const pdev_power_ops* pdev_swap_power_for_test(const pdev_power_ops* ops) {
+  const pdev_power_ops* old = power_ops;
+  power_ops = ops;
+  arch::ThreadMemoryBarrier();
+  return old;
+}

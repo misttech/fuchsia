@@ -8,12 +8,15 @@
 #include <lib/fit/function.h>
 #include <lib/power-management/energy-model.h>
 #include <lib/power-management/kernel-registry.h>
+#include <lib/power-management/pdev-power-level-controller.h>
 #include <lib/power-management/port-power-level-controller.h>
 #include <lib/power-management/power-level-controller.h>
 #include <lib/power-management/power-state.h>
 #include <lib/unittest/unittest.h>
 #include <zircon/errors.h>
 #include <zircon/rights.h>
+
+#include <pdev/power.h>
 // TODO(https://fxbug.dev/415033686): Stop using `syscalls-next.h` on host.
 #define FUCHSIA_UNSUPPORTED_ALLOW_SYSCALLS_NEXT_ON_HOST
 #include <zircon/syscalls-next.h>
@@ -41,6 +44,7 @@ namespace {
 
 using power_management::ControlInterface;
 using power_management::EnergyModel;
+using power_management::PDevPowerLevelController;
 using power_management::PortPowerLevelController;
 using power_management::PowerDomain;
 using power_management::PowerDomainSet;
@@ -419,6 +423,180 @@ bool SchedulerCanPendControlRequestsAcrossCpus() {
   END_TEST;
 }
 
+ktl::optional<uint32_t> g_mock_opp_set_domain;
+ktl::optional<uint64_t> g_mock_opp_set_opp;
+zx_status_t g_mock_opp_set_status;
+ktl::optional<uint32_t> g_mock_opp_get_domain;
+zx::result<uint64_t> g_mock_opp_get_result;
+zx::result<size_t> g_mock_opp_get_domain_count_result;
+
+const pdev_power_ops kMockPowerOps = {
+    .reboot = [](power_reboot_flags flags) -> zx_status_t { return ZX_OK; },
+    .shutdown = []() -> zx_status_t { return ZX_OK; },
+    .cpu_off = []() -> zx_status_t { return ZX_OK; },
+    .cpu_on = [](uint64_t mpid, paddr_t entry, uint64_t context) -> zx_status_t { return ZX_OK; },
+    .get_cpu_state = [](uint64_t hw_cpu_id) -> zx::result<power_cpu_state> {
+      return zx::error(ZX_ERR_NOT_SUPPORTED);
+    },
+    .opp_set = [](uint32_t domain_id, uint64_t opp) -> zx_status_t {
+      g_mock_opp_set_domain = domain_id;
+      g_mock_opp_set_opp = opp;
+      return g_mock_opp_set_status;
+    },
+    .opp_get = [](uint32_t domain_id) -> zx::result<uint64_t> {
+      g_mock_opp_get_domain = domain_id;
+      return g_mock_opp_get_result;
+    },
+    .opp_get_domain_count = []() -> zx::result<size_t> {
+      return g_mock_opp_get_domain_count_result;
+    },
+};
+
+void ResetMockPowerOps() {
+  g_mock_opp_set_domain = ktl::nullopt;
+  g_mock_opp_set_opp = ktl::nullopt;
+  g_mock_opp_set_status = ZX_OK;
+  g_mock_opp_get_domain = ktl::nullopt;
+  g_mock_opp_get_result = zx::ok(uint64_t{0});
+  g_mock_opp_get_domain_count_result = zx::ok(size_t{0});
+}
+
+struct AutoMockPowerOps {
+  AutoMockPowerOps() {
+    ResetMockPowerOps();
+    original_ops_ = pdev_swap_power_for_test(&kMockPowerOps);
+  }
+  ~AutoMockPowerOps() { pdev_swap_power_for_test(original_ops_); }
+
+ private:
+  const pdev_power_ops* original_ops_;
+};
+
+bool PDevPowerLevelControllerIsSupported() {
+  BEGIN_TEST;
+
+  AutoMockPowerOps mock;
+
+  // The controller is not supported if retrieving the domain count fails.
+  g_mock_opp_get_domain_count_result = zx::error(ZX_ERR_NOT_SUPPORTED);
+  EXPECT_FALSE(PDevPowerLevelController::IsSupported());
+
+  // The controller is not supported if the domain count is 0.
+  g_mock_opp_get_domain_count_result = zx::ok(size_t{0});
+  EXPECT_FALSE(PDevPowerLevelController::IsSupported());
+
+  // The controller is supported if the domain count is greater than 0.
+  g_mock_opp_get_domain_count_result = zx::ok(size_t{2});
+  EXPECT_TRUE(PDevPowerLevelController::IsSupported());
+
+  END_TEST;
+}
+
+bool PDevPowerLevelControllerPostValidation() {
+  BEGIN_TEST;
+
+  PDevPowerLevelController::ResetForTest();
+
+  AutoMockPowerOps mock;
+  g_mock_opp_get_domain_count_result = zx::ok(size_t{2});
+
+  zx::result<fbl::RefPtr<PDevPowerLevelController>> controller_result =
+      PDevPowerLevelController::Get(0);
+  ASSERT_TRUE(controller_result.is_ok());
+  fbl::RefPtr controller = ktl::move(controller_result.value());
+
+  // Validate that interface requests not matching kCpuDriver are rejected.
+  PowerLevelUpdateRequest request_wfi = {
+      .domain_id = 0,
+      .target_id = 0,
+      .control = ControlInterface::kArmWfi,
+      .control_argument = 1,
+      .options = 0,
+  };
+  const zx::result<uint32_t> post_wfi_result = controller->Post(request_wfi);
+  EXPECT_EQ(post_wfi_result.error_value(), ZX_ERR_NOT_SUPPORTED);
+
+  // Validate that domain_id is checked against the total domain count
+  // (domain_id 2 >= count 2).
+  PowerLevelUpdateRequest request_oob = {
+      .domain_id = 2,
+      .target_id = 2,
+      .control = ControlInterface::kCpuDriver,
+      .control_argument = 1,
+      .options = 0,
+  };
+  const zx::result<uint32_t> post_oob_result = controller->Post(request_oob);
+  EXPECT_EQ(post_oob_result.error_value(), ZX_ERR_OUT_OF_RANGE);
+
+  // Validate that errors from power_opp_get_domain_count are correctly
+  // propagated on creation.
+  PDevPowerLevelController::ResetForTest();
+  g_mock_opp_get_domain_count_result = zx::error(ZX_ERR_BAD_STATE);
+  const zx::result<fbl::RefPtr<PDevPowerLevelController>> get_error_result =
+      PDevPowerLevelController::Get(0);
+  EXPECT_EQ(get_error_result.error_value(), ZX_ERR_BAD_STATE);
+
+  // Validate that domain_id is checked against domain count during Get().
+  PDevPowerLevelController::ResetForTest();
+  g_mock_opp_get_domain_count_result = zx::ok(size_t{2});
+  const zx::result<fbl::RefPtr<PDevPowerLevelController>> get_oob_result =
+      PDevPowerLevelController::Get(2);
+  EXPECT_EQ(get_oob_result.error_value(), ZX_ERR_OUT_OF_RANGE);
+
+  // Re-acquire the controller for the valid POST test.
+  PDevPowerLevelController::ResetForTest();
+  controller_result = PDevPowerLevelController::Get(0);
+  ASSERT_TRUE(controller_result.is_ok());
+  controller = ktl::move(controller_result.value());
+
+  // Validate that a request passing all checks is allowed to proceed to the
+  // registry update. Since domain 0 is not registered in this test registry,
+  // UpdatePowerLevel returns ZX_ERR_NOT_FOUND, which verifies that all earlier
+  // validation checks successfully passed.
+  PowerLevelUpdateRequest request_valid = {
+      .domain_id = 0,
+      .target_id = 0,
+      .control = ControlInterface::kCpuDriver,
+      .control_argument = 1,
+      .options = 0,
+  };
+  g_mock_opp_set_status = ZX_OK;
+  const zx::result<uint32_t> post_valid_result = controller->Post(request_valid);
+  EXPECT_EQ(post_valid_result.error_value(), ZX_ERR_NOT_FOUND);
+
+  END_TEST;
+}
+
+bool PDevPowerLevelControllerGetPowerLevelValidation() {
+  BEGIN_TEST;
+
+  PDevPowerLevelController::ResetForTest();
+
+  AutoMockPowerOps mock;
+  g_mock_opp_get_domain_count_result = zx::ok(size_t{2});
+
+  zx::result<fbl::RefPtr<PDevPowerLevelController>> controller_result =
+      PDevPowerLevelController::Get(0);
+  ASSERT_TRUE(controller_result.is_ok());
+  fbl::RefPtr controller = ktl::move(controller_result.value());
+
+  // Validate that domain_id is checked against the total domain count
+  // (domain_id 2 >= count 2).
+  const zx::result<uint64_t> current_level_oob_result = controller->GetCurrentPowerLevel(2);
+  EXPECT_EQ(current_level_oob_result.error_value(), ZX_ERR_OUT_OF_RANGE);
+
+  // Validate that a valid domain query returns the value fetched from the pdev
+  // backend.
+  g_mock_opp_get_result = zx::ok(uint64_t{42});
+  zx::result<uint64_t> current_power_level_result = controller->GetCurrentPowerLevel(0);
+  ASSERT_TRUE(current_power_level_result.is_ok());
+  ASSERT_TRUE(g_mock_opp_get_domain.has_value());
+  EXPECT_EQ(current_power_level_result.value(), uint64_t{42});
+  EXPECT_EQ(g_mock_opp_get_domain.value(), 0u);
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(pm_controller)
 UNITTEST("Port controller queues a packet.", PortPowerLevelControllerPost)
 UNITTEST("Port controller stops serving when there are zero handles.",
@@ -431,6 +609,10 @@ UNITTEST("Scheduler control requests may occur in IRQ context.",
          SchedulerCanPendControlRequestsInIrqContext)
 UNITTEST("Scheduler control requests may pend from a different CPU.",
          SchedulerCanPendControlRequestsAcrossCpus)
+UNITTEST("PDev controller supported.", PDevPowerLevelControllerIsSupported)
+UNITTEST("PDev controller post validation.", PDevPowerLevelControllerPostValidation)
+UNITTEST("PDev controller get power level validation.",
+         PDevPowerLevelControllerGetPowerLevelValidation)
 UNITTEST_END_TESTCASE(pm_controller, "pm_controller", "Kernel CPU power level controller tests.")
 
 }  // namespace

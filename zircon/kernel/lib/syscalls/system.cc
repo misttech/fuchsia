@@ -971,7 +971,7 @@ zx_status_t sys_system_set_processor_power_domain(
 
   zx::result<fbl::RefPtr<power_management::PowerLevelController>> controller_result;
   if (power_management::PDevPowerLevelController::IsSupported() && !force_user_control) {
-    controller_result = power_management::PDevPowerLevelController::Create();
+    controller_result = power_management::PDevPowerLevelController::Get(domain_info.domain_id);
   } else {
     controller_result =
         power_management::PortPowerLevelController::Create(ktl::move(port_dispatcher));

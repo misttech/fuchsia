@@ -39,6 +39,8 @@ NEEDS_NEXT_SYSCALL(zx_system_set_processor_power_state);
 
 namespace {
 
+constexpr uint64_t kForceUserDriver = ZX_SYSTEM_SET_PROCESSOR_POWER_DOMAIN_OPTION_FORCE_USER_DRIVER;
+
 zx::result<> Unregister(uint32_t power_domain_id) {
   zx_processor_power_domain_t domain = {.domain_id = power_domain_id};
   return zx::make_result(
@@ -127,8 +129,8 @@ TEST(SetPowerDomainTest, ValidPowerDomainSucceeds) {
   auto [levels, transitions] = GetModel();
   auto domain = GetDomainWithDefaultCpus(123);
 
-  ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, p.get(), levels.data(),
-                                                 levels.size(), transitions.data(),
+  ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain, p.get(),
+                                                 levels.data(), levels.size(), transitions.data(),
                                                  transitions.size()));
   auto cleanup = Cleanup(domain.domain_id);
 }
@@ -142,15 +144,15 @@ TEST(SetPowerDomainTest, SameIdUpdates) {
   auto [levels, transitions] = GetModel();
   auto domain = GetDomainWithDefaultCpus(123);
 
-  ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, p.get(), levels.data(),
-                                                 levels.size(), transitions.data(),
+  ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain, p.get(),
+                                                 levels.data(), levels.size(), transitions.data(),
                                                  transitions.size()));
   auto cleanup = Cleanup(domain.domain_id);
 
   auto domain_updated = MakeDomain(123, 0);
-  ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), 0, &domain_updated, p.get(),
-                                                 levels.data(), levels.size(), transitions.data(),
-                                                 transitions.size()));
+  ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain_updated,
+                                                 p.get(), levels.data(), levels.size(),
+                                                 transitions.data(), transitions.size()));
 }
 
 TEST(SetPowerDomainTest, UnregisterDomain) {
@@ -163,16 +165,16 @@ TEST(SetPowerDomainTest, UnregisterDomain) {
   ASSERT_TRUE(rsrc->is_valid());
   auto [levels, transitions] = GetModel();
   auto domain = GetDomainWithDefaultCpus(123);
-  ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, p.get(), levels.data(),
-                                                 levels.size(), transitions.data(),
+  ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain, p.get(),
+                                                 levels.data(), levels.size(), transitions.data(),
                                                  transitions.size()));
 
   zx_processor_power_domain_t domain_updated{.cpus = {}, .domain_id = domain.domain_id};
 
   // Successful registering.
-  ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), 0, &domain_updated, p.get(),
-                                                 levels.data(), levels.size(), transitions.data(),
-                                                 transitions.size()));
+  ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain_updated,
+                                                 p.get(), levels.data(), levels.size(),
+                                                 transitions.data(), transitions.size()));
 
   // Unregistring an unexistant domain id is `ZX_ERR_NOT_FOUND`.
   ASSERT_STATUS(zx_system_set_processor_power_domain(rsrc->get(), 0, &domain_updated,
@@ -191,9 +193,9 @@ TEST(SetPowerDomainTest, RegisterDomainWithInvalidPortIsError) {
   ASSERT_TRUE(rsrc->is_valid());
   auto [levels, transitions] = GetModel();
   auto domain = GetDomainWithDefaultCpus(123);
-  ASSERT_STATUS(zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, ZX_HANDLE_INVALID,
-                                                     levels.data(), levels.size(),
-                                                     transitions.data(), transitions.size()),
+  ASSERT_STATUS(zx_system_set_processor_power_domain(
+                    rsrc->get(), kForceUserDriver, &domain, ZX_HANDLE_INVALID, levels.data(),
+                    levels.size(), transitions.data(), transitions.size()),
                 ZX_ERR_BAD_HANDLE);
 }
 
@@ -207,10 +209,10 @@ TEST(SetPowerDomainTest, RegisterDomainWithPortWithoutWriteRights) {
   ASSERT_TRUE(rsrc->is_valid());
   auto [levels, transitions] = GetModel();
   auto domain = GetDomainWithDefaultCpus(123);
-  ASSERT_STATUS(
-      zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, p2.get(), levels.data(),
-                                           levels.size(), transitions.data(), transitions.size()),
-      ZX_ERR_ACCESS_DENIED);
+  ASSERT_STATUS(zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain,
+                                                     p2.get(), levels.data(), levels.size(),
+                                                     transitions.data(), transitions.size()),
+                ZX_ERR_ACCESS_DENIED);
 }
 
 TEST(SetPowerDomainTest, RegisterDomainWithPortWithoutReadRights) {
@@ -223,10 +225,10 @@ TEST(SetPowerDomainTest, RegisterDomainWithPortWithoutReadRights) {
   ASSERT_TRUE(rsrc->is_valid());
   auto [levels, transitions] = GetModel();
   auto domain = GetDomainWithDefaultCpus(123);
-  ASSERT_STATUS(
-      zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, p2.get(), levels.data(),
-                                           levels.size(), transitions.data(), transitions.size()),
-      ZX_ERR_ACCESS_DENIED);
+  ASSERT_STATUS(zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain,
+                                                     p2.get(), levels.data(), levels.size(),
+                                                     transitions.data(), transitions.size()),
+                ZX_ERR_ACCESS_DENIED);
 }
 
 TEST(SetPowerDomainTest, RegisterDomainWithWrongHandleType) {
@@ -237,10 +239,10 @@ TEST(SetPowerDomainTest, RegisterDomainWithWrongHandleType) {
   ASSERT_TRUE(rsrc->is_valid());
   auto [levels, transitions] = GetModel();
   auto domain = GetDomainWithDefaultCpus(123);
-  ASSERT_STATUS(
-      zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, e.get(), levels.data(),
-                                           levels.size(), transitions.data(), transitions.size()),
-      ZX_ERR_WRONG_TYPE);
+  ASSERT_STATUS(zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain,
+                                                     e.get(), levels.data(), levels.size(),
+                                                     transitions.data(), transitions.size()),
+                ZX_ERR_WRONG_TYPE);
 }
 
 TEST(SetPowerDomainTest, RegisterDomainWithNonEmptyMaskWithInvalidLevels) {
@@ -252,9 +254,10 @@ TEST(SetPowerDomainTest, RegisterDomainWithNonEmptyMaskWithInvalidLevels) {
   auto [levels, transitions] = GetModel();
   auto domain = MakeDomain(123, 0, 1);
 
-  ASSERT_STATUS(zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, p.get(), nullptr, 0,
-                                                     transitions.data(), transitions.size()),
-                ZX_ERR_INVALID_ARGS);
+  ASSERT_STATUS(
+      zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain, p.get(), nullptr,
+                                           0, transitions.data(), transitions.size()),
+      ZX_ERR_INVALID_ARGS);
 }
 
 TEST(SetPowerDomainTest, RegisterDomainWithNonEmptyMaskWithEmptyTransitions) {
@@ -265,8 +268,8 @@ TEST(SetPowerDomainTest, RegisterDomainWithNonEmptyMaskWithEmptyTransitions) {
   ASSERT_TRUE(rsrc->is_valid());
   auto [levels, transitions] = GetModel();
   auto domain = GetDomainWithDefaultCpus(123);
-  ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, p.get(), levels.data(),
-                                                 levels.size(), nullptr, 0));
+  ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain, p.get(),
+                                                 levels.data(), levels.size(), nullptr, 0));
 }
 
 TEST(SetPowerDomainTest, RegisterDomainWithNonEmptyMaskWithTooManyTransitions) {
@@ -278,10 +281,10 @@ TEST(SetPowerDomainTest, RegisterDomainWithNonEmptyMaskWithTooManyTransitions) {
   auto [levels, transitions] = GetModel();
   transitions.resize(levels.size() * levels.size() + 1);
   auto domain = GetDomainWithDefaultCpus(123);
-  ASSERT_STATUS(
-      zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, p.get(), levels.data(),
-                                           levels.size(), transitions.data(), transitions.size()),
-      ZX_ERR_INVALID_ARGS);
+  ASSERT_STATUS(zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain,
+                                                     p.get(), levels.data(), levels.size(),
+                                                     transitions.data(), transitions.size()),
+                ZX_ERR_INVALID_ARGS);
 }
 
 TEST(SetPowerDomainTest, RegisterDomainWithCpuOutOfBounds) {
@@ -292,10 +295,10 @@ TEST(SetPowerDomainTest, RegisterDomainWithCpuOutOfBounds) {
   ASSERT_TRUE(rsrc->is_valid());
   auto [levels, transitions] = GetModel();
   auto domain = MakeDomain(123, 0, zx_system_get_num_cpus());
-  ASSERT_STATUS(
-      zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, p.get(), levels.data(),
-                                           levels.size(), transitions.data(), transitions.size()),
-      ZX_ERR_INVALID_ARGS);
+  ASSERT_STATUS(zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain,
+                                                     p.get(), levels.data(), levels.size(),
+                                                     transitions.data(), transitions.size()),
+                ZX_ERR_INVALID_ARGS);
 }
 
 TEST(SetPowerDomainTest, RegisterDomainWithTransitionReferencingLevelsOutOfBounds) {
@@ -308,10 +311,10 @@ TEST(SetPowerDomainTest, RegisterDomainWithTransitionReferencingLevelsOutOfBound
   transitions[0].from = static_cast<uint8_t>(levels.size());
   transitions[1].to = static_cast<uint8_t>(levels.size() + 1);
   auto domain = GetDomainWithDefaultCpus(123);
-  ASSERT_STATUS(
-      zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, p.get(), levels.data(),
-                                           levels.size(), transitions.data(), transitions.size()),
-      ZX_ERR_INVALID_ARGS);
+  ASSERT_STATUS(zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain,
+                                                     p.get(), levels.data(), levels.size(),
+                                                     transitions.data(), transitions.size()),
+                ZX_ERR_INVALID_ARGS);
 }
 
 TEST(SetPowerDomainTest, RegisterDomainWithNonEmptyMaskWithUnknownControlInterface) {
@@ -324,10 +327,10 @@ TEST(SetPowerDomainTest, RegisterDomainWithNonEmptyMaskWithUnknownControlInterfa
   levels[0].control_interface = std::numeric_limits<zx_processor_power_control_t>::max();
   auto domain = GetDomainWithDefaultCpus(123);
 
-  ASSERT_STATUS(
-      zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, p.get(), levels.data(),
-                                           levels.size(), transitions.data(), transitions.size()),
-      ZX_ERR_INVALID_ARGS);
+  ASSERT_STATUS(zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain,
+                                                     p.get(), levels.data(), levels.size(),
+                                                     transitions.data(), transitions.size()),
+                ZX_ERR_INVALID_ARGS);
 }
 
 TEST(SetPowerDomainTest, BadLevelPointer) {
@@ -340,7 +343,7 @@ TEST(SetPowerDomainTest, BadLevelPointer) {
   auto domain = GetDomainWithDefaultCpus(123);
 
   ASSERT_STATUS(
-      zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, p.get(),
+      zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain, p.get(),
                                            reinterpret_cast<zx_processor_power_level_t*>(0x01),
                                            levels.size(), transitions.data(), transitions.size()),
       ZX_ERR_INVALID_ARGS);
@@ -357,7 +360,7 @@ TEST(SetPowerDomainTest, BadTransitionPointer) {
 
   ASSERT_STATUS(
       zx_system_set_processor_power_domain(
-          rsrc->get(), 0, &domain, p.get(), levels.data(), levels.size(),
+          rsrc->get(), kForceUserDriver, &domain, p.get(), levels.data(), levels.size(),
           reinterpret_cast<zx_processor_power_level_transition_t*>(0x01), transitions.size()),
       ZX_ERR_INVALID_ARGS);
 }
@@ -425,8 +428,8 @@ TEST(SetPowerDomainTest, PerformanceLimitRegisterRacePanicStressTest) {
   auto racer_thread_func = [&]() {
     while (!stop.load()) {
       // 1. Register domain.
-      zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, p.get(), levels.data(), 2,
-                                           transitions.data(), 2);
+      zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain, p.get(),
+                                           levels.data(), 2, transitions.data(), 2);
 
       // 2. Set initial state.
       zx_processor_power_state_t state = {};
@@ -448,8 +451,8 @@ TEST(SetPowerDomainTest, PerformanceLimitRegisterRacePanicStressTest) {
       std::this_thread::yield();
 
       // 4. Tight race: Re-register domain.
-      zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, p.get(), levels.data(), 2,
-                                           transitions.data(), 2);
+      zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain, p.get(),
+                                           levels.data(), 2, transitions.data(), 2);
 
       // Reset limits.
       for (size_t cpu = 0; cpu < num_cpus; cpu++) {
@@ -652,8 +655,8 @@ TEST(GetPowerDomainInfo, OneDomainRegistered) {
   auto [levels, transitions] = GetModel();
   auto domain = GetDomainWithDefaultCpus(123);
 
-  ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, p.get(), levels.data(),
-                                                 levels.size(), transitions.data(),
+  ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain, p.get(),
+                                                 levels.data(), levels.size(), transitions.data(),
                                                  transitions.size()));
   auto cleanup = Cleanup(domain.domain_id);
 
@@ -699,15 +702,15 @@ TEST(GetPowerDomainInfo, MultipleDomainRegistered) {
   auto [levels, transitions] = GetModel();
   auto domain = MakeDomain(123, 0);
 
-  ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, p.get(), levels.data(),
-                                                 levels.size(), transitions.data(),
+  ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain, p.get(),
+                                                 levels.data(), levels.size(), transitions.data(),
                                                  transitions.size()));
   auto cleanup = Cleanup(domain.domain_id);
 
   auto domain_2 = MakeDomain(1234, 1);
 
-  ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), 0, &domain_2, p.get(), levels.data(),
-                                                 levels.size(), transitions.data(),
+  ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain_2, p.get(),
+                                                 levels.data(), levels.size(), transitions.data(),
                                                  transitions.size()));
   auto cleanup_2 = Cleanup(domain_2.domain_id);
 
@@ -792,8 +795,8 @@ TEST(GetPowerDomainInfo, BadBuffer) {
   auto [levels, transitions] = GetModel();
   auto domain = GetDomainWithDefaultCpus(123);
 
-  ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, p.get(), levels.data(),
-                                                 levels.size(), transitions.data(),
+  ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), kForceUserDriver, &domain, p.get(),
+                                                 levels.data(), levels.size(), transitions.data(),
                                                  transitions.size()));
   auto cleanup = Cleanup(domain.domain_id);
 
