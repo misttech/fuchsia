@@ -10,6 +10,7 @@
 #include <zxtest/zxtest.h>
 
 #include "src/devices/bin/driver_runtime/dispatcher.h"
+#include "src/devices/bin/driver_runtime/dispatcher_coordinator.h"
 #include "src/devices/bin/driver_runtime/test_utils.h"
 #include "src/devices/bin/driver_runtime/thread_context.h"
 

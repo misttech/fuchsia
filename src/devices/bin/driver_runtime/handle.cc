@@ -147,7 +147,7 @@ Handle* HandleTableArena::AllocHandleMemoryLocked(uint32_t* out_dir_index, uint3
   return handle;
 }
 
-Handle* HandleTableArena::Alloc(fdf_handle_t* out_value) {
+Handle* HandleTableArena::Alloc(fbl::RefPtr<Object> object, fdf_handle_t* out_value) {
   fbl::AutoLock lock(&lock_);
 
   uint32_t dir_index;
@@ -161,18 +161,58 @@ Handle* HandleTableArena::Alloc(fdf_handle_t* out_value) {
 
   *out_value = new_handle_value(dir_index, index, handle->handle_value());
   num_allocated_++;
+
+  handle->~Handle();
+  new (handle) Handle(std::move(object), *out_value);
   return handle;
+}
+
+Handle* HandleTableArena::GetHandleLocked(fdf_handle_t handle_value) {
+  uint32_t dir_index = handle_value_to_dir_index(handle_value);
+  uint32_t index = handle_value_to_index(handle_value);
+  if (dir_index >= kNumTables || index >= kHandlesPerTable) {
+    return nullptr;
+  }
+  if (!handle_table_dir_[dir_index]) {
+    return nullptr;
+  }
+  Handle* handle = &(handle_table_dir_[dir_index]->data()[index]);
+  if (!handle->has_object() || handle->handle_value() != handle_value) {
+    return nullptr;
+  }
+  return handle;
+}
+
+fbl::RefPtr<Object> HandleTableArena::GetObject(fdf_handle_t handle_value) {
+  fbl::AutoLock lock(&lock_);
+  Handle* handle = GetHandleLocked(handle_value);
+  if (!handle) {
+    return nullptr;
+  }
+  return handle->object();
+}
+
+std::pair<HandleOwner, fbl::RefPtr<Object>> HandleTableArena::TakeOwnership(
+    fdf_handle_t handle_value) {
+  fbl::AutoLock lock(&lock_);
+  Handle* handle = GetHandleLocked(handle_value);
+  if (!handle) {
+    return {nullptr, nullptr};
+  }
+  fbl::RefPtr<Object> object = handle->object();
+  handle->Reset();
+  return {HandleOwner(handle), std::move(object)};
 }
 
 // static
 HandleOwner Handle::Create(fbl::RefPtr<Object> object) {
   fdf_handle_t handle_value;
-  Handle* handle = gHandleTableArena.Alloc(&handle_value);
+  Handle* handle = gHandleTableArena.Alloc(std::move(object), &handle_value);
   if (!handle) {
     return nullptr;
   }
   ZX_ASSERT(handle_value != FDF_HANDLE_INVALID);
-  return HandleOwner(new (handle) Handle(std::move(object), handle_value));
+  return HandleOwner(handle);
 }
 
 // static

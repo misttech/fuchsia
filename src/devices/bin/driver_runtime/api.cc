@@ -119,18 +119,15 @@ __EXPORT void fdf_handle_close(fdf_handle_t channel_handle) {
     zx_handle_close(channel_handle);
     return;
   }
-  driver_runtime::Handle* handle = driver_runtime::Handle::MapValueToHandle(channel_handle);
+  auto [handle_owner, object] = driver_runtime::gHandleTableArena.TakeOwnership(channel_handle);
   // TODO(https://fxbug.dev/42168124): we may want to consider killing the process.
-  ZX_ASSERT(handle);
+  ZX_ASSERT(handle_owner);
 
-  fbl::RefPtr<driver_runtime::Channel> channel;
-  zx_status_t status = handle->GetObject<driver_runtime::Channel>(&channel);
-  if (status != ZX_OK) {
-    return;
+  fbl::RefPtr<driver_runtime::Channel> channel =
+      fbl::RefPtr<driver_runtime::Channel>::Downcast(std::move(object));
+  if (channel) {
+    channel->Close();
   }
-  channel->Close();
-  // Drop the handle.
-  handle->TakeOwnership();
 }
 
 // fdf_dispatcher_t interface

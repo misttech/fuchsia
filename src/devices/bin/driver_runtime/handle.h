@@ -10,6 +10,8 @@
 #include <stdint.h>
 
 #include <array>
+#include <memory>
+#include <utility>
 
 #include <fbl/auto_lock.h>
 #include <fbl/intrusive_single_list.h>
@@ -62,7 +64,8 @@ class Handle : public fbl::SinglyLinkedListable<Handle*> {
   // Returns the object corresponding to |value_|.
   template <typename T>
   zx_status_t GetObject(fbl::RefPtr<T>* out_object) {
-    // TODO(https://fxbug.dev/42167564): we should add some type checking once we support more object types.
+    // TODO(https://fxbug.dev/42167564): we should add some type checking once we support more
+    // object types.
     *out_object = fbl::RefPtr<T>::Downcast(object());
     if (!*out_object) {
       return ZX_ERR_WRONG_TYPE;
@@ -72,13 +75,7 @@ class Handle : public fbl::SinglyLinkedListable<Handle*> {
 
   // Returns the object corresponding to |handle_value|.
   template <typename T>
-  static zx_status_t GetObject(fdf_handle_t handle_value, fbl::RefPtr<T>* out_object) {
-    Handle* handle = Handle::MapValueToHandle(handle_value);
-    if (!handle) {
-      return ZX_ERR_BAD_HANDLE;
-    }
-    return handle->GetObject<T>(out_object);
-  }
+  static zx_status_t GetObject(fdf_handle_t handle_value, fbl::RefPtr<T>* out_object);
 
   HandleOwner TakeOwnership() { return HandleOwner(this); }
 
@@ -123,17 +120,28 @@ class HandleTableArena {
 
   // Alloc returns storage for a handle.
   // |out_handle_value| is the generated handle value referring to the returned Handle object.
-  Handle* Alloc(fdf_handle_t* out_handle_value);
+  Handle* Alloc(fbl::RefPtr<Object> object, fdf_handle_t* out_handle_value);
 
   // Clears handle state specific to this lifetime and adds the handle to the free
   // list for re-use.
   void Delete(Handle* handle) {
-    handle->Reset();
-
-    fbl::AutoLock lock(&lock_);
-    free_handles_.push_front(handle);
-    num_allocated_--;
+    fbl::RefPtr<Object> object_to_destroy;
+    {
+      fbl::AutoLock lock(&lock_);
+      object_to_destroy = handle->object();
+      handle->Reset();
+      free_handles_.push_front(handle);
+      num_allocated_--;
+    }
   }
+
+  // Returns the object corresponding to |handle_value|.
+  // Returns nullptr if the handle is invalid or has no object.
+  fbl::RefPtr<Object> GetObject(fdf_handle_t handle_value);
+
+  // Takes ownership of the handle, resetting its object and returning the HandleOwner and the
+  // object. Returns nullptr HandleOwner if the handle is invalid or has no object.
+  std::pair<HandleOwner, fbl::RefPtr<Object>> TakeOwnership(fdf_handle_t handle_value);
 
   // Returns the handle located in the handle table pointed to by |table|, at |index|.
   // Returns nullptr if the indexes are invalid, or do not point to an allocated handle.
@@ -146,6 +154,8 @@ class HandleTableArena {
   }
 
  private:
+  Handle* GetHandleLocked(fdf_handle_t handle_value) __TA_REQUIRES(&lock_);
+
   // Returns a pointer to memory that can be used to construct a Handle object.
   // |out_table| and |out_index| describes the location of that memory.
   Handle* AllocHandleMemoryLocked(uint32_t* out_table, uint32_t* out_index) __TA_REQUIRES(&lock_);
@@ -172,6 +182,19 @@ class HandleTableArena {
 };
 
 extern HandleTableArena gHandleTableArena;
+
+template <typename T>
+inline zx_status_t Handle::GetObject(fdf_handle_t handle_value, fbl::RefPtr<T>* out_object) {
+  fbl::RefPtr<Object> object = gHandleTableArena.GetObject(handle_value);
+  if (!object) {
+    return ZX_ERR_BAD_HANDLE;
+  }
+  *out_object = fbl::RefPtr<T>::Downcast(std::move(object));
+  if (!*out_object) {
+    return ZX_ERR_WRONG_TYPE;
+  }
+  return ZX_OK;
+}
 
 // This can't be defined directly in the HandleDestroyer struct definition
 // because Handle is an incomplete type at that point.
