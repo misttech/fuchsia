@@ -8,20 +8,20 @@ use zx_status::Status;
 use zx_types::zx_instant_mono_t;
 
 unsafe extern "C" {
-    fn rust_thread_create_default(
+    fn cpp_thread_create_default(
         name: *const c_char,
         entry: extern "C" fn(*mut c_void) -> i32,
         arg: *mut c_void,
     ) -> *mut c_void;
-    fn rust_thread_resume(thread: *mut c_void);
-    fn rust_thread_join(
+    fn cpp_thread_resume(thread: *mut c_void);
+    fn cpp_thread_join(
         thread: *mut c_void,
         out_retcode: *mut i32,
         deadline: zx_instant_mono_t,
     ) -> i32;
-    fn rust_thread_yield();
-    fn rust_thread_kill(thread: *mut c_void);
-    fn rust_thread_is_blocked(thread: *mut c_void) -> bool;
+    fn cpp_thread_yield();
+    fn cpp_thread_kill(thread: *mut c_void);
+    fn cpp_thread_is_blocked(thread: *mut c_void) -> bool;
 }
 
 /// Type-safe wrapper around a raw pointer to a Zircon kernel Thread.
@@ -57,7 +57,7 @@ impl ThreadPtr {
     ///
     /// The caller must ensure the thread has not been joined or destroyed.
     pub unsafe fn resume(self) {
-        unsafe { rust_thread_resume(self.as_raw()) }
+        unsafe { cpp_thread_resume(self.as_raw()) }
     }
 
     /// Joins the thread, waiting for it to exit.
@@ -69,7 +69,7 @@ impl ThreadPtr {
     /// The caller must ensure that the thread has not been joined yet.
     pub unsafe fn join(self, deadline: zx_instant_mono_t) -> Result<i32, Status> {
         let mut retcode = 0;
-        let status = unsafe { rust_thread_join(self.as_raw(), &mut retcode, deadline) };
+        let status = unsafe { cpp_thread_join(self.as_raw(), &mut retcode, deadline) };
         Status::ok(status).map(|_| retcode)
     }
 
@@ -79,7 +79,7 @@ impl ThreadPtr {
     ///
     /// The caller must ensure the thread is still valid.
     pub unsafe fn kill(self) {
-        unsafe { rust_thread_kill(self.as_raw()) }
+        unsafe { cpp_thread_kill(self.as_raw()) }
     }
 
     /// Checks if the thread is currently blocked.
@@ -89,7 +89,7 @@ impl ThreadPtr {
     /// The caller must ensure that the thread pointer is still valid and the
     /// underlying thread has not been destroyed or joined.
     pub unsafe fn is_blocked(self) -> bool {
-        unsafe { rust_thread_is_blocked(self.as_raw()) }
+        unsafe { cpp_thread_is_blocked(self.as_raw()) }
     }
 }
 
@@ -103,7 +103,7 @@ pub unsafe fn create(
     entry: extern "C" fn(*mut c_void) -> i32,
     arg: *mut c_void,
 ) -> Result<ThreadPtr, Status> {
-    let thread = unsafe { rust_thread_create_default(name, entry, arg) };
+    let thread = unsafe { cpp_thread_create_default(name, entry, arg) };
     unsafe { ThreadPtr::from_raw(thread) }.ok_or(Status::NO_MEMORY)
 }
 
@@ -125,5 +125,5 @@ pub unsafe fn spawn(
 
 /// Yields the current thread's CPU time slice.
 pub fn r#yield() {
-    unsafe { rust_thread_yield() }
+    unsafe { cpp_thread_yield() }
 }

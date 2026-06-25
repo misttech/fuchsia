@@ -132,6 +132,20 @@ across the following dimensions:
   (e.g., `mod tests;` under `#[cfg(test)]`) in the crate root to ensure they are
   compiled and run?
 
+### 9. FFI Interoperability
+* **Minimal Shims**: The extern "C" FFI method, be it in C++ or Rust, should
+  have no new logic and should just be forwarding to the implementation in the
+  target language.
+* **Non-Trivial Types**: Any non-trivial types that would result in an unstable
+  ABI definition should be serialized and deserialized. This is the only
+  exception to minimal shims.
+* **Consistent Naming**: If logic is in C++ and is being exposed to Rust the FFI
+  method should be prefixed with `cpp_` and generally be of the form
+  `cpp_$namespace_$classname_$functionname`. If logic is in Rust and is being
+  exposed to C++ the FFI method should be prefixed ithe `rust_` and generally be
+  of the form `rust_$modpath_$structname_$functionname`. All names should be
+  lower_case_snake_case, regardless of source language capitalization.
+
 ## Common Pitfalls to Check For
 
 When reviewing ports, pay special attention to these common issues:
