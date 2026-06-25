@@ -83,6 +83,7 @@ setup_build_test() {
   # which appends ":." at the end of PATH, which will result in an error when
   # calling fx-run-build-command, so remove this here explicitly.
   export PATH="${BT_TEMP_DIR}/bin:${PATH%:.}"
+  export _FUCHSIA_COG_CLI="${BT_TEMP_DIR}/nonexistent/fuchsia-cog"
 
   # Misc mock binaries invoked by tools/devshell/build
   ninja="$(btf::make_mock_binary bin/ninja)"
@@ -595,6 +596,42 @@ EOF
 
     source "${track_build_event}.mock_state"
     BT_EXPECT_EQ "${BT_MOCK_ARGS[9]}" ""  # quiet should be empty when --verbose is passed
+}
+
+TEST_fx-build-invokes-fuchsia-cog-yield() {
+    setup_build_test
+
+    local fuchsia_cog
+    fuchsia_cog=$(btf::make_mock_binary fuchsia-cog)
+    export _FUCHSIA_COG_CLI="${fuchsia_cog}"
+
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    export FX_BUILD_DRY_RUN=1
+    BT_EXPECT "${fx}" build //src:foo ">" stdout.txt
+
+    for _ in {1..100}; do
+      if [[ -f "${fuchsia_cog}.mock_state" ]]; then
+        break
+      fi
+      sleep 0.05
+    done
+
+    BT_EXPECT btf::expect-mock-args "${fuchsia_cog}" daemon yield _ANY_
+}
+
+TEST_fx-build-does-not-invoke-fuchsia-cog-when-no-checks() {
+    setup_build_test
+
+    local fuchsia_cog
+    fuchsia_cog=$(btf::make_mock_binary fuchsia-cog)
+    export _FUCHSIA_COG_CLI="${fuchsia_cog}"
+
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    export FX_BUILD_DRY_RUN=1
+    BT_EXPECT "${fx}" build --no-checks //src:foo ">" stdout.txt
+
+    sleep 0.5
+    BT_EXPECT [ ! -f "${fuchsia_cog}.mock_state" ]
 }
 
 BT_RUN_TESTS "$@"

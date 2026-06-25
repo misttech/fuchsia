@@ -555,6 +555,20 @@ function main {
   local need_fx_gen_for=()
 
   if [[ -z "${no_checks}" ]]; then
+    # If a fuchsia-cog daemon is running, notify it to suspend its build tasks
+    # until this `fx build` invocation completes.
+    # This prevents the daemon from building concurrently, which slows down
+    # local builds by ~40-100%.
+    local -r fuchsia_cog="${_FUCHSIA_COG_CLI:-/google/bin/releases/fuchsia-cog-cli/fuchsia-cog}"
+    if [[ -x "${fuchsia_cog}" ]]; then
+      # This is a best-effort, non-blocking, fire-and-forget request.
+      if [[ -n "${verbose}" ]]; then
+        timeout 5s "${fuchsia_cog}" daemon yield "$$" </dev/null &
+      else
+        timeout 5s "${fuchsia_cog}" daemon yield "$$" </dev/null >/dev/null 2>&1 &
+      fi
+    fi
+
     # A change to any of these might mean things are now done differently enough
     # that ninja's automatic re-gen rule might not be triggered or might not work
     # properly if it is triggered.  So preemptively force a re-gen if that seems
