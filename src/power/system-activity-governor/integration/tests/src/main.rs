@@ -6,7 +6,7 @@ use anyhow::Result;
 use diagnostics_assertions::{
     AnyProperty, AnyStringProperty, NonZeroUintProperty, TreeAssertion, tree_assertion,
 };
-use diagnostics_hierarchy::DiagnosticsHierarchy;
+use diagnostics_hierarchy::{DiagnosticsHierarchy, Property};
 use diagnostics_reader::ArchiveReader;
 use fidl::endpoints::create_endpoints;
 use fidl_fuchsia_hardware_power_statecontrol as fstatecontrol;
@@ -29,6 +29,24 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use test_case::test_case;
 use test_util::assert_leq;
+
+struct AtLeastIntProperty(i64);
+
+impl<K: AsRef<str>> diagnostics_assertions::PropertyAssertion<K> for AtLeastIntProperty {
+    fn run(&self, actual: &Property<K>) -> Result<(), anyhow::Error> {
+        match actual {
+            Property::Int(_, v) if *v >= self.0 => Ok(()),
+            Property::Int(_, v) => {
+                anyhow::bail!("expected integer >= {}, found {}", self.0, v)
+            }
+            Property::Uint(_, v) if self.0 < 0 || *v >= self.0 as u64 => Ok(()),
+            Property::Uint(_, v) => {
+                anyhow::bail!("expected integer >= {}, found {}", self.0, v)
+            }
+            _ => anyhow::bail!("expected integer property, found {}", actual.discriminant_name()),
+        }
+    }
+}
 
 const REALM_FACTORY_CHILD_NAME: &str = "test_realm_factory";
 
@@ -4522,7 +4540,7 @@ async fn test_activity_governor_reports_on_suspend_blocker_stall(
 
 #[fuchsia::test]
 async fn test_activity_governor_files_crash_report_on_normal_wake_lease() -> Result<()> {
-    let (realm, _) = create_realm_ext(ftest::RealmOptions {
+    let (realm, activity_governor_moniker) = create_realm_ext(ftest::RealmOptions {
         use_suspender: Some(true),
         long_wake_lease_timeout_seconds: Some(1),
         ..Default::default()
@@ -4554,14 +4572,46 @@ async fn test_activity_governor_files_crash_report_on_normal_wake_lease() -> Res
 
     assert_eq!(num_filed, 1);
 
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            long_wake_leases: contains {
+                occurrences: contains {
+                    "test-normal-lease": 1u64,
+                },
+                latest_long_wake_leases: contains {
+                    "0": contains {
+                        name: "test-normal-lease",
+                        start_time_ns: AnyProperty,
+                    }
+                }
+            }
+        }
+    );
+
     drop(token);
+
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            long_wake_leases: contains {
+                latest_long_wake_leases: contains {
+                    "0": contains {
+                        name: "test-normal-lease",
+                        start_time_ns: AnyProperty,
+                        duration_ns: AtLeastIntProperty(1_000_000_000),
+                    }
+                }
+            }
+        }
+    );
 
     Ok(())
 }
 
 #[fuchsia::test]
 async fn test_activity_governor_rates_limit_long_wake_lease_crash_reports() -> Result<()> {
-    let (realm, _) = create_realm_ext(ftest::RealmOptions {
+    let (realm, activity_governor_moniker) = create_realm_ext(ftest::RealmOptions {
         use_suspender: Some(true),
         long_wake_lease_timeout_seconds: Some(1),
         ..Default::default()
@@ -4625,6 +4675,37 @@ async fn test_activity_governor_rates_limit_long_wake_lease_crash_reports() -> R
         .await?;
 
     assert_eq!(num_filed, 3);
+
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            long_wake_leases: contains {
+                occurrences: contains {
+                    "test-lease-a": 3u64,
+                    "test-lease-b": 1u64,
+                },
+                latest_long_wake_leases: contains {
+                    "0": contains {
+                        name: "test-lease-a",
+                        start_time_ns: AnyProperty,
+                    },
+                    "1": contains {
+                        name: "test-lease-a",
+                        start_time_ns: AnyProperty,
+                    },
+                    "2": contains {
+                        name: "test-lease-a",
+                        start_time_ns: AnyProperty,
+                    },
+                    "3": contains {
+                        name: "test-lease-b",
+                        start_time_ns: AnyProperty,
+                    }
+                }
+            }
+        }
+    );
+
     drop(token_b);
 
     Ok(())
