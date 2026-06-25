@@ -425,6 +425,16 @@ expect_includes("test_crypt_service") {
   includes = [ "meta/fxfs_crypt_test.shard.cml" ]
 }
 
+test("symlink_tests") {
+  sources = [ "symlink.cc" ]
+  deps = [
+    ":fs_test",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//src/lib/fxl/test:gtest_main",
+    "//zircon/system/ulib/fdio-caller",
+  ]
+}
+
 static_library("crypt_service") {
   testonly = true
   sources = [

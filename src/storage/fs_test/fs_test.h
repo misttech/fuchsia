@@ -202,6 +202,7 @@ class [[clang::lto_visibility_public]] Filesystem {
     std::string name;
     bool supports_fsck_after_every_transaction = false;
     bool supports_hard_links = true;
+    bool supports_symlinks = false;
     bool supports_inspect = false;
     bool supports_mmap = false;
     bool supports_mmap_shared_write = false;

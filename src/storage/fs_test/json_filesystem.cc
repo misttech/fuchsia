@@ -47,6 +47,7 @@ zx::result<std::unique_ptr<JsonFilesystem>> JsonFilesystem::NewFilesystem(
           .supports_fsck_after_every_transaction =
               ConfigGetOrDefault<bool>(config, "supports_fsck_after_every_transaction", false),
           .supports_hard_links = ConfigGetOrDefault<bool>(config, "supports_hard_links", false),
+          .supports_symlinks = ConfigGetOrDefault<bool>(config, "supports_symlinks", false),
           .supports_inspect = ConfigGetOrDefault<bool>(config, "supports_inspect", false),
           .supports_mmap = ConfigGetOrDefault<bool>(config, "supports_mmap", false),
           .supports_mmap_shared_write =

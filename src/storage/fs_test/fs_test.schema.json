@@ -148,6 +148,11 @@
             "description": "True if hard links are supported",
             "type": "boolean"
         },
+        "supports_symlinks": {
+            "default": false,
+            "description": "True if symlinks are supported",
+            "type": "boolean"
+        },
         "supports_inspect": {
             "default": false,
             "description": "True if the filesystem exposes a standardized inspect tree",

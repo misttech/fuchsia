@@ -813,11 +813,13 @@ impl MutableDirectory for FxDirectory {
                         let scope = self.volume().scope().clone();
                         let flags =
                             fio::Flags::PROTOCOL_SYMLINK | fio::PERM_READABLE | fio::PERM_WRITABLE;
+                        // Wrap in OpenedNode to set open_count to 1 for the connection.
+                        let opened_node = OpenedNode::new(node);
                         // fio::Flags::FLAG_SEND_REPRESENTATION isn't specified so connection
                         // creation is synchronous.
                         symlink::Connection::create_sync(
                             scope,
-                            node,
+                            opened_node.take(),
                             flags,
                             flags.to_object_request(connection),
                         );
@@ -3897,17 +3899,73 @@ mod tests {
                 .expect("FIDL call failed")
                 .expect("rename failed");
 
-            let result = proxy
+            proxy
                 .get_attributes(fio::NodeAttributesQuery::empty())
                 .await
-                .expect("FIDL call failed");
-            assert_eq!(result.err(), Some(zx::Status::NOT_FOUND.into_raw()));
+                .expect("FIDL call failed")
+                .expect("get_attributes failed");
+            let node_info = proxy.describe().await.expect("FIDL call failed");
             assert_matches!(
-                proxy.describe().await,
-                Err(fidl::Error::ClientChannelClosed { status: zx::Status::NOT_FOUND, .. })
+                node_info,
+                fio::SymlinkInfo { target: Some(target), .. } if target == b"target2"
             );
         }
 
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_symlink_link_into_unlinked_fails() {
+        let fixture = TestFixture::new().await;
+        {
+            let root = fixture.root();
+
+            // 1. Create a symlink.
+            root.create_symlink("symlink", b"target", None)
+                .await
+                .expect("FIDL call failed")
+                .expect("create_symlink failed");
+
+            // 2. Open a connection to it.
+            let (proxy, server_end) = create_proxy::<fio::SymlinkMarker>();
+            root.open(
+                "symlink",
+                fio::PERM_READABLE,
+                &Default::default(),
+                server_end.into_channel(),
+            )
+            .expect("open failed");
+
+            // 3. Unlink the symlink.
+            root.unlink("symlink", &fio::UnlinkOptions::default())
+                .await
+                .expect("FIDL call failed")
+                .expect("unlink failed");
+
+            // 4. Try to LinkInto to a new path.
+            let (status, dst_token) = root.get_token().await.expect("FIDL call failed");
+            zx::Status::ok(status).expect("get_token failed");
+
+            let link_result =
+                proxy.link_into(zx::Event::from(dst_token.unwrap()), "symlink_new").await;
+            assert_matches!(
+                link_result,
+                Ok(Err(status)) if status == zx::Status::NOT_FOUND.into_raw()
+            );
+
+            // 5. Verify that symlink_new does not exist.
+            let (proxy_new, server_end_new) = create_proxy::<fio::SymlinkMarker>();
+            root.open(
+                "symlink_new",
+                fio::PERM_READABLE,
+                &Default::default(),
+                server_end_new.into_channel(),
+            )
+            .expect("open failed");
+
+            let describe_result = proxy_new.describe().await;
+            assert_matches!(describe_result, Err(_));
+        }
         fixture.close().await;
     }
 

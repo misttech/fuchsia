@@ -9,7 +9,7 @@ use crate::common::{
 };
 use crate::execution_scope::ExecutionScope;
 use crate::name::parse_name;
-use crate::node::Node;
+use crate::node::{Node, OpenNode};
 use crate::object_request::{ConnectionCreator, Representation, run_synchronous_future_or_spawn};
 use crate::request_handler::{RequestHandler, RequestListener};
 use crate::{ObjectRequest, ObjectRequestRef, ProtocolsExt, ToObjectRequest};
@@ -33,9 +33,9 @@ pub struct SymlinkOptions {
     pub rights: fio::Operations,
 }
 
-pub struct Connection<T> {
+pub struct Connection<T: Node> {
     scope: ExecutionScope,
-    symlink: Arc<T>,
+    symlink: OpenNode<T>,
     options: SymlinkOptions,
 }
 
@@ -52,7 +52,7 @@ impl<T: Symlink> Connection<T> {
         object_request: ObjectRequestRef<'_>,
     ) -> Result<(), Status> {
         let options = protocols.to_symlink_options()?;
-        let connection = Self { scope: scope.clone(), symlink, options };
+        let connection = Self { scope: scope.clone(), symlink: OpenNode::new(symlink), options };
         if let Ok(requests) = object_request.take().into_request_stream(&connection).await {
             scope.spawn(RequestListener::new(requests, connection));
         }
@@ -248,6 +248,7 @@ impl<T: Symlink> Connection<T> {
 
     async fn handle_clone(&mut self, server_end: ServerEnd<fio::SymlinkMarker>) {
         let flags = fio::Flags::PROTOCOL_SYMLINK | fio::Flags::PERM_GET_ATTRIBUTES;
+        self.symlink.will_clone();
         flags
             .to_object_request(server_end)
             .handle_async(async |object_request| {

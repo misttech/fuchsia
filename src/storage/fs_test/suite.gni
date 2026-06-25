@@ -133,6 +133,10 @@ template("fs_test_suite") {
     deps = [ "//src/storage/fs_test:link_tests" ] + extra_deps
   }
 
+  storage_driver_test_realm_component("${suite_name}-symlink-tests") {
+    deps = [ "//src/storage/fs_test:symlink_tests" ] + extra_deps
+  }
+
   storage_driver_test_realm_component("${suite_name}-lseek-tests") {
     deps = [ "//src/storage/fs_test:lseek_tests" ] + extra_deps
   }
@@ -240,6 +244,7 @@ template("fs_test_suite") {
       ":${suite_name}-full-tests",
       ":${suite_name}-inspect-tests",
       ":${suite_name}-link-tests",
+      ":${suite_name}-symlink-tests",
       ":${suite_name}-lseek-tests",
       ":${suite_name}-mmap-tests",
       ":${suite_name}-open-tests",

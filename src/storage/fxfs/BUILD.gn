@@ -300,6 +300,7 @@ fs_test_config("fxfs") {
   # TODO(https://fxbug.dev/42063349) Add support for block sizes greater than the page size.
   max_block_size = 4096
   supports_hard_links = true
+  supports_symlinks = true
   supports_inspect = true
   supports_resize = true
   supports_mmap = true

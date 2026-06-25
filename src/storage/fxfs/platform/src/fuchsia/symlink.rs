@@ -116,6 +116,9 @@ impl FxSymlink {
             _ => Err(FxfsError::NotFile.into()),
         }
     }
+    pub fn to_be_purged(&self) -> bool {
+        (self.open_count.load(Ordering::Relaxed) & TO_BE_PURGED) != 0
+    }
 }
 
 impl Symlink for FxSymlink {
@@ -178,6 +181,9 @@ impl Node for FxSymlink {
         destination_dir: Arc<dyn MutableDirectory>,
         name: Name,
     ) -> Result<(), zx::Status> {
+        if self.to_be_purged() {
+            return Err(zx::Status::NOT_FOUND);
+        }
         let dir = destination_dir.into_any().downcast::<FxDirectory>().unwrap();
         let store = self.handle.store();
         let transaction = store
@@ -216,6 +222,14 @@ impl Node for FxSymlink {
 
     async fn remove_extended_attribute(&self, name: Vec<u8>) -> Result<(), zx::Status> {
         self.handle.remove_extended_attribute(name).await.map_err(map_to_status)
+    }
+
+    fn will_clone(&self) {
+        self.open_count_add_one();
+    }
+
+    fn close(self: Arc<Self>) {
+        self.open_count_sub_one();
     }
 }
 
