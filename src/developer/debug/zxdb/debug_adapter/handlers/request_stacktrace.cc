@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "src/developer/debug/zxdb/debug_adapter/handlers/request_stacktrace.h"
+
 #include <algorithm>
 
 #include "src/developer/debug/zxdb/client/frame.h"
@@ -10,6 +12,11 @@
 #include "src/developer/debug/zxdb/client/target.h"
 #include "src/developer/debug/zxdb/client/thread.h"
 #include "src/developer/debug/zxdb/debug_adapter/context.h"
+
+namespace dap {
+DAP_IMPLEMENT_STRUCT_TYPEINFO_EXT(StackTraceRequestZxdb, StackTraceRequest, "stackTrace",
+                                  DAP_FIELD(remoteUnwind, "remoteUnwind"))
+}  // namespace dap
 
 namespace zxdb {
 
@@ -58,13 +65,18 @@ dap::StackTraceResponse PopulateStackTraceResponse(DebugAdapterContext* ctx, Thr
 }
 
 void OnRequestStackTrace(
-    DebugAdapterContext* ctx, const dap::StackTraceRequest& req,
+    DebugAdapterContext* ctx, const dap::StackTraceRequestZxdb& req,
     std::function<void(dap::ResponseOrError<dap::StackTraceResponse>)> callback) {
   Thread* thread = ctx->GetThread(static_cast<uint64_t>(req.threadId));
   if (thread) {
+    Stack::SyncFrameOptions options;
+    if (req.remoteUnwind.value(false)) {
+      options.remote_unwind = true;
+      options.force_update = true;
+    }
     thread->GetStack().EnsureFrames(
-        {}, [ctx, weak_thread = thread->GetWeakPtr(), request = dap::StackTraceRequest(req),
-             callback](const Err& err) {
+        options, [ctx, weak_thread = thread->GetWeakPtr(),
+                  request = dap::StackTraceRequestZxdb(req), callback](const Err& err) {
           if (!err.has_error() && weak_thread) {
             callback(PopulateStackTraceResponse(ctx, weak_thread.get(), request));
           } else {

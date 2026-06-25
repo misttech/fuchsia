@@ -1,4 +1,4 @@
-// Copyright 2021 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include "dap/protocol.h"
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/zxdb/client/mock_frame.h"
 #include "src/developer/debug/zxdb/client/process.h"
@@ -541,6 +542,64 @@ TEST_F(RequestStackTraceTest, ElideFrames) {
   EXPECT_EQ(got.response.stackFrames[9].name, "_start");
   EXPECT_EQ(got.response.stackFrames[9].presentationHint.value(), "subtle");
   EXPECT_EQ(got.response.stackFrames[9].source.value().origin.value(), "Rust test startup");
+}
+
+TEST_F(RequestStackTraceTest, ArgValidate) {
+  TestPipe pipe;
+  auto s1 = dap::Session::create();
+  s1->connect(std::make_shared<DebugAdapterReader>(pipe.end1()),
+              std::make_shared<DebugAdapterWriter>(pipe.end1()));
+
+  auto s2 = dap::Session::create();
+  s2->connect(std::make_shared<DebugAdapterReader>(pipe.end2()),
+              std::make_shared<DebugAdapterWriter>(pipe.end2()));
+
+  dap::optional<dap::boolean> remoteUnwind;
+  bool is_called = false;
+  s2->registerHandler([&](const dap::StackTraceRequestZxdb& req) {
+    remoteUnwind = req.remoteUnwind;
+    is_called = true;
+    return dap::StackTraceResponse();
+  });
+
+  auto run_s2_payload = [&s2]() {
+    if (auto payload = s2->getPayload()) {
+      payload();
+    }
+  };
+
+  {
+    dap::StackTraceRequestZxdb request_without_remote_unwind;
+    auto res = s1->send(request_without_remote_unwind);
+    is_called = false;
+    run_s2_payload();
+    EXPECT_TRUE(is_called);
+    EXPECT_FALSE(remoteUnwind.has_value());
+  }
+
+  {
+    dap::StackTraceRequestZxdb request_with_remote_unwind{
+        .remoteUnwind = true,
+    };
+    auto res = s1->send(request_with_remote_unwind);
+    is_called = false;
+    run_s2_payload();
+    EXPECT_TRUE(is_called);
+    EXPECT_TRUE(remoteUnwind.has_value());
+    EXPECT_TRUE(remoteUnwind.value());
+  }
+
+  {
+    dap::StackTraceRequestZxdb request_with_remote_unwind{
+        .remoteUnwind = false,
+    };
+    auto res = s1->send(request_with_remote_unwind);
+    is_called = false;
+    run_s2_payload();
+    EXPECT_TRUE(is_called);
+    EXPECT_TRUE(remoteUnwind.has_value());
+    EXPECT_FALSE(remoteUnwind.value());
+  }
 }
 
 }  // namespace zxdb
