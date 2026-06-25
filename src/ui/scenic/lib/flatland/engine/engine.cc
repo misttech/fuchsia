@@ -13,6 +13,7 @@
 
 #include "src/ui/scenic/lib/flatland/global_image_data.h"
 #include "src/ui/scenic/lib/flatland/global_matrix_data.h"
+#include "src/ui/scenic/lib/flatland/global_resolved_layers.h"
 #include "src/ui/scenic/lib/flatland/global_topology_data.h"
 #include "src/ui/scenic/lib/flatland/scene_dumper.h"
 #include "src/ui/scenic/lib/scheduling/frame_scheduler.h"
@@ -149,29 +150,17 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
     first_frame_with_image_is_rendered_ = true;
   }
 
-  std::vector<EngineLayer> layers;
-  std::vector<EngineLayerImage> images;
-  layers.reserve(scene_state.image_rectangles.size());
-  images.reserve(scene_state.images.size());
+  auto resolved_layers =
+      ComputeGlobalResolvedLayers(scene_state.image_rectangles, scene_state.images);
 
-  for (size_t i = 0; i < scene_state.images.size(); ++i) {
-    layers.push_back(EngineLayer{.rect = scene_state.image_rectangles[i],
-                                 .color = scene_state.images[i].multiply_color,
-                                 .blend_mode = scene_state.images[i].blend_mode,
-                                 .flip = scene_state.images[i].flip});
-    images.push_back(EngineLayerImage{
-        .image_id = scene_state.images[i].identifier,
-        .width = scene_state.images[i].width,
-        .height = scene_state.images[i].height,
-    });
-  }
+  RenderData render_data = {
+      .display_id = hw_display->display_id(),
+      .layers = std::move(resolved_layers),
+  };
 
   auto fences = flatland_presenter_->TakeFences();
   auto frame_result = flatland_compositor_->RenderFrame(
-      frame_number, presentation_time,
-      {{.layers = std::move(layers),
-        .images = std::move(images),
-        .display_id = hw_display->display_id()}},
+      frame_number, presentation_time, std::span<const RenderData>(&render_data, 1),
       std::move(fences.release_fences), std::move(fences.release_counters),
       std::move(fences.present_fences), std::move(callback));
   RecordFrameResult(frame_result);

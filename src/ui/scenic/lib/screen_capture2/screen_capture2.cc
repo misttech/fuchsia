@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "src/lib/fsl/handles/object_info.h"
+#include "src/ui/scenic/lib/flatland/global_resolved_layers.h"
 
 using fuchsia::ui::composition::internal::FrameInfo;
 using fuchsia::ui::composition::internal::ScreenCaptureConfig;
@@ -193,29 +194,10 @@ void ScreenCapture::MaybeRenderFrame() {
   FX_DCHECK(current_release_fences_.empty());
   current_release_fences_.push_back(std::move(release_fence));
 
-  std::vector<flatland::EngineLayer> layers;
-  layers.reserve(rects.size());
-  for (size_t i = 0; i < rects.size(); ++i) {
-    layers.push_back(flatland::EngineLayer{
-        .rect = rects[i],
-        .color = image_metadatas[i].multiply_color,
-        .blend_mode = image_metadatas[i].blend_mode,
-        .flip = image_metadatas[i].flip,
-    });
-  }
-
-  std::vector<flatland::EngineLayerImage> images;
-  images.reserve(image_metadatas.size());
-  for (const auto& image : image_metadatas) {
-    images.push_back(flatland::EngineLayerImage{
-        .image_id = image.identifier,
-        .width = image.width,
-        .height = image.height,
-    });
-  }
+  auto layers = flatland::ComputeGlobalResolvedLayers(rects, image_metadatas);
 
   // Render content into user-provided buffer, which will signal the release_fence.
-  renderer_->Render(metadata, layers, images, {.release_fences = current_release_fences_});
+  renderer_->Render(metadata, layers, {.release_fences = current_release_fences_});
 }
 
 void ScreenCapture::HandleRender(uint32_t buffer_index, uint64_t timestamp) {

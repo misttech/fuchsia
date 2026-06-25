@@ -146,16 +146,15 @@ void NullRenderer::SetColorConversionValues(const fidl::Array<float, 9>& coeffic
 // Check that the buffer collections for each of the images passed in have been validated.
 // DCHECK if they have not.
 void NullRenderer::Render(const allocation::ImageMetadata& render_target,
-                          const std::vector<EngineLayer>& layers,
-                          const std::vector<EngineLayerImage>& images,
-                          const RenderArgs& render_args) {
+                          std::span<const ResolvedLayer> layers, const RenderArgs& render_args) {
   std::scoped_lock lock(lock_);
-  for (const auto& image : images) {
-    if (image.image_id == display::kInvalidImageId) {
+  for (const auto& layer : layers) {
+    if (std::holds_alternative<ResolvedLayer::SolidColorContent>(layer.content)) {
       // Solid color layer.
       continue;
     }
 
+    const auto& image = std::get<ResolvedLayer::ImageContent>(layer.content);
     const auto& image_map_itr_ = image_map_.find(image.image_id);
     FX_DCHECK(image_map_itr_ != image_map_.end());
     const auto& image_constraints = image_map_itr_->second;
@@ -184,7 +183,7 @@ fuchsia_images2::PixelFormat NullRenderer::ChoosePreferredRenderTargetFormat(
 
 bool NullRenderer::SupportsRenderInProtected() const { return false; }
 
-bool NullRenderer::RequiresRenderInProtected(const std::vector<EngineLayerImage>& images) const {
+bool NullRenderer::RequiresRenderInProtected(std::span<const ResolvedLayer> layers) const {
   return false;
 }
 

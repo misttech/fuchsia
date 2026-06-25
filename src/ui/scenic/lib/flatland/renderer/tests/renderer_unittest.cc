@@ -18,6 +18,7 @@
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
 #include "src/ui/scenic/lib/allocation/id.h"
 #include "src/ui/scenic/lib/flatland/buffers/util.h"
+#include "src/ui/scenic/lib/flatland/global_resolved_layers.h"
 #include "src/ui/scenic/lib/flatland/renderer/null_renderer.h"
 #include "src/ui/scenic/lib/flatland/renderer/tests/common.h"
 #include "src/ui/scenic/lib/flatland/renderer/vk_renderer.h"
@@ -167,34 +168,14 @@ allocation::GlobalBufferCollectionId SetupBufferCollection(
   return collection_id;
 }
 
-std::vector<EngineLayer> MakeLayers(const std::vector<ImageRect>& rects,
-                                    const std::vector<ImageMetadata>& images = {}) {
-  std::vector<EngineLayer> layers;
-  layers.reserve(rects.size());
-  for (size_t i = 0; i < rects.size(); ++i) {
-    EngineLayer layer;
-    layer.rect = rects[i];
-    if (i < images.size()) {
-      layer.flip = images[i].flip;
-      layer.blend_mode = images[i].blend_mode;
-      layer.color = images[i].multiply_color;
-    }
-    layers.push_back(layer);
+std::vector<ResolvedLayer> MakeLayers(const std::vector<ImageRect>& rects,
+                                      const std::vector<ImageMetadata>& images = {}) {
+  if (images.empty()) {
+    std::vector<allocation::ImageMetadata> dummy_images(
+        rects.size(), allocation::ImageMetadata{.identifier = allocation::kInvalidImageId});
+    return ComputeGlobalResolvedLayers(rects, dummy_images);
   }
-  return layers;
-}
-
-std::vector<EngineLayerImage> MakeImages(const std::vector<ImageMetadata>& images) {
-  std::vector<EngineLayerImage> layer_images;
-  layer_images.reserve(images.size());
-  for (const auto& image : images) {
-    layer_images.push_back({
-        .image_id = image.identifier,
-        .width = image.width,
-        .height = image.height,
-    });
-  }
-  return layer_images;
+  return ComputeGlobalResolvedLayers(rects, images);
 }
 
 }  // anonymous namespace
@@ -492,8 +473,8 @@ void RenderImageAfterBufferCollectionReleasedTest(
 
   // We should still be able to render this image.
   renderer->Render(render_target,
-                   MakeLayers({ImageRect(glm::vec2(0, 0), glm::vec2(kWidth, kHeight))}),
-                   MakeImages({image}), {});
+                   MakeLayers({ImageRect(glm::vec2(0, 0), glm::vec2(kWidth, kHeight))}, {image}),
+                   {});
   if (use_vulkan) {
     auto vk_renderer = static_cast<VkRenderer*>(renderer);
     vk_renderer->WaitIdle();
@@ -558,7 +539,7 @@ void RenderAfterImageReleasedTest(async::TestLoop& loop, Renderer* renderer,
   renderer->ReleaseBufferImage(image.identifier);
 
   // Send an empty render.
-  renderer->Render(render_target, {}, {}, {});
+  renderer->Render(render_target, {}, {});
 }
 
 // Test to make sure we can call the functions import kRenderTarget and kClientImage collections
@@ -679,7 +660,7 @@ void AsyncEventSignalTest(async::TestLoop& loop, Renderer* renderer,
   // call its handler function.
   std::vector<zx::event> fences;
   fences.push_back(std::move(release_fence));
-  renderer->Render(render_target, {}, {}, {.release_fences = fences});
+  renderer->Render(render_target, {}, {.release_fences = fences});
 
   if (use_vulkan) {
     auto vk_renderer = static_cast<VkRenderer*>(renderer);
@@ -921,8 +902,7 @@ VK_TEST_F(VulkanRendererTest, RenderTest) {
       });
 
   // Render the renderable to the render target.
-  renderer->Render(render_target, MakeLayers({renderable}, {renderable_texture}),
-                   MakeImages({renderable_texture}), {});
+  renderer->Render(render_target, MakeLayers({renderable}, {renderable_texture}), {});
   renderer->WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target
@@ -955,8 +935,7 @@ VK_TEST_F(VulkanRendererTest, RenderTest) {
       Orientation::CCW_0_DEGREES);
 
   // Render the renderable to the render target.
-  renderer->Render(render_target, MakeLayers({renderable2}, {renderable_texture}),
-                   MakeImages({renderable_texture}), {});
+  renderer->Render(render_target, MakeLayers({renderable2}, {renderable_texture}), {});
   renderer->WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target
@@ -1060,8 +1039,7 @@ VK_TEST_F(VulkanRendererTest, FullScreenRenderTest) {
       });
 
   // Render the renderable to the render target.
-  renderer->Render(render_target, MakeLayers({renderable}, {renderable_texture}),
-                   MakeImages({renderable_texture}), {});
+  renderer->Render(render_target, MakeLayers({renderable}, {renderable_texture}), {});
   renderer->WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target
@@ -1228,8 +1206,7 @@ VK_TEST_F(VulkanRendererTest, RotationRenderTest) {
       });
 
   // Render the renderable to the render target.
-  renderer->Render(render_target, MakeLayers({renderable}, {renderable_texture}),
-                   MakeImages({renderable_texture}), {});
+  renderer->Render(render_target, MakeLayers({renderable}, {renderable_texture}), {});
   renderer->WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target
@@ -1267,8 +1244,7 @@ VK_TEST_F(VulkanRendererTest, RotationRenderTest) {
       {renderable}, fuchsia_ui_composition::Rotation::kCw90Degrees, kTargetWidthFlipped,
       kTargetHeightFlipped);
   // Render the renderable to the render target.
-  renderer->Render(render_target_flipped, MakeLayers(renderables_90deg, {renderable_texture}),
-                   MakeImages({renderable_texture}), {});
+  renderer->Render(render_target_flipped, MakeLayers(renderables_90deg, {renderable_texture}), {});
   renderer->WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target
@@ -1306,8 +1282,7 @@ VK_TEST_F(VulkanRendererTest, RotationRenderTest) {
   auto renderables_180deg = screen_capture::ScreenCapture::RotateRenderables(
       {renderable}, fuchsia_ui_composition::Rotation::kCw180Degrees, 16, 8);
   // Render the renderable to the render target.
-  renderer->Render(render_target, MakeLayers(renderables_180deg, {renderable_texture}),
-                   MakeImages({renderable_texture}), {});
+  renderer->Render(render_target, MakeLayers(renderables_180deg, {renderable_texture}), {});
   renderer->WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target
@@ -1345,8 +1320,7 @@ VK_TEST_F(VulkanRendererTest, RotationRenderTest) {
       {renderable}, fuchsia_ui_composition::Rotation::kCw270Degrees, kTargetWidthFlipped,
       kTargetHeightFlipped);
   // Render the renderable to the render target.
-  renderer->Render(render_target_flipped, MakeLayers(renderables_270deg, {renderable_texture}),
-                   MakeImages({renderable_texture}), {});
+  renderer->Render(render_target_flipped, MakeLayers(renderables_270deg, {renderable_texture}), {});
   renderer->WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target
@@ -1499,8 +1473,7 @@ VK_TEST_F(VulkanRendererTest, FlipLeftRightAndRotate90RenderTest) {
       });
 
   // Render the renderable to the render target.
-  renderer.Render(render_target, MakeLayers({renderable}, {renderable_texture}),
-                  MakeImages({renderable_texture}), {});
+  renderer.Render(render_target, MakeLayers({renderable}, {renderable_texture}), {});
   renderer.WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target
@@ -1538,8 +1511,7 @@ VK_TEST_F(VulkanRendererTest, FlipLeftRightAndRotate90RenderTest) {
       {renderable}, fuchsia_ui_composition::Rotation::kCw90Degrees, kTargetWidthFlipped,
       kTargetHeightFlipped);
   // Render the renderable to the render target.
-  renderer.Render(render_target_flipped, MakeLayers(renderables_90deg, {renderable_texture}),
-                  MakeImages({renderable_texture}), {});
+  renderer.Render(render_target_flipped, MakeLayers(renderables_90deg, {renderable_texture}), {});
   renderer.WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target
@@ -1678,8 +1650,7 @@ VK_TEST_F(VulkanRendererTest, FlipUpDownAndRotate90RenderTest) {
       });
 
   // Render the renderable to the render target.
-  renderer.Render(render_target, MakeLayers({renderable}, {renderable_texture}),
-                  MakeImages({renderable_texture}), {});
+  renderer.Render(render_target, MakeLayers({renderable}, {renderable_texture}), {});
   renderer.WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target
@@ -1705,8 +1676,7 @@ VK_TEST_F(VulkanRendererTest, FlipUpDownAndRotate90RenderTest) {
       {renderable}, fuchsia_ui_composition::Rotation::kCw90Degrees, kTargetWidthFlipped,
       kTargetHeightFlipped);
   // Render the renderable to the render target.
-  renderer.Render(render_target_flipped, MakeLayers(renderables_90deg, {renderable_texture}),
-                  MakeImages({renderable_texture}), {});
+  renderer.Render(render_target_flipped, MakeLayers(renderables_90deg, {renderable_texture}), {});
   renderer.WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target
@@ -1770,8 +1740,7 @@ VK_TEST_F(VulkanRendererColorTest, SolidColorTest) {
   ImageRect renderable(glm::vec2(6, 3), glm::vec2(kRenderableWidth, kRenderableHeight));
 
   // Render the renderable to the render target.
-  renderer->Render(render_target, MakeLayers({renderable}, {renderable_image_data}),
-                   MakeImages({renderable_image_data}), {});
+  renderer->Render(render_target, MakeLayers({renderable}, {renderable_image_data}), {});
   renderer->WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target
@@ -1845,7 +1814,7 @@ VK_TEST_F(VulkanRendererColorTest, ColorCorrectionTest) {
 
   // Render the renderable to the render target.
   renderer->Render(render_target, MakeLayers({renderable}, {renderable_image_data}),
-                   MakeImages({renderable_image_data}), {.apply_color_conversion = true});
+                   {.apply_color_conversion = true});
   renderer->WaitIdle();
 
   // Calculate expected color.
@@ -1937,8 +1906,7 @@ VK_TEST_F(VulkanRendererColorTest, MultipleSolidColorTest) {
   // Render the renderable to the render target.
   renderer->Render(
       render_target,
-      MakeLayers({renderable, renderable_2}, {renderable_image_data, renderable_image_data_2}),
-      MakeImages({renderable_image_data, renderable_image_data_2}), {});
+      MakeLayers({renderable, renderable_2}, {renderable_image_data, renderable_image_data_2}), {});
   renderer->WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target
@@ -2044,8 +2012,7 @@ VK_TEST_F(VulkanRendererColorTest, MixSolidColorAndImageTest) {
   // Render the renderable to the render target.
   renderer->Render(
       render_target,
-      MakeLayers({renderable, renderable_2}, {renderable_image_data, renderable_image_data_2}),
-      MakeImages({renderable_image_data, renderable_image_data_2}), {});
+      MakeLayers({renderable, renderable_2}, {renderable_image_data, renderable_image_data_2}), {});
   renderer->WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target
@@ -2170,7 +2137,7 @@ VK_TEST_F(VulkanRendererColorTest, TransparencyTest) {
   renderer->Render(
       render_target,
       MakeLayers({renderable, transparent_renderable}, {renderable_texture, transparent_texture}),
-      MakeImages({renderable_texture, transparent_texture}), {});
+      {});
   renderer->WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target
@@ -2316,7 +2283,7 @@ VK_TEST_P(VulkanRendererParameterizedMultiplyColorTest, MultiplyColorTest) {
   renderer->Render(
       render_target,
       MakeLayers({renderable, transparent_renderable}, {renderable_texture, transparent_texture}),
-      MakeImages({renderable_texture, transparent_texture}), {});
+      {});
   renderer->WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target
@@ -2508,8 +2475,7 @@ VK_TEST_P(VulkanRendererParameterizedYuvTest, YuvTest) {
                  });
 
   // Render the renderable to the render target.
-  renderer->Render(render_target_metadata, MakeLayers({image_renderable}, {image_metadata}),
-                   MakeImages({image_metadata}), {});
+  renderer->Render(render_target_metadata, MakeLayers({image_renderable}, {image_metadata}), {});
   renderer->WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target and read
@@ -2651,8 +2617,7 @@ VK_TEST_F(VulkanRendererTest, ProtectedMemoryTest) {
   // width/height of (32,32).
   ImageRect image_renderable(glm::vec2(0, 0), glm::vec2(kTargetWidth, kTargetHeight));
   // Render the renderable to the render target.
-  renderer->Render(render_target_metadata, MakeLayers({image_renderable}, {image_metadata}),
-                   MakeImages({image_metadata}), {});
+  renderer->Render(render_target_metadata, MakeLayers({image_renderable}, {image_metadata}), {});
   renderer->WaitIdle();
 
   // Note that we cannot read pixel values from either buffer because protected memory does not
@@ -2723,12 +2688,13 @@ VK_TEST_F(VulkanRendererTest, ReadbackTest) {
   ImageRect renderable(glm::vec2(0, 0), glm::vec2(kTargetWidth, kTargetHeight));
 
   // Render the renderable to the render target.
-  EngineLayer layer = {
+  ResolvedLayer layer = {
       .rect = renderable,
-      .color = renderable_image_data.multiply_color,
+      .color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = renderable_image_data.blend_mode,
+      .content = ResolvedLayer::SolidColorContent{.color = renderable_image_data.multiply_color},
   };
-  renderer->Render(render_target, {layer}, MakeImages({renderable_image_data}), {});
+  renderer->Render(render_target, std::span<const ResolvedLayer>(&layer, 1), {});
   renderer->WaitIdle();
 
   // Get a raw pointer from the readback collection's vmo that represents the copied render target

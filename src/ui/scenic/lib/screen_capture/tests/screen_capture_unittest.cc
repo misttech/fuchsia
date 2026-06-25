@@ -288,7 +288,7 @@ TEST_F(ScreenCaptureTest, ConfigureTwice) {
   EXPECT_TRUE(alloc_result);
 
   // Capture call to renderer.
-  EXPECT_CALL(*renderer_, Render(_, _, _, _)).Times(1);
+  EXPECT_CALL(*renderer_, Render(_, _, _)).Times(1);
 
   // Request a frame in the buffer.
   const auto& response_buffer1 = CaptureScreen(sc);
@@ -319,7 +319,7 @@ TEST_F(ScreenCaptureTest, ConfigureTwice) {
   EXPECT_TRUE(alloc_result);
 
   // Capture call to renderer.
-  EXPECT_CALL(*renderer_, Render(_, _, _, _)).Times(1);
+  EXPECT_CALL(*renderer_, Render(_, _, _)).Times(1);
 
   // Request a frame into new buffer.
   const auto& response1_buffer2 = CaptureScreen(sc);
@@ -372,7 +372,7 @@ TEST_F(ScreenCaptureTest, GetNextFrameSuccess) {
   EXPECT_TRUE(configure);
 
   // Capture call to renderer.
-  EXPECT_CALL(*renderer_, Render(_, _, _, _)).Times(1);
+  EXPECT_CALL(*renderer_, Render(_, _, _)).Times(1);
 
   const auto& result = CaptureScreen(sc);
   EXPECT_TRUE(result.is_ok());
@@ -406,7 +406,7 @@ TEST_F(ScreenCaptureTest, GetNextFrameBufferFullError) {
   EXPECT_TRUE(configure);
 
   // Capture call to renderer.
-  EXPECT_CALL(*renderer_, Render(_, _, _, _)).Times(1);
+  EXPECT_CALL(*renderer_, Render(_, _, _)).Times(1);
 
   // Request frame. This will use up the only buffer in the collection.
   const auto& result1 = CaptureScreen(sc);
@@ -446,14 +446,14 @@ TEST_F(ScreenCaptureTest, GetNextFrameMultipleBuffers) {
   EXPECT_TRUE(configure);
 
   // Capture call to renderer.
-  EXPECT_CALL(*renderer_, Render(_, _, _, _)).Times(1);
+  EXPECT_CALL(*renderer_, Render(_, _, _)).Times(1);
 
   // Request frame.
   const auto& result1 = CaptureScreen(sc);
   EXPECT_TRUE(result1.is_ok());
 
   // Capture call to renderer.
-  EXPECT_CALL(*renderer_, Render(_, _, _, _)).Times(1);
+  EXPECT_CALL(*renderer_, Render(_, _, _)).Times(1);
 
   // Request another frame. This should fill the second buffer.
   const auto& result2 = CaptureScreen(sc);
@@ -610,7 +610,7 @@ TEST_F(ScreenCaptureTest, ReleaseFrameFromFullBuffer) {
   // Fill buffers.
   for (uint32_t i = 0; i < kNumBuffers; i++) {
     // Capture call to renderer.
-    EXPECT_CALL(*renderer_, Render(_, _, _, _)).Times(1);
+    EXPECT_CALL(*renderer_, Render(_, _, _)).Times(1);
     const auto& result = CaptureScreen(sc);
     EXPECT_TRUE(result.is_ok());
   }
@@ -631,7 +631,7 @@ TEST_F(ScreenCaptureTest, ReleaseFrameFromFullBuffer) {
   EXPECT_TRUE(alloc_result);
 
   // Capture call to renderer.
-  EXPECT_CALL(*renderer_, Render(_, _, _, _)).Times(1);
+  EXPECT_CALL(*renderer_, Render(_, _, _)).Times(1);
 
   // Now we request another frame. This should be rendered to the VMO at the index we just released.
   const auto& result_after_release = CaptureScreen(sc);

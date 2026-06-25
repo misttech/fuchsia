@@ -513,8 +513,7 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
                  data.display_id.value(), "rectangle_count", data.layers.size());
 
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
-  // Every rectangle should have an associated image.
-  const uint32_t num_images = static_cast<uint32_t>(data.images.size());
+  const uint32_t num_layers = static_cast<uint32_t>(data.layers.size());
 
   DisplayEngineData& display_engine_data = display_engine_data_map_.at(data.display_id);
 
@@ -528,17 +527,17 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
   }
 
   // Proactively fallback to GPU composition if the number of layers exceeds the hardware limit.
-  if (num_images > display_engine_data.max_layer_count) {
+  if (num_layers > display_engine_data.max_layer_count) {
     TRACE_INSTANT("gfx", "scenic_d2d_failed: too few hardware layers available",
                   TRACE_SCOPE_THREAD);
     FLATLAND_VERBOSE_LOG << "SetRenderDataOnDisplay() falling back to GPU: "
-                         << "requested layers (" << num_images << ") exceeds limit ("
+                         << "requested layers (" << num_layers << ") exceeds limit ("
                          << display_engine_data.max_layer_count << ") for display "
                          << data.display_id.value();
     return false;
   }
 
-  if (num_images == 0) {
+  if (num_layers == 0) {
     SetDisplayLayers(data.display_id, std::span(&display_engine_data.empty_scene_layer, 1));
     return true;
   }
@@ -546,21 +545,22 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
   // Since we map 1 image to 1 layer, if there are more images than layers available for
   // the given display, then they cannot be directly composited to the display in hardware.
   std::vector<display::LayerId>& layers = display_engine_data.layers;
-  if (layers.size() < num_images) {
+  if (layers.size() < num_layers) {
     TRACE_INSTANT("gfx", "scenic_d2d_failed: insufficient layers available", TRACE_SCOPE_THREAD);
     FLATLAND_VERBOSE_LOG << "SetRenderDataOnDisplay() failed: insufficient layers available.";
     return false;
   }
 
   // We only set as many layers as needed for the images we have.
-  SetDisplayLayers(data.display_id, std::span{layers.data(), num_images});
+  SetDisplayLayers(data.display_id, std::span{layers.data(), num_layers});
 
-  for (uint32_t i = 0; i < num_images; i++) {
-    const allocation::GlobalImageId image_id = data.images[i].image_id;
-    if (image_id != allocation::kInvalidImageId) {
+  for (uint32_t i = 0; i < num_layers; i++) {
+    const auto& layer = data.layers[i];
+    if (std::holds_alternative<ResolvedLayer::ImageContent>(layer.content)) {
+      const auto& image = std::get<ResolvedLayer::ImageContent>(layer.content);
+      const allocation::GlobalImageId image_id = image.image_id;
       if (image_tiling_type_map_.contains(image_id)) {
-        ApplyLayerImage(layers[i], data.layers[i], data.images[i],
-                        /*wait_id*/ display::kInvalidEventId);
+        ApplyLayerImage(layers[i], layer, /*wait_id=*/display::kInvalidEventId);
       } else {
         // TODO(https://fxbug.dev/496160334): Previously, the only way this could happen is if the
         // image couldn't be displayed directly by the display driver (e.g. for formats that Vulkan
@@ -572,8 +572,14 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
         return false;
       }
     } else {
-      ApplyLayerColor(layers[i], data.layers[i].rect, data.layers[i].color,
-                      data.layers[i].blend_mode);
+      const auto& solid_color = std::get<ResolvedLayer::SolidColorContent>(layer.content);
+      const std::array<float, 4> final_color = {
+          solid_color.color[0] * layer.color[0],
+          solid_color.color[1] * layer.color[1],
+          solid_color.color[2] * layer.color[2],
+          solid_color.color[3] * layer.color[3],
+      };
+      ApplyLayerColor(layers[i], layer.rect, final_color, layer.blend_mode);
     }
   }
 
@@ -637,12 +643,15 @@ void DisplayCompositor::ApplyLayerColor(const display::LayerId& layer_id,
 #endif
 }
 
-void DisplayCompositor::ApplyLayerImage(const display::LayerId& layer_id, const EngineLayer& layer,
-                                        const EngineLayerImage& image,
+void DisplayCompositor::ApplyLayerImage(const display::LayerId& layer_id,
+                                        const ResolvedLayer& layer,
                                         const display::EventId& wait_id) {
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::ApplyLayerImage");
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   FX_DCHECK(display_coordinator_.is_valid());
+  FX_DCHECK(std::holds_alternative<ResolvedLayer::ImageContent>(layer.content));
+
+  const auto& image = std::get<ResolvedLayer::ImageContent>(layer.content);
 
   const auto [src, dst] = DisplaySrcDstFrames::New(layer.rect);
   FX_DCHECK(src.width() && src.height()) << "Source frame cannot be empty.";
@@ -694,7 +703,7 @@ zx::result<> DisplayCompositor::ApplyConfig(uint64_t frame_number, uint64_t trac
 
 bool DisplayCompositor::PerformGpuComposition(
     const uint64_t frame_number, const uint64_t trace_flow_id,
-    const zx::time_monotonic presentation_time, const std::vector<RenderData>& render_data_list,
+    const zx::time_monotonic presentation_time, std::span<const RenderData> render_data_list,
     std::vector<zx::event> release_fences, std::vector<zx::counter> release_counters,
     std::vector<zx::counter> present_fences, scheduling::FramePresentedCallback callback) {
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::PerformGpuComposition");
@@ -736,7 +745,7 @@ bool DisplayCompositor::PerformGpuComposition(
     const uint32_t curr_vmo = display_engine_data.curr_vmo;
     display_engine_data.curr_vmo =
         (display_engine_data.curr_vmo + 1) % display_engine_data.vmo_count;
-    const auto& render_targets = renderer_->RequiresRenderInProtected(render_data.images)
+    const auto& render_targets = renderer_->RequiresRenderInProtected(render_data.layers)
                                      ? display_engine_data.protected_render_targets
                                      : display_engine_data.render_targets;
     FX_DCHECK(curr_vmo < render_targets.size()) << curr_vmo << "/" << render_targets.size();
@@ -749,16 +758,18 @@ bool DisplayCompositor::PerformGpuComposition(
     event_data.wait_event.signal(ZX_EVENT_SIGNALED, 0);
 
     // Apply the debugging color to the images.
-    // Unfortunately we copy the list here due to constness.
-    auto layers = render_data.layers;
+    std::vector<ResolvedLayer> tinted_layers;
     if (config_.tint_gpu_fallback_images) {
-      for (auto& layer : layers) {
+      // Unfortunately we copy the list here due to constness.
+      tinted_layers.assign(render_data.layers.begin(), render_data.layers.end());
+      for (auto& layer : tinted_layers) {
         layer.color[0] *= kGpuRenderingDebugColor[0];
         layer.color[1] *= kGpuRenderingDebugColor[1];
         layer.color[2] *= kGpuRenderingDebugColor[2];
         layer.color[3] *= kGpuRenderingDebugColor[3];
       }
     }
+    const std::span layers = config_.tint_gpu_fallback_images ? tinted_layers : render_data.layers;
 
     // Prepare semaphores for this render pass.
     std::array<zx::event, 2> render_fences;
@@ -776,7 +787,7 @@ bool DisplayCompositor::PerformGpuComposition(
       render_args.display_frame_number = frame_number;
     }
     // const render_args allows us to retrieve the fences after the render call.
-    renderer_->Render(render_target, layers, render_data.images, render_args);
+    renderer_->Render(render_target, layers, render_args);
 
     event_data.wait_event = std::move(render_args.release_fences[0]);
     if (is_final_display) {
@@ -789,21 +800,21 @@ bool DisplayCompositor::PerformGpuComposition(
       return false;
     }
 
-    /* const*/ display::LayerId layer = display_engine_data.layers[0];
-    SetDisplayLayers(render_data.display_id, std::span<display::LayerId>{&layer, 1});
+    /* const*/ display::LayerId layer_id = display_engine_data.layers[0];
+    SetDisplayLayers(render_data.display_id, std::span<display::LayerId>{&layer_id, 1});
 
-    EngineLayer engine_layer = {
+    ResolvedLayer gpu_layer = {
         .rect = {glm::vec2(0), glm::vec2(render_target.width, render_target.height)},
         .color = render_target.multiply_color,
+        .content =
+            ResolvedLayer::ImageContent{
+                .image_id = render_target.identifier,
+                .width = render_target.width,
+                .height = render_target.height,
+            },
     };
 
-    EngineLayerImage layer_image = {
-        .image_id = render_target.identifier,
-        .width = render_target.width,
-        .height = render_target.height,
-    };
-
-    ApplyLayerImage(layer, engine_layer, layer_image, event_data.wait_id);
+    ApplyLayerImage(layer_id, gpu_layer, event_data.wait_id);
 
     applied_display_mode =
         applied_display_mode || MaybeSetPendingDisplayMode(render_data.display_id);
@@ -835,7 +846,7 @@ bool DisplayCompositor::PerformGpuComposition(
 
 DisplayCompositor::RenderFrameResult DisplayCompositor::RenderFrame(
     const uint64_t frame_number, const zx::time_monotonic presentation_time,
-    const std::vector<RenderData>& render_data_list, std::vector<zx::event> release_fences,
+    std::span<const RenderData> render_data_list, std::vector<zx::event> release_fences,
     std::vector<zx::counter> release_counters, std::vector<zx::counter> present_fences,
     scheduling::FramePresentedCallback callback, RenderFrameTestArgs test_args) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
@@ -904,7 +915,7 @@ DisplayCompositor::RenderFrameResult DisplayCompositor::RenderFrame(
   return RenderFrameResult::kFailure;
 }
 
-bool DisplayCompositor::TryDirectToDisplay(const std::vector<RenderData>& render_data_list,
+bool DisplayCompositor::TryDirectToDisplay(std::span<const RenderData> render_data_list,
                                            uint64_t frame_number, uint64_t trace_flow_id) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   FX_DCHECK(config_.enable_direct_to_display);
@@ -1366,8 +1377,7 @@ bool DisplayCompositor::MaybeSetPendingDisplayMode(const display::DisplayId& dis
   return true;
 }
 
-void DisplayCompositor::ClearAllPendingDisplayModes(
-    const std::vector<RenderData>& render_data_list) {
+void DisplayCompositor::ClearAllPendingDisplayModes(std::span<const RenderData> render_data_list) {
   for (auto& render_data : render_data_list) {
     auto it = display_engine_data_map_.find(render_data.display_id);
     if (it == display_engine_data_map_.end()) {

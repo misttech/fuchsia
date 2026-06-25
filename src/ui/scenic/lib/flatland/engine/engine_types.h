@@ -10,6 +10,8 @@
 #include <fidl/fuchsia.math/cpp/fidl.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 
+#include <span>
+
 #include "src/ui/scenic/lib/display/fidl_id_types.h"
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
 #include "src/ui/scenic/lib/types/rectangle.h"
@@ -52,12 +54,11 @@ struct DisplaySrcDstFrames {
 // of |layers| and |images| must be the same, and each layer/image pair for a given
 // index represents a single renderable object.
 struct RenderData {
-  std::vector<EngineLayer> layers;
-  std::vector<EngineLayerImage> images;
   // TODO(https://fxbug.dev/42149711): should we remove this, and pass to RenderFrame() as a
   // std::map of RenderData keyed by display_id?  That would have the benefit of guaranteeing by
   // construction that each display_id could only appear once.
   display::DisplayId display_id;
+  std::span<const ResolvedLayer> layers;
 };
 
 }  // namespace flatland

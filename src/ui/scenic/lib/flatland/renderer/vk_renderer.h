@@ -56,8 +56,7 @@ class VkRenderer final : public Renderer {
 
   // |Renderer|.
   // Only called from the main thread.
-  void Render(const allocation::ImageMetadata& render_target,
-              const std::vector<EngineLayer>& layers, const std::vector<EngineLayerImage>& images,
+  void Render(const allocation::ImageMetadata& render_target, std::span<const ResolvedLayer> layers,
               const RenderArgs& render_args) override;
 
   // |Renderer|.
@@ -77,7 +76,7 @@ class VkRenderer final : public Renderer {
 
   // |Renderer|.
   // Only called from the main thread.
-  bool RequiresRenderInProtected(const std::vector<EngineLayerImage>& images) const override;
+  bool RequiresRenderInProtected(std::span<const ResolvedLayer> layers) const override;
 
   // Wait for all gpu operations to complete.
   // Only called from the main thread.

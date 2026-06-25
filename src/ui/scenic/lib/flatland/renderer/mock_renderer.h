@@ -31,8 +31,8 @@ class MockRenderer : public Renderer {
   MOCK_METHOD(void, ReleaseBufferImage, (allocation::GlobalImageId image_id));
 
   MOCK_METHOD(void, Render,
-              (const allocation::ImageMetadata&, const std::vector<EngineLayer>&,
-               const std::vector<EngineLayerImage>&, const RenderArgs& render_args));
+              (const allocation::ImageMetadata&, std::span<const ResolvedLayer>,
+               const RenderArgs& render_args));
 
   MOCK_METHOD(void, SetColorConversionValues,
               ((const fidl::Array<float, 9>&), (const fidl::Array<float, 3>&),
@@ -43,7 +43,7 @@ class MockRenderer : public Renderer {
 
   MOCK_METHOD(bool, SupportsRenderInProtected, (), (const));
 
-  MOCK_METHOD(bool, RequiresRenderInProtected, (const std::vector<EngineLayerImage>&), (const));
+  MOCK_METHOD(bool, RequiresRenderInProtected, (std::span<const ResolvedLayer>), (const));
 };
 
 }  // namespace flatland

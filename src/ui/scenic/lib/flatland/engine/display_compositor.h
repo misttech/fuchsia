@@ -123,7 +123,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // Only called from the main thread.
   RenderFrameResult RenderFrame(
       uint64_t frame_number, zx::time presentation_time,
-      const std::vector<RenderData>& render_data_list, std::vector<zx::event> release_fences,
+      std::span<const RenderData> render_data_list, std::vector<zx::event> release_fences,
       std::vector<zx::counter> release_counters, std::vector<zx::counter> present_fences,
       scheduling::FramePresentedCallback callback,
       // Allows customization of behavior for tests.  Default values are used in production.
@@ -220,7 +220,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // Used when we're forced to fall back to GPU rendering.
   bool PerformGpuComposition(
       uint64_t frame_number, uint64_t trace_flow_id, zx::time presentation_time,
-      const std::vector<RenderData>& render_data_list, std::vector<zx::event> release_fences,
+      std::span<const RenderData> render_data_list, std::vector<zx::event> release_fences,
       std::vector<zx::counter> release_counters, std::vector<zx::counter> present_fences,
       scheduling::FramePresentedCallback callback) FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
@@ -231,7 +231,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
 
   // Calls SetRenderData for each item in |render_data_list| and applies direct-to-display color
   // conversion. Return false if this fails for any RenderData.
-  bool TryDirectToDisplay(const std::vector<RenderData>& render_data_list, uint64_t frame_number,
+  bool TryDirectToDisplay(std::span<const RenderData> render_data_list, uint64_t frame_number,
                           uint64_t trace_flow_id) FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Sets the provided layers onto the display referenced by the given display_id.
@@ -243,10 +243,9 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
                        const std::array<float, 4>& color, const types::BlendMode& blend_mode)
       FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
-  // Takes an EngineLayerImage and directly composites it to a hardware layer on the display.
-  void ApplyLayerImage(const display::LayerId& layer_id, const EngineLayer& layer,
-                       const EngineLayerImage& image, const display::EventId& wait_id)
-      FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
+  // Takes a ResolvedLayer and directly composites it to a hardware layer on the display.
+  void ApplyLayerImage(const display::LayerId& layer_id, const ResolvedLayer& layer,
+                       const display::EventId& wait_id) FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Applies the config to the display coordinator and record the corresponding ConfigStamp, so that
   // we can observe Vsync events to know when this config was actually displayed.
@@ -268,7 +267,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // to apply.
   bool MaybeSetPendingDisplayMode(const display::DisplayId& display_id)
       FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
-  void ClearAllPendingDisplayModes(const std::vector<RenderData>& render_data_list)
+  void ClearAllPendingDisplayModes(std::span<const RenderData> render_data_list)
       FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // This mutex protects access to class members that are accessed on main thread and the Flatland

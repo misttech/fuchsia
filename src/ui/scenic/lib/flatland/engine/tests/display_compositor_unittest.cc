@@ -14,6 +14,7 @@
 #include <lib/zx/time.h>
 
 #include <memory>
+#include <span>
 
 #include <gmock/gmock.h>
 
@@ -223,7 +224,7 @@ class DisplayCompositorTest : public DisplayCompositorTestBase {
            display_compositor_->buffer_collection_supports_display_[id];
   }
 
-  bool TryDirectToDisplay(const std::vector<RenderData>& render_data_list) {
+  bool TryDirectToDisplay(std::span<const RenderData> render_data_list) {
     std::scoped_lock lock(display_compositor_->lock_);
     return display_compositor_->TryDirectToDisplay(render_data_list, /* frame_number= */ 1,
                                                    /* trace_flow_id= */ 1);
@@ -936,10 +937,10 @@ TEST_F(DisplayCompositorTest, VsyncConfigStampAreProcessed) {
   static constexpr display::WireConfigStamp kConfigStamp1(1);
   static constexpr display::WireConfigStamp kConfigStamp2(2);
   EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(2).WillRepeatedly(Return());
-  display_compositor_->RenderFrame(1, zx::time_monotonic(1), std::vector<RenderData>(), {}, {}, {},
-                                   [](const scheduling::Timestamps&) {});
-  display_compositor_->RenderFrame(2, zx::time_monotonic(2), std::vector<RenderData>(), {}, {}, {},
-                                   [](const scheduling::Timestamps&) {});
+  display_compositor_->RenderFrame(1, zx::time_monotonic(1), std::span<const RenderData>(), {}, {},
+                                   {}, [](const scheduling::Timestamps&) {});
+  display_compositor_->RenderFrame(2, zx::time_monotonic(2), std::span<const RenderData>(), {}, {},
+                                   {}, [](const scheduling::Timestamps&) {});
 
   EXPECT_EQ(2u, GetPendingApplyConfigs().size());
 
@@ -1207,10 +1208,10 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
 
   EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(1).WillOnce(Return());
 
-  display_compositor_->RenderFrame(
-      1, zx::time_monotonic(1),
-      GenerateDisplayListForTest({{kDisplayId, {display_info, parent_root_handle}}}), {}, {}, {},
-      [](const scheduling::Timestamps&) {});
+  auto render_data_list =
+      GenerateDisplayListForTest({{kDisplayId, {display_info, parent_root_handle}}});
+  display_compositor_->RenderFrame(1, zx::time_monotonic(1), render_data_list, {}, {}, {},
+                                   [](const scheduling::Timestamps&) {});
 
   // Cleanup: All layers should be destroyed.
   for (uint64_t i = 1; i < layer_id_value; ++i) {
@@ -1407,10 +1408,10 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
 
   EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(1).WillOnce(Return());
 
-  display_compositor_->RenderFrame(
-      1, zx::time_monotonic(1),
-      GenerateDisplayListForTest({{kDisplayId, {display_info, parent_root_handle}}}), {}, {}, {},
-      [](const scheduling::Timestamps&) {});
+  auto render_data_list =
+      GenerateDisplayListForTest({{kDisplayId, {display_info, parent_root_handle}}});
+  display_compositor_->RenderFrame(1, zx::time_monotonic(1), render_data_list, {}, {}, {},
+                                   [](const scheduling::Timestamps&) {});
 
   for (uint64_t i = 1; i < layer_id_value; ++i) {
     EXPECT_CALL(
@@ -1660,10 +1661,9 @@ TEST_F(DisplayCompositorTest, SetDisplayLayers_WithNoImages_UsesEmptySceneLayer)
   // This triggers SetRenderDataOnDisplay with 0 images.
   auto session = CreateSession();
   const TransformHandle root_handle = session.graph().CreateTransform();
-  display_compositor_->RenderFrame(
-      1, zx::time_monotonic(1),
-      GenerateDisplayListForTest({{kDisplayId, {display_info, root_handle}}}), {}, {}, {},
-      [](const scheduling::Timestamps&) {});
+  auto render_data_list = GenerateDisplayListForTest({{kDisplayId, {display_info, root_handle}}});
+  display_compositor_->RenderFrame(1, zx::time_monotonic(1), render_data_list, {}, {}, {},
+                                   [](const scheduling::Timestamps&) {});
 
   // Cleanup: All layers should be destroyed.
   for (uint64_t i = 1; i < layer_id_value; ++i) {
@@ -1719,6 +1719,202 @@ TEST_F(DisplayCompositorTest, TryDirectToDisplayExceedsHardwareLayerLimitFallbac
   EXPECT_FALSE(result);
 
   // Cleanup: All layers (kMaxDisplayLayersCount + 1 empty scene layer) should be destroyed.
+  for (uint64_t i = 1; i <= kMaxDisplayLayersCount + 1; ++i) {
+    EXPECT_CALL(
+        *mock_display_coordinator_,
+        DestroyLayer(
+            MatchRequestField(DestroyLayer, layer_id, Eq(display::WireLayerId{.value = i})), _))
+        .Times(1)
+        .WillOnce(Return());
+  }
+  EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
+}
+
+TEST_F(DisplayCompositorTest, SolidColorContentTakesColorLayerPath) {
+  const display::DisplayId kDisplayId(1);
+  glm::uvec2 resolution(1024, 768);
+  DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
+  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y,
+                           kMaxDisplayLayersCount);
+
+  uint64_t layer_id_value = 1;
+  EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_, _))
+      .Times(kMaxDisplayLayersCount + 1)
+      .WillRepeatedly(testing::Invoke(
+          [&](fidl::WireServer<fuchsia_hardware_display::Coordinator>::CreateLayerRequestView
+                  request,
+              MockDisplayCoordinator::CreateLayerCompleter::Sync& completer) {
+            EXPECT_EQ(request->layer_id.value, layer_id_value++);
+            completer.Reply(fit::ok());
+          }));
+
+  display_compositor_->AddDisplay(&display, display_info, /*num_vmos*/ 0,
+                                  /*out_buffer_collection*/ nullptr);
+
+  ResolvedLayer layer = {
+      .rect = {glm::vec2(0, 0), glm::vec2(resolution.x, resolution.y)},
+      .color = {1.f, 1.f, 1.f, 1.f},
+      .blend_mode = BlendMode::kReplace(),
+      .content = ResolvedLayer::SolidColorContent{.color = {1.f, 0.f, 0.f, 1.f}},
+  };
+  RenderData render_data = {
+      .display_id = kDisplayId,
+      .layers = std::span<const ResolvedLayer>(&layer, 1),
+  };
+
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _))
+      .Times(2)
+      .WillRepeatedly(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryConfig(_, _)).Times(0);
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerImage2(_, _)).Times(0);
+
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayLayers(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayMode(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
+      .Times(1)
+      .WillOnce(testing::Invoke([](MockDisplayCoordinator::CheckConfigCompleter::Sync& completer) {
+        completer.Reply(display::WireConfigResult::kOk);
+      }));
+  EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(1).WillOnce(Return());
+
+  bool result = TryDirectToDisplay(std::span<const RenderData>(&render_data, 1));
+  EXPECT_TRUE(result);
+
+  // Cleanup: All layers should be destroyed.
+  for (uint64_t i = 1; i <= kMaxDisplayLayersCount + 1; ++i) {
+    EXPECT_CALL(
+        *mock_display_coordinator_,
+        DestroyLayer(
+            MatchRequestField(DestroyLayer, layer_id, Eq(display::WireLayerId{.value = i})), _))
+        .Times(1)
+        .WillOnce(Return());
+  }
+  EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
+}
+
+TEST_F(DisplayCompositorTest, ImageContentTakesImageLayerPath) {
+  const uint64_t kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+
+  const display::DisplayId kDisplayId(1);
+  glm::uvec2 resolution(1024, 768);
+  DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
+  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y,
+                           kMaxDisplayLayersCount);
+
+  uint64_t layer_id_value = 1;
+  EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_, _))
+      .Times(kMaxDisplayLayersCount + 1)
+      .WillRepeatedly(testing::Invoke(
+          [&](fidl::WireServer<fuchsia_hardware_display::Coordinator>::CreateLayerRequestView
+                  request,
+              MockDisplayCoordinator::CreateLayerCompleter::Sync& completer) {
+            EXPECT_EQ(request->layer_id.value, layer_id_value++);
+            completer.Reply(fit::ok());
+          }));
+
+  display_compositor_->AddDisplay(&display, display_info, /*num_vmos*/ 0,
+                                  /*out_buffer_collection*/ nullptr);
+
+  // Import buffer collection and image.
+  EXPECT_CALL(*mock_display_coordinator_,
+              ImportBufferCollection(MatchRequestField(ImportBufferCollection, buffer_collection_id,
+                                                       Eq(kDisplayBufferCollectionId)),
+                                     _))
+      .Times(1)
+      .WillOnce(testing::Invoke(
+          [](fuchsia_hardware_display::wire::CoordinatorImportBufferCollectionRequest* request,
+             MockDisplayCoordinator::ImportBufferCollectionCompleter::Sync& completer) {
+            completer.Reply(fit::ok());
+          }));
+  EXPECT_CALL(*mock_display_coordinator_,
+              SetBufferCollectionConstraints(
+                  MatchRequestField(SetBufferCollectionConstraints, buffer_collection_id,
+                                    Eq(kDisplayBufferCollectionId)),
+                  _))
+      .Times(1)
+      .WillOnce(testing::Invoke(
+          [](fuchsia_hardware_display::wire::CoordinatorSetBufferCollectionConstraintsRequest*,
+             MockDisplayCoordinator::SetBufferCollectionConstraintsCompleter::Sync& completer) {
+            completer.Reply(fit::ok());
+          }));
+  // Save token to avoid early token failure.
+  fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token_ref;
+  EXPECT_CALL(*renderer_, ImportBufferCollection(kGlobalBufferCollectionId, _, _, _, _))
+      .WillOnce([&token_ref](auto id, auto& client, auto token, auto usage, auto size) {
+        token_ref = std::move(token);
+        return fpromise::make_ok_promise();
+      });
+  EXPECT_TRUE(RunPromise(display_compositor_->ImportBufferCollection(
+      kGlobalBufferCollectionId, sysmem_allocator_, CreateToken(),
+      BufferCollectionUsage::kClientImage, std::nullopt)));
+  SetDisplaySupported(kGlobalBufferCollectionId, true);
+
+  ImageMetadata image_metadata = ImageMetadata{
+      .collection_id = kGlobalBufferCollectionId,
+      .identifier = allocation::GenerateUniqueImageId(),
+      .vmo_index = 0,
+      .width = 128,
+      .height = 256,
+      .blend_mode = BlendMode::kReplace(),
+  };
+
+  const display::WireImageId fidl_image_id = image_metadata.identifier.ToFidl();
+  EXPECT_CALL(
+      *mock_display_coordinator_,
+      ImportImage(testing::AllOf(MatchRequestField(ImportImage, buffer_collection_id,
+                                                   Eq(kDisplayBufferCollectionId)),
+                                 MatchRequestField(ImportImage, buffer_index, Eq(0)),
+                                 MatchRequestField(ImportImage, image_id, Eq(fidl_image_id))),
+                  _))
+      .Times(1)
+      .WillOnce(testing::Invoke([](fuchsia_hardware_display::wire::CoordinatorImportImageRequest*,
+                                   MockDisplayCoordinator::ImportImageCompleter::Sync& completer) {
+        completer.Reply(fit::ok());
+      }));
+  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _))
+      .WillOnce(ReturnPromise(fpromise::ok()));
+
+  display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage);
+
+  ResolvedLayer layer = {
+      .rect = {glm::vec2(0, 0), glm::vec2(128, 256)},
+      .color = {1.f, 1.f, 1.f, 1.f},
+      .blend_mode = BlendMode::kReplace(),
+      .content =
+          ResolvedLayer::ImageContent{
+              .image_id = image_metadata.identifier,
+              .width = image_metadata.width,
+              .height = image_metadata.height,
+          },
+  };
+  RenderData render_data = {
+      .display_id = kDisplayId,
+      .layers = std::span<const ResolvedLayer>(&layer, 1),
+  };
+
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryConfig(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryPosition(_, _))
+      .Times(1)
+      .WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryAlpha(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerImage2(_, _)).Times(1).WillOnce(Return());
+
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayLayers(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayMode(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
+      .Times(1)
+      .WillOnce(testing::Invoke([](MockDisplayCoordinator::CheckConfigCompleter::Sync& completer) {
+        completer.Reply(display::WireConfigResult::kOk);
+      }));
+  EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(1).WillOnce(Return());
+
+  bool result = TryDirectToDisplay(std::span<const RenderData>(&render_data, 1));
+  EXPECT_TRUE(result);
+
+  // Cleanup: All layers should be destroyed.
   for (uint64_t i = 1; i <= kMaxDisplayLayersCount + 1; ++i) {
     EXPECT_CALL(
         *mock_display_coordinator_,

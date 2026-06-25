@@ -64,9 +64,7 @@ class Renderer : public allocation::BufferCollectionImporter {
   // If any of the |images| use protected memory but the |render_target| is not using protected
   // memory, the renderer replaces protected content with black solid color.
   virtual void Render(const allocation::ImageMetadata& render_target,
-                      const std::vector<EngineLayer>& layers,
-                      const std::vector<EngineLayerImage>& images,
-                      const RenderArgs& render_args) = 0;
+                      std::span<const ResolvedLayer> layers, const RenderArgs& render_args) = 0;
 
   // Values needed to adjust the color of the framebuffer as a postprocessing effect.
   virtual void SetColorConversionValues(const fidl::Array<float, 9>& coefficients,
@@ -86,7 +84,7 @@ class Renderer : public allocation::BufferCollectionImporter {
   // calling Render().
   // TODO(https://fxbug.dev/42062402): The caller should be able to figure out if the images are
   // protected. Remove this after moving to prunable tokens in the callers.
-  virtual bool RequiresRenderInProtected(const std::vector<EngineLayerImage>& images) const = 0;
+  virtual bool RequiresRenderInProtected(std::span<const ResolvedLayer> layers) const = 0;
 
   // Implementations which use Vulkan or similar should implement this by generating render passes
   // and pipelines, so that there is no jank due to lazily generating them later.

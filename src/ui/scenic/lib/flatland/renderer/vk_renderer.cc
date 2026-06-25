@@ -136,19 +136,19 @@ std::array<glm::ivec2, 4> FlipUVs(const std::array<glm::ivec2, 4>& uvs, const Im
   return flipped_uvs;
 }
 
-std::vector<escher::Rectangle2D> GetNormalizedUvRects(const std::vector<EngineLayer>& layers,
-                                                      const std::vector<EngineLayerImage>& images) {
-  FX_DCHECK(layers.size() == images.size());
-
+std::vector<escher::Rectangle2D> GetNormalizedUvRects(std::span<const ResolvedLayer> layers) {
   std::vector<escher::Rectangle2D> normalized_rects;
 
-  for (unsigned int i = 0; i < layers.size(); i++) {
-    const EngineLayer& layer = layers[i];
-    const EngineLayerImage& image = images[i];
+  for (const auto& layer : layers) {
     const ImageRect& rect = layer.rect;
     const fuchsia::ui::composition::Orientation orientation = rect.orientation;
-    const float w = static_cast<float>(image.width);
-    const float h = static_cast<float>(image.height);
+    float w = 1.f;
+    float h = 1.f;
+    if (std::holds_alternative<ResolvedLayer::ImageContent>(layer.content)) {
+      const auto& image = std::get<ResolvedLayer::ImageContent>(layer.content);
+      w = static_cast<float>(image.width);
+      h = static_cast<float>(image.height);
+    }
     FX_DCHECK(w >= 0.f && h >= 0.f);
 
     // First, reorder the UVs based on whether the image was flipped.
@@ -796,14 +796,10 @@ escher::TexturePtr VkRenderer::ExtractTexture(const allocation::ImageMetadata& m
   return fxl::MakeRefCounted<escher::Texture>(escher_->resource_recycler(), sampler, image);
 }
 
-void VkRenderer::Render(const ImageMetadata& render_target, const std::vector<EngineLayer>& layers,
-                        const std::vector<EngineLayerImage>& images,
+void VkRenderer::Render(const ImageMetadata& render_target, std::span<const ResolvedLayer> layers,
                         const RenderArgs& render_args) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   TRACE_DURATION("gfx", "VkRenderer::Render");
-
-  FX_DCHECK(layers.size() == images.size())
-      << "# layers: " << layers.size() << " and #images: " << images.size();
 
   // Copy over the texture and render target data to local containers that do not need
   // to be accessed via a lock. We're just doing a shallow copy via the copy assignment
@@ -862,17 +858,20 @@ void VkRenderer::Render(const ImageMetadata& render_target, const std::vector<En
   TRACE_DURATION_BEGIN("gfx", "VkRenderer::Render[transform_display_list]");
   std::vector<escher::TexturePtr> textures;
   std::vector<escher::RectangleCompositor::ColorData> color_data;
-  textures.reserve(images.size());
-  color_data.reserve(images.size());
-  for (size_t i = 0; i < images.size(); ++i) {
-    const EngineLayerImage& image = images[i];
-    const EngineLayer& layer = layers[i];
-    const auto texture_it = local_texture_map.find(image.image_id);
+  textures.reserve(layers.size());
+  color_data.reserve(layers.size());
+  for (const auto& layer : layers) {
+    allocation::GlobalImageId image_id = allocation::kInvalidImageId;
+    if (std::holds_alternative<ResolvedLayer::ImageContent>(layer.content)) {
+      image_id = std::get<ResolvedLayer::ImageContent>(layer.content).image_id;
+    }
+
+    const auto texture_it = local_texture_map.find(image_id);
     if (texture_it == local_texture_map.end()) {
       // TODO(https://fxbug.dev/496160334): the image wasn't found, probably (hopefully) because it
       // was removed by `TrustedFlatland.ReleaseImageImmediately()`, otherwise for unknown reasons.
       // Either way, there's nothing we can do but ignore it.
-      FX_LOGS(WARNING) << "VkRenderer::Render missing image: " << image.image_id;
+      FX_LOGS(WARNING) << "VkRenderer::Render missing image: " << image_id;
       continue;
     }
     const escher::TexturePtr& texture_ptr = texture_it->second;
@@ -887,7 +886,14 @@ void VkRenderer::Render(const ImageMetadata& render_target, const std::vector<En
 
     textures.push_back(texture_ptr);
 
-    const glm::vec4 multiply(layer.color[0], layer.color[1], layer.color[2], layer.color[3]);
+    glm::vec4 multiply(layer.color[0], layer.color[1], layer.color[2], layer.color[3]);
+    if (std::holds_alternative<ResolvedLayer::SolidColorContent>(layer.content)) {
+      const auto& solid = std::get<ResolvedLayer::SolidColorContent>(layer.content);
+      multiply.r *= solid.color[0];
+      multiply.g *= solid.color[1];
+      multiply.b *= solid.color[2];
+      multiply.a *= solid.color[3];
+    }
     escher::RectangleCompositor::Opacity opacity;
     switch (layer.blend_mode.enum_value()) {
       case BlendMode::Enum::kReplace:
@@ -916,7 +922,7 @@ void VkRenderer::Render(const ImageMetadata& render_target, const std::vector<En
                                                 render_image_layout, VK_QUEUE_FAMILY_FOREIGN_EXT,
                                                 escher_->device()->vk_main_queue_family());
 
-  const auto normalized_rects = GetNormalizedUvRects(layers, images);
+  const auto normalized_rects = GetNormalizedUvRects(layers);
 
   // Now the compositor can finally draw.
   compositor_.DrawBatch(command_buffer, normalized_rects, textures, color_data, output_image,
@@ -1057,11 +1063,15 @@ bool VkRenderer::SupportsRenderInProtected() const {
   return escher_->allow_protected_memory();
 }
 
-bool VkRenderer::RequiresRenderInProtected(const std::vector<EngineLayerImage>& images) const {
+bool VkRenderer::RequiresRenderInProtected(std::span<const ResolvedLayer> layers) const {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   std::scoped_lock lock(lock_);
 
-  for (const auto& image : images) {
+  for (const auto& layer : layers) {
+    if (std::holds_alternative<ResolvedLayer::SolidColorContent>(layer.content)) {
+      continue;
+    }
+    const auto& image = std::get<ResolvedLayer::ImageContent>(layer.content);
     auto it = texture_map_.find(image.image_id);
     if (it != texture_map_.end()) {
       if (it->second->image()->use_protected_memory()) {

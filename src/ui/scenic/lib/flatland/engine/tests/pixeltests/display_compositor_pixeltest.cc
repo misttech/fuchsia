@@ -958,11 +958,10 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
   session.PushUberStruct(std::move(uberstruct));
 
   // Now we can finally render.
-  display_compositor->RenderFrame(
-      1, zx::time(1),
-      GenerateDisplayListForTest(
-          {{display->display_id(), std::make_pair(display_info, root_handle)}}),
-      {}, {}, {}, [](const scheduling::Timestamps&) {});
+  auto render_data_list = GenerateDisplayListForTest(
+      {{display->display_id(), std::make_pair(display_info, root_handle)}});
+  display_compositor->RenderFrame(1, zx::time(1), render_data_list, {}, {}, {},
+                                  [](const scheduling::Timestamps&) {});
 
   bool images_are_same = [&]() -> bool {
     // The amlogic capture IP block can sometimes be flaky.
@@ -1093,11 +1092,10 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, ColorConversionTest) {
 
   // Now we can finally render. Do it a few times to make sure the color correction persists.
   for (uint32_t i = 0; i < 3; i++) {
-    display_compositor->RenderFrame(
-        1, zx::time(1),
-        GenerateDisplayListForTest(
-            {{display->display_id(), std::make_pair(display_info, root_handle)}}),
-        {}, {}, {}, [](const scheduling::Timestamps&) {});
+    auto render_data_list = GenerateDisplayListForTest(
+        {{display->display_id(), std::make_pair(display_info, root_handle)}});
+    display_compositor->RenderFrame(1, zx::time(1), render_data_list, {}, {}, {},
+                                    [](const scheduling::Timestamps&) {});
 
     // Grab the capture vmo data.
     std::vector<uint8_t> read_values;
@@ -1200,11 +1198,10 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenSolidColorRectangle
   session.PushUberStruct(std::move(uberstruct));
 
   // Now we can finally render.
-  display_compositor->RenderFrame(
-      1, zx::time(1),
-      GenerateDisplayListForTest(
-          {{display->display_id(), std::make_pair(display_info, root_handle)}}),
-      {}, {}, {}, [](const scheduling::Timestamps&) {});
+  auto render_data_list = GenerateDisplayListForTest(
+      {{display->display_id(), std::make_pair(display_info, root_handle)}});
+  display_compositor->RenderFrame(1, zx::time(1), render_data_list, {}, {}, {},
+                                  [](const scheduling::Timestamps&) {});
 
   // Grab the capture vmo data.
   std::vector<uint8_t> read_values;
@@ -1325,11 +1322,10 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, SetMinimumRGBTest) {
   display_compositor->SetMinimumRgb(kMinimum);
 
   // Now we can finally render.
-  display_compositor->RenderFrame(
-      1, zx::time(1),
-      GenerateDisplayListForTest(
-          {{display->display_id(), std::make_pair(display_info, root_handle)}}),
-      {}, {}, {}, [](const scheduling::Timestamps&) {});
+  auto render_data_list = GenerateDisplayListForTest(
+      {{display->display_id(), std::make_pair(display_info, root_handle)}});
+  display_compositor->RenderFrame(1, zx::time(1), render_data_list, {}, {}, {},
+                                  [](const scheduling::Timestamps&) {});
 
   // Grab the capture vmo data.
   std::vector<uint8_t> readback_values;
@@ -1484,30 +1480,34 @@ VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest
   EXPECT_TRUE(RunPromise(std::move(promise)));
 
   // Now we can finally render.
-  RenderData render_data;
-  {
-    uint32_t width = display->width_in_px() / 2;
-    uint32_t height = display->height_in_px();
+  const uint32_t width = display->width_in_px() / 2;
+  const uint32_t height = display->height_in_px();
 
-    render_data.display_id = display->display_id();
-    render_data.layers.push_back(EngineLayer{.rect = {glm::vec2(0), glm::vec2(width, height)}});
-    render_data.layers.push_back(
-        EngineLayer{.rect = {glm::vec2(width, 0), glm::vec2(width, height)}});
-
-    render_data.images.push_back(EngineLayerImage{
-        .image_id = image_metadatas[0].identifier,
-        .width = image_metadatas[0].width,
-        .height = image_metadatas[0].height,
-    });
-
-    render_data.images.push_back(EngineLayerImage{
-        .image_id = image_metadatas[1].identifier,
-        .width = image_metadatas[1].width,
-        .height = image_metadatas[1].height,
-    });
-  }
-  display_compositor->RenderFrame(1, zx::time(1), {std::move(render_data)}, {}, {}, {},
-                                  [](const scheduling::Timestamps&) {});
+  ResolvedLayer layer1 = {
+      .rect = {glm::vec2(0), glm::vec2(width, height)},
+      .content =
+          ResolvedLayer::ImageContent{
+              .image_id = image_metadatas[0].identifier,
+              .width = image_metadatas[0].width,
+              .height = image_metadatas[0].height,
+          },
+  };
+  ResolvedLayer layer2 = {
+      .rect = {glm::vec2(width, 0), glm::vec2(width, height)},
+      .content =
+          ResolvedLayer::ImageContent{
+              .image_id = image_metadatas[1].identifier,
+              .width = image_metadatas[1].width,
+              .height = image_metadatas[1].height,
+          },
+  };
+  ResolvedLayer layers[] = {layer1, layer2};
+  RenderData render_data = {
+      .display_id = display->display_id(),
+      .layers = layers,
+  };
+  display_compositor->RenderFrame(1, zx::time(1), std::span<const RenderData>(&render_data, 1), {},
+                                  {}, {}, [](const scheduling::Timestamps&) {});
   renderer->WaitIdle();
 
   // Make sure the render target has the same data as what's being put on the display.
@@ -1657,34 +1657,38 @@ VK_TEST_P(DisplayCompositorTransparencyPixelTest, OverlappingTransparencyTest) {
 
   // Now we can finally render.
   const uint32_t kNumOverlappingColumns = 25;
-  RenderData render_data;
-  {
-    uint32_t width = display->width_in_px() / 2;
-    uint32_t height = display->height_in_px();
+  const uint32_t width = display->width_in_px() / 2;
+  const uint32_t height = display->height_in_px();
 
-    // Have the two rectangles overlap each other slightly with 25 rows in common across the
-    // displays.
-    render_data.display_id = display->display_id();
-    render_data.layers.push_back(
-        EngineLayer{.rect = {glm::vec2(0, 0), glm::vec2(width + kNumOverlappingColumns, height)}});
-    render_data.layers.push_back(EngineLayer{
-        .rect = {glm::vec2(width - kNumOverlappingColumns, 0),
-                 glm::vec2(width + kNumOverlappingColumns, height)},
-        .blend_mode = blend_mode_param,
-    });
-    render_data.images.push_back(EngineLayerImage{
-        .image_id = image_metadatas[0].identifier,
-        .width = image_metadatas[0].width,
-        .height = image_metadatas[0].height,
-    });
-    render_data.images.push_back(EngineLayerImage{
-        .image_id = image_metadatas[1].identifier,
-        .width = image_metadatas[1].width,
-        .height = image_metadatas[1].height,
-    });
-  }
-  display_compositor->RenderFrame(1, zx::time(1), {std::move(render_data)}, {}, {}, {},
-                                  [](const scheduling::Timestamps&) {});
+  // Have the two rectangles overlap each other slightly with 25 rows in common across the
+  // displays.
+  ResolvedLayer layer1 = {
+      .rect = {glm::vec2(0, 0), glm::vec2(width + kNumOverlappingColumns, height)},
+      .content =
+          ResolvedLayer::ImageContent{
+              .image_id = image_metadatas[0].identifier,
+              .width = image_metadatas[0].width,
+              .height = image_metadatas[0].height,
+          },
+  };
+  ResolvedLayer layer2 = {
+      .rect = {glm::vec2(width - kNumOverlappingColumns, 0),
+               glm::vec2(width + kNumOverlappingColumns, height)},
+      .blend_mode = blend_mode_param,
+      .content =
+          ResolvedLayer::ImageContent{
+              .image_id = image_metadatas[1].identifier,
+              .width = image_metadatas[1].width,
+              .height = image_metadatas[1].height,
+          },
+  };
+  ResolvedLayer layers[] = {layer1, layer2};
+  RenderData render_data = {
+      .display_id = display->display_id(),
+      .layers = layers,
+  };
+  display_compositor->RenderFrame(1, zx::time(1), std::span<const RenderData>(&render_data, 1), {},
+                                  {}, {}, [](const scheduling::Timestamps&) {});
   renderer->WaitIdle();
 
   // Make sure the render target has the same data as what's being put on the display.
@@ -1908,11 +1912,10 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
   }
 
   // Now we can finally render.
+  auto render_data_list = GenerateDisplayListForTest(
+      {{display->display_id(), std::make_pair(display_info, root_handle)}});
   auto render_frame_result = display_compositor->RenderFrame(
-      1, zx::time(1),
-      GenerateDisplayListForTest(
-          {{display->display_id(), std::make_pair(display_info, root_handle)}}),
-      {}, {}, {}, [](const scheduling::Timestamps&) {},
+      1, zx::time(1), render_data_list, {}, {}, {}, [](const scheduling::Timestamps&) {},
       // NOTE: this is somewhat redundant, since we also pass enable_direct_to_display=false into
       // the DisplayCompositor constructor.  But, no harm is done.
       DisplayCompositor::RenderFrameTestArgs{.force_gpu_composition = true});
@@ -2161,11 +2164,10 @@ VK_TEST_P(DisplayCompositorParameterizedTest, ImageFlipRotate180DegreesPixelTest
   }
 
   // Now we can finally render.
-  display_compositor->RenderFrame(
-      1, zx::time(1),
-      GenerateDisplayListForTest(
-          {{display->display_id(), std::make_pair(display_info, root_handle)}}),
-      {}, {}, {}, [](const scheduling::Timestamps&) {});
+  auto render_data_list = GenerateDisplayListForTest(
+      {{display->display_id(), std::make_pair(display_info, root_handle)}});
+  display_compositor->RenderFrame(1, zx::time(1), render_data_list, {}, {}, {},
+                                  [](const scheduling::Timestamps&) {});
   renderer->WaitIdle();
 
   // Make sure the render target has the same data as what's being put on the display.
@@ -2510,11 +2512,11 @@ VK_TEST_F(DisplayCompositorPixelTest, EmptySceneLayerTest) {
   EXPECT_TRUE(RunPromise(std::move(promise)));
 
   // Render an empty frame.
+  auto render_data_list = GenerateDisplayListForTest(
+      {{display->display_id(), std::make_pair(display_info, root_handle)}});
   auto render_frame_result = display_compositor->RenderFrame(
-      1, zx::time(1),
-      GenerateDisplayListForTest(
-          {{display->display_id(), std::make_pair(display_info, root_handle)}}),
-      {}, {}, {}, [](const scheduling::Timestamps&) {}, {.force_gpu_composition = false});
+      1, zx::time(1), render_data_list, {}, {}, {}, [](const scheduling::Timestamps&) {},
+      {.force_gpu_composition = false});
   EXPECT_NE(render_frame_result, DisplayCompositor::RenderFrameResult::kFailure);
 
   // Grab the capture vmo data.

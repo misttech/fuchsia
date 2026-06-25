@@ -15,6 +15,7 @@
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/eventpair.h>
 
+#include <deque>
 #include <limits>
 #include <thread>
 
@@ -28,6 +29,7 @@
 #include "src/ui/scenic/lib/flatland/flatland.h"
 #include "src/ui/scenic/lib/flatland/global_image_data.h"
 #include "src/ui/scenic/lib/flatland/global_matrix_data.h"
+#include "src/ui/scenic/lib/flatland/global_resolved_layers.h"
 #include "src/ui/scenic/lib/flatland/global_topology_data.h"
 #include "src/ui/scenic/lib/scheduling/id.h"
 #include "src/ui/scenic/lib/utils/dispatcher_holder.h"
@@ -44,6 +46,7 @@ class DisplayCompositorTestBase : public gtest::RealLoopFixture {
     uber_struct_system_ = std::make_shared<UberStructSystem>();
     link_system_ = std::make_shared<LinkSystem>(uber_struct_system_->GetNextInstanceId());
     async_set_default_dispatcher(dispatcher());
+    resolved_layers_storage_.clear();
   }
 
   void TearDown() override {
@@ -54,6 +57,7 @@ class DisplayCompositorTestBase : public gtest::RealLoopFixture {
     // and close when this function returns.
     zx::channel local(std::move(local_));
     dispatcher_holder_.reset();
+    resolved_layers_storage_.clear();
     gtest::RealLoopFixture::TearDown();
   }
 
@@ -98,25 +102,12 @@ class DisplayCompositorTestBase : public gtest::RealLoopFixture {
                             display_data.first.dimensions.y);
       FX_DCHECK(image_rectangles.size() == images.size());
 
-      std::vector<EngineLayerImage> layer_images;
-      layer_images.reserve(images.size());
-      for (auto& im : images) {
-        layer_images.push_back({.image_id = im.identifier, .width = im.width, .height = im.height});
-      }
-
-      std::vector<EngineLayer> engine_layers;
-      engine_layers.reserve(image_rectangles.size());
-      for (size_t i = 0; i < image_rectangles.size(); ++i) {
-        engine_layers.push_back({.rect = image_rectangles[i],
-                                 .color = images[i].multiply_color,
-                                 .blend_mode = images[i].blend_mode,
-                                 .flip = images[i].flip});
-      }
+      auto resolved_layers = ComputeGlobalResolvedLayers(image_rectangles, images);
+      resolved_layers_storage_.push_back(std::move(resolved_layers));
 
       image_list_per_display.push_back(RenderData{
-          .layers = std::move(engine_layers),
-          .images = std::move(layer_images),
           .display_id = display_id,
+          .layers = resolved_layers_storage_.back(),
       });
     }
     return image_list_per_display;
@@ -216,6 +207,10 @@ class DisplayCompositorTestBase : public gtest::RealLoopFixture {
   std::shared_ptr<UberStructSystem> uber_struct_system_;
   std::shared_ptr<LinkSystem> link_system_;
   zx::channel local_;
+  // std::deque is used to guarantee that individual std::vector instances do not move
+  // in memory when new vectors are appended, ensuring that spans exposed to the contents
+  // of these vectors remain stable and valid during a test case execution.
+  std::deque<std::vector<ResolvedLayer>> resolved_layers_storage_;
 };
 
 }  // namespace flatland
