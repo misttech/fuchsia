@@ -37,8 +37,8 @@
 #if defined(__aarch64__)
 
   // Prologue: make x19, x20 available as call-saved scratch.
-  .prologue.fp 16
   .prologue.shadow_call_sp
+  .prologue.fp 16
   stp x19, x20, [sp, #16]
   .cfi_rel_offset x19, 16
   .cfi_rel_offset x20, 24
@@ -82,8 +82,8 @@
   ldp x19, x20, [sp, #16]
   .cfi_same_value x19
   .cfi_same_value x20
-  .epilogue.shadow_call_sp
   .epilogue.fp 16
+  .epilogue.shadow_call_sp
   ret
 
 #elif defined(__arm__)
@@ -126,8 +126,8 @@
 #elif defined(__riscv)
 
   // Prologue: make s1 and s2 available as call-saved scratch.
-  .prologue.fp 16
   .prologue.shadow_call_sp
+  .prologue.fp 16
   sd s1, 0(sp)
   .cfi_rel_offset s1, 0
   sd s2, 8(sp)
@@ -178,8 +178,8 @@
   .cfi_same_value s1
   ld s2, 8(sp)
   .cfi_same_value s2
-  .epilogue.shadow_call_sp
   .epilogue.fp 16
+  .epilogue.shadow_call_sp
   ret
 
 #elif defined(__x86_64__)

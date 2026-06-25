@@ -10,10 +10,10 @@
 // no arguments, but return values in registers according to the architecture's
 // calling convention.
 .function CallerWithAsmPrologue, global
-  .prologue.fp
 #if __has_feature(shadow_call_stack)
   .prologue.shadow_call_sp
 #endif
+  .prologue.fp
 
 #if defined(__aarch64__)
   bl CalledFromAsmWithPrologue
@@ -23,9 +23,9 @@
   #error "unsupported machine"
 #endif
 
+  .epilogue.fp
 #if __has_feature(shadow_call_stack)
   .epilogue.shadow_call_sp
 #endif
-  .epilogue.fp
   ret
 .end_function
