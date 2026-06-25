@@ -430,6 +430,12 @@ func (c *FFXStrictClient) RepositoryServerList(ctx context.Context) (string, err
 }
 
 func (c *FFXStrictClient) IsPackageServerRunning(ctx context.Context, repoName string) (bool, error) {
+	c.mu.Lock()
+	err := c.serverErr
+	c.mu.Unlock()
+	if err != nil {
+		return false, err
+	}
 	stdout, err := c.ffxInst.RunAndGetOutput(ctx, "--machine", "json", "repository", "server", "list")
 	if err != nil {
 		return false, fmt.Errorf("failed to list repository servers: %w", err)

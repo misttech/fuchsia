@@ -6,6 +6,7 @@ package orchestrate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -273,6 +274,59 @@ func TestFFXStrictClient_RepositoryServer_Restart(t *testing.T) {
 	}
 }
 
+func TestFFXStrictClient_IsPackageServerRunning_CacheError(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	fakeFfx := createSmartFakeFfx(t, tmpDir)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "fail-later-repo")
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	target := "fake-target"
+	client.SetDefaultTarget(&target)
+
+	repoName := "fail-later-repo"
+	repoDir := filepath.Join(tmpDir, "repo")
+
+	err = client.RepositoryServerStart(ctx, repoName, repoDir, "localhost:0")
+	if err != nil {
+		t.Fatalf("RepositoryServerStart failed: %v", err)
+	}
+
+	// Trigger the fake server to fail now that startup has completed.
+	triggerPath := filepath.Join(tmpDir, "ffx_strict", "trigger_fail")
+	if err := os.WriteFile(triggerPath, []byte{}, 0666); err != nil {
+		t.Fatalf("Failed to create trigger file: %v", err)
+	}
+
+	// Poll for the server status to fail, with a 5-second timeout to prevent flakiness
+	var err1 error
+	start := time.Now()
+	for time.Since(start) < 5*time.Second {
+		_, err1 = client.IsPackageServerRunning(ctx, repoName)
+		if err1 != nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if err1 == nil {
+		t.Fatalf("First IsPackageServerRunning expected error, got nil")
+	}
+
+	// Second check should return the exact same cached error immediately
+	_, err2 := client.IsPackageServerRunning(ctx, repoName)
+	if err2 == nil {
+		t.Errorf("Second IsPackageServerRunning expected error, got nil")
+	} else if !errors.Is(err2, err1) {
+		t.Errorf("Expected identical errors, got: %v vs %v", err1, err2)
+	}
+}
+
 func TestFFXStrictClient_RepositoryServer_Restart_ExplicitPort(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
@@ -470,7 +524,10 @@ done
 
 		if $is_fail_later; then
 			 echo "{\"port\": $PORT}" > "$STATE_FILE"
-			 sleep 0.1
+			 while [ ! -f "$STATE_DIR/trigger_fail" ]; do
+			 	sleep 0.05
+			 done
+			 rm -f "$STATE_DIR/trigger_fail"
 			 exit 1
 		fi
 
