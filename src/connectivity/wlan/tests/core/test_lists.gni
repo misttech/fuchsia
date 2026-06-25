@@ -46,8 +46,10 @@ core_tests_for_wlan_cq = [
 # FYI don't cause any alerting if they break, so having the test here doesn't
 # provide much of a safety net. Consider moving it to one of the CQ groups
 # above.
-core_tests_for_fyi =
-    [ "//src/connectivity/wlan/tests/core:roam_request_test_should_succeed" ]
+core_tests_for_fyi = [
+  "//src/connectivity/wlan/tests/core:roam_request_test_should_succeed",
+  "//src/connectivity/wlan/tests/core:wlan_scan_test",
+]
 
 # Tests longer than ~20 minutes consume significant resources and significantly
 # lengthen the cadence of the test runs. Split these tests out so we can run

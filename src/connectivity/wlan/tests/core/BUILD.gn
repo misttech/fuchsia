@@ -116,6 +116,17 @@ antlion_host_test("sar_setting_test") {
   ]
 }
 
+antlion_host_test("wlan_scan_test") {
+  main_source = "WlanScanTest.py"
+  libraries = [
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.sme:fuchsia.wlan.sme_host_test_data",
+  ]
+}
+
 # This is a helper group so developers can easily add all tests to their build.
 # It is not run by infra. You should not directly add tests here, but rather to
 # one of the other groups below so it runs in infra.

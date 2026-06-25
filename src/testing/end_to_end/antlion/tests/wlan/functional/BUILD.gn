@@ -119,23 +119,6 @@ antlion_host_test("wlan_reboot_dut_test_quick") {
   deps = [ "//third_party/iperf" ]
 }
 
-antlion_host_test("wlan_scan_test") {
-  main_source = "WlanScanTest.py"
-  environments = wlan_ap_envs
-}
-
-# iwlwifi AX201 does not support WPA2 yet.
-# TODO(b/328494216): Remove then add nuc11_env to wlan_scan_test.
-antlion_host_test("wlan_scan_test_without_wpa2") {
-  main_source = "WlanScanTest.py"
-  environments = [ wlan_nuc11_ap_env ]
-  test_cases = [
-    "test_basic_scan_request",
-    "test_scan_while_connected_open_network_2g",
-    "test_scan_while_connected_open_network_5g",
-  ]
-}
-
 antlion_host_test("wlan_wireless_network_management_test") {
   main_source = "WlanWirelessNetworkManagementTest.py"
   environments = wlan_ap_envs
@@ -155,8 +138,6 @@ group("e2e_tests") {
     ":wlan_reboot_dut_open_test",
     ":wlan_reboot_dut_wpa2_test",
     ":wlan_reboot_dut_wpa3_test",
-    ":wlan_scan_test",
-    ":wlan_scan_test_without_wpa2",
     ":wlan_wireless_network_management_test",
   ]
 }
@@ -168,7 +149,6 @@ group("e2e_tests_quick") {
     ":wlan_driver_restart_test",
     ":wlan_reboot_ap_test_quick",
     ":wlan_reboot_dut_test_quick",
-    ":wlan_scan_test_without_wpa2",
   ]
 }
 
