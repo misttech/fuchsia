@@ -9,8 +9,6 @@
 
 #include <memory>
 
-#include "third_party/iwlwifi/platform/kernel.h"
-
 extern "C" {
 #include "third_party/iwlwifi/mvm/mvm.h"
 }  // extern "C"

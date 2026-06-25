@@ -1,12 +1,12 @@
 // Copyright 2022 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
+#include "third_party/driver-lib/log/cpp/include/common/wlan/drivers/internal/hexdump.h"
+
 #include <stdint.h>
 #include <string.h>
 
 #include <cctype>
-
-#include <wlan/drivers/internal/hexdump.h>
 
 namespace wlan::drivers::log {
 

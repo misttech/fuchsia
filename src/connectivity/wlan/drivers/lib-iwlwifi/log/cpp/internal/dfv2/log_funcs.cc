@@ -3,7 +3,7 @@
 
 #include <stdarg.h>
 
-#include <wlan/drivers/log_instance.h>
+#include "third_party/driver-lib/log/cpp/include/dfv2/wlan/drivers/log_instance.h"
 
 extern "C" void wlan_drivers_log_with_severity(FuchsiaLogSeverity severity, uint32_t filter,
                                                const char* tag, const char* file, int line,

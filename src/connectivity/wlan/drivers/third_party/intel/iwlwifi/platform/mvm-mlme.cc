@@ -57,12 +57,11 @@
 #include <iterator>
 #include <vector>
 
+#include "banjo/common.h"
+#include "banjo/softmac.h"
 #include "lib/fidl/cpp/wire/arena.h"
 #include "lib/fidl/cpp/wire/array.h"
 #include "third_party/driver-lib/wlan/ieee80211.h"
-#include "third_party/iwlwifi/platform/banjo/common.h"
-#include "third_party/iwlwifi/platform/banjo/softmac.h"
-#include "third_party/iwlwifi/platform/kernel.h"
 
 extern "C" {
 #include "third_party/iwlwifi/iwl-debug.h"

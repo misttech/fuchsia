@@ -6,8 +6,8 @@
 
 #include <zircon/compiler.h>
 
-#include <wlan/drivers/internal/macro_helpers.h>
-#include <wlan/drivers/internal/throttle_counter.h>
+#include "third_party/driver-lib/log/cpp/include/common/wlan/drivers/internal/macro_helpers.h"
+#include "third_party/driver-lib/log/cpp/include/common/wlan/drivers/internal/throttle_counter.h"
 
 // TODO (fxbug.dev/81914) - Add support for log level fatal i.e. lfatal().
 #define lerror(fmt, ...) (wlan_drivers_log_internal(ERROR, 0, NULL, fmt, ##__VA_ARGS__))

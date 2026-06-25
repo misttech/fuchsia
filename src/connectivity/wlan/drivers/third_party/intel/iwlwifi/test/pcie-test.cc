@@ -30,8 +30,8 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include <wlan/drivers/log_instance.h>
 
+#include "third_party/driver-lib/log/cpp/include/dfv2/wlan/drivers/log_instance.h"
 #include "third_party/iwlwifi/iwl-fh.h"
 #include "third_party/iwlwifi/platform/compiler.h"
 #include "third_party/iwlwifi/test/mock-function.h"

@@ -21,8 +21,7 @@
 
 #include <memory>
 
-#include <wlan/drivers/log_instance.h>
-
+#include "third_party/driver-lib/log/cpp/include/dfv2/wlan/drivers/log_instance.h"
 #include "third_party/iwlwifi/platform/kernel.h"
 #include "third_party/iwlwifi/platform/wlanphyimpl-device.h"
 #include "third_party/iwlwifi/test/sim-mvm.h"

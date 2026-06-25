@@ -14,9 +14,8 @@
 #include <memory>
 #include <type_traits>
 
-#include "third_party/iwlwifi/platform/banjo/associnfo.h"
-#include "third_party/iwlwifi/platform/banjo/softmac.h"
-#include "third_party/iwlwifi/platform/kernel.h"
+#include "banjo/associnfo.h"
+#include "banjo/softmac.h"
 
 extern "C" {
 #include "third_party/iwlwifi/mvm/mvm.h"

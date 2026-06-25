@@ -87,6 +87,12 @@ board_input_bundle("reduced_perf_variation_args") {
 board_input_bundle("main_bundle") {
   drivers = [
     {
+      package_target =
+          "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:iwlwifi"
+      package_set = "base"
+      driver_components = [ "meta/iwlwifi.cm" ]
+    },
+    {
       package_target = "//src/connectivity/ethernet/drivers/gvnic:gvnic-package"
       package_set = "bootfs"
       driver_components = [ "meta/gvnic.cm" ]

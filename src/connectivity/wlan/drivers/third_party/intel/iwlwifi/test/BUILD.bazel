@@ -31,12 +31,14 @@ cc_library(
         "sim-mcc-update.cc",
         "sim-mvm.cc",
         "sim-nvm.cc",
+        "sim-nvm-data.inc",
         "sim-scan.cc",
         "sim-time-event.cc",
         "sim-trans.cc",
         "single-ap-test.cc",
         "tkip-test.cc",
         "tlv-fw-builder.cc",
+        "tlv-fw-builder.h",
         "wlan-pkt-builder.cc",
     ],
     hdrs = [
@@ -47,25 +49,22 @@ cc_library(
         "sim-mcc-update.h",
         "sim-mvm.h",
         "sim-nvm.h",
-        "sim-nvm-data.inc",
         "sim-scan.h",
         "sim-time-event.h",
         "sim-trans.h",
         "single-ap-test.h",
-        "tlv-fw-builder.h",
         "wlan-pkt-builder.h",
     ],
-    include_prefix = "third_party/iwlwifi/test",
     deps = [
-        "//src/connectivity/wlan/drivers/lib-iwlwifi/fake-bti",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:core",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/cfg",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/fw:api",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/mvm",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/pcie",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform:iwlwifi_device",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform:rcu_manager",
+        "//third_party/driver-lib/fake-bti",
+        "//third_party/iwlwifi:core",
+        "//third_party/iwlwifi/cfg",
+        "//third_party/iwlwifi/fw:api",
+        "//third_party/iwlwifi/mvm",
+        "//third_party/iwlwifi/pcie",
+        "//third_party/iwlwifi/platform",
+        "//third_party/iwlwifi/platform:iwlwifi_device",
+        "//third_party/iwlwifi/platform:rcu_manager",
         "@com_google_googletest//:gtest_main",
         "@fuchsia_sdk//fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl_cpp_driver",
         "@fuchsia_sdk//pkg/async-loop-cpp",
@@ -79,7 +78,6 @@ cc_library(
 cc_library(
     name = "mock_function",
     hdrs = ["mock-function.h"],
-    include_prefix = "third_party/iwlwifi/test",
 )
 
 cc_library(
@@ -97,7 +95,7 @@ fuchsia_cc_test(
     deps = [
         ":mock_function",
         ":stub_mvm",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform",
+        "//third_party/iwlwifi/platform",
         "@com_google_googletest//:gtest_main",
         "@fuchsia_sdk//pkg/async-testing",
     ],
@@ -110,7 +108,7 @@ fuchsia_cc_test(
     size = "small",
     srcs = ["rcu-manager-test.cc"],
     deps = [
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform:rcu_manager",
+        "//third_party/iwlwifi/platform:rcu_manager",
         "@com_google_googletest//:gtest_main",
         "@fuchsia_sdk//pkg/async",
         "@fuchsia_sdk//pkg/async-testing",
@@ -139,8 +137,8 @@ fuchsia_cc_test(
     srcs = ["fw-test.cc"],
     deps = [
         ":sim_library",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:core",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/mvm",
+        "//third_party/iwlwifi:core",
+        "//third_party/iwlwifi/mvm",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -153,8 +151,8 @@ fuchsia_cc_test(
     srcs = ["fw-dbg-test.cc"],
     deps = [
         ":sim_library",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/fw",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform:driver_inspector",
+        "//third_party/iwlwifi/fw",
+        "//third_party/iwlwifi/platform:driver_inspector",
         "@com_google_googletest//:gtest_main",
         "@fuchsia_sdk//pkg/inspect",
     ],
@@ -168,7 +166,7 @@ fuchsia_cc_test(
     srcs = ["driver-inspector-test.cc"],
     deps = [
         ":sim_library",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform:driver_inspector",
+        "//third_party/iwlwifi/platform:driver_inspector",
         "@com_google_googletest//:gtest_main",
         "@fuchsia_sdk//pkg/async-default",
         "@fuchsia_sdk//pkg/inspect",
@@ -198,7 +196,7 @@ fuchsia_cc_test(
     size = "small",
     srcs = ["utils-test.cc"],
     deps = [
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/mvm",
+        "//third_party/iwlwifi/mvm",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -211,7 +209,7 @@ fuchsia_cc_test(
     srcs = ["iwl-phy-db-test.cc"],
     deps = [
         ":stub_mvm",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:core",
+        "//third_party/iwlwifi:core",
         "@com_google_googletest//:gtest_main",
         "@fuchsia_sdk//pkg/async-loop-cpp",
     ],
@@ -226,7 +224,7 @@ fuchsia_cc_test(
     deps = [
         ":mock_function",
         ":sim_library",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/mvm",
+        "//third_party/iwlwifi/mvm",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -239,7 +237,7 @@ fuchsia_cc_test(
     srcs = ["mac-ctxt-test.cc"],
     deps = [
         ":sim_library",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/mvm",
+        "//third_party/iwlwifi/mvm",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -253,7 +251,7 @@ fuchsia_cc_test(
     deps = [
         ":mock_function",
         ":sim_library",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/mvm",
+        "//third_party/iwlwifi/mvm",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -266,7 +264,7 @@ fuchsia_cc_test(
     srcs = ["phy-ctxt-test.cc"],
     deps = [
         ":sim_library",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/mvm",
+        "//third_party/iwlwifi/mvm",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -279,7 +277,7 @@ fuchsia_cc_test(
     srcs = ["platform-test.cc"],
     deps = [
         ":stub_mvm",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform",
+        "//third_party/iwlwifi/platform",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -293,7 +291,7 @@ fuchsia_cc_test(
     deps = [
         ":mock_function",
         ":sim_library",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/mvm",
+        "//third_party/iwlwifi/mvm",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -307,9 +305,9 @@ fuchsia_cc_test(
     deps = [
         ":mock_function",
         ":sim_library",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:core",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/mvm",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform:iwlwifi_device",
+        "//third_party/iwlwifi:core",
+        "//third_party/iwlwifi/mvm",
+        "//third_party/iwlwifi/platform:iwlwifi_device",
         "@com_google_googletest//:gtest_main",
         "@fuchsia_sdk//fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_cpp_wire",
         "@fuchsia_sdk//fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl_cpp_driver",
@@ -324,8 +322,8 @@ fuchsia_cc_test(
     srcs = ["wlanphy-impl-device-test.cc"],
     deps = [
         ":sim_library",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/mvm",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform:iwlwifi_device",
+        "//third_party/iwlwifi/mvm",
+        "//third_party/iwlwifi/platform:iwlwifi_device",
         "@com_google_googletest//:gtest_main",
         "@fuchsia_sdk//fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl_cpp_driver",
     ],
@@ -339,7 +337,7 @@ fuchsia_cc_test(
     srcs = ["notif-wait-test.cc"],
     deps = [
         ":stub_mvm",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/fw",
+        "//third_party/iwlwifi/fw",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -352,8 +350,8 @@ fuchsia_cc_test(
     srcs = ["nvm-test.cc"],
     deps = [
         ":sim_library",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:core",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/mvm",
+        "//third_party/iwlwifi:core",
+        "//third_party/iwlwifi/mvm",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -367,10 +365,10 @@ fuchsia_cc_test(
     deps = [
         ":mock_function",
         ":sim_library",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:core",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/fw:api",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/pcie",
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform:iwlwifi_device",
+        "//third_party/iwlwifi:core",
+        "//third_party/iwlwifi/fw:api",
+        "//third_party/iwlwifi/pcie",
+        "//third_party/iwlwifi/platform:iwlwifi_device",
         "@com_google_googletest//:gtest_main",
         "@fuchsia_sdk//fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl_cpp_driver",
         "@fuchsia_sdk//pkg/async-loop-cpp",
@@ -406,7 +404,6 @@ iwlwifi_tests += ["pcie_test"]
 fuchsia_test_package(
     name = "iwlwifi_test_pkg",
     package_name = "iwlwifi_test_pkg",
-    fuchsia_api_level = "HEAD",
     test_components = [
         ":dummy_test_component",
         ":fw_test_component",

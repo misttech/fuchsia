@@ -11,7 +11,7 @@
 
 #include <memory>
 
-#include "third_party/iwlwifi/platform/banjo/ieee80211.h"
+#include "banjo/ieee80211.h"
 #include "third_party/iwlwifi/platform/ieee80211.h"
 
 struct iwl_mvm_vif;

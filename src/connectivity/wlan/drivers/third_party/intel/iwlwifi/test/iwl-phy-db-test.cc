@@ -17,7 +17,8 @@
 #include <lib/driver/logging/cpp/logger.h>
 
 #include <gtest/gtest.h>
-#include <wlan/drivers/log_instance.h>
+
+#include "third_party/driver-lib/log/cpp/include/dfv2/wlan/drivers/log_instance.h"
 
 namespace wlan {
 namespace testing {

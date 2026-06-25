@@ -3834,7 +3834,7 @@ iwl_trans_pcie_alloc(struct iwl_pci_dev *pdev,
 		goto out_no_pci;
 	}
 
-	trans->hw_id = ((u32)ent->device << 16) + ent->subdevice;
+	trans->hw_id = (ent->device << 16) + ent->subdevice;
 	snprintf(trans->hw_id_str, sizeof(trans->hw_id_str),
 		 "PCI ID: 0x%04X:0x%04X", ent->device, ent->subdevice);
 

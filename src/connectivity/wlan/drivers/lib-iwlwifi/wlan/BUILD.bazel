@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 package(
+    default_applicable_licenses = ["//:license_fuchsia"],
     default_visibility = ["//visibility:public"],
 )
 
@@ -14,7 +15,6 @@ cc_library(
         "channel.h",
         "ieee80211.h",
     ],
-    include_prefix = "third_party/driver-lib/wlan",
     deps = [
         "@fuchsia_sdk//fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_cpp_driver",
     ],

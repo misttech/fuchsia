@@ -6,7 +6,6 @@ load("@fuchsia_build_info//:args.bzl", "build_info_version")
 load(
     "@rules_fuchsia//fuchsia:assembly.bzl",
     "fuchsia_board_configuration",
-    "fuchsia_board_input_bundle",
     "fuchsia_prebuilt_board_input_bundle",
     "fuchsia_prebuilt_board_input_bundle_set",
 )
@@ -61,10 +60,7 @@ _COMMON_PROVIDED_FEATURES = [
 fuchsia_board_configuration(
     name = "x64",
     board_input_bundle_sets = [":x64_bibs"],
-    board_input_bundles = [
-        ":paver",
-        ":bazel_drivers",
-    ],
+    board_input_bundles = [":paver"],
     board_name = "x64",
     filesystems = _COMMON_FILESYSTEMS,
     hardware_info = {
@@ -84,7 +80,6 @@ fuchsia_board_configuration(
     board_input_bundles = [
         ":paver",
         ":reduced_perf_variation_args",
-        ":bazel_drivers",
     ],
     board_name = "x64",
     filesystems = _COMMON_FILESYSTEMS,
@@ -114,12 +109,4 @@ fuchsia_prebuilt_board_input_bundle(
 fuchsia_prebuilt_board_input_bundle(
     name = "reduced_perf_variation_args",
     files = "@gn_targets//boards/x64:reduced_perf_variation_args",
-)
-
-fuchsia_board_input_bundle(
-    name = "bazel_drivers",
-    base_driver_packages = [
-        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform:iwlwifi_pkg",
-    ],
-    version = build_info_version,
 )
