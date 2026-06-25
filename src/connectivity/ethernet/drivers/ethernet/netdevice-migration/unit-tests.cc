@@ -893,6 +893,7 @@ struct RecvFailedPreconditionInput {
   const char* name;
   const size_t buf_len;
   const uint8_t vmo_id;
+  const uint64_t offset = 0;
 };
 
 class RecvFailedPreconditionTest : public NetdeviceMigrationDefaultSetupTest,
@@ -910,7 +911,7 @@ TEST_P(RecvFailedPreconditionTest, RemovesDriver) {
           .region =
               {
                   .vmo = input.vmo_id,
-                  .offset = 0,
+                  .offset = input.offset,
                   .length = kMaxBufferSize,
               },
       },
@@ -932,7 +933,28 @@ INSTANTIATE_TEST_SUITE_P(
             .vmo_id = kVmoId,
         },
         RecvFailedPreconditionInput{
-            .name = "UnknownVmoId", .buf_len = ETH_FRAME_MAX_SIZE, .vmo_id = 24}),
+            .name = "UnknownVmoId",
+            .buf_len = ETH_FRAME_MAX_SIZE,
+            .vmo_id = 24,
+        },
+        RecvFailedPreconditionInput{
+            .name = "OffsetOutOfRange",
+            .buf_len = ETH_FRAME_MAX_SIZE,
+            .vmo_id = kVmoId,
+            .offset = kVmoSize + 10,
+        },
+        RecvFailedPreconditionInput{
+            .name = "LengthOutOfRange",
+            .buf_len = ETH_FRAME_MAX_SIZE,
+            .vmo_id = kVmoId,
+            .offset = kVmoSize - 10,
+        },
+        RecvFailedPreconditionInput{
+            .name = "IntegerOverflow",
+            .buf_len = ETH_FRAME_MAX_SIZE,
+            .vmo_id = kVmoId,
+            .offset = UINT64_MAX - 10,
+        }),
     [](const testing::TestParamInfo<RecvFailedPreconditionTest::ParamType>& info) {
       RecvFailedPreconditionInput input = info.param;
       return input.name;
@@ -1111,42 +1133,13 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, NetworkDeviceImplQueueTxNotStarted) {
   completed_tx.Wait();
 }
 
-TEST_F(NetdeviceMigrationEthernetDmaSetupTest, NetworkDeviceImplQueueTxOutOfRangeOfVmo) {
-  ASSERT_NO_FATAL_FAILURE(NetdevImplPrepareVmo(kVmoId));
-  ASSERT_NO_FATAL_FAILURE(NetdevImplStart(ZX_OK));
-  constexpr uint32_t kBufId = 42;
-  netdev::wire::BufferRegion region = {.vmo = kVmoId, .offset = kVmoSize, .length = ETH_MTU_SIZE};
-  netdev::wire::TxBuffer buf = {
-      .id = kBufId, .data = fidl::VectorView<netdev::wire::BufferRegion>::FromExternal(&region, 1)};
-  libsync::Completion completed_tx;
-  EXPECT_CALL(
-      MockNetworkDevice(),
-      CompleteTx(
-          testing::Field(
-              &netdev::wire::NetworkDeviceIfcCompleteTxRequest::tx,
-              testing::Property(
-                  &fidl::VectorView<::netdev::wire::TxResult>::get,
-                  testing::AllOf(testing::SizeIs(1),
-                                 testing::Property(&std::span<netdev::wire::TxResult>::front,
-                                                   testing::FieldsAre(kBufId, ZX_ERR_INTERNAL))))),
-          testing::_, testing::_))
-
-      .Times(1)
-      .WillOnce([&] { completed_tx.Signal(); });
-  fdf::Arena arena(0u);
-  EXPECT_TRUE(NetDeviceClient()
-                  .buffer(arena)
-                  ->QueueTx(fidl::VectorView<netdev::wire::TxBuffer>::FromExternal(&buf, 1))
-                  .ok());
-  completed_tx.Wait();
-}
-
 struct QueueTxFailedPreconditionInput {
   const char* name;
   size_t bufs;
   size_t parts;
   size_t buf_len;
   uint8_t vmo_id;
+  uint64_t offset = 0;
 };
 
 class QueueTxFailedPreconditionTest
@@ -1160,7 +1153,7 @@ TEST_P(QueueTxFailedPreconditionTest, RemovesDriver) {
   AssertDriverIsRunning();
   std::vector<netdev::wire::BufferRegion> regions;
   for (size_t i = 0; i < param.parts; ++i) {
-    regions.push_back({.vmo = param.vmo_id, .length = param.buf_len});
+    regions.push_back({.vmo = param.vmo_id, .offset = param.offset, .length = param.buf_len});
   }
   constexpr uint32_t kBufId = 42;
   std::vector<netdev::wire::TxBuffer> buffers;
@@ -1202,7 +1195,25 @@ INSTANTIATE_TEST_SUITE_P(
                                        .bufs = 1,
                                        .parts = 1,
                                        .buf_len = ETH_FRAME_MAX_SIZE,
-                                       .vmo_id = 42}),
+                                       .vmo_id = 42},
+        QueueTxFailedPreconditionInput{.name = "OffsetOutOfRange",
+                                       .bufs = 1,
+                                       .parts = 1,
+                                       .buf_len = ETH_FRAME_MAX_SIZE,
+                                       .vmo_id = kVmoId,
+                                       .offset = kVmoSize + 10},
+        QueueTxFailedPreconditionInput{.name = "LengthOutOfRange",
+                                       .bufs = 1,
+                                       .parts = 1,
+                                       .buf_len = ETH_FRAME_MAX_SIZE,
+                                       .vmo_id = kVmoId,
+                                       .offset = kVmoSize - 10},
+        QueueTxFailedPreconditionInput{.name = "IntegerOverflow",
+                                       .bufs = 1,
+                                       .parts = 1,
+                                       .buf_len = ETH_FRAME_MAX_SIZE,
+                                       .vmo_id = kVmoId,
+                                       .offset = UINT64_MAX - 10}),
     [](const testing::TestParamInfo<QueueTxFailedPreconditionTest::ParamType>& info) {
       QueueTxFailedPreconditionInput input = info.param;
       return input.name;

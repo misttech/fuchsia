@@ -258,6 +258,13 @@ void NetdeviceMigration::EthernetIfcRecv(const uint8_t* data_buffer, size_t data
         return ZX_ERR_INVALID_ARGS;
       }
       cpp20::span<uint8_t> vmo_view = vmo->data();
+      if (space.region.offset > vmo_view.size() ||
+          data_size > vmo_view.size() - space.region.offset) {
+        fdf::error("invalid region offset {} and data size {} > VMO size {}", space.region.offset,
+                   data_size, vmo_view.size());
+        DeviceRemove();
+        return ZX_ERR_OUT_OF_RANGE;
+      }
       std::copy_n(data_buffer, data_size, vmo_view.begin() + space.region.offset);
     }
     netdev::wire::RxBufferPart part = {
@@ -304,6 +311,9 @@ void NetdeviceMigration::EthernetIfcRecv(const uint8_t* data_buffer, size_t data
       break;
     case ZX_ERR_INVALID_ARGS:
       fdf::error("queued frames with unknown VMO IDs");
+      break;
+    case ZX_ERR_OUT_OF_RANGE:
+      // Detailed message logged above.
       break;
     default:
       ZX_PANIC("unexpected status %s", zx_status_get_string(status));
@@ -482,6 +492,13 @@ void NetdeviceMigration::QueueTx(netdev::wire::NetworkDeviceImplQueueTxRequest* 
       auto* vmo = vmo_store_->GetVmo(region.vmo);
       if (vmo == nullptr) {
         fdf::error("tx buffer {} queued with unknown vmo id {}", buffer.id, region.vmo);
+        DeviceRemove();
+        return;
+      }
+      if (region.offset > vmo->data().size() ||
+          region.length > vmo->data().size() - region.offset) {
+        fdf::error("tx buffer {} queued with offset {} and length {} > VMO data size {}", buffer.id,
+                   region.offset, region.length, vmo->data().size());
         DeviceRemove();
         return;
       }
