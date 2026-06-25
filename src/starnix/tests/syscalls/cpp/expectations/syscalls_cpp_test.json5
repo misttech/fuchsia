@@ -77,6 +77,9 @@
                 // TODO(https://fxbug.dev/507976628): Write at most the requested size in the BPF_OBJ_GET_INFO_BY_FD command.
                 "BpfMapTest.ObjGetInfoByFdOnlyWritesRequestedSize",
 
+                // TODO(https://fxbug.dev/527579086)
+                "FsTest.Casefold",
+
                 // TODO(https://fxbug.dev/297438799)
                 "MmapTest.CanMprotectNonExecMmapToExecutable",
 

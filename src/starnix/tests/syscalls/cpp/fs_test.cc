@@ -6,11 +6,19 @@
 #include <fcntl.h>
 #include <lib/fit/defer.h>
 #include <sys/fsuid.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+
+#include <linux/fs.h>
+
+#ifndef FS_CASEFOLD_FL
+#define FS_CASEFOLD_FL 0x40000000
+#endif
+
 #include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <sys/uio.h>
@@ -1595,6 +1603,82 @@ TEST(FsTest, DeepPathLookup) {
   // Test path ending in missing component
   std::string missing_end_path = deep_path + "/g";
   EXPECT_EQ(open(missing_end_path.c_str(), O_RDONLY), -1);
+  EXPECT_EQ(errno, ENOENT);
+}
+
+TEST(FsTest, Casefold) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping.";
+  }
+
+  test_helper::ScopedTempDir test_folder;
+  std::string test_dir = test_folder.path();
+
+  fbl::unique_fd dir_fd(open(test_dir.c_str(), O_RDONLY | O_DIRECTORY));
+  ASSERT_TRUE(dir_fd.is_valid()) << "Failed to open test dir: " << strerror(errno);
+
+  int flags = 0;
+  if (ioctl(dir_fd.get(), FS_IOC_GETFLAGS, &flags) < 0) {
+    GTEST_SKIP() << "FS_IOC_GETFLAGS failed: " << strerror(errno);
+  }
+
+  flags |= FS_CASEFOLD_FL;
+  if (ioctl(dir_fd.get(), FS_IOC_SETFLAGS, &flags) < 0) {
+    if (errno == ENOTTY || errno == EOPNOTSUPP || errno == ENOSYS || errno == EINVAL) {
+      GTEST_SKIP() << "Casefold not supported by filesystem";
+    }
+    FAIL() << "FS_IOC_SETFLAGS failed: " << strerror(errno);
+  }
+
+  // Verify casefold flag is set
+  int new_flags = 0;
+  ASSERT_EQ(ioctl(dir_fd.get(), FS_IOC_GETFLAGS, &new_flags), 0);
+  ASSERT_TRUE(new_flags & FS_CASEFOLD_FL);
+
+  std::string foo_path = test_dir + "/Foo";
+
+  // Create "Foo"
+  fbl::unique_fd file_fd(open(foo_path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  ASSERT_TRUE(file_fd.is_valid()) << "Failed to create Foo: " << strerror(errno);
+  file_fd.reset();
+
+  // Verify we can access it via "foo" and "FOO"
+  std::string foo_lower = test_dir + "/foo";
+  std::string foo_upper = test_dir + "/FOO";
+  EXPECT_EQ(access(foo_lower.c_str(), F_OK), 0) << "Failed to access foo";
+  EXPECT_EQ(access(foo_upper.c_str(), F_OK), 0) << "Failed to access FOO";
+
+  // Try to create "foo" with O_EXCL, should fail with EEXIST
+  fbl::unique_fd file_fd2(open(foo_lower.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  EXPECT_FALSE(file_fd2.is_valid());
+  EXPECT_EQ(errno, EEXIST);
+
+  // Readdir should return "Foo"
+  DIR *dir = opendir(test_dir.c_str());
+  ASSERT_NE(dir, nullptr);
+  std::vector<std::string> entries = GetEntries(dir);
+  closedir(dir);
+
+  std::sort(entries.begin(), entries.end());
+  EXPECT_EQ(entries, std::vector<std::string>({".", "..", "Foo"}));
+
+  // Rename "Foo" to "FOO" (case-only rename)
+  EXPECT_EQ(rename(foo_path.c_str(), foo_upper.c_str()), 0) << "Rename failed: " << strerror(errno);
+
+  // Readdir should now return "FOO"
+  dir = opendir(test_dir.c_str());
+  ASSERT_NE(dir, nullptr);
+  entries = GetEntries(dir);
+  closedir(dir);
+
+  std::sort(entries.begin(), entries.end());
+  EXPECT_EQ(entries, std::vector<std::string>({".", "..", "FOO"}));
+
+  // Unlink "foo" (different case) should succeed and remove "FOO"
+  EXPECT_EQ(unlink(foo_lower.c_str()), 0) << "Unlink failed: " << strerror(errno);
+
+  // Verify it is gone
+  EXPECT_EQ(access(foo_upper.c_str(), F_OK), -1);
   EXPECT_EQ(errno, ENOENT);
 }
 
