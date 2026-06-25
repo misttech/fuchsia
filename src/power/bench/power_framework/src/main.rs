@@ -70,16 +70,26 @@ fn main() -> Result<()> {
 
     let _: &mut Criterion =
         c.bench("fuchsia.power.framework", get_sag_benches("TakeDropWakeLease"));
+
+    // Hold a background wake lease to keep SAG's execution state lease active. This bypasses the
+    // expensive Power Broker state transition and watch loop for subsequent benchmarks.
     let sag_arc = sag_work::obtain_sag_proxy();
-    let _event_pair = sag_arc
-        .acquire_wake_lease(
-            "benchmark",
-            zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(5)),
-        )
+    let background_wake_lease =
+        sag_arc.acquire_wake_lease("benchmark", zx::MonotonicInstant::INFINITE).unwrap().unwrap();
+
+    let _: &mut Criterion =
+        c.bench("fuchsia.power.framework", get_sag_benches("TakeMonitoredWakeLease"));
+
+    // Hold a background unmonitored lease to bypass both the Power Broker transition overhead
+    // and SAG's long wake lease monitoring timer, enabling clean fast-path measurements.
+    drop(background_wake_lease);
+    let _unmonitored_lease_to_avoid_monitoring = sag_arc
+        .acquire_unmonitored_wake_lease("benchmark_unmonitored", zx::MonotonicInstant::INFINITE)
         .unwrap()
         .unwrap();
 
     let _: &mut Criterion = c.bench("fuchsia.power.framework", get_sag_benches("TakeWakeLease"));
+
     let _: &mut Criterion = c.bench("fuchsia.power.framework", get_daemon_benches());
     let _: &mut Criterion =
         c.bench("fuchsia.power.framework", get_large_topology_lease_benches("LargeTopologyLease"));

@@ -10,6 +10,32 @@ integration tests or to profile the performance of the corresponding fidl.
 The integration tests run in CQ and can verify the correctness of the
 implementations of the same function for fidl proxy creation and benchmarks.
 
+## Benchmark Metrics
+
+These benchmarks measure the latency of wake lease operations under different
+active lease states in the System Activity Governor (SAG). They help isolate the
+overhead introduced by two main mechanisms:
+
+1. **Power Broker state transitions:** Bypassed when *any* wake lease is already held.
+2. **Long wake lease monitoring (timer tasks):** Bypassed when *any unmonitored*
+wake lease is already held.
+
+The following metrics are collected:
+
+*   **`TakeDropWakeLease`**: Runs with no leases active. Measures the full cycle
+of acquiring and dropping a monitored wake lease. This incurs both the Power Broker
+transition overhead and the long-lease monitoring timer task creation.
+*   **`TakeMonitoredWakeLease`**: Runs while a normal wake lease is held in the
+background. Bypasses the Power Broker transition overhead but still incurs the
+long-lease monitoring timer task creation.
+*   **`TakeWakeLease`**: Runs while a background unmonitored lease is held.
+Bypasses both the Power Broker transition overhead and the timer task creation
+(clean fast path).
+*   **`ToggleLease`**: Measures the lease toggling operation via the Topology
+Test Daemon.
+*   **`LargeTopologyLease`**: Measures lease acquisition and release in a large
+topology with multiple elements.
+
 ## Running the Benchmarks
 
 1. Add the benchmark test target to your `fx set` line, and configure your
