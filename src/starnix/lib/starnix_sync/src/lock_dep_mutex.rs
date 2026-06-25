@@ -428,6 +428,13 @@ impl<T> DynamicLockDepMutex<T> {
         LockDepGuard { inner: self.inner.lock(), token }
     }
 
+    #[inline(always)]
+    pub fn try_lock(&self) -> Option<LockDepGuard<'_, T>> {
+        let inner = self.inner.try_lock()?;
+        let token = tracking::LockLevelToken::new(self.tracking.lock_id(), self.tracking.name());
+        Some(LockDepGuard { inner, token })
+    }
+
     /// Returns a mutable reference to the underlying data.
     ///
     /// Since this call borrows the `DynamicLockDepMutex` mutably, no actual locking takes place -- the
@@ -511,6 +518,11 @@ impl<T, L: crate::LockLevel> LockDepMutex<T, L> {
     #[inline(always)]
     pub fn lock(&self) -> LockDepGuard<'_, T> {
         self.inner.lock()
+    }
+
+    #[inline(always)]
+    pub fn try_lock(&self) -> Option<LockDepGuard<'_, T>> {
+        self.inner.try_lock()
     }
 
     /// Returns a mutable reference to the underlying data.
@@ -615,9 +627,23 @@ impl<T> DynamicLockDepRwLock<T> {
     }
 
     #[inline(always)]
+    pub fn try_read(&self) -> Option<LockDepReadGuard<'_, T>> {
+        let inner = self.inner.try_read()?;
+        let token = tracking::LockLevelToken::new(self.tracking.lock_id(), self.tracking.name());
+        Some(LockDepReadGuard { inner, token })
+    }
+
+    #[inline(always)]
     pub fn write(&self) -> LockDepWriteGuard<'_, T> {
         let token = tracking::LockLevelToken::new(self.tracking.lock_id(), self.tracking.name());
         LockDepWriteGuard { inner: self.inner.write(), token }
+    }
+
+    #[inline(always)]
+    pub fn try_write(&self) -> Option<LockDepWriteGuard<'_, T>> {
+        let inner = self.inner.try_write()?;
+        let token = tracking::LockLevelToken::new(self.tracking.lock_id(), self.tracking.name());
+        Some(LockDepWriteGuard { inner, token })
     }
 
     /// Returns a mutable reference to the underlying data.
@@ -735,8 +761,18 @@ impl<T, L: crate::LockLevel> LockDepRwLock<T, L> {
     }
 
     #[inline(always)]
+    pub fn try_read(&self) -> Option<LockDepReadGuard<'_, T>> {
+        self.inner.try_read()
+    }
+
+    #[inline(always)]
     pub fn write(&self) -> LockDepWriteGuard<'_, T> {
         self.inner.write()
+    }
+
+    #[inline(always)]
+    pub fn try_write(&self) -> Option<LockDepWriteGuard<'_, T>> {
+        self.inner.try_write()
     }
 }
 
@@ -1150,6 +1186,51 @@ mod tests {
         let _g1 = l1.lock();
         let _subclass = tracking::SubclassToken::new();
         let _g2 = l2.lock();
+    }
+
+    #[test]
+    fn test_try_lock() {
+        tracking::clear_state();
+        let l1: LockDepMutex<i32, LevelA> = LockDepMutex::new(1);
+        let g1 = l1.try_lock();
+        assert!(g1.is_some());
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                assert!(l1.try_lock().is_none());
+            });
+        });
+
+        let l2: LockDepRwLock<i32, LevelB> = LockDepRwLock::new(2);
+        let g2 = l2.try_read();
+        assert!(g2.is_some());
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                assert!(l2.try_read().is_some());
+            });
+            s.spawn(|| {
+                assert!(l2.try_write().is_none());
+            });
+        });
+        std::mem::drop(g2);
+
+        let g4 = l2.try_write();
+        assert!(g4.is_some());
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                assert!(l2.try_read().is_none());
+            });
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid lock ordering cycle detected")]
+    fn test_try_lock_ordering_failure() {
+        tracking::clear_state();
+        let l1: LockDepMutex<i32, LevelA> = LockDepMutex::new(1);
+        let l2: LockDepMutex<i32, LevelB> = LockDepMutex::new(2);
+
+        let _g2 = l2.try_lock();
+        let _g1 = l1.try_lock(); // This should panic since we hold B and request A.
     }
 }
 
