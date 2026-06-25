@@ -71,7 +71,6 @@ class AudioStreamIn : public SimpleAudioStream {
   inspect::IntProperty status_time_;
   inspect::UintProperty dma_status_;
   inspect::UintProperty pdm_status_;
-  inspect::UintProperty ring_buffer_physical_address_;
 };
 }  // namespace audio::aml_g12
 

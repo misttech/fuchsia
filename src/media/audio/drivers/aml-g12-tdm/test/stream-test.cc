@@ -1992,7 +1992,11 @@ TEST_F(AmlG12TdmTest, Inspect) {
   auto result = stream_client->CreateRingBuffer(std::move(format), std::move(remote));
   ASSERT_OK(result.status());
 
-  // Check inspect state.
+  // Wait for driver response, to ensure that `CreateRingBuffer()` has completed.
+  auto prop_result = stream_client->GetProperties();
+  ASSERT_OK(prop_result.status());
+
+  // Now check inspect state.
   ASSERT_NO_FATAL_FAILURE(ReadInspect(test_dev->inspect().DuplicateVmo()));
   auto* simple_audio = hierarchy().GetByPath({"simple_audio_stream"});
   ASSERT_TRUE(simple_audio);
@@ -2024,6 +2028,22 @@ TEST_F(AmlG12TdmTest, NoGpio) {
 
   child_dev->UnbindOp();
   EXPECT_TRUE(child_dev->UnbindReplyCalled());
+}
+
+TEST_F(AmlG12TdmTest, LargeInvalidMetadata) {
+  zx::result pdev = StartPDev();
+  ASSERT_OK(pdev);
+  auto metadata = GetDefaultMetadata();
+  std::vector<uint8_t> large_metadata(sizeof(metadata) + 64, 0xAB);
+  memcpy(large_metadata.data(), &metadata, sizeof(metadata));
+  fake_parent()->SetMetadata(DEVICE_METADATA_PRIVATE, large_metadata.data(), large_metadata.size());
+  auto controller = audio::SimpleAudioStream::Create<AmlG12TdmStream>(
+      fake_parent().get(), false, std::move(pdev.value()),
+      fidl::WireSyncClient<fuchsia_hardware_gpio::Gpio>(),
+      fidl::WireSyncClient<fuchsia_hardware_clock::Clock>(),
+      fidl::WireSyncClient<fuchsia_hardware_clock::Clock>());
+  auto* child_dev = fake_parent()->GetLatestChild();
+  EXPECT_NULL(child_dev);
 }
 
 TEST_F(PowerManagementTest, ClockGating) {

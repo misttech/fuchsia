@@ -15,7 +15,6 @@
 #include <zircon/errors.h>
 
 #include <numeric>
-#include <optional>
 #include <set>
 #include <utility>
 
@@ -37,7 +36,6 @@ AmlG12TdmStream::AmlG12TdmStream(
   status_time_ = inspect().GetRoot().CreateInt("status_time", 0);
   dma_status_ = inspect().GetRoot().CreateUint("dma_status", 0);
   tdm_status_ = inspect().GetRoot().CreateUint("tdm_status", 0);
-  ring_buffer_physical_address_ = inspect().GetRoot().CreateUint("ring_buffer_physical_address", 0);
 }
 
 int AmlG12TdmStream::Thread() {
@@ -100,18 +98,19 @@ zx_status_t AmlG12TdmStream::InitPDev() {
         "device_get_metadata failed %d. Expected size %zu, got size %zu. Got metadata with value",
         status, sizeof(metadata::AmlConfig), actual);
     char output_buffer[80];
-    for (size_t count = 0; count < actual; count += 16) {
+    const size_t dump_len = std::min(actual, sizeof(metadata_));
+    for (size_t count = 0; count < dump_len; count += 16) {
       FILE* f = fmemopen(output_buffer, sizeof(output_buffer), "w");
       if (!f) {
         zxlogf(ERROR, "Couldn't open buffer. Returning.");
-        return status;
+        return status == ZX_OK ? ZX_ERR_INVALID_ARGS : status;
       }
       hexdump_very_ex(reinterpret_cast<uint8_t*>(&metadata_) + count,
-                      std::min(actual - count, 16UL), count, hexdump_stdio_printf, f);
+                      std::min(dump_len - count, size_t{16}), count, hexdump_stdio_printf, f);
       fclose(f);
       zxlogf(ERROR, "%s", output_buffer);
     }
-    return status;
+    return status == ZX_OK ? ZX_ERR_INVALID_ARGS : status;
   }
 
   status = AmlTdmConfigDevice::Normalize(metadata_);
@@ -247,9 +246,11 @@ zx_status_t AmlG12TdmStream::InitPDev() {
 }
 
 void AmlG12TdmStream::UpdateCodecsGainStateFromCurrent() {
-  UpdateCodecsGainState({.gain = cur_gain_state_.cur_gain,
-                         .muted = cur_gain_state_.cur_mute,
-                         .agc_enabled = cur_gain_state_.cur_agc});
+  UpdateCodecsGainState({
+      .gain = cur_gain_state_.cur_gain,
+      .muted = cur_gain_state_.cur_mute,
+      .agc_enabled = cur_gain_state_.cur_agc,
+  });
 }
 
 void AmlG12TdmStream::UpdateCodecsGainState(GainState state) {
@@ -427,7 +428,7 @@ zx_status_t AmlG12TdmStream::UpdateHardwareSettings() {
 zx_status_t AmlG12TdmStream::StartSocPower() {
   // Only if needed (not done previously) so voting on relevant clock ids is not repeated.
   // Each driver instance may vote independently.
-  if (soc_power_started_ == true) {
+  if (soc_power_started_) {
     return ZX_OK;
   }
   if (clock_gate_.is_valid()) {
@@ -461,7 +462,7 @@ zx_status_t AmlG12TdmStream::StartSocPower() {
 zx_status_t AmlG12TdmStream::StopSocPower() {
   // Only if needed (not done previously) so voting on relevant clock ids is not repeated.
   // Each driver instance may vote independently.
-  if (soc_power_started_ == false) {
+  if (!soc_power_started_) {
     return ZX_OK;
   }
   if (clock_gate_.is_valid()) {
@@ -599,7 +600,9 @@ void AmlG12TdmStream::ShutdownHook() {
              zx_status_get_string(result->error_value()));
     }
   }
-  aml_audio_->Shutdown();
+  if (aml_audio_) {
+    aml_audio_->Shutdown();
+  }
   pinned_ring_buffer_.Unpin();
 
   [[maybe_unused]] zx_status_t unused_status = StopSocPower();
@@ -621,7 +624,7 @@ zx_status_t AmlG12TdmStream::SetGain(const audio_proto::SetGainReq& req) {
 zx_status_t AmlG12TdmStream::GetBuffer(const audio_proto::RingBufGetBufferReq& req,
                                        uint32_t* out_num_rb_frames, zx::vmo* out_buffer) {
   size_t ring_buffer_size =
-      fbl::round_up<size_t, size_t>(req.min_ring_buffer_frames * frame_size_,
+      fbl::round_up<size_t, size_t>(static_cast<uint64_t>(req.min_ring_buffer_frames) * frame_size_,
                                     std::lcm(frame_size_, aml_audio_->GetBufferAlignment()));
   size_t out_frames = ring_buffer_size / frame_size_;
   if (out_frames > std::numeric_limits<uint32_t>::max()) {
@@ -646,7 +649,6 @@ zx_status_t AmlG12TdmStream::GetBuffer(const audio_proto::RingBufGetBufferReq& r
     zxlogf(ERROR, "failed to set buffer %d", status);
     return status;
   }
-  ring_buffer_physical_address_.Set(pinned_ring_buffer_.region(0).phys_addr);
 
   // This is safe because of the overflow check we made above.
   *out_num_rb_frames = static_cast<uint32_t>(out_frames);
@@ -663,8 +665,9 @@ zx_status_t AmlG12TdmStream::Start(uint64_t* out_start_time) {
 
   uint32_t notifs = LoadNotificationsPerRing();
   if (notifs) {
-    us_per_notification_ = static_cast<uint32_t>(1000 * pinned_ring_buffer_.region(0).size /
-                                                 (frame_size_ * frame_rate_ / 1000 * notifs));
+    us_per_notification_ =
+        static_cast<uint32_t>(pinned_ring_buffer_.region(0).size * 1'000'000 /
+                              (static_cast<uint64_t>(frame_size_) * frame_rate_ * notifs));
     notify_timer_.PostDelayed(dispatcher(), zx::usec(us_per_notification_));
   } else {
     us_per_notification_ = 0;
@@ -777,7 +780,7 @@ zx_status_t AmlG12TdmStream::AddFormats() {
   for (auto& i : AmlTdmConfigDevice::GetSupportedFrameRates()) {
     bool fully_supported = true;
     for (const auto& frame_rate_set : codec_frame_rates) {
-      if (frame_rate_set.count(i) == 0) {
+      if (!frame_rate_set.contains(i)) {
         fully_supported = false;
         break;
       }
@@ -837,7 +840,7 @@ static zx_status_t audio_bind(void* ctx, zx_device_t* device) {
                                              sizeof(metadata::AmlConfig), &actual);
   if (status != ZX_OK || sizeof(metadata::AmlConfig) != actual) {
     zxlogf(ERROR, "device_get_metadata failed %d", status);
-    return status;
+    return status == ZX_OK ? ZX_ERR_INVALID_ARGS : status;
   }
   const char* kGpioEnableFragmentName = "gpio-enable";
   zx::result gpio_enable =

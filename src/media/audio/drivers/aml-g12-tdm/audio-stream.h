@@ -109,7 +109,6 @@ class AmlG12TdmStream : public SimpleAudioStream {
   inspect::IntProperty status_time_;
   inspect::UintProperty dma_status_;
   inspect::UintProperty tdm_status_;
-  inspect::UintProperty ring_buffer_physical_address_;
   fidl::WireSyncClient<fuchsia_hardware_clock::Clock> clock_gate_;
   fidl::WireSyncClient<fuchsia_hardware_clock::Clock> pll_;
 };

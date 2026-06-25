@@ -30,7 +30,6 @@ AudioStreamIn::AudioStreamIn(zx_device_t* parent) : SimpleAudioStream(parent, tr
   status_time_ = inspect().GetRoot().CreateInt("status_time", 0);
   dma_status_ = inspect().GetRoot().CreateUint("dma_status", 0);
   pdm_status_ = inspect().GetRoot().CreateUint("pdm_status", 0);
-  ring_buffer_physical_address_ = inspect().GetRoot().CreateUint("ring_buffer_physical_address", 0);
 }
 
 int AudioStreamIn::Thread() {
@@ -101,7 +100,7 @@ zx_status_t AudioStreamIn::InitPDev() {
                                              sizeof(metadata::AmlPdmConfig), &actual);
   if (status != ZX_OK || sizeof(metadata::AmlPdmConfig) != actual) {
     zxlogf(ERROR, "device_get_fragment_metadata failed %d", status);
-    return status;
+    return status == ZX_OK ? ZX_ERR_INVALID_ARGS : status;
   }
 
   zx::result pdev_client_end = ddk::Device<void>::DdkConnectFragmentFidlProtocol<
@@ -153,7 +152,7 @@ zx_status_t AudioStreamIn::InitPDev() {
                                    "aml_pdm_irq_thread");
     if (rc != thrd_success) {
       zxlogf(ERROR, "could not create thread %d", rc);
-      return status;
+      return ZX_ERR_INTERNAL;
     }
   } else if (irq.status_value() != ZX_ERR_OUT_OF_RANGE) {  // Not specified in the board file.
     zxlogf(ERROR, "Failed to get irq: %s", irq.status_string());
@@ -180,7 +179,6 @@ zx_status_t AudioStreamIn::InitPDev() {
     zxlogf(ERROR, "failed to set buffer %d", status);
     return status;
   }
-  ring_buffer_physical_address_.Set(pinned_ring_buffer_.region(0).phys_addr);
 
   InitHw();
 
@@ -213,8 +211,9 @@ zx_status_t AudioStreamIn::ChangeFormat(const audio_proto::StreamSetFmtReq& req)
 
 zx_status_t AudioStreamIn::GetBuffer(const audio_proto::RingBufGetBufferReq& req,
                                      uint32_t* out_num_rb_frames, zx::vmo* out_buffer) {
-  size_t ring_buffer_size = fbl::round_up<size_t, size_t>(
-      req.min_ring_buffer_frames * frame_size_, std::lcm(frame_size_, lib_->GetBufferAlignment()));
+  size_t ring_buffer_size =
+      fbl::round_up<size_t, size_t>(static_cast<uint64_t>(req.min_ring_buffer_frames) * frame_size_,
+                                    std::lcm(frame_size_, lib_->GetBufferAlignment()));
   size_t out_frames = ring_buffer_size / frame_size_;
   if (out_frames > std::numeric_limits<uint32_t>::max()) {
     return ZX_ERR_INVALID_ARGS;
@@ -252,9 +251,9 @@ zx_status_t AudioStreamIn::Start(uint64_t* out_start_time) {
   if (notifs) {
     size_t size = 0;
     ring_buffer_vmo_.get_size(&size);
-    notification_rate_ =
-        zx::duration(zx_duration_from_usec(1'000 * pinned_ring_buffer_.region(0).size /
-                                           (frame_size_ * frames_per_second_ / 1'000 * notifs)));
+    notification_rate_ = zx::duration(
+        zx_duration_from_usec(static_cast<int64_t>(pinned_ring_buffer_.region(0).size) * 1'000'000 /
+                              (static_cast<int64_t>(frame_size_) * frames_per_second_ * notifs)));
     notify_timer_.PostDelayed(dispatcher(), notification_rate_);
   } else {
     notification_rate_ = {};
