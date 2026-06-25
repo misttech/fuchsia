@@ -41,15 +41,37 @@ if (is_host) {
     timeout_secs = 600
   }
 
+  python_mobly_test("usb_fastboot_loop_test") {
+    main_source = "test_usb_disconnect.py"
+    libraries = [
+      "//src/testing/end_to_end/honeydew",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
+    ]
+    params = {
+      num_iterations = 5
+      disconnect_duration_sec = 1
+      fastboot_loop = true
+    }
+    local_config_source = "UsbDisconnectTestbed.yaml"
+    environments = [ sorrel_env ]
+    timeout_secs = 900
+  }
+
   group("tests") {
     testonly = true
     public_deps = [
       ":usb_disconnect_test($host_toolchain)",
+      ":usb_fastboot_loop_test($host_toolchain)",
       ":usb_virtual_disconnect_test($host_toolchain)",
     ]
   }
 } else {
   # Redirection from target toolchain to host toolchain
+  group("usb_fastboot_loop_test") {
+    testonly = true
+    public_deps = [ ":usb_fastboot_loop_test($host_toolchain)" ]
+  }
+
   group("usb_virtual_disconnect_test") {
     testonly = true
     public_deps = [ ":usb_virtual_disconnect_test($host_toolchain)" ]
@@ -64,6 +86,7 @@ if (is_host) {
     testonly = true
     public_deps = [
       ":usb_disconnect_test($host_toolchain)",
+      ":usb_fastboot_loop_test($host_toolchain)",
       ":usb_virtual_disconnect_test($host_toolchain)",
     ]
   }
