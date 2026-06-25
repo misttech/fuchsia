@@ -11,7 +11,7 @@
 #include <memory>
 #include <mutex>
 
-#include "third_party/driver-lib/fake-object/internal.h"
+#include "internal.h"
 
 namespace fake_object {
 

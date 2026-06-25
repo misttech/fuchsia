@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
 package(
-    default_applicable_licenses = ["//:license_fuchsia"],
     default_visibility = ["//visibility:public"],
 )
 
@@ -23,6 +22,10 @@ cc_library(
         "include/common/wlan/drivers/log.h",
         "include/dfv2/wlan/drivers/internal/log_severity.h",
         "include/dfv2/wlan/drivers/log_instance.h",
+    ],
+    includes = [
+        "include/common",
+        "include/dfv2",
     ],
     deps = [
         "@fuchsia_sdk//fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_cpp_driver",

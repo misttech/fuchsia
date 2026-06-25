@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 package(
-    default_applicable_licenses = ["//third_party/iwlwifi:license_intel"],
+    default_applicable_licenses = ["//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:license_intel"],
     default_visibility = ["//visibility:public"],
 )
 
@@ -15,9 +15,10 @@ cc_library(
     hdrs = [
         "tx.h",
     ],
+    include_prefix = "third_party/iwlwifi/queue",
     deps = [
-        "//third_party/iwlwifi:headers",
-        "//third_party/iwlwifi/fw:api",
-        "//third_party/iwlwifi/platform",
+        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:headers",
+        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/fw:api",
+        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform",
     ],
 )

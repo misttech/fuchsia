@@ -12,7 +12,7 @@
 #include <zircon/assert.h>
 #include <zircon/types.h>
 
-#include "third_party/driver-lib/log/cpp/include/common/wlan/drivers/log.h"
+#include <wlan/drivers/log.h>
 
 #if defined(__cplusplus)
 extern "C" {

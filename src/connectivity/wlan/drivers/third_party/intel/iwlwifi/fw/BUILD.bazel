@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 package(
-    default_applicable_licenses = ["//third_party/iwlwifi:license_intel"],
+    default_applicable_licenses = ["//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:license_intel"],
     default_visibility = ["//visibility:public"],
 )
 
@@ -53,9 +53,9 @@ cc_library(
         "file.h",
         "img.h",
     ],
+    include_prefix = "third_party/iwlwifi/fw",
     deps = [
-        "//third_party/iwlwifi/platform",
-        #"@fuchsia_sdk//pkg/ddk",
+        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform",
     ],
 )
 
@@ -75,9 +75,10 @@ cc_library(
         "notif-wait.h",
         "runtime.h",
     ],
+    include_prefix = "third_party/iwlwifi/fw",
     deps = [
         ":api",
-        "//third_party/iwlwifi:core",
-        "//third_party/iwlwifi/platform",
+        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:core",
+        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform",
     ],
 )
