@@ -83,6 +83,8 @@ These options control how tests are executed.
 
 `Multiply: <test name>` will run the given test multiple times.
 This is helpful to confirm that specific tests are not flaky.
+This applies to builders triggered by CQ as well as manually-triggered
+builders started using the **Choose Tryjobs** dropdown.
 
 For example:
 

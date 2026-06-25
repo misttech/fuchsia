@@ -69,6 +69,12 @@ explicitly specify a number of runs.  For example:
 Multiply: foo_tests: 100
 ```
 
+## Applicability
+
+The `Multiply` footer applies to all builders that run against a CL, including
+builders triggered automatically by CQ as well as manually-triggered builders
+started using the **Choose Tryjobs** dropdown in Gerrit.
+
 ## Limitations
 
 {% dynamic if user.is_googler %}
