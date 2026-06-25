@@ -41,6 +41,6 @@ UNITTEST_START_TESTCASE(arch_rs_tests)
 UNITTEST("test Rust interrupt enable/disable/disabled ops", rust_interrupt_ops_test)
 UNITTEST("test Rust current CPU number", rust_curr_cpu_num_test)
 UNITTEST("test Rust max num CPUs", rust_max_num_cpus_test)
-UNITTEST_END_TESTCASE(arch_rs_tests, "rust", "Tests for arch_rs")
+UNITTEST_END_TESTCASE(arch_rs_tests, "arch_rs", "Tests for arch_rs")
 
 }  // namespace

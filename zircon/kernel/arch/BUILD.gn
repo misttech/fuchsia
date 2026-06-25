@@ -6,10 +6,11 @@ import("//build/rust/rustc_library.gni")
 
 rustc_library("arch-rs") {
   edition = "2024"
-  sources = [
-    "arm64/lib.rs",
-    "riscv64/lib.rs",
-    "src/lib.rs",
-    "x86/lib.rs",
-  ]
+  sources = [ "src/lib.rs" ]
+  non_rust_deps = [ ":ffi" ]
+}
+
+source_set("ffi") {
+  sources = [ "arch_ffi.cc" ]
+  deps = [ "//zircon/kernel/lib/ktl" ]
 }

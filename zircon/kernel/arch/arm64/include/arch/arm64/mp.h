@@ -45,7 +45,6 @@ struct percpu;
 // Per cpu structure, pointed to by a fixed register while in kernel mode.
 // Aligned on the maximum architectural cache line to avoid cache
 // line sharing between cpus.
-// LINT.IfChange(arm64_percpu)
 struct arm64_percpu {
   // cpu number
   cpu_num_t cpu_num;
@@ -73,7 +72,6 @@ struct arm64_percpu {
   // Flag to track that we're in restricted mode.
   uint32_t in_restricted_mode;
 } __CPU_ALIGN;
-// LINT.ThenChange(//zircon/kernel/arch/arm64/lib.rs:curr_cpu_num)
 static_assert(offsetof(struct arm64_percpu, in_restricted_mode) == PERCPU_IN_RESTRICTED_MODE,
               "in_restricted mode is at the wrong offset");
 

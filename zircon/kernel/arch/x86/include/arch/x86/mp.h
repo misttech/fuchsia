@@ -51,7 +51,6 @@ class MwaitMonitor;
 
 // This struct is accessed very early during boot so it's important that it can live in the BSS and
 // be initialized without calling global constructors.
-// LINT.IfChange(x86_percpu)
 struct x86_percpu {
   /* a direct pointer to ourselves */
   struct x86_percpu *direct;
@@ -111,7 +110,6 @@ struct x86_percpu {
     uint8_t double_fault[INTERRUPT_STACK_SIZE] __ALIGNED(16);
   } interrupt_stacks;
 } __CPU_ALIGN;
-// LINT.ThenChange(//zircon/kernel/arch/x86/lib.rs:curr_cpu_num)
 
 static_assert(__offsetof(struct x86_percpu, direct) == PERCPU_DIRECT_OFFSET);
 static_assert(__offsetof(struct x86_percpu, current_thread) == PERCPU_CURRENT_THREAD_OFFSET);
