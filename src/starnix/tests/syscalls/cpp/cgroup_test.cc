@@ -10,7 +10,9 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -667,4 +669,243 @@ TEST_F(CgroupTest, ChownDirectoryDoesNotPropagate) {
 
   // The prepopulated interface files inside must STILL be owned by root (0:0).
   EXPECT_THAT(procs_path, HasUidAndGid(0u, 0u));
+}
+
+class CgroupV1Test : public ::testing::Test {
+ public:
+  void SetUp() override {
+    if (!test_helper::HasSysAdmin()) {
+      GTEST_SKIP() << "requires CAP_SYS_ADMIN to mount cgroup";
+    }
+  }
+
+  void TearDown() override {
+    if (!test_helper::HasSysAdmin()) {
+      return;
+    }
+    // If we moved tasks into our sub-cgroups, move ourselves back to the top-level system root
+    // so that our sub-cgroups can be cleanly deleted.
+    if (!system_cgroup_root_.empty()) {
+      std::string pid_str = std::to_string(getpid());
+      int fd = open((system_cgroup_root_ + "/tasks").c_str(), O_WRONLY);
+      if (fd >= 0) {
+        write(fd, pid_str.c_str(), pid_str.length());
+        close(fd);
+      } else {
+        fd = open((system_cgroup_root_ + "/cgroup.procs").c_str(), O_WRONLY);
+        if (fd >= 0) {
+          write(fd, pid_str.c_str(), pid_str.length());
+          close(fd);
+        }
+      }
+    }
+
+    for (auto path = cgroup_paths_.rbegin(); path != cgroup_paths_.rend(); path++) {
+      ASSERT_THAT(rmdir(path->c_str()), SyscallSucceeds()) << "Could not delete " << *path << "";
+    }
+    for (auto mountpoint = cgroup_mountpoints_.rbegin(); mountpoint != cgroup_mountpoints_.rend();
+         mountpoint++) {
+      ASSERT_THAT(umount((mountpoint->path()).c_str()), SyscallSucceeds());
+    }
+  }
+
+  std::string MountCgroupV1(const std::string& options) {
+    auto& mountpoint = cgroup_mountpoints_.emplace_back();
+    if (mount("none", mountpoint.path().c_str(), "cgroup", 0, options.c_str()) == -1) {
+      if (errno == EBUSY) {
+        // The controller is already mounted by the system. Let's discover where it is mounted.
+        std::ifstream mounts("/proc/mounts");
+        std::string line;
+        std::string existing_mount;
+        while (std::getline(mounts, line)) {
+          std::istringstream iss(line);
+          std::string spec, path, type, opts;
+          if (iss >> spec >> path >> type >> opts) {
+            if (type == "cgroup") {
+              std::istringstream opts_stream(opts);
+              std::string opt;
+              while (std::getline(opts_stream, opt, ',')) {
+                if (opt == options) {
+                  existing_mount = path;
+                  break;
+                }
+              }
+            }
+          }
+          if (!existing_mount.empty())
+            break;
+        }
+
+        if (existing_mount.empty()) {
+          if (options == "cpu" && std::filesystem::exists("/sys/fs/cgroup/cpu")) {
+            existing_mount = "/sys/fs/cgroup/cpu";
+          }
+        }
+
+        if (existing_mount.empty()) {
+          cgroup_mountpoints_.pop_back();
+          return "";
+        }
+
+        if (!existing_mount.empty()) {
+          // We found the system's mount point. Remove our ScopedTempDir since we won't use it.
+          cgroup_mountpoints_.pop_back();
+          system_cgroup_root_ = existing_mount;
+
+          // Create a dedicated sub-cgroup inside the system's mount to serve as our isolated test
+          // root.
+          std::string test_root = existing_mount + "/starnix_test_" + std::to_string(getpid());
+          if (mkdir(test_root.c_str(), 0777) == -1 && errno != EEXIST) {
+            ADD_FAILURE() << "Could not create sub-cgroup " << test_root << ": " << strerror(errno);
+          } else {
+            cgroup_paths_.push_back(test_root);
+            return test_root;
+          }
+        }
+      }
+      ADD_FAILURE() << "mount failed with " << strerror(errno);
+      return mountpoint.path();
+    }
+    return mountpoint.path();
+  }
+
+  void CreateCgroup(std::string path) {
+    ASSERT_THAT(mkdir(path.c_str(), 0777), SyscallSucceeds()) << "Could not create " << path;
+    cgroup_paths_.push_back(std::move(path));
+  }
+
+ private:
+  std::vector<std::string> cgroup_paths_;
+  std::vector<test_helper::ScopedTempDir> cgroup_mountpoints_;
+  std::string system_cgroup_root_;
+};
+
+TEST_F(CgroupV1Test, MountAndBasicFiles) {
+  std::string root = MountCgroupV1("none,name=starnix_test");
+  if (root.empty()) {
+    GTEST_SKIP() << "cgroup v1 is unavailable on this Linux system";
+    return;
+  }
+
+  struct stat buffer;
+  ASSERT_THAT(stat((root + "/tasks").c_str(), &buffer), SyscallSucceeds());
+  ASSERT_THAT(stat((root + "/cgroup.procs").c_str(), &buffer), SyscallSucceeds());
+
+  // Create child cgroup.
+  std::string child = root + "/child";
+  CreateCgroup(child);
+
+  ASSERT_THAT(stat((child + "/tasks").c_str(), &buffer), SyscallSucceeds());
+  ASSERT_THAT(stat((child + "/cgroup.procs").c_str(), &buffer), SyscallSucceeds());
+}
+
+TEST_F(CgroupV1Test, MoveTaskAndProcfs) {
+  std::string root = MountCgroupV1("none,name=starnix_test");
+  if (root.empty()) {
+    GTEST_SKIP() << "cgroup v1 is unavailable on this Linux system";
+    return;
+  }
+  std::string child = root + "/child";
+  CreateCgroup(child);
+
+  std::string pid_str = std::to_string(getpid());
+
+  // Move self to child cgroup.
+  std::ofstream tasks_file(child + "/tasks");
+  tasks_file << pid_str;
+  tasks_file.close();
+
+  // Check /proc/self/cgroup.
+  std::ifstream cgroup_file("/proc/self/cgroup");
+  std::string line;
+  bool found = false;
+  while (std::getline(cgroup_file, line)) {
+    if (line.find("/child") != std::string::npos) {
+      found = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found) << "Could not find /child cgroup entry in /proc/self/cgroup";
+
+  // Move self back to root cgroup.
+  std::ofstream root_tasks_file(root + "/tasks");
+  root_tasks_file << pid_str;
+  root_tasks_file.close();
+}
+
+TEST_F(CgroupV1Test, InvalidPidFails) {
+  std::string root = MountCgroupV1("none,name=starnix_test");
+  if (root.empty()) {
+    GTEST_SKIP() << "cgroup v1 is unavailable on this Linux system";
+    return;
+  }
+
+  int fd = open((root + "/tasks").c_str(), O_WRONLY);
+  ASSERT_GE(fd, 0);
+  EXPECT_THAT(write(fd, "99999999\n", 9), SyscallFailsWithErrno(ESRCH));
+  close(fd);
+
+  fd = open((root + "/cgroup.procs").c_str(), O_WRONLY);
+  ASSERT_GE(fd, 0);
+  EXPECT_THAT(write(fd, "99999999\n", 9), SyscallFailsWithErrno(ESRCH));
+  close(fd);
+}
+
+TEST_F(CgroupV1Test, RmdirWithTasksFails) {
+  std::string root = MountCgroupV1("none,name=starnix_test");
+  if (root.empty()) {
+    GTEST_SKIP() << "cgroup v1 is unavailable on this Linux system";
+    return;
+  }
+  std::string child = root + "/child";
+  CreateCgroup(child);
+
+  std::string pid_str = std::to_string(getpid());
+
+  int fd = open((child + "/tasks").c_str(), O_WRONLY);
+  ASSERT_GE(fd, 0);
+  EXPECT_EQ(write(fd, pid_str.c_str(), pid_str.length()), static_cast<ssize_t>(pid_str.length()));
+  close(fd);
+
+  EXPECT_THAT(rmdir(child.c_str()), SyscallFailsWithErrno(EBUSY));
+
+  // Move back to root so teardown can succeed.
+  fd = open((root + "/tasks").c_str(), O_WRONLY);
+  ASSERT_GE(fd, 0);
+  EXPECT_EQ(write(fd, pid_str.c_str(), pid_str.length()), static_cast<ssize_t>(pid_str.length()));
+  close(fd);
+}
+
+TEST_F(CgroupV1Test, MultiMountsWithDifferentNaming) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "requires CAP_SYS_ADMIN to mount cgroup";
+  }
+
+  test_helper::ScopedTempDir mnt_foo;
+  test_helper::ScopedTempDir mnt_bar;
+
+  std::string opt_foo = "none,name=hierarchy_foo";
+  std::string opt_bar = "none,name=hierarchy_bar";
+
+  // 1. Mount hierarchy_foo.
+  EXPECT_THAT(mount("none", mnt_foo.path().c_str(), "cgroup", 0, opt_foo.c_str()),
+              SyscallSucceeds());
+
+  // 2. Mount hierarchy_bar.
+  EXPECT_THAT(mount("none", mnt_bar.path().c_str(), "cgroup", 0, opt_bar.c_str()),
+              SyscallSucceeds());
+
+  // 3. Verify distinctness: create a group in foo, ensure it does not appear in bar.
+  std::string subgroup_foo = mnt_foo.path() + "/subgroup_only_in_foo";
+  EXPECT_THAT(mkdir(subgroup_foo.c_str(), 0777), SyscallSucceeds());
+
+  struct stat st;
+  std::string should_not_exist_in_bar = mnt_bar.path() + "/subgroup_only_in_foo";
+  EXPECT_THAT(stat(should_not_exist_in_bar.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+
+  // Clean up subgroup in foo before umounting.
+  EXPECT_THAT(rmdir(subgroup_foo.c_str()), SyscallSucceeds());
+
+  umount(mnt_bar.path().c_str());
+  umount(mnt_foo.path().c_str());
 }

@@ -724,6 +724,19 @@ impl DynamicFileSource for CgroupFile {
         sink: &mut DynamicFileBuf,
     ) -> Result<(), Errno> {
         let task = Task::from_weak(&self.0)?;
+        let cgroup1 = task.kernel().cgroups.cgroup1.lock();
+        for (key, root) in &cgroup1.hierarchies {
+            let mut parts: Vec<&str> = key.controllers.iter().map(|c| c.as_str()).collect();
+            let name_storage;
+            if let Some(name) = &key.name {
+                name_storage = format!("name={}", name);
+                parts.push(&name_storage);
+            }
+            let controller_str = parts.join(",");
+            let cgroup = root.get_cgroup(task.thread_group());
+            let path = path_from_root(cgroup)?;
+            sink.write(format!("{}:{}:{}\n", root.hierarchy_id, controller_str, path).as_bytes());
+        }
         let cgroup = task.kernel().cgroups.cgroup2.get_cgroup(task.thread_group());
         let path = path_from_root(cgroup)?;
         sink.write(format!("0::{}\n", path).as_bytes());

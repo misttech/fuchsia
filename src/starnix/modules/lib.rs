@@ -107,7 +107,7 @@ pub fn register_common_file_systems(_locked: &mut Locked<Unlocked>, kernel: &Ker
     registry.register(b"cgroup2".into(), cgroup2_fs);
     // Cpusets use the generic cgroup (v1) subsystem.
     // From https://docs.kernel.org/admin-guide/cgroup-v1/cpusets.html
-    registry.register(b"cpuset".into(), CgroupV1Fs::new_fs);
+    registry.register(b"cpuset".into(), CgroupV1Fs::new_fs_cpuset);
     registry.register(b"debugfs".into(), debug_fs);
     registry.register(b"devpts".into(), dev_pts_fs);
     registry.register(b"devtmpfs".into(), dev_tmp_fs);

@@ -76,7 +76,7 @@ impl DynamicFileSource for ControlGroupFile {
     ) -> Result<usize, Errno> {
         let bytes = data.read_all()?;
         let pid_string = std::str::from_utf8(&bytes).map_err(|_| errno!(EINVAL))?;
-        let pid = pid_string.trim().parse::<pid_t>().map_err(|_| errno!(ENOENT))?;
+        let pid = pid_string.trim().parse::<pid_t>().map_err(|_| errno!(EINVAL))?;
 
         // Check if the pid is a valid task.
         let thread_group = if let Some(ProcessEntryRef::Process(thread_group)) =
@@ -84,7 +84,7 @@ impl DynamicFileSource for ControlGroupFile {
         {
             thread_group
         } else {
-            return error!(EINVAL);
+            return error!(ESRCH);
         };
 
         self.cgroup()?.add_process(locked, &thread_group)?;

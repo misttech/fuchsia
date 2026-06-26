@@ -35,6 +35,10 @@ impl MountParams {
         Ok(MountParams { options })
     }
 
+    pub fn keys(&self) -> impl Iterator<Item = &FlyByteStr> {
+        self.options.keys()
+    }
+
     pub fn get(&self, key: &[u8]) -> Option<&FlyByteStr> {
         self.options.get(&key.into())
     }

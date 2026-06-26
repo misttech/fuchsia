@@ -69,6 +69,7 @@ lock_ordering! {
     Terminal(AioPendingOperationsLock),
     Terminal(AuditQueueLock),
     Terminal(BootedLock),
+    Terminal(CgroupV1Level),
     Terminal(ComponentControllerLock),
     Terminal(DeviceTerminalsLock),
     Terminal(EventFdInnerLock),

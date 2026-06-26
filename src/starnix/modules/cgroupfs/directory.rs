@@ -33,6 +33,7 @@ use starnix_uapi::{errno, error, mode};
 use crate::DirectoryNodes;
 use crate::events::EventsFile;
 use crate::freeze::FreezeFile;
+use crate::fs::CgroupVersion;
 use crate::kill::KillFile;
 use crate::procs::ControlGroupNode;
 
@@ -43,6 +44,7 @@ const EVENTS_FILE: &str = "cgroup.events";
 const KILL_FILE: &str = "cgroup.kill";
 const TYPE_FILE: &str = "cgroup.type";
 const SUBTREE_CONTROL_FILE: &str = "cgroup.subtree_control";
+const TASKS_FILE: &str = "tasks";
 
 #[derive(Debug)]
 pub struct CgroupDirectory {
@@ -78,97 +80,145 @@ impl CgroupDirectory {
     pub fn create_root_interface_files(&self, fs: &FileSystemHandle) {
         let mut interface_files = self.interface_files.lock();
         assert!(interface_files.is_empty(), "init is only called once");
-        interface_files.insert(
-            PROCS_FILE.into(),
-            fs.create_node_and_allocate_node_id(
-                ControlGroupNode::new(self.cgroup.clone()),
-                FsNodeInfo::new(mode!(IFREG, 0o644), FsCred::root()),
-            ),
-        );
-        interface_files.insert(
-            CONTROLLERS_FILE.into(),
-            fs.create_node_and_allocate_node_id(
-                BytesFile::new_node(b"".to_vec()),
-                FsNodeInfo::new(mode!(IFREG, 0o444), FsCred::root()),
-            ),
-        );
-        interface_files.insert(
-            SUBTREE_CONTROL_FILE.into(),
-            fs.create_node_and_allocate_node_id(
-                BytesFile::new_node(b"".to_vec()),
-                FsNodeInfo::new(mode!(IFREG, 0o644), FsCred::root()),
-            ),
-        );
+        match self.version().unwrap() {
+            CgroupVersion::V2 => {
+                interface_files.insert(
+                    PROCS_FILE.into(),
+                    fs.create_node_and_allocate_node_id(
+                        ControlGroupNode::new(self.cgroup.clone()),
+                        FsNodeInfo::new(mode!(IFREG, 0o644), FsCred::root()),
+                    ),
+                );
+                interface_files.insert(
+                    CONTROLLERS_FILE.into(),
+                    fs.create_node_and_allocate_node_id(
+                        BytesFile::new_node(b"".to_vec()),
+                        FsNodeInfo::new(mode!(IFREG, 0o444), FsCred::root()),
+                    ),
+                );
+                interface_files.insert(
+                    SUBTREE_CONTROL_FILE.into(),
+                    fs.create_node_and_allocate_node_id(
+                        BytesFile::new_node(b"".to_vec()),
+                        FsNodeInfo::new(mode!(IFREG, 0o644), FsCred::root()),
+                    ),
+                );
+            }
+            CgroupVersion::V1(_) => {
+                // TODO(https://fxbug.dev/401298305): "tasks" should contain task IDs (TIDs)
+                // of all threads in the cgroup, and allow migrating individual threads. Currently
+                // it uses `ControlGroupNode` which only supports process IDs (PIDs).
+                interface_files.insert(
+                    TASKS_FILE.into(),
+                    fs.create_node_and_allocate_node_id(
+                        ControlGroupNode::new(self.cgroup.clone()),
+                        FsNodeInfo::new(mode!(IFREG, 0o644), FsCred::root()),
+                    ),
+                );
+                interface_files.insert(
+                    PROCS_FILE.into(),
+                    fs.create_node_and_allocate_node_id(
+                        ControlGroupNode::new(self.cgroup.clone()),
+                        FsNodeInfo::new(mode!(IFREG, 0o644), FsCred::root()),
+                    ),
+                );
+            }
+        }
     }
 
     /// Creates a new non-root directory, along with its core interface files.
-    fn new(
+    pub(crate) fn new(
         cgroup: Weak<dyn CgroupOps>,
         fs: &FileSystemHandle,
-        dir_nodes: Weak<DirectoryNodes>,
+        dir_nodes: &Arc<DirectoryNodes>,
         owner: FsCred,
     ) -> CgroupDirectoryHandle {
-        let interface_files = BTreeMap::from([
-            (
-                PROCS_FILE.into(),
-                fs.create_node_and_allocate_node_id(
-                    ControlGroupNode::new(cgroup.clone()),
-                    FsNodeInfo::new(mode!(IFREG, 0o644), owner.clone()),
-                ),
-            ),
-            (
-                CONTROLLERS_FILE.into(),
-                fs.create_node_and_allocate_node_id(
-                    BytesFile::new_node(b"".to_vec()),
-                    FsNodeInfo::new(mode!(IFREG, 0o444), owner.clone()),
-                ),
-            ),
-            (
-                FREEZE_FILE.into(),
-                fs.create_node_and_allocate_node_id(
-                    FreezeFile::new_node(cgroup.clone()),
-                    FsNodeInfo::new(mode!(IFREG, 0o644), owner.clone()),
-                ),
-            ),
-            (
-                EVENTS_FILE.into(),
-                fs.create_node_and_allocate_node_id(
-                    EventsFile::new_node(cgroup.clone()),
-                    FsNodeInfo::new(mode!(IFREG, 0o444), owner.clone()),
-                ),
-            ),
-            (
-                KILL_FILE.into(),
-                fs.create_node_and_allocate_node_id(
-                    KillFile::new_node(cgroup.clone()),
-                    FsNodeInfo::new(mode!(IFREG, 0o200), owner.clone()),
-                ),
-            ),
-            (
-                TYPE_FILE.into(),
-                fs.create_node_and_allocate_node_id(
-                    StubBytesFile::new_node_with_data(
-                        bug_ref!("https://fxbug.dev/489195565"),
-                        b"domain".to_vec(),
+        let version = &dir_nodes.version;
+        let mut interface_files = BTreeMap::new();
+        match version {
+            CgroupVersion::V2 => {
+                interface_files = BTreeMap::from([
+                    (
+                        PROCS_FILE.into(),
+                        fs.create_node_and_allocate_node_id(
+                            ControlGroupNode::new(cgroup.clone()),
+                            FsNodeInfo::new(mode!(IFREG, 0o644), owner.clone()),
+                        ),
                     ),
-                    FsNodeInfo::new(mode!(IFREG, 0o644), owner.clone()),
-                ),
-            ),
-            (
-                SUBTREE_CONTROL_FILE.into(),
-                fs.create_node_and_allocate_node_id(
-                    StubBytesFile::new_node_with_data(
-                        bug_ref!("https://fxbug.dev/489194399"),
-                        b"".to_vec(),
+                    (
+                        CONTROLLERS_FILE.into(),
+                        fs.create_node_and_allocate_node_id(
+                            BytesFile::new_node(b"".to_vec()),
+                            FsNodeInfo::new(mode!(IFREG, 0o444), owner.clone()),
+                        ),
                     ),
-                    FsNodeInfo::new(mode!(IFREG, 0o644), owner.clone()),
-                ),
-            ),
-        ]);
+                    (
+                        FREEZE_FILE.into(),
+                        fs.create_node_and_allocate_node_id(
+                            FreezeFile::new_node(cgroup.clone()),
+                            FsNodeInfo::new(mode!(IFREG, 0o644), owner.clone()),
+                        ),
+                    ),
+                    (
+                        EVENTS_FILE.into(),
+                        fs.create_node_and_allocate_node_id(
+                            EventsFile::new_node(cgroup.clone()),
+                            FsNodeInfo::new(mode!(IFREG, 0o444), owner.clone()),
+                        ),
+                    ),
+                    (
+                        KILL_FILE.into(),
+                        fs.create_node_and_allocate_node_id(
+                            KillFile::new_node(cgroup.clone()),
+                            FsNodeInfo::new(mode!(IFREG, 0o200), owner.clone()),
+                        ),
+                    ),
+                    (
+                        TYPE_FILE.into(),
+                        fs.create_node_and_allocate_node_id(
+                            StubBytesFile::new_node_with_data(
+                                bug_ref!("https://fxbug.dev/489195565"),
+                                b"domain".to_vec(),
+                            ),
+                            FsNodeInfo::new(mode!(IFREG, 0o644), owner.clone()),
+                        ),
+                    ),
+                    (
+                        SUBTREE_CONTROL_FILE.into(),
+                        fs.create_node_and_allocate_node_id(
+                            StubBytesFile::new_node_with_data(
+                                bug_ref!("https://fxbug.dev/489194399"),
+                                b"".to_vec(),
+                            ),
+                            FsNodeInfo::new(mode!(IFREG, 0o644), owner.clone()),
+                        ),
+                    ),
+                ]);
+            }
+            CgroupVersion::V1(_) => {
+                // TODO(https://fxbug.dev/401298305): "tasks" should contain task IDs (TIDs)
+                // of all threads in the cgroup, and allow migrating individual threads. Currently
+                // it uses `ControlGroupNode` which only supports process IDs (PIDs).
+                interface_files.insert(
+                    TASKS_FILE.into(),
+                    fs.create_node_and_allocate_node_id(
+                        ControlGroupNode::new(cgroup.clone()),
+                        FsNodeInfo::new(mode!(IFREG, 0o644), owner.clone()),
+                    ),
+                );
+                interface_files.insert(
+                    PROCS_FILE.into(),
+                    fs.create_node_and_allocate_node_id(
+                        ControlGroupNode::new(cgroup.clone()),
+                        FsNodeInfo::new(mode!(IFREG, 0o644), owner.clone()),
+                    ),
+                );
+            }
+        }
         CgroupDirectoryHandle(Arc::new(Self {
             cgroup,
             interface_files: Mutex::new(interface_files),
-            dir_nodes,
+            dir_nodes: Arc::downgrade(dir_nodes),
         }))
     }
 
@@ -178,6 +228,10 @@ impl CgroupDirectory {
 
     fn dir_nodes(&self) -> Result<Arc<DirectoryNodes>, Errno> {
         self.dir_nodes.upgrade().ok_or_else(|| errno!(ENODEV))
+    }
+
+    fn version(&self) -> Result<CgroupVersion, Errno> {
+        Ok(self.dir_nodes()?.version.clone())
     }
 
     #[cfg(test)]
@@ -247,7 +301,7 @@ impl FsNodeOps for CgroupDirectoryHandle {
         let directory = CgroupDirectory::new(
             Arc::downgrade(&cgroup) as Weak<dyn CgroupOps>,
             &node.fs(),
-            self.dir_nodes.clone(),
+            &dir_nodes,
             owner.clone(),
         );
         let child = dir_nodes.add_node(&cgroup, directory, &node.fs(), owner);

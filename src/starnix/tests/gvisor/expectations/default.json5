@@ -171,7 +171,6 @@
                 "Cgroup.DirSetStat",
                 "Cgroup.DuplicateUnlinkOnDirFD",
                 "Cgroup.EmptyHierarchyMustHaveName",
-                "Cgroup.InvalidController",
                 "Cgroup.MigrateInvalidPID",
                 "Cgroup.MigrateToSubcontainer",
                 "Cgroup.MigrateToSubcontainerThread",

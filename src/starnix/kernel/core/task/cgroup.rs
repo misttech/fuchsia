@@ -12,23 +12,96 @@ use crate::task::waiter::WaiterOptions;
 use crate::task::{Kernel, ThreadGroup, ThreadGroupKey, WaitQueue, Waiter};
 use crate::vfs::{FsStr, FsString, PathBuilder};
 use starnix_logging::{CATEGORY_STARNIX, log_warn, track_stub};
-use starnix_sync::{FileOpsCore, LockBefore, Locked, Mutex, MutexGuard, ThreadGroupLimits};
+use starnix_sync::{
+    CgroupV1Level, FileOpsCore, LockBefore, LockDepMutex, Locked, Mutex, MutexGuard,
+    ThreadGroupLimits,
+};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::SIGKILL;
 use starnix_uapi::{errno, error, pid_t};
-use std::collections::{BTreeMap, HashMap, HashSet, btree_map, hash_map};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, btree_map, hash_map};
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 
 use crate::signals::KernelSignal;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ControllerType {
+    Cpu,
+    Cpuacct,
+    Cpuset,
+    Memory,
+    Freezer,
+    Blkio,
+}
+
+impl ControllerType {
+    pub const ALL: [Self; 6] =
+        [Self::Cpu, Self::Cpuacct, Self::Cpuset, Self::Memory, Self::Freezer, Self::Blkio];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Cpu => "cpu",
+            Self::Cpuacct => "cpuacct",
+            Self::Cpuset => "cpuset",
+            Self::Memory => "memory",
+            Self::Freezer => "freezer",
+            Self::Blkio => "blkio",
+        }
+    }
+}
+
+impl std::str::FromStr for ControllerType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "cpu" => Ok(Self::Cpu),
+            "cpuacct" => Ok(Self::Cpuacct),
+            "cpuset" => Ok(Self::Cpuset),
+            "memory" => Ok(Self::Memory),
+            "freezer" => Ok(Self::Freezer),
+            "blkio" => Ok(Self::Blkio),
+            _ => Err(()),
+        }
+    }
+}
+
+impl std::fmt::Display for ControllerType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CgroupV1Key {
+    pub controllers: BTreeSet<ControllerType>,
+    pub name: Option<String>,
+}
+
+#[derive(Default, Debug)]
+pub struct CgroupV1State {
+    // TODO(https://fxbug.dev/401298305): Support removing cgroup hierarchies when they are
+    // unmounted and no longer have any tasks or child cgroups. Currently, they are kept alive
+    // indefinitely by these Arc references.
+    /// Maps controller to its active hierarchy.
+    pub controllers: HashMap<ControllerType, Arc<CgroupRoot>>,
+    /// Maps named hierarchies.
+    pub named: HashMap<String, Arc<CgroupRoot>>,
+    /// List of all unique hierarchies, naturally sorted.
+    pub hierarchies: BTreeMap<CgroupV1Key, Arc<CgroupRoot>>,
+    /// The next ID to assign to a cgroup v1 hierarchy.
+    next_hierarchy_id: u32,
+}
+
 /// All cgroups of the kernel. There is a single cgroup v2 hierarchy, and one-or-more cgroup v1
 /// hierarchies.
-/// TODO(https://fxbug.dev/389748287): Add cgroup v1 hierarchies on the kernel.
 #[derive(Debug)]
 pub struct KernelCgroups {
+    /// The single cgroup v2 hierarchy.
     pub cgroup2: Arc<CgroupRoot>,
+    /// The cgroup v1 hierarchies state, protected by a lockdep mutex.
+    pub cgroup1: LockDepMutex<CgroupV1State, CgroupV1Level>,
 }
 
 impl KernelCgroups {
@@ -41,11 +114,60 @@ impl KernelCgroups {
     pub fn lock_cgroup2_pid_table(&self) -> MutexGuard<'_, CgroupPidTable> {
         self.cgroup2.pid_table.lock()
     }
+
+    pub fn get_or_create_cgroup1(
+        &self,
+        controllers: &BTreeSet<ControllerType>,
+        name: Option<&str>,
+    ) -> Result<Arc<CgroupRoot>, Errno> {
+        let mut cgroup1 = self.cgroup1.lock();
+
+        let key = CgroupV1Key { controllers: controllers.clone(), name: name.map(String::from) };
+
+        if let Some(root) = cgroup1.hierarchies.get(&key) {
+            return Ok(root.clone());
+        }
+
+        for c in controllers {
+            if cgroup1.controllers.contains_key(c) {
+                return error!(EBUSY);
+            }
+        }
+
+        if let Some(n) = name {
+            if cgroup1.named.contains_key(n) {
+                return error!(EBUSY);
+            }
+        }
+
+        cgroup1.next_hierarchy_id += 1;
+        let hierarchy_id = cgroup1.next_hierarchy_id;
+        let root = CgroupRoot::new(hierarchy_id);
+        cgroup1.hierarchies.insert(key, root.clone());
+        for c in controllers {
+            cgroup1.controllers.insert(*c, root.clone());
+        }
+        if let Some(n) = name {
+            cgroup1.named.insert(n.to_string(), root.clone());
+        }
+
+        Ok(root)
+    }
+
+    pub fn get_cgroup1<TG: Copy + Into<ThreadGroupKey>>(
+        &self,
+        controller: ControllerType,
+        tg: TG,
+    ) -> Option<Weak<Cgroup>> {
+        let cgroup1 = self.cgroup1.lock();
+        let root = cgroup1.controllers.get(&controller)?;
+        root.get_cgroup(tg)
+    }
 }
 
 impl Default for KernelCgroups {
     fn default() -> Self {
-        Self { cgroup2: CgroupRoot::new() }
+        Self { cgroup2: CgroupRoot::new(0), cgroup1: LockDepMutex::new(CgroupV1State::default()) }
     }
 }
 
@@ -202,6 +324,9 @@ impl CgroupPidTable {
 /// - The root does not own a `FsNode` as it is created and owned by the `FileSystem` instead.
 #[derive(Debug)]
 pub struct CgroupRoot {
+    /// The ID of this hierarchy. 0 is reserved for cgroup v2.
+    pub hierarchy_id: u32,
+
     /// Look up cgroup by pid. Must be locked before child states.
     pid_table: Mutex<CgroupPidTable>,
 
@@ -216,8 +341,9 @@ pub struct CgroupRoot {
 }
 
 impl CgroupRoot {
-    pub fn new() -> Arc<CgroupRoot> {
+    pub fn new(hierarchy_id: u32) -> Arc<CgroupRoot> {
         Arc::new_cyclic(|weak_self| Self {
+            hierarchy_id,
             pid_table: Default::default(),
             children: Default::default(),
             weak_self: weak_self.clone(),
@@ -253,14 +379,14 @@ impl CgroupOps for CgroupRoot {
         thread_group: &ThreadGroup,
     ) -> Result<(), Errno> {
         let mut pid_table = self.pid_table.lock();
+        // If the process is currently in a child cgroup, we must remove it from that cgroup's
+        // tracking. If it's not in the pid table, it is already implicitly in the root cgroup,
+        // so adding it to root is a no-op.
         if let Some(entry) = pid_table.remove(&thread_group.into()) {
-            // If pid is in a child cgroup, remove it.
             if let Some(cgroup) = entry.upgrade() {
                 cgroup.state.lock().remove_process(locked, thread_group)?;
             }
         }
-        // Else if pid is not in a child cgroup, then it must be in the root cgroup already.
-        // This does not throw an error on Linux, so just return success here.
 
         Ok(())
     }
@@ -727,7 +853,7 @@ mod test {
     #[::fuchsia::test]
     async fn cgroup_path_from_root() {
         spawn_kernel_and_run(async |_, _| {
-            let root = CgroupRoot::new();
+            let root = CgroupRoot::new(0);
 
             let test_cgroup =
                 root.new_child("test".into()).expect("new_child on root cgroup succeeds");

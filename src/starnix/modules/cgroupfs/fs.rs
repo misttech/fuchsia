@@ -2,18 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use starnix_core::task::{Cgroup, CgroupOps, CgroupRoot, CurrentTask};
+use starnix_core::security;
+use starnix_core::task::{Cgroup, CgroupOps, CgroupRoot, CgroupV1Key, ControllerType, CurrentTask};
 use starnix_core::vfs::{
     CacheMode, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNodeHandle,
     FsNodeInfo, FsStr,
 };
+use starnix_logging::log_warn;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::{CGROUP_SUPER_MAGIC, CGROUP2_SUPER_MAGIC, errno, mode, statfs};
+use starnix_uapi::{CGROUP_SUPER_MAGIC, CGROUP2_SUPER_MAGIC, errno, error, mode, statfs};
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Weak};
 
 use crate::directory::{CgroupDirectory, CgroupDirectoryHandle};
@@ -23,6 +25,13 @@ pub struct CgroupV1Fs {
 
     /// All directory nodes of the filesystem.
     pub dir_nodes: Arc<DirectoryNodes>,
+
+    /// The name of this filesystem, which is also the name of the cgroup v1 hierarchy.
+    /// E.g., "cgroup" or "cpuset".
+    pub name: &'static FsStr,
+
+    /// The key identifying this hierarchy in the global cgroup v1 state.
+    pub hierarchy_key: CgroupV1Key,
 }
 
 impl CgroupV1Fs {
@@ -31,26 +40,105 @@ impl CgroupV1Fs {
         current_task: &CurrentTask,
         options: FileSystemOptions,
     ) -> Result<FileSystemHandle, Errno> {
+        Self::new_fs_inner(locked, current_task, options, b"cgroup".into())
+    }
+
+    pub fn new_fs_cpuset(
+        locked: &mut Locked<Unlocked>,
+        current_task: &CurrentTask,
+        options: FileSystemOptions,
+    ) -> Result<FileSystemHandle, Errno> {
+        Self::new_fs_inner(locked, current_task, options, b"cpuset".into())
+    }
+
+    fn new_fs_inner(
+        locked: &mut Locked<Unlocked>,
+        current_task: &CurrentTask,
+        options: FileSystemOptions,
+        fs_name: &'static FsStr,
+    ) -> Result<FileSystemHandle, Errno> {
         let kernel = current_task.kernel();
-        let root = CgroupRoot::new();
-        let dir_nodes = DirectoryNodes::new(Arc::downgrade(&root));
+
+        let mut params = options.params.clone();
+        // Eat LSM/SELinux options (like `context=`) before running validation. Android's
+        // `libprocessgroup` mounts cgroups with these options. If they are not stripped
+        // by an active LSM, they would be treated as invalid controllers and fail the
+        // strict validation below.
+        let _ = security::sb_eat_lsm_opts(kernel, &mut params)?;
+
+        let name = params.get(b"name").map(|n| String::from_utf8_lossy(n.as_ref()).to_string());
+
+        let mut controllers = BTreeSet::new();
+        for key in params.keys() {
+            let key_str = String::from_utf8_lossy(key.as_ref());
+            if let Ok(controller) = key_str.parse::<ControllerType>() {
+                controllers.insert(controller);
+            } else {
+                // Ignore common cgroup options that we don't support yet to avoid spamming warnings.
+                // TODO(https://fxbug.dev/322255433): Support these options.
+                if key_str != "name"
+                    && key_str != "none"
+                    && key_str != "noprefix"
+                    && key_str != "cpuset_v2_mode"
+                    && key_str != "clone_children"
+                {
+                    log_warn!("cgroup v1: invalid controller or option: {}", key_str);
+                }
+                continue;
+            }
+        }
+
+        if params.get(b"none").is_some() && !controllers.is_empty() {
+            return error!(EINVAL);
+        }
+
+        if fs_name == b"cpuset" {
+            // cpuset filesystem only allows cpuset controller.
+            if !controllers.is_empty()
+                && (controllers.len() > 1 || !controllers.contains(&ControllerType::Cpuset))
+            {
+                return error!(EINVAL);
+            }
+            controllers.insert(ControllerType::Cpuset);
+        }
+
+        if controllers.is_empty() && name.is_none() {
+            log_warn!("Mounting cgroup v1 without controllers or name is not supported");
+            return error!(EINVAL);
+        }
+
+        let root = kernel.cgroups.get_or_create_cgroup1(&controllers, name.as_deref())?;
+
+        let hierarchy_key = CgroupV1Key { controllers, name };
+
+        let dir_nodes =
+            DirectoryNodes::new(Arc::downgrade(&root), CgroupVersion::V1(hierarchy_key.clone()));
         let root_dir = dir_nodes.root.clone();
         let fs = FileSystem::new(
             locked,
             kernel,
             CacheMode::Uncached,
-            CgroupV1Fs { dir_nodes, root },
+            CgroupV1Fs {
+                dir_nodes: dir_nodes.clone(),
+                root: root.clone(),
+                name: fs_name,
+                hierarchy_key,
+            },
             options,
         )?;
         root_dir.create_root_interface_files(&fs);
         let root_ino = fs.allocate_ino();
         fs.create_root(root_ino, root_dir);
+
+        // Populate existing child cgroups if any (e.g. on remount).
+        dir_nodes.populate_from_root(&fs, &root, FsCred::root())?;
+
         Ok(fs)
     }
 }
 impl FileSystemOps for CgroupV1Fs {
     fn name(&self) -> &'static FsStr {
-        b"cgroup".into()
+        self.name
     }
     fn statfs(
         &self,
@@ -93,7 +181,8 @@ impl CgroupV2Fs {
         L: LockEqualOrBefore<FileOpsCore>,
     {
         let kernel = current_task.kernel();
-        let dir_nodes = DirectoryNodes::new(Arc::downgrade(&kernel.cgroups.cgroup2));
+        let dir_nodes =
+            DirectoryNodes::new(Arc::downgrade(&kernel.cgroups.cgroup2), CgroupVersion::V2);
         let root = dir_nodes.root.clone();
         let fs = FileSystem::new(
             locked,
@@ -124,6 +213,12 @@ impl FileSystemOps for CgroupV2Fs {
 }
 
 /// Represents all directory nodes of a cgroup hierarchy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CgroupVersion {
+    V1(CgroupV1Key),
+    V2,
+}
+
 pub struct DirectoryNodes {
     /// `CgroupRoot`'s directory handle. The `FileSystem` owns the `FsNode` of the root, and so we
     /// do not have a `FsNodeHandle` of the root.
@@ -132,13 +227,17 @@ pub struct DirectoryNodes {
     /// All non-root cgroup directories, keyed by cgroup's ID. Every non-root cgroup has a
     /// corresponding node.
     nodes: Mutex<HashMap<u64, FsNodeHandle>>,
+
+    /// The version of cgroup for this hierarchy (v1 or v2).
+    pub version: CgroupVersion,
 }
 
 impl DirectoryNodes {
-    pub fn new(root_cgroup: Weak<CgroupRoot>) -> Arc<DirectoryNodes> {
+    pub fn new(root_cgroup: Weak<CgroupRoot>, version: CgroupVersion) -> Arc<DirectoryNodes> {
         Arc::new_cyclic(|weak_self| Self {
             root: CgroupDirectory::new_root(root_cgroup, weak_self.clone()),
             nodes: Mutex::new(HashMap::new()),
+            version,
         })
     }
 
@@ -178,6 +277,40 @@ impl DirectoryNodes {
         let mut nodes = self.nodes.lock();
         nodes.remove(&id).ok_or_else(|| errno!(ENOENT))
     }
+
+    pub fn populate_from_root(
+        self: &Arc<Self>,
+        fs: &FileSystemHandle,
+        root: &Arc<CgroupRoot>,
+        owner: FsCred,
+    ) -> Result<(), Errno> {
+        let children = root.get_children()?;
+        for child in children {
+            self.populate_recursive(fs, &child, owner.clone())?;
+        }
+        Ok(())
+    }
+
+    fn populate_recursive(
+        self: &Arc<Self>,
+        fs: &FileSystemHandle,
+        cgroup: &Arc<Cgroup>,
+        owner: FsCred,
+    ) -> Result<(), Errno> {
+        let directory = CgroupDirectory::new(
+            Arc::downgrade(cgroup) as Weak<dyn CgroupOps>,
+            fs,
+            self,
+            owner.clone(),
+        );
+        self.add_node(cgroup, directory, fs, owner.clone());
+
+        let children = cgroup.get_children()?;
+        for child in children {
+            self.populate_recursive(fs, &child, owner.clone())?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -186,7 +319,10 @@ mod test {
 
     #[allow(deprecated, reason = "pre-existing usage")]
     use starnix_core::testing::create_kernel_task_and_unlocked;
+    use starnix_core::vfs::FsNodeOps;
+    use starnix_core::vfs::fs_args::MountParams;
     use starnix_core::vfs::fs_registry::FsRegistry;
+    use starnix_uapi::file_mode::FileMode;
 
     #[::fuchsia::test]
     async fn test_filesystem_creates_nodes() {
@@ -205,5 +341,65 @@ mod test {
 
         let root_dir = dir_nodes.root.clone();
         assert!(root_dir.has_interface_files(), "root directory is initialized");
+    }
+
+    #[::fuchsia::test]
+    async fn test_cgroup_v1_remount_preserves_tree() {
+        #[allow(deprecated, reason = "pre-existing usage")]
+        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let registry = kernel.expando.get::<FsRegistry>();
+        registry.register(b"cgroup".into(), CgroupV1Fs::new_fs);
+
+        let options = FileSystemOptions {
+            params: MountParams::parse(b"memory".into()).unwrap(),
+            ..Default::default()
+        };
+
+        {
+            let fs1 = current_task
+                .create_filesystem(&mut *locked, b"cgroup".into(), options.clone())
+                .expect("create_filesystem");
+            let cgroupfs1 = fs1.downcast_ops::<CgroupV1Fs>().expect("downcast_ops");
+            let dir_nodes1 = cgroupfs1.dir_nodes.clone();
+            let root_dir1 = dir_nodes1.root.clone();
+            let root_node1 = fs1.root();
+
+            let locked_file_ops = locked.cast_locked::<FileOpsCore>();
+            root_dir1
+                .mkdir(
+                    locked_file_ops,
+                    &root_node1.node,
+                    &current_task,
+                    "test_child".into(),
+                    FileMode::default(),
+                    FsCred::root(),
+                )
+                .expect("mkdir");
+
+            let lookup_result1 = root_dir1.lookup(
+                locked_file_ops,
+                &root_node1.node,
+                &current_task,
+                "test_child".into(),
+            );
+            assert!(lookup_result1.is_ok());
+        }
+
+        let fs2 = current_task
+            .create_filesystem(&mut *locked, b"cgroup".into(), options)
+            .expect("create_filesystem");
+        let cgroupfs2 = fs2.downcast_ops::<CgroupV1Fs>().expect("downcast_ops");
+        let dir_nodes2 = cgroupfs2.dir_nodes.clone();
+        let root_dir2 = dir_nodes2.root.clone();
+        let root_node2 = fs2.root();
+
+        let locked_file_ops2 = locked.cast_locked::<FileOpsCore>();
+        let lookup_result2 = root_dir2.lookup(
+            locked_file_ops2,
+            &root_node2.node,
+            &current_task,
+            "test_child".into(),
+        );
+        assert!(lookup_result2.is_ok(), "child cgroup should be preserved on remount");
     }
 }
