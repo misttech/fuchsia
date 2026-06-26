@@ -345,9 +345,8 @@ pub struct ManifestFile {
 
 /// Construct a list of partitions to add to the flash manifest by mapping the partitions to the
 /// images. If |is_recovery|, then put the recovery images in every slot.
-fn get_mapped_partitions(image_map: &PartitionImageMapper, is_recovery: bool) -> Vec<Partition> {
-    let partition_map =
-        if is_recovery { image_map.map_recovery_on_all_slots() } else { image_map.map() };
+fn get_mapped_partitions(image_map: &PartitionImageMapper, _is_recovery: bool) -> Vec<Partition> {
+    let partition_map = image_map.map();
     partition_map
         .iter()
         .map(|PartitionAndImage { partition, path }| Partition {

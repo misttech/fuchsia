@@ -191,16 +191,6 @@ impl PartitionImageMapper {
 
     /// Return the mappings of images to partitions.
     pub fn map(&self) -> Vec<PartitionAndImage> {
-        self.map_internal(false)
-    }
-
-    /// Return the mappings of images to partitions.
-    /// Use the R slot images for all partitions.
-    pub fn map_recovery_on_all_slots(&self) -> Vec<PartitionAndImage> {
-        self.map_internal(true)
-    }
-
-    fn map_internal(&self, recovery_on_all_slots: bool) -> Vec<PartitionAndImage> {
         let mut mapped_partitions = vec![];
 
         // Assign the images to particular partitions.
@@ -219,12 +209,7 @@ impl PartitionImageMapper {
                 Partition::Fxfs { .. } => (ImageType::Fxfs, &Slot::A),
             };
 
-            if let Some(slot) = match recovery_on_all_slots {
-                // If this is recovery mode, then fill every partition with images from the slot R
-                // system.
-                true => self.images.get(&Slot::R),
-                false => self.images.get(slot),
-            } {
+            if let Some(slot) = self.images.get(slot) {
                 if let Some(path) = slot.get(&image_type) {
                     mapped_partitions
                         .push(PartitionAndImage { partition: p.clone(), path: path.clone() });
@@ -382,94 +367,6 @@ mod tests {
             },
         ];
         assert_eq!(expected, mapper.map());
-    }
-
-    #[test]
-    fn test_map_recovery() {
-        let partitions = PartitionsConfig {
-            partitions: vec![
-                Partition::ZBI { name: "zbi_a".into(), slot: Slot::A, size: None },
-                Partition::VBMeta { name: "vbmeta_a".into(), slot: Slot::A, size: None },
-                Partition::Dtbo { name: "dtbo_a".into(), slot: Slot::A, size: None },
-                Partition::ZBI { name: "zbi_b".into(), slot: Slot::B, size: None },
-                Partition::VBMeta { name: "vbmeta_b".into(), slot: Slot::B, size: None },
-                Partition::Dtbo { name: "dtbo_b".into(), slot: Slot::B, size: None },
-                Partition::ZBI { name: "zbi_r".into(), slot: Slot::R, size: None },
-                Partition::VBMeta { name: "vbmeta_r".into(), slot: Slot::R, size: None },
-                Partition::FVM { name: "fvm".into(), size: None },
-            ],
-            ..Default::default()
-        };
-        let images_a = AssembledSystem {
-            images: vec![
-                Image::ZBI { path: "path/to/a/fuchsia.zbi".into(), signed: false },
-                Image::VBMeta("path/to/a/fuchsia.vbmeta".into()),
-                Image::Dtbo("path/to/a/dtbo".into()),
-                Image::FVM("path/to/a/fvm.blk".into()),
-                Image::FVMFastboot("path/to/a/fvm.fastboot.blk".into()),
-            ],
-            board_name: "my_board".into(),
-            partitions_config: None,
-            system_release_info: SystemReleaseInfo::new_for_testing(),
-            platform_tools: vec![],
-        };
-        let images_b = AssembledSystem {
-            images: vec![
-                Image::ZBI { path: "path/to/b/fuchsia.zbi".into(), signed: false },
-                Image::VBMeta("path/to/b/fuchsia.vbmeta".into()),
-                Image::Dtbo("path/to/b/dtbo".into()),
-                Image::FVM("path/to/b/fvm.blk".into()),
-                Image::FVMFastboot("path/to/b/fvm.fastboot.blk".into()),
-            ],
-            board_name: "my_board".into(),
-            partitions_config: None,
-            system_release_info: SystemReleaseInfo::new_for_testing(),
-            platform_tools: vec![],
-        };
-        let images_r = AssembledSystem {
-            images: vec![
-                Image::ZBI { path: "path/to/r/fuchsia.zbi".into(), signed: false },
-                Image::VBMeta("path/to/r/fuchsia.vbmeta".into()),
-                Image::FVM("path/to/r/fvm.blk".into()),
-                Image::FVMFastboot("path/to/r/fvm.fastboot.blk".into()),
-            ],
-            board_name: "my_board".into(),
-            partitions_config: None,
-            system_release_info: SystemReleaseInfo::new_for_testing(),
-            platform_tools: vec![],
-        };
-        let mut mapper = PartitionImageMapper::new(partitions).unwrap();
-        mapper.map_images_to_slot(&images_a.images, Slot::A).unwrap();
-        mapper.map_images_to_slot(&images_b.images, Slot::B).unwrap();
-        mapper.map_images_to_slot(&images_r.images, Slot::R).unwrap();
-
-        let expected = vec![
-            PartitionAndImage {
-                partition: Partition::ZBI { name: "zbi_a".into(), slot: Slot::A, size: None },
-                path: "path/to/r/fuchsia.zbi".into(),
-            },
-            PartitionAndImage {
-                partition: Partition::VBMeta { name: "vbmeta_a".into(), slot: Slot::A, size: None },
-                path: "path/to/r/fuchsia.vbmeta".into(),
-            },
-            PartitionAndImage {
-                partition: Partition::ZBI { name: "zbi_b".into(), slot: Slot::B, size: None },
-                path: "path/to/r/fuchsia.zbi".into(),
-            },
-            PartitionAndImage {
-                partition: Partition::VBMeta { name: "vbmeta_b".into(), slot: Slot::B, size: None },
-                path: "path/to/r/fuchsia.vbmeta".into(),
-            },
-            PartitionAndImage {
-                partition: Partition::ZBI { name: "zbi_r".into(), slot: Slot::R, size: None },
-                path: "path/to/r/fuchsia.zbi".into(),
-            },
-            PartitionAndImage {
-                partition: Partition::VBMeta { name: "vbmeta_r".into(), slot: Slot::R, size: None },
-                path: "path/to/r/fuchsia.vbmeta".into(),
-            },
-        ];
-        assert_eq!(expected, mapper.map_recovery_on_all_slots());
     }
 
     #[test]
