@@ -203,7 +203,7 @@ impl SshConnector {
             BUFFER_SIZE,
             cmd.stdout.take().expect("process should have stdout"),
         );
-        let stderr = BufReader::with_capacity(
+        let mut stderr = BufReader::with_capacity(
             BUFFER_SIZE,
             cmd.stderr.take().expect("process should have stderr"),
         );
@@ -211,20 +211,30 @@ impl SshConnector {
         match stdout.read_exact(&mut ack).await {
             Ok(_) => (),
             Err(e) => {
+                let mut stderr_content = String::new();
                 if e.kind() == ErrorKind::UnexpectedEof {
-                    let mut lines = stderr.lines();
-                    // Read all lines of stderr since SSH can output warning messages first
-                    // (e.g., "Warning: Permanently added ...") on standard error when connecting,
-                    // which would otherwise mask the target's "fdomain_runner: not found" error.
-                    while let Ok(Some(line)) = lines.next_line().await {
-                        if line.contains("fdomain_runner: not found") {
-                            return Err(FDomainConnectionError::NotSupported);
-                        }
+                    let _ = stderr.read_to_string(&mut stderr_content).await;
+                }
+
+                if stderr_content.is_empty() {
+                    return Err(FDomainConnectionError::ConnectionError(
+                        TargetConnectionError::NonFatal(e.into()),
+                    ));
+                }
+
+                let ssh_err = ffx_ssh::ssh::SshError::from(stderr_content);
+                match ssh_err {
+                    SshError::Unknown(_) => {
+                        // If it is unknown, we assume FDomain is not supported or broken,
+                        // and fallback to Overnet.
+                        return Err(FDomainConnectionError::NotSupported);
+                    }
+                    _ => {
+                        return Err(FDomainConnectionError::ConnectionError(
+                            TargetConnectionError::from(ssh_err),
+                        ));
                     }
                 }
-                return Err(FDomainConnectionError::ConnectionError(
-                    TargetConnectionError::NonFatal(e.into()),
-                ));
             }
         }
 
@@ -267,28 +277,39 @@ impl TryFromEnvContext for SshConnector {
     }
 }
 
+async fn make_ssh_command(
+    target: ScopedSocketAddr,
+    env_context: &EnvironmentContext,
+    args: Vec<&str>,
+) -> Result<tokio::process::Command> {
+    let ssh_path: String = env_context.get("ssh.path").unwrap_or_else(|_| "ssh".to_string());
+    let ssh = tokio::process::Command::from(
+        build_ssh_command_with_env(&ssh_path, target, env_context, args).await?,
+    );
+    Ok(ssh)
+}
+
+async fn spawn_ssh_command(mut ssh: tokio::process::Command, label: &str) -> Result<Child> {
+    log::debug!("SshConnector starting {label} invoking: {ssh:?}");
+    let ssh_cmd = ssh.stdout(Stdio::piped()).stdin(Stdio::piped()).stderr(Stdio::piped());
+    Ok(ssh_cmd.spawn().bug_context("spawning ssh command")?)
+}
+
 async fn make_fdomain_ssh_command(
     target: ScopedSocketAddr,
     env_context: &EnvironmentContext,
 ) -> Result<tokio::process::Command> {
     let log_id = format!("{:0>20}", *ffx_config::logging::LOGGING_ID);
     let args = vec!["fdomain_runner", "--log-id", &log_id];
-    // Use ssh from the environment.
-    let ssh_path = "ssh";
-    let ssh = tokio::process::Command::from(
-        build_ssh_command_with_env(ssh_path, target, env_context, args).await?,
-    );
-    Ok(ssh)
+    make_ssh_command(target, env_context, args).await
 }
 
 async fn start_fdomain_ssh_command(
     target: ScopedSocketAddr,
     env_context: &EnvironmentContext,
 ) -> Result<Child> {
-    let mut ssh = make_fdomain_ssh_command(target, env_context).await?;
-    log::debug!("SshConnector starting start_fdomain_ssh invoking:  {ssh:?}");
-    let ssh_cmd = ssh.stdout(Stdio::piped()).stdin(Stdio::piped()).stderr(Stdio::piped());
-    Ok(ssh_cmd.spawn().bug_context("spawning ssh command")?)
+    let ssh = make_fdomain_ssh_command(target, env_context).await?;
+    spawn_ssh_command(ssh, "start_fdomain_ssh").await
 }
 
 async fn start_overnet_ssh_command(
@@ -313,14 +334,8 @@ async fn start_overnet_ssh_command(
         "--log-id",
         &log_id,
     ];
-    // Use ssh from the environment.
-    let ssh_path = "ssh";
-    let mut ssh = tokio::process::Command::from(
-        build_ssh_command_with_env(ssh_path, target, env_context, args).await?,
-    );
-    log::debug!("SshConnector starting overnet invoking: {ssh:?}");
-    let ssh_cmd = ssh.stdout(Stdio::piped()).stdin(Stdio::piped()).stderr(Stdio::piped());
-    Ok(ssh_cmd.spawn().bug_context("spawning ssh command")?)
+    let ssh = make_ssh_command(target, env_context, args).await?;
+    spawn_ssh_command(ssh, "overnet").await
 }
 
 async fn try_ssh_cmd_cleanup(mut cmd: Child) -> Result<()> {
@@ -407,6 +422,11 @@ impl Drop for SshConnector {
 #[cfg(test)]
 mod test {
     use super::*;
+    use ffx_config::environment::TestEnvBuilder;
+    use std::fs::File;
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::PathBuf;
 
     #[test]
     fn test_ssh_error_conversion() {
@@ -433,5 +453,151 @@ mod test {
         assert!(matches!(TargetConnectionError::from(err), TargetConnectionError::NonFatal(_)));
         let err = ConnectionClosedByRemoteHost;
         assert!(matches!(TargetConnectionError::from(err), TargetConnectionError::NonFatal(_)));
+    }
+
+    fn write_mock_ssh(dir: &tempfile::TempDir, content: &str) -> PathBuf {
+        let path = dir.path().join("ssh");
+        let mut file = File::create(&path).unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&path, perms).unwrap();
+        path
+    }
+
+    #[fuchsia::test]
+    async fn test_connect_via_fdomain_fallback_and_errors() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mock_ssh_script = r#"#!/bin/bash
+PORT=""
+args=("$@")
+for ((i=0; i<${#args[@]}; i++)); do
+  if [[ "${args[i]}" == "-p" ]]; then
+    PORT="${args[i+1]}"
+    break
+  fi
+done
+
+case "$PORT" in
+  "2201")
+    printf "OK\n"
+    sleep 3600
+    ;;
+  "2202")
+    echo "fdomain_runner: not found" >&2
+    exit 127
+    ;;
+  "2203")
+    echo "bash: fdomain_runner: command not found" >&2
+    exit 127
+    ;;
+  "2204")
+    echo "ssh: connect to host 127.0.0.1 port 2204: Connection refused" >&2
+    exit 255
+    ;;
+  "2205")
+    echo "Permission denied (publickey)." >&2
+    exit 255
+    ;;
+  *)
+    echo "Unknown port $PORT" >&2
+    exit 1
+    ;;
+esac
+"#;
+        let ssh_path = write_mock_ssh(&tmp, mock_ssh_script);
+        let priv_key_path = tmp.path().join("fake_key");
+        File::create(&priv_key_path).unwrap();
+
+        let test_env = TestEnvBuilder::default()
+            .user_config("ssh.path", ssh_path.to_str().unwrap())
+            .user_config("ssh.priv", priv_key_path.to_str().unwrap())
+            .user_config("ssh.controlmaster.mode", "none")
+            .build()
+            .unwrap();
+
+        // 1. Test Success (Port 2201)
+        {
+            let target_addr: SocketAddr = "127.0.0.1:2201".parse().unwrap();
+            let scoped_addr = ScopedSocketAddr::from_socket_addr(target_addr).unwrap();
+            let mut connector = SshConnector::new(scoped_addr, &test_env.context).unwrap();
+            let res = connector.connect_via_fdomain().await;
+            assert!(res.is_ok(), "Expected Ok for success case, got {:?}", res);
+        }
+
+        // 2. Test Not Supported (Port 2202) -> Fatal(FDomain not supported)
+        {
+            let target_addr: SocketAddr = "127.0.0.1:2202".parse().unwrap();
+            let scoped_addr = ScopedSocketAddr::from_socket_addr(target_addr).unwrap();
+            let mut connector = SshConnector::new(scoped_addr, &test_env.context).unwrap();
+            let res = connector.connect_via_fdomain().await;
+            assert!(res.is_err(), "Expected Err for not_supported case");
+            let err = res.unwrap_err();
+            assert!(
+                matches!(err, TargetConnectionError::Fatal(_)),
+                "Expected Fatal for not_supported case, got {:?}",
+                err
+            );
+            assert!(
+                format!("{:?}", err).contains("FDomain not supported"),
+                "Expected 'FDomain not supported' error message, got: '{:?}'",
+                err
+            );
+        }
+
+        // 3. Test Command Not Found (Port 2203) -> Fatal(FDomain not supported)
+        {
+            let target_addr: SocketAddr = "127.0.0.1:2203".parse().unwrap();
+            let scoped_addr = ScopedSocketAddr::from_socket_addr(target_addr).unwrap();
+            let mut connector = SshConnector::new(scoped_addr, &test_env.context).unwrap();
+            let res = connector.connect_via_fdomain().await;
+            assert!(res.is_err(), "Expected Err for command_not_found case");
+            let err = res.unwrap_err();
+            assert!(
+                matches!(err, TargetConnectionError::Fatal(_)),
+                "Expected Fatal for command_not_found case, got {:?}",
+                err
+            );
+            assert!(
+                format!("{:?}", err).contains("FDomain not supported"),
+                "Expected 'FDomain not supported' error message, got: '{:?}'",
+                err
+            );
+        }
+
+        // 4. Test Connection Refused (Port 2204) -> NonFatal
+        {
+            let target_addr: SocketAddr = "127.0.0.1:2204".parse().unwrap();
+            let scoped_addr = ScopedSocketAddr::from_socket_addr(target_addr).unwrap();
+            let mut connector = SshConnector::new(scoped_addr, &test_env.context).unwrap();
+            let res = connector.connect_via_fdomain().await;
+            assert!(res.is_err(), "Expected Err for connection_refused case");
+            let err = res.unwrap_err();
+            assert!(
+                matches!(err, TargetConnectionError::NonFatal(_)),
+                "Expected NonFatal for connection_refused case, got {:?}",
+                err
+            );
+        }
+
+        // 5. Test Permission Denied (Port 2205) -> Fatal
+        {
+            let target_addr: SocketAddr = "127.0.0.1:2205".parse().unwrap();
+            let scoped_addr = ScopedSocketAddr::from_socket_addr(target_addr).unwrap();
+            let mut connector = SshConnector::new(scoped_addr, &test_env.context).unwrap();
+            let res = connector.connect_via_fdomain().await;
+            assert!(res.is_err(), "Expected Err for permission_denied case");
+            let err = res.unwrap_err();
+            assert!(
+                matches!(err, TargetConnectionError::Fatal(_)),
+                "Expected Fatal for permission_denied case, got {:?}",
+                err
+            );
+            assert!(
+                !format!("{:?}", err).contains("FDomain not supported"),
+                "Expected NOT 'FDomain not supported' error message, got: '{:?}'",
+                err
+            );
+        }
     }
 }
