@@ -930,10 +930,6 @@
                 "PtyTest.PacketModeWriteReplicaToMaster",
                 "PtyTest.PacketModeFailsOnReplica",
 
-                // TODO(https://fxbug.dev/495998421): Implement termios2 ioctls.
-                "PtyTest.Termios2",
-                "PtyTest.TermiosFault",
-
                 // TODO(https://fxbug.dev/525046044): TIOCGPTPEER is not implemented in Starnix.
                 "BasicPtyTest.TIOCGPTPEER*",
 

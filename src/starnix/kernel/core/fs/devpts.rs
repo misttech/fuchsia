@@ -28,18 +28,22 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::SIGWINCH;
+use starnix_uapi::termios::{
+    into_termio, into_termios2, termios_from_termios2, termios2_from_termios,
+};
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
     DEVPTS_SUPER_MAGIC, FIOASYNC, FIOCLEX, FIONBIO, FIONCLEX, FIONREAD, FIOQSIZE, TCFLSH, TCGETA,
-    TCGETS, TCGETX, TCSBRK, TCSBRKP, TCSETA, TCSETAF, TCSETAW, TCSETS, TCSETSF, TCSETSW, TCSETX,
-    TCSETXF, TCSETXW, TCXONC, TIOCCBRK, TIOCCONS, TIOCEXCL, TIOCGETD, TIOCGICOUNT, TIOCGLCKTRMIOS,
-    TIOCGPGRP, TIOCGPTLCK, TIOCGPTN, TIOCGRS485, TIOCGSERIAL, TIOCGSID, TIOCGSOFTCAR, TIOCGWINSZ,
-    TIOCLINUX, TIOCMBIC, TIOCMBIS, TIOCMGET, TIOCMIWAIT, TIOCMSET, TIOCNOTTY, TIOCNXCL, TIOCOUTQ,
-    TIOCPKT, TIOCSBRK, TIOCSCTTY, TIOCSERCONFIG, TIOCSERGETLSR, TIOCSERGETMULTI, TIOCSERGSTRUCT,
-    TIOCSERGWILD, TIOCSERSETMULTI, TIOCSERSWILD, TIOCSETD, TIOCSLCKTRMIOS, TIOCSPGRP, TIOCSPTLCK,
-    TIOCSRS485, TIOCSSERIAL, TIOCSSOFTCAR, TIOCSTI, TIOCSWINSZ, TIOCVHANGUP, errno, error, gid_t,
-    ino_t, pid_t, statfs, uapi, uid_t,
+    TCGETS, TCGETS2, TCGETX, TCSBRK, TCSBRKP, TCSETA, TCSETAF, TCSETAW, TCSETS, TCSETS2, TCSETSF,
+    TCSETSF2, TCSETSW, TCSETSW2, TCSETX, TCSETXF, TCSETXW, TCXONC, TIOCCBRK, TIOCCONS, TIOCEXCL,
+    TIOCGETD, TIOCGICOUNT, TIOCGLCKTRMIOS, TIOCGPGRP, TIOCGPTLCK, TIOCGPTN, TIOCGRS485,
+    TIOCGSERIAL, TIOCGSID, TIOCGSOFTCAR, TIOCGWINSZ, TIOCLINUX, TIOCMBIC, TIOCMBIS, TIOCMGET,
+    TIOCMIWAIT, TIOCMSET, TIOCNOTTY, TIOCNXCL, TIOCOUTQ, TIOCPKT, TIOCSBRK, TIOCSCTTY,
+    TIOCSERCONFIG, TIOCSERGETLSR, TIOCSERGETMULTI, TIOCSERGSTRUCT, TIOCSERGWILD, TIOCSERSETMULTI,
+    TIOCSERSWILD, TIOCSETD, TIOCSLCKTRMIOS, TIOCSPGRP, TIOCSPTLCK, TIOCSRS485, TIOCSSERIAL,
+    TIOCSSOFTCAR, TIOCSTI, TIOCSWINSZ, TIOCVHANGUP, errno, error, gid_t, ino_t, pid_t, statfs,
+    uapi, uid_t,
 };
 use std::sync::{Arc, Weak};
 
@@ -583,33 +587,6 @@ impl FileOps for TtyFile {
     }
 }
 
-fn into_termios(value: uapi::termio) -> uapi::termios {
-    let mut cc = [0; 19];
-    cc[0..8].copy_from_slice(&value.c_cc[0..8]);
-    uapi::termios {
-        c_iflag: value.c_iflag as uapi::tcflag_t,
-        c_oflag: value.c_oflag as uapi::tcflag_t,
-        c_cflag: value.c_cflag as uapi::tcflag_t,
-        c_lflag: value.c_lflag as uapi::tcflag_t,
-        c_line: value.c_line as uapi::cc_t,
-        c_cc: cc,
-    }
-}
-
-fn into_termio(value: uapi::termios) -> uapi::termio {
-    let mut cc = [0; 8];
-    cc.copy_from_slice(&value.c_cc[0..8]);
-    uapi::termio {
-        c_iflag: value.c_iflag as u16,
-        c_oflag: value.c_oflag as u16,
-        c_cflag: value.c_cflag as u16,
-        c_lflag: value.c_lflag as u16,
-        c_line: value.c_line,
-        c_cc: cc,
-        ..Default::default()
-    }
-}
-
 /// The ioctl behaviour common to main and replica terminal file descriptors.
 fn shared_ioctl<L>(
     locked: &mut Locked<L>,
@@ -698,53 +675,75 @@ where
             Ok(SUCCESS)
         }
         TCGETA => {
-            let termio = into_termio(*terminal.read().termios());
+            let termio = into_termio(terminal.read().termios());
             current_task.write_object(UserRef::<uapi::termio>::new(user_addr), &termio)?;
             Ok(SUCCESS)
         }
         TCGETS => {
             // N.B. TCGETS on the main terminal actually returns the configuration of the replica
             // end.
+            let termios = termios_from_termios2(terminal.read().termios());
+            current_task.write_object(UserRef::<uapi::termios>::new(user_addr), &termios)?;
+            Ok(SUCCESS)
+        }
+        TCGETS2 => {
             current_task.write_object(
-                UserRef::<uapi::termios>::new(user_addr),
+                UserRef::<uapi::termios2>::new(user_addr),
                 terminal.read().termios(),
             )?;
             Ok(SUCCESS)
         }
         TCSETA => {
             let termio = current_task.read_object(UserRef::<uapi::termio>::new(user_addr))?;
-            terminal.set_termios(locked, into_termios(termio));
+            terminal.set_termios(locked, into_termios2(termio));
             Ok(SUCCESS)
         }
         TCSETS => {
             // N.B. TCSETS on the main terminal actually affects the configuration of the replica
             // end.
             let termios = current_task.read_object(UserRef::<uapi::termios>::new(user_addr))?;
-            terminal.set_termios(locked, termios);
+            terminal.set_termios(locked, termios2_from_termios(&termios));
+            Ok(SUCCESS)
+        }
+        TCSETS2 => {
+            let termios2 = current_task.read_object(UserRef::<uapi::termios2>::new(user_addr))?;
+            terminal.set_termios(locked, termios2);
             Ok(SUCCESS)
         }
         TCSETAF => {
             // This should drain the output queue and discard the pending input first.
             let termio = current_task.read_object(UserRef::<uapi::termio>::new(user_addr))?;
-            terminal.set_termios(locked, into_termios(termio));
+            terminal.set_termios(locked, into_termios2(termio));
             Ok(SUCCESS)
         }
         TCSETSF => {
             // This should drain the output queue and discard the pending input first.
             let termios = current_task.read_object(UserRef::<uapi::termios>::new(user_addr))?;
-            terminal.set_termios(locked, termios);
+            terminal.set_termios(locked, termios2_from_termios(&termios));
+            Ok(SUCCESS)
+        }
+        TCSETSF2 => {
+            // This should drain the output queue and discard the pending input first.
+            let termios2 = current_task.read_object(UserRef::<uapi::termios2>::new(user_addr))?;
+            terminal.set_termios(locked, termios2);
             Ok(SUCCESS)
         }
         TCSETAW => {
             track_stub!(TODO("https://fxbug.dev/322873281"), "TCSETAW drain output queue first");
             let termio = current_task.read_object(UserRef::<uapi::termio>::new(user_addr))?;
-            terminal.set_termios(locked, into_termios(termio));
+            terminal.set_termios(locked, into_termios2(termio));
             Ok(SUCCESS)
         }
         TCSETSW => {
             track_stub!(TODO("https://fxbug.dev/322873281"), "TCSETSW drain output queue first");
             let termios = current_task.read_object(UserRef::<uapi::termios>::new(user_addr))?;
-            terminal.set_termios(locked, termios);
+            terminal.set_termios(locked, termios2_from_termios(&termios));
+            Ok(SUCCESS)
+        }
+        TCSETSW2 => {
+            track_stub!(TODO("https://fxbug.dev/322873281"), "TCSETSW2 drain output queue first");
+            let termios2 = current_task.read_object(UserRef::<uapi::termios2>::new(user_addr))?;
+            terminal.set_termios(locked, termios2);
             Ok(SUCCESS)
         }
         TIOCSETD => {

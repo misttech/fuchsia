@@ -37,6 +37,7 @@ rustc_library("starnix_uapi") {
     "src/selinux.rs",
     "src/signals.rs",
     "src/syslog.rs",
+    "src/termios.rs",
     "src/uapi.rs",
     "src/union.rs",
     "src/unmount_flags.rs",

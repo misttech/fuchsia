@@ -24,6 +24,7 @@ pub mod seal_flags;
 pub mod selinux;
 pub mod signals;
 pub mod syslog;
+pub mod termios;
 pub mod uapi;
 pub mod union;
 pub mod unmount_flags;

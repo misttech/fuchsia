@@ -127,7 +127,7 @@ impl Terminal {
     }
 
     /// Sets the terminal configuration.
-    pub fn set_termios<L>(&self, locked: &mut Locked<L>, termios: uapi::termios)
+    pub fn set_termios<L>(&self, locked: &mut Locked<L>, termios: uapi::termios2)
     where
         L: LockBefore<ProcessGroupState>,
     {
@@ -296,7 +296,7 @@ impl<'a> line_discipline::OutputBuffer for OutputBufferWrapper<'a> {
 #[apply(state_implementation!)]
 impl TerminalMutableState<Base = Terminal> {
     /// Returns the terminal configuration.
-    pub fn termios(&self) -> &uapi::termios {
+    pub fn termios(&self) -> &uapi::termios2 {
         self.line_discipline.termios()
     }
 
@@ -307,7 +307,7 @@ impl TerminalMutableState<Base = Terminal> {
     }
 
     /// Sets the terminal configuration.
-    fn set_termios(&mut self, termios: uapi::termios) -> PendingSignals {
+    fn set_termios(&mut self, termios: uapi::termios2) -> PendingSignals {
         let old_canon_enabled = self.line_discipline.is_canon_enabled();
         let signals = self.line_discipline.set_termios(termios);
         if old_canon_enabled && !self.line_discipline.is_canon_enabled() {

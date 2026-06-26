@@ -55,7 +55,7 @@ pub struct LineDiscipline {
 
     /// Terminal configuration.
     #[derivative(Default(value = "get_default_termios()"))]
-    termios: uapi::termios,
+    termios: uapi::termios2,
 
     /// True if the terminal is currently in the middle of an erase sequence (ECHOPRT).
     #[derivative(Default(value = "false"))]
@@ -148,7 +148,7 @@ enum EraseType {
 
 impl LineDiscipline {
     /// Returns the terminal configuration.
-    pub fn termios(&self) -> &uapi::termios {
+    pub fn termios(&self) -> &uapi::termios2 {
         &self.termios
     }
 
@@ -164,7 +164,7 @@ impl LineDiscipline {
     }
 
     /// Sets the terminal configuration.
-    pub fn set_termios(&mut self, termios: uapi::termios) -> PendingSignals {
+    pub fn set_termios(&mut self, termios: uapi::termios2) -> PendingSignals {
         let old_canon_enabled = self.is_canon_enabled();
         self.termios = termios;
         if old_canon_enabled && !self.is_canon_enabled() {
@@ -896,9 +896,11 @@ fn get_default_control_characters() -> [cc_t; 19usize] {
     ]
 }
 
+const DEFAULT_SPEED: u32 = 38400;
+
 // Returns the default replica terminal configuration.
-pub fn get_default_termios() -> uapi::termios {
-    uapi::termios {
+pub fn get_default_termios() -> uapi::termios2 {
+    uapi::termios2 {
         c_iflag: uapi::ICRNL | uapi::IXON,
         c_oflag: uapi::OPOST | uapi::ONLCR,
         c_cflag: uapi::B38400 | uapi::CS8 | uapi::CREAD,
@@ -912,6 +914,8 @@ pub fn get_default_termios() -> uapi::termios {
             | uapi::IEXTEN,
         c_line: 0,
         c_cc: get_default_control_characters(),
+        c_ispeed: DEFAULT_SPEED,
+        c_ospeed: DEFAULT_SPEED,
     }
 }
 
@@ -928,7 +932,7 @@ trait TermIOS {
     fn signal(&self, c: RawByte) -> Option<Signal>;
 }
 
-impl TermIOS for uapi::termios {
+impl TermIOS for uapi::termios2 {
     fn has_input_flags(&self, flags: tcflag_t) -> bool {
         self.c_iflag & flags == flags
     }
@@ -992,7 +996,7 @@ impl TermIOS for uapi::termios {
     }
 }
 
-fn compute_next_character_size(buffer: &[RawByte], termios: &uapi::termios) -> usize {
+fn compute_next_character_size(buffer: &[RawByte], termios: &uapi::termios2) -> usize {
     if !termios.has_input_flags(IUTF8) {
         return 1;
     }
@@ -1055,7 +1059,7 @@ impl std::ops::AddAssign<Self> for BufferSpan {
     }
 }
 
-fn compute_last_character_span(buffer: &[RawByte], termios: &uapi::termios) -> BufferSpan {
+fn compute_last_character_span(buffer: &[RawByte], termios: &uapi::termios2) -> BufferSpan {
     if buffer.is_empty() {
         return BufferSpan::default();
     }
@@ -1073,7 +1077,7 @@ fn compute_last_character_span(buffer: &[RawByte], termios: &uapi::termios) -> B
     }
 }
 
-fn compute_last_word_span(buffer: &[RawByte], termios: &uapi::termios) -> BufferSpan {
+fn compute_last_word_span(buffer: &[RawByte], termios: &uapi::termios2) -> BufferSpan {
     fn is_whitespace(c: RawByte) -> bool {
         c == b' ' || c == b'\t'
     }
@@ -1105,7 +1109,7 @@ fn compute_last_word_span(buffer: &[RawByte], termios: &uapi::termios) -> Buffer
     word_span
 }
 
-fn compute_last_line_span(buffer: &[RawByte], termios: &uapi::termios) -> BufferSpan {
+fn compute_last_line_span(buffer: &[RawByte], termios: &uapi::termios2) -> BufferSpan {
     let mut line_span = BufferSpan::default();
     let mut remaining = buffer.len();
 
