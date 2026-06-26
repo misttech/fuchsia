@@ -239,6 +239,7 @@ void Ufs::ProcessIoSubmissions() {
     if (transfer_bytes > max_transfer_bytes_) {
       fdf::error("Request exceeding max transfer size. transfer_bytes={}, max_transfer_bytes_={}",
                  transfer_bytes, max_transfer_bytes_);
+      io_cmd->data_vmo.reset();
       io_cmd->device_op.Complete(ZX_ERR_INVALID_ARGS);
       continue;
     }
@@ -253,8 +254,8 @@ void Ufs::ProcessIoSubmissions() {
       }
       fdf::error("Failed to submit SCSI command (command {}): {}", static_cast<const void*>(io_cmd),
                  response);
-      io_cmd->device_op.Complete(response.error_value());
       io_cmd->data_vmo.reset();
+      io_cmd->device_op.Complete(response.error_value());
     }
   }
 }
