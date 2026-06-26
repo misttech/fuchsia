@@ -367,7 +367,7 @@ impl ResourceAccessor for CurrentTask {
     fn close_files(&self, fds: Vec<FdNumber>) -> Result<(), Errno> {
         for fd in fds {
             log_trace!("Closing fd {:?}", fd);
-            self.running_state().files.close(fd)?;
+            self.files().close(fd)?;
         }
         Ok(())
     }
@@ -382,7 +382,7 @@ impl ResourceAccessor for CurrentTask {
         for fd in fds {
             log_trace!("Getting file {:?} with flags", fd);
             // TODO: Should we allow O_PATH here?
-            files.push(self.running_state().files.get_allowing_opath_with_flags(fd)?);
+            files.push(self.files().get_allowing_opath_with_flags(fd)?);
         }
         Ok(files)
     }
@@ -397,7 +397,7 @@ impl ResourceAccessor for CurrentTask {
         let mut fds = Vec::with_capacity(files.len());
         for (file, flags) in files {
             log_trace!("Adding file {:?} with flags {:?}", file, flags);
-            let fd = self.running_state().files.add(locked, current_task, file, flags)?;
+            let fd = self.files().add(locked, current_task, file, flags)?;
             add_action(fd);
             fds.push(fd);
         }
@@ -414,7 +414,7 @@ impl ResourceAccessor for Task {
     fn close_files(&self, fds: Vec<FdNumber>) -> Result<(), Errno> {
         for fd in fds {
             log_trace!("Closing fd {:?}", fd);
-            self.running_state()?.files.close(fd)?;
+            self.files()?.close(fd)?;
         }
         Ok(())
     }
@@ -429,7 +429,7 @@ impl ResourceAccessor for Task {
         for fd in fds {
             log_trace!("Getting file {:?} with flags", fd);
             // TODO: Should we allow O_PATH here?
-            files.push(self.running_state()?.files.get_allowing_opath_with_flags(fd)?);
+            files.push(self.files()?.get_allowing_opath_with_flags(fd)?);
         }
         Ok(files)
     }
@@ -444,7 +444,7 @@ impl ResourceAccessor for Task {
         let mut fds = Vec::with_capacity(files.len());
         for (file, flags) in files {
             log_trace!("Adding file {:?} with flags {:?}", file, flags);
-            let fd = self.running_state()?.files.add(locked, current_task, file, flags)?;
+            let fd = self.files()?.add(locked, current_task, file, flags)?;
             add_action(fd);
             fds.push(fd);
         }

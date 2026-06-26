@@ -96,7 +96,7 @@ pub fn sys_io_uring_enter(
             return error!(EINVAL);
         }
     }
-    let file = current_task.get_file(fd)?;
+    let file = current_task.files().get(fd)?;
     let io_uring = file.downcast_file::<IoUringFileObject>().ok_or_else(|| errno!(EOPNOTSUPP))?;
     // TODO(https://fxbug.dev/297431387): Use `_sig` to change the signal mask for `current_task`.
     io_uring.enter(locked, current_task, to_submit, min_complete, flags)
@@ -113,7 +113,7 @@ pub fn sys_io_uring_register(
     if !current_task.kernel().features.io_uring {
         return error!(ENOSYS);
     }
-    let file = current_task.get_file(fd)?;
+    let file = current_task.files().get(fd)?;
     let io_uring = file.downcast_file::<IoUringFileObject>().ok_or_else(|| errno!(EOPNOTSUPP))?;
     match opcode {
         IORING_REGISTER_BUFFERS => {

@@ -311,7 +311,7 @@ impl MagmaFile {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        let file = current_task.get_file(fd)?;
+        let file = current_task.files().get(fd)?;
         if let Some(file) = file.downcast_file::<ImageFile>() {
             let buffer = BufferInfo::Image(file.info.clone());
             Ok((
@@ -411,7 +411,7 @@ impl MagmaFile {
         let mut result_semaphore_id = 0;
 
         if let (Ok(connection), Ok(file)) =
-            (self.get_connection(control.connection), current_task.get_file(fd))
+            (self.get_connection(control.connection), current_task.files().get(fd))
         {
             let mut handles: Vec<magma_semaphore_t> = vec![];
             let mut ids: Vec<magma_semaphore_id_t> = vec![];
@@ -458,7 +458,7 @@ impl MagmaFile {
         }
 
         // Import is expected to close the file that was imported.
-        let _ = current_task.running_state().files.close(fd);
+        let _ = current_task.files().close(fd);
 
         response.result_return = status as u64;
         response.semaphore_out = result_semaphore_id;
@@ -684,7 +684,7 @@ impl FileOps for MagmaFile {
                 // Store the information for the newly imported buffer.
                 self.add_buffer_info(connection_id, connection, buffer_out, id_out, buffer);
                 // Import is expected to close the file that was imported.
-                let _ = current_task.running_state().files.close(buffer_fd);
+                let _ = current_task.files().close(buffer_fd);
 
                 response.buffer_out = id_out;
                 response.id_out = id_out;

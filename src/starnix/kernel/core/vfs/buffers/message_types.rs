@@ -346,7 +346,7 @@ impl UnixControlData {
                     //   UNIX domain socket (see SCM_RIGHTS in unix(7)).
                     //
                     // See https://man7.org/linux/man-pages/man2/open.2.html
-                    .map(|fd| current_task.get_file_allowing_opath(FdNumber::from_raw(fd)))
+                    .map(|fd| current_task.files().get_allowing_opath(FdNumber::from_raw(fd)))
                     .collect::<Result<Vec<FileHandle>, Errno>>()?;
 
                 Ok(UnixControlData::Rights(files))

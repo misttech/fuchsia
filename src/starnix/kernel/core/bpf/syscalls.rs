@@ -133,7 +133,7 @@ fn read_map_key(
         let fd = FdNumber::from_raw(
             i32::read_from_bytes(&key[..]).expect("invalid key size in sk_storage map"),
         );
-        let file = current_task.get_file(fd)?;
+        let file = current_task.files().get(fd)?;
         let socket = Socket::get_from_file(&file)?;
         let socket = socket.downcast_socket::<ZxioBackedSocket>().ok_or_else(|| errno!(EINVAL))?;
         let cookie = socket.get_socket_cookie()?;

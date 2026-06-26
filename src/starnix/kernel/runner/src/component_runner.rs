@@ -267,11 +267,12 @@ pub async fn start_component(
                             )?;
                         }
 
+                        let files = current_task.files();
                         parse_numbered_handles(
                             locked,
                             current_task,
                             start_info.numbered_handles,
-                            &current_task.running_state().files,
+                            &files,
                         )
                         .map_err(|e| {
                             log_error!("Error while parsing the numbered handles: {e:?}");

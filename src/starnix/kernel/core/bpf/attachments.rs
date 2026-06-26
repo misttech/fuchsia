@@ -44,7 +44,7 @@ fn check_root_cgroup_fd(
     current_task: &CurrentTask,
     cgroup_fd: FdNumber,
 ) -> Result<(), Errno> {
-    let file = current_task.get_file(cgroup_fd)?;
+    let file = current_task.files().get(cgroup_fd)?;
 
     // Check that `cgroup_fd` is from the CGROUP2 file system.
     let is_cgroup =

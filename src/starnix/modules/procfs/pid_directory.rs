@@ -367,7 +367,7 @@ impl FsNodeOps for FdDirectory {
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
         Ok(VecDirectory::new_file(fds_to_directory_entries(
-            Task::from_weak(&self.task)?.running_state()?.files.get_all_fds(),
+            Task::from_weak(&self.task)?.files()?.get_all_fds(),
         )))
     }
 
@@ -381,19 +381,14 @@ impl FsNodeOps for FdDirectory {
         let fd = FdNumber::from_fs_str(name).map_err(|_| errno!(ENOENT))?;
         let task = Task::from_weak(&self.task)?;
         // Make sure that the file descriptor exists before creating the node.
-        let file =
-            task.running_state()?.files.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
+        let file = task.files()?.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
         // Derive the symlink's mode from the mode in which the file was opened.
         let mode = FileMode::IFLNK | Access::from_open_flags(file.flags()).user_mode();
         let task_reference = self.task.clone();
         Ok(node.fs().create_node_and_allocate_node_id(
             CallbackSymlinkNode::new(move || {
                 let task = Task::from_weak(&task_reference)?;
-                let file = task
-                    .running_state()?
-                    .files
-                    .get_allowing_opath(fd)
-                    .map_err(|_| errno!(ENOENT))?;
+                let file = task.files()?.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
                 Ok(SymlinkTarget::Node(file.name.to_passive()))
             }),
             FsNodeInfo::new(mode, task.real_fscred()),
@@ -620,9 +615,7 @@ impl FsNodeOps for FdInfoDirectory {
             .check_ptrace_access_mode(locked, PTRACE_MODE_READ_FSCREDS, &task)
             .map_err(|_| errno!(EACCES))?;
 
-        Ok(VecDirectory::new_file(fds_to_directory_entries(
-            task.running_state()?.files.get_all_fds(),
-        )))
+        Ok(VecDirectory::new_file(fds_to_directory_entries(task.files()?.get_all_fds())))
     }
 
     fn lookup(
@@ -634,8 +627,7 @@ impl FsNodeOps for FdInfoDirectory {
     ) -> Result<FsNodeHandle, Errno> {
         let task = Task::from_weak(&self.task)?;
         let fd = FdNumber::from_fs_str(name).map_err(|_| errno!(ENOENT))?;
-        let file =
-            task.running_state()?.files.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
+        let file = task.files()?.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
         let pos = file.offset.read();
         let flags = file.flags();
         let mut data = format!("pos:\t{}\nflags:\t0{:o}\n", pos, flags.bits()).into_bytes();

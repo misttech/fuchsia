@@ -1187,6 +1187,18 @@ impl Task {
         self.running_state.read().ok_or_else(|| errno!(ESRCH))
     }
 
+    /// Returns the file descriptor table of the task, if it exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Err(errno)`] where `errno` is:
+    ///
+    ///   - `ESRCH`: the task is dead and its live resources have been dropped.
+    #[track_caller]
+    pub fn files(&self) -> Result<FdTable, Errno> {
+        Ok(self.running_state()?.files())
+    }
+
     /// Returns the memory manager of the task, if it exists.
     ///
     /// # Errors

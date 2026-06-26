@@ -46,7 +46,7 @@ pub fn sys_inotify_add_watch(
         // Mask must include at least 1 event.
         return error!(EINVAL);
     }
-    let file = current_task.get_file(fd)?;
+    let file = current_task.files().get(fd)?;
     let inotify_file = file.downcast_file::<InotifyFileObject>().ok_or_else(|| errno!(EINVAL))?;
     let options = if mask.contains(InotifyMask::DONT_FOLLOW) {
         LookupFlags::no_follow()
@@ -66,7 +66,7 @@ pub fn sys_inotify_rm_watch(
     fd: FdNumber,
     watch_id: WdNumber,
 ) -> Result<(), Errno> {
-    let file = current_task.get_file(fd)?;
+    let file = current_task.files().get(fd)?;
     let inotify_file = file.downcast_file::<InotifyFileObject>().ok_or_else(|| errno!(EINVAL))?;
     inotify_file.remove_watch(watch_id, &file)
 }

@@ -268,7 +268,7 @@ pub fn sys_execveat(
         //   directory.
         //
         // See https://man7.org/linux/man-pages/man2/open.2.html
-        let file = current_task.get_file_allowing_opath(dir_fd)?;
+        let file = current_task.files().get_allowing_opath(dir_fd)?;
 
         // We are forced to reopen the file with O_RDONLY to get access to the underlying VMO.
         // Note that skip the access check in the arguments in case the file mode does
@@ -1790,7 +1790,7 @@ pub fn sys_setns(
     ns_fd: FdNumber,
     ns_type: c_int,
 ) -> Result<(), Errno> {
-    let file_handle = current_task.get_file(ns_fd)?;
+    let file_handle = current_task.files().get(ns_fd)?;
 
     // From man pages this is not quite right because some namespace types require more capabilities
     // or require this capability in multiple namespaces, but it should cover our current test
@@ -1985,7 +1985,7 @@ pub fn sys_kcmp(
             fn get_file(task: &Task, index: u64) -> Result<FileHandle, Errno> {
                 // TODO: Test whether O_PATH is allowed here. Conceptually, seems like
                 //       O_PATH should be allowed, but we haven't tested it yet.
-                task.running_state()?.files.get_allowing_opath(FdNumber::from_raw(
+                task.files()?.get_allowing_opath(FdNumber::from_raw(
                     index.try_into().map_err(|_| errno!(EBADF))?,
                 ))
             }
@@ -1994,8 +1994,8 @@ pub fn sys_kcmp(
             Ok(encode_ordering(obfuscate_arc(&file1).cmp(&obfuscate_arc(&file2))))
         }
         KcmpResource::FILES => {
-            let files1 = task1.running_state()?.files.id();
-            let files2 = task2.running_state()?.files.id();
+            let files1 = task1.files()?.id();
+            let files2 = task2.files()?.id();
             Ok(encode_ordering(obfuscate_value(files1.raw()).cmp(&obfuscate_value(files2.raw()))))
         }
         KcmpResource::FS => {

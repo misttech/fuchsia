@@ -871,8 +871,7 @@ async fn create_container(
         kernel.kthreads.unlocked_for_async().deref_mut(),
         init_task,
         move |locked, init_task| {
-            parse_numbered_handles(locked, init_task, None, &init_task.running_state().files)
-                .expect("");
+            parse_numbered_handles(locked, init_task, None, &init_task.files()).expect("");
             init_task.exec(locked, executable, argv[0].clone(), argv.clone(), vec![])
         },
         move |result| {

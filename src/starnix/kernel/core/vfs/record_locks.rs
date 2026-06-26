@@ -229,7 +229,7 @@ impl RecordLockOwner {
         if cmd.is_ofd() {
             RecordLockOwner::FileObject(file.id)
         } else {
-            RecordLockOwner::FdTable(current_task.running_state().files.id())
+            RecordLockOwner::FdTable(current_task.files().id())
         }
     }
 }

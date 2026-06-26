@@ -44,7 +44,7 @@ impl CopyOperand {
         fd: FdNumber,
         user_offset: OffsetPtr,
     ) -> Result<Self, Errno> {
-        let file = current_task.get_file(fd)?;
+        let file = current_task.files().get(fd)?;
         let maybe_offset = maybe_read_offset(current_task, user_offset)?;
         Ok(Self { file, user_offset, maybe_offset })
     }
@@ -265,7 +265,7 @@ pub fn vmsplice(
 
     let non_blocking = flags & uapi::SPLICE_F_NONBLOCK != 0;
 
-    let file = current_task.get_file(fd)?;
+    let file = current_task.files().get(fd)?;
     let should_write = file.can_write();
     let should_read = file.can_read();
 
@@ -360,8 +360,8 @@ where
 
     let non_blocking = flags & uapi::SPLICE_F_NONBLOCK != 0;
 
-    let file_in = current_task.get_file(fd_in)?;
-    let file_out = current_task.get_file(fd_out)?;
+    let file_in = current_task.files().get(fd_in)?;
+    let file_out = current_task.files().get(fd_out)?;
 
     // tee requires that both files are pipes.
     let PipeOperands { mut read, mut write } =

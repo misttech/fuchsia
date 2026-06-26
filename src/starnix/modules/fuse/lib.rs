@@ -191,7 +191,7 @@ impl FileOps for DevFuse {
         match request {
             FUSE_DEV_IOC_PASSTHROUGH_OPEN_V2 => {
                 let fd = current_task.read_object::<FdNumber>(arg.into())?;
-                let fd = current_task.get_file(fd)?;
+                let fd = current_task.files().get(fd)?;
                 let id = {
                     let mut connection = self.connection.lock();
                     let (mut id, _) = connection.last_passthrough_id.overflowing_add(1);
@@ -222,8 +222,7 @@ pub fn new_fuse_fs(
     )?;
     let default_permissions = options.params.get(b"default_permissions").is_some().into();
     let connection = current_task
-        .running_state()
-        .files
+        .files()
         .get(fd)?
         .downcast_file::<DevFuse>()
         .ok_or_else(|| errno!(EINVAL))?

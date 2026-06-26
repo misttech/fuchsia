@@ -189,7 +189,7 @@ impl FileOps for SyncFile {
                 fuchsia_trace::duration!(TRACE_CATEGORY, "SyncFileMerge");
                 let user_ref = UserRef::new(user_addr);
                 let mut merge_data: sync_merge_data = current_task.read_object(user_ref)?;
-                let file2 = current_task.get_file(FdNumber::from_raw(merge_data.fd2))?;
+                let file2 = current_task.files().get(FdNumber::from_raw(merge_data.fd2))?;
 
                 let file2_sync = file2.downcast_file::<SyncFile>();
                 let max_capacity = self.fence.sync_points.len()
@@ -471,7 +471,7 @@ mod test {
                 current_task.read_object(UserRef::new(user_addr)).unwrap();
             let new_fd = FdNumber::from_raw(updated_merge_data.fence);
 
-            let new_file = current_task.get_file(new_fd).unwrap();
+            let new_file = current_task.files().get(new_fd).unwrap();
             let merged_sync_file = new_file.downcast_file::<SyncFile>().unwrap();
 
             assert_eq!(merged_sync_file.fence.sync_points.len(), 2);

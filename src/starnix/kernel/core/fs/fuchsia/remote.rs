@@ -4851,11 +4851,8 @@ mod test {
             let file_handle = node
                 .open(locked, &current_task, OpenFlags::RDWR, AccessCheck::default())
                 .expect("open");
-            let fd = current_task
-                .running_state()
-                .files
-                .add(locked, current_task, file_handle, FdFlags::empty())
-                .expect("add file");
+            let fd =
+                current_task.add_file(locked, file_handle, FdFlags::empty()).expect("add file");
 
             // Do mmap
             let len = *PAGE_SIZE as usize * 4;

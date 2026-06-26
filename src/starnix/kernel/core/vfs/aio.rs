@@ -276,7 +276,7 @@ impl IoOperation {
         if control_block.aio_reserved2 != 0 {
             return error!(EINVAL);
         }
-        let file = current_task.get_file(FdNumber::from_raw(control_block.aio_fildes as i32))?;
+        let file = current_task.files().get(FdNumber::from_raw(control_block.aio_fildes as i32))?;
         let op_type = (control_block.aio_lio_opcode as u32).try_into()?;
         let offset = control_block.aio_offset.try_into().map_err(|_| errno!(EINVAL))?;
         let flags = control_block.aio_flags;
@@ -313,10 +313,8 @@ impl IoOperation {
         checked_add_offset_and_length(offset, buffer_length)?;
 
         let eventfd = if flags & IOCB_FLAG_RESFD != 0 {
-            let eventfd = current_task
-                .running_state()
-                .files
-                .get(FdNumber::from_raw(control_block.aio_resfd as i32))?;
+            let eventfd =
+                current_task.files().get(FdNumber::from_raw(control_block.aio_resfd as i32))?;
             if eventfd.downcast_file::<EventFdFileObject>().is_none() {
                 return error!(EINVAL);
             }

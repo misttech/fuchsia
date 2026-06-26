@@ -471,7 +471,7 @@ impl FastRPCFile {
                 for fd in fds {
                     // A non-postive fd signifies a non-mapped entry.
                     if fd > 0 {
-                        let file = current_task.get_file(FdNumber::from_raw(fd))?;
+                        let file = current_task.files().get(FdNumber::from_raw(fd))?;
                         let dma_buf =
                             file.downcast_file::<DmaBufFile>().ok_or_else(|| errno!(EBADF))?;
 

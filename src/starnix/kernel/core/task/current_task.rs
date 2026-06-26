@@ -16,8 +16,9 @@ use crate::task::{
     SeccompStateValue, Task, TaskFlags, TaskRunningState, ThreadState, Waiter,
 };
 use crate::vfs::{
-    CheckAccessReason, FdFlags, FdNumber, FileHandle, FsContext, FsStr, LookupContext, LookupVec,
-    MAX_SYMLINK_FOLLOWS, NamespaceNode, ResolveBase, SymlinkMode, SymlinkTarget, new_pidfd,
+    CheckAccessReason, FdFlags, FdNumber, FdTable, FileHandle, FsContext, FsStr, LookupContext,
+    LookupVec, MAX_SYMLINK_FOLLOWS, NamespaceNode, ResolveBase, SymlinkMode, SymlinkTarget,
+    new_pidfd,
 };
 use fuchsia_rcu::RcuReadGuard;
 use futures::FutureExt;
@@ -235,6 +236,17 @@ impl CurrentTask {
         self.task.running_state().expect("CurrentTask must have TaskRunningState")
     }
 
+    /// Returns the [`FdTable`] for the [`Task`].
+    ///
+    /// # Panics
+    ///
+    /// Calling `files()` on a [`CurrentTask`] for which the [`Task`] has no file descriptor table
+    /// (i.e. exited tasks) panics. However, such tasks should not have a `CurrentTask`.
+    #[track_caller]
+    pub fn files(&self) -> FdTable {
+        self.task.files().expect("CurrentTask must have FdTable")
+    }
+
     pub fn fs(&self) -> Arc<FsContext> {
         self.running_state().fs()
     }
@@ -365,15 +377,7 @@ impl CurrentTask {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        self.running_state().files.add(locked, self, file, flags)
-    }
-
-    pub fn get_file(&self, fd: FdNumber) -> Result<FileHandle, Errno> {
-        self.running_state().files.get(fd)
-    }
-
-    pub fn get_file_allowing_opath(&self, fd: FdNumber) -> Result<FileHandle, Errno> {
-        self.running_state().files.get_allowing_opath(fd)
+        self.files().add(locked, self, file, flags)
     }
 
     /// Sets the task's signal mask to `signal_mask` and runs `wait_function`.
@@ -580,7 +584,7 @@ impl CurrentTask {
             //   directory.
             //
             // See https://man7.org/linux/man-pages/man2/open.2.html
-            let file = self.get_file_allowing_opath(dir_fd)?;
+            let file = self.files().get_allowing_opath(dir_fd)?;
             file.name.to_passive()
         };
 
@@ -1115,7 +1119,7 @@ impl CurrentTask {
         //   If the calling process was sharing its file descriptor table (via
         //   the use of CLONE_FILES with clone(2)), then this sharing is undone.
         self.running_state().files.unshare();
-        self.running_state().files.exec(locked, self);
+        self.files().exec(locked, self);
 
         {
             let mut state = self.write();

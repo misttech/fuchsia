@@ -45,6 +45,10 @@ pub struct TaskRunningState {
 }
 
 impl TaskRunningState {
+    pub fn files(&self) -> FdTable {
+        self.files.clone()
+    }
+
     pub fn mm(&self) -> Result<Arc<MemoryManager>, Errno> {
         self.mm.to_option_arc().ok_or_else(|| errno!(EINVAL))
     }

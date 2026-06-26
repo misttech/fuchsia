@@ -1001,7 +1001,7 @@ pub fn sys_perf_event_open(
     if group_fd.raw() == -1 {
         perf_event_file.sample_id = event_id;
     } else {
-        let group_file = current_task.get_file(group_fd)?;
+        let group_file = current_task.files().get(group_fd)?;
         let group_file_object_id = group_file.id;
         let perf_state = get_perf_state(&current_task.kernel);
         let events = perf_state.format_id_lookup_table.lock();
