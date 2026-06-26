@@ -207,6 +207,14 @@ class Environment : public fdf_testing::Environment {
     return zx::ok();
   }
 
+  // Note: Only intended for teardown, does not restore default mock behaviors.
+  void Reset() {
+    for (size_t i = 0; i < kRegCount; i++) {
+      reg_region_[i * kRegSize].SetReadCallback([]() { return 0; });
+      reg_region_[i * kRegSize].SetWriteCallback([](uint64_t value) {});
+    }
+  }
+
   ddk_fake::FakeMmioRegRegion& reg_region() { return reg_region_; }
 
   FakeUsbPhy& usb_phy() { return usb_phy_; }
@@ -214,11 +222,11 @@ class Environment : public fdf_testing::Environment {
   fdf_fake::FakeReset& reset() { return reset_; }
   const fdf_fake::FakeVreg& vreg() const { return vreg_; }
 
- private:
   static constexpr size_t kRegSize = sizeof(uint32_t);
   static constexpr size_t kMmioRegionSize = 0x10'0000;
   static constexpr size_t kRegCount = kMmioRegionSize / kRegSize;
 
+ private:
   fdf_fake::FakePDev pdev_;
   ddk_fake::FakeMmioRegRegion reg_region_{kRegSize, kRegCount};
   FakePath path_;
@@ -320,6 +328,13 @@ class TestFixture : public gtest_base {
       EXPECT_EQ(ZX_OK, WaitForPhy());
       EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
     }
+
+    // Explicitly reset mock hardware state and sync the environment dispatcher.
+    // This fully destroys the mock VMOs and guarantees no leaked state
+    // across parallel test runs.
+    dut_.RunInEnvironmentTypeContext([](Environment& env) { env.Reset(); });
+
+    dut_.runtime().RunUntilIdle();
   }
 
  protected:
