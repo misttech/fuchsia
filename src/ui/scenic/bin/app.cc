@@ -235,6 +235,9 @@ App::App(async_dispatcher_t* flatland_dispatcher, async_dispatcher_t* input_disp
                                      dir_server.TakeChannel());
 
   // Log a warning if Scenic is waiting for the Vulkan to load.
+  //
+  // Vulkan is required for Scenic to work. If you see this message printed
+  // for a prolonged time, the issue is upstream of Scenic.
   auto vulkan_wait_log = std::make_unique<fxl::CancelableClosure>(
       [] { FX_LOGS(WARNING) << "SCENIC IS WAITING FOR VULKAN TO BE AVAILABLE..."; });
   PostDelayedTaskUntilCancelled(vulkan_wait_log->callback(), kWaitWarningInterval);
@@ -268,6 +271,10 @@ App::App(async_dispatcher_t* flatland_dispatcher, async_dispatcher_t* input_disp
   }
 
   // Log a warning if Scenic is waiting for the Display to become available.
+  //
+  // Display is required for Scenic to work. If you see this message printed
+  // for a prolonged time, and you expect to have a display, the issue is
+  // upstream of Scenic.
   auto display_wait_log = std::make_unique<fxl::CancelableClosure>(
       [] { FX_LOGS(WARNING) << "SCENIC IS WAITING FOR DISPLAY TO BE AVAILABLE..."; });
   PostDelayedTaskUntilCancelled(display_wait_log->callback(), kWaitWarningInterval);
