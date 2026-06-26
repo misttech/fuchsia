@@ -36,8 +36,9 @@ impl<H: WriteObjectHandle> WriteBytes for Writer<'_, H> {
         Ok(())
     }
 
-    async fn complete(&mut self) -> Result<(), Error> {
-        self.handle.flush().await
+    async fn complete(self) -> Result<u64, Error> {
+        self.handle.flush().await?;
+        Ok(self.offset)
     }
 
     async fn skip(&mut self, amount: u64) -> Result<(), Error> {
@@ -50,9 +51,5 @@ impl<H: WriteObjectHandle> WriteBytes for Writer<'_, H> {
             left -= to_do;
         }
         Ok(())
-    }
-
-    fn bytes_written(&self) -> u64 {
-        self.offset
     }
 }

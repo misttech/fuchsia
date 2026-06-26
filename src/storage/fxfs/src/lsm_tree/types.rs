@@ -438,11 +438,9 @@ where
     /// Writes the given item to this layer.
     fn write(&mut self, item: ItemRef<'_, K, V>) -> impl Future<Output = Result<(), Error>> + Send;
 
-    /// Flushes any buffered items to the backing storage.
-    fn flush(&mut self) -> impl Future<Output = Result<(), Error>> + Send;
-
-    /// Returns the total bytes written to the layer.
-    fn bytes_written(&self) -> u64;
+    /// Flushes any buffered items to the backing storage. The total number of bytes written is
+    /// returned.
+    fn complete(self) -> impl Future<Output = Result<u64, Error>> + Send;
 }
 
 /// A `LayerIterator`` that filters the items of another `LayerIterator`.

@@ -1925,9 +1925,9 @@ impl<'a, S: HandleOwner> WriteBytes for DirectWriter<'a, S> {
         Ok(())
     }
 
-    async fn complete(&mut self) -> Result<(), Error> {
+    async fn complete(mut self) -> Result<u64, Error> {
         self.flush().await?;
-        Ok(())
+        Ok(self.offset + self.buf_offset as u64)
     }
 
     async fn skip(&mut self, amount: u64) -> Result<(), Error> {
@@ -1942,11 +1942,6 @@ impl<'a, S: HandleOwner> WriteBytes for DirectWriter<'a, S> {
             self.offset += amount;
         }
         Ok(())
-    }
-
-    /// The number of bytes written to this writer (including unflushed bytes).
-    fn bytes_written(&self) -> u64 {
-        self.offset + self.buf_offset as u64
     }
 }
 

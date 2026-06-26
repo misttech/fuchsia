@@ -185,7 +185,7 @@ async fn install_items_in_store<K: Key, V: Value>(
         for item in items.as_ref() {
             writer.write(item.as_item_ref()).await.expect("write failed");
         }
-        writer.flush().await.expect("flush failed");
+        writer.complete().await.expect("flush failed");
     }
 
     // store.store_info() holds the current state of the store including unflushed mods.
@@ -388,7 +388,7 @@ async fn test_malformed_allocation() {
                 AllocatorValue::Abs { count: 2, owner_object_id: 9 },
             );
             writer.write(item.as_item_ref()).await.expect("write failed");
-            writer.flush().await.expect("flush failed");
+            writer.complete().await.expect("flush failed");
         }
         let mut allocator_info = fs.allocator().info();
         allocator_info.layers.push(layer_handle.object_id());
@@ -3893,7 +3893,7 @@ async fn test_full_disk(read_only: bool) {
                 AllocatorValue::Abs { count: 2, owner_object_id: 9 },
             );
             writer.write(item.as_item_ref()).await.expect("write failed");
-            writer.flush().await.expect("flush failed");
+            writer.complete().await.expect("flush failed");
         }
         // Discard the mutable layer which contains mutations associated with the write itself.
         fs.allocator()
@@ -4331,7 +4331,7 @@ async fn test_invalid_bloom_filter_for_allocator() {
             // no items exist.
             writer.bloom_filter().clear();
 
-            writer.flush().await.expect("flush failed");
+            writer.complete().await.expect("flush failed");
         }
         let mut allocator_info = fs.allocator().info();
         allocator_info.layers.push(layer_handle.object_id());
@@ -4425,7 +4425,7 @@ async fn test_invalid_bloom_filter_for_volume() {
             // no items exist.
             writer.bloom_filter().clear();
 
-            writer.flush().await.expect("flush failed");
+            writer.complete().await.expect("flush failed");
         }
         let store_info_handle = ObjectStore::open_object(
             &root_store,

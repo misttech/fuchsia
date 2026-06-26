@@ -95,15 +95,12 @@ pub trait WriteBytes: Sized {
     /// or when buffers are full.
     fn write_bytes(&mut self, buf: &[u8]) -> impl Future<Output = Result<(), Error>> + Send;
 
-    /// Called to flush to the handle.  Named to avoid conflict with the flush method above.
-    fn complete(&mut self) -> impl Future<Output = Result<(), Error>> + Send;
+    /// Called to flush to the handle. The total number of bytes written is returned.
+    fn complete(self) -> impl Future<Output = Result<u64, Error>> + Send;
 
     /// Moves the offset forward by `amount`, which will result in zeroes in the output stream, even
     /// if no other data is appended to it.
     fn skip(&mut self, amount: u64) -> impl Future<Output = Result<(), Error>> + Send;
-
-    /// Returns the total bytes written to the writer.
-    fn bytes_written(&self) -> u64;
 }
 
 // Implements ReadObjectHandle for things like `Arc<dyn ReadObjectHandle>` and

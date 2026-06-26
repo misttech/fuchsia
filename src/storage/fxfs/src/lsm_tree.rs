@@ -153,9 +153,7 @@ pub async fn compact_with_iterator<K: Key, V: Value, W: WriteBytes + Send>(
             y.yield_now().await;
         }
     }
-    writer.flush().await?;
-
-    Ok(writer.bytes_written())
+    writer.complete().await
 }
 
 /// LSMTree manages a tree of layers to provide a key/value store.  Each layer contains deltas on

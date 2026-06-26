@@ -223,9 +223,9 @@ impl ObjectStore {
                 writer.write(item_ref).await?;
                 iter.advance().await?;
             }
-            writer.flush().await?;
+            let bytes_written = writer.complete().await?;
             self.tree.report_compaction_metrics(
-                writer.bytes_written(),
+                bytes_written,
                 start_time.elapsed(),
                 inner_layer_set.layers.len(),
             );

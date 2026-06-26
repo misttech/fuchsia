@@ -1778,7 +1778,7 @@ mod tests {
         for item in items {
             writer.write(item.as_item_ref()).await.expect("write failed");
         }
-        writer.flush().await.expect("flush failed");
+        writer.complete().await.expect("flush failed");
         PersistentLayer::open(FakeObjectHandle::new(object))
             .await
             .expect("open_persistent_layer failed")

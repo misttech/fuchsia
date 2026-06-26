@@ -736,7 +736,7 @@ pub struct PersistentLayerWriter<W: WriteBytes, K: Key, V: LayerValue> {
     writer: W,
     block_size: u64,
     buf: Vec<u8>,
-    buf_item_count: u16,
+    buf_item_count: LayerWriterBufItemCount,
     item_count: usize,
     block_offsets: Vec<u16>,
     block_keys: Vec<u64>,
@@ -774,7 +774,7 @@ impl<W: WriteBytes, K: Key, V: LayerValue> PersistentLayerWriter<W, K, V> {
             writer,
             block_size,
             buf: Vec::new(),
-            buf_item_count: 0,
+            buf_item_count: LayerWriterBufItemCount(0),
             item_count: 0,
             block_offsets: Vec::new(),
             block_keys: Vec::new(),
@@ -788,13 +788,13 @@ impl<W: WriteBytes, K: Key, V: LayerValue> PersistentLayerWriter<W, K, V> {
     /// Blocks are fixed size, consisting of a 16-bit item count, data, zero padding
     /// and seek table at the end.
     async fn write_block(&mut self, len: usize) -> Result<(), Error> {
-        if self.buf_item_count == 0 {
+        if *self.buf_item_count == 0 {
             return Ok(());
         }
         let seek_table_size = self.block_offsets.len() * PER_DATA_BLOCK_SEEK_ENTRY_SIZE;
         assert!(PER_DATA_BLOCK_HEADER_SIZE + seek_table_size + len <= self.block_size as usize);
         let mut cursor = std::io::Cursor::new(vec![0u8; self.block_size as usize]);
-        cursor.write_u16::<LittleEndian>(self.buf_item_count)?;
+        cursor.write_u16::<LittleEndian>(*self.buf_item_count)?;
         cursor.write_all(self.buf.drain(..len).as_ref())?;
         cursor.set_position(self.block_size - seek_table_size as u64);
         // Write the seek table. Entries are 2 bytes each and items are always at least 10.
@@ -802,8 +802,8 @@ impl<W: WriteBytes, K: Key, V: LayerValue> PersistentLayerWriter<W, K, V> {
             cursor.write_u16::<LittleEndian>(offset)?;
         }
         self.writer.write_bytes(cursor.get_ref()).await?;
-        debug!(item_count = self.buf_item_count, byte_count = len; "wrote items");
-        self.buf_item_count = 0;
+        debug!(item_count = *self.buf_item_count, byte_count = len; "wrote items");
+        *self.buf_item_count = 0;
         self.block_offsets.clear();
         Ok(())
     }
@@ -902,7 +902,7 @@ impl<W: WriteBytes + Send, K: Key, V: LayerValue> LayerWriter<K, V>
 
         let mut added_offset = false;
         // Never record the first item. The offset is always the same.
-        if self.buf_item_count > 0 {
+        if *self.buf_item_count > 0 {
             self.block_offsets.push(u16::try_from(len + PER_DATA_BLOCK_HEADER_SIZE).unwrap());
             added_offset = true;
         }
@@ -926,12 +926,12 @@ impl<W: WriteBytes + Send, K: Key, V: LayerValue> LayerWriter<K, V>
         }
 
         self.bloom_filter.insert(&item.key);
-        self.buf_item_count += 1;
+        *self.buf_item_count += 1;
         self.item_count += 1;
         Ok(())
     }
 
-    async fn flush(&mut self) -> Result<(), Error> {
+    async fn complete(mut self) -> Result<u64, Error> {
         self.write_block(self.buf.len()).await?;
         let data_blocks = self.data_blocks() as u64;
         let bloom_filter_len = self.write_bloom_filter().await?;
@@ -939,17 +939,31 @@ impl<W: WriteBytes + Send, K: Key, V: LayerValue> LayerWriter<K, V>
         self.write_info(data_blocks, bloom_filter_len, seek_table_len).await?;
         self.writer.complete().await
     }
+}
 
-    fn bytes_written(&self) -> u64 {
-        self.writer.bytes_written()
+/// Logs a warning if this object is dropped and the contained value isn't 0.
+#[repr(transparent)]
+struct LayerWriterBufItemCount(u16);
+
+impl Drop for LayerWriterBufItemCount {
+    fn drop(&mut self) {
+        debug_assert!(self.0 == 0, "Dropping unwritten items; did you forget to call complete?");
+        if self.0 > 0 {
+            warn!("Dropping unwritten items; did you forget to call complete?");
+        }
     }
 }
 
-impl<W: WriteBytes, K: Key, V: LayerValue> Drop for PersistentLayerWriter<W, K, V> {
-    fn drop(&mut self) {
-        if self.buf_item_count > 0 {
-            warn!("Dropping unwritten items; did you forget to flush?");
-        }
+impl std::ops::Deref for LayerWriterBufItemCount {
+    type Target = u16;
+    fn deref(&self) -> &u16 {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for LayerWriterBufItemCount {
+    fn deref_mut(&mut self) -> &mut u16 {
+        &mut self.0
     }
 }
 
@@ -977,7 +991,7 @@ mod tests {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
             f.debug_struct("rPersistentLayerWriter")
                 .field("block_size", &self.block_size)
-                .field("item_count", &self.buf_item_count)
+                .field("item_count", &*self.buf_item_count)
                 .finish()
         }
     }
@@ -999,7 +1013,7 @@ mod tests {
             for i in 0..ITEM_COUNT {
                 writer.write(Item::new(i, i).as_item_ref()).await.expect("write failed");
             }
-            writer.flush().await.expect("flush failed");
+            writer.complete().await.expect("flush failed");
         }
         let layer = PersistentLayer::<i32, i32>::open(handle).await.expect("new failed");
         let mut iterator = layer.seek(Bound::Unbounded).await.expect("seek failed");
@@ -1029,7 +1043,7 @@ mod tests {
                 // Populate every other value as an item.
                 writer.write(Item::new(i * 2, i * 2).as_item_ref()).await.expect("write failed");
             }
-            writer.flush().await.expect("flush failed");
+            writer.complete().await.expect("flush failed");
         }
         let layer = PersistentLayer::<i32, i32>::open(handle).await.expect("new failed");
         // Search for all values to check the in-between values.
@@ -1079,7 +1093,7 @@ mod tests {
             for i in 0..ITEM_COUNT {
                 writer.write(Item::new(i, i).as_item_ref()).await.expect("write failed");
             }
-            writer.flush().await.expect("flush failed");
+            writer.complete().await.expect("flush failed");
         }
         let layer = PersistentLayer::<i32, i32>::open(handle).await.expect("new failed");
         let mut iterator = layer.seek(Bound::Unbounded).await.expect("failed to seek");
@@ -1098,14 +1112,14 @@ mod tests {
 
         let handle = FakeObjectHandle::new(Arc::new(FakeObject::new()));
         {
-            let mut writer = PersistentLayerWriter::<_, i32, i32>::new(
+            let writer = PersistentLayerWriter::<_, i32, i32>::new(
                 Writer::new(&handle).await,
                 0,
                 BLOCK_SIZE,
             )
             .await
             .expect("writer new");
-            writer.flush().await.expect("flush failed");
+            writer.complete().await.expect("flush failed");
         }
 
         let layer = PersistentLayer::<i32, i32>::open(handle).await.expect("new failed");
@@ -1130,7 +1144,7 @@ mod tests {
             .await
             .expect("writer new");
             writer.write(Item::new(42, 42).as_item_ref()).await.expect("write failed");
-            writer.flush().await.expect("flush failed");
+            writer.complete().await.expect("flush failed");
         }
 
         let layer = PersistentLayer::<i32, i32>::open(handle).await.expect("new failed");
@@ -1194,7 +1208,7 @@ mod tests {
             for i in 2000000000..(2000000000 + ITEM_COUNT) {
                 writer.write(Item::new(i, i).as_item_ref()).await.expect("write failed");
             }
-            writer.flush().await.expect("flush failed");
+            writer.complete().await.expect("flush failed");
         }
 
         let layer = PersistentLayer::<i32, i32>::open(handle).await.expect("new failed");
@@ -1236,7 +1250,7 @@ mod tests {
             for i in 0..ITEM_COUNT {
                 writer.write(Item::new(i, i).as_item_ref()).await.expect("write failed");
             }
-            writer.flush().await.expect("flush failed");
+            writer.complete().await.expect("flush failed");
         }
         let layer = PersistentLayer::<i32, i32>::open(handle).await.expect("new failed");
 
@@ -1424,7 +1438,7 @@ mod tests {
                 writer.write(item.as_item_ref()).await.expect("write failed");
             }
 
-            writer.flush().await.expect("flush failed");
+            writer.complete().await.expect("flush failed");
         }
 
         let layer = PersistentLayer::<ObjectKey, u64>::open(handle).await.expect("new failed");
@@ -1474,7 +1488,7 @@ mod tests {
             let end = initial_value + ITEM_COUNT - 1;
             to_find.push(TestKey(end..end));
 
-            writer.flush().await.expect("flush failed");
+            writer.complete().await.expect("flush failed");
         }
 
         let layer = PersistentLayer::<TestKey, u64>::open(handle).await.expect("new failed");
@@ -1527,7 +1541,7 @@ mod tests {
                         .expect("write failed");
                 }
 
-                writer.flush().await.expect("flush failed");
+                writer.complete().await.expect("flush failed");
             }
             PersistentLayer::<TestKey, u64>::open(handle).await.expect("new failed");
         }
@@ -1581,8 +1595,8 @@ mod tests {
                     .expect("write failed");
             }
 
-            old_version_writer.flush().await.expect("flush failed");
-            current_version_writer.flush().await.expect("flush failed");
+            old_version_writer.complete().await.expect("flush failed");
+            current_version_writer.complete().await.expect("flush failed");
         }
 
         let old_layer =
@@ -1613,7 +1627,7 @@ mod tests {
             for i in 0..ITEM_COUNT {
                 writer.write(Item::new(i * 2, i * 2).as_item_ref()).await.expect("write failed");
             }
-            writer.flush().await.expect("flush failed");
+            writer.complete().await.expect("flush failed");
         }
         let layer = PersistentLayer::<i32, i32>::open(handle).await.expect("new failed");
         assert!(!layer.has_bloom_filter());
@@ -1648,7 +1662,7 @@ mod tests {
             for i in 0..ITEM_COUNT {
                 writer.write(Item::new(i * 2, i * 2).as_item_ref()).await.expect("write failed");
             }
-            writer.flush().await.expect("flush failed");
+            writer.complete().await.expect("flush failed");
         }
         let layer = PersistentLayer::<i32, i32>::open(handle).await.expect("new failed");
         assert!(layer.has_bloom_filter());
