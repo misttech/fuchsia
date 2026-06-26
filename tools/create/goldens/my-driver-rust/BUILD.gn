@@ -6,6 +6,14 @@ import("//build/bind/bind.gni")
 import("//build/components.gni")
 import("//build/drivers.gni")
 
+group("my-driver-rust") {
+  testonly = true
+  deps = [
+    ":pkg",
+    ":tests",
+  ]
+}
+
 driver_bind_rules("bind") {
   rules = "meta/my_driver_rust.bind"
   bind_output = "my_driver_rust.bindbc"
