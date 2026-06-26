@@ -2335,6 +2335,8 @@ void ArmArchVmAspace::ContextSwitch(ArmArchVmAspace* old_aspace, ArmArchVmAspace
     // invalidate all TLB entries except the global ones.
     DEBUG_ASSERT(aspace->asid_ == MMU_ARM64_FIRST_USER_ASID);
     ARM64_TLBI_ASID(aside1, aspace->asid_);
+    // DSB to ensure TLB flushes happen prior to returning to user.
+    __dsb(ARM_MB_ISH);
   }
   if (likely(aspace)) {
     aspace->canary_.Assert();
