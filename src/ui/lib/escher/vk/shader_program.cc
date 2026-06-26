@@ -8,7 +8,7 @@
 #include "src/ui/lib/escher/impl/vulkan_utils.h"
 #include "src/ui/lib/escher/resources/resource_recycler.h"
 #include "src/ui/lib/escher/third_party/granite/vk/shader_utils.h"
-#include "src/ui/lib/escher/util/enum_cast.h"
+#include "src/ui/lib/escher/util/enum_utils.h"
 #include "src/ui/lib/escher/util/hasher.h"
 #include "src/ui/lib/escher/util/trace_macros.h"
 #include "src/ui/lib/escher/vk/impl/pipeline_layout_cache.h"

@@ -7,8 +7,7 @@
 
 #include "src/ui/lib/escher/resources/resource.h"
 #include "src/ui/lib/escher/third_party/granite/vk/pipeline_layout.h"
-#include "src/ui/lib/escher/util/enum_cast.h"
-#include "src/ui/lib/escher/util/enum_count.h"
+#include "src/ui/lib/escher/util/enum_utils.h"
 #include "src/ui/lib/escher/util/hash.h"
 #include "src/ui/lib/escher/util/hash_map.h"
 #include "src/ui/lib/escher/vk/sampler.h"

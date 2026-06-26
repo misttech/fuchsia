@@ -28,7 +28,7 @@
 
 #include <array>
 
-#include "src/ui/lib/escher/util/enum_count.h"
+#include "src/ui/lib/escher/util/enum_utils.h"
 #include "src/ui/lib/escher/vk/sampler.h"
 #include "src/ui/lib/escher/vk/shader_module.h"
 #include "src/ui/lib/escher/vk/shader_stage.h"

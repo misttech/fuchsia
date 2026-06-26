@@ -29,7 +29,6 @@
 #include "src/ui/lib/escher/base/reffable.h"
 #include "src/ui/lib/escher/third_party/granite/vk/command_buffer_pipeline_state.h"
 #include "src/ui/lib/escher/third_party/granite/vk/pipeline_layout.h"
-#include "src/ui/lib/escher/util/enum_cast.h"
 #include "src/ui/lib/escher/vk/render_pass_info.h"
 
 #include <vulkan/vulkan.hpp>
@@ -454,7 +453,7 @@ class CommandBuffer : public Reffable {
     // produces always treats viewport, scissor, stencil, and depth-bias as
     // dynamic state.
     kDirtyDynamicBits = kDirtyViewportBit | kDirtyScissorBit | kDirtyDepthBiasBit |
-                        kDirtyStencilMasksAndReferenceBit,
+        kDirtyStencilMasksAndReferenceBit,
   };
   using DirtyFlags = uint32_t;
 

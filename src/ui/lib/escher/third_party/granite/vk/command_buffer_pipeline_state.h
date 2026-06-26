@@ -31,7 +31,7 @@
 #include "src/lib/fxl/memory/ref_ptr.h"
 #include "src/ui/lib/escher/forward_declarations.h"
 #include "src/ui/lib/escher/third_party/granite/vk/pipeline_layout.h"
-#include "src/ui/lib/escher/util/enum_cast.h"
+#include "src/ui/lib/escher/util/enum_utils.h"
 #include "src/ui/lib/escher/util/hash.h"
 #include "src/ui/lib/escher/vk/vulkan_limits.h"
 

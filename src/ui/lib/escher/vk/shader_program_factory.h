@@ -7,7 +7,7 @@
 
 #include "src/ui/lib/escher/base/trait.h"
 #include "src/ui/lib/escher/forward_declarations.h"
-#include "src/ui/lib/escher/util/enum_count.h"
+#include "src/ui/lib/escher/util/enum_utils.h"
 #include "src/ui/lib/escher/vk/shader_stage.h"
 #include "src/ui/lib/escher/vk/shader_variant_args.h"
 

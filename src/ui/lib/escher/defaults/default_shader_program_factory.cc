@@ -5,7 +5,7 @@
 #include "src/ui/lib/escher/defaults/default_shader_program_factory.h"
 
 #include "src/ui/lib/escher/escher.h"
-#include "src/ui/lib/escher/util/enum_cast.h"
+#include "src/ui/lib/escher/util/enum_utils.h"
 
 namespace escher {
 

@@ -6,7 +6,7 @@
 
 #include "src/ui/lib/escher/resources/resource_recycler.h"
 #include "src/ui/lib/escher/third_party/granite/vk/render_pass.h"
-#include "src/ui/lib/escher/util/enum_cast.h"
+#include "src/ui/lib/escher/util/enum_utils.h"
 #include "src/ui/lib/escher/util/hasher.h"
 #include "src/ui/lib/escher/util/trace_macros.h"
 #include "src/ui/lib/escher/vk/render_pass_info.h"
@@ -42,8 +42,8 @@ const impl::RenderPassPtr& RenderPassCache::ObtainRenderPass(const RenderPassInf
   if (rpi.depth_stencil_attachment_info.format != vk::Format::eUndefined) {
     h.u32(EnumCast(rpi.depth_stencil_attachment_info.format));
     h.u32(EnumCast(rpi.depth_stencil_attachment_info.swapchain_layout));
-    // TODO(https://fxbug.dev/42151036): See above.  We don't check whether the depth-stencil attachment is
-    // transient, but it seems like we probably should.
+    // TODO(https://fxbug.dev/42151036): See above.  We don't check whether the depth-stencil
+    // attachment is transient, but it seems like we probably should.
   }
 
   uint32_t num_subpasses = static_cast<uint32_t>(rpi.subpasses.size());

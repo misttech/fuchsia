@@ -31,7 +31,7 @@
 #include "src/ui/lib/escher/third_party/granite/vk/descriptor_set_layout.h"
 #include "src/ui/lib/escher/util/bit_ops.h"
 #include "src/ui/lib/escher/util/debug_print.h"
-#include "src/ui/lib/escher/util/enum_count.h"
+#include "src/ui/lib/escher/util/enum_utils.h"
 #include "src/ui/lib/escher/util/hashable.h"
 #include "src/ui/lib/escher/util/hasher.h"
 #include "src/ui/lib/escher/vk/impl/descriptor_set_allocator.h"

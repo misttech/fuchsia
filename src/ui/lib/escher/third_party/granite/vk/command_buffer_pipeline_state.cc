@@ -26,12 +26,11 @@
 #include "src/ui/lib/escher/third_party/granite/vk/command_buffer_pipeline_state.h"
 
 #include "src/ui/lib/escher/impl/vulkan_utils.h"
-#include "src/ui/lib/escher/third_party/enum_utils/enum_utils.h"
 #include "src/ui/lib/escher/third_party/granite/vk/pipeline_layout.h"
 #include "src/ui/lib/escher/third_party/granite/vk/render_pass.h"
 #include "src/ui/lib/escher/util/bit_ops.h"
 #include "src/ui/lib/escher/util/block_allocator.h"
-#include "src/ui/lib/escher/util/enum_cast.h"
+#include "src/ui/lib/escher/util/enum_utils.h"
 #include "src/ui/lib/escher/util/hasher.h"
 #include "src/ui/lib/escher/util/trace_macros.h"
 #include "src/ui/lib/escher/vk/buffer.h"
@@ -44,13 +43,12 @@ namespace escher {
   static_assert((1 << CommandBufferPipelineState::StaticState::BIT_COUNT) - 1 >= (MAX_VALUE), \
                 "not enough bits for " #MAX_VALUE)
 
-ASSERT_NUM_STATE_BITS(kNumCompareOpBits, *enum_utils::MaxEnumElementValue<vk::CompareOp>());
-ASSERT_NUM_STATE_BITS(kNumStencilOpBits, *enum_utils::MaxEnumElementValue<vk::StencilOp>());
-ASSERT_NUM_STATE_BITS(kNumBlendFactorBits, *enum_utils::MaxEnumElementValue<vk::BlendFactor>());
-ASSERT_NUM_STATE_BITS(kNumBlendOpBits, *enum_utils::MaxEnumElementValue<vk::BlendOp>());
-ASSERT_NUM_STATE_BITS(kNumFrontFaceBits, *enum_utils::MaxEnumElementValue<vk::FrontFace>());
-ASSERT_NUM_STATE_BITS(kNumPrimitiveTopologyBits,
-                      *enum_utils::MaxEnumElementValue<vk::PrimitiveTopology>());
+ASSERT_NUM_STATE_BITS(kNumCompareOpBits, *EnumMaxElementValue<vk::CompareOp>());
+ASSERT_NUM_STATE_BITS(kNumStencilOpBits, *EnumMaxElementValue<vk::StencilOp>());
+ASSERT_NUM_STATE_BITS(kNumBlendFactorBits, *EnumMaxElementValue<vk::BlendFactor>());
+ASSERT_NUM_STATE_BITS(kNumBlendOpBits, *EnumMaxElementValue<vk::BlendOp>());
+ASSERT_NUM_STATE_BITS(kNumFrontFaceBits, *EnumMaxElementValue<vk::FrontFace>());
+ASSERT_NUM_STATE_BITS(kNumPrimitiveTopologyBits, *EnumMaxElementValue<vk::PrimitiveTopology>());
 
 // Must adjust this in the unlikely case that more cull modes are added.
 ASSERT_NUM_STATE_BITS(kNumCullModeBits, VK_CULL_MODE_FRONT_AND_BACK);
