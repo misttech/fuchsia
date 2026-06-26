@@ -56,6 +56,8 @@ type FailureModeCheck interface {
 	// IsInfraFailure is true if the check is a result of an
 	// infrastructure failure.
 	IsInfraFailure() bool
+	// IsExoneration is true if the check should exonerate the matching test.
+	IsExoneration() bool
 	// FailureReason is the human-readable error message.
 	FailureReason() string
 	// EmitSyntheticTestCase is true if the check should add a synthetic
@@ -99,6 +101,10 @@ func (c baseCheck) Tags() []build.TestTag {
 }
 
 func (c baseCheck) IsInfraFailure() bool {
+	return false
+}
+
+func (c baseCheck) IsExoneration() bool {
 	return false
 }
 

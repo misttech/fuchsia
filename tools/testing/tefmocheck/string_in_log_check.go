@@ -25,6 +25,7 @@ import (
 
 // stringInLogCheck checks if String is found in the log named LogName.
 type stringInLogCheck struct {
+	baseCheck
 	// String that will be searched for.
 	String string
 	// OnlyOnStates will cause Check() to return false if the swarming task

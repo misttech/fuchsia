@@ -146,6 +146,7 @@ func main() {
 		},
 	})
 	checks = append(checks, tefmocheck.NearbyStringsChecks()...)
+	checks = append(checks, tefmocheck.FailureReasonChecks()...)
 	checks = append(checks, tefmocheck.StringInLogsChecks()...)
 	checks = append(checks, tefmocheck.MassTestFailureCheck{MaxFailed: 5})
 	// TaskStateChecks should go toward the end, since they're not very specific.

@@ -422,3 +422,78 @@ func TestRunChecks_TargetedSyntheticTestCase_NotFound(t *testing.T) {
 		}
 	})
 }
+
+type exonerationCheck struct {
+	syntheticCheck
+	testName string
+}
+
+func (c exonerationCheck) Name() string {
+	return "exoneration_check"
+}
+
+func (c exonerationCheck) IsExoneration() bool {
+	return true
+}
+
+func (c exonerationCheck) TestName() string {
+	return c.testName
+}
+
+func TestRunChecks_Exoneration(t *testing.T) {
+	summary := runtests.TestSummary{
+		Tests: []runtests.TestDetails{
+			{
+				Name:   "failing_test",
+				Status: runtests.TestFailure,
+				TestResult: runtests.TestResult{
+					Cases: []runtests.TestCaseResult{
+						{
+							CaseName: "failed_case",
+							Status:   runtests.TestFailure,
+						},
+						{
+							CaseName: "passed_case",
+							Status:   runtests.TestSuccess,
+						},
+					},
+				},
+			},
+		},
+	}
+	to := TestingOutputs{
+		TestSummary: &summary,
+	}
+	outputsDir := t.TempDir()
+	check := exonerationCheck{testName: "failing_test"}
+
+	got, err := RunChecks([]FailureModeCheck{check}, &to, outputsDir)
+	if err != nil {
+		t.Fatalf("RunChecks() failed: %v", err)
+	}
+
+	// No synthetic tests should be returned for exoneration.
+	if len(got) != 0 {
+		t.Fatalf("RunChecks() returned %d tests, want 0", len(got))
+	}
+
+	// The actual test status should be updated to TestExonerated.
+	if summary.Tests[0].Status != runtests.TestExonerated {
+		t.Errorf("summary.Tests[0].Status = %v, want %v", summary.Tests[0].Status, runtests.TestExonerated)
+	}
+
+	// The failed test case status should be updated to TestExonerated.
+	if summary.Tests[0].Cases[0].Status != runtests.TestExonerated {
+		t.Errorf("summary.Tests[0].Cases[0].Status = %v, want %v", summary.Tests[0].Cases[0].Status, runtests.TestExonerated)
+	}
+
+	// The passed test case status should remain TestSuccess.
+	if summary.Tests[0].Cases[1].Status != runtests.TestSuccess {
+		t.Errorf("summary.Tests[0].Cases[1].Status = %v, want %v", summary.Tests[0].Cases[1].Status, runtests.TestSuccess)
+	}
+
+	// No synthetic test case should be added.
+	if len(summary.Tests[0].Cases) != 2 {
+		t.Fatalf("len(summary.Tests[0].Cases) = %d, want 2", len(summary.Tests[0].Cases))
+	}
+}

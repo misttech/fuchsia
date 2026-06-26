@@ -18,6 +18,7 @@ if (is_host) {
       "test_cases_example:tests",
       "test_cases_revive_example:tests",
       "test_data_resource_access:tests",
+      "test_exoneration_failing:tests",
       "test_hello_world:tests",
       "test_multi_device:tests",
       "test_openwrt_ap:tests",

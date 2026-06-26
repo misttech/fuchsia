@@ -37,6 +37,41 @@ func RunChecks(checks []FailureModeCheck, to *TestingOutputs, outputsDir string)
 			continue
 		}
 
+		if check.IsExoneration() {
+			if to == nil || to.TestSummary == nil {
+				log.Printf("Warning: exoneration check %s matched but TestingOutputs or TestSummary is nil; ignoring", check.Name())
+				continue
+			}
+			attributedTestName := check.TestName()
+			if attributedTestName == "" {
+				log.Printf("Warning: exoneration check %s matched but is not attributed to a specific test; ignoring", check.Name())
+				continue
+			}
+			foundMatch := false
+			for i := range to.TestSummary.Tests {
+				test := &to.TestSummary.Tests[i]
+				if !runtests.IsFailure(test.Status) {
+					continue
+				}
+				if test.Name != attributedTestName {
+					continue
+				}
+				foundMatch = true
+				test.Status = runtests.TestExonerated
+				for j := range test.Cases {
+					if runtests.IsFailure(test.Cases[j].Status) {
+						test.Cases[j].Status = runtests.TestExonerated
+					}
+				}
+			}
+			if !foundMatch {
+				log.Printf("Warning: exoneration check %s attributed to test %q but test not found in summary", check.Name(), attributedTestName)
+			}
+			// For exoneration, we don't emit synthetic test or test case.
+			// Just update the status and continue.
+			continue
+		}
+
 		// Some checks are difficult to attribute to a single test (e.g. syslogs and serial logs).
 		// However, we would still like the check's FailureReason to be associated with a top-level
 		// test's FailureReason.

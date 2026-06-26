@@ -88,7 +88,11 @@ group_with_no_dir_target_deps("core_x64_unstable_sl4f_tests") {
 
 group_with_no_dir_target_deps("core_x64_unstable_tests") {
   testonly = true
-  public_deps = []
+  public_deps = [
+    # This test is designed to always fail to verify the test exoneration
+    # mechanism.
+    "examples/test_exoneration_failing:exoneration_failing_test($host_toolchain)",
+  ]
 }
 
 group("core_x64_staging_sl4f_tests") {

@@ -11,6 +11,8 @@ if (is_host) {
     sources = [
       "cdc_ethernet_state_check.go",
       "cdc_ethernet_state_check_test.go",
+      "failure_reason_check.go",
+      "failure_reason_check_test.go",
       "lib.go",
       "lib_test.go",
       "logprocessing.go",
