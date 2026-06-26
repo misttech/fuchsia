@@ -261,8 +261,8 @@
                 // is a symlink that points to `toybox`, meaning that using NOFOLLOW will fail.
                 "ExecveatTest.SymlinkNoFollowWithNormalFile",
 
-                // This test call exec from a process with multiple threads.
-                // Starnix doesnt' support this  https://fxbug.dev/42082680
+                // TODO(https://fxbug.dev/297434895) These tests call exec from a process with
+                // multiple threads. Starnix doesn't yet support this.
                 "ExecTest.FromSiblingThread",
                 "ExecTest.WithSiblingThread",
 
