@@ -836,13 +836,13 @@
     },
     {
         "package": "gn/gn/linux-amd64",
-        "version": "git_revision:ed2a73266f1d9a0aeeebc3e1e07045848a62254e",
-        "instance_id": "-Yex6GbG--HbqQkrZgoY2nmxMbN7g3P_3BerRlmAyoMC"
+        "version": "git_revision:a5cbe3d1e70b629c44cba269eec96309edd160a8",
+        "instance_id": "Jf_UfZnydKALP-uESSw2nL5ARHvuzmirGxfh4WwtoAQC"
     },
     {
         "package": "gn/gn/linux-arm64",
-        "version": "git_revision:ed2a73266f1d9a0aeeebc3e1e07045848a62254e",
-        "instance_id": "GD6_i3Cez9DRT7m9ftX8-jvUrgXTM-YWF_GO0jjhdoYC"
+        "version": "git_revision:a5cbe3d1e70b629c44cba269eec96309edd160a8",
+        "instance_id": "d0sly8uBqGWYAx00R5qW2OcUXBqH3ODYz-2F6308ggQC"
     },
     {
         "package": "infra/3pp/tools/cpython3/linux-amd64",
