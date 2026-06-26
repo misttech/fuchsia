@@ -289,7 +289,7 @@ class ExecWriteCallData final : public CallData {
       return;
     }
     if (status_ != WRITING) {
-      GPR_ASSERT(status_ == FINISH);
+      FX_CHECK(status_ == FINISH);
       Finish();
       return;
     }
@@ -359,7 +359,7 @@ class ExecReadCallData final : public CallData {
       return;
     }
     if (status_ != CallStatus::READ) {
-      GPR_ASSERT(status_ == CallStatus::FINISH);
+      FX_CHECK(status_ == CallStatus::FINISH);
       if (!grpc_stream_status_.ok() && operation_status_ == OperationStatus::OK) {
         operation_status_ = OperationStatus::GRPC_FAILURE;
       }

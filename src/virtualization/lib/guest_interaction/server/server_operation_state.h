@@ -5,6 +5,8 @@
 #ifndef SRC_VIRTUALIZATION_LIB_GUEST_INTERACTION_SERVER_SERVER_OPERATION_STATE_H_
 #define SRC_VIRTUALIZATION_LIB_GUEST_INTERACTION_SERVER_SERVER_OPERATION_STATE_H_
 
+#include <lib/syslog/cpp/macros.h>
+
 #include <filesystem>
 
 #include "src/virtualization/lib/guest_interaction/common.h"
@@ -361,7 +363,7 @@ class ExecWriteCallData final : public CallData {
       return;
     }
     if (status_ != CallStatus::WRITE) {
-      GPR_ASSERT(status_ == CallStatus::FINISH);
+      FX_CHECK(status_ == CallStatus::FINISH);
       Finish();
       return;
     }
