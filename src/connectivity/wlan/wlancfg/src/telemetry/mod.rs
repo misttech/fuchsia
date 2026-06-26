@@ -3,13 +3,11 @@
 // found in the LICENSE file.
 
 mod convert;
-mod inspect_time_series;
 mod windowed_stats;
 
 use crate::client;
 use crate::client::roaming::lib::{PolicyRoamRequest, RoamReason};
 use crate::mode_management::{Defect, IfaceFailure};
-use crate::telemetry::inspect_time_series::TimeSeriesStats;
 use crate::telemetry::windowed_stats::WindowedStats;
 use crate::util::historical_list::{HistoricalList, Timestamped};
 use crate::util::pseudo_energy::{EwmaSignalData, RssiVelocity};
@@ -386,10 +384,6 @@ pub enum TelemetryEvent {
     /// efficacy of the recovery mechanism can be evaluated later.
     RecoveryEvent {
         reason: RecoveryReason,
-    },
-    /// Get the TimeSeries held by telemetry loop. Intended for test only.
-    GetTimeSeries {
-        sender: oneshot::Sender<Arc<Mutex<TimeSeriesStats>>>,
     },
     SmeTimeout {
         source: TimeoutSource,
@@ -1656,9 +1650,6 @@ impl Telemetry {
             TelemetryEvent::RecoveryEvent { reason } => {
                 self.stats_logger.log_recovery_occurrence(reason).await;
             }
-            TelemetryEvent::GetTimeSeries { sender } => {
-                let _result = sender.send(Arc::clone(&self.stats_logger.time_series_stats));
-            }
             TelemetryEvent::SmeTimeout { source } => {
                 self.stats_logger.log_sme_timeout(source).await;
 
@@ -1783,13 +1774,6 @@ fn float_to_ten_thousandth(value: f64) -> i64 {
     (value * 10000f64) as i64
 }
 
-fn round_to_nearest_second(duration: zx::MonotonicDuration) -> i64 {
-    const MILLIS_PER_SEC: i64 = 1000;
-    let millis = duration.into_millis();
-    let rounded_portion = if millis % MILLIS_PER_SEC >= 500 { 1 } else { 0 };
-    millis / MILLIS_PER_SEC + rounded_portion
-}
-
 pub async fn connect_to_metrics_logger_factory()
 -> Result<fidl_fuchsia_metrics::MetricEventLoggerFactoryProxy, Error> {
     let cobalt_svc = fuchsia_component::client::connect_to_protocol::<
@@ -1886,13 +1870,6 @@ async fn diff_and_log_rx_counters(
     };
     let rx_drop_rate = if rx_total > 0 { rx_drop as f64 / rx_total as f64 } else { 0f64 };
 
-    stats_logger
-        .log_stat(StatOp::AddRxPacketCounters {
-            rx_unicast_total: rx_total,
-            rx_unicast_drop: rx_drop,
-        })
-        .await;
-
     if rx_drop_rate > HIGH_PACKET_DROP_RATE_THRESHOLD {
         stats_logger.log_stat(StatOp::AddRxHighPacketDropDuration(duration)).await;
     }
@@ -1929,8 +1906,6 @@ async fn diff_and_log_tx_counters(
     };
     let tx_drop_rate = if tx_total > 0 { tx_drop as f64 / tx_total as f64 } else { 0f64 };
 
-    stats_logger.log_stat(StatOp::AddTxPacketCounters { tx_total, tx_drop }).await;
-
     if tx_drop_rate > HIGH_PACKET_DROP_RATE_THRESHOLD {
         stats_logger.log_stat(StatOp::AddTxHighPacketDropDuration(duration)).await;
     }
@@ -1941,7 +1916,6 @@ async fn diff_and_log_tx_counters(
 
 struct StatsLogger {
     cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
-    time_series_stats: Arc<Mutex<TimeSeriesStats>>,
     last_1d_stats: Arc<Mutex<WindowedStats<StatCounters>>>,
     last_7d_stats: Arc<Mutex<WindowedStats<StatCounters>>>,
     last_successful_recovery: UintProperty,
@@ -1960,7 +1934,6 @@ struct StatsLogger {
     throttled_error_logger: ThrottledErrorLogger,
 
     // Inspect nodes
-    _time_series_inspect_node: LazyNode,
     _1d_counters_inspect_node: LazyNode,
     _7d_counters_inspect_node: LazyNode,
 }
@@ -1970,16 +1943,10 @@ impl StatsLogger {
         cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
         inspect_node: &InspectNode,
     ) -> Self {
-        let time_series_stats = Arc::new(Mutex::new(TimeSeriesStats::new()));
         let last_1d_stats = Arc::new(Mutex::new(WindowedStats::new(24)));
         let last_7d_stats = Arc::new(Mutex::new(WindowedStats::new(7)));
         let last_successful_recovery = inspect_node.create_uint("last_successful_recovery", 0);
         let successful_recoveries = inspect_node.create_uint("successful_recoveries", 0);
-        let _time_series_inspect_node = inspect_time_series::inspect_create_stats(
-            inspect_node,
-            "time_series",
-            Arc::clone(&time_series_stats),
-        );
         let _1d_counters_inspect_node =
             inspect_create_counters(inspect_node, "1d_counters", Arc::clone(&last_1d_stats));
         let _7d_counters_inspect_node =
@@ -1987,7 +1954,6 @@ impl StatsLogger {
 
         Self {
             cobalt_proxy,
-            time_series_stats,
             last_1d_stats,
             last_7d_stats,
             last_successful_recovery,
@@ -2003,74 +1969,11 @@ impl StatsLogger {
             ),
             _1d_counters_inspect_node,
             _7d_counters_inspect_node,
-            _time_series_inspect_node,
         }
     }
 
     async fn log_stat(&mut self, stat_op: StatOp) {
-        self.log_time_series(&stat_op);
         self.log_stat_counters(stat_op);
-    }
-
-    fn log_time_series(&mut self, stat_op: &StatOp) {
-        match stat_op {
-            StatOp::AddTotalDuration(duration) => {
-                self.time_series_stats
-                    .lock()
-                    .total_duration_sec
-                    .log_value(&(round_to_nearest_second(*duration) as i32));
-            }
-            StatOp::AddConnectedDuration(duration) => {
-                self.time_series_stats
-                    .lock()
-                    .connected_duration_sec
-                    .log_value(&(round_to_nearest_second(*duration) as i32));
-            }
-            StatOp::AddConnectAttemptsCount => {
-                self.time_series_stats.lock().connect_attempt_count.log_value(&1u32);
-            }
-            StatOp::AddConnectSuccessfulCount => {
-                self.time_series_stats.lock().connect_successful_count.log_value(&1u32);
-            }
-            StatOp::AddDisconnectCount(..) => {
-                self.time_series_stats.lock().disconnect_count.log_value(&1u32);
-            }
-            StatOp::AddPolicyRoamAttemptsCount(_reasons) => {
-                self.time_series_stats.lock().policy_roam_attempts_count.log_value(&1u32);
-            }
-            StatOp::AddPolicyRoamSuccessfulCount(_reasons) => {
-                self.time_series_stats.lock().policy_roam_successful_count.log_value(&1u32);
-            }
-            StatOp::AddPolicyRoamDisconnectsCount => {
-                self.time_series_stats.lock().policy_roam_disconnects_count.log_value(&1u32);
-            }
-            StatOp::AddRxPacketCounters { rx_unicast_total, rx_unicast_drop } => {
-                self.time_series_stats
-                    .lock()
-                    .rx_unicast_total_count
-                    .log_value(&(*rx_unicast_total as u32));
-                self.time_series_stats
-                    .lock()
-                    .rx_unicast_drop_count
-                    .log_value(&(*rx_unicast_drop as u32));
-            }
-            StatOp::AddTxPacketCounters { tx_total, tx_drop } => {
-                self.time_series_stats.lock().tx_total_count.log_value(&(*tx_total as u32));
-                self.time_series_stats.lock().tx_drop_count.log_value(&(*tx_drop as u32));
-            }
-            StatOp::AddNoRxDuration(duration) => {
-                self.time_series_stats
-                    .lock()
-                    .no_rx_duration_sec
-                    .log_value(&(round_to_nearest_second(*duration) as i32));
-            }
-            StatOp::AddDowntimeDuration(..)
-            | StatOp::AddDowntimeNoSavedNeighborDuration(..)
-            | StatOp::AddTxHighPacketDropDuration(..)
-            | StatOp::AddRxHighPacketDropDuration(..)
-            | StatOp::AddTxVeryHighPacketDropDuration(..)
-            | StatOp::AddRxVeryHighPacketDropDuration(..) => (),
-        }
     }
 
     fn log_stat_counters(&mut self, stat_op: StatOp) {
@@ -2127,8 +2030,6 @@ impl StatsLogger {
                 StatCounters { rx_very_high_packet_drop_duration: duration, ..zero }
             }
             StatOp::AddNoRxDuration(duration) => StatCounters { no_rx_duration: duration, ..zero },
-            StatOp::AddRxPacketCounters { .. } => StatCounters { ..zero },
-            StatOp::AddTxPacketCounters { .. } => StatCounters { ..zero },
         };
 
         if addition != StatCounters::default() {
@@ -4470,8 +4371,6 @@ enum StatOp {
     AddTxVeryHighPacketDropDuration(zx::MonotonicDuration),
     AddRxVeryHighPacketDropDuration(zx::MonotonicDuration),
     AddNoRxDuration(zx::MonotonicDuration),
-    AddRxPacketCounters { rx_unicast_total: u64, rx_unicast_drop: u64 },
-    AddTxPacketCounters { tx_total: u64, tx_drop: u64 },
 }
 
 #[derive(Clone, PartialEq, Default)]
@@ -5336,22 +5235,6 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_total_duration_time_series() {
-        let (mut test_helper, mut test_fut) = setup_test();
-
-        test_helper.advance_by(zx::MonotonicDuration::from_seconds(25), test_fut.as_mut());
-        let time_series = test_helper.get_time_series(&mut test_fut);
-        let total_duration_sec: Vec<_> =
-            time_series.lock().total_duration_sec.minutely_iter().copied().collect();
-        assert_eq!(total_duration_sec, vec![15]);
-
-        test_helper.advance_to_next_telemetry_checkpoint(test_fut.as_mut());
-        let total_duration_sec: Vec<_> =
-            time_series.lock().total_duration_sec.minutely_iter().copied().collect();
-        assert_eq!(total_duration_sec, vec![30]);
-    }
-
-    #[fuchsia::test]
     fn test_counters_when_idle() {
         let (mut test_helper, mut test_fut) = setup_test();
 
@@ -5705,41 +5588,6 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_log_connect_attempt_time_series() {
-        let (mut test_helper, mut test_fut) = setup_test();
-
-        // Send 10 failed connect results, then 1 successful.
-        for i in 0..10 {
-            let event = TelemetryEvent::ConnectResult {
-                iface_id: IFACE_ID,
-                policy_connect_reason: Some(
-                    client::types::ConnectReason::RetryAfterFailedConnectAttempt,
-                ),
-                result: fake_connect_result(fidl_ieee80211::StatusCode::RefusedReasonUnspecified),
-                multiple_bss_candidates: true,
-                ap_state: random_bss_description!(Wpa1).into(),
-                network_is_likely_hidden: false,
-            };
-            test_helper.telemetry_sender.send(event);
-
-            // Verify that the connection failure has been logged.
-            test_helper.drain_cobalt_events(&mut test_fut);
-            let logged_metrics =
-                test_helper.get_logged_metrics(metrics::CONNECTION_FAILURES_METRIC_ID);
-            assert_eq!(logged_metrics.len(), i + 1);
-        }
-        test_helper.send_connected_event(random_bss_description!(Wpa2));
-        test_helper.drain_cobalt_events(&mut test_fut);
-        let time_series = test_helper.get_time_series(&mut test_fut);
-        let connect_attempt_count: Vec<_> =
-            time_series.lock().connect_attempt_count.minutely_iter().copied().collect();
-        let connect_successful_count: Vec<_> =
-            time_series.lock().connect_successful_count.minutely_iter().copied().collect();
-        assert_eq!(connect_attempt_count, vec![11]);
-        assert_eq!(connect_successful_count, vec![1]);
-    }
-
-    #[fuchsia::test]
     fn test_disconnect_count_counter() {
         let (mut test_helper, mut test_fut) = setup_test();
         test_helper.send_connected_event(random_bss_description!(Wpa2));
@@ -5847,36 +5695,6 @@ mod tests {
                 },
             }
         });
-    }
-
-    #[fuchsia::test]
-    fn test_disconnect_count_time_series() {
-        let (mut test_helper, mut test_fut) = setup_test();
-        test_helper.send_connected_event(random_bss_description!(Wpa2));
-        assert_eq!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
-
-        let time_series = test_helper.get_time_series(&mut test_fut);
-        let disconnect_count: Vec<_> =
-            time_series.lock().disconnect_count.minutely_iter().copied().collect();
-        assert_eq!(disconnect_count, vec![0]);
-
-        let info = DisconnectInfo {
-            disconnect_source: fidl_sme::DisconnectSource::Ap(fidl_sme::DisconnectCause {
-                reason_code: fidl_ieee80211::ReasonCode::StaLeaving,
-                mlme_event_name: fidl_sme::DisconnectMlmeEventName::DisassociateIndication,
-            }),
-            ..fake_disconnect_info()
-        };
-        test_helper.telemetry_sender.send(TelemetryEvent::Disconnected {
-            track_subsequent_downtime: true,
-            info: Some(info),
-        });
-        test_helper.drain_cobalt_events(&mut test_fut);
-
-        let time_series = test_helper.get_time_series(&mut test_fut);
-        let disconnect_count: Vec<_> =
-            time_series.lock().disconnect_count.minutely_iter().copied().collect();
-        assert_eq!(disconnect_count, vec![1]);
     }
 
     #[fuchsia::test]
@@ -6003,19 +5821,6 @@ mod tests {
                 },
             }
         });
-    }
-
-    #[fuchsia::test]
-    fn test_connected_duration_time_series() {
-        let (mut test_helper, mut test_fut) = setup_test();
-        test_helper.send_connected_event(random_bss_description!(Wpa2));
-        assert_eq!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
-        test_helper.advance_by(zx::MonotonicDuration::from_seconds(90), test_fut.as_mut());
-
-        let time_series = test_helper.get_time_series(&mut test_fut);
-        let connected_duration_sec: Vec<_> =
-            time_series.lock().connected_duration_sec.minutely_iter().copied().collect();
-        assert_eq!(connected_duration_sec, vec![45, 45]);
     }
 
     #[fuchsia::test]
@@ -6225,51 +6030,6 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_rx_tx_packet_time_series() {
-        let (mut test_helper, mut test_fut) = setup_test();
-        test_helper.set_iface_stats_resp(Box::new(|| {
-            let seed = (fasync::MonotonicInstant::now()
-                - fasync::MonotonicInstant::from_nanos(0i64))
-            .into_seconds() as u64;
-            Ok(fidl_fuchsia_wlan_stats::IfaceStats {
-                connection_stats: Some(fidl_fuchsia_wlan_stats::ConnectionStats {
-                    rx_unicast_total: Some(100 * seed),
-                    rx_unicast_drop: Some(3 * seed),
-                    tx_total: Some(10 * seed),
-                    tx_drop: Some(2 * seed),
-                    ..fake_connection_stats(seed)
-                }),
-                ..Default::default()
-            })
-        }));
-
-        test_helper.send_connected_event(random_bss_description!(Wpa2));
-        assert_eq!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
-
-        test_helper.advance_by(zx::MonotonicDuration::from_minutes(2), test_fut.as_mut());
-
-        let time_series = test_helper.get_time_series(&mut test_fut);
-        let rx_unicast_drop_count: Vec<_> =
-            time_series.lock().rx_unicast_drop_count.minutely_iter().copied().collect();
-        let rx_unicast_total_count: Vec<_> =
-            time_series.lock().rx_unicast_total_count.minutely_iter().copied().collect();
-        let tx_drop_count: Vec<_> =
-            time_series.lock().tx_drop_count.minutely_iter().copied().collect();
-        let tx_total_count: Vec<_> =
-            time_series.lock().tx_total_count.minutely_iter().copied().collect();
-
-        // Note: Packets from the first 15 seconds are not accounted because we
-        //       we did not take packet measurement at 0th second mark.
-        //       Additionally, the count for 45th-60th second mark is logged
-        //       at the 60th mark, which is considered to be part of the second
-        //       window.
-        assert_eq!(rx_unicast_drop_count, vec![90, 180, 45]);
-        assert_eq!(rx_unicast_total_count, vec![3000, 6000, 1500]);
-        assert_eq!(tx_drop_count, vec![60, 120, 30]);
-        assert_eq!(tx_total_count, vec![300, 600, 150]);
-    }
-
-    #[fuchsia::test]
     fn test_no_rx_duration_counters() {
         let (mut test_helper, mut test_fut) = setup_test();
         test_helper.set_iface_stats_resp(Box::new(|| {
@@ -6308,30 +6068,6 @@ mod tests {
                 },
             }
         });
-    }
-
-    #[fuchsia::test]
-    fn test_no_rx_duration_time_series() {
-        let (mut test_helper, mut test_fut) = setup_test();
-        test_helper.set_iface_stats_resp(Box::new(|| {
-            let seed = fasync::MonotonicInstant::now().into_nanos() as u64;
-            Ok(fidl_fuchsia_wlan_stats::IfaceStats {
-                connection_stats: Some(fidl_fuchsia_wlan_stats::ConnectionStats {
-                    rx_unicast_total: Some(10),
-                    ..fake_connection_stats(seed)
-                }),
-                ..Default::default()
-            })
-        }));
-
-        test_helper.send_connected_event(random_bss_description!(Wpa2));
-        assert_eq!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
-
-        test_helper.advance_by(zx::MonotonicDuration::from_seconds(150), test_fut.as_mut());
-        let time_series = test_helper.get_time_series(&mut test_fut);
-        let no_rx_duration_sec: Vec<_> =
-            time_series.lock().no_rx_duration_sec.minutely_iter().copied().collect();
-        assert_eq!(no_rx_duration_sec, vec![30, 60, 45]);
     }
 
     #[fuchsia::test]
@@ -10762,17 +10498,6 @@ mod tests {
         // ignore previous values.
         fn clear_cobalt_events(&mut self) {
             self.cobalt_events = Vec::new();
-        }
-
-        fn get_time_series(
-            &mut self,
-            test_fut: &mut (impl Future<Output = ()> + Unpin),
-        ) -> Arc<Mutex<TimeSeriesStats>> {
-            let (sender, mut receiver) = oneshot::channel();
-            self.telemetry_sender.send(TelemetryEvent::GetTimeSeries { sender });
-            assert_matches!(self.advance_test_fut(test_fut), Poll::Pending);
-            self.drain_cobalt_events(test_fut);
-            assert_matches!(receiver.try_recv(), Ok(Some(stats)) => stats)
         }
     }
 
