@@ -186,10 +186,6 @@ SECTIONS {
     KEEP(*(asan_globals))
     PROVIDE_HIDDEN(__stop_asan_globals = .);
 
-    PROVIDE_HIDDEN(__start_rust_lock_classes = .);
-    KEEP(*(rust_lock_classes))
-    PROVIDE_HIDDEN(__stop_rust_lock_classes = .);
-
     /* TODO(https://fxbug.dev/384994543): Alignment should actually be 8 if present. */
     *(.data.rel.ro*)
     ASSERT(ALIGNOF(.data.rel.ro) <= 32 || SIZEOF(.data.rel.ro) == 0,
@@ -216,6 +212,10 @@ SECTIONS {
      */
     *(.data.cpu_align_exclusive)
     . = ALIGN(128);
+
+    PROVIDE_HIDDEN(__start_rust_lock_classes = .);
+    KEEP(*(rust_lock_classes))
+    PROVIDE_HIDDEN(__stop_rust_lock_classes = .);
 
     *(SORT_BY_ALIGNMENT(.data*))
   }
