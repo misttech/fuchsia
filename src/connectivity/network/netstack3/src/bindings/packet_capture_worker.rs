@@ -106,11 +106,12 @@ impl RollingCaptureState {
     }
 
     #[track_caller]
-    fn transition_to_closing(&mut self) -> fasync::Task<Option<CaptureData>> {
+    fn transition_to_closing(&mut self) {
         self.replace_with(|old| match old {
             RollingCaptureState::Attached { task, cancel: _ }
             | RollingCaptureState::DetachedConnected { task, name: _, cancel: _ } => {
-                (RollingCaptureState::Closing, task)
+                let _ = task.detach_on_drop();
+                (RollingCaptureState::Closing, ())
             }
             old => unreachable!("transition to closing for teardown in unexpected state: {old:?}"),
         })
@@ -251,11 +252,11 @@ where
         mut ctx: Ctx,
         source: Source,
         responder: Option<fnet_debug::RollingPacketCaptureDiscardResponder>,
-    ) -> fasync::Task<Option<CaptureData>> {
-        let task = {
+    ) {
+        {
             let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
             state_lock.transition_to_closing()
-        };
+        }
 
         source.shutdown(&mut ctx).await;
 
@@ -268,17 +269,15 @@ where
         if let Some(responder) = responder {
             responder.send().unwrap_or_log("failed to respond");
         }
-
-        task
     }
 
     match close_type {
         CloseType::Discard(responder) => {
-            let _task = cleanup(ctx, source, Some(responder)).await;
+            cleanup(ctx, source, Some(responder)).await;
             return None;
         }
         CloseType::Canceled => {
-            let _task = cleanup(ctx, source, None).await;
+            cleanup(ctx, source, None).await;
             return None;
         }
         CloseType::Takeover => return Some(CaptureData { source, pcap_headers }),
@@ -340,7 +339,7 @@ where
 
             futures::select! {
                 _ = scope_cancel_fut => {
-                    let _task = cleanup(ctx, source, None).await;
+                    cleanup(ctx, source, None).await;
                     return None;
                 }
                 _ = takeover_cancel => return Some(CaptureData { source, pcap_headers }),
