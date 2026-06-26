@@ -63,6 +63,40 @@ zx_status_t UsbPeripheral::UsbDciCancelAll(uint8_t ep_address) {
   return ZX_OK;
 }
 
+zx_status_t UsbPeripheral::UsbDciEndpointSetStall(uint8_t ep_address) {
+  TRACE_DURATION("usb-peripheral", __func__, "ep_address", ep_address);
+  {
+    fbl::AutoLock _(&lock_);
+    stalled_eps_.insert(ep_address);
+  }
+  fidl::Arena arena;
+  auto result = dci_.buffer(arena)->EndpointSetStall(ep_address);
+  if (!result.ok()) {
+    return result.status();
+  }
+  if (result->is_error()) {
+    return result->error_value();
+  }
+  return ZX_OK;
+}
+
+zx_status_t UsbPeripheral::UsbDciEndpointClearStall(uint8_t ep_address) {
+  TRACE_DURATION("usb-peripheral", __func__, "ep_address", ep_address);
+  {
+    fbl::AutoLock _(&lock_);
+    stalled_eps_.erase(ep_address);
+  }
+  fidl::Arena arena;
+  auto result = dci_.buffer(arena)->EndpointClearStall(ep_address);
+  if (!result.ok()) {
+    return result.status();
+  }
+  if (result->is_error()) {
+    return result->error_value();
+  }
+  return ZX_OK;
+}
+
 zx_status_t UsbPeripheral::ConnectToEndpoint(uint8_t ep_address,
                                              fidl::ServerEnd<fendpoint::Endpoint> ep) {
   TRACE_DURATION("usb-peripheral", __func__, "ep_address", ep_address);
@@ -963,6 +997,7 @@ void UsbPeripheral::ClearFunctions(std::optional<fit::callback<void()>> callback
     if (callback) {
       on_all_functions_cleared_.push_back(UnlockedCallback(std::move(*callback), lock_));
     }
+    stalled_eps_.clear();
     if (state_ == DeviceState::kStopping) {
       fdf::info("Already in process of clearing the functions (state=kStopping)");
       already_stopping = true;
@@ -1219,11 +1254,6 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
                      });
         return;
       }
-      if (request == USB_REQ_CLEAR_FEATURE && value == USB_ENDPOINT_HALT) {
-        UsbDciCancelAll(EpAddressToIndex(static_cast<uint8_t>(index)));
-        completer(zx::ok(std::vector<uint8_t>()));
-        return;
-      }
 
       const auto& configuration = configurations_[configuration_ - 1];
       const auto& interface_map = configuration.interface_map;
@@ -1241,6 +1271,36 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
       break;
     }
     case USB_RECIP_ENDPOINT: {
+      if (request_type == (USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT) &&
+          request == USB_REQ_GET_STATUS && length == 2) {
+        uint8_t ep_addr = static_cast<uint8_t>(index);
+        uint16_t status = 0;
+        {
+          fbl::AutoLock _(&lock_);
+          if (stalled_eps_.contains(ep_addr)) {
+            status = 1;
+          }
+        }
+        std::vector<uint8_t> read_data_vec = {static_cast<uint8_t>(status & 0xFF),
+                                              static_cast<uint8_t>(status >> 8)};
+        completer(zx::ok(std::move(read_data_vec)));
+        return;
+      }
+      if (request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT) &&
+          request == USB_REQ_SET_FEATURE && value == USB_ENDPOINT_HALT && length == 0) {
+        uint8_t ep_addr = static_cast<uint8_t>(index);
+        UsbDciCancelAll(ep_addr);
+        UsbDciEndpointSetStall(ep_addr);
+        completer(zx::ok(std::vector<uint8_t>()));
+        return;
+      }
+      if (request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT) &&
+          request == USB_REQ_CLEAR_FEATURE && value == USB_ENDPOINT_HALT && length == 0) {
+        uint8_t ep_addr = static_cast<uint8_t>(index);
+        UsbDciEndpointClearStall(ep_addr);
+        completer(zx::ok(std::vector<uint8_t>()));
+        return;
+      }
       // delegate to the function driver for the endpoint
       index = EpAddressToIndex(static_cast<uint8_t>(index));
       if (index == 0 || index >= USB_MAX_EPS) {

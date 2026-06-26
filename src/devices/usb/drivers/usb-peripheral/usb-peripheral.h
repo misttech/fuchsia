@@ -21,6 +21,7 @@
 
 #include <format>
 #include <optional>
+#include <set>
 #include <string_view>
 #include <utility>
 
@@ -179,6 +180,8 @@ class UsbPeripheral : public fdf::DriverBase2,
   void Stop(fdf::StopCompleter completer) override;
 
   zx_status_t UsbDciCancelAll(uint8_t ep_address);
+  zx_status_t UsbDciEndpointSetStall(uint8_t ep_address);
+  zx_status_t UsbDciEndpointClearStall(uint8_t ep_address);
 
   // fuchsia_hardware_usb_peripheral::Device protocol implementation.
   void SetConfiguration(SetConfigurationRequestView request,
@@ -389,6 +392,7 @@ class UsbPeripheral : public fdf::DriverBase2,
   void WaitForFunctionsCleared(fit::callback<void()> callback) __TA_EXCLUDES(lock_);
 
   std::vector<UnlockedCallback> on_all_functions_cleared_ __TA_GUARDED(lock_);
+  std::set<uint8_t> stalled_eps_ __TA_GUARDED(lock_);
 
   UsbDciInterfaceServer intf_srv_{this};
 
