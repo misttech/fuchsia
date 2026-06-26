@@ -15,9 +15,6 @@
                 // Flaky test.
                 "LocalSocketTest.smoke",
 
-                // TODO(https://fxbug.dev/323209351): Re-enable flaky test.
-                "FdeventTest.timeout",
-
                 // TODO(https://fxbug.dev/445433238): Connect syscall to a vsock not supported.
                 "socket_spec.socket_spec_listen_connect_vsock_success",
             ],
