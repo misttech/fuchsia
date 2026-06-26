@@ -215,11 +215,11 @@ From //boards/arm64.gni:35
 
 **Overridden from the default:** `""`
 
-From //build/images/vbmeta.gni:23
+From //build/images/vbmeta.gni:20
 
 **Current value (from the default):** `""`
 
-From //build/images/vbmeta.gni:23
+From //build/images/vbmeta.gni:20
 
 ### avb_key
 
@@ -231,11 +231,11 @@ From //boards/arm64.gni:37
 
 **Overridden from the default:** `""`
 
-From //build/images/vbmeta.gni:20
+From //build/images/vbmeta.gni:17
 
 **Current value (from the default):** `""`
 
-From //build/images/vbmeta.gni:20
+From //build/images/vbmeta.gni:17
 
 ### base_package_labels
 
@@ -1003,7 +1003,7 @@ This should never be set as a build argument.
 }
   hwasan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.hwasan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
@@ -1021,7 +1021,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -9928,7 +9928,6 @@ From //build/config/features.gni:10
 
 If true, then a vbmeta image will be generated for provided ZBI
 and the paving script will pave vbmeta images to the target device.
-LINT.IfChange
 
 **Current value for `target_cpu = "arm64"`:** `true`
 
@@ -9936,11 +9935,11 @@ From //boards/arm64.gni:33
 
 **Overridden from the default:** `false`
 
-From //build/images/vbmeta.gni:15
+From //build/images/vbmeta.gni:14
 
 **Current value (from the default):** `false`
 
-From //build/images/vbmeta.gni:15
+From //build/images/vbmeta.gni:14
 
 ### using_fuchsia_sdk
 
