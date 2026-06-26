@@ -138,6 +138,14 @@
                 },
                 {
                     event_codes: [
+                        4,
+                    ],
+                    metric_id: 71,
+                    metric_type: "Occurrence",
+                    selector: "bootstrap/fshost:root/keymint_unseal_failure_events:fxfs",
+                },
+                {
+                    event_codes: [
                         2,
                     ],
                     metric_id: 62,

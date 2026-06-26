@@ -622,12 +622,19 @@ impl TestFixture {
                 .expect("expected one inspect hierarchy");
 
             let format = || expected_program.to_string();
-
-            assert_data_tree!(tree, root: contains {
-                corruption_events: contains {
-                    format() => 1u64,
-                }
-            });
+            if expected_signature.contains("unseal-error") {
+                assert_data_tree!(tree, root: contains {
+                    keymint_unseal_failure_events: contains {
+                        format() => 1u64,
+                    }
+                });
+            } else {
+                assert_data_tree!(tree, root: contains {
+                    corruption_events: contains {
+                        format() => 1u64,
+                    }
+                });
+            }
         }
     }
 

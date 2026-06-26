@@ -296,6 +296,8 @@ impl FshostEnvironment {
         shutdown_tx: mpsc::Sender<service::FshostShutdownResponder>,
     ) -> Self {
         let corruption_events = inspector.root().create_child("corruption_events");
+        let keymint_unseal_failure_events =
+            inspector.root().create_child("keymint_unseal_failure_events");
         Self {
             config: config.clone(),
             gpt: Filesystem::Queue(Vec::new()),
@@ -303,7 +305,11 @@ impl FshostEnvironment {
             container: None,
             blobfs: Filesystem::Queue(Vec::new()),
             data: Filesystem::Queue(Vec::new()),
-            launcher: Arc::new(FilesystemLauncher { config, corruption_events }),
+            launcher: Arc::new(FilesystemLauncher {
+                config,
+                corruption_events,
+                keymint_unseal_failure_events,
+            }),
             watcher,
             registered_devices,
             other_filesystems: Vec::new(),
@@ -716,6 +722,7 @@ impl Environment for FshostEnvironment {
 pub struct FilesystemLauncher {
     config: Arc<fshost_config::Config>,
     corruption_events: finspect::Node,
+    keymint_unseal_failure_events: finspect::Node,
 }
 
 impl FilesystemLauncher {
@@ -816,10 +823,15 @@ impl FilesystemLauncher {
         })
         .detach();
 
-        // NOTE: If a corruption event has already been recorded, this will turn into a no-op, which
-        // means we'd short count the number of corruption events.  Given that this should only
-        // occur no more than once per-boot, this doesn't seem worth fixing.
-        self.corruption_events.record_uint(format, 1);
+        // NOTE: If an event is recorded multiple times, Inspect does not deduplicate them.
+        // Sampler (which converts Inspect -> Cobalt) will arbitrarily select one of the samples,
+        // rather than aggregating them.  Since we only ever expect one of these events per boot,
+        // this should not cause any issues.
+        if is_unseal_error {
+            self.keymint_unseal_failure_events.record_uint(format, 1);
+        } else {
+            self.corruption_events.record_uint(format, 1);
+        }
     }
 }
 
