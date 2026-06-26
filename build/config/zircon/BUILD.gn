@@ -347,6 +347,14 @@ config("static-libc++") {
 # ways that won't work. This config can be changed to add switches when those
 # needs arise.
 config("pure") {
+  # TODO(https://fxbug.dev/527515871): The pass in Clang that makes lookup
+  # tables PIC-friendly is disabled for aarch64 since the offset between
+  # data and text sections can be up to 4GB, but the pc-relative relocations
+  # used to make them pic-friendly has a range of +/-2GB which could potentially
+  # lead to overflows.
+  if (!is_gcc && current_cpu == "arm64") {
+    cflags = [ "-fno-jump-tables" ]
+  }
 }
 
 variant("rodso") {
