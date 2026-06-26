@@ -4,12 +4,14 @@
 
 #include <lib/fxt/interned_category.h>
 
-extern "C" const fxt::InternedString* get_cpp_hello_ptr() {
+extern "C" {
+const fxt::InternedString* get_cpp_hello_ptr() {
   using fxt::operator""_intern;
   return &"hello"_intern;
 }
 
-extern "C" const fxt::InternedCategory* get_cpp_category_ptr() {
+const fxt::InternedCategory* get_cpp_category_ptr() {
   using fxt::operator""_category;
   return &"hello_category"_category;
+}
 }
