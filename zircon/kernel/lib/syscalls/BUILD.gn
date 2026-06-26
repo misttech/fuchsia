@@ -6,6 +6,7 @@
 
 import("//build/cpp/library_headers.gni")
 import("//build/zircon/zircon_cpu.gni")
+import("//zircon/kernel/kernel_rust_crate.gni")
 import("//zircon/kernel/params.gni")
 
 library_headers("headers") {
@@ -70,6 +71,7 @@ source_set("impl") {
   deps = [
     ":dispatch",
     ":headers",
+    ":syscalls-rs",
     "//src/lib/zbitl",
     "//zircon/kernel/dev/iommu",
     "//zircon/kernel/lib/boot-options",
@@ -129,4 +131,10 @@ group("phys-tests") {
 
 group("boot_tests") {
   testonly = true
+}
+
+kernel_rust_crate("syscalls-rs") {
+  source_root = "test.rs"
+  sources = [ "test.rs" ]
+  deps = [ "//sdk/rust/zx-status" ]
 }

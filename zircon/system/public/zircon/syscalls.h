@@ -24,9 +24,11 @@ __BEGIN_CDECLS
 #else
 #define _ZX_SYSCALL_ANNO(attr)  // Nothing for compilers without the support.
 #endif
+#define _ZX_SYSCALL_EXTERN_C
 
 #include "syscalls/gen/cdecls.inc"
 
+#undef _ZX_SYSCALL_EXTERN_C
 #undef _ZX_SYSCALL_ANNO
 #undef _ZX_SYSCALL_DECL
 

@@ -26,6 +26,7 @@
 #else
 #define _ZX_SYSCALL_ANNO(anno)
 #endif
+#define _ZX_SYSCALL_EXTERN_C
 
 #include <lib/syscalls/syscalls.inc>
 
@@ -33,3 +34,5 @@
 #undef KERNEL_SYSCALL
 #undef INTERNAL_SYSCALL
 #undef BLOCKING_SYSCALL
+#undef _ZX_SYSCALL_EXTERN_C
+#undef _ZX_SYSCALL_ANNO

@@ -789,6 +789,43 @@ unsafe extern "C" {
         out: *mut zx_handle_t,
     ) -> zx_status_t;
 
+    pub fn zx_syscall_test_rust_wrapper(a: i32, b: i32, c: i32) -> zx_status_t;
+
+    pub fn zx_syscall_test_rust_0() -> zx_status_t;
+
+    pub fn zx_syscall_test_rust_1(a: i32) -> zx_status_t;
+
+    pub fn zx_syscall_test_rust_2(a: i32, b: i32) -> zx_status_t;
+
+    pub fn zx_syscall_test_rust_3(a: i32, b: i32, c: i32) -> zx_status_t;
+
+    pub fn zx_syscall_test_rust_4(a: i32, b: i32, c: i32, d: i32) -> zx_status_t;
+
+    pub fn zx_syscall_test_rust_5(a: i32, b: i32, c: i32, d: i32, e: i32) -> zx_status_t;
+
+    pub fn zx_syscall_test_rust_6(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> zx_status_t;
+
+    pub fn zx_syscall_test_rust_7(
+        a: i32,
+        b: i32,
+        c: i32,
+        d: i32,
+        e: i32,
+        f: i32,
+        g: i32,
+    ) -> zx_status_t;
+
+    pub fn zx_syscall_test_rust_8(
+        a: i32,
+        b: i32,
+        c: i32,
+        d: i32,
+        e: i32,
+        f: i32,
+        g: i32,
+        h: i32,
+    ) -> zx_status_t;
+
     pub fn zx_syscall_test_widening_signed_narrow(a: i64, b: i32, c: i16, d: i8) -> i64;
 
     pub fn zx_syscall_test_widening_signed_wide(a: i64, b: i32, c: i16, d: i8) -> i64;

@@ -31,12 +31,19 @@
 #define _ZX_SYSCALL_ANNO(anno)
 #endif
 
+#ifdef __cplusplus
+#define _ZX_SYSCALL_EXTERN_C extern "C"
+#else
+#define _ZX_SYSCALL_EXTERN_C
+#endif
+
 #include <lib/syscalls/kernel.inc>
 
 #undef VDSO_SYSCALL
 #undef KERNEL_SYSCALL
 #undef INTERNAL_SYSCALL
 #undef BLOCKING_SYSCALL
+#undef _ZX_SYSCALL_EXTERN_C
 #undef _ZX_SYSCALL_ANNO
 
 #endif  // ZIRCON_KERNEL_LIB_SYSCALLS_INCLUDE_LIB_SYSCALLS_FORWARD_H_

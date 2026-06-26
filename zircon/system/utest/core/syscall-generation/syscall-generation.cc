@@ -46,6 +46,27 @@ TEST(SyscallGenerationTest, Syscall) {
   ASSERT_EQ(zx_syscall_test_0(), 0, "syscall0_test doesn't add up");
 }
 
+TEST(SyscallGenerationTest, RustWrapper) {
+  ASSERT_EQ(zx_syscall_test_rust_wrapper(1, 2, 3), 6, "syscall_test_rust_wrapper doesn't add up");
+  ASSERT_EQ(zx_syscall_test_rust_wrapper(-1, 2, 3), ZX_ERR_INVALID_ARGS,
+            "vdso should have checked args");
+  ASSERT_EQ(zx_syscall_test_rust_wrapper(10, 20, 30), ZX_ERR_OUT_OF_RANGE,
+            "vdso should have checked the return");
+}
+
+TEST(SyscallGenerationTest, RustSyscall) {
+  ASSERT_EQ(zx_syscall_test_rust_0(), 0, "syscall_test_rust_0 doesn't add up");
+  ASSERT_EQ(zx_syscall_test_rust_1(1), 1, "syscall_test_rust_1 doesn't add up");
+  ASSERT_EQ(zx_syscall_test_rust_2(1, 2), 3, "syscall_test_rust_2 doesn't add up");
+  ASSERT_EQ(zx_syscall_test_rust_3(1, 2, 3), 6, "syscall_test_rust_3 doesn't add up");
+  ASSERT_EQ(zx_syscall_test_rust_4(1, 2, 3, 4), 10, "syscall_test_rust_4 doesn't add up");
+  ASSERT_EQ(zx_syscall_test_rust_5(1, 2, 3, 4, 5), 15, "syscall_test_rust_5 doesn't add up");
+  ASSERT_EQ(zx_syscall_test_rust_6(1, 2, 3, 4, 5, 6), 21, "syscall_test_rust_6 doesn't add up");
+  ASSERT_EQ(zx_syscall_test_rust_7(1, 2, 3, 4, 5, 6, 7), 28, "syscall_test_rust_7 doesn't add up");
+  ASSERT_EQ(zx_syscall_test_rust_8(1, 2, 3, 4, 5, 6, 7, 8), 36,
+            "syscall_test_rust_8 doesn't add up");
+}
+
 TEST(SyscallGenerationTest, HandleCreateSuccess) {
   zx_handle_t handle = ZX_HANDLE_INVALID;
   ASSERT_OK(zx_syscall_test_handle_create(ZX_OK, &handle));

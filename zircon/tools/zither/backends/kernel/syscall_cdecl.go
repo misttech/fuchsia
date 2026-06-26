@@ -7,6 +7,7 @@ package kernel
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"text/template"
 
 	"go.fuchsia.dev/fuchsia/zircon/tools/zither"
@@ -67,13 +68,20 @@ func SyscallCDecl(syscall zither.Syscall, ptrView PointerView, macroName func(zi
 }
 
 func cDeclAttributes(syscall zither.Syscall) string {
+	var attrs []string
+	if syscall.Rust {
+		attrs = append(attrs, "_ZX_SYSCALL_EXTERN_C")
+	}
 	if syscall.Const {
-		return "__CONST"
+		attrs = append(attrs, "__CONST")
 	}
 	if syscall.NoReturn {
-		return "__NO_RETURN"
+		attrs = append(attrs, "__NO_RETURN")
 	}
-	return "/* no attributes */"
+	if len(attrs) == 0 {
+		return "/* no attributes */"
+	}
+	return strings.Join(attrs, " ")
 }
 
 func cDeclMacro(syscall zither.Syscall) string {

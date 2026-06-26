@@ -1298,6 +1298,9 @@ type Syscall struct {
 	// See the definition of @testonly in //zircon/vdso/README.md.
 	Testonly bool
 
+	// Whether the syscall implementation in the kernel is written in Rust.
+	Rust bool
+
 	// Parameters gives the list of parameters in the C vDSO signature of the
 	// syscall in order.
 	Parameters []SyscallParameter
@@ -1428,6 +1431,7 @@ func newSyscallFamily(protocol fidlgen.Protocol, decls declMap) (*SyscallFamily,
 		_, syscall.Const = method.LookupAttribute("const")
 		_, syscall.Testonly = method.LookupAttribute("testonly")
 		_, syscall.VdsoCall = method.LookupAttribute("vdsocall")
+		_, syscall.Rust = method.LookupAttribute("rust")
 
 		// @const must be paired with @vdsocall.
 		if syscall.Const && !syscall.VdsoCall {
