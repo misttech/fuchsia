@@ -75,7 +75,7 @@ enum RollingCaptureState {
     /// A packet capture is active and the client is currently connected.
     ///
     /// The lifetime of the packet capture is tied to the client's connection.
-    Attached { task: fasync::Task<Option<CaptureData>>, cancel: oneshot::Sender<()> },
+    Attached { task: fasync::Task<Option<CaptureData>> },
     /// A packet capture is detached, and may or may not have a client connected
     /// based on `connected`.
     Detached {
@@ -97,7 +97,7 @@ impl RollingCaptureState {
     #[track_caller]
     fn transition_to_closing(&mut self) {
         self.replace_with(|old| match old {
-            RollingCaptureState::Attached { task, cancel: _ }
+            RollingCaptureState::Attached { task }
             | RollingCaptureState::Detached { task, name: _, cancel: _, connected: _ } => {
                 let _ = task.detach_on_drop();
                 (RollingCaptureState::Closing, ())
@@ -132,12 +132,20 @@ async fn remove_socket(ctx: &mut Ctx, id: SocketId<BindingsCtx>) -> SocketState 
 fn handle_detach(
     ctx: &mut Ctx,
     name: String,
-) -> Result<(), fnet_debug::RollingPacketCaptureDetachError> {
+) -> Result<oneshot::Receiver<()>, fnet_debug::RollingPacketCaptureDetachError> {
     ctx.bindings_ctx().packet_captures.state.lock().replace_with(|old_state| match old_state {
-        RollingCaptureState::Attached { task, cancel } => (
-            RollingCaptureState::Detached { name: name.clone(), task, cancel, connected: true },
-            Ok(()),
-        ),
+        RollingCaptureState::Attached { task } => {
+            let (cancel_tx, cancel_rx) = oneshot::channel();
+            (
+                RollingCaptureState::Detached {
+                    name: name.clone(),
+                    task,
+                    cancel: cancel_tx,
+                    connected: true,
+                },
+                Ok(cancel_rx),
+            )
+        }
         s @ RollingCaptureState::Detached { name: _, task: _, cancel: _, connected }
             if connected =>
         {
@@ -161,13 +169,18 @@ async fn serve_rolling_packet_capture<Fut>(
     mut rs: fnet_debug::RollingPacketCaptureRequestStream,
     data: CaptureData,
     scope_cancel_fut: Fut,
-    mut takeover_cancel: oneshot::Receiver<()>,
+    takeover_cancel_rx: Option<oneshot::Receiver<()>>,
 ) -> Option<CaptureData>
 where
     Fut: futures::Future<Output = ()>,
 {
     let CaptureData { source, pcap_headers } = data;
     let mut source = Some(source);
+
+    let mut takeover_cancel = match takeover_cancel_rx {
+        None => futures::future::Either::Left(futures::future::pending().fuse()),
+        Some(rx) => futures::future::Either::Right(rx.fuse()),
+    };
 
     enum CloseType {
         StreamClosed,
@@ -181,7 +194,7 @@ where
             _ = scope_cancel_fut => {
                 break CloseType::Canceled;
             }
-            _ = takeover_cancel => {
+            _ = &mut takeover_cancel => {
                 break CloseType::Takeover;
             }
             req = rs.try_next().fuse() => match req {
@@ -196,6 +209,9 @@ where
         match req {
             fnet_debug::RollingPacketCaptureRequest::Detach { name, responder } => {
                 let ret = handle_detach(&mut ctx, name);
+                let ret = ret.map(|cancel_rx| {
+                    takeover_cancel = futures::future::Either::Right(cancel_rx.fuse());
+                });
                 responder.send(ret).unwrap_or_log("failed to respond");
             }
             fnet_debug::RollingPacketCaptureRequest::Discard { responder } => {
@@ -288,9 +304,14 @@ where
         // If takeover has been signalled, the state protected by the mutex now
         // belongs to the new task, so we must check for this and hand over
         // capture data correctly instead of overwriting state!
-        if let Some(()) =
-            takeover_cancel.try_recv().expect("takeover sender should not have been dropped")
-        {
+        let takeover_signaled = match (&mut takeover_cancel).now_or_never() {
+            Some(Ok(())) => true,
+            Some(Err(oneshot::Canceled)) => {
+                unreachable!("takeover sender should not have been dropped");
+            }
+            None => false,
+        };
+        if takeover_signaled {
             return Some(CaptureData { source, pcap_headers });
         }
 
@@ -299,7 +320,7 @@ where
                 RollingCaptureState::Detached { name, task, cancel, connected: false },
                 NewState::Disconnected,
             ),
-            RollingCaptureState::Attached { task, cancel: _ } => {
+            RollingCaptureState::Attached { task } => {
                 let _ = task.detach_on_drop();
                 (RollingCaptureState::Closing, NewState::Closing)
             }
@@ -337,7 +358,7 @@ where
                     cleanup(ctx, source, None).await;
                     return None;
                 }
-                _ = takeover_cancel => return Some(CaptureData { source, pcap_headers }),
+                _ = &mut takeover_cancel => return Some(CaptureData { source, pcap_headers }),
                 _ = timeout_after_downloads_complete => {},
             }
 
@@ -498,17 +519,15 @@ fn handle_start_rolling(
     let pcap_headers = Arc::from(headers);
 
     let scope = fasync::Scope::current();
-    let (cancel_sender, cancel_receiver) = oneshot::channel::<()>();
 
     let data = CaptureData { source: Source::Socket(id), pcap_headers };
 
     let new_task = scope.compute(async move {
         let scope_cancel = guard.on_cancel();
-        serve_rolling_packet_capture(ctx_clone, request_stream, data, scope_cancel, cancel_receiver)
-            .await
+        serve_rolling_packet_capture(ctx_clone, request_stream, data, scope_cancel, None).await
     });
 
-    *state_lock = RollingCaptureState::Attached { task: new_task, cancel: cancel_sender };
+    *state_lock = RollingCaptureState::Attached { task: new_task };
 
     Ok(rolling_client)
 }
@@ -549,7 +568,7 @@ fn handle_reconnect_rolling(
                 request_stream,
                 data,
                 scope_cancel,
-                cancel_receiver,
+                Some(cancel_receiver),
             )
             .await
         });
