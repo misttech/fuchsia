@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::logs::common::LogFormat;
 use crate::{test_topology, utils};
-use diagnostics_reader::{ArchiveReader, RetryConfig};
 use fidl_fuchsia_archivist_test as ftest;
 use fidl_fuchsia_diagnostics as fdiagnostics;
 use fidl_fuchsia_diagnostics_types::Severity;
@@ -23,11 +23,18 @@ const SPAM_COUNT: usize = 1001;
 /// configured budget. It then verifies that the victim's initial log message is
 /// evicted from the cache, confirming the FIFO (First-In, First-Out) eviction
 /// strategy.
-#[cfg_attr(fuchsia_api_level_at_least = "HEAD", test_case(fdiagnostics::Format::Fxt))]
-#[cfg_attr(fuchsia_api_level_at_least = "HEAD", test_case(fdiagnostics::Format::LegacyFxt))]
-#[test_case(fdiagnostics::Format::Json)]
+#[cfg_attr(
+    fuchsia_api_level_at_least = "HEAD",
+    test_case(LogFormat::Rust(fdiagnostics::Format::Fxt))
+)]
+#[cfg_attr(fuchsia_api_level_at_least = "HEAD", test_case(LogFormat::Ffi))]
+#[cfg_attr(
+    fuchsia_api_level_at_least = "HEAD",
+    test_case(LogFormat::Rust(fdiagnostics::Format::LegacyFxt))
+)]
+#[test_case(LogFormat::Rust(fdiagnostics::Format::Json))]
 #[fuchsia::test]
-async fn test_budget(format: fdiagnostics::Format) {
+async fn test_budget(reader_format: LogFormat) {
     let realm_proxy = test_topology::create_realm(ftest::RealmOptions {
         puppets: Some(vec![
             test_topology::PuppetDeclBuilder::new("spammer").into(),
@@ -63,25 +70,18 @@ async fn test_budget(format: fdiagnostics::Format) {
         .expect("emitted log");
 
     let accessor = utils::connect_accessor(&realm_proxy, utils::ALL_PIPELINE).await;
-    let mut log_reader = ArchiveReader::logs();
-    log_reader
-        .with_archive(accessor)
-        .with_format(format)
-        .with_minimum_schema_count(0) // we want this to return even when no log messages
-        .retry(RetryConfig::never());
+    let reader = reader_format.build(accessor);
 
-    let (mut observed_logs, _errors) =
-        log_reader.snapshot_then_subscribe().unwrap().split_streams();
-    let (mut observed_logs_2, _errors) =
-        log_reader.snapshot_then_subscribe().unwrap().split_streams();
+    let mut observed_logs = reader.get_test_snapshot_then_subscribe().await;
+    let mut observed_logs_2 = reader.get_test_snapshot_then_subscribe().await;
 
     let msg_a = observed_logs.next().await.unwrap();
     let msg_a_2 = observed_logs_2.next().await.unwrap();
-    assert_eq!(expected, msg_a.msg().unwrap());
-    assert_eq!(expected, msg_a_2.msg().unwrap());
+    assert_eq!(expected, msg_a.message);
+    assert_eq!(expected, msg_a_2.message);
 
     // Spam many logs.
-    let mut expected = Vec::new();
+    let mut expected_messages = Vec::new();
     for i in 0..SPAM_COUNT {
         let message = next_message();
         spammer_puppet
@@ -92,7 +92,7 @@ async fn test_budget(format: fdiagnostics::Format) {
             })
             .await
             .expect("emitted log");
-        expected.push(message);
+        expected_messages.push(message);
 
         // Each message is about 136 bytes. Archivist delays rolling out messages to reduce CPU
         // time, so we must take care to observe the messages in batches. If we don't wait,
@@ -100,27 +100,25 @@ async fn test_budget(format: fdiagnostics::Format) {
         // fit in the buffer all at once, and then we sleep to ensure that Archivist will wake up
         // and roll logs out before we write and read the next batch.
         if i.is_multiple_of(100) {
-            for message in expected.drain(..) {
-                assert_eq!(message, observed_logs.next().await.unwrap().msg().unwrap());
+            for message in expected_messages.drain(..) {
+                assert_eq!(message, observed_logs.next().await.unwrap().message);
             }
         }
     }
 
-    for message in expected.drain(..) {
-        assert_eq!(message, observed_logs.next().await.unwrap().msg().unwrap());
+    for message in expected_messages.drain(..) {
+        assert_eq!(message, observed_logs.next().await.unwrap().message);
     }
 
     // We observe some logs were rolled out.
-    while observed_logs_2.next().await.unwrap().rolled_out_logs().is_none() {}
+    while !observed_logs_2.next().await.unwrap().message.contains("rolled_out") {}
 
-    let mut observed_logs = log_reader.snapshot().await.unwrap().into_iter();
+    let mut observed_logs = reader.get_test_snapshot().await.into_iter();
     let msg_b = observed_logs.next().unwrap();
-    assert!(!msg_b.moniker.to_string().contains("puppet-victim"));
+    assert!(msg_b.tags[0] != "puppet-victim");
 
     // Victim logs should have been rolled out.
-    let messages = observed_logs
-        .filter(|log| log.moniker.to_string().contains("puppet-victim"))
-        .collect::<Vec<_>>();
+    let messages = observed_logs.filter(|log| log.tags[0] == "puppet-victim").collect::<Vec<_>>();
     assert!(messages.is_empty());
-    assert_ne!(msg_a.msg().unwrap(), msg_b.msg().unwrap());
+    assert_ne!(msg_a.message, msg_b.message);
 }

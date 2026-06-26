@@ -103,20 +103,20 @@ impl<'a> From<BumpaloString<'a>> for CppString<'a> {
 #[repr(C)]
 pub struct LogMessage<'a> {
     /// Severity of a log message.
-    severity: u8,
+    pub severity: u8,
     /// Tags in a log message, guaranteed to be non-null.
-    tags: CppArray<'a, CppString<'a>>,
+    pub tags: CppArray<'a, CppString<'a>>,
     /// Process ID from a LogMessage, or 0 if unknown
-    pid: u64,
+    pub pid: u64,
     /// Thread ID from a LogMessage, or 0 if unknown
-    tid: u64,
+    pub tid: u64,
     /// Number of dropped log messages.
-    dropped: u64,
+    pub dropped: u64,
     /// The UTF-encoded log message, guaranteed to be valid UTF-8.
-    message: CppString<'a>,
+    pub message: CppString<'a>,
     /// Timestamp on the boot timeline of the log message,
     /// in nanoseconds.
-    timestamp: i64,
+    pub timestamp: i64,
 }
 
 // These are allocated using the Bumpalo allocator.
