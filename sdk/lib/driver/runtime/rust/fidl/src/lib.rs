@@ -23,8 +23,9 @@ use fdf_channel::arena::{Arena, ArenaBox};
 use fdf_channel::channel::Channel;
 use fdf_channel::futures::ReadMessageState;
 use fdf_channel::message::Message;
-use fdf_core::dispatcher::{CurrentDispatcher, OnDispatcher};
+use fdf_core::dispatcher::CurrentDispatcher;
 use fdf_core::handle::{DriverHandle, MixedHandle, MixedHandleType};
+use libasync_dispatcher::OnDispatcher;
 
 /// A wrapper around a dispatcher reference object that can be used with the [`fidl_next`] bindings
 /// to spawn client and server dispatchers on a driver runtime provided async dispatcher.

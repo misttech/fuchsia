@@ -208,7 +208,9 @@ impl Drop for AfterDeadline {
     }
 }
 
-#[cfg(all(not_yet, test))]
+// TODO(528052543): Migrate these to a specifically test-oriented dispatcher when there is one
+// so they don't require the driver runtime to be involved.
+#[cfg(test)]
 mod tests {
     use std::sync::mpsc;
     use std::thread::sleep;
@@ -219,91 +221,57 @@ mod tests {
     use futures::{FutureExt, poll};
     use std::task::Waker;
 
-    use crate::dispatcher::tests::with_raw_dispatcher;
-    use crate::dispatcher::{CurrentDispatcher, OnDispatcher};
+    use fdf_env::test::spawn_in_driver;
+    use libasync_dispatcher::CurrentDispatcher;
+
+    fn now() -> zx::MonotonicInstant {
+        zx::MonotonicInstant::from_nanos(CurrentDispatcher.get_async_dispatcher().now())
+    }
 
     #[test]
     fn after_the_past() {
-        with_raw_dispatcher("testing task", |dispatcher| {
-            let (tx, rx) = mpsc::channel();
-            dispatcher
-                .spawn_task(async move {
-                    let fut = CurrentDispatcher.after_deadline(zx::MonotonicInstant::INFINITE_PAST);
-                    assert_eq!(poll!(fut), Poll::Ready(Ok(())));
-                    tx.send(()).unwrap();
-                })
-                .unwrap();
-            rx.recv().unwrap();
+        spawn_in_driver("testing task", async {
+            let fut = CurrentDispatcher.after_deadline(zx::MonotonicInstant::INFINITE_PAST);
+            assert_eq!(poll!(fut), Poll::Ready(Ok(())));
         });
     }
 
     #[test]
     fn after_now() {
-        with_raw_dispatcher("testing task", |dispatcher| {
-            let (tx, rx) = mpsc::channel();
-            dispatcher
-                .spawn_task(async move {
-                    let fut = CurrentDispatcher.after_deadline(CurrentDispatcher.now().unwrap());
-                    assert_eq!(poll!(fut), Poll::Ready(Ok(())));
-                    tx.send(()).unwrap();
-                })
-                .unwrap();
-            rx.recv().unwrap();
+        spawn_in_driver("testing task", async {
+            let fut = CurrentDispatcher.after_deadline(now());
+            assert_eq!(poll!(fut), Poll::Ready(Ok(())));
         });
     }
 
     #[test]
     fn after_future() {
-        with_raw_dispatcher("testing task", |dispatcher| {
-            let (tx, rx) = mpsc::channel();
-            dispatcher
-                .spawn_task(async move {
-                    let deadline =
-                        CurrentDispatcher.now().unwrap() + zx::MonotonicDuration::from_seconds(3);
-                    let mut fut = CurrentDispatcher.after_deadline(deadline);
-                    assert_eq!(poll!(&mut fut), Poll::Pending);
-                    assert!(fut.await.is_ok());
-                    assert!(CurrentDispatcher.now().unwrap() >= deadline);
-                    tx.send(()).unwrap();
-                })
-                .unwrap();
-            rx.recv().unwrap();
+        spawn_in_driver("testing task", async {
+            let deadline = now() + zx::MonotonicDuration::from_seconds(3);
+            let mut fut = CurrentDispatcher.after_deadline(deadline);
+            assert_eq!(poll!(&mut fut), Poll::Pending);
+            assert!(fut.await.is_ok());
+            assert!(now() >= deadline);
         });
     }
 
     #[test]
     fn drop_after_poll() {
-        with_raw_dispatcher("testing task", |dispatcher| {
-            let (tx, rx) = mpsc::channel();
-            dispatcher
-                .spawn_task(async move {
-                    let deadline =
-                        CurrentDispatcher.now().unwrap() + zx::MonotonicDuration::from_minutes(3);
-                    let mut fut = CurrentDispatcher.after_deadline(deadline);
-                    assert_eq!(poll!(&mut fut), Poll::Pending);
-                    tx.send(()).unwrap();
-                })
-                .unwrap();
-            rx.recv().unwrap();
+        spawn_in_driver("testing task", async {
+            let deadline = now() + zx::MonotonicDuration::from_minutes(3);
+            let mut fut = CurrentDispatcher.after_deadline(deadline);
+            assert_eq!(poll!(&mut fut), Poll::Pending);
         });
     }
 
     #[test]
     fn dispatcher_shutdown_cancel() {
         let (fut_tx, fut_rx) = mpsc::channel();
-        with_raw_dispatcher("testing task", |dispatcher| {
-            let (tx, rx) = mpsc::channel();
-            dispatcher
-                .spawn_task(async move {
-                    let deadline =
-                        CurrentDispatcher.now().unwrap() + zx::MonotonicDuration::from_minutes(3);
-                    let mut fut = CurrentDispatcher.after_deadline(deadline);
-                    assert_eq!(poll!(&mut fut), Poll::Pending);
-                    fut_tx.send(fut).unwrap();
-                    tx.send(()).unwrap();
-                })
-                .unwrap();
-            rx.recv().unwrap();
+        spawn_in_driver("testing task", async move {
+            let deadline = now() + zx::MonotonicDuration::from_minutes(3);
+            let mut fut = CurrentDispatcher.after_deadline(deadline);
+            assert_eq!(poll!(&mut fut), Poll::Pending);
+            fut_tx.send(fut).unwrap();
         });
         let mut fut = fut_rx.recv().unwrap();
         loop {

@@ -14,6 +14,7 @@ rustc_library("fidl") {
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 
   deps = [
+    "//sdk/lib/async/rust/dispatcher",
     "//sdk/lib/async/rust/fidl",
     "//sdk/lib/driver/runtime/rust/channel",
     "//sdk/lib/driver/runtime/rust/core",

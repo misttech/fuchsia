@@ -10,9 +10,10 @@ use zx::Status;
 
 use crate::channel::{Channel, try_read_raw};
 use crate::message::Message;
-use fdf_core::dispatcher::{DriverDispatcherRef, OnDispatcher};
+use fdf_core::dispatcher::DriverDispatcherRef;
 use fdf_core::handle::DriverHandle;
 use fdf_sys::*;
+use libasync_dispatcher::OnDispatcher;
 
 use core::mem::MaybeUninit;
 use core::task::{Context, Poll};
@@ -260,8 +261,9 @@ mod test {
     use std::pin::pin;
     use std::sync::Weak;
 
-    use fdf_core::dispatcher::{CurrentDispatcher, OnDispatcher};
+    use fdf_core::dispatcher::CurrentDispatcher;
     use fdf_env::test::{spawn_in_driver, spawn_in_driver_etc};
+    use libasync_dispatcher::OnDispatcher;
 
     use crate::arena::Arena;
     use crate::channel::{Channel, read_raw};

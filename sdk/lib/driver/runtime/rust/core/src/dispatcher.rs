@@ -5,6 +5,10 @@
 //! Safe bindings for the driver runtime dispatcher stable ABI
 
 use fdf_sys::*;
+use libasync_dispatcher::{
+    AsAsyncDispatcherRef, AsyncDispatcher, AsyncDispatcherRef, GetAsyncDispatcher, JoinHandle,
+    OnDispatcher, Task,
+};
 
 use core::cell::RefCell;
 use core::ffi;
@@ -17,10 +21,6 @@ use zx::Status;
 use crate::shutdown_observer::ShutdownObserver;
 
 pub use fdf_sys::fdf_dispatcher_t;
-pub use libasync::{
-    AfterDeadline, AsAsyncDispatcherRef, AsyncDispatcher, AsyncDispatcherRef, DispatcherTimerExt,
-    GetAsyncDispatcher, JoinHandle, OnDispatcher, Task,
-};
 
 /// A marker trait for a function type that can be used as a shutdown observer for [`Dispatcher`].
 pub trait ShutdownObserverFn: FnOnce(DriverDispatcherRef<'_>) + Send + 'static {}

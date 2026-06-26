@@ -12,9 +12,9 @@ use zx::Status;
 use crate::arena::{Arena, ArenaBox};
 use crate::futures::{ReadMessageState, ReadMessageStateOp};
 use crate::message::Message;
-use fdf_core::dispatcher::OnDispatcher;
 use fdf_core::handle::{DriverHandle, MixedHandle};
 use fdf_sys::*;
+use libasync_dispatcher::OnDispatcher;
 
 use core::marker::PhantomData;
 use core::mem::{MaybeUninit, size_of_val};
@@ -373,13 +373,12 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, mpsc};
 
-    use fdf_core::dispatcher::{
-        AsAsyncDispatcherRef, AsyncDispatcher, CurrentDispatcher, DispatcherBuilder, OnDispatcher,
-    };
+    use fdf_core::dispatcher::{CurrentDispatcher, DispatcherBuilder};
     use fdf_core::handle::MixedHandleType;
     use fdf_env::test::spawn_in_driver;
     use futures::channel::oneshot;
     use futures::poll;
+    use libasync_dispatcher::{AsAsyncDispatcherRef, AsyncDispatcher, OnDispatcher};
 
     use super::*;
     use crate::test_utils::*;

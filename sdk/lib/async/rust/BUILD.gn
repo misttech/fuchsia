@@ -21,6 +21,8 @@ rustc_library("rust") {
     "//third_party/rust_crates:futures",
   ]
 
+  test_deps = [ "//sdk/lib/driver/runtime/rust/env" ]
+
   sources = [
     "src/after_deadline.rs",
     "src/callback_state.rs",

@@ -30,7 +30,10 @@ rustc_library("dispatcher") {
     "src/task.rs",
   ]
 
-  visibility = [ "//sdk/lib/async/*" ]
+  visibility = [
+    "//sdk/lib/async/*",
+    "//sdk/lib/driver/runtime/*",
+  ]
 }
 
 fuchsia_unittest_package("libasync_dispatcher_tests") {

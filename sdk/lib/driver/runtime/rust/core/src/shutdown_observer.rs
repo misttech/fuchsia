@@ -8,9 +8,6 @@ use fdf_sys::*;
 
 use core::ptr::NonNull;
 
-pub use fdf_sys::fdf_dispatcher_t;
-pub use libasync::{AfterDeadline, AsAsyncDispatcherRef, AsyncDispatcherRef, OnDispatcher};
-
 use crate::dispatcher::{DriverDispatcherRef, ShutdownObserverFn};
 
 /// A shutdown observer for [`fdf_dispatcher_create`] that can call any kind of callback instead of

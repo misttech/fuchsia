@@ -16,6 +16,7 @@ rustc_library("rust") {
   deps = [
     "channel",
     "core",
+    "//sdk/lib/async/rust",
   ]
 
   sources = [ "src/lib.rs" ]

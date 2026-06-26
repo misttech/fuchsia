@@ -15,6 +15,7 @@ rustc_library("channel") {
 
   deps = [
     "//sdk/lib/async",
+    "//sdk/lib/async/rust/dispatcher",
     "//sdk/lib/driver/runtime/rust/core",
     "//sdk/lib/driver/runtime/rust/fdf_sys",
     "//sdk/rust/zx",

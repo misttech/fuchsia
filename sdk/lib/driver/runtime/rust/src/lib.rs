@@ -12,3 +12,9 @@ pub use fdf_channel::channel::*;
 pub use fdf_channel::message::*;
 pub use fdf_core::dispatcher::*;
 pub use fdf_core::handle::*;
+
+// re-export useful parts of libasync as well
+pub use libasync::{
+    AfterDeadline, AsAsyncDispatcherRef, AsyncDispatcher, AsyncDispatcherRef, DispatcherTimerExt,
+    GetAsyncDispatcher, JoinHandle, OnDispatcher, Task,
+};
