@@ -78,6 +78,7 @@ cc_test_executable("log_source_unittest_exe") {
   deps = [
     "//sdk/lib/sys/cpp/testing:cpp",
     "//src/developer/forensics/feedback_data:log_source",
+    "//src/developer/forensics/testing:backoff",
     "//src/developer/forensics/testing:gpretty_printers",
     "//src/developer/forensics/testing:gtest_with_syslog_main",
     "//src/developer/forensics/testing:log_message",

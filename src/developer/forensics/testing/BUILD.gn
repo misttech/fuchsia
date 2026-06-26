@@ -7,6 +7,15 @@ visibility = [ "//src/developer/forensics/*" ]
 ###############################################################################
 # SOURCES
 ###############################################################################
+
+source_set("backoff") {
+  testonly = true
+
+  sources = [ "backoff.h" ]
+
+  public_deps = [ "//src/lib/backoff" ]
+}
+
 source_set("unit_test_fixture") {
   testonly = true
 

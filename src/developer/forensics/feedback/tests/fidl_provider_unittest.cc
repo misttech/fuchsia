@@ -13,10 +13,10 @@
 #include <gtest/gtest.h>
 
 #include "src/developer/forensics/feedback/annotations/types.h"
+#include "src/developer/forensics/testing/backoff.h"
 #include "src/developer/forensics/testing/stubs/channel_control.h"
 #include "src/developer/forensics/testing/stubs/device_id_provider.h"
 #include "src/developer/forensics/testing/unit_test_fixture.h"
-#include "src/lib/backoff/backoff.h"
 
 namespace forensics::feedback {
 namespace {
@@ -28,19 +28,6 @@ using ::testing::UnorderedElementsAreArray;
 constexpr char kChannelKey[] = "current_channel";
 constexpr char kChannelValue[] = "channel";
 
-class MonotonicBackoff : public backoff::Backoff {
- public:
-  zx::duration GetNext() override {
-    const zx::duration backoff = backoff_;
-    backoff_ = backoff + zx::sec(1);
-    return backoff;
-  }
-  void Reset() override { backoff_ = zx::sec(1); }
-
- private:
-  zx::duration backoff_{zx::sec(1)};
-};
-
 using StaticSingleFidlMethodAnnotationProviderTest = UnitTestFixture;
 
 struct ConvertChannel {
@@ -48,7 +35,9 @@ struct ConvertChannel {
     return {{kChannelKey, ErrorOrString(channel)}};
   }
 
-  Annotations operator()(const Error channel) { return {{kChannelKey, ErrorOrString(channel)}}; }
+  Annotations operator()(const Error channel) {
+    return {{kChannelKey, ErrorOrString(channel)}};
+  }
 };
 
 class StaticCurrentChannelProvider

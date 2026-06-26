@@ -15,10 +15,10 @@
 
 #include "src/developer/forensics/feedback/annotations/constants.h"
 #include "src/developer/forensics/feedback/annotations/types.h"
+#include "src/developer/forensics/testing/backoff.h"
 #include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 #include "src/developer/forensics/testing/stubs/ui_state_provider.h"
 #include "src/developer/forensics/testing/unit_test_fixture.h"
-#include "src/lib/backoff/backoff.h"
 #include "src/lib/timekeeper/async_test_clock.h"
 
 namespace forensics::feedback {
@@ -27,19 +27,6 @@ namespace {
 using ::testing::IsEmpty;
 using ::testing::Pair;
 using ::testing::UnorderedElementsAreArray;
-
-class MonotonicBackoff : public backoff::Backoff {
- public:
-  zx::duration GetNext() override {
-    const zx::duration backoff = backoff_;
-    backoff_ = backoff + zx::sec(1);
-    return backoff;
-  }
-  void Reset() override { backoff_ = zx::sec(1); }
-
- private:
-  zx::duration backoff_{zx::sec(1)};
-};
 
 class UIStateProviderTest : public UnitTestFixture {
  public:

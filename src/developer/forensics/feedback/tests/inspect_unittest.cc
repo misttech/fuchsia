@@ -20,6 +20,7 @@
 
 #include "src/developer/forensics/feedback/attachments/types.h"
 #include "src/developer/forensics/feedback_data/constants.h"
+#include "src/developer/forensics/testing/backoff.h"
 #include "src/developer/forensics/testing/gmatchers.h"
 #include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 #include "src/developer/forensics/testing/stubs/diagnostics_archive.h"
@@ -32,17 +33,6 @@
 
 namespace forensics::feedback {
 namespace {
-
-class MonotonicBackoff : public backoff::Backoff {
- public:
-  static std::unique_ptr<backoff::Backoff> Make() { return std::make_unique<MonotonicBackoff>(); }
-
-  zx::duration GetNext() override { return zx::sec(delay_++); }
-  void Reset() override {}
-
- private:
-  size_t delay_{1u};
-};
 
 class InspectTest : public UnitTestFixture {
  public:
@@ -105,7 +95,8 @@ TEST_F(InspectTest, DataBudget) {
   SetUpInspectServer(std::make_unique<stubs::DiagnosticsArchiveCaptureParameters>(&parameters));
 
   const size_t kBudget = DataBudget()->SizeInBytes().value();
-  Inspect inspect(dispatcher(), services(), MonotonicBackoff::Make(), DataBudget(), GetRedactor());
+  Inspect inspect(dispatcher(), services(), std::make_unique<MonotonicBackoff>(), DataBudget(),
+                  GetRedactor());
 
   inspect.Get(kTicket);
   RunLoopUntilIdle();
@@ -123,7 +114,8 @@ TEST_F(InspectTest, NoDataBudget) {
   SetUpInspectServer(std::make_unique<stubs::DiagnosticsArchiveCaptureParameters>(&parameters));
 
   DisableDataBudget();
-  Inspect inspect(dispatcher(), services(), MonotonicBackoff::Make(), DataBudget(), GetRedactor());
+  Inspect inspect(dispatcher(), services(), std::make_unique<MonotonicBackoff>(), DataBudget(),
+                  GetRedactor());
 
   inspect.Get(kTicket);
   RunLoopUntilIdle();
@@ -139,7 +131,8 @@ TEST_F(InspectTest, Get) {
           {},
       }))));
 
-  Inspect inspect(dispatcher(), services(), MonotonicBackoff::Make(), DataBudget(), GetRedactor());
+  Inspect inspect(dispatcher(), services(), std::make_unique<MonotonicBackoff>(), DataBudget(),
+                  GetRedactor());
   const AttachmentValue attachment = Run(inspect.Get(1234));
 
   EXPECT_THAT(attachment, AttachmentValueIs(R"([
@@ -155,7 +148,8 @@ TEST_F(InspectTest, GetTerminatesDueToForceCompletion) {
       std::make_unique<stubs::DiagnosticsBatchIteratorNeverRespondsAfterOneBatch>(
           std::vector<std::string>({"foo1", "foo2"}))));
 
-  Inspect inspect(dispatcher(), services(), MonotonicBackoff::Make(), DataBudget(), GetRedactor());
+  Inspect inspect(dispatcher(), services(), std::make_unique<MonotonicBackoff>(), DataBudget(),
+                  GetRedactor());
   const AttachmentValue attachment = Run(inspect.Get(kTicket));
 
   // Giving some time to actually collect some inspect data
@@ -182,7 +176,8 @@ TEST_F(InspectTest, ForceCompletionCalledAfterTermination) {
           {},
       }))));
 
-  Inspect inspect(dispatcher(), services(), MonotonicBackoff::Make(), DataBudget(), GetRedactor());
+  Inspect inspect(dispatcher(), services(), std::make_unique<MonotonicBackoff>(), DataBudget(),
+                  GetRedactor());
   const AttachmentValue attachment = Run(inspect.Get(kTicket));
 
   inspect.ForceCompletion(kTicket, Error::kDefault);
@@ -196,7 +191,8 @@ bar1
 
 TEST_F(InspectTest, GetCalledWithSameTicket) {
   const uint64_t kTicket = 1234;
-  Inspect inspect(dispatcher(), services(), MonotonicBackoff::Make(), DataBudget(), GetRedactor());
+  Inspect inspect(dispatcher(), services(), std::make_unique<MonotonicBackoff>(), DataBudget(),
+                  GetRedactor());
 
   // Expect a crash because a ticket cannot be reused.
   ASSERT_DEATH(
@@ -211,7 +207,8 @@ TEST_F(InspectTest, GetConnectionError) {
   const uint64_t kTicket = 1234;
   SetUpInspectServer(std::make_unique<stubs::DiagnosticsArchiveClosesIteratorConnection>());
 
-  Inspect inspect(dispatcher(), services(), MonotonicBackoff::Make(), DataBudget(), GetRedactor());
+  Inspect inspect(dispatcher(), services(), std::make_unique<MonotonicBackoff>(), DataBudget(),
+                  GetRedactor());
   const AttachmentValue attachment = Run(inspect.Get(kTicket));
 
   EXPECT_THAT(attachment.Error(), AttachmentValueIs(Error::kConnectionError));
@@ -222,7 +219,8 @@ TEST_F(InspectTest, GetIteratorReturnsError) {
   SetUpInspectServer(std::make_unique<stubs::DiagnosticsArchive>(
       std::make_unique<stubs::DiagnosticsBatchIteratorReturnsError>()));
 
-  Inspect inspect(dispatcher(), services(), MonotonicBackoff::Make(), DataBudget(), GetRedactor());
+  Inspect inspect(dispatcher(), services(), std::make_unique<MonotonicBackoff>(), DataBudget(),
+                  GetRedactor());
   const AttachmentValue attachment = Run(inspect.Get(kTicket));
 
   EXPECT_THAT(attachment.Error(), AttachmentValueIs(Error::kMissingValue));
@@ -234,7 +232,8 @@ TEST_F(InspectTest, Reconnects) {
 
   InjectServiceProvider(archive.get(), feedback_data::kArchiveAccessorName);
 
-  Inspect inspect(dispatcher(), services(), MonotonicBackoff::Make(), DataBudget(), GetRedactor());
+  Inspect inspect(dispatcher(), services(), std::make_unique<MonotonicBackoff>(), DataBudget(),
+                  GetRedactor());
   RunLoopUntilIdle();
 
   EXPECT_TRUE(archive->IsBound());
@@ -268,7 +267,8 @@ TEST_F(InspectTest, RedactsWithJsonReplacers) {
   redaction_enabled.Set(true);
   SetRedactor(std::make_unique<Redactor>(0, inspect::UintProperty(), std::move(redaction_enabled)));
 
-  Inspect inspect(dispatcher(), services(), MonotonicBackoff::Make(), DataBudget(), GetRedactor());
+  Inspect inspect(dispatcher(), services(), std::make_unique<MonotonicBackoff>(), DataBudget(),
+                  GetRedactor());
   const AttachmentValue attachment = Run(inspect.Get(1234));
   EXPECT_EQ(attachment.Value(), R"([
 ["<REDACTED-IPV4: 1>",

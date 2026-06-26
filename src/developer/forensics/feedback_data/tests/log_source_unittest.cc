@@ -15,11 +15,11 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "src/developer/forensics/testing/backoff.h"
 #include "src/developer/forensics/testing/log_message.h"
 #include "src/developer/forensics/testing/stubs/diagnostics_archive.h"
 #include "src/developer/forensics/testing/stubs/diagnostics_batch_iterator.h"
 #include "src/developer/forensics/testing/unit_test_fixture.h"
-#include "src/lib/backoff/backoff.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
 namespace forensics::feedback_data {
@@ -82,16 +82,6 @@ bool operator==(const std::vector<LogSink::MessageOr>& lhs,
 
   return true;
 }
-
-class MonotonicBackoff : public backoff::Backoff {
- public:
-  zx::duration GetNext() override { return zx::sec(seconds_++); }
-
-  void Reset() override { seconds_ = 1; }
-
- private:
-  size_t seconds_{1u};
-};
 
 class SimpleLogSink : public LogSink {
  public:

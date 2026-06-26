@@ -11,10 +11,10 @@
 
 #include "src/developer/forensics/feedback/annotations/constants.h"
 #include "src/developer/forensics/feedback/annotations/types.h"
+#include "src/developer/forensics/testing/backoff.h"
 #include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 #include "src/developer/forensics/testing/stubs/battery_info_provider.h"
 #include "src/developer/forensics/testing/unit_test_fixture.h"
-#include "src/lib/backoff/backoff.h"
 
 namespace forensics::feedback {
 namespace {
@@ -27,20 +27,6 @@ using ::fuchsia_power_battery::ChargeStatus;
 using ::testing::Contains;
 using ::testing::Pair;
 using ::testing::UnorderedElementsAreArray;
-
-class MonotonicBackoff : public backoff::Backoff {
- public:
-  zx::duration GetNext() override {
-    const zx::duration backoff = backoff_;
-    backoff_ = backoff + zx::sec(1);
-    return backoff;
-  }
-
-  void Reset() override { backoff_ = zx::sec(1); }
-
- private:
-  zx::duration backoff_{zx::sec(1)};
-};
 
 class BatteryInfoProviderTest : public UnitTestFixture {
  protected:
