@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use aes::cipher::{KeyIvInit, StreamCipher as _, StreamCipherSeek};
 use anyhow::anyhow;
 use async_trait::async_trait;
+use chacha20::cipher::{KeyIvInit, StreamCipher as _, StreamCipherSeek};
 use chacha20::{self, ChaCha20};
 use fprint::TypeFingerprint;
 use futures::TryStreamExt as _;
@@ -234,8 +234,10 @@ pub struct StreamCipher(ChaCha20);
 
 impl StreamCipher {
     pub fn new(key: &UnwrappedKey, offset: u64) -> Self {
-        let mut cipher =
-            Self(ChaCha20::new(chacha20::Key::from_slice(key), /* nonce: */ &[0; 12].into()));
+        let mut cipher = Self(ChaCha20::new(
+            &chacha20::Key::try_from(&key[..]).expect("Invalid StreamCipher key length"),
+            /* nonce: */ &[0; 12].into(),
+        ));
         cipher.0.seek(offset);
         cipher
     }

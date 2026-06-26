@@ -374,11 +374,11 @@ group("cfg-if-1.0.4") {
 }
 
 group("chacha20") {
-  public_deps = [ ":chacha20-v0_9_1" ]
+  public_deps = [ ":chacha20-v0_10_0" ]
 }
 
-group("chacha20-0.9.1") {
-  public_deps = [ ":chacha20-v0_9_1" ]
+group("chacha20-0.10.0") {
+  public_deps = [ ":chacha20-v0_10_0" ]
 }
 
 group("chrono") {
@@ -5297,41 +5297,43 @@ rustc_library("cfg-if-v1_0_4") {
   applicable_licenses = [ ":cfg-if-v1_0_4.license" ]
 }
 
-license("chacha20-v0_9_1.license") {
+license("chacha20-v0_10_0.license") {
   public_package_name = "chacha20"
   license_files = [
-    "//third_party/rust_crates/vendor/chacha20-0.9.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/chacha20-0.9.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/chacha20-0.10.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/chacha20-0.10.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("chacha20-v0_9_1") {
+rustc_library("chacha20-v0_10_0") {
   crate_name = "chacha20"
-  source_root = "//third_party/rust_crates/vendor/chacha20-0.9.1/src/lib.rs"
-  output_name = "chacha20-d08bfd603edd31a"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/vendor/chacha20-0.10.0/src/lib.rs"
+  output_name = "chacha20-eb5ea7c07310216e"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
   deps += [ ":cfg-if-v1_0_4" ]
-  deps += [ ":cipher-v0_4_4" ]
+  deps += [ ":cipher-v0_5_2" ]
   if (current_cpu == "x64" || false) {
-    deps += [ ":cpufeatures-v0_2_17" ]
+    deps += [ ":cpufeatures-v0_3_0" ]
   }
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d08bfd603edd31a",
-    "-Cextra-filename=-d08bfd603edd31a",
+    "-Cmetadata=eb5ea7c07310216e",
+    "-Cextra-filename=-eb5ea7c07310216e",
+    "--cfg=feature=\"cipher\"",
+    "--cfg=feature=\"default\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":chacha20-v0_9_1.license" ]
+  applicable_licenses = [ ":chacha20-v0_10_0.license" ]
 }
 
 license("chrono-v0_4_45.license") {
@@ -5553,6 +5555,46 @@ rustc_library("cipher-v0_4_4") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":cipher-v0_4_4.license" ]
+}
+
+license("cipher-v0_5_2.license") {
+  public_package_name = "cipher"
+  license_files = [
+    "//third_party/rust_crates/vendor/cipher-0.5.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/cipher-0.5.2/LICENSE-MIT",
+  ]
+}
+
+rustc_library("cipher-v0_5_2") {
+  crate_name = "cipher"
+  source_root = "//third_party/rust_crates/vendor/cipher-0.5.2/src/lib.rs"
+  output_name = "cipher-897faed4894292ed"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":block-buffer-v0_12_1" ]
+  deps += [ ":crypto-common-v0_2_2" ]
+  deps += [ ":inout-v0_2_2" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=897faed4894292ed",
+    "-Cextra-filename=-897faed4894292ed",
+    "--cfg=feature=\"block-buffer\"",
+    "--cfg=feature=\"stream-wrapper\"",
+  ]
+
+  aliased_deps = {
+    common = ":crypto-common-v0_2_2.actual"
+  }
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":cipher-v0_5_2.license" ]
 }
 
 license("clap-v2_34_0.license") {
@@ -6075,6 +6117,50 @@ rustc_library("cpufeatures-v0_2_17") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":cpufeatures-v0_2_17.license" ]
+}
+
+license("cpufeatures-v0_3_0.license") {
+  public_package_name = "cpufeatures"
+  license_files = [
+    "//third_party/rust_crates/vendor/cpufeatures-0.3.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/cpufeatures-0.3.0/LICENSE-MIT",
+  ]
+}
+
+rustc_library("cpufeatures-v0_3_0") {
+  crate_name = "cpufeatures"
+  source_root = "//third_party/rust_crates/vendor/cpufeatures-0.3.0/src/lib.rs"
+  output_name = "cpufeatures-75f0333cf96fab93"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  if (current_cpu == "arm64" && false) {
+    deps += [ ":libc-v0_2_186" ]
+  }
+  if (current_cpu == "arm64" && current_os == "linux") {
+    deps += [ ":libc-v0_2_186" ]
+  }
+  if (current_cpu == "arm64" && false) {
+    deps += [ ":libc-v0_2_186" ]
+  }
+  if (false && current_os == "linux") {
+    deps += [ ":libc-v0_2_186" ]
+  }
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=75f0333cf96fab93",
+    "-Cextra-filename=-75f0333cf96fab93",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":cpufeatures-v0_3_0.license" ]
 }
 
 license("crc-v3_4_0.license") {
@@ -11322,6 +11408,39 @@ rustc_library("inout-v0_1_4") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":inout-v0_1_4.license" ]
+}
+
+license("inout-v0_2_2.license") {
+  public_package_name = "inout"
+  license_files = [
+    "//third_party/rust_crates/vendor/inout-0.2.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/inout-0.2.2/LICENSE-MIT",
+  ]
+}
+
+rustc_library("inout-v0_2_2") {
+  crate_name = "inout"
+  source_root = "//third_party/rust_crates/vendor/inout-0.2.2/src/lib.rs"
+  output_name = "inout-6221ec01de4cd261"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":hybrid-array-v0_4_12" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=6221ec01de4cd261",
+    "-Cextra-filename=-6221ec01de4cd261",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":inout-v0_2_2.license" ]
 }
 
 license("instant-v0_1_13.license") {
