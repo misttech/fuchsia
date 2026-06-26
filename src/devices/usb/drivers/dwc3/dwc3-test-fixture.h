@@ -281,18 +281,23 @@ class TestFixture : public gtest_base {
 
   static void TriggerConnectionDone(Dwc3& drv) { drv.HandleConnectionDoneEvent(); }
 
-  static void TriggerConnectionPlugIn(Environment& env,
-                                      fuchsia_hardware_usb_descriptor::UsbSpeed speed) {
+  void TriggerConnectionPlugIn(fuchsia_hardware_usb_descriptor::UsbSpeed speed) {
     namespace fdescriptor = fuchsia_hardware_usb_descriptor;
-    auto& dsts_reg = env.reg_region()[DSTS::Get().addr()];
-    dsts_reg.SetReadCallback([speed]() -> uint32_t {
-      uint32_t speed_val = 0;
-      if (speed == fdescriptor::UsbSpeed::kSuper) {
-        speed_val = DSTS::CONNECTSPD_SUPER;
-      }
-      return DSTS::Get().FromValue(0).set_CONNECTSPD(speed_val).reg_value();
+    dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+      auto& dsts_reg = env.reg_region()[DSTS::Get().addr()];
+      dsts_reg.SetReadCallback([speed]() -> uint32_t {
+        uint32_t speed_val = 0;
+        if (speed == fdescriptor::UsbSpeed::kSuper) {
+          speed_val = DSTS::CONNECTSPD_SUPER;
+        }
+        return DSTS::Get().FromValue(0).set_CONNECTSPD(speed_val).reg_value();
+      });
+      env.usb_phy().TriggerConnection(true);
     });
-    env.usb_phy().TriggerConnection(true);
+
+    // Deterministic synchronization: Wait for the driver dispatcher to process the event.
+    dut_.runtime().RunUntil(
+        [&]() { return dut_.RunInDriverContext<bool>([](Dwc3& drv) { return drv.power_on(); }); });
   }
 
   void SetUp() override {

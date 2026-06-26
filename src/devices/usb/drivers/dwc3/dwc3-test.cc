@@ -86,9 +86,7 @@ TEST_F(ManagedTestFixture, TestInspectMetrics) {
   const uint8_t ep_num = UsbAddressToEpNum(0x02);
 
   // Dynamic cable connection triggers automatic core wake-up and soft reset.
-  dut_.RunInEnvironmentTypeContext(
-      [&](Environment& env) { TriggerConnectionPlugIn(env, fdescriptor::UsbSpeed::kSuper); });
-  dut_.runtime().RunUntilIdle();
+  TriggerConnectionPlugIn(fdescriptor::UsbSpeed::kSuper);
 
   auto dci_service = dut_.Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
   ASSERT_TRUE(dci_service.is_ok())
