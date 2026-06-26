@@ -1275,7 +1275,7 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
           request == USB_REQ_GET_STATUS && length == 2) {
         uint8_t ep_addr = static_cast<uint8_t>(index);
         uint16_t status = 0;
-        {
+        if (ep_addr != 0) {
           fbl::AutoLock _(&lock_);
           if (stalled_eps_.contains(ep_addr)) {
             status = 1;
@@ -1289,15 +1289,19 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
       if (request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT) &&
           request == USB_REQ_SET_FEATURE && value == USB_ENDPOINT_HALT && length == 0) {
         uint8_t ep_addr = static_cast<uint8_t>(index);
-        UsbDciCancelAll(ep_addr);
-        UsbDciEndpointSetStall(ep_addr);
+        if (ep_addr != 0) {
+          UsbDciCancelAll(ep_addr);
+          UsbDciEndpointSetStall(ep_addr);
+        }
         completer(zx::ok(std::vector<uint8_t>()));
         return;
       }
       if (request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT) &&
           request == USB_REQ_CLEAR_FEATURE && value == USB_ENDPOINT_HALT && length == 0) {
         uint8_t ep_addr = static_cast<uint8_t>(index);
-        UsbDciEndpointClearStall(ep_addr);
+        if (ep_addr != 0) {
+          UsbDciEndpointClearStall(ep_addr);
+        }
         completer(zx::ok(std::vector<uint8_t>()));
         return;
       }
