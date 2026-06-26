@@ -1208,7 +1208,7 @@ mod tests {
         .unwrap();
 
         // Create a product bundle.
-        let pb = crate::ProductBundleBuilder::new("name", "version")
+        let pb = crate::ProductBundleBuilder::new("name")
             .system(system, assembly_partitions_config::Slot::A)
             .build(Box::new(tools), Utf8Path::from_path(&out_dir).unwrap())
             .await

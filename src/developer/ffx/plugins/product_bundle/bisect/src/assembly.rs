@@ -80,7 +80,10 @@ pub async fn assemble(
     let update_version_file = tmp_path.join("update_version.txt");
     fs::write(&update_version_file, &pb_version)?;
 
-    let builder = ProductBundleBuilder::new(pb_name, pb_version)
+    // While the version of the PB will default to that of 'product_artifact',
+    // we'll be explicit here to make sure that they all line up.
+    let builder = ProductBundleBuilder::new(pb_name)
+        .version(pb_version)
         .system(system, pb_slot)
         .update_package(update_version_file, 1, None);
 

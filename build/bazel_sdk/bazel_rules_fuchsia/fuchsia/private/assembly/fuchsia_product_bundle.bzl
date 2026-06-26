@@ -685,15 +685,13 @@ def _build_fuchsia_product_bundle_impl(ctx):
         size_report.path,
     ]
 
+    # If the product bundle version or version file is provided, it takes precedence
+    # over the version in the assembled product artifact.
     if ctx.attr.product_bundle_version != "":
         ffx_pb_invocation += ["--product-version", ctx.attr.product_bundle_version]
     elif ctx.file.product_bundle_version_file:
         ffx_pb_invocation += ["--product-version-file", ctx.file.product_bundle_version_file.path]
         all_inputs.append(ctx.file.product_bundle_version_file)
-    else:
-        if not fuchsia_toolchain.sdk_id:
-            fail("product_version string must not be empty.")
-        ffx_pb_invocation += ["--product-version", fuchsia_toolchain.sdk_id]
 
     if delivery_blob_type:
         ffx_pb_invocation.append("--delivery-blob-type " + delivery_blob_type)

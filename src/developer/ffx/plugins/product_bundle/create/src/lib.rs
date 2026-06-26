@@ -345,7 +345,8 @@ async fn sanitized_product_bundle_create(
         println!("{}", dest_path);
         return Ok(());
     }
-    let mut builder = ProductBundleBuilder::new(name.clone(), version)
+    let mut builder = ProductBundleBuilder::new(name.clone())
+        .version(version)
         .system(system, Slot::A)
         .update_package(update_version_file, 1, cmd.ota_manifest_key);
 

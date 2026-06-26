@@ -177,24 +177,11 @@ template("product_bundle") {
     ffx_tool = "//src/developer/ffx/plugins/product:ffx_product_tool"
     ffx_tool_output_name = "ffx-product"
 
-    if (defined(invoker.version) && invoker.version != "") {
-      product_version = invoker.version
-    } else {
-      # The sdk_id holds the sdk_version. This value can be set (e.g. for
-      # testing) with `--args sdk_id=1234` on the `fx set` call. In the future,
-      # the product bundles should be versioned independently of the sdk
-      # version. So far they have been the same value.
-      assert(sdk_id != "")
-      product_version = sdk_id
-    }
-
     args = [
       "--config",
       "product.experimental=true",
       "product",
       "create-old",
-      "--product-version",
-      product_version,
       "--product-name",
       product_name,
       "--out-dir",
@@ -206,6 +193,14 @@ template("product_bundle") {
       "--gerrit-size-report",
       rebase_path(files.image_size_report, root_build_dir),
     ]
+
+    # Set the version if provided.
+    if (defined(invoker.version) && invoker.version != "") {
+      args += [
+        "--product-version",
+        invoker.version,
+      ]
+    }
 
     outputs += [ files.product_bundle_manifest ]
     inputs = [

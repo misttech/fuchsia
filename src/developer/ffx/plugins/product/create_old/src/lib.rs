@@ -80,15 +80,17 @@ pub async fn pb_create_with_sdk_version(
         };
 
     // Build a product bundle.
-    let version = if let Some(version_file) = &cmd.product_version_file {
-        read_version_from_file(version_file)?
+    let mut pb_builder =
+        ProductBundleBuilder::new(cmd.product_name.clone()).sdk_version(sdk_version.to_string());
+
+    // If an explicit version or version file is provided, it takes precedence
+    // over the version in the systems.
+    if let Some(version_file) = &cmd.product_version_file {
+        pb_builder = pb_builder.version(read_version_from_file(version_file)?);
     } else if let Some(version) = &cmd.product_version {
-        version.clone()
-    } else {
-        sdk_version.to_string()
-    };
-    let mut pb_builder = ProductBundleBuilder::new(cmd.product_name.clone(), version)
-        .sdk_version(sdk_version.to_string());
+        pb_builder = pb_builder.version(version.clone());
+    }
+
     if let Some(system_path) = &cmd.system_a {
         let system = AssembledSystem::from_dir(system_path)?;
         pb_builder = pb_builder.system(system, PartitionSlot::A);
@@ -101,6 +103,8 @@ pub async fn pb_create_with_sdk_version(
         let system = AssembledSystem::from_dir(system_path)?;
         pb_builder = pb_builder.system(system, PartitionSlot::R);
     }
+
+    // The version in the update package is separately-configured from that of the PB itself.
     if let Some((version, epoch, ota_manifest_key)) = update_details {
         pb_builder = pb_builder.update_package(version, epoch, ota_manifest_key);
     }
