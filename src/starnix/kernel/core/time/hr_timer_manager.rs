@@ -1189,7 +1189,12 @@ impl HrTimerManager {
 
 #[derive(Debug)]
 pub struct HrTimer {
+    // Event used to signal the timer.
     event: zx::Event,
+
+    // The koid of the `event` above. Cached because calling `koid()` on a
+    // handle costs a syscall. And yet, the koid is immutable.
+    event_koid: zx::Koid,
 
     /// True iff the timer is currently set to trigger at an interval.
     ///
@@ -1215,8 +1220,10 @@ impl Drop for HrTimer {
 
 impl HrTimer {
     pub fn new() -> HrTimerHandle {
+        let event = zx::Event::create();
+        let event_koid = event.koid().expect("infallible");
         let ret =
-            Arc::new(Self { event: zx::Event::create(), is_interval: LockDepMutex::new(false) });
+            Arc::new(Self { event, event_koid, is_interval: LockDepMutex::new(false) });
         let wake_alarm_id = ret.wake_alarm_id();
         ftrace::duration!("alarms", "hrtimer::new", "timer_id" => ret.get_id(), "wake_alarm_id" => &wake_alarm_id[..]);
         ftrace::flow_begin!("alarms", "hrtimer_lifecycle", ret.trace_id(), "wake_alarm_id" => &wake_alarm_id[..]);
@@ -1233,7 +1240,7 @@ impl HrTimer {
     ///
     /// All holders of the same [HrTimerHandle] will see the same value here.
     pub fn get_id(&self) -> zx::Koid {
-        self.event.koid().expect("infallible")
+        self.event_koid
     }
 
     /// Returns the unique alarm ID for this [HrTimer].
