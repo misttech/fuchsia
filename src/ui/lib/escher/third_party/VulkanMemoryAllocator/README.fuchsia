@@ -1,6 +1,6 @@
 Name: Vulkan Memory Allocator
 URL: https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
-Revision: 14208732131ebefa85baa08086f5d7d806cda947
+Revision: 2dccf1167b223466c5fcd64f842cb8a59d91f151
 Security Critical: yes
 
 License File: LICENSE.txt
@@ -9,7 +9,12 @@ License File: LICENSE.txt
 Description: Only src/vk_mem_alloc.h and LICENSE.txt files were imported.
 Local Modifications: - added README.fuchsia
 - line endings were auto-converted from CRLF
-- Mutex macros (FXL_ACQUIRE, FXL_RELEASE) added to compile with -Wthread-safety
-- clang formatting disabled
-- suppress "-Wimplicit-fallthrough" warning
-- suppress "-Wnullability-completeness" warning
+- indentation removed from blank newlines, trailing whitespace removed
+- Thread annotation macros (__TA_*) added to compile with -Wthread-safety
+- Clang formatting disabled
+- suppress compilation warnings:
+  -Wdeprecated-copy
+  -Wmissing-field-initializers
+  -Wnullability-completeness
+  -Wunused-private-field
+  -Wunused-variable

@@ -89,6 +89,9 @@ config("vk_mem_alloc_small_heap_max_size") {
   defines = [ "VMA_SMALL_HEAP_MAX_SIZE=(256ull*1024*1024)" ]
 }
 
+# TODO(https://fxbug.dev/379153784): this is now handled by Clang pragmas.  However,
+# deleting this config reveals that it has leaked into Scenic, and now there are
+# hundreds of fixes required.
 config("vk_mem_alloc_error_suppression") {
   cflags = [
     "-Wno-deprecated-copy",

@@ -235,15 +235,27 @@ ImagePtr VmaGpuAllocator::AllocateImage(ResourceManager* manager, const ImageInf
 }
 
 size_t VmaGpuAllocator::GetTotalBytesAllocated() const {
-  VmaStats stats;
-  vmaCalculateStats(allocator_, &stats);
-  return stats.total.usedBytes;
+  VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
+  vmaGetHeapBudgets(allocator_, budgets);
+
+  size_t total = 0;
+  auto memory_properties = physical_device_.getMemoryProperties();
+  for (uint32_t i = 0; i < memory_properties.memoryHeapCount; ++i) {
+    total += budgets[i].statistics.allocationBytes;
+  }
+  return total;
 }
 
 size_t VmaGpuAllocator::GetUnusedBytesAllocated() const {
-  VmaStats stats;
-  vmaCalculateStats(allocator_, &stats);
-  return stats.total.unusedBytes;
+  VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
+  vmaGetHeapBudgets(allocator_, budgets);
+
+  size_t total = 0;
+  auto memory_properties = physical_device_.getMemoryProperties();
+  for (uint32_t i = 0; i < memory_properties.memoryHeapCount; ++i) {
+    total += (budgets[i].statistics.blockBytes - budgets[i].statistics.allocationBytes);
+  }
+  return total;
 }
 
 bool VmaGpuAllocator::CreateImage(const VkImageCreateInfo& image_create_info,
