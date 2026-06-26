@@ -15,6 +15,7 @@
 .DS_Store
 .gdb_history
 .gdbinit
+.jiri_cache
 .jiri_manifest
 .landmines
 .local
