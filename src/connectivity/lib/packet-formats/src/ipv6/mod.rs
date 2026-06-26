@@ -39,14 +39,14 @@ use crate::ip::{
     Nat64TranslationResult,
 };
 use crate::ipv4::{HDR_PREFIX_LEN, Ipv4PacketBuilder};
+use crate::ipv6::ext_hdrs::ExtensionHeaderOptionAction;
 use crate::tcp::{TcpParseArgs, TcpSegment};
 use crate::udp::{UdpPacket, UdpParseArgs};
 
 use ext_hdrs::{
-    ExtensionHeaderOptionAction, HopByHopOption, HopByHopOptionData, IPV6_FRAGMENT_EXT_HDR_LEN,
-    Ipv6ExtensionHeader, Ipv6ExtensionHeaderData, Ipv6ExtensionHeaderImpl,
-    Ipv6ExtensionHeaderParsingContext, Ipv6ExtensionHeaderParsingError, is_valid_next_header,
-    is_valid_next_header_upper_layer,
+    HopByHopOption, HopByHopOptionData, IPV6_FRAGMENT_EXT_HDR_LEN, Ipv6ExtensionHeader,
+    Ipv6ExtensionHeaderData, Ipv6ExtensionHeaderImpl, Ipv6ExtensionHeaderParsingContext,
+    Ipv6ExtensionHeaderParsingError, is_valid_next_header_upper_layer,
 };
 
 /// Length of the IPv6 fixed header.
@@ -95,61 +95,36 @@ fn ext_hdr_err_fn(hdr: &FixedHeader, err: Ipv6ExtensionHeaderParsingError) -> Ip
 
     match err {
         Ipv6ExtensionHeaderParsingError::ErroneousHeaderField { pointer, must_send_icmp } => {
-            let (pointer, action) = match pointer.checked_add(IPV6_FIXED_HDR_LEN as u32) {
-                // Pointer calculation overflowed so set action to discard the packet and
-                // 0 for the pointer (which won't be used anyways since the packet will be
-                // discarded without sending an ICMP response).
-                None => (0, IpParseErrorAction::DiscardPacket),
-                // Pointer calculation didn't overflow so set action to send an ICMP
-                // message to the source of the original packet and the pointer value
-                // to what we calculated.
-                Some(p) => (p, IpParseErrorAction::DiscardPacketSendIcmpNoMulticast),
-            };
-
             Ipv6ParseError::ParameterProblem {
                 src_ip: hdr.src_ip,
                 dst_ip: hdr.dst_ip,
                 code: Icmpv6ParameterProblemCode::ErroneousHeaderField,
                 pointer,
                 must_send_icmp,
-                action,
+                action: IpParseErrorAction::DiscardPacketSendIcmpNoMulticast,
             }
         }
         Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader { pointer, must_send_icmp } => {
-            let (pointer, action) = match pointer.checked_add(IPV6_FIXED_HDR_LEN as u32) {
-                None => (0, IpParseErrorAction::DiscardPacket),
-                Some(p) => (p, IpParseErrorAction::DiscardPacketSendIcmpNoMulticast),
-            };
-
             Ipv6ParseError::ParameterProblem {
                 src_ip: hdr.src_ip,
                 dst_ip: hdr.dst_ip,
                 code: Icmpv6ParameterProblemCode::UnrecognizedNextHeaderType,
                 pointer,
                 must_send_icmp,
-                action,
+                action: IpParseErrorAction::DiscardPacketSendIcmpNoMulticast,
             }
         }
         Ipv6ExtensionHeaderParsingError::UnrecognizedOption { pointer, must_send_icmp, action } => {
-            let (pointer, action) = match pointer.checked_add(IPV6_FIXED_HDR_LEN as u32) {
-                None => (0, IpParseErrorAction::DiscardPacket),
-                Some(p) => {
-                    let action = match action {
-                        ExtensionHeaderOptionAction::SkipAndContinue => unreachable!(
-                            "Should never end up here because this action should never result in an error"
-                        ),
-                        ExtensionHeaderOptionAction::DiscardPacket => {
-                            IpParseErrorAction::DiscardPacket
-                        }
-                        ExtensionHeaderOptionAction::DiscardPacketSendIcmp => {
-                            IpParseErrorAction::DiscardPacketSendIcmp
-                        }
-                        ExtensionHeaderOptionAction::DiscardPacketSendIcmpNoMulticast => {
-                            IpParseErrorAction::DiscardPacketSendIcmpNoMulticast
-                        }
-                    };
-
-                    (p, action)
+            let action = match action {
+                ExtensionHeaderOptionAction::SkipAndContinue => unreachable!(
+                    "Should never end up here because this action should never result in an error"
+                ),
+                ExtensionHeaderOptionAction::DiscardPacket => IpParseErrorAction::DiscardPacket,
+                ExtensionHeaderOptionAction::DiscardPacketSendIcmp => {
+                    IpParseErrorAction::DiscardPacketSendIcmp
+                }
+                ExtensionHeaderOptionAction::DiscardPacketSendIcmpNoMulticast => {
+                    IpParseErrorAction::DiscardPacketSendIcmpNoMulticast
                 }
             };
 
@@ -313,33 +288,20 @@ impl<B: SplitByteSlice> FromRaw<Ipv6PacketRaw<B>, ()> for Ipv6Packet<B> {
     fn try_from_raw_with(raw: Ipv6PacketRaw<B>, _args: ()) -> Result<Self, Self::Error> {
         let fixed_hdr = raw.fixed_hdr;
 
-        // Make sure that the fixed header has a valid next header before
-        // validating extension headers.
-        if !is_valid_next_header(fixed_hdr.next_hdr, true) {
-            return debug_err!(
-                Err(Ipv6ParseError::ParameterProblem {
-                    src_ip: fixed_hdr.src_ip,
-                    dst_ip: fixed_hdr.dst_ip,
-                    code: Icmpv6ParameterProblemCode::UnrecognizedNextHeaderType,
-                    pointer: u32::from(NEXT_HEADER_OFFSET),
-                    must_send_icmp: false,
-                    action: IpParseErrorAction::DiscardPacketSendIcmpNoMulticast,
-                }),
-                "Unrecognized next header value"
-            );
-        }
-
         let extension_hdrs = match raw.extension_hdrs {
-            MaybeParsed::Complete(v) => {
-                Records::try_from_raw(v).map_err(|e| ext_hdr_err_fn(&fixed_hdr, e))?
-            }
-            MaybeParsed::Incomplete(_) => {
-                return debug_err!(
-                    Err(ParseError::Format.into()),
-                    "Incomplete IPv6 extension headers"
-                );
+            MaybeParsed::Complete(v) => Records::try_from_raw(v),
+            MaybeParsed::Incomplete(buffer) => {
+                // If raw parser failed then try full parser again. This is
+                // expected to fail, but the returned error may be different
+                // from the error reported by the raw parser.
+                let context = Ipv6ExtensionHeaderParsingContext::new(fixed_hdr.next_hdr);
+                match Records::<_, Ipv6ExtensionHeaderImpl>::parse_with_context(buffer, context) {
+                    Err(err) => Err(err),
+                    Ok(_) => panic!("Extension Header parsing succeeded after raw parse failure."),
+                }
             }
         };
+        let extension_hdrs = extension_hdrs.map_err(|e| ext_hdr_err_fn(&fixed_hdr, e))?;
 
         // If extension headers parse successfully, then proto and a
         // `MaybeParsed` body MUST be available, and the proto must be a valid
@@ -496,8 +458,8 @@ impl<B: SplitByteSlice> Ipv6Packet<B> {
             bytes.extend_from_slice(&self.extension_hdrs.bytes()[IPV6_FRAGMENT_EXT_HDR_LEN..]);
         } else {
             let mut ext_hdr = ext_hdr;
-            let mut ext_hdr_start = 0;
-            let mut ext_hdr_end = iter.context().bytes_parsed;
+            let mut ext_hdr_start = IPV6_FIXED_HDR_LEN;
+            let mut ext_hdr_end = iter.context().position;
 
             // Here we keep looping until `next_ext_hdr` points to the fragment header.
             // Once we find the fragment header, we update the next header value within
@@ -520,14 +482,17 @@ impl<B: SplitByteSlice> Ipv6Packet<B> {
                     // into `bytes` and patch the next header value within the
                     // current extension header in `bytes`.
 
+                    // Header position relative to the extension header buffer.
+                    let fragment_hdr_start = ext_hdr_end - IPV6_FIXED_HDR_LEN;
+
                     // Size of the fragment header should be exactly `IPV6_FRAGMENT_EXT_HDR_LEN`.
-                    let fragment_hdr_end = ext_hdr_end + IPV6_FRAGMENT_EXT_HDR_LEN;
-                    assert_eq!(fragment_hdr_end, iter.context().bytes_parsed);
+                    let fragment_hdr_end = fragment_hdr_start + IPV6_FRAGMENT_EXT_HDR_LEN;
+                    assert_eq!(fragment_hdr_end, iter.context().position - IPV6_FIXED_HDR_LEN);
 
                     let extension_hdr_bytes = self.extension_hdrs.bytes();
 
                     // Copy extension headers that appear before the fragment header
-                    bytes.extend_from_slice(&extension_hdr_bytes[..ext_hdr_end]);
+                    bytes.extend_from_slice(&extension_hdr_bytes[..fragment_hdr_start]);
 
                     // Copy extension headers that appear after the fragment header
                     bytes.extend_from_slice(&extension_hdr_bytes[fragment_hdr_end..]);
@@ -540,7 +505,7 @@ impl<B: SplitByteSlice> Ipv6Packet<B> {
                         Ipv6ExtensionHeaderData::HopByHopOptions { .. }
                         | Ipv6ExtensionHeaderData::DestinationOptions { .. }
                         | Ipv6ExtensionHeaderData::Routing { .. } => {
-                            bytes[IPV6_FIXED_HDR_LEN + ext_hdr_start] = next_ext_hdr.next_header;
+                            bytes[ext_hdr_start] = next_ext_hdr.next_header;
                         }
                         Ipv6ExtensionHeaderData::Fragment { .. } => unreachable!(
                             "If we had a fragment header before `ext_hdr`, we should have used that instead"
@@ -552,7 +517,7 @@ impl<B: SplitByteSlice> Ipv6Packet<B> {
 
                 ext_hdr = next_ext_hdr;
                 ext_hdr_start = ext_hdr_end;
-                ext_hdr_end = iter.context().bytes_parsed;
+                ext_hdr_end = iter.context().position;
             }
         }
 
@@ -1930,8 +1895,14 @@ mod tests {
         // Use invalid next header.
         let mut fixed_hdr = new_fixed_hdr();
         fixed_hdr.next_hdr = 255;
+        let packet = fixed_hdr_to_bytes(fixed_hdr);
+
+        // Raw parsing should succeed even with unrecognized Next Header.
+        assert!((&packet[..]).parse::<Ipv6PacketRaw<_>>().is_ok());
+
+        // Full parse should fail with unrecognized next header error.
         assert_eq!(
-            (&fixed_hdr_to_bytes(fixed_hdr)[..]).parse::<Ipv6Packet<_>>().unwrap_err(),
+            (&packet[..]).parse::<Ipv6Packet<_>>().unwrap_err(),
             Ipv6ParseError::ParameterProblem {
                 src_ip: DEFAULT_SRC_IP,
                 dst_ip: DEFAULT_DST_IP,
@@ -2027,18 +1998,22 @@ mod tests {
         fixed_hdr.payload_len = U16::new((buf.len() - IPV6_FIXED_HDR_LEN) as u16);
         let fixed_hdr_buf = fixed_hdr_to_bytes(fixed_hdr);
         buf[..IPV6_FIXED_HDR_LEN].copy_from_slice(&fixed_hdr_buf);
-        let mut buf = &buf[..];
-        assert_eq!(
-            buf.parse::<Ipv6Packet<_>>().unwrap_err(),
-            Ipv6ParseError::ParameterProblem {
-                src_ip: DEFAULT_SRC_IP,
-                dst_ip: DEFAULT_DST_IP,
-                code: Icmpv6ParameterProblemCode::ErroneousHeaderField,
-                pointer: (IPV6_FIXED_HDR_LEN as u32) + 2,
-                must_send_icmp: true,
-                action: IpParseErrorAction::DiscardPacketSendIcmpNoMulticast,
-            }
-        );
+        let expected_error = Ipv6ParseError::ParameterProblem {
+            src_ip: DEFAULT_SRC_IP,
+            dst_ip: DEFAULT_DST_IP,
+            code: Icmpv6ParameterProblemCode::ErroneousHeaderField,
+            pointer: (IPV6_FIXED_HDR_LEN as u32) + 2,
+            must_send_icmp: true,
+            action: IpParseErrorAction::DiscardPacketSendIcmpNoMulticast,
+        };
+        assert_eq!((&buf[..]).parse::<Ipv6Packet<_>>().unwrap_err(), expected_error);
+
+        // Test an unrecognized Routing Type with an unrecognized Next Header.
+        // This shouldn't change the result: each header should be processed
+        // before validating the Next Header field.
+        buf[IPV6_FIXED_HDR_LEN] = 250; // Next Header (Invalid)
+
+        assert_eq!((&buf[..]).parse::<Ipv6Packet<_>>().unwrap_err(), expected_error);
     }
 
     #[test]
@@ -2067,9 +2042,9 @@ mod tests {
                 src_ip: _,
                 dst_ip: _,
                 code: Icmpv6ParameterProblemCode::UnrecognizedNextHeaderType,
-                pointer: 0,
+                pointer: 6,
                 must_send_icmp: false,
-                action: IpParseErrorAction::DiscardPacket,
+                action: IpParseErrorAction::DiscardPacketSendIcmpNoMulticast,
             })
         );
 
@@ -2080,6 +2055,50 @@ mod tests {
             buf[6] = b;
             let _: Result<_, _> = (&buf[..]).parse::<Ipv6Packet<_>>();
         }
+    }
+
+    #[test]
+    fn test_parse_ext_hdr_unrecognized_next_header() {
+        // Test that parsing an IPv6 packet with an unrecognized Next Header value
+        // in an extension header succeeds for Ipv6PacketRaw, but fails for Ipv6Packet.
+
+        #[rustfmt::skip]
+        let mut buf = [
+            // FixedHeader (will be replaced later)
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+
+            // HopByHop Options Extension Header
+            250,                     // Next Header (unrecognized next header type)
+            0,                       // Hdr Ext Len (In 8-octet units, not including first 8 octets)
+            0,                       // Pad1
+            1, 0,                    // Pad2
+            1, 1, 0,                 // Pad3
+
+            // Body
+            1, 2, 3, 4, 5,
+        ];
+        let mut fixed_hdr = new_fixed_hdr();
+        fixed_hdr.next_hdr = Ipv6ExtHdrType::HopByHopOptions.into();
+        fixed_hdr.payload_len = U16::new((buf.len() - IPV6_FIXED_HDR_LEN) as u16);
+        let fixed_hdr_buf = fixed_hdr_to_bytes(fixed_hdr);
+        buf[..IPV6_FIXED_HDR_LEN].copy_from_slice(&fixed_hdr_buf);
+
+        // Raw parsing should succeed.
+        assert!((&buf[..]).parse::<Ipv6PacketRaw<_>>().is_ok());
+
+        // Full packet validation should fail.
+        assert_eq!(
+            (&buf[..]).parse::<Ipv6Packet<_>>().unwrap_err(),
+            Ipv6ParseError::ParameterProblem {
+                src_ip: DEFAULT_SRC_IP,
+                dst_ip: DEFAULT_DST_IP,
+                code: Icmpv6ParameterProblemCode::UnrecognizedNextHeaderType,
+                pointer: IPV6_FIXED_HDR_LEN as u32,
+                must_send_icmp: false,
+                action: IpParseErrorAction::DiscardPacketSendIcmpNoMulticast,
+            }
+        );
     }
 
     #[test]
@@ -2121,10 +2140,8 @@ mod tests {
         let partial = buf.parse::<Ipv6PacketRaw<_>>().unwrap();
         let Ipv6PacketRaw { fixed_hdr, extension_hdrs, body_proto } = &partial;
         assert_eq!(fixed_hdr.deref(), &make_fixed_hdr());
-        assert_eq!(
-            *extension_hdrs.as_ref().incomplete().unwrap(),
-            [IpProto::Tcp.into(), MALFORMED_BYTE]
-        );
+        let b = extension_hdrs.as_ref().incomplete().unwrap();
+        assert_eq!(*b, &[IpProto::Tcp.into(), MALFORMED_BYTE][..]);
         assert_eq!(body_proto, &Err(ExtHdrParseError));
         assert!(Ipv6Packet::try_from_raw(partial).is_err());
 
