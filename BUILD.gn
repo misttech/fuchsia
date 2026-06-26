@@ -129,6 +129,10 @@ declare_args() {
   # the //:default target
   additional_default_targets = []
 
+  # List of additional tefmocheck target labels to include in the manifest.
+  # Defaults to empty.
+  additional_tefmocheck_labels = []
+
   # These labels are added as dependencies of '//:default' transitively via
   # '//:build_only'.  These are used to add targets that need to be built
   # but aren't part of any product, board, etc.
@@ -279,6 +283,7 @@ build_api_module("api") {
     ":rules_fuchsia_info",
     ":rust_target_mapping",
     ":sdk_archives",
+    ":tefmocheck_rules_manifest",
     ":test_components",
     ":test_durations",
     ":test_list_location",
@@ -289,6 +294,19 @@ build_api_module("api") {
     "//build/rbe:rbe_settings.json",
     "//sdk/ctf:ctf_artifacts_path",
   ]
+}
+
+# This target generates a file that contains a list of paths to
+# tefmocheck config files. These paths are relative to the $root_build_dir.
+#
+# in file: "$root_build_dir/tefmocheck_rules_manifest.json".
+#
+# Type: list(string)
+#
+build_api_module("tefmocheck_rules_manifest") {
+  data_keys = [ "tefmocheck_rules" ]
+  deps = [ "//tools/testing/tefmocheck:public_checks" ] +
+         additional_tefmocheck_labels
 }
 
 # This target is used to generate, at `gn gen` time a file

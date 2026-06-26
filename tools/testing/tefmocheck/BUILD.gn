@@ -81,3 +81,9 @@ group("tests") {
 
   deps = [ ":lib_tests($host_toolchain)" ]
 }
+
+group("public_checks") {
+  metadata = {
+    tefmocheck_rules = [ rebase_path("check-configs.yaml", root_build_dir) ]
+  }
+}
