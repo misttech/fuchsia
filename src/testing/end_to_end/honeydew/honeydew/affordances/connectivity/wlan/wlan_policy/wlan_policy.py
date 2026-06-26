@@ -6,10 +6,11 @@
 import abc
 from dataclasses import dataclass
 
+import fidl_fuchsia_wlan_policy as f_wlan_policy
+
 from honeydew.affordances import affordance
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
-    ConnectionState,
     CountryCode,
     NetworkConfig,
     SecurityType,
@@ -127,9 +128,9 @@ class AsyncWlanPolicy(abc.ABC):
     async def wait_for_network_state(
         self,
         ssid: str,
-        expected_state: ConnectionState,
+        expected_state: f_wlan_policy.ConnectionState,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> ConnectionState:
+    ) -> f_wlan_policy.ConnectionState:
         """Waits until the network converges to expected state."""
 
     @abc.abstractmethod
@@ -395,9 +396,9 @@ class WlanPolicy(affordance.Affordance):
     def wait_for_network_state(
         self,
         ssid: str,
-        expected_state: ConnectionState,
+        expected_state: f_wlan_policy.ConnectionState,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> ConnectionState:
+    ) -> f_wlan_policy.ConnectionState:
         """Waits until the network converges to expected state."""
 
     @abc.abstractmethod

@@ -7,6 +7,7 @@
 import logging
 import time
 
+import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
@@ -20,10 +21,7 @@ from antlion.utils import rand_ascii_str
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    ConnectionState,
-    SecurityType,
-)
+from honeydew.affordances.connectivity.wlan.utils.types import SecurityType
 from mobly import signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
@@ -178,7 +176,7 @@ class HiddenNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         try:
             await self.dut.wlan_policy.wait_for_network_state(
                 self.hidden_ssid,
-                ConnectionState.CONNECTED,
+                f_wlan_policy.ConnectionState.CONNECTED,
                 timeout=TIME_WAIT_FOR_CONNECT,
             )
         except HoneydewWlanError as e:
@@ -203,7 +201,7 @@ class HiddenNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         try:
             await self.dut.wlan_policy.wait_for_network_state(
                 self.hidden_ssid,
-                ConnectionState.CONNECTED,
+                f_wlan_policy.ConnectionState.CONNECTED,
                 timeout=TIME_WAIT_FOR_CONNECT,
             )
         except HoneydewWlanError as e:

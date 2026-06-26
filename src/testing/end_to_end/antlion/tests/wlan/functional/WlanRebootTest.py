@@ -11,6 +11,7 @@ import time
 from dataclasses import dataclass
 from enum import Enum, StrEnum, auto, unique
 
+import fidl_fuchsia_wlan_policy as f_wlan_policy
 from antlion import utils
 from antlion.controllers.ap_lib.hostapd_ap_preset import create_ap_preset
 from antlion.controllers.ap_lib.hostapd_constants import AP_SSID_LENGTH_2G
@@ -24,7 +25,6 @@ from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import ConnectionState
 from mobly import asserts, signals, test_runner
 from openwrt_access_point import AddrType as OpenWrtAddrType
 from openwrt_access_point import InterfaceName as OpenWrtInterfaceName
@@ -486,7 +486,7 @@ class WlanRebootTest(base_test.WifiBaseTest):
                 )
                 self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
                     ssid,
-                    ConnectionState.CONNECTED,
+                    f_wlan_policy.ConnectionState.CONNECTED,
                     timeout=DUT_NETWORK_CONNECTION_TIMEOUT,
                 )
             except HoneydewWlanError as e:

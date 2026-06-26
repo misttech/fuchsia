@@ -14,7 +14,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
-    ConnectionState,
     NetworkIdentifier,
     NetworkState,
     SecurityType,
@@ -173,7 +172,7 @@ class StartStopClientConnectionsTest(
                         network_identifier=NetworkIdentifier(
                             self.ssid, self.security_type
                         ),
-                        connection_state=ConnectionState.CONNECTING,
+                        connection_state=f_wlan_policy.ConnectionState.CONNECTING,
                         disconnect_status=None,
                     )
                 ],
@@ -193,7 +192,7 @@ class StartStopClientConnectionsTest(
                         network_identifier=NetworkIdentifier(
                             self.ssid, self.security_type
                         ),
-                        connection_state=ConnectionState.DISCONNECTED,
+                        connection_state=f_wlan_policy.ConnectionState.DISCONNECTED,
                         disconnect_status=f_wlan_policy.DisconnectStatus.CONNECTION_STOPPED,
                     )
                 ],
@@ -243,7 +242,7 @@ class StartStopClientConnectionsTest(
                         network_identifier=NetworkIdentifier(
                             self.ssid, self.security_type
                         ),
-                        connection_state=ConnectionState.CONNECTING,
+                        connection_state=f_wlan_policy.ConnectionState.CONNECTING,
                         disconnect_status=None,
                     )
                 ],
@@ -259,7 +258,7 @@ class StartStopClientConnectionsTest(
                         network_identifier=NetworkIdentifier(
                             self.ssid, self.security_type
                         ),
-                        connection_state=ConnectionState.CONNECTED,
+                        connection_state=f_wlan_policy.ConnectionState.CONNECTED,
                         disconnect_status=None,
                     )
                 ],
@@ -282,7 +281,7 @@ class StartStopClientConnectionsTest(
                         network_identifier=NetworkIdentifier(
                             self.ssid, self.security_type
                         ),
-                        connection_state=ConnectionState.DISCONNECTED,
+                        connection_state=f_wlan_policy.ConnectionState.DISCONNECTED,
                         disconnect_status=f_wlan_policy.DisconnectStatus.CONNECTION_STOPPED,
                     )
                 ],

@@ -6,6 +6,7 @@
 
 import logging
 
+import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
@@ -17,7 +18,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
-    ConnectionState,
     NetworkConfig,
     SecurityType,
     WlanClientState,
@@ -364,7 +364,7 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
 
         await self.dut.wlan_policy.wait_for_network_state(
-            test_network.ssid, ConnectionState.CONNECTED
+            test_network.ssid, f_wlan_policy.ConnectionState.CONNECTED
         )
         # Remove network and verify we disconnect
         await self.dut.wlan_policy.remove_network(
@@ -407,7 +407,7 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
         try:
             await self.dut.wlan_policy.wait_for_network_state(
-                test_network.ssid, ConnectionState.CONNECTED
+                test_network.ssid, f_wlan_policy.ConnectionState.CONNECTED
             )
         except HoneydewWlanError as e:
             raise signals.TestFailure(
@@ -445,7 +445,7 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
         try:
             await self.dut.wlan_policy.wait_for_network_state(
-                test_network.ssid, ConnectionState.CONNECTED
+                test_network.ssid, f_wlan_policy.ConnectionState.CONNECTED
             )
         except HoneydewWlanError as e:
             raise signals.TestFailure(

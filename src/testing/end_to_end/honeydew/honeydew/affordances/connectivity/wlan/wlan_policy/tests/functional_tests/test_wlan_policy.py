@@ -25,7 +25,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
-    ConnectionState,
     NetworkConfig,
     NetworkIdentifier,
     NetworkState,
@@ -148,8 +147,12 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             await self.dut.wlan_policy.get_saved_networks(),
             [NetworkConfig(test_ssid, SecurityType.NONE, "None", "")],
         )
-        await self.wait_for_network(test_ssid, ConnectionState.CONNECTING)
-        await self.wait_for_network(test_ssid, ConnectionState.CONNECTED)
+        await self.wait_for_network(
+            test_ssid, f_wlan_policy.ConnectionState.CONNECTING
+        )
+        await self.wait_for_network(
+            test_ssid, f_wlan_policy.ConnectionState.CONNECTED
+        )
 
         # Connecting explicitly again shouldn't do anything.
         await self.dut.wlan_policy.connect(test_ssid, SecurityType.NONE)
@@ -167,7 +170,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 networks=[
                     NetworkState(
                         NetworkIdentifier(test_ssid, SecurityType.NONE),
-                        ConnectionState.DISCONNECTED,
+                        f_wlan_policy.ConnectionState.DISCONNECTED,
                         f_wlan_policy.DisconnectStatus.CONNECTION_STOPPED,
                     )
                 ],
@@ -183,8 +186,12 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         # Starting client connections again should initiate an auto-connection.
         await self.dut.wlan_policy.start_client_connections()
-        await self.wait_for_network(test_ssid, ConnectionState.CONNECTING)
-        await self.wait_for_network(test_ssid, ConnectionState.CONNECTED)
+        await self.wait_for_network(
+            test_ssid, f_wlan_policy.ConnectionState.CONNECTING
+        )
+        await self.wait_for_network(
+            test_ssid, f_wlan_policy.ConnectionState.CONNECTED
+        )
 
         # Removing the network should initiate a auto-disconnection.
         await self.dut.wlan_policy.remove_all_networks()
@@ -193,7 +200,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
         await self.wait_for_network(
             test_ssid,
-            ConnectionState.DISCONNECTED,
+            f_wlan_policy.ConnectionState.DISCONNECTED,
             f_wlan_policy.DisconnectStatus.CONNECTION_STOPPED,
         )
 
@@ -314,7 +321,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     async def wait_for_network(
         self,
         ssid: str,
-        expected_state: ConnectionState,
+        expected_state: f_wlan_policy.ConnectionState,
         expected_status: f_wlan_policy.DisconnectStatus | None = None,
         expected_client_state: WlanClientState = WlanClientState.CONNECTIONS_ENABLED,
     ) -> None:

@@ -92,33 +92,6 @@ class WlanClientState(enum.StrEnum):
                 raise TypeError(f"Unknown WlanClientState: {fidl}")
 
 
-class ConnectionState(enum.StrEnum):
-    """Connection states used to update registered wlan observers.
-
-    Defined by https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/fidl/fuchsia.wlan.policy/client_provider.fidl
-    """
-
-    FAILED = "Failed"
-    DISCONNECTED = "Disconnected"
-    CONNECTING = "Connecting"
-    CONNECTED = "Connected"
-
-    @staticmethod
-    def from_fidl(fidl: f_wlan_policy.ConnectionState) -> "ConnectionState":
-        """Parse from a fuchsia.wlan.policy/ConnectionState."""
-        match fidl:
-            case f_wlan_policy.ConnectionState.FAILED:
-                return ConnectionState.FAILED
-            case f_wlan_policy.ConnectionState.DISCONNECTED:
-                return ConnectionState.DISCONNECTED
-            case f_wlan_policy.ConnectionState.CONNECTING:
-                return ConnectionState.CONNECTING
-            case f_wlan_policy.ConnectionState.CONNECTED:
-                return ConnectionState.CONNECTED
-            case _:
-                raise TypeError(f"Unknown ConnectionState: {fidl}")
-
-
 # TODO(http://b/346424966): Only necessary because Python does not have static
 # typing for FIDL. Once these static types are available and the SL4F affordance
 # is removed, replace with the statically generated FIDL equivalent.
@@ -323,7 +296,7 @@ class NetworkState:
     """
 
     network_identifier: NetworkIdentifier
-    connection_state: ConnectionState
+    connection_state: f_wlan_policy.ConnectionState
     disconnect_status: f_wlan_policy.DisconnectStatus | None
 
     @staticmethod
@@ -334,9 +307,7 @@ class NetworkState:
 
         return NetworkState(
             network_identifier=NetworkIdentifier.from_fidl(fidl.id_),
-            connection_state=ConnectionState.from_fidl(
-                f_wlan_policy.ConnectionState(fidl.state)
-            ),
+            connection_state=f_wlan_policy.ConnectionState(fidl.state),
             disconnect_status=(
                 f_wlan_policy.DisconnectStatus(fidl.status)
                 if fidl.status

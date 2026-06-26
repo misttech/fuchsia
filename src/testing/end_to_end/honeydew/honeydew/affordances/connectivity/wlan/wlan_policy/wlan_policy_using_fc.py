@@ -23,7 +23,6 @@ from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
 from honeydew.affordances.connectivity.wlan.utils import errors as wlan_errors
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
-    ConnectionState,
     CountryCode,
     Credential,
     NetworkConfig,
@@ -428,7 +427,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
 
             await self.wait_for_network_state(
                 target_ssid,
-                ConnectionState.CONNECTED,
+                f_wlan_policy.ConnectionState.CONNECTED,
                 timeout=timeout,
             )
         except FcTransportStatus as status:
@@ -620,10 +619,10 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
     async def wait_for_network_state(
         self,
         ssid: str,
-        expected_state: ConnectionState,
+        expected_state: f_wlan_policy.ConnectionState,
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> ConnectionState:
+    ) -> f_wlan_policy.ConnectionState:
         await self.set_new_update_listener()
 
         def check_net(update: ClientStateSummary) -> bool:
@@ -631,15 +630,18 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
                 if net.network_identifier.ssid == ssid:
                     if net.connection_state == expected_state:
                         return True
-                    elif net.connection_state is ConnectionState.CONNECTING:
+                    elif (
+                        net.connection_state
+                        is f_wlan_policy.ConnectionState.CONNECTING
+                    ):
                         _LOGGER.debug(
                             "Network %s still attempting to connect.", ssid
                         )
                         return False
                     else:
                         raise wlan_errors.HoneydewWlanError(
-                            f'Expected network "{ssid}" to be in state {expected_state}, '
-                            f"got {net.connection_state}"
+                            f'Expected network "{ssid}" to be in state {expected_state.name}, '
+                            f"got {net.connection_state.name}"
                         )
             return False
 
@@ -1034,8 +1036,8 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
     ) -> None:
         await self.set_new_update_listener()
         connection_states = {
-            ConnectionState.CONNECTING,
-            ConnectionState.CONNECTED,
+            f_wlan_policy.ConnectionState.CONNECTING,
+            f_wlan_policy.ConnectionState.CONNECTED,
         }
 
         try:
@@ -1251,10 +1253,10 @@ class WlanPolicy(wlan_policy.WlanPolicy):
     def wait_for_network_state(
         self,
         ssid: str,
-        expected_state: ConnectionState,
+        expected_state: f_wlan_policy.ConnectionState,
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> ConnectionState:
+    ) -> f_wlan_policy.ConnectionState:
         """Waits until the network converges to expected state."""
         return fuchsia_async_extension.get_loop().run_until_complete(
             self._inner.wait_for_network_state(

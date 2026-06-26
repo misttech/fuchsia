@@ -21,7 +21,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
-    ConnectionState,
     NetworkConfig,
     NetworkIdentifier,
     NetworkState,
@@ -367,7 +366,7 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
                         )
                         mock_wait_for_network_state.assert_called_once_with(
                             _TEST_SSID,
-                            ConnectionState.CONNECTED,
+                            f_wlan_policy.ConnectionState.CONNECTED,
                             timeout=mock.ANY,
                         )
 
@@ -443,7 +442,7 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
                                 ssid="Google Guest",
                                 security_type=SecurityType.WPA2,
                             ),
-                            connection_state=ConnectionState.CONNECTING,
+                            connection_state=f_wlan_policy.ConnectionState.CONNECTING,
                             disconnect_status=None,
                         )
                     ],
@@ -518,10 +517,10 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
 
         state = await self.wlan_policy_obj.wait_for_network_state(
             ssid="ssid1",
-            expected_state=ConnectionState.CONNECTED,
+            expected_state=f_wlan_policy.ConnectionState.CONNECTED,
             timeout=5,
         )
-        self.assertEqual(state, ConnectionState.CONNECTED)
+        self.assertEqual(state, f_wlan_policy.ConnectionState.CONNECTED)
         await push_task
 
     async def test__wait_on_update(self) -> None:
