@@ -19,11 +19,12 @@ def main() -> int:
         "fuchsia": source_root,
         "mesa": source_root / "third_party/mesa-migrating/src",
         "glslang": source_root / "third_party/glslang/src",
+        "spirv_tools": source_root / "third_party/spirv-tools/src",
     }
 
     results = {}
     for name, path in projects.items():
-        if name == "glslang" and not path.exists():
+        if name in ("glslang", "spirv_tools") and not path.exists():
             continue
         head_file = get_git_path(path, "HEAD")
         ref_path = get_git_ref(path)

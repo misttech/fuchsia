@@ -49,6 +49,12 @@ git_paths = {
   if (defined(_paths.glslang_head)) {
     glslang_head = _paths.glslang_head
   }
+  if (defined(_paths.spirv_tools_head)) {
+    spirv_tools_head = _paths.spirv_tools_head
+  }
+  if (defined(_paths.spirv_tools_ref)) {
+    spirv_tools_ref = _paths.spirv_tools_ref
+  }
 }
 
 git_revisions = {
