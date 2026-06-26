@@ -289,7 +289,7 @@
              path="third_party/libpng/src"
              remote="https://fuchsia.googlesource.com/third_party/libpng"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="abb170895914da6b02584dc2af549f0952e53679"/>
+             revision="22f155df2cb39cac58b23c2ba43d83c180ef3ac6"/>
     <project name="linux-syscall-support"
              path="third_party/linux-syscall-support/src"
              remote="https://chromium.googlesource.com/linux-syscall-support"

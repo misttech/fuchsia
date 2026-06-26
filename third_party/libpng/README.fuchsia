@@ -1,8 +1,8 @@
 Name: libpng
 URL: https://github.com/pnggroup/libpng
 Original URL: https://www.libpng.org/pub/png/libpng.html
-Version: 1.6.52
-Revision: fbed16182b92eeb3a06d96e49f0836d450318098
+Version: 1.6.58
+Revision: 3061454d980de7d53608f594194cfac722721d2a
 Security Critical: yes
 License Android Compatible: yes
 
@@ -10,7 +10,7 @@ License File: src/LICENSE
   License: Libpng
 
 Description:
-  Updated to 1.6.52, stripped all unneeded files.
+  Updated to 1.6.58, stripped all unneeded files.
 
   - Strip all unneeded files
   rm -r ci contrib projects scripts tests \
@@ -22,10 +22,29 @@ Description:
   - Use custom configuration file pnglibconf.h, which turns off features that
   are not in use.
   - Configures custom png chunk user limits (crbug.com/117369) in pnglibconf.h.
-  Revision is from `git merge-base JIRI_HEAD v1.6.52`.
+  Revision is from `git merge-base JIRI_HEAD v1.6.58`.
 
 Local Modifications:
-  git diff $(git merge-base JIRI_HEAD v1.6.52) JIRI_HEAD --name-status
+See https://fxbug.dev/526720299 for details.
+
+The dependency is a fork of a large library, reduced to just two files - a
+header and a .cc file, which has then been adapted to work on Fuchsia.
+
+The full library is present and regularly maintained at //third_party/icu.
+However, it is not appropriate for the fxl library to take on this large
+dependency for the very limited piece of functionality it actually uses.
+
+As a result of adaptation, and almost total strip-down,
+//src/lib/fxl/third_party/icu has taken on a new life as a fuchsia-specific
+library, with adequate functionality which effectively did not need to be
+modified in the last ~10 years.
+
+With that in mind, the library should be exempted for freshness because it is a
+stand-alone library which has not had new commits since it was placed in
+service. Yes, it is unusual for a piece of software to stop changing, but this
+library is "complete".
+
+  git diff $(git merge-base JIRI_HEAD v1.6.58) JIRI_HEAD --name-status
   D	.appveyor.yml
   D	.cmake-format.yaml
   D	.editorconfig
@@ -34,6 +53,7 @@ Local Modifications:
   D	.github/workflows/verify-linux.yml
   D	.github/workflows/verify-macos.yml
   D	.github/workflows/verify-windows.yml
+  D	.markdownlint.yml
   D	.yamllint.yml
   D	ANNOUNCE
   D	CHANGES
@@ -150,6 +170,7 @@ Local Modifications:
   D	contrib/libtests/fakepng.c
   D	contrib/libtests/gentests.sh
   D	contrib/libtests/makepng.c
+  D	contrib/libtests/pnggetset.c
   D	contrib/libtests/pngimage.c
   D	contrib/libtests/pngstest-errors.h
   D	contrib/libtests/pngstest.c
@@ -164,8 +185,11 @@ Local Modifications:
   D	contrib/oss-fuzz/Dockerfile
   D	contrib/oss-fuzz/README.txt
   D	contrib/oss-fuzz/build.sh
+  D	contrib/oss-fuzz/libpng_colormap_fuzzer.cc
   D	contrib/oss-fuzz/libpng_read_fuzzer.cc
   D	contrib/oss-fuzz/libpng_read_fuzzer.options
+  D	contrib/oss-fuzz/libpng_readapi_fuzzer.cc
+  D	contrib/oss-fuzz/libpng_transformations_fuzzer.cc
   D	contrib/oss-fuzz/nalloc.h
   D	contrib/oss-fuzz/png.dict
   D	contrib/pngexif/.editorconfig
@@ -547,17 +571,22 @@ Local Modifications:
   D	scripts/symbols.def
   D	scripts/vers.c
   D	test-driver
+  D	tests/pnggetset
   D	tests/pngimage-full
   D	tests/pngimage-quick
   D	tests/pngstest
   D	tests/pngstest-1.8
   D	tests/pngstest-1.8-alpha
+  D	tests/pngstest-large-stride
   D	tests/pngstest-linear
   D	tests/pngstest-linear-alpha
+  D	tests/pngstest-negative-stride
+  D	tests/pngstest-negative-stride-extra
   D	tests/pngstest-none
   D	tests/pngstest-none-alpha
   D	tests/pngstest-sRGB
   D	tests/pngstest-sRGB-alpha
+  D	tests/pngtest-all
   D	tests/pngunknown-IDAT
   D	tests/pngunknown-discard
   D	tests/pngunknown-if-safe

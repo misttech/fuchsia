@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/* libpng 1.6.52 CUSTOM API DEFINITION */
+/* libpng 1.6.58 CUSTOM API DEFINITION */
 /* pnglibconf.h - library build configuration */
 
-/* libpng version 1.6.52 */
+/* libpng version 1.6.58 */
 
-/* Copyright (c) 2018-2025 Cosmin Truta */
+/* Copyright (c) 2018-2026 Cosmin Truta */
 /* Copyright (c) 1998-2002,2004,2006-2018 Glenn Randers-Pehrson */
 
 /* This code is released under the libpng license. */
