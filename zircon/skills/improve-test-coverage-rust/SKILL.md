@@ -1,12 +1,15 @@
 ---
 name: improve-test-coverage-rust
-description: Improve test coverage for Rust libraries with local line coverage profiling.
+description: >
+  Improve test coverage for Fuchsia Rust code using local line coverage
+  profiling, fx coverage, and LCOV analysis.
 ---
 
 # Rust Coverage Improvement Skill
 
 This skill documents the methodology, tooling, and advanced techniques for
-achieving 100% code coverage in Rust userspace libraries under Fuchsia.
+achieving 100% code coverage in Rust components, libraries, and binaries under
+Fuchsia.
 
 ---
 
@@ -74,23 +77,7 @@ fn test_unaligned_pointer_panics() {
 }
 ```
 
-### 2. Covering FFI/Opaque Recyclers and Allocators
-Opaque C++ objects wrapped in Rust interfaces often implement `Recyclable` with
-stub `allocate()` methods returning `Err(AllocError)`. Since these allocations
-never occur during normal execution, the failure branches remain uncovered.
-
-**Solution**: Explicitly invoke `Recyclable::allocate` with placeholder or
-zeroed values in a unit test and assert that it returns an error.
-```rust
-#[test]
-fn test_opaque_ref_counted_allocate_fails() {
-    let val = OpaqueRefCounted(Opaque::uninit());
-    let res = OpaqueRefCounted::<TestCppRefCountedObject>::allocate(val);
-    assert!(res.is_err());
-}
-```
-
-### 3. Covering `const fn` at Runtime
+### 2. Covering `const fn` at Runtime
 Functions marked as `const fn` evaluated at compile-time (such as const generic
 parameter generators) do not generate runtime coverage counters.
 
@@ -104,15 +91,25 @@ fn test_magic_runtime() {
 }
 ```
 
-### 4. Documenting Untestable Macro Attribute Lines
-Proc macro attributes (like `#[fbl::ref_counted]`) or derive macros (like
-`#[derive(fbl::Recyclable)]`) generate code. Even if 100% of the generated code
-is hit, LLVM line profile mapping may mark the attribute line itself as
-uncovered.
+### 3. Documenting Untestable Macro Attribute Lines
+Proc macro attributes or derive macros generate code. Even if 100% of the
+generated code is hit, LLVM line profile mapping may mark the attribute line
+itself as uncovered.
 - Once all actual source code is 100% covered, identify and document these
   attribute-line exclusions as **untestable due to LLVM profile mapping
   limitations**. A line coverage of **98%+** where the only missing lines are
   macro attributes is considered functionally 100% covered.
+
+### 4. Handling Unreachable Codepaths (`unreachable!()`, `panic!()`)
+The `unreachable!()`, `panic!()`, `todo!()`, and `unimplemented!()` macros
+generate panic branches that LLVM line coverage profiling reports as uncovered
+unless triggered.
+- If one of these macros guards a defensive check against invalid external input
+  (e.g., corrupted IPC or FIDL payloads), write a unit test with
+  `#[should_panic]` to cover the branch.
+- If the macro guards a logically impossible compiler branch (such as an
+  exhaustive `match` arm), treating those lines as uncovered mapping limitations
+  is acceptable, and the code is considered functionally 100% covered.
 
 ### 5. Separation of Concerns for Coverage Tests
 When writing unit tests to cover missing paths, follow the **separation of
@@ -182,9 +179,4 @@ python3 zircon/skills/improve-test-coverage-rust/parse-coverage.py <lcov_file> <
 Example:
 ```bash
 python3 zircon/skills/improve-test-coverage-rust/parse-coverage.py lcov.info zircon/system/ulib/fbl/rust/
-
-
-
-
-
-
+```
