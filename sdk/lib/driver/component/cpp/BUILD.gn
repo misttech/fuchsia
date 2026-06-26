@@ -22,14 +22,12 @@ sdk_source_set("cpp") {
 
   sources = [
     "completer.cc",
-    "driver_base.cc",
     "driver_base.h",
     "driver_base2.cc",
     "driver_base2.h",
     "driver_export.h",
     "driver_export2.h",
     "internal/concepts.h",
-    "internal/driver_server.h",
     "internal/driver_server2.h",
     "internal/start_args.h",
     "internal/symbols.h",
@@ -45,7 +43,6 @@ sdk_source_set("cpp") {
 
   sdk_headers_for_internal_use = [
     "internal/concepts.h",
-    "internal/driver_server.h",
     "internal/driver_server2.h",
     "internal/start_args.h",
     "internal/symbols.h",

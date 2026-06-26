@@ -4,13 +4,14 @@
 
 #include "sdk/lib/driver/metadata/cpp/tests/metadata_integration_test/metadata_retriever_test_driver/metadata_retriever_test_driver.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 #include <lib/driver/metadata/cpp/metadata.h>
 
 namespace fdf_metadata::test {
 
-zx::result<> MetadataRetrieverTestDriver::Start() {
+zx::result<> MetadataRetrieverTestDriver::Start(fdf::DriverContext context) {
+  incoming_ = context.take_incoming();
   zx::result result = outgoing()->AddService<fuchsia_hardware_test::MetadataRetrieverService>(
       fuchsia_hardware_test::MetadataRetrieverService::InstanceHandler(
           {.device = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure)}));
@@ -24,7 +25,7 @@ zx::result<> MetadataRetrieverTestDriver::Start() {
 
 void MetadataRetrieverTestDriver::GetMetadata(GetMetadataCompleter::Sync& completer) {
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-  zx::result metadata = fdf_metadata::GetMetadata<fuchsia_hardware_test::Metadata>(incoming());
+  zx::result metadata = fdf_metadata::GetMetadata<fuchsia_hardware_test::Metadata>(*incoming_);
 
   if (metadata.is_error()) {
     fdf::error("Failed to get metadata: {}", metadata);
@@ -43,7 +44,7 @@ void MetadataRetrieverTestDriver::GetMetadataIfExists(
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
     GetMetadataIfExistsCompleter::Sync& completer) {
   zx::result result =
-      fdf_metadata::GetMetadataIfExists<fuchsia_hardware_test::Metadata>(incoming());
+      fdf_metadata::GetMetadataIfExists<fuchsia_hardware_test::Metadata>(*incoming_);
   if (result.is_error()) {
     fdf::error("Failed to get metadata: {}", result);
     completer.Reply(fit::error(result.status_value()));
@@ -69,4 +70,4 @@ void MetadataRetrieverTestDriver::GetMetadataIfExists(
 
 }  // namespace fdf_metadata::test
 
-FUCHSIA_DRIVER_EXPORT(fdf_metadata::test::MetadataRetrieverTestDriver);
+FUCHSIA_DRIVER_EXPORT2(fdf_metadata::test::MetadataRetrieverTestDriver);

@@ -32,6 +32,8 @@ class DriverServer2;
 
 namespace fdf {
 
+using DriverStartArgs = fuchsia_driver_framework::DriverStartArgs;
+
 class DriverBase2;
 
 class DriverContext {

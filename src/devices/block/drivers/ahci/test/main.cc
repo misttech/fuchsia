@@ -435,7 +435,7 @@ class TestController : public Controller {
       return;
     }
 
-    auto shared_completer = std::make_shared<fdf::PrepareStopCompleter>(std::move(completer));
+    auto shared_completer = std::make_shared<fdf::StopCompleter>(std::move(completer));
     auto count = std::make_shared<std::atomic<size_t>>(sata_devices().size());
 
     for (auto& device : sata_devices()) {

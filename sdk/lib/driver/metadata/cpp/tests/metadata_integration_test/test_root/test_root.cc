@@ -5,7 +5,7 @@
 #include "sdk/lib/driver/metadata/cpp/tests/metadata_integration_test/test_root/test_root.h"
 
 #include <fidl/fuchsia.driver.framework/cpp/natural_types.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 
@@ -13,7 +13,7 @@
 
 namespace fdf_metadata::test {
 
-zx::result<> TestRootDriver::Start() {
+zx::result<> TestRootDriver::Start(fdf::DriverContext context) {
   zx::result result = outgoing()->AddService<fuchsia_hardware_test::RootService>(
       fuchsia_hardware_test::RootService::InstanceHandler(
           {.device = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure)}));
@@ -50,4 +50,4 @@ void TestRootDriver::AddMetadataSenderNode(AddMetadataSenderNodeRequest& request
 
 }  // namespace fdf_metadata::test
 
-FUCHSIA_DRIVER_EXPORT(fdf_metadata::test::TestRootDriver);
+FUCHSIA_DRIVER_EXPORT2(fdf_metadata::test::TestRootDriver);

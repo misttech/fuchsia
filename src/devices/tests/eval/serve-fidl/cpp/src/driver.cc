@@ -2,18 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 namespace {
 
-class DriverServeFidl : public fdf::DriverBase {
+class DriverServeFidl : public fdf::DriverBase2 {
  public:
-  DriverServeFidl(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase("driver_serve_fidl", std::move(start_args), std::move(dispatcher)) {}
+  DriverServeFidl() : fdf::DriverBase2("driver_serve_fidl") {}
 
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
     fdf::info("DriverServeFidl started");
 
     return zx::ok();
@@ -22,4 +21,4 @@ class DriverServeFidl : public fdf::DriverBase {
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(DriverServeFidl);
+FUCHSIA_DRIVER_EXPORT2(DriverServeFidl);

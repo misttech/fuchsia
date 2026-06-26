@@ -232,7 +232,7 @@ class GpioRootDevice : public fdf::DriverBase2 {
                             : fdf::Dispatcher::GetCurrent();
   }
 
-  std::optional<fdf::PrepareStopCompleter> stop_completer_;
+  std::optional<fdf::StopCompleter> stop_completer_;
   std::optional<fdf::SynchronizedDispatcher> fidl_dispatcher_;
   fdf::WireSharedClient<fuchsia_hardware_pinimpl::PinImpl> pinimpl_;
   std::vector<std::unique_ptr<GpioDevice>> children_;

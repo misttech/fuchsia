@@ -4,14 +4,14 @@
 
 #include "sdk/lib/driver/metadata/cpp/tests/metadata_integration_test/metadata_sender_test_driver/metadata_sender_test_driver.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 
 #include <bind/fuchsia_driver_metadata_test_bind_library/cpp/bind.h>
 
 namespace fdf_metadata::test {
 
-zx::result<> MetadataSenderTestDriver::Start() {
+zx::result<> MetadataSenderTestDriver::Start(fdf::DriverContext context) {
   zx::result result = outgoing()->AddService<fuchsia_hardware_test::MetadataSenderService>(
       fuchsia_hardware_test::MetadataSenderService::InstanceHandler(
           {.device = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure)}));
@@ -104,4 +104,4 @@ zx_status_t MetadataSenderTestDriver::AddChildNode(
 
 }  // namespace fdf_metadata::test
 
-FUCHSIA_DRIVER_EXPORT(fdf_metadata::test::MetadataSenderTestDriver);
+FUCHSIA_DRIVER_EXPORT2(fdf_metadata::test::MetadataSenderTestDriver);

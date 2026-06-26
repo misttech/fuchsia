@@ -6,7 +6,7 @@
 #define LIB_DRIVER_TESTING_CPP_INTERNAL_INTERNALS_H_
 
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
 #include <lib/driver/testing/cpp/internal/driver_lifecycle.h>
 #include <lib/driver/testing/cpp/internal/test_environment.h>
@@ -24,7 +24,7 @@ namespace internal {
 template <typename EnvironmentType>
 class EnvWrapper {
  public:
-  fdf::DriverStartArgs Init() {
+  fuchsia_driver_framework::DriverStartArgs Init() {
     zx::result start_args = node_server_.CreateStartArgsAndServe();
     ZX_ASSERT_MSG(start_args.is_ok(), "Failed to CreateStartArgsAndServe: %s.",
                   start_args.status_string());

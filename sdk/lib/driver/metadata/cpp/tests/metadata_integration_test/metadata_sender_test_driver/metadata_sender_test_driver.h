@@ -7,23 +7,21 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.test/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/node/cpp/add_child.h>
 
 namespace fdf_metadata::test {
 
 // This driver's purpose is to serve metadata to its two child nodes using `fdf::MetadataServer`.
-class MetadataSenderTestDriver : public fdf::DriverBase,
+class MetadataSenderTestDriver : public fdf::DriverBase2,
                                  public fidl::Server<fuchsia_hardware_test::MetadataSender> {
  public:
   static constexpr std::string_view kDriverName = "sender";
 
-  MetadataSenderTestDriver(fdf::DriverStartArgs start_args,
-                           fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  MetadataSenderTestDriver() : DriverBase2(kDriverName) {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   // fidl::Server<fuchsia_hardware_test::MetadataSender> implementation.
   void ServeMetadata(ServeMetadataRequest& request,

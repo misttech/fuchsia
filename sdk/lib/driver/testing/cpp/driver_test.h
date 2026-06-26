@@ -184,7 +184,8 @@ class DriverTestCommon {
         "Cannot call |StartDriver| multiple times in a row. If multiple starts are needed, "
         "ensure to go through |StopDriver| and |ShutdownAndDestroyDriver| first.");
 
-    fdf::DriverStartArgs start_args = env_wrapper_.SyncCall(&EnvWrapper<EnvironmentType>::Init);
+    fuchsia_driver_framework::DriverStartArgs start_args =
+        env_wrapper_.SyncCall(&EnvWrapper<EnvironmentType>::Init);
     outgoing_directory_client_ =
         env_wrapper_.SyncCall(&EnvWrapper<EnvironmentType>::TakeOutgoingClient);
 
@@ -198,13 +199,14 @@ class DriverTestCommon {
   // which is called with a reference to the start args that will be used to start the driver.
   // Modifications can happen in-place with this reference.
   zx::result<> StartDriverWithCustomStartArgs(
-      fit::callback<void(fdf::DriverStartArgs&)> args_modifier) {
+      fit::callback<void(fuchsia_driver_framework::DriverStartArgs&)> args_modifier) {
     ZX_ASSERT_MSG(
         !start_result_.has_value(),
         "Cannot call |StartDriver| multiple times in a row. If multiple starts are needed, "
         "ensure to go through |StopDriver| and |ShutdownAndDestroyDriver| first.");
 
-    fdf::DriverStartArgs start_args = env_wrapper_.SyncCall(&EnvWrapper<EnvironmentType>::Init);
+    fuchsia_driver_framework::DriverStartArgs start_args =
+        env_wrapper_.SyncCall(&EnvWrapper<EnvironmentType>::Init);
     outgoing_directory_client_ =
         env_wrapper_.SyncCall(&EnvWrapper<EnvironmentType>::TakeOutgoingClient);
     args_modifier(start_args);
@@ -273,14 +275,14 @@ class DriverTestCommon {
   void SetServiceValidator(bool enable) { enable_service_connect_validation_ = enable; }
 
  private:
-  virtual zx::result<> StartDriverInner(fdf::DriverStartArgs start_args) = 0;
+  virtual zx::result<> StartDriverInner(fuchsia_driver_framework::DriverStartArgs start_args) = 0;
   virtual zx::result<> StopDriverInner() = 0;
   virtual bool DriverExists() = 0;
   virtual void ShutdownAndDestroyDriverInner() = 0;
 
   bool StartedSuccessfully() const { return start_result_.has_value() && start_result_->is_ok(); }
 
-  void AddServiceValidation(fdf::DriverStartArgs& start_args) {
+  void AddServiceValidation(fuchsia_driver_framework::DriverStartArgs& start_args) {
     if (enable_service_connect_validation_) {
       if (start_args.program() == std::nullopt) {
         start_args.program(fuchsia_data::Dictionary{});
@@ -354,7 +356,7 @@ class BackgroundDriverTest final : public internal::DriverTestCommon<Configurati
   }
 
  private:
-  zx::result<> StartDriverInner(fdf::DriverStartArgs start_args) override {
+  zx::result<> StartDriverInner(fuchsia_driver_framework::DriverStartArgs start_args) override {
     DriverRegistration symbol;
     if constexpr (internal::HasGetDriverRegistration<DriverType>) {
       symbol = DriverType::GetDriverRegistration();
@@ -465,7 +467,7 @@ class ForegroundDriverTest final : public internal::DriverTestCommon<Configurati
   }
 
  private:
-  zx::result<> StartDriverInner(fdf::DriverStartArgs start_args) override {
+  zx::result<> StartDriverInner(fuchsia_driver_framework::DriverStartArgs start_args) override {
     DriverRegistration symbol;
     if constexpr (internal::HasGetDriverRegistration<DriverType>) {
       symbol = DriverType::GetDriverRegistration();

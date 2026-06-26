@@ -9,26 +9,26 @@
 #include <fidl/fuchsia.driver.component.test/cpp/wire.h>
 #include <fidl/fuchsia.driver.framework/cpp/wire_messaging.h>
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/symbols/symbols.h>
 
 extern bool g_driver_stopped;
 
-class TestDriver : public fdf::DriverBase,
+class TestDriver : public fdf::DriverBase2,
                    public fidl::WireServer<fuchsia_driver_component_test::ZirconProtocol>,
                    public fdf::WireServer<fuchsia_driver_component_test::DriverProtocol>,
                    public fidl::WireAsyncEventHandler<fuchsia_driver_framework::NodeController> {
  public:
-  TestDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("test_driver", std::move(start_args), std::move(driver_dispatcher)),
+  TestDriver()
+      : fdf::DriverBase2("test_driver"),
         devfs_connector_(fit::bind_member<&TestDriver::Connect>(this)) {}
 
-  void Start(fdf::StartCompleter completer) override;
+  ~TestDriver() override;
 
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  void Start(fdf::DriverContext context, fdf::StartCompleter completer) override;
 
-  void Stop() override;
+  void Stop(fdf::StopCompleter completer) override;
 
   zx::result<> InitSyncCompat();
   void BeginInitAsyncCompat(fit::callback<void(zx::result<>)> completed);
@@ -99,17 +99,20 @@ class TestDriver : public fdf::DriverBase,
   fidl::WireSyncClient<fuchsia_driver_framework::Node> devfs_node_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> devfs_node_controller_;
 
-  std::optional<fdf::PrepareStopCompleter> stop_completer_;
+  std::optional<fdf::StopCompleter> stop_completer_;
   fidl::WireClient<fuchsia_driver_framework::NodeController> child_controller_;
 
   std::optional<fdf::SynchronizedDispatcher> not_shutdown_manually_dispatcher_;
+  std::shared_ptr<fdf::Namespace> incoming_;
+  const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
+  std::string node_name_;
 };
 
 class StartFailTestDriver : public TestDriver {
  public:
   using TestDriver::TestDriver;
   static DriverRegistration GetDriverRegistration();
-  void Start(fdf::StartCompleter completer) override;
+  void Start(fdf::DriverContext context, fdf::StartCompleter completer) override;
 };
 
 #endif  // LIB_DRIVER_COMPONENT_CPP_TESTS_TEST_DRIVER_H_

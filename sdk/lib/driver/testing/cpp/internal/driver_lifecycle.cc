@@ -34,7 +34,8 @@ void DriverUnderTestBase::on_fidl_error(fidl::UnbindInfo error) {
 void DriverUnderTestBase::handle_unknown_event(
     fidl::UnknownEventMetadata<fuchsia_driver_framework::Driver> metadata) {}
 
-DriverRuntime::AsyncTask<zx::result<>> DriverUnderTestBase::Start(fdf::DriverStartArgs start_args) {
+DriverRuntime::AsyncTask<zx::result<>> DriverUnderTestBase::Start(
+    fuchsia_driver_framework::DriverStartArgs start_args) {
   std::lock_guard guard(checker_);
   fdf::Arena arena('STRT');
   fpromise::bridge<zx::result<>> bridge;

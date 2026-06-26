@@ -7,24 +7,22 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.test/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/node/cpp/add_child.h>
 
 namespace fdf_metadata::test {
 
 // This driver's purpose is to try to retrieve metadata from its parent node using
 // `fdf::GetMetadata()`.
-class MetadataRetrieverTestDriver : public fdf::DriverBase,
+class MetadataRetrieverTestDriver : public fdf::DriverBase2,
                                     public fidl::Server<fuchsia_hardware_test::MetadataRetriever> {
  public:
   static constexpr std::string_view kDriverName = "retriever";
 
-  MetadataRetrieverTestDriver(fdf::DriverStartArgs start_args,
-                              fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  MetadataRetrieverTestDriver() : DriverBase2(kDriverName) {}
 
   // fdf::DriverBase2 implementation.
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   // fidl::Server<fuchsia_hardware_test::MetadataRetriever> implementation.
   void GetMetadata(GetMetadataCompleter::Sync& completer) override;
@@ -32,6 +30,7 @@ class MetadataRetrieverTestDriver : public fdf::DriverBase,
 
  private:
   fidl::ServerBindingGroup<fuchsia_hardware_test::MetadataRetriever> bindings_;
+  std::unique_ptr<fdf::Namespace> incoming_;
 };
 
 }  // namespace fdf_metadata::test

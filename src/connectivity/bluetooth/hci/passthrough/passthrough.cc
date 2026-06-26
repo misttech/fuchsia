@@ -4,12 +4,14 @@
 
 #include "passthrough.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 namespace bt::passthrough {
 
-void PassthroughDevice::Start(fdf::StartCompleter completer) {
+void PassthroughDevice::Start(fdf::DriverContext context, fdf::StartCompleter completer) {
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  node_client_.Bind(take_node(), dispatcher());
   zx_status_t status = ConnectToHciTransportFidlProtocol();
   if (status != ZX_OK) {
     completer(zx::error(status));
@@ -52,12 +54,15 @@ void PassthroughDevice::Start(fdf::StartCompleter completer) {
           });
 }
 
-void PassthroughDevice::Stop() {
+void PassthroughDevice::Stop(fdf::StopCompleter completer) {
   auto status = child_node_controller_client_->Remove();
   if (!status.ok()) {
     fdf::error("Could not remove child: {}", status.status_string());
   }
+  completer(zx::ok());
 }
+
+PassthroughDevice::~PassthroughDevice() = default;
 
 void PassthroughDevice::GetFeatures(GetFeaturesCompleter::Sync& completer) {
   completer.Reply(::fuchsia_hardware_bluetooth::wire::VendorFeatures());
@@ -191,4 +196,4 @@ zx_status_t PassthroughDevice::ConnectToHciTransportFidlProtocol() {
 
 }  // namespace bt::passthrough
 
-FUCHSIA_DRIVER_EXPORT(bt::passthrough::PassthroughDevice);
+FUCHSIA_DRIVER_EXPORT2(bt::passthrough::PassthroughDevice);

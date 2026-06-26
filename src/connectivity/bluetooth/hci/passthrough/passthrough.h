@@ -7,7 +7,7 @@
 
 #include <assert.h>
 #include <fidl/fuchsia.hardware.bluetooth/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,21 +17,21 @@
 namespace bt::passthrough {
 
 class PassthroughDevice
-    : public fdf::DriverBase,
+    : public fdf::DriverBase2,
       public fidl::WireServer<fuchsia_hardware_bluetooth::Vendor>,
       public fidl::WireServer<fuchsia_hardware_bluetooth::HciTransport>,
       public fidl::WireAsyncEventHandler<fuchsia_hardware_bluetooth::HciTransport> {
  public:
-  PassthroughDevice(fdf::DriverStartArgs start_args,
-                    fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("bt_hci_passthrough", std::move(start_args), std::move(driver_dispatcher)),
-        node_client_(fidl::WireClient(std::move(node()), dispatcher())),
+  PassthroughDevice()
+      : DriverBase2("bt_hci_passthrough"),
         devfs_connector_(fit::bind_member<&PassthroughDevice::Connect>(this)) {}
 
+  ~PassthroughDevice() override;
+
  private:
-  // DriverBase overrides:
-  void Start(fdf::StartCompleter completer) override;
-  void Stop() override;
+  // DriverBase2 overrides:
+  void Start(fdf::DriverContext context, fdf::StartCompleter completer) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // WireServer<Vendor> overrides:
   void GetFeatures(GetFeaturesCompleter::Sync& completer) override;
@@ -73,6 +73,8 @@ class PassthroughDevice
   fidl::ServerBindingGroup<fuchsia_hardware_bluetooth::Vendor> vendor_binding_group_;
   fidl::ServerBindingGroup<fuchsia_hardware_bluetooth::HciTransport> hci_transport_server_bindings_;
   driver_devfs::Connector<fuchsia_hardware_bluetooth::Vendor> devfs_connector_;
+  std::shared_ptr<fdf::Namespace> incoming_;
+  const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
 };
 
 }  // namespace bt::passthrough

@@ -109,7 +109,7 @@ struct TestNetworkDevice : public TestDriver::StopHandler, public NetworkDevice:
 
   fdf::Dispatcher netdev_dispatcher_;
   libsync::Completion netdev_dispatcher_shutdown_;
-  std::optional<fdf::PrepareStopCompleter> prepare_stop_completer_;
+  std::optional<fdf::StopCompleter> prepare_stop_completer_;
 
   // Ownership is in a pointer so that it can be manually destroyed in tests if needed.
   std::unique_ptr<NetworkDevice> network_device_ = std::make_unique<NetworkDevice>(this);

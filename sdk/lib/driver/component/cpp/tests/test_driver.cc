@@ -2,14 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/tests/test_driver.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 
 bool g_driver_stopped = false;
 
-void TestDriver::Start(fdf::StartCompleter completer) {
-  node_client_.Bind(std::move(node()), dispatcher());
+void TestDriver::Start(fdf::DriverContext context, fdf::StartCompleter completer) {
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  node_name_ = context.node_name().value_or("test_driver");
+  node_client_.Bind(take_node(), dispatcher());
   // Delay the completion to simulate an async workload.
   async::PostDelayedTask(
       dispatcher(), [completer = std::move(completer)]() mutable { completer(zx::ok()); },
@@ -147,7 +149,7 @@ zx::result<> TestDriver::ValidateIncomingZirconService(std::string_view instance
   return zx::ok();
 }
 
-void TestDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
+void TestDriver::Stop(fdf::StopCompleter completer) {
   if (child_controller_.is_valid()) {
     fidl::OneWayStatus status = child_controller_->Remove();
     if (!status.ok()) {
@@ -166,17 +168,17 @@ void TestDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
   }
 }
 
-void TestDriver::Stop() { g_driver_stopped = true; }
+TestDriver::~TestDriver() { g_driver_stopped = true; }
 
 zx::result<> TestDriver::InitSyncCompat() {
-  auto result = sync_device_server_.Initialize(incoming(), outgoing(), node_name(), "child",
+  auto result = sync_device_server_.Initialize(incoming(), outgoing(), node_name_, "child",
                                                compat::ForwardMetadata::All());
   return result;
 }
 
 void TestDriver::BeginInitAsyncCompat(fit::callback<void(zx::result<>)> completed) {
   async_device_server_.Begin(
-      incoming(), outgoing(), node_name(), "child",
+      incoming(), outgoing(), node_name_, "child",
       [completed_cb = std::move(completed)](zx::result<> result) mutable { completed_cb(result); },
       compat::ForwardMetadata::All());
 }
@@ -233,12 +235,13 @@ void TestDriver::handle_unknown_event(
 DriverRegistration StartFailTestDriver::GetDriverRegistration() {
   // Use a custom DriverRegistration to create the DUT. Without this, the 'TestDriver'
   // implementation will be used by default.
-  return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer<StartFailTestDriver>::initialize,
-                                        fdf_internal::DriverServer<StartFailTestDriver>::destroy);
+  return FUCHSIA_DRIVER_REGISTRATION_V1(
+      fdf_internal::DriverServer2<StartFailTestDriver>::initialize,
+      fdf_internal::DriverServer2<StartFailTestDriver>::destroy);
 }
 
-void StartFailTestDriver::Start(fdf::StartCompleter completer) {
+void StartFailTestDriver::Start(fdf::DriverContext context, fdf::StartCompleter completer) {
   completer(zx::error(ZX_ERR_INTERNAL));
 }
 
-FUCHSIA_DRIVER_EXPORT(TestDriver);
+FUCHSIA_DRIVER_EXPORT2(TestDriver);

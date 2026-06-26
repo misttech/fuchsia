@@ -6,9 +6,7 @@
 #define LIB_DRIVER_TESTING_CPP_INTERNAL_DRIVER_LIFECYCLE_H_
 
 #include <fidl/fuchsia.driver.framework/cpp/driver/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/driver_base2.h>
-#include <lib/driver/component/cpp/internal/driver_server.h>
 #include <lib/driver/component/cpp/internal/driver_server2.h>
 #include <lib/driver/symbols/symbols.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
@@ -39,7 +37,8 @@ class DriverUnderTestBase : public fdf::WireAsyncEventHandler<fuchsia_driver_fra
   // Start the driver. This is an asynchronous operation.
   // Use |DriverRuntime::RunToCompletion| to await the completion of the async task.
   // The resulting zx::result is the result of the start operation.
-  DriverRuntime::AsyncTask<zx::result<>> Start(fdf::DriverStartArgs start_args);
+  DriverRuntime::AsyncTask<zx::result<>> Start(
+      fuchsia_driver_framework::DriverStartArgs start_args);
 
   // PrepareStop the driver. This is an asynchronous operation.
   // Use |DriverRuntime::RunToCompletion| to await the completion of the async task.
