@@ -5,7 +5,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
-use vbmeta::{HashDescriptor, HashDescriptorBuilder, Salt};
+use vbmeta::{RawHashDescriptor, Salt};
 
 /// Used to deserialize a JSON representation of a HashDescriptor.
 #[derive(Debug, Deserialize)]
@@ -28,34 +28,16 @@ pub struct ExtraHashDescriptor {
     pub min_avb_version: Option<[u32; 2]>,
 }
 
-impl From<ExtraHashDescriptor> for HashDescriptor {
+impl From<ExtraHashDescriptor> for RawHashDescriptor {
     fn from(val: ExtraHashDescriptor) -> Self {
-        let builder = HashDescriptorBuilder::default();
-        let builder = match val.name {
-            Some(name) => builder.name(name),
-            _ => builder,
-        };
-        let builder = match val.size {
-            Some(size) => builder.size(size),
-            _ => builder,
-        };
-        let builder = match val.salt {
-            Some(salt) => builder.salt(salt),
-            _ => builder,
-        };
-        let builder = match val.digest {
-            Some(digest) => builder.digest(&digest[..]),
-            _ => builder,
-        };
-        let builder = match val.flags {
-            Some(flags) => builder.flags(flags),
-            _ => builder,
-        };
-        let builder = match val.min_avb_version {
-            Some(min_avb_version) => builder.min_avb_version(min_avb_version),
-            _ => builder,
-        };
-        builder.build()
+        Self {
+            partition_name: val.name.unwrap_or_default(),
+            size: val.size.unwrap_or_default(),
+            salt: val.salt,
+            digest: val.digest,
+            flags: val.flags.unwrap_or_default(),
+            min_avb_version: val.min_avb_version,
+        }
     }
 }
 
@@ -168,29 +150,32 @@ mod tests {
             "flags": "546",
             "min_avb_version": "3.5"
         });
-        let descriptor: HashDescriptor =
+        let descriptor: RawHashDescriptor =
             serde_json::from_value::<ExtraHashDescriptor>(input).unwrap().into();
 
-        assert_eq!(descriptor.image_name(), "a name");
-        assert_eq!(descriptor.image_size(), 123456);
+        assert_eq!(descriptor.partition_name, "a name");
+        assert_eq!(descriptor.size, 123456);
         assert_eq!(
-            descriptor.salt(),
+            descriptor.salt,
             Some(
-                Salt::decode_hex(
-                    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-                )
+                Salt::decode_hex(concat!(
+                    "0123456789abcdef0123456789abcdef",
+                    "0123456789abcdef0123456789abcdef"
+                ))
                 .unwrap()
             )
         );
-        assert_eq!(
-            descriptor.digest(),
-            Some(
-                &hex::decode("fedbca9876543210fedbca9876543210fedbca9876543210fedbca9876543210")
-                    .unwrap()[..]
-            )
+        let mut expected_digest = [0u8; 32];
+        expected_digest.copy_from_slice(
+            &hex::decode(concat!(
+                "fedbca9876543210fedbca9876543210",
+                "fedbca9876543210fedbca9876543210"
+            ))
+            .unwrap(),
         );
-        assert_eq!(descriptor.flags(), 546);
-        assert_eq!(descriptor.get_min_avb_version(), Some([3, 5]));
+        assert_eq!(descriptor.digest, Some(expected_digest));
+        assert_eq!(descriptor.flags, 546);
+        assert_eq!(descriptor.min_avb_version, Some([3, 5]));
     }
 
     #[test]
@@ -199,14 +184,14 @@ mod tests {
             "name": "another name",
             "size": "1234",
         });
-        let descriptor: HashDescriptor =
+        let descriptor: RawHashDescriptor =
             serde_json::from_value::<ExtraHashDescriptor>(input).unwrap().into();
 
-        assert_eq!(descriptor.image_name(), "another name");
-        assert_eq!(descriptor.image_size(), 1234);
-        assert_matches!(descriptor.salt(), None);
-        assert_matches!(descriptor.digest(), None);
-        assert_eq!(descriptor.flags(), 0);
-        assert_matches!(descriptor.get_min_avb_version(), None);
+        assert_eq!(descriptor.partition_name, "another name");
+        assert_eq!(descriptor.size, 1234);
+        assert_matches!(descriptor.salt, None);
+        assert_matches!(descriptor.digest, None);
+        assert_eq!(descriptor.flags, 0);
+        assert_matches!(descriptor.min_avb_version, None);
     }
 }

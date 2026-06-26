@@ -2,43 +2,53 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use camino::{Utf8Path, Utf8PathBuf};
 use include_bytes_from_working_dir::include_bytes_from_working_dir_env;
-use include_str_from_working_dir::include_str_from_working_dir_env;
+use std::fs;
+use tempfile::tempdir;
 
-use vbmeta::{ChainPartitionDescriptor, Descriptor, HashDescriptor, Key, Salt, VBMeta};
+use vbmeta::{ChainPartition, Salt, VBMeta};
 
-const PEM: &str = include_str_from_working_dir_env!("AVB_KEY");
-const METADATA: &[u8] = include_bytes_from_working_dir_env!("AVB_METADATA");
+const KEY_PATH: &str = env!("AVB_KEY");
+const METADATA_PATH: &str = env!("AVB_METADATA");
+const PUBLIC_KEY_PATH: &str = env!("PUBLIC_KEY");
+const IMAGE_PATH: &str = env!("IMAGE");
 const SALT: &str = env!("SALT");
-const IMAGE: &[u8] = include_bytes_from_working_dir_env!("IMAGE");
 const EXPECTED_VBMETA: &[u8] = include_bytes_from_working_dir_env!("EXPECTED_VBMETA");
 const EXPECTED_VBMETA_CHAIN: &[u8] = include_bytes_from_working_dir_env!("EXPECTED_VBMETA_CHAIN");
-const PUBLIC_KEY: &[u8] = include_bytes_from_working_dir_env!("PUBLIC_KEY");
 
 #[test]
 fn avbtool_comparison() {
-    let key = Key::try_new(PEM, METADATA).unwrap();
+    let tmp = tempdir().unwrap();
+    let outdir = Utf8Path::from_path(tmp.path()).unwrap();
 
-    let salt_bytes: &[u8] = &hex::decode(SALT).unwrap();
-    let salt = Salt::try_from(salt_bytes).unwrap();
-    let descriptor = Descriptor::Hash(HashDescriptor::new("zircon", IMAGE, salt));
-    let descriptors = vec![descriptor];
+    let salt = Salt::decode_hex(SALT).unwrap();
+    let generated_path = VBMeta::builder("vbmeta", KEY_PATH)
+        .key_metadata(METADATA_PATH)
+        .salt(salt)
+        .hash_descriptor("zircon", IMAGE_PATH)
+        .construct(outdir)
+        .unwrap();
+    let generated_bytes = fs::read(&generated_path).unwrap();
 
-    let vbmeta = VBMeta::sign(descriptors, key).unwrap();
-    assert_eq!(vbmeta.as_bytes(), EXPECTED_VBMETA);
+    assert_eq!(generated_bytes, EXPECTED_VBMETA);
 }
 
 #[test]
 fn avbtool_chain_partition_comparison() {
-    let key = Key::try_new(PEM, METADATA).unwrap();
+    let tmp = tempdir().unwrap();
+    let outdir = Utf8Path::from_path(tmp.path()).unwrap();
 
-    let descriptor = Descriptor::ChainPartition(ChainPartitionDescriptor {
-        rollback_index_location: 1,
-        partition_name: "system".to_string(),
-        public_key: PUBLIC_KEY.to_vec(),
-    });
-    let descriptors = vec![descriptor];
+    let generated_path = VBMeta::builder("vbmeta_chain", KEY_PATH)
+        .key_metadata(METADATA_PATH)
+        .chain_partition(ChainPartition {
+            rollback_index_location: 1,
+            partition_name: "system".to_string(),
+            public_key_path: Utf8PathBuf::from(PUBLIC_KEY_PATH),
+        })
+        .construct(outdir)
+        .unwrap();
+    let generated_bytes = fs::read(&generated_path).unwrap();
 
-    let vbmeta = VBMeta::sign(descriptors, key).unwrap();
-    assert_eq!(vbmeta.as_bytes(), EXPECTED_VBMETA_CHAIN);
+    assert_eq!(generated_bytes, EXPECTED_VBMETA_CHAIN);
 }

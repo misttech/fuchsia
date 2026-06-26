@@ -5,6 +5,7 @@
 import("//build/host.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_library.gni")
+import("//build/testing/host_test_data.gni")
 
 assert(is_host, "Assembly libraries are host-only")
 
@@ -178,6 +179,19 @@ chain_outputs = get_target_outputs(":expected_vbmeta_chain")
 expected_vbmeta_chain = chain_outputs[0]
 expected_vbmeta_chain_path = rebase_path(expected_vbmeta_chain, root_build_dir)
 
+host_test_data("integration_test_data") {
+  sources = [
+    extracted_key_path,
+    test_avb_atx_metadata,
+    test_avb_key,
+    test_image,
+  ]
+  deps = [
+    ":expected_descriptor",
+    ":extract_avb_public_key",
+  ]
+}
+
 rustc_test("integration_test") {
   edition = "2024"
   source_root = "tests/integration_test.rs"
@@ -185,9 +199,10 @@ rustc_test("integration_test") {
   deps = [
     ":vbmeta",
     "//src/lib/include_bytes_from_working_dir",
-    "//src/lib/include_str_from_working_dir",
-    "//third_party/rust_crates:hex",
+    "//third_party/rust_crates:camino",
+    "//third_party/rust_crates:tempfile",
   ]
+  data_deps = [ ":integration_test_data" ]
 
   # These are not host_test_data(), but are compiled-in files.
   non_rust_deps = [
@@ -207,12 +222,8 @@ rustc_test("integration_test") {
   ]
 
   inputs = [
-    test_avb_key,
-    test_avb_atx_metadata,
-    test_image,
     expected_vbmeta,
     expected_vbmeta_chain,
-    extracted_key_path,
   ]
 }
 
@@ -226,5 +237,6 @@ rustc_binary("bin") {
     ":vbmeta",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
+    "//third_party/rust_crates:camino",
   ]
 }

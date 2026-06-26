@@ -10,6 +10,7 @@ use crate::qemu_based::comms::{QemuSocket, spawn_pipe_thread};
 use crate::show_output;
 use assembled_system::vbmeta::FUCHSIA_HASH_DESCRIPTOR_NAME;
 use async_trait::async_trait;
+use camino::Utf8Path;
 use emulator_instance::{
     AccelerationMode, ConsoleType, DiskImage, EmulatorConfiguration, EngineState, GuestConfig,
     NetworkingMode, Ramdisk, RamdiskKind,
@@ -39,7 +40,7 @@ use std::sync::mpsc::channel;
 use std::time::{Duration, Instant};
 use std::{env, str};
 use tempfile::NamedTempFile;
-use vbmeta::{Descriptor, HashDescriptor, Key, Salt, VBMeta};
+use vbmeta::VBMeta;
 
 pub(crate) fn make_absolute_path(path: &Path) -> Result<PathBuf> {
     if path.is_absolute() {
@@ -526,25 +527,27 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
         zbi_path: &PathBuf,
         dest: &PathBuf,
     ) -> Result<()> {
-        let private_key_pem = fs::read_to_string(key_path)
-            .map_err(|e| user_error!("Error reading PEM key file '{}': {e}", key_path.display()))?;
-        let public_key_metadata = fs::read(metadata_path).map_err(|e| {
-            user_error!("Error reading key  metadata file '{}': {e}", metadata_path.display())
-        })?;
-        let zbi_bytes = fs::read(zbi_path)
-            .map_err(|e| bug!("Error reading ZBI file '{}': {e}", zbi_path.display()))?;
+        let parent = dest.parent().ok_or_else(|| user_error!("Invalid destination path"))?;
+        let outdir =
+            Utf8Path::from_path(parent).ok_or_else(|| user_error!("Non-UTF8 parent path"))?;
+        let file_stem = dest
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| user_error!("Invalid destination file stem"))?;
 
-        let key =
-            Key::try_new(&private_key_pem, public_key_metadata).map_err(|e| user_error!("{e}"))?;
-        let salt = Salt::random().map_err(|e| bug!("{e}"))?;
-        // Create a hash descriptor of the same format as Fuchsia images assembly:
-        // https://cs.opensource.google/fuchsia/fuchsia/+/main:src/lib/assembly/vbmeta/src/main.rs;l=39;drc=4fcdaf5e61c518ac1bec7462f077f5e1ffd5ddab
-        let descriptor =
-            Descriptor::Hash(HashDescriptor::new(FUCHSIA_HASH_DESCRIPTOR_NAME, &zbi_bytes, salt));
-        let descriptors = vec![descriptor];
-        let vbmeta = VBMeta::sign(descriptors, key).map_err(|e| user_error!("{e}"))?;
+        let key_path_utf8 =
+            Utf8Path::from_path(key_path).ok_or_else(|| user_error!("Non-UTF8 key path"))?;
+        let metadata_path_utf8 = Utf8Path::from_path(metadata_path)
+            .ok_or_else(|| user_error!("Non-UTF8 metadata path"))?;
+        let zbi_path_utf8 =
+            Utf8Path::from_path(zbi_path).ok_or_else(|| user_error!("Non-UTF8 ZBI path"))?;
 
-        fs::write(dest, vbmeta.as_bytes()).map_err(|e| user_error!("{e}"))
+        VBMeta::builder(file_stem, key_path_utf8)
+            .key_metadata(metadata_path_utf8)
+            .hash_descriptor(FUCHSIA_HASH_DESCRIPTOR_NAME, zbi_path_utf8)
+            .construct(outdir)
+            .map_err(|e| user_error!("Failed to generate VBMeta image: {e}"))?;
+        Ok(())
     }
 
     fn validate_network_flags(&self, emu_config: &EmulatorConfiguration) -> Result<()> {

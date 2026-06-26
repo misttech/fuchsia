@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result};
+use camino::Utf8PathBuf;
 use std::path::PathBuf;
-use vbmeta::{Descriptor, HashDescriptor, Key, Salt, VBMeta};
+use vbmeta::VBMeta;
 
 /// Command-line arguments for the vbmeta tool.
 #[derive(argh::FromArgs)]
@@ -29,18 +30,19 @@ struct Args {
 fn main() -> Result<()> {
     let args: Args = argh::from_env();
 
-    let zbi = std::fs::read(args.zbi).context("failed to read ZBI")?;
-    let pem = std::fs::read(args.private_key_pem).context("failed to read private key PEM")?;
-    let pem_str = std::str::from_utf8(&pem).context("failed to convert PEM to string")?;
-    let metadata =
-        std::fs::read(args.public_key_metadata).context("failed to read public key metadata")?;
+    let output_path =
+        Utf8PathBuf::try_from(args.output).context("converting output path to UTF-8")?;
+    let outdir = output_path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("output path must have a parent directory"))?;
+    let name = output_path
+        .file_stem()
+        .ok_or_else(|| anyhow::anyhow!("output path must have a file stem"))?;
 
-    let key = Key::try_new(pem_str, metadata).context("failed to create AVB key")?;
-    let salt = Salt::random().context("failed to season")?;
-    let descriptor = Descriptor::Hash(HashDescriptor::new("zircon", &zbi, salt));
-    let vbmeta = VBMeta::sign(vec![descriptor], key).unwrap();
-
-    std::fs::write(args.output, vbmeta.as_bytes()).context("failed to write VBMeta to file")?;
+    VBMeta::builder(name, Utf8PathBuf::try_from(args.private_key_pem)?)
+        .key_metadata(Utf8PathBuf::try_from(args.public_key_metadata)?)
+        .hash_descriptor("zircon", Utf8PathBuf::try_from(args.zbi)?)
+        .construct(outdir)?;
 
     Ok(())
 }

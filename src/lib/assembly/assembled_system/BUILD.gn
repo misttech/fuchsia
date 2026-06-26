@@ -52,7 +52,6 @@ rustc_library("assembled_system") {
     "src/image.rs",
     "src/lib.rs",
     "src/vbmeta.rs",
-    "src/vfs.rs",
     "src/zbi.rs",
   ]
   test_deps = [

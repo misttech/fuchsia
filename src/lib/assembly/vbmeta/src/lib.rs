@@ -13,10 +13,9 @@ mod key;
 mod test;
 mod vbmeta;
 
-pub use descriptor::{
-    ChainPartitionDescriptor, Descriptor, HashDescriptor, HashDescriptorBuilder,
-    KernelCmdlineDescriptor, PropertyDescriptor, Salt, SaltError,
+pub use descriptor::{Salt, SaltError};
+
+pub use vbmeta::{
+    ChainPartition, HashDescriptor, RawHashDescriptor, VBMeta, VBMetaBuilder, VBMetaConfig,
+    VBMetaOutput,
 };
-pub use header::Header;
-pub use key::{Key, KeyError, SIGNATURE_SIZE, SignFailure, Signature};
-pub use vbmeta::VBMeta;

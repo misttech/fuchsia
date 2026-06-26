@@ -25,6 +25,7 @@ pub struct HashDescriptor {
 
 impl HashDescriptor {
     /// Construct a new HashDescriptor by hashing the provided `image`.
+    #[cfg(test)]
     pub fn new(image_name: &str, image: &[u8], salt: Salt) -> HashDescriptor {
         let header = HashDescriptorHeader::new(image_name, image);
 
@@ -62,34 +63,6 @@ impl HashDescriptor {
         bytes
     }
 
-    /// Accessor for the name of the image described by this Descriptor.
-    pub fn image_name(&self) -> &str {
-        &self.image_name
-    }
-
-    /// Accessor for the size of the image described by this Descriptor.
-    pub fn image_size(&self) -> u64 {
-        self.header.image_size.into()
-    }
-
-    /// Accessor for the salt used in the calculation of the digest.
-    pub fn salt(&self) -> Option<Salt> {
-        self.salt.clone()
-    }
-
-    /// Accessor for the digest of the image described by this Descriptor.
-    pub fn digest(&self) -> Option<&[u8]> {
-        match &self.digest {
-            Some(d) => Some(&d[..]),
-            _ => None,
-        }
-    }
-
-    /// Accessor for the flags that are set on the Descriptor.
-    pub fn flags(&self) -> u32 {
-        self.header.flags.into()
-    }
-
     /// Accessor for the minimum avb version that this HashDescriptor requires.
     pub fn get_min_avb_version(&self) -> Option<[u32; 2]> {
         self.min_avb_version
@@ -122,6 +95,7 @@ pub(crate) struct HashDescriptorHeader {
 
 impl HashDescriptorHeader {
     /// Create a new HashDescriptorHeader based on a name and an image.
+    #[cfg(test)]
     fn new(image_name: &str, image: &[u8]) -> HashDescriptorHeader {
         let alg_bytes = Self::bytes_for_algorithm(ALGORITHM);
 

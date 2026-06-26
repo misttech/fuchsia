@@ -2,17 +2,207 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::descriptor::Descriptor;
+use crate::descriptor::{
+    ChainPartitionDescriptor, Descriptor, HashDescriptorBuilder, KernelCmdlineDescriptor,
+    PropertyDescriptor, Salt,
+};
 use crate::footer::append_vbmeta_as_footer;
 use crate::header::Header;
 use crate::key::{Key, SIGNATURE_SIZE, SignFailure};
 
-use anyhow::Result;
-use camino::Utf8Path;
+use anyhow::{Context, Result};
+use camino::{Utf8Path, Utf8PathBuf};
 use ring::digest;
+use std::collections::BTreeMap;
+use std::fs;
 use zerocopy::IntoBytes;
 
 const HASH_SIZE: u64 = 0x40;
+
+/// Specifies how and where to output the generated VBMeta artifact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VBMetaOutput {
+    /// Name to identify the partition or output artifact
+    /// (e.g., "fuchsia" producing `fuchsia.vbmeta`).
+    pub name: String,
+
+    /// If provided, appends the VBMeta as a footer to a copy of
+    /// the specified image file
+    /// instead of creating a standalone `.vbmeta` file.
+    pub add_footer_to: Option<Utf8PathBuf>,
+}
+
+/// Fully declarative plumbing configuration for building
+/// a single VBMeta artifact.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VBMetaConfig {
+    /// Output generation and destination parameters.
+    pub output: VBMetaOutput,
+
+    /// Path to the PEM-encoded private signing key.
+    pub key: Utf8PathBuf,
+
+    /// Optional path to public key metadata (e.g., ATX metadata).
+    pub key_metadata: Option<Utf8PathBuf>,
+
+    /// Images to be hashed and embedded as Hash descriptors.
+    pub hash_descriptors: Vec<HashDescriptor>,
+
+    /// Pre-calculated or external raw Hash descriptors to embed
+    /// without hashing.
+    pub raw_descriptors: Vec<RawHashDescriptor>,
+
+    /// Key-value properties to embed as Property descriptors.
+    pub property_descriptors: BTreeMap<String, String>,
+
+    /// Chained partitions to verify and embed.
+    pub chain_partitions: Vec<ChainPartition>,
+
+    /// Optional base merkle root to embed as a kernel command line descriptor.
+    pub base_merkle: Option<String>,
+
+    /// The rollback index to encode in the VBMeta header.
+    pub rollback_index: u64,
+
+    /// Optional salt to use when calculating digests
+    /// (defaults to random if None).
+    pub salt: Option<Salt>,
+}
+
+/// Fluent builder for constructing a VBMeta artifact.
+#[derive(Debug)]
+pub struct VBMetaBuilder {
+    config: VBMetaConfig,
+}
+
+impl VBMetaBuilder {
+    /// Appends the VBMeta as a footer to a copy of the specified image file.
+    pub fn add_footer_to(mut self, path: impl Into<Utf8PathBuf>) -> Self {
+        self.config.output.add_footer_to = Some(path.into());
+        self
+    }
+
+    /// Sets optional public key metadata (e.g., ATX metadata).
+    pub fn key_metadata(mut self, path: impl Into<Utf8PathBuf>) -> Self {
+        self.config.key_metadata = Some(path.into());
+        self
+    }
+
+    /// Adds an image Hash descriptor.
+    pub fn hash_descriptor(
+        mut self,
+        partition_name: impl Into<String>,
+        image_path: impl Into<Utf8PathBuf>,
+    ) -> Self {
+        self.config.hash_descriptors.push(HashDescriptor {
+            partition_name: partition_name.into(),
+            image_path: image_path.into(),
+            flags: 0,
+            min_avb_version: None,
+        });
+        self
+    }
+
+    /// Adds an image Hash descriptor with custom flags and minimum AVB version.
+    pub fn hash_descriptor_with_flags(mut self, config: HashDescriptor) -> Self {
+        self.config.hash_descriptors.push(config);
+        self
+    }
+
+    /// Adds an external or unhashed raw Hash descriptor.
+    pub fn raw_descriptor(mut self, raw: RawHashDescriptor) -> Self {
+        self.config.raw_descriptors.push(raw);
+        self
+    }
+
+    /// Adds a key-value property descriptor.
+    pub fn property_descriptor(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.config.property_descriptors.insert(key.into(), value.into());
+        self
+    }
+
+    /// Adds a chained partition descriptor.
+    pub fn chain_partition(mut self, chain: ChainPartition) -> Self {
+        self.config.chain_partitions.push(chain);
+        self
+    }
+
+    /// Sets the base merkle root for the kernel command line descriptor.
+    pub fn base_merkle(mut self, merkle: impl Into<String>) -> Self {
+        self.config.base_merkle = Some(merkle.into());
+        self
+    }
+
+    /// Sets the rollback index encoded in the VBMeta header.
+    pub fn rollback_index(mut self, index: u64) -> Self {
+        self.config.rollback_index = index;
+        self
+    }
+
+    /// Sets an explicit salt to use when calculating digests
+    /// (defaults to random if None).
+    pub fn salt(mut self, salt: Salt) -> Self {
+        self.config.salt = Some(salt);
+        self
+    }
+
+    /// Builds the declarative configuration struct.
+    pub fn build(self) -> VBMetaConfig {
+        self.config
+    }
+
+    /// Builds and constructs the VBMeta image, returning the
+    /// resulting path on disk.
+    pub fn construct(self, outdir: impl AsRef<Utf8Path>) -> Result<Utf8PathBuf> {
+        VBMeta::construct(&self.config, outdir)
+    }
+}
+
+/// Configuration for an image Hash descriptor.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct HashDescriptor {
+    /// Name of the partition (e.g., "zircon", "boot", "initrd_normal").
+    pub partition_name: String,
+
+    /// Path to the source image file on host to be hashed.
+    pub image_path: Utf8PathBuf,
+
+    /// Custom flags for this descriptor.
+    pub flags: u32,
+
+    /// Optional minimum AVB version.
+    pub min_avb_version: Option<[u32; 2]>,
+}
+
+/// Configuration for a pre-calculated or unhashed Hash descriptor.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct RawHashDescriptor {
+    /// Name of the partition.
+    pub partition_name: String,
+    /// Declared size in bytes.
+    pub size: u64,
+    /// Optional salt.
+    pub salt: Option<Salt>,
+    /// Optional calculated digest.
+    pub digest: Option<[u8; 32]>,
+    /// Flags.
+    pub flags: u32,
+    /// Optional minimum AVB version.
+    pub min_avb_version: Option<[u32; 2]>,
+}
+
+/// Configuration for a Chained Partition descriptor.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ChainPartition {
+    /// Name of the chained partition (e.g., "vbmeta_system").
+    pub partition_name: String,
+
+    /// Rollback index location.
+    pub rollback_index_location: u32,
+
+    /// Path to the public key file verifying this partition.
+    pub public_key_path: Utf8PathBuf,
+}
 
 #[derive(Debug)]
 /// A struct for creating the VBMeta image to be read on startup for verified boot.
@@ -22,26 +212,146 @@ const HASH_SIZE: u64 = 0x40;
 pub struct VBMeta {
     /// The raw bytes of VBMeta that can be written to the device image.
     bytes: Vec<u8>,
-
-    /// The VBMeta header that was created.
-    header: Header,
-
-    /// The descriptors used to create the VBMeta
-    descriptors: Vec<Descriptor>,
-
-    /// The key used to sign the VBMeta
-    key: Key,
 }
 
 impl VBMeta {
-    /// Constructs and signs a new VBMeta image using the provided `descriptors` and AVB `key`.
-    /// This can fail if signing with `key` failed. Encodes a rollback index of zero.
-    pub fn sign(descriptors: Vec<Descriptor>, key: Key) -> Result<Self, SignFailure> {
-        Self::sign_with_rollback(descriptors, key, /*rollback_index=*/ 0)
+    /// Initiates a fluent builder for creating a VBMeta image
+    /// with mandatory parameters.
+    pub fn builder(output_name: impl Into<String>, key: impl Into<Utf8PathBuf>) -> VBMetaBuilder {
+        VBMetaBuilder {
+            config: VBMetaConfig {
+                output: VBMetaOutput { name: output_name.into(), add_footer_to: None },
+                key: key.into(),
+                key_metadata: None,
+                hash_descriptors: Vec::new(),
+                raw_descriptors: Vec::new(),
+                property_descriptors: BTreeMap::new(),
+                chain_partitions: Vec::new(),
+                base_merkle: None,
+                rollback_index: 0,
+                salt: None,
+            },
+        }
+    }
+
+    /// Builds and signs a VBMeta image according to `config`,
+    /// saving the artifact into `outdir` and returning its path.
+    pub fn construct(config: &VBMetaConfig, outdir: impl AsRef<Utf8Path>) -> Result<Utf8PathBuf> {
+        let outdir = outdir.as_ref();
+
+        // 1. Read signing key and metadata
+        let key_pem = fs::read_to_string(&config.key)
+            .with_context(|| format!("reading signing key: {}", config.key))?;
+        let key_metadata = match &config.key_metadata {
+            Some(path) => {
+                fs::read(path).with_context(|| format!("reading key metadata: {}", path))?
+            }
+            None => Vec::new(),
+        };
+        let key = Key::try_new(&key_pem, key_metadata).context("parsing AVB signing key")?;
+
+        // 2. Determine salt for hashing (explicit or random)
+        let salt = match &config.salt {
+            Some(s) => s.clone(),
+            None => Salt::random().context("generating random salt")?,
+        };
+
+        // 3. Assemble all descriptors
+        let mut descriptors = Vec::new();
+
+        // Hash descriptors
+        for hash_config in &config.hash_descriptors {
+            let image_bytes = fs::read(&hash_config.image_path)
+                .with_context(|| format!("reading target image: {}", hash_config.image_path))?;
+
+            let mut builder = HashDescriptorBuilder::default()
+                .name(&hash_config.partition_name)
+                .size(image_bytes.len() as u64)
+                .salt(salt.clone());
+
+            if hash_config.flags != 0 {
+                builder = builder.flags(hash_config.flags);
+            }
+            if let Some(min_avb) = hash_config.min_avb_version {
+                builder = builder.min_avb_version(min_avb);
+            }
+
+            let hash_desc = builder.build_with_digest_calculated_for(&image_bytes);
+            descriptors.push(Descriptor::Hash(hash_desc));
+        }
+
+        // Raw / unhashed descriptors
+        for raw_config in &config.raw_descriptors {
+            let mut builder = HashDescriptorBuilder::default()
+                .name(&raw_config.partition_name)
+                .size(raw_config.size);
+
+            if let Some(salt) = &raw_config.salt {
+                builder = builder.salt(salt.clone());
+            }
+            if let Some(digest) = &raw_config.digest {
+                builder = builder.digest(digest);
+            }
+            if raw_config.flags != 0 {
+                builder = builder.flags(raw_config.flags);
+            }
+            if let Some(min_avb) = raw_config.min_avb_version {
+                builder = builder.min_avb_version(min_avb);
+            }
+
+            descriptors.push(Descriptor::Hash(builder.build()));
+        }
+
+        // Property descriptors
+        for (prop_key, prop_val) in &config.property_descriptors {
+            let prop_desc = PropertyDescriptor::new(prop_key.clone(), prop_val.clone());
+            descriptors.push(Descriptor::Property(prop_desc));
+        }
+
+        // Chain partition descriptors
+        for chain_config in &config.chain_partitions {
+            let public_key = fs::read(&chain_config.public_key_path)
+                .with_context(|| format!("reading key: {}", chain_config.public_key_path))?;
+
+            let chain_desc = ChainPartitionDescriptor {
+                rollback_index_location: chain_config.rollback_index_location,
+                partition_name: chain_config.partition_name.clone(),
+                public_key,
+            };
+            descriptors.push(Descriptor::ChainPartition(chain_desc));
+        }
+
+        // Kernel command line descriptor
+        if let Some(merkle) = &config.base_merkle {
+            let cmdline = format!("system.base_merkle={}", merkle);
+            let cmdline_desc = KernelCmdlineDescriptor::new(0, cmdline);
+            descriptors.push(Descriptor::KernelCmdline(cmdline_desc));
+        }
+
+        // 4. Sign VBMeta
+        let vbmeta = Self::sign_with_rollback(descriptors, key, config.rollback_index)
+            .context("signing VBMeta image")?;
+
+        // 5. Output generation (standalone vs footer)
+        if let Some(target_image) = &config.output.add_footer_to {
+            let base_name = target_image
+                .file_name()
+                .ok_or_else(|| anyhow::anyhow!("invalid image path: {}", target_image))?;
+            let destination = outdir.join(base_name);
+            vbmeta
+                .append_as_footer(target_image, &destination)
+                .with_context(|| format!("appending VBMeta footer: {}", destination))?;
+            Ok(destination)
+        } else {
+            let destination = outdir.join(format!("{}.vbmeta", config.output.name));
+            fs::write(&destination, &vbmeta.bytes)
+                .with_context(|| format!("writing standalone VBMeta: {}", destination))?;
+            Ok(destination)
+        }
     }
 
     /// Similar to `sign` but with a specified rollback index.
-    pub fn sign_with_rollback(
+    fn sign_with_rollback(
         descriptors: Vec<Descriptor>,
         key: Key,
         rollback_index: u64,
@@ -70,38 +380,18 @@ impl VBMeta {
         bytes.extend_from_slice(&auth_data);
         bytes.extend_from_slice(&aux_data);
 
-        Ok(VBMeta { bytes, header: header, descriptors: descriptors, key: key })
-    }
-
-    /// Returns an immutable byte slice containing the VBMeta image.
-    pub fn as_bytes(&self) -> &[u8] {
-        self.bytes.as_bytes()
-    }
-
-    /// Returns an immutable slice of the descriptors used to create the VBMeta image.
-    pub fn descriptors(&self) -> &[Descriptor] {
-        &self.descriptors
-    }
-
-    /// Returns an immutable reference to the header struct for the VBMeta image.
-    pub fn header(&self) -> &Header {
-        &self.header
-    }
-
-    /// Returns an immutable reference to the key used to sign the VBMeta image.
-    pub fn key(&self) -> &Key {
-        &self.key
+        Ok(VBMeta { bytes })
     }
 
     /// Appends the binary contents to a copy of `image` as a VBMeta footer at
     /// `destination`.
-    pub fn append_as_footer(
+    fn append_as_footer(
         &self,
         image: impl AsRef<Utf8Path>,
         destination: impl AsRef<Utf8Path>,
     ) -> Result<()> {
         append_vbmeta_as_footer(
-            self.as_bytes(),
+            &self.bytes,
             image.as_ref().as_std_path(),
             destination.as_ref().as_std_path(),
         )
@@ -171,8 +461,6 @@ mod tests {
     use crate::descriptor::{HashDescriptor, HashDescriptorBuilder, PropertyDescriptor, Salt};
     use crate::test;
 
-    use zerocopy::Ref;
-
     #[test]
     fn simple_vbmeta() {
         #[rustfmt::skip]
@@ -238,7 +526,7 @@ mod tests {
         let salt = Salt::try_from(&[0xAA; 32][..]).expect("new salt");
         let descriptor = Descriptor::Hash(HashDescriptor::new("image_name", &[0xBB; 32], salt));
         let descriptors = vec![descriptor];
-        let vbmeta_bytes = VBMeta::sign(descriptors, key).unwrap().bytes;
+        let vbmeta_bytes = VBMeta::sign_with_rollback(descriptors, key, 0).unwrap().bytes;
         assert_eq!(vbmeta_bytes[..expected_header.len()], expected_header);
         test::hash_data_and_expect(
             &vbmeta_bytes,
@@ -399,25 +687,10 @@ mod tests {
             "prop_value".to_string(),
         ));
         let descriptors = vec![hash, hash_from_raw, prop];
-        let vbmeta = VBMeta::sign(descriptors, key).unwrap();
-        let vbmeta_bytes = vbmeta.as_bytes();
+        let vbmeta = VBMeta::sign_with_rollback(descriptors, key, 0).unwrap();
+        let vbmeta_bytes = &vbmeta.bytes;
 
-        if vbmeta_bytes[..expected_header_bytes.len()] != expected_header_bytes {
-            // the bytes didn't line up as expected, so compare the two header structs
-            // directly, first, as it can have prettier results.
-            let expected_header = Ref::into_ref(
-                Ref::<_, Header>::from_bytes(&expected_header_bytes as &[u8]).unwrap(),
-            );
-            assert_eq!(
-                vbmeta.header(),
-                expected_header,
-                "generated header: {:#?}\nexpected header:{:#?}",
-                vbmeta.header(),
-                expected_header
-            );
-            // and a final assert in case the problem is in the serialization of the header.
-            assert_eq!(vbmeta_bytes[..expected_header_bytes.len()], expected_header_bytes);
-        }
+        assert_eq!(&vbmeta_bytes[..expected_header_bytes.len()], &expected_header_bytes[..],);
         test::hash_data_and_expect(
             &vbmeta_bytes,
             "bb68ffc6bb7b3a74013de4187f67fe01e897e01818420e38201e41d8a8a823d8",

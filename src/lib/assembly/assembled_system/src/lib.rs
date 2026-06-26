@@ -15,7 +15,6 @@ mod fvm;
 mod fxfs;
 mod image;
 pub mod vbmeta;
-pub mod vfs;
 mod zbi;
 
 pub use assembled_system::AssembledSystem;
