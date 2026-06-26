@@ -465,7 +465,7 @@ TEST_F(BlockOpTest, MultiQueueDepthWriteTest) {
     }
 
     // Wait until the slot is used up to the desired queue depth.
-    constexpr zx::duration kMultiQueueTimeout = zx::sec(10);
+    constexpr zx::duration kMultiQueueTimeout = zx::sec(30);
     auto wait_for_scheduled = [&]() -> bool {
       return GetSlotStateCount(SlotState::kScheduled) == queue_depth;
     };

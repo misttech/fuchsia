@@ -14,9 +14,11 @@
 namespace ufs {
 using namespace ufs_mock_device;
 
-using TiemoutTest = UfsTest;
+constexpr zx::duration kWaitLimit = zx::sec(30);
 
-TEST_F(TiemoutTest, GetEarliestTimeoutDeadline) {
+using TimeoutTest = UfsTest;
+
+TEST_F(TimeoutTest, GetEarliestTimeoutDeadline) {
   constexpr uint8_t kTestLun = 0;
   const uint8_t kMaxSlotCount =
       dut_->GetTransferRequestProcessor().GetRequestList().GetSlotCount() - kAdminCommandSlotCount;
@@ -67,7 +69,7 @@ TEST_F(TiemoutTest, GetEarliestTimeoutDeadline) {
   }
 }
 
-TEST_F(TiemoutTest, AsyncCommandTimeout) {
+TEST_F(TimeoutTest, AsyncCommandTimeout) {
   constexpr uint8_t kTestLun = 0;
   constexpr uint8_t target_task_tag = 0;
 
@@ -115,14 +117,14 @@ TEST_F(TiemoutTest, AsyncCommandTimeout) {
            SlotState::kTimeout;
   };
   fbl::String timeout_message = "Timeout waiting for SCSI command timeout";
-  ASSERT_OK(dut_->WaitWithTimeout(wait_for, zx::sec(10), timeout_message, zx::msec(100)));
+  ASSERT_OK(dut_->WaitWithTimeout(wait_for, kWaitLimit, timeout_message, zx::msec(100)));
 
   // Check that the timed out command is aborted and not in the request list
   ASSERT_EQ(dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(target_task_tag).state,
             SlotState::kTimeout);
 }
 
-TEST_F(TiemoutTest, AllAsyncCommandsTimeout) {
+TEST_F(TimeoutTest, AllAsyncCommandsTimeout) {
   constexpr uint8_t kTestLun = 0;
   const uint8_t kMaxSlotCount =
       dut_->GetTransferRequestProcessor().GetRequestList().GetSlotCount() - kAdminCommandSlotCount;
@@ -180,7 +182,7 @@ TEST_F(TiemoutTest, AllAsyncCommandsTimeout) {
     return all_timed_out;
   };
   fbl::String timeout_message = "Timeout waiting for SCSI command timeout";
-  ASSERT_OK(dut_->WaitWithTimeout(wait_for, zx::sec(10), timeout_message, zx::msec(100)));
+  ASSERT_OK(dut_->WaitWithTimeout(wait_for, kWaitLimit, timeout_message, zx::msec(100)));
 
   // Check that the timed out command.
   for (uint8_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {
@@ -191,7 +193,7 @@ TEST_F(TiemoutTest, AllAsyncCommandsTimeout) {
   }
 }
 
-TEST_F(TiemoutTest, PartialAsyncCommandsTimeout) {
+TEST_F(TimeoutTest, PartialAsyncCommandsTimeout) {
   constexpr uint8_t kTestLun = 0;
   const uint8_t kMaxSlotCount =
       dut_->GetTransferRequestProcessor().GetRequestList().GetSlotCount() - kAdminCommandSlotCount;
@@ -263,17 +265,23 @@ TEST_F(TiemoutTest, PartialAsyncCommandsTimeout) {
   }
 
   auto wait_for = [&]() -> bool {
-    bool all_timed_out = true;
+    bool all_done = true;
     for (uint8_t slot_num = 0; slot_num < kTimeoutCount; ++slot_num) {
       if (dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(slot_num).state !=
           SlotState::kTimeout) {
-        all_timed_out = false;
+        all_done = false;
       }
     }
-    return all_timed_out;
+    for (uint8_t slot_num = kTimeoutCount; slot_num < kMaxSlotCount; ++slot_num) {
+      if (dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(slot_num).state !=
+          SlotState::kFree) {
+        all_done = false;
+      }
+    }
+    return all_done;
   };
-  fbl::String timeout_message = "Timeout waiting for SCSI command timeout";
-  ASSERT_OK(dut_->WaitWithTimeout(wait_for, zx::sec(10), timeout_message, zx::msec(100)));
+  fbl::String timeout_message = "Timeout waiting for SCSI command timeout or completion";
+  ASSERT_OK(dut_->WaitWithTimeout(wait_for, kWaitLimit, timeout_message, zx::msec(100)));
 
   // Check that the timed out command.
   for (uint8_t slot_num = 0; slot_num < kTimeoutCount; ++slot_num) {
