@@ -293,8 +293,7 @@
                 "Cases/ElfInterpreterBadPathTest.Test/2",
                 "Cases/ElfInterpreterBadPathTest.Test/3",
 
-                // fault_test
-                // TODO(https://fxbug.dev/391438267)
+                // TODO(https://fxbug.dev/528339136): Starnix does not support ARM64 memory tagging.
                 "TaggedAddressesTest.MemoryFault",
 
                 // fcntl_test

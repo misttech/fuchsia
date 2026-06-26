@@ -22,10 +22,14 @@
                 "sys_cachectl.__riscv_*",
                 "sys_hwprobe.__riscv_*",
 
-                // These tests currently pass on arm64 and are SKIPPED on x86_64. Our test harness thinks skipped tests fail.
+                // https://fxbug.dev/528339136: Starnix does not support ARM64 memory tagging.
+                // These tests are relevant only for ARM64, and are skipped on x86_64. However,
+                // since the test harness thinks skipped tests fail, we skip the entire suite.
                 "MemtagStackTest.*",
                 "*MemtagGlobalsTest.*",
                 "MemtagNoteTest.*",
+
+                // These tests currently pass on arm64 and are SKIPPED on x86_64. Our test harness thinks skipped tests fail.
                 "scs_test.stack_overflow",
                 "scs_DeathTest.stack_overflow",
                 "stack_unwinding.unwind_through_signal_frame",
