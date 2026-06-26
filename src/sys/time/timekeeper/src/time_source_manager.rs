@@ -248,6 +248,10 @@ impl<D: Diagnostics, M: ReferenceTimeProvider> PushSourceManager<D, M> {
             Err(SampleValidationError::ReferenceInstantTooOld)
         } else if current_reference < earliest_allowed_arrival {
             Err(SampleValidationError::TooCloseToPrevious)
+        } else if sample.std_dev < zx::BootDuration::from_micros(1) {
+            // Zero standard deviation is impossible in practice, and will
+            // mess with Kalman gain such that we may never recover.
+            Err(SampleValidationError::ZeroStandardDeviation)
         } else {
             Ok(current_reference)
         }
@@ -477,6 +481,7 @@ mod test {
     const BACKSTOP_FACTOR: i64 = 100;
     const TEST_ROLE: Role = Role::Monitor;
     const STD_DEV: zx::BootDuration = zx::BootDuration::from_millis(22);
+    const STD_DEV_REJECTED: zx::BootDuration = zx::BootDuration::from_nanos(22);
 
     macro_rules! assert_push_manager {
         ($manager:expr) => {{
@@ -586,16 +591,23 @@ mod test {
         TimeSourceManager { manager }
     }
 
-    /// Creates a new time sample from the supplied times. Both UTC and ReferenceInstant are supplied as
-    /// a factor to multiply by MIN_UPDATE_DELAY, which is the minimum interval the manager would
-    /// accept between samples.rate at hence the rate we choose our fake reference clock to tick at.
-    fn create_sample(utc_factor: i64, reference_factor: i64) -> Sample {
+    fn create_sample_stddev(
+        utc_factor: i64,
+        reference_factor: i64,
+        std_dev: zx::BootDuration,
+    ) -> Sample {
         Sample {
             utc: UtcInstant::ZERO
                 + UtcDuration::from_nanos((MIN_UPDATE_DELAY * utc_factor).into_nanos()),
             reference: zx::BootInstant::ZERO + (MIN_UPDATE_DELAY * reference_factor),
-            std_dev: STD_DEV,
+            std_dev,
         }
+    }
+    /// Creates a new time sample from the supplied times. Both UTC and ReferenceInstant are supplied as
+    /// a factor to multiply by MIN_UPDATE_DELAY, which is the minimum interval the manager would
+    /// accept between samples.rate at hence the rate we choose our fake reference clock to tick at.
+    fn create_sample(utc_factor: i64, reference_factor: i64) -> Sample {
+        create_sample_stddev(utc_factor, reference_factor, STD_DEV)
     }
 
     #[fuchsia::test]
@@ -807,6 +819,29 @@ mod test {
     }
 
     #[fuchsia::test]
+    fn reject_std_dev_zero() {
+        let manager = create_manager_from_push(
+            FakePushTimeSource::failing(),
+            Arc::new(FakeDiagnostics::new()),
+        );
+        let mut push_manager = assert_push_manager!(manager);
+        push_manager.last_status = Some(Status::Ok);
+
+        assert_eq!(
+            push_manager.validate_sample(&create_sample(BACKSTOP_FACTOR, 1)),
+            Ok(zx::BootInstant::ZERO + MIN_UPDATE_DELAY)
+        );
+        assert_eq!(
+            push_manager.validate_sample(&create_sample_stddev(
+                BACKSTOP_FACTOR,
+                2,
+                STD_DEV_REJECTED
+            )),
+            Err(SVE::ZeroStandardDeviation)
+        );
+    }
+
+    #[fuchsia::test]
     fn validate_sample_failures() {
         let manager = create_manager_from_push(
             FakePushTimeSource::failing(),
@@ -833,6 +868,7 @@ mod test {
             push_manager.validate_sample(&create_sample(BACKSTOP_FACTOR, 100)),
             Err(SVE::ReferenceInstantInFuture)
         );
+
         // On the next call the monontonic should be a factor of 5, trick the manager into thinking
         // it already accepted an update at 4.5
         push_manager.last_accepted_sample_arrival =

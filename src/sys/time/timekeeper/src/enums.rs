@@ -200,6 +200,8 @@ pub enum SampleValidationError {
     ReferenceInstantTooOld,
     BeforeBackstop,
     TooCloseToPrevious,
+    /// Zero standard deviation is impossible in practice.
+    ZeroStandardDeviation,
 }
 
 impl Into<CobaltTimeSourceEvent> for SampleValidationError {
@@ -212,6 +214,7 @@ impl Into<CobaltTimeSourceEvent> for SampleValidationError {
             Self::ReferenceInstantTooOld => CobaltTimeSourceEvent::SampleRejectedMonotonicTooOld,
             Self::BeforeBackstop => CobaltTimeSourceEvent::SampleRejectedBeforeBackstop,
             Self::TooCloseToPrevious => CobaltTimeSourceEvent::SampleRejectedTooCloseToPrevious,
+            Self::ZeroStandardDeviation => CobaltTimeSourceEvent::SampleRejectedStatusNotOk,
         }
     }
 }
