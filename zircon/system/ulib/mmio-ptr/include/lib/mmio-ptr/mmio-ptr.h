@@ -116,7 +116,7 @@ static inline uint32_t MmioRead32(MMIO_PTR const volatile uint32_t* buffer) {
   // likely free just by doing a later mov from w<n> instead of x<n>.
   uint64_t data;
   __asm__ volatile("ldr %w0, %1" : "=r"(data) : "m"(*(volatile uint32_t*)buffer) : "memory");
-  return static_cast<uint32_t>(data);
+  return (uint32_t)data;
 }
 
 __NONNULL((1))

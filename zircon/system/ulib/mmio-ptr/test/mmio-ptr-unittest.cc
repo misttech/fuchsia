@@ -6,6 +6,8 @@
 
 #include <zxtest/zxtest.h>
 
+#include "mmio-ptr-c.h"
+
 namespace {
 
 TEST(MmioPtr, LowLevelAPIWrites) {
@@ -148,6 +150,32 @@ TEST(MmioPtr, WriteBuffer) {
     ASSERT_EQ(mmio_buffer[i], i);
   }
   ASSERT_EQ(mmio_buffer[255], 0u);
+}
+TEST(MmioPtr, CCompatibility) {
+  uint8_t value8 = 10;
+  uint16_t value16 = 11;
+  uint32_t value32 = 12;
+  uint64_t value64 = 13;
+
+  MMIO_PTR uint8_t* value8_ptr = FakeMmioPtr(&value8);
+  MMIO_PTR uint16_t* value16_ptr = FakeMmioPtr(&value16);
+  MMIO_PTR uint32_t* value32_ptr = FakeMmioPtr(&value32);
+  MMIO_PTR uint64_t* value64_ptr = FakeMmioPtr(&value64);
+
+  ASSERT_EQ(c_MmioRead8(value8_ptr), 10);
+  ASSERT_EQ(c_MmioRead16(value16_ptr), 11);
+  ASSERT_EQ(c_MmioRead32(value32_ptr), 12);
+  ASSERT_EQ(c_MmioRead64(value64_ptr), 13);
+
+  c_MmioWrite8(20, value8_ptr);
+  c_MmioWrite16(21, value16_ptr);
+  c_MmioWrite32(22, value32_ptr);
+  c_MmioWrite64(23, value64_ptr);
+
+  ASSERT_EQ(value8, 20);
+  ASSERT_EQ(value16, 21);
+  ASSERT_EQ(value32, 22);
+  ASSERT_EQ(value64, 23);
 }
 
 }  // namespace
