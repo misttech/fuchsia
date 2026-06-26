@@ -8,7 +8,7 @@ use ffx_diagnostics_analytics::{PointOfFailure, ResultExt};
 use ffx_fastboot_connection_factory::{
     ConnectionFactory, FastbootConnectionFactory, FastbootConnectionKind,
 };
-use termion::{color, style};
+use termio::Colors;
 
 pub async fn check_fastboot_device<N>(
     context: &ffx_config::EnvironmentContext,
@@ -23,11 +23,8 @@ where
         .check_with_notifier(device, notifier)
         .await
         .map_err(|e| fho::Error::User(e.into()))?;
-    notifier.on_success(format!(
-        "Got device info: {}{info}{}",
-        color::Fg(color::Green),
-        style::Reset
-    ))?;
+    let colors = Colors::current();
+    notifier.on_success(format!("Got device info: {}{info}{}", colors.green, colors.reset))?;
     Ok(())
 }
 

@@ -43,6 +43,7 @@ libs = [
   "target_errors",
   "target_net",
   "tasks",
+  "termio",
   "testing",
   "timeout",
   "trace",

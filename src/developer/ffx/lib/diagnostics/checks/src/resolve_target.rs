@@ -11,7 +11,7 @@ use ffx_diagnostics_formatting::TargetInfoQueryExt;
 use futures::stream::StreamExt;
 use std::marker::PhantomData;
 use std::path::PathBuf;
-use termion::{color, style};
+use termio::Colors;
 
 pub struct ResolveTarget<'a, N, R = SingleTargetResolver> {
     ctx: &'a EnvironmentContext,
@@ -109,13 +109,12 @@ where
         output: &Self::Output,
         notifier: &mut Self::Notifier,
     ) -> anyhow::Result<()> {
+        let colors = Colors::current();
         let state_str = ffx_diagnostics_formatting::format_target_state(&output.state);
         if let Some(name) = &output.node_name {
             notifier.on_success(format!(
                 "Device resolved to node: \"{}{}{}\" {state_str}",
-                color::Fg(color::Green),
-                name,
-                style::Reset
+                colors.green, name, colors.reset
             ))
         } else {
             notifier.on_success(format!("Device resolved to be {state_str}"))
@@ -173,11 +172,12 @@ where
             }
 
             if targets.is_empty() {
+                let colors = Colors::current();
                 notifier.info(format!(
                         "{}{}No matching devices were found.{} Ensure the diagnostics logs don't contain your device before proceeding to debugging.",
-                        termion::style::Bold,
-                        termion::color::Fg(termion::color::Red),
-                        termion::style::Reset
+                        colors.bold,
+                        colors.red,
+                        colors.reset
                     ))?;
                 notifier.info(
                         format!("The following link contains steps for general network debugging: https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity")
@@ -189,9 +189,7 @@ where
                     // unreadable gibberish surrounding this message.
                     notifier.info(format!(
                         "{}{} failed to find matching devices.{}",
-                        termion::color::Fg(termion::color::Red),
-                        name,
-                        termion::style::Reset
+                        colors.red, name, colors.reset
                     ))?;
                     use ffx_diagnostics_formatting::AsDiagnosticMessage;
                     let additional_message = source.bits().as_diagnostic_message();

@@ -6,7 +6,7 @@ use discovery::query::TargetInfoQuery;
 use ffx_config::EnvironmentContext;
 use ffx_diagnostics::{Check, CheckFut, Notifier};
 use std::marker::PhantomData;
-use termion::{color, style};
+use termio::Colors;
 
 pub struct GetTargetSpecifier<'a, N>(pub(crate) &'a EnvironmentContext, pub(crate) PhantomData<N>);
 
@@ -42,11 +42,10 @@ where
         if value.is_empty() {
             notifier.on_success(format!("The target specifier is {kind}"))
         } else {
+            let colors = Colors::current();
             notifier.on_success(format!(
                 "The target specifier is {kind} and is \"{}{}{}\"",
-                color::Fg(color::Green),
-                value,
-                style::Reset
+                colors.green, value, colors.reset
             ))
         }
     }

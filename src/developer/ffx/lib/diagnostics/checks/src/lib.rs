@@ -6,7 +6,7 @@ use discovery::TargetHandle;
 use ffx_config::EnvironmentContext;
 use ffx_diagnostics::{Check, CheckExt, Notifier};
 use std::time::Duration;
-use termion::{color, style};
+use termio::Colors;
 
 mod check_fastboot;
 mod check_target_specifier;
@@ -124,11 +124,12 @@ where
     .into_iter()
     .flatten()
     .collect::<Vec<_>>();
+    let colors = Colors::current();
     notifier.on_success(format!(
         "Got device info: {}{}{}",
-        color::Fg(color::Green),
+        colors.green,
         info_bits.join(" "),
-        style::Reset
+        colors.reset
     ))?;
     Ok(())
 }

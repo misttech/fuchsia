@@ -9,7 +9,7 @@ use ffx_diagnostics_analytics::{PointOfFailure, ResultExt};
 use ffx_target::connection::ConnectionError;
 use ffx_target::ssh_connector::SshConnector;
 use ffx_target::{Connection, TargetConnection, TargetConnectionError, TargetConnector};
-use termion::{color, style};
+use termio::Colors;
 
 pub trait SshConnectorProvider {
     async fn connector_for_target<N>(
@@ -98,11 +98,10 @@ where
     ) -> anyhow::Result<()> {
         let state_str = ffx_diagnostics_formatting::format_target_state(&input.state);
         if let Some(name) = &input.node_name {
+            let colors = Colors::current();
             notifier.info(format!(
                 "Attempting to connect ssh to device node: \"{}{}{}\" {state_str}",
-                color::Fg(color::Green),
-                name,
-                style::Reset
+                colors.green, name, colors.reset
             ))
         } else {
             notifier.info(format!("Attempting to connect ssh to device {state_str}"))
