@@ -881,29 +881,29 @@ fn wait_on_pid(
             {
                 return Ok(Some(tracee));
             }
+            let mut has_waitable_tracee = false;
+            let mut has_any_tracee = false;
+            current_task.thread_group().get_ptracees_and(
+                selector,
+                &pids,
+                &mut |task: &Task, task_state: &TaskMutableState| {
+                    if let Some(ptrace) = &task_state.ptrace {
+                        has_any_tracee = true;
+                        ptrace.tracer_waiters().wait_async(&waiter);
+                        if ptrace.is_waitable(task.load_stopped(), options) {
+                            has_waitable_tracee = true;
+                        }
+                    }
+                },
+            );
+            if has_waitable_tracee {
+                continue;
+            }
+
             {
                 let mut thread_group = current_task.thread_group().write();
 
-                // Per the above, see if traced tasks have become waitable. If they have, release
-                // the lock and retry getting waitable tracees.
-                let mut has_waitable_tracee = false;
-                let mut has_any_tracee = false;
-                current_task.thread_group().get_ptracees_and(
-                    selector,
-                    &pids,
-                    &mut |task: &Task, task_state: &TaskMutableState| {
-                        if let Some(ptrace) = &task_state.ptrace {
-                            has_any_tracee = true;
-                            ptrace.tracer_waiters().wait_async(&waiter);
-                            if ptrace.is_waitable(task.load_stopped(), options) {
-                                has_waitable_tracee = true;
-                            }
-                        }
-                    },
-                );
-                if has_waitable_tracee
-                    || thread_group.zombie_ptracees.has_zombie_matching(&selector)
-                {
+                if thread_group.zombie_ptracees.has_zombie_matching(&selector) {
                     continue;
                 }
                 match thread_group.get_waitable_child(selector, options, &mut pids) {
