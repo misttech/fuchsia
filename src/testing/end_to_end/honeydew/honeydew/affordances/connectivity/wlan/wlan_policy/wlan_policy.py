@@ -14,7 +14,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     CountryCode,
     NetworkConfig,
     SecurityType,
-    WlanClientState,
 )
 
 
@@ -119,7 +118,7 @@ class AsyncWlanPolicy(abc.ABC):
     @abc.abstractmethod
     async def wait_for_client_state(
         self,
-        expected_state: WlanClientState,
+        expected_state: f_wlan_policy.WlanClientState,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
         """Waits until the client converges to expected state."""
@@ -288,7 +287,7 @@ class WlanPolicy(affordance.Affordance):
     @dataclass
     class PreservedState:
         saved_networks: list[NetworkConfig] | None
-        client_connections_state: WlanClientState | None
+        client_connections_state: f_wlan_policy.WlanClientState | None
 
     # List all the public methods
     @abc.abstractmethod
@@ -387,7 +386,7 @@ class WlanPolicy(affordance.Affordance):
     @abc.abstractmethod
     def wait_for_client_state(
         self,
-        expected_state: WlanClientState,
+        expected_state: f_wlan_policy.WlanClientState,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
         """Waits until the client converges to expected state."""

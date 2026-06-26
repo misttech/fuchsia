@@ -25,7 +25,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     NetworkIdentifier,
     NetworkState,
     SecurityType,
-    WlanClientState,
 )
 from honeydew.affordances.connectivity.wlan.wlan_policy import (
     wlan_policy_using_fc,
@@ -416,7 +415,8 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
                     networks=[],
                 ),
                 ClientStateSummary(
-                    state=WlanClientState.CONNECTIONS_ENABLED, networks=[]
+                    state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
+                    networks=[],
                 ),
             ),
             (
@@ -435,7 +435,7 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
                     ],
                 ),
                 ClientStateSummary(
-                    state=WlanClientState.CONNECTIONS_ENABLED,
+                    state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                     networks=[
                         NetworkState(
                             network_identifier=NetworkIdentifier(
@@ -455,7 +455,8 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
                     networks=[],
                 ),
                 ClientStateSummary(
-                    state=WlanClientState.CONNECTIONS_DISABLED, networks=[]
+                    state=f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
+                    networks=[],
                 ),
             ),
         ]:
@@ -486,7 +487,7 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
         push_task = asyncio.create_task(push_updates())
 
         await self.wlan_policy_obj.wait_for_client_state(
-            expected_state=WlanClientState.CONNECTIONS_ENABLED,
+            expected_state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
             timeout=5,
         )
         await push_task
@@ -540,12 +541,17 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
         push_task = asyncio.create_task(push_updates())
 
         def condition(update: ClientStateSummary) -> bool:
-            return update.state == WlanClientState.CONNECTIONS_ENABLED
+            return (
+                update.state
+                == f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED
+            )
 
         summary = await self.wlan_policy_obj._wait_on_update(
             condition, timeout=5
         )
-        self.assertEqual(summary.state, WlanClientState.CONNECTIONS_ENABLED)
+        self.assertEqual(
+            summary.state, f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED
+        )
         await push_task
 
     async def test_remove_all_networks(self) -> None:
@@ -838,7 +844,8 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
             "get_status",
             mock.AsyncMock(
                 return_value=ClientStateSummary(
-                    state=WlanClientState.CONNECTIONS_ENABLED, networks=[]
+                    state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
+                    networks=[],
                 )
             ),
         ):
@@ -898,7 +905,7 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
                     "get_status",
                     mock.AsyncMock(
                         return_value=ClientStateSummary(
-                            state=WlanClientState.CONNECTIONS_ENABLED,
+                            state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                             networks=[],
                         )
                     ),

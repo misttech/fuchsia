@@ -28,7 +28,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     NetworkConfig,
     NetworkIdentifier,
     SecurityType,
-    WlanClientState,
 )
 from honeydew.affordances.connectivity.wlan.wlan_policy import wlan_policy
 from honeydew.affordances.location.location import AsyncLocation, Location
@@ -658,7 +657,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
     @ensure_ready
     async def wait_for_client_state(
         self,
-        expected_state: WlanClientState,
+        expected_state: f_wlan_policy.WlanClientState,
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
@@ -993,7 +992,10 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
 
         try:
             client = await self.get_status(timeout=timeout)
-            if client.state != WlanClientState.CONNECTIONS_ENABLED:
+            if (
+                client.state
+                != f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED
+            ):
                 _LOGGER.info(
                     "Client connections are not enabled, so they will not be disabled."
                 )
@@ -1021,7 +1023,8 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
 
             if wait_for_confirmation:
                 await self.wait_for_client_state(
-                    WlanClientState.CONNECTIONS_DISABLED, timeout=timeout
+                    f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
+                    timeout=timeout,
                 )
         except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
@@ -1241,7 +1244,7 @@ class WlanPolicy(wlan_policy.WlanPolicy):
 
     def wait_for_client_state(
         self,
-        expected_state: WlanClientState,
+        expected_state: f_wlan_policy.WlanClientState,
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:

@@ -71,27 +71,6 @@ class SecurityType(enum.StrEnum):
                 return f_wlan_policy.SecurityType.WPA3
 
 
-class WlanClientState(enum.StrEnum):
-    """Wlan operating state for client connections.
-
-    Defined by https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/fidl/fuchsia.wlan.policy/client_provider.fidl
-    """
-
-    CONNECTIONS_DISABLED = "ConnectionsDisabled"
-    CONNECTIONS_ENABLED = "ConnectionsEnabled"
-
-    @staticmethod
-    def from_fidl(fidl: f_wlan_policy.WlanClientState) -> "WlanClientState":
-        """Parse from a fuchsia.wlan.policy/WlanClientState."""
-        match fidl:
-            case f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED:
-                return WlanClientState.CONNECTIONS_DISABLED
-            case f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED:
-                return WlanClientState.CONNECTIONS_ENABLED
-            case _:
-                raise TypeError(f"Unknown WlanClientState: {fidl}")
-
-
 # TODO(http://b/346424966): Only necessary because Python does not have static
 # typing for FIDL. Once these static types are available and the SL4F affordance
 # is removed, replace with the statically generated FIDL equivalent.
@@ -329,7 +308,7 @@ class ClientStateSummary:
     Defined by https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/fidl/fuchsia.wlan.policy/client_provider.fidl
     """
 
-    state: WlanClientState
+    state: f_wlan_policy.WlanClientState
     networks: list[NetworkState]
 
     @staticmethod
@@ -340,9 +319,7 @@ class ClientStateSummary:
         assert fidl.networks is not None, f"{fidl!r} missing networks"
         assert fidl.state is not None, f"{fidl!r} missing state"
         return ClientStateSummary(
-            state=WlanClientState.from_fidl(
-                f_wlan_policy.WlanClientState(fidl.state)
-            ),
+            state=f_wlan_policy.WlanClientState(fidl.state),
             networks=[NetworkState.from_fidl(n) for n in fidl.networks],
         )
 

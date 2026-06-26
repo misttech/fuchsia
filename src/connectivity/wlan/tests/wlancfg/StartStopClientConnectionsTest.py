@@ -17,7 +17,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     NetworkIdentifier,
     NetworkState,
     SecurityType,
-    WlanClientState,
 )
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
@@ -124,7 +123,7 @@ class StartStopClientConnectionsTest(
         """
         await self.dut.wlan_policy.start_client_connections()
         await self.dut.wlan_policy.wait_for_client_state(
-            WlanClientState.CONNECTIONS_ENABLED
+            f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED
         )
 
         await self.dut.wlan_policy.stop_client_connections(
@@ -133,7 +132,7 @@ class StartStopClientConnectionsTest(
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
             ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_DISABLED,
+                state=f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
                 networks=[],
             ),
         )
@@ -148,7 +147,7 @@ class StartStopClientConnectionsTest(
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
             ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_ENABLED,
+                state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[],
             ),
         )
@@ -157,7 +156,7 @@ class StartStopClientConnectionsTest(
         """Test that if client connections are disabled connection attempts fail."""
         await self.dut.wlan_policy.start_client_connections()
         await self.dut.wlan_policy.wait_for_client_state(
-            WlanClientState.CONNECTIONS_ENABLED
+            f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED
         )
 
         await self.dut.wlan_policy.save_network(
@@ -166,7 +165,7 @@ class StartStopClientConnectionsTest(
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
             ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_ENABLED,
+                state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
                     NetworkState(
                         network_identifier=NetworkIdentifier(
@@ -186,7 +185,7 @@ class StartStopClientConnectionsTest(
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
             ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_DISABLED,
+                state=f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
                 networks=[
                     NetworkState(
                         network_identifier=NetworkIdentifier(
@@ -230,13 +229,14 @@ class StartStopClientConnectionsTest(
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
             ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_ENABLED, networks=[]
+                state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
+                networks=[],
             ),
         )
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
             ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_ENABLED,
+                state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
                     NetworkState(
                         network_identifier=NetworkIdentifier(
@@ -252,7 +252,7 @@ class StartStopClientConnectionsTest(
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(timeout=60),
             ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_ENABLED,
+                state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
                     NetworkState(
                         network_identifier=NetworkIdentifier(
@@ -275,7 +275,7 @@ class StartStopClientConnectionsTest(
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
             ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_ENABLED,
+                state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
                     NetworkState(
                         network_identifier=NetworkIdentifier(
@@ -291,7 +291,8 @@ class StartStopClientConnectionsTest(
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
             ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_DISABLED, networks=[]
+                state=f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
+                networks=[],
             ),
         )
 

@@ -20,7 +20,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 from honeydew.affordances.connectivity.wlan.utils.types import (
     NetworkConfig,
     SecurityType,
-    WlanClientState,
 )
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
@@ -354,7 +353,7 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         # Make sure client connections are enabled
         await self.dut.wlan_policy.start_client_connections()
         await self.dut.wlan_policy.wait_for_client_state(
-            WlanClientState.CONNECTIONS_ENABLED
+            f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED
         )
         # Save and verify we connect to network
         await self.dut.wlan_policy.save_network(
@@ -399,7 +398,7 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         await self.dut.wlan_policy.start_client_connections()
 
         await self.dut.wlan_policy.wait_for_client_state(
-            WlanClientState.CONNECTIONS_ENABLED
+            f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED
         )
         # Save the network and make sure that we see the device auto connect to it.
         await self.dut.wlan_policy.save_network(
@@ -435,7 +434,7 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         # Make sure client connections are enabled
         await self.dut.wlan_policy.start_client_connections()
         await self.dut.wlan_policy.wait_for_client_state(
-            WlanClientState.CONNECTIONS_ENABLED
+            f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED
         )
         # Save the network and make sure that we see the device auto connect to it.
         await self.dut.wlan_policy.save_network(

@@ -29,7 +29,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     NetworkIdentifier,
     NetworkState,
     SecurityType,
-    WlanClientState,
 )
 
 # Time to wait for a WLAN interface to become available.
@@ -67,7 +66,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
             ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_ENABLED,
+                state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[],
             ),
         )
@@ -78,7 +77,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
             ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_DISABLED,
+                state=f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
                 networks=[],
             ),
         )
@@ -89,7 +88,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
             ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_DISABLED,
+                state=f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
                 networks=[],
             ),
         )
@@ -129,7 +128,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
             ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_ENABLED,
+                state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[],
             ),
         )
@@ -166,7 +165,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
             ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_ENABLED,
+                state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
                     NetworkState(
                         NetworkIdentifier(test_ssid, SecurityType.NONE),
@@ -179,7 +178,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
             ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_DISABLED,
+                state=f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
                 networks=[],
             ),
         )
@@ -323,7 +322,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         ssid: str,
         expected_state: f_wlan_policy.ConnectionState,
         expected_status: f_wlan_policy.DisconnectStatus | None = None,
-        expected_client_state: WlanClientState = WlanClientState.CONNECTIONS_ENABLED,
+        expected_client_state: f_wlan_policy.WlanClientState = f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
     ) -> None:
         """Assert the next update matches the specified network state."""
         await self.wait_for_update(

@@ -8,14 +8,12 @@ import logging
 import time
 from dataclasses import dataclass
 
+import fidl_fuchsia_wlan_policy as f_wlan_policy
 from antlion.controllers.fuchsia_lib.ssh import FuchsiaSSHProvider
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    NetworkState,
-    WlanClientState,
-)
+from honeydew.affordances.connectivity.wlan.utils.types import NetworkState
 from honeydew.fuchsia_device.fuchsia_device import (
     FuchsiaDevice as HdFuchsiaDevice,
 )
@@ -144,7 +142,10 @@ class WlanPolicyController:
             client = self.honeydew.wlan_policy_deprecated_sync.get_status(
                 timeout=DEFAULT_TIME_WAIT_FOR_CLIENT_CONNECTIONS_STATE
             )
-            if client.state != WlanClientState.CONNECTIONS_ENABLED:
+            if (
+                client.state
+                != f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED
+            ):
                 self.log.info(
                     "Client connections are not enabled, so they will not be disabled."
                 )
@@ -159,7 +160,7 @@ class WlanPolicyController:
         self.honeydew.wlan_policy_deprecated_sync.stop_client_connections()
         try:
             self.honeydew.wlan_policy_deprecated_sync.wait_for_client_state(
-                expected_state=WlanClientState.CONNECTIONS_DISABLED,
+                expected_state=f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
                 timeout=DEFAULT_TIME_WAIT_FOR_CLIENT_CONNECTIONS_STATE,
             )
         except TimeoutError:

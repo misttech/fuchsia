@@ -7,6 +7,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 import fidl_fuchsia_location_namedplace as f_location_namedplace
+import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
 from honeydew.affordances.connectivity.wlan.utils import errors as wlan_errors
 from honeydew.affordances.connectivity.wlan.utils.types import (
@@ -14,7 +15,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     CountryCode,
     OperatingBand,
     SecurityType,
-    WlanClientState,
 )
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import asserts, signals, test_runner
@@ -100,7 +100,7 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         # Verify changing the country code does not create interfaces
         await self.dut.wlan_policy.wait_for_client_state(
-            WlanClientState.CONNECTIONS_DISABLED
+            f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED
         )
 
         if self.device_supports_ap:
@@ -118,7 +118,7 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         await self.dut.wlan_policy.set_country_code(CountryCode("US"))
         await self.dut.wlan_policy.start_client_connections()
         await self.dut.wlan_policy.wait_for_client_state(
-            WlanClientState.CONNECTIONS_ENABLED
+            f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED
         )
         if self.device_supports_ap:
             await self.dut.wlan_policy_ap.start(
@@ -134,7 +134,7 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         # Verify changing the country code cycles the client back to enabled.
         await self.dut.wlan_policy.wait_for_client_state(
-            WlanClientState.CONNECTIONS_ENABLED
+            f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED
         )
 
         # Don't reset the update listener so that this verifies
