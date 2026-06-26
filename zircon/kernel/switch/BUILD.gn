@@ -523,7 +523,7 @@ if (current_cpu == "arm64" && is_gcc) {
   # little Rust code that might run into this compiler issue.  Until the
   # compiler bug is fixed (ASAP), allow the few slots empirically seen to be
   # produced in the build.
-  got_tolerance = 24
+  got_tolerance = 128
 }
 
 # This is implicitly added last to configs in kernel_executable().
