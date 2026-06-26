@@ -357,6 +357,63 @@ TEST_F(PciBusTests, LegacyIrqSignalTest) {
   ASSERT_EQ(ZX_ERR_TIMED_OUT, port.wait(zx::deadline_after(zx::sec(0)), &packet));
 }
 
+TEST_F(PciBusTests, LegacyIrqMaskOnDeliverTest) {
+  // Legacy (INTx) interrupts are level-triggered: a device holds its interrupt
+  // line asserted until its driver services it. After the bus driver dispatches
+  // the interrupt it must mask the device so the line deasserts; otherwise the
+  // kernel re-delivers the still-asserted line in a storm. The mask is cleared
+  // again once the driver acknowledges. This test verifies that mask/unmask.
+  pci_bdf_t device = {0, 0, 0};
+  pciroot()
+      .ecam()
+      .get_device(device)
+      ->set_vendor_id(0x8086)
+      .set_device_id(0x8086)
+      .set_interrupt_pin(0x1)
+      .set_status(PCI_STATUS_INTERRUPT);
+  // Route pin A to vector 16.
+  constexpr uint8_t kVector = 0x10;
+  zx::interrupt bus_interrupt = AddLegacyIrqToBus(kVector);
+  AddRoutingEntryToBus(/*p_dev=*/std::nullopt, /*p_func=*/std::nullopt, /*dev_id=*/0,
+                       /*a=*/kVector,
+                       /*b=*/0, /*c=*/0, /*d=*/0);
+  auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
+                                             pciroot().ecam().mmio());
+  ASSERT_OK(owned_bus->Initialize());
+  auto* bus = owned_bus.release();
+
+  auto* bus_device = bus->GetDevice(device);
+  ASSERT_OK(bus_device->SetIrqMode(fuchsia_hardware_pci::InterruptMode::kLegacy, 1));
+  auto result = bus_device->MapInterrupt(0);
+  ASSERT_TRUE(result.is_ok());
+  zx::interrupt dev_interrupt = std::move(result.value());
+
+  // Reads legacy_disabled under the device lock. The IRQ worker holds the same
+  // lock across both the signal and the mask, so once we acquire it (after the
+  // device interrupt below has fired) we are guaranteed to observe the masked
+  // state rather than racing the worker thread.
+  auto disabled = [&bus_device]() {
+    fbl::AutoLock _(bus_device->dev_lock());
+    return bus_device->irqs().legacy_disabled;
+  };
+  ASSERT_FALSE(disabled());
+
+  // Fire the hardware vector. The worker thread signals the device's virtual
+  // interrupt (waking our wait below) and then masks the device.
+  ASSERT_OK(bus_interrupt.trigger(0, zx::clock::get_boot()));
+  zx::time_boot receive_time;
+  ASSERT_OK(dev_interrupt.wait(&receive_time));
+  ASSERT_TRUE(disabled());
+
+  // Acknowledging the interrupt the way a driver does (via AckInterrupt) re-arms
+  // the device by clearing the mask.
+  {
+    fbl::AutoLock _(bus_device->dev_lock());
+    ASSERT_OK(bus_device->AckLegacyIrq());
+  }
+  ASSERT_FALSE(disabled());
+}
+
 TEST_F(PciBusTests, ObeysHeaderTypeMultiFn) {
   auto& ecam = pciroot().ecam();
 

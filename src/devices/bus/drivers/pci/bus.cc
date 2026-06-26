@@ -466,10 +466,21 @@ void Bus::LegacyIrqWorker(const zx::port& port, fbl::Mutex* lock, SharedIrqMap* 
             zxlogf(ERROR, "failed to signal vector %#lx for device %s: %s", vector,
                    device.config()->addr(), zx_status_get_string(signal_status));
           }
+
+          // Legacy (INTx) interrupts are level-triggered: the device holds its
+          // interrupt line asserted until its driver services the device and
+          // clears the source. Mask the device's interrupt (set INT_DISABLE) so
+          // the line deasserts before we re-arm the physical interrupt below.
+          // The driver re-arms it by calling AckInterrupt (-> EnableLegacyIrq)
+          // once it has serviced the device. Without this the line stays
+          // asserted, the kernel immediately re-delivers, and the worker spins
+          // in an interrupt storm until the driver wins the race to clear it.
+          device.DisableLegacyIrq();
         }
       }
 
-      // Re-arm the given interrupt now that all the devices have been checked.
+      // Re-arm the given interrupt now that all the devices have been checked
+      // and any asserting devices have been masked.
       status = interrupt.ack();
       if (status != ZX_OK) {
         zxlogf(ERROR, "Failed to ack vector %#lx after servicing device: %s", vector,
