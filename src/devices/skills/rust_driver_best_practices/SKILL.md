@@ -153,6 +153,26 @@ preferences, etc.), please refer to the `rust_best_practices` skill.
   * In macros and generated code.
   * In code with lots of dependencies, where importing everything would lead to
     a very large import block with little benefit.
+* **Prefer `Option` or `Result` over Sentinel Values**: Do not use sentinel
+  values (such as `u64::MAX`, `-1`, or empty/placeholder values) to represent
+  errors or missing data. Use `Option<T>` or `Result<T, E>` to leverage Rust's
+  type safety and force callers to handle these cases.
+* **Prefer Early Returns (Guard Clauses)**: Use early returns (`return`,
+  `continue`, `break`) to handle argument validation, error conditions, or
+  simple cases. Avoid nesting the primary logic of a function inside a large
+  `else` block, which unnecessarily increases indentation.
+* **Extract Complex Expressions**: Extract complex match expressions, long
+  closures, or deeply nested logic into well-named helper functions or methods.
+  This keeps the main control flow clean and readable.
+* **No Redundant `Result` for Infallible Functions**: If a function cannot fail,
+  its return type should not be wrapped in a `Result`. Only use `Result` when
+  there is a legitimate error case that the caller must handle.
+* **Do Not Return Input Parameters Unchanged**: Avoid signatures that return an
+  input parameter unmodified, as the caller already has access to this value.
+* **Encapsulate Operations as Methods**: If a function primarily operates on a
+  struct's internal state (especially registers or MMIO blocks), define it as a
+  method on that struct. This improves encapsulation and simplifies caller-side
+  logic.
 
 **Driver-Specific Guidelines:**
 
@@ -342,6 +362,11 @@ possible, preferring actor pattern when it makes sense.
 
 ### Locks
 Prefer `Mutex` and `RwLock` from the `fuchsia_sync` crate, not `std::sync`.
+* **Minimize Lock Scope**: Keep the duration of lock acquisition as short as
+  possible. Avoid holding Mutex guards across `.await` points. Prefer
+  encapsulating locked operations within synchronous helper methods on the
+  protected resource (e.g., the register block struct) to ensure locks are
+  released immediately.
 
 ### Patterns to avoid Mutex/Arc:
 - **Task-Local State**: Own the state in a local task spawned on the driver's
@@ -460,6 +485,10 @@ aspect:**
   macros are used for MMIO access. Check for magic numbers.
 - **Round 3: Concurrency & Lifecycle**: Verify proper async patterns, lock
   usage, and node lifecycle management (e.g., keeping `Node` handles alive if
-  needed).
+  needed). Ensure Mutex guards are not held across `await` points and lock
+  scopes are minimized.
 - **Round 4: Style & Comments**: Check for AI-targeted comments, missing
-  documentation, or non-idiomatic Rust.
+  documentation, or non-idiomatic Rust. Verify that `Option`/`Result` are used
+  instead of sentinel values, early returns are used to reduce indentation,
+  infallible functions do not return `Result`, and operations on struct fields
+  are encapsulated as methods.
