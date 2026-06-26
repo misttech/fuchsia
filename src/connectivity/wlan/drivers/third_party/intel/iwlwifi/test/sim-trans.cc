@@ -64,9 +64,10 @@ SimTransIwlwifiDriver::SimTransIwlwifiDriver(iwl_trans* drvdata)
   // Create driver::Logger with dispatcher and namespace.
   auto logger = fdf::Logger::Create2(*ns, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
                                      "SimTransIwlwifiDriver loop", FUCHSIA_LOG_INFO);
+  logger_ = std::move(logger);
 
   // Initialize the log instance with driver::Logger.
-  wlan::drivers::log::Instance::Init(0, std::move(logger));
+  wlan::drivers::log::Instance::Init(0, logger_.get());
 }
 
 SimTransIwlwifiDriver::~SimTransIwlwifiDriver() {

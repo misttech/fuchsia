@@ -6,7 +6,7 @@
 #define SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_INTEL_IWLWIFI_PLATFORM_PCIE_IWLWIFI_DRIVER_H_
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/sync/completion.h>
@@ -29,20 +29,19 @@ class RcuManager;
 // This class contains the Fuchsia-specific PCIE bus initialization logic, and uses DDKTL class
 // to manage the lifetime of a iwlwifi driver instance.
 class PcieIwlwifiDriver : public wlan::iwlwifi::WlanPhyImplDevice,
-                          public fdf::DriverBase,
+                          public fdf::DriverBase2,
                           public fidl::WireAsyncEventHandler<fdf::NodeController> {
  public:
   PcieIwlwifiDriver(const PcieIwlwifiDriver& driver) = delete;
   PcieIwlwifiDriver& operator=(const PcieIwlwifiDriver& driver_in) = delete;
-  explicit PcieIwlwifiDriver(fdf::DriverStartArgs start_args,
-                             fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  PcieIwlwifiDriver();
   ~PcieIwlwifiDriver();
 
   static constexpr const char* Name() { return "iwlwifi"; }
   // The start point of iwlwifi driver. This function will be called right after the driver
   // framework decides to bind this driver to a known node.
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // Device implementation.
   iwl_trans* drvdata() override;
@@ -90,6 +89,8 @@ class PcieIwlwifiDriver : public wlan::iwlwifi::WlanPhyImplDevice,
   // Iwlwifi only supports client iface now.
   std::optional<fidl::WireClient<fdf::NodeController>> wlansoftmac_controller_client_;
   std::unique_ptr<WlanSoftmacDevice> wlan_softmac_device_;
+
+  std::shared_ptr<fdf::Namespace> incoming_;
 
   iwl_pci_dev pci_dev_;
 };

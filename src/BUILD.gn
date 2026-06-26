@@ -207,6 +207,37 @@ bazel_test_package_group("bazel_tests") {
       test_package_name = "my_driver_cpp_test"
       test_component_names = [ "my_driver_cpp_test" ]
     },
+    {
+      test_package_target = "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/test:iwlwifi_test_pkg"
+      test_package_name = "iwlwifi_test_pkg"
+      test_component_names = [
+        "dummy_test",
+        "fw_test",
+        "fw_dbg_test",
+        "utils_test",
+        "driver_inspector_test",
+        "driver_lifecycle_test",
+        "iwl_phy_db_test",
+        "mac80211_test",
+        "mac_ctxt_test",
+        "mvm_test",
+        "phy_ctxt_test",
+        "platform_test",
+        "sta_test",
+        "wlan_phy_impl_device_test",
+        "notif_wait_test",
+        "nvm_test",
+        "pcie_test",
+        "task_test",
+        "rcu_manager_test",
+        "wlan_softmac_device_test",
+      ]
+      test_specs = {
+        log_settings = {
+          max_severity = "ERROR"
+        }
+      }
+    },
   ]
 }
 

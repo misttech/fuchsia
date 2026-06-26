@@ -132,9 +132,10 @@ class PcieTest : public testing::Test {
 
     // Create driver::Logger with dispatcher and namespace.
     auto logger = fdf::Logger::Create2(*ns, task_loop_->dispatcher(), "SimTransIwlwifiDriver loop");
+    logger_ = std::move(logger);
 
     // Initialize the log instance with driver::Logger.
-    wlan::drivers::log::Instance::Init(0, std::move(logger));
+    wlan::drivers::log::Instance::Init(0, logger_.get());
 
     irq_loop_ = std::make_unique<::async::Loop>(&kAsyncLoopConfigNoAttachToCurrentThread);
     EXPECT_EQ(ZX_OK, irq_loop_->StartThread("iwlwifi-test-irq-worker", nullptr));
@@ -334,6 +335,7 @@ class PcieTest : public testing::Test {
 
  protected:
   std::unique_ptr<::async::Loop> task_loop_;
+  std::unique_ptr<fdf::Logger> logger_;
   std::unique_ptr<::async::Loop> irq_loop_;
   struct iwl_pci_dev pci_dev_ = {};
   struct iwl_trans* trans_ = {};

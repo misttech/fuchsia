@@ -13,7 +13,7 @@ class Instance {
  public:
   // Driver should call this once at startup before any logging calls are made.
   // Not thread safe
-  static void Init(uint32_t filter, std::unique_ptr<fdf::Logger> logger);
+  static void Init(uint32_t filter, fdf::Logger* logger);
   static bool IsFilterOn(uint32_t filter);
   static fdf::Logger* GetLogger();
   static void Reset();
@@ -22,7 +22,7 @@ class Instance {
   static Instance& get();
 
   uint32_t filter_{};
-  std::unique_ptr<fdf::Logger> logger_;
+  fdf::Logger* logger_ = nullptr;
 };
 
 }  // namespace wlan::drivers::log

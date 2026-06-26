@@ -59,6 +59,7 @@ class SimTransIwlwifiDriver : public ::wlan::iwlwifi::WlanPhyImplDevice {
   struct iwl_mvm_vif* mvmvif_ptrs_[MAX_NUM_MVMVIF];
   size_t softmac_device_count_ = 0;
   iwl_trans* drvdata_ = nullptr;
+  std::unique_ptr<fdf::Logger> logger_;
 };
 
 }  // namespace iwlwifi

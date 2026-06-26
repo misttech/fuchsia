@@ -4,7 +4,6 @@
 
 load(
     "@rules_fuchsia//fuchsia:defs.bzl",
-    "fuchsia_bind_library",
     "fuchsia_cc_driver",
     "fuchsia_component_manifest",
     "fuchsia_driver_bind_bytecode",
@@ -21,14 +20,6 @@ package(
     default_visibility = ["//visibility:public"],
 )
 
-# TODO(https://fxbug.dev/328828649): Remove this when fuchsia.hardware.sysmem is in the sdk.
-fuchsia_bind_library(
-    name = "sysmem_bindlib",
-    srcs = [
-        "sysmem_lib.bind",
-    ],
-)
-
 fuchsia_driver_bind_bytecode(
     name = "iwlwifi_bind_bytecode",
     output = "iwlwifi.bindbc",
@@ -37,10 +28,6 @@ fuchsia_driver_bind_bytecode(
         "@fuchsia_sdk//bind/fuchsia.acpi",
         "@fuchsia_sdk//bind/fuchsia.pci",
         "@fuchsia_sdk//fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib",
-        # TODO(https://fxbug.dev/328828649): Remove this when fuchsia.hardware.sysmem is in the sdk.
-        ":sysmem_bindlib",
-        # TODO(https://fxbug.dev/328828649): Use this when fuchsia.hardware.sysmem is in the sdk.
-        #"@fuchsia_sdk//fidl/fuchsia.hardware.sysmem:fuchsia.hardware.sysmem_bindlib",
     ],
 )
 
@@ -188,8 +175,6 @@ cc_library(
     ],
 )
 
-#TODO: need to switch back to fuchsia_cc_driver once it supports the following
-#linker flags.
 fuchsia_cc_driver(
     name = "iwlwifi_driver",
     srcs = [

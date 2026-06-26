@@ -8,7 +8,7 @@
 #include <fidl/fuchsia.hardware.pci/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <lib/async/cpp/task.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <zircon/assert.h>
 #include <zircon/status.h>
@@ -39,11 +39,8 @@ extern "C" {
 namespace wlan {
 namespace iwlwifi {
 
-PcieIwlwifiDriver::PcieIwlwifiDriver(fdf::DriverStartArgs start_args,
-                                     fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : WlanPhyImplDevice(),
-      DriverBase("iwlwifi", std::move(start_args), std::move(driver_dispatcher)),
-      node_client_(fidl::WireClient(std::move(node()), dispatcher())) {
+PcieIwlwifiDriver::PcieIwlwifiDriver()
+    : WlanPhyImplDevice(), fdf::DriverBase2("iwlwifi") {
   pci_dev_ = {};
 }
 
@@ -58,7 +55,7 @@ constexpr auto kOpenFlags =
 zx_status_t PcieIwlwifiDriver::LoadFirmware(const char* name, zx_handle_t* vmo, size_t* size) {
   std::string full_filename = "/pkg/lib/firmware/";
   full_filename.append(name);
-  auto client = incoming()->Open<fuchsia_io::File>(full_filename.c_str(), kOpenFlags);
+  auto client = incoming_->Open<fuchsia_io::File>(full_filename.c_str(), kOpenFlags);
   if (client.is_error()) {
     IWL_WARN(nullptr, "Open firmware file failed: %s", zx_status_get_string(client.error_value()));
     return client.error_value();
@@ -213,9 +210,12 @@ zx_status_t PcieIwlwifiDriver::RemoveWlansoftmacDevice(uint16_t iface_id) {
   return ZX_OK;
 }
 
-zx::result<> PcieIwlwifiDriver::Start() {
+zx::result<> PcieIwlwifiDriver::Start(fdf::DriverContext context) {
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  node_client_ = fidl::WireClient(take_node(), dispatcher());
+
   // Take over the logger lifecycle management from DriverBase.
-  wlan::drivers::log::Instance::Init(0, std::move(logger_));
+  wlan::drivers::log::Instance::Init(0, &logger());
 
   zx_status_t status = AddWlanPhyImplService();
   if (status != ZX_OK) {
@@ -228,7 +228,7 @@ zx::result<> PcieIwlwifiDriver::Start() {
   return zx::ok();
 }
 
-void PcieIwlwifiDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
+void PcieIwlwifiDriver::Stop(fdf::StopCompleter completer) {
   if (drvdata()) {
     // TODO(b/306684649): remove the below workaround once the issue is fixed.
     const int mac_id = 0;  // Assume only one interface is created.
@@ -277,7 +277,7 @@ zx_status_t PcieIwlwifiDriver::Initialize() {
   pci_dev_.dev.rcu_manager = static_cast<struct rcu_manager*>(rcu_manager_.get());
   pci_dev_.dev.inspector = static_cast<struct driver_inspector*>(driver_inspector_.get());
 
-  auto pci_client_end = incoming()->Connect<fuchsia_hardware_pci::Service::Device>();
+  auto pci_client_end = incoming_->Connect<fuchsia_hardware_pci::Service::Device>();
   if (pci_client_end.is_error()) {
     IWL_ERR(nullptr, "Failed to connect to PCI service: %s", pci_client_end.status_string());
     return pci_client_end.status_value();
@@ -366,4 +366,4 @@ zx_status_t PcieIwlwifiDriver::AddWlanPhyImplService() {
 }  // namespace iwlwifi
 }  // namespace wlan
 
-FUCHSIA_DRIVER_EXPORT(::wlan::iwlwifi::PcieIwlwifiDriver);
+FUCHSIA_DRIVER_EXPORT2(::wlan::iwlwifi::PcieIwlwifiDriver);

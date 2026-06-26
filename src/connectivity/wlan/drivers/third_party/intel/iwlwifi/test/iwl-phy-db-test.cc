@@ -43,9 +43,10 @@ class IwlPhyDbTest : public ::testing::Test {
 
     // Create driver::Logger with dispatcher and namespace.
     auto logger = fdf::Logger::Create2(*ns, loop_.dispatcher(), "SimTransIwlwifiDriver loop");
+    logger_ = std::move(logger);
 
     // Initialize the log instance with driver::Logger.
-    wlan::drivers::log::Instance::Init(0, std::move(logger));
+    wlan::drivers::log::Instance::Init(0, logger_.get());
   }
   ~IwlPhyDbTest() { wlan::drivers::log::Instance::Reset(); }
 
@@ -58,6 +59,7 @@ class IwlPhyDbTest : public ::testing::Test {
  private:
   struct iwl_phy_db* phy_db_;
   async::Loop loop_ = async::Loop(&kAsyncLoopConfigNeverAttachToThread);
+  std::unique_ptr<fdf::Logger> logger_;
 };
 
 // Expect the iwl_phy_db_send_all_channel_groups() returns ZX_OK right after init before there is

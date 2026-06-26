@@ -4,11 +4,6 @@
 
 composite iwlwifi;
 
-using fuchsia.acpi;
-using fuchsia.pci;
-using fuchsia.hardware.pci;
-using fuchsia.hardware.sysmem;
-
 primary parent "pci" {
   fuchsia.BIND_PCI_VID == fuchsia.pci.BIND_PCI_VID.INTEL;
   accept fuchsia.BIND_PCI_DID {
@@ -23,15 +18,6 @@ primary parent "pci" {
   } else {
     // 0x04 = fuchsia.pci.BIND_FIDL_PROTOCOL.DEVICE
     fuchsia.BIND_FIDL_PROTOCOL == 0x04;
-  }
-}
-
-optional parent "sysmem" {
-  if fuchsia.hardware.sysmem.Service == "fuchsia.hardware.sysmem.Service.ZirconTransport" {
-    true;
-  } else {
-    // 0x09 = fuchsia.sysmem.BIND_FIDL_PROTOCOL.DEVICE
-    fuchsia.BIND_FIDL_PROTOCOL == 0x09;
   }
 }
 

@@ -462,7 +462,7 @@ enum scan_config_flags {
 	SCAN_CONFIG_FLAG_CLEAR_LMAC2_FRAGMENTED = BIT(23),
 
 /* Bits 26-31 are for num of channels in channel_array */
-#define SCAN_CONFIG_N_CHANNELS(n) ((n) << 26)
+#define SCAN_CONFIG_N_CHANNELS(n) (((uint32_t)(n)) << 26)
 };
 
 enum scan_config_rates {
@@ -482,7 +482,7 @@ enum scan_config_rates {
 	SCAN_CONFIG_RATE_11M = BIT(11),
 
 /* Bits 16-27 are for supported rates */
-#define SCAN_CONFIG_SUPPORTED_RATE(rate) ((rate) << 16)
+#define SCAN_CONFIG_SUPPORTED_RATE(rate) (((uint32_t)(rate)) << 16)
 };
 
 enum iwl_channel_flags {
