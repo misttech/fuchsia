@@ -7,6 +7,10 @@ pub mod permission_check;
 pub mod policy;
 pub mod security_server;
 
+#[allow(unused_imports)]
+#[expect(dead_code)]
+mod new_policy;
+
 pub use access_vector_cache::{AccessQueryArgs, DEFAULT_SHARED_SIZE, QueryCacheCapacity};
 pub use concurrent_access_cache::{AccessCacheStorage, ConcurrentAccessCache};
 pub use security_server::SecurityServer;
