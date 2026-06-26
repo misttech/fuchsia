@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include <zircon/compiler.h>
 
-#include "third_party/driver-lib/log/cpp/include/dfv2/wlan/drivers/internal/log_severity.h"
+#include <wlan/drivers/internal/log_severity.h>
 
 // This file contains internal functions and macros that are used by the public-facing macros.
 // Users should not use any of these functions or macros directly.

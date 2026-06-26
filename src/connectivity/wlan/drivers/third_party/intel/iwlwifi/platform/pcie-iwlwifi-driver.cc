@@ -17,8 +17,9 @@
 
 #include <bind/fuchsia/wlan/phyimpl/cpp/bind.h>
 #include <bind/fuchsia/wlan/softmac/cpp/bind.h>
+#include <wlan/drivers/log_instance.h>
 
-#include "third_party/driver-lib/log/cpp/include/dfv2/wlan/drivers/log_instance.h"
+#include "third_party/iwlwifi/platform/kernel.h"
 
 extern "C" {
 #include "third_party/iwlwifi/iwl-debug.h"

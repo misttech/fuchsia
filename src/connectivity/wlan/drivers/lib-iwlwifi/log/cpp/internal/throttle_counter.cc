@@ -1,9 +1,9 @@
 // Copyright 2022 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
-#include "third_party/driver-lib/log/cpp/include/common/wlan/drivers/internal/throttle_counter.h"
-
 #include <zircon/syscalls.h>
+
+#include <wlan/drivers/internal/throttle_counter.h>
 
 // Attempt to consume one token. If a token is successfully consumed then one token will be
 // deducted and true is returned. Returns false if there are no available tokens.

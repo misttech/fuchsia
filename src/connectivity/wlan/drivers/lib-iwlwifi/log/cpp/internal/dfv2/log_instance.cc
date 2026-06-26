@@ -1,9 +1,9 @@
 // Copyright 2022 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
-#include "third_party/driver-lib/log/cpp/include/dfv2/wlan/drivers/log_instance.h"
-
 #include <zircon/assert.h>
+
+#include <wlan/drivers/log_instance.h>
 
 namespace wlan::drivers::log {
 

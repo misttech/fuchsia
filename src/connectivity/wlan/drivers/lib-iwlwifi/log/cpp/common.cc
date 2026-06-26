@@ -5,9 +5,9 @@
 #include <zircon/assert.h>
 #include <zircon/syscalls.h>
 
-#include "third_party/driver-lib/log/cpp/include/common/wlan/drivers/internal/hexdump.h"
-#include "third_party/driver-lib/log/cpp/include/common/wlan/drivers/internal/macro_helpers.h"
-#include "third_party/driver-lib/log/cpp/include/dfv2/wlan/drivers/internal/log_severity.h"
+#include <wlan/drivers/internal/hexdump.h>
+#include <wlan/drivers/internal/log_severity.h>
+#include <wlan/drivers/internal/macro_helpers.h>
 
 extern "C" void wlan_drivers_log_hexdump(LOG_SEVERITY_TYPE severity, uint32_t filter,
                                          const char* tag, const char* file, int line,

@@ -9,6 +9,7 @@
 #include <lib/async/time.h>  // for async_now()
 #include <zircon/time.h>
 
+#include <algorithm>
 #include <mutex>
 
 #include "third_party/driver-lib/wlan/ieee80211.h"

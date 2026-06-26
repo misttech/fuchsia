@@ -18,7 +18,6 @@ load(
 )
 
 package(
-    default_applicable_licenses = ["//:license_fuchsia"],
     default_visibility = ["//visibility:public"],
 )
 
@@ -53,6 +52,7 @@ cc_library(
     hdrs = [
         "driver-inspector.h",
     ],
+    include_prefix = "third_party/iwlwifi/platform",
     deps = [
         "@fuchsia_sdk//pkg/inspect",
         "@fuchsia_sdk//pkg/inspect_component_cpp",
@@ -111,11 +111,12 @@ cc_library(
         "CPTCFG_IWLMVM=1",
         "CPTCFG_IWLWIFI_D0I3_DEFAULT_DISABLE=",
     ],
+    include_prefix = "third_party/iwlwifi/platform",
     deps = [
         ":driver_inspector",
         ":rcu_manager",
-        "//third_party/driver-lib/wlan",
-        "//third_party/driver-lib/log/cpp:dfv2",
+        "//src/connectivity/wlan/drivers/lib-iwlwifi/wlan",
+        "//src/connectivity/wlan/drivers/lib-iwlwifi/log/cpp:dfv2",
         "@fuchsia_sdk//fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac_cpp_driver",
         "@fuchsia_sdk//pkg/driver_mmio_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp_wire",
@@ -130,6 +131,7 @@ cc_library(
     name = "rcu_manager",
     srcs = ["rcu-manager.cc"],
     hdrs = ["rcu-manager.h"],
+    include_prefix = "third_party/iwlwifi/platform",
     deps = [
         "@fuchsia_sdk//pkg/async",
         "@fuchsia_sdk//pkg/async-cpp",
@@ -153,7 +155,8 @@ cc_library(
         "wlanphyimpl-device.h",
         "wlansoftmac-device.h",
     ],
-    copts = ["-Ithird_party/iwlwifi"],
+    copts = ["-Isrc/connectivity/wlan/drivers/third_party/intel/iwlwifi"],
+    include_prefix = "third_party/iwlwifi/platform",
     deps = [
         ":driver_inspector",
         ":platform",
@@ -164,10 +167,10 @@ cc_library(
         "@fuchsia_sdk//fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac_cpp_driver",
         "@fuchsia_sdk//fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
         "@fuchsia_sdk//pkg/sync",
-        "//third_party/iwlwifi:core",
-        "//third_party/iwlwifi/mvm",
-        "//third_party/iwlwifi/pcie",
-        "//third_party/iwlwifi/cfg",
+        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:core",
+        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/mvm",
+        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/pcie",
+        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/cfg",
 
         # These might not be needed once we have cpp/driver support
         "@fuchsia_sdk//pkg/fidl_driver_transport",
@@ -215,9 +218,10 @@ fuchsia_package(
     package_name = "iwlwifi",
     components = [":iwlwifi_component"],
     disable_repository_name = "fuchsia.com",
+    fuchsia_api_level = "HEAD",
     resources = [
-        "//third_party/iwlwifi/firmwares:iwlwifi-firmware-iwlwifi-8265-31",
-        "//third_party/iwlwifi/firmwares:iwlwifi-firmware-iwlwifi-QuZ-a0-hr-b0-71",
+        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/firmwares:iwlwifi-firmware-iwlwifi-8265-31",
+        "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/firmwares:iwlwifi-firmware-iwlwifi-QuZ-a0-hr-b0-71",
     ],
     visibility = ["//visibility:public"],
 )

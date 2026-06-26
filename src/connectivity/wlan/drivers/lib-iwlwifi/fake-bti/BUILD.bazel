@@ -13,7 +13,7 @@ cc_library(
     ],
     includes = ["include"],
     deps = [
-        "//third_party/driver-lib/fake-object",
+        "//src/connectivity/wlan/drivers/lib-iwlwifi/fake-object",
         "@fuchsia_sdk//pkg/fdio",
         "@fuchsia_sdk//pkg/zx",
     ],
