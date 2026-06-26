@@ -269,6 +269,18 @@ void Dwc3::HandleEp0Setup(size_t length) {
   }
 
   const bool is_out = (setup.bm_request_type & USB_DIR_MASK) == USB_DIR_OUT;
+
+  // We can't fit this in FIDL so we can't dispatch. Log loudly and fail.
+  if (is_out && length > fuchsia_hardware_usb_dci::kMaxControlRequestLen) {
+    fdf::error(
+        "control data request too large ({}) bm_request_type=0x{:02X}, "
+        "b_request=0x{:02X}, w_value=0x{:04X}, w_index=0x{:04X}, w_length={}",
+        length, setup.bm_request_type, setup.b_request, setup.w_value, setup.w_index,
+        setup.w_length);
+    fail();
+    return;
+  }
+
   fidl::Arena arena;
   dci_intf_.buffer(arena)
       ->Control(setup, is_out ? fidl::VectorView<uint8_t>::FromExternal(
@@ -284,7 +296,7 @@ void Dwc3::HandleEp0Setup(size_t length) {
         }
 
         if (!result.ok()) {
-          fdf::error("(framework) Control(): {}", result.status_string());
+          fdf::error("(framework) Control() length = {}: {}", length, result.FormatDescription());
           metrics_.RecordEvent(
               std::format("ep0: Stalled setup request "
                           "[type=0x{:02x} req=0x{:02x} val=0x{:04x} idx=0x{:04x} len={}] "

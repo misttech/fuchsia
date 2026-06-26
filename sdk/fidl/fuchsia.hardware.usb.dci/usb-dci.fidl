@@ -66,6 +66,9 @@ open protocol UsbDci {
     }) -> () error zx.Status;
 };
 
+// Calculated to hit the maximum FIDL message size on the control request.
+const MAX_CONTROL_REQUEST_LEN uint64 = 65508;
+
 /// Interface for parent (typically DCI driver) to call into its child
 /// (currently usb-peripheral driver). UsbDci::Use SetInterface() to bind
 /// client_end in the parent driver.
@@ -75,7 +78,7 @@ open protocol UsbDciInterface {
     /// See usb20 8.5.3 and 9.6
     flexible Control(struct {
         setup fuchsia.hardware.usb.descriptor.UsbSetup;
-        write vector<uint8>:MAX;
+        write vector<uint8>:MAX_CONTROL_REQUEST_LEN;
     }) -> (struct {
         read vector<uint8>:MAX;
     }) error zx.Status;

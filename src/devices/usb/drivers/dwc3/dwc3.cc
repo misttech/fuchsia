@@ -943,7 +943,8 @@ void Dwc3::ResetConfiguration() {
         [](fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::SetConnected>&
                result) {
           if (!result.ok()) {
-            fdf::error("(framework) SetConnected(): {}", result.status_string());
+            fdf::error("(framework) SetConnected() (ResetConfiguration): {}",
+                       result.FormatDescription());
           } else if (result->is_error()) {
             fdf::error("SetConnected(): {}", zx_status_get_string(result->error_value()));
           }
@@ -974,7 +975,8 @@ void Dwc3::HandleResetEvent() {
         [](fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::SetConnected>&
                result) {
           if (!result.ok()) {
-            fdf::error("(framework) SetConnected(): {}", result.status_string());
+            fdf::error("(framework) SetConnected() (HandleResetEvent): {}",
+                       result.FormatDescription());
           } else if (result->is_error()) {
             fdf::error("SetConnected(): {}", zx_status_get_string(result->error_value()));
           }
@@ -1035,7 +1037,7 @@ void Dwc3::HandleConnectionDoneEvent() {
     dci_intf_.buffer(arena)->SetSpeed(new_speed).Then(
         [](fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::SetSpeed>& result) {
           if (!result.ok()) {
-            fdf::error("(framework) SetSpeed(): {}", result.status_string());
+            fdf::error("(framework) SetSpeed(): {}", result.FormatDescription());
           } else if (result->is_error()) {
             fdf::error("SetSpeed(): {}", zx_status_get_string(result->error_value()));
           }
@@ -1053,7 +1055,8 @@ void Dwc3::HandleDisconnectedEvent() {
         [](fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::SetConnected>&
                result) {
           if (!result.ok()) {
-            fdf::error("(framework) SetConnected(): {}", result.status_string());
+            fdf::error("(framework) SetConnected() (HandleDisconnect): {}",
+                       result.FormatDescription());
           } else if (result->is_error()) {
             fdf::error("SetConnected(): {}", zx_status_get_string(result->error_value()));
           }
@@ -1504,7 +1507,8 @@ void Dwc3::OnConnectStatusChanged(
         .Then([](fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::SetConnected>&
                      result) {
           if (!result.ok()) {
-            fdf::error("(framework) SetConnected(): {}", result.status_string());
+            fdf::error("(framework) SetConnected() (OnConnectStatusChanged): {}",
+                       result.FormatDescription());
           } else if (result->is_error()) {
             fdf::error("SetConnected(): {}", zx_status_get_string(result->error_value()));
           }

@@ -15,6 +15,16 @@
 
 namespace usb_peripheral {
 
+// We have a constant in fuchsia.hardware.usb.dci to be able to check maximum
+// size of control payloads, leave a change detector here to ensure we have the
+// constant at the correct value (targeting the maximum FIDL message size).
+static_assert(fidl::MaxSizeInChannel<fuchsia_hardware_usb_dci::wire::UsbDciInterfaceControlRequest,
+                                     fidl::MessageDirection::kSending>() ==
+              ZX_CHANNEL_MAX_MSG_BYTES);
+// Mention the constant because an unbounded message always ends up with the
+// maximum channel message length either way.
+static_assert(fuchsia_hardware_usb_dci::wire::kMaxControlRequestLen != 0);
+
 void UsbDciInterfaceServer::Control(ControlRequestView req, ControlCompleter::Sync& completer) {
   TRACE_DURATION("usb-peripheral", __func__);
 
