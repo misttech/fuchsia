@@ -84,6 +84,6 @@ rust_library(
         "//third_party/rust_crates/vendor/prost-types-0.14.4:prost_types",
         "//third_party/rust_crates/vendor/regex-1.12.3:regex",
         "//third_party/rust_crates/vendor/syn-2.0.117:syn",
-        "//third_party/rust_crates/vendor/tempfile-3.2.0:tempfile",
+        "//third_party/rust_crates/vendor/tempfile-3.27.0:tempfile",
     ],
 )

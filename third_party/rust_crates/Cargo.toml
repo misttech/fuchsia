@@ -434,6 +434,7 @@ bt-common = { path = "forks/bluetooth/bt-common" }
 bt-gatt = { path = "forks/bluetooth/bt-gatt" }
 bt-pacs = { path = "forks/bluetooth/bt-pacs" }
 bt-vcs = { path = "forks/bluetooth/bt-vcs" }
+errno = { path = "forks/errno-0.3.14" }
 fatfs = { path = "forks/fatfs" }
 fuse3 = { path = "forks/fuse3" }
 libm = { path = "forks/libm" }
@@ -1050,6 +1051,7 @@ target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "i
 
 [gn.package.rustix."1.1.4"]
 rustflags = []
+license_files = ["LICENSE-APACHE"]
 
 [gn.package.rustix."1.1.4".platform."cfg(target_os = \"fuchsia\")"]
 rustflags = [

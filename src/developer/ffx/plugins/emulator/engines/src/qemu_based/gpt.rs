@@ -164,8 +164,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_create_default_cmdline_file_in_designated_location() {
-        let tmpdir = tempfile::tempdir().unwrap().into_path();
-        let f = tmpdir.join("cmdline");
+        let tmp = tempfile::tempdir().unwrap();
+        let f = tmp.path().join("cmdline");
         write_zedboot_cmdline(&f, None).unwrap();
         let cmdline = std::fs::read_to_string(f).unwrap();
         assert_eq!(cmdline, DEFAULT_ZEDBOOT_CMDLINE);

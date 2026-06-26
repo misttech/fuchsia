@@ -192,7 +192,7 @@ mod tests {
         )])
     }
 
-    fn test_folder_structure(outdir: &Utf8PathBuf) -> Result<()> {
+    fn test_folder_structure(outdir: &Utf8Path) -> Result<()> {
         let mut count = 0;
         for entry in fs::read_dir(&outdir.join(PackageDestination::ShellCommands.to_string()))? {
             count += 1;
@@ -204,7 +204,7 @@ mod tests {
                 true => {
                     match file_name.as_str() {
                         "package1" => test_bash_files(outdir, &file_name)?,
-                        "pkgctl" => test_mismatch_case(&outdir)?,
+                        "pkgctl" => test_mismatch_case(outdir)?,
                         _ => assert!(file_name.contains("meta")),
                     };
                 }
@@ -226,7 +226,7 @@ mod tests {
         Ok(())
     }
 
-    fn test_mismatch_case(outdir: &Utf8PathBuf) -> Result<()> {
+    fn test_mismatch_case(outdir: &Utf8Path) -> Result<()> {
         let contents = fs::read_to_string(
             outdir.join(PackageDestination::ShellCommands.to_string()).join("pkgctl").join("bin"),
         )?;
@@ -234,7 +234,7 @@ mod tests {
         Ok(())
     }
 
-    fn test_bash_files(outdir: &Utf8PathBuf, package: &String) -> Result<()> {
+    fn test_bash_files(outdir: &Utf8Path, package: &str) -> Result<()> {
         for entry in fs::read_dir(
             outdir.join(PackageDestination::ShellCommands.to_string()).join(package).join("bin"),
         )? {
@@ -264,11 +264,11 @@ mod tests {
     #[test]
     fn test_build() -> Result<()> {
         let mut builder = ShellCommandsBuilder::new_pkg();
-        let outdir = TempDir::new().unwrap().into_path();
-        let outdir_path = Utf8PathBuf::from_path_buf(outdir).unwrap();
+        let outdir = TempDir::new().unwrap();
+        let outdir_path = Utf8Path::from_path(outdir.path()).unwrap();
         builder.add_shell_commands(make_test_shell_commands(), "fuchsia.com".to_string());
-        builder.build(&outdir_path).unwrap();
-        test_folder_structure(&outdir_path)
+        builder.build(outdir_path).unwrap();
+        test_folder_structure(outdir_path)
             .map_err(|_| anyhow::anyhow!("The folder structure is not as expected"))?;
         Ok(())
     }
@@ -276,7 +276,8 @@ mod tests {
     #[test]
     fn test_mismatch_target_path_source_path() -> Result<()> {
         let mut builder = ShellCommandsBuilder::new_pkg();
-        let outdir = TempDir::new().unwrap().into_path();
+        let outdir = TempDir::new().unwrap();
+        let outdir_path = Utf8Path::from_path(outdir.path()).unwrap();
         builder.add_shell_commands(
             ShellCommands::from([(
                 "pkgctl".to_string(),
@@ -285,7 +286,7 @@ mod tests {
             "fuchsia.com".to_string(),
         );
 
-        builder.build(Utf8PathBuf::from_path_buf(outdir).unwrap()).unwrap();
+        builder.build(outdir_path).unwrap();
         Ok(())
     }
 

@@ -228,7 +228,7 @@ mod tests {
     fn create_temp_dir(file_name: &str) -> fio::DirectoryProxy {
         // Create a temp directory and put a file with name `file_name` inside it.
         let temp_dir = TempDir::new().unwrap();
-        let temp_dir_path = temp_dir.into_path();
+        let temp_dir_path = temp_dir.keep();
         let file_path = temp_dir_path.join(file_name);
         std::fs::write(&file_path, "Hippos Rule!").unwrap();
         let temp_dir_path = temp_dir_path.display().to_string();

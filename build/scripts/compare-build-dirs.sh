@@ -422,6 +422,10 @@ function diff_file_relpath() {
     # TODO(b/379173865): fidldoc.zip bears timestamps (nondeterministic)
     fidldoc.zip) expect="ignore" ;;
 
+    # rustix build script compilation tests are attributed to absolute paths
+    # in metadata, which causes false positives in bazel consistency checks
+    rustix_test_can_compile) expect="ignore" ;;
+
     *.pyz | *.zip) expect="match"; diff_zip "$left" "$right" ;;
     # Most archives carry timestamp information of their contents.
     # One way to make this reproducible is to force a magic date/time

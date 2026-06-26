@@ -88,7 +88,7 @@ rust_library(
         "//third_party/rust_crates/vendor/percent-encoding-2.3.1:percent_encoding",
         "//third_party/rust_crates/vendor/serde-1.0.228:serde",
         "//third_party/rust_crates/vendor/serde_json-1.0.149:serde_json",
-        "//third_party/rust_crates/vendor/tempfile-3.2.0:tempfile",
+        "//third_party/rust_crates/vendor/tempfile-3.27.0:tempfile",
         "//third_party/rust_crates/vendor/thiserror-2.0.18:thiserror",
         "//third_party/rust_crates/vendor/untrusted-0.9.0:untrusted",
         "//third_party/rust_crates/vendor/url-2.3.1:url",

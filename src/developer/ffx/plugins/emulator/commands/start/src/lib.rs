@@ -33,7 +33,7 @@ mod pbm;
 pub(crate) const DEFAULT_NAME: &str = "fuchsia-emulator";
 
 async fn download_from_gs(gs_url: &str) -> Result<PathBuf> {
-    let dir = TempDir::new().context("create temp dir")?.into_path();
+    let dir = TempDir::new().context("create temp dir")?.keep();
     let file_name = gs_url.split('/').next_back().ok_or_else(|| anyhow!("Invalid GS URL"))?;
     let local_path = dir.join(file_name);
 

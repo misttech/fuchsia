@@ -60,7 +60,7 @@ fn canonicalize<P: AsRef<Path>>(path: P, path_name: &str) -> PathBuf {
 #[cfg(test)]
 mod test {
     use super::{join_and_canonicalize, relativize_path};
-    use std::fs::{create_dir_all, File};
+    use std::fs::{File, create_dir_all};
     use std::path::PathBuf;
     use tempfile::tempdir;
 
@@ -98,7 +98,8 @@ mod test {
 
     #[fuchsia::test]
     fn resolve_absolute_base_resolved_relative_parent_path() {
-        let base_root = tempdir().unwrap().into_path();
+        let temp = tempdir().unwrap();
+        let base_root = temp.path();
         let base = base_root.join("out/product.board");
         let path = path_buf("../../path");
         // `join_and_canonicalize("/tmp-dir/out/product.board", "../../path") == "/tmp-dir/path"`.
@@ -114,12 +115,14 @@ mod test {
 
     #[fuchsia::test]
     fn resolve_absolute_base_resolved_absolute_path_resolved() {
-        let base = tempdir().unwrap().into_path();
-        let path = tempdir().unwrap().into_path();
+        let base_temp = tempdir().unwrap();
+        let path_temp = tempdir().unwrap();
+        let base = base_temp.path();
+        let path = path_temp.path();
         // `join_and_canonicalize("/tmp-dir-1", "/tmp-dir-2") == "/tmp-dir-2"`.
-        let expected = path.clone();
+        let expected = path.to_path_buf();
 
-        assert_eq!(join_and_canonicalize(&base, &path), expected);
+        assert_eq!(join_and_canonicalize(base, path), expected);
     }
 
     #[fuchsia::test]
@@ -169,7 +172,8 @@ mod test {
 
     #[fuchsia::test]
     fn relativize_canonicalized_base_absolute_path() {
-        let base_root = tempdir().unwrap().into_path();
+        let temp = tempdir().unwrap();
+        let base_root = temp.path();
         let canonical_base = base_root.join("out/product.board");
         create_dir_all(&canonical_base).unwrap();
         let non_canonical_base = base_root.join("out/product.board/../../out/product.board");
