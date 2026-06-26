@@ -76,24 +76,13 @@ enum RollingCaptureState {
     ///
     /// The lifetime of the packet capture is tied to the client's connection.
     Attached { task: fasync::Task<Option<CaptureData>>, cancel: oneshot::Sender<()> },
-    /// A packet capture is active but has been detached from the client's
-    /// connection.
-    ///
-    /// The client is currently connected, but closing the connection will not
-    /// terminate the capture.
-    DetachedConnected {
+    /// A packet capture is detached, and may or may not have a client connected
+    /// based on `connected`.
+    Detached {
         name: String,
         task: fasync::Task<Option<CaptureData>>,
         cancel: oneshot::Sender<()>,
-    },
-    /// A packet capture is detached and there is no client connected.
-    ///
-    /// The server holds the captured data and is waiting for a reconnect
-    /// or a timeout.
-    Disconnected {
-        name: String,
-        task: fasync::Task<Option<CaptureData>>,
-        cancel: oneshot::Sender<()>,
+        connected: bool,
     },
 }
 
@@ -109,11 +98,13 @@ impl RollingCaptureState {
     fn transition_to_closing(&mut self) {
         self.replace_with(|old| match old {
             RollingCaptureState::Attached { task, cancel: _ }
-            | RollingCaptureState::DetachedConnected { task, name: _, cancel: _ } => {
+            | RollingCaptureState::Detached { task, name: _, cancel: _, connected: _ } => {
                 let _ = task.detach_on_drop();
                 (RollingCaptureState::Closing, ())
             }
-            old => unreachable!("transition to closing for teardown in unexpected state: {old:?}"),
+            RollingCaptureState::Closing | RollingCaptureState::Empty => {
+                unreachable!("transition to closing for teardown in unexpected state: {old:?}")
+            }
         })
     }
 }
@@ -143,15 +134,18 @@ fn handle_detach(
     name: String,
 ) -> Result<(), fnet_debug::RollingPacketCaptureDetachError> {
     ctx.bindings_ctx().packet_captures.state.lock().replace_with(|old_state| match old_state {
-        RollingCaptureState::Attached { task, cancel } => {
-            (RollingCaptureState::DetachedConnected { name: name.clone(), task, cancel }, Ok(()))
-        }
-        s @ RollingCaptureState::DetachedConnected { .. } => {
+        RollingCaptureState::Attached { task, cancel } => (
+            RollingCaptureState::Detached { name: name.clone(), task, cancel, connected: true },
+            Ok(()),
+        ),
+        s @ RollingCaptureState::Detached { name: _, task: _, cancel: _, connected }
+            if connected =>
+        {
             (s, Err(fnet_debug::RollingPacketCaptureDetachError::AlreadyDetached))
         }
         RollingCaptureState::Empty
         | RollingCaptureState::Closing
-        | RollingCaptureState::Disconnected { .. } => {
+        | RollingCaptureState::Detached { .. } => {
             unreachable!("Detach called in unexpected state {old_state:?}");
         }
     })
@@ -293,7 +287,7 @@ where
 
         // If takeover has been signalled, the state protected by the mutex now
         // belongs to the new task, so we must check for this and hand over
-        // capture data correctly instead of overwriting state with Disconnected!
+        // capture data correctly instead of overwriting state!
         if let Some(()) =
             takeover_cancel.try_recv().expect("takeover sender should not have been dropped")
         {
@@ -301,16 +295,17 @@ where
         }
 
         state_lock.replace_with(|old| match old {
-            RollingCaptureState::DetachedConnected { name, task, cancel } => {
-                (RollingCaptureState::Disconnected { name, task, cancel }, NewState::Disconnected)
-            }
+            RollingCaptureState::Detached { name, task, cancel, connected } if connected => (
+                RollingCaptureState::Detached { name, task, cancel, connected: false },
+                NewState::Disconnected,
+            ),
             RollingCaptureState::Attached { task, cancel: _ } => {
                 let _ = task.detach_on_drop();
                 (RollingCaptureState::Closing, NewState::Closing)
             }
-            old @ (RollingCaptureState::Empty
+            RollingCaptureState::Detached { .. }
             | RollingCaptureState::Closing
-            | RollingCaptureState::Disconnected { .. }) => {
+            | RollingCaptureState::Empty => {
                 unreachable!("unexpected state at closure: {old:?}");
             }
         })
@@ -346,21 +341,7 @@ where
                 _ = timeout_after_downloads_complete => {},
             }
 
-            {
-                let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
-                state_lock.replace_with(|old| match old {
-                    RollingCaptureState::Disconnected { name: _, task, cancel: _ } => {
-                        let _ = task.detach_on_drop();
-                        (RollingCaptureState::Closing, ())
-                    }
-                    old => unreachable!("unexpected state at timeout: {old:?}"),
-                });
-            }
-
-            source.shutdown(&mut ctx).await;
-            let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
-            assert_matches::assert_matches!(*state_lock, RollingCaptureState::Closing);
-            *state_lock = RollingCaptureState::Empty;
+            cleanup(ctx, source, None).await;
             None
         }
     }
@@ -391,8 +372,7 @@ fn handle_start_rolling(
     let mut state_lock = ctx_clone.bindings_ctx().packet_captures.state.lock();
     match *state_lock {
         RollingCaptureState::Attached { .. }
-        | RollingCaptureState::DetachedConnected { .. }
-        | RollingCaptureState::Disconnected { .. }
+        | RollingCaptureState::Detached { .. }
         | RollingCaptureState::Closing => {
             return Err(fnet_debug::PacketCaptureStartError::QuotaExceeded);
         }
@@ -552,10 +532,7 @@ fn handle_reconnect_rolling(
 
     state_lock.replace_with(|old_state| {
         let old_task = match old_state {
-            RollingCaptureState::Disconnected { name: n, task, cancel }
-            | RollingCaptureState::DetachedConnected { name: n, task, cancel }
-                if n == name =>
-            {
+            RollingCaptureState::Detached { name: n, task, cancel, connected: _ } if n == name => {
                 cancel.send(()).expect("cancel recevier should not have been dropped");
                 task
             }
@@ -578,10 +555,11 @@ fn handle_reconnect_rolling(
         });
 
         (
-            RollingCaptureState::DetachedConnected {
+            RollingCaptureState::Detached {
                 name: name.clone(),
                 task: new_task,
                 cancel: cancel_sender,
+                connected: true,
             },
             Ok(rolling_client),
         )
@@ -846,7 +824,7 @@ mod tests {
         rolling_proxy.stop_and_download(file_server).expect("stop_and_download FIDL");
 
         // Close the RollingPacketCapture control channel.
-        // This triggers the transition to Disconnected.
+        // This triggers a state transition.
         std::mem::drop(rolling_proxy);
 
         // Advance time by 2 * TIMEOUT.
@@ -855,13 +833,15 @@ mod tests {
         fasync::TestExecutor::advance_to(fasync::MonotonicInstant::now() + timeout_duration * 2)
             .await;
 
-        // Verify we are still in Disconnected state.
+        // Verify we are still disconnected.
         {
             let state_lock = ns.ctx.bindings_ctx().packet_captures.state.lock();
-            assert_matches::assert_matches!(
+            let (name, connected) = assert_matches::assert_matches!(
                 &*state_lock,
-                RollingCaptureState::Disconnected { name, .. } if name == capture_name
+                RollingCaptureState::Detached { name, connected, .. } => (name, connected)
             );
+            assert_eq!(name, capture_name);
+            assert!(!connected);
         }
 
         // Close the file download. This should allow the GC timer to start.
