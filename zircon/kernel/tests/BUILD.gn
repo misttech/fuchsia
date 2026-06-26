@@ -81,6 +81,7 @@ if (toolchain_environment == "kernel") {
     sources = [
       "abi_type_validator.cc",
       "alloc_checker_tests.cc",
+      "arch_rs_tests.cc",
       "benchmarks.cc",
       "brwlock_tests.cc",
       "cache_tests.cc",
@@ -123,6 +124,7 @@ if (toolchain_environment == "kernel") {
       "wait_queue_ordering_tests.cc",
     ]
     deps = [
+      ":arch-rs-tests",
       ":common",
       "rustlang-support:kernel-tests",
       "//zircon/kernel/arch/$zircon_cpu:kernel-tests",
@@ -163,22 +165,18 @@ if (toolchain_environment == "kernel") {
     source_set("rust-based-kernel-tests") {
       visibility = [ ":*" ]
       testonly = true
-      sources = [
-        "arch_rs_tests.cc",
-        "ksync-tests.cc",
-      ]
+      sources = [ "ksync-tests.cc" ]
       deps = [
-        ":arch_rs_tests",
         "//src/lib/ksync:ksync-kernel-tests",
         "//zircon/kernel/lib/unittest",
       ]
     }
+  }
 
-    kernel_rust_crate("arch_rs_tests") {
-      testonly = true
-      source_root = "arch_rs_tests.rs"
-      sources = [ source_root ]
-      deps = [ "//zircon/kernel/arch:arch-rs" ]
-    }
+  kernel_rust_crate("arch-rs-tests") {
+    testonly = true
+    source_root = "arch_rs_tests.rs"
+    sources = [ source_root ]
+    deps = [ "//zircon/kernel/arch:arch-rs" ]
   }
 }
