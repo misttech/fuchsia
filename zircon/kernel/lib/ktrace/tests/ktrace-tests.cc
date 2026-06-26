@@ -17,6 +17,16 @@
 #include <arch/interrupt.h>
 #include <arch/ops.h>
 
+extern "C" {
+int32_t rust_ktrace_test_interop(uint64_t header, uint64_t val);
+void rust_ktrace_test_macros();
+bool rust_ktrace_test_init_and_size();
+bool rust_ktrace_test_write();
+bool rust_ktrace_test_dropped_record_tracking();
+bool rust_ktrace_test_emit_drop_stats();
+bool rust_ktrace_test_global_lifecycle();
+}
+
 // A test version of the per-CPU KTrace instance that disables diagnostic logs and overrides
 // ReportMetadata. We need to override ReportMetadata in tests because the base version emits trace
 // records containing the names of all live threads and processes in the system to the global ktrace
@@ -574,6 +584,99 @@ class KTraceTests {
 
     END_TEST;
   }
+
+#if ENABLE_RUST_IN_ZIRCON
+  static bool TestRustInterop() {
+    BEGIN_TEST;
+
+    // We'll write one C++ record, one Rust record, and then read both back from C++!
+    TestKTrace ktrace;
+    const uint32_t total_bufsize = kPageSize * arch_max_num_cpus();
+    ktrace.Init(total_bufsize, 0xfff);
+    ASSERT_OK(ktrace.Control(KTRACE_ACTION_START, 0xfff));
+
+    constexpr uint64_t cpp_header =
+        fxt::MakeHeader(fxt::RecordType::kBlob, fxt::WordSize::FromBytes(16));
+    constexpr uint64_t cpp_val = 0x1111222233334444ULL;
+
+    constexpr uint64_t rust_header =
+        fxt::MakeHeader(fxt::RecordType::kBlob, fxt::WordSize::FromBytes(16));
+    constexpr uint64_t rust_val = 0x5555666677778888ULL;
+
+    const cpu_num_t target_cpu = [&]() {
+      InterruptDisableGuard guard;
+
+      // 1. Write the C++ record
+      zx::result<TestKTrace::Reservation> res_cpp = ktrace.Reserve(cpp_header);
+      DEBUG_ASSERT(res_cpp.is_ok());
+      res_cpp->WriteWord(cpp_val);
+      res_cpp->Commit();
+
+      // 2. Call the Rust FFI function to write the Rust record
+      int32_t rust_res = rust_ktrace_test_interop(rust_header, rust_val);
+      DEBUG_ASSERT(rust_res == 0);
+
+      return arch_curr_cpu_num();
+    }();
+
+    // The total bytes read should be 16 (C++ record) + 16 (Rust record) = 32 bytes.
+    constexpr size_t total_size = 32;
+    uint8_t actual[total_size];
+    auto copy_out = [&](uint32_t offset, ktl::span<ktl::byte> src) {
+      memcpy(actual + offset, src.data(), src.size());
+      return ZX_OK;
+    };
+    zx::result<size_t> read_result = ktrace.percpu_buffers_[target_cpu].Read(copy_out, total_size);
+    ASSERT_OK(read_result.status_value());
+    ASSERT_EQ(total_size, read_result.value());
+
+    // Verify the C++ record
+    uint64_t actual_cpp_header, actual_cpp_val;
+    memcpy(&actual_cpp_header, actual, 8);
+    memcpy(&actual_cpp_val, actual + 8, 8);
+    ASSERT_EQ(cpp_header, actual_cpp_header);
+    ASSERT_EQ(cpp_val, actual_cpp_val);
+
+    // Verify the Rust record
+    uint64_t actual_rust_header, actual_rust_val;
+    memcpy(&actual_rust_header, actual + 16, 8);
+    memcpy(&actual_rust_val, actual + 24, 8);
+    ASSERT_EQ(rust_header, actual_rust_header);
+    ASSERT_EQ(rust_val, actual_rust_val);
+
+    END_TEST;
+  }
+
+  static bool TestRustInitAndSize() {
+    BEGIN_TEST;
+    EXPECT_TRUE(rust_ktrace_test_init_and_size());
+    END_TEST;
+  }
+
+  static bool TestRustWrite() {
+    BEGIN_TEST;
+    EXPECT_TRUE(rust_ktrace_test_write());
+    END_TEST;
+  }
+
+  static bool TestRustDroppedRecordTracking() {
+    BEGIN_TEST;
+    EXPECT_TRUE(rust_ktrace_test_dropped_record_tracking());
+    END_TEST;
+  }
+
+  static bool TestRustEmitDropStats() {
+    BEGIN_TEST;
+    EXPECT_TRUE(rust_ktrace_test_emit_drop_stats());
+    END_TEST;
+  }
+
+  static bool TestRustGlobalLifecycle() {
+    BEGIN_TEST;
+    EXPECT_TRUE(rust_ktrace_test_global_lifecycle());
+    END_TEST;
+  }
+#endif
 };
 
 UNITTEST_START_TESTCASE(ktrace_tests)
@@ -584,4 +687,12 @@ UNITTEST("write", KTraceTests::TestWrite)
 UNITTEST("rewind", KTraceTests::TestRewind)
 UNITTEST("read_user", KTraceTests::TestReadUser)
 UNITTEST("dropped_records", KTraceTests::TestDroppedRecordTracking)
+#if ENABLE_RUST_IN_ZIRCON
+UNITTEST("rust_interop", KTraceTests::TestRustInterop)
+UNITTEST("rust_init_and_size", KTraceTests::TestRustInitAndSize)
+UNITTEST("rust_write", KTraceTests::TestRustWrite)
+UNITTEST("rust_dropped_record_tracking", KTraceTests::TestRustDroppedRecordTracking)
+UNITTEST("rust_emit_drop_stats", KTraceTests::TestRustEmitDropStats)
+UNITTEST("rust_global_lifecycle", KTraceTests::TestRustGlobalLifecycle)
+#endif
 UNITTEST_END_TESTCASE(ktrace_tests, "ktrace", "KTrace tests")

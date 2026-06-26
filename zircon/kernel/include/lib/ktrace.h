@@ -27,6 +27,14 @@
 #include <ktl/atomic.h>
 #include <ktl/tuple.h>
 
+// LINT.IfChange(KTraceState)
+struct KTraceState {
+  ktl::atomic<uint32_t> categories_bitmask{0};
+  ktl::atomic<bool> writes_enabled{false};
+};
+static_assert(sizeof(KTraceState) == 8);
+// LINT.ThenChange(//zircon/kernel/lib/ktrace/src/lib.rs:KTraceState)
+
 //
 // # Kernel tracing instrumentation and state management interfaces
 //
@@ -1006,10 +1014,10 @@ class KTrace {
   // possible for trace records from other categories to fill up the buffer and cause the metadata
   // to be dropped, which would make the trace hard to understand.
   uint32_t categories_bitmask() const {
-    return categories_bitmask_.load(ktl::memory_order_acquire);
+    return state_.categories_bitmask.load(ktl::memory_order_acquire);
   }
   void set_categories_bitmask(uint32_t new_mask) {
-    categories_bitmask_.store(new_mask, ktl::memory_order_release);
+    state_.categories_bitmask.store(new_mask, ktl::memory_order_release);
   }
 
   // Enables writes to the ktrace buffer.
@@ -1017,29 +1025,28 @@ class KTrace {
   // which in turn ensures that operations to initialize the buffer during Init are not reordered
   // after the call to EnableWrites. Without this synchronization, it would be possible for a
   // writer to begin a write before the backing buffer has been allocated.
-  void EnableWrites() { writes_enabled_.store(true, ktl::memory_order_release); }
+  void EnableWrites() { state_.writes_enabled.store(true, ktl::memory_order_release); }
 
   // Disables writes to the ktrace buffer.
   // Note: This function does not wait for any ongoing writes to complete. The caller is
   // responsible for doing this, likely using an IPI to all other cores.
   // It may be possible to perform this store with relaxed semantics, but we do it with release
   // semantics out of an abundance of caution.
-  void DisableWrites() { writes_enabled_.store(false, ktl::memory_order_release); }
+  void DisableWrites() { state_.writes_enabled.store(false, ktl::memory_order_release); }
 
   // Returns true if writes are currently enabled.
   // This uses acquire semantics to ensure that it synchronizes with EnableWrites as described in
   // that method comment.
-  bool WritesEnabled() const { return writes_enabled_.load(ktl::memory_order_acquire); }
+  bool WritesEnabled() const { return state_.writes_enabled.load(ktl::memory_order_acquire); }
 
   // A mapping of KOIDs to CPUs, used to annotate trace records.
   CpuContextMap cpu_context_map_;
-  // A bitmask of categories to trace. Bits set to 1 indicate a category that should be traced.
-  ktl::atomic<uint32_t> categories_bitmask_{0};
   // True if diagnostic log messages should not be printed. Set to true in tests to avoid logspam.
   const bool disable_diagnostic_logs_{false};
 
-  // Stores whether writes are currently enabled.
-  ktl::atomic<bool> writes_enabled_{false};
+  // The atomic tracing state. This is shared with the Rust KTrace implementation
+  // via FFI by passing its address during initialization.
+  KTraceState state_;
 
   // The buffers used to store data when using per-CPU mode.
   ktl::unique_ptr<percpu_writer::Buffer[]> percpu_buffers_{nullptr};

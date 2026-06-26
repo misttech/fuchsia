@@ -33,6 +33,13 @@
 
 #include <ktl/enforce.h>
 
+extern "C" {
+zx_status_t rust_ktrace_init(uint32_t num_buffers, void* state_ptr);
+zx_status_t rust_ktrace_init_cpu_buffer(uint32_t cpu_num, void* spsc_buffer_ptr,
+                                        void* drop_stats_ptr, uint64_t process_koid,
+                                        uint64_t thread_koid, uint16_t cpu_ref_header_entry);
+}
+
 namespace {
 
 using fxt::operator""_category;
@@ -179,6 +186,15 @@ zx_status_t KTrace::Start(uint32_t action, uint32_t categories) {
     // allocated and use the new ones we found.
     if (!percpu_buffers_) {
       percpu_buffers_ = ktl::move(buffers);
+      if constexpr (ENABLE_RUST_IN_ZIRCON) {
+        for (uint32_t i = 0; i < num_buffers_; i++) {
+          const auto& cpu_ref = cpu_context_map_.GetCpuRef(i);
+          rust_ktrace_init_cpu_buffer(i, percpu_buffers_[i].spsc_buffer(),
+                                      percpu_buffers_[i].drop_stats_ptr(), cpu_ref.process().koid,
+                                      cpu_ref.thread().koid,
+                                      static_cast<uint16_t>(cpu_ref.HeaderEntry()));
+        }
+      }
     }
   }
 
@@ -225,6 +241,9 @@ void KTrace::Init(uint32_t bufsize, uint32_t initial_grpmask) {
     DEBUG_ASSERT(raw_percpu_bufsize > 0);
     const int leading_zeros = __builtin_clz(raw_percpu_bufsize);
     buffer_size_ = 1u << (31 - leading_zeros);
+    if constexpr (ENABLE_RUST_IN_ZIRCON) {
+      rust_ktrace_init(num_buffers_, &state_);
+    }
   }
 
   // If the initial_grpmask was zero, then we can delay allocation of the KTrace buffer.

@@ -28,6 +28,7 @@ class Buffer {
  public:
   using BufferImpl = SpscBuffer<KernelAspaceAllocator, const char*>;
 
+  // LINT.IfChange(DroppedRecordStats)
   // This struct keeps track of the duration, number, and size of trace records dropped when the
   // buffer is full. These statistics are emitted to the trace buffer as a duration as soon as
   // space is available to do so, at which point the values are reset to 0, or false in the case
@@ -63,6 +64,7 @@ class Buffer {
     bool HasDropped() const { return has_dropped; }
   };
   static_assert(sizeof(DroppedRecordStats) == 32);
+  // LINT.ThenChange(//zircon/kernel/lib/ktrace/src/lib.rs:DroppedRecordStats)
 
   const DroppedRecordStats& drop_stats() const { return drop_stats_; }
 
@@ -245,6 +247,7 @@ class Buffer {
   //
   // Eventually, it would be nice to have the FXT serialization library support in-place
   // serialization, as that would allow us to remove this bespoke functionality.
+  // LINT.IfChange(DroppedRecordDurationEvent)
   struct DroppedRecordDurationEvent {
     uint64_t header;
     zx_instant_boot_ticks_t start;
@@ -255,6 +258,7 @@ class Buffer {
     zx_instant_boot_ticks_t end;
   };
   static_assert(ktl::is_standard_layout_v<DroppedRecordDurationEvent>);
+  // LINT.ThenChange(//zircon/kernel/lib/ktrace/src/lib.rs:DroppedRecordDurationEvent)
 
   // Serializes the dropped record statistics into a DroppedRecordDurationEvent.
   DroppedRecordDurationEvent SerializeDropStats() const {

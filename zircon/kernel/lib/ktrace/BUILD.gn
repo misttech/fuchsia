@@ -4,6 +4,8 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//zircon/kernel/kernel_rust_crate.gni")
+
 source_set("ktrace") {
   public_deps = [ "//src/performance/lib/fxt:headers" ]
 
@@ -18,6 +20,31 @@ source_set("ktrace") {
     "//zircon/kernel/object:headers",
     "//zircon/system/ulib/zircon-internal",
   ]
+}
+
+common_deps = [
+  "//sdk/rust/zx-status",
+  "//src/lib/kalloc",
+  "//src/lib/kstring",
+  "//zircon/kernel/arch:arch-rs",
+  "//zircon/kernel/lib/spsc_buffer:spsc-buffer-rs",
+  "//zircon/kernel/platform:platform-rs",
+]
+
+kernel_rust_crate("ktrace-rs") {
+  crate_name = "ktrace_rs"
+  sources = [ "src/lib.rs" ]
+  check_cfgs = [ "test" ]
+  deps = common_deps
+}
+
+kernel_rust_crate("ktrace-rs-tests") {
+  testonly = true
+  crate_name = "ktrace_rs_tests"
+  sources = [ "src/lib.rs" ]
+  check_cfgs = [ "test" ]
+  deps = common_deps
+  rustflags = [ "--cfg=test" ]
 }
 
 group("tests") {
