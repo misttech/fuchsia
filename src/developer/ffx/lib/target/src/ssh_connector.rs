@@ -68,12 +68,21 @@ enum FDomainConnectionError {
     NotSupported,
 }
 
-#[derive(Debug)]
 pub struct SshConnector {
     overnet_cmd: Option<Child>,
     fdomain_cmd: Option<Child>,
     target: ScopedSocketAddr,
     env_context: EnvironmentContext,
+}
+
+impl Debug for SshConnector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SshConnector")
+            .field("target", &self.target)
+            .field("overnet_cmd", &self.overnet_cmd)
+            .field("fdomain_cmd", &self.overnet_cmd)
+            .finish()
+    }
 }
 
 impl SshConnector {
