@@ -138,12 +138,42 @@ if (!is_kernel) {
     deps = [ ":debug_port_fuzztest" ]
   }
 
+  fuchsia_fuzzer_component("acpi-lite-fuzztest-rust-component") {
+    component_name = "acpi_lite_fuzztest_rust"
+    manifest = "rust/meta/acpi_lite_fuzztest_rust.cml"
+    deps = [ "rust:acpi_lite_fuzztest_rust" ]
+  }
+
+  fuchsia_fuzzer_component("apic-fuzztest-rust-component") {
+    component_name = "apic_fuzztest_rust"
+    manifest = "rust/meta/apic_fuzztest_rust.cml"
+    deps = [ "rust:apic_fuzztest_rust" ]
+  }
+
+  fuchsia_fuzzer_component("debug-port-fuzztest-rust-component") {
+    component_name = "debug_port_fuzztest_rust"
+    manifest = "rust/meta/debug_port_fuzztest_rust.cml"
+    deps = [ "rust:debug_port_fuzztest_rust" ]
+  }
+
+  fuchsia_fuzzer_component("numa-fuzztest-rust-component") {
+    component_name = "numa_fuzztest_rust"
+    manifest = "rust/meta/numa_fuzztest_rust.cml"
+    deps = [ "rust:numa_fuzztest_rust" ]
+  }
+
   fuchsia_fuzzer_package("acpi-lite-fuzzer") {
     cpp_fuzzer_components = [
       ":acpi-lite-fuzztest-component",
       ":apic-fuzztest-component",
       ":numa-fuzztest-component",
       ":debug-port-fuzztest-component",
+    ]
+    rust_fuzzer_components = [
+      ":acpi-lite-fuzztest-rust-component",
+      ":apic-fuzztest-rust-component",
+      ":debug-port-fuzztest-rust-component",
+      ":numa-fuzztest-rust-component",
     ]
   }
 
@@ -153,6 +183,8 @@ if (!is_kernel) {
       ":acpi-lite-fuzzer",
       ":acpi-lite-test",
       ":acpi_lite_test($host_toolchain)",
+      "rust:acpi_lite_test($host_toolchain)",
+      "rust:tests",
     ]
   }
 }
