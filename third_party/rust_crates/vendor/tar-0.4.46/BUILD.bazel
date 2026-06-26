@@ -77,7 +77,7 @@ rust_library(
     }),
     version = "0.4.46",
     deps = [
-        "//third_party/rust_crates/vendor/filetime-0.2.14:filetime",
+        "//third_party/rust_crates/vendor/filetime-0.2.29:filetime",
         "//third_party/rust_crates/vendor/xattr-1.6.1:xattr",
     ] + select({
         "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [

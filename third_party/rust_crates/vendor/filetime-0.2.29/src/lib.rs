@@ -47,7 +47,7 @@ cfg_if::cfg_if! {
     } else if #[cfg(windows)] {
         #[path = "windows.rs"]
         mod imp;
-    } else if #[cfg(target_arch = "wasm32")] {
+    } else if #[cfg(all(target_family = "wasm", not(target_os = "emscripten")))] {
         #[path = "wasm.rs"]
         mod imp;
     } else {
@@ -71,14 +71,14 @@ impl FileTime {
     /// Creates a new timestamp representing a 0 time.
     ///
     /// Useful for creating the base of a cmp::max chain of times.
-    pub fn zero() -> FileTime {
+    pub const fn zero() -> FileTime {
         FileTime {
             seconds: 0,
             nanos: 0,
         }
     }
 
-    fn emulate_second_only_system(self) -> FileTime {
+    const fn emulate_second_only_system(self) -> FileTime {
         if cfg!(emulate_second_only_system) {
             FileTime {
                 seconds: self.seconds,
@@ -118,7 +118,7 @@ impl FileTime {
     /// from, but on Windows the native time stamp is relative to January 1,
     /// 1601 so the return value of `seconds` from the returned `FileTime`
     /// instance may not be the same as that passed in.
-    pub fn from_unix_time(seconds: i64, nanos: u32) -> FileTime {
+    pub const fn from_unix_time(seconds: i64, nanos: u32) -> FileTime {
         FileTime {
             seconds: seconds + if cfg!(windows) { 11644473600 } else { 0 },
             nanos,
@@ -193,7 +193,7 @@ impl FileTime {
     /// Note that this value's meaning is **platform specific**. On Unix
     /// platform time stamps are typically relative to January 1, 1970, but on
     /// Windows platforms time stamps are relative to January 1, 1601.
-    pub fn seconds(&self) -> i64 {
+    pub const fn seconds(&self) -> i64 {
         self.seconds
     }
 
@@ -202,7 +202,7 @@ impl FileTime {
     ///
     /// Note that this does not return the same value as `seconds` for Windows
     /// platforms as seconds are relative to a different date there.
-    pub fn unix_seconds(&self) -> i64 {
+    pub const fn unix_seconds(&self) -> i64 {
         self.seconds - if cfg!(windows) { 11644473600 } else { 0 }
     }
 
@@ -211,7 +211,7 @@ impl FileTime {
     /// The returned value is always less than one billion and represents a
     /// portion of a second forward from the seconds returned by the `seconds`
     /// method.
-    pub fn nanoseconds(&self) -> u32 {
+    pub const fn nanoseconds(&self) -> u32 {
         self.nanos
     }
 }
@@ -228,6 +228,18 @@ impl From<SystemTime> for FileTime {
     }
 }
 
+impl From<FileTime> for SystemTime {
+    fn from(time: FileTime) -> SystemTime {
+        let seconds = time.unix_seconds();
+        if seconds < 0 {
+            SystemTime::UNIX_EPOCH - Duration::from_secs(-seconds as u64)
+                + Duration::from_nanos(time.nanoseconds() as u64)
+        } else {
+            SystemTime::UNIX_EPOCH + Duration::new(seconds as u64, time.nanoseconds())
+        }
+    }
+}
+
 /// Set the last access and modification times for a file on the filesystem.
 ///
 /// This function will set the `atime` and `mtime` metadata fields for a file
@@ -236,7 +248,11 @@ pub fn set_file_times<P>(p: P, atime: FileTime, mtime: FileTime) -> io::Result<(
 where
     P: AsRef<Path>,
 {
-    imp::set_file_times(p.as_ref(), atime, mtime)
+    imp::open(p.as_ref())?.set_times(
+        fs::FileTimes::new()
+            .set_accessed(atime.into())
+            .set_modified(mtime.into()),
+    )
 }
 
 /// Set the last access and modification times for a file handle.
@@ -250,7 +266,14 @@ pub fn set_file_handle_times(
     atime: Option<FileTime>,
     mtime: Option<FileTime>,
 ) -> io::Result<()> {
-    imp::set_file_handle_times(f, atime, mtime)
+    let mut times = fs::FileTimes::new();
+    if let Some(t) = atime {
+        times = times.set_accessed(t.into());
+    }
+    if let Some(t) = mtime {
+        times = times.set_modified(t.into());
+    }
+    f.set_times(times)
 }
 
 /// Set the last access and modification times for a file on the filesystem.
@@ -279,7 +302,7 @@ pub fn set_file_mtime<P>(p: P, mtime: FileTime) -> io::Result<()>
 where
     P: AsRef<Path>,
 {
-    imp::set_file_mtime(p.as_ref(), mtime)
+    imp::open(p.as_ref())?.set_times(fs::FileTimes::new().set_modified(mtime.into()))
 }
 
 /// Set the last access time for a file on the filesystem.
@@ -296,7 +319,7 @@ pub fn set_file_atime<P>(p: P, atime: FileTime) -> io::Result<()>
 where
     P: AsRef<Path>,
 {
-    imp::set_file_atime(p.as_ref(), atime)
+    imp::open(p.as_ref())?.set_times(fs::FileTimes::new().set_accessed(atime.into()))
 }
 
 #[cfg(test)]
@@ -385,42 +408,52 @@ mod tests {
 
     #[test]
     #[cfg(windows)]
-    fn from_system_time_test() {
-        let time = FileTime::from_system_time(UNIX_EPOCH + Duration::from_secs(10));
+    fn to_from_system_time_test() {
+        let systime = UNIX_EPOCH + Duration::from_secs(10);
+        let time = FileTime::from_system_time(systime);
         assert_eq!(11644473610, time.seconds);
         assert_eq!(0, time.nanos);
+        assert_eq!(systime, time.into());
 
-        let time = FileTime::from_system_time(UNIX_EPOCH - Duration::from_secs(10));
+        let systime = UNIX_EPOCH - Duration::from_secs(10);
+        let time = FileTime::from_system_time(systime);
         assert_eq!(11644473590, time.seconds);
         assert_eq!(0, time.nanos);
+        assert_eq!(systime, time.into());
 
-        let time = FileTime::from_system_time(UNIX_EPOCH - Duration::from_millis(1100));
+        let systime = UNIX_EPOCH - Duration::from_millis(1100);
+        let time = FileTime::from_system_time(systime);
         assert_eq!(11644473598, time.seconds);
         assert_eq!(900_000_000, time.nanos);
-
-        let time = FileTime::from_system_time(UNIX_EPOCH - Duration::from_secs(12_000_000_000));
-        assert_eq!(-355526400, time.seconds);
-        assert_eq!(0, time.nanos);
+        assert_eq!(systime, time.into());
     }
 
     #[test]
     #[cfg(not(windows))]
-    fn from_system_time_test() {
-        let time = FileTime::from_system_time(UNIX_EPOCH + Duration::from_secs(10));
+    fn to_from_system_time_test() {
+        let systime = UNIX_EPOCH + Duration::from_secs(10);
+        let time = FileTime::from_system_time(systime);
         assert_eq!(10, time.seconds);
         assert_eq!(0, time.nanos);
+        assert_eq!(systime, time.into());
 
-        let time = FileTime::from_system_time(UNIX_EPOCH - Duration::from_secs(10));
+        let systime = UNIX_EPOCH - Duration::from_secs(10);
+        let time = FileTime::from_system_time(systime);
         assert_eq!(-10, time.seconds);
         assert_eq!(0, time.nanos);
+        assert_eq!(systime, time.into());
 
-        let time = FileTime::from_system_time(UNIX_EPOCH - Duration::from_millis(1100));
+        let systime = UNIX_EPOCH - Duration::from_millis(1100);
+        let time = FileTime::from_system_time(systime);
         assert_eq!(-2, time.seconds);
         assert_eq!(900_000_000, time.nanos);
+        assert_eq!(systime, time.into());
 
-        let time = FileTime::from_system_time(UNIX_EPOCH - Duration::from_secs(12_000_000));
+        let systime = UNIX_EPOCH - Duration::from_secs(12_000_000);
+        let time = FileTime::from_system_time(systime);
         assert_eq!(-12_000_000, time.seconds);
         assert_eq!(0, time.nanos);
+        assert_eq!(systime, time.into());
     }
 
     #[test]
@@ -561,11 +594,18 @@ mod tests {
         set_file_times(&path, atime, mtime).unwrap();
 
         let new_mtime = FileTime::from_unix_time(-10_000, 0);
-        set_file_times(&path, atime, new_mtime).unwrap();
+        if cfg!(target_os = "aix") {
+            // On AIX, os checks if the unix timestamp is valid.
+            let result = set_file_times(&path, atime, new_mtime);
+            assert!(result.is_err());
+            assert!(result.err().unwrap().kind() == std::io::ErrorKind::InvalidInput);
+        } else {
+            set_file_times(&path, atime, new_mtime).unwrap();
 
-        let metadata = fs::metadata(&path).unwrap();
-        let mtime = FileTime::from_last_modification_time(&metadata);
-        assert_eq!(mtime, new_mtime);
+            let metadata = fs::metadata(&path).unwrap();
+            let mtime = FileTime::from_last_modification_time(&metadata);
+            assert_eq!(mtime, new_mtime);
+        }
     }
 
     #[test]
@@ -579,9 +619,6 @@ mod tests {
         let mtime = FileTime::from_last_modification_time(&metadata);
         let atime = FileTime::from_last_access_time(&metadata);
         set_file_times(&path, atime, mtime).unwrap();
-
-        let new_mtime = FileTime::from_unix_time(-12_000_000_000, 0);
-        assert!(set_file_times(&path, atime, new_mtime).is_err());
     }
 
     #[test]
@@ -630,7 +667,7 @@ mod tests {
     fn set_symlink_dir_times_test() {
         let td = Builder::new().prefix("filetime").tempdir().unwrap();
         let path = td.path().join("foo");
-        fs::create_dir(&path);
+        fs::create_dir(&path).unwrap();
 
         let metadata = fs::metadata(&path).unwrap();
         let mtime = FileTime::from_last_modification_time(&metadata);

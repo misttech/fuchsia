@@ -8582,18 +8582,18 @@ rustc_library("ff-v0_13_1") {
   applicable_licenses = [ ":ff-v0_13_1.license" ]
 }
 
-license("filetime-v0_2_14.license") {
+license("filetime-v0_2_29.license") {
   public_package_name = "filetime"
   license_files = [
-    "//third_party/rust_crates/vendor/filetime-0.2.14/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/filetime-0.2.14/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/filetime-0.2.29/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/filetime-0.2.29/LICENSE-MIT",
   ]
 }
 
-rustc_library("filetime-v0_2_14") {
+rustc_library("filetime-v0_2_29") {
   crate_name = "filetime"
-  source_root = "//third_party/rust_crates/vendor/filetime-0.2.14/src/lib.rs"
-  output_name = "filetime-771a5d3d16b52760"
+  source_root = "//third_party/rust_crates/vendor/filetime-0.2.29/src/lib.rs"
+  output_name = "filetime-1c649fba5bb3444e"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -8601,30 +8601,21 @@ rustc_library("filetime-v0_2_14") {
 
   deps = []
   deps += [ ":cfg-if-v1_0_4" ]
-  if (false) {
-    deps += [ ":redox_syscall-v0_2_13" ]
-  }
   if (true) {
     deps += [ ":libc-v0_2_186" ]
-  }
-  if (false) {
-    deps += [ ":winapi-v0_3_9" ]
   }
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=771a5d3d16b52760",
-    "-Cextra-filename=-771a5d3d16b52760",
+    "-Cmetadata=1c649fba5bb3444e",
+    "-Cextra-filename=-1c649fba5bb3444e",
   ]
 
-  aliased_deps = {
-    syscall = ":redox_syscall-v0_2_13.actual"
-  }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":filetime-v0_2_14.license" ]
+  applicable_licenses = [ ":filetime-v0_2_29.license" ]
 }
 
 license("fixedbitset-v0_4_2.license") {
@@ -13166,7 +13157,7 @@ rustc_library("notify-v5_2_0") {
   deps = []
   deps += [ ":walkdir-v2_5_0" ]
   deps += [ ":bitflags-v1_3_2" ]
-  deps += [ ":filetime-v0_2_14" ]
+  deps += [ ":filetime-v0_2_29" ]
   deps += [ ":libc-v0_2_186" ]
   if (false || false || false || false) {
     deps += [ ":kqueue-v1_0_7" ]
@@ -21060,7 +21051,7 @@ rustc_library("tar-v0_4_46") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":filetime-v0_2_14" ]
+  deps += [ ":filetime-v0_2_29" ]
   if (true) {
     deps += [ ":libc-v0_2_186" ]
     deps += [ ":xattr-v1_6_1" ]
