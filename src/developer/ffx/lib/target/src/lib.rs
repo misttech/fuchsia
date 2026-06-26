@@ -86,6 +86,16 @@ pub async fn get_remote_proxy(
     context: &EnvironmentContext,
 ) -> std::result::Result<RemoteControlProxy, FfxTargetError> {
     let mut target_info_out = None;
+    // Target connection retries utilize exponential backoff (starting at 100ms up to 5s) to
+    // prevent high-frequency, CPU-intensive retry spinning during target reboots or prolonged
+    // offline states. This backoff is only active/necessary for daemon-based connections;
+    // direct mode connections utilize a separate flow that immediately bubbles up failures
+    // without retry looping.
+    let mut retry_delay = Duration::from_millis(100);
+    const MAX_RETRY_DELAY: Duration = Duration::from_secs(5);
+    // Track the last encountered non-fatal connection error to prevent spamming logs with
+    // duplicate retry messages on every attempt.
+    let mut last_error: Option<ffx::TargetConnectionError> = None;
     let res = loop {
         match get_remote_proxy_impl(
             &target_spec,
@@ -97,29 +107,30 @@ pub async fn get_remote_proxy(
         .await
         {
             Ok(p) => break Ok(p),
-            Err(e) => {
-                match &e {
-                    FfxTargetError::TargetConnectionError { err, .. } => match err {
-                        ffx::TargetConnectionError::KeyVerificationFailure
-                        | ffx::TargetConnectionError::InvalidArgument
-                        | ffx::TargetConnectionError::PermissionDenied => {
-                            break Err(e.clone());
-                        }
-                        _ => {
-                            let retry_info = format!(
-                                "Retrying connection after non-fatal error encountered: {e}"
-                            );
-                            log::info!("{}", retry_info.as_str());
-                            // Insert a small delay to prevent too tight of a spinning loop.
-                            fuchsia_async::Timer::new(Duration::from_millis(20)).await;
-                            continue;
-                        }
-                    },
-                    _ => {
+            Err(e) => match &e {
+                FfxTargetError::TargetConnectionError { err, .. } => match err {
+                    ffx::TargetConnectionError::KeyVerificationFailure
+                    | ffx::TargetConnectionError::InvalidArgument
+                    | ffx::TargetConnectionError::PermissionDenied => {
                         break Err(e.clone());
                     }
+                    _ => {
+                        let current_error = *err;
+                        if last_error != Some(current_error) {
+                            log::info!(
+                                "Retrying connection after non-fatal error encountered: {e}"
+                            );
+                            last_error = Some(current_error);
+                        }
+                        fuchsia_async::Timer::new(retry_delay).await;
+                        retry_delay = std::cmp::min(retry_delay * 2, MAX_RETRY_DELAY);
+                        continue;
+                    }
+                },
+                _ => {
+                    break Err(e.clone());
                 }
-            }
+            },
         }
     };
     if let Some(ref mut info_out) = target_info {
@@ -1247,5 +1258,122 @@ mod test {
         )
         .await;
         assert!(res.is_err(), "{:?}", res);
+    }
+
+    // We implement the fake daemon and target mock handlers locally rather than using
+    // `FakeDaemon` from the protocols crate to prevent circular dependencies (as the
+    // protocols crate depends on `ffx_target`).
+    async fn run_fake_daemon(
+        mut stream: ffx::DaemonRequestStream,
+        connection_counter: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    ) {
+        while let Ok(Some(req)) = stream.try_next().await {
+            match req {
+                ffx::DaemonRequest::ConnectToProtocol { name, server_end, responder } => {
+                    if name == ffx::TargetCollectionMarker::PROTOCOL_NAME {
+                        let stream =
+                            fidl::endpoints::ServerEnd::<ffx::TargetCollectionMarker>::new(
+                                server_end,
+                            )
+                            .into_stream();
+                        let connection_counter = connection_counter.clone();
+                        fuchsia_async::Task::local(async move {
+                            run_fake_target_collection(stream, connection_counter).await;
+                        })
+                        .detach();
+                        responder.send(Ok(())).unwrap();
+                    } else {
+                        responder.send(Err(ffx::DaemonError::ProtocolOpenError)).unwrap();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    async fn run_fake_target_collection(
+        mut stream: ffx::TargetCollectionRequestStream,
+        connection_counter: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    ) {
+        while let Ok(Some(req)) = stream.try_next().await {
+            match req {
+                ffx::TargetCollectionRequest::OpenTarget { query: _, target_handle, responder } => {
+                    let stream = target_handle.into_stream();
+                    let connection_counter = connection_counter.clone();
+                    fuchsia_async::Task::local(async move {
+                        run_fake_target(stream, connection_counter).await;
+                    })
+                    .detach();
+                    responder.send(Ok(())).unwrap();
+                }
+                _ => {}
+            }
+        }
+    }
+
+    async fn run_fake_target(
+        mut stream: ffx::TargetRequestStream,
+        connection_counter: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    ) {
+        while let Ok(Some(req)) = stream.try_next().await {
+            match req {
+                ffx::TargetRequest::OpenRemoteControl { remote_control: _, responder } => {
+                    let attempt =
+                        connection_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    if attempt < 2 {
+                        responder.send(Err(ffx::TargetConnectionError::ConnectionRefused)).unwrap();
+                    } else {
+                        responder.send(Ok(())).unwrap();
+                    }
+                }
+                ffx::TargetRequest::Identity { responder } => {
+                    responder.send(&ffx::TargetInfo::default()).unwrap();
+                }
+                ffx::TargetRequest::GetSshLogs { responder } => {
+                    responder.send("mock ssh logs").unwrap();
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Verify that daemon-based target connection retries utilize the exponential backoff delay,
+    // avoiding high-frequency retry loops when encountering non-fatal connection errors.
+    #[fuchsia::test]
+    #[allow(clippy::large_futures)]
+    async fn test_daemon_remote_proxy_retry_rate() {
+        let env = test_init().unwrap();
+        let (daemon_proxy, daemon_stream) =
+            fidl::endpoints::create_proxy_and_stream::<ffx::DaemonMarker>();
+        let connection_counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter_clone = connection_counter.clone();
+
+        fuchsia_async::Task::local(async move {
+            run_fake_daemon(daemon_stream, counter_clone).await;
+        })
+        .detach();
+
+        let target_spec = TargetInfoQuery::NodenameOrSerial("fake-device".to_string());
+
+        let proxy_timeout = Duration::from_millis(50);
+        let start = std::time::Instant::now();
+
+        let res =
+            get_remote_proxy(&target_spec, daemon_proxy, proxy_timeout, None, &env.context).await;
+        let elapsed = start.elapsed();
+
+        assert!(res.is_ok(), "Expected connection to succeed, got {:?}", res);
+
+        let retries = connection_counter.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(
+            retries, 3,
+            "Expected exactly 3 attempts (2 retries and 1 success), got {}",
+            retries
+        );
+        assert!(
+            elapsed >= Duration::from_millis(250),
+            "Expected elapsed time to be at least 250ms due to backoff, got {:?}",
+            elapsed
+        );
     }
 }
