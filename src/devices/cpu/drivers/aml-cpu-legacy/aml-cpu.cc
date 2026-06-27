@@ -367,6 +367,16 @@ void AmlCpu::GetRelativePerformance(GetRelativePerformanceCompleter::Sync& compl
   completer.ReplySuccess(relative_performance_);
 }
 
+void AmlCpu::GetRelativePerformance2(GetRelativePerformance2Completer::Sync& completer) {
+  completer.ReplySuccess(static_cast<uint64_t>(relative_performance_));
+}
+
+void AmlCpu::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_hardware_cpu_ctrl::Device> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  zxlogf(ERROR, "Unknown FIDL method ordinal 0x%016lx", metadata.method_ordinal);
+}
+
 void AmlCpu::SetCpuInfo(uint32_t cpu_version_packed) {
   const uint8_t major_revision = (cpu_version_packed >> 24) & 0xff;
   const uint8_t minor_revision = (cpu_version_packed >> 8) & 0xff;

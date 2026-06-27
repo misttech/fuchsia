@@ -117,6 +117,10 @@ class AmlCpu : public fidl::WireServer<fuchsia_hardware_cpu_ctrl::Device> {
                         GetLogicalCoreIdCompleter::Sync& completer) override;
   void GetDomainId(GetDomainIdCompleter::Sync& completer) override;
   void GetRelativePerformance(GetRelativePerformanceCompleter::Sync& completer) override;
+  void GetRelativePerformance2(GetRelativePerformance2Completer::Sync& completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_cpu_ctrl::Device> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
 
   inspect::Inspector& Inspector() { return inspect_; }
 

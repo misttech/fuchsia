@@ -412,4 +412,14 @@ void AmlCpu::GetRelativePerformance(GetRelativePerformanceCompleter::Sync& compl
   completer.ReplySuccess(perf_domain_.relative_performance());
 }
 
+void AmlCpu::GetRelativePerformance2(GetRelativePerformance2Completer::Sync& completer) {
+  completer.ReplySuccess(static_cast<uint64_t>(perf_domain_.relative_performance()));
+}
+
+void AmlCpu::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_hardware_cpu_ctrl::Device> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  fdf::error("Unknown FIDL method ordinal 0x{:016x}", metadata.method_ordinal);
+}
+
 }  // namespace amlogic_cpu

@@ -23,7 +23,7 @@ type CpuOperatingPointInfo = struct {
     voltage_uv int64;
 };
 
-closed protocol Device {
+open protocol Device {
     /// Returns information about a given operating point for this performance
     /// domain.
     strict GetOperatingPointInfo(struct {
@@ -177,8 +177,22 @@ closed protocol Device {
     /// if known. The highest performance domain should return 255, while others
     /// should return N/255 fractional values relative to that domain.
     /// Returns ZX_ERR_NOT_SUPPORTED if the performance level is unknown.
+    @deprecated("Use GetRelativePerformance2 instead")
     strict GetRelativePerformance() -> (struct {
         relative_performance uint8;
+    }) error zx.Status;
+
+    /// The relative performance of this domain as configured by the platform,
+    /// if known.
+    ///
+    /// The relative performance is a unitless value. To calculate normalized
+    /// performance rates from the relative rates, a user would need to query
+    /// each performance domain to determine the maximum performance value
+    /// before calculating normalized values.
+    ///
+    /// Returns ZX_ERR_NOT_SUPPORTED if the performance level is unknown.
+    flexible GetRelativePerformance2() -> (struct {
+        relative_performance uint64;
     }) error zx.Status;
 };
 

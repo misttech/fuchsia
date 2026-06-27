@@ -118,6 +118,17 @@ void CpuCtrlProtocolServer::GetRelativePerformance(
   completer.ReplySuccess(255);
 }
 
+void CpuCtrlProtocolServer::GetRelativePerformance2(
+    GetRelativePerformance2Completer::Sync& completer) {
+  completer.ReplySuccess(255);
+}
+
+void CpuCtrlProtocolServer::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_hardware_cpu_ctrl::Device> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  FDF_SLOG(ERROR, "Unknown FIDL method ordinal", KV("ordinal", metadata.method_ordinal));
+}
+
 void CpuCtrlProtocolServer::Serve(async_dispatcher_t* dispatcher,
                                   fidl::ServerEnd<fuchsia_hardware_cpu_ctrl::Device> server) {
   bindings_.AddBinding(dispatcher, std::move(server), this, fidl::kIgnoreBindingClosure);

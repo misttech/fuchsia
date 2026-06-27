@@ -495,4 +495,22 @@ TEST_F(AmlCpuTestFixture, TestGetNumLogicalCores) {
   EXPECT_EQ(resp.value().count, kBigClusterCoreCount);
 }
 
+// Tests that GetRelativePerformance and GetRelativePerformance2 return the
+// expected relative performance values configured for the domain.
+TEST_F(AmlCpuTestFixture, TestGetRelativePerformance) {
+  {
+    auto resp = cpu_client_->GetRelativePerformance();
+    ASSERT_OK(resp.status());
+    ASSERT_FALSE(resp->is_error());
+    EXPECT_EQ(resp->value()->relative_performance, kBigClusterRelativePerformance);
+  }
+
+  {
+    auto resp = cpu_client_->GetRelativePerformance2();
+    ASSERT_OK(resp.status());
+    ASSERT_FALSE(resp->is_error());
+    EXPECT_EQ(resp->value()->relative_performance, kBigClusterRelativePerformance);
+  }
+}
+
 }  // namespace amlogic_cpu
