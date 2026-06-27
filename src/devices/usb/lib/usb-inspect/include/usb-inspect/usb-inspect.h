@@ -38,10 +38,24 @@ class EndpointInspect {
   // of endpoint-specific state transitions (such as stall/clear-stall).
   static constexpr size_t kDefaultEventCapacity = 15;
 
+  // Default capacity for transfer snapshots history.
+  static constexpr size_t kDefaultTransferCapacity = 15;
+
+  // Encapsulates cumulative transfer statistics for root properties and snapshots.
+  struct TransferStats {
+    // Total bytes transmitted since boot.
+    uint64_t total_bytes_tx = 0;
+    // Total bytes received since boot.
+    uint64_t total_bytes_rx = 0;
+    // Maximum bytes per second observed since boot.
+    uint64_t max_bytes_per_second = 0;
+  };
+
   EndpointInspect() = default;
 
   void Init(inspect::Node& parent, const std::string& name,
-            size_t event_capacity = kDefaultEventCapacity);
+            size_t event_capacity = kDefaultEventCapacity,
+            size_t transfer_snapshot_capacity = kDefaultTransferCapacity);
   // Update TX pending requests count.
   void UpdateTxQueue(size_t pending_requests) {
     tx_pending_requests_.store(pending_requests, std::memory_order_relaxed);
@@ -76,6 +90,12 @@ class EndpointInspect {
 
   void RecordEvent(const std::string& event_name);
 
+  // Captures an independent cumulative transfer stats snapshot at current boot time.
+  // Note: These values represent the totals and max rate since boot, not the
+  // incremental traffic and max rate since the last snapshot.
+  // Called automatically by RecordEvent(), or directly by drivers at any point.
+  void SnapshotTransferStats();
+
   uint64_t total_bytes_tx_val() const { return total_bytes_tx_.load(std::memory_order_relaxed); }
   uint64_t total_bytes_rx_val() const { return total_bytes_rx_.load(std::memory_order_relaxed); }
 
@@ -88,6 +108,13 @@ class EndpointInspect {
     zx_instant_boot_t timestamp;
     std::string event;
   };
+
+  struct TransferSnapshotEntry {
+    zx_instant_boot_t timestamp;
+    TransferStats stats;
+  };
+
+  void SnapshotTransferStatsLocked(zx_instant_boot_t raw_time) __TA_REQUIRES(lock_);
 
   mutable std::mutex lock_;
   inspect::LazyNode lazy_node_;
@@ -104,6 +131,10 @@ class EndpointInspect {
   std::deque<EventLogEntry> event_history_ __TA_GUARDED(lock_);
   size_t event_history_capacity_ = kDefaultEventCapacity;
   size_t event_history_index_ __TA_GUARDED(lock_) = 0;
+
+  std::deque<TransferSnapshotEntry> transfer_snapshots_ __TA_GUARDED(lock_);
+  size_t transfer_snapshot_capacity_ = kDefaultTransferCapacity;
+  size_t transfer_snapshots_index_ __TA_GUARDED(lock_) = 0;
 
   std::atomic<uint64_t> last_total_bytes_val_{0};
 };

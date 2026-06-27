@@ -73,6 +73,27 @@ inline fit::result<std::string> VerifyEndpointInspect(
   if (auto res = verify_prop("failed_bytes_rx", failed_bytes_rx); res.is_error())
     return res;
 
+  if (const auto* transfer_snapshots = node->GetByPath({"transfer_snapshots"});
+      transfer_snapshots) {
+    for (const auto& snapshot_entry : transfer_snapshots->children()) {
+      if (!snapshot_entry.node().get_property<inspect::UintPropertyValue>("@time")) {
+        return fit::error("transfer_snapshots '" + snapshot_entry.name() + "' missing '@time'");
+      }
+      if (!snapshot_entry.node().get_property<inspect::UintPropertyValue>("total_bytes_tx")) {
+        return fit::error("transfer_snapshots '" + snapshot_entry.name() +
+                          "' missing 'total_bytes_tx'");
+      }
+      if (!snapshot_entry.node().get_property<inspect::UintPropertyValue>("total_bytes_rx")) {
+        return fit::error("transfer_snapshots '" + snapshot_entry.name() +
+                          "' missing 'total_bytes_rx'");
+      }
+      if (!snapshot_entry.node().get_property<inspect::UintPropertyValue>("max_bytes_per_second")) {
+        return fit::error("transfer_snapshots '" + snapshot_entry.name() +
+                          "' missing 'max_bytes_per_second'");
+      }
+    }
+  }
+
   return fit::ok();
 }
 

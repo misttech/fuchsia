@@ -180,4 +180,102 @@ TEST_F(UsbInspectTest, TestDciInspectHistory) {
                                   UintIs("response_length", 0), UintIs("@time", ::testing::_))));
 }
 
+TEST_F(UsbInspectTest, TestEventHistoryTrafficSnapshots) {
+  inspect::Inspector inspector;
+  EndpointInspect endpoint;
+
+  endpoint.Init(inspector.GetRoot(), "endpoint_test", 5);
+
+  endpoint.RecordEvent("state_changed: kStoppingUsb");
+  endpoint.AddTxBytes(1024);
+  endpoint.AddRxBytes(2048);
+  endpoint.MeasureThroughput(zx::sec(1));
+
+  endpoint.RecordEvent("state_changed: kOnline");
+  endpoint.AddTxBytes(4096);
+
+  auto hierarchy = ReadInspect(inspector);
+
+  auto* snap_0 = hierarchy.GetByPath({"endpoint_test", "transfer_snapshots", "0"});
+  ASSERT_THAT(snap_0, ::testing::NotNull());
+  EXPECT_THAT(snap_0->node(), PropertyList(::testing::UnorderedElementsAre(
+                                  UintIs("@time", ::testing::_), UintIs("total_bytes_tx", 0),
+                                  UintIs("total_bytes_rx", 0), UintIs("max_bytes_per_second", 0))));
+
+  auto* snap_1 = hierarchy.GetByPath({"endpoint_test", "transfer_snapshots", "1"});
+  ASSERT_THAT(snap_1, ::testing::NotNull());
+  EXPECT_THAT(snap_1->node(),
+              PropertyList(::testing::UnorderedElementsAre(
+                  UintIs("@time", ::testing::_), UintIs("total_bytes_tx", 1024),
+                  UintIs("total_bytes_rx", 2048), UintIs("max_bytes_per_second", 3072))));
+}
+
+TEST_F(UsbInspectTest, TestEventHistoryTrafficSnapshotsEviction) {
+  inspect::Inspector inspector;
+  EndpointInspect endpoint;
+
+  endpoint.Init(inspector.GetRoot(), "endpoint_test", 2, 2);
+
+  endpoint.RecordEvent("event_0");
+  endpoint.AddTxBytes(100);
+  endpoint.RecordEvent("event_1");
+  endpoint.AddTxBytes(200);
+  endpoint.RecordEvent("event_2");  // Evicts event_0
+  endpoint.AddTxBytes(300);
+
+  auto hierarchy = ReadInspect(inspector);
+  EXPECT_THAT(hierarchy.GetByPath({"endpoint_test", "transfer_snapshots", "0"}),
+              ::testing::IsNull());
+  auto* snap_1 = hierarchy.GetByPath({"endpoint_test", "transfer_snapshots", "1"});
+  ASSERT_THAT(snap_1, ::testing::NotNull());
+  EXPECT_THAT(snap_1->node(), PropertyList(::testing::UnorderedElementsAre(
+                                  UintIs("@time", ::testing::_), UintIs("total_bytes_tx", 100),
+                                  UintIs("total_bytes_rx", 0), UintIs("max_bytes_per_second", 0))));
+
+  auto* snap_2 = hierarchy.GetByPath({"endpoint_test", "transfer_snapshots", "2"});
+  ASSERT_THAT(snap_2, ::testing::NotNull());
+  EXPECT_THAT(snap_2->node(), PropertyList(::testing::UnorderedElementsAre(
+                                  UintIs("@time", ::testing::_), UintIs("total_bytes_tx", 300),
+                                  UintIs("total_bytes_rx", 0), UintIs("max_bytes_per_second", 0))));
+}
+
+TEST_F(UsbInspectTest, TestDirectSnapshotTransferStats) {
+  inspect::Inspector inspector;
+  EndpointInspect endpoint;
+
+  endpoint.Init(inspector.GetRoot(), "endpoint_test", 5);
+
+  endpoint.AddTxBytes(500);
+  endpoint.SnapshotTransferStats();
+
+  endpoint.AddTxBytes(250);
+  endpoint.SnapshotTransferStats();
+
+  auto hierarchy = ReadInspect(inspector);
+  auto* snap_0 = hierarchy.GetByPath({"endpoint_test", "transfer_snapshots", "0"});
+  ASSERT_THAT(snap_0, ::testing::NotNull());
+  EXPECT_THAT(snap_0->node(), PropertyList(::testing::UnorderedElementsAre(
+                                  UintIs("@time", ::testing::_), UintIs("total_bytes_tx", 500),
+                                  UintIs("total_bytes_rx", 0), UintIs("max_bytes_per_second", 0))));
+
+  auto* snap_1 = hierarchy.GetByPath({"endpoint_test", "transfer_snapshots", "1"});
+  ASSERT_THAT(snap_1, ::testing::NotNull());
+  EXPECT_THAT(snap_1->node(), PropertyList(::testing::UnorderedElementsAre(
+                                  UintIs("@time", ::testing::_), UintIs("total_bytes_tx", 750),
+                                  UintIs("total_bytes_rx", 0), UintIs("max_bytes_per_second", 0))));
+}
+
+TEST_F(UsbInspectTest, TestZeroCapacity) {
+  inspect::Inspector inspector;
+  EndpointInspect endpoint;
+
+  endpoint.Init(inspector.GetRoot(), "endpoint_test", 0, 0);
+  endpoint.RecordEvent("event_0");
+  endpoint.SnapshotTransferStats();
+
+  auto hierarchy = ReadInspect(inspector);
+  EXPECT_THAT(hierarchy.GetByPath({"endpoint_test", "event_history"}), ::testing::IsNull());
+  EXPECT_THAT(hierarchy.GetByPath({"endpoint_test", "transfer_snapshots"}), ::testing::IsNull());
+}
+
 }  // namespace usb_inspect

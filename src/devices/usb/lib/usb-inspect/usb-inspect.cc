@@ -35,12 +35,16 @@ const char* SpeedToString(usb_speed_t speed) {
 // EndpointInspect Implementation
 // ============================================================================
 
-void EndpointInspect::Init(inspect::Node& parent, const std::string& name, size_t event_capacity) {
+void EndpointInspect::Init(inspect::Node& parent, const std::string& name, size_t event_capacity,
+                           size_t transfer_snapshot_capacity) {
   {
     std::lock_guard<std::mutex> _(lock_);
     event_history_capacity_ = event_capacity;
     event_history_.clear();
     event_history_index_ = 0;
+    transfer_snapshot_capacity_ = transfer_snapshot_capacity;
+    transfer_snapshots_.clear();
+    transfer_snapshots_index_ = 0;
   }
 
   // Initialize atomic values
@@ -60,34 +64,54 @@ void EndpointInspect::Init(inspect::Node& parent, const std::string& name, size_
     inspect::Inspector inspector;
     auto& root = inspector.GetRoot();
 
+    std::scoped_lock _(lock_);
+
+    uint64_t cur_tx = total_bytes_tx_.load(std::memory_order_relaxed);
+    uint64_t cur_rx = total_bytes_rx_.load(std::memory_order_relaxed);
+    uint64_t cur_max_rate = max_bytes_per_second_.load(std::memory_order_relaxed);
+
     root.CreateUint("tx_pending_requests", tx_pending_requests_.load(std::memory_order_relaxed),
                     &inspector);
     root.CreateUint("rx_pending_requests", rx_pending_requests_.load(std::memory_order_relaxed),
                     &inspector);
     root.CreateUint("rx_pending_processing", rx_pending_processing_.load(std::memory_order_relaxed),
                     &inspector);
-    root.CreateUint("total_bytes_tx", total_bytes_tx_.load(std::memory_order_relaxed), &inspector);
-    root.CreateUint("total_bytes_rx", total_bytes_rx_.load(std::memory_order_relaxed), &inspector);
+    root.CreateUint("total_bytes_tx", cur_tx, &inspector);
+    root.CreateUint("total_bytes_rx", cur_rx, &inspector);
     if (auto failed_tx = failed_bytes_tx_.load(std::memory_order_relaxed); failed_tx > 0) {
       root.CreateUint("failed_bytes_tx", failed_tx, &inspector);
     }
     if (auto failed_rx = failed_bytes_rx_.load(std::memory_order_relaxed); failed_rx > 0) {
       root.CreateUint("failed_bytes_rx", failed_rx, &inspector);
     }
-    root.CreateUint("max_bytes_per_second", max_bytes_per_second_.load(std::memory_order_relaxed),
-                    &inspector);
+    root.CreateUint("max_bytes_per_second", cur_max_rate, &inspector);
 
-    std::lock_guard<std::mutex> _(lock_);
     if (!event_history_.empty()) {
       auto event_node = root.CreateChild("event_history");
       size_t index = event_history_index_ - event_history_.size();
       for (const auto& entry : event_history_) {
-        auto node = event_node.CreateChild(std::to_string(index++));
+        auto node = event_node.CreateChild(std::to_string(index));
         node.CreateUint("@time", entry.timestamp, &inspector);
         node.CreateString("event", entry.event, &inspector);
         inspector.emplace(std::move(node));
+        index++;
       }
       inspector.emplace(std::move(event_node));
+    }
+
+    if (!transfer_snapshots_.empty()) {
+      auto snapshot_parent = root.CreateChild("transfer_snapshots");
+      size_t index = transfer_snapshots_index_ - transfer_snapshots_.size();
+      for (const auto& entry : transfer_snapshots_) {
+        auto node = snapshot_parent.CreateChild(std::to_string(index));
+        node.CreateUint("@time", entry.timestamp, &inspector);
+        node.CreateUint("total_bytes_tx", entry.stats.total_bytes_tx, &inspector);
+        node.CreateUint("total_bytes_rx", entry.stats.total_bytes_rx, &inspector);
+        node.CreateUint("max_bytes_per_second", entry.stats.max_bytes_per_second, &inspector);
+        inspector.emplace(std::move(node));
+        index++;
+      }
+      inspector.emplace(std::move(snapshot_parent));
     }
 
     return fpromise::make_ok_promise(std::move(inspector));
@@ -112,18 +136,52 @@ void EndpointInspect::MeasureThroughput(zx::duration elapsed) {
   }
 }
 
+void EndpointInspect::SnapshotTransferStatsLocked(zx_instant_boot_t raw_time) {
+  if (transfer_snapshot_capacity_ == 0) {
+    return;
+  }
+  if (transfer_snapshots_.size() >= transfer_snapshot_capacity_) {
+    transfer_snapshots_.pop_front();
+  }
+  uint64_t tx = total_bytes_tx_.load(std::memory_order_relaxed);
+  uint64_t rx = total_bytes_rx_.load(std::memory_order_relaxed);
+  uint64_t max_rate = max_bytes_per_second_.load(std::memory_order_relaxed);
+  transfer_snapshots_.push_back(TransferSnapshotEntry{
+      .timestamp = raw_time,
+      .stats =
+          TransferStats{
+              .total_bytes_tx = tx,
+              .total_bytes_rx = rx,
+              .max_bytes_per_second = max_rate,
+          },
+  });
+  transfer_snapshots_index_++;
+}
+
+void EndpointInspect::SnapshotTransferStats() {
+  if (transfer_snapshot_capacity_ == 0) {
+    return;
+  }
+  std::scoped_lock _(lock_);
+  SnapshotTransferStatsLocked(zx_clock_get_boot());
+}
+
 void EndpointInspect::RecordEvent(const std::string& event_name) {
   if (event_history_capacity_ == 0) {
     return;
   }
-  std::lock_guard<std::mutex> _(lock_);
+  std::scoped_lock _(lock_);
   if (event_history_.size() >= event_history_capacity_) {
     event_history_.pop_front();
   }
 
   zx_instant_boot_t raw_time = zx_clock_get_boot();
-  event_history_.push_back(EventLogEntry{raw_time, event_name});
+  event_history_.push_back(EventLogEntry{
+      .timestamp = raw_time,
+      .event = event_name,
+  });
   event_history_index_++;
+  SnapshotTransferStatsLocked(raw_time);
 }
 
 // ============================================================================
