@@ -21,22 +21,6 @@ source_set("battery_info_provider") {
   deps = [ "//sdk/lib/syslog/cpp" ]
 }
 
-source_set("board_info_provider") {
-  testonly = true
-
-  sources = [
-    "board_info_provider.cc",
-    "board_info_provider.h",
-  ]
-
-  public_deps = [
-    ":fidl_server_hlcpp",
-    "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_hlcpp",
-  ]
-
-  deps = [ "//sdk/lib/syslog/cpp" ]
-}
-
 source_set("channel_control") {
   testonly = true
 
