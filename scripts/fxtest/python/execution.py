@@ -806,8 +806,25 @@ async def get_device_environment_from_exec_env(
     if not wait_output or wait_output.return_code != 0:
         raise DeviceConfigError("Failed to wait for target to become reachable")
 
+    target_output = await run_command(
+        *exec_env.fx_cmd_line("ffx", "target", "default", "get"),
+        recorder=recorder,
+    )
+    if not target_output or target_output.return_code != 0:
+        raise DeviceConfigError(
+            "Failed to get the target name. Please ensure you have set a default target using 'fx set-device'. See 'fx set-device --help' for more details on target resolution."
+        )
+    target_name = target_output.stdout.strip()
+
     ssh_output = await run_command(
-        *exec_env.fx_cmd_line("ffx", "target", "list", "--format", "addresses"),
+        *exec_env.fx_cmd_line(
+            "ffx",
+            "target",
+            "list",
+            "--format",
+            "addresses-with-scope",
+            target_name,
+        ),
         recorder=recorder,
     )
 
@@ -828,16 +845,6 @@ async def get_device_environment_from_exec_env(
         )
     ip = ssh_output.stdout[0:last_colon_index].strip()
     port = ssh_output.stdout[last_colon_index + 1 :].strip()
-
-    target_output = await run_command(
-        *exec_env.fx_cmd_line("ffx", "target", "default", "get"),
-        recorder=recorder,
-    )
-    if not target_output or target_output.return_code != 0:
-        raise DeviceConfigError(
-            "Failed to get the target name. Please ensure you have set a default target using 'fx set-device'. See 'fx set-device --help' for more details on target resolution."
-        )
-    target_name = target_output.stdout.strip()
 
     # get the configured private key. Ideally, the private key usage
     # should be an implementation detail internal to ffx commands.

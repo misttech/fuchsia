@@ -955,8 +955,8 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         command_patch.side_effect = [
             self._make_command_output(""),  # target wait
-            self._make_command_output("127.0.0.1:6000"),  # target list
             self._make_command_output("foo-bar"),  # target default get
+            self._make_command_output("127.0.0.1:6000"),  # target list
             # config get ssh.priv
             self._make_command_output(self._ssh_key_file),
         ]
@@ -979,8 +979,8 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         command_patch.side_effect = [
             self._make_command_output(""),  # target wait
-            self._make_command_output("[::1]:6000"),  # target list
             self._make_command_output("foo-bar"),  # target default get
+            self._make_command_output("[::1]:6000"),  # target list
             # config get ssh.priv
             self._make_command_output(self._ssh_key_file),
         ]
@@ -1003,6 +1003,7 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         command_patch.side_effect = [
             self._make_command_output(""),  # target wait
+            self._make_command_output("foo-bar"),  # target default get
             self._make_command_output("", return_code=1),  # target list fails
         ]
 
@@ -1031,6 +1032,7 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         command_patch.side_effect = [
             self._make_command_output(""),  # target wait
+            self._make_command_output("foo-bar"),  # target default get
             self._make_command_output("foo"),  # target list
         ]
 
@@ -1046,7 +1048,6 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         command_patch.side_effect = [
             self._make_command_output(""),  # target wait
-            self._make_command_output("127.0.0.1:6000"),  # target list
             self._make_command_output(
                 "", return_code=1
             ),  # target default get fails
@@ -1064,8 +1065,8 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         command_patch.side_effect = [
             self._make_command_output(""),  # target wait
-            self._make_command_output("127.0.0.1:6000"),  # target list
             self._make_command_output("foo-bar"),  # target default get
+            self._make_command_output("127.0.0.1:6000"),  # target list
             self._make_command_output(
                 "/nonexistent/path"
             ),  # config get ssh.priv
