@@ -965,6 +965,30 @@
         {
             type: "skip",
             matchers: [
+                // TODO(https://fxbug.dev/528464338): Support SO_MARK and netfilter mark matching.
+                "IPTablesBasic.GetRevisionMatchMark",
+
+                // TODO(https://fxbug.dev/528464949): Support ioprio_set and ioprio_get.
+                "IoprioTest.BasicSetGet",
+                "IoprioTest.ChildPID",
+                "IoprioTest.InvalidClassesAndData",
+                "IoprioTest.RtRequiresCapability",
+                "IoprioTest.ValidWho",
+
+                // TODO(https://fxbug.dev/528464354): Make /proc/sys/kernel/hostname and domainname pollable.
+                "ProcSysKernelDomainname.EpollNotifiesOnChange",
+                "ProcSysKernelHostname.EpollLatchesAndWakesAllSubscribers",
+                "ProcSysKernelHostname.EpollNotifiesOnChange",
+
+                // TODO(https://fxbug.dev/528465482): Support sched_setattr and sched_getattr.
+                "SchedAttrTest.BasicSetGet",
+                "SchedAttrTest.ChildPID",
+                "SchedAttrTest.ImpossiblePIDReturnsESRCH",
+                "SchedAttrTest.InvalidArgs",
+                "SchedAttrTest.InvalidPIDReturnsEINVAL",
+                "SchedAttrTest.StructSizeE2BIG",
+                "SchedSetschedulerTest.BasicSetGet",
+
                 // TODO(https://fxbug.dev/42066087): This test clones with CLONE_VM without
                 // CLONE_THREAD which Starnix does not properly support.
                 "AIOTest.CloneVm",
