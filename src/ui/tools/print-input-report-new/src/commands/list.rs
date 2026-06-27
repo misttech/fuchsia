@@ -200,7 +200,7 @@ mod tests {
                 }),
             }
         };
-        vfs::directory::serve_read_only(service_dir)
+        vfs::directory::serve_read_only(service_dir, vfs::execution_scope::ExecutionScope::new())
     }
 
     #[gtest]

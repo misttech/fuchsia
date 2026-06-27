@@ -21,7 +21,10 @@ group("tools") {
 group("tests") {
   testonly = true
 
-  deps = [ "print-input-report:print-input-report-test" ]
+  deps = [
+    "print-input-report:print-input-report-test",
+    "print-input-report-new:tests",
+  ]
 }
 
 # Non-component tools contains the names of shell command tools that do not
