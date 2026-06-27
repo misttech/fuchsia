@@ -33,7 +33,7 @@ use starnix_sync::{FileOpsCore, Locked};
 use starnix_task_command::TaskCommand;
 use starnix_types::time::duration_to_scheduler_clock;
 use starnix_uapi::auth::{
-    CAP_SYS_NICE, CAP_SYS_RESOURCE, Capabilities, PTRACE_MODE_ATTACH_FSCREDS, PTRACE_MODE_NOAUDIT,
+    CAP_SYS_NICE, CAP_SYS_RESOURCE, PTRACE_MODE_ATTACH_FSCREDS, PTRACE_MODE_NOAUDIT,
     PTRACE_MODE_READ_FSCREDS, PtraceAccessMode,
 };
 use starnix_uapi::device_id::DeviceId;
@@ -1343,12 +1343,11 @@ impl DynamicFileSource for StatusFile {
 
             // Since version 3.8 all nonexistent capabilities are reported as not-enabled.
             let creds = task.real_creds();
-            let cap_mask = Capabilities::all_existent();
-            writeln!(sink, "CapInh:\t{:016x}", creds.cap_inheritable & cap_mask)?;
-            writeln!(sink, "CapPrm:\t{:016x}", creds.cap_permitted & cap_mask)?;
-            writeln!(sink, "CapEff:\t{:016x}", creds.cap_effective & cap_mask)?;
-            writeln!(sink, "CapBnd:\t{:016x}", creds.cap_bounding & cap_mask)?;
-            writeln!(sink, "CapAmb:\t{:016x}", creds.cap_ambient & cap_mask)?;
+            writeln!(sink, "CapInh:\t{:016x}", creds.cap_inheritable)?;
+            writeln!(sink, "CapPrm:\t{:016x}", creds.cap_permitted)?;
+            writeln!(sink, "CapEff:\t{:016x}", creds.cap_effective)?;
+            writeln!(sink, "CapBnd:\t{:016x}", creds.cap_bounding)?;
+            writeln!(sink, "CapAmb:\t{:016x}", creds.cap_ambient)?;
         }
 
         let state_code =

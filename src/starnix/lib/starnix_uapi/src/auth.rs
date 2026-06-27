@@ -19,16 +19,17 @@ pub struct Capabilities {
 }
 
 impl Capabilities {
-    pub fn empty() -> Self {
+    pub const fn empty() -> Self {
         Self { mask: 0 }
     }
 
-    pub fn all() -> Self {
-        Self { mask: u64::MAX }
-    }
-
-    pub fn all_existent() -> Self {
-        Self { mask: (1u64 << CAP_LAST_CAP) - 1 }
+    pub const fn all() -> Self {
+        const fn make_mask(cap: u32) -> u64 {
+            let mask = if cap > 0 { make_mask(cap - 1) << 1 } else { 0u64 };
+            mask | 1u64
+        }
+        const ALL_CAPS_MASK: u64 = make_mask(CAP_LAST_CAP);
+        Self { mask: ALL_CAPS_MASK }
     }
 
     pub fn union(&self, caps: Capabilities) -> Self {
@@ -55,20 +56,20 @@ impl Capabilities {
         *self &= !caps;
     }
 
-    pub fn as_abi_v1(self) -> u32 {
+    pub const fn as_abi_v1(self) -> u32 {
         self.mask as u32
     }
 
     pub fn from_abi_v1(bits: u32) -> Self {
-        Self { mask: bits as u64 }
+        Self { mask: bits as u64 } & Self::all()
     }
 
-    pub fn as_abi_v3(self) -> (u32, u32) {
+    pub const fn as_abi_v3(self) -> (u32, u32) {
         (self.mask as u32, (self.mask >> 32) as u32)
     }
 
     pub fn from_abi_v3(u32s: (u32, u32)) -> Self {
-        Self { mask: u32s.0 as u64 | ((u32s.1 as u64) << 32) }
+        Self { mask: u32s.0 as u64 | ((u32s.1 as u64) << 32) } & Self::all()
     }
 }
 
@@ -548,12 +549,6 @@ mod tests {
     #[::fuchsia::test]
     fn test_empty() {
         assert_eq!(Capabilities::empty().mask, 0);
-    }
-
-    #[::fuchsia::test]
-    fn test_all() {
-        // all() should be every bit set, not just all the CAP_* constants.
-        assert_eq!(Capabilities::all().mask, u64::MAX);
     }
 
     #[::fuchsia::test]

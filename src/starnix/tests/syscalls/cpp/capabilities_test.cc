@@ -910,3 +910,78 @@ TEST_F(CapsExecTest, SUIDBinarySameUserPreservesAmbientCapabilities) {
     }
   }
 }
+
+TEST(CapsTest, CapsetMasksReservedBits) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities. skipping.";
+  }
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([]() {
+    // 1. Get current capabilities using the V3 (64-bit) ABI.
+    __user_cap_header_struct header{};
+    header.version = _LINUX_CAPABILITY_VERSION_3;
+    header.pid = 0;  // 0 means the calling thread
+
+    __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3]{};
+    ASSERT_THAT(syscall(SYS_capget, &header, caps), SyscallSucceeds());
+
+    // Reconstruct 64-bit masks from the two u32 halves.
+    uint64_t orig_permitted =
+        static_cast<uint64_t>(caps[0].permitted) | (static_cast<uint64_t>(caps[1].permitted) << 32);
+    uint64_t orig_effective =
+        static_cast<uint64_t>(caps[0].effective) | (static_cast<uint64_t>(caps[1].effective) << 32);
+    uint64_t orig_inheritable = static_cast<uint64_t>(caps[0].inheritable) |
+                                (static_cast<uint64_t>(caps[1].inheritable) << 32);
+
+    // 2. Determine the last valid capability supported by the running kernel.
+    int cap_last_cap = 0;
+    FILE *fp = fopen("/proc/sys/kernel/cap_last_cap", "r");
+    ASSERT_NE(fp, nullptr);
+    ASSERT_EQ(fscanf(fp, "%d\n", &cap_last_cap), 1);
+    fclose(fp);
+
+    // 3. Construct masks for valid vs reserved bits.
+    uint64_t valid_mask = (1ULL << (cap_last_cap + 1)) - 1;
+    uint64_t reserved_mask = ~valid_mask;
+
+    // We attempt to set reserved bits. To avoid EPERM, we only set valid bits
+    // that we already possess, plus the reserved bits (which should be ignored).
+    uint64_t test_permitted = orig_permitted | reserved_mask;
+    uint64_t test_effective = orig_effective | reserved_mask;
+    uint64_t test_inheritable = orig_inheritable | reserved_mask;
+
+    __user_cap_data_struct set_caps[_LINUX_CAPABILITY_U32S_3]{};
+    set_caps[0].permitted = static_cast<uint32_t>(test_permitted);
+    set_caps[1].permitted = static_cast<uint32_t>(test_permitted >> 32);
+    set_caps[0].effective = static_cast<uint32_t>(test_effective);
+    set_caps[1].effective = static_cast<uint32_t>(test_effective >> 32);
+    set_caps[0].inheritable = static_cast<uint32_t>(test_inheritable);
+    set_caps[1].inheritable = static_cast<uint32_t>(test_inheritable >> 32);
+
+    // This call must succeed because reserved bits should be silently dropped.
+    EXPECT_THAT(syscall(SYS_capset, &header, set_caps), SyscallSucceeds());
+
+    // 4. Get capabilities again to verify the kernel masked the reserved bits.
+    __user_cap_data_struct get_caps[_LINUX_CAPABILITY_U32S_3]{};
+    ASSERT_THAT(syscall(SYS_capget, &header, get_caps), SyscallSucceeds());
+
+    uint64_t got_permitted = static_cast<uint64_t>(get_caps[0].permitted) |
+                             (static_cast<uint64_t>(get_caps[1].permitted) << 32);
+    uint64_t got_effective = static_cast<uint64_t>(get_caps[0].effective) |
+                             (static_cast<uint64_t>(get_caps[1].effective) << 32);
+    uint64_t got_inheritable = static_cast<uint64_t>(get_caps[0].inheritable) |
+                               (static_cast<uint64_t>(get_caps[1].inheritable) << 32);
+
+    // Assert that no reserved bits are set in any of the sets.
+    EXPECT_EQ(got_permitted & reserved_mask, 0ULL);
+    EXPECT_EQ(got_effective & reserved_mask, 0ULL);
+    EXPECT_EQ(got_inheritable & reserved_mask, 0ULL);
+
+    // Assert that the original valid capabilities are preserved.
+    EXPECT_EQ(got_permitted & valid_mask, orig_permitted & valid_mask);
+    EXPECT_EQ(got_effective & valid_mask, orig_effective & valid_mask);
+    EXPECT_EQ(got_inheritable & valid_mask, orig_inheritable & valid_mask);
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
