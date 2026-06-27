@@ -26,7 +26,7 @@ impl Driver for VirtioGpuDisplayDriver {
     async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         info!("VirtioGpuDisplayDriver::start()");
 
-        let platform_resources = PlatformResources::build(&mut context)?;
+        let platform_resources = PlatformResources::new(&mut context)?;
 
         let mut pci_device_builder =
             VirtioPciDeviceBuilder::new(platform_resources.pci_client).await?;

@@ -24,7 +24,7 @@ pub struct PlatformResources {
 
 impl PlatformResources {
     /// Obtains all the resources used by the driver.
-    pub fn build(context: &mut DriverContext) -> Result<Self, Status> {
+    pub fn new(context: &mut DriverContext) -> Result<Self, Status> {
         let pci_service: ServiceInstance<fidl_pci::Service> =
             context.incoming.service().connect_next().map_err(|_| Status::INTERNAL)?;
 

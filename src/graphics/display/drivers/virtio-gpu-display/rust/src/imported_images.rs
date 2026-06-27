@@ -40,7 +40,7 @@ pub struct SysmemBufferInfo {
 
 impl SysmemBufferInfo {
     // Obtains the relevant information from sysmem.
-    pub async fn build(
+    pub async fn new(
         sysmem_buffer_collection: &mut fidl_next::Client<fidl_sysmem2::BufferCollection>,
         buffer_index: u32,
     ) -> Result<Self, zx::Status> {
@@ -167,7 +167,7 @@ impl ImportedImages {
     /// Returns an empty collection of images.
     ///
     /// `scope` must outlive this instance. `sysmem` must be valid.
-    pub async fn build(
+    pub async fn new(
         scope: fuchsia_async::ScopeHandle,
         mut sysmem: fidl_next::Client<fidl_sysmem2::Allocator>,
     ) -> Result<Self, zx::Status> {

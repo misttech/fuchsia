@@ -30,7 +30,7 @@ impl ImportedImage {
     /// `bti` must be valid for the duration of the call. `image_vmo` must point to
     /// a valid VMO whose size is at least `image_vmo_offset` + `image_size`.
     /// `resource_format` must be a known format.
-    pub fn build(
+    pub fn new(
         bti: &zx::Bti,
         image_vmo: &zx::Vmo,
         image_vmo_offset: u64,
