@@ -36,6 +36,7 @@
 #include "src/lib/files/file.h"
 #include "src/lib/fxl/strings/split_string.h"
 #include "src/lib/fxl/strings/string_number_conversions.h"
+#include "src/lib/fxl/strings/string_printf.h"
 #include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 
@@ -634,26 +635,36 @@ bool TryWrite(uintptr_t addr) {
   return read(zero_fd.get(), reinterpret_cast<void *>(addr), 1) == 1;
 }
 
-// Loop until the target process indicates a sleeping state in /proc/pid/stat.
-void WaitUntilBlocked(pid_t target, bool ignore_tracer) {
+testing::AssertionResult WaitUntilBlocked(pid_t target, bool ignore_tracer) {
+  return WaitForTaskState(target, target, [ignore_tracer](std::string_view state) {
+    return cpp23::contains(state, 'S') || (!ignore_tracer && cpp23::contains(state, 't'));
+  });
+}
+
+testing::AssertionResult WaitUntilZombie(pid_t target) {
+  return WaitForTaskState(target, target,
+                          [](std::string_view state) { return cpp23::contains(state, 'Z'); });
+}
+
+testing::AssertionResult WaitForTaskState(pid_t pid, pid_t tid,
+                                          fit::function<bool(std::string_view)> predicate) {
+  std::string stat_path = fxl::StringPrintf("/proc/%d/task/%d/stat", pid, tid);
   for (int i = 0; i < 100000; i++) {
-    // Loop until the target task is paused.
-    std::string fname = "/proc/" + std::to_string(target) + "/stat";
-    std::ifstream t(fname);
-    if (!t.is_open()) {
-      FAIL() << "File " << fname << " not found";
+    std::string stat_buf;
+    if (!files::ReadFileToString(stat_path, &stat_buf)) {
+      return testing::AssertionFailure() << "Failed to read " << stat_path;
     }
-    std::stringstream buffer;
-    buffer << t.rdbuf();
-    if (cpp23::contains(buffer.str(), "S") ||
-        (!ignore_tracer && cpp23::contains(buffer.str(), "t"))) {
-      break;
+    if (predicate(stat_buf)) {
+      return testing::AssertionSuccess();
     }
-    // Give up if we don't seem to be getting to sleep.
-    if (i == 99999)
-      FAIL() << "Failed to wait for pid " << target
-             << " to block. resulting status: " << buffer.str();
+    if (i == 99999) {
+      return testing::AssertionFailure()
+             << "Failed to wait for task with PID=" << pid << " TID=" << tid
+             << " to reach state. Final state: " << stat_buf;
+    }
+    usleep(1000);  // Sleep for 1ms to avoid busy-looping.
   }
+  return testing::AssertionFailure() << "Unreachable";
 }
 
 // This variable is accessed from within a signal handler and thus must be declared volatile.

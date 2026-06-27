@@ -514,7 +514,16 @@ int MemFdCreate(const char *name, unsigned int flags);
 // Wrapper for the pidfd_open system call.
 int PidFdOpen(pid_t pid, unsigned int flags);
 
-void WaitUntilBlocked(pid_t target, bool ignore_tracer);
+// Wait until the target process indicates a sleeping (S) or traced sleeping (t) state.
+testing::AssertionResult WaitUntilBlocked(pid_t target, bool ignore_tracer);
+
+// Wait until the target process indicates a zombie (Z) state.
+testing::AssertionResult WaitUntilZombie(pid_t target);
+
+// Loop until the target task's process state in /proc/<pid>/task/<tid>/stat satisfies the given
+// predicate function. The string passed to the predicate is the task state (R, S, T, Z, etc.).
+testing::AssertionResult WaitForTaskState(pid_t pid, pid_t tid,
+                                          fit::function<bool(std::string_view)> predicate);
 
 enum AccessType { Read, Write };
 

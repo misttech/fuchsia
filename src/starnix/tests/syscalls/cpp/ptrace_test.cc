@@ -326,7 +326,7 @@ void TraceSyscallWithRestartWithCall(int call, long arg0, long arg1, long arg2, 
 
   // Resume the child with PTRACE_SYSCALL and expect it to block in the syscall.
   ASSERT_EQ(ptrace(PTRACE_SYSCALL, child_pid, 0, 0), 0);
-  test_helper::WaitUntilBlocked(child_pid, true);
+  ASSERT_TRUE(test_helper::WaitUntilBlocked(child_pid, true));
   ASSERT_EQ(waitpid(child_pid, &status, WNOHANG), 0);
 
   // Send the child kUnmaskedSignal, causing it to return the given errno and enter
@@ -1073,7 +1073,7 @@ TEST(PtraceTest, GrandchildWithSigsuspend) {
     ASSERT_EQ(0, sigprocmask(SIG_BLOCK, &child_mask, &old_mask));
     pid_t gc_pid = fork();
     if (gc_pid == 0) {
-      test_helper::WaitUntilBlocked(my_pid, false);
+      ASSERT_TRUE(test_helper::WaitUntilBlocked(my_pid, false));
       exit(0);
     }
     ASSERT_EQ(-1, sigsuspend(&old_mask));
@@ -2136,7 +2136,7 @@ TEST(PtraceTest, PtraceAttachesDuringPpoll) {
   });
   ASSERT_NE(child_pid, 0);
 
-  test_helper::WaitUntilBlocked(child_pid, true);
+  ASSERT_TRUE(test_helper::WaitUntilBlocked(child_pid, true));
 
   ASSERT_THAT(ptrace(PTRACE_ATTACH, child_pid, 0, 0), SyscallSucceeds());
   int status;
@@ -2193,7 +2193,7 @@ TEST(PtraceTest, PtraceAttachesDuringPpollAndSignal) {
   });
   ASSERT_NE(child_pid, 0);
 
-  test_helper::WaitUntilBlocked(child_pid, true);
+  ASSERT_TRUE(test_helper::WaitUntilBlocked(child_pid, true));
 
   ASSERT_THAT(ptrace(PTRACE_ATTACH, child_pid, 0, 0), SyscallSucceeds());
   int status;
@@ -2203,7 +2203,7 @@ TEST(PtraceTest, PtraceAttachesDuringPpollAndSignal) {
 
   // Let child go back to blocking on ppoll.
   ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, 0, 0), SyscallSucceeds());
-  test_helper::WaitUntilBlocked(child_pid, true);
+  ASSERT_TRUE(test_helper::WaitUntilBlocked(child_pid, true));
 
   // Now that child is in ppoll and is ptraced, send a signal and check that the child goes into
   // signal-delivery-stop.

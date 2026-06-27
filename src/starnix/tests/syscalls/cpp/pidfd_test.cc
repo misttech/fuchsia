@@ -55,26 +55,6 @@ std::pair<fbl::unique_fd, fbl::unique_fd> CreatePipe() {
   return {fbl::unique_fd(pipe_fds[0]), fbl::unique_fd(pipe_fds[1])};
 }
 
-// Waits until the given process' main thread becomes a zombie.
-void WaitUntilMainThreadIsZombie(pid_t pid) {
-  std::string stat_path =
-      "/proc/" + fxl::NumberToString(pid) + "/task/" + fxl::NumberToString(pid) + "/stat";
-
-  while (true) {
-    std::string contents;
-    ASSERT_TRUE(files::ReadFileToString(stat_path, &contents));
-
-    char state;
-    ASSERT_EQ(sscanf(contents.c_str(), "%*d %*s %c", &state), 1) << contents;
-
-    if (state == 'Z') {
-      return;  // thread is a Zombie, we're done waiting!
-    }
-
-    usleep(10000);  // check again in 10 ms.
-  }
-}
-
 TEST(PidFdTest, ProcessCanBeOpened) {
   auto pid_fd = DoPidFdOpen(getpid());
   ASSERT_TRUE(pid_fd.is_valid()) << strerror(errno);
@@ -153,7 +133,7 @@ TEST(PidFdTest, PollWaitsForSecondaryThreadsToo) {
   r_fd.reset();
 
   // Wait for the main thread to exit.
-  ASSERT_NO_FATAL_FAILURE(WaitUntilMainThreadIsZombie(pid));
+  ASSERT_TRUE(test_helper::WaitUntilZombie(pid));
 
   // Open a pidfd using the main thread's pid.
   auto pid_fd = DoPidFdOpen(pid);

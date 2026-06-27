@@ -68,7 +68,7 @@ TEST(TimerFD, AlarmCancelOnSet) {
   // A sleep alone removes flakiness 100%, but a wait alone does not. Let's
   // see if this makes a difference.
   sleep(1);
-  test_helper::WaitUntilBlocked(test_thread_tid, true);
+  ASSERT_TRUE(test_helper::WaitUntilBlocked(test_thread_tid, true));
   printf("main_thread: ending wait, on to changing the timeline\n");
 
   // Now, rejigger the UTC timeline. This should cause epoll_wait above to unblock.

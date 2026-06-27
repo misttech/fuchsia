@@ -22,24 +22,6 @@ std::string ProcFilePath(pid_t pid, const char* name) {
   return fxl::StringPrintf("/proc/%d/%s", pid, name);
 }
 
-// Waits until the given task enters the zombie state.
-void WaitUntilTaskIsZombie(pid_t pid) {
-  std::string stat_path = ProcFilePath(pid, "stat");
-
-  while (true) {
-    std::string contents;
-    ASSERT_TRUE(files::ReadFileToString(stat_path, &contents));
-
-    char state;
-    ASSERT_EQ(sscanf(contents.c_str(), "%*d %*s %c", &state), 1) << contents;
-    if (state == 'Z') {
-      return;  // Thread is a zombie.
-    }
-
-    usleep(10000);  // Check again in 10 ms.
-  }
-}
-
 class ZombieProcTest : public ProcTestBase {
  protected:
   void SetUp() override {
@@ -71,7 +53,7 @@ class ZombieProcTest : public ProcTestBase {
     // Wait for the leader thread to exit, entering the zombie state.
     complete_ = std::move(complete.poker);
     ready.holder.hold();
-    ASSERT_NO_FATAL_FAILURE(WaitUntilTaskIsZombie(leader_pid_));
+    ASSERT_TRUE(test_helper::WaitUntilZombie(leader_pid_));
   }
 
   void ReapZombie() {

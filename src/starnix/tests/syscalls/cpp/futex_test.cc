@@ -410,7 +410,7 @@ TEST(FutexTest, WaitRestartableOnSignal) {
 
   // Wait for child to go to sleep.
   std::cerr << "wait for block" << std::endl;
-  test_helper::WaitUntilBlocked(child_pid, true);
+  ASSERT_TRUE(test_helper::WaitUntilBlocked(child_pid, true));
   std::cerr << "waited for block" << std::endl;
   usleep(100000);
 
