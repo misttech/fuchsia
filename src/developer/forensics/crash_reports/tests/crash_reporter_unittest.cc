@@ -37,7 +37,6 @@
 #include "src/developer/forensics/feedback/constants.h"
 #include "src/developer/forensics/feedback_data/constants.h"
 #include "src/developer/forensics/testing/fakes/privacy_settings.h"
-#include "src/developer/forensics/testing/stubs/channel_control.h"
 #include "src/developer/forensics/testing/stubs/cobalt_logger_factory.h"
 #include "src/developer/forensics/testing/stubs/data_provider.h"
 #include "src/developer/forensics/testing/unit_test_fixture.h"
@@ -476,7 +475,6 @@ class CrashReporterTest : public UnitTestFixture {
   LogTags tags_;
 
   // Stubs and fake servers.
-  std::unique_ptr<stubs::ChannelControlBase> channel_provider_server_;
   std::unique_ptr<stubs::DataProviderBase> data_provider_server_;
   std::unique_ptr<fakes::PrivacySettings> privacy_settings_server_;
 
