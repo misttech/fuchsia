@@ -118,6 +118,7 @@ rustc_library("kernel-rs") {
     "lib.rs",
     "relaxed_atomic.rs",
     "thread.rs",
+    "types.rs",
   ]
   deps = [
     "//sdk/rust/zx-status",
