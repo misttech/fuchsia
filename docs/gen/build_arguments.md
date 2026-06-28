@@ -1015,7 +1015,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.so"
 }
   static = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.hwasan_cxx.a"
 }
 }
@@ -1025,7 +1025,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
@@ -1108,7 +1108,7 @@ This should never be set as a build argument.
 }
   riscv64_unknown_linux_gnu = {
   libclang_rt_profile_a = "lib/clang/23/lib/riscv64-unknown-linux-gnu/libclang_rt.profile.a"
-  libunwind_so = ""
+  libunwind_so = "../../../../out/not-default/libunwind.so"
   resource_dir = "lib/clang/23"
   variants = {
   asan = {
