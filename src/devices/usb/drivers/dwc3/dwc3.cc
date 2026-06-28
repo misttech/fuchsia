@@ -535,12 +535,17 @@ zx::result<> Dwc3::Start(fdf::DriverContext context) {
     return zx::error(status);
   }
 
-  if (std::unique_ptr extension = QualcommExtension::Create(this, get_mmio()->View(0)); extension) {
-    if (zx::result result = extension->Start(); result.is_error()) {
-      fdf::error("Failed platform extension start: {}", result);
-      return result.take_error();
+  // Platform extensions require platform-specific hardware mocks. Gating this on
+  // bypass_platform_extension allows generic DWC3 tests to skip platform mocks.
+  if (!config_->bypass_platform_extension()) {
+    if (std::unique_ptr extension = QualcommExtension::Create(this, get_mmio()->View(0));
+        extension) {
+      if (zx::result result = extension->Start(); result.is_error()) {
+        fdf::error("Failed platform extension start: {}", result);
+        return result.take_error();
+      }
+      platform_extension_ = std::move(extension);
     }
-    platform_extension_ = std::move(extension);
   }
 
   auto watcher_result = incoming()->Connect<fphy::ConnectionWatcherService::Watcher>("dwc3-phy");

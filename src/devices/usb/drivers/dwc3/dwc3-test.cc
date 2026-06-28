@@ -49,6 +49,7 @@ TEST_F(UnmanagedTestFixture, ResourcesManagedInStart) {
   zx::result start = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
     dwc3_config::Config cfg;
     cfg.enable_suspend() = false;
+    cfg.bypass_platform_extension() = false;
     args.config(cfg.ToVmo());
   });
   ASSERT_TRUE(start.is_ok());
@@ -65,11 +66,32 @@ TEST_F(UnmanagedTestFixture, ResourcesManagedInStart) {
   EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
 }
 
+TEST_F(UnmanagedTestFixture, PlatformExtensionBypass) {
+  // Verify that when bypass_platform_extension is true, the platform extension is not created,
+  // preventing it from making calls to external environment mocks during unit tests.
+  dut_.RunInEnvironmentTypeContext(
+      [](Environment& env) { env.usb_phy().set_watch_connection_status_changed_called(true); });
+
+  zx::result start = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+    dwc3_config::Config cfg;
+    cfg.enable_suspend() = false;
+    cfg.bypass_platform_extension() = true;
+    args.config(cfg.ToVmo());
+  });
+  ASSERT_TRUE(start.is_ok());
+
+  dut_.RunInDriverContext(
+      [this](Dwc3& drv) { EXPECT_EQ(this->GetPlatformExtension(drv), nullptr); });
+
+  EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+}
+
 TEST_F(UnmanagedTestFixture, Dfv2HwResetTimeout) {
   stuck_reset_test_ = true;
   zx::result start = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
     dwc3_config::Config cfg;
     cfg.enable_suspend() = false;
+    cfg.bypass_platform_extension() = true;
     args.config(cfg.ToVmo());
   });
   ASSERT_TRUE(start.is_error());
@@ -314,6 +336,7 @@ TEST_P(Parameterized, TestHwVersion) {
   zx::result start = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
     dwc3_config::Config cfg;
     cfg.enable_suspend() = false;
+    cfg.bypass_platform_extension() = true;
     args.config(cfg.ToVmo());
   });
 

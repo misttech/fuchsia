@@ -63,4 +63,8 @@
             from: "self",
         },
     ],
+    config: {
+        // TEST ONLY: Used to bypass hardware mocks in generic unit tests.
+        bypass_platform_extension: { type: "bool" },
+    },
 }

@@ -115,6 +115,7 @@ fuchsia_structured_config_values("dwc3-values") {
   cm_label = ":dwc3-manifest"
   values = {
     enable_suspend = false
+    bypass_platform_extension = false
   }
 }
 

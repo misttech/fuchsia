@@ -281,6 +281,10 @@ class TestFixture : public gtest_base {
 
   static void TriggerConnectionDone(Dwc3& drv) { drv.HandleConnectionDoneEvent(); }
 
+ protected:
+  PlatformExtension* GetPlatformExtension(Dwc3& drv) { return drv.platform_extension_.get(); }
+
+ public:
   void TriggerConnectionPlugIn(fuchsia_hardware_usb_descriptor::UsbSpeed speed) {
     namespace fdescriptor = fuchsia_hardware_usb_descriptor;
     dut_.RunInEnvironmentTypeContext([&](Environment& env) {
@@ -318,6 +322,7 @@ class TestFixture : public gtest_base {
       ASSERT_TRUE(dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
                         dwc3_config::Config cfg;
                         cfg.enable_suspend() = false;
+                        cfg.bypass_platform_extension() = true;
                         args.config(cfg.ToVmo());
                       })
                       .is_ok());
