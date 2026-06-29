@@ -1016,7 +1016,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.hwasan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   lsan = {
@@ -1025,7 +1025,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
@@ -1092,7 +1092,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   ubsan = {
