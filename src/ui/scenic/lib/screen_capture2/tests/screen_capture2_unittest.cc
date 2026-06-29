@@ -59,8 +59,7 @@ class ScreenCapture2Test : public gtest::TestLoopFixture {
     importer_ = std::make_shared<ScreenCaptureBufferCollectionImporter>(
         utils::CreateSysmemAllocatorClient(dispatcher(), "ScreenCapture2Test-importer"), renderer_);
 
-    renderables_ =
-        std::make_pair<std::vector<ImageRect>, std::vector<allocation::ImageMetadata>>({}, {});
+    renderables_ = {};
   }
 
   void SetUpMockImporter() {
@@ -129,9 +128,7 @@ class ScreenCapture2Test : public gtest::TestLoopFixture {
     EXPECT_TRUE(configure_result.is_ok());
   }
 
-  std::pair<std::vector<ImageRect>, std::vector<allocation::ImageMetadata>> GetRenderables() {
-    return renderables_;
-  }
+  std::vector<flatland::ResolvedLayer> GetRenderables() { return renderables_; }
 
   bool GetReceivedLastFrame(screen_capture2::ScreenCapture& sc) {
     return sc.get_client_received_last_frame();
@@ -146,7 +143,7 @@ class ScreenCapture2Test : public gtest::TestLoopFixture {
   sys::testing::ComponentContextProvider context_provider_;
 
  private:
-  std::pair<std::vector<ImageRect>, std::vector<allocation::ImageMetadata>> renderables_;
+  std::vector<flatland::ResolvedLayer> renderables_;
 };
 
 TEST_F(ScreenCapture2Test, ConfigureWithMissingArguments) {

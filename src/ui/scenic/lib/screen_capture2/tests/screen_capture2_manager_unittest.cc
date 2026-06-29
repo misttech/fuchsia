@@ -72,9 +72,7 @@ class ScreenCapture2ManagerTest : public gtest::TestLoopFixture {
     return sc;
   }
 
-  flatland::Renderables GetRenderables() {
-    return std::make_pair<std::vector<ImageRect>, std::vector<allocation::ImageMetadata>>({}, {});
-  }
+  flatland::Renderables GetRenderables() { return {}; }
 
   void ConfigureScreenCapture(
       fidl::InterfacePtr<fuchsia::ui::composition::internal::ScreenCapture>& sc,

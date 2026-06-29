@@ -23,8 +23,8 @@ namespace screen_capture {
 
 class ScreenCapture : public fidl::Server<fuchsia_ui_composition::ScreenCapture> {
  public:
-  static std::vector<flatland::ImageRect> RotateRenderables(
-      const std::vector<flatland::ImageRect>& rects, fuchsia_ui_composition::Rotation rotation,
+  static std::vector<flatland::ResolvedLayer> RotateRenderables(
+      const std::vector<flatland::ResolvedLayer>& layers, fuchsia_ui_composition::Rotation rotation,
       uint32_t image_width, uint32_t image_height);
 
   ScreenCapture(const std::vector<std::shared_ptr<allocation::BufferCollectionImporter>>&

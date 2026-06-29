@@ -1240,11 +1240,11 @@ VK_TEST_F(VulkanRendererTest, RotationRenderTest) {
                  });
 
   // Now let's update the renderable so it is rotated 90 deg.
-  auto renderables_90deg = screen_capture::ScreenCapture::RotateRenderables(
-      {renderable}, fuchsia_ui_composition::Rotation::kCw90Degrees, kTargetWidthFlipped,
-      kTargetHeightFlipped);
+  auto layers_90deg = screen_capture::ScreenCapture::RotateRenderables(
+      MakeLayers({renderable}, {renderable_texture}),
+      fuchsia_ui_composition::Rotation::kCw90Degrees, kTargetWidthFlipped, kTargetHeightFlipped);
   // Render the renderable to the render target.
-  renderer->Render(render_target_flipped, MakeLayers(renderables_90deg, {renderable_texture}), {});
+  renderer->Render(render_target_flipped, layers_90deg, {});
   renderer->WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target
@@ -1279,10 +1279,11 @@ VK_TEST_F(VulkanRendererTest, RotationRenderTest) {
       });
 
   // Now let's update the renderable so it is rotated 180 deg.
-  auto renderables_180deg = screen_capture::ScreenCapture::RotateRenderables(
-      {renderable}, fuchsia_ui_composition::Rotation::kCw180Degrees, 16, 8);
+  auto layers_180deg = screen_capture::ScreenCapture::RotateRenderables(
+      MakeLayers({renderable}, {renderable_texture}),
+      fuchsia_ui_composition::Rotation::kCw180Degrees, 16, 8);
   // Render the renderable to the render target.
-  renderer->Render(render_target, MakeLayers(renderables_180deg, {renderable_texture}), {});
+  renderer->Render(render_target, layers_180deg, {});
   renderer->WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target
@@ -1316,11 +1317,11 @@ VK_TEST_F(VulkanRendererTest, RotationRenderTest) {
                  });
 
   // Now let's update the renderable so it is rotated 270 deg.
-  auto renderables_270deg = screen_capture::ScreenCapture::RotateRenderables(
-      {renderable}, fuchsia_ui_composition::Rotation::kCw270Degrees, kTargetWidthFlipped,
-      kTargetHeightFlipped);
+  auto layers_270deg = screen_capture::ScreenCapture::RotateRenderables(
+      MakeLayers({renderable}, {renderable_texture}),
+      fuchsia_ui_composition::Rotation::kCw270Degrees, kTargetWidthFlipped, kTargetHeightFlipped);
   // Render the renderable to the render target.
-  renderer->Render(render_target_flipped, MakeLayers(renderables_270deg, {renderable_texture}), {});
+  renderer->Render(render_target_flipped, layers_270deg, {});
   renderer->WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target
@@ -1507,11 +1508,11 @@ VK_TEST_F(VulkanRendererTest, FlipLeftRightAndRotate90RenderTest) {
                  });
 
   // Now let's update the renderable so it is rotated 90 deg.
-  auto renderables_90deg = screen_capture::ScreenCapture::RotateRenderables(
-      {renderable}, fuchsia_ui_composition::Rotation::kCw90Degrees, kTargetWidthFlipped,
-      kTargetHeightFlipped);
+  auto layers_90deg = screen_capture::ScreenCapture::RotateRenderables(
+      MakeLayers({renderable}, {renderable_texture}),
+      fuchsia_ui_composition::Rotation::kCw90Degrees, kTargetWidthFlipped, kTargetHeightFlipped);
   // Render the renderable to the render target.
-  renderer.Render(render_target_flipped, MakeLayers(renderables_90deg, {renderable_texture}), {});
+  renderer.Render(render_target_flipped, layers_90deg, {});
   renderer.WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target
@@ -1672,11 +1673,11 @@ VK_TEST_F(VulkanRendererTest, FlipUpDownAndRotate90RenderTest) {
                  });
 
   // Now let's update the renderable so it is rotated 90 deg.
-  auto renderables_90deg = screen_capture::ScreenCapture::RotateRenderables(
-      {renderable}, fuchsia_ui_composition::Rotation::kCw90Degrees, kTargetWidthFlipped,
-      kTargetHeightFlipped);
+  auto layers_90deg = screen_capture::ScreenCapture::RotateRenderables(
+      MakeLayers({renderable}, {renderable_texture}),
+      fuchsia_ui_composition::Rotation::kCw90Degrees, kTargetWidthFlipped, kTargetHeightFlipped);
   // Render the renderable to the render target.
-  renderer.Render(render_target_flipped, MakeLayers(renderables_90deg, {renderable_texture}), {});
+  renderer.Render(render_target_flipped, layers_90deg, {});
   renderer.WaitIdle();
 
   // Get a raw pointer from the client collection's vmo that represents the render target

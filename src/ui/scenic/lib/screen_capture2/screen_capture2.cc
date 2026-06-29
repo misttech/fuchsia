@@ -166,8 +166,6 @@ void ScreenCapture::MaybeRenderFrame() {
   available_buffers_.pop_front();
   // Get renderables from the engine.
   auto renderables = get_renderables_();
-  const auto& rects = renderables.first;
-  const auto& image_metadatas = renderables.second;
 
   const auto& metadata = image_ids_[buffer_index];
 
@@ -194,10 +192,8 @@ void ScreenCapture::MaybeRenderFrame() {
   FX_DCHECK(current_release_fences_.empty());
   current_release_fences_.push_back(std::move(release_fence));
 
-  auto layers = flatland::ComputeGlobalResolvedLayers(rects, image_metadatas);
-
   // Render content into user-provided buffer, which will signal the release_fence.
-  renderer_->Render(metadata, layers, {.release_fences = current_release_fences_});
+  renderer_->Render(metadata, renderables, {.release_fences = current_release_fences_});
 }
 
 void ScreenCapture::HandleRender(uint32_t buffer_index, uint64_t timestamp) {

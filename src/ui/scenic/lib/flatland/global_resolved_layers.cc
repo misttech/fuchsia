@@ -5,6 +5,9 @@
 #include "src/ui/scenic/lib/flatland/global_resolved_layers.h"
 
 #include <lib/syslog/cpp/macros.h>
+#include <lib/trace/event.h>
+
+#include <algorithm>
 
 namespace flatland {
 
@@ -39,6 +42,44 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
     }
     output.push_back(std::move(layer));
   }
+}
+
+void CullLayersInPlace(std::vector<flatland::ResolvedLayer>* layers_in_out, uint64_t display_width,
+                       uint64_t display_height) {
+  TRACE_DURATION("gfx", "CullLayersInPlace");
+  FX_DCHECK(layers_in_out);
+  auto is_occluder = [display_width, display_height](const flatland::ResolvedLayer& layer) -> bool {
+    // Only cull if the rect is opaque.
+    auto is_opaque = layer.blend_mode == flatland::BlendMode::kReplace();
+
+    // If the rect is full screen (or larger), and opaque, clear the output vectors.
+    return (is_opaque && layer.rect.origin.x <= 0 && layer.rect.origin.y <= 0 &&
+            layer.rect.extent.x >= static_cast<float>(display_width) &&
+            layer.rect.extent.y >= static_cast<float>(display_height));
+  };
+
+  // Find the index of the last occluder.
+  size_t occluder_index = 0;
+  for (size_t i = 0; i < layers_in_out->size(); i++) {
+    if (is_occluder((*layers_in_out)[i])) {
+      occluder_index = i;
+    }
+  }
+
+  // Move all of the remaining renderable data into the output vectors. Entries get erased
+  // if they occur before the last occluder index, or if the rectangle at that entry is empty.
+  const auto is_rect_empty = [](const flatland::ImageRect& rect) {
+    return rect.extent.x <= 0.f || rect.extent.y <= 0.f;
+  };
+
+  layers_in_out->erase(
+      std::remove_if(layers_in_out->begin(), layers_in_out->end(),
+                     [index = static_cast<size_t>(0), occluder_index,
+                      &is_rect_empty](const flatland::ResolvedLayer& layer) mutable {
+                       auto curr_index = index++;
+                       return curr_index < occluder_index || is_rect_empty(layer.rect);
+                     }),
+      layers_in_out->end());
 }
 
 }  // namespace flatland

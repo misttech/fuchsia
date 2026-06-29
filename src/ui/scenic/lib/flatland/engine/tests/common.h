@@ -98,11 +98,9 @@ class DisplayCompositorTestBase : public gtest::RealLoopFixture {
                                        snapshot.map);
       link_system_->UpdateDevicePixelRatio(glm::vec2(1.0));
 
-      CullRectanglesInPlace(&image_rectangles, &images, display_data.first.dimensions.x,
-                            display_data.first.dimensions.y);
-      FX_DCHECK(image_rectangles.size() == images.size());
-
       auto resolved_layers = ComputeGlobalResolvedLayers(image_rectangles, images);
+      CullLayersInPlace(&resolved_layers, display_data.first.dimensions.x,
+                        display_data.first.dimensions.y);
       resolved_layers_storage_.push_back(std::move(resolved_layers));
 
       image_list_per_display.push_back(RenderData{

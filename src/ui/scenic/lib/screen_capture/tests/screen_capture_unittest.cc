@@ -44,9 +44,8 @@ class ScreenCaptureTest : public gtest::TestLoopFixture {
         std::shared_ptr<allocation::BufferCollectionImporter>(mock_buffer_collection_importer_);
 
     renderer_ = std::make_shared<flatland::MockRenderer>();
-    // Empty vectors.
-    renderables_ =
-        std::make_pair<std::vector<ImageRect>, std::vector<allocation::ImageMetadata>>({}, {});
+    // Empty vector.
+    renderables_ = {};
 
     // Capture uninteresting cleanup calls from Allocator dtor.
     EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferCollection(_, _))
@@ -73,9 +72,7 @@ class ScreenCaptureTest : public gtest::TestLoopFixture {
     return response;
   }
 
-  std::pair<std::vector<ImageRect>, std::vector<allocation::ImageMetadata>> GetRenderables() {
-    return renderables_;
-  }
+  std::vector<flatland::ResolvedLayer> GetRenderables() { return renderables_; }
 
  protected:
   allocation::MockBufferCollectionImporter* mock_buffer_collection_importer_;
@@ -84,7 +81,7 @@ class ScreenCaptureTest : public gtest::TestLoopFixture {
 
  private:
   fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
-  std::pair<std::vector<ImageRect>, std::vector<allocation::ImageMetadata>> renderables_;
+  std::vector<flatland::ResolvedLayer> renderables_;
 };
 
 TEST_F(ScreenCaptureTest, ConfigureSingleImporterSuccess) {

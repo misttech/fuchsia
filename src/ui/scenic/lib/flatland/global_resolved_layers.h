@@ -28,6 +28,14 @@ inline std::vector<ResolvedLayer> ComputeGlobalResolvedLayers(
   return output;
 }
 
+// Simple culling algorithm that checks if any of the input rectangles cover the entire display,
+// and if so, culls all rectangles that came before them (since rectangles are implicitly sorted
+// according to depth, with the first entry being the furthest back, this has the effect of
+// eliminating all rectangles behind the full-screen one). Also culls any rectangle that has
+// no size (width is zero, or height is zero).
+void CullLayersInPlace(std::vector<flatland::ResolvedLayer>* layers_in_out, uint64_t display_width,
+                       uint64_t display_height);
+
 }  // namespace flatland
 
 #endif  // SRC_UI_SCENIC_LIB_FLATLAND_GLOBAL_RESOLVED_LAYERS_H_

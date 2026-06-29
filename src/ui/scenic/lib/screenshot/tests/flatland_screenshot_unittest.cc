@@ -97,10 +97,7 @@ class FlatlandScreenshotTest : public gtest::RealLoopFixture,
 
     screen_capturer_ = std::make_unique<screen_capture::ScreenCapture>(
         screenshot_importers, renderer_,
-        /*get_renderables=*/[](auto...) {
-          return std::make_pair<std::vector<flatland::ImageRect>,
-                                std::vector<allocation::ImageMetadata>>({}, {});
-        });
+        /*get_renderables=*/[](auto...) { return flatland::Renderables{}; });
 
     // Create flatland allocator.
     {

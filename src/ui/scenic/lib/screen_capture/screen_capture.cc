@@ -195,23 +195,19 @@ void ScreenCapture::GetNextFrame(
   // TODO(https://fxbug.dev/42179243): Ensure this does not happen more than once in the same vsync.
   auto renderables = get_renderables_();
 
-  const auto& rects = renderables.first;
-  const auto& image_metadatas = renderables.second;
-
   uint32_t buffer_id = available_buffers_.front();
   const auto& metadata = image_ids_[buffer_id];
 
   auto image_width = metadata.width;
   auto image_height = metadata.height;
 
-  const auto& rotated_rects = RotateRenderables(rects, stream_rotation_, image_width, image_height);
+  const auto rotated_layers =
+      RotateRenderables(renderables, stream_rotation_, image_width, image_height);
 
   // Render content into user-provided buffer, which will signal the user-provided event.
   std::span release_fences(&args.event().value(), 1);
 
-  auto layers = flatland::ComputeGlobalResolvedLayers(rotated_rects, image_metadatas);
-
-  renderer_->Render(metadata, layers, {.release_fences = release_fences});
+  renderer_->Render(metadata, rotated_layers, {.release_fences = release_fences});
 
   FrameInfo frame_info;
   frame_info.buffer_id(buffer_id);
@@ -261,16 +257,17 @@ void ScreenCapture::ClearImages(ConfigureState state) {
   configure_state_ = state;
 }
 
-std::vector<ImageRect> ScreenCapture::RotateRenderables(const std::vector<ImageRect>& rects,
-                                                        fuchsia_ui_composition::Rotation rotation,
-                                                        uint32_t image_width,
-                                                        uint32_t image_height) {
+std::vector<flatland::ResolvedLayer> ScreenCapture::RotateRenderables(
+    const std::vector<flatland::ResolvedLayer>& layers, fuchsia_ui_composition::Rotation rotation,
+    uint32_t image_width, uint32_t image_height) {
   if (rotation == fuchsia_ui_composition::Rotation::kCw0Degrees)
-    return rects;
+    return layers;
 
-  std::vector<ImageRect> final_rects;
+  std::vector<flatland::ResolvedLayer> final_layers;
+  final_layers.reserve(layers.size());
 
-  for (const auto& rect : rects) {
+  for (auto layer : layers) {
+    const auto& rect = layer.rect;
     auto origin = rect.origin;
     auto extent = rect.extent;
     auto texel_uvs = rect.texel_uvs;
@@ -318,11 +315,12 @@ std::vector<ImageRect> ScreenCapture::RotateRenderables(const std::vector<ImageR
         break;
     }
 
-    final_rects.emplace_back(new_origin, new_extent, texel_uvs,
-                             fidl::NaturalToHLCPP(new_orientation));
+    layer.rect = flatland::ImageRect(new_origin, new_extent, texel_uvs,
+                                     fidl::NaturalToHLCPP(new_orientation));
+    final_layers.push_back(layer);
   }
 
-  return final_rects;
+  return final_layers;
 }
 
 }  // namespace screen_capture

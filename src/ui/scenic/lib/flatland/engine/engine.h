@@ -28,9 +28,7 @@
 namespace flatland {
 
 using GetRootTransformFunc = fit::function<std::optional<TransformHandle>()>;
-using ImageRectangles = std::vector<ImageRect>;
-using ImageMetadatas = std::vector<allocation::ImageMetadata>;
-using Renderables = std::pair<ImageRectangles, ImageMetadatas>;
+using Renderables = std::vector<ResolvedLayer>;
 
 // Engine is responsible for building a display list for DisplayCompositor, to insulate it from
 // needing to know anything about the Flatland scene graph.

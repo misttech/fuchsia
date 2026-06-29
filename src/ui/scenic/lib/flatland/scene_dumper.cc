@@ -5,6 +5,7 @@
 #include "scene_dumper.h"
 
 #include <lib/async/default.h>
+#include <lib/stdcompat/utility.h>
 
 #include <stack>
 
@@ -157,18 +158,29 @@ void DumpAllSessions(const flatland::UberStruct::InstanceMap& snapshot, std::ost
 }
 
 void DumpImages(const flatland::GlobalTopologyData& topology_data,
-                const flatland::GlobalImageVector& images,
-                const flatland::GlobalIndexVector& image_indices,
-                const flatland::GlobalRectangleVector& image_rectangles, std::ostream& output) {
-  output << "\nFrame display-list contains " << images.size()
+                const std::vector<flatland::ResolvedLayer>& layers,
+                const flatland::GlobalIndexVector& layer_indices, std::ostream& output) {
+  static_assert(std::variant_size_v<decltype(flatland::ResolvedLayer::content)> == 2,
+                "DumpImages must be updated to support new content types");
+
+  output << "\nFrame display-list contains " << layers.size()
          << " images and image-rectangles (in increasing Z-order):";
-  FX_DCHECK(images.size() == image_rectangles.size());
-  FX_DCHECK(images.size() == image_indices.size());
-  for (size_t i = 0; i < images.size(); i++) {
-    auto& image = images[i];
-    output << "\n        image: " << image;
-    output << "\n        transform: " << topology_data.topology_vector[image_indices[i]];
-    output << "\n        rect: " << image_rectangles[i];
+  FX_DCHECK(layers.size() == layer_indices.size());
+  for (size_t i = 0; i < layers.size(); i++) {
+    const auto& layer = layers[i];
+    if (std::holds_alternative<flatland::ResolvedLayer::SolidColorContent>(layer.content)) {
+      const auto& solid = std::get<flatland::ResolvedLayer::SolidColorContent>(layer.content);
+      output << "\n        solid color: (" << solid.color[0] << "," << solid.color[1] << ","
+             << solid.color[2] << "," << solid.color[3] << ")";
+    } else {
+      const auto& image = std::get<flatland::ResolvedLayer::ImageContent>(layer.content);
+      output << "\n        image: size=" << image.width << "x" << image.height
+             << "  multiply_color=(" << layer.color[0] << "," << layer.color[1] << ","
+             << layer.color[2] << "," << layer.color[3] << ")"
+             << "  blend_mode=" << layer.blend_mode << " flip=" << cpp23::to_underlying(layer.flip);
+    }
+    output << "\n        transform: " << topology_data.topology_vector[layer_indices[i]];
+    output << "\n        rect: " << layer.rect;
   }
 }
 
@@ -197,15 +209,14 @@ namespace flatland {
 
 void DumpScene(const UberStruct::InstanceMap& snapshot,
                const flatland::GlobalTopologyData& topology_data,
-               const flatland::GlobalImageVector& images,
-               const flatland::GlobalIndexVector& image_indices,
-               const flatland::GlobalRectangleVector& image_rectangles, std::ostream& output) {
+               const std::vector<flatland::ResolvedLayer>& layers,
+               const flatland::GlobalIndexVector& layer_indices, std::ostream& output) {
   output << "\n========== BEGIN SCENE DUMP ======================\n";
   DumpTopology(snapshot, topology_data, output);
   output << '\n';
   DumpAllSessions(snapshot, output);
   output << '\n';
-  DumpImages(topology_data, images, image_indices, image_rectangles, output);
+  DumpImages(topology_data, layers, layer_indices, output);
   output << '\n';
   DumpHitRegions(snapshot, output);
   output << "\n============ END SCENE DUMP ======================";

@@ -63,9 +63,11 @@ void Engine::InitializeInspectObjects() {
 
     SceneState scene_state;
     scene_state.Initialize(*this, *root_transform);
+    std::vector<ResolvedLayer> layers;
+    ComputeGlobalResolvedLayers(layers, scene_state.image_rectangles, scene_state.images);
     std::ostringstream output;
-    DumpScene(scene_state.snapshot.map, scene_state.topology_data, scene_state.images,
-              scene_state.image_indices, scene_state.image_rectangles, output);
+    DumpScene(scene_state.snapshot.map, scene_state.topology_data, layers,
+              scene_state.image_indices, output);
     inspector.GetRoot().CreateString(kSceneDump, output.str(), &inspector);
     return fpromise::make_ok_promise(std::move(inspector));
   });
@@ -135,23 +137,22 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
     return;
   }
 
-  CullRectanglesInPlace(&scene_state.image_rectangles, &scene_state.images,
-                        hw_display->width_in_px(), hw_display->height_in_px());
+  auto resolved_layers =
+      ComputeGlobalResolvedLayers(scene_state.image_rectangles, scene_state.images);
+
+  CullLayersInPlace(&resolved_layers, hw_display->width_in_px(), hw_display->height_in_px());
 
   // Don't render any initial frames if there is no image that could actually be rendered. We do
   // this to avoid triggering any changes in the display until we have content ready to render. We
   // invoke |callback| to continue the render loop.
   if (!first_frame_with_image_is_rendered_) {
-    if (scene_state.images.empty()) {
+    if (resolved_layers.empty()) {
       // We already "rotated the scene state" above; doing it again would fail a CHECK.
       SkipRender(std::move(callback), /*rotate_scene_state=*/false);
       return;
     }
     first_frame_with_image_is_rendered_ = true;
   }
-
-  auto resolved_layers =
-      ComputeGlobalResolvedLayers(scene_state.image_rectangles, scene_state.images);
 
   RenderData render_data = {
       .display_id = hw_display->display_id(),
@@ -246,10 +247,13 @@ Renderables Engine::GetRenderables(const FlatlandDisplay& display) {
   SceneState scene_state;
   scene_state.Initialize(*this, root);
   const auto hw_display = display.display();
-  CullRectanglesInPlace(&scene_state.image_rectangles, &scene_state.images,
-                        hw_display->width_in_px(), hw_display->height_in_px());
 
-  return std::make_pair(std::move(scene_state.image_rectangles), std::move(scene_state.images));
+  auto resolved_layers =
+      ComputeGlobalResolvedLayers(scene_state.image_rectangles, scene_state.images);
+
+  CullLayersInPlace(&resolved_layers, hw_display->width_in_px(), hw_display->height_in_px());
+
+  return resolved_layers;
 }
 
 void Engine::SceneState::Initialize(Engine& engine, TransformHandle root_transform) {
