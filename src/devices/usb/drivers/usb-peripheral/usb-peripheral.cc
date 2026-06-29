@@ -1162,10 +1162,13 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
                  index);
 
   if (direction == USB_DIR_OUT && length > write_buffer.size()) {
+    fdf::warn("CommonControl: write buffer too small (length: {}, buffer size: {})", length,
+              write_buffer.size());
     completer(zx::error(ZX_ERR_BUFFER_TOO_SMALL));
     return;
   }
   if (write_buffer.size() > 0 && write_buffer.data() == nullptr) {
+    fdf::error("CommonControl: write buffer data is null but size is {}", write_buffer.size());
     completer(zx::error(ZX_ERR_INVALID_ARGS));
     return;
   }
@@ -1238,6 +1241,9 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
       }
 
       // Exhausted all interfaces, no one handled it.
+      fdf::debug(
+          "CommonControl: USB_RECIP_DEVICE request {:#02X} (req: {:#02X}) not handled by any function",
+          request_type, request);
       completer(zx::error(ZX_ERR_NOT_SUPPORTED));
       return;
     }
@@ -1258,6 +1264,8 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
       const auto& configuration = configurations_[configuration_ - 1];
       const auto& interface_map = configuration.interface_map;
       if (index >= std::size(interface_map)) {
+        fdf::warn("CommonControl: USB_RECIP_INTERFACE index {} out of range (max {})", index,
+                  std::size(interface_map));
         completer(zx::error(ZX_ERR_OUT_OF_RANGE));
         return;
       }
@@ -1306,16 +1314,21 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
         return;
       }
       // delegate to the function driver for the endpoint
-      index = EpAddressToIndex(static_cast<uint8_t>(index));
-      if (index == 0 || index >= USB_MAX_EPS) {
+      uint8_t ep_index = EpAddressToIndex(static_cast<uint8_t>(index));
+      if (ep_index == 0 || ep_index >= USB_MAX_EPS) {
+        fdf::warn("CommonControl: USB_RECIP_ENDPOINT invalid ep index {} (raw index: {})", ep_index,
+                  index);
         completer(zx::error(ZX_ERR_INVALID_ARGS));
         return;
       }
-      if (index >= std::size(endpoint_map_)) {
+      if (ep_index >= std::size(endpoint_map_)) {
+        fdf::warn(
+            "CommonControl: USB_RECIP_ENDPOINT ep index {} out of range (max {}) (raw index: {})",
+            ep_index, std::size(endpoint_map_), index);
         completer(zx::error(ZX_ERR_OUT_OF_RANGE));
         return;
       }
-      auto function_index = endpoint_map_[index];
+      auto function_index = endpoint_map_[ep_index];
       if (function_index.has_value()) {
         auto& function = GetFunction(function_index.value());
         completer(function.Control(setup, write_buffer));
@@ -1327,6 +1340,9 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
       break;
   }
 
+  fdf::debug(
+      "CommonControl: Unhandled request (type: {:#02X}, req: {:#02X}, value: {:#04X}, index: {:#04X})",
+      request_type, request, value, index);
   completer(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
 
