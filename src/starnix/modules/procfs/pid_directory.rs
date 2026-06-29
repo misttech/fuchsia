@@ -5,7 +5,8 @@
 use itertools::Itertools;
 use regex_lite::Regex;
 use starnix_core::mm::{
-    MemoryAccessor, MemoryAccessorExt, MemoryManager, PAGE_SIZE, ProcMapsFile, ProcSmapsFile,
+    MemoryAccessor, MemoryAccessorExt, MemoryManager, MemoryStats, PAGE_SIZE, ProcMapsFile,
+    ProcSmapsFile,
 };
 use starnix_core::security;
 use starnix_core::task::{
@@ -1087,6 +1088,30 @@ impl FileOps for MemFile {
     }
 }
 
+const STUBBED_MEM_BYTES: usize = 4096;
+
+// Workaround for b/525059309: Zircon VMAR walks (`ZX_INFO_VMAR_MAPS`) are extremely
+// slow and cause Perfetto's `traced_probes` watchdog timeouts when sweeping thread status
+// files. We bypass them when the reader is `traced_probes` by returning a 1 page/KB stub.
+fn should_skip_memory_stats(current_task: &CurrentTask) -> bool {
+    current_task.persistent_info.command_guard().comm_name() == b"traced_probes"
+}
+fn stub_memory_stats() -> MemoryStats {
+    MemoryStats {
+        vm_size: STUBBED_MEM_BYTES,
+        vm_rss: STUBBED_MEM_BYTES,
+        vm_rss_hwm: STUBBED_MEM_BYTES,
+        rss_anonymous: STUBBED_MEM_BYTES,
+        rss_file: 0,
+        rss_shared: 0,
+        vm_data: 0,
+        vm_stack: STUBBED_MEM_BYTES,
+        vm_exe: STUBBED_MEM_BYTES,
+        vm_swap: 0,
+        vm_lck: 0,
+    }
+}
+
 #[derive(Clone)]
 pub struct StatFile {
     task: Weak<Task>,
@@ -1202,7 +1227,12 @@ impl DynamicFileSource for StatFile {
         }
 
         if let Ok(mm) = task.mm() {
-            let mem_stats = mm.get_stats(current_task);
+            // TODO(b/525059309): Bypassed for traced_probes due to VMAR walk slowness. Re-enable when optimized.
+            let mem_stats = if should_skip_memory_stats(current_task) {
+                stub_memory_stats()
+            } else {
+                mm.get_stats(current_task)
+            };
             let page_size = *PAGE_SIZE as usize;
             vsize = mem_stats.vm_size;
             rss = mem_stats.vm_rss / page_size;
@@ -1263,9 +1293,14 @@ impl DynamicFileSource for StatmFile {
     fn generate(&self, current_task: &CurrentTask, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
         // /proc/<pid>/statm reports zeroes for kthreads.
         let task = Task::from_weak(&self.task)?;
-        let mem_stats = match task.mm() {
-            Ok(mm) => mm.get_stats(current_task),
-            Err(_) => Default::default(),
+        // TODO(b/525059309): Bypassed for traced_probes due to VMAR walk slowness. Re-enable when optimized.
+        let mem_stats = if should_skip_memory_stats(current_task) {
+            stub_memory_stats()
+        } else {
+            match task.mm() {
+                Ok(mm) => mm.get_stats(current_task),
+                Err(_) => Default::default(),
+            }
         };
         let page_size = *PAGE_SIZE as usize;
 
@@ -1380,7 +1415,12 @@ impl DynamicFileSource for StatusFile {
 
         if let Some(task) = task {
             if let Ok(mm) = task.mm() {
-                let mem_stats = mm.get_stats(current_task);
+                // TODO(b/525059309): Bypassed for traced_probes due to VMAR walk slowness. Re-enable when optimized.
+                let mem_stats = if should_skip_memory_stats(current_task) {
+                    stub_memory_stats()
+                } else {
+                    mm.get_stats(current_task)
+                };
                 writeln!(sink, "VmSize:\t{} kB", mem_stats.vm_size / 1024)?;
                 writeln!(sink, "VmLck:\t{} kB", mem_stats.vm_lck / 1024)?;
                 writeln!(sink, "VmRSS:\t{} kB", mem_stats.vm_rss / 1024)?;
