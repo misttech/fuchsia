@@ -78,6 +78,8 @@ class TraceProviderImpl final : public trace_provider_t,
   std::optional<fidl::ServerBindingRef<fuchsia_tracing_provider::ProviderV2>> binding_
       __TA_GUARDED(mutex_);
   std::unique_ptr<Session> session_ __TA_GUARDED(mutex_);
+#else
+  std::optional<fidl::ServerBindingRef<fuchsia_tracing_provider::Provider>> binding_;
 #endif
 
   trace::GetKnownCategoriesCallback get_known_categories_callback_ __TA_GUARDED(mutex_);

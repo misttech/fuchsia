@@ -119,13 +119,18 @@ TraceProviderImpl::~TraceProviderImpl() {
 TraceProviderImpl::TraceProviderImpl(std::string name, async_dispatcher_t* dispatcher,
                                      fidl::ServerEnd<fuchsia_tracing_provider::Provider> server_end)
     : name_(std::move(name)), dispatcher_(dispatcher) {
-  fidl::BindServer(dispatcher_, std::move(server_end), this,
-                   [](TraceProviderImpl* impl, fidl::UnbindInfo info,
-                      fidl::ServerEnd<fuchsia_tracing_provider::Provider> server_end) {
-                     Session::TerminateEngine();
-                   });
+  binding_ = fidl::BindServer(dispatcher_, std::move(server_end), this,
+                              [](TraceProviderImpl* impl, fidl::UnbindInfo info,
+                                 fidl::ServerEnd<fuchsia_tracing_provider::Provider> server_end) {
+                                Session::TerminateEngine();
+                              });
 }
-TraceProviderImpl::~TraceProviderImpl() { Session::TerminateEngine(); }
+TraceProviderImpl::~TraceProviderImpl() {
+  if (binding_) {
+    binding_->Unbind();
+  }
+  Session::TerminateEngine();
+}
 #endif
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(31)
