@@ -6,6 +6,7 @@
 #include <fidl/fuchsia.hardware.audio/cpp/wire.h>
 #include <lib/inspect/testing/cpp/zxtest/inspect.h>
 #include <lib/simple-audio-stream/simple-audio-stream.h>
+#include <lib/sync/completion.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/clock.h>
 #include <threads.h>
@@ -144,7 +145,7 @@ class MockSimpleAudio : public SimpleAudioStream {
     }
     zx::vmo rb;
     *out_num_rb_frames = req.min_ring_buffer_frames;
-    zx::vmo::create(*out_num_rb_frames * 2 * 2, 0, &rb);
+    zx::vmo::create(static_cast<uint64_t>(*out_num_rb_frames) * 2 * 2, 0, &rb);
     us_per_notification_ = (req.notifications_per_ring
                                 ? (1'000'000 * req.min_ring_buffer_frames) /
                                       (MockSimpleAudio::kTestFrameRate * req.notifications_per_ring)
@@ -156,7 +157,7 @@ class MockSimpleAudio : public SimpleAudioStream {
   zx_status_t Start(uint64_t* out_start_time) __TA_REQUIRES(domain_token()) override {
     *out_start_time = zx::clock::get_monotonic().get();
     if (us_per_notification_) {
-      notify_timer_.PostDelayed(dispatcher(), zx::usec(us_per_notification_));
+      notify_timer_.PostDelayed(dispatcher(), zx::usec(static_cast<int64_t>(us_per_notification_)));
     }
     return ZX_OK;
   }
@@ -178,7 +179,7 @@ class MockSimpleAudio : public SimpleAudioStream {
     resp.ring_buffer_pos = kTestPositionNotify;
     NotifyPosition(resp);
     if (us_per_notification_) {
-      notify_timer_.PostDelayed(dispatcher(), zx::usec(us_per_notification_));
+      notify_timer_.PostDelayed(dispatcher(), zx::usec(static_cast<int64_t>(us_per_notification_)));
     }
   }
 
@@ -194,6 +195,8 @@ class MockSimpleAudio : public SimpleAudioStream {
 class MockSimpleAudioWithExtension : public MockSimpleAudio {
  public:
   explicit MockSimpleAudioWithExtension(zx_device_t* parent) : MockSimpleAudio(parent) {}
+
+ protected:
   zx_status_t ChangeActiveChannels(uint64_t mask, zx_time_t* set_time_out) override
       __TA_REQUIRES(domain_token()) {
     return (mask > (1u << kTestNumberOfChannels) - 1u) ? ZX_ERR_INVALID_ARGS : ZX_OK;
@@ -214,7 +217,7 @@ class SimpleAudioTest : public inspect::InspectTestHelper, public zxtest::Test {
   }
 
   template <typename T>
-  static void CheckPropertyNotEqual(const inspect::NodeValue& node, std::string property,
+  static void CheckPropertyNotEqual(const inspect::NodeValue& node, const std::string& property,
                                     T not_expected_value) {
     const T* actual_value = node.get_property<T>(property);
     EXPECT_TRUE(actual_value);
@@ -781,7 +784,8 @@ TEST_F(SimpleAudioTest, WatchPlugDetectAndCloseStreamBeforeReply) {
   ASSERT_EQ(prop2.value().properties.plug_detect_capabilities(),
             audio_fidl::wire::PlugDetectCapabilities::kCanAsyncNotify);
 
-  // Watch each channel for initial reply.
+  // Watch each channel for initial reply. The first call to WatchPlugState returns immediately
+  // with the current plug detect state.
   auto state1 = stream_client1->WatchPlugState();
   auto state2 = stream_client2->WatchPlugState();
   ASSERT_OK(state1.status());
@@ -790,27 +794,34 @@ TEST_F(SimpleAudioTest, WatchPlugDetectAndCloseStreamBeforeReply) {
   ASSERT_FALSE(state2.value().plug_state.plugged());
 
   // Secondary watches with no reply since there is no change of plug detect state.
-  auto f = [](void* arg) -> int {
-    auto stream_client = static_cast<fidl::WireSyncClient<audio_fidl::StreamConfig>*>(arg);
-    [[maybe_unused]] auto result = (*stream_client)->WatchPlugState();
-    return 0;
-  };
-  thrd_t th1;
-  ASSERT_OK(thrd_create_with_name(&th1, f, &stream_client1, "test-thread-1"));
-  thrd_t th2;
-  ASSERT_OK(thrd_create_with_name(&th2, f, &stream_client2, "test-thread-2"));
+  // We use asynchronous WireClients on a local client_loop to send these hanging gets without
+  // blocking the main test thread.
+  async::Loop client_loop(&kAsyncLoopConfigAttachToCurrentThread);
+  std::optional<fidl::WireClient<audio_fidl::StreamConfig>> client1;
+  client1.emplace(stream_client1.TakeClientEnd(), client_loop.dispatcher());
+  std::optional<fidl::WireClient<audio_fidl::StreamConfig>> client2;
+  client2.emplace(stream_client2.TakeClientEnd(), client_loop.dispatcher());
 
-  // We want the watches to be started before we reset the channels triggering deactivations.
-  zx::nanosleep(zx::deadline_after(zx::msec(100)));
-  stream_client1.TakeClientEnd().TakeChannel().reset();
-  stream_client2.TakeClientEnd().TakeChannel().reset();
+  // Send secondary WatchPlugState requests on each channel. Because the plug state has not changed
+  // since the initial replies above, the server will not reply immediately; these become pending
+  // hanging get requests on the server side.
+  (*client1)->WatchPlugState().Then([](auto& result) {});
+  (*client2)->WatchPlugState().Then([](auto& result) {});
 
-  int result = -1;
-  thrd_join(th1, &result);
-  ASSERT_EQ(result, 0);
-  result = -1;
-  thrd_join(th2, &result);
-  ASSERT_EQ(result, 0);
+  bool watch1_ready = false, watch2_ready = false;
+  (*client1)->GetProperties().Then([&](auto& result) { watch1_ready = true; });
+  (*client2)->GetProperties().Then([&](auto& result) { watch2_ready = true; });
+
+  // Run the loop, blocking until events are processed, rather than busy-waiting.
+  // Passing once=true causes Run() to return after processing a single event.
+  while (!watch1_ready || !watch2_ready) {
+    client_loop.Run(zx::time::infinite(), /* once= */ true);
+  }
+
+  // Now close the channels while the secondary WatchPlugState hanging gets are still pending.
+  // This verifies that SimpleAudioStream cleanly handles peer closure during pending hanging gets.
+  client1.reset();
+  client2.reset();
   loop_.Shutdown();
   server->DdkAsyncRemove();
   mock_ddk::ReleaseFlaggedDevices(root_.get());
