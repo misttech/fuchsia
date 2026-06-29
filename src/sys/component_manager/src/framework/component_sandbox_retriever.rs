@@ -7,7 +7,7 @@ use ::routing::bedrock::sandbox_construction::{ComponentSandbox, ProgramInput};
 use ::routing::bedrock::structured_dict::ComponentInput;
 use ::routing::component_instance::ComponentInstanceInterface;
 use anyhow::{Error, format_err};
-use capability_source::CapabilitySource;
+use capability_source::{BuiltinSource, CapabilitySource, InternalCapability};
 use cm_types::Name;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_component_internal as finternal;
@@ -48,7 +48,7 @@ pub fn serve(
                         .map_err(|e| format_err!("failed to resolve component: {:?}", e))?
                         .sandbox
                         .clone();
-                    if !is_builtin_runner(&program_input, source.as_weak().into()).await {
+                    if !is_dispatcher_runner(&program_input, source.as_weak().into()).await {
                         // This API is explerimental and making it widely available has security
                         // implications. To allow us to get a bit of mileage on it to determine the
                         // correct shape for it, we currently only allow connections to this
@@ -93,17 +93,22 @@ pub fn serve(
     .boxed()
 }
 
-async fn is_builtin_runner(program_input: &ProgramInput, target: Arc<WeakInstanceToken>) -> bool {
+async fn is_dispatcher_runner(
+    program_input: &ProgramInput,
+    target: Arc<WeakInstanceToken>,
+) -> bool {
     let Some(runner_router) = program_input.runner() else {
         return false;
     };
     let Ok(source) = runner_router.route_debug(RouteRequest::default(), target).await else {
         return false;
     };
-    let CapabilitySource::Builtin(_) = source else {
+    let CapabilitySource::Builtin(BuiltinSource { capability: InternalCapability::Runner(name) }) =
+        source
+    else {
         return false;
     };
-    true
+    name == Name::new("builtin_dispatcher").unwrap() || name == Name::new("test_runner").unwrap()
 }
 
 #[cfg(all(test, not(feature = "src_model_tests")))]
