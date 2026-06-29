@@ -149,7 +149,9 @@ void TouchSourceBase::UpdateStream(const view_tree::Snapshot& snapshot, StreamId
   TRACE_DURATION("input", "TouchSourceBase::UpdateStream");
 
   const bool is_new_stream = !ongoing_streams_.contains(stream_id);
-  FX_CHECK(is_new_stream == (event.phase == Phase::kAdd)) << "Stream must only start with ADD.";
+  FX_CHECK(is_new_stream == (event.phase == Phase::kAdd))
+      << "Stream must only start with ADD. stream_id: " << stream_id
+      << " view_ref_koid: " << view_ref_koid_;
   FX_CHECK(is_end_of_stream == (event.phase == Phase::kRemove || event.phase == Phase::kCancel));
 
   if (is_new_stream) {
@@ -184,6 +186,7 @@ void TouchSourceBase::UpdateStream(const view_tree::Snapshot& snapshot, StreamId
           AddInteractionResultsToEvent(touch_event, stream_id, event.device_id, event.pointer_id,
                                        true);
           won_streams_awaiting_first_message_.erase(stream_id);
+          stream.was_won = true;
         }
       }
 

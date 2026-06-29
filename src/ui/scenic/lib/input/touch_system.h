@@ -88,6 +88,10 @@ class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
   void UpdateGestureContest(const view_tree::Snapshot& snapshot, InternalTouchEvent event,
                             StreamId stream_id);
 
+  // Delivers the event directly to the winner of the stream, bypassing the gesture arena.
+  void DeliverToWinner(const view_tree::Snapshot& snapshot, InternalTouchEvent event,
+                       StreamId stream_id, GestureContender& contender);
+
   // Records a set of responses from a gesture disambiguation contender.
   void RecordGestureDisambiguationResponse(StreamId stream_id, ContenderId contender_id,
                                            const std::vector<GestureResponse>& responses);
@@ -121,8 +125,14 @@ class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
   // Each gesture arena tracks one touch event stream and a set of contenders.
   std::unordered_map<StreamId, GestureArena> gesture_arenas_;
 
+  // Map of active streams to their resolved winner.
+  std::unordered_map<StreamId, GestureContender*> stream_winners_;
+
   // Map of all active contenders.
   std::unordered_map<ContenderId, std::unique_ptr<GestureContender>> contenders_;
+
+  // Pointer to the legacy a11y contender, if registered.
+  GestureContender* a11y_contender_ = nullptr;
 
   // Map of ViewRef koids to ContenderIds.
   // Does not include ContenderIds for the A11yLegacyContender, since no View is

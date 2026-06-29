@@ -111,6 +111,7 @@ TouchSystem::TouchSystem(async_dispatcher_t* input_dispatcher, HitTester& hit_te
               a11y_contender->OnStreamHandled(pointer_id, handled);
             };
 
+        a11y_contender_ = a11y_contender.get();
         const auto [_, success] =
             contenders_.emplace(a11y_contender_id_, std::move(a11y_contender));
         FX_DCHECK(success) << "Duplicate A11yLegacyContender";
@@ -320,19 +321,29 @@ void TouchSystem::InjectTouchEventExclusive(InternalTouchEvent event, StreamId s
 //  - Touch REMOVE drops the association between event stream and client.
 void TouchSystem::InjectTouchEventHitTested(InternalTouchEvent event, StreamId stream_id,
                                             const view_tree::Snapshot& snapshot) {
+  if (auto winner_it = stream_winners_.find(stream_id); winner_it != stream_winners_.end()) {
+    DeliverToWinner(snapshot, std::move(event), stream_id, *winner_it->second);
+    return;
+  }
+
   // New stream. Collect contenders and set up a new arena.
   if (event.phase == Phase::kAdd) {
     std::vector<ContenderId> contenders = CollectContenders(snapshot, stream_id, event);
     if (!contenders.empty()) {
       const bool is_single_contender = contenders.size() == 1;
       const ContenderId front_contender = contenders.front();
-      const auto [it, success] =
-          gesture_arenas_.emplace(stream_id, GestureArena{std::move(contenders)});
-      FX_DCHECK(success);
-      // If there's only a single contender then the contest is already decided
-      FX_DCHECK(it->second.contest_has_ended() == is_single_contender);
-      if (it->second.contest_has_ended()) {
-        contenders_.at(front_contender)->EndContest(stream_id, /*awarded_win*/ true);
+      if (is_single_contender) {
+        auto contender_it = contenders_.find(front_contender);
+        FX_DCHECK(contender_it != contenders_.end());
+        GestureContender* contender = contender_it->second.get();
+        contender->EndContest(stream_id, /*awarded_win=*/true);
+        stream_winners_[stream_id] = contender;
+        DeliverToWinner(snapshot, std::move(event), stream_id, *contender);
+        return;
+      } else {
+        const auto [it, success] =
+            gesture_arenas_.emplace(stream_id, GestureArena{std::move(contenders)});
+        FX_DCHECK(success);
       }
     }
   }
@@ -509,6 +520,40 @@ void TouchSystem::UpdateGestureContest(const view_tree::Snapshot& snapshot,
   DestroyArenaIfComplete(stream_id);
 }
 
+void TouchSystem::DeliverToWinner(const view_tree::Snapshot& snapshot, InternalTouchEvent event,
+                                  StreamId stream_id, GestureContender& contender) {
+  const bool is_end_of_stream = event.phase == Phase::kRemove || event.phase == Phase::kCancel;
+  if (is_end_of_stream) {
+    stream_winners_.erase(stream_id);
+  }
+
+  if (&contender == a11y_contender_) {
+    // Send a clone of the event without transferring any possible wake lease.
+    // The legacy accessibility pointer event listener is a global listener that does not require
+    // correct coordinate transforms or view bounds (its target view ref KOID is ZX_KOID_INVALID).
+    contender.UpdateStream(snapshot, stream_id, event.ShallowClone(), is_end_of_stream,
+                           /*bounding_box=*/{});
+    return;
+  }
+
+  const zx_koid_t view_ref_koid = contender.view_ref_koid_;
+  if (!snapshot.view_tree.contains(view_ref_koid)) {
+    // Contender left view tree, send Cancel.
+    stream_winners_.erase(stream_id);
+    InternalTouchEvent event_copy = event.ShallowClone();
+    event_copy.phase = Phase::kCancel;
+    contender.UpdateStream(snapshot, stream_id, std::move(event_copy),
+                           /*is_end_of_stream=*/true,
+                           /*bounding_box=*/{});
+    return;
+  }
+
+  contender.UpdateStream(snapshot, stream_id,
+                         EventWithReceiverFromViewportTransform<InternalTouchEvent>(
+                             snapshot, std::move(event), view_ref_koid),
+                         is_end_of_stream, snapshot.view_tree.at(view_ref_koid).bounding_box);
+}
+
 void TouchSystem::RecordGestureDisambiguationResponse(
     StreamId stream_id, ContenderId contender_id, const std::vector<GestureResponse>& responses) {
   auto arena_it = gesture_arenas_.find(stream_id);
@@ -531,7 +576,14 @@ void TouchSystem::RecordGestureDisambiguationResponse(
     }
     if (result.winner) {
       FX_DCHECK(arena.contenders().size() == 1u);
-      contenders_.at(result.winner.value())->EndContest(stream_id, /*awarded_win*/ true);
+      const ContenderId winner_id = result.winner.value();
+      GestureContender* winner = contenders_.at(winner_id).get();
+      winner->EndContest(stream_id, /*awarded_win=*/true);
+      if (!arena.stream_has_ended()) {
+        stream_winners_[stream_id] = winner;
+      }
+      gesture_arenas_.erase(stream_id);
+      return;
     }
   }
 
@@ -554,10 +606,17 @@ void TouchSystem::DestroyArenaIfComplete(StreamId stream_id) {
 }
 
 void TouchSystem::EraseContender(ContenderId contender_id, zx_koid_t view_ref_koid) {
-  {
-    const size_t success = contenders_.erase(contender_id);
-    FX_DCHECK(success) << "Contender " << contender_id << " did not exist";
+  auto contender_it = contenders_.find(contender_id);
+  FX_DCHECK(contender_it != contenders_.end()) << "Contender " << contender_id << " did not exist";
+  if (contender_it == contenders_.end()) {
+    return;
   }
+  GestureContender* contender_ptr = contender_it->second.get();
+  if (contender_ptr == a11y_contender_) {
+    a11y_contender_ = nullptr;
+  }
+  contenders_.erase(contender_it);
+
   // TODO(https://fxbug.dev/42142976): ZX_KOID_INVALID is only passed in by legacy contenders.
   // Remove this check when they go away.
   if (view_ref_koid != ZX_KOID_INVALID) {
@@ -578,6 +637,10 @@ void TouchSystem::EraseContender(ContenderId contender_id, zx_koid_t view_ref_ko
   for (const auto stream_id : ongoing_streams) {
     RecordGestureDisambiguationResponse(stream_id, contender_id, {GestureResponse::kNo});
   }
+
+  // Remove from stream_winners_ if it was the winner.
+  std::erase_if(stream_winners_,
+                [contender_ptr](const auto& item) { return item.second == contender_ptr; });
 }
 
 }  // namespace scenic_impl::input
