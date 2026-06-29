@@ -98,6 +98,7 @@ executable("device_partitioner_test") {
     "//zircon/kernel/lib/arch",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fdio-caller",
+    "//zircon/system/ulib/sync:sync-cpp",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
   ]

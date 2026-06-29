@@ -34,6 +34,7 @@
 #include <lib/fdio/fd.h>
 #include <lib/fidl/cpp/binding_set.h>
 #include <lib/fzl/owned-vmo-mapper.h>
+#include <lib/sync/cpp/completion.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
 #include <lib/sys/cpp/testing/service_directory_provider.h>
 #include <lib/zbi-format/zbi.h>
@@ -373,25 +374,33 @@ class FakeSystemStateTransition final : public fidl::WireServer<SystemStateTrans
 
 class FakeSvc {
  public:
-  explicit FakeSvc(async_dispatcher_t* dispatcher) {
+  explicit FakeSvc(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {
     zx::result server_end = fidl::CreateEndpoints(&root_);
     ASSERT_OK(server_end);
-    async::PostTask(dispatcher, [dispatcher,
-                                 &fake_system_shutdown_state = fake_system_shutdown_state_,
-                                 server_end = std::move(server_end.value())]() mutable {
-      component::OutgoingDirectory outgoing{dispatcher};
-      ASSERT_OK(outgoing.AddUnmanagedProtocol<SystemStateTransition>(
-          [&fake_system_shutdown_state, dispatcher](fidl::ServerEnd<SystemStateTransition> server) {
-            fidl::BindServer(dispatcher, std::move(server), &fake_system_shutdown_state);
-          }));
+    libsync::Completion completion;
+    async::PostTask(
+        dispatcher_, [this, server_end = std::move(server_end.value()), &completion]() mutable {
+          outgoing_ = std::make_unique<component::OutgoingDirectory>(dispatcher_);
+          ASSERT_OK(outgoing_->AddUnmanagedProtocol<SystemStateTransition>(
+              [this](fidl::ServerEnd<SystemStateTransition> server) {
+                fidl::BindServer(dispatcher_, std::move(server), &fake_system_shutdown_state_);
+              }));
 
-      ASSERT_OK(outgoing.Serve(std::move(server_end)));
+          ASSERT_OK(outgoing_->Serve(std::move(server_end)));
+          completion.Signal();
+        });
+    completion.Wait();
+  }
 
-      // Stash the outgoing directory on the dispatcher so that the dtor runs on the dispatcher
-      // thread.
-      async::PostDelayedTask(
-          dispatcher, [outgoing = std::move(outgoing)]() {}, zx::duration::infinite());
-    });
+  ~FakeSvc() {
+    if (outgoing_) {
+      libsync::Completion completion;
+      async::PostTask(dispatcher_, [this, &completion]() {
+        outgoing_.reset();
+        completion.Signal();
+      });
+      completion.Wait();
+    }
   }
 
   FakeSystemStateTransition& fake_system_shutdown_state() { return fake_system_shutdown_state_; }
@@ -401,8 +410,10 @@ class FakeSvc {
   }
 
  private:
+  async_dispatcher_t* dispatcher_;
   FakeSystemStateTransition fake_system_shutdown_state_;
   fidl::ClientEnd<fuchsia_io::Directory> root_;
+  std::unique_ptr<component::OutgoingDirectory> outgoing_;
 };
 
 class FakeUfs : public fidl::WireServer<fuchsia_hardware_ufs::Ufs> {
@@ -448,20 +459,21 @@ class FakeUfsSvc {
  public:
   explicit FakeUfsSvc(async_dispatcher_t* dispatcher,
                       fidl::ClientEnd<fuchsia_io::Directory> realm_root)
-      : realm_root_(std::move(realm_root)) {
+      : dispatcher_(dispatcher), realm_root_(std::move(realm_root)) {
     zx::result server_end = fidl::CreateEndpoints(&root_);
     ASSERT_OK(server_end);
-    async::PostTask(dispatcher, [dispatcher, &fake_ufs = fake_ufs_,
-                                 raw_realm_root = realm_root_.handle()->get(),
-                                 server_end = std::move(server_end.value())]() mutable {
-      component::OutgoingDirectory outgoing{dispatcher};
-      ASSERT_OK(outgoing.AddUnmanagedProtocol<fuchsia_sysinfo::SysInfo>(
+    libsync::Completion completion;
+    async::PostTask(dispatcher_, [this, raw_realm_root = realm_root_.handle()->get(),
+                                  server_end = std::move(server_end.value()),
+                                  &completion]() mutable {
+      outgoing_ = std::make_unique<component::OutgoingDirectory>(dispatcher_);
+      ASSERT_OK(outgoing_->AddUnmanagedProtocol<fuchsia_sysinfo::SysInfo>(
           [raw_realm_root](fidl::ServerEnd<fuchsia_sysinfo::SysInfo> server) {
             EXPECT_OK(fdio_service_connect_at(raw_realm_root, "fuchsia.sysinfo.SysInfo",
                                               server.TakeChannel().release()));
           }));
 
-      ASSERT_OK(outgoing.AddUnmanagedProtocol<fuchsia_storage_partitions::PartitionsManager>(
+      ASSERT_OK(outgoing_->AddUnmanagedProtocol<fuchsia_storage_partitions::PartitionsManager>(
           [raw_realm_root](fidl::ServerEnd<fuchsia_storage_partitions::PartitionsManager> server) {
             EXPECT_OK(fdio_service_connect_at(raw_realm_root,
                                               "fuchsia.storage.partitions.PartitionsManager",
@@ -474,24 +486,32 @@ class FakeUfsSvc {
                               static_cast<uint64_t>(fuchsia_io::wire::kPermReadable),
                               partitions_endpoints->server.TakeChannel().release()),
                 ZX_OK);
-      ASSERT_OK(outgoing.AddDirectoryAt(std::move(partitions_endpoints->client), "svc",
-                                        "fuchsia.storage.partitions.PartitionService"));
+      ASSERT_OK(outgoing_->AddDirectoryAt(std::move(partitions_endpoints->client), "svc",
+                                          "fuchsia.storage.partitions.PartitionService"));
 
       fuchsia_hardware_ufs::Service::InstanceHandler handler({
           .device =
-              [&fake_ufs, dispatcher](fidl::ServerEnd<fuchsia_hardware_ufs::Ufs> server) {
-                fidl::BindServer(dispatcher, std::move(server), &fake_ufs);
+              [this](fidl::ServerEnd<fuchsia_hardware_ufs::Ufs> server) {
+                fidl::BindServer(dispatcher_, std::move(server), &fake_ufs_);
               },
       });
-      ASSERT_OK(outgoing.AddService<fuchsia_hardware_ufs::Service>(std::move(handler)));
+      ASSERT_OK(outgoing_->AddService<fuchsia_hardware_ufs::Service>(std::move(handler)));
 
-      ASSERT_OK(outgoing.Serve(std::move(server_end)));
-
-      // Stash the outgoing directory on the dispatcher so that the dtor runs on the dispatcher
-      // thread.
-      async::PostDelayedTask(
-          dispatcher, [outgoing = std::move(outgoing)]() {}, zx::duration::infinite());
+      ASSERT_OK(outgoing_->Serve(std::move(server_end)));
+      completion.Signal();
     });
+    completion.Wait();
+  }
+
+  ~FakeUfsSvc() {
+    if (outgoing_) {
+      libsync::Completion completion;
+      async::PostTask(dispatcher_, [this, &completion]() {
+        outgoing_.reset();
+        completion.Signal();
+      });
+      completion.Wait();
+    }
   }
 
   FakeUfs& fake_ufs() { return fake_ufs_; }
@@ -501,9 +521,11 @@ class FakeUfsSvc {
   }
 
  private:
+  async_dispatcher_t* dispatcher_;
   FakeUfs fake_ufs_;
   fidl::ClientEnd<fuchsia_io::Directory> root_;
   fidl::ClientEnd<fuchsia_io::Directory> realm_root_;
+  std::unique_ptr<component::OutgoingDirectory> outgoing_;
 };
 
 class EfiDevicePartitionerTests : public GptDevicePartitionerTests {
@@ -1204,6 +1226,7 @@ class IrisPartitionerTests : public GptDevicePartitionerTests {
   }
 
   void TearDown() override {
+    fake_ufs_svc_.reset();
     loop_.Shutdown();
     GptDevicePartitionerTests::TearDown();
   }
