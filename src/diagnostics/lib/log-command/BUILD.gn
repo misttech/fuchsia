@@ -71,6 +71,20 @@ log_command_lib("log-command") {
   ]
 }
 
+log_command_lib("log-command-ctf") {
+  deps = [
+    "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust_flex",
+    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust_flex",
+    "//src/lib/diagnostics/log/encoding/rust",
+    "//src/lib/diagnostics/log/message/rust:lib",
+    "//src/lib/fdomain/client:flex_fidl",
+    "//third_party/rust_crates:flyweights",
+    "//third_party/rust_crates:zerocopy",
+  ]
+
+  features = [ "ctf" ]
+}
+
 log_command_lib("log-command_fdomain") {
   deps = [
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust_fdomain_flex",

@@ -2,11 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use diagnostics_data::{Data, Logs};
+use diagnostics_data::{Data, Logs, Severity};
 use diagnostics_reader::{ArchiveReader, RetryConfig};
-use fidl_fuchsia_diagnostics::{ArchiveAccessorProxy, Format};
+use fidl_fuchsia_diagnostics::{
+    ArchiveAccessorProxy, ClientSelectorConfiguration, DataType, Format, StreamMode,
+    StreamParameters,
+};
+use fidl_fuchsia_diagnostics_host::ArchiveAccessorProxy as HostArchiveAccessor;
 use futures::StreamExt;
 use futures::stream::BoxStream;
+use log_command_ctf::LogsDataStream;
 
 /// The interface format to use for reading logs.
 pub enum LogFormat {
@@ -20,25 +25,6 @@ pub enum LogFormat {
     Rust(Format),
 }
 
-impl LogFormat {
-    /// Builds a `MultiFormatLogReader` using the specific format configured in this enum.
-    pub fn build(&self, accessor: ArchiveAccessorProxy) -> Box<dyn LogReader> {
-        match self {
-            #[cfg(fuchsia_api_level_at_least = "HEAD")]
-            LogFormat::Ffi => Box::new(new_ffi_reader(accessor)),
-            LogFormat::Rust(format) => {
-                let mut r1 = ArchiveReader::logs();
-                r1.with_archive(accessor)
-                    .with_format(*format)
-                    .with_minimum_schema_count(0) // we want this to return even when
-                    //no log messages
-                    .retry(RetryConfig::never());
-                Box::new(new_reader(r1))
-            }
-        }
-    }
-}
-
 /// A common format for representing log messages across different interfaces during tests.
 #[derive(Debug, Clone)]
 pub struct TestLogMessage {
@@ -46,6 +32,8 @@ pub struct TestLogMessage {
     pub message: String,
     /// Tags associated with the log message.
     pub tags: Vec<String>,
+    /// Severity of the log message.
+    pub severity: Severity,
 }
 
 /// Abstract log reader used for reading logs into a common format
@@ -65,11 +53,13 @@ pub trait LogReader {
 mod ffi_format {
 
     use super::*;
+    use diagnostics_data::Severity;
     use diagnostics_message::MessageParser;
     use fidl_fuchsia_diagnostics::{
         BatchIteratorMarker, BatchIteratorProxy, ClientSelectorConfiguration, DataType,
         FormattedContent, StreamMode, StreamParameters,
     };
+    use log_command_ctf::fxt_streamer::FxtStreamer;
     /// Internal implementation of LogReader using the FFI interfaces.
     pub struct FfiReader {
         accessor: ArchiveAccessorProxy,
@@ -110,9 +100,14 @@ mod ffi_format {
                                     Ok((maybe_msg, remaining)) => {
                                         if let Some(msg) = maybe_msg {
                                             let message = msg.message.to_string();
+                                            let (_, severity) = Severity::parse_exact(msg.severity);
                                             let tags =
                                                 msg.tags.iter().map(|s| s.to_string()).collect();
-                                            pending.push(TestLogMessage { message, tags });
+                                            pending.push(TestLogMessage {
+                                                message,
+                                                tags,
+                                                severity,
+                                            });
                                         }
                                         current_slice = remaining;
                                     }
@@ -154,6 +149,62 @@ mod ffi_format {
             messages.push(msg);
         }
         messages
+    }
+
+    pub struct HostReaderFxt {
+        pub reader: HostArchiveAccessor,
+    }
+
+    #[async_trait::async_trait]
+    impl LogReader for HostReaderFxt {
+        async fn get_test_snapshot(&self) -> Vec<TestLogMessage> {
+            let (local, remote) = zx::Socket::create_stream();
+            let reader = fuchsia_async::Socket::from_socket(local);
+            self.reader
+                .stream_diagnostics(
+                    &StreamParameters {
+                        data_type: Some(DataType::Logs),
+                        stream_mode: Some(StreamMode::Snapshot),
+                        format: Some(Format::Fxt),
+                        client_selector_configuration: Some(
+                            ClientSelectorConfiguration::SelectAll(true),
+                        ),
+                        ..Default::default()
+                    },
+                    remote,
+                )
+                .await
+                .unwrap();
+            FxtStreamer::new(reader)
+                .stream()
+                .map(|value| rust_format::data_logs_to_test_logs(value.unwrap()))
+                .collect::<Vec<_>>()
+                .await
+        }
+
+        async fn get_test_snapshot_then_subscribe(&self) -> BoxStream<'static, TestLogMessage> {
+            let (local, remote) = zx::Socket::create_stream();
+            let reader = fuchsia_async::Socket::from_socket(local);
+            self.reader
+                .stream_diagnostics(
+                    &StreamParameters {
+                        data_type: Some(DataType::Logs),
+                        stream_mode: Some(StreamMode::SnapshotThenSubscribe),
+                        format: Some(Format::Fxt),
+                        client_selector_configuration: Some(
+                            ClientSelectorConfiguration::SelectAll(true),
+                        ),
+                        ..Default::default()
+                    },
+                    remote,
+                )
+                .await
+                .unwrap();
+            FxtStreamer::new(reader)
+                .stream()
+                .map(|value| rust_format::data_logs_to_test_logs(value.unwrap()))
+                .boxed()
+        }
     }
 
     impl FfiReader {
@@ -210,10 +261,28 @@ mod rust_format {
         }
     }
 
+    impl LogProtocol for ArchiveAccessorProxy {
+        fn build(self, format: LogFormat) -> Box<dyn LogReader> {
+            match format {
+                #[cfg(fuchsia_api_level_at_least = "HEAD")]
+                LogFormat::Ffi => Box::new(new_ffi_reader(self)),
+                LogFormat::Rust(format) => {
+                    let mut r1 = ArchiveReader::logs();
+                    r1.with_archive(self)
+                        .with_format(format)
+                        .with_minimum_schema_count(0) // we want this to return even when
+                        //no log messages
+                        .retry(RetryConfig::never());
+                    Box::new(new_reader(r1))
+                }
+            }
+        }
+    }
+
     /// Converts a standard `Data<Logs>` value into a `TestLogMessage`. This function is used
     /// by the `LogFormat::Rust` readers, which can read either JSON or legacy FXT formats.
     /// Rolled-out logs are represented as a message indicating the count.
-    fn data_logs_to_test_logs(log: Data<Logs>) -> TestLogMessage {
+    pub fn data_logs_to_test_logs(log: Data<Logs>) -> TestLogMessage {
         let message = if let Some(count) = log.rolled_out_logs() {
             format!("rolled_out={count}")
         } else {
@@ -233,7 +302,7 @@ mod rust_format {
             }
         }
 
-        TestLogMessage { message, tags }
+        TestLogMessage { message, tags, severity: log.severity() }
     }
 }
 
@@ -246,4 +315,78 @@ fn new_ffi_reader(accessor: ArchiveAccessorProxy) -> impl LogReader {
 /// Creates a new log reader that uses the standard Rust diagnostics_reader.
 fn new_reader(reader: ArchiveReader<Logs>) -> impl LogReader {
     reader
+}
+
+/// Creates a new log reader that uses the ffx host reader
+fn new_host_reader(reader: HostArchiveAccessor) -> impl LogReader {
+    reader
+}
+
+/// Creates a new log reader that uses the fxt host reader
+#[cfg(fuchsia_api_level_at_least = "HEAD")]
+fn new_host_fxt(reader: HostArchiveAccessor) -> impl LogReader {
+    ffi_format::HostReaderFxt { reader }
+}
+
+impl LogProtocol for HostArchiveAccessor {
+    fn build(self, format: LogFormat) -> Box<dyn LogReader> {
+        match format {
+            #[cfg(fuchsia_api_level_at_least = "HEAD")]
+            LogFormat::Rust(Format::Fxt) => Box::new(new_host_fxt(self)),
+            LogFormat::Rust(Format::Json) => Box::new(new_host_reader(self)),
+            _ => unreachable!("Only FXT and JSON formats are supported for HostArchiveAccessor"),
+        }
+    }
+}
+
+pub trait LogProtocol {
+    fn build(self, format: LogFormat) -> Box<dyn LogReader>;
+}
+
+impl LogFormat {
+    /// Builds a `MultiFormatLogReader` using the specific format configured in this enum.
+    pub fn build(self, accessor: impl LogProtocol) -> Box<dyn LogReader> {
+        accessor.build(self)
+    }
+}
+
+async fn initialize_socket(
+    proxy: &HostArchiveAccessor,
+    format: Format,
+    mode: StreamMode,
+) -> fuchsia_async::Socket {
+    let (local, remote) = zx::Socket::create_stream();
+    let reader = fuchsia_async::Socket::from_socket(local);
+    proxy
+        .stream_diagnostics(
+            &StreamParameters {
+                data_type: Some(DataType::Logs),
+                stream_mode: Some(mode),
+                format: Some(format),
+                client_selector_configuration: Some(ClientSelectorConfiguration::SelectAll(true)),
+                ..Default::default()
+            },
+            remote,
+        )
+        .await
+        .unwrap();
+    reader
+}
+
+#[async_trait::async_trait]
+impl LogReader for HostArchiveAccessor {
+    async fn get_test_snapshot(&self) -> Vec<TestLogMessage> {
+        let reader = initialize_socket(self, Format::Json, StreamMode::Snapshot).await;
+        LogsDataStream::new(reader)
+            .map(|value| rust_format::data_logs_to_test_logs(value.unwrap()))
+            .collect::<Vec<_>>()
+            .await
+    }
+
+    async fn get_test_snapshot_then_subscribe(&self) -> BoxStream<'static, TestLogMessage> {
+        let reader = initialize_socket(self, Format::Json, StreamMode::SnapshotThenSubscribe).await;
+        LogsDataStream::new(reader)
+            .map(|value| rust_format::data_logs_to_test_logs(value.unwrap()))
+            .boxed()
+    }
 }

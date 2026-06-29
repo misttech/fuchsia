@@ -6,7 +6,7 @@ use anyhow::format_err;
 use argh::{ArgsInfo, FromArgs, TopLevelCommand};
 use chrono::{DateTime, Local, Utc};
 use chrono_english::{Dialect, parse_date_string};
-#[cfg(not(feature = "fdomain"))]
+#[cfg(not(any(feature = "fdomain", feature = "ctf")))]
 use component_debug::query::get_instances_from_query;
 #[cfg(feature = "fdomain")]
 use component_debug_fdomain::query::get_instances_from_query;
@@ -26,7 +26,7 @@ use std::time::Duration;
 use thiserror::Error;
 mod filter;
 #[cfg(not(feature = "fdomain"))]
-mod fxt_streamer;
+pub mod fxt_streamer;
 mod log_formatter;
 mod log_socket_stream;
 pub use log_formatter::{
@@ -550,6 +550,7 @@ pub trait InstanceGetter {
     async fn get_monikers_from_query(&self, query: &str) -> Result<Vec<Moniker>, LogError>;
 }
 
+#[cfg(not(feature = "ctf"))]
 #[async_trait::async_trait(?Send)]
 impl InstanceGetter for RealmQueryProxy {
     async fn get_monikers_from_query(&self, query: &str) -> Result<Vec<Moniker>, LogError> {
@@ -558,6 +559,14 @@ impl InstanceGetter for RealmQueryProxy {
             .into_iter()
             .map(|value| value.moniker)
             .collect())
+    }
+}
+
+#[cfg(feature = "ctf")]
+#[async_trait::async_trait(?Send)]
+impl InstanceGetter for RealmQueryProxy {
+    async fn get_monikers_from_query(&self, _query: &str) -> Result<Vec<Moniker>, LogError> {
+        unreachable!("get_monikers_from_query is not supported in CTF tests.");
     }
 }
 

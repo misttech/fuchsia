@@ -176,7 +176,7 @@ where
     F: LogFormatter + BootTimeAccessor,
     S: Symbolize + ?Sized,
 {
-    let mut streamer = crate::fxt_streamer::FxtStreamer::new(socket);
+    let streamer = crate::fxt_streamer::FxtStreamer::new(socket);
     let mut decoder = std::pin::pin!(streamer.stream());
     let mut symbolize_pending = FuturesUnordered::new();
     if include_timestamp && !formatter.is_utc_time_format() {

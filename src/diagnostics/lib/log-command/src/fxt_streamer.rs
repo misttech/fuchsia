@@ -22,9 +22,9 @@ impl FxtStreamer {
         Self { socket_reader: SocketReader::new(socket), tags: HashMap::default() }
     }
 
-    pub fn stream(&mut self) -> impl FusedStream<Item = Result<LogsData, LogError>> {
+    pub fn stream(self) -> impl FusedStream<Item = Result<LogsData, LogError>> {
         stream::unfold(Some(self), |maybe_this| async {
-            let this = maybe_this?;
+            let mut this = maybe_this?;
             let item = this.next_message().await.transpose()?;
             let maybe_this = item.is_ok().then_some(this);
             Some((item, maybe_this))
@@ -247,7 +247,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_fxt_streamer_invalid_record_size() {
         let (sender, receiver) = zx::Socket::create_stream();
-        let mut streamer = FxtStreamer::new(flex_client::socket_to_async(receiver));
+        let streamer = FxtStreamer::new(flex_client::socket_to_async(receiver));
         let mut stream = std::pin::pin!(streamer.stream());
 
         // Write 8 bytes of zeroes. Header size_words will be 0. record_len = 0 < 8.
@@ -264,7 +264,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_fxt_streamer_truncated_record() {
         let (sender, receiver) = zx::Socket::create_stream();
-        let mut streamer = FxtStreamer::new(flex_client::socket_to_async(receiver));
+        let streamer = FxtStreamer::new(flex_client::socket_to_async(receiver));
         let mut stream = std::pin::pin!(streamer.stream());
 
         // Build a valid 16-byte record
@@ -291,7 +291,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_fxt_streamer_parse_error() {
         let (sender, receiver) = zx::Socket::create_stream();
-        let mut streamer = FxtStreamer::new(flex_client::socket_to_async(receiver));
+        let streamer = FxtStreamer::new(flex_client::socket_to_async(receiver));
         let mut stream = std::pin::pin!(streamer.stream());
 
         // Build a valid 16-byte record
@@ -316,7 +316,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_fxt_streamer_unknown_tag() {
         let (sender, receiver) = zx::Socket::create_stream();
-        let mut streamer = FxtStreamer::new(flex_client::socket_to_async(receiver));
+        let streamer = FxtStreamer::new(flex_client::socket_to_async(receiver));
         let mut stream = std::pin::pin!(streamer.stream());
 
         let log_bytes = fn_encode(
@@ -339,7 +339,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_fxt_streamer_partial_manifest_ignored() {
         let (sender, receiver) = zx::Socket::create_stream();
-        let mut streamer = FxtStreamer::new(flex_client::socket_to_async(receiver));
+        let streamer = FxtStreamer::new(flex_client::socket_to_async(receiver));
         let mut stream = std::pin::pin!(streamer.stream());
 
         // Write a manifest missing the URL argument
@@ -375,7 +375,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_fxt_streamer_multiple_messages() {
         let (sender, receiver) = zx::Socket::create_stream();
-        let mut streamer = FxtStreamer::new(flex_client::socket_to_async(receiver));
+        let streamer = FxtStreamer::new(flex_client::socket_to_async(receiver));
         let mut stream = std::pin::pin!(streamer.stream());
 
         let manifest_a = fn_encode(
