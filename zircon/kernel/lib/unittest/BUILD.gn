@@ -57,6 +57,7 @@ source_set("unittest") {
 
 group("tests") {
   testonly = true
+  deps = [ "rust:tests" ]
 }
 
 group("kernel-tests") {
