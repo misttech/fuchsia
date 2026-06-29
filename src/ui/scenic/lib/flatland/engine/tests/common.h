@@ -86,8 +86,6 @@ class DisplayCompositorTestBase : public gtest::RealLoopFixture {
           topology_data.topology_vector, topology_data.parent_indices, global_matrices,
           snapshot.map);
 
-      // TODO(https://fxbug.dev/475838502): this should return EngineLayerImage instead of
-      // ImageMetadata.
       auto [image_indices, images] = ComputeGlobalImageData(
           topology_data.topology_vector, topology_data.parent_indices, snapshot.map);
 

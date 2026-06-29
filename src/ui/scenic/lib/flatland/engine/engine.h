@@ -94,12 +94,16 @@ class Engine {
     UberStructSnapshot snapshot;
     flatland::GlobalTopologyData topology_data;
     flatland::GlobalMatrixVector global_matrices;
+    flatland::GlobalTransformClipRegionVector clip_regions;
+    std::vector<ResolvedLayer> resolved_layers;
+
+   private:
+    // Internal scratch buffers stashed to avoid heap allocations in the hot path.
+    // Most (all?) of these will be deleted when moving Flatland1 to use the Flatland2
+    // UberStruct schema.
     flatland::GlobalImageVector images;
     flatland::GlobalIndexVector image_indices;
     flatland::GlobalRectangleVector image_rectangles;
-    flatland::GlobalTransformClipRegionVector clip_regions;
-
-    // Only used internally to compute `image_rectangles`, but stashed to avoid reallocating memory.
     flatland::GlobalImageSampleRegionVector image_sample_regions;
   };
 

@@ -63,11 +63,9 @@ void Engine::InitializeInspectObjects() {
 
     SceneState scene_state;
     scene_state.Initialize(*this, *root_transform);
-    std::vector<ResolvedLayer> layers;
-    ComputeGlobalResolvedLayers(layers, scene_state.image_rectangles, scene_state.images);
     std::ostringstream output;
-    DumpScene(scene_state.snapshot.map, scene_state.topology_data, layers,
-              scene_state.image_indices, output);
+    DumpScene(scene_state.snapshot.map, scene_state.topology_data, scene_state.resolved_layers,
+              output);
     inspector.GetRoot().CreateString(kSceneDump, output.str(), &inspector);
     return fpromise::make_ok_promise(std::move(inspector));
   });
@@ -137,16 +135,14 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
     return;
   }
 
-  auto resolved_layers =
-      ComputeGlobalResolvedLayers(scene_state.image_rectangles, scene_state.images);
-
-  CullLayersInPlace(&resolved_layers, hw_display->width_in_px(), hw_display->height_in_px());
+  CullLayersInPlace(&scene_state.resolved_layers, hw_display->width_in_px(),
+                    hw_display->height_in_px());
 
   // Don't render any initial frames if there is no image that could actually be rendered. We do
   // this to avoid triggering any changes in the display until we have content ready to render. We
   // invoke |callback| to continue the render loop.
   if (!first_frame_with_image_is_rendered_) {
-    if (resolved_layers.empty()) {
+    if (scene_state.resolved_layers.empty()) {
       // We already "rotated the scene state" above; doing it again would fail a CHECK.
       SkipRender(std::move(callback), /*rotate_scene_state=*/false);
       return;
@@ -156,7 +152,7 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
 
   RenderData render_data = {
       .display_id = hw_display->display_id(),
-      .layers = std::move(resolved_layers),
+      .layers = scene_state.resolved_layers,
   };
 
   auto fences = flatland_presenter_->TakeFences();
@@ -248,8 +244,7 @@ Renderables Engine::GetRenderables(const FlatlandDisplay& display) {
   scene_state.Initialize(*this, root);
   const auto hw_display = display.display();
 
-  auto resolved_layers =
-      ComputeGlobalResolvedLayers(scene_state.image_rectangles, scene_state.images);
+  auto resolved_layers = std::move(scene_state.resolved_layers);
 
   CullLayersInPlace(&resolved_layers, hw_display->width_in_px(), hw_display->height_in_px());
 
@@ -269,7 +264,7 @@ void Engine::SceneState::Initialize(Engine& engine, TransformHandle root_transfo
   ComputeGlobalMatrices(/*output=*/global_matrices, topology_data.topology_vector,
                         topology_data.parent_indices, snapshot.map);
 
-  ComputeGlobalImageData(/*output_indices=*/this->image_indices, /*output_images=*/this->images,
+  ComputeGlobalImageData(/*output_indices=*/image_indices, /*output_images=*/images,
                          topology_data.topology_vector, topology_data.parent_indices, snapshot.map);
 
   ComputeGlobalImageSampleRegions(/*output=*/image_sample_regions, topology_data.topology_vector,
@@ -280,6 +275,8 @@ void Engine::SceneState::Initialize(Engine& engine, TransformHandle root_transfo
 
   ComputeGlobalRectangles(/*output=*/image_rectangles, global_matrices, image_sample_regions,
                           clip_regions, image_indices, images);
+
+  ComputeGlobalResolvedLayers(resolved_layers, image_rectangles, images, image_indices);
 }
 
 void Engine::SceneState::Clear() {
@@ -297,6 +294,14 @@ void Engine::SceneState::Clear() {
     global_matrices.clear();
   }
   {
+    TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[clip_regions]");
+    clip_regions.clear();
+  }
+  {
+    TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[resolved_layers]");
+    resolved_layers.clear();
+  }
+  {
     TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[images]");
     images.clear();
   }
@@ -307,10 +312,6 @@ void Engine::SceneState::Clear() {
   {
     TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[image_rectangles]");
     image_rectangles.clear();
-  }
-  {
-    TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[clip_regions]");
-    clip_regions.clear();
   }
   {
     TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[image_sample_regions]");

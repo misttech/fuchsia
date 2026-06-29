@@ -127,30 +127,6 @@ class HitRegion {
       fuchsia::ui::composition::HitTestInteraction::DEFAULT;
 };
 
-// Struct representing a layer to be rendered by the engine.
-struct EngineLayer {
-  ImageRect rect;
-  std::array<float, 4> color = {1.f, 1.f, 1.f, 1.f};
-  types::BlendMode blend_mode = types::BlendMode::kReplace();
-  // TODO(https://fxbug.dev/475842762): we should use types::RotateFlip here, but the problem is
-  // that the rotation would be redundant with the rotation in `rect.orientation`.  Ultimately
-  // ImageRect should be absorbed into EngineLayer, but that would be too disruptive in the current
-  // CL.
-  fuchsia_ui_composition::ImageFlip flip = fuchsia_ui_composition::ImageFlip::kNone;
-};
-
-// Reference to a sysmem image.  When associated with an EngineLayerImage, contains the data
-// required to display the image.
-struct EngineLayerImage {
-  allocation::GlobalImageId image_id = allocation::kInvalidImageId;
-  uint32_t width = 0;
-  uint32_t height = 0;
-
-  bool operator==(const EngineLayerImage& other) const {
-    return image_id == other.image_id && width == other.width && height == other.height;
-  }
-};
-
 // Layer instance resolved from the global Flatland scene graph.
 struct ResolvedLayer {
   // Reference to a sysmem image bound to a layer.
@@ -172,8 +148,14 @@ struct ResolvedLayer {
   types::BlendMode blend_mode = types::BlendMode::kReplace();
   fuchsia_ui_composition::ImageFlip flip = fuchsia_ui_composition::ImageFlip::kNone;
   std::variant<ImageContent, SolidColorContent> content;
-  // damage_hints / visible_hints / topology_index arrive with later Flatland2
-  // work; identity fields only if the deferred tracker is ever built.
+
+  // Sentinel value representing an unset or invalid topology index (primarily for unit tests).
+  static constexpr int32_t kInvalidTopologyIndex = -1;
+
+  // Index of the Transform node in the global topology vector that produced this layer.
+  // Used for debug dumps and (eventually, maybe) cross-frame layer identity tracking.
+  int32_t topology_index = kInvalidTopologyIndex;
+
   bool operator==(const ResolvedLayer&) const = default;
 };
 

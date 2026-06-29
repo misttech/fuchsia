@@ -11,11 +11,6 @@
 
 #include <sdk/lib/syslog/cpp/macros.h>
 
-#include "src/lib/fostr/fidl/fuchsia.math/amendments.h"
-#include "src/lib/fsl/handles/object_info.h"
-#include "src/ui/scenic/lib/allocation/id.h"
-#include "src/ui/scenic/lib/flatland/global_image_data.h"
-#include "src/ui/scenic/lib/flatland/global_matrix_data.h"
 #include "src/ui/scenic/lib/flatland/global_topology_data.h"
 
 namespace {
@@ -157,15 +152,13 @@ void DumpAllSessions(const flatland::UberStruct::InstanceMap& snapshot, std::ost
   }
 }
 
-void DumpImages(const flatland::GlobalTopologyData& topology_data,
-                const std::vector<flatland::ResolvedLayer>& layers,
-                const flatland::GlobalIndexVector& layer_indices, std::ostream& output) {
+void DumpLayers(const flatland::GlobalTopologyData& topology_data,
+                const std::vector<flatland::ResolvedLayer>& layers, std::ostream& output) {
   static_assert(std::variant_size_v<decltype(flatland::ResolvedLayer::content)> == 2,
                 "DumpImages must be updated to support new content types");
 
   output << "\nFrame display-list contains " << layers.size()
          << " images and image-rectangles (in increasing Z-order):";
-  FX_DCHECK(layers.size() == layer_indices.size());
   for (size_t i = 0; i < layers.size(); i++) {
     const auto& layer = layers[i];
     if (std::holds_alternative<flatland::ResolvedLayer::SolidColorContent>(layer.content)) {
@@ -179,8 +172,9 @@ void DumpImages(const flatland::GlobalTopologyData& topology_data,
              << layer.color[2] << "," << layer.color[3] << ")"
              << "  blend_mode=" << layer.blend_mode << " flip=" << cpp23::to_underlying(layer.flip);
     }
-    output << "\n        transform: " << topology_data.topology_vector[layer_indices[i]];
-    output << "\n        rect: " << layer.rect;
+    FX_CHECK(layer.topology_index >= 0);
+    output << "\n        transform: " << topology_data.topology_vector[layer.topology_index]
+           << "\n        rect: " << layer.rect;
   }
 }
 
@@ -209,14 +203,13 @@ namespace flatland {
 
 void DumpScene(const UberStruct::InstanceMap& snapshot,
                const flatland::GlobalTopologyData& topology_data,
-               const std::vector<flatland::ResolvedLayer>& layers,
-               const flatland::GlobalIndexVector& layer_indices, std::ostream& output) {
+               const std::vector<flatland::ResolvedLayer>& layers, std::ostream& output) {
   output << "\n========== BEGIN SCENE DUMP ======================\n";
   DumpTopology(snapshot, topology_data, output);
   output << '\n';
   DumpAllSessions(snapshot, output);
   output << '\n';
-  DumpImages(topology_data, layers, layer_indices, output);
+  DumpLayers(topology_data, layers, output);
   output << '\n';
   DumpHitRegions(snapshot, output);
   output << "\n============ END SCENE DUMP ======================";

@@ -16,15 +16,21 @@ namespace flatland {
 // |rectangles| and |images| must be the same length (the existing RenderData
 // invariant).  An entry whose metadata.identifier == kInvalidImageId becomes
 // SolidColorContent{multiply_color}; all others become ImageContent.
+//
+// |image_indices| maps each layer back to its corresponding transform node in the global
+// topology tree. If empty (only allowed for unit tests), the topology_index of the resulting
+// layers will be set to ResolvedLayer::kInvalidTopologyIndex.  Otherwise the length must match
+// |rectangles| and |images|.
 void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
                                  const std::vector<ImageRect>& rectangles,
-                                 const std::vector<allocation::ImageMetadata>& images);
+                                 const std::vector<allocation::ImageMetadata>& images,
+                                 const std::vector<size_t>& image_indices);
 
 inline std::vector<ResolvedLayer> ComputeGlobalResolvedLayers(
-    const std::vector<ImageRect>& rectangles,
-    const std::vector<allocation::ImageMetadata>& images) {
+    const std::vector<ImageRect>& rectangles, const std::vector<allocation::ImageMetadata>& images,
+    const std::vector<size_t>& image_indices = {}) {
   std::vector<ResolvedLayer> output;
-  ComputeGlobalResolvedLayers(output, rectangles, images);
+  ComputeGlobalResolvedLayers(output, rectangles, images, image_indices);
   return output;
 }
 

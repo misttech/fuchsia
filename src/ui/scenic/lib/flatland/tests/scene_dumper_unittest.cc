@@ -343,17 +343,12 @@ TEST(SceneDumperTest, TopologyTree) {
       ->local_hit_regions_map[hit_region_transform]
       .emplace_back(hit_region);
 
-  GlobalImageVector images;
-  GlobalIndexVector image_indices;
-  GlobalRectangleVector image_rectangles;
-
   std::stringstream output;
 
   auto topology_data =
       GlobalTopologyData::ComputeGlobalTopologyData(uber_structs, links, 0, {1, 0});
 
-  DumpScene(uber_structs, topology_data, ComputeGlobalResolvedLayers(image_rectangles, images),
-            image_indices, output);
+  DumpScene(uber_structs, topology_data, ComputeGlobalResolvedLayers({}, {}, {}), output);
   auto lines = GetLines(output);
 
   // {1, 0} is the root with {2, 0} on the next line as child.
@@ -401,17 +396,12 @@ TEST(SceneDumperTest, TopologyTreeDeep) {
   MakeLink(links, 5);  // 0:5 - 5:0
   MakeLink(links, 6);  // 0:5 - 5:0
 
-  GlobalImageVector images;
-  GlobalIndexVector image_indices;
-  GlobalRectangleVector image_rectangles;
-
   std::stringstream output;
 
   auto topology_data =
       GlobalTopologyData::ComputeGlobalTopologyData(uber_structs, links, 0, {1, 0});
 
-  DumpScene(uber_structs, topology_data, ComputeGlobalResolvedLayers(image_rectangles, images),
-            image_indices, output);
+  DumpScene(uber_structs, topology_data, ComputeGlobalResolvedLayers({}, {}, {}), output);
   auto lines = GetLines(output);
 
   ExpectTopologyNodeHasLessDepthLevel({1, 0}, 0, {2, 0}, 1, lines);
@@ -465,17 +455,12 @@ TEST(SceneDumperTest, TopologyTreeWithNames) {
   MakeLink(links, 4);     // 0:4 - 4:0
   MakeLink(links, 5);     // 0:5 - 5:0
 
-  GlobalImageVector images;
-  GlobalIndexVector image_indices;
-  GlobalRectangleVector image_rectangles;
-
   std::stringstream output;
 
   auto topology_data =
       GlobalTopologyData::ComputeGlobalTopologyData(uber_structs, links, 0, {1, 0});
 
-  DumpScene(uber_structs, topology_data, ComputeGlobalResolvedLayers(image_rectangles, images),
-            image_indices, output);
+  DumpScene(uber_structs, topology_data, ComputeGlobalResolvedLayers({}, {}, {}), output);
   auto lines = GetLines(output);
 
   // {1, 0} is the root with {2, 1} as a child node.
@@ -560,8 +545,8 @@ TEST(SceneDumperTest, ImageRectangleMetadata) {
   image_rectangles.push_back(ImageRect({50, 60}, {200, 300}));
   image_rectangles.push_back(ImageRect({90, 100}, {400, 500}));
 
-  DumpScene(uber_structs, topology_data, ComputeGlobalResolvedLayers(image_rectangles, images),
-            image_indices, output);
+  DumpScene(uber_structs, topology_data,
+            ComputeGlobalResolvedLayers(image_rectangles, images, image_indices), output);
   auto lines = GetLines(output);
 
   // {1, 0} is the root with two child transforms {2, 0} and {3, 0}.
@@ -629,8 +614,8 @@ TEST(SceneDumperTest, DumpsSolidColorLayer) {
   GlobalRectangleVector image_rectangles;
   image_rectangles.push_back(ImageRect({50, 60}, {200, 300}));
 
-  DumpScene(uber_structs, topology_data, ComputeGlobalResolvedLayers(image_rectangles, images),
-            image_indices, output);
+  DumpScene(uber_structs, topology_data,
+            ComputeGlobalResolvedLayers(image_rectangles, images, image_indices), output);
   auto lines = GetLines(output);
 
   // Expected output contains the solid color details.

@@ -144,6 +144,29 @@ TEST(ComputeGlobalResolvedLayersTest, CopiesBlendModeAndFlip) {
   EXPECT_EQ(result[0].flip, fuchsia_ui_composition::ImageFlip::kLeftRight);
 }
 
+TEST(ComputeGlobalResolvedLayersTest, PopulatesTopologyIndex) {
+  std::vector<ImageRect> rectangles;
+  rectangles.push_back(ImageRect(glm::vec2(0, 0), glm::vec2(10, 10)));
+  rectangles.push_back(ImageRect(glm::vec2(0, 0), glm::vec2(10, 10)));
+
+  std::vector<allocation::ImageMetadata> images(2);
+  images[0].identifier = display::ImageId(1);
+  images[1].identifier = display::ImageId(2);
+
+  // Case 1: Unpopulated indices default to kInvalidTopologyIndex
+  auto result_default = ComputeGlobalResolvedLayers(rectangles, images);
+  ASSERT_EQ(result_default.size(), 2u);
+  EXPECT_EQ(result_default[0].topology_index, ResolvedLayer::kInvalidTopologyIndex);
+  EXPECT_EQ(result_default[1].topology_index, ResolvedLayer::kInvalidTopologyIndex);
+
+  // Case 2: Populated indices are correctly assigned
+  std::vector<size_t> indices = {4, 7};
+  auto result_populated = ComputeGlobalResolvedLayers(rectangles, images, indices);
+  ASSERT_EQ(result_populated.size(), 2u);
+  EXPECT_EQ(result_populated[0].topology_index, 4);
+  EXPECT_EQ(result_populated[1].topology_index, 7);
+}
+
 TEST(ResolvedLayerTest, EqualityComparesAllFields) {
   ResolvedLayer layer1;
   layer1.rect = ImageRect(glm::vec2(0, 0), glm::vec2(10, 10));
@@ -185,6 +208,11 @@ TEST(ResolvedLayerTest, EqualityComparesAllFields) {
   // 6. content inner fields (ImageContent image_id)
   layer2 = layer1;
   layer2.content = ImageContent{.image_id = display::ImageId(2)};
+  EXPECT_NE(layer1, layer2);
+
+  // 7. topology_index
+  layer2 = layer1;
+  layer2.topology_index = 42;
   EXPECT_NE(layer1, layer2);
 }
 

@@ -13,8 +13,10 @@ namespace flatland {
 
 void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
                                  const std::vector<ImageRect>& rectangles,
-                                 const std::vector<allocation::ImageMetadata>& images) {
+                                 const std::vector<allocation::ImageMetadata>& images,
+                                 const std::vector<size_t>& image_indices) {
   FX_DCHECK(rectangles.size() == images.size());
+  FX_DCHECK(image_indices.empty() || image_indices.size() == rectangles.size());
   output.clear();
   output.reserve(rectangles.size());
   for (size_t i = 0; i < rectangles.size(); ++i) {
@@ -24,6 +26,8 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
     layer.rect = rect;
     layer.blend_mode = meta.blend_mode;
     layer.flip = meta.flip;
+    layer.topology_index = image_indices.empty() ? ResolvedLayer::kInvalidTopologyIndex
+                                                 : static_cast<int32_t>(image_indices[i]);
 
     if (meta.identifier == allocation::kInvalidImageId) {
       // TODO(https://fxbug.dev/523371761): currently, the opacity is already pre-baked into

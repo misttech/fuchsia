@@ -9,8 +9,7 @@
 #include <vector>
 
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
-#include "src/ui/scenic/lib/flatland/global_image_data.h"
-#include "src/ui/scenic/lib/flatland/global_matrix_data.h"
+#include "src/ui/scenic/lib/flatland/global_resolved_layers.h"
 #include "src/ui/scenic/lib/flatland/global_topology_data.h"
 
 namespace flatland {
@@ -18,8 +17,7 @@ namespace flatland {
 // Dumps information about a flatland scene to an output stream.
 void DumpScene(const flatland::UberStruct::InstanceMap& snapshot,
                const flatland::GlobalTopologyData& topology_data,
-               const std::vector<flatland::ResolvedLayer>& layers,
-               const flatland::GlobalIndexVector& layer_indices, std::ostream& output);
+               const std::vector<flatland::ResolvedLayer>& layers, std::ostream& output);
 
 }  // namespace flatland
 
