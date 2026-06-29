@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 [workspace]
 members = [
+  "sapphire-collections",
   "sapphire-gatt",
   "sapphire-peer-cache",
   "sapphire-uuid",

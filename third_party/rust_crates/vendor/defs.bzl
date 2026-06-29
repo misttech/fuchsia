@@ -458,6 +458,7 @@ _NORMAL_DEPENDENCIES = {
             "rustls-webpki": Label("//third_party/rust_crates/vendor/rustls-webpki-0.101.7:webpki"),
             "rustyline": Label("//third_party/rust_crates/vendor/rustyline-2.1.0:rustyline"),
             "rutabaga_gfx": Label("//third_party/rust_crates/vendor/rutabaga_gfx-0.1.3:rutabaga_gfx"),
+            "sapphire-collections": Label("//third_party/rust_crates/vendor/sapphire-collections-0.1.0:sapphire_collections"),
             "sapphire-gatt": Label("//third_party/rust_crates/vendor/sapphire-gatt-0.1.0:sapphire_gatt"),
             "sapphire-peer-cache": Label("//third_party/rust_crates/vendor/sapphire-peer-cache-0.1.0:sapphire_peer_cache"),
             "sapphire-uuid": Label("//third_party/rust_crates/vendor/sapphire-uuid-0.1.0:sapphire_uuid"),

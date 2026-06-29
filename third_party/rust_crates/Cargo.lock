@@ -1926,6 +1926,7 @@ dependencies = [
  "rustls-webpki",
  "rustyline",
  "rutabaga_gfx",
+ "sapphire-collections",
  "sapphire-gatt",
  "sapphire-peer-cache",
  "sapphire-uuid",
@@ -4706,6 +4707,10 @@ version = "1.0.6"
 dependencies = [
  "winapi-util",
 ]
+
+[[package]]
+name = "sapphire-collections"
+version = "0.1.0"
 
 [[package]]
 name = "sapphire-gatt"
