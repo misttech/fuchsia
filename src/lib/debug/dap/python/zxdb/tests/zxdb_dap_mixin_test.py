@@ -7,7 +7,7 @@ import io
 import json
 import unittest
 
-from zxdb_dap import ZxdbDapClient, ZxdbDetachArguments
+from zxdb_dap import ZxdbDapClient, ZxdbDetachArguments, ZxdbStackTraceArguments
 
 
 class MockWriter(asyncio.StreamWriter):
@@ -90,6 +90,41 @@ class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
             ZxdbDetachArguments(pid=1234, detach_all=True)
         with self.assertRaises(ValueError):
             ZxdbDetachArguments(pid=None, detach_all=None)
+
+    async def test_zxdb_stack_trace(self) -> None:
+        client = ZxdbDapClient()
+        writer = MockWriter()
+        args = ZxdbStackTraceArguments(thread_id=5678, remote_unwind=True)
+
+        send_task = asyncio.create_task(client.zxdb_stack_trace(writer, args))
+
+        await asyncio.wait_for(writer.drained.wait(), timeout=2.0)
+
+        buffer_val = writer.buffer.getvalue()
+        headers, body = buffer_val.split(b"\r\n\r\n", 1)
+        req_val = json.loads(body.decode("utf-8"))
+        seq = req_val["seq"]
+
+        response = {
+            "seq": 10,
+            "type": "response",
+            "request_seq": seq,
+            "success": True,
+            "command": "stackTrace",
+            "body": {
+                "stackFrames": [],
+                "totalFrames": 0,
+            },
+        }
+
+        if seq in client._pending_requests:
+            client._pending_requests[seq].set_result(response)
+
+        resp = await send_task
+        self.assertTrue(resp.success)
+        self.assertEqual(req_val["command"], "stackTrace")
+        self.assertEqual(req_val["arguments"]["threadId"], 5678)
+        self.assertTrue(req_val["arguments"]["remoteUnwind"])
 
 
 if __name__ == "__main__":

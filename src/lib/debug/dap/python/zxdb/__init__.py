@@ -4,11 +4,20 @@
 
 from pydap.client import DapClient
 
-from .zxdb_dap_mixin import ZxdbDapMixin, ZxdbDetachArguments
+from .zxdb_dap_mixin import (
+    ZxdbDapMixin,
+    ZxdbDetachArguments,
+    ZxdbStackTraceArguments,
+)
 
 
 class ZxdbDapClient(ZxdbDapMixin, DapClient):
     pass
 
 
-__all__ = ["ZxdbDapClient", "ZxdbDapMixin", "ZxdbDetachArguments"]
+__all__ = [
+    "ZxdbDapClient",
+    "ZxdbDapMixin",
+    "ZxdbDetachArguments",
+    "ZxdbStackTraceArguments",
+]

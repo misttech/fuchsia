@@ -112,6 +112,7 @@ class StackTraceResponseBody(DapBaseModel):
     """Body of response to `stackTrace` request."""
 
     stack_frames: list[StackFrame]
+    total_frames: int | None = None
 
 
 class StackTraceResponse(Response):

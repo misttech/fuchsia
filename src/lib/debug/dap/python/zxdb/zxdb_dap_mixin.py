@@ -7,6 +7,17 @@ from typing import Any, Protocol
 
 from pydantic import Field, model_validator
 from pydap.dap_types import DapBaseModel
+from pydap.models import StackTraceArguments, StackTraceResponse
+
+
+class ZxdbStackTraceArguments(StackTraceArguments):
+    """Arguments for zxdb `stackTrace` request.
+
+    Attributes:
+        remote_unwind: Force remote unwind on the target.
+    """
+
+    remote_unwind: bool | None = None
 
 
 class ZxdbDetachArguments(DapBaseModel):
@@ -50,3 +61,12 @@ class ZxdbDapMixin:
     ) -> dict[str, Any]:
         """Sends a custom zxdb detach request."""
         return await self._send_request(writer, "zxdb.Detach", args)
+
+    async def zxdb_stack_trace(
+        self: SupportsSendRequest,
+        writer: asyncio.StreamWriter,
+        args: ZxdbStackTraceArguments,
+    ) -> StackTraceResponse:
+        """Sends a custom zxdb stackTrace request."""
+        resp = await self._send_request(writer, "stackTrace", args)
+        return StackTraceResponse.model_validate(resp)

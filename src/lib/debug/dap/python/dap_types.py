@@ -37,11 +37,14 @@ class Source(DapBaseModel):
         path: The path of the source to be shown in the UI.
         source_reference: If the value > 0 the contents of the source must be
             retrieved through the `source` request.
+        origin: The origin of this source (e.g., 'internal module', 'inlined content
+            from source map').
     """
 
     name: str | None = None
     path: str | None = None
     source_reference: int | None = None
+    origin: str | None = None
 
 
 # TODO(https://fxbug.dev/510003272): Support presentationHint.
@@ -60,6 +63,9 @@ class StackFrame(DapBaseModel):
                 whether it is 0- or 1-based. If attribute `source` is missing or doesn't
                 exist, `column` is 0 and should be ignored by the client.
         source: The source of the frame.
+        presentation_hint: A hint for how to present this frame in the UI. A value of
+            'label' indicates an artificial frame used as a visual separator; 'subtle'
+            indicates a subtle UI appearance. Values: 'normal', 'label', 'subtle'.
     """
 
     id: int
@@ -67,6 +73,7 @@ class StackFrame(DapBaseModel):
     line: int
     column: int
     source: Source | None = None
+    presentation_hint: str | None = None
 
 
 class Thread(DapBaseModel):
