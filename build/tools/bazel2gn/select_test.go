@@ -45,20 +45,224 @@ rust_library(
 }`,
 		},
 		{
+			name: "select with empty non-default",
+			bazel: `load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+	name = "select_with_empty_non_default",
+	hdrs = select({
+		"@platforms//os:fuchsia": [],
+		"//conditions:default": [ "default.h" ],
+	}),
+	srcs = [ "common.rs" ] + select({
+		"@platforms//os:fuchsia": [],
+		"//conditions:default": [ "default.rs" ],
+	}),
+)`,
+			wantGN: `rustc_library("select_with_empty_non_default") {
+	if (is_fuchsia) {
+		public = [
+		]
+	} else {
+		public = [
+			"default.h",
+		]
+	}
+	sources = []
+	sources += [
+		"common.rs",
+	]
+	if (is_fuchsia) {
+		sources += [
+		]
+	} else {
+		sources += [
+			"default.rs",
+		]
+	}
+}`,
+		},
+		{
+			name: "select with empty default",
+			bazel: `load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+	name = "select_with_empty_default",
+	hdrs = select({
+		"@platforms//os:fuchsia": [ "fuchsia.h" ],
+		"//conditions:default": [],
+	}),
+	srcs = [ "common.rs" ] + select({
+		"@platforms//os:fuchsia": [ "fuchsia.rs" ],
+		"//conditions:default": [],
+	}),
+)`,
+			wantGN: `rustc_library("select_with_empty_default") {
+	if (is_fuchsia) {
+		public = [
+			"fuchsia.h",
+		]
+	} else {
+		public = [
+		]
+	}
+	sources = []
+	sources += [
+		"common.rs",
+	]
+	if (is_fuchsia) {
+		sources += [
+			"fuchsia.rs",
+		]
+	}
+}`,
+		},
+		{
+			name: "select with skipped non-default",
+			bazel: `load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+	name = "select_with_skipped_non_default",
+	hdrs = select({
+		"@platforms//os:fuchsia": [
+			# @bazel2gn:skip
+			"fuchsia.h",
+		],
+		"//conditions:default": [ "default.h" ],
+	}),
+	srcs = [ "common.rs" ] + select({
+		"@platforms//os:fuchsia": [
+			# @bazel2gn:skip
+			"fuchsia.rs",
+		],
+		"//conditions:default": [ "default.rs" ],
+	}),
+)`,
+			wantGN: `rustc_library("select_with_skipped_non_default") {
+	if (is_fuchsia) {
+		public = [
+		]
+	} else {
+		public = [
+			"default.h",
+		]
+	}
+	sources = []
+	sources += [
+		"common.rs",
+	]
+	if (is_fuchsia) {
+		sources += [
+		]
+	} else {
+		sources += [
+			"default.rs",
+		]
+	}
+}`,
+		},
+		{
+			name: "select with skipped default",
+			bazel: `load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+	name = "select_with_skipped_default",
+	hdrs = select({
+		"@platforms//os:fuchsia": [ "fuchsia.h" ],
+		"//conditions:default": [
+				# @bazel2gn:skip
+				"default.h",
+		],
+	}),
+	srcs = [ "common.rs" ] + select({
+		"@platforms//os:fuchsia": [ "fuchsia.rs" ],
+		"//conditions:default": [
+				# @bazel2gn:skip
+				"default.rs",
+		],
+	}),
+)`,
+			wantGN: `rustc_library("select_with_skipped_default") {
+	if (is_fuchsia) {
+		public = [
+			"fuchsia.h",
+		]
+	} else {
+		public = [
+		]
+	}
+	sources = []
+	sources += [
+		"common.rs",
+	]
+	if (is_fuchsia) {
+		sources += [
+			"fuchsia.rs",
+		]
+	}
+}`,
+		},
+		{
 			name: "simple cond expr",
 			bazel: `load("@rules_rust//rust:defs.bzl", "rust_library")
 
 rust_library(
 	name = "simple_cond",
-	srcs = [ "some_feature.rs" ] if some_build_arg else [ "default.rs" ],
+	hdrs = [ "some_feature.h" ] if some_build_arg else [ "default.h" ],
+	srcs = [ "common.rs" ] + ([ "some_feature.rs" ] if some_build_arg else [ "default.rs" ]),
 )`,
 			wantGN: `rustc_library("simple_cond") {
 	if (some_build_arg) {
-		sources = [
+		public = [
+			"some_feature.h",
+		]
+	} else {
+		public = [
+			"default.h",
+		]
+	}
+	sources = []
+	sources += [
+		"common.rs",
+	]
+	if (some_build_arg) {
+		sources += [
 			"some_feature.rs",
 		]
 	} else {
-		sources = [
+		sources += [
+			"default.rs",
+		]
+	}
+}`,
+		},
+		{
+			name: "cond expr with empty if",
+			bazel: `load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+	name = "cond_with_empty_if",
+	hdrs = [] if some_build_arg else [ "default.h" ],
+	srcs = [ "common.rs" ] + ([] if some_build_arg else [ "default.rs" ]),
+)`,
+			wantGN: `rustc_library("cond_with_empty_if") {
+	if (some_build_arg) {
+		public = [
+		]
+	} else {
+		public = [
+			"default.h",
+		]
+	}
+	sources = []
+	sources += [
+		"common.rs",
+	]
+	if (some_build_arg) {
+		sources += [
+		]
+	} else {
+		sources += [
 			"default.rs",
 		]
 	}
@@ -69,10 +273,96 @@ rust_library(
 			bazel: `load("@rules_rust//rust:defs.bzl", "rust_library")
 
 rust_library(
-	name = "empty_else_cond",
+	name = "cond_with_empty_else",
+	hdrs = [ "some_feature.h" ] if some_build_arg else [],
 	srcs = [ "common.rs" ] + ([ "some_feature.rs" ] if some_build_arg else []),
 )`,
-			wantGN: `rustc_library("empty_else_cond") {
+			wantGN: `rustc_library("cond_with_empty_else") {
+	if (some_build_arg) {
+		public = [
+			"some_feature.h",
+		]
+	} else {
+		public = [
+		]
+	}
+	sources = []
+	sources += [
+		"common.rs",
+	]
+	if (some_build_arg) {
+		sources += [
+			"some_feature.rs",
+		]
+	}
+}`,
+		},
+		{
+			// This test behaves incorrectly, not skipping the "some_feature.*" files.
+			// TODO(https://fxbug.dev/521482733): Fix the implementation and update this test.
+			name: "cond expr with skipped if",
+			bazel: `load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+	name = "cond_with_skipped_if",
+	hdrs = [
+		# @bazel2gn:skip
+		"some_feature.h",
+	] if some_build_arg else [ "default.h" ],
+	srcs = [ "common.rs" ] + ([
+		# @bazel2gn:skip
+		"some_feature.rs",
+	] if some_build_arg else [ "default.rs" ]),
+)`,
+			wantGN: `rustc_library("cond_with_skipped_if") {
+	if (some_build_arg) {
+		public = [
+			"some_feature.h",
+		]
+	} else {
+		public = [
+			"default.h",
+		]
+	}
+	sources = []
+	sources += [
+		"common.rs",
+	]
+	if (some_build_arg) {
+		sources += [
+			"some_feature.rs",
+		]
+	} else {
+		sources += [
+			"default.rs",
+		]
+	}
+}`,
+		},
+		{
+			name: "cond expr with skipped else",
+			bazel: `load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+	name = "cond_with_skipped_else",
+	hdrs = [ "some_feature.h" ] if some_build_arg else [
+		# @bazel2gn:skip
+		"default.h",
+	],
+	srcs = [ "common.rs" ] + ([ "some_feature.rs" ] if some_build_arg else [
+		# @bazel2gn:skip
+		"default.rs",
+	]),
+)`,
+			wantGN: `rustc_library("cond_with_skipped_else") {
+	if (some_build_arg) {
+		public = [
+			"some_feature.h",
+		]
+	} else {
+		public = [
+		]
+	}
 	sources = []
 	sources += [
 		"common.rs",
@@ -90,18 +380,51 @@ rust_library(
 
 rust_library(
 	name = "mixed_cond_select",
-	srcs = [
+	hdrs = [
+		"common_for_condition.h",
+	] + select({
+		"@platforms//os:fuchsia": [ "fuchsia.h" ],
+		"//conditions:default": [ "linux.h" ],
+	}) + [
+		"bar.h",
+	] if some_condition else [ "baz.h" ],
+	srcs = [ "common.rs" ] + ([
 		"common_for_condition.rs",
 	] + select({
 		"@platforms//os:fuchsia": [ "fuchsia.rs" ],
 		"//conditions:default": [ "linux.rs" ],
 	}) + [
 		"bar.rs",
-	] if some_condition else [ "baz.rs" ],
+	] if some_condition else [ "baz.rs" ]),
 )`,
 			wantGN: `rustc_library("mixed_cond_select") {
 	if (some_condition) {
-		sources = []
+		public = []
+		public += [
+			"common_for_condition.h",
+		]
+		if (is_fuchsia) {
+			public += [
+				"fuchsia.h",
+			]
+		} else {
+			public += [
+				"linux.h",
+			]
+		}
+		public += [
+			"bar.h",
+		]
+	} else {
+		public = [
+			"baz.h",
+		]
+	}
+	sources = []
+	sources += [
+		"common.rs",
+	]
+	if (some_condition) {
 		sources += [
 			"common_for_condition.rs",
 		]
@@ -118,7 +441,7 @@ rust_library(
 			"bar.rs",
 		]
 	} else {
-		sources = [
+		sources += [
 			"baz.rs",
 		]
 	}
@@ -130,6 +453,12 @@ rust_library(
 
 rust_library(
 	name = "cond_with_parens",
+	hdrs = select({
+		"@platforms//os:fuchsia": [ "fuchsia.h" ],
+		"//conditions:default": [ "linux.h" ],
+	}) + ([
+		"bar.h",
+	] if some_condition else [ "baz.h" ]),
 	srcs = [
 		"common.rs",
 	] + select({
@@ -140,6 +469,25 @@ rust_library(
 	] if some_condition else [ "baz.rs" ]),
 )`,
 			wantGN: `rustc_library("cond_with_parens") {
+	public = []
+	if (is_fuchsia) {
+		public += [
+			"fuchsia.h",
+		]
+	} else {
+		public += [
+			"linux.h",
+		]
+	}
+	if (some_condition) {
+		public += [
+			"bar.h",
+		]
+	} else {
+		public += [
+			"baz.h",
+		]
+	}
 	sources = []
 	sources += [
 		"common.rs",
@@ -170,7 +518,14 @@ rust_library(
 
 rust_library(
 	name = "two_selects_one_condition",
-	srcs = select({
+	hdrs = select({
+		"@platforms//os:fuchsia": [ "fuchsia.h" ],
+		"//conditions:default": [ "linux.h" ],
+	}) if some_condition else select({
+		"@platforms//os:fuchsia": [ "other_fuchsia.h" ],
+		"//conditions:default": [ "other_linux.h" ],
+	}),
+	srcs = [ "common.rs" ] + select({
 		"@platforms//os:fuchsia": [ "fuchsia.rs" ],
 		"//conditions:default": [ "linux.rs" ],
 	}) if some_condition else select({
@@ -180,7 +535,33 @@ rust_library(
 )`,
 			wantGN: `rustc_library("two_selects_one_condition") {
 	if (some_condition) {
+		public = []
+		if (is_fuchsia) {
+			public += [
+				"fuchsia.h",
+			]
+		} else {
+			public += [
+				"linux.h",
+			]
+		}
+	} else {
+		public = []
+		if (is_fuchsia) {
+			public += [
+				"other_fuchsia.h",
+			]
+		} else {
+			public += [
+				"other_linux.h",
+			]
+		}
+	}
+	if (some_condition) {
 		sources = []
+		sources += [
+			"common.rs",
+		]
 		if (is_fuchsia) {
 			sources += [
 				"fuchsia.rs",
@@ -202,7 +583,8 @@ rust_library(
 			]
 		}
 	}
-}`},
+}`,
+		},
 		{
 			name: "list concatenation",
 			bazel: `load("@rules_rust//rust:defs.bzl", "rust_library")
@@ -421,6 +803,132 @@ if (is_fuchsia) {
 } else {
 	_FOO_DEPS += [
 		"host_bar",
+	]
+}
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "_FOO_DEPS" ])
+`,
+		},
+		{
+			name: "branching assignment without common element",
+			bazel: `_FOO_DEPS = select({
+	"@platforms//os:fuchsia": ["fuchsia_bar"],
+	"//conditions:default": ["host_bar"],
+})`,
+			wantGN: `_FOO_DEPS = []
+if (is_fuchsia) {
+	_FOO_DEPS += [
+		"fuchsia_bar",
+	]
+} else {
+	_FOO_DEPS += [
+		"host_bar",
+	]
+}
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "_FOO_DEPS" ])
+`,
+		},
+		{
+			name: "branching assignment with empty non-default",
+			bazel: `_FOO_DEPS = [
+	"bar",
+] + select({
+	"@platforms//os:fuchsia": [],
+	"//conditions:default": ["host_bar"],
+})`,
+			wantGN: `_FOO_DEPS = []
+_FOO_DEPS += [
+	"bar",
+]
+if (is_fuchsia) {
+	_FOO_DEPS += [
+	]
+} else {
+	_FOO_DEPS += [
+		"host_bar",
+	]
+}
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "_FOO_DEPS" ])
+`,
+		},
+		{
+			name: "branching assignment with empty default",
+			bazel: `_FOO_DEPS = [
+	"bar",
+] + select({
+	"@platforms//os:fuchsia": ["fuchsia_bar"],
+	"//conditions:default": [],
+})`,
+			wantGN: `_FOO_DEPS = []
+_FOO_DEPS += [
+	"bar",
+]
+if (is_fuchsia) {
+	_FOO_DEPS += [
+		"fuchsia_bar",
+	]
+}
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "_FOO_DEPS" ])
+`,
+		},
+		{
+			name: "branching assignment with skipped non-default",
+			bazel: `_FOO_DEPS = [
+	"bar",
+] + select({
+	"@platforms//os:fuchsia": [
+		# @bazel2gn:skip
+		"fuchsia_bar",
+	],
+	"//conditions:default": ["host_bar"],
+})`,
+			wantGN: `_FOO_DEPS = []
+_FOO_DEPS += [
+	"bar",
+]
+if (is_fuchsia) {
+	_FOO_DEPS += [
+	]
+} else {
+	_FOO_DEPS += [
+		"host_bar",
+	]
+}
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "_FOO_DEPS" ])
+`,
+		},
+		{
+			name: "branching assignment with skipped default",
+			bazel: `_FOO_DEPS = [
+	"bar",
+] + select({
+	"@platforms//os:fuchsia": ["fuchsia_bar"],
+	"//conditions:default": [
+		# @bazel2gn:skip
+		"host_bar",
+	],
+})`,
+			wantGN: `_FOO_DEPS = []
+_FOO_DEPS += [
+	"bar",
+]
+if (is_fuchsia) {
+	_FOO_DEPS += [
+		"fuchsia_bar",
 	]
 }
 

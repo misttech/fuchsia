@@ -187,6 +187,22 @@ python_binary("generate_version_history_bin") {
 	]
 }`,
 		},
+		{
+			name: "Empty list attributes",
+			bazel: `fx_cc_library(
+	name = "has_empty_lists",
+	# 'configs' has special handling so test both it and another attribute.
+	configs = [],
+	srcs = [],
+)
+`,
+			wantGN: `static_library("has_empty_lists") {
+	configs += [
+	]
+	sources = [
+	]
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)
