@@ -48,10 +48,11 @@ impl Directory for ClientEnd<fio::DirectoryMarker> {
             let borrowed: zx::Channel = zx::NullableHandle::from_raw(raw_handle).into();
             let proxy = fio::DirectorySynchronousProxy::new(borrowed);
             #[cfg(fuchsia_api_level_at_least = "27")]
-            proxy.open(path, flags, &fio::Options::default(), server_end.into())?;
+            let res = proxy.open(path, flags, &fio::Options::default(), server_end.into());
             #[cfg(not(fuchsia_api_level_at_least = "27"))]
-            proxy.open3(path, flags, &fio::Options::default(), server_end.into())?;
+            let res = proxy.open3(path, flags, &fio::Options::default(), server_end.into());
             std::mem::forget(proxy.into_channel());
+            res?;
         }
         Ok(())
     }
