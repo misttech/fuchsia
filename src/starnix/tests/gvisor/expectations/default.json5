@@ -1280,9 +1280,11 @@
 
                 // TODO(https://fxbug.dev/474544848): New failing tests.
                 "LinkTest.LinkAtWithEmptyPathNeedsNoCapForSameCreds",
-                "LinkTest.LinkAtWithEmptyPathNeedsCapDacReadSearch",
                 "LinkTest.LinkAtWithEmptyPathNeedsNoCapForAtFcwd",
                 "MsgqueueTest.MsgOpReceiveMax",
+
+                // TODO(https://fxbug.dev/528473076): Requires CLONE_NEWUSER.
+                "LinkTest.LinkAtWithEmptyPathNeedsCapDacReadSearch",
                 "TruncateTest.TruncateNonWriteable",
                 "XattrTest.TrustedNamespaceWithCapSysAdminInNewUserns",
 
