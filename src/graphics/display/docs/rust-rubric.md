@@ -72,12 +72,12 @@ to fallible and async functions.
 Examples:
 
 ```rust
-use zx::Status;
+use zx;
 
 struct Data {}
 
 impl Data {
-    pub async fn new() -> Result<Data, Status> {
+    pub async fn new() -> Result<Data, zx::Status> {
         // ...
     }
 }
@@ -128,7 +128,8 @@ from the underscore prefix in variable names.
 Examples:
 
 ```rust
-use fdf_component::Driver;
+use fdf_component::{Driver, Node};
+use zx;
 
 struct DisplayDriver {
     // We must keep the Node alive for the lifetime of the driver.
@@ -143,6 +144,8 @@ impl Driver for DisplayDriver {
         let _ = fallible_function_that_logs();
     }
 }
+
+fn fallible_function_that_logs() -> Result<(), zx::Status> { /* ... */ }
 ```
 
 ## Representation
@@ -152,25 +155,34 @@ impl Driver for DisplayDriver {
 **Explanation:** Having the representation defined early makes it more likely
 that macros operating on the structure use the correct data layout.
 
-**Guideline:** Stick to the default representation (`rust`) unless one of the
-exceptions below applies.
+**Guideline:** Stick to the default representation (`rust`) unless the type's
+in-memory representation must be fixed. The in-memory representation must be
+fixed if and only if values are directly loaded from or stored into memory
+shared between the driver and a different piece of software or hardware. Follow
+the guidelines below to choose a non-default representation.
 
-**Explanation:** Preserves opportunities for optimization.
+**Explanation:** The default representation maximizes the compiler's
+opportunities for optimization. We can use the `rust` representation in shared
+memory, when we're guaranteed that the memory is used by multiple instances of
+the same compiled binary. We have to use a fixed memory representation when
+there are multiple pieces of software (different binaries) or hardware (devices)
+using the in-memory values.
 
-**Guideline:** Use `#[repr(transparent)]` for Rust "newtypes" that implement a
-non-composite value in an ABI between the driver and its target hardware.
+**Guideline:** Use `#[repr(transparent)]` for Rust "newtypes" that need a fixed
+in-memory representation.
 
 **Explanation:** `#[repr(transparent)]` encodes the "newtype" intent. The
 compiler enforces that the struct wraps a single non-zero-sized type field.
 
-**Guideline:** Use `#[repr(C)]` for multi-field composite types that implement
-an ABI, such as a command structure.
+**Guideline:** Use `#[repr(C)]` for multi-field composite types that need a
+fixed in-memory representation.
 
 **Explanation:** `#[repr(C)]` encodes the intent to produce a composite type
 with deterministic field offsets and alignments.
 
-**Guideline:** For every type implementing a part of an ABI, have unit tests
-checking each type's size and alignment, and each type member's offset.
+**Guideline:** For every type that needs a fixed in-memory representation, have
+unit tests checking each type's size and alignment, and each type member's
+offset.
 
 **Explanation:** Translating from vendor documentation to Rust is non-trivial,
 and we use tests to reduce the risk of errors.
@@ -233,16 +245,23 @@ mod tests {
 **Explanation:** Matches the established recommendation in
 [The Rust Programming Book section on idiomatic use paths][rust-book-idiomatic-paths].
 
-**Guideline:** Bring into scope the parent module for register or ABI definition
-types.
+**Guideline:** Bring into scope the top-level module of the `zx` crate.
 
 **Explanation:**
-[The Rust Programming Book section on idiomatic use paths][rust-book-idiomatic-paths]
-recommends solving type name conflicts by bringing into scope the parent modules
-for both types. Our variation on this rule recognizes that register and ABI type
-names are likely to overlap Rust driver type names, because they cover the same
-domain. We reuse the practice in C++ drivers that gave us a good tradeoff
-between clarity and conciseness.
+The `zx` crate exports generic type names such as `Channel` and `Event`, which
+were intended to be read with a `zx::` prefix -- for example, `zx::Event`
+reads as "Zircon event". This is an intentional deviation from
+[the Rust Programming Book section on idiomatic use paths][rust-book-idiomatic-paths],
+which recommends bringing into scope the parent modules for both types involved
+in a name conflict.
+
+**Guideline:** Bring into scope the parent module for register or ABI definition
+types. When it makes sense, alias the modules as `abi` or `registers`.
+
+**Explanation:** Similar reasoning to the rule above. We deviate from the Rust
+convention because register and ABI type names are likely to overlap Rust driver
+type names, as they cover the same domain. We reuse the practice in C++ drivers
+that gave us a good tradeoff between clarity and conciseness.
 
 **Guideline:** Alias each fidl_next binding module. Use the `fidl_` prefix for
 all aliases. Use the alias to qualify access to both structs and functions.
@@ -252,7 +271,8 @@ likely to overlap.
 
 **Guideline:** Bring the logging macros into scope directly.
 
-**Explanation:** [The Rust Book section on idiomatic use paths][rust-book-idiomatic-paths]
+**Explanation:**
+[The Rust Book section on idiomatic use paths][rust-book-idiomatic-paths]
 recommends module qualifiers on function calls, with an exception for common
 functions that are close to language-level features. Logging falls under the
 exception.
@@ -303,7 +323,7 @@ Examples:
 ```rust
 use std::num::NonZero;
 use std::ptr::NonNull;
-use zx::Status;
+use zx;
 
 #[repr(...)]
 #[derive(...)]
@@ -318,21 +338,23 @@ struct SharedMemory {
     trailer_ptr: NonNull<Trailer>,
 }
 
-pub fn new_shared_memory() -> Result<SharedMemory, Status> {
-    let data_address = fuchsia_runtime::vmar_root_self().map(...)?;
-    let data_address = NonZero::<usize>::new(data_address)
-        .expect("zx::vmar::map() returned null address");
+impl SharedMemory {
+    pub fn new() -> Result<Self, zx::Status> {
+        let data_address = fuchsia_runtime::vmar_root_self().map(...)?;
+        let data_address = NonZero::<usize>::new(data_address)
+            .expect("zx::vmar::map() returned null address");
 
-    // [`Option::unwrap()`] is guaranteed not to panic. The [`NonZero::new()`]
-    // call above already checked that the pointer is non-null.
-    let header_ptr = NonNull::new(
-        std::ptr::with_exposed_provenance_mut(data_address.get())
-    ).unwrap();
+        // [`Option::unwrap()`] is guaranteed not to panic. The [`NonZero::new()`]
+        // call above already checked that the pointer is non-null.
+        let header_ptr = NonNull::new(
+            std::ptr::with_exposed_provenance_mut(data_address.get())
+        ).unwrap();
 
-    // SAFETY: The memory allocation covers both [`Header`] and [`Trailer`].
-    let trailer_ptr = unsafe { header_ptr.add(1) }.cast::<Trailer>();
+        // SAFETY: The memory allocation covers both [`Header`] and [`Trailer`].
+        let trailer_ptr = unsafe { header_ptr.add(1) }.cast::<Trailer>();
 
-    Ok(SharedMemory { header_ptr, trailer_ptr })
+        Ok(Self { header_ptr, trailer_ptr })
+    }
 }
 ```
 
@@ -353,12 +375,12 @@ Examples:
 
 ```rust
 use log::warn;
-use zx::Status;
+use zx;
 
 /// Errors if the hardware returns an invalid version.
 ///
 /// All error conditions are logged.
-pub fn read_version() -> Result<u32, Status> {
+pub fn read_version() -> Result<u32, zx::Status> {
     let version_value: u32 = read_from_register();
     if version_value == 0 {
         warn!("Invalid version, device probably powered off: {}", version_value);
@@ -395,14 +417,20 @@ logging.
 Examples:
 
 ```rust
-use zx::Status;
+use zx;
 
 /// Errors if the hardware returns an invalid version.
 ///
 /// All error conditions are logged.
-pub fn read_version() -> Result<u32, Status> {
-    // ...
-    Ok(version_value)
+pub fn read_version() -> Result<u32, zx::Status> { /* ... */ }
+
+/// Initializes the hardware so it can receive commands.
+///
+/// All error conditions are logged.
+pub fn initialize_hardware() -> Result<(), zx::Status> {
+    let version_value = read_version()?;
+
+    /* ... */
 }
 ```
 
