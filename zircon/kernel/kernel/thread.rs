@@ -19,10 +19,22 @@ unsafe extern "C" {
         out_retcode: *mut i32,
         deadline: zx_instant_mono_t,
     ) -> i32;
-    fn cpp_thread_yield();
+    fn cpp_thread_current_yield();
     fn cpp_thread_kill(thread: *mut c_void);
     fn cpp_thread_is_blocked(thread: *mut c_void) -> bool;
+    fn cpp_thread_current_get() -> *mut c_void;
+    fn cpp_thread_fxt_ref(thread: *mut c_void) -> FxtRef;
 }
+
+// LINT.IfChange(FxtRef)
+/// Rust representation of the C++ `FxtRef` struct.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FxtRef {
+    pub pid: u64,
+    pub tid: u64,
+}
+// LINT.ThenChange(//zircon/kernel/kernel/thread_ffi.cc:FxtRef)
 
 /// Type-safe wrapper around a raw pointer to a Zircon kernel Thread.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +103,26 @@ impl ThreadPtr {
     pub unsafe fn is_blocked(self) -> bool {
         unsafe { cpp_thread_is_blocked(self.as_raw()) }
     }
+
+    /// Returns a `ThreadPtr` representing the currently executing thread.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that this function is called after multi-threading has been
+    /// initialized (i.e. after LK_INIT_LEVEL_THREADING).
+    pub unsafe fn current() -> Self {
+        unsafe { Self::from_raw(cpp_thread_current_get()) }.unwrap()
+    }
+
+    /// Returns the thread's process and thread KOIDs.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the thread pointer is still valid and the
+    /// underlying thread has not been destroyed.
+    pub unsafe fn fxt_ref(self) -> FxtRef {
+        unsafe { cpp_thread_fxt_ref(self.as_raw()) }
+    }
 }
 
 /// Creates a new kernel thread with default priority.
@@ -125,5 +157,5 @@ pub unsafe fn spawn(
 
 /// Yields the current thread's CPU time slice.
 pub fn r#yield() {
-    unsafe { cpp_thread_yield() }
+    unsafe { cpp_thread_current_yield() }
 }
