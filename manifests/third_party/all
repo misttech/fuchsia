@@ -448,7 +448,7 @@
              path="third_party/pyyaml/src"
              remote="https://fuchsia.googlesource.com/third_party/pyyaml"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="8cdff2c80573b8be8e8ad28929264a913a63aa33"/>
+             revision="78c0b01dfd22f51de2d76f322688cce76b75b5d2"/>
     <project name="third_party/quickjs"
              path="third_party/quickjs"
              remote="https://fuchsia.googlesource.com/third_party/quickjs"

@@ -1,9 +1,9 @@
 Name: PyYAML
 URL: https://github.com/yaml/pyyaml
 Original URL: http://pyyaml.org/
-Version: 6.0
+Version: 6.0.3
 Upstream Git: https://github.com/yaml/pyyaml
-Revision: 8cdff2c80573b8be8e8ad28929264a913a63aa33
+Revision: 78c0b01dfd22f51de2d76f322688cce76b75b5d2
 Security Critical: no
 
 License File: src/LICENSE
