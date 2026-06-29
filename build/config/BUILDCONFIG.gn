@@ -651,7 +651,7 @@ declare_args() {
             _zircon_cpu = current_cpu
           }
           dir = [
-            "//zircon/kernel",
+            "//zircon/kernel/bin",
             "//zircon/kernel/arch/$_zircon_cpu/phys",
             "//zircon/kernel/arch/$_zircon_cpu/phys/boot-shim",
             "//zircon/kernel/arch/$_zircon_cpu/phys/efi",
