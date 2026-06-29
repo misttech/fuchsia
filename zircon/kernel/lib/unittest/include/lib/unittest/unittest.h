@@ -404,14 +404,7 @@ typedef struct unitest_testcase_registration {
   size_t test_cnt;
 } unittest_testcase_registration_t;
 
-#if LK_DEBUGLEVEL == 0
-
-#define UNITTEST_START_TESTCASE(_global_id) \
-  [[maybe_unused]] static void __unittest_table_##_global_id() {
-#define UNITTEST(_name, _fn) (void)(_fn);
-#define UNITTEST_END_TESTCASE(_global_id, _name, _desc) }
-
-#else  // LK_DEBUGLEVEL != 0
+#ifdef UNITTESTS_ENABLED
 
 #define UNITTEST_START_TESTCASE(_global_id) \
   static const unittest_registration_t __unittest_table_##_global_id[] = {
@@ -428,7 +421,14 @@ typedef struct unitest_testcase_registration {
       .test_cnt = std::size(__unittest_table_##_global_id),                                   \
   };
 
-#endif  // LK_DEBUGLEVEL == 0
+#else  // !defined(UNITTESTS_ENABLED)
+
+#define UNITTEST_START_TESTCASE(_global_id) \
+  [[maybe_unused]] static void __unittest_table_##_global_id() {
+#define UNITTEST(_name, _fn) (void)(_fn);
+#define UNITTEST_END_TESTCASE(_global_id, _name, _desc) }
+
+#endif  // defined(UNITTESTS_ENABLED)
 
 #endif  // !_KERNEL
 

@@ -8,4 +8,5 @@ import("//zircon/kernel/kernel_switchset.gni")
 
 kernel_switchset("lk_debug_level_0") {
   lk_debug_level = 0
+  unit_tests_enabled = false
 }

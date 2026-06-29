@@ -559,3 +559,10 @@ compiler_config("kernel_executable.config") {
     "//build/config/zircon:static-pie-link",
   ]
 }
+
+# Enables unit tests in both the C++ and Rust parts of the kernel.
+variant("unit-tests-enabled") {
+  defines = [ "UNITTESTS_ENABLED" ]
+  # TODO(https://fxbug.dev/517130174): Enable Rust tests too when available
+  # with `--cfg test`
+}

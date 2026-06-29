@@ -31,7 +31,6 @@ assert(
 #         * the print levels enabled for dprintf() (see <kernel/debug.h>);
 #         * whether ZX_DEBUG_ASSERT() is enabled;
 #         * whether the kernel serial console is enabled;
-#         * whether tests are compiled in (and runnable via the console).
 #
 #       More specifically, we have the features by level as follows:
 #
@@ -41,11 +40,15 @@ assert(
 #       | Print levels      | CRITICAL, ALWAYS | ..., INFO | ..., SPEW |
 #       | Debug asserts     | N                | N         | Y         |
 #       | Console           | N                | Y         | Y         |
-#       | Tests             | N                | Y         | Y         |
 #       +-------------------+------------------+-----------+-----------+
 #
 #       # TODO(https://fxbug.dev/42117912): Break this up into individual knobs.
 #     - Type: int
+#
+#   * unit_tests_enabled
+#     - Required: Whether unit tests are compiled into the kernel or not. Note
+#       that tests are only runnable if the console is enabled (via `k ut`).
+#     - Type: bool
 #
 template("kernel_switchset") {
   _dir = get_label_info(":$target_name", "dir")
@@ -65,6 +68,9 @@ template("kernel_switchset") {
   assert(_allowed_levels + [ _lk_debug_level ] - [ _lk_debug_level ] !=
              _allowed_levels,
          "lk_debug_level must be <= 2")
+
+  assert(defined(invoker.unit_tests_enabled),
+         "kernel_switchset($target_name) must define unit_tests_enabled")
 
   foreach(cpu, standard_fuchsia_cpus) {
     tc_name = "kernel_${cpu}.${target_name}"
@@ -243,6 +249,10 @@ template("kernel_switchset") {
       }
 
       configs += [ "//zircon/kernel/switch:lk_debug_level_${_lk_debug_level}" ]
+
+      if (invoker.unit_tests_enabled) {
+        configs += [ "//zircon/kernel/switch:unit-tests-enabled" ]
+      }
 
       # TODO(https://fxbug.dev/42117912): Map debug level to assert level for
       # now.
