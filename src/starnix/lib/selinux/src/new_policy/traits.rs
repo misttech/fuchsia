@@ -65,3 +65,20 @@ where
         Ok(())
     }
 }
+
+/// Trait for policy elements with a byte slice name.
+pub trait HasName {
+    fn name(&self) -> &[u8];
+}
+
+/// Trait for policy elements that have a strongly-typed policy identifier.
+pub trait HasPolicyId {
+    type Id: PolicyId;
+    fn id(&self) -> Self::Id;
+}
+
+impl Validate for Box<[u8]> {
+    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+        Ok(())
+    }
+}

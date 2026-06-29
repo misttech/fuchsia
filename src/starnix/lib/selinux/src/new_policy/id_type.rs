@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use std::marker::PhantomData;
-use std::num::{NonZeroU16, NonZeroU32};
+use std::num::{NonZeroU8, NonZeroU16, NonZeroU32};
 
 use super::traits::PolicyId;
 
@@ -33,6 +33,22 @@ where
     /// Helper to construct an ID from a raw `u32` in tests. Panics if the value is invalid.
     pub fn for_test(value: u32) -> Self {
         Self::from_u32(value).expect("valid test ID")
+    }
+}
+
+// Implement PolicyId for 8-bit IDs (wrapped in NonZeroU8)
+impl<Tag> PolicyId for IdType<NonZeroU8, Tag>
+where
+    Tag: Copy + Clone + std::fmt::Debug + Eq + std::hash::Hash + Ord + PartialOrd,
+{
+    fn as_u32(&self) -> u32 {
+        self.value.get() as u32
+    }
+
+    fn from_u32(value: u32) -> Option<Self> {
+        let val_u8 = u8::try_from(value).ok()?;
+        let value = NonZeroU8::new(val_u8)?;
+        Some(Self { value, _phantom: PhantomData })
     }
 }
 

@@ -57,7 +57,7 @@ impl<'a> PolicyCursor<'a> {
     }
 
     /// Reads a slice of `count` bytes from the cursor.
-    fn read_bytes(&mut self, count: usize) -> Result<&'a [u8], ParseError> {
+    pub(super) fn read_bytes(&mut self, count: usize) -> Result<&'a [u8], ParseError> {
         if self.offset + count > self.data.len() {
             return Err(ParseError::MissingData {
                 type_name: "bytes",
@@ -248,6 +248,47 @@ impl<T: Validate> Validate for Array<T> {
     }
 }
 
+/// Symbol list header and associated array of items.
+///
+/// In the SELinux binary policy database, each symbol table is prefixed by a header
+/// containing a `primary_names_count` field, followed by the array of items (which itself
+/// is prefixed by an `items_count` field).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SymbolArray<T> {
+    primary_names_count: u32,
+    items: Array<T>,
+}
+
+impl<T> Deref for SymbolArray<T> {
+    type Target = [T];
+    fn deref(&self) -> &Self::Target {
+        &self.items
+    }
+}
+
+impl<T: Parse> Parse for SymbolArray<T> {
+    fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
+        let primary_names_count = u32::parse(cursor)?;
+        let items = Array::<T>::parse(cursor)?;
+        Ok(Self { primary_names_count, items })
+    }
+}
+
+impl<T: Serialize> Serialize for SymbolArray<T> {
+    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+        self.primary_names_count.serialize(writer)?;
+        self.items.serialize(writer)?;
+        Ok(())
+    }
+}
+
+impl<T: Validate> Validate for SymbolArray<T> {
+    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+        self.items.validate(policy)?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -373,6 +414,22 @@ mod tests {
 
         let mut writer = Vec::new();
         array.serialize(&mut writer).unwrap();
+        assert_eq!(writer, data);
+    }
+
+    #[test]
+    fn test_symbol_array_parse_and_serialize() {
+        // primary_names_count = 5, array count = 2, elements = [10, 20]
+        let data = [5, 0, 0, 0, 2, 0, 0, 0, 10, 0, 0, 0, 20, 0, 0, 0];
+        let mut cursor = PolicyCursor::new(&data);
+
+        let sym_array = cursor.parse::<SymbolArray<u32>>().unwrap();
+        assert_eq!(sym_array.primary_names_count, 5);
+        assert_eq!(sym_array.as_ref(), &[10, 20]);
+        assert_eq!(cursor.offset, 16);
+
+        let mut writer = Vec::new();
+        sym_array.serialize(&mut writer).unwrap();
         assert_eq!(writer, data);
     }
 }

@@ -3,10 +3,13 @@
 // found in the LICENSE file.
 
 pub(super) mod bitmap;
+pub(super) mod common_symbols;
 pub(super) mod error;
 pub(super) mod id_type;
+pub(super) mod indexed;
 pub(super) mod metadata;
 pub(super) mod parser;
+pub(super) mod permissions;
 pub(super) mod traits;
 
 use selinux_policy_derive::{Parse, Serialize, Validate};
@@ -20,8 +23,11 @@ use traits::{Parse, Serialize, Validate};
 pub(super) mod types;
 
 pub use bitmap::{ExtensibleBitmap, IdSet};
+pub use common_symbols::{CommonSymbol, CommonSymbolId};
 pub use id_type::*;
-pub use parser::Array;
+pub use indexed::IdAndNameIndexed;
+pub use parser::{Array, SymbolArray};
+pub use permissions::{ClassPermissionId, Permission, PermissionId};
 pub use types::*;
 
 /// Top-level [`NewPolicy`] structure that parses the first few fields
@@ -35,6 +41,7 @@ pub struct NewPolicy {
     counts: Counts,
     policy_capabilities: ExtensibleBitmap,
     permissive_map: PermissiveTypeSet,
+    common_symbols: SymbolArray<CommonSymbol>,
     rest: RemainingBytes,
 }
 
@@ -69,6 +76,11 @@ impl NewPolicy {
     pub fn permissive_map(&self) -> &PermissiveTypeSet {
         &self.permissive_map
     }
+
+    /// Returns the common symbols table.
+    pub fn common_symbols(&self) -> &SymbolArray<CommonSymbol> {
+        &self.common_symbols
+    }
 }
 
 #[cfg(test)]
@@ -90,6 +102,12 @@ mod tests {
         // we just verify the APIs exist and don't panic).
         let _caps = new_policy.policy_capabilities();
         let _permissive = new_policy.permissive_map();
+
+        // Verify common symbols are parsed
+        assert!(!new_policy.common_symbols().is_empty());
+        let common = &new_policy.common_symbols()[0];
+        assert!(!common.name_bytes().is_empty());
+        assert!(!common.permissions().is_empty());
 
         // Verify 100% byte-for-byte roundtrip fidelity
         let mut serialized = Vec::new();
