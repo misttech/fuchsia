@@ -136,11 +136,13 @@ void TraceProviderImpl::Initialize(
   if (session_) {
     fprintf(stderr, "TraceProvider: Initialize failed, session already exists.\n");
     completer.Close(ZX_ERR_BAD_STATE);
+    return;
   }
 
   if (!binding_) {
     fprintf(stderr, "TraceProvider: Initialize failed, binding not yet completed.\n");
     completer.Close(ZX_ERR_BAD_STATE);
+    return;
   }
 
   fuchsia_tracing_provider::wire::ProviderConfigV2& config = request->config;

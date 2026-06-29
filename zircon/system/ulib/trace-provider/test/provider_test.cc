@@ -162,6 +162,41 @@ TEST_F(ProviderTest, GetKnownCategoriesFromSetCallback) {
   loop_.RunUntilIdle();
 }
 
+TEST_F(ProviderTest, DoubleInitialize) {
+  loop_.RunUntilIdle();
+
+  ASSERT_TRUE(manager_->provider_client().has_value());
+
+  // The first Initialize has already been called during RegisterV2.
+  // Now call it again.
+  zx::vmo buffer_vmo;
+  ASSERT_EQ(zx::vmo::create(42, 0u, &buffer_vmo), ZX_OK);
+  fuchsia_tracing_provider::ProviderConfigV2 config{{
+      .buffering_mode = fuchsia_tracing::BufferingMode::kOneshot,
+      .buffer = std::move(buffer_vmo),
+  }};
+
+  auto result = (*manager_->provider_client())->Initialize({std::move(config)});
+  ASSERT_TRUE(result.is_ok());
+
+  // Since it closes the channel on error, we should expect the channel to be closed.
+  loop_.RunUntilIdle();
+
+  bool called = false;
+  (*manager_->provider_client())
+      ->GetKnownCategories()
+      .Then([&called](
+                fidl::Result<::fuchsia_tracing_provider::ProviderV2::GetKnownCategories>& result) {
+        called = true;
+        ASSERT_TRUE(result.is_error());
+        // The channel should be closed with the epitaph ZX_ERR_BAD_STATE.
+        EXPECT_EQ(result.error_value().status(), ZX_ERR_BAD_STATE);
+      });
+
+  loop_.RunUntilIdle();
+  ASSERT_TRUE(called);
+}
+
 struct TestParams {
   std::vector<std::string> categories;
   fuchsia_tracing::BufferingMode buffering_mode;
