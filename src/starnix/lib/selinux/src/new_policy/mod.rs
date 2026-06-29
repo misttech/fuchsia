@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+pub(super) mod bitmap;
 pub(super) mod error;
+pub(super) mod id_type;
 pub(super) mod metadata;
 pub(super) mod parser;
 pub(super) mod traits;
@@ -15,6 +17,13 @@ use metadata::{Config, Counts, Magic, PolicyVersion, Signature};
 use parser::{PolicyCursor, RemainingBytes};
 use traits::{Parse, Serialize, Validate};
 
+pub(super) mod types;
+
+pub use bitmap::{ExtensibleBitmap, IdSet};
+pub use id_type::*;
+pub use parser::Array;
+pub use types::*;
+
 /// Top-level [`NewPolicy`] structure that parses the first few fields
 /// and stores the rest in [`Self::rest`] to allow round-trip testing.
 #[derive(Debug, Clone, Parse, Serialize, Validate)]
@@ -24,6 +33,8 @@ pub struct NewPolicy {
     version: PolicyVersion,
     config: Config,
     counts: Counts,
+    policy_capabilities: ExtensibleBitmap,
+    permissive_map: PermissiveTypeSet,
     rest: RemainingBytes,
 }
 
@@ -48,6 +59,16 @@ impl NewPolicy {
     pub fn handle_unknown(&self) -> HandleUnknown {
         self.config.handle_unknown()
     }
+
+    /// Returns the policy capabilities bitmap.
+    pub fn policy_capabilities(&self) -> &ExtensibleBitmap {
+        &self.policy_capabilities
+    }
+
+    /// Returns the permissive types set.
+    pub fn permissive_map(&self) -> &PermissiveTypeSet {
+        &self.permissive_map
+    }
 }
 
 #[cfg(test)]
@@ -63,6 +84,12 @@ mod tests {
         // Verify metadata basics
         assert!(new_policy.policy_version() >= 30);
         assert_eq!(new_policy.handle_unknown(), HandleUnknown::Allow);
+
+        // Verify that we can query policy capabilities and permissive map
+        // (even if they are empty or have specific values in the test policy,
+        // we just verify the APIs exist and don't panic).
+        let _caps = new_policy.policy_capabilities();
+        let _permissive = new_policy.permissive_map();
 
         // Verify 100% byte-for-byte roundtrip fidelity
         let mut serialized = Vec::new();

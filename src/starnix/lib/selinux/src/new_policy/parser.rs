@@ -162,6 +162,92 @@ impl Validate for RemainingBytes {
     }
 }
 
+impl Parse for u64 {
+    fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
+        let val: le::U64 = cursor.read::<le::U64>()?;
+        Ok(val.get())
+    }
+}
+
+impl Serialize for u64 {
+    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+        let val = le::U64::new(*self);
+        writer.extend_from_slice(zerocopy::IntoBytes::as_bytes(&val));
+        Ok(())
+    }
+}
+
+impl Validate for u64 {
+    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+        Ok(())
+    }
+}
+
+impl<T> Parse for std::marker::PhantomData<T> {
+    fn parse(_cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
+        Ok(Self)
+    }
+}
+
+impl<T> Serialize for std::marker::PhantomData<T> {
+    fn serialize(&self, _writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+        Ok(())
+    }
+}
+
+impl<T> Validate for std::marker::PhantomData<T> {
+    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+        Ok(())
+    }
+}
+
+/// Sized array of elements of type `T`, prefixed by a `u32` count.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Array<T> {
+    elements: Box<[T]>,
+}
+
+impl<T> Deref for Array<T> {
+    type Target = [T];
+    fn deref(&self) -> &Self::Target {
+        &self.elements
+    }
+}
+
+impl<T> AsRef<[T]> for Array<T> {
+    fn as_ref(&self) -> &[T] {
+        &self.elements
+    }
+}
+
+impl<T: Parse> Parse for Array<T> {
+    fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
+        let count = u32::parse(cursor)? as usize;
+        let elements = cursor.parse_elements(count)?;
+        Ok(Self { elements })
+    }
+}
+
+impl<T: Serialize> Serialize for Array<T> {
+    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+        let count = self.elements.len() as u32;
+        count.serialize(writer)?;
+        for element in self.elements.iter() {
+            element.serialize(writer)?;
+        }
+        Ok(())
+    }
+}
+
+impl<T: Validate> Validate for Array<T> {
+    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+        for element in self.elements.iter() {
+            element.validate(policy)?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,6 +263,15 @@ mod tests {
 
         let val2 = cursor.parse::<u32>().unwrap();
         assert_eq!(val2, 2);
+        assert_eq!(cursor.offset, 8);
+    }
+
+    #[test]
+    fn test_policy_cursor_parse_u64() {
+        let data = [1, 0, 0, 0, 0, 0, 0, 0];
+        let mut cursor = PolicyCursor::new(&data);
+        let val = cursor.parse::<u64>().unwrap();
+        assert_eq!(val, 1);
         assert_eq!(cursor.offset, 8);
     }
 
@@ -208,6 +303,14 @@ mod tests {
         let mut writer = Vec::new();
         val.serialize(&mut writer).unwrap();
         assert_eq!(writer, [42, 0, 0, 0]);
+    }
+
+    #[test]
+    fn test_u64_serialize() {
+        let val = 42u64;
+        let mut writer = Vec::new();
+        val.serialize(&mut writer).unwrap();
+        assert_eq!(writer, [42, 0, 0, 0, 0, 0, 0, 0]);
     }
 
     #[test]
@@ -257,5 +360,19 @@ mod tests {
         let mut writer = Vec::new();
         remaining.serialize(&mut writer).unwrap();
         assert_eq!(writer, [9, 9, 9]);
+    }
+
+    #[test]
+    fn test_array_parse_and_serialize() {
+        let data = [2, 0, 0, 0, 10, 0, 0, 0, 20, 0, 0, 0];
+        let mut cursor = PolicyCursor::new(&data);
+
+        let array = cursor.parse::<Array<u32>>().unwrap();
+        assert_eq!(array.as_ref(), &[10, 20]);
+        assert_eq!(cursor.offset, 12);
+
+        let mut writer = Vec::new();
+        array.serialize(&mut writer).unwrap();
+        assert_eq!(writer, data);
     }
 }
