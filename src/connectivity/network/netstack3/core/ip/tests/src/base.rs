@@ -6,7 +6,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use assert_matches::assert_matches;
 use core::fmt::Debug;
-use core::num::NonZeroU16;
+use core::num::{NonZeroU8, NonZeroU16};
 use core::time::Duration;
 
 use ip_test_macro::ip_test;
@@ -2196,7 +2196,8 @@ fn test_multicast_forwarding_receive_ip_packet_action<I: IpExt + TestIpExt>() {
     let key =
         MulticastRouteKey::<I>::new(I::TEST_ADDRS.remote_ip.get(), mcast_addr.clone()).unwrap();
     let targets: MulticastRouteTargets<_> =
-        [MulticastRouteTarget { output_interface: other_dev, min_ttl: 0 }].into();
+        [MulticastRouteTarget { output_interface: other_dev, min_ttl: NonZeroU8::new(1).unwrap() }]
+            .into();
     let route = MulticastRoute::new_forward(dev.clone(), targets.clone()).unwrap();
     assert_eq!(
         ctx.core_api().multicast_forwarding::<I>().add_multicast_route(key.clone(), route.clone()),

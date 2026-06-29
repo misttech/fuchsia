@@ -39,10 +39,15 @@ type Route = table {
             /// The ID for the outgoing interface.
             id fuchsia.net.InterfaceId;
 
-            /// The minumum TTL/HopLimit a multicast packet must have to be sent
-            /// through the interface.
+            /// The minimum TTL/HopLimit a multicast packet must have to be
+            /// forwarded through the interface. This check is enforced on
+            /// egress (e.g. after the packet's TTL has been decremented by the
+            /// Netstack).
             ///
-            /// Note: a value of 0 naturally allows all packets to be forwarded.
+            /// Values must be non-zero; 0 yields an `INVALID_TTL` error.
+            ///
+            /// Note: a value of 255 naturally prevents any packet from being
+            /// forwarded.
             min_ttl uint8;
         }>:MAX_MULTICAST_INTERFACES;
     };

@@ -5,7 +5,7 @@
 //! FIDL Worker for the `fuchsia.net.multicast.admin` API.
 
 use std::collections::VecDeque;
-use std::num::NonZeroU64;
+use std::num::{NonZeroU8, NonZeroU64};
 
 use derivative::Derivative;
 use explicit::ResultExt;
@@ -647,7 +647,11 @@ impl TryFromFidlWithContext<FidlExtRoute> for MulticastRoute<DeviceId<BindingsCt
                                 NonZeroU64::new(id).ok_or(AddRouteError::InterfaceNotFound)?,
                             )
                             .map_err(|DeviceNotFoundError {}| AddRouteError::InterfaceNotFound)?;
-                        Ok(MulticastRouteTarget { output_interface, min_ttl })
+                        if let Some(min_ttl) = NonZeroU8::new(min_ttl) {
+                            Ok(MulticastRouteTarget { output_interface, min_ttl })
+                        } else {
+                            Err(AddRouteError::InvalidTtl)
+                        }
                     })
                     .collect::<Result<Vec<_>, AddRouteError>>()?;
                 MulticastRoute::new_forward(input_interface, targets.into()).map_err(|e| match e {
@@ -866,7 +870,7 @@ mod tests {
             action: fnet_multicast_admin::Action::OutgoingInterfaces(vec![
                 fnet_multicast_admin::OutgoingInterfaces {
                     id: OUTPUT_BINDING_ID.get(),
-                    min_ttl: 0,
+                    min_ttl: 1,
                 },
             ]),
         };
@@ -935,7 +939,7 @@ mod tests {
         action: fnet_multicast_admin::Action::OutgoingInterfaces(vec![
             fnet_multicast_admin::OutgoingInterfaces {
                 id: FakeConversionContext::BINDING_ID2.into(),
-                min_ttl: 0,
+                min_ttl: 1,
             }
         ]),
         } => None; "success")]
@@ -944,7 +948,7 @@ mod tests {
         action: fnet_multicast_admin::Action::OutgoingInterfaces(vec![
             fnet_multicast_admin::OutgoingInterfaces {
                 id: FakeConversionContext::BINDING_ID2.into(),
-                min_ttl: 0,
+                min_ttl: 1,
             }
         ]),
         } => Some(AddRouteError::InterfaceNotFound); "invalid_iif")]
@@ -953,7 +957,7 @@ mod tests {
         action: fnet_multicast_admin::Action::OutgoingInterfaces(vec![
             fnet_multicast_admin::OutgoingInterfaces {
                 id: FakeConversionContext::INVALID_BINDING_ID.into(),
-                min_ttl: 0,
+                min_ttl: 1,
             }
         ]),
         } => Some(AddRouteError::InterfaceNotFound); "invalid_oif")]
@@ -966,7 +970,7 @@ mod tests {
         action: fnet_multicast_admin::Action::OutgoingInterfaces(vec![
             fnet_multicast_admin::OutgoingInterfaces {
                 id: FakeConversionContext::BINDING_ID1.into(),
-                min_ttl: 0,
+                min_ttl: 1,
             }
         ]),
         } => Some(AddRouteError::InputCannotBeOutput); "iff_is_oif")]
@@ -975,11 +979,11 @@ mod tests {
         action: fnet_multicast_admin::Action::OutgoingInterfaces(vec![
             fnet_multicast_admin::OutgoingInterfaces {
                 id: FakeConversionContext::BINDING_ID2.into(),
-                min_ttl: 0,
+                min_ttl: 1,
             },
             fnet_multicast_admin::OutgoingInterfaces {
                 id: FakeConversionContext::BINDING_ID2.into(),
-                min_ttl: 0,
+                min_ttl: 1,
             }
         ]),
         } => Some(AddRouteError::DuplicateOutput); "duplicate_oif")]

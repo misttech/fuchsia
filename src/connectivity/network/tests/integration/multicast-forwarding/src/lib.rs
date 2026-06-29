@@ -824,11 +824,11 @@ struct MulticastForwardingTestOptions {
     hashmap! {
         Client::A => ClientConfig {
             route_min_ttl: 1,
-            expect_forwarded_packet: true,
+            expect_forwarded_packet: false,
         },
         Client::B => ClientConfig {
             route_min_ttl: 1,
-            expect_forwarded_packet: true,
+            expect_forwarded_packet: false,
         }
     },
     MulticastForwardingNetworkOptions {
@@ -838,6 +838,26 @@ struct MulticastForwardingTestOptions {
     vec![Server::A],
     MulticastForwardingTestOptions::default();
     "ttl same as route min ttl"
+)]
+#[test_case(
+    "ttl_greater_than_route_min_ttl",
+    hashmap! {
+        Client::A => ClientConfig {
+            route_min_ttl: 1,
+            expect_forwarded_packet: true,
+        },
+        Client::B => ClientConfig {
+            route_min_ttl: 1,
+            expect_forwarded_packet: true,
+        }
+    },
+    MulticastForwardingNetworkOptions {
+        packet_ttl: 2,
+        ..MulticastForwardingNetworkOptions::default()
+    },
+    vec![Server::A],
+    MulticastForwardingTestOptions::default();
+    "ttl greater than route min ttl"
 )]
 #[test_case(
     "packet_sent_from_router",
@@ -852,7 +872,7 @@ struct MulticastForwardingTestOptions {
         }
     },
     MulticastForwardingNetworkOptions {
-        packet_ttl: 1,
+        packet_ttl: 2,
         source_device: SourceDevice::Router(Server::A),
         ..MulticastForwardingNetworkOptions::default()
     },
@@ -1350,6 +1370,17 @@ struct AddMulticastRouteTestOptions {
         ..AddMulticastRouteTestOptions::default()
     };
     "link-local multicast destination address"
+)]
+#[test_case(
+    "min_ttl_0_disallowed",
+    ClientConfig {
+        route_min_ttl: 0,
+        expect_forwarded_packet: false,
+    },
+    Err(AddRouteError::InvalidTtl),
+    vec![Server::A],
+    AddMulticastRouteTestOptions::default();
+    "min ttl 0 disallowed"
 )]
 async fn add_multicast_route<I: Ip + FidlMulticastAdminIpExt, N: Netstack>(
     name: &str,

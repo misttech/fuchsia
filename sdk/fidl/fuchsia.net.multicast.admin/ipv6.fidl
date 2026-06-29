@@ -58,6 +58,10 @@ closed protocol Ipv6RoutingTableController {
         /// Indicates that the same output interface was specified multiple
         /// times, regardless of provided minimum TTLs.
         DUPLICATE_OUTPUT = 5;
+
+        /// Indicates that the route would forward via an outgoing interface
+        /// with an invalid TTL value. The TTL must be non-zero.
+        INVALID_TTL = 6;
     };
 
     /// Delete a route.

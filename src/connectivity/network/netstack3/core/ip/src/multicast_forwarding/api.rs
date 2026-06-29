@@ -414,6 +414,7 @@ mod tests {
     use super::*;
 
     use alloc::vec;
+    use core::num::NonZeroU8;
     use core::ops::Deref;
     use core::time::Duration;
 
@@ -430,6 +431,8 @@ mod tests {
     use crate::internal::multicast_forwarding::packet_queue::QueuePacketOutcome;
     use crate::internal::multicast_forwarding::testutil::{SentPacket, TestIpExt};
     use crate::multicast_forwarding::{MulticastRoute, MulticastRouteKey, MulticastRouteTarget};
+
+    const MIN_TTL: NonZeroU8 = NonZeroU8::new(1).unwrap();
 
     #[ip_test(I)]
     fn enable_disable<I: IpLayerIpExt>() {
@@ -459,12 +462,14 @@ mod tests {
         let key2 = MulticastRouteKey::new(I::SRC2, I::DST2).unwrap();
         let forward_to_b = MulticastRoute::new_forward(
             MultipleDevicesId::A,
-            [MulticastRouteTarget { output_interface: MultipleDevicesId::B, min_ttl: 0 }].into(),
+            [MulticastRouteTarget { output_interface: MultipleDevicesId::B, min_ttl: MIN_TTL }]
+                .into(),
         )
         .unwrap();
         let forward_to_c = MulticastRoute::new_forward(
             MultipleDevicesId::A,
-            [MulticastRouteTarget { output_interface: MultipleDevicesId::C, min_ttl: 0 }].into(),
+            [MulticastRouteTarget { output_interface: MultipleDevicesId::C, min_ttl: MIN_TTL }]
+                .into(),
         )
         .unwrap();
 
@@ -519,7 +524,7 @@ mod tests {
 
         let route = MulticastRoute::new_forward(
             expected_dev,
-            [MulticastRouteTarget { output_interface: OUTPUT_DEV, min_ttl: 0 }].into(),
+            [MulticastRouteTarget { output_interface: OUTPUT_DEV, min_ttl: MIN_TTL }].into(),
         )
         .unwrap();
 
@@ -611,11 +616,11 @@ mod tests {
         const GOOD_DEV2: MultipleDevicesId = MultipleDevicesId::B;
         const BAD_DEV: MultipleDevicesId = MultipleDevicesId::C;
         const GOOD_TARGET1: MulticastRouteTarget<MultipleDevicesId> =
-            MulticastRouteTarget { output_interface: GOOD_DEV1, min_ttl: 0 };
+            MulticastRouteTarget { output_interface: GOOD_DEV1, min_ttl: MIN_TTL };
         const GOOD_TARGET2: MulticastRouteTarget<MultipleDevicesId> =
-            MulticastRouteTarget { output_interface: GOOD_DEV2, min_ttl: 0 };
+            MulticastRouteTarget { output_interface: GOOD_DEV2, min_ttl: MIN_TTL };
         const BAD_TARGET: MulticastRouteTarget<MultipleDevicesId> =
-            MulticastRouteTarget { output_interface: BAD_DEV, min_ttl: 0 };
+            MulticastRouteTarget { output_interface: BAD_DEV, min_ttl: MIN_TTL };
         let dev_is_input = MulticastRoute::new_forward(BAD_DEV, [GOOD_TARGET1].into()).unwrap();
         let dev_is_only_output =
             MulticastRoute::new_forward(GOOD_DEV1, [BAD_TARGET].into()).unwrap();
@@ -665,7 +670,8 @@ mod tests {
         // Install a route and verify that get_route_stats succeeds.
         let route = MulticastRoute::new_forward(
             MultipleDevicesId::A,
-            [MulticastRouteTarget { output_interface: MultipleDevicesId::B, min_ttl: 0 }].into(),
+            [MulticastRouteTarget { output_interface: MultipleDevicesId::B, min_ttl: MIN_TTL }]
+                .into(),
         )
         .unwrap();
         assert_eq!(api.add_multicast_route(key.clone(), route.clone()), Ok(None));

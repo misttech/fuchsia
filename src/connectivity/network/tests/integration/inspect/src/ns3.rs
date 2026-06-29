@@ -1314,7 +1314,7 @@ async fn inspect_multicast_routes(name: &str) {
         fnet_multicast_ext::Route {
             expected_input_interface: dev1.id(),
             action: fnet_multicast_admin::Action::OutgoingInterfaces(vec![
-                fnet_multicast_admin::OutgoingInterfaces { id: dev2.id(), min_ttl: 0 },
+                fnet_multicast_admin::OutgoingInterfaces { id: dev2.id(), min_ttl: 1 },
             ]),
         },
     )
@@ -1344,7 +1344,7 @@ async fn inspect_multicast_routes(name: &str) {
                     "ForwardingTargets": {
                         "0": {
                             OutputInterface: dev2.id(),
-                            MinTTL: 0u64,
+                            MinTTL: 1u64,
                         },
                     },
                     "Statistics": {

@@ -2986,7 +2986,7 @@ pub(crate) fn determine_ip_packet_forwarding_action<'a, 'b, I, BC, CC>(
     core_ctx: &'a mut CC,
     mut packet: I::Packet<&'a mut [u8]>,
     mut packet_meta: IpLayerPacketMetadata<I, CC::WeakAddressId, BC>,
-    minimum_ttl: Option<u8>,
+    minimum_ttl: Option<NonZeroU8>,
     inbound_device: &'b CC::DeviceId,
     outbound_device: &'b CC::DeviceId,
     destination: IpPacketDestination<I, &'b CC::DeviceId>,
@@ -3003,11 +3003,10 @@ where
     // decrementing the TTL would put it below the allowed minimum value.
     // For IPv4, see "TTL" section, https://tools.ietf.org/html/rfc791#page-14.
     // For IPv6, see "Hop Limit" section, https://datatracker.ietf.org/doc/html/rfc2460#page-5.
-    const DEFAULT_MINIMUM_FORWARDING_TTL: u8 = 2;
-    let minimum_ttl = minimum_ttl.unwrap_or(DEFAULT_MINIMUM_FORWARDING_TTL);
-
+    const DEFAULT_MIN_TTL: u8 = 1;
+    let minimum_ttl = minimum_ttl.map(NonZeroU8::get).unwrap_or(DEFAULT_MIN_TTL);
     let ttl = packet.ttl();
-    if ttl < minimum_ttl {
+    if ttl <= minimum_ttl {
         debug!(
             "{} packet not forwarded due to inadequate TTL: got={ttl} minimum={minimum_ttl}",
             I::NAME

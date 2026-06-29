@@ -385,6 +385,7 @@ pub enum AddRouteError {
     InterfaceNotFound,
     InputCannotBeOutput,
     DuplicateOutput,
+    InvalidTtl,
 }
 
 impl From<fnet_multicast_admin::Ipv4RoutingTableControllerAddRouteError> for AddRouteError {
@@ -396,6 +397,7 @@ impl From<fnet_multicast_admin::Ipv4RoutingTableControllerAddRouteError> for Add
             E::InterfaceNotFound => AddRouteError::InterfaceNotFound,
             E::InputCannotBeOutput => AddRouteError::InputCannotBeOutput,
             E::DuplicateOutput => AddRouteError::DuplicateOutput,
+            E::InvalidTtl => AddRouteError::InvalidTtl,
         }
     }
 }
@@ -409,6 +411,7 @@ impl From<fnet_multicast_admin::Ipv6RoutingTableControllerAddRouteError> for Add
             E::InterfaceNotFound => AddRouteError::InterfaceNotFound,
             E::InputCannotBeOutput => AddRouteError::InputCannotBeOutput,
             E::DuplicateOutput => AddRouteError::DuplicateOutput,
+            E::InvalidTtl => AddRouteError::InvalidTtl,
         }
     }
 }
@@ -422,6 +425,7 @@ impl From<AddRouteError> for fnet_multicast_admin::Ipv4RoutingTableControllerAdd
             AddRouteError::InterfaceNotFound => E::InterfaceNotFound,
             AddRouteError::InputCannotBeOutput => E::InputCannotBeOutput,
             AddRouteError::DuplicateOutput => E::DuplicateOutput,
+            AddRouteError::InvalidTtl => E::InvalidTtl,
         }
     }
 }
@@ -435,6 +439,7 @@ impl From<AddRouteError> for fnet_multicast_admin::Ipv6RoutingTableControllerAdd
             AddRouteError::InterfaceNotFound => E::InterfaceNotFound,
             AddRouteError::InputCannotBeOutput => E::InputCannotBeOutput,
             AddRouteError::DuplicateOutput => E::DuplicateOutput,
+            AddRouteError::InvalidTtl => E::InvalidTtl,
         }
     }
 }

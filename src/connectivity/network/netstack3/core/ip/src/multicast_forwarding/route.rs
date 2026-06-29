@@ -7,6 +7,7 @@
 use alloc::fmt::Debug;
 use alloc::sync::Arc;
 use core::hash::Hash;
+use core::num::NonZeroU8;
 use core::sync::atomic::Ordering;
 use derivative::Derivative;
 use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Ipv6Scope};
@@ -251,7 +252,7 @@ impl<D: StrongDeviceIdentifier, BT: InstantBindingsTypes> MulticastRouteEntry<D,
             for MulticastRouteTarget { output_interface, min_ttl } in targets.iter() {
                 inspector.record_unnamed_child(|inspector| {
                     II::record_device(inspector, "OutputInterface", output_interface);
-                    inspector.record_uint("MinTTL", *min_ttl);
+                    inspector.record_uint("MinTTL", min_ttl.get());
                 });
             }
         });
@@ -297,10 +298,10 @@ pub type MulticastRouteTargets<D> = Arc<[MulticastRouteTarget<D>]>;
 pub struct MulticastRouteTarget<D: StrongDeviceIdentifier> {
     /// An interface the packet should be forwarded out of.
     pub output_interface: D,
-    /// The minimum TTL of the packet in order for it to be forwarded.
-    ///
-    /// A value of 0 allows packets to be forwarded, regardless of their TTL.
-    pub min_ttl: u8,
+    /// The minimum TTL of packets that will be forwarded out this interface.
+    /// Evaluated on egress (e.g. after the netstack has decremented the
+    /// packet's TTL).
+    pub min_ttl: NonZeroU8,
 }
 
 /// Errors returned by [`MulticastRoute::new_forward`].
@@ -423,7 +424,10 @@ mod tests {
     ) -> Option<ForwardMulticastRouteError> {
         let targets = output_interfaces
             .into_iter()
-            .map(|output_interface| MulticastRouteTarget { output_interface, min_ttl: 0 })
+            .map(|output_interface| MulticastRouteTarget {
+                output_interface,
+                min_ttl: NonZeroU8::new(1).unwrap(),
+            })
             .collect();
         MulticastRoute::new_forward(input_interface, targets).err()
     }

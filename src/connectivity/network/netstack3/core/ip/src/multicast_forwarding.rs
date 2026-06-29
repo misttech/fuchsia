@@ -618,6 +618,7 @@ mod tests {
     use super::*;
 
     use alloc::vec;
+    use core::num::NonZeroU8;
     use core::time::Duration;
 
     use ip_test_macro::ip_test;
@@ -674,7 +675,7 @@ mod tests {
                         expected_dev,
                         [MulticastRouteTarget {
                             output_interface: MultipleDevicesId::C,
-                            min_ttl: 0
+                            min_ttl: NonZeroU8::new(1).unwrap(),
                         }]
                         .into()
                     )
