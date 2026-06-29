@@ -100,6 +100,7 @@ fidl_bazel2gn_verification_targets = [
   "//sdk/fidl/fuchsia.drm:verify_bazel2gn",
   "//sdk/fidl/fuchsia.ebpf:verify_bazel2gn",
   "//sdk/fidl/fuchsia.element:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.erofs:verify_bazel2gn",
   "//sdk/fidl/fuchsia.exception:verify_bazel2gn",
   "//sdk/fidl/fuchsia.factory.lowpan:verify_bazel2gn",
   "//sdk/fidl/fuchsia.factory.wlan:verify_bazel2gn",
