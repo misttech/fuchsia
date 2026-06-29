@@ -284,7 +284,7 @@ Flatland::~Flatland() {
   // all the images in `images_to_release_`, which potentially includes some added by
   // `ProcessDeadTransforms()`.
   ProcessDeadTransforms(data);
-  FX_DCHECK(image_metadatas_.empty());
+  FX_DCHECK(flatland1_content_.image_metadatas.empty());
 
   // If there are any images to release, set up a waiter, and pass the event-to-be-signaled to
   // `FlatlandPresenter::RemoveSession`.  This will schedule another frame and signal the event
@@ -488,9 +488,9 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
       uber_struct->local_matrices[handle] = matrix_data.GetMatrix();
     }
 
-    uber_struct->local_image_sample_regions.reserve(image_sample_regions_.size());
-    uber_struct->local_image_sample_regions.insert(image_sample_regions_.begin(),
-                                                   image_sample_regions_.end());
+    uber_struct->local_image_sample_regions.reserve(flatland1_content_.image_sample_regions.size());
+    uber_struct->local_image_sample_regions.insert(flatland1_content_.image_sample_regions.begin(),
+                                                   flatland1_content_.image_sample_regions.end());
 
     uber_struct->local_opacity_values.reserve(opacity_values_.size());
     uber_struct->local_opacity_values.insert(opacity_values_.begin(), opacity_values_.end());
@@ -511,8 +511,9 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
       uber_struct->local_hit_regions_map[root_transform_] = {{flatland::HitRegion::Infinite()}};
     }
 
-    uber_struct->images.reserve(image_metadatas_.size());
-    uber_struct->images.insert(image_metadatas_.begin(), image_metadatas_.end());
+    uber_struct->images.reserve(flatland1_content_.image_metadatas.size());
+    uber_struct->images.insert(flatland1_content_.image_metadatas.begin(),
+                               flatland1_content_.image_metadatas.end());
 
     if (link_to_parent_.has_value()) {
       uber_struct->view_ref = link_to_parent_->view_ref;
@@ -1042,10 +1043,10 @@ std::vector<allocation::GlobalImageId> Flatland::ProcessDeadTransforms(
     matrices_.erase(dead_handle);
 
     // Gather all images corresponding to dead transforms.
-    auto image_kv = image_metadatas_.find(dead_handle);
-    if (image_kv != image_metadatas_.end()) {
+    auto image_kv = flatland1_content_.image_metadatas.find(dead_handle);
+    if (image_kv != flatland1_content_.image_metadatas.end()) {
       const auto image_id = image_kv->second.identifier;
-      image_metadatas_.erase(image_kv);
+      flatland1_content_.image_metadatas.erase(image_kv);
 
       // FilledRects do not need to be released.
       if (image_id == allocation::kInvalidImageId)
@@ -1410,7 +1411,7 @@ void Flatland::CreateImage(ContentId image_id,
   // immediately. If we fail to import the image, we will release the handle.
   TransformHandle handle = transform_graph_.CreateTransform();
   content_handles_[image_id] = handle;
-  image_metadatas_[handle] = metadata;
+  flatland1_content_.image_metadatas[handle] = metadata;
 
   // Set the default sample region of the image to be the full image.
   SetImageSampleRegion(
@@ -1486,8 +1487,8 @@ void Flatland::SetImageSampleRegion(ContentId image_id, types::RectangleF rect) 
     return;
   }
 
-  const auto image_kv = image_metadatas_.find(content_kv->second);
-  if (image_kv == image_metadatas_.end()) {
+  const auto* image = flatland1_content_.FindImage(content_kv->second);
+  if (!image) {
     error_reporter_->ERROR() << "SetImageSampleRegion called on non-image content.";
     CloseConnection(FlatlandError::kBadOperation);
     return;
@@ -1495,7 +1496,7 @@ void Flatland::SetImageSampleRegion(ContentId image_id, types::RectangleF rect) 
 
   // The provided sample region needs to be within the bounds of the image.
   {
-    const auto& metadata = image_kv->second;
+    const auto& metadata = *image;
     const float image_width = static_cast<float>(metadata.width);
     const float image_height = static_cast<float>(metadata.height);
     // This clamping is required in cases where (x+width>image_width) or (y+height>image_height)
@@ -1522,7 +1523,7 @@ void Flatland::SetImageSampleRegion(ContentId image_id, types::RectangleF rect) 
         {.x = rect.x(), .y = rect.y(), .width = clamped_width, .height = clamped_height});
   }
 
-  image_sample_regions_[content_kv->second] = rect;
+  flatland1_content_.image_sample_regions[content_kv->second] = rect;
 }
 
 void Flatland::SetImageDestinationSize(SetImageDestinationSizeRequest& request,
@@ -1546,8 +1547,8 @@ void Flatland::SetImageDestinationSize(ContentId image_id, fuchsia_math::SizeU s
     return;
   }
 
-  auto image_kv = image_metadatas_.find(content_kv->second);
-  if (image_kv == image_metadatas_.end()) {
+  auto* image = flatland1_content_.FindImage(content_kv->second);
+  if (!image) {
     error_reporter_->ERROR() << "SetImageSize called on non-image content  " << image_id.value();
     CloseConnection(FlatlandError::kBadOperation);
     return;
@@ -1581,14 +1582,14 @@ void Flatland::SetImageBlendMode(ContentId image_id, BlendMode blend_mode) {
     return;
   }
 
-  auto image_kv = image_metadatas_.find(content_kv->second);
-  if (image_kv == image_metadatas_.end()) {
+  auto* image = flatland1_content_.FindImage(content_kv->second);
+  if (!image) {
     error_reporter_->ERROR() << "SetImageBlendMode called on non-image content.";
     CloseConnection(FlatlandError::kBadOperation);
     return;
   }
 
-  image_kv->second.blend_mode = blend_mode;
+  image->blend_mode = blend_mode;
 }
 
 void Flatland::SetImageFlip(SetImageFlipRequest& request, SetImageFlipCompleter::Sync& completer) {
@@ -1609,14 +1610,14 @@ void Flatland::SetImageFlip(ContentId image_id, fuchsia_ui_composition::ImageFli
     return;
   }
 
-  auto image_kv = image_metadatas_.find(content_kv->second);
-  if (image_kv == image_metadatas_.end()) {
+  auto* image = flatland1_content_.FindImage(content_kv->second);
+  if (!image) {
     error_reporter_->ERROR() << "SetImageFlip called on non-image content.";
     CloseConnection(FlatlandError::kBadOperation);
     return;
   }
 
-  image_kv->second.flip = flip;
+  image->flip = flip;
 }
 
 void Flatland::CreateFilledRect(CreateFilledRectRequest& request,
@@ -1648,7 +1649,7 @@ void Flatland::CreateFilledRect(ContentId rect_id) {
   // to our map.
   auto handle = transform_graph_.CreateTransform();
   content_handles_[rect_id] = handle;
-  image_metadatas_[handle] = metadata;
+  flatland1_content_.image_metadatas[handle] = metadata;
 
   FLATLAND_VERBOSE_LOG << "Flatland::CreateFilledRect() session_id=" << session_id_
                        << "  rect_id=" << rect_id << "  handle=" << handle;
@@ -1674,8 +1675,8 @@ void Flatland::SetSolidFill(ContentId rect_id, fuchsia_ui_composition::ColorRgba
     return;
   }
 
-  auto image_kv = image_metadatas_.find(content_kv->second);
-  if (image_kv == image_metadatas_.end()) {
+  auto* image = flatland1_content_.FindImage(content_kv->second);
+  if (!image) {
     error_reporter_->ERROR() << "Missing metadata for rect with id  " << rect_id;
     CloseConnection(FlatlandError::kBadOperation);
     return;
@@ -1696,11 +1697,11 @@ void Flatland::SetSolidFill(ContentId rect_id, fuchsia_ui_composition::ColorRgba
                        << "  rgba=" << color.red() << "," << color.green() << "," << color.blue()
                        << "," << color.alpha() << "  size=" << size.width() << "x" << size.height();
 
-  image_kv->second.blend_mode =
+  image->blend_mode =
       color.alpha() < 1.f ? BlendMode::kPremultipliedAlpha() : BlendMode::kReplace();
-  image_kv->second.collection_id = allocation::kInvalidId;
-  image_kv->second.identifier = allocation::kInvalidImageId;
-  image_kv->second.multiply_color = {color.red(), color.green(), color.blue(), color.alpha()};
+  image->collection_id = allocation::kInvalidId;
+  image->identifier = allocation::kInvalidImageId;
+  image->multiply_color = {color.red(), color.green(), color.blue(), color.alpha()};
   matrices_[content_kv->second].SetScale(
       {static_cast<float>(size.width()), static_cast<float>(size.height())});
 }
@@ -1725,9 +1726,9 @@ void Flatland::ReleaseFilledRect(ContentId rect_id) {
     return;
   }
 
-  auto image_kv = image_metadatas_.find(content_kv->second);
+  auto* image = flatland1_content_.FindImage(content_kv->second);
 
-  if (image_kv == image_metadatas_.end()) {
+  if (!image) {
     error_reporter_->ERROR() << "ReleaseFilledRect failed, content_id " << rect_id
                              << " has no metadata.";
     CloseConnection(FlatlandError::kBadOperation);
@@ -1738,7 +1739,8 @@ void Flatland::ReleaseFilledRect(ContentId rect_id) {
   FX_DCHECK(erased_from_graph);
 
   // Even though the handle is released, it may still be referenced by client Transforms. The
-  // image_metadatas_ map preserves the entry until it shows up in the dead_transforms list.
+  // flatland1_content_.image_metadatas map preserves the entry until it shows up in the
+  // dead_transforms list.
   content_handles_.erase(rect_id);
 }
 
@@ -1761,14 +1763,14 @@ void Flatland::SetImageOpacity(ContentId image_id, float opacity) {
     return;
   }
 
-  auto image_kv = image_metadatas_.find(content_kv->second);
-  if (image_kv == image_metadatas_.end()) {
+  auto* image = flatland1_content_.FindImage(content_kv->second);
+  if (!image) {
     error_reporter_->ERROR() << "SetImageOpacity called on non-rectangle content.";
     CloseConnection(FlatlandError::kBadOperation);
     return;
   }
 
-  auto& metadata = image_kv->second;
+  auto& metadata = *image;
   if (metadata.identifier == allocation::kInvalidImageId) {
     error_reporter_->ERROR() << "SetImageOpacity called on solid color content.";
     CloseConnection(FlatlandError::kBadOperation);
@@ -2077,9 +2079,9 @@ void Flatland::ReleaseImage(ContentId image_id) {
     return;
   }
 
-  auto image_kv = image_metadatas_.find(content_kv->second);
+  auto* image = flatland1_content_.FindImage(content_kv->second);
 
-  if (image_kv == image_metadatas_.end()) {
+  if (!image) {
     error_reporter_->ERROR() << "ReleaseImage failed, content_id " << image_id
                              << " is not an Image";
     CloseConnection(FlatlandError::kBadOperation);
@@ -2094,7 +2096,8 @@ void Flatland::ReleaseImage(ContentId image_id) {
   FX_DCHECK(erased_from_graph);
 
   // Even though the handle is released, it may still be referenced by client Transforms. The
-  // image_metadatas_ map preserves the entry until it shows up in the dead_transforms list.
+  // flatland1_content_.image_metadatas map preserves the entry until it shows up in the
+  // dead_transforms list.
   content_handles_.erase(image_id);
 }
 
@@ -2147,9 +2150,9 @@ void Flatland::ReleaseImageImmediately(ContentId image_id) {
     return;
   }
 
-  auto image_kv = image_metadatas_.find(content_kv->second);
+  auto* image = flatland1_content_.FindImage(content_kv->second);
 
-  if (image_kv == image_metadatas_.end()) {
+  if (!image) {
     error_reporter_->ERROR() << "ReleaseImageImmediately failed, content_id " << image_id
                              << " is not an Image";
     CloseConnection(FlatlandError::kBadOperation);
@@ -2166,7 +2169,7 @@ void Flatland::ReleaseImageImmediately(ContentId image_id) {
 
   // Release the image from all importers immediately.
   for (auto& importer : buffer_collection_importers_) {
-    importer->ReleaseBufferImage(image_kv->second.identifier);
+    importer->ReleaseBufferImage(image->identifier);
   }
 }
 

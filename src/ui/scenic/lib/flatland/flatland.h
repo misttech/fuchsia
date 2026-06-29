@@ -27,6 +27,7 @@
 
 #include "src/ui/lib/escher/flib/fence_queue.h"
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
+#include "src/ui/scenic/lib/flatland/flatland1_state.h"
 #include "src/ui/scenic/lib/flatland/flatland_config.h"
 #include "src/ui/scenic/lib/flatland/flatland_presenter.h"
 #include "src/ui/scenic/lib/flatland/link_system.h"
@@ -506,12 +507,8 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // parts of the transform are user-interactive.
   std::unordered_map<TransformHandle, std::vector<flatland::HitRegion>> hit_regions_;
 
-  // A map of content (image) transform handles to ImageSampleRegion structs which are used
-  // to determine the portion of an image that is actually used for rendering.
-  std::unordered_map<TransformHandle, ImageSampleRegion> image_sample_regions_;
-
-  // A mapping from Flatland-generated TransformHandle to the ImageMetadata it represents.
-  std::unordered_map<TransformHandle, allocation::ImageMetadata> image_metadatas_;
+  // Session-side state for the classic (Flatland1) content representation.
+  Flatland1ContentState flatland1_content_;
 
   // Error reporter used for printing debug logs.
   std::unique_ptr<scenic_impl::ErrorReporter> error_reporter_;
