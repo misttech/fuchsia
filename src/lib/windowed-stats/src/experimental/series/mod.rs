@@ -27,7 +27,7 @@ use crate::experimental::series::buffer::{
 use crate::experimental::series::interpolation::{
     ConstantSample, Interpolation, InterpolationKind, LastSample,
 };
-use crate::experimental::series::metadata::{BitSetIndex, Metadata};
+use crate::experimental::series::metadata::{BitsetIndex, Metadata};
 use crate::experimental::series::statistic::{
     FoldError, PostAggregation, SerialStatistic, Statistic,
 };
@@ -154,16 +154,13 @@ impl DataSemantic for GaugeForceSimple8bRle {
     }
 }
 
-// TODO(https://fxbug.dev/375255178): Spell "bit set" consistently. `BitSet` suggests `bit_set` and
-//                                    "bit set", but there are notably some instances of "bitset",
-//                                    which instead suggests `Bitset` and `bitset`.
 /// A set of Boolean values.
 ///
-/// Bit sets are analogous to indicator lamps in a vehicle.
+/// Bitsets are analogous to indicator lamps in a vehicle.
 #[derive(Debug)]
-pub enum BitSet {}
+pub enum Bitset {}
 
-impl<A, P> BufferStrategy<A, P> for BitSet
+impl<A, P> BufferStrategy<A, P> for Bitset
 where
     Simple8bRle: RingBuffer<A>,
     P: InterpolationKind,
@@ -171,8 +168,8 @@ where
     type Buffer = Simple8bRle;
 }
 
-impl DataSemantic for BitSet {
-    type Metadata = BitSetIndex;
+impl DataSemantic for Bitset {
+    type Metadata = BitsetIndex;
 
     fn display() -> impl Display {
         "bitset"

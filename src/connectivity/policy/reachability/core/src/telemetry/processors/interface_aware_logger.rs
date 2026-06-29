@@ -10,7 +10,7 @@ use fuchsia_inspect_derive::Unit;
 use std::collections::HashMap;
 use windowed_stats::experimental::inspect::{InspectSender, InspectedTimeMatrix, TimeMatrixClient};
 use windowed_stats::experimental::series::interpolation::ConstantSample;
-use windowed_stats::experimental::series::metadata::BitSetNode;
+use windowed_stats::experimental::series::metadata::BitsetNode;
 use windowed_stats::experimental::series::statistic::Union;
 use windowed_stats::experimental::series::{SamplingProfile, TimeMatrix};
 
@@ -181,7 +181,7 @@ impl PerInterfaceEvents {
 fn bitset_constant_sample_time_matrix(
     client: &TimeMatrixClient,
     time_series_name: &str,
-    bitset_node: BitSetNode,
+    bitset_node: BitsetNode,
 ) -> InspectedTimeMatrix<u64> {
     client.inspect_time_matrix_with_metadata(
         time_series_name,
@@ -217,7 +217,7 @@ impl PerInterfaceTimeSeries {
 
         let bitset_constant_sample_time_matrices = |name: &str, metadata_node_name: &str| {
             let bitset_node =
-                BitSetNode::from_path(format!("{}/{}", inspect_metadata_path, metadata_node_name));
+                BitsetNode::from_path(format!("{}/{}", inspect_metadata_path, metadata_node_name));
             IpVersions {
                 ipv4: bitset_constant_sample_time_matrix(&client_v4, name, bitset_node.clone()),
                 ipv6: bitset_constant_sample_time_matrix(&client_v6, name, bitset_node),

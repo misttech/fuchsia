@@ -217,7 +217,7 @@ mod tests {
 
     use crate::experimental::series::SamplingProfile;
     use crate::experimental::series::interpolation::{ConstantSample, LastSample};
-    use crate::experimental::series::metadata::BitSetMap;
+    use crate::experimental::series::metadata::BitsetMap;
     use crate::experimental::series::statistic::{Max, Union};
 
     #[fuchsia::test]
@@ -287,7 +287,7 @@ mod tests {
         let _matrix = client.inspect_time_matrix_with_metadata(
             "engine",
             TimeMatrix::<Union<u64>, LastSample>::default(),
-            BitSetMap::from_ordered(["check", "oil", "battery", "coolant"]),
+            BitsetMap::from_ordered(["check", "oil", "battery", "coolant"]),
         );
 
         assert_data_tree!(inspector, root: contains {

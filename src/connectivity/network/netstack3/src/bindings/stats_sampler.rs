@@ -19,12 +19,12 @@ use log::error;
 use netstack3_core::device::{DeviceCounters, DeviceId, WeakDeviceId};
 use windowed_stats::experimental::clock::{Timed, Timestamp};
 use windowed_stats::experimental::series::interpolation::{InterpolationKind, LastSample};
-use windowed_stats::experimental::series::metadata::{DenseBitSetMap, Metadata};
+use windowed_stats::experimental::series::metadata::{DenseBitsetMap, Metadata};
 use windowed_stats::experimental::series::statistic::{
     Diff, FoldError, SerialStatistic, Statistic, Union,
 };
 use windowed_stats::experimental::series::{
-    BitSet, GaugeForceSimple8bRle, SamplingProfile, SerializedBuffer, TimeMatrix,
+    Bitset, GaugeForceSimple8bRle, SamplingProfile, SerializedBuffer, TimeMatrix,
     TimeMatrixFold as _, TimeMatrixTick,
 };
 
@@ -420,9 +420,9 @@ impl From<InterfaceStatusBits> for u64 {
     }
 }
 
-impl LocalMetadata<BitSet> for InterfaceStatusBits {
+impl LocalMetadata<Bitset> for InterfaceStatusBits {
     fn record(parent: &fuchsia_inspect::Node) {
-        let meta = DenseBitSetMap::new(|| Self::labels().map(|(_bits, label)| label));
+        let meta = DenseBitsetMap::new(|| Self::labels().map(|(_bits, label)| label));
         Metadata::record_with_parent(&meta, parent);
     }
 }

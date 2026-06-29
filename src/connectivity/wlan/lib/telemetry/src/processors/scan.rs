@@ -4,16 +4,15 @@
 
 use crate::util::cobalt_logger::log_cobalt_batch;
 use fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload};
+use fidl_fuchsia_power_battery as fidl_battery;
+use fuchsia_async as fasync;
 use std::ops::BitOr;
 use windowed_stats::experimental::inspect::{InspectSender, InspectedTimeMatrix};
 use windowed_stats::experimental::series::interpolation::ConstantSample;
-use windowed_stats::experimental::series::metadata::BitSetMap;
+use windowed_stats::experimental::series::metadata::BitsetMap;
 use windowed_stats::experimental::series::statistic::Union;
 use windowed_stats::experimental::series::{SamplingProfile, TimeMatrix};
-use {
-    fidl_fuchsia_power_battery as fidl_battery, fuchsia_async as fasync,
-    wlan_legacy_metrics_registry as metrics,
-};
+use wlan_legacy_metrics_registry as metrics;
 
 #[derive(Debug, PartialEq)]
 pub enum ScanResult {
@@ -121,8 +120,8 @@ impl ScanEvents {
 }
 
 impl ScanEvents {
-    fn bit_set_map() -> BitSetMap {
-        BitSetMap::from_ordered(["start"])
+    fn bit_set_map() -> BitsetMap {
+        BitsetMap::from_ordered(["start"])
     }
 }
 

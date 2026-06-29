@@ -9,7 +9,7 @@ use fuchsia_inspect_contrib::nodes::LruCacheNode;
 use fuchsia_inspect_derive::Unit;
 use windowed_stats::experimental::inspect::{InspectSender, InspectedTimeMatrix};
 use windowed_stats::experimental::series::interpolation::LastSample;
-use windowed_stats::experimental::series::metadata::{BitSetMap, BitSetNode};
+use windowed_stats::experimental::series::metadata::{BitsetMap, BitsetNode};
 use windowed_stats::experimental::series::statistic::Union;
 use windowed_stats::experimental::series::{SamplingProfile, TimeMatrix};
 
@@ -40,7 +40,7 @@ impl<S: InspectSender> NetworkPropertiesProcessor<S> {
         let default_network_detailed_matrix = client.inspect_time_matrix_with_metadata(
             "default_network_detailed",
             detailed_time_matrix,
-            BitSetNode::from_path(format!(
+            BitsetNode::from_path(format!(
                 "{}/{}",
                 inspect_metadata_path,
                 InspectMetadataNode::NETWORK_REGISTRY
@@ -54,7 +54,7 @@ impl<S: InspectSender> NetworkPropertiesProcessor<S> {
         let default_network_type_matrix = client.inspect_time_matrix_with_metadata(
             "default_network_type",
             types_time_matrix,
-            BitSetNode::from_path(format!(
+            BitsetNode::from_path(format!(
                 "{}/{}",
                 inspect_metadata_path,
                 InspectMetadataNode::NETWORK_TYPES
@@ -132,7 +132,7 @@ impl<S: InspectSender> NetworkPropertiesProcessor<S> {
             let matrix = scoped_client.inspect_time_matrix_with_metadata(
                 "connectivity",
                 time_matrix,
-                BitSetNode::from_path(format!(
+                BitsetNode::from_path(format!(
                     "{}/connectivity_states",
                     self.inspect_metadata_path
                 )),
@@ -213,7 +213,7 @@ impl InspectMetadataNode {
         );
 
         let connectivity_states = inspect_node.create_child("connectivity_states");
-        let connectivity_metadata = BitSetMap::from_ordered(get_ordered_connectivity_states());
+        let connectivity_metadata = BitsetMap::from_ordered(get_ordered_connectivity_states());
         connectivity_metadata.record(&connectivity_states);
 
         Self {

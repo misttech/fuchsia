@@ -5,11 +5,11 @@
 //! Metadata for [time matrices][`TimeMatrix`].
 //!
 //! The [`DataSemantic`] of the [`Statistic`] determines which metadata types can be used to
-//! annotate a [`TimeMatrix`]. For example, the [`Union`] statistic has a [`BitSet`] semantic that
-//! requires [`BitSetMetadata`].
+//! annotate a [`TimeMatrix`]. For example, the [`Union`] statistic has a [`Bitset`] semantic that
+//! requires [`BitsetIndex`].
 //!
-//! [`BitSet`]: crate::experimental::series::BitSet
-//! [`BitSetMetadata`]: crate::experimental::series::metadata::BitSetMetadata
+//! [`Bitset`]: crate::experimental::series::Bitset
+//! [`BitsetIndex`]: crate::experimental::series::metadata::BitsetIndex
 //! [`DataSemantic`]: crate::experimental::series::DataSemantic
 //! [`Statistic`]: crate::experimental::series::statistic::Statistic
 //! [`TimeMatrix`]: crate::experimental::series::TimeMatrix
@@ -36,9 +36,9 @@ impl Metadata for () {
     fn record(&self, _: &Node) {}
 }
 
-/// A textual label for a bit in a [`BitSet`] aggregation.
+/// A textual label for a bit in a [`Bitset`] aggregation.
 ///
-/// [`BitSet`]: crate::experimental::series::BitSet
+/// [`Bitset`]: crate::experimental::series::Bitset
 #[derive(Clone, Debug)]
 pub struct BitLabel(Cow<'static, str>);
 
@@ -74,37 +74,37 @@ impl From<String> for BitLabel {
     }
 }
 
-// TODO(https://fxbug.dev/375475120): It is easiest to construct a `BitSetMap` inline with a
+// TODO(https://fxbug.dev/375475120): It is easiest to construct a `BitsetMap` inline with a
 //                                    `Reactor`. This means that the mapping is most likely defined
-//                                    far from the data type that represents the bit set. Staleness
+//                                    far from the data type that represents the bitset. Staleness
 //                                    is likely to occur if the mapping or data type change.
 //
 //                                    Provide an additional mechanism for defining this mapping
 //                                    locally to the sampled data type.
-/// A map from index to [`BitLabel`]s that indexes a [`BitSet`] aggregation.
+/// A map from index to [`BitLabel`]s that indexes a [`Bitset`] aggregation.
 ///
-/// A `BitSetMap` maps labels to particular bits in a bit set. These labels cannot change and are
+/// A `BitsetMap` maps labels to particular bits in a bitset. These labels cannot change and are
 /// recorded directly in the metadata for a [`TimeMatrix`].
 ///
 /// [`BitLabel`]: crate::experimental::series::metadata::BitLabel
-/// [`BitSet`]: crate::experimental::series::BitSet
+/// [`Bitset`]: crate::experimental::series::Bitset
 /// [`TimeMatrix`]: crate::experimental::series::TimeMatrix
 #[derive(Clone, Debug)]
-pub struct BitSetMap {
+pub struct BitsetMap {
     labels: BTreeMap<usize, BitLabel>,
 }
 
-impl BitSetMap {
-    // TODO(https://fxbug.dev/460232058): Consider merging `BitSetMap` and
-    // `DenseBitSetMap`. `DenseBitSetMap` provides behavior similar to
+impl BitsetMap {
+    // TODO(https://fxbug.dev/460232058): Consider merging `BitsetMap` and
+    // `DenseBitsetMap`. `DenseBitsetMap` provides behavior similar to
     // `from_ordered` but avoids the hashing and allocations needed to create a
-    // BitSetMap.
+    // BitsetMap.
     pub fn from_ordered<I>(labels: I) -> Self
     where
         I: IntoIterator,
         I::Item: Into<BitLabel>,
     {
-        BitSetMap { labels: labels.into_iter().map(Into::into).enumerate().collect() }
+        BitsetMap { labels: labels.into_iter().map(Into::into).enumerate().collect() }
     }
 
     pub fn from_indexed<T, I>(labels: I) -> Self
@@ -112,7 +112,7 @@ impl BitSetMap {
         T: Into<BitLabel>,
         I: IntoIterator<Item = (usize, T)>,
     {
-        BitSetMap {
+        BitsetMap {
             labels: labels
                 .into_iter()
                 .unique_by(|(index, _)| *index)
@@ -150,18 +150,18 @@ fn record_bit_labels_inner<I: Iterator<Item = (usize, L)>, L: AsRef<str>>(node: 
     });
 }
 
-/// Provides implementation of [`Metadata`]  similar to [`BitSetMap`] that
+/// Provides implementation of [`Metadata`]  similar to [`BitsetMap`] that
 /// requires a dense (i.e. not sparse) set of bit indices.
-pub struct DenseBitSetMap<I, F>(F, PhantomData<I>);
+pub struct DenseBitsetMap<I, F>(F, PhantomData<I>);
 
-impl<I, F> DenseBitSetMap<I, F> {
-    /// Creates a new [`DenseBitSetMap`] from a function that generates labels.
+impl<I, F> DenseBitsetMap<I, F> {
+    /// Creates a new [`DenseBitsetMap`] from a function that generates labels.
     pub fn new(labels: F) -> Self {
-        DenseBitSetMap(labels, PhantomData)
+        DenseBitsetMap(labels, PhantomData)
     }
 }
 
-impl<I, F> Metadata for DenseBitSetMap<I, F>
+impl<I, F> Metadata for DenseBitsetMap<I, F>
 where
     I: Iterator,
     I::Item: Into<BitLabel>,
@@ -172,25 +172,25 @@ where
     }
 }
 
-/// A reference to an Inspect node that indexes a [`BitSet`] aggregation.
+/// A reference to an Inspect node that indexes a [`Bitset`] aggregation.
 ///
-/// A `BitSetNode` provides a path to an Inspect node in which each key represents a bit index and
-/// each value represents a label. Unlike [`BitSetMap`], this index is not tightly coupled to a
+/// A `BitsetNode` provides a path to an Inspect node in which each key represents a bit index and
+/// each value represents a label. Unlike [`BitsetMap`], this index is not tightly coupled to a
 /// served [`TimeMatrix`] and the index may be dynamic.
 ///
 /// Only the path to the Inspect node is recorded in the metadata for a [`TimeMatrix`].
 ///
-/// [`BitSet`]: crate::experimental::series::BitSet
-/// [`BitSetMap`]: crate::experimental::series::metadata::BitSetMap
+/// [`Bitset`]: crate::experimental::series::Bitset
+/// [`BitsetMap`]: crate::experimental::series::metadata::BitsetMap
 /// [`TimeMatrix`]: crate::experimental::series::TimeMatrix
 #[derive(Clone, Debug)]
-pub struct BitSetNode {
+pub struct BitsetNode {
     path: Cow<'static, str>,
 }
 
-impl BitSetNode {
+impl BitsetNode {
     pub fn from_path(path: impl Into<Cow<'static, str>>) -> Self {
-        BitSetNode { path: path.into() }
+        BitsetNode { path: path.into() }
     }
 
     fn record(&self, node: &Node) {
@@ -198,32 +198,32 @@ impl BitSetNode {
     }
 }
 
-/// Metadata for a [`BitSet`] aggregation that indexes bits with textual labels.
+/// Metadata for a [`Bitset`] aggregation that indexes bits with textual labels.
 ///
-/// [`BitSet`]: crate::experimental::series::BitSet
+/// [`Bitset`]: crate::experimental::series::Bitset
 #[derive(Clone, Debug)]
-pub enum BitSetIndex {
-    Map(BitSetMap),
-    Node(BitSetNode),
+pub enum BitsetIndex {
+    Map(BitsetMap),
+    Node(BitsetNode),
 }
 
-impl From<BitSetMap> for BitSetIndex {
-    fn from(metadata: BitSetMap) -> Self {
-        BitSetIndex::Map(metadata)
+impl From<BitsetMap> for BitsetIndex {
+    fn from(metadata: BitsetMap) -> Self {
+        BitsetIndex::Map(metadata)
     }
 }
 
-impl From<BitSetNode> for BitSetIndex {
-    fn from(metadata: BitSetNode) -> Self {
-        BitSetIndex::Node(metadata)
+impl From<BitsetNode> for BitsetIndex {
+    fn from(metadata: BitsetNode) -> Self {
+        BitsetIndex::Node(metadata)
     }
 }
 
-impl Metadata for BitSetIndex {
+impl Metadata for BitsetIndex {
     fn record(&self, node: &Node) {
         match self {
-            BitSetIndex::Map(metadata) => metadata.record(node),
-            BitSetIndex::Node(metadata) => metadata.record(node),
+            BitsetIndex::Map(metadata) => metadata.record(node),
+            BitsetIndex::Node(metadata) => metadata.record(node),
         }
     }
 }

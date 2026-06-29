@@ -16,7 +16,7 @@ use crate::experimental::clock::MonotonicityError;
 use crate::experimental::series::buffer::{BufferStrategy, RingBuffer};
 use crate::experimental::series::interpolation::InterpolationKind;
 use crate::experimental::series::interval::SamplingInterval;
-use crate::experimental::series::{BitSet, Counter, DataSemantic, Gauge, GaugeForceSimple8bRle};
+use crate::experimental::series::{Bitset, Counter, DataSemantic, Gauge, GaugeForceSimple8bRle};
 use crate::experimental::vec1::Vec1;
 
 pub mod recipe {
@@ -575,7 +575,7 @@ impl<T> Statistic for Union<T>
 where
     T: Into<u64> + BitOr<Output = T> + Copy + Default,
 {
-    type Semantic = BitSet;
+    type Semantic = Bitset;
     type Sample = T;
     type Aggregation = T;
 

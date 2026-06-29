@@ -4,12 +4,13 @@
 
 use crate::util::cobalt_logger::log_cobalt_batch;
 use fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload};
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_stats as fidl_stats;
 use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_inspect_contrib::nodes::LruCacheNode;
 use fuchsia_inspect_derive::{InspectNode, Unit};
 use futures::TryFutureExt;
 use futures::lock::Mutex;
-use {fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_stats as fidl_stats};
 
 use log::{error, warn};
 use std::collections::HashMap;
@@ -17,7 +18,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use windowed_stats::experimental::inspect::{InspectSender, InspectedTimeMatrix};
 use windowed_stats::experimental::series::interpolation::{ConstantSample, LastSample};
-use windowed_stats::experimental::series::metadata::BitSetNode;
+use windowed_stats::experimental::series::metadata::BitsetNode;
 use windowed_stats::experimental::series::statistic::{
     ArithmeticMean, Last, LatchMax, Max, Min, PostAggregation, Sum, Union,
 };
@@ -635,7 +636,7 @@ impl SignalTimeSeries {
                 SamplingProfile::highly_granular(),
                 ConstantSample::default(),
             ),
-            BitSetNode::from_path(format!(
+            BitsetNode::from_path(format!(
                 "{}/{}",
                 inspect_metadata_path,
                 InspectMetadataNode::WLAN_CHANNELS,

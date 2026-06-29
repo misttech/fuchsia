@@ -26,7 +26,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use strum_macros::{Display, EnumIter};
 use windowed_stats::experimental::inspect::{InspectSender, InspectedTimeMatrix};
 use windowed_stats::experimental::series::interpolation::{ConstantSample, LastSample};
-use windowed_stats::experimental::series::metadata::{BitSetMap, BitSetNode};
+use windowed_stats::experimental::series::metadata::{BitsetMap, BitsetNode};
 use windowed_stats::experimental::series::statistic::Union;
 use windowed_stats::experimental::series::{SamplingProfile, TimeMatrix};
 use wlan_common::bss::BssDescription;
@@ -55,7 +55,7 @@ enum ConnectionState {
     PnoScanFailedIdle(PnoScanFailedIdleState),
 }
 
-// Update the ConnectDisconnectTimeSeries BitSetMap when making changes to this enum.
+// Update the ConnectDisconnectTimeSeries BitsetMap when making changes to this enum.
 impl IdEnum for ConnectionState {
     type Id = u8;
     fn to_id(&self) -> Self::Id {
@@ -771,7 +771,7 @@ impl ConnectDisconnectTimeSeries {
                 LastSample::or(0),
             ),
             // Update the ConnectionState IdEnum trait when making changes to this list.
-            BitSetMap::from_ordered(Self::wlan_connectivity_states_bitset_map().iter().copied()),
+            BitsetMap::from_ordered(Self::wlan_connectivity_states_bitset_map().iter().copied()),
         );
         let connected_networks = client.inspect_time_matrix_with_metadata(
             "connected_networks",
@@ -779,7 +779,7 @@ impl ConnectDisconnectTimeSeries {
                 SamplingProfile::granular(),
                 ConstantSample::default(),
             ),
-            BitSetNode::from_path(format!(
+            BitsetNode::from_path(format!(
                 "{}/{}",
                 inspect_metadata_path,
                 InspectMetadataNode::CONNECTED_NETWORKS
@@ -792,7 +792,7 @@ impl ConnectDisconnectTimeSeries {
                 ConstantSample::default(),
             ),
             // This time matrix shares its bit labels with `connected_networks`.
-            BitSetNode::from_path(format!(
+            BitsetNode::from_path(format!(
                 "{}/{}",
                 inspect_metadata_path,
                 InspectMetadataNode::CONNECTED_NETWORKS
@@ -804,7 +804,7 @@ impl ConnectDisconnectTimeSeries {
                 SamplingProfile::granular(),
                 ConstantSample::default(),
             ),
-            BitSetNode::from_path(format!(
+            BitsetNode::from_path(format!(
                 "{}/{}",
                 inspect_metadata_path,
                 InspectMetadataNode::DISCONNECT_SOURCES,
@@ -816,7 +816,7 @@ impl ConnectDisconnectTimeSeries {
                 SamplingProfile::granular(),
                 ConstantSample::default(),
             ),
-            BitSetNode::from_path(format!(
+            BitsetNode::from_path(format!(
                 "{}/{}",
                 inspect_metadata_path,
                 InspectMetadataNode::CONNECT_ATTEMPT_RESULTS,
@@ -831,7 +831,7 @@ impl ConnectDisconnectTimeSeries {
         }
     }
 
-    // TODO(https://fxbug.dev/504712259): Update BitSetMap to accept the enum type
+    // TODO(https://fxbug.dev/504712259): Update BitsetMap to accept the enum type
     // it's associated with rather than constructing bit labels separately like this
     fn wlan_connectivity_states_bitset_map() -> &'static [&'static str] {
         &[

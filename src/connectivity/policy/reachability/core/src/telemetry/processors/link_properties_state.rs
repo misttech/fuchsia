@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use windowed_stats::experimental::inspect::{InspectSender, InspectedTimeMatrix};
 use windowed_stats::experimental::series::interpolation::LastSample;
-use windowed_stats::experimental::series::metadata::{BitSetMap, BitSetNode};
+use windowed_stats::experimental::series::metadata::{BitsetMap, BitsetNode};
 use windowed_stats::experimental::series::statistic::Union;
 use windowed_stats::experimental::series::{SamplingProfile, TimeMatrix};
 
@@ -151,7 +151,7 @@ fn ip_versions_time_series<S: InspectSender>(
         TimeSeriesType::LinkProperties => InspectMetadataNode::LINK_PROPERTIES,
         TimeSeriesType::LinkState => InspectMetadataNode::LINK_STATE,
     };
-    let bitset_node = BitSetNode::from_path(format!("{}/{}", inspect_metadata_path, metadata_node));
+    let bitset_node = BitsetNode::from_path(format!("{}/{}", inspect_metadata_path, metadata_node));
     // A separate time matrix is created for IPv4 and IPv6.
     IpVersions {
         ipv4: single_time_matrix(
@@ -167,7 +167,7 @@ fn ip_versions_time_series<S: InspectSender>(
 fn single_time_matrix<S: InspectSender>(
     client: &S,
     time_series_name: String,
-    bitset_node: BitSetNode,
+    bitset_node: BitsetNode,
 ) -> InspectedTimeMatrix<u64> {
     client.inspect_time_matrix_with_metadata(
         time_series_name,
@@ -361,13 +361,13 @@ impl InspectMetadataNode {
         let link_properties = inspect_node.create_child(Self::LINK_PROPERTIES);
         let link_state = inspect_node.create_child(Self::LINK_STATE);
 
-        let link_properties_metadata = BitSetMap::from_ordered([
+        let link_properties_metadata = BitsetMap::from_ordered([
             "has_address",
             "has_default_route",
             "has_dns",
             "has_http_reachability",
         ]);
-        let link_state_metadata = BitSetMap::from_ordered([
+        let link_state_metadata = BitsetMap::from_ordered([
             "None", "Removed", "Down", "Up", "Local", "Gateway", "Internet",
         ]);
 
