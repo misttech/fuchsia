@@ -17,6 +17,8 @@ from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.utils import host_shell
 
 
+# pylint: disable=protected-access
+# pylint: disable=unused-argument
 class LinuxVirtualUsbPowerHubTests(unittest.TestCase):
     """Unit tests for linux_virtual_usb_hub.py."""
 

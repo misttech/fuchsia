@@ -114,6 +114,7 @@ class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
         )
 
     def _find_usb_bus_id(self) -> str:
+        """Finds the USB bus ID for the target device."""
         vendor_id = "18d1"
         product_ids = {p.lower() for p in ["a02b", "a025", "d00d"]}
 
@@ -122,7 +123,7 @@ class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
             try:
                 target_info = self.ffx.get_target_information()
                 serial = target_info.device.serial_number
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 _LOGGER.warning(
                     "Could not get target serial number from FFX: %s", e
                 )
@@ -139,8 +140,8 @@ class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
                 continue
 
             try:
-                with open(vendor_file, "r") as f_v, open(
-                    product_file, "r"
+                with open(vendor_file, "r", encoding="utf-8") as f_v, open(
+                    product_file, "r", encoding="utf-8"
                 ) as f_p:
                     v_id = f_v.read().strip().lower()
                     p_id = f_p.read().strip().lower()
@@ -151,7 +152,7 @@ class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
                 if serial:
                     if not os.path.exists(serial_file):
                         continue
-                    with open(serial_file, "r") as f_s:
+                    with open(serial_file, "r", encoding="utf-8") as f_s:
                         dev_serial = f_s.read().strip()
                     if dev_serial != serial:
                         continue
