@@ -65,6 +65,8 @@ static CALLBACK_BEFORE_RANGE_COLLECTION: TestCallback = TestCallback::new();
 static CALLBACK_AFTER_RANGE_COLLECTION: TestCallback = TestCallback::new();
 #[cfg(test)]
 static CALLBACK_AFTER_SIZE_CAPTURE: TestCallback = TestCallback::new();
+#[cfg(test)]
+static CALLBACK_AFTER_READ_UNCACHED: TestCallback = TestCallback::new();
 
 pub struct PagedObjectHandle {
     inner: Mutex<Inner>,
@@ -582,6 +584,10 @@ impl PagedObjectHandle {
         let mut buffer = self.handle.allocate_buffer((range.end - range.start) as usize).await;
         let read = self.handle.read(range.start, buffer.as_mut()).await?;
         buffer.as_mut_slice()[read..].fill(0);
+
+        #[cfg(test)]
+        CALLBACK_AFTER_READ_UNCACHED.call();
+
         Ok(buffer)
     }
 
@@ -1595,32 +1601,27 @@ mod tests {
     use super::*;
     use crate::fuchsia::directory::FxDirectory;
     use crate::fuchsia::file::FxFile;
-    use crate::fuchsia::node::{FxNode, OpenedNode};
-    use crate::fuchsia::pager::{PageInRange, PagerPacketReceiverRegistration, default_page_in};
+    use crate::fuchsia::node::FxNode;
     use crate::fuchsia::testing::{
         TestFixture, TestFixtureOptions, close_dir_checked, close_file_checked, open_file_checked,
     };
-    use crate::fuchsia::volume::{FxVolumeAndRoot, MemoryPressureConfig, READ_AHEAD_SIZE};
+    use crate::fuchsia::volume::{FxVolumeAndRoot, MemoryPressureConfig};
     use anyhow::bail;
     use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy;
     use fidl_fuchsia_io as fio;
     use fuchsia_async as fasync;
     use fuchsia_fs::file;
-    use fuchsia_sync::Condvar;
-    use futures::channel::mpsc::{UnboundedSender, unbounded};
-    use futures::{StreamExt, join};
+    use futures::join;
     use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
+    use fxfs::object_store::NewChildStoreOptions;
     use fxfs::object_store::volume::root_volume;
-    use fxfs::object_store::{Directory, NewChildStoreOptions};
-    use fxfs_macros::ToWeakNode;
     use refaults_vmo::PageRefaultCounter;
-    use std::collections::HashSet;
-    use std::sync::Weak;
     use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
+    use std::sync::{Weak, mpsc};
     use std::time::Duration;
+    use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
-    use storage_device::{DeviceHolder, buffer};
     use test_util::{assert_geq, assert_lt};
 
     const BLOCK_SIZE: u32 = 512;
@@ -2788,209 +2789,176 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fuchsia::test(threads = 8)]
-    async fn test_race() {
-        #[derive(ToWeakNode)]
-        struct File {
-            notifications: UnboundedSender<Op>,
-            handle: PagedObjectHandle,
-            unblocked_requests: Mutex<HashSet<u64>>,
-            cvar: Condvar,
-            pager_packet_receiver_registration: PagerPacketReceiverRegistration<Self>,
-        }
+    // Verifies that if a duplicate page-in races with sync, the second page-in cannot populate the
+    // vmo with old data. While normally a duplicate page-in is dropped by the kernel, if the kernel
+    // reclaims the page after flush it can accept the stale data served from the duplicate supply.
+    // This test ensures that we do not mark the pages clean until all in-flight page-ins are gone
+    // so that the page cannot be reclaimed.
+    #[fuchsia::test(threads = 5)]
+    async fn test_duplicate_page_in_race_with_sync() {
+        let page_size = zx::system_get_page_size() as u64;
 
-        impl File {
-            fn unblock(&self, request: u64) {
-                self.unblocked_requests.lock().insert(request);
-                self.cvar.notify_all();
-            }
-        }
+        // Populate 2 pages with 0x01 to be version 1 of the file.
+        let fixture = TestFixture::new_unencrypted().await;
+        {
+            let (proxy, _object, stream) = open_file_proxy_object_and_stream(&fixture).await;
 
-        impl FxNode for File {
-            fn object_id(&self) -> u64 {
-                self.handle.handle.object_id()
-            }
-
-            fn parent(&self) -> Option<Arc<crate::directory::FxDirectory>> {
-                unimplemented!();
-            }
-
-            fn set_parent(&self, _parent: Arc<crate::directory::FxDirectory>) {
-                unimplemented!();
-            }
-
-            fn open_count_add_one(&self) {}
-
-            fn open_count_sub_one(self: Arc<Self>) {}
-
-            fn object_descriptor(&self) -> fxfs::object_store::ObjectDescriptor {
-                unimplemented!();
-            }
-        }
-
-        impl PagerBacked for File {
-            fn try_keep_open(self: Arc<Self>) -> Result<OpenedNode<Self>, Arc<Self>> {
-                Ok(OpenedNode(self))
-            }
-
-            fn pager(&self) -> &crate::pager::Pager {
-                self.handle.owner().pager()
-            }
-
-            fn pager_packet_receiver_registration(&self) -> &PagerPacketReceiverRegistration<Self> {
-                &self.pager_packet_receiver_registration
-            }
-
-            fn vmo(&self) -> &zx::Vmo {
-                self.handle.vmo()
-            }
-
-            fn page_in(self: Arc<Self>, range: PageInRange<Self>) {
-                default_page_in(self, range, READ_AHEAD_SIZE);
-            }
-
-            fn mark_dirty(self: Arc<Self>, range: MarkDirtyRange<Self>) {
-                self.handle.mark_dirty(range).unwrap();
-            }
-
-            fn on_zero_children(self: Arc<Self>) {}
-
-            fn byte_size(&self) -> u64 {
-                self.handle.uncached_size()
-            }
-
-            async fn aligned_read(&self, range: Range<u64>) -> Result<buffer::Buffer<'_>, Error> {
-                let buffer = self.handle.read_uncached(range).await?;
-                static COUNTER: AtomicU64 = AtomicU64::new(0);
-                let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
-                if let Ok(()) = self.notifications.unbounded_send(Op::AfterAlignedRead(counter)) {
-                    let mut unblocked_requests = self.unblocked_requests.lock();
-                    while !unblocked_requests.remove(&counter) {
-                        self.cvar.wait(&mut unblocked_requests);
-                    }
-                }
-                Ok(buffer)
-            }
-        }
-
-        #[derive(Debug)]
-        enum Op {
-            AfterAlignedRead(u64),
-        }
-
-        let fixture = TestFixture::new().await;
-
-        let vol = fixture.volume().volume().clone();
-
-        // Run the test in a separate executor to avoid issues caused by stalling page_in requests
-        // (see `page_in` above).
-        std::thread::spawn(move || {
-            fasync::LocalExecutor::default().run_singlethreaded(async move {
-                let root_object_id = vol.store().root_directory_object_id();
-                let root_dir = Directory::open(&vol, root_object_id).await.expect("open failed");
-
-                let file;
-                let mut transaction = vol
-                    .store()
-                    .new_transaction(
-                        lock_keys![LockKey::object(
-                            vol.store().store_object_id(),
-                            root_dir.object_id()
-                        )],
-                        Options::default(),
-                    )
-                    .await
-                    .unwrap();
-                file = root_dir
-                    .create_child_file(&mut transaction, "foo")
-                    .await
-                    .expect("create_child_file failed");
-                {
-                    let mut buf = file.allocate_buffer(100).await;
-                    buf.as_mut_slice().fill(1);
-                    file.txn_write(&mut transaction, 0, buf.as_ref())
-                        .await
-                        .expect("txn_write failed");
-                }
-                transaction.commit().await.unwrap();
-                let (notifications, mut receiver) = unbounded();
-
-                let file = Arc::new_cyclic(|weak| {
-                    let (vmo, pager_packet_receiver_registration) = file
-                        .owner()
-                        .pager()
-                        .create_vmo(
-                            weak.clone(),
-                            file.get_size(),
-                            zx::VmoOptions::RESIZABLE | zx::VmoOptions::TRAP_DIRTY,
-                        )
-                        .unwrap();
-                    File {
-                        notifications,
-                        handle: PagedObjectHandle::new(file, vmo),
-                        unblocked_requests: Mutex::new(HashSet::new()),
-                        cvar: Condvar::new(),
-                        pager_packet_receiver_registration,
-                    }
-                });
-
-                // Trigger a pager request.
-                let cloned_file = file.clone();
-                let thread1 = std::thread::spawn(move || {
-                    cloned_file.vmo().read_to_vec::<u8>(0, 10).unwrap();
-                });
-
-                // Wait for it.
-                let request1 = assert_matches!(
-                    receiver.next().await.unwrap(),
-                    Op::AfterAlignedRead(request1) => request1
-                );
-
-                // Truncate and then grow the file.
-                file.handle.truncate(0).await.expect("truncate failed");
-                file.handle.truncate(100).await.expect("truncate failed");
-
-                // Unblock the first page request after a delay.  The flush should wait for the
-                // request to finish.  If it doesn't, then the page request might finish later and
-                // provide the wrong pages.
-                let cloned_file = file.clone();
-                let thread2 = std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_millis(50));
-                    cloned_file.unblock(request1);
-                });
-
-                file.handle.flush(FlushType::Sync).await.expect("flush failed");
-
-                // We don't care what the original VMO read request returned, but reading now should
-                // return the new content, i.e. zeroes.  The original page-in request would/will
-                // return non-zero content.
-                let file_cloned = file.clone();
-                let thread3 = std::thread::spawn(move || {
-                    assert_eq!(&file_cloned.vmo().read_to_vec::<u8>(0, 10).unwrap(), &[0; 10]);
-                });
-
-                // Wait for the second page request to arrive.
-                let request2 = assert_matches!(
-                    receiver.next().await.unwrap(),
-                    Op::AfterAlignedRead(request2) => request2
-                );
-
-                // If the flush didn't wait for the request to finish (it's a bug if it doesn't) we
-                // want the first page request to complete before the second one, and the only way
-                // we can do that now is to wait.
-                fasync::Timer::new(std::time::Duration::from_millis(100)).await;
-
-                // Unblock the second page request.
-                file.unblock(request2);
-
-                thread1.join().unwrap();
-                thread2.join().unwrap();
-                thread3.join().unwrap();
+            std::thread::spawn(move || {
+                let buf = vec![1u8; page_size as usize * 2];
+                stream
+                    .write_at(zx::StreamWriteOptions::empty(), 0, buf.as_slice())
+                    .expect("Init file contents");
             })
-        })
-        .join()
-        .unwrap();
+            .join()
+            .unwrap();
+            proxy.sync().await.unwrap().expect("Sync");
+        }
 
+        // Remount to clear the cached vmo.
+        let device = fixture.close().await;
+        let fixture = TestFixture::open(
+            device,
+            TestFixtureOptions { encrypted: false, format: false, ..Default::default() },
+        )
+        .await;
+        {
+            let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
+
+            // ASCII approximation of a UML sequence diagram. Time flows down. The arrow destination
+            // does not proceed until the action described by the arrow is triggered from the arrow
+            // source.
+            //
+            // stream_write             test                 stream_read                 sync
+            //   |                        |                        |                       |
+            //   |   spawn stream_write  | |                       |                       |
+            //  | | <|-------------------| |                       |                       |
+            //  | |                      | |                       |                       |
+            //  | |                      | |                       |                       |
+            //  | |    first_read_tx     | |                       |                       |
+            //  | |--------------------|>| |                       |                       |
+            //  | |                      | |  spawn stream_read    |                       |
+            //  | |                      | | -------------------|>| |                      |
+            //  | |                      | |                      | |                      |
+            //  | |                      | |                      | |                      |
+            //  | |                      | |    second_read tx    | |                      |
+            //  | |<|---------------------------------------------| |                      |
+            //  | |                      | |                      | |                      |
+            //  | |                      | |                      | |                      |
+            //  | |                      | |                      | |                      |
+            //  | |  await stream_write  | |                      | |                      |
+            //    ---------------------|>| |                      | |                      |
+            //   |                       | |                      | |      spawn sync      |
+            //   |                       | | -------------------------------------------|>| |
+            //   |                       | |                      | |                     | |
+            //   |                       | |                      | |                     | |
+            //   |                       | |     Data flushed     | |     to disk         | |
+            //   |                       | |<|--------------------------------------------| |
+            //   |                       | |                      | |                     | |
+            //   |                       | |                      | |                     | |
+            //   |        Sleep for sync to block on epoch        | |                     | |
+            //   |                       | |                      | |                     | |
+            //   |                       | |                      | |                     | |
+            //   |                 Bytes still dirty              | |                     | |
+            //   |                       | |                      | |                     | |
+            //   |                       | |                      | |                     | |
+            //   |                       | |  syncing_blocked_tx  | |                     | |
+            //   |                       | |--------------------|>| |                     | |
+            //   |                       | |                      | |    epoch dropped    | |
+            //   |                       | |                      | |-------------------|>| |
+            //   |                       | |   await stream_read  | |                     | |
+            //   |                       | |<|--------------------| |                     | |
+            //   |                       | |                       |                      | |
+            //   |                       | |     await sync        |                      | |
+            //   |                       | |<|--------------------------------------------| |
+            //   |                       | |                       |                       |
+            //   |                        |                        |                       |
+
+            // The actions_* channel is used to pipe a sender and receiver to each read that we want
+            // to block. Those function as oneshot signals to send out that they've reached the
+            // critical point and wait to before moving on from it. They need to be sync in places
+            // so we can't use the fasync oneshot.
+            let (actions_tx, actions_rx) =
+                mpsc::channel::<(mpsc::Sender<()>, mpsc::Receiver<()>)>();
+            let actions_rx = Mutex::new(actions_rx);
+            let guard = CALLBACK_AFTER_READ_UNCACHED.set(move || {
+                let (tx, rx) = actions_rx.lock().recv().unwrap();
+                tx.send(()).expect("Sending one-shot");
+                rx.recv().expect("Awaiting one-shot");
+            });
+            // These should all be one-shots but they need to be sync, and sync
+            // one-shots are still in nightly.
+            let (first_read_tx, first_read_rx) = mpsc::channel::<()>();
+            let (second_read_tx, second_read_rx) = mpsc::channel::<()>();
+            let (syncing_blocked_tx, syncing_blocked_rx) = mpsc::channel::<()>();
+            actions_tx.send((first_read_tx, second_read_rx)).expect("Sending actions");
+            actions_tx.send((second_read_tx, syncing_blocked_rx)).expect("Sending actions");
+
+            // Now write version 2 directly to stream. This will trigger a read first, but we don't
+            // want the read to complete until after the next parallel read is part-way done.
+            let stream_clone = stream.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+            let write_thread = fasync::unblock(move || {
+                stream_clone
+                    .write_at(zx::StreamWriteOptions::empty(), page_size, &[2u8; 10])
+                    .expect("stream_write");
+            });
+
+            // Wait for it to get blocked.
+            first_read_rx.recv().unwrap();
+
+            // Trigger a read request at a different unpopulated page in parallel. This will spawn
+            // an async page_in request on the executor holding an EpochGuard and unblock the first
+            // stream request.
+            let stream_clone = stream.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+            let read_thread = fasync::unblock(move || {
+                stream_clone.read_to_vec(zx::StreamReadOptions::empty(), 8).expect("stream_read");
+            });
+
+            write_thread.await;
+
+            // Start sync, and see that it is blocked at a point where the data is updated but the
+            // pages aren't marked clean yet. It is critical that the page in barrier is there.
+            let (syncing_done_tx, syncing_done_rx) = mpsc::channel::<()>();
+            let sync_task = fasync::Task::spawn(async move {
+                proxy.sync().await.unwrap().expect("Sync");
+                syncing_done_tx.send(()).unwrap();
+            });
+            // Drop the guard so that these reads don't get blocked.
+            std::mem::drop(guard);
+            while object
+                .handle()
+                .read_uncached(page_size..(page_size * 2))
+                .await
+                .unwrap()
+                .as_slice()[0]
+                == 1u8
+            {
+                fasync::Timer::new(std::time::Duration::from_millis(50)).await;
+            }
+            // Wait at least this long after data is confirmed written out and check that it still
+            // hasn't finished so that we know it is well and truly blocked.
+            fasync::Timer::new(std::time::Duration::from_millis(50)).await;
+            assert_matches!(syncing_done_rx.try_recv(), Err(mpsc::TryRecvError::Empty));
+            assert!(
+                object
+                    .handle()
+                    .collect_modified_ranges()
+                    .expect("Collecting ranges")
+                    .iter()
+                    .any(|r| r.range().contains(&page_size))
+            );
+
+            // Release the second read and everything finishes.
+            syncing_blocked_tx.send(()).unwrap();
+            read_thread.await;
+            sync_task.await;
+
+            assert_eq!(
+                stream
+                    .read_at_to_vec(zx::StreamReadOptions::empty(), page_size, 10)
+                    .expect("Reading"),
+                vec![2u8; 10]
+            );
+        }
         fixture.close().await;
     }
 
