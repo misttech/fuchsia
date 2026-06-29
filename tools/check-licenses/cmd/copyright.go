@@ -9,15 +9,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"sync"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/subcommands"
-
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/classify"
 )
 
 type CopyrightCommand struct {
@@ -92,51 +91,105 @@ func (c *CopyrightAddCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 
 type CopyrightCheckCommand struct {
 	fuchsiaDir string
+	fileList   string
 }
 
 func (*CopyrightCheckCommand) Name() string     { return "check" }
 func (*CopyrightCheckCommand) Synopsis() string { return "Check if file has copyright header." }
 func (*CopyrightCheckCommand) Usage() string {
-	return `check <file_path>:
-  Checks if the file contains the Fuchsia copyright header.
-  Fails with exit code 1 if missing.
+	return `check [-file-list <path>] [<file_path>...]:
+  Checks if the files contain the Fuchsia copyright header.
+  Use -file-list to specify a file containing paths to check, one per line.
+  Prints the paths of files missing headers to stdout.
+  Fails with exit code 1 if any file is missing a header.
 `
 }
 
-func (c *CopyrightCheckCommand) SetFlags(f *flag.FlagSet) {}
+func (c *CopyrightCheckCommand) SetFlags(f *flag.FlagSet) {
+	f.StringVar(&c.fileList, "file-list", "", "Path to a file containing a list of file paths to check, one per line.")
+}
 
 func (c *CopyrightCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
-	if f.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, "Error: exactly one file path must be provided.")
+	var targets []string
+
+	if c.fileList != "" {
+		absFileList := c.fileList
+		if !filepath.IsAbs(absFileList) {
+			absFileList = filepath.Join(c.fuchsiaDir, c.fileList)
+		}
+		content, err := os.ReadFile(absFileList)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading file list %s: %v\n", c.fileList, err)
+			return subcommands.ExitStatus(3) // System error
+		}
+		for _, line := range strings.Split(string(content), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				targets = append(targets, line)
+			}
+		}
+	} else {
+		targets = f.Args()
+	}
+
+	if len(targets) == 0 {
+		fmt.Fprintln(os.Stderr, "Error: at least one file path must be provided, or use -file-list.")
 		return subcommands.ExitUsageError
 	}
 
-	targetFile := f.Arg(0)
-	fuchsiaDir, targetFile, err := ResolveAndValidatePath(c.fuchsiaDir, targetFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return subcommands.ExitFailure
+	hasErrors := false
+	hasMissingCopyright := false
+	for _, targetFile := range targets {
+		fuchsiaDir, resolvedPath, err := ResolveAndValidatePath(c.fuchsiaDir, targetFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error resolving %s: %v\n", targetFile, err)
+			hasErrors = true
+			continue
+		}
+
+		hasCopyright, err := CheckCopyright(fuchsiaDir, resolvedPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error checking %s: %v\n", targetFile, err)
+			hasErrors = true
+			continue
+		}
+
+		if !hasCopyright {
+			// Print failed file path to stdout (one per line) for easy parsing
+			fmt.Println(targetFile)
+			hasMissingCopyright = true
+		}
 	}
 
-	hasCopyright, err := CheckCopyright(fuchsiaDir, targetFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return subcommands.ExitFailure
+	if hasErrors {
+		return subcommands.ExitStatus(3) // System/IO error
 	}
-
-	if !hasCopyright {
-		fmt.Printf("❌ Fuchsia copyright header missing in %s\n", targetFile)
-		return subcommands.ExitFailure
+	if hasMissingCopyright {
+		return subcommands.ExitFailure // 1
 	}
-
-	fmt.Printf("✅ Fuchsia copyright header found in %s\n", targetFile)
-	return subcommands.ExitSuccess
+	return subcommands.ExitSuccess // 0
 }
 
-var (
-	globalClassifier *classify.Classifier
-	classifierOnce   sync.Once
-	classifierErr    error
+var commentCleaner = strings.NewReplacer(
+	"//", " ",
+	"/*", " ",
+	"*/", " ",
+	"#", " ",
+	";", " ",
+	"*", " ",
+	"\r", " ",
+	"\n", " ",
+	"\t", " ",
+)
+
+// Standard Fuchsia/Chromium/Android copyright regex (strict).
+// It matches the exact core license text to enforce the correct standard.
+// It ignores comment prefixes and other whitespace text via commentCleaner.
+var copyrightRegex = regexp.MustCompile(
+	`(?i)Copyright\s+[0-9,\-\s]+The\s+Fuchsia\s+Authors\.?\s*` +
+		`(?:\s*All\s+rights\s+reserved\.?)?\s+` +
+		`Use\s+of\s+this\s+source\s+code\s+is\s+governed\s+by\s+a\s+BSD-style\s+license\s+` +
+		`that\s+can\s+be\s+found\s+in\s+the\s+LICENSE\s+file`,
 )
 
 // CheckCopyright verifies if a file has a Fuchsia copyright header.
@@ -146,45 +199,35 @@ func CheckCopyright(fuchsiaDir, filePath string) (bool, error) {
 		absPath = filepath.Join(fuchsiaDir, filePath)
 	}
 
-	patternsDir := filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "patterns")
-
-	classifierOnce.Do(func() {
-		globalClassifier, classifierErr = classify.NewClassifier(0.8, []string{patternsDir}, nil)
-	})
-	if classifierErr != nil {
-		return false, fmt.Errorf("failed to initialize classifier: %w", classifierErr)
+	// Skip empty files (size 0). They are not required to have copyright headers.
+	stat, err := os.Stat(absPath)
+	if err == nil && stat.Size() == 0 {
+		return true, nil
 	}
 
-	inChan := make(chan pipeline.FilteredProject, 1)
-	inChan <- pipeline.FilteredProject{
-		Project: pipeline.Project{
-			RootPath: filepath.Dir(absPath),
-			Files:    []pipeline.FileInfo{{Path: absPath}},
-		},
-	}
-	close(inChan)
-
-	ctx := context.Background()
-	outChan, err := globalClassifier.Run(ctx, inChan)
+	// We only need to read the beginning of the file.
+	// 8192 bytes should be more than enough for the copyright header,
+	// even if there are large third-party headers before it.
+	f, err := os.Open(absPath)
 	if err != nil {
-		return false, fmt.Errorf("failed to run classifier: %w", err)
+		return false, err
+	}
+	defer f.Close()
+
+	buf := make([]byte, 8192)
+	n, err := f.Read(buf)
+	if err != nil && err != io.EOF {
+		return false, err
 	}
 
-	var result pipeline.ClassifiedFile
-	for cf := range outChan {
-		result = cf
-	}
-
-	for _, match := range result.Matches {
-		if match.SPDXID == "FuchsiaCopyright" {
-			return true, nil
-		}
-	}
-
-	return false, nil
+	cleaned := commentCleaner.Replace(string(buf[:n]))
+	return copyrightRegex.MatchString(cleaned), nil
 }
 
 // ApplyCopyrightFix analyzes a file and adds a Fuchsia copyright header if missing.
+// Note: If a file has a nearly-correct but non-matching copyright header, this
+// tool will prepend a new one, resulting in double headers. The developer must
+// manually resolve this.
 func ApplyCopyrightFix(fuchsiaDir, filePath string, printStdout bool) error {
 	absPath := filePath
 	if !filepath.IsAbs(filePath) {
@@ -256,12 +299,7 @@ func addCopyright(filePath string) ([]byte, error) {
 
 	year := time.Now().Year()
 
-	var header string
-	if commentPrefix == "rem" {
-		header = fmt.Sprintf("%s Copyright %d The Fuchsia Authors. All rights reserved.\n%s Use of this source code is governed by a BSD-style license that can be\n%s found in the LICENSE file.\n\n", commentPrefix, year, commentPrefix, commentPrefix)
-	} else {
-		header = fmt.Sprintf("%s Copyright %d The Fuchsia Authors. All rights reserved.\n%s Use of this source code is governed by a BSD-style license that can be\n%s found in the LICENSE file.\n\n", commentPrefix, year, commentPrefix, commentPrefix)
-	}
+	header := fmt.Sprintf("%s Copyright %d The Fuchsia Authors. All rights reserved.\n%s Use of this source code is governed by a BSD-style license that can be\n%s found in the LICENSE file.\n\n", commentPrefix, year, commentPrefix, commentPrefix)
 
 	content, err := os.ReadFile(filePath)
 	if err != nil {
