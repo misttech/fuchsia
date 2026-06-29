@@ -11,7 +11,6 @@
 mod vec1;
 
 pub mod clock;
-pub mod event;
 pub mod inspect;
 pub mod series;
 pub mod testing;

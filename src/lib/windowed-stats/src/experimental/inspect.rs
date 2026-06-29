@@ -175,16 +175,6 @@ impl<T> InspectedTimeMatrix<T> {
             warn!("failed to fold sample into time matrix \"{}\": {:?}", self.name, error);
         }
     }
-
-    /// Fold a sample with the given timestamp.
-    ///
-    /// This API was only added to avoid breaking changes to the `serve` API, which is
-    /// currently unused.
-    ///
-    /// TODO(https://fxbug.dev/457423931) - Remove this API
-    pub(crate) fn fold_at(&self, sample: Timed<T>) -> Result<(), FoldError> {
-        self.matrix.lock().fold(sample)
-    }
 }
 
 /// Records a lazy child node in the given node that records buffers and metadata for the given
