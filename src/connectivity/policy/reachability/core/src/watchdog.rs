@@ -13,7 +13,7 @@ use crate::{Id as InterfaceId, InterfaceView};
 use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
 use itertools::Itertools as _;
 use log::{debug, error, info, warn};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// The minimum amount of time for a device counter to be stuck in the same
 /// value for the device to be considered unhealthy.
@@ -290,16 +290,13 @@ where
         debug!(iface = interface; "evaluate interface state");
 
         let mut neighbors = neighbors.as_ref()?.iter_health();
+        let router_next_hops: HashSet<_> =
+            routes.device_routes(interface.get()).filter_map(|route| route.next_hop).collect();
         let found_healthy_gateway = neighbors
             .fold_while(None, |found_healthy_gateway, (neighbor, health)| {
-                let is_router = routes.device_routes(interface.get()).any(|route| {
-                    route.next_hop.map(|next_hop| *neighbor == next_hop).unwrap_or(false)
-                });
-
-                if !is_router {
+                if !router_next_hops.contains(neighbor) {
                     return itertools::FoldWhile::Continue(found_healthy_gateway);
                 }
-
                 let gateway_health = GatewayHealth::from_neighbor_health(health, now);
                 debug!(
                     iface = interface,

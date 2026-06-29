@@ -32,6 +32,7 @@ use named_timer::DeadlineId;
 use net_declare::{fidl_subnet, std_ip};
 use net_types::ScopeableAddress as _;
 use num_derive::FromPrimitive;
+use std::collections::HashSet;
 use std::collections::hash_map::{Entry, HashMap};
 
 use std::net::IpAddr;
@@ -1582,14 +1583,11 @@ fn scan_neighbor_health(
     match neighbors {
         None => Default::default(),
         Some(neighbors) => {
+            let router_next_hops: HashSet<_> =
+                device_routes.iter().filter_map(|Route { next_hop, .. }| *next_hop).collect();
             neighbors.iter_health().fold(
                 Default::default(),
                 |mut neighbor_health_scan, (neighbor, health)| {
-                    let is_router = device_routes.iter().any(
-                        |Route { destination: _, outbound_interface: _, next_hop }| {
-                            next_hop.map(|next_hop| *neighbor == next_hop).unwrap_or(false)
-                        },
-                    );
                     match health {
                         // When we find an unhealthy or unknown neighbor, continue,
                         // keeping whether we've previously found a healthy neighbor.
@@ -1604,7 +1602,7 @@ fn scan_neighbor_health(
                                 fnet::IpAddress::Ipv6(..) => &mut neighbor_health_scan.ipv6,
                             };
 
-                            scan.update_scan_result(is_router);
+                            scan.update_scan_result(router_next_hops.contains(neighbor));
                             neighbor_health_scan
                         }
                     }
