@@ -397,4 +397,32 @@ TEST(BufferTest, ConcurrentStreaming) {
   reader_thread.join();
   EXPECT_TRUE(verify_buffer(streamed_data));
 }
+
+TEST(RollingBufferTest, AllocRecordNextBufferTooSmall) {
+  RollingBuffer buffer;
+  std::vector<uint8_t> backing_buffer1(kTestBufferSize);
+  // Next buffer is smaller, e.g. 16 bytes
+  std::vector<uint8_t> backing_buffer2(16);
+  buffer.SetDoubleBuffers(std::span(backing_buffer1), std::span(backing_buffer2));
+
+  // Fill up the first buffer
+  ASSERT_TRUE(std::holds_alternative<Allocation>(buffer.AllocRecord(kTestBufferSize)));
+
+  // Try to allocate 32 bytes. It doesn't fit in backing_buffer1 (which is full).
+  // It rolls to backing_buffer2, which is only 16 bytes.
+  // This should return BufferFull, NOT a SwitchingAllocation.
+  AllocationResult result = buffer.AllocRecord(32);
+  EXPECT_TRUE(std::holds_alternative<BufferFull>(result));
+}
+
+TEST(RollingBufferTest, OneshotAllocationTooLarge) {
+  RollingBuffer buffer;
+  std::vector<uint8_t> backing_buffer(kTestBufferSize);
+  buffer.SetOneshotBuffer(std::span(backing_buffer));
+
+  // Try to allocate more than kTestBufferSize
+  AllocationResult result = buffer.AllocRecord(kTestBufferSize + 8);
+  EXPECT_TRUE(std::holds_alternative<BufferFull>(result));
+}
+
 }  // namespace

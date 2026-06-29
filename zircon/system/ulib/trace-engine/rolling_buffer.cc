@@ -114,6 +114,10 @@ AllocationResult RollingBuffer::AllocRecord(size_t num_bytes) {
       if (rolling_buffers_[1].size_bytes() == 0) {
         return BufferFull{};
       }
+      if (num_bytes >
+          rolling_buffers_[static_cast<uint8_t>(NextBuffer(buffer_number))].size_bytes()) {
+        return BufferFull{};
+      }
       service_required = std::optional<RollingBufferState>{expected};
       // To roll the buffer, we need to:
       //
@@ -124,6 +128,10 @@ AllocationResult RollingBuffer::AllocRecord(size_t num_bytes) {
                     .WithOffset(static_cast<uint32_t>(num_bytes))
                     .WithNextWrappedCount();
     } else {
+      if (unlikely(num_bytes >
+                   rolling_buffers_[static_cast<uint8_t>(buffer_number)].size_bytes())) {
+        return BufferFull{};
+      }
       desired = expected.WithAllocatedBytes(static_cast<uint32_t>(num_bytes));
     }
 
