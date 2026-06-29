@@ -222,18 +222,17 @@ void RxQueue::CompleteRxList(
                   "too many buffer parts in rx buffer: %ld", rx_buffer.data.size());
     std::array<SessionRxBuffer, netdriver::wire::kMaxBufferParts> session_parts;
     auto session_parts_iter = session_parts.begin();
-    bool drop_frame = false;
     uint32_t total_length = 0;
 
     cpp20::span rx_parts = rx_buffer.data.get();
-    if (rx_parts.size() == 0) {
+    if (rx_parts.empty()) {
       // Buffer contained no parts.
       LOG_WARN("attempted to return an rx buffer with no parts");
       continue;
     }
 
     for (const fuchsia_hardware_network_driver::wire::RxBufferPart& rx_part : rx_parts) {
-      InFlightBuffer& in_flight_buffer = in_flight_->Get(rx_part.id);
+      const InFlightBuffer& in_flight_buffer = in_flight_->Get(rx_part.id);
 
       total_length += rx_part.length;
       *session_parts_iter++ = SessionRxBuffer{
@@ -243,8 +242,8 @@ void RxQueue::CompleteRxList(
       };
     }
 
-    // Drop any frames containing no data or where inconsistencies were found above.
-    if (total_length == 0 || drop_frame) {
+    // Drop any frames containing no data.
+    if (total_length == 0) {
       for (const fuchsia_hardware_network_driver::wire::RxBufferPart& rx_part : rx_parts) {
         session_->AssertParentRxLock(*parent_);
         if (session_->CompleteUnfulfilledRx()) {
