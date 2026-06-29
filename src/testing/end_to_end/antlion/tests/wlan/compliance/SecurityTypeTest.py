@@ -44,6 +44,7 @@ from openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper,
 )
 from openwrt_access_point.lib.uci_bss_options import UciBssOptions
+from openwrt_access_point.lib.uci_options import VendorElements
 from openwrt_access_point.lib.uci_radio_options import UciRadioOptions
 
 AP_11ABG_PROFILE_NAME = "whirlwind_11ag_legacy"
@@ -107,6 +108,13 @@ class MacPhyTestParams:
 @dataclass
 class PmfTestParams:
     security: SecurityWpa2 | SecurityWpa2Wpa3Mixed
+    band: Band
+
+
+@dataclass
+class VendorIeTestParams:
+    vendor_ie_type: str
+    security: SecurityWpa2
     band: Band
 
 
@@ -404,6 +412,50 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             test_logic=self._run_pmf_test,
             name_func=generate_pmf_test_name,
             arg_sets=pmf_args,
+        )
+
+        vendor_ie_args: list[tuple[VendorIeTestParams]] = []
+        vendor_ie_types = [
+            VendorElements.CORRECT_LENGTH,
+            VendorElements.ZERO_LENGTH_WITHOUT_DATA,
+            VendorElements.SIMILAR_TO_WPA,
+        ]
+        for vendor_ie_type in vendor_ie_types:
+            vendor_ie_args.append(
+                (
+                    VendorIeTestParams(
+                        vendor_ie_type=vendor_ie_type,
+                        security=SecurityWpa2(cipher="ccmp"),
+                        band=self.rng.choice([Band.BAND_2G, Band.BAND_5G]),
+                    ),
+                )
+            )
+
+        def generate_vendor_ie_test_name(params: VendorIeTestParams) -> str:
+            band_name = _get_band_name(params.band)
+            if params.vendor_ie_type == VendorElements.CORRECT_LENGTH:
+                ie_name = "correct_length"
+            elif (
+                params.vendor_ie_type == VendorElements.ZERO_LENGTH_WITHOUT_DATA
+            ):
+                ie_name = "zero_length"
+            elif params.vendor_ie_type == VendorElements.SIMILAR_TO_WPA:
+                ie_name = "similar_to_wpa"
+            else:
+                raise ValueError(
+                    f"Unknown vendor_ie_type: {params.vendor_ie_type}"
+                )
+            name = (
+                f"test_associate_{band_name}_{ie_name}_vendor_ie_"
+                f"{params.security.uci_encryption}"
+            )
+            self.log.info(f"Generated test case: {name}")
+            return name
+
+        self.generate_tests(
+            test_logic=self._run_vendor_ie_test,
+            name_func=generate_vendor_ie_test_name,
+            arg_sets=vendor_ie_args,
         )
 
     async def setup_class(self) -> None:
@@ -899,6 +951,92 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 security=legacy_security,
                 pmf_support=security.pmf_support,
                 force_wmm=False,
+            )
+
+        await self.dut.wlan_policy.save_network(
+            ssid,
+            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+            target_pwd=password,
+        )
+        await self.dut.wlan_policy.connect(
+            ssid,
+            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+        )
+
+    async def _run_vendor_ie_test(self, params: VendorIeTestParams) -> None:
+        """Helper to run a Vendor IE test case (hybrid)."""
+        band = params.band
+        password = AccessPointConfig.random_string(length=10)
+        ssid = AccessPointConfig.random_string(SSID_LENGTH_DEFAULT)
+        security = params.security
+
+        if self.openwrt_ap:
+            custom_bss_options = UciBssOptions(
+                vendor_elements=[params.vendor_ie_type]
+            )
+
+            channel = band.default_bss_channel
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig(
+                        channel=channel,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=ssid,
+                                security=security,
+                                password=password,
+                                custom_uci_options=custom_bss_options,
+                            )
+                        ],
+                    )
+                ]
+            )
+            self.openwrt_ap.configure_wifi(config)
+        elif self.access_point:
+            legacy_security_mode = AccessPointConfigMapper.to_hostapd_security(
+                security
+            )
+
+            assert security.cipher is not None
+            legacy_security = DeprecatedSecurity(
+                security_mode=legacy_security_mode,
+                password=password,
+                wpa_cipher=AccessPointConfigMapper.to_hostapd_cipher(
+                    security.cipher
+                ),
+                wpa2_cipher=AccessPointConfigMapper.to_hostapd_cipher(
+                    security.cipher
+                ),
+            )
+
+            if params.vendor_ie_type == VendorElements.CORRECT_LENGTH:
+                additional_ap_parameters = hostapd_constants.VENDOR_IE[
+                    "correct_length_beacon"
+                ]
+            elif (
+                params.vendor_ie_type == VendorElements.ZERO_LENGTH_WITHOUT_DATA
+            ):
+                additional_ap_parameters = hostapd_constants.VENDOR_IE[
+                    "zero_length_beacon_without_data"
+                ]
+            elif params.vendor_ie_type == VendorElements.SIMILAR_TO_WPA:
+                additional_ap_parameters = hostapd_constants.VENDOR_IE[
+                    "simliar_to_wpa"
+                ]
+            else:
+                raise ValueError(
+                    f"Unknown vendor_ie_type: {params.vendor_ie_type}"
+                )
+
+            setup_ap(
+                access_point=self.access_point,
+                profile_name=AP_11ABG_PROFILE_NAME,
+                channel=band.default_channel,
+                ssid=ssid,
+                security=legacy_security,
+                pmf_support=security.pmf_support,
+                force_wmm=False,
+                additional_ap_parameters=additional_ap_parameters,
             )
 
         await self.dut.wlan_policy.save_network(
