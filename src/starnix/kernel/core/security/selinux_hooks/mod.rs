@@ -490,11 +490,19 @@ pub(in crate::security) fn build_permission_check<'a>(
     security_server.as_permission_check(&current_task.security_state.state.local_cache)
 }
 
-/// Security state for a [`crate::vfs::FileObject`] instance. This currently just holds the SID
-/// that the [`crate::task::Task`] that created the file object had.
+/// Security state for a [`crate::vfs::FileObject`] instance.
 #[derive(Debug)]
 pub(super) struct FileObjectState {
     sid: SecurityId,
+    open_state: OnceLock<FileObjectOpenState>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct FileObjectOpenState {
+    /// The SID of the FsNode when it was opened.
+    node_sid: SecurityId,
+    /// The policy version (change count) when it was opened.
+    policy_seqno: selinux::PolicySeqNo,
 }
 
 /// Security state for a [`crate::vfs::FileSystem`] instance. This holds the security fields

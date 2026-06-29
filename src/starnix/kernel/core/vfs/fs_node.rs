@@ -1386,10 +1386,6 @@ impl FsNode {
                 permission_flags |= security::PermissionFlags::APPEND;
             }
 
-            // TODO: https://fxbug.dev/455782510 - Remove this once non-open() checks are fully
-            // enforced.
-            permission_flags |= security::PermissionFlags::FOR_OPEN;
-
             self.check_access(
                 locked,
                 current_task,

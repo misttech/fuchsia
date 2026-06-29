@@ -153,6 +153,10 @@ pub(crate) struct SecurityServerBackend {
     policy_change_count: AtomicU32,
 }
 
+/// An opaque identifier for the policy version, which can be used to detect if the policy has changed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PolicySeqNo(u32);
+
 pub struct SecurityServer {
     /// The access vector cache that is shared between threads subject to access control by this
     /// security server.
@@ -338,9 +342,9 @@ impl SecurityServer {
         self.access_vector_cache.cache_stats()
     }
 
-    /// Returns the current policy change count.
-    pub fn policy_change_count(&self) -> u32 {
-        self.backend.policy_change_count.load(Ordering::Relaxed)
+    /// Returns the current policy version.
+    pub fn policy_seqno(&self) -> PolicySeqNo {
+        PolicySeqNo(self.backend.policy_change_count.load(Ordering::Relaxed))
     }
 
     /// Returns the list of all class names.

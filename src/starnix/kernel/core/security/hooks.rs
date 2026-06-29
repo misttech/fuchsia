@@ -69,10 +69,6 @@ bitflags::bitflags! {
         // Internal flag used to indicate that the check is being made on behalf of userspace e.g.
         // via the `access()` syscall.
         const ACCESS = 16 as u32;
-
-        // TODO: https://fxbug.dev/455782510 - Remove this once all fs_node_permission() calls are
-        // enforced.
-        const FOR_OPEN = 32 as u32;
     }
 }
 

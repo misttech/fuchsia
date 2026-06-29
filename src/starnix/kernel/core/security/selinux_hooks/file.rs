@@ -7,9 +7,9 @@
 
 use super::bpf::{check_bpf_map_access, check_bpf_prog_access};
 use super::{
-    FileObjectState, FsNodeSidAndClass, NO_PERMISSIONS, PermissionFlags, build_permission_check,
-    check_permission, current_task_state, fs_node_effective_sid_and_class,
-    has_file_ioctl_permission, has_file_permissions, permissions_from_flags,
+    FileObjectOpenState, FileObjectState, FsNodeSidAndClass, NO_PERMISSIONS, PermissionFlags,
+    build_permission_check, check_permission, current_task_state, fs_node_effective_sid_and_class,
+    has_file_ioctl_permission, has_file_permissions, is_internal_operation, permissions_from_flags,
 };
 use crate::bpf::fs::BpfHandle;
 use crate::mm::{Mapping, MappingNameRef, MappingOptions, ProtectionFlags};
@@ -31,10 +31,14 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserAddress;
 use std::ops::Range;
+use std::sync::OnceLock;
 
 /// Returns the security state for a new file object created by `current_task`.
 pub(in crate::security) fn file_alloc_security(current_task: &CurrentTask) -> FileObjectState {
-    FileObjectState { sid: current_task_state(current_task).current_sid }
+    FileObjectState {
+        sid: current_task_state(current_task).current_sid,
+        open_state: OnceLock::new(),
+    }
 }
 
 /// Checks whether the `current_task` has the specified `permission_flags` to the `file`.
@@ -45,8 +49,20 @@ pub(in crate::security) fn file_permission(
     mut permission_flags: PermissionFlags,
 ) -> Result<(), Errno> {
     let current_sid = current_task_state(current_task).current_sid;
-    let FsNodeSidAndClass { class: file_class, .. } =
+    let FsNodeSidAndClass { class: file_class, sid: node_sid } =
         fs_node_effective_sid_and_class(&file.name.entry.node);
+
+    // Fast-path: If the caller SID, `FsNode` SID, and policy sequence number all match the values
+    // cached by `file_open()` then access checks can be skipped, because `file_open()` has already
+    // (re-)verified the caller's access to the `FsNode`.
+    if let Some(open_state) = file.security_state.state.open_state.get() {
+        if file.security_state.state.sid == current_sid
+            && open_state.node_sid == node_sid
+            && open_state.policy_seqno == security_server.policy_seqno()
+        {
+            return Ok(());
+        }
+    }
 
     // `WRITE` permission checks must distinguish between append-only and full write permissions.
     if permission_flags.contains(PermissionFlags::WRITE) && file.flags().contains(OpenFlags::APPEND)
@@ -70,20 +86,54 @@ pub(in crate::security) fn file_open(
     current_task: &CurrentTask,
     file: &FileObject,
 ) -> Result<(), Errno> {
+    if is_internal_operation(current_task) {
+        return Ok(());
+    }
+
+    // Fast-path: To allow the fast-path optimization in `file_permission()` the caller's
+    // access to the `file`'s underlying `FsNode` must be verified and the `FsNode` SID and policy
+    // sequence number used for that verification stored in the `FileObjectState`.
+    //
+    // The `FsNode` SID and policy sequence number are captured before validating access, to
+    // safeguard against concurrent re-labeling or policy re-loading:
+    // - `FsNode` access is checked manually, rather than delegating to `has_fs_node_permission()`,
+    //   to ensure that the cached SID matches that for which access was validated.
+    // - If the policy is re-loaded then subsequent `file_permission()` calls will observe the later
+    //   sequence number and fail-safe by re-doing the check.
+    let policy_version = security_server.policy_seqno();
+    let FsNodeSidAndClass { sid: node_sid, class } = fs_node_effective_sid_and_class(file.node());
+
+    let current_sid = current_task_state(current_task).current_sid;
+    // `file_alloc_security()` ws called by this task immediately before `file_open()`, so the
+    // `FileObject` must be labeled with this task's SID.
+    assert_eq!(current_sid, file.security_state.state.sid);
+
+    let permission_check = build_permission_check(current_task, security_server);
+    let audit_context = [current_task.into(), file.into()];
+
+    // Fast-path: Verify that the currently has the required `FsNode` access, to allow the fast-path
+    // in `file_permission()` to safely skip subsequent re-validation.
+    let mut open_permissions = permissions_from_flags(file.flags().into(), class);
     if security_server.is_policycap_enabled(PolicyCap::OpenPerms) {
-        let current_sid = current_task_state(current_task).current_sid;
-        let FsNodeSidAndClass { class, .. } = fs_node_effective_sid_and_class(file.node());
         if let FsNodeClass::File(file_class) = class {
-            has_file_permissions(
-                &build_permission_check(current_task, security_server),
-                current_task,
-                current_sid,
-                file,
-                &[CommonFilePermission::Open.for_class(file_class)],
-                current_task.into(),
-            )?;
+            open_permissions.push(CommonFilePermission::Open.for_class(file_class));
         }
     }
+    for permission in open_permissions {
+        check_permission(
+            &permission_check,
+            current_task,
+            current_sid,
+            node_sid,
+            permission,
+            (&audit_context).into(),
+        )?;
+    }
+
+    // Fast-path: Cache the `FsNode` SID and policy sequence number for which access was validated.
+    let open_state = FileObjectOpenState { node_sid, policy_seqno: policy_version };
+    file.security_state.state.open_state.set(open_state).expect("file_open() called at most once");
+
     Ok(())
 }
 

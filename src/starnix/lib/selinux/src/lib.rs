@@ -13,7 +13,7 @@ mod new_policy;
 
 pub use access_vector_cache::{AccessQueryArgs, DEFAULT_SHARED_SIZE, QueryCacheCapacity};
 pub use concurrent_access_cache::{AccessCacheStorage, ConcurrentAccessCache};
-pub use security_server::SecurityServer;
+pub use security_server::{PolicySeqNo, SecurityServer};
 
 mod access_vector_cache;
 mod cache_stats;

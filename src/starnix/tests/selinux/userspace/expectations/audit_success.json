@@ -13,6 +13,10 @@
             ]
         },
         {
+            "name": "AppendTest.WriteDeniedAfterOAppendClearedByPeer",
+            "audit_expectations": []
+        },
+        {
             "name": "AuditAccessTest.AccessWithDontAudit",
             "audit_expectations": []
         },
