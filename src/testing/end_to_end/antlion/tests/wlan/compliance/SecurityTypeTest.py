@@ -42,11 +42,17 @@ from openwrt_access_point.lib.access_point_config import (
 from openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper,
 )
+from openwrt_access_point.lib.uci_bss_options import UciBssOptions
+from openwrt_access_point.lib.uci_radio_options import UciRadioOptions
 
 AP_11ABG_PROFILE_NAME = "whirlwind_11ag_legacy"
 SSID_LENGTH_DEFAULT = 15
 MAX_WPA_PASSWORD_LENGTH = 63
 WPA_HEX_PSK_LENGTH = 64
+HIGH_DTIM = 3
+LOW_DTIM = 1
+HIGH_BEACON_INTERVAL = 300
+LOW_BEACON_INTERVAL = 100
 
 
 @dataclass
@@ -82,6 +88,19 @@ class Utf8TestParams:
     char_class: str
     password: str
     band: Band
+
+
+@dataclass
+class MacPhyTestParams:
+    band: Band
+    security: SecurityWpa | SecurityWpa2 | SecurityWpa3 | SecurityWpaWpa2Mixed | SecurityWpa2Wpa3Mixed = SecurityWpa2(
+        cipher="ccmp"
+    )
+    frag: int | None = None
+    rts: int | None = None
+    dtim_period: int | None = None
+    beacon_int: int | None = None
+    wmm: bool | None = None
 
 
 def _get_band_name(band: Band) -> str:
@@ -291,6 +310,59 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             test_logic=self._run_utf8_test,
             name_func=generate_utf8_test_name,
             arg_sets=utf8_args,
+        )
+
+        mac_phy_args: list[tuple[MacPhyTestParams]] = []
+        for band in [Band.BAND_2G, Band.BAND_5G]:
+            for param in [
+                MacPhyTestParams(band=band, frag=430),
+                MacPhyTestParams(band=band, rts=256),
+                MacPhyTestParams(band=band, rts=256, frag=430),
+                MacPhyTestParams(
+                    band=band,
+                    dtim_period=HIGH_DTIM,
+                    beacon_int=LOW_BEACON_INTERVAL,
+                ),
+                MacPhyTestParams(
+                    band=band,
+                    dtim_period=LOW_DTIM,
+                    beacon_int=HIGH_BEACON_INTERVAL,
+                ),
+                MacPhyTestParams(band=band, wmm=False),
+                MacPhyTestParams(band=band, wmm=True),
+            ]:
+                mac_phy_args.append((param,))
+
+        def generate_mac_phy_test_name(params: MacPhyTestParams) -> str:
+            band_name = _get_band_name(params.band)
+            parts = []
+            if params.rts is not None:
+                parts.append(f"rts_{params.rts}")
+            if params.frag is not None:
+                parts.append(f"frag_{params.frag}")
+            if params.dtim_period == HIGH_DTIM:
+                parts.append("high_dtim")
+            elif params.dtim_period == LOW_DTIM:
+                parts.append("low_dtim")
+
+            if params.beacon_int == HIGH_BEACON_INTERVAL:
+                parts.append("high_beacon_int")
+            elif params.beacon_int == LOW_BEACON_INTERVAL:
+                parts.append("low_beacon_int")
+            if params.wmm is True:
+                parts.append("with_wmm")
+            elif params.wmm is False:
+                parts.append("without_wmm")
+
+            suffix = "_".join(parts)
+            name = f"test_associate_{band_name}_{suffix}_{params.security.uci_encryption}"
+            self.log.info(f"Generated test case: {name}")
+            return name
+
+        self.generate_tests(
+            test_logic=self._run_mac_phy_test,
+            name_func=generate_mac_phy_test_name,
+            arg_sets=mac_phy_args,
         )
 
     async def setup_class(self) -> None:
@@ -627,6 +699,104 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 security=legacy_security,
                 pmf_support=security.pmf_support,
                 force_wmm=False,
+            )
+
+        await self.dut.wlan_policy.save_network(
+            ssid,
+            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+            target_pwd=password,
+        )
+        await self.dut.wlan_policy.connect(
+            ssid,
+            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+        )
+
+    async def _run_mac_phy_test(self, params: MacPhyTestParams) -> None:
+        """Helper to run a MAC/PHY Timings & Thresholds test case (hybrid)."""
+        if params.wmm is False and self.openwrt_ap:
+            raise signals.TestSkip(
+                "OpenWrt AP firmware hardcodes wmm_enabled=1 and does not "
+                "support disabling WMM via configuration."
+            )
+
+        band = params.band
+        password = AccessPointConfig.random_string(length=10)
+        ssid = AccessPointConfig.random_string(SSID_LENGTH_DEFAULT)
+        self.log.info(
+            f"Running MAC/PHY timing test case {self.current_test_info.name} "
+            f"on band {band} via seed {self.seed}"
+        )
+
+        security = params.security
+
+        if self.openwrt_ap:
+            # 1. Radio-level custom UCI options (frag, rts, beacon_int)
+            custom_radio_options = UciRadioOptions()
+            if params.frag is not None:
+                custom_radio_options["frag"] = params.frag
+            if params.rts is not None:
+                custom_radio_options["rts"] = params.rts
+            if params.beacon_int is not None:
+                custom_radio_options["beacon_int"] = params.beacon_int
+
+            # 2. BSS-level custom UCI options (dtim_period)
+            custom_bss_options = UciBssOptions()
+            if params.dtim_period is not None:
+                custom_bss_options["dtim_period"] = params.dtim_period
+
+            channel = BssChannel(
+                band=band,
+                number=band.default_channel,
+                phy_mode=LegacyMode(),
+            )
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig(
+                        channel=channel,
+                        n_capabilities=CapabilitySelection.DISABLED(),
+                        ac_capabilities=CapabilitySelection.DISABLED(),
+                        custom_uci_options=custom_radio_options,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=ssid,
+                                security=security,
+                                password=password,
+                                custom_uci_options=custom_bss_options,
+                            )
+                        ],
+                    )
+                ]
+            )
+            self.openwrt_ap.configure_wifi(config)
+        elif self.access_point:
+            legacy_security_mode = AccessPointConfigMapper.to_hostapd_security(
+                security
+            )
+
+            assert security.cipher is not None
+            legacy_security = DeprecatedSecurity(
+                security_mode=legacy_security_mode,
+                password=password,
+                wpa_cipher=AccessPointConfigMapper.to_hostapd_cipher(
+                    security.cipher
+                ),
+                wpa2_cipher=AccessPointConfigMapper.to_hostapd_cipher(
+                    security.cipher
+                ),
+            )
+
+            setup_ap(
+                access_point=self.access_point,
+                profile_name=AP_11ABG_PROFILE_NAME,
+                channel=band.default_channel,
+                ssid=ssid,
+                security=legacy_security,
+                pmf_support=security.pmf_support,
+                force_wmm=params.wmm,
+                frag_threshold=params.frag,
+                rts_threshold=params.rts,
+                dtim_period=params.dtim_period,
+                beacon_interval=params.beacon_int,
             )
 
         await self.dut.wlan_policy.save_network(
