@@ -1297,6 +1297,7 @@ void Dwc3::EndpointClearStall(EndpointClearStallRequest& request,
   if (zx_status_t status = EpSetStall(uep->ep, false); status != ZX_OK) {
     completer.Reply(zx::error(status));
   } else {
+    UserEpQueueNext(*uep);
     completer.Reply(zx::ok());
   }
 }

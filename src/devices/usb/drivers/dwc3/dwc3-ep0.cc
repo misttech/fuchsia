@@ -308,9 +308,12 @@ void Dwc3::HandleEp0Setup(size_t length) {
         }
         if (result->is_error()) {
           if (result->error_value() != ZX_ERR_NOT_SUPPORTED) {
-            fdf::error("Control(): {}", zx_status_get_string(result->error_value()));
+            fdf::error(
+                "Control([type=0x{:02x} req=0x{:02x} val=0x{:04x} idx=0x{:04x} len={}]) request failed: {}",
+                setup.bm_request_type, setup.b_request, setup.w_value, setup.w_index,
+                setup.w_length, zx_status_get_string(result->error_value()));
           } else {
-            fdf::debug("Control(): {}", zx_status_get_string(result->error_value()));
+            fdf::debug("Control request failed: {}", zx_status_get_string(result->error_value()));
           }
           metrics_.RecordEvent(
               std::format("ep0: Stalled setup request "

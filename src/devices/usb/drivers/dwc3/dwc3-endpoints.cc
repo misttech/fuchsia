@@ -108,7 +108,7 @@ void Dwc3::EpServer::CancelAll(zx_status_t reason) {
 void Dwc3::UserEpQueueNext(UserEndpoint& uep) {
   TRACE_DURATION("dwc3", "Dwc3::UserEpQueueNext", "ep_num", uep.ep.ep_num);
   if (uep.server->current_req.has_value() || !uep.ep.got_not_ready ||
-      uep.server->queued_reqs.empty()) {
+      uep.server->queued_reqs.empty() || uep.ep.stalled) {
     return;
   }
 
