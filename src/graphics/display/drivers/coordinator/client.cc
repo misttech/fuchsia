@@ -757,6 +757,7 @@ void Client::CommitConfig(CommitConfigRequestView request, CommitConfigCompleter
     return;
   }
   const display::ConfigStamp new_config_stamp(request->stamp().value);
+  TRACE_FLOW_END("gfx", "Display::CommitConfig", new_config_stamp.value());
 
   if (layers_.is_empty()) {
     fdf::error("CommitConfig called before SetDisplayLayers");

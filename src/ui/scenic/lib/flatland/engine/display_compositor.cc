@@ -688,6 +688,7 @@ zx::result<> DisplayCompositor::ApplyConfig(uint64_t frame_number, uint64_t trac
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::ApplyConfig");
   fidl::Arena arena;
 
+  TRACE_FLOW_BEGIN("gfx", "Display::CommitConfig", config_stamp.value);
   auto result = display_coordinator_.ApplyConfig(config_stamp);
   if (result.is_error()) {
     return result;
