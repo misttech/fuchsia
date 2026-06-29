@@ -77,7 +77,7 @@
     - fidl: 'fuchsia.driver.framework'
 
 - name: 'Drivers'
-  api_primary: 'jocelyndang@google.com'
+  api_primary: 'cja@google.com'
   api_secondary: 'puneetha@google.com'
   description: |
     <p>
