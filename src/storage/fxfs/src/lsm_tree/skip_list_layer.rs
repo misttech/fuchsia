@@ -85,7 +85,7 @@ struct Inner<K, V> {
     epoch: u64,
 
     // The number of readers on the current epoch.
-    current_count: u16,
+    current_count: u64,
 
     // A list of nodes to be freed once the read counts have reached zero.
     erase_lists: BTreeMap<u64, EpochEraseList<K, V>>,
@@ -101,7 +101,7 @@ struct Inner<K, V> {
 struct EpochEraseList<K, V> {
     // The number of readers still associated with this epoch.  When this reaches zero, the list can
     // be freed once all previous epochs have been freed.
-    count: u16,
+    count: u64,
     // We represent the list by storing the head and tail of the list which each node chained to the
     // next.
     start: NonNull<SkipListNode<K, V>>,
