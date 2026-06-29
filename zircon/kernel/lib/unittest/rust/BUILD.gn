@@ -12,7 +12,10 @@ rustc_library("unittest") {
 
   source_root = "src/lib.rs"
   sources = [ "src/lib.rs" ]
-  deps = [ "unittest-macro" ]
+  deps = [
+    "unittest-macro",
+    "//sdk/rust/zx-status",
+  ]
 
   with_unit_tests = true
   test_configs = [ ":unittest.test.ld" ]

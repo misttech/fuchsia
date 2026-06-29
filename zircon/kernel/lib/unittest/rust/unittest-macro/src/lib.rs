@@ -84,15 +84,19 @@ impl ToTokens for TestCase {
         let block = &self.block;
         let doc_comment = format!(" {}", self.docstring);
 
-        // TODO(https://fxbug.dev/517130174): Introduce a mutable boolean
-        // variable at the top of the function body representing any expectation
-        // failures and return it at the end. This is what expect_*!() macros
-        // will set as false in the event of failure.
+        // Declarative macros can't reference variables not defined in their
+        // scope, but they can reference other macros, so we introduce
+        // record_failure!() for use in the assert/expect macros.
         tokens.extend(quote! {
             #[doc = #doc_comment]
             pub extern "C" fn #ident() -> bool {
+                let mut all_ok = true;
+                #[allow(unused_macros)]
+                macro_rules! record_failure {
+                    () => { all_ok = false; };
+                }
                 #block
-                true
+                all_ok
             }
         });
     }
