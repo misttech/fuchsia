@@ -57,7 +57,7 @@ use fuchsia_sync::Mutex;
 use futures::FutureExt;
 use rustc_hash::FxHashMap as HashMap;
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::fmt;
 use std::io::{Read, Write};
 use std::ops::Range;
@@ -561,6 +561,39 @@ impl SuperBlockHeader {
             }
             (super_block_header, super_block_version) =
                 SuperBlockHeader::deserialize_with_version(&mut cursor)?;
+
+            // Ensure all store IDs are distinct.
+            let mut stores = HashSet::new();
+            ensure!(
+                stores.insert(super_block_header.root_parent_store_object_id),
+                FxfsError::Inconsistent
+            );
+            ensure!(
+                stores.insert(super_block_header.root_store_object_id),
+                FxfsError::Inconsistent
+            );
+
+            // Ensure all objects in the root parent store are distinct.
+            let mut root_parent_objects = HashSet::new();
+            ensure!(
+                root_parent_objects
+                    .insert(super_block_header.root_parent_graveyard_directory_object_id),
+                FxfsError::Inconsistent
+            );
+            ensure!(
+                root_parent_objects.insert(super_block_header.root_store_object_id),
+                FxfsError::Inconsistent
+            );
+            ensure!(
+                root_parent_objects.insert(super_block_header.journal_object_id),
+                FxfsError::Inconsistent
+            );
+
+            // The allocator (in root_store) cannot match any store ID.
+            ensure!(
+                !stores.contains(&super_block_header.allocator_object_id),
+                FxfsError::Inconsistent
+            );
 
             if super_block_version < EARLIEST_SUPPORTED_VERSION {
                 bail!("Unsupported SuperBlock version: {:?}", super_block_version);
@@ -1314,5 +1347,81 @@ mod tests {
             store.tree().find(&ObjectKey::object(handle.object_id())).await.expect("find failed"),
             None
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_invalid_object_ids_validation() {
+        let device = DeviceHolder::new(FakeDevice::new(
+            TEST_DEVICE_BLOCK_COUNT,
+            MIN_SUPER_BLOCK_SIZE as u32,
+        ));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        fs.close().await.expect("close");
+        let device = fs.take_device().await;
+        device.reopen(false);
+
+        // Helper to write a superblock with specific object IDs.
+        let device_arc = (*device).clone();
+        let write_sb = |instance: SuperBlockInstance,
+                        root_parent_store_object_id: u64,
+                        root_parent_graveyard_directory_object_id: u64,
+                        root_store_object_id: u64,
+                        allocator_object_id: u64,
+                        journal_object_id: u64| {
+            let device = device_arc.clone();
+            async move {
+                let mut super_block_header = SuperBlockHeader::new(
+                    1, // generation
+                    root_parent_store_object_id,
+                    root_parent_graveyard_directory_object_id,
+                    root_store_object_id,
+                    allocator_object_id,
+                    journal_object_id,
+                    JournalCheckpoint::default(),
+                    LATEST_VERSION,
+                );
+                super_block_header.journal_checkpoint.version = LATEST_VERSION;
+
+                let mut writer = JournalWriter::new(MIN_SUPER_BLOCK_SIZE as usize, 0);
+                writer.write_all(SUPER_BLOCK_MAGIC).unwrap();
+                super_block_header.serialize_with_version(&mut writer).unwrap();
+                SuperBlockRecord::End.serialize_into(&mut writer).unwrap();
+                writer.pad_to_block().unwrap();
+
+                let mut buf = device.allocate_buffer(writer.flushable_bytes()).await;
+                writer.take_flushable(buf.as_mut());
+                device
+                    .write(instance.first_extent().start, buf.as_ref())
+                    .await
+                    .expect("write failed");
+            }
+        };
+
+        let manager = SuperBlockManager::new();
+
+        // Case 1: Duplicate store IDs (3, 3)
+        write_sb(SuperBlockInstance::A, 3, 4, 3, 5, 6).await;
+        write_sb(SuperBlockInstance::B, 3, 4, 3, 5, 6).await;
+        assert!(manager.load((*device).clone(), MIN_SUPER_BLOCK_SIZE as u64).await.is_err());
+
+        // Case 2: Allocator matches root_parent_store_object_id (3, 3)
+        write_sb(SuperBlockInstance::A, 3, 4, 5, 3, 6).await;
+        write_sb(SuperBlockInstance::B, 3, 4, 5, 3, 6).await;
+        assert!(manager.load((*device).clone(), MIN_SUPER_BLOCK_SIZE as u64).await.is_err());
+
+        // Case 3: Allocator matches root_store_object_id (5, 5)
+        write_sb(SuperBlockInstance::A, 3, 4, 5, 5, 6).await;
+        write_sb(SuperBlockInstance::B, 3, 4, 5, 5, 6).await;
+        assert!(manager.load((*device).clone(), MIN_SUPER_BLOCK_SIZE as u64).await.is_err());
+
+        // Case 4: Duplicate objects in root_parent_store (graveyard 4, journal 4)
+        write_sb(SuperBlockInstance::A, 3, 4, 5, 6, 4).await;
+        write_sb(SuperBlockInstance::B, 3, 4, 5, 6, 4).await;
+        assert!(manager.load((*device).clone(), MIN_SUPER_BLOCK_SIZE as u64).await.is_err());
+
+        // Case 5: Valid configuration
+        write_sb(SuperBlockInstance::A, 3, 4, 5, 6, 7).await;
+        write_sb(SuperBlockInstance::B, 3, 4, 5, 6, 7).await;
+        assert!(manager.load((*device).clone(), MIN_SUPER_BLOCK_SIZE as u64).await.is_ok());
     }
 }
