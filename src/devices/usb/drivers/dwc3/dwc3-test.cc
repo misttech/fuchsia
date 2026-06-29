@@ -108,6 +108,18 @@ TEST_F(ManagedTestFixture, TestInspectMetrics) {
   const uint8_t ep_num = UsbAddressToEpNum(0x02);
 
   // Dynamic cable connection triggers automatic core wake-up and soft reset.
+  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+    // Mock GHWPARAMS0 to return MDWIDTH = 2 (128-bit = 16 bytes)
+    auto& ghwparams0 = env.reg_region()[GHWPARAMS0::Get().addr()];
+    ghwparams0.SetReadCallback([]() -> uint32_t {
+      return GHWPARAMS0::Get().FromValue(0).set_DWC_USB31_MDWIDTH(2).reg_value();
+    });
+
+    // Mock GRXFIFOSIZ for FIFO 0 to have depth 64 (1024 bytes)
+    auto& grxfifosiz0 = env.reg_region()[GRXFIFOSIZ::Get(0).addr()];
+    grxfifosiz0.SetReadCallback(
+        []() -> uint32_t { return GRXFIFOSIZ::Get(0).FromValue(0).set_RXFDEP(64).reg_value(); });
+  });
   TriggerConnectionPlugIn(fdescriptor::UsbSpeed::kSuper);
 
   auto dci_service = dut_.Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
@@ -294,6 +306,178 @@ TEST_F(ManagedTestFixture, TestInspectMetrics) {
 
   const auto* active_trbs = fifo_node->GetByPath({"active_trbs"});
   EXPECT_EQ(nullptr, active_trbs);
+}
+
+TEST_F(ManagedTestFixture, ConfigureEndpoint_FifoTooSmall) {
+  namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
+  // Dynamic cable connection triggers automatic core wake-up and soft reset.
+  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+    // Mock GHWPARAMS0 to return MDWIDTH = 2 (128-bit = 16 bytes)
+    auto& ghwparams0 = env.reg_region()[GHWPARAMS0::Get().addr()];
+    ghwparams0.SetReadCallback([]() -> uint32_t {
+      return GHWPARAMS0::Get().FromValue(0).set_DWC_USB31_MDWIDTH(2).reg_value();
+    });
+
+    // Mock GTXFIFOSIZ for FIFO 1 to have depth 8 (128 bytes)
+    auto& gtxfifosiz1 = env.reg_region()[GTXFIFOSIZ::Get(1).addr()];
+    gtxfifosiz1.SetReadCallback(
+        []() -> uint32_t { return GTXFIFOSIZ::Get(1).FromValue(0).set_TXFDEP(8).reg_value(); });
+  });
+  TriggerConnectionPlugIn(fdescriptor::UsbSpeed::kSuper);
+
+  auto dci_service = dut_.Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
+  ASSERT_TRUE(dci_service.is_ok())
+      << "Failed to connect to UsbDciService: " << dci_service.status_string();
+  fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci> dci{std::move(*dci_service)};
+
+  // Configure EP1 IN (0x81) with max packet size 512 (which is > 128)
+  fdescriptor::wire::UsbEndpointDescriptor ep_desc;
+  ep_desc.b_endpoint_address = 0x81;
+  ep_desc.bm_attributes = USB_ENDPOINT_BULK;
+  ep_desc.w_max_packet_size = 512;
+  ep_desc.b_interval = 0;
+
+  auto result = dci->ConfigureEndpoint(ep_desc, {});
+  ASSERT_TRUE(result.ok()) << "ConfigureEndpoint transport failed: " << result.status_string();
+  ASSERT_TRUE(result.value().is_error());
+  EXPECT_EQ(result.value().error_value(), ZX_ERR_INVALID_ARGS);
+}
+TEST_F(ManagedTestFixture, ConfigureEndpoint_FifoSufficient) {
+  namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
+  // Dynamic cable connection triggers automatic core wake-up and soft reset.
+  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+    // Mock GHWPARAMS0 to return MDWIDTH = 2 (128-bit = 16 bytes)
+    auto& ghwparams0 = env.reg_region()[GHWPARAMS0::Get().addr()];
+    ghwparams0.SetReadCallback([]() -> uint32_t {
+      return GHWPARAMS0::Get().FromValue(0).set_DWC_USB31_MDWIDTH(2).reg_value();
+    });
+
+    // Mock GTXFIFOSIZ for FIFO 1 to have depth 32 (512 bytes)
+    auto& gtxfifosiz1 = env.reg_region()[GTXFIFOSIZ::Get(1).addr()];
+    gtxfifosiz1.SetReadCallback(
+        []() -> uint32_t { return GTXFIFOSIZ::Get(1).FromValue(0).set_TXFDEP(32).reg_value(); });
+  });
+  TriggerConnectionPlugIn(fdescriptor::UsbSpeed::kSuper);
+
+  auto dci_service = dut_.Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
+  ASSERT_TRUE(dci_service.is_ok())
+      << "Failed to connect to UsbDciService: " << dci_service.status_string();
+  fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci> dci{std::move(*dci_service)};
+
+  // Configure EP1 IN (0x81) with max packet size 512 (which is == 512)
+  fdescriptor::wire::UsbEndpointDescriptor ep_desc;
+  ep_desc.b_endpoint_address = 0x81;
+  ep_desc.bm_attributes = USB_ENDPOINT_BULK;
+  ep_desc.w_max_packet_size = 512;
+  ep_desc.b_interval = 0;
+
+  auto result = dci->ConfigureEndpoint(ep_desc, {});
+  ASSERT_TRUE(result.ok()) << "ConfigureEndpoint transport failed: " << result.status_string();
+  ASSERT_TRUE(result.value().is_ok())
+      << "ConfigureEndpoint failed: " << zx_status_get_string(result.value().error_value());
+}
+
+TEST_F(ManagedTestFixture, ConfigureEndpoint_FifoIndexOob) {
+  namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
+  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+    // Mock GHWPARAMS3 to return DWC_USB31_NUM_IN_EPS = 4 (EP0 to EP3 IN)
+    auto& ghwparams3 = env.reg_region()[GHWPARAMS3::Get().addr()];
+    ghwparams3.SetReadCallback([]() -> uint32_t {
+      return GHWPARAMS3::Get().FromValue(0).set_DWC_USB31_NUM_IN_EPS(4).reg_value();
+    });
+  });
+  TriggerConnectionPlugIn(fdescriptor::UsbSpeed::kSuper);
+
+  auto dci_service = dut_.Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
+  ASSERT_TRUE(dci_service.is_ok())
+      << "Failed to connect to UsbDciService: " << dci_service.status_string();
+  fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci> dci{std::move(*dci_service)};
+
+  // Configure EP10 IN (0x8A) -> fifo_num = 5.
+  // Since DWC_USB31_NUM_IN_EPS is 4, fifo_num 5 is OOB.
+  fdescriptor::wire::UsbEndpointDescriptor ep_desc;
+  ep_desc.b_endpoint_address = 0x8A;
+  ep_desc.bm_attributes = USB_ENDPOINT_BULK;
+  ep_desc.w_max_packet_size = 512;
+  ep_desc.b_interval = 0;
+
+  auto result = dci->ConfigureEndpoint(ep_desc, {});
+  ASSERT_TRUE(result.ok()) << "ConfigureEndpoint transport failed: " << result.status_string();
+  ASSERT_TRUE(result.value().is_error());
+  EXPECT_EQ(result.value().error_value(), ZX_ERR_INVALID_ARGS);
+}
+
+TEST_F(ManagedTestFixture, ConfigureEndpoint_RxFifoTooSmall) {
+  namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
+  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+    // Mock GHWPARAMS0 to return MDWIDTH = 2 (128-bit = 16 bytes)
+    auto& ghwparams0 = env.reg_region()[GHWPARAMS0::Get().addr()];
+    ghwparams0.SetReadCallback([]() -> uint32_t {
+      return GHWPARAMS0::Get().FromValue(0).set_DWC_USB31_MDWIDTH(2).reg_value();
+    });
+
+    // Mock GRXFIFOSIZ for FIFO 0 to have depth 8 (128 bytes)
+    auto& grxfifosiz0 = env.reg_region()[GRXFIFOSIZ::Get(0).addr()];
+    grxfifosiz0.SetReadCallback(
+        []() -> uint32_t { return GRXFIFOSIZ::Get(0).FromValue(0).set_RXFDEP(8).reg_value(); });
+  });
+  TriggerConnectionPlugIn(fdescriptor::UsbSpeed::kSuper);
+
+  auto dci_service = dut_.Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
+  ASSERT_TRUE(dci_service.is_ok())
+      << "Failed to connect to UsbDciService: " << dci_service.status_string();
+  fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci> dci{std::move(*dci_service)};
+
+  // Configure EP1 OUT (0x01) with max packet size 512 (which is > 128)
+  fdescriptor::wire::UsbEndpointDescriptor ep_desc;
+  ep_desc.b_endpoint_address = 0x01;
+  ep_desc.bm_attributes = USB_ENDPOINT_BULK;
+  ep_desc.w_max_packet_size = 512;
+  ep_desc.b_interval = 0;
+
+  auto result = dci->ConfigureEndpoint(ep_desc, {});
+  ASSERT_TRUE(result.ok()) << "ConfigureEndpoint transport failed: " << result.status_string();
+  ASSERT_TRUE(result.value().is_error());
+  EXPECT_EQ(result.value().error_value(), ZX_ERR_INVALID_ARGS);
+}
+
+TEST_F(ManagedTestFixture, ConfigureEndpoint_RxFifoSufficient) {
+  namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
+  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+    // Mock GHWPARAMS0 to return MDWIDTH = 2 (128-bit = 16 bytes)
+    auto& ghwparams0 = env.reg_region()[GHWPARAMS0::Get().addr()];
+    ghwparams0.SetReadCallback([]() -> uint32_t {
+      return GHWPARAMS0::Get().FromValue(0).set_DWC_USB31_MDWIDTH(2).reg_value();
+    });
+
+    // Mock GRXFIFOSIZ for FIFO 0 to have depth 32 (512 bytes)
+    auto& grxfifosiz0 = env.reg_region()[GRXFIFOSIZ::Get(0).addr()];
+    grxfifosiz0.SetReadCallback(
+        []() -> uint32_t { return GRXFIFOSIZ::Get(0).FromValue(0).set_RXFDEP(32).reg_value(); });
+  });
+  TriggerConnectionPlugIn(fdescriptor::UsbSpeed::kSuper);
+
+  auto dci_service = dut_.Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
+  ASSERT_TRUE(dci_service.is_ok())
+      << "Failed to connect to UsbDciService: " << dci_service.status_string();
+  fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci> dci{std::move(*dci_service)};
+
+  // Configure EP1 OUT (0x01) with max packet size 512 (which is == 512)
+  fdescriptor::wire::UsbEndpointDescriptor ep_desc;
+  ep_desc.b_endpoint_address = 0x01;
+  ep_desc.bm_attributes = USB_ENDPOINT_BULK;
+  ep_desc.w_max_packet_size = 512;
+  ep_desc.b_interval = 0;
+
+  auto result = dci->ConfigureEndpoint(ep_desc, {});
+  ASSERT_TRUE(result.ok()) << "ConfigureEndpoint transport failed: " << result.status_string();
+  ASSERT_TRUE(result.value().is_ok())
+      << "ConfigureEndpoint failed: " << zx_status_get_string(result.value().error_value());
 }
 
 typedef struct {

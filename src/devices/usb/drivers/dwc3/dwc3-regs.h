@@ -439,4 +439,24 @@ class USB31_VER_TYPE : public hwreg::RegisterBase<USB31_VER_TYPE, uint32_t> {
   static auto Get() { return hwreg::RegisterAddr<USB31_VER_TYPE>(0xc1a4); }
 };
 
+class GHWPARAMS0 : public hwreg::RegisterBase<GHWPARAMS0, uint32_t> {
+ public:
+  DEF_FIELD(11, 8, DWC_USB31_MDWIDTH);
+  static auto Get() { return hwreg::RegisterAddr<GHWPARAMS0>(0xc140); }
+};
+
+class GTXFIFOSIZ : public hwreg::RegisterBase<GTXFIFOSIZ, uint32_t> {
+ public:
+  DEF_FIELD(15, 0, TXFDEP);
+  DEF_FIELD(31, 16, TXFSTADDR);
+  static auto Get(unsigned i) { return hwreg::RegisterAddr<GTXFIFOSIZ>(0xc300 + 4 * i); }
+};
+
+class GRXFIFOSIZ : public hwreg::RegisterBase<GRXFIFOSIZ, uint32_t> {
+ public:
+  DEF_FIELD(15, 0, RXFDEP);
+  DEF_FIELD(31, 16, RXFSTADDR);
+  static auto Get(unsigned i = 0) { return hwreg::RegisterAddr<GRXFIFOSIZ>(0xc380 + 4 * i); }
+};
+
 #endif  // SRC_DEVICES_USB_DRIVERS_DWC3_DWC3_REGS_H_

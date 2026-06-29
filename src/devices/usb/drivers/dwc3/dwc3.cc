@@ -1215,13 +1215,45 @@ void Dwc3::ConfigureEndpoint(ConfigureEndpointRequest& request,
     return;
   }
 
+  uint16_t max_packet_size = usb_ep_max_packet2(request.ep_descriptor());
+
+  auto* const mmio = get_mmio();
+  const uint32_t mdwidth = GHWPARAMS0::Get().ReadFrom(mmio).DWC_USB31_MDWIDTH();
+  const uint32_t ram_width_bytes = 4 << mdwidth;
+  uint32_t depth = 0;
+
+  const bool is_in =
+      usb_ep_direction2(request.ep_descriptor().b_endpoint_address()) == USB_ENDPOINT_IN;
+  if (is_in) {
+    // IN endpoint.
+    const uint8_t fifo_num = ep_num >> 1;
+    const uint32_t num_in_eps = GHWPARAMS3::Get().ReadFrom(mmio).DWC_USB31_NUM_IN_EPS();
+    if (fifo_num >= num_in_eps) {
+      fdf::error("dwc3: endpoint {} mapped to invalid FIFO {}", ep_num, fifo_num);
+      completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+      return;
+    }
+    depth = GTXFIFOSIZ::Get(fifo_num).ReadFrom(mmio).TXFDEP();
+  } else {
+    // OUT endpoint.
+    depth = GRXFIFOSIZ::Get(0).ReadFrom(mmio).RXFDEP();
+  }
+
+  const uint64_t fifo_size = static_cast<uint64_t>(depth) * ram_width_bytes;
+  if (max_packet_size > fifo_size) {
+    fdf::error("dwc3: endpoint {} max packet size {} exceeds {} FIFO size {}", ep_num,
+               max_packet_size, is_in ? "TX" : "RX", fifo_size);
+    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+    return;
+  }
+
   if (zx::result result = uep->fifo.Init(bti_); result.is_error()) {
     fdf::error("fifo init failed {}", result);
     completer.Reply(result.take_error());
     return;
   }
 
-  uep->ep.max_packet_size = usb_ep_max_packet2(request.ep_descriptor());
+  uep->ep.max_packet_size = max_packet_size;
   uep->ep.type = ep_type;
   uep->ep.interval = request.ep_descriptor().b_interval();
   uep->ep.usb_endpoint_address = request.ep_descriptor().b_endpoint_address();
