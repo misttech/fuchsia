@@ -509,7 +509,8 @@ async fn create_interface(
                     | netdevice_client::Error::Attach(_, _)
                     | netdevice_client::Error::Detach(_, _)
                     | netdevice_client::Error::TooSmall { size: _, offset: _, length: _ }
-                    | netdevice_client::Error::InvalidLease => None,
+                    | netdevice_client::Error::InvalidLease
+                    | netdevice_client::Error::RegisterForTx(_) => None,
                 },
                 netdevice_worker::Error::AlreadyInstalled(_) => {
                     Some(fnet_interfaces_admin::InterfaceRemovedReason::PortAlreadyBound)

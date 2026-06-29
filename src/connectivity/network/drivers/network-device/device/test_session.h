@@ -29,7 +29,8 @@ class TestSession {
   zx_status_t Open(fidl::WireSyncClient<netdev::Device>& netdevice, const char* name,
                    netdev::wire::SessionFlags flags = netdev::wire::SessionFlags(),
                    uint16_t num_descriptors = kDefaultDescriptorCount,
-                   uint64_t buffer_size = kDefaultBufferLength, std::vector<VmoConfig> vmos = {});
+                   uint64_t buffer_size = kDefaultBufferLength, std::vector<VmoConfig> vmos = {},
+                   bool register_for_tx = true);
 
   zx_status_t Init(uint16_t descriptor_count, uint64_t buffer_size,
                    std::vector<VmoConfig> vmos = {});

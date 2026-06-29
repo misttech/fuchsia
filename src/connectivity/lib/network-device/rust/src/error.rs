@@ -48,6 +48,8 @@ pub enum Error {
     TooSmall { size: usize, offset: usize, length: usize },
     #[error("received an invalid lease")]
     InvalidLease,
+    #[error("failed to register VMO for Tx: {0}")]
+    RegisterForTx(zx::Status),
 }
 
 /// Common result type for methods in this crate.

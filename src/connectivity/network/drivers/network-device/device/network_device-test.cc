@@ -239,7 +239,8 @@ class NetworkDeviceTest : public ::testing::Test {
                           uint64_t buffer_size = kDefaultBufferLength,
                           std::vector<TestSession::VmoConfig> vmos = {},
                           const char* session_name = nullptr,
-                          netdev::wire::SessionFlags flags = netdev::wire::SessionFlags()) {
+                          netdev::wire::SessionFlags flags = netdev::wire::SessionFlags(),
+                          bool register_for_tx = true) {
     // automatically increment to test_session_(a, b, c, etc...)
     char session_name_storage[] = "test_session_a";
     if (session_name == nullptr) {
@@ -251,7 +252,7 @@ class NetworkDeviceTest : public ::testing::Test {
 
     fidl::WireSyncClient connection = OpenConnection();
     return session->Open(connection, session_name, flags, num_descriptors, buffer_size,
-                         std::move(vmos));
+                         std::move(vmos), register_for_tx);
   }
 
   zx_status_t AttachSessionPort(TestSession& session, FakeNetworkPortImpl& impl) {
@@ -277,6 +278,12 @@ class NetworkDeviceTest : public ::testing::Test {
 
   void SetEvtTxCompleteHandler(fit::function<void()> h) {
     static_cast<internal::DeviceInterface*>(device_.get())->evt_tx_complete_.Set(std::move(h));
+  }
+
+  bool IsTxRegistered(uint8_t id) {
+    auto* dev = static_cast<internal::DeviceInterface*>(device_.get());
+    SharedAutoLock lock(&dev->control_lock_);
+    return dev->vmo_store_.GetVmo(id)->meta().tx_registered;
   }
 
   void SetBacktraceCallback(fit::function<void()> cb) {
@@ -461,6 +468,411 @@ TEST_P(PrepareVmoCallbackParamTest, PrepareVmoFailure) {
   ASSERT_OK(CreateDevice());
   TestSession session;
   ASSERT_STATUS(OpenSession(&session), ZX_ERR_INTERNAL);
+}
+
+TEST_P(PrepareVmoCallbackParamTest, RegisterForTxSuccess) {
+  InstallPrepareVmoCallback(ZX_OK);
+  ASSERT_OK(CreateDevice());
+
+  std::vector<TestSession::VmoConfig> vmo_configs;
+  zx::vmo rx_vmo, tx_vmo_1, tx_vmo_2;
+  ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &rx_vmo));
+  ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &tx_vmo_1));
+  ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &tx_vmo_2));
+  vmo_configs.push_back({.vmo = std::move(rx_vmo), .num_rx_buffers = 16});
+  vmo_configs.push_back({.vmo = std::move(tx_vmo_1), .num_rx_buffers = 0});
+  vmo_configs.push_back({.vmo = std::move(tx_vmo_2), .num_rx_buffers = 0});
+
+  TestSession session;
+  ASSERT_OK(
+      OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength, std::move(vmo_configs)));
+
+  EXPECT_TRUE(impl_.vmos()[0].is_valid());
+  EXPECT_TRUE(impl_.vmos()[1].is_valid());
+  EXPECT_TRUE(impl_.vmos()[2].is_valid());
+
+  uint8_t both_tx_vmo_ids[] = {1, 2};
+  // Unregister first to release the VMOs from the driver, since they are prepared during
+  // OpenSession setup.
+  {
+    fidl::WireResult result = session.session()->UnregisterForTx(
+        fidl::VectorView<uint8_t>::FromExternal(both_tx_vmo_ids));
+    ASSERT_OK(result.status());
+    EXPECT_EQ(result->successful, 2);
+  }
+  EXPECT_TRUE(impl_.vmos()[0].is_valid());
+  EXPECT_FALSE(impl_.vmos()[1].is_valid());
+  EXPECT_FALSE(impl_.vmos()[2].is_valid());
+
+  // Now register multiple VMOs in a single call.
+  {
+    fidl::WireResult result =
+        session.session()->RegisterForTx(fidl::VectorView<uint8_t>::FromExternal(both_tx_vmo_ids));
+    ASSERT_OK(result.status());
+    EXPECT_EQ(result->successful, 2);
+    EXPECT_OK(result->status);
+  }
+  EXPECT_TRUE(impl_.vmos()[0].is_valid());
+  EXPECT_TRUE(impl_.vmos()[1].is_valid());
+  EXPECT_TRUE(impl_.vmos()[2].is_valid());
+
+  uint8_t single_tx_vmo_ids[] = {1};
+  // Unregister only one of them (VMO 1).
+  {
+    fidl::WireResult result = session.session()->UnregisterForTx(
+        fidl::VectorView<uint8_t>::FromExternal(single_tx_vmo_ids));
+    ASSERT_OK(result.status());
+    EXPECT_EQ(result->successful, 1);
+  }
+  EXPECT_TRUE(impl_.vmos()[0].is_valid());
+  EXPECT_FALSE(impl_.vmos()[1].is_valid());
+  EXPECT_TRUE(impl_.vmos()[2].is_valid());
+
+  // Register it back to restore full state before cleanup.
+  {
+    fidl::WireResult result = session.session()->RegisterForTx(
+        fidl::VectorView<uint8_t>::FromExternal(single_tx_vmo_ids));
+    ASSERT_OK(result.status());
+    EXPECT_EQ(result->successful, 1);
+    EXPECT_OK(result->status);
+  }
+  EXPECT_TRUE(impl_.vmos()[0].is_valid());
+  EXPECT_TRUE(impl_.vmos()[1].is_valid());
+  EXPECT_TRUE(impl_.vmos()[2].is_valid());
+}
+
+TEST_P(PrepareVmoCallbackParamTest, RegisterForTxErrors) {
+  InstallPrepareVmoCallback(ZX_OK);
+  ASSERT_OK(CreateDevice());
+
+  std::vector<TestSession::VmoConfig> vmo_configs;
+  zx::vmo rx_vmo, tx_vmo;
+  ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &rx_vmo));
+  ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &tx_vmo));
+  vmo_configs.push_back({.vmo = std::move(rx_vmo), .num_rx_buffers = 16});
+  vmo_configs.push_back({.vmo = std::move(tx_vmo), .num_rx_buffers = 0});
+
+  TestSession session;
+  ASSERT_OK(
+      OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength, std::move(vmo_configs)));
+
+  // Error case 1: Register an unknown VmoId.
+  {
+    uint8_t unknown_vmo_ids[] = {42};
+    fidl::WireResult result =
+        session.session()->RegisterForTx(fidl::VectorView<uint8_t>::FromExternal(unknown_vmo_ids));
+    ASSERT_OK(result.status());
+    EXPECT_EQ(result->successful, 0);
+    EXPECT_STATUS(result->status, ZX_ERR_NOT_FOUND);
+  }
+
+  // Error case 2: Register a VmoId that is already prepared (VMO ID 1 is prepared during
+  // OpenSession).
+  {
+    uint8_t already_prepared_vmo_ids[] = {1};
+    fidl::WireResult result = session.session()->RegisterForTx(
+        fidl::VectorView<uint8_t>::FromExternal(already_prepared_vmo_ids));
+    ASSERT_OK(result.status());
+    EXPECT_EQ(result->successful, 0);
+    EXPECT_STATUS(result->status, ZX_ERR_ALREADY_EXISTS);
+  }
+}
+
+TEST_P(PrepareVmoCallbackParamTest, RegisterForTxDriverFailure) {
+  InstallPrepareVmoCallback(ZX_OK);
+  ASSERT_OK(CreateDevice());
+
+  std::vector<TestSession::VmoConfig> vmo_configs;
+  zx::vmo rx_vmo, tx_vmo;
+  ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &rx_vmo));
+  ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &tx_vmo));
+  vmo_configs.push_back({.vmo = std::move(rx_vmo), .num_rx_buffers = 0});
+  vmo_configs.push_back({.vmo = std::move(tx_vmo), .num_rx_buffers = 0});
+
+  TestSession session;
+  ASSERT_OK(
+      OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength, std::move(vmo_configs)));
+
+  uint8_t tx_vmo_ids[] = {0, 1};
+  // Unregister them first to release them from the driver.
+  {
+    fidl::WireResult result =
+        session.session()->UnregisterForTx(fidl::VectorView<uint8_t>::FromExternal(tx_vmo_ids));
+    ASSERT_OK(result.status());
+    EXPECT_EQ(result->successful, 2);
+  }
+
+  // Now install a failing prepare callback.
+  InstallPrepareVmoCallback(ZX_ERR_NO_MEMORY);
+
+  fidl::WireResult result =
+      session.session()->RegisterForTx(fidl::VectorView<uint8_t>::FromExternal(tx_vmo_ids));
+  ASSERT_OK(result.status());
+  EXPECT_EQ(result->successful, 0);
+  EXPECT_STATUS(result->status, ZX_ERR_NO_MEMORY);
+
+  // Verify rollback: We can retry registration after installing a successful callback.
+  InstallPrepareVmoCallback(ZX_OK);
+  fidl::WireResult retry_result =
+      session.session()->RegisterForTx(fidl::VectorView<uint8_t>::FromExternal(tx_vmo_ids));
+  ASSERT_OK(retry_result.status());
+  EXPECT_EQ(retry_result->successful, 2);
+  EXPECT_OK(retry_result->status);
+}
+
+TEST_P(PrepareVmoCallbackParamTest, RegisterForTxPartialFailure) {
+  InstallPrepareVmoCallback(ZX_OK);
+  ASSERT_OK(CreateDevice());
+
+  std::vector<TestSession::VmoConfig> vmo_configs;
+  zx::vmo rx_vmo, tx_vmo_1, tx_vmo_2;
+  ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &rx_vmo));
+  ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &tx_vmo_1));
+  ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &tx_vmo_2));
+  vmo_configs.push_back({.vmo = std::move(rx_vmo), .num_rx_buffers = 0});
+  vmo_configs.push_back({.vmo = std::move(tx_vmo_1), .num_rx_buffers = 0});
+  vmo_configs.push_back({.vmo = std::move(tx_vmo_2), .num_rx_buffers = 0});
+
+  TestSession session;
+  ASSERT_OK(
+      OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength, std::move(vmo_configs)));
+
+  uint8_t tx_vmo_ids[] = {1, 2};
+  // Unregister them first to release them from the driver.
+  {
+    fidl::WireResult result =
+        session.session()->UnregisterForTx(fidl::VectorView<uint8_t>::FromExternal(tx_vmo_ids));
+    ASSERT_OK(result.status());
+    EXPECT_EQ(result->successful, 2);
+  }
+
+  // Install a prepare handler that succeeds for VMO ID 1 but fails for VMO ID 2.
+  impl_.set_prepare_vmo_handler([this](uint8_t id, const zx::vmo&, auto& completer) {
+    zx_status_t status = (id == 1) ? ZX_OK : ZX_ERR_NO_MEMORY;
+    const bool deferred_callback = GetParam();
+    if (deferred_callback) {
+      async::PostTask(dispatcher().async_dispatcher(),
+                      [completer = completer.ToAsync(), status]() mutable {
+                        fdf::Arena arena('TEST');
+                        completer.buffer(arena).Reply(status);
+                      });
+    } else {
+      fdf::Arena arena('TEST');
+      completer.buffer(arena).Reply(status);
+    }
+    return status == ZX_OK;
+  });
+
+  // Try to register VMO ID 1 and 2 for Tx.
+  fidl::WireResult result =
+      session.session()->RegisterForTx(fidl::VectorView<uint8_t>::FromExternal(tx_vmo_ids));
+  ASSERT_OK(result.status());
+  EXPECT_EQ(result->successful, 1);
+  EXPECT_STATUS(result->status, ZX_ERR_NO_MEMORY);
+
+  // Verify state:
+  // VMO ID 1 is prepared and registered for Tx. We should be able to unregister it.
+  uint8_t vmo_1_ids[] = {1};
+  fidl::WireResult unregister_result =
+      session.session()->UnregisterForTx(fidl::VectorView<uint8_t>::FromExternal(vmo_1_ids));
+  ASSERT_OK(unregister_result.status());
+  EXPECT_EQ(unregister_result->successful, 1);
+  EXPECT_OK(unregister_result->status);
+
+  // VMO ID 2 is NOT registered (its tx_registered was rolled back).
+  // We can verify this by checking that we can retry registering it after setting a successful
+  // handler.
+  InstallPrepareVmoCallback(ZX_OK);
+  uint8_t vmo_2_ids[] = {2};
+  fidl::WireResult register_vmo2_result =
+      session.session()->RegisterForTx(fidl::VectorView<uint8_t>::FromExternal(vmo_2_ids));
+  ASSERT_OK(register_vmo2_result.status());
+  EXPECT_EQ(register_vmo2_result->successful, 1);
+  EXPECT_OK(register_vmo2_result->status);
+}
+
+TEST_P(PrepareVmoCallbackParamTest, RegisterForTxForMixedVmo) {
+  InstallPrepareVmoCallback(ZX_OK);
+  ASSERT_OK(CreateDevice());
+
+  std::vector<TestSession::VmoConfig> vmo_configs;
+  zx::vmo rx_tx_vmo, tx_vmo_1, tx_vmo_2;
+  ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &rx_tx_vmo));
+  ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &tx_vmo_1));
+  ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &tx_vmo_2));
+  vmo_configs.push_back({.vmo = std::move(rx_tx_vmo), .num_rx_buffers = 16});
+  vmo_configs.push_back({.vmo = std::move(tx_vmo_1), .num_rx_buffers = 0});
+  vmo_configs.push_back({.vmo = std::move(tx_vmo_2), .num_rx_buffers = 0});
+
+  TestSession session;
+  ASSERT_OK(OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength,
+                        std::move(vmo_configs), nullptr, netdev::wire::SessionFlags(),
+                        /*register_for_tx*/ false));
+
+  EXPECT_TRUE(impl_.vmos()[0].is_valid());
+  EXPECT_FALSE(impl_.vmos()[1].is_valid());
+  EXPECT_FALSE(impl_.vmos()[2].is_valid());
+  EXPECT_EQ(IsTxRegistered(0), false);
+  EXPECT_EQ(IsTxRegistered(1), false);
+  EXPECT_EQ(IsTxRegistered(2), false);
+
+  impl_.set_prepare_vmo_handler([this](uint8_t id, const zx::vmo&, auto& completer) {
+    zx_status_t status = (id == 1) ? ZX_ERR_NO_MEMORY : ZX_OK;
+    const bool deferred_callback = GetParam();
+    if (deferred_callback) {
+      async::PostTask(dispatcher().async_dispatcher(),
+                      [completer = completer.ToAsync(), status]() mutable {
+                        fdf::Arena arena('TEST');
+                        completer.buffer(arena).Reply(status);
+                      });
+    } else {
+      fdf::Arena arena('TEST');
+      completer.buffer(arena).Reply(status);
+    }
+    return status == ZX_OK;
+  });
+
+  uint8_t batch_ids[] = {0, 1, 2};
+  {
+    fidl::WireResult result =
+        session.session()->RegisterForTx(fidl::VectorView<uint8_t>::FromExternal(batch_ids));
+    ASSERT_OK(result.status());
+    EXPECT_EQ(result->successful, 1);
+    EXPECT_STATUS(result->status, ZX_ERR_NO_MEMORY);
+  }
+
+  EXPECT_TRUE(impl_.vmos()[0].is_valid());
+  EXPECT_FALSE(impl_.vmos()[1].is_valid());
+  EXPECT_FALSE(impl_.vmos()[2].is_valid());
+  EXPECT_EQ(IsTxRegistered(0), true);
+  EXPECT_EQ(IsTxRegistered(1), false);
+  EXPECT_EQ(IsTxRegistered(2), false);
+
+  impl_.set_prepare_vmo_handler([this](uint8_t id, const zx::vmo&, auto& completer) {
+    zx_status_t status = (id == 2) ? ZX_ERR_NO_MEMORY : ZX_OK;
+    const bool deferred_callback = GetParam();
+    if (deferred_callback) {
+      async::PostTask(dispatcher().async_dispatcher(),
+                      [completer = completer.ToAsync(), status]() mutable {
+                        fdf::Arena arena('TEST');
+                        completer.buffer(arena).Reply(status);
+                      });
+    } else {
+      fdf::Arena arena('TEST');
+      completer.buffer(arena).Reply(status);
+    }
+    return status == ZX_OK;
+  });
+
+  {
+    // Skip the first successful VMO.
+    fidl::WireResult result =
+        session.session()->RegisterForTx(fidl::VectorView<uint8_t>::FromExternal(batch_ids + 1, 2));
+    ASSERT_OK(result.status());
+    EXPECT_EQ(result->successful, 1);
+    EXPECT_STATUS(result->status, ZX_ERR_NO_MEMORY);
+  }
+
+  EXPECT_TRUE(impl_.vmos()[0].is_valid());
+  EXPECT_TRUE(impl_.vmos()[1].is_valid());
+  EXPECT_FALSE(impl_.vmos()[2].is_valid());
+  EXPECT_EQ(IsTxRegistered(0), true);
+  EXPECT_EQ(IsTxRegistered(1), true);
+  EXPECT_EQ(IsTxRegistered(2), false);
+}
+
+TEST_P(PrepareVmoCallbackParamTest, UnregisterForTxSuccess) {
+  InstallPrepareVmoCallback(ZX_OK);
+  ASSERT_OK(CreateDevice());
+
+  std::vector<TestSession::VmoConfig> vmo_configs;
+  zx::vmo rx_vmo, tx_vmo;
+  ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &rx_vmo));
+  ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &tx_vmo));
+  vmo_configs.push_back({.vmo = std::move(rx_vmo), .num_rx_buffers = 16});
+  vmo_configs.push_back({.vmo = std::move(tx_vmo), .num_rx_buffers = 0});
+
+  TestSession session;
+  ASSERT_OK(
+      OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength, std::move(vmo_configs)));
+
+  uint8_t tx_vmo_ids[] = {1};
+  // Unregister VMO ID 1 first to release it (since it was prepared during OpenSession).
+  {
+    fidl::WireResult result =
+        session.session()->UnregisterForTx(fidl::VectorView<uint8_t>::FromExternal(tx_vmo_ids));
+    ASSERT_OK(result.status());
+    EXPECT_EQ(result->successful, 1);
+  }
+
+  // Now register VMO ID 1.
+  {
+    fidl::WireResult result =
+        session.session()->RegisterForTx(fidl::VectorView<uint8_t>::FromExternal(tx_vmo_ids));
+    ASSERT_OK(result.status());
+    EXPECT_EQ(result->successful, 1);
+  }
+
+  // Now unregister VMO ID 1 again.
+  {
+    fidl::WireResult result =
+        session.session()->UnregisterForTx(fidl::VectorView<uint8_t>::FromExternal(tx_vmo_ids));
+    ASSERT_OK(result.status());
+    EXPECT_EQ(result->successful, 1);
+    EXPECT_OK(result->status);
+  }
+}
+
+TEST_P(PrepareVmoCallbackParamTest, UnregisterForTxErrors) {
+  InstallPrepareVmoCallback(ZX_OK);
+  ASSERT_OK(CreateDevice());
+
+  std::vector<TestSession::VmoConfig> vmo_configs;
+  zx::vmo rx_vmo;
+  ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &rx_vmo));
+  vmo_configs.push_back({.vmo = std::move(rx_vmo), .num_rx_buffers = 16});
+
+  TestSession session;
+  ASSERT_OK(
+      OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength, std::move(vmo_configs)));
+
+  // Error case: Unregister an unknown VmoId.
+  uint8_t unknown_vmo_ids[] = {42};
+  fidl::WireResult result =
+      session.session()->UnregisterForTx(fidl::VectorView<uint8_t>::FromExternal(unknown_vmo_ids));
+  ASSERT_OK(result.status());
+  EXPECT_EQ(result->successful, 0);
+  EXPECT_STATUS(result->status, ZX_ERR_INVALID_ARGS);
+}
+
+TEST_P(PrepareVmoCallbackParamTest, UnregisterMixedVmo) {
+  InstallPrepareVmoCallback(ZX_OK);
+  ASSERT_OK(CreateDevice());
+
+  std::vector<TestSession::VmoConfig> vmo_configs;
+  zx::vmo rx_vmo;
+  ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &rx_vmo));
+  vmo_configs.push_back({.vmo = std::move(rx_vmo), .num_rx_buffers = 16});
+
+  TestSession session;
+  ASSERT_OK(
+      OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength, std::move(vmo_configs)));
+
+  uint8_t rx_tx_vmo[] = {0};
+  fidl::WireResult reg_result =
+      session.session()->RegisterForTx(fidl::VectorView<uint8_t>::FromExternal(rx_tx_vmo));
+  ASSERT_OK(reg_result.status());
+  EXPECT_EQ(reg_result->successful, 1);
+  EXPECT_STATUS(reg_result->status, ZX_OK);
+
+  fidl::WireResult unreg_result =
+      session.session()->UnregisterForTx(fidl::VectorView<uint8_t>::FromExternal(rx_tx_vmo));
+  ASSERT_OK(unreg_result.status());
+  EXPECT_EQ(unreg_result->successful, 1);
+  EXPECT_STATUS(unreg_result->status, ZX_OK);
+
+  EXPECT_FALSE(IsTxRegistered(0));
+  EXPECT_TRUE(impl_.vmos()[0].is_valid());
 }
 
 INSTANTIATE_TEST_SUITE_P(NetworkDeviceTest, PrepareVmoCallbackParamTest,
@@ -1554,6 +1966,35 @@ TEST_F(NetworkDeviceTest, RejectsInvalidDescriptorLength) {
   ASSERT_OK(res.status());
   ASSERT_TRUE(res->is_error());
   ASSERT_EQ(res->error_value(), ZX_ERR_INVALID_ARGS);
+}
+
+TEST_F(NetworkDeviceTest, UnregisteredTxVmosDoNotLeak) {
+  ASSERT_OK(CreateDeviceWithPort13());
+
+  std::vector<TestSession::VmoConfig> vmo_configs;
+  zx::vmo rx_vmo, tx_vmo;
+  ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &rx_vmo));
+  ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength, 0, &tx_vmo));
+  vmo_configs.push_back({.vmo = std::move(rx_vmo), .num_rx_buffers = 16});
+  vmo_configs.push_back({.vmo = std::move(tx_vmo), .num_rx_buffers = 0});
+
+  {
+    TestSession session;
+    ASSERT_OK(OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength,
+                          std::move(vmo_configs), "session_a", netdev::wire::SessionFlags(),
+                          /*register_for_tx=*/false));
+    ASSERT_OK(session.Close());
+    ASSERT_OK(WaitSessionDied());
+  }
+
+  // Open a new session. If VMOs leaked from the previous session, this OpenSession call
+  // will crash/fail because `vmo_store_` is not empty.
+  {
+    TestSession session;
+    ASSERT_OK(OpenSession(&session));
+    ASSERT_OK(session.Close());
+    ASSERT_OK(WaitSessionDied());
+  }
 }
 
 TEST_F(NetworkDeviceTest, TxBadPorts) {

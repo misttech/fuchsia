@@ -8,7 +8,8 @@ namespace network::testing {
 
 zx_status_t TestSession::Open(fidl::WireSyncClient<netdev::Device>& netdevice, const char* name,
                               netdev::wire::SessionFlags flags, uint16_t num_descriptors,
-                              uint64_t buffer_size, std::vector<VmoConfig> vmos) {
+                              uint64_t buffer_size, std::vector<VmoConfig> vmos,
+                              bool register_for_tx) {
   if (zx_status_t status = Init(num_descriptors, buffer_size, std::move(vmos)); status != ZX_OK) {
     return status;
   }
@@ -29,6 +30,22 @@ zx_status_t TestSession::Open(fidl::WireSyncClient<netdev::Device>& netdevice, c
   }
 
   Setup(std::move(res->value()->session), std::move(res->value()->fifos));
+
+  if (register_for_tx) {
+    for (size_t i = 0; i < vmo_configs_.size(); ++i) {
+      if (vmo_configs_[i].num_rx_buffers > 0) {
+        continue;
+      }
+      uint8_t tx_vmo = static_cast<uint8_t>(i);
+      auto reg_res = session_->RegisterForTx(fidl::VectorView<uint8_t>::FromExternal(&tx_vmo, 1));
+      if (reg_res.status() != ZX_OK) {
+        return reg_res.status();
+      }
+      if (reg_res->status != ZX_OK) {
+        return reg_res->status;
+      }
+    }
+  }
 
   return ZX_OK;
 }

@@ -104,7 +104,7 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
     if (!stored_vmo) {
       return false;
     }
-    return fbl::InContainer<PreparedVmosTag>(stored_vmo->meta());
+    return stored_vmo->meta().prepared;
   }
 
   // Returns the device-owned buffer count threshold at which we should trigger RxQueue work. If the
@@ -154,6 +154,12 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
   // FIDL protocol implementation.
   void GetInfo(GetInfoCompleter::Sync& completer) override;
   void OpenSession(OpenSessionRequestView request, OpenSessionCompleter::Sync& completer) override;
+  void RegisterForTx(cpp20::span<const VmoId> vmos,
+                     fidl::WireServer<netdev::Session>::RegisterForTxCompleter::Async completer)
+      __TA_EXCLUDES(control_lock_);
+  void UnregisterForTx(cpp20::span<const VmoId> vmos,
+                       fidl::WireServer<netdev::Session>::UnregisterForTxCompleter::Async completer)
+      __TA_EXCLUDES(control_lock_);
   void GetPort(GetPortRequestView request, GetPortCompleter::Sync& _completer) override;
   void GetPortWatcher(GetPortWatcherRequestView request,
                       GetPortWatcherCompleter::Sync& _completer) override;
@@ -259,90 +265,35 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
 
   PendingDeviceOperation SetDeviceStatus(DeviceStatus status) __TA_REQUIRES(control_lock_);
 
-  template <DataVmoIter Iter>
-  void PrepareVmos(Iter begin, Iter end, fdf::Arena arena, fit::callback<void(zx::result<>)>&& cb)
-      __TA_REQUIRES(control_lock_) __TA_RELEASE(control_lock_) {
-    if (begin == end) {
-      control_lock_.Release();
-      cb(zx::ok());
-      return;
-    }
+  // Asynchronously prepares a list of VMOs with the device implementation driver.
+  //
+  // Prepares the VMOs in `vmos` sequentially. If preparation fails for a VMO,
+  // the process is aborted, and the callback `cb` is invoked with the error
+  // status and the list of unprocessed VMOs, which has the failed VMO at its head.
+  // Upon success, each VMO is marked as prepared and added to `prepared_vmos_`.
+  void PrepareVmos(DataVmoList vmos, fdf::Arena arena,
+                   fit::callback<void(fit::result<std::tuple<zx_status_t, DataVmoList>>)> cb)
+      __TA_EXCLUDES(control_lock_);
 
-    VmoId id = begin->id;
-    if (fbl::InContainer<PreparedVmosTag>(*begin)) {
-      LOGF_INFO("VMO %d already prepared, skip preparing", id);
-      PrepareVmos(std::next(begin), end, std::move(arena), std::move(cb));
-      return;
-    }
-
-    DataVmoStore::StoredVmo* stored_vmo = vmo_store_.GetVmo(id);
-    ZX_ASSERT(stored_vmo != nullptr);
-    control_lock_.Release();
-
-    zx::vmo vmo_clone;
-    if (zx_status_t status = stored_vmo->vmo()->duplicate(ZX_RIGHT_SAME_RIGHTS, &vmo_clone);
-        status != ZX_OK) {
-      cb(zx::error(status));
-      return;
-    }
-    device_impl_.buffer(arena)
-        ->PrepareVmo(id, std::move(vmo_clone))
-        .Then(
-            [this, cur = begin, end, arena = std::move(arena), cb = std::move(cb)](
-                fdf::WireUnownedResult<netdriver::NetworkDeviceImpl::PrepareVmo>& result) mutable {
-              if (!result.ok() || result.value().s != ZX_OK) {
-                LOGF_ERROR("PrepareVmo failed: %s", result.ok()
-                                                        ? zx_status_get_string(result.value().s)
-                                                        : result.FormatDescription().c_str());
-                cb(zx::error(ZX_ERR_INTERNAL));
-                return;
-              }
-              control_lock_.Acquire();
-              prepared_vmos_.push_back(std::addressof(*cur));
-              PrepareVmos(std::next(cur), end, std::move(arena), std::move(cb));
-            });
-  }
-
-  template <DataVmoIter Iter>
-  void ReleaseVmos(Iter begin, Iter end, fdf::Arena arena, fit::callback<void()> cb)
-      __TA_EXCLUDES(control_lock_) {
-    if (begin == end) {
-      cb();
-      return;
-    }
-    VmoId id = begin->id;
-
-    if (!fbl::InContainer<PreparedVmosTag>(*begin)) {
-      LOGF_INFO("VMO %d not prepared, skip releasing", id);
-      ReleaseVmos(std::next(begin), end, std::move(arena), std::move(cb));
-      return;
-    }
-
-    device_impl_.buffer(arena)->ReleaseVmo(id).Then(
-        [this, cur = begin, end, arena = std::move(arena), cb = std::move(cb)](
-            fdf::WireUnownedResult<netdriver::NetworkDeviceImpl::ReleaseVmo>& result) mutable {
-          // Even if the release failed at the vendor driver, we continue to release the next one.
-          if (!result.ok()) {
-            LOGF_ERROR("ReleaseVmo failed: %s", result.FormatDescription().c_str());
-          }
-          auto next = std::next(cur);
-          {
-            fbl::AutoLock lock(&control_lock_);
-            prepared_vmos_.erase(*cur);
-          }
-          ReleaseVmos(next, end, std::move(arena), std::move(cb));
-        });
-  }
+  // Asynchronously releases a list of VMOs from the device implementation driver.
+  //
+  // Releases the VMOs in `vmos` sequentially. If release fails for a VMO,
+  // the process is aborted, and the callback `cb` is invoked with the error
+  // status and the list of remaining VMOs, which has the failed VMO at its head.
+  // Upon success, each VMO is marked as not prepared and added to `unprepared_vmos_`.
+  void ReleaseVmos(DataVmoList vmos, fdf::Arena arena,
+                   fit::callback<void(fit::result<std::tuple<zx_status_t, DataVmoList>>)> cb)
+      __TA_EXCLUDES(control_lock_);
 
   // Continues a teardown process, if one is running.
   //
-  // The provided state is the expected state that the teardown process is in. If the given state is
-  // not the current teardown state, no processing will happen. Otherwise, the teardown process will
-  // continue if the pre-conditions to move between teardown states are met.
+  // The provided state is the expected state that the teardown process is in. If the given
+  // state is not the current teardown state, no processing will happen. Otherwise, the teardown
+  // process will continue if the pre-conditions to move between teardown states are met.
   //
   // Returns true if the teardown is completed and execution should be stopped.
-  // ContinueTeardown is marked with many thread analysis lock exclusions so it can acquire those
-  // locks internally and evaluate the teardown progress.
+  // ContinueTeardown is marked with many thread analysis lock exclusions so it can acquire
+  // those locks internally and evaluate the teardown progress.
   bool ContinueTeardown(TeardownState state) __TA_RELEASE(control_lock_)
       __TA_EXCLUDES(tx_lock_, rx_lock_);
 
@@ -386,11 +337,8 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
   std::array<PortSlot, netdev::wire::kMaxPorts> ports_ __TA_GUARDED(control_lock_);
 
   DataVmoStore vmo_store_ __TA_GUARDED(control_lock_);
-  PreparedDataVmos prepared_vmos_ __TA_GUARDED(control_lock_);
-  // Note: This is needed since the underlying VmoStore storage does not expose
-  // iterators or the iterators cannot be implemented to support iteration and
-  // deletion at the same time.
-  AllDataVmos all_vmos_ __TA_GUARDED(control_lock_);
+  DataVmoList prepared_vmos_ __TA_GUARDED(control_lock_);
+  DataVmoList unprepared_vmos_ __TA_GUARDED(control_lock_);
   BindingList bindings_ __TA_GUARDED(control_lock_);
 
   PortWatcher::List port_watchers_ __TA_GUARDED(control_lock_);

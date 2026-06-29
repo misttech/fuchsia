@@ -24,6 +24,8 @@ constexpr uint64_t kMaxDepth = ZX_FIFO_MAX_SIZE_BYTES / sizeof(uint16_t);
 
 constexpr zx_signals_t kFifoWaitReads = ZX_FIFO_READABLE | ZX_FIFO_PEER_CLOSED;
 constexpr zx_signals_t kFifoWaitWrites = ZX_FIFO_WRITABLE;
+
+constexpr uint8_t kDefaultVmoId = 0;
 }  // namespace
 
 zx::result<DeviceInfo> DeviceInfo::Create(const netdev::wire::DeviceInfo& fidl) {
@@ -207,6 +209,28 @@ void NetworkDeviceClient::OpenSession(const std::string& name,
         });
     return bridge.consumer.promise_or(fpromise::error(ZX_ERR_CANCELED));
   };
+  auto register_tx = [this]() -> fpromise::promise<void, zx_status_t> {
+    if (session_config_.tx_descriptor_count == 0) {
+      return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok());
+    }
+    fpromise::bridge<void, zx_status_t> bridge;
+    uint8_t tx_vmos[] = {kDefaultVmoId};
+    session_->RegisterForTx(fidl::VectorView<uint8_t>::FromExternal(tx_vmos, 1))
+        .Then([res = std::move(bridge.completer)](
+                  fidl::WireUnownedResult<netdev::Session::RegisterForTx>& result) mutable {
+          if (!result.ok()) {
+            res.complete_error(result.status());
+            return;
+          }
+          const auto* reg_result = result.Unwrap();
+          if (reg_result->status != ZX_OK) {
+            res.complete_error(reg_result->status);
+          } else {
+            res.complete_ok();
+          }
+        });
+    return bridge.consumer.promise_or(fpromise::error(ZX_ERR_CANCELED));
+  };
   auto prepare_descriptors = [this]() -> fpromise::result<void, zx_status_t> {
     zx_status_t status;
     if ((status = PrepareDescriptors()) != ZX_OK) {
@@ -227,6 +251,7 @@ void NetworkDeviceClient::OpenSession(const std::string& name,
   auto prom = bridge.consumer.promise()
                   .and_then(std::move(prepare_session))
                   .and_then(std::move(open_session))
+                  .and_then(std::move(register_tx))
                   .and_then(std::move(prepare_descriptors))
                   .then(std::move(fire_callback));
   fpromise::schedule_for_consumer(executor_.get(), std::move(prom));
@@ -590,7 +615,7 @@ zx::result<netdev::wire::SessionInfo> NetworkDeviceClient::MakeSessionInfo(fidl:
   }
 
   auto data_vmo = netdev::wire::DataVmo::Builder(alloc)
-                      .id(0)
+                      .id(kDefaultVmoId)
                       .vmo(std::move(vmo))
                       .num_rx_buffers(device_info_.rx_depth)
                       .Build();

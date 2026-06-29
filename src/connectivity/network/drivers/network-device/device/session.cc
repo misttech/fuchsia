@@ -634,14 +634,14 @@ void Session::WatchDelegatedRxLease(WatchDelegatedRxLeaseCompleter::Sync& comple
 
 void Session::RegisterForTx(RegisterForTxRequestView request,
                             RegisterForTxCompleter::Sync& completer) {
-  // TODO(https://fxbug.dev/438527741): Add support for Tx voting.
-  completer.Reply(0, ZX_ERR_NOT_SUPPORTED);
+  parent_->RegisterForTx(cpp20::span(request->vmos.data(), request->vmos.size()),
+                         completer.ToAsync());
 }
 
 void Session::UnregisterForTx(UnregisterForTxRequestView request,
                               UnregisterForTxCompleter::Sync& completer) {
-  // TODO(https://fxbug.dev/438527741): Add support for Tx voting.
-  completer.Reply(0, ZX_ERR_NOT_SUPPORTED);
+  parent_->UnregisterForTx(cpp20::span(request->vmos.data(), request->vmos.size()),
+                           completer.ToAsync());
 }
 
 void Session::MarkTxReturnResult(uint16_t descriptor_index, zx_status_t status) {

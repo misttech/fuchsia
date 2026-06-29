@@ -32,6 +32,11 @@ use buffer::{
 };
 pub use buffer::{Buffer, ChecksumRxOffloading, Rx, SinglePartTxBuffer, Tx};
 
+// TODO(https://fxbug.dev/438527741): This is the VMO ID used for single VMO
+// clients (Rx + Tx in the same VMO). When VMO split is applied everywhere,
+// remove this constant.
+const DEFAULT_VMO_ID: u8 = 0;
+
 /// A session between network device client and driver.
 #[derive(Clone)]
 pub struct Session {
@@ -235,7 +240,7 @@ impl Inner {
                 u8::try_from(NETWORK_DEVICE_DESCRIPTOR_LENGTH / std::mem::size_of::<u64>())
                     .expect("descriptor length in 64-bit words not representable by u8");
             let data = vec![fidl_fuchsia_hardware_network::DataVmo {
-                id: Some(0),
+                id: Some(DEFAULT_VMO_ID),
                 vmo: Some(data),
                 num_rx_buffers: Some(config.num_rx_buffers.get()),
                 __source_breaking: fidl::marker::SourceBreaking,
@@ -256,6 +261,13 @@ impl Inner {
             .await?
             .map_err(|raw| Error::Open(name.to_owned(), zx::Status::from_raw(raw)))?;
         let proxy = client.into_proxy();
+
+        if config.num_tx_buffers.get() > 0 {
+            let (_successful, status) =
+                proxy.register_for_tx(&[DEFAULT_VMO_ID]).await.map_err(Error::Fidl)?;
+            zx::Status::ok(status).map_err(Error::RegisterForTx)?;
+        }
+
         let rx = fasync::Fifo::from_fifo(rx);
         let tx = fasync::Fifo::from_fifo(tx);
 
