@@ -16,7 +16,7 @@ def find_fuchsia_root():
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         potential_root = os.path.abspath(
-            os.path.join(script_dir, "..", "..", "..")
+            os.path.join(script_dir, "..", "..", "..", "..")
         )
         if os.path.exists(os.path.join(potential_root, ".fx-root")):
             return potential_root

@@ -46,8 +46,17 @@ fx coverage --lcov-output-path $FUCHSIA_DIR/lcov.info <test_package_name>
 ```
 
 ### 4. Parse the LCOV File
-Use the parsing script to extract coverage metrics for your target crate and
-list uncovered lines concisely. (See the Python LCOV Parser script below).
+Use the parsing script [scripts/parse-coverage.py](scripts/parse-coverage.py) to
+extract coverage metrics for your target crate and list uncovered lines
+concisely:
+```bash
+python3 .agents/skills/improve-test-coverage-rust/scripts/parse-coverage.py <lcov_file> <target_prefix_path>
+```
+
+*Example:*
+```bash
+python3 .agents/skills/improve-test-coverage-rust/scripts/parse-coverage.py lcov.info zircon/system/ulib/fbl/rust/
+```
 
 ---
 
@@ -160,23 +169,3 @@ Benefits:
   broken.
 - Simpler setup and cleaner, more readable code.
 - Avoids mixed assertion logic.
-
----
-
-## Python LCOV Parser Helper Tool
-
-To help parse `lcov.info` and extract clear, granular coverage statistics for
-your target Rust library, a helper tool is provided in the same directory:
-[parse-coverage.py](parse-coverage.py)
-
-### Usage
-Run it using Python 3, providing the path to the LCOV file and the prefix of the
-target library path:
-```bash
-python3 zircon/skills/improve-test-coverage-rust/parse-coverage.py <lcov_file> <target_prefix_path>
-```
-
-Example:
-```bash
-python3 zircon/skills/improve-test-coverage-rust/parse-coverage.py lcov.info zircon/system/ulib/fbl/rust/
-```
