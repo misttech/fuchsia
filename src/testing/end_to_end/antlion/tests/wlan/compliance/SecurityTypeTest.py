@@ -31,6 +31,7 @@ from openwrt_access_point.lib.access_point_config import (
     BssSettings,
     CapabilitySelection,
     LegacyMode,
+    Pmf,
     RadioConfig,
     SecurityWep,
     SecurityWpa,
@@ -101,6 +102,12 @@ class MacPhyTestParams:
     dtim_period: int | None = None
     beacon_int: int | None = None
     wmm: bool | None = None
+
+
+@dataclass
+class PmfTestParams:
+    security: SecurityWpa2 | SecurityWpa2Wpa3Mixed
+    band: Band
 
 
 def _get_band_name(band: Band) -> str:
@@ -363,6 +370,40 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             test_logic=self._run_mac_phy_test,
             name_func=generate_mac_phy_test_name,
             arg_sets=mac_phy_args,
+        )
+
+        pmf_args: list[tuple[PmfTestParams]] = []
+        pmf_args.append(
+            (
+                PmfTestParams(
+                    security=SecurityWpa2(
+                        cipher="ccmp", pmf_support=Pmf.REQUIRED
+                    ),
+                    band=self.rng.choice([Band.BAND_2G, Band.BAND_5G]),
+                ),
+            )
+        )
+        pmf_args.append(
+            (
+                PmfTestParams(
+                    security=SecurityWpa2Wpa3Mixed(
+                        cipher="ccmp", pmf_support=Pmf.REQUIRED
+                    ),
+                    band=self.rng.choice([Band.BAND_2G, Band.BAND_5G]),
+                ),
+            )
+        )
+
+        def generate_pmf_test_name(params: PmfTestParams) -> str:
+            band_name = _get_band_name(params.band)
+            name = f"test_associate_{band_name}_pmf_{params.security.uci_encryption}"
+            self.log.info(f"Generated test case: {name}")
+            return name
+
+        self.generate_tests(
+            test_logic=self._run_pmf_test,
+            name_func=generate_pmf_test_name,
+            arg_sets=pmf_args,
         )
 
     async def setup_class(self) -> None:
@@ -797,6 +838,67 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 rts_threshold=params.rts,
                 dtim_period=params.dtim_period,
                 beacon_interval=params.beacon_int,
+            )
+
+        await self.dut.wlan_policy.save_network(
+            ssid,
+            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+            target_pwd=password,
+        )
+        await self.dut.wlan_policy.connect(
+            ssid,
+            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+        )
+
+    async def _run_pmf_test(self, params: PmfTestParams) -> None:
+        """Helper to run a PMF test case (hybrid)."""
+        band = params.band
+        password = AccessPointConfig.random_string(length=10)
+        ssid = AccessPointConfig.random_string(SSID_LENGTH_DEFAULT)
+        security = params.security
+
+        if self.openwrt_ap:
+            channel = band.default_bss_channel
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig(
+                        channel=channel,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=ssid,
+                                security=security,
+                                password=password,
+                            )
+                        ],
+                    )
+                ]
+            )
+            self.openwrt_ap.configure_wifi(config)
+        elif self.access_point:
+            legacy_security_mode = AccessPointConfigMapper.to_hostapd_security(
+                security
+            )
+
+            assert security.cipher is not None
+            legacy_security = DeprecatedSecurity(
+                security_mode=legacy_security_mode,
+                password=password,
+                wpa_cipher=AccessPointConfigMapper.to_hostapd_cipher(
+                    security.cipher
+                ),
+                wpa2_cipher=AccessPointConfigMapper.to_hostapd_cipher(
+                    security.cipher
+                ),
+            )
+
+            setup_ap(
+                access_point=self.access_point,
+                profile_name=AP_11ABG_PROFILE_NAME,
+                channel=band.default_channel,
+                ssid=ssid,
+                security=legacy_security,
+                pmf_support=security.pmf_support,
+                force_wmm=False,
             )
 
         await self.dut.wlan_policy.save_network(
