@@ -13,6 +13,7 @@ from .models import (
     ContinueArguments,
     DisconnectArguments,
     EvaluateArguments,
+    EvaluateResponse,
     InitializeArguments,
     LaunchArguments,
     MessageType,
@@ -238,7 +239,7 @@ class DapClient:
 
     async def evaluate(
         self, writer: asyncio.StreamWriter, args: EvaluateArguments
-    ) -> Response:
+    ) -> EvaluateResponse:
         """Sends an evaluate request.
 
         Args:
@@ -249,7 +250,7 @@ class DapClient:
             The response model.
         """
         resp = await self._send_request(writer, "evaluate", args)
-        return Response.model_validate(resp)
+        return EvaluateResponse.model_validate(resp)
 
     async def scopes(
         self, writer: asyncio.StreamWriter, args: ScopesArguments

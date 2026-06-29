@@ -331,7 +331,9 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
     async def test_evaluate(self) -> None:
         client = DapClient()
         writer = MockWriter()
-        args = EvaluateArguments(expression="1 + 1", context="repl")
+        args = EvaluateArguments(
+            expression="1 + 1", context="repl", frame_id=42
+        )
         send_task = asyncio.create_task(client.evaluate(writer, args))  # type: ignore
 
         await asyncio.sleep(0.1)
@@ -347,7 +349,11 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             "request_seq": seq,
             "success": True,
             "command": "evaluate",
-            "body": {"result": "2"},
+            "body": {
+                "result": "2",
+                "type": "int",
+                "variablesReference": 0,
+            },
         }
 
         if seq in client._pending_requests:
@@ -355,9 +361,12 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
         resp = await send_task
         self.assertTrue(resp.success)
-        self.assertEqual((resp.body or {}).get("result"), "2")
+        self.assertEqual(resp.body.result, "2")
+        self.assertEqual(resp.body.type, "int")
+        self.assertEqual(resp.body.variables_reference, 0)
         self.assertEqual(req_val["arguments"]["expression"], "1 + 1")
         self.assertEqual(req_val["arguments"]["context"], "repl")
+        self.assertEqual(req_val["arguments"]["frameId"], 42)
 
     async def test_scopes(self) -> None:
         client = DapClient()
@@ -442,3 +451,98 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp.body.variables[0].variables_reference, 0)
         self.assertEqual(resp.body.variables[0].type, "str")
         self.assertEqual(req_val["arguments"]["variablesReference"], 100)
+        self.assertNotIn("start", req_val["arguments"])
+        self.assertNotIn("count", req_val["arguments"])
+
+    async def test_variables_with_start_only(self) -> None:
+        client = DapClient()
+        writer = MockWriter()
+        args = VariablesArguments(variables_reference=100, start=5)
+        send_task = asyncio.create_task(client.variables(writer, args))  # type: ignore
+
+        await asyncio.sleep(0.1)
+
+        buffer_val = writer.buffer.getvalue()
+        headers, body = buffer_val.split(b"\r\n\r\n", 1)
+        req_val = json.loads(body.decode("utf-8"))
+        seq = req_val["seq"]
+
+        response = {
+            "seq": 10,
+            "type": "response",
+            "request_seq": seq,
+            "success": True,
+            "command": "variables",
+            "body": {"variables": []},
+        }
+
+        if seq in client._pending_requests:
+            client._pending_requests[seq].set_result(response)
+
+        resp = await send_task
+        self.assertTrue(resp.success)
+        self.assertEqual(req_val["arguments"]["variablesReference"], 100)
+        self.assertEqual(req_val["arguments"]["start"], 5)
+        self.assertNotIn("count", req_val["arguments"])
+
+    async def test_variables_with_count_only(self) -> None:
+        client = DapClient()
+        writer = MockWriter()
+        args = VariablesArguments(variables_reference=100, count=10)
+        send_task = asyncio.create_task(client.variables(writer, args))  # type: ignore
+
+        await asyncio.sleep(0.1)
+
+        buffer_val = writer.buffer.getvalue()
+        headers, body = buffer_val.split(b"\r\n\r\n", 1)
+        req_val = json.loads(body.decode("utf-8"))
+        seq = req_val["seq"]
+
+        response = {
+            "seq": 10,
+            "type": "response",
+            "request_seq": seq,
+            "success": True,
+            "command": "variables",
+            "body": {"variables": []},
+        }
+
+        if seq in client._pending_requests:
+            client._pending_requests[seq].set_result(response)
+
+        resp = await send_task
+        self.assertTrue(resp.success)
+        self.assertEqual(req_val["arguments"]["variablesReference"], 100)
+        self.assertNotIn("start", req_val["arguments"])
+        self.assertEqual(req_val["arguments"]["count"], 10)
+
+    async def test_variables_with_start_and_count(self) -> None:
+        client = DapClient()
+        writer = MockWriter()
+        args = VariablesArguments(variables_reference=100, start=5, count=10)
+        send_task = asyncio.create_task(client.variables(writer, args))  # type: ignore
+
+        await asyncio.sleep(0.1)
+
+        buffer_val = writer.buffer.getvalue()
+        headers, body = buffer_val.split(b"\r\n\r\n", 1)
+        req_val = json.loads(body.decode("utf-8"))
+        seq = req_val["seq"]
+
+        response = {
+            "seq": 10,
+            "type": "response",
+            "request_seq": seq,
+            "success": True,
+            "command": "variables",
+            "body": {"variables": []},
+        }
+
+        if seq in client._pending_requests:
+            client._pending_requests[seq].set_result(response)
+
+        resp = await send_task
+        self.assertTrue(resp.success)
+        self.assertEqual(req_val["arguments"]["variablesReference"], 100)
+        self.assertEqual(req_val["arguments"]["start"], 5)
+        self.assertEqual(req_val["arguments"]["count"], 10)

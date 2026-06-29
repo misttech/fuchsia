@@ -199,6 +199,27 @@ class EvaluateArguments(DapBaseModel):
 
     expression: str
     context: str = Field(default="repl")
+    frame_id: int | None = None
+
+
+class EvaluateResponseBody(DapBaseModel):
+    """Body of response to `evaluate` request."""
+
+    # TODO(https://fxbug.dev/529329366): Support `type` and `variablesReference` in the zxdb
+    # backend.
+    result: str
+    type: str | None = None
+    variables_reference: int
+
+
+class EvaluateResponse(Response):
+    """Response to `evaluate` request.
+
+    Attributes:
+        body: The evaluate response body.
+    """
+
+    body: EvaluateResponseBody
 
 
 class AttachRequestArguments(DapBaseModel):
@@ -258,9 +279,13 @@ class VariablesArguments(DapBaseModel):
 
     Attributes:
         variables_reference: Retrieve the variables for this reference.
+        start: The index of the first variable to return.
+        count: The number of variables to return.
     """
 
     variables_reference: int
+    start: int | None = None
+    count: int | None = None
 
 
 class VariablesResponseBody(DapBaseModel):
