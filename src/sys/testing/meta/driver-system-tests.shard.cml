@@ -17,7 +17,10 @@
             source_availability: "unknown",
         },
         {
-            protocol: "fuchsia.driver.development.Manager",
+            protocol: [
+                "fuchsia.driver.development.Manager",
+                "fuchsia.driver.registrar.DriverRegistrar",
+            ],
             from: "parent",
             to: "#driver-system-tests",
         },

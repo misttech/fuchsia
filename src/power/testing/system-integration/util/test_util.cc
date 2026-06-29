@@ -10,6 +10,10 @@
 #include <fidl/test.suspendcontrol/cpp/fidl.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/directory.h>
+#include <lib/syslog/cpp/macros.h>
+
+#include <mutex>
+#include <unordered_map>
 
 #include <gtest/gtest.h>
 
@@ -19,23 +23,195 @@ namespace {
 namespace fh_suspend = fuchsia_hardware_power_suspend;
 
 template <typename T>
-std::string ToString(const T& value) {
-  std::ostringstream buf;
-  buf << value;
-  return buf.str();
+fidl::ostream::Formatted<T> FidlFormat(const T& value) {
+  return fidl::ostream::Formatted<T>(value);
 }
-template <typename T>
-std::string FidlString(const T& value) {
-  return ToString(fidl::ostream::Formatted<T>(value));
-}
+
+std::mutex g_tokens_mutex;
+std::unordered_map<std::string, zx::event> g_captured_tokens;
+
+class TestElementControlServer : public fidl::Server<fuchsia_power_broker::ElementControl> {
+ public:
+  TestElementControlServer(std::string element_name,
+                           fidl::ClientEnd<fuchsia_power_broker::ElementControl> real_control)
+      : element_name_(element_name), real_control_(std::move(real_control)) {}
+
+  void RegisterDependencyToken(RegisterDependencyTokenRequest& request,
+                               RegisterDependencyTokenCompleter::Sync& completer) override {
+    FX_LOGS(DEBUG) << "[INTERCEPTOR] RegisterDependencyToken called for element: " << element_name_;
+    zx::event token;
+    zx_status_t status = request.token().duplicate(ZX_RIGHT_SAME_RIGHTS, &token);
+    if (status == ZX_OK) {
+      std::lock_guard<std::mutex> lock(g_tokens_mutex);
+      g_captured_tokens[element_name_] = std::move(token);
+      FX_LOGS(DEBUG) << "[INTERCEPTOR] Successfully duplicated and stashed token for element: "
+                     << element_name_;
+    } else {
+      FX_LOGS(ERROR) << "[INTERCEPTOR] Failed to duplicate token: " << status;
+    }
+
+    auto result = fidl::Call(real_control_)->RegisterDependencyToken(std::move(request));
+    if (result.is_error()) {
+      if (result.error_value().is_framework_error()) {
+        completer.Close(result.error_value().framework_error().status());
+      } else {
+        completer.Reply(fit::error(result.error_value().domain_error()));
+      }
+    } else {
+      completer.Reply(fit::ok());
+    }
+  }
+
+  void OpenStatusChannel(OpenStatusChannelRequest& request,
+                         OpenStatusChannelCompleter::Sync& completer) override {
+    auto result = fidl::Call(real_control_)->OpenStatusChannel(std::move(request));
+    if (result.is_error()) {
+      FX_LOGS(ERROR) << "[INTERCEPTOR] OpenStatusChannel failed: " << result.error_value();
+    }
+  }
+
+  void UnregisterDependencyToken(UnregisterDependencyTokenRequest& request,
+                                 UnregisterDependencyTokenCompleter::Sync& completer) override {
+    auto result = fidl::Call(real_control_)->UnregisterDependencyToken(std::move(request));
+    if (result.is_error()) {
+      if (result.error_value().is_framework_error()) {
+        completer.Close(result.error_value().framework_error().status());
+      } else {
+        completer.Reply(fit::error(result.error_value().domain_error()));
+      }
+    } else {
+      completer.Reply(fit::ok());
+    }
+  }
+
+  void AddDependency(AddDependencyRequest& request,
+                     AddDependencyCompleter::Sync& completer) override {
+    auto result = fidl::Call(real_control_)->AddDependency(std::move(request));
+    if (result.is_error()) {
+      if (result.error_value().is_framework_error()) {
+        completer.Close(result.error_value().framework_error().status());
+      } else {
+        completer.Reply(fit::error(result.error_value().domain_error()));
+      }
+    } else {
+      completer.Reply(fit::ok());
+    }
+  }
+
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementControl> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {}
+
+ private:
+  std::string element_name_;
+  fidl::ClientEnd<fuchsia_power_broker::ElementControl> real_control_;
+};
+
+class TestTopologyServer : public fidl::Server<fuchsia_power_broker::Topology> {
+ public:
+  TestTopologyServer(async_dispatcher_t* dispatcher,
+                     fidl::ClientEnd<fuchsia_power_broker::Topology> real_topology)
+      : dispatcher_(dispatcher), real_topology_(std::move(real_topology)) {}
+
+  void AddElement(AddElementRequest& request, AddElementCompleter::Sync& completer) override {
+    std::string name = request.element_name().has_value() ? *request.element_name() : "";
+
+    if (request.element_control().has_value()) {
+      auto [real_control_client_end, real_control_server_end] =
+          fidl::Endpoints<fuchsia_power_broker::ElementControl>::Create();
+
+      auto driver_runner_server_end = std::move(*request.element_control());
+
+      auto local_server =
+          std::make_unique<TestElementControlServer>(name, std::move(real_control_client_end));
+      fidl::BindServer(dispatcher_, std::move(driver_runner_server_end), std::move(local_server));
+
+      request.element_control(std::move(real_control_server_end));
+    }
+
+    auto real_topology = component::Connect<fuchsia_power_broker::Topology>();
+    if (!real_topology.is_ok()) {
+      completer.Close(real_topology.status_value());
+      return;
+    }
+
+    auto result = fidl::Call(*real_topology)->AddElement(std::move(request));
+    if (result.is_error()) {
+      if (result.error_value().is_framework_error()) {
+        completer.Close(result.error_value().framework_error().status());
+      } else {
+        completer.Reply(fit::error(result.error_value().domain_error()));
+      }
+    } else {
+      completer.Reply(fit::ok());
+    }
+  }
+
+  void Lease(LeaseRequest& request, LeaseCompleter::Sync& completer) override {
+    FX_LOGS(DEBUG) << "[INTERCEPTOR] Topology::Lease called!";
+    auto real_topology = component::Connect<fuchsia_power_broker::Topology>();
+    if (!real_topology.is_ok()) {
+      FX_LOGS(ERROR) << "[INTERCEPTOR] Failed to connect to real Topology: "
+                     << real_topology.status_string();
+      completer.Close(real_topology.status_value());
+      return;
+    }
+
+    auto result = fidl::Call(*real_topology)->Lease(std::move(request));
+    if (result.is_error()) {
+      FX_LOGS(ERROR) << "[INTERCEPTOR] Real Topology::Lease call failed: " << result.error_value();
+      if (result.error_value().is_framework_error()) {
+        completer.Close(result.error_value().framework_error().status());
+      } else {
+        completer.Reply(fit::error(result.error_value().domain_error()));
+      }
+    } else {
+      FX_LOGS(DEBUG) << "[INTERCEPTOR] Real Topology::Lease call succeeded!";
+      completer.Reply(fit::ok());
+    }
+  }
+
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_broker::Topology> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {}
+
+ private:
+  async_dispatcher_t* dispatcher_;
+  fidl::ClientEnd<fuchsia_power_broker::Topology> real_topology_;
+};
 
 }  // namespace
 
 void Connector::Receive(ReceiveRequest& request, ReceiveCompleter::Sync& completer) {
+  if (path_ == fidl::DiscoverableProtocolDefaultPath<fuchsia_power_broker::Topology>) {
+    auto real_topology = component::Connect<fuchsia_power_broker::Topology>();
+    if (real_topology.is_ok()) {
+      auto local_server =
+          std::make_unique<TestTopologyServer>(dispatcher_, std::move(real_topology.value()));
+      fidl::BindServer(
+          dispatcher_,
+          fidl::ServerEnd<fuchsia_power_broker::Topology>(std::move(request.channel())),
+          std::move(local_server));
+      return;
+    }
+  }
+
   zx_status_t status = fdio_service_connect(path_.c_str(), request.channel().release());
   if (status != ZX_OK) {
     completer.Close(status);
   }
+}
+
+zx::event TestLoopBase::GetCapturedToken(const std::string& element_name) {
+  std::lock_guard<std::mutex> lock(g_tokens_mutex);
+  auto iter = g_captured_tokens.find(element_name);
+  if (iter != g_captured_tokens.end()) {
+    zx::event copy;
+    zx_status_t status = iter->second.duplicate(ZX_RIGHT_SAME_RIGHTS, &copy);
+    if (status == ZX_OK) {
+      return copy;
+    }
+  }
+  return zx::event();
 }
 
 void TestLoopBase::Initialize() {
@@ -84,13 +260,13 @@ test_sagcontrol::SystemActivityGovernorState TestLoopBase::GetBootCompleteState(
 }
 
 zx_status_t TestLoopBase::AwaitSystemSuspend() {
-  std::cout << "Awaiting suspend" << std::endl;
+  FX_LOGS(INFO) << "Awaiting suspend";
   auto wait_result = fidl::Call(suspend_device_client_end_)->AwaitSuspend();
   if (!wait_result.is_ok()) {
-    std::cout << "Failed to await suspend: " << wait_result.error_value() << std::endl;
+    FX_LOGS(ERROR) << "Failed to await suspend: " << wait_result.error_value();
     return ZX_ERR_INTERNAL;
   }
-  std::cout << "Suspend confirmed" << std::endl;
+  FX_LOGS(INFO) << "Suspend confirmed";
 
   return ZX_OK;
 }
@@ -99,7 +275,7 @@ bool TestLoopBase::SetBootComplete() {
   {
     auto status = fidl::WireCall(sag_control_state_client_end_)->SetBootComplete();
     if (!status.ok()) {
-      std::cout << "Failed to SetBootComplete" << std::endl;
+      FX_LOGS(ERROR) << "Failed to SetBootComplete";
       return false;
     }
   }
@@ -107,7 +283,7 @@ bool TestLoopBase::SetBootComplete() {
 }
 
 zx_status_t TestLoopBase::StartSystemResume() {
-  std::cout << "Starting system resume" << std::endl;
+  FX_LOGS(INFO) << "Starting system resume";
   test_suspendcontrol::SuspendResult suspend_result;
   // Assign suspend results to provide the appearance of a normal return from suspension.
   suspend_result.suspend_duration(2);
@@ -115,10 +291,10 @@ zx_status_t TestLoopBase::StartSystemResume() {
   auto request = test_suspendcontrol::DeviceResumeRequest::WithResult(suspend_result);
   auto resume_result = fidl::Call(suspend_device_client_end_)->Resume(request);
   if (!resume_result.is_ok()) {
-    std::cout << "Failed to await suspend: " << resume_result.error_value() << std::endl;
+    FX_LOGS(ERROR) << "Failed to await suspend: " << resume_result.error_value();
     return ZX_ERR_INTERNAL;
   }
-  std::cout << "Resume started" << std::endl;
+  FX_LOGS(INFO) << "Resume started";
 
   return ZX_OK;
 }
@@ -126,10 +302,10 @@ zx_status_t TestLoopBase::StartSystemResume() {
 zx_status_t TestLoopBase::ChangeSagState(test_sagcontrol::SystemActivityGovernorState state,
                                          zx::duration poll_delay) {
   while (true) {
-    std::cout << "Setting SAG state: " << FidlString(state) << std::endl;
+    FX_LOGS(INFO) << "Setting SAG state: " << FidlFormat(state);
     auto set_result = fidl::Call(sag_control_state_client_end_)->Set(state);
     if (!set_result.is_ok()) {
-      std::cout << "Failed to set SAG state: " << set_result.error_value() << std::endl;
+      FX_LOGS(ERROR) << "Failed to set SAG state: " << set_result.error_value();
       return ZX_ERR_INTERNAL;
     }
     zx::nanosleep(zx::deadline_after(poll_delay));
@@ -139,17 +315,16 @@ zx_status_t TestLoopBase::ChangeSagState(test_sagcontrol::SystemActivityGovernor
       break;
     }
 
-    std::cout << "Retrying SAG state change. Last known state: " << FidlString(get_result.value())
-              << std::endl;
+    FX_LOGS(INFO) << "Retrying SAG state change. Last known state: "
+                  << FidlFormat(get_result.value());
     set_result = fidl::Call(sag_control_state_client_end_)->Set(GetBootCompleteState());
     if (!set_result.is_ok()) {
-      std::cout << "Failed to set boot complete SAG state: " << set_result.error_value()
-                << std::endl;
+      FX_LOGS(ERROR) << "Failed to set boot complete SAG state: " << set_result.error_value();
       return ZX_ERR_INTERNAL;
     }
     zx::nanosleep(zx::deadline_after(poll_delay));
   }
-  std::cout << "SAG state change complete." << std::endl;
+  FX_LOGS(INFO) << "SAG state change complete.";
   return ZX_OK;
 }
 
@@ -166,11 +341,12 @@ void TestLoopBase::MatchInspectData(diagnostics::reader::ArchiveReader& reader,
       std::vector<std::string>(inspect_path.begin(), inspect_path.end() - 1),
       inspect_path[inspect_path.size() - 1]);
 
-  std::cout << "Matching inspect data for moniker = " << moniker << ", path = ";
+  std::string path_str;
   for (const auto& path : inspect_path) {
-    std::cout << "[" << path << "]";
+    path_str += "[" + path + "]";
   }
-  std::cout << ", selector = " << selector << std::endl;
+  FX_LOGS(INFO) << "Matching inspect data for moniker = " << moniker << ", path = " << path_str
+                << ", selector = " << selector;
 
   bool match = false;
   do {
@@ -183,21 +359,20 @@ void TestLoopBase::MatchInspectData(diagnostics::reader::ArchiveReader& reader,
         // IsBool will return false if the value at inspect_path doesn't exist yet,
         // whereas GetBool will crash the test
         if (!actual_value.IsBool()) {
-          std::cout << std::boolalpha << moniker << ": Expected value " << *bool_value
-                    << ", but got nothing for selector " << selector << ". Taking another snapshot."
-                    << std::endl;
+          FX_LOGS(INFO) << moniker << ": Expected value " << std::boolalpha << *bool_value
+                        << ", but got nothing for selector " << selector
+                        << ". Taking another snapshot.";
           // look through all the trees
           continue;
         }
         if (actual_value.GetBool() == *bool_value) {
           match = true;
-          std::cout << std::boolalpha << moniker << ": Got expected value " << *bool_value
-                    << " for selector " << selector << std::endl;
+          FX_LOGS(INFO) << moniker << ": Got expected value " << std::boolalpha << *bool_value
+                        << " for selector " << selector;
           break;
         } else {
-          std::cout << std::boolalpha << moniker << ": Expected value " << *bool_value
-                    << ", but got " << actual_value.GetBool() << ". Taking another snapshot."
-                    << std::endl;
+          FX_LOGS(INFO) << moniker << ": Expected value " << std::boolalpha << *bool_value
+                        << ", but got " << actual_value.GetBool() << ". Taking another snapshot.";
         }
       }
 
@@ -207,20 +382,20 @@ void TestLoopBase::MatchInspectData(diagnostics::reader::ArchiveReader& reader,
         // IsUint64 will return false if the value at inspect_path doesn't exist yet,
         // whereas GetUint64 will crash the test
         if (!actual_value.IsUint64()) {
-          std::cout << moniker << ": Expected value " << *uint64_value
-                    << ", but got nothing for selector " << selector << ". Taking another snapshot."
-                    << std::endl;
+          FX_LOGS(INFO) << moniker << ": Expected value " << *uint64_value
+                        << ", but got nothing for selector " << selector
+                        << ". Taking another snapshot.";
           // look through all the trees
           continue;
         }
         if (actual_value.GetUint64() == *uint64_value) {
           match = true;
-          std::cout << moniker << ": Got expected value " << *uint64_value << " for selector "
-                    << selector << std::endl;
+          FX_LOGS(INFO) << moniker << ": Got expected value " << *uint64_value << " for selector "
+                        << selector;
           break;
         } else {
-          std::cout << moniker << ": Expected value " << *uint64_value << ", but got "
-                    << actual_value.GetUint64() << ". Taking another snapshot." << std::endl;
+          FX_LOGS(INFO) << moniker << ": Expected value " << *uint64_value << ", but got "
+                        << actual_value.GetUint64() << ". Taking another snapshot.";
         }
       }
     }
@@ -230,8 +405,8 @@ void TestLoopBase::MatchInspectData(diagnostics::reader::ArchiveReader& reader,
 zx::result<std::string> TestLoopBase::GetPowerElementId(diagnostics::reader::ArchiveReader& reader,
                                                         const std::string& pb_moniker,
                                                         const std::string& power_element_name) {
-  std::cout << "Searching for power element with name '" << power_element_name
-            << "' in Power Broker's topology listing." << std::endl;
+  FX_LOGS(INFO) << "Searching for power element with name '" << power_element_name
+                << "' in Power Broker's topology listing.";
   while (true) {
     auto result = RunPromise(reader.SnapshotInspectUntilPresent({pb_moniker}));
     auto data = result.take_value();
@@ -240,7 +415,7 @@ zx::result<std::string> TestLoopBase::GetPowerElementId(diagnostics::reader::Arc
         auto topology = datum.payload().value()->GetByPath(
             {"broker", "topology", "fuchsia.inspect.Graph", "topology"});
         if (topology == nullptr) {
-          std::cout << "No topology listing in Power Broker's inspect data. ";
+          FX_LOGS(INFO) << "No topology listing in Power Broker's inspect data.";
           break;
         }
         for (const auto& child : topology->children()) {
@@ -249,31 +424,34 @@ zx::result<std::string> TestLoopBase::GetPowerElementId(diagnostics::reader::Arc
                                       "topology", child.name(), "meta", "name"})
                           .GetString();
           if (name == power_element_name) {
-            std::cout << "Power element '" << power_element_name << "' has ID '" << child.name()
-                      << "'." << std::endl;
+            FX_LOGS(INFO) << "Power element '" << power_element_name << "' has ID '" << child.name()
+                          << "'.";
             return zx::ok(child.name());
           }
         }
-        std::cout << "Did not find power element in Power Broker's topology listing. ";
+        FX_LOGS(INFO) << "Did not find power element in Power Broker's topology listing.";
       }
     }
-    std::cout << "Taking another snapshot." << std::endl;
+    FX_LOGS(INFO) << "Taking another snapshot.";
   }
 }
 
 zx::eventpair TestLoopBase::PrepareDriver(std::string_view node_filter,
                                           std::string_view driver_url_suffix, bool expect_new_koid,
-                                          bool use_df_elements) {
+                                          bool use_df_elements,
+                                          std::vector<CustomDictionaryEntry> custom_entries) {
   // Find the node running our target driver.
-  std::cout << "Preparing driver '" << driver_url_suffix << "' for test..." << std::endl;
+  FX_LOGS(INFO) << "Preparing driver '" << driver_url_suffix << "' for test...";
   std::optional<std::string> found = std::nullopt;
   uint64_t old_koid;
   while (!found) {
     auto node_vec = GetNodeInfo(node_filter);
+    FX_LOGS(INFO) << "Found " << node_vec.size() << " nodes matching filter '" << node_filter
+                  << "'.";
     for (auto& node : node_vec) {
       if (node.bound_driver_url().has_value() &&
           node.bound_driver_url().value().ends_with(driver_url_suffix)) {
-        std::cout << "driver found with moniker '" << node.moniker().value() << "'" << std::endl;
+        FX_LOGS(INFO) << "driver found with moniker '" << node.moniker().value() << "'";
         found.emplace(node.moniker().value());
         old_koid = node.driver_host_koid().value();
         break;
@@ -281,15 +459,15 @@ zx::eventpair TestLoopBase::PrepareDriver(std::string_view node_filter,
     }
 
     if (!found) {
-      std::cout << "driver not found, retrying... " << std::endl;
+      FX_LOGS(INFO) << "driver not found, retrying...";
       // Small loop delay.
       RunLoopWithTimeout(zx::msec(10));
     }
   }
 
-  std::cout << "restarting driver with test dictionary..." << std::endl;
+  FX_LOGS(INFO) << "restarting driver with test dictionary...";
   // Setup the power dictionary and restart the node with this dictionary.
-  auto dict_ref = CreateDictionaryForTest();
+  auto dict_ref = CreateDictionaryForTest(std::move(custom_entries));
   zx::eventpair release_fence;
   if (use_df_elements) {
     // Retrieve the CPU token to override.
@@ -331,7 +509,7 @@ zx::eventpair TestLoopBase::PrepareDriver(std::string_view node_filter,
     RunLoopWithTimeout(zx::sec(1));
   }
 
-  std::cout << "checking for the driver to be up again..." << std::endl;
+  FX_LOGS(INFO) << "checking for the driver to be up again...";
   found = std::nullopt;
 
   // Wait until the node is available again, possibly under a new driver host.
@@ -350,18 +528,19 @@ zx::eventpair TestLoopBase::PrepareDriver(std::string_view node_filter,
     }
 
     if (!found) {
-      std::cout << "driver not found, retrying... " << std::endl;
+      FX_LOGS(INFO) << "driver not found, retrying...";
       // Small loop delay.
       RunLoopWithTimeout(zx::msec(10));
     }
   }
 
-  std::cout << "proceeding with test! " << std::endl;
+  FX_LOGS(INFO) << "proceeding with test!";
   // Return the release_fence for the caller to hold on to.
   return release_fence;
 }
 
-fuchsia_component_sandbox::DictionaryRef TestLoopBase::CreateDictionaryForTest() {
+fuchsia_component_sandbox::DictionaryRef TestLoopBase::CreateDictionaryForTest(
+    std::vector<CustomDictionaryEntry> custom_entries) {
   // Start a background loop to run the sandbox connectors.
   sandbox_connector_loop_.StartThread("sandbox-loop");
 
@@ -403,20 +582,34 @@ fuchsia_component_sandbox::DictionaryRef TestLoopBase::CreateDictionaryForTest()
           ->DictionaryInsert({dict_id, {"fuchsia.power.system.CpuElementManager", cpu_element_id}});
   EXPECT_EQ(true, insert_res.is_ok());
 
+  for (auto& entry : custom_entries) {
+    uint32_t cap_id = next_cap_id_++;
+    auto connector_res =
+        fidl::Call(*cap_store)->ConnectorCreate({cap_id, {std::move(entry.client_end)}});
+    EXPECT_EQ(true, connector_res.is_ok());
+
+    auto insert_custom_res =
+        fidl::Call(*cap_store)->DictionaryInsert({dict_id, {entry.name, cap_id}});
+    EXPECT_EQ(true, insert_custom_res.is_ok());
+  }
+
   auto dict_export = fidl::Call(*cap_store)->Export({dict_id});
   auto dict_ref = std::move(dict_export->capability().dictionary().value());
 
-  sag_connector_.emplace(async_patterns::PassDispatcher,
-                         std::string("/svc/fuchsia.power.system.ActivityGovernor"),
-                         std::move(sag_server));
+  sag_connector_.emplace(
+      async_patterns::PassDispatcher,
+      std::string(fidl::DiscoverableProtocolDefaultPath<fuchsia_power_system::ActivityGovernor>),
+      std::move(sag_server));
 
-  broker_connector_.emplace(async_patterns::PassDispatcher,
-                            std::string("/svc/fuchsia.power.broker.Topology"),
-                            std::move(broker_server));
+  broker_connector_.emplace(
+      async_patterns::PassDispatcher,
+      std::string(fidl::DiscoverableProtocolDefaultPath<fuchsia_power_broker::Topology>),
+      std::move(broker_server));
 
-  cpu_element_connector_.emplace(async_patterns::PassDispatcher,
-                                 std::string("/svc/fuchsia.power.system.CpuElementManager"),
-                                 std::move(cpu_element_server));
+  cpu_element_connector_.emplace(
+      async_patterns::PassDispatcher,
+      std::string(fidl::DiscoverableProtocolDefaultPath<fuchsia_power_system::CpuElementManager>),
+      std::move(cpu_element_server));
 
   return dict_ref;
 }

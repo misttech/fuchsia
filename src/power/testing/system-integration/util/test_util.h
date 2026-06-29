@@ -21,7 +21,8 @@ class Connector final : public fidl::Server<fuchsia_component_sandbox::Receiver>
  public:
   explicit Connector(async_dispatcher_t* dispatcher, std::string path,
                      fidl::ServerEnd<fuchsia_component_sandbox::Receiver> server)
-      : path_(std::move(path)),
+      : dispatcher_(dispatcher),
+        path_(std::move(path)),
         binding_(dispatcher, std::move(server), this, fidl::kIgnoreBindingClosure) {}
 
   void Receive(ReceiveRequest& request, ReceiveCompleter::Sync& completer) override;
@@ -31,11 +32,21 @@ class Connector final : public fidl::Server<fuchsia_component_sandbox::Receiver>
       fidl::UnknownMethodCompleter::Sync& completer) override {}
 
  private:
+  async_dispatcher_t* dispatcher_;
   std::string path_;
   fidl::ServerBinding<fuchsia_component_sandbox::Receiver> binding_;
 };
 
+struct CustomDictionaryEntry {
+  std::string name;
+  fidl::ClientEnd<fuchsia_component_sandbox::Receiver> client_end;
+};
+
 class TestLoopBase : public loop_fixture::RealLoop {
+ public:
+  // Get the duplicated DependencyToken captured by the intercepted Topology.AddElement call.
+  zx::event GetCapturedToken(const std::string& element_name);
+
  protected:
   void Initialize();
 
@@ -72,12 +83,14 @@ class TestLoopBase : public loop_fixture::RealLoop {
   // the target driver and children are restarted again and lose access to the test-specific
   // power protocols.
   zx::eventpair PrepareDriver(std::string_view node_filter, std::string_view driver_url_suffix,
-                              bool expect_new_koid, bool use_df_elements = false);
+                              bool expect_new_koid, bool use_df_elements = false,
+                              std::vector<CustomDictionaryEntry> custom_entries = {});
 
   // Create and export a component framework dictionary that contains connectors for the various
   // power framework protocols, that are connected to the test-specific SAG and power broker that
   // is accessible in the incoming namespace of the test component. See 'meta/client.shard.cml'.
-  fuchsia_component_sandbox::DictionaryRef CreateDictionaryForTest();
+  fuchsia_component_sandbox::DictionaryRef CreateDictionaryForTest(
+      std::vector<CustomDictionaryEntry> custom_entries = {});
 
   // Query the driver framework for nodes that have a moniker matching the |node_filter|.
   std::vector<fuchsia_driver_development::NodeInfo> GetNodeInfo(std::string_view node_filter);

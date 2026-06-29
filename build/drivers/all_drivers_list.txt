@@ -362,6 +362,7 @@
 //src/power/power-manager/testing/fake_root:root_driver
 //src/power/testing/fake-battery:fake_battery_driver
 //src/power/testing/fake-trippoint:driver
+//src/power/testing/system-integration/dispatcher-power/test-driver:driver
 //src/power/testing/system-integration/example/test-driver:driver
 //src/storage/block-relay/testing/toy-driver:driver
 //src/sys/component_manager/tests/structured_config/client_integration/cpp_driver:receiver_driver

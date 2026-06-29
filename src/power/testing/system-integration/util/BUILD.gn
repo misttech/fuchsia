@@ -18,6 +18,7 @@ source_set("util") {
     "//sdk/lib/async-loop-testing/cpp",
     "//sdk/lib/async_patterns/cpp",
     "//sdk/lib/diagnostics/reader/cpp:archive_reader",
+    "//sdk/lib/syslog/cpp",
     "//src/lib/fxl/test:gtest_main_no_testonly",
     "//src/power/system-activity-governor/fake/fidl:test.sagcontrol_cpp",
     "//src/power/testing/fake-suspend:test.suspendcontrol_cpp",

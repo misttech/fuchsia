@@ -31,6 +31,7 @@ group("drivers") {
     "testing/fake-battery:fake_battery_component",
     "testing/fake-powersensor:fake_power_sensor_package",
     "testing/fake-trippoint:fake_trippoint_component",
+    "testing/system-integration/dispatcher-power/test-driver:component",
     "testing/system-integration/example/test-driver:component",
   ]
 }

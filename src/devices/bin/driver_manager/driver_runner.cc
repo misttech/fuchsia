@@ -1370,7 +1370,7 @@ void DriverRunner::CreatePowerElement(
   }
 
   // Any drivers that aren't from bootfs have a dependency on storage.
-  if (for_collection != Collection::kBoot) {
+  if (for_collection != Collection::kBoot && SuspendEnabled()) {
     std::optional<fuchsia_power_broker::DependencyToken> token = StorageElementToken();
 
     ZX_ASSERT_MSG(token.has_value(),
