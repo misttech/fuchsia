@@ -4,10 +4,9 @@
 
 #include "src/media/audio/drivers/aml-g12-tdm/composite-server.h"
 
-#include <lib/driver/logging/cpp/logger.h>
-
 #include <fidl/fuchsia.hardware.audio.signalprocessing/cpp/common_types.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/memory_barriers/memory_barriers.h>
 #include <lib/trace/event_args.h>
@@ -329,8 +328,7 @@ void AudioCompositeServer::GetRingBufferFormats(GetRingBufferFormatsRequest& req
   auto ring_buffer =
       std::find(kRingBufferIds.begin(), kRingBufferIds.end(), request.processing_element_id());
   if (ring_buffer == kRingBufferIds.end()) {
-    fdf::error("Unknown Ring Buffer id ({}) for format retrieval",
-               request.processing_element_id());
+    fdf::error("Unknown Ring Buffer id ({}) for format retrieval", request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
@@ -355,8 +353,7 @@ void AudioCompositeServer::CreateRingBuffer(CreateRingBufferRequest& request,
   ZX_ASSERT(ring_buffer_index < kNumberOfTdmEngines);
   auto& supported = supported_ring_buffer_formats_[ring_buffer_index];
   if (request.format().Which() != fuchsia_hardware_audio::Format2::Tag::kPcmFormat) {
-    fdf::error("No PCM formats provided for Ring Buffer id ({})",
-               request.processing_element_id());
+    fdf::error("No PCM formats provided for Ring Buffer id ({})", request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
@@ -548,7 +545,7 @@ zx_status_t AudioCompositeServer::StartSocPower(bool wait_for_completion) {
   fidl::WireResult clock_gate_result = clock_gate_->Enable();
   if (!clock_gate_result.ok()) {
     fdf::error("Failed to send request to enable clock gate: {}",
-            clock_gate_result.status_string());
+               clock_gate_result.status_string());
     TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StartSocPower exit", TRACE_SCOPE_PROCESS,
                   "status", clock_gate_result.status(), "reason",
                   "Could not send request to enable clock gate");
@@ -556,7 +553,7 @@ zx_status_t AudioCompositeServer::StartSocPower(bool wait_for_completion) {
   }
   if (clock_gate_result->is_error()) {
     fdf::error("Send request to enable clock gate error: {}",
-            zx_status_get_string(clock_gate_result->error_value()));
+               zx_status_get_string(clock_gate_result->error_value()));
     TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StartSocPower exit", TRACE_SCOPE_PROCESS,
                   "status", clock_gate_result->error_value(), "reason",
                   "Could not enable clock gate");
@@ -571,7 +568,7 @@ zx_status_t AudioCompositeServer::StartSocPower(bool wait_for_completion) {
   }
   if (pll_result->is_error()) {
     fdf::error("Send request to enable PLL error: {}",
-            zx_status_get_string(pll_result->error_value()));
+               zx_status_get_string(pll_result->error_value()));
     TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StartSocPower exit", TRACE_SCOPE_PROCESS,
                   "status", pll_result->error_value(), "reason", "Could not enable PLL");
     return pll_result->error_value();
@@ -630,7 +627,7 @@ zx_status_t AudioCompositeServer::StopSocPower() {
     fidl::WireResult alt_function_result = sclk_client.pin->Configure(gpio_function_config);
     if (!alt_function_result.ok()) {
       fdf::error("Failed to send request to set GPIO function: {}",
-              alt_function_result.status_string());
+                 alt_function_result.status_string());
       TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StopSocPower exit",
                     TRACE_SCOPE_PROCESS, "status", alt_function_result.status(), "reason",
                     "Could not set GPIO function");
@@ -640,7 +637,7 @@ zx_status_t AudioCompositeServer::StopSocPower() {
         sclk_client.gpio->SetBufferMode(fuchsia_hardware_gpio::BufferMode::kOutputLow);
     if (!config_out_result.ok()) {
       fdf::error("Failed to send request to set GPIO output: {}",
-              config_out_result.status_string());
+                 config_out_result.status_string());
       TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StopSocPower exit",
                     TRACE_SCOPE_PROCESS, "status", config_out_result.status(), "reason",
                     "Could not set GPIO output");
@@ -652,7 +649,7 @@ zx_status_t AudioCompositeServer::StopSocPower() {
   fidl::WireResult clock_gate_result = clock_gate_->Disable();
   if (!clock_gate_result.ok()) {
     fdf::error("Failed to send request to disable clock gate: {}",
-            clock_gate_result.status_string());
+               clock_gate_result.status_string());
     TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StopSocPower exit", TRACE_SCOPE_PROCESS,
                   "status", clock_gate_result.status(), "reason",
                   "Could not send request to disable clock gate");
@@ -660,7 +657,7 @@ zx_status_t AudioCompositeServer::StopSocPower() {
   }
   if (clock_gate_result->is_error()) {
     fdf::error("Send request to disable clock gate error: {}",
-            zx_status_get_string(clock_gate_result->error_value()));
+               zx_status_get_string(clock_gate_result->error_value()));
     TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StopSocPower exit", TRACE_SCOPE_PROCESS,
                   "status", clock_gate_result->error_value(), "reason",
                   "Could not disable clock gate");
@@ -676,7 +673,7 @@ zx_status_t AudioCompositeServer::StopSocPower() {
   }
   if (pll_result->is_error()) {
     fdf::error("Send request to disable PLL error: {}",
-            zx_status_get_string(pll_result->error_value()));
+               zx_status_get_string(pll_result->error_value()));
     TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StopSocPower exit", TRACE_SCOPE_PROCESS,
                   "status", pll_result->error_value(), "reason", "Could not disable PLL");
     return pll_result->error_value();
@@ -745,6 +742,7 @@ void RingBufferServer::ResetRingBuffer() {
     auto stop_if_temporarily_started = owner_.TemporarilyStartSocPower();
     engine_.device->Stop();
   }
+  BarrierBeforeRelease();
   started_ = false;
   pinned_ring_buffer_.Unpin();
 }
@@ -798,7 +796,10 @@ void RingBufferServer::GetVmo(
     return;
   }
 
-  status = engine_.device->SetBuffer(pinned_ring_buffer_.region(0).phys_addr, ring_buffer_size);
+  {
+    auto stop_if_temporarily_started = owner_.TemporarilyStartSocPower();
+    status = engine_.device->SetBuffer(pinned_ring_buffer_.region(0).phys_addr, ring_buffer_size);
+  }
   if (status != ZX_OK) {
     fdf::error("failed to set buffer: {}", zx_status_get_string(status));
     completer.Close(status);
@@ -1101,9 +1102,8 @@ void AudioCompositeServer::SetElementState(SetElementStateRequest& request,
   }
   // This driver does not expect or handle vendor_specific_data from clients.
   if (request.state().vendor_specific_data().has_value()) {
-    fdf::warn(
-        "SetElementState({}): ignoring {} bytes of vendor_specific_data (unsupported)",
-        request.processing_element_id(), request.state().vendor_specific_data()->size());
+    fdf::warn("SetElementState({}): ignoring {} bytes of vendor_specific_data (unsupported)",
+              request.processing_element_id(), request.state().vendor_specific_data()->size());
   }
   // No field is acted upon, so if we get this far then we can declare success.
   completer.Reply(zx::ok());

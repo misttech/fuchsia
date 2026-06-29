@@ -48,6 +48,7 @@ class FakeClock : public fidl::testing::WireTestBase<fuchsia_hardware_clock::Clo
   FakeClock() = default;
 
   bool IsFakeClockEnabled() const { return enabled_; }
+  uint32_t enable_count() const { return enable_count_; }
 
   fuchsia_hardware_clock::Service::InstanceHandler GetInstanceHandler() {
     return fuchsia_hardware_clock::Service::InstanceHandler({
@@ -59,6 +60,7 @@ class FakeClock : public fidl::testing::WireTestBase<fuchsia_hardware_clock::Clo
  protected:
   void Enable(EnableCompleter::Sync& completer) override {
     enabled_ = true;
+    enable_count_++;
     completer.Reply(zx::ok());
   }
   void Disable(DisableCompleter::Sync& completer) override {
@@ -97,6 +99,7 @@ class FakeClock : public fidl::testing::WireTestBase<fuchsia_hardware_clock::Clo
 
  private:
   bool enabled_ = false;
+  uint32_t enable_count_ = 0;
   fidl::ServerBindingGroup<fuchsia_hardware_clock::Clock> bindings_;
 };
 
@@ -297,6 +300,11 @@ class AmlG12CompositeTest : public testing::Test {
   bool IsFakeClockGateEnabled() {
     return driver_test_.RunInEnvironmentTypeContext<bool>(
         [](auto& env) { return env.clock_gate().IsFakeClockEnabled(); });
+  }
+
+  uint32_t GetFakeClockGateEnableCount() {
+    return driver_test_.RunInEnvironmentTypeContext<uint32_t>(
+        [](auto& env) { return env.clock_gate().enable_count(); });
   }
 
   bool IsFakeClockPllEnabled() {
@@ -1260,4 +1268,29 @@ TEST_F(AmlG12CompositeRingBufferTest, InvalidSetActiveChannels) {
     TestInvalidActiveChannelsFor2Channels(id);
   }
 }
+
+// Calling GetVmo while powered-down should still succeed.
+// To set the stream's memory range, we program DMA registers; this requires being powered-up.
+// So if needed, we power-up the stream beforehand and restore the original power state afterward.
+TEST_F(AmlG12CompositeRingBufferTest, GetVmoWhilePowerStopped) {
+  // Create the RingBuffer client, but don't retrieve a VMO yet.
+  auto client = GetRingBufferClient(kAllValidRingBufferIds[0]);
+  // Setting active channels to 0 tells this endpoint to power-down.
+  ASSERT_TRUE(client->SetActiveChannels(0).is_ok());
+  // Verify that we are indeed powered-down.
+  TestPowerState(false);
+
+  // We verify this temporary power-up by observing an increase in enable-count.
+  auto initial_enable_count = GetFakeClockGateEnableCount();
+
+  constexpr uint32_t kMinFrames = 8192;
+  auto vmo = client->GetVmo(fuchsia_hardware_audio::RingBufferGetVmoRequest(kMinFrames, 0));
+  ASSERT_TRUE(vmo.is_ok());
+
+  // Verify that SoC power was temporarily enabled during GetVmo...
+  EXPECT_GT(GetFakeClockGateEnableCount(), initial_enable_count);
+  // ...and then turned back off afterward.
+  TestPowerState(false);
+}
+
 }  // namespace audio::aml_g12
