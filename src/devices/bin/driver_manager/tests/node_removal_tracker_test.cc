@@ -170,34 +170,3 @@ TEST_F(NodeRemovalTrackerTest, FinishEnumeration) {
   EXPECT_EQ(package_callbacks, 1);
   EXPECT_EQ(all_callbacks, 1);
 }
-
-TEST_F(NodeRemovalTrackerTest, PkgShutdownTimeoutCanceled) {
-  driver_manager::NodeRemovalTracker tracker(dispatcher());
-  NodeBank boot_node_bank(&tracker), package_node_bank(&tracker);
-  boot_node_bank.AddNode(driver_manager::Collection::kBoot, driver_manager::NodeState::kRunning);
-  package_node_bank.AddNode(driver_manager::Collection::kPackage,
-                            driver_manager::NodeState::kRunning);
-
-  int package_callbacks = 0;
-  tracker.set_pkg_callback([&package_callbacks]() { package_callbacks++; });
-
-  bool timed_out = false;
-  tracker.SetOnRemovalTimeoutCallback([&timed_out]() { timed_out = true; });
-
-  tracker.FinishEnumeration();
-
-  // Advance time, but not enough to timeout.
-  RunLoopFor(driver_manager::NodeRemovalTracker::kRemovalCheckDelay *
-                 driver_manager::NodeRemovalTracker::kMaxRemovalCheckCount -
-             zx::nsec(1));
-  EXPECT_FALSE(timed_out);
-
-  // Complete package removal.
-  package_node_bank.NotifyRemovalComplete();
-  EXPECT_EQ(package_callbacks, 1);
-
-  // Advance time past the timeout.
-  // If the timeout was canceled, it should not fire.
-  RunLoopFor(zx::sec(1));
-  EXPECT_FALSE(timed_out);
-}

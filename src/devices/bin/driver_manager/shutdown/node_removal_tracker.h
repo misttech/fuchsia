@@ -7,7 +7,6 @@
 
 #include <lib/async/cpp/task.h>
 #include <lib/fit/function.h>
-#include <lib/zx/time.h>
 
 #include <string>
 #include <unordered_map>
@@ -30,13 +29,6 @@ struct NodeInfo {
 
 class NodeRemovalTracker {
  public:
-  // Wait time between checking which nodes have not finished being removed.
-  static constexpr zx::duration kRemovalCheckDelay = zx::sec(15);
-
-  // Maximum number of times we check for nodes that have not being removed before considering the
-  // removal process timed out.
-  static constexpr uint32_t kMaxRemovalCheckCount = 3;
-
   explicit NodeRemovalTracker(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
 
   NodeId RegisterNode(NodeInfo node);
@@ -50,7 +42,7 @@ class NodeRemovalTracker {
   void SetOnRemovalTimeoutCallback(fit::callback<void()> callback);
 
  private:
-  void CheckRemoval();
+  void OnRemovalTimeout();
 
   void CheckRemovalDone();
 
@@ -69,21 +61,16 @@ class NodeRemovalTracker {
   std::unordered_set<NodeId> remaining_non_pkg_nodes_;
   std::unordered_map<NodeId, NodeInfo> nodes_;
 
-  // Callback invoked when all package drivers have been removed.
   fit::callback<void()> pkg_callback_;
-
-  // Callback invoked when all drivers have been removed.
   fit::callback<void()> all_callback_;
-
-  // Callback invoked when waiting on the nodes to be removed has timed out.
   fit::callback<void()> on_removal_timeout_callback_;
 
   async_dispatcher_t* const dispatcher_;
 
   // Task used to dump diagnostic data if node removal is hanging. The task is started when
   // FinishEnumeration() is called and canceled when removal is complete.
-  async::TaskClosureMethod<NodeRemovalTracker, &NodeRemovalTracker::CheckRemoval>
-      check_removal_task_{this};
+  async::TaskClosureMethod<NodeRemovalTracker, &NodeRemovalTracker::OnRemovalTimeout>
+      handle_timeout_task_{this};
 };
 
 }  // namespace driver_manager
