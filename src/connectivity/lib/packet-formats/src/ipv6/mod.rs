@@ -2058,6 +2058,66 @@ mod tests {
     }
 
     #[test]
+    fn test_esp_packet() {
+        // Encapsulating Security Payload (ESP) is not supported yet. Verify
+        // that for ESP packets Ipv6Packet parsing fails, but Ipv6PacketRaw
+        // parser succeeds.
+
+        const ESP_NEXT_HEADER: u8 = 50;
+
+        // 1. ESP as first extension header (Next Header in Fixed Header = ESP)
+        let mut fixed_hdr = new_fixed_hdr();
+        fixed_hdr.next_hdr = ESP_NEXT_HEADER;
+        fixed_hdr.payload_len = U16::new(8);
+        let mut buf = fixed_hdr_to_bytes(fixed_hdr).to_vec();
+        buf.extend_from_slice(&[0; 8]);
+
+        // Ipv6Packet parsing fails.
+        assert_matches!(
+            (&buf[..]).parse::<Ipv6Packet<_>>(),
+            Err(Ipv6ParseError::ParameterProblem {
+                src_ip: _,
+                dst_ip: _,
+                code: Icmpv6ParameterProblemCode::UnrecognizedNextHeaderType,
+                pointer: 6, // Next Header field in Fixed Header.
+                must_send_icmp: false,
+                action: IpParseErrorAction::DiscardPacketSendIcmpNoMulticast,
+            })
+        );
+
+        // Ipv6PacketRaw parsing succeeds
+        let mut buf_ref = &buf[..];
+        assert!(buf_ref.parse::<Ipv6PacketRaw<_>>().is_ok());
+
+        // 2. ESP in middle (after Hop-by-Hop)
+        let mut fixed_hdr = new_fixed_hdr();
+        fixed_hdr.next_hdr = Ipv6ExtHdrType::HopByHopOptions.into();
+        fixed_hdr.payload_len = U16::new(16);
+        let mut buf = fixed_hdr_to_bytes(fixed_hdr).to_vec();
+        // Hop-by-Hop header: Next Header = ESP (50), Hdr Ext Len = 0 (8 bytes total)
+        buf.extend_from_slice(&[ESP_NEXT_HEADER, 0, 0, 0, 0, 0, 0, 0]);
+        // ESP body
+        buf.extend_from_slice(&[0; 8]);
+
+        // Ipv6Packet parsing fails
+        assert_matches!(
+            (&buf[..]).parse::<Ipv6Packet<_>>(),
+            Err(Ipv6ParseError::ParameterProblem {
+                src_ip: _,
+                dst_ip: _,
+                code: Icmpv6ParameterProblemCode::UnrecognizedNextHeaderType,
+                pointer: 40, // Next Header in the Hop-by-Hop header.
+                must_send_icmp: false,
+                action: IpParseErrorAction::DiscardPacketSendIcmpNoMulticast,
+            })
+        );
+
+        // Ipv6PacketRaw parsing succeeds
+        let mut buf_ref = &buf[..];
+        assert!(buf_ref.parse::<Ipv6PacketRaw<_>>().is_ok());
+    }
+
+    #[test]
     fn test_parse_ext_hdr_unrecognized_next_header() {
         // Test that parsing an IPv6 packet with an unrecognized Next Header value
         // in an extension header succeeds for Ipv6PacketRaw, but fails for Ipv6Packet.
