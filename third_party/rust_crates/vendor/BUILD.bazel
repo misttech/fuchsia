@@ -2557,6 +2557,18 @@ alias(
 )
 
 alias(
+    name = "sapphire-sync-0.1.0",
+    actual = "//third_party/rust_crates/intree/sunstone/sapphire-sync:sapphire_sync",
+    tags = ["manual"],
+)
+
+alias(
+    name = "sapphire-sync",
+    actual = "//third_party/rust_crates/intree/sunstone/sapphire-sync:sapphire_sync",
+    tags = ["manual"],
+)
+
+alias(
     name = "sapphire-uuid-0.1.0",
     actual = "//third_party/rust_crates/intree/sunstone/sapphire-uuid:sapphire_uuid",
     tags = ["manual"],

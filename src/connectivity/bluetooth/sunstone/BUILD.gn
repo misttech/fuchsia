@@ -59,6 +59,21 @@ if (is_host) {
       "//third_party/rust_crates:zerocopy",
     ]
   }
+
+  rustc_test("sapphire_sync_test") {
+    edition = "2024"
+    source_root = "sapphire-sync/src/lib.rs"
+    sources = [
+      "sapphire-sync/src/lib.rs",
+      "sapphire-sync/src/mutex.rs",
+      "sapphire-sync/src/mutex/raw.rs",
+      "sapphire-sync/src/mutex/raw/single_thread.rs",
+      "sapphire-sync/src/mutex/raw/spin.rs",
+      "sapphire-sync/src/mutex/raw/std.rs",
+    ]
+    features = [ "std" ]
+    deps = [ "//third_party/rust_crates:parking_lot" ]
+  }
 }
 
 group("tests") {
@@ -67,6 +82,7 @@ group("tests") {
     ":sapphire_collections_test($host_toolchain)",
     ":sapphire_gatt_test($host_toolchain)",
     ":sapphire_peer_cache_test($host_toolchain)",
+    ":sapphire_sync_test($host_toolchain)",
     ":sapphire_uuid_test($host_toolchain)",
   ]
 }

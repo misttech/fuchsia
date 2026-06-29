@@ -4,6 +4,7 @@
 [workspace]
 members = [
   "sapphire-collections",
+  "sapphire-sync",
   "sapphire-gatt",
   "sapphire-peer-cache",
   "sapphire-uuid",

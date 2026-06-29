@@ -1929,6 +1929,7 @@ dependencies = [
  "sapphire-collections",
  "sapphire-gatt",
  "sapphire-peer-cache",
+ "sapphire-sync",
  "sapphire-uuid",
  "schemars",
  "scopeguard",
@@ -4724,6 +4725,13 @@ dependencies = [
 [[package]]
 name = "sapphire-peer-cache"
 version = "0.1.0"
+
+[[package]]
+name = "sapphire-sync"
+version = "0.1.0"
+dependencies = [
+ "parking_lot 0.12.5",
+]
 
 [[package]]
 name = "sapphire-uuid"
