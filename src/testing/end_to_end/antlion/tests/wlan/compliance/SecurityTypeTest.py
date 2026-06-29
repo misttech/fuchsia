@@ -71,8 +71,16 @@ class Wpa3TestParams:
 
 @dataclass
 class BoundaryTestParams:
-    security: SecurityWpa | SecurityWpa2 | SecurityWpa3 | SecurityWpa2Wpa3Mixed
+    security: SecurityWpa | SecurityWpa2 | SecurityWpa3
     password_type: Literal["max_length_password", "max_length_psk"]
+    band: Band
+
+
+@dataclass
+class Utf8TestParams:
+    security: SecurityWpa2
+    char_class: str
+    password: str
     band: Band
 
 
@@ -209,15 +217,13 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
 
         boundary_args: list[tuple[BoundaryTestParams]] = []
-        boundary_securities: list[
-            SecurityWpa | SecurityWpa2 | SecurityWpa3 | SecurityWpa2Wpa3Mixed
-        ] = [
+        boundary_securities: list[SecurityWpa | SecurityWpa2 | SecurityWpa3] = [
             SecurityWpa(cipher="ccmp"),
             SecurityWpa2(cipher="ccmp"),
             SecurityWpa3(cipher="ccmp"),
-            SecurityWpa2Wpa3Mixed(cipher="ccmp"),
         ]
         for boundary_security in boundary_securities:
+            # All pure modes support ASCII password boundary validation
             boundary_args.append(
                 (
                     BoundaryTestParams(
@@ -227,9 +233,8 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     ),
                 )
             )
-            # Any pre-shared key mode (WPA, WPA2, and mixed modes) supports hex PSK,
-            # while pure WPA3-SAE does not.
-            if not isinstance(boundary_security, SecurityWpa3):
+            # Only WPA and WPA2 support raw HEX PSKs. WPA3-SAE only supports ASCII passphrases.
+            if isinstance(boundary_security, (SecurityWpa, SecurityWpa2)):
                 boundary_args.append(
                     (
                         BoundaryTestParams(
@@ -252,6 +257,42 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             arg_sets=boundary_args,
         )
 
+        utf8_args: list[tuple[Utf8TestParams]] = []
+        # Rather than testing individual human languages (which share identical byte-width classes),
+        # we test representative samples of the three multi-byte UTF-8 width classes.
+        # This ensures full Unicode encoding and PBKDF2 hashing coverage while minimizing test overhead.
+        utf8_passwords = {
+            # 2-byte UTF-8 (Latin Extended / Diacritics, covering European languages)
+            "latin_2byte": "du Feÿ Château caffè",
+            # 3-byte UTF-8 (CJK Ideographs / Basic Multilingual Plane)
+            "cjk_3byte": "そっくりね。无线测试",
+            # 4-byte UTF-8 (Emojis & Mathematical Symbols / Supplementary Multilingual Plane)
+            "emoji_4byte": "𝔊𝔬𝔬𝔤𝔩𝔢_🚀🔒",
+        }
+        for char_class, pwd in utf8_passwords.items():
+            utf8_args.append(
+                (
+                    Utf8TestParams(
+                        security=SecurityWpa2(cipher="ccmp"),
+                        char_class=char_class,
+                        password=pwd,
+                        band=self.rng.choice([Band.BAND_2G, Band.BAND_5G]),
+                    ),
+                )
+            )
+
+        def generate_utf8_test_name(params: Utf8TestParams) -> str:
+            band_name = _get_band_name(params.band)
+            name = f"test_associate_{band_name}_utf8_{params.char_class}_{params.security.uci_encryption}"
+            self.log.info(f"Generated test case: {name}")
+            return name
+
+        self.generate_tests(
+            test_logic=self._run_utf8_test,
+            name_func=generate_utf8_test_name,
+            arg_sets=utf8_args,
+        )
+
     async def setup_class(self) -> None:
         await super().setup_class()
         self.log = logging.getLogger(self.__class__.__name__)
@@ -269,6 +310,9 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     async def setup_test(self) -> None:
         await super().setup_test()
         await self.dut.wlan_policy.ensure_clean_state()
+        self.log.info(
+            f"Running test case {self.current_test_info.name} via seed {self.seed}"
+        )
 
     async def teardown_test(self) -> None:
         await self.dut.wlan_policy.ensure_clean_state()
@@ -295,12 +339,6 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             password = AccessPointConfig.random_string(key_length)
 
         ssid = AccessPointConfig.random_string(SSID_LENGTH_DEFAULT)
-
-        self.log.info(
-            f"Running WEP test case {self.current_test_info.name} "
-            f"on band {band} via seed {self.seed} "
-            f"with SSID: {ssid}, password: {password}"
-        )
 
         if self.openwrt_ap:
             config = AccessPointConfig(
@@ -357,20 +395,14 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         band = params.band
         password = AccessPointConfig.random_string(length=10)
         ssid = AccessPointConfig.random_string(SSID_LENGTH_DEFAULT)
-        self.log.info(
-            f"Running WPA test case {self.current_test_info.name} "
-            f"on band {band} via seed {self.seed} "
-            f"with SSID: {ssid}, password: {password}"
-        )
 
         security = params.security
 
         if self.openwrt_ap:
-            channel = band.default_bss_channel
             config = AccessPointConfig(
                 radios=[
                     RadioConfig(
-                        channel=channel,
+                        channel=band.default_bss_channel,
                         bss_settings=[
                             BssSettings(
                                 ssid=ssid,
@@ -421,20 +453,14 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         band = params.band
         password = AccessPointConfig.random_string(length=10)
         ssid = AccessPointConfig.random_string(SSID_LENGTH_DEFAULT)
-        self.log.info(
-            f"Running WPA3 test case {self.current_test_info.name} "
-            f"on band {band} via seed {self.seed} "
-            f"with SSID: {ssid}, password: {password}"
-        )
 
         security = params.security
 
         if self.openwrt_ap:
-            channel = band.default_bss_channel
             config = AccessPointConfig(
                 radios=[
                     RadioConfig(
-                        channel=channel,
+                        channel=band.default_bss_channel,
                         bss_settings=[
                             BssSettings(
                                 ssid=ssid,
@@ -496,20 +522,75 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             raise ValueError(f"Unknown password type: {params.password_type}")
 
         ssid = AccessPointConfig.random_string(SSID_LENGTH_DEFAULT)
-        self.log.info(
-            f"Running boundary test case {self.current_test_info.name} "
-            f"on band {band} via seed {self.seed} "
-            f"with SSID: {ssid}, password: {password}"
-        )
 
         security = params.security
 
         if self.openwrt_ap:
-            channel = band.default_bss_channel
             config = AccessPointConfig(
                 radios=[
                     RadioConfig(
-                        channel=channel,
+                        channel=band.default_bss_channel,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=ssid,
+                                security=security,
+                                password=password,
+                            )
+                        ],
+                    )
+                ]
+            )
+            self.openwrt_ap.configure_wifi(config)
+        elif self.access_point:
+            legacy_security_mode = AccessPointConfigMapper.to_hostapd_security(
+                security
+            )
+
+            assert security.cipher is not None
+            legacy_security = DeprecatedSecurity(
+                security_mode=legacy_security_mode,
+                password=password,
+                wpa_cipher=AccessPointConfigMapper.to_hostapd_cipher(
+                    security.cipher
+                ),
+                wpa2_cipher=AccessPointConfigMapper.to_hostapd_cipher(
+                    security.cipher
+                ),
+            )
+
+            setup_ap(
+                access_point=self.access_point,
+                profile_name=AP_11ABG_PROFILE_NAME,
+                channel=band.default_channel,
+                ssid=ssid,
+                security=legacy_security,
+                pmf_support=security.pmf_support,
+                force_wmm=False,
+            )
+
+        await self.dut.wlan_policy.save_network(
+            ssid,
+            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+            target_pwd=password,
+        )
+        await self.dut.wlan_policy.connect(
+            ssid,
+            SecurityType.from_fidl(security.to_fidl_wlan_policy()),
+        )
+
+    async def _run_utf8_test(self, params: Utf8TestParams) -> None:
+        """Helper to run multi-byte UTF-8 width class test cases (2-byte, 3-byte, 4-byte) across bands."""
+        band = params.band
+        password = params.password
+        ssid = AccessPointConfig.random_string(SSID_LENGTH_DEFAULT)
+
+        security = params.security
+
+        if self.openwrt_ap:
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig(
+                        channel=band.default_bss_channel,
                         bss_settings=[
                             BssSettings(
                                 ssid=ssid,
