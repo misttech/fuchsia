@@ -266,6 +266,9 @@ pub struct TaskMutableState {
 
     /// Information that a tracer needs to inspect this process.
     pub captured_thread_state: Option<Box<CapturedThreadState>>,
+
+    /// The last applied scheduler role name.
+    last_applied_role: Option<String>,
 }
 
 impl TaskMutableState {
@@ -1123,6 +1126,7 @@ impl Task {
                     default_timerslack_ns: timerslack_ns,
                     ptrace: None,
                     captured_thread_state: None,
+                    last_applied_role: None,
                 }),
                 persistent_info: TaskPersistentInfoState::new(
                     tid,
@@ -1260,13 +1264,26 @@ impl Task {
         &self,
         updater: impl FnOnce(&mut SchedulerState),
     ) -> Result<(), Errno> {
-        let new_scheduler_state = {
-            // Hold the task state lock as briefly as possible, it's not needed to update the role.
-            let mut state = self.write();
-            updater(&mut state.scheduler_state);
-            state.scheduler_state
-        };
-        self.thread_group().kernel.scheduler.set_thread_role(self, new_scheduler_state)?;
+        let process_name = self
+            .thread_group()
+            .read()
+            .get_task(self.thread_group().leader)
+            .ok_or_else(|| errno!(EINVAL))?
+            .command();
+        let thread_name = self.command();
+
+        let mut state = self.write();
+        updater(&mut state.scheduler_state);
+        let new_scheduler_state = state.scheduler_state;
+
+        let scheduler = &self.thread_group().kernel.scheduler;
+        let role_name =
+            scheduler.resolve_role_name(&process_name, &thread_name, new_scheduler_state);
+        if state.last_applied_role.as_deref() == Some(role_name) {
+            return Ok(());
+        }
+        scheduler.set_thread_role(self, role_name)?;
+        state.last_applied_role = Some(role_name.to_string());
         Ok(())
     }
 
@@ -1463,6 +1480,10 @@ impl Task {
             if let Some(notifier) = &self.thread_group().read().notifier {
                 let _ = notifier.send(MemoryAttributionLifecycleEvent::name_change(self.tid));
             }
+        }
+
+        if let Err(err) = self.sync_scheduler_state_to_role() {
+            log_warn!(err:?; "Failed to update scheduler role after thread name change.");
         }
     }
 
@@ -1729,6 +1750,36 @@ mod test {
             let child_task = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
             let child_fsize = child_task.thread_group().get_rlimit(locked, Resource::FSIZE);
             assert_eq!(child_fsize, 10)
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_set_command_name_syncs_scheduler_role() {
+        use crate::task::{RoleOverrides, SchedulerManager};
+
+        let mut builder = RoleOverrides::new();
+        builder.add("renamed-thread", "renamed-thread", "test-role");
+        let overrides = builder.build().unwrap();
+
+        let scheduler_manager = SchedulerManager::new_for_tests(None, overrides);
+
+        spawn_kernel_with_scheduler_and_run_sync(scheduler_manager, |_locked, current_task| {
+            // Set did_exec = true so custom role overrides are applied.
+            current_task.thread_group().write().did_exec = true;
+
+            let scheduler = &current_task.thread_group().kernel.scheduler;
+
+            // Before rename, check task's role name.
+            let initial_role = scheduler.role_name(current_task).unwrap();
+            assert_ne!(initial_role, "test-role");
+
+            // Rename the task's thread to renamed-thread.
+            current_task
+                .set_command_name(starnix_task_command::TaskCommand::new(b"renamed-thread"));
+
+            let renamed_role = scheduler.role_name(current_task).unwrap();
+            assert_eq!(renamed_role, "test-role");
         })
         .await;
     }

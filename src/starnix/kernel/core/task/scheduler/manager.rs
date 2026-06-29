@@ -9,6 +9,7 @@ use fidl_fuchsia_scheduler::{
 };
 use fuchsia_component::client::connect_to_protocol_sync;
 use starnix_logging::{impossible_error, log_debug, log_error, log_warn, track_stub};
+use starnix_task_command::TaskCommand;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{
     SCHED_BATCH, SCHED_DEADLINE, SCHED_FIFO, SCHED_IDLE, SCHED_NORMAL, SCHED_RESET_ON_FORK,
@@ -56,6 +57,14 @@ impl SchedulerManager {
         }
     }
 
+    /// Create a new SchedulerManager with a custom role manager and overrides for testing.
+    pub fn new_for_tests(
+        role_manager: Option<RoleManagerSynchronousProxy>,
+        role_overrides: RoleOverrides,
+    ) -> Self {
+        Self { role_manager, role_overrides, profile_handle_cache: Mutex::new(HashMap::new()) }
+    }
+
     /// Return the currently active role name for this task. Requires read access to `task`'s state,
     /// should only be called by code which is not already modifying the provided `task`.
     pub fn role_name(&self, task: &Task) -> Result<&str, Errno> {
@@ -63,7 +72,11 @@ impl SchedulerManager {
         self.role_name_inner(task, scheduler_state)
     }
 
-    fn role_name_inner(&self, task: &Task, scheduler_state: SchedulerState) -> Result<&str, Errno> {
+    pub fn role_name_inner(
+        &self,
+        task: &Task,
+        scheduler_state: SchedulerState,
+    ) -> Result<&str, Errno> {
         let process_name = task
             .thread_group()
             .read()
@@ -71,27 +84,28 @@ impl SchedulerManager {
             .ok_or_else(|| errno!(EINVAL))?
             .command();
         let thread_name = task.command();
-        if let Some(name) = self.role_overrides.get_role_name(&process_name, &thread_name) {
-            return Ok(name);
+        Ok(self.resolve_role_name(&process_name, &thread_name, scheduler_state))
+    }
+
+    pub fn resolve_role_name(
+        &self,
+        process_name: &TaskCommand,
+        thread_name: &TaskCommand,
+        scheduler_state: SchedulerState,
+    ) -> &str {
+        if let Some(name) = self.role_overrides.get_role_name(process_name, thread_name) {
+            return name;
         }
-        Ok(scheduler_state.role_name())
+        scheduler_state.role_name()
     }
 
     /// Give the provided `task`'s Zircon thread a role.
-    ///
-    /// Requires passing the current `SchedulerState` so that this can be
-    /// performed without touching `task`'s state lock.
-    pub fn set_thread_role(
-        &self,
-        task: &Task,
-        scheduler_state: SchedulerState,
-    ) -> Result<(), Errno> {
+    pub fn set_thread_role(&self, task: &Task, role_name: &str) -> Result<(), Errno> {
         let Some(role_manager) = self.role_manager.as_ref() else {
             log_debug!("no role manager for setting role");
             return Ok(());
         };
 
-        let role_name = self.role_name_inner(task, scheduler_state)?;
         let zircon_thread = {
             let running_state = match task.running_state() {
                 Ok(live) => live,
@@ -113,7 +127,9 @@ impl SchedulerManager {
             &zircon_thread.thread,
             role_name,
             &self.profile_handle_cache,
-        )
+        )?;
+
+        Ok(())
     }
 
     fn set_thread_role_inner(

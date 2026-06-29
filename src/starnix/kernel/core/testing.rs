@@ -99,7 +99,31 @@ where
     F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> R + Send + Sync + 'static,
     R: Send + Sync + 'static,
 {
-    spawn_kernel_and_run_internal_sync(callback, None, TmpFs::new_fs, KernelFeatures::default())
+    spawn_kernel_and_run_internal_sync(
+        callback,
+        None,
+        TmpFs::new_fs,
+        KernelFeatures::default(),
+        SchedulerManager::empty_for_tests(),
+    )
+}
+
+/// Create a Kernel object with a custom SchedulerManager and run the given synchronous callback.
+pub fn spawn_kernel_with_scheduler_and_run_sync<F, R>(
+    scheduler: SchedulerManager,
+    callback: F,
+) -> impl Future<Output = R>
+where
+    F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> R + Send + Sync + 'static,
+    R: Send + Sync + 'static,
+{
+    spawn_kernel_and_run_internal_sync(
+        callback,
+        None,
+        TmpFs::new_fs,
+        KernelFeatures::default(),
+        scheduler,
+    )
 }
 
 /// Create a Kernel object and run the given callback in the init process for that kernel.
@@ -165,6 +189,7 @@ where
         security_server,
         fs_factory,
         features,
+        SchedulerManager::empty_for_tests(),
     )
 }
 
@@ -175,6 +200,7 @@ fn spawn_kernel_and_run_internal_sync<F, FS, R>(
     security_server: Option<Arc<SecurityServer>>,
     fs_factory: FS,
     features: KernelFeatures,
+    scheduler: SchedulerManager,
 ) -> impl Future<Output = R>
 where
     R: Send + Sync + 'static,
@@ -186,7 +212,7 @@ where
         reason = "Force documented unsafe blocks in Starnix"
     )]
     let locked = unsafe { Unlocked::new() };
-    let kernel = create_test_kernel(locked, security_server, features);
+    let kernel = create_test_kernel(locked, security_server, features, scheduler);
     let fs = create_test_fs_context(locked, &kernel, fs_factory);
     let init_task = create_test_init_task(locked, &kernel, fs);
     fasync::unblock(move || {
@@ -220,13 +246,14 @@ fn create_test_kernel(
     _locked: &mut Locked<Unlocked>,
     security_server: Option<Arc<SecurityServer>>,
     features: KernelFeatures,
+    scheduler: SchedulerManager,
 ) -> Arc<Kernel> {
     Kernel::new(
         b"".into(),
         features,
         SystemLimits::default(),
         ContainerNamespace::new(),
-        SchedulerManager::empty_for_tests(),
+        scheduler,
         None,
         fuchsia_inspect::Node::default(),
         security::testing::kernel_state(security_server),
@@ -297,7 +324,12 @@ fn create_kernel_task_and_unlocked_with_fs(
         reason = "Force documented unsafe blocks in Starnix"
     )]
     let locked = unsafe { Unlocked::new() };
-    let kernel = create_test_kernel(locked, None, KernelFeatures::default());
+    let kernel = create_test_kernel(
+        locked,
+        None,
+        KernelFeatures::default(),
+        SchedulerManager::empty_for_tests(),
+    );
     let fs = create_fs(locked, &kernel);
     let fs_context = create_test_fs_context(locked, &kernel, |_, _| fs.clone());
     let init_task = create_test_init_task(locked, &kernel, fs_context);
