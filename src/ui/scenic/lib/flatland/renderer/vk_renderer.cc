@@ -12,6 +12,9 @@
 #include <zircon/status.h>
 #include <zircon/types.h>
 
+#include <array>
+#include <memory_resource>
+
 #include "src/lib/fidl/contrib/fpromise/client.h"
 #include "src/ui/lib/escher/escher.h"
 #include "src/ui/lib/escher/flatland/rectangle_compositor.h"
@@ -137,8 +140,10 @@ std::array<glm::ivec2, 4> FlipUVs(const std::array<glm::ivec2, 4>& uvs, const Im
   return flipped_uvs;
 }
 
-std::vector<escher::Rectangle2D> GetNormalizedUvRects(std::span<const ResolvedLayer> layers) {
-  std::vector<escher::Rectangle2D> normalized_rects;
+std::pmr::vector<escher::Rectangle2D> GetNormalizedUvRects(std::span<const ResolvedLayer> layers,
+                                                           std::pmr::memory_resource* resource) {
+  std::pmr::vector<escher::Rectangle2D> normalized_rects(resource);
+  normalized_rects.reserve(layers.size());
 
   for (const auto& layer : layers) {
     const ImageRect& rect = layer.rect;
@@ -293,6 +298,15 @@ bool IsValidImage(const allocation::ImageMetadata& metadata) {
 VkRenderer::VkRenderer(escher::EscherWeakPtr escher)
     : escher_(std::move(escher)),
       compositor_(escher::RectangleCompositor(escher_)),
+      texture_collections_(16, &pool_resource_),
+      render_target_collections_(4, &pool_resource_),
+      readback_collections_(4, &pool_resource_),
+      texture_map_(64, &pool_resource_),
+      render_target_map_(8, &pool_resource_),
+      depth_target_map_(8, &pool_resource_),
+      readback_image_map_(4, &pool_resource_),
+      pending_textures_(&pool_resource_),
+      pending_render_targets_(&pool_resource_),
       main_dispatcher_(async_get_default_dispatcher()) {
   auto gpu_uploader = escher::BatchGpuUploader::New(escher_, /*frame_trace_number*/ 0);
   FX_DCHECK(gpu_uploader);
@@ -361,7 +375,7 @@ std::optional<vk::BufferCollectionFUCHSIA> VkRenderer::GetAllocatedVulkanBufferC
   std::scoped_lock lock(lock_);
   // Make sure that the collection that will back this image's memory
   // is actually registered with the renderer.
-  std::unordered_map<GlobalBufferCollectionId, CollectionData>& collections =
+  std::pmr::unordered_map<GlobalBufferCollectionId, CollectionData>& collections =
       GetBufferCollectionsFor(usage);
   auto collection_itr = collections.find(collection_id);
   if (collection_itr == collections.end()) {
@@ -461,7 +475,7 @@ fpromise::promise<> VkRenderer::ImportBufferCollection(
         // TODO(https://fxbug.dev/42120738): Convert this to a lock-free structure.
         std::scoped_lock lock(lock_);
 
-        std::unordered_map<GlobalBufferCollectionId, CollectionData>& collections =
+        std::pmr::unordered_map<GlobalBufferCollectionId, CollectionData>& collections =
             GetBufferCollectionsFor(usage);
         const auto [_, emplace_success] = collections.emplace(
             collection_id, CollectionData{.collection = std::move(buffer_collection),
@@ -489,7 +503,7 @@ void VkRenderer::ReleaseBufferCollection(GlobalBufferCollectionId collection_id,
   // TODO(https://fxbug.dev/42120738): Convert this to a lock-free structure.
   std::scoped_lock lock(lock_);
 
-  std::unordered_map<GlobalBufferCollectionId, CollectionData>& collections =
+  std::pmr::unordered_map<GlobalBufferCollectionId, CollectionData>& collections =
       GetBufferCollectionsFor(usage);
   const auto collection_itr = collections.find(collection_id);
 
@@ -802,24 +816,36 @@ void VkRenderer::Render(const ImageMetadata& render_target, std::span<const Reso
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   TRACE_DURATION("gfx", "VkRenderer::Render");
 
-  // Copy over the texture and render target data to local containers that do not need
-  // to be accessed via a lock. We're just doing a shallow copy via the copy assignment
-  // operator since the texture and render target data is just referenced through pointers.
-  // We manually unlock the lock after copying over the data.
-  TRACE_DURATION_BEGIN("gfx", "LockAndCopyDataStructs");
-  lock_.lock();
-  const auto local_texture_map = texture_map_;
-  const auto local_render_target_map = render_target_map_;
-  const auto local_depth_target_map = depth_target_map_;
-  const auto local_readback_image_map = readback_image_map_;
+  // Minimize time that `lock_` is held by making local copies of collections.
+  alignas(std::max_align_t) std::array<std::byte, 8192> stack_buffer;
+  std::pmr::monotonic_buffer_resource resource(stack_buffer.data(), stack_buffer.size());
 
-  // After moving, the original containers are emptied.
-  const auto local_pending_textures = std::move(pending_textures_);
-  const auto local_pending_render_targets = std::move(pending_render_targets_);
-  pending_textures_.clear();
-  pending_render_targets_.clear();
-  lock_.unlock();
-  TRACE_DURATION_END("gfx", "LockAndCopyDataStructs");
+  std::pmr::unordered_map<GlobalImageId, escher::TexturePtr> local_texture_map(&resource);
+  std::pmr::unordered_map<GlobalImageId, escher::ImagePtr> local_render_target_map(&resource);
+  std::pmr::unordered_map<GlobalImageId, escher::TexturePtr> local_depth_target_map(&resource);
+  std::pmr::unordered_map<GlobalImageId, escher::ImagePtr> local_readback_image_map(&resource);
+  std::pmr::set<GlobalImageId> local_pending_textures(&resource);
+  std::pmr::set<GlobalImageId> local_pending_render_targets(&resource);
+  {
+    TRACE_DURATION("gfx", "LockAndCopyDataStructs");
+    std::scoped_lock lock(lock_);
+    local_texture_map.reserve(texture_map_.size());
+    local_render_target_map.reserve(render_target_map_.size());
+    local_depth_target_map.reserve(depth_target_map_.size());
+    local_readback_image_map.reserve(readback_image_map_.size());
+
+    local_texture_map.insert(texture_map_.begin(), texture_map_.end());
+    local_render_target_map.insert(render_target_map_.begin(), render_target_map_.end());
+    local_depth_target_map.insert(depth_target_map_.begin(), depth_target_map_.end());
+    local_readback_image_map.insert(readback_image_map_.begin(), readback_image_map_.end());
+
+    // `reserve()` is only necessary for unordered containers (like above), not these ordered sets.
+    local_pending_textures.insert(pending_textures_.begin(), pending_textures_.end());
+    local_pending_render_targets.insert(pending_render_targets_.begin(),
+                                        pending_render_targets_.end());
+    pending_textures_.clear();
+    pending_render_targets_.clear();
+  }
 
   // If the |render_target| is protected, we should switch to a protected escher::Frame. Otherwise,
   // we should ensure that there is no protected content in |images|.
@@ -857,8 +883,8 @@ void VkRenderer::Render(const ImageMetadata& render_target, std::span<const Reso
   }
 
   TRACE_DURATION_BEGIN("gfx", "VkRenderer::Render[transform_display_list]");
-  std::vector<escher::TexturePtr> textures;
-  std::vector<escher::RectangleCompositor::ColorData> color_data;
+  std::pmr::vector<escher::TexturePtr> textures(&resource);
+  std::pmr::vector<escher::RectangleCompositor::ColorData> color_data(&resource);
   textures.reserve(layers.size());
   color_data.reserve(layers.size());
   for (const auto& layer : layers) {
@@ -923,7 +949,7 @@ void VkRenderer::Render(const ImageMetadata& render_target, std::span<const Reso
                                                 render_image_layout, VK_QUEUE_FAMILY_FOREIGN_EXT,
                                                 escher_->device()->vk_main_queue_family());
 
-  const auto normalized_rects = GetNormalizedUvRects(layers);
+  const auto normalized_rects = GetNormalizedUvRects(layers, &resource);
 
   // Now the compositor can finally draw.
   compositor_.DrawBatch(command_buffer, normalized_rects, textures, color_data, output_image,
@@ -1120,7 +1146,7 @@ void VkRenderer::BlitRenderTarget(escher::CommandBuffer* command_buffer,
       vk::Offset2D(0, 0), vk::Extent2D(metadata.width, metadata.height), kDefaultFilter);
 }
 
-std::unordered_map<GlobalBufferCollectionId, VkRenderer::CollectionData>&
+std::pmr::unordered_map<GlobalBufferCollectionId, VkRenderer::CollectionData>&
 VkRenderer::GetBufferCollectionsFor(const BufferCollectionUsage usage) {
   // Called from main thread or Flatland threads.
   switch (usage) {

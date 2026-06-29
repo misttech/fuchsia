@@ -186,9 +186,8 @@ void DrawSingle(CommandBuffer* cmd_buf, const ShaderProgramPtr& program,
 // renderables are rendered from front-to-back while the translucent renderables
 // are rendered from back-to-front.
 void TraverseBatch(CommandBuffer* cmd_buf, vec3 bounds, ShaderProgramPtr program,
-                   const std::vector<Rectangle2D>& rectangles,
-                   const std::vector<TexturePtr>& textures,
-                   const std::vector<RectangleCompositor::ColorData>& color_data) {
+                   std::span<const Rectangle2D> rectangles, std::span<const TexturePtr> textures,
+                   std::span<const RectangleCompositor::ColorData> color_data) {
   TRACE_DURATION("gfx", "RectangleCompositor::TraverseBatch");
   int64_t num_renderables = static_cast<int64_t>(rectangles.size());
 
@@ -268,10 +267,9 @@ RectangleCompositor::RectangleCompositor(EscherWeakPtr escher)
 // DrawBatch generates the Vulkan data needed to render the batch (e.g. renderpass,
 // bounds, etc) and calls |TraverseBatch| which iterates over the renderables and
 // submits them for rendering.
-void RectangleCompositor::DrawBatch(CommandBuffer* cmd_buf,
-                                    const std::vector<Rectangle2D>& rectangles,
-                                    const std::vector<TexturePtr>& textures,
-                                    const std::vector<ColorData>& color_data,
+void RectangleCompositor::DrawBatch(CommandBuffer* cmd_buf, std::span<const Rectangle2D> rectangles,
+                                    std::span<const TexturePtr> textures,
+                                    std::span<const ColorData> color_data,
                                     const ImagePtr& output_image, const TexturePtr& depth_buffer,
                                     bool apply_color_conversion) {
   TRACE_DURATION("gfx", "RectangleCompositor::DrawBatch");

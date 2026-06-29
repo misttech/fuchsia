@@ -5,6 +5,10 @@
 #ifndef SRC_UI_LIB_ESCHER_FLATLAND_RECTANGLE_COMPOSITOR_H_
 #define SRC_UI_LIB_ESCHER_FLATLAND_RECTANGLE_COMPOSITOR_H_
 
+#include <initializer_list>
+#include <span>
+#include <vector>
+
 #include "src/ui/lib/escher/flatland/flatland_static_config.h"
 #include "src/ui/lib/escher/forward_declarations.h"
 #include "src/ui/lib/escher/util/hash_map.h"
@@ -58,10 +62,21 @@ class RectangleCompositor {
   //
   // Depth is implicit. Renderables are drawn in the order they appear in the input
   // vector, with the first entry being the furthest back, and the last the closest.
-  void DrawBatch(CommandBuffer* cmd_buf, const std::vector<Rectangle2D>& rectangles,
-                 const std::vector<TexturePtr>& textures, const std::vector<ColorData>& color_data,
+  void DrawBatch(CommandBuffer* cmd_buf, std::span<const Rectangle2D> rectangles,
+                 std::span<const TexturePtr> textures, std::span<const ColorData> color_data,
                  const ImagePtr& output_image, const TexturePtr& depth_buffer,
                  bool apply_color_conversion = false);
+
+  // Helper to support braced-init-lists (e.g. {rectangle}) on the stack without heap allocations.
+  void DrawBatch(CommandBuffer* cmd_buf, std::initializer_list<Rectangle2D> rectangles,
+                 std::initializer_list<TexturePtr> textures,
+                 std::initializer_list<ColorData> color_data, const ImagePtr& output_image,
+                 const TexturePtr& depth_buffer, bool apply_color_conversion = false) {
+    DrawBatch(cmd_buf, std::span<const Rectangle2D>(rectangles.begin(), rectangles.size()),
+              std::span<const TexturePtr>(textures.begin(), textures.size()),
+              std::span<const ColorData>(color_data.begin(), color_data.size()), output_image,
+              depth_buffer, apply_color_conversion);
+  }
 
   // This data is used to apply a color-conversion post processing effect over the entire
   // rendered output, when making a call to |DrawBatch|. The color conversion formula

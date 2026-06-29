@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.images2/cpp/fidl.h>
 #include <fuchsia/images/cpp/fidl.h>
 
+#include <memory_resource>
 #include <set>
 #include <unordered_map>
 
@@ -139,7 +140,7 @@ class VkRenderer final : public Renderer {
                                         BufferCollectionUsage usage);
 
   // Returns a reference to the appropriate map of buffer collections for |usage|.
-  std::unordered_map<GlobalBufferCollectionId, CollectionData>& GetBufferCollectionsFor(
+  std::pmr::unordered_map<GlobalBufferCollectionId, CollectionData>& GetBufferCollectionsFor(
       BufferCollectionUsage usage) FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Return a lazily-initialized |DebugFont|.
@@ -155,23 +156,30 @@ class VkRenderer final : public Renderer {
   // threads.
   mutable std::mutex lock_;
 
-  std::unordered_map<GlobalBufferCollectionId, CollectionData> texture_collections_
+  // Pool resource to back the polymorphic memory resource containers below. Since all access to
+  // the containers and this resource is serialized via |lock_|, using an unsynchronized pool is
+  // completely safe.
+  std::pmr::unsynchronized_pool_resource pool_resource_;
+
+  std::pmr::unordered_map<GlobalBufferCollectionId, CollectionData> texture_collections_
       FXL_GUARDED_BY(lock_);
-  std::unordered_map<GlobalBufferCollectionId, CollectionData> render_target_collections_
+  std::pmr::unordered_map<GlobalBufferCollectionId, CollectionData> render_target_collections_
       FXL_GUARDED_BY(lock_);
-  std::unordered_map<GlobalBufferCollectionId, CollectionData> readback_collections_
+  std::pmr::unordered_map<GlobalBufferCollectionId, CollectionData> readback_collections_
       FXL_GUARDED_BY(lock_);
-  std::unordered_map<GlobalImageId, escher::TexturePtr> texture_map_ FXL_GUARDED_BY(lock_);
-  std::unordered_map<GlobalImageId, escher::ImagePtr> render_target_map_ FXL_GUARDED_BY(lock_);
-  std::unordered_map<GlobalImageId, escher::TexturePtr> depth_target_map_ FXL_GUARDED_BY(lock_);
-  std::unordered_map<GlobalImageId, escher::ImagePtr> readback_image_map_ FXL_GUARDED_BY(lock_);
-  std::set<GlobalImageId> pending_textures_ FXL_GUARDED_BY(lock_);
-  std::set<GlobalImageId> pending_render_targets_ FXL_GUARDED_BY(lock_);
-  bool disable_lazy_pipeline_creation_ = false;
+  std::pmr::unordered_map<GlobalImageId, escher::TexturePtr> texture_map_ FXL_GUARDED_BY(lock_);
+  std::pmr::unordered_map<GlobalImageId, escher::ImagePtr> render_target_map_ FXL_GUARDED_BY(lock_);
+  std::pmr::unordered_map<GlobalImageId, escher::TexturePtr> depth_target_map_
+      FXL_GUARDED_BY(lock_);
+  std::pmr::unordered_map<GlobalImageId, escher::ImagePtr> readback_image_map_
+      FXL_GUARDED_BY(lock_);
+  std::pmr::set<GlobalImageId> pending_textures_ FXL_GUARDED_BY(lock_);
+  std::pmr::set<GlobalImageId> pending_render_targets_ FXL_GUARDED_BY(lock_);
 
   std::unique_ptr<escher::DebugFont> debug_font_;
 
   uint32_t frame_number_ = 0;
+  bool disable_lazy_pipeline_creation_ = false;
 
   const async_dispatcher_t* const main_dispatcher_;
 };
