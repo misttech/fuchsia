@@ -902,7 +902,7 @@ impl ManagedRealm {
                         .get_exposed_dir()
                         .open(
                             &service_path,
-                            fio::Flags::PROTOCOL_DIRECTORY,
+                            fio::PERM_READABLE | fio::Flags::PROTOCOL_DIRECTORY,
                             &Default::default(),
                             req,
                         )

@@ -66,7 +66,10 @@ mod fuchsia {
         flags: fio::Flags,
         request: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
     ) -> Result<(), OpenError> {
-        let flags = flags | fio::Flags::PROTOCOL_DIRECTORY;
+        let mut flags = flags | fio::Flags::PROTOCOL_DIRECTORY;
+        if flags.intersection(fio::MASK_KNOWN_PERMISSIONS).is_empty() {
+            flags |= PERM_READABLE;
+        }
         let namespace = fdio::Namespace::installed().map_err(OpenError::Namespace)?;
         namespace.open(path, flags, request.into_channel()).map_err(OpenError::Namespace)
     }
@@ -202,7 +205,10 @@ pub fn open_directory_async(
 ) -> Result<fio::DirectoryProxy, OpenError> {
     let (dir, server_end) = parent.domain().create_proxy::<fio::DirectoryMarker>();
 
-    let flags = flags | fio::Flags::PROTOCOL_DIRECTORY;
+    let mut flags = flags | fio::Flags::PROTOCOL_DIRECTORY;
+    if flags.intersection(fio::MASK_KNOWN_PERMISSIONS).is_empty() {
+        flags |= PERM_READABLE;
+    }
 
     #[cfg(fuchsia_api_level_at_least = "27")]
     parent
@@ -225,7 +231,10 @@ pub async fn open_directory(
 ) -> Result<fio::DirectoryProxy, OpenError> {
     let (dir, server_end) = parent.domain().create_proxy::<fio::DirectoryMarker>();
 
-    let flags = flags | fio::Flags::PROTOCOL_DIRECTORY | fio::Flags::FLAG_SEND_REPRESENTATION;
+    let mut flags = flags | fio::Flags::PROTOCOL_DIRECTORY | fio::Flags::FLAG_SEND_REPRESENTATION;
+    if flags.intersection(fio::MASK_KNOWN_PERMISSIONS).is_empty() {
+        flags |= PERM_READABLE;
+    }
 
     #[cfg(fuchsia_api_level_at_least = "27")]
     parent
@@ -296,7 +305,10 @@ pub fn open_file_async(
 ) -> Result<fio::FileProxy, OpenError> {
     let (file, server_end) = parent.domain().create_proxy::<fio::FileMarker>();
 
-    let flags = flags | fio::Flags::PROTOCOL_FILE;
+    let mut flags = flags | fio::Flags::PROTOCOL_FILE;
+    if flags.intersection(fio::MASK_KNOWN_PERMISSIONS).is_empty() {
+        flags |= PERM_READABLE;
+    }
 
     #[cfg(fuchsia_api_level_at_least = "27")]
     parent
@@ -319,7 +331,10 @@ pub async fn open_file(
 ) -> Result<fio::FileProxy, OpenError> {
     let (file, server_end) = parent.domain().create_proxy::<fio::FileMarker>();
 
-    let flags = flags | fio::Flags::PROTOCOL_FILE | fio::Flags::FLAG_SEND_REPRESENTATION;
+    let mut flags = flags | fio::Flags::PROTOCOL_FILE | fio::Flags::FLAG_SEND_REPRESENTATION;
+    if flags.intersection(fio::MASK_KNOWN_PERMISSIONS).is_empty() {
+        flags |= PERM_READABLE;
+    }
 
     #[cfg(fuchsia_api_level_at_least = "27")]
     parent

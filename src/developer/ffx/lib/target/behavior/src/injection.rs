@@ -211,7 +211,7 @@ impl Injection {
                     let (client, server) = fidl::endpoints::create_endpoints();
                     if let Err(error) = toolbox.open(
                         ".",
-                        fidl_fuchsia_io::Flags::PROTOCOL_DIRECTORY,
+                        fidl_fuchsia_io::Flags::PROTOCOL_DIRECTORY | fidl_fuchsia_io::PERM_READABLE,
                         &fidl_fuchsia_io::Options::default(),
                         server.into(),
                     ) {

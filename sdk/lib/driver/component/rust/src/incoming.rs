@@ -284,8 +284,8 @@ impl<'a, S: Service<ServiceMemberConnector>> ServiceConnector<'a, ServiceInstanc
     /// Logs and returns a [`Status::CONNECTION_REFUSED`] if the service instance couldn't be opened.
     pub fn connect_next(self) -> Result<ServiceInstance<S>, Status> {
         let service_path = format!("{SVC_DIR}/{}/{}", S::SERVICE_NAME, self.instance);
-        let dir = open_directory_async(self.incoming, &service_path, fio::Rights::empty())
-            .map_err(|e| {
+        let dir =
+            open_directory_async(self.incoming, &service_path, fio::R_STAR_DIR).map_err(|e| {
                 error!(
                     "Failed to connect to aggregated service connector `{}`, instance `{}`: {e}",
                     S::SERVICE_NAME,

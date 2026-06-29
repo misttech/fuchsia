@@ -515,7 +515,7 @@ impl BuiltinEnvironment {
         // If capability passthrough is enabled, add capabilities offered from
         // the parent to the input dictionary of the root component.
         if capability_passthrough {
-            match fuchsia_fs::directory::open_in_namespace("/parent-offered", fio::Flags::empty()) {
+            match fuchsia_fs::directory::open_in_namespace("/parent-offered", fio::PERM_READABLE) {
                 Ok(passthrough_dir) => match fuchsia_fs::directory::readdir(&passthrough_dir).await
                 {
                     Ok(entries) => {

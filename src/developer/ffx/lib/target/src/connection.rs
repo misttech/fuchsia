@@ -186,7 +186,7 @@ impl Connection {
             let (client, server) = fidl::endpoints::create_endpoints();
             if let Err(error) = toolbox.open(
                 ".",
-                fio_f::Flags::PROTOCOL_DIRECTORY,
+                fio_f::Flags::PROTOCOL_DIRECTORY | fio_f::PERM_READABLE,
                 &fio_f::Options::default(),
                 server.into(),
             ) {

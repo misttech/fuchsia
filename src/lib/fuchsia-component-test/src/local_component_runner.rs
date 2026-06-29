@@ -7,6 +7,13 @@ use fidl::endpoints::{
     ClientEnd, ControlHandle, DiscoverableProtocolMarker, RequestStream, ServerEnd, ServiceMarker,
     ServiceProxy, create_request_stream,
 };
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_runner as fcrunner;
+use fidl_fuchsia_component_test as ftest;
+use fidl_fuchsia_data as fdata;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_process as fprocess;
+use fuchsia_async as fasync;
 use fuchsia_component::DEFAULT_SERVICE_INSTANCE;
 use fuchsia_component::client::Connect;
 use futures::channel::oneshot;
@@ -18,11 +25,6 @@ use runner::get_value as get_dictionary_value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use vfs::execution_scope::ExecutionScope;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runner as fcrunner,
-    fidl_fuchsia_component_test as ftest, fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio,
-    fidl_fuchsia_process as fprocess, fuchsia_async as fasync,
-};
 
 /// The handles from the framework over which the local component should interact with other
 /// components.
@@ -119,7 +121,7 @@ impl LocalComponentHandles {
         let svc_dir_proxy = self.namespace.get("/svc").ok_or_else(|| {
             format_err!("the component's namespace doesn't have a /svc directory")
         })?;
-        fuchsia_fs::directory::open_directory_async(&svc_dir_proxy, name, fio::Flags::empty())
+        fuchsia_fs::directory::open_directory_async(&svc_dir_proxy, name, fio::PERM_READABLE)
             .map_err(Into::into)
     }
 
@@ -151,7 +153,7 @@ impl LocalComponentHandles {
         let directory_proxy = fuchsia_fs::directory::open_directory_async(
             &service_dir,
             instance_name,
-            fio::Flags::empty(),
+            fio::PERM_READABLE,
         )?;
         Ok(S::Proxy::from_member_opener(Box::new(
             fuchsia_component::client::ServiceInstanceDirectory(

@@ -1370,7 +1370,7 @@ mod tests {
             let ns = ns.remove(1);
             assert_eq!(ns.path.to_string(), "/svc");
             let svc_dir = ns.directory.into_proxy();
-            fuchsia_fs::directory::open_directory(&svc_dir, "foo.bar", fio::Flags::empty())
+            fuchsia_fs::directory::open_directory(&svc_dir, "foo.bar", fio::PERM_READABLE)
                 .await
                 .unwrap();
         }

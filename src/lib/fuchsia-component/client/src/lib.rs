@@ -187,7 +187,7 @@ impl<D: Borrow<fio::DirectoryProxy>, P: DiscoverableProtocolMarker> ProtocolConn
 
 /// Clone the handle to the service directory in the application's root namespace.
 pub fn clone_namespace_svc() -> Result<fio::DirectoryProxy, Error> {
-    fuchsia_fs::directory::open_in_namespace(SVC_DIR, fio::Flags::empty())
+    fuchsia_fs::directory::open_in_namespace(SVC_DIR, fio::PERM_READABLE)
         .context("error opening svc directory")
 }
 
@@ -205,7 +205,7 @@ pub fn new_protocol_connector<P: DiscoverableProtocolMarker>()
 pub fn new_protocol_connector_at<P: DiscoverableProtocolMarker>(
     service_directory_path: &str,
 ) -> Result<ProtocolConnector<fio::DirectoryProxy, P>, Error> {
-    let dir = fuchsia_fs::directory::open_in_namespace(service_directory_path, fio::Flags::empty())
+    let dir = fuchsia_fs::directory::open_in_namespace(service_directory_path, fio::PERM_READABLE)
         .context("error opening service directory")?;
 
     Ok(ProtocolConnector::new(dir))
@@ -408,7 +408,7 @@ impl<S: ServiceMarker> Service<S> {
 
     /// Returns a new [`Service`] that is in the given directory.
     pub fn open_from_dir(svc_dir: impl AsRefDirectory, marker: S) -> Result<Self, Error> {
-        let dir = open_directory_async(&svc_dir, S::SERVICE_NAME, fio::Rights::empty())?;
+        let dir = open_directory_async(&svc_dir, S::SERVICE_NAME, fio::R_STAR_DIR)?;
         Ok(Self::from_service_dir_proxy(dir, marker))
     }
 
@@ -425,7 +425,7 @@ impl<S: ServiceMarker> Service<S> {
         // even though they aren't technically supposed to, so strip the leading slash until that's
         // resolved one way or the other.
         let service_path = service_path.strip_prefix('/').unwrap_or_else(|| service_path.as_ref());
-        let dir = open_directory_async(&dir, &service_path, fio::Rights::empty())?;
+        let dir = open_directory_async(&dir, &service_path, fio::R_STAR_DIR)?;
         Ok(Self::from_service_dir_proxy(dir, marker))
     }
 
@@ -436,7 +436,7 @@ impl<S: ServiceMarker> Service<S> {
         let directory_proxy = fuchsia_fs::directory::open_directory_async(
             &self.dir,
             name.as_ref(),
-            fio::Flags::empty(),
+            fio::PERM_READABLE,
         )?;
         Ok(S::Proxy::from_member_opener(Box::new(ServiceInstanceDirectory(
             directory_proxy,
@@ -577,7 +577,7 @@ impl<S: ServiceMarker> FusedStream for ServiceInstanceStream<S> {
 pub fn connect_to_service_instance<S: ServiceMarker>(instance: &str) -> Result<S::Proxy, Error> {
     let service_path = format!("{}/{}/{}", SVC_DIR, S::SERVICE_NAME, instance);
     let directory_proxy =
-        fuchsia_fs::directory::open_in_namespace(&service_path, fio::Flags::empty())?;
+        fuchsia_fs::directory::open_in_namespace(&service_path, fio::PERM_READABLE)?;
     Ok(S::Proxy::from_member_opener(Box::new(ServiceInstanceDirectory(
         directory_proxy,
         instance.to_string(),
@@ -595,7 +595,7 @@ pub fn connect_to_service_instance_at_dir<S: ServiceMarker>(
 ) -> Result<S::Proxy, Error> {
     let service_path = format!("{}/{}", S::SERVICE_NAME, instance);
     let directory_proxy =
-        fuchsia_fs::directory::open_directory_async(directory, &service_path, fio::Flags::empty())?;
+        fuchsia_fs::directory::open_directory_async(directory, &service_path, fio::PERM_READABLE)?;
     Ok(S::Proxy::from_member_opener(Box::new(ServiceInstanceDirectory(
         directory_proxy,
         instance.to_string(),
@@ -612,7 +612,7 @@ pub fn connect_to_service_instance_at_dir_svc<S: ServiceMarker>(
     // even though they aren't technically supposed to, so strip the leading slash until that's
     // resolved one way or the other.
     let service_path = service_path.strip_prefix('/').unwrap();
-    let directory_proxy = open_directory_async(directory, service_path, fio::Rights::empty())?;
+    let directory_proxy = open_directory_async(directory, service_path, fio::R_STAR_DIR)?;
     Ok(S::Proxy::from_member_opener(Box::new(ServiceInstanceDirectory(
         directory_proxy,
         instance.as_ref().to_string(),
@@ -622,14 +622,14 @@ pub fn connect_to_service_instance_at_dir_svc<S: ServiceMarker>(
 /// Opens a FIDL service as a directory, which holds instances of the service.
 pub fn open_service<S: ServiceMarker>() -> Result<fio::DirectoryProxy, Error> {
     let service_path = format!("{}/{}", SVC_DIR, S::SERVICE_NAME);
-    fuchsia_fs::directory::open_in_namespace(&service_path, fio::Flags::empty())
+    fuchsia_fs::directory::open_in_namespace(&service_path, fio::PERM_READABLE)
         .context("namespace open failed")
 }
 
 /// Opens a FIDL service with a custom name as a directory, which holds instances of the service.
 pub fn open_service_at(service_name: impl AsRef<str>) -> Result<fio::DirectoryProxy, Error> {
     let service_path = format!("{SVC_DIR}/{}", service_name.as_ref());
-    fuchsia_fs::directory::open_in_namespace(&service_path, fio::Flags::empty())
+    fuchsia_fs::directory::open_in_namespace(&service_path, fio::PERM_READABLE)
         .context("namespace open failed")
 }
 

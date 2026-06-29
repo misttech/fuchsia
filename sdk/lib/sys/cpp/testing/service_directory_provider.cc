@@ -14,7 +14,7 @@ namespace testing {
 ServiceDirectoryProvider::ServiceDirectoryProvider(async_dispatcher_t* dispatcher)
     : svc_dir_(std::make_unique<vfs::PseudoDir>()) {
   auto [svc_client, svc_server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
-  svc_dir_->Serve(fuchsia_io::Flags::kPermConnect, std::move(svc_server), dispatcher);
+  svc_dir_->Serve(fuchsia_io::wire::kPermReadable, std::move(svc_server), dispatcher);
   service_directory_ = std::make_shared<sys::ServiceDirectory>(svc_client.TakeChannel());
 }
 
