@@ -8,6 +8,7 @@ load("./common.star", "FORMATTER_MSG", "cipd_platform_name", "get_fuchsia_dir", 
 load("./confusing_characters.star", "confusing_characters")
 load("./dart.star", "register_dart_checks")
 load("./docs.star", "register_doc_checks")
+load("./enforce_bazel_build_file.star", "register_bazel_build_file_checks")
 load("./fidl.star", "register_fidl_checks")
 load("./fidl_migration.star", "register_fidl_migration_checks")
 load("./gn.star", "gn_no_print")
@@ -153,6 +154,7 @@ def register_all_checks():
     shac.register_check(gn_no_print)
 
     # keeps-sorted start
+    register_bazel_build_file_checks()
     register_cml_checks()
     register_dart_checks()
     register_doc_checks()
