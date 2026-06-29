@@ -1875,6 +1875,14 @@ group("rutabaga_gfx-0.1.3") {
   public_deps = [ ":rutabaga_gfx-v0_1_3" ]
 }
 
+group("sapphire-async") {
+  public_deps = [ ":sapphire-async-v0_1_0" ]
+}
+
+group("sapphire-async-0.1.0") {
+  public_deps = [ ":sapphire-async-v0_1_0" ]
+}
+
 group("sapphire-collections") {
   public_deps = [ ":sapphire-collections-v0_1_0" ]
 }
@@ -18893,6 +18901,37 @@ rustc_library("same-file-v1_0_6") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":same-file-v1_0_6.license" ]
+}
+
+rustc_library("sapphire-async-v0_1_0") {
+  crate_name = "sapphire_async"
+  source_root =
+      "//src/connectivity/bluetooth/sunstone/sapphire-async/src/lib.rs"
+  output_name = "sapphire_async-fe594d0ce9d1dac8"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":sapphire-collections-v0_1_0" ]
+  deps += [ ":sapphire-sync-v0_1_0" ]
+  deps += [ ":thiserror-v2_0_18" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=fe594d0ce9d1dac8",
+    "-Cextra-filename=-fe594d0ce9d1dac8",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
+    "--cfg=feature=\"testing\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
 rustc_library("sapphire-collections-v0_1_0") {

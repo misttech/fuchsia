@@ -1926,6 +1926,7 @@ dependencies = [
  "rustls-webpki",
  "rustyline",
  "rutabaga_gfx",
+ "sapphire-async",
  "sapphire-collections",
  "sapphire-gatt",
  "sapphire-peer-cache",
@@ -4707,6 +4708,15 @@ name = "same-file"
 version = "1.0.6"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "sapphire-async"
+version = "0.1.0"
+dependencies = [
+ "sapphire-collections",
+ "sapphire-sync",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
