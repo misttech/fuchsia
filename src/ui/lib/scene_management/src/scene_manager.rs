@@ -23,7 +23,7 @@ use fidl_fuchsia_ui_pointerinjector_configuration::{
 };
 use fidl_fuchsia_ui_views as ui_views;
 use flatland_frame_scheduling_lib::*;
-use fuchsia_async as fasync;
+use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_scenic as scenic;
 use fuchsia_sync::Mutex;
 use fuchsia_trace as trace;
@@ -38,6 +38,7 @@ use std::ffi::CStr;
 use std::process;
 use std::rc::Rc;
 use std::sync::{Arc, Weak};
+use zx;
 
 /// Presentation messages.
 pub enum PresentationMessage {
@@ -61,6 +62,9 @@ const CURSOR_HOTSPOT: (u32, u32) = (2, 4);
 // what is needed to determine the cursor scale factor.
 const CURSOR_SCALE_MULTIPLIER: u32 = 5;
 const CURSOR_SCALE_DIVIDER: u32 = 4;
+
+const DEFAULT_VIEW_CONNECTION_TIMEOUT: zx::MonotonicDuration =
+    zx::MonotonicDuration::from_seconds(15);
 
 // Converts a cursor size to physical pixels.
 fn physical_cursor_size(value: u32) -> u32 {
@@ -827,14 +831,31 @@ impl SceneManager {
                 .context("could not request present with pingback")?,
         );
 
-        let _child_status =
-            child_view_watcher.get_status().await.context("could not call get_status")?;
-        let child_view_ref =
-            child_view_watcher.get_view_ref().await.context("could not get view_ref")?;
+        let _child_status = child_view_watcher
+            .get_status()
+            .on_timeout(fasync::MonotonicInstant::after(DEFAULT_VIEW_CONNECTION_TIMEOUT), || {
+                make_timeout_error("fuchsia.ui.composition.ChildViewWatcher")
+            })
+            .await
+            .context("could not call get_status")?;
+        let child_view_ref = child_view_watcher
+            .get_view_ref()
+            .on_timeout(fasync::MonotonicInstant::after(DEFAULT_VIEW_CONNECTION_TIMEOUT), || {
+                make_timeout_error("fuchsia.ui.composition.ChildViewWatcher")
+            })
+            .await
+            .context("could not get view_ref")?;
         let child_view_ref_copy =
             scenic::duplicate_view_ref(&child_view_ref).context("could not duplicate view_ref")?;
 
-        let request_focus_result = self.root_flatland.focuser.request_focus(child_view_ref).await;
+        let request_focus_result = self
+            .root_flatland
+            .focuser
+            .request_focus(child_view_ref)
+            .on_timeout(fasync::MonotonicInstant::after(DEFAULT_VIEW_CONNECTION_TIMEOUT), || {
+                make_timeout_error("fuchsia.ui.views.Focuser")
+            })
+            .await;
         match request_focus_result {
             Err(e) => warn!("Request focus failed with err: {}", e),
             Ok(Err(value)) => warn!("Request focus failed with err: {:?}", value),
@@ -852,6 +873,14 @@ impl SceneManager {
 
         Ok(child_view_ref_copy)
     }
+}
+
+fn make_timeout_error<T>(protocol_name: &'static str) -> Result<T, fidl::Error> {
+    Err(fidl::Error::ClientChannelClosed {
+        status: zx::Status::TIMED_OUT,
+        protocol_name,
+        epitaph: None,
+    })
 }
 
 pub fn create_viewport_hanging_get(

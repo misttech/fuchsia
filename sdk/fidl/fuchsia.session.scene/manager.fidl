@@ -11,6 +11,9 @@ using fuchsia.ui.views;
 type PresentRootViewError = flexible enum {
     /// An error occurred while processing the request.
     INTERNAL_ERROR = 1;
+
+    /// The view failed to connect within the expected timeout duration.
+    VIEW_CONNECTION_TIMEOUT = 2;
 };
 
 /// A protocol used to manage the scene graph of the session.
@@ -36,8 +39,8 @@ closed protocol Manager {
     ///
     /// TODO(https://fxbug.dev/42055565): Fix this situation.
     /// NOTE: the ViewRef is only returned after the child view is connected to the scene graph.
-    /// Therefore, the caller must guarantee that the child view will eventually be connected before
-    /// waiting for the ViewRef; if the child view doesn't connect, it is possible to deadlock.
+    /// If the child view does not connect within the expected timeout duration, the call returns
+    /// `PresentRootViewError.VIEW_CONNECTION_TIMEOUT`.
     @deprecated("Use PresentRootView.")
     strict SetRootView(resource struct {
         view_provider client_end:fuchsia.ui.app.ViewProvider;
@@ -59,8 +62,8 @@ closed protocol Manager {
     ///
     /// TODO(https://fxbug.dev/42055565): Fix this situation.
     /// NOTE: this method returns only after the child view is connected to the scene graph.
-    /// Therefore, the caller must guarantee that the child view will eventually be connected before
-    /// waiting for the return; if the child view doesn't connect, it is possible to deadlock.
+    /// If the child view does not connect within the expected timeout duration, the call returns
+    /// `PresentRootViewError.VIEW_CONNECTION_TIMEOUT`.
     @deprecated("Use PresentRootView unless running GFX.")
     strict PresentRootViewLegacy(resource struct {
         view_holder_token fuchsia.ui.views.ViewHolderToken;
@@ -79,8 +82,8 @@ closed protocol Manager {
     ///
     /// TODO(https://fxbug.dev/42055565): Fix this situation.
     /// NOTE: this method returns only after the child view is connected to the scene graph.
-    /// Therefore, the caller must guarantee that the child view will eventually be connected before
-    /// waiting for the return; if the child view doesn't connect, it is possible to deadlock.
+    /// If the child view does not connect within the expected timeout duration, the call returns
+    /// `PresentRootViewError.VIEW_CONNECTION_TIMEOUT`.
     strict PresentRootView(resource struct {
         viewport_creation_token fuchsia.ui.views.ViewportCreationToken;
     }) -> () error PresentRootViewError;

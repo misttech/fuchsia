@@ -3,6 +3,10 @@
 // found in the LICENSE file.
 
 use crate::{Incoming, metrics};
+use fuchsia_async::{self as fasync, TimeoutExt};
+use zx;
+
+const DEFAULT_TEXT_MANAGER_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(15);
 use anyhow::{Context, Error};
 use fidl_fuchsia_ui_focus as focus;
 use fidl_fuchsia_ui_keyboard_focus as kbd_focus;
@@ -115,10 +119,26 @@ impl FocusListener {
                     if let Some(ref focus_chain) = focus_chain.focus_chain {
                         if let Some(ref view_ref) = focus_chain.last() {
                             let view_ref_dup = fuchsia_scenic::duplicate_view_ref(&view_ref)?;
-                            self.text_manager
+                            let notify_result = self
+                                .text_manager
                                 .notify(view_ref_dup)
-                                .await
-                                .context("while notifying text_manager")?;
+                                .on_timeout(
+                                    fasync::MonotonicInstant::after(DEFAULT_TEXT_MANAGER_TIMEOUT),
+                                    || {
+                                        Err(fidl::Error::ClientChannelClosed {
+                                            status: zx::Status::TIMED_OUT,
+                                            protocol_name: "fuchsia.ui.keyboard.focus.Controller",
+                                            epitaph: None,
+                                        })
+                                    },
+                                )
+                                .await;
+                            if let Err(e) = notify_result {
+                                log::warn!(
+                                    "Failed to notify text_manager of focus change: {:?}",
+                                    e
+                                );
+                            }
                         }
                     };
 

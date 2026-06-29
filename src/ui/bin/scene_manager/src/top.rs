@@ -45,6 +45,7 @@ use std::cell::RefCell;
 use std::fs::File;
 use std::io::Read;
 use std::rc::Rc;
+use zx;
 
 enum ExposedServices {
     ColorAdjustment(ColorAdjustmentRequestStream),
@@ -462,7 +463,7 @@ pub async fn handle_scene_manager_request_stream(
                 let set_root_view_result =
                     scene_manager.set_root_view_deprecated(proxy).await.map_err(|e| {
                         error!("Failed to obtain ViewRef from SetRootView(): {}", e);
-                        PresentRootViewError::InternalError
+                        map_present_root_view_error(e)
                     });
                 if let Err(e) = responder.send(set_root_view_result) {
                     error!("Error responding to SetRootView(): {}", e);
@@ -485,7 +486,7 @@ pub async fn handle_scene_manager_request_stream(
                 let set_root_view_result =
                     scene_manager.set_root_view(viewport_creation_token, None).await.map_err(|e| {
                         error!("Failed to obtain ViewRef from PresentRootView(): {}", e);
-                        PresentRootViewError::InternalError
+                        map_present_root_view_error(e)
                     });
                 if let Err(e) = responder.send(set_root_view_result) {
                     error!("Error responding to PresentRootView(): {}", e);
@@ -547,6 +548,15 @@ pub async fn handle_graphical_presenter_request_stream(
         };
         info!("No longer processing fuchsia.element.GraphicalPresenter request stream.");
     }
+}
+
+fn map_present_root_view_error(e: anyhow::Error) -> PresentRootViewError {
+    if let Some(fidl_err) = e.downcast_ref::<fidl::Error>() {
+        if let fidl::Error::ClientChannelClosed { status: zx::Status::TIMED_OUT, .. } = fidl_err {
+            return PresentRootViewError::ViewConnectionTimeout;
+        }
+    }
+    PresentRootViewError::InternalError
 }
 
 #[cfg(test)]
