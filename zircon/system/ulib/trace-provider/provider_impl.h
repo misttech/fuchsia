@@ -8,6 +8,8 @@
 #include <fidl/fuchsia.tracing.provider/cpp/wire.h>
 #include <lib/trace-provider/provider.h>
 
+#include <mutex>
+
 #include "session.h"
 
 // Provide a definition for the opaque type declared in provider.h.
@@ -65,20 +67,20 @@ class TraceProviderImpl final : public trace_provider_t,
 
   async_dispatcher_t* dispatcher() const { return dispatcher_; }
 
-  const ProviderConfig& GetProviderConfig() const;
+  ProviderConfig GetProviderConfig() const;
 
  private:
+  mutable std::mutex mutex_;
   const std::string name_;
   async_dispatcher_t* const dispatcher_;
-  ProviderConfig provider_config_;
+  ProviderConfig provider_config_ __TA_GUARDED(mutex_);
 #if FUCHSIA_API_LEVEL_AT_LEAST(31)
-  std::mutex mutex_;
   std::optional<fidl::ServerBindingRef<fuchsia_tracing_provider::ProviderV2>> binding_
       __TA_GUARDED(mutex_);
   std::unique_ptr<Session> session_ __TA_GUARDED(mutex_);
 #endif
 
-  trace::GetKnownCategoriesCallback get_known_categories_callback_;
+  trace::GetKnownCategoriesCallback get_known_categories_callback_ __TA_GUARDED(mutex_);
 
   TraceProviderImpl(const TraceProviderImpl&) = delete;
   TraceProviderImpl(TraceProviderImpl&&) = delete;

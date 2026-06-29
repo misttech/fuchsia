@@ -168,6 +168,7 @@ void TraceProviderImpl::Initialize(
 void TraceProviderImpl::Initialize(
     fuchsia_tracing_provider::wire::ProviderInitializeRequest* request,
     InitializeCompleter::Sync& completer) {
+  std::scoped_lock lock{mutex_};
   fuchsia_tracing_provider::wire::ProviderConfig& config = request->config;
   Session::InitializeEngine(
       dispatcher_, FidlBufferingModeToTraceEngineBufferingMode(config.buffering_mode),
@@ -238,12 +239,16 @@ void TraceProviderImpl::Terminate(TerminateCompleter::Sync& completer) {
 void TraceProviderImpl::GetKnownCategories(GetKnownCategoriesCompleter::Sync& completer) {
   // TODO(https://fxbug.dev/42068744): Return the trace categories that were registered with the
   // category string literal.
-  if (get_known_categories_callback_ == nullptr) {
-    completer.Reply({});
-    return;
+  std::vector<trace::KnownCategory> known_categories;
+  {
+    std::scoped_lock lock{mutex_};
+    if (get_known_categories_callback_ == nullptr) {
+      completer.Reply({});
+      return;
+    }
+    known_categories = get_known_categories_callback_();
   }
 
-  std::vector<trace::KnownCategory> known_categories = get_known_categories_callback_();
   std::vector<fuchsia_tracing::wire::KnownCategory> known_categories_fidl;
   known_categories_fidl.reserve(known_categories.size());
 
@@ -256,6 +261,7 @@ void TraceProviderImpl::GetKnownCategories(GetKnownCategoriesCompleter::Sync& co
 }
 
 void TraceProviderImpl::SetGetKnownCategoriesCallback(GetKnownCategoriesCallback callback) {
+  std::scoped_lock lock{mutex_};
   get_known_categories_callback_ = std::move(callback);
 }
 
@@ -282,7 +288,10 @@ void TraceProviderImpl::handle_unknown_method(
 }
 #endif
 
-const ProviderConfig& TraceProviderImpl::GetProviderConfig() const { return provider_config_; }
+ProviderConfig TraceProviderImpl::GetProviderConfig() const {
+  std::scoped_lock lock{mutex_};
+  return provider_config_;
+}
 
 }  // namespace internal
 
