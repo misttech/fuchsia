@@ -11,18 +11,30 @@ use fnet_masquerade::Error;
 use futures::stream::LocalBoxStream;
 use futures::{StreamExt as _, TryStreamExt as _, future};
 use log::{error, warn};
-use net_declare::fidl_subnet;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter_deprecated as fnet_filter_deprecated,
-    fidl_fuchsia_net_masquerade as fnet_masquerade,
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
-};
+
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_filter_deprecated as fnet_filter_deprecated;
+use fidl_fuchsia_net_masquerade as fnet_masquerade;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
 
 use crate::filter::{FilterControl, FilterEnabledState, FilterError};
 use crate::{InterfaceId, InterfaceState};
 
-const V4_UNSPECIFIED_SUBNET: fnet::Subnet = fidl_subnet!("0.0.0.0/0");
-const V6_UNSPECIFIED_SUBNET: fnet::Subnet = fidl_subnet!("::/0");
+// The minimum allowed prefix length for IPv4 masquerading subnets.
+//
+// While the OpenThread API only requires a non-zero prefix, in practice we do
+// not need to support subnets larger than a Class A private network (/8, ~16M
+// addresses). This covers the default /24 pool used by lowpan-ot-driver while
+// blocking overly broad /1 to /7 subnets.
+const MIN_V4_MASQUERADE_PREFIX_LEN: u8 = 8;
+
+// The minimum allowed prefix length for IPv6 masquerading subnets.
+//
+// Enforced to prevent overly broad masquerade rules. Aligns with RFC 6052
+// section 2.2 and OpenThread's NAT64 translator API
+// (https://openthread.io/reference/group/api-nat64#otip4extractfromip6address),
+// which both specify a minimum prefix length of 32.
+const MIN_V6_MASQUERADE_PREFIX_LEN: u8 = 32;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
@@ -52,8 +64,17 @@ impl TryFrom<fnet_masquerade::ControlConfig> for ValidatedConfig {
             output_interface
         }: fnet_masquerade::ControlConfig,
     ) -> Result<Self, Self::Error> {
-        if src_subnet == V4_UNSPECIFIED_SUBNET || src_subnet == V6_UNSPECIFIED_SUBNET {
-            return Err(Error::Unsupported);
+        match src_subnet.addr {
+            fnet::IpAddress::Ipv4(_) => {
+                if src_subnet.prefix_len < MIN_V4_MASQUERADE_PREFIX_LEN {
+                    return Err(Error::Unsupported);
+                }
+            }
+            fnet::IpAddress::Ipv6(_) => {
+                if src_subnet.prefix_len < MIN_V6_MASQUERADE_PREFIX_LEN {
+                    return Err(Error::Unsupported);
+                }
+            }
         }
         Ok(Self {
             src_subnet: src_subnet.try_into().map_err(|_| Error::InvalidArguments)?,
@@ -457,6 +478,7 @@ impl RespondAndMaybeShutdown for MasqueradeState {
 #[cfg(test)]
 pub mod test {
     use fuchsia_sync::Mutex;
+    use net_declare::fidl_subnet;
     use std::collections::HashSet;
     use std::sync::Arc;
 
@@ -472,6 +494,13 @@ pub mod test {
 
     const VALID_OUTPUT_INTERFACE: u64 = 11;
     const NON_EXISTENT_INTERFACE: u64 = 1005;
+
+    const V4_UNSPECIFIED_SUBNET: fnet::Subnet = fidl_subnet!("0.0.0.0/0");
+    const V6_UNSPECIFIED_SUBNET: fnet::Subnet = fidl_subnet!("::/0");
+    const V4_SLASH_7_SUBNET: fnet::Subnet = fidl_subnet!("0.0.0.0/7");
+    const V4_SLASH_8_SUBNET: fnet::Subnet = fidl_subnet!("0.0.0.0/8");
+    const V6_SLASH_31_SUBNET: fnet::Subnet = fidl_subnet!("::/31");
+    const V6_SLASH_32_SUBNET: fnet::Subnet = fidl_subnet!("::/32");
 
     const VALID_SUBNET: fnet::Subnet = fidl_subnet!("192.0.2.0/24");
     // Note: Invalid because the host-bits are set.
@@ -881,6 +910,34 @@ pub mod test {
             .. DEFAULT_CONFIG
         } => Err(Error::Unsupported);
         "v6_unspecified_subnet"
+    )]
+    #[test_case(
+        fnet_masquerade::ControlConfig {
+            src_subnet: V4_SLASH_7_SUBNET,
+            .. DEFAULT_CONFIG
+        } => Err(Error::Unsupported);
+        "v4_slash_7_subnet"
+    )]
+    #[test_case(
+        fnet_masquerade::ControlConfig {
+            src_subnet: V4_SLASH_8_SUBNET,
+            .. DEFAULT_CONFIG
+        } => Ok(());
+        "v4_slash_8_subnet"
+    )]
+    #[test_case(
+        fnet_masquerade::ControlConfig {
+            src_subnet: V6_SLASH_31_SUBNET,
+            .. DEFAULT_CONFIG
+        } => Err(Error::Unsupported);
+        "v6_slash_31_subnet"
+    )]
+    #[test_case(
+        fnet_masquerade::ControlConfig {
+            src_subnet: V6_SLASH_32_SUBNET,
+            .. DEFAULT_CONFIG
+        } => Ok(());
+        "v6_slash_32_subnet"
     )]
     #[test_case(
         fnet_masquerade::ControlConfig {
