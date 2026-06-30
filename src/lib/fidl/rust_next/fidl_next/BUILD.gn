@@ -69,6 +69,7 @@ rustc_library("fidl_next") {
     "//src/lib/fuchsia-component/*",
     "//src/tests/fidl/conformance_suite/*",
     "//src/ui/lib/input_pipeline/*",
+    "//src/ui/tools/print-input-report-new/*",
     "//tools/fidl/fidlc/testdata/*",
     "//tools/fidl/fidlgen_rust_next/*",
     "//vendor/google/*",

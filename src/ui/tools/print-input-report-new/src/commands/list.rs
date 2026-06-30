@@ -4,9 +4,11 @@
 
 use anyhow::{Context, Result};
 use argh::FromArgs;
-use fidl_fuchsia_input_report as fidl_input_report;
-use fidl_fuchsia_io as fio;
-use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
+
+use fidl::endpoints::Proxy;
+use fidl_fuchsia_io as fidl_legacy_io;
+use fidl_next;
+use fidl_next_fuchsia_input_report as fidl_input_report;
 use prettytable::Table;
 use serde::{Serialize, Serializer};
 use std::str::FromStr;
@@ -60,18 +62,18 @@ where
 }
 
 pub async fn run(args: ListArgs) -> Result<()> {
-    let service_dir =
-        fuchsia_fs::directory::open_in_namespace(SERVICE_DIR, fio::Flags::PROTOCOL_DIRECTORY)
-            .context(format!("Failed to open {}", SERVICE_DIR))?;
+    let service_dir = fuchsia_fs::directory::open_in_namespace(
+        SERVICE_DIR,
+        fidl_legacy_io::Flags::PROTOCOL_DIRECTORY,
+    )
+    .context(format!("Failed to open {}", SERVICE_DIR))?;
     let output = list_devices_to_string(&service_dir, args.output).await?;
     println!("{}", output);
     Ok(())
 }
 
-/// Fetches the info of all input device instances from `service_dir`, and
-/// returns it as a formatted String.
 async fn list_devices_to_string(
-    service_dir: &fio::DirectoryProxy,
+    service_dir: &fidl_legacy_io::DirectoryProxy,
     output_format: OutputFormat,
 ) -> Result<String> {
     let mut devices = Vec::new();
@@ -109,27 +111,35 @@ async fn list_devices_to_string(
 }
 
 async fn get_device_info(
-    service_dir: &fio::DirectoryProxy,
+    service_dir: &fidl_legacy_io::DirectoryProxy,
     instance: String,
 ) -> Result<DeviceInfo> {
     let device_path = format!("{}/input_device", instance);
-    let device = connect_to_named_protocol_at_dir_root::<fidl_input_report::InputDeviceMarker>(
-        service_dir,
+
+    let (client_end, server_end) =
+        fidl_next::fuchsia::create_channel::<fidl_input_report::InputDevice>();
+    fdio::service_connect_at(
+        service_dir.as_channel().as_ref(),
         &device_path,
+        server_end.into_untyped(),
     )
     .context(format!("Failed to connect to {}", device_path))?;
+    let device = client_end.spawn();
 
-    let descriptor = device
+    let response = device
         .get_descriptor()
         .await
-        .context(format!("Failed to get descriptor for {}", instance))?;
+        .map_err(|e| anyhow::anyhow!("Failed to get descriptor for {}: {:?}", instance, e))?;
 
-    let device_info = descriptor.device_information.expect("device_information is required.");
+    let device_info = response
+        .descriptor
+        .device_information
+        .expect("device_information is required by FIDL protocol");
 
     Ok(DeviceInfo {
         instance,
-        vendor_id: device_info.vendor_id.expect("vendor_id is required."),
-        product_id: device_info.product_id.expect("product_id is required."),
+        vendor_id: device_info.vendor_id.expect("vendor_id is required by FIDL protocol"),
+        product_id: device_info.product_id.expect("product_id is required by FIDL protocol"),
         serial_number: device_info.serial_number,
         manufacturer_name: device_info.manufacturer_name,
         product_name: device_info.product_name,
@@ -139,21 +149,19 @@ async fn get_device_info(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl_fuchsia_input_report::{
-        DeviceDescriptor, DeviceInformation, InputDeviceRequest, InputDeviceRequestStream,
-    };
+    use fidl_fuchsia_input_report as fidl_legacy_input_report;
     use futures::TryStreamExt;
     use googletest::prelude::*;
     use std::sync::Arc;
 
     async fn handle_input_device_request(
-        mut stream: InputDeviceRequestStream,
-        device_info: DeviceInformation,
+        mut stream: fidl_legacy_input_report::InputDeviceRequestStream,
+        device_info: fidl_legacy_input_report::DeviceInformation,
     ) {
         while let Ok(Some(request)) = stream.try_next().await {
             match request {
-                InputDeviceRequest::GetDescriptor { responder } => {
-                    let descriptor = DeviceDescriptor {
+                fidl_legacy_input_report::InputDeviceRequest::GetDescriptor { responder } => {
+                    let descriptor = fidl_legacy_input_report::DeviceDescriptor {
                         device_information: Some(device_info.clone()),
                         ..Default::default()
                     };
@@ -166,8 +174,10 @@ mod tests {
 
     /// Serves a fake InputDevice that always returns the given `device_info`
     /// when asked for it.
-    fn serve_fake_input_device(device_info: DeviceInformation) -> Arc<vfs::service::Service> {
-        vfs::service::host(move |stream: InputDeviceRequestStream| {
+    fn serve_fake_input_device(
+        device_info: fidl_legacy_input_report::DeviceInformation,
+    ) -> Arc<vfs::service::Service> {
+        vfs::service::host(move |stream: fidl_legacy_input_report::InputDeviceRequestStream| {
             let device_info = device_info.clone();
             async move {
                 handle_input_device_request(stream, device_info).await;
@@ -177,27 +187,31 @@ mod tests {
 
     /// Creates a fake service directory with two input devices.
     /// Only the GetDescriptor method is supported on the devices for now.
-    fn setup_fake_service_directory() -> fio::DirectoryProxy {
+    fn setup_fake_service_directory() -> fidl_legacy_io::DirectoryProxy {
         let service_dir = vfs::pseudo_directory! {
             "instance1" => vfs::pseudo_directory! {
-                "input_device" => serve_fake_input_device(DeviceInformation {
-                    vendor_id: Some(0x1234),
-                    product_id: Some(0x5678),
-                    manufacturer_name: Some("Manuf1".to_string()),
-                    product_name: Some("Prod1".to_string()),
-                    serial_number: Some("Ser1".to_string()),
-                    ..Default::default()
-                }),
+                "input_device" => serve_fake_input_device(
+                    fidl_legacy_input_report::DeviceInformation {
+                        vendor_id: Some(0x1234),
+                        product_id: Some(0x5678),
+                        manufacturer_name: Some("Manuf1".to_string()),
+                        product_name: Some("Prod1".to_string()),
+                        serial_number: Some("Ser1".to_string()),
+                        ..Default::default()
+                    }
+                ),
             },
             "instance2" => vfs::pseudo_directory! {
-                "input_device" => serve_fake_input_device(DeviceInformation {
-                    vendor_id: Some(0xaaaa),
-                    product_id: Some(0xbbbb),
-                    manufacturer_name: Some("Manuf2".to_string()),
-                    product_name: Some("Prod2".to_string()),
-                    serial_number: Some("Ser2".to_string()),
-                    ..Default::default()
-                }),
+                "input_device" => serve_fake_input_device(
+                    fidl_legacy_input_report::DeviceInformation {
+                        vendor_id: Some(0xaaaa),
+                        product_id: Some(0xbbbb),
+                        manufacturer_name: Some("Manuf2".to_string()),
+                        product_name: Some("Prod2".to_string()),
+                        serial_number: Some("Ser2".to_string()),
+                        ..Default::default()
+                    }
+                ),
             }
         };
         vfs::directory::serve_read_only(service_dir, vfs::execution_scope::ExecutionScope::new())
