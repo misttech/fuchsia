@@ -7,7 +7,7 @@
 use anyhow::{Context, Result, bail};
 use emulator_instance::{
     AccelerationMode, ConsoleType, EmulatorConfiguration, EmulatorInstances, GpuType, LogLevel,
-    NetworkingMode, OperatingSystem,
+    NetworkingMode, OperatingSystem, PortMapping,
 };
 use ffx_config::EnvironmentContext;
 use ffx_emulator_common::config::{
@@ -215,24 +215,35 @@ async fn apply_command_line_options(
     }
 
     if emu_config.host.networking == NetworkingMode::Auto {
-        let available = tap_available();
-        if available.is_ok() {
-            emu_config.host.networking = NetworkingMode::Tap;
-            eprintln!(
-                "Auto resolving networking to tap-mode. For more information see \
-                https://fuchsia.dev/fuchsia-src/development/build/emulator#networking"
-            );
-        } else {
-            log::debug!(
-                "Falling back on user-mode networking: {}",
-                available.as_ref().unwrap_err()
-            );
-            eprintln!(
-                "Auto resolving networking to user-mode. For more information see \
-                https://fuchsia.dev/fuchsia-src/development/build/emulator#networking"
-            );
+        if !cmd.additional_port_forwards.is_empty() {
+            eprintln!("Port forwarding requested; defaulting to user-mode networking.");
             emu_config.host.networking = NetworkingMode::User;
+        } else {
+            let available = tap_available();
+            if available.is_ok() {
+                emu_config.host.networking = NetworkingMode::Tap;
+                eprintln!(
+                    "Auto resolving networking to tap-mode. For more information see \
+                    https://fuchsia.dev/fuchsia-src/development/build/emulator#networking"
+                );
+            } else {
+                log::debug!(
+                    "Falling back on user-mode networking: {}",
+                    available.as_ref().unwrap_err()
+                );
+                eprintln!(
+                    "Auto resolving networking to user-mode. For more information see \
+                    https://fuchsia.dev/fuchsia-src/development/build/emulator#networking"
+                );
+                emu_config.host.networking = NetworkingMode::User;
+            }
         }
+    }
+
+    if emu_config.host.networking != NetworkingMode::User
+        && !cmd.additional_port_forwards.is_empty()
+    {
+        bail!("Port forwarding is only supported with USER networking. Use '--net user' instead.");
     }
 
     // RuntimeConfig options, starting with simple copies.
@@ -256,6 +267,16 @@ async fn apply_command_line_options(
     emu_config.runtime.log_level = if cmd.verbose { LogLevel::Verbose } else { LogLevel::Info };
 
     if emu_config.host.networking == NetworkingMode::User {
+        for additional in &cmd.additional_port_forwards {
+            let (name, guest) = parse_additional_port_forwards(additional)?;
+            if emu_config.host.port_map.contains_key(&name) {
+                bail!(
+                    "Port '{}' is already defined. Cannot add it as an additional port forward.",
+                    name
+                );
+            }
+            emu_config.host.port_map.insert(name, PortMapping { host: None, guest });
+        }
         // Reconcile the guest ports from device_spec with the host ports from the command line.
         if let Err(e) = parse_host_port_maps(&cmd.port_map, &mut emu_config) {
             bail!(
@@ -329,8 +350,9 @@ fn parse_host_port_maps(
             if mapping.is_none() {
                 bail!(
                     "Command attempts to set port '{}', which is not defined by the device \
-                    specification. Only ports with names defined by the device specification \
-                    can be set. Terminating emulation.",
+                    specification or additional-port-forwards. Only ports with names defined \
+                    by the device specification or additional-port-forwards can be set. \
+                    Terminating emulation.",
                     name
                 );
             }
@@ -356,6 +378,31 @@ fn parse_host_port_maps(
     log::debug!("Port map parsed: {:?}\n", emu_config.host.port_map);
 
     Ok(())
+}
+
+fn parse_additional_port_forwards(val: &str) -> Result<(String, u16)> {
+    let parts: Vec<&str> = val.split(':').collect();
+    if parts.len() != 2 {
+        bail!(
+            "Invalid syntax for flag --additional-port-forwards: '{}'. \
+            The expected syntax is <portname>:<guest_port>, e.g. '--additional-port-forwards myport:80'.",
+            val
+        );
+    }
+    let name = parts[0].to_string();
+    if name.is_empty() {
+        bail!("Port name cannot be empty in additional-port-forwards");
+    }
+    let guest: u16 = parts[1].parse().map_err(|e| {
+        anyhow::anyhow!("Invalid guest port '{}' in additional-port-forwards: {}", parts[1], e)
+    })?;
+    if guest == 0 {
+        bail!(
+            "Invalid guest port '{}' in additional-port-forwards. Guest port must be non-zero.",
+            guest
+        );
+    }
+    Ok((name, guest))
 }
 
 /// Check if name follows the scheme "fuchsia-5254-Y-Z" where the last three sections represent a
@@ -536,6 +583,106 @@ mod tests {
         assert_eq!(opts.host.log, long_path.join("absolute.file"));
 
         env::set_current_dir(cwd).context("Revert to previous CWD")?;
+
+        // Test additional_port_forwards
+        let mut cmd_with_ports = StartCommand {
+            net: Some("user".to_string()),
+            additional_port_forwards: vec!["port1:80".to_string(), "port2:90".to_string()],
+            ..Default::default()
+        };
+        let opts = apply_command_line_options(
+            emu_config.clone(),
+            &cmd_with_ports,
+            &emulator_instances,
+            &env.context,
+        )
+        .await?;
+        assert_eq!(opts.host.networking, NetworkingMode::User);
+        assert_eq!(
+            opts.host.port_map.get("port1").unwrap(),
+            &PortMapping { host: None, guest: 80 }
+        );
+        assert_eq!(
+            opts.host.port_map.get("port2").unwrap(),
+            &PortMapping { host: None, guest: 90 }
+        );
+
+        // Test additional_port_forwards with multiple flags and port_map override
+        let cmd_multiple_flags = StartCommand {
+            net: Some("user".to_string()),
+            additional_port_forwards: vec!["port1:80".to_string(), "port2:90".to_string()],
+            port_map: vec!["port1:8080".to_string()],
+            ..Default::default()
+        };
+        let opts = apply_command_line_options(
+            emu_config.clone(),
+            &cmd_multiple_flags,
+            &emulator_instances,
+            &env.context,
+        )
+        .await?;
+        assert_eq!(opts.host.networking, NetworkingMode::User);
+        assert_eq!(
+            opts.host.port_map.get("port1").unwrap(),
+            &PortMapping { host: Some(8080), guest: 80 }
+        );
+        assert_eq!(
+            opts.host.port_map.get("port2").unwrap(),
+            &PortMapping { host: None, guest: 90 }
+        );
+
+        // Test additional_port_forwards with invalid format (comma-separated is no longer supported)
+        cmd_with_ports.additional_port_forwards = vec!["port1:80,port2:90".to_string()];
+        let result = apply_command_line_options(
+            emu_config.clone(),
+            &cmd_with_ports,
+            &emulator_instances,
+            &env.context,
+        )
+        .await;
+        assert!(result.is_err());
+
+        // Test additional_port_forwards with zero guest port
+        cmd_with_ports.additional_port_forwards = vec!["port1:0".to_string()];
+        let result = apply_command_line_options(
+            emu_config.clone(),
+            &cmd_with_ports,
+            &emulator_instances,
+            &env.context,
+        )
+        .await;
+        assert!(result.is_err());
+
+        // Test additional_port_forwards with auto networking (defaults to User)
+        let cmd_auto_net = StartCommand {
+            net: None,
+            additional_port_forwards: vec!["port1:80".to_string()],
+            ..Default::default()
+        };
+        let opts = apply_command_line_options(
+            emu_config.clone(),
+            &cmd_auto_net,
+            &emulator_instances,
+            &env.context,
+        )
+        .await?;
+        assert_eq!(opts.host.networking, NetworkingMode::User);
+        assert!(opts.host.port_map.get("port1").is_some());
+
+        // Test additional_port_forwards with tap networking (should fail)
+        let cmd_tap_net = StartCommand {
+            net: Some("tap".to_string()),
+            additional_port_forwards: vec!["port1:80".to_string()],
+            ..Default::default()
+        };
+        let result = apply_command_line_options(
+            emu_config.clone(),
+            &cmd_tap_net,
+            &emulator_instances,
+            &env.context,
+        )
+        .await;
+        assert!(result.is_err());
 
         Ok(())
     }
@@ -975,5 +1122,16 @@ mod tests {
     fn test_check_for_emulator_mac_arbitrary_name() {
         let name = "New_York_Rio_Tokyo";
         assert!(check_for_emulator_mac(name).is_none());
+    }
+
+    #[test]
+    fn test_parse_additional_port_forwards() {
+        assert_eq!(parse_additional_port_forwards("port1:80").unwrap(), ("port1".to_string(), 80));
+        assert!(parse_additional_port_forwards("port1").is_err());
+        assert!(parse_additional_port_forwards("port1:").is_err());
+        assert!(parse_additional_port_forwards(":80").is_err());
+        assert!(parse_additional_port_forwards("port1:0").is_err());
+        assert!(parse_additional_port_forwards("port1:port").is_err());
+        assert!(parse_additional_port_forwards("port1:80:extra").is_err());
     }
 }

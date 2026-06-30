@@ -168,6 +168,13 @@ pub struct StartCommand {
     #[argh(option)]
     pub port_map: Vec<String>,
 
+    /// specify additional port mappings for user-networking mode.
+    /// Syntax is "--additional-port-forwards <portname>:<guest_port>".
+    /// This flag may be repeated for multiple port mappings.
+    /// The guest_port must be non-zero.
+    #[argh(option)]
+    pub additional_port_forwards: Vec<String>,
+
     /// use named product information from Product Bundle Metadata (PBM). If no
     /// product bundle is specified and there is an obvious choice, that will be
     /// used (e.g. if there is only one PBM available).

@@ -245,14 +245,21 @@ pub(crate) fn finalize_port_mapping(emu_config: &mut EmulatorConfiguration) -> R
     let port_map = &mut emu_config.host.port_map;
     let mut used_ports = Vec::new();
     for (name, port) in port_map {
+        let mut need_allocation = true;
         if let Some(value) = port.host {
-            if is_free_tcp_port(value).is_some() && !used_ports.contains(&value) {
+            if value != 0 {
+                if used_ports.contains(&value) {
+                    return_user_error!("Host port {} was mapped to multiple guest ports.", value);
+                }
+                if is_free_tcp_port(value).is_none() {
+                    return_user_error!("Host port {} is already in use by another process.", value);
+                }
                 // This port is good, so we claim it to make sure there are no conflicts later.
                 used_ports.push(value);
-            } else {
-                return_user_error!("Host port {} was mapped to multiple guest ports.", value);
+                need_allocation = false;
             }
-        } else {
+        }
+        if need_allocation {
             log::warn!(
                 "No host-side port specified for '{:?}', a host port will be dynamically \
                 assigned. Check `ffx emu show {}` to see which port is assigned.",
@@ -263,11 +270,13 @@ pub(crate) fn finalize_port_mapping(emu_config: &mut EmulatorConfiguration) -> R
             // There have been some incidents in automated tests of the same port
             // being returned multiple times.
             // So we'll try multiple times and avoid duplicates.
+            let mut assigned = false;
             for _ in 0..10 {
                 if let Some(value) = pick_unused_port() {
                     if !used_ports.contains(&value) {
                         port.host = Some(value);
                         used_ports.push(value);
+                        assigned = true;
                         break;
                     } else {
                         log::warn!("pick unused port returned: {} multiple times\n", value);
@@ -276,11 +285,35 @@ pub(crate) fn finalize_port_mapping(emu_config: &mut EmulatorConfiguration) -> R
                     log::warn!("pick unused port returned: None\n");
                 }
             }
-            if !port.host.is_some() {
+            if !assigned {
                 return_bug!("Unable to assign a host port for '{}'. Terminating emulation.", name);
             }
         }
     }
     log::debug!("Port map finalized: {:?}\n", emu_config.host.port_map);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use emulator_instance::PortMapping;
+
+    #[test]
+    fn test_finalize_port_mapping_zero() {
+        let mut emu_config = EmulatorConfiguration::default();
+        emu_config
+            .host
+            .port_map
+            .insert("test_port".to_string(), PortMapping { host: Some(0), guest: 2222 });
+
+        let result = finalize_port_mapping(&mut emu_config);
+        assert!(result.is_ok(), "Expected OK, got {:?}", result);
+
+        let mapping = emu_config.host.port_map.get("test_port").unwrap();
+        assert!(mapping.host.is_some());
+        let host_port = mapping.host.unwrap();
+        assert_ne!(host_port, 0, "Host port should not be 0 after finalization");
+        assert_eq!(mapping.guest, 2222);
+    }
 }

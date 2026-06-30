@@ -218,6 +218,18 @@
       "hidden": false
     },
     {
+      "kind": {
+        "Option": {
+          "arg_name": "additional-port-forwards"
+        }
+      },
+      "optionality": "repeating",
+      "long": "--additional-port-forwards",
+      "short": null,
+      "description": "specify additional port mappings for user-networking mode. Syntax is \"--additional-port-forwards <portname>:<guest_port>\". This flag may be repeated for multiple port mappings. The guest_port must be non-zero.",
+      "hidden": false
+    },
+    {
       "kind": "Switch",
       "optionality": "optional",
       "long": "--reuse",
