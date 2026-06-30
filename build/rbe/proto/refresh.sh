@@ -10,7 +10,7 @@ script_dir="$(dirname "$script")"
 project_root="$(readlink -f "$script_dir"/../../..)"
 
 # relative to $project_root:
-readonly PROTOBUF_SRC=third_party/protobuf/src
+readonly PROTOBUF_SRC=third_party/protobuf/src/src
 # This is where the prebuilt protobuf python wheel is installed.
 readonly PROTOBUF_WHEEL=prebuilt/third_party/protobuf-py3
 
