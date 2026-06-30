@@ -85,7 +85,7 @@ pub async fn assemble(
     let builder = ProductBundleBuilder::new(pb_name)
         .version(pb_version)
         .system(system, pb_slot)
-        .update_package(update_version_file, 1, None);
+        .update_package(Some(update_version_file), 1, None);
 
     builder.build(Box::new(tools), outdir).await?;
     print_fn("Assembly complete.");

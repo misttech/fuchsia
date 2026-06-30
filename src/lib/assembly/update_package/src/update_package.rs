@@ -10,6 +10,7 @@ use assembly_images_config::BlobfsLayout;
 use assembly_partitions_config::{PartitionsConfig, RecoveryStyle};
 use assembly_tool::ToolProvider;
 use assembly_update_packages_manifest::UpdatePackagesManifest;
+use assembly_util::get_release_version;
 use camino::{Utf8Path, Utf8PathBuf};
 use epoch::EpochFile;
 use fuchsia_merkle::Hash;
@@ -47,7 +48,7 @@ pub struct UpdatePackageBuilder {
     board_name: String,
 
     /// Version of the update.
-    version_file: PathBuf,
+    version_file: Option<PathBuf>,
 
     /// The epoch of the system.
     /// Fuchsia confirms that the epoch changes in increasing order before applying an update.
@@ -182,7 +183,7 @@ impl UpdatePackageBuilder {
     pub fn new(
         partitions: PartitionsConfig,
         board_name: impl AsRef<str>,
-        version_file: impl AsRef<Path>,
+        version_file: Option<impl AsRef<Path>>,
         epoch: EpochFile,
         outdir: impl AsRef<Utf8Path>,
     ) -> Self {
@@ -190,7 +191,7 @@ impl UpdatePackageBuilder {
             name: "update".into(),
             partitions,
             board_name: board_name.as_ref().into(),
-            version_file: version_file.as_ref().to_path_buf(),
+            version_file: version_file.map(|v| v.as_ref().to_path_buf()),
             epoch,
             slot_primary: None,
             slot_recovery: None,
@@ -450,7 +451,19 @@ impl UpdatePackageBuilder {
             &self.gendir,
         )?;
         builder.package.add_contents_as_blob("board", &self.board_name, &self.gendir)?;
-        builder.package.add_file_as_blob("version", self.version_file.path_to_string()?)?;
+        if let Some(version_file) = &self.version_file {
+            builder.package.add_file_as_blob("version", version_file.path_to_string()?)?;
+        } else {
+            let resolved_version =
+                [&self.slot_primary, &self.slot_recovery].into_iter().find_map(|slot| match slot {
+                    Some(Slot::Primary(s)) | Some(Slot::Recovery(s)) => {
+                        Some(s.system_release_info.product.info.version.clone())
+                    }
+                    None => None,
+                });
+            let version = get_release_version(&resolved_version, &None)?;
+            builder.package.add_contents_as_blob("version", version, &self.gendir)?;
+        }
         let (_, manifest) = builder.build()?;
 
         // Ensure the update package is within size budget.
@@ -523,12 +536,10 @@ mod tests {
             ssh_key_upload_method: None,
         };
         let epoch = EpochFile::Version1 { epoch: 0 };
-        let mut fake_version = NamedTempFile::new().unwrap();
-        writeln!(fake_version, "1.2.3.4").unwrap();
         let mut builder = UpdatePackageBuilder::new(
             partitions_config,
             "board",
-            fake_version.path().to_path_buf(),
+            None::<&Path>,
             epoch.clone(),
             &outdir,
         );
@@ -537,11 +548,14 @@ mod tests {
         let fake_zbi_tmp = NamedTempFile::new().unwrap();
         let fake_zbi = Utf8Path::from_path(fake_zbi_tmp.path()).unwrap();
 
+        let mut system_release_info = SystemReleaseInfo::new_for_testing();
+        system_release_info.product.info.version = "1.2.3.4".into();
+
         builder.add_slot_images(Slot::Primary(AssembledSystem {
             images: vec![Image::ZBI { path: fake_zbi.to_path_buf(), signed: true }],
             board_name: "my_board".into(),
             partitions_config: None,
-            system_release_info: SystemReleaseInfo::new_for_testing(),
+            system_release_info,
             platform_tools: vec![],
         }));
 
@@ -579,6 +593,9 @@ mod tests {
 
         let b = std::fs::read_to_string(outdir.join("board")).unwrap();
         assert_eq!("board", b);
+
+        let v = std::fs::read_to_string(outdir.join("version")).unwrap();
+        assert_eq!("1.2.3.4", v);
 
         // Read the output and ensure it contains the right files (and their hashes).
         let far_path = outdir.join("update.far");
@@ -667,7 +684,7 @@ mod tests {
         let mut builder = UpdatePackageBuilder::new(
             partitions_config,
             "board",
-            fake_version.path().to_path_buf(),
+            Some(fake_version.path()),
             epoch.clone(),
             &outdir,
         );
@@ -829,7 +846,7 @@ mod tests {
         let builder = UpdatePackageBuilder::new(
             partitions_config,
             "board",
-            fake_version.path().to_path_buf(),
+            Some(fake_version.path()),
             epoch.clone(),
             &outdir,
         );
@@ -881,7 +898,7 @@ mod tests {
         let mut builder = UpdatePackageBuilder::new(
             partitions_config,
             "board",
-            fake_version.path().to_path_buf(),
+            Some(fake_version.path()),
             epoch.clone(),
             &outdir,
         );
@@ -956,7 +973,7 @@ mod tests {
         let mut builder = UpdatePackageBuilder::new(
             PartitionsConfig::default(),
             "board",
-            fake_version.path().to_path_buf(),
+            Some(fake_version.path()),
             EpochFile::Version1 { epoch: 0 },
             &outdir,
         );
@@ -980,7 +997,7 @@ mod tests {
         let mut builder = UpdatePackageBuilder::new(
             PartitionsConfig::default(),
             "board",
-            fake_version.path().to_path_buf(),
+            Some(fake_version.path()),
             EpochFile::Version1 { epoch: 0 },
             &outdir,
         );
@@ -1010,7 +1027,7 @@ mod tests {
         let mut builder = UpdatePackageBuilder::new(
             PartitionsConfig::default(),
             "board",
-            fake_version.path().to_path_buf(),
+            Some(fake_version.path()),
             EpochFile::Version1 { epoch: 0 },
             &outdir,
         );

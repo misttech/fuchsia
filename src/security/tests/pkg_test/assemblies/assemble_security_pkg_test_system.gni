@@ -318,7 +318,6 @@ template("assemble_security_pkg_test_system") {
     deps = [ ":${labels.assembly_image_assembler}" ]
     partitions = ":${labels.assembly_partitions_config}"
     system_a = directories.assembly_out
-    version_file = invoker.system_version_file
     epoch = "1"
 
     if (defined(invoker.update_domain)) {

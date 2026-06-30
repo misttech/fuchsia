@@ -48,7 +48,7 @@ pub struct CreateUpdateArgs {
 
     /// file containing the version of the Fuchsia system.
     #[argh(option)]
-    pub version_file: Utf8PathBuf,
+    pub version_file: Option<Utf8PathBuf>,
 
     /// backstop OTA version.
     /// Fuchsia will reject updates with a lower epoch.

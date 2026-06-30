@@ -99,7 +99,7 @@ fuchsia_update_package = rule(
         "update_version_file": attr.label(
             doc = "Version file needed to create update package.",
             allow_single_file = True,
-            mandatory = True,
+            mandatory = False,
         ),
         "update_epoch": attr.string(
             doc = "Epoch needed to create update package.",

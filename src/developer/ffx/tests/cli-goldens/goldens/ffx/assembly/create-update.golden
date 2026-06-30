@@ -53,7 +53,7 @@
           "arg_name": "version-file"
         }
       },
-      "optionality": "required",
+      "optionality": "optional",
       "long": "--version-file",
       "short": null,
       "description": "file containing the version of the Fuchsia system.",

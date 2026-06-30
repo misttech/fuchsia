@@ -36,8 +36,13 @@ pub fn create_update(ctx: &EnvironmentContext, args: CreateUpdateArgs) -> Result
     };
 
     let board_name = partitions.hardware_revision.clone();
-    let mut builder =
-        UpdatePackageBuilder::new(partitions, board_name, args.version_file, epoch, &args.outdir);
+    let mut builder = UpdatePackageBuilder::new(
+        partitions,
+        board_name,
+        args.version_file.as_ref(),
+        epoch,
+        &args.outdir,
+    );
 
     // Set the package name.
     // Typically used for OTA tests.

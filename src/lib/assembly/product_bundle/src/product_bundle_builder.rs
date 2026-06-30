@@ -110,7 +110,7 @@ pub struct ProductBundleBuilder {
 /// The details needed to build an update package.
 struct UpdateDetails {
     epoch: EpochFile,
-    version_file: Utf8PathBuf,
+    version_file: Option<Utf8PathBuf>,
     ota_manifest_key_path: Option<Utf8PathBuf>,
 }
 
@@ -178,12 +178,12 @@ impl ProductBundleBuilder {
     /// Add an update package.
     pub fn update_package(
         mut self,
-        version_file: impl AsRef<Utf8Path>,
+        version_file: Option<impl AsRef<Utf8Path>>,
         epoch: u64,
         ota_manifest_key_path: Option<Utf8PathBuf>,
     ) -> Self {
         let epoch: EpochFile = EpochFile::Version1 { epoch };
-        let version_file = version_file.as_ref().to_path_buf();
+        let version_file = version_file.map(|v| v.as_ref().to_path_buf());
         self.update_details = Some(UpdateDetails { epoch, version_file, ota_manifest_key_path });
         self
     }
@@ -285,11 +285,18 @@ impl ProductBundleBuilder {
             ProductBundleBuildError::Other("checking if temporary directory is UTF-8".to_string())
         })?;
         let update_package = if let Some(update_details) = update_details {
+            let ota_manifest_version = if let Some(vf) = &update_details.version_file {
+                std::fs::read_to_string(vf).map_err(|e| {
+                    ProductBundleBuildError::Other(format!("reading version file: {}", e))
+                })?
+            } else {
+                product_bundle_version.clone()
+            };
             if let Some(repository_details) = &repository_details
                 && let Some(key_path) = &update_details.ota_manifest_key_path
             {
                 write_ota_manifest(
-                    &update_details.version_file,
+                    &ota_manifest_version,
                     &update_details.epoch,
                     &key_path,
                     repository_details.delivery_blob_type,
@@ -461,7 +468,7 @@ fn write_update_package(
     let mut builder = UpdatePackageBuilder::new(
         partitions.clone(),
         partitions.hardware_revision.clone(),
-        update_details.version_file,
+        update_details.version_file.as_ref(),
         update_details.epoch,
         out_dir,
     );
@@ -900,7 +907,7 @@ mod test {
                 VirtualDevice::V1(VirtualDeviceV1::new("my_virtual_device", Hardware::default())),
             )
             .recommended_virtual_device("my_virtual_device")
-            .update_package(version_path, 42, Some(ota_key_path))
+            .update_package(Some(version_path), 42, Some(ota_key_path))
             .repository(delivery_blob::DeliveryBlobType::Type1, tuf_keys)
             .gerrit_size_report(&size_report_path)
             .build(Box::new(tools), &product_bundle_path)

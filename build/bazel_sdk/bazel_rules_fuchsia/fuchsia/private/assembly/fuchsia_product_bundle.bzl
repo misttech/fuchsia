@@ -714,18 +714,18 @@ def _build_fuchsia_product_bundle_impl(ctx):
 
     # If update info is supplied, add it to the product bundle.
     if ctx.file.update_version_file != None or ctx.attr.update_epoch != "":
-        # both the update version and the update epoch need to be set
-        if ctx.file.update_version_file == None:
-            fail("'update_version_file' must be supplied in order to build an update package.")
         if ctx.attr.repository_keys == None:
             fail("Repository keys must be supplied in order to build an update package")
+        if ctx.file.update_version_file != None:
+            ffx_pb_invocation += [
+                "--update-package-version-file",
+                ctx.file.update_version_file.path,
+            ]
+            all_inputs.append(ctx.file.update_version_file)
         ffx_pb_invocation += [
-            "--update-package-version-file",
-            ctx.file.update_version_file.path,
             "--update-package-epoch",
             ctx.attr.update_epoch or "1",
         ]
-        all_inputs.append(ctx.file.update_version_file)
 
     # If a repository is supplied, add it to the product bundle.
     if ctx.attr.repository_keys != None:

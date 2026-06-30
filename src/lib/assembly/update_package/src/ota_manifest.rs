@@ -45,7 +45,7 @@ fn get_all_blobs(
 
 /// Write the ota manifest to `out_path`.
 pub fn write_ota_manifest(
-    version_file: impl AsRef<std::path::Path>,
+    version: impl AsRef<str>,
     epoch: &EpochFile,
     private_key_path: impl AsRef<std::path::Path>,
     delivery_blob_type: DeliveryBlobType,
@@ -55,10 +55,7 @@ pub fn write_ota_manifest(
     packages_a: &[(Option<Utf8PathBuf>, PackageManifest)],
     out_path: impl AsRef<std::path::Path>,
 ) -> anyhow::Result<()> {
-    let version = std::fs::read_to_string(version_file)
-        .context("reading version file")?
-        .parse()
-        .context("parsing version file")?;
+    let version = version.as_ref().parse().context("parsing version string")?;
     let delivery_blob_type_val: u32 = delivery_blob_type.into();
 
     let mut images = vec![];
@@ -234,9 +231,6 @@ mod tests {
 
     #[test]
     fn build_ota_manifest() {
-        let mut version_file = NamedTempFile::new().unwrap();
-        write!(version_file, "1.2.3.4").unwrap();
-
         let (private_key_file, public_key) = create_private_key();
 
         let fake_zbi = NamedTempFile::new().unwrap();
@@ -289,7 +283,7 @@ mod tests {
         let manifest_file = NamedTempFile::new().unwrap();
 
         write_ota_manifest(
-            version_file.path(),
+            "1.2.3.4",
             &EpochFile::Version1 { epoch: 1 },
             private_key_file.path(),
             DeliveryBlobType::Type1,
@@ -353,9 +347,6 @@ mod tests {
 
     #[test]
     fn build_ota_manifest_with_subpackages_and_recovery() {
-        let mut version_file = NamedTempFile::new().unwrap();
-        write!(version_file, "1.2.3.4").unwrap();
-
         // System A images
         let fake_zbi_a = NamedTempFile::new().unwrap();
         let fake_vbmeta_a = NamedTempFile::new().unwrap();
@@ -468,7 +459,7 @@ mod tests {
 
         let manifest_file = NamedTempFile::new().unwrap();
         write_ota_manifest(
-            version_file.path(),
+            "1.2.3.4",
             &EpochFile::Version1 { epoch: 1 },
             private_key_file.path(),
             DeliveryBlobType::Type1,
@@ -535,9 +526,6 @@ mod tests {
 
     #[test]
     fn build_ota_manifest_with_ab_recovery() {
-        let mut version_file = NamedTempFile::new().unwrap();
-        write!(version_file, "1.2.3.4").unwrap();
-
         // System A images
         let fake_zbi_a = NamedTempFile::new().unwrap();
         let fake_vbmeta_a = NamedTempFile::new().unwrap();
@@ -605,7 +593,7 @@ mod tests {
 
         let manifest_file = NamedTempFile::new().unwrap();
         write_ota_manifest(
-            version_file.path(),
+            "1.2.3.4",
             &EpochFile::Version1 { epoch: 1 },
             private_key_file.path(),
             DeliveryBlobType::Type1,
@@ -650,9 +638,6 @@ mod tests {
 
     #[test]
     fn build_ota_manifest_with_duplicate_bootloaders() {
-        let mut version_file = NamedTempFile::new().unwrap();
-        write!(version_file, "1.2.3.4").unwrap();
-
         let system_a = None;
         let system_r = None;
 
@@ -684,7 +669,7 @@ mod tests {
 
         let manifest_file = NamedTempFile::new().unwrap();
         write_ota_manifest(
-            version_file.path(),
+            "1.2.3.4",
             &EpochFile::Version1 { epoch: 1 },
             private_key_file.path(),
             DeliveryBlobType::Type1,

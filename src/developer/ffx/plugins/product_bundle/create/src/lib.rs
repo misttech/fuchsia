@@ -348,7 +348,7 @@ async fn sanitized_product_bundle_create(
     let mut builder = ProductBundleBuilder::new(name.clone())
         .version(version)
         .system(system, Slot::A)
-        .update_package(update_version_file, 1, cmd.ota_manifest_key);
+        .update_package(Some(update_version_file), 1, cmd.ota_manifest_key);
 
     if let Some(tuf_keys) = cmd.tuf_keys {
         builder = builder.repository(DeliveryBlobType::Type1, tuf_keys);
