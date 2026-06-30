@@ -8,11 +8,41 @@
 
 #include "fidl/fuchsia.bluetooth.sys/cpp/common_types.h"
 #include "lib/component/incoming/cpp/protocol.h"
-#include "src/connectivity/bluetooth/testing/bt-affordances/ffi_c/bindings.h"
 
 using fuchsia_bluetooth_sys::PairingMethod;
 using grpc::Status;
 using grpc::StatusCode;
+
+namespace {
+
+// `le_addr_bytes` must be in little-endian order.
+zx::result<uint64_t> GetPeerId(
+    fidl::SyncClient<fuchsia_bluetooth_affordances::PeerController>& client,
+    std::string_view le_addr_bytes, fuchsia_bluetooth::AddressType type) {
+  if (le_addr_bytes.size() != 6) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  std::array<uint8_t, 6> le_bytes;
+  std::ranges::copy(le_addr_bytes, le_bytes.begin());
+  fuchsia_bluetooth::Address addr(type, le_bytes);
+
+  fuchsia_bluetooth_affordances::PeerControllerGetPeerIdRequest get_peer_id_request;
+  get_peer_id_request.address() = addr;
+  auto result = client->GetPeerId(get_peer_id_request);
+  if (result.is_error()) {
+    FX_LOGS(WARNING) << "fuchsia.bluetooth.affordances.PeerController/GetPeerId error: "
+                     << result.error_value().FormatDescription();
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+  if (!result->id().has_value()) {
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+
+  return zx::ok(result->id()->value());
+}
+
+}  // namespace
 
 SecurityStorageService::SecurityStorageService(async_dispatcher_t* dispatcher) {
   // Connect to fuchsia.bluetooth.sys.Access
@@ -21,6 +51,16 @@ SecurityStorageService::SecurityStorageService(async_dispatcher_t* dispatcher) {
     access_client_.Bind(std::move(*access_client_end));
   } else {
     FX_LOGS(ERROR) << "Error connecting to Access service: " << access_client_end.status_string();
+  }
+
+  // Connect to fuchsia.bluetooth.affordances.PeerController
+  zx::result peer_controller_client_end =
+      component::Connect<fuchsia_bluetooth_affordances::PeerController>();
+  if (peer_controller_client_end.is_ok()) {
+    peer_controller_client_.Bind(std::move(*peer_controller_client_end));
+  } else {
+    FX_LOGS(ERROR) << "Error connecting to PeerController service: "
+                   << peer_controller_client_end.status_string();
   }
 }
 
@@ -37,14 +77,23 @@ Status SecurityStorageService::DeleteBond(::grpc::ServerContext* context,
     return Status(StatusCode::INVALID_ARGUMENT, "DeleteBondRequest address not set");
   }
   std::string little_endian_addr;
+  fuchsia_bluetooth::AddressType type;
   if (request->address_case() == ::pandora::DeleteBondRequest::AddressCase::kPublic) {
     little_endian_addr = request->public_();
+    type = fuchsia_bluetooth::AddressType::kPublic;
   } else {
     little_endian_addr = request->random();
+    type = fuchsia_bluetooth::AddressType::kRandom;
   }
   std::ranges::reverse(little_endian_addr);
 
-  uint64_t peer_id = get_peer_id(little_endian_addr.c_str());
+  auto get_peer_id_result = GetPeerId(peer_controller_client_, little_endian_addr, type);
+  if (get_peer_id_result.is_error()) {
+    // Peer not found; no bond to delete.
+    return Status::OK;
+  }
+  uint64_t peer_id = *get_peer_id_result;
+
   auto result = access_client_->Forget(fuchsia_bluetooth::PeerId{peer_id});
   if (result.is_error()) {
     return Status(StatusCode::INTERNAL, "fuchsia.bluetooth.sys.Access/Forget error: " +

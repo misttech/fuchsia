@@ -23,6 +23,7 @@ class SecurityStorageService : public pandora::SecurityStorage::Service {
 
  private:
   fidl::SyncClient<fuchsia_bluetooth_sys::Access> access_client_;
+  fidl::SyncClient<fuchsia_bluetooth_affordances::PeerController> peer_controller_client_;
 };
 
 class SecurityService : public pandora::Security::Service {

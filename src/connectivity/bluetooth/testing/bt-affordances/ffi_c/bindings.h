@@ -29,16 +29,6 @@ extern "C" {
 /// Returns ZX_STATUS_INTERNAL if Rust affordances exited with an error (check logs).
 int32_t stop_rust_affordances();
 
-/// Get identifier of peer with given `address`.
-///
-/// Returns 0 on error.
-///
-/// # Safety
-///
-/// The caller must ensure that `address` points to a valid C string encoding a BD_ADDR as a string
-/// of bytes in little-endian order.
-uint64_t get_peer_id(const char *address);
-
 /// Parse a UUID from a string.
 ///
 /// Returns a zeroed `UuidBytes` on error.

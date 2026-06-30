@@ -9,7 +9,6 @@ use fidl_fuchsia_bluetooth_sys::{AccessSetConnectionPolicyRequest, HostInfo, Pee
 use fuchsia_async::{TimeoutExt, Timer};
 use fuchsia_sync::Mutex;
 use futures::StreamExt;
-use std::ffi::CString;
 use std::sync::Arc;
 
 pub(crate) fn update_peer_cache(
@@ -45,12 +44,12 @@ pub(crate) async fn refresh_peer_cache(
 // TODO(https://fxbug.dev/450986278): Migrate to fasync::MonotonicInstant.
 pub(crate) async fn get_peer(
     proxies: &mut Proxies,
-    address: &CString,
+    address: [u8; 6],
     mut timeout: std::time::Duration,
     peer_cache: Arc<Mutex<Vec<Peer>>>,
 ) -> Result<Option<Peer>, anyhow::Error> {
     let addr_matches =
-        |peer: &Peer| peer.address.unwrap().bytes.iter().eq(address.to_bytes().iter());
+        |peer: &Peer| peer.address.as_ref().map_or(false, |addr| addr.bytes == address);
     if let Some(peer) = peer_cache.lock().iter().find(|peer: &&Peer| addr_matches(peer)) {
         return Ok(Some(peer.clone()));
     }

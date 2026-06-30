@@ -18,6 +18,37 @@ using grpc::StatusCode;
 
 using namespace std::chrono_literals;
 
+namespace {
+
+// `le_addr_bytes` must be in little-endian order.
+zx::result<uint64_t> GetPeerId(
+    fidl::SyncClient<fuchsia_bluetooth_affordances::PeerController>& client,
+    std::string_view le_addr_bytes, fuchsia_bluetooth::AddressType type) {
+  if (le_addr_bytes.size() != 6) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  std::array<uint8_t, 6> le_bytes;
+  std::ranges::copy(le_addr_bytes, le_bytes.begin());
+  fuchsia_bluetooth::Address addr(type, le_bytes);
+
+  fuchsia_bluetooth_affordances::PeerControllerGetPeerIdRequest get_peer_id_request;
+  get_peer_id_request.address() = addr;
+  auto result = client->GetPeerId(get_peer_id_request);
+  if (result.is_error()) {
+    FX_LOGS(WARNING) << "fuchsia.bluetooth.affordances.PeerController/GetPeerId error: "
+                     << result.error_value().FormatDescription();
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+  if (!result->id().has_value()) {
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+
+  return zx::ok(result->id()->value());
+}
+
+}  // namespace
+
 // TODO(https://fxbug.dev/316721276): Implement gRPCs necessary to enable GAP/A2DP testing.
 
 HostService::HostService(async_dispatcher_t* dispatcher) {
@@ -120,15 +151,17 @@ Status HostService::ReadLocalAddress(grpc::ServerContext* context,
 Status HostService::Connect(grpc::ServerContext* context, const pandora::ConnectRequest* request,
                             pandora::ConnectResponse* response) {
   std::string little_endian_addr(request->address().rbegin(), request->address().rend());
-  uint64_t peer_id = get_peer_id(little_endian_addr.c_str());
-  if (!peer_id) {
+  auto get_peer_id_result = GetPeerId(peer_controller_client_, little_endian_addr,
+                                      fuchsia_bluetooth::AddressType::kPublic);
+  if (get_peer_id_result.is_error()) {
     return Status(StatusCode::NOT_FOUND, "Peer not found");
   }
+  uint64_t peer_id = *get_peer_id_result;
 
-  auto result = access_sync_client_->Connect({fuchsia_bluetooth::PeerId{peer_id}});
-  if (result.is_error()) {
+  auto connect_result = access_sync_client_->Connect({fuchsia_bluetooth::PeerId{peer_id}});
+  if (connect_result.is_error()) {
     return Status(StatusCode::INTERNAL, "fuchsia.bluetooth.sys.Access/Connect error: " +
-                                            result.error_value().FormatDescription());
+                                            connect_result.error_value().FormatDescription());
   }
 
   response->mutable_connection()->mutable_cookie()->set_value(std::to_string(peer_id));
@@ -157,19 +190,21 @@ Status HostService::ConnectLE(::grpc::ServerContext* context,
   }
 
   std::string little_endian_addr(request->public_().rbegin(), request->public_().rend());
-  uint64_t peer_id = get_peer_id(little_endian_addr.c_str());
-  if (!peer_id) {
-    return Status(StatusCode::NOT_FOUND, "Could not find peer.");
+  auto get_peer_id_result = GetPeerId(peer_controller_client_, little_endian_addr,
+                                      fuchsia_bluetooth::AddressType::kPublic);
+  if (get_peer_id_result.is_error()) {
+    return Status(StatusCode::NOT_FOUND, "Peer not found");
   }
+  uint64_t peer_id = *get_peer_id_result;
 
   fuchsia_bluetooth_affordances::PeerSelector selector;
   selector.id() = fuchsia_bluetooth::PeerId{peer_id};
 
-  auto result = central_controller_client_->ConnectPeripheral(selector);
-  if (result.is_error()) {
+  auto connect_peripheral_result = central_controller_client_->ConnectPeripheral(selector);
+  if (connect_peripheral_result.is_error()) {
     return Status(StatusCode::INTERNAL,
                   "fuchsia.bluetooth.affordances.CentralController/ConnectPeripheral error: " +
-                      result.error_value().FormatDescription());
+                      connect_peripheral_result.error_value().FormatDescription());
   }
   response->mutable_connection()->mutable_cookie()->set_value(std::to_string(peer_id));
   return {/*OK*/};

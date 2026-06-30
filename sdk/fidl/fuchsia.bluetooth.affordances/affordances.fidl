@@ -19,6 +19,19 @@ open protocol PeerController {
         1: peers vector<sys.Peer>:MAX;
     }) error Error;
 
+    /// Get a peer's ID from its address.
+    ///
+    /// * error Returns `INTERNAL` if the operation failed (check logs).
+    /// * error Returns `TIMEOUT` if the operation timed out without finding the peer.
+    /// * error Returns `MISSING_PARAMETERS` if `address` is missing.
+    flexible GetPeerId(table {
+        /// Required. The address of the peer to get the ID of (in little-endian order).
+        1: address bt.Address;
+    }) -> (table {
+        /// The ID of the peer.
+        1: id bt.PeerId;
+    }) error Error;
+
     /// Connect to a peer.
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).

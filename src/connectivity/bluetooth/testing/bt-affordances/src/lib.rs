@@ -40,26 +40,6 @@ pub extern "C" fn stop_rust_affordances() -> i32 {
     zx::Status::OK.into_raw()
 }
 
-/// Get identifier of peer with given `address`.
-///
-/// Returns 0 on error.
-///
-/// # Safety
-///
-/// The caller must ensure that `address` points to a valid C string encoding a BD_ADDR as a string
-/// of bytes in little-endian order.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn get_peer_id(address: *const core::ffi::c_char) -> u64 {
-    let address = unsafe { CStr::from_ptr(address) };
-    match block_on(STATE.worker.get_peer_id(address)) {
-        Ok(peer_id) => peer_id.value,
-        Err(err) => {
-            eprintln!("get_peer_id encountered error: {err}");
-            0
-        }
-    }
-}
-
 #[repr(C)]
 pub struct UuidBytes {
     pub value: [u8; 16],

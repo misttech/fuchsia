@@ -9,8 +9,9 @@ use fidl_fuchsia_bluetooth_affordances::{
     GattClientControllerDiscoverServicesResponse, GattClientControllerRequest,
     GattClientControllerRequestStream, HostControllerRequest, HostControllerRequestStream,
     HostControllerSetConnectabilityRequest, HostControllerSetDiscoverabilityRequest,
-    PeerControllerRequest, PeerControllerRequestStream, PeerControllerSetDiscoveryRequest,
-    PeerSelector, PeripheralControllerAdvertiseRequest, PeripheralControllerAdvertiseResponse,
+    PeerControllerGetPeerIdRequest, PeerControllerGetPeerIdResponse, PeerControllerRequest,
+    PeerControllerRequestStream, PeerControllerSetDiscoveryRequest, PeerSelector,
+    PeripheralControllerAdvertiseRequest, PeripheralControllerAdvertiseResponse,
     PeripheralControllerRequest, PeripheralControllerRequestStream,
     ScanResultListenerOnPeersDiscoveredRequest,
 };
@@ -58,6 +59,28 @@ async fn handle_single_peer_request(
                 }
                 Err(err) => {
                     error!("GetKnownPeers encountered error: {err}");
+                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                }
+            }
+        }
+        PeerControllerRequest::GetPeerId { payload, responder } => {
+            let PeerControllerGetPeerIdRequest { address: Some(address), .. } = payload else {
+                responder
+                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::MissingParameters))?;
+                return Ok(());
+            };
+            match worker.get_peer_id(address.bytes).await {
+                Ok(Some(peer_id)) => {
+                    responder.send(Ok(&PeerControllerGetPeerIdResponse {
+                        id: Some(peer_id),
+                        ..Default::default()
+                    }))?;
+                }
+                Ok(None) => {
+                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Timeout))?;
+                }
+                Err(err) => {
+                    error!("GetPeerId encountered error: {err}");
                     responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
                 }
             }

@@ -13,7 +13,6 @@ use fuchsia_bluetooth::types::Channel;
 use fuchsia_sync::Mutex;
 use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
-use std::ffi::{CStr, CString};
 use std::sync::Arc;
 use std::thread;
 
@@ -30,7 +29,7 @@ use proxies::Proxies;
 enum Request {
     GetHosts(oneshot::Sender<Result<Vec<HostInfo>, anyhow::Error>>),
     GetKnownPeers(oneshot::Sender<Result<Vec<Peer>, anyhow::Error>>),
-    GetPeerId(CString, oneshot::Sender<Result<PeerId, anyhow::Error>>),
+    GetPeerId([u8; 6], oneshot::Sender<Result<Option<PeerId>, anyhow::Error>>),
     ConnectL2cap(PeerId, u16, oneshot::Sender<Result<(), anyhow::Error>>),
     DisconnectL2cap(oneshot::Sender<Result<(), anyhow::Error>>),
     WriteL2cap(Vec<u8>, oneshot::Sender<Result<(), anyhow::Error>>),
@@ -130,18 +129,15 @@ impl WorkThread {
                     result_sender.send(Ok(peer_cache.lock().clone())).unwrap();
                 }
                 Request::GetPeerId(address, result_sender) => {
-                    if let Some(peer) = sys::get_peer(
+                    let result = sys::get_peer(
                         &mut proxies,
-                        &address,
+                        address,
                         std::time::Duration::from_secs(2),
                         peer_cache.clone(),
                     )
-                    .await?
-                    {
-                        result_sender.send(Ok(peer.id.unwrap())).unwrap();
-                        continue;
-                    }
-                    result_sender.send(Err(anyhow!("Peer not found"))).unwrap();
+                    .await
+                    .map(|opt_peer| opt_peer.map(|peer| peer.id.unwrap()));
+                    result_sender.send(result).unwrap();
                 }
                 Request::ConnectL2cap(peer_id, psm, result_sender) => {
                     match bredr::connect_l2cap(&proxies, &peer_id, psm).await {
@@ -310,9 +306,9 @@ impl WorkThread {
     }
 
     // Get identifier of peer at `address`.
-    pub async fn get_peer_id(&self, address: &CStr) -> Result<PeerId, anyhow::Error> {
-        let (sender, receiver) = oneshot::channel::<Result<PeerId, anyhow::Error>>();
-        self.sender.clone().unbounded_send(Request::GetPeerId(address.to_owned(), sender))?;
+    pub async fn get_peer_id(&self, address: [u8; 6]) -> Result<Option<PeerId>, anyhow::Error> {
+        let (sender, receiver) = oneshot::channel::<Result<Option<PeerId>, anyhow::Error>>();
+        self.sender.clone().unbounded_send(Request::GetPeerId(address, sender))?;
         receiver.await?
     }
 
