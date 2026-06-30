@@ -154,15 +154,6 @@ struct MockTimeMatrix<T> {
     phantom: PhantomData<fn() -> T>,
 }
 
-impl<T> MockTimeMatrix<T> {
-    pub fn new(
-        name: impl Into<String>,
-        calls: Arc<Mutex<Vec<(String, TimeMatrixCall<DynamicSample>)>>>,
-    ) -> Self {
-        MockTimeMatrix { name: name.into(), calls, phantom: PhantomData }
-    }
-}
-
 impl<T> TimeMatrixFold<T> for MockTimeMatrix<T>
 where
     T: 'static + Send,

@@ -58,8 +58,6 @@ pub trait InspectSender {
     fn clone_with_child(&self, name: &str) -> Self;
 }
 
-type SharedTimeMatrix = Arc<Mutex<dyn TimeMatrixTick>>;
-
 pub struct TimeMatrixClient {
     node: InspectNode,
 }

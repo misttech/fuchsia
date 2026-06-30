@@ -188,11 +188,6 @@ impl SerializedTimeSeries {
     pub fn interval(&self) -> &SamplingInterval {
         &self.interval
     }
-
-    /// Gets the serialized data.
-    pub fn data(&self) -> &[u8] {
-        self.data.as_slice()
-    }
 }
 
 /// An unbuffered statistical time series specification.

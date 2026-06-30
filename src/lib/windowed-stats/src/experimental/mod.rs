@@ -6,8 +6,6 @@
 //!
 //! This module hosts experimental APIs, most notably round-robin multi-resolution time series.
 
-#![allow(dead_code)]
-
 mod vec1;
 
 pub mod clock;
