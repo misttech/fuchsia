@@ -36,10 +36,19 @@ pub async fn get_cpu_ctrl_proxy(
             .connect_to_device()
             .map_err(|e| anyhow::anyhow!("Failed to connect to device: {:?}", e))?;
 
-        let relative_perf = proxy
-            .get_relative_performance()
-            .await?
-            .map_err(|e| anyhow::anyhow!("GetRelativePerformance returned err: {:?}", e))?;
+        let relative_perf =
+            match proxy.get_relative_performance2().await {
+                Ok(Ok(perf)) => perf,
+                other => {
+                    log::info!(
+                        other:?;
+                        "get_relative_performance2 failed, falling back to get_relative_performance"
+                    );
+                    proxy.get_relative_performance().await?.map_err(|e| {
+                        anyhow::anyhow!("GetRelativePerformance returned err: {:?}", e)
+                    })? as u64
+                }
+            };
         log::info!(node_info:?, relative_perf:?; "CPU device detected");
         if proxies.insert(relative_perf, proxy).is_some() {
             log::warn!(
