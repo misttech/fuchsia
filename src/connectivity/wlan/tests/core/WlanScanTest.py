@@ -10,7 +10,6 @@ import logging
 from datetime import datetime
 
 import fidl_fuchsia_wlan_internal as f_wlan_internal
-import fuchsia_wlan_base_test
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
@@ -18,7 +17,8 @@ from antlion.controllers.ap_lib.hostapd_security import (
 from antlion.controllers.ap_lib.hostapd_security import (
     SecurityMode as DeprecatedSecurityMode,
 )
-from mobly import asserts, signals, test_runner
+from core_testing import base_test
+from mobly import asserts, test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
@@ -28,7 +28,7 @@ from openwrt_access_point.lib.access_point_config import (
 )
 
 
-class WlanScanTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
+class WlanScanTest(base_test.ConnectionBaseTestClass):
     """WLAN scan test class.
 
     Test Bed Requirement:
@@ -40,27 +40,6 @@ class WlanScanTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     async def setup_class(self) -> None:
         await super().setup_class()
         self.log = logging.getLogger()
-
-        if self.openwrt_aps:
-            self.openwrt_ap = self.openwrt_aps[0]
-        elif self.access_points:
-            self.access_point = self.access_points[0]
-            self.access_point.stop_all_aps()
-        else:
-            raise signals.TestAbortClass(
-                "Requires at least one access point and one Fuchsia device"
-            )
-
-    async def teardown_test(self) -> None:
-        await self.dut.wlan_core.disconnect()
-        if self.access_point:
-            self.access_point.stop_all_aps()
-        await super().teardown_test()
-
-    async def teardown_class(self) -> None:
-        if self.access_point:
-            self.access_point.stop_all_aps()
-        await super().teardown_class()
 
     async def test_scan_while_connected(self) -> None:
         """Connects to a specified network and initiates a scan."""
