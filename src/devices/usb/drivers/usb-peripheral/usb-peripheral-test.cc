@@ -2443,5 +2443,97 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, CheckAndStartControllerGuard) {
   });
 }
 
+TEST_F(UnmanagedUsbPeripheralTest, UnconfiguredRequestTests) {
+  StartDriverWithConfig(usb_peripheral_config::Config{});
+
+  // 1. Test Control request with USB_RECIP_INTERFACE before configuration.
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_INTERFACE,
+        .b_request = USB_REQ_GET_STATUS,
+        .w_value = 0,
+        .w_index = 0,
+        .w_length = 2,
+    };
+
+    auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_error());
+    EXPECT_EQ(res->error_value(), ZX_ERR_BAD_STATE);
+  }
+
+  // 2. Test SetInterface (via CommonControl) before configuration.
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_INTERFACE,
+        .b_request = USB_REQ_SET_INTERFACE,
+        .w_value = 1,  // alt setting
+        .w_index = 0,  // interface
+        .w_length = 0,
+    };
+
+    auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_error());
+    EXPECT_EQ(res->error_value(), ZX_ERR_BAD_STATE);
+  }
+
+  // 3. Test SetConfiguration with invalid index (1) when 0 configs exist.
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE,
+        .b_request = USB_REQ_SET_CONFIGURATION,
+        .w_value = 1,  // config 1
+        .w_index = 0,
+        .w_length = 0,
+    };
+
+    auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_error());
+    EXPECT_EQ(res->error_value(), ZX_ERR_INVALID_ARGS);
+  }
+
+  // 4. Test SetConfiguration with 0 (unconfigure) when 0 configs exist.
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE,
+        .b_request = USB_REQ_SET_CONFIGURATION,
+        .w_value = 0,  // config 0
+        .w_index = 0,
+        .w_length = 0,
+    };
+
+    auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_ok());
+  }
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, InvalidConfigurationTest) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients);
+
+  // Test SetConfiguration with invalid index (2) when 1 config exists.
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE,
+        .b_request = USB_REQ_SET_CONFIGURATION,
+        .w_value = 2,  // config 2 (invalid)
+        .w_index = 0,
+        .w_length = 0,
+    };
+
+    auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_error());
+    EXPECT_EQ(res->error_value(), ZX_ERR_INVALID_ARGS);
+  }
+}
+
 }  // namespace
 }  // namespace usb_peripheral::test

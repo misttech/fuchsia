@@ -878,6 +878,11 @@ zx_status_t UsbPeripheral::GetDescriptor(uint8_t request_type, uint16_t value, u
 void UsbPeripheral::SetConfiguration(uint8_t configuration,
                                      fit::callback<void(zx_status_t)> completer) {
   TRACE_DURATION("usb-peripheral", __func__, "configuration", configuration);
+  if (configuration > configurations_.size()) {
+    fdf::error("Invalid configuration value: {} (max {})", configuration, configurations_.size());
+    completer(ZX_ERR_INVALID_ARGS);
+    return;
+  }
   bool configured = configuration > 0;
   // TODO(b/355271738): Logs added to debug b/355271738. Remove when fixed.
   fdf::info("Configuration {}", configuration);
@@ -954,17 +959,40 @@ void UsbPeripheral::SetConfiguration(uint8_t configuration,
 void UsbPeripheral::SetInterface(uint8_t interface, uint8_t alt_setting,
                                  fit::callback<void(zx_status_t)> completer) {
   TRACE_DURATION("usb-peripheral", __func__, "interface", interface, "alt_setting", alt_setting);
-  const auto& configuration = configurations_[configuration_ - 1];
-  if (interface >= std::size(configuration.interface_map)) {
-    fdf::error("Invalid interface index: {}", interface);
-    completer(ZX_ERR_OUT_OF_RANGE);
-    return;
+
+  std::shared_ptr<UsbFunction> function;
+  {
+    fbl::AutoLock lock(&lock_);
+    if (configuration_ == 0) {
+      fdf::error("SetInterface called before device is configured");
+      completer(ZX_ERR_BAD_STATE);
+      return;
+    }
+    if (configuration_ > configurations_.size()) {
+      fdf::error("SetInterface: invalid configuration_ {}", configuration_);
+      completer(ZX_ERR_BAD_STATE);
+      return;
+    }
+    const auto& configuration = configurations_[configuration_ - 1];
+    if (interface >= std::size(configuration.interface_map)) {
+      fdf::error("Invalid interface index: {}", interface);
+      completer(ZX_ERR_OUT_OF_RANGE);
+      return;
+    }
+
+    auto function_index = configuration.interface_map[interface];
+    if (function_index.has_value()) {
+      if (function_index.value() >= functions_.size()) {
+        fdf::error("SetInterface: function_index {} out of bounds", function_index.value());
+        completer(ZX_ERR_BAD_STATE);
+        return;
+      }
+      function = functions_[function_index.value()];
+    }
   }
 
-  auto function_index = configuration.interface_map[interface];
-  if (function_index.has_value()) {
-    auto& function = GetFunction(function_index.value());
-    function.SetInterface(interface, alt_setting, std::move(completer));
+  if (function) {
+    function->SetInterface(interface, alt_setting, std::move(completer));
     return;
   }
 
@@ -1023,6 +1051,7 @@ void UsbPeripheral::ClearFunctions(std::optional<fit::callback<void()>> callback
 
     // 2. Clear configurations and resources.
     configurations_.clear();
+    configuration_ = 0;
     for (size_t i = 0; i < std::size(endpoint_map_); i++) {
       endpoint_map_[i].reset();
     }
@@ -1220,23 +1249,33 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
       // Delegate to one of the function drivers.
       // USB_RECIP_DEVICE should only be used when there is a single active interface.
       // But just to be conservative, try all the available interfaces.
+      std::vector<std::shared_ptr<UsbFunction>> funcs_to_call;
       if (configuration_ == 0) {
         completer(zx::error(ZX_ERR_BAD_STATE));
         return;
       }
-      ZX_ASSERT(configuration_ <= configurations_.size());
+      if (configuration_ > configurations_.size()) {
+        fdf::error("CommonControl: invalid configuration_ {}", configuration_);
+        completer(zx::error(ZX_ERR_BAD_STATE));
+        return;
+      }
 
       const auto& configuration = configurations_[configuration_ - 1];
       const auto& interface_map = configuration.interface_map;
 
       for (auto function_index : interface_map) {
         if (function_index.has_value()) {
-          auto& function = GetFunction(function_index.value());
-          auto result = function.Control(setup, write_buffer);
-          if (result.is_ok()) {
-            completer(std::move(result));
-            return;
+          if (function_index.value() < functions_.size()) {
+            funcs_to_call.push_back(functions_[function_index.value()]);
           }
+        }
+      }
+
+      for (auto& function : funcs_to_call) {
+        auto result = function->Control(setup, write_buffer);
+        if (result.is_ok()) {
+          completer(std::move(result));
+          return;
         }
       }
 
@@ -1261,6 +1300,17 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
         return;
       }
 
+      std::shared_ptr<UsbFunction> function;
+      if (configuration_ == 0) {
+        fdf::error("Control request received for interface before configuration");
+        completer(zx::error(ZX_ERR_BAD_STATE));
+        return;
+      }
+      if (configuration_ > configurations_.size()) {
+        fdf::error("CommonControl: invalid configuration_ {}", configuration_);
+        completer(zx::error(ZX_ERR_BAD_STATE));
+        return;
+      }
       const auto& configuration = configurations_[configuration_ - 1];
       const auto& interface_map = configuration.interface_map;
       if (index >= std::size(interface_map)) {
@@ -1272,8 +1322,13 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
       // delegate to the function driver for the interface
       auto function_index = interface_map[index];
       if (function_index.has_value()) {
-        auto& function = GetFunction(function_index.value());
-        completer(function.Control(setup, write_buffer));
+        if (function_index.value() < functions_.size()) {
+          function = functions_[function_index.value()];
+        }
+      }
+
+      if (function) {
+        completer(function->Control(setup, write_buffer));
         return;
       }
       break;
@@ -1328,10 +1383,15 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
         completer(zx::error(ZX_ERR_OUT_OF_RANGE));
         return;
       }
+      std::shared_ptr<UsbFunction> function;
       auto function_index = endpoint_map_[ep_index];
       if (function_index.has_value()) {
-        auto& function = GetFunction(function_index.value());
-        completer(function.Control(setup, write_buffer));
+        if (function_index.value() < functions_.size()) {
+          function = functions_[function_index.value()];
+        }
+      }
+      if (function) {
+        completer(function->Control(setup, write_buffer));
         return;
       }
       break;
