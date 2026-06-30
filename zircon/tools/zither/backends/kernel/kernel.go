@@ -24,6 +24,7 @@ var includePaths = []string{
 	filepath.Join("lib", "syscalls", "category.inc"),
 	filepath.Join("lib", "syscalls", "kernel.inc"),
 	filepath.Join("lib", "syscalls", "kernel-wrappers.inc"),
+	filepath.Join("lib", "syscalls", "syscall_sigs.rs"),
 	filepath.Join("lib", "syscalls", "syscalls.inc"),
 	filepath.Join("lib", "syscalls", "zx-syscall-numbers.h"),
 }
@@ -46,7 +47,9 @@ func NewGenerator(formatter fidlgen.Formatter) *Generator {
 		"ParameterType": func(param zither.SyscallParameter) string {
 			return cDeclParameterType(param, PointerViewUserspace, false)
 		},
-		"PassedAsPointer": passedAsPointer,
+		"PassedAsPointer":         passedAsPointer,
+		"RustKernelParameterType": rustKernelParameterType,
+		"RustKernelReturnType":    rustKernelReturnType,
 		"SyscallIncDecl": func(syscall zither.Syscall) string {
 			return SyscallCDecl(syscall, PointerViewUserspace, cDeclMacro)
 		},

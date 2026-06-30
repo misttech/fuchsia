@@ -137,7 +137,10 @@ kernel_rust_crate("syscalls-rs") {
   source_root = "test.rs"
   sources = [ "test.rs" ]
   deps = [
+    "macros:syscalls-macro",
     "//sdk/rust/zx-status",
     "//zircon/kernel/lib/user_copy:user-copy-rs",
+    "//zircon/vdso:private",
+    "//zircon/vdso:syscall-signatures",
   ]
 }

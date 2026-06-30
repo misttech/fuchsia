@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/fidl/fidl.gni")
+import("//zircon/kernel/kernel_rust_crate.gni")
 import("//zircon/tools/zither/zither_golden_files.gni")
 import("vdso.gni")
 
@@ -176,6 +177,22 @@ group("private") {
   ]
   public_deps = [ ":zx_zither.kernel" ]
   metadata = barrier_metadata
+}
+
+kernel_rust_crate("syscall-signatures") {
+  visibility = [
+    ":*",
+    "//zircon/kernel/lib/syscalls/*",
+  ]
+  _vdso_gen_dir =
+      get_label_info(":zx_zither.kernel($fidl_toolchain)", "target_gen_dir")
+  source_root = "$_vdso_gen_dir/zx/zither/kernel/lib/syscalls/syscall_sigs.rs"
+  sources = [ source_root ]
+  deps = [
+    ":zx_zither.kernel.gen($default_toolchain)",
+    "//sdk/rust/zx-status",
+    "//zircon/kernel/lib/user_copy:user-copy-rs",
+  ]
 }
 
 zither_golden_files("zx.rust_syscall.checked-in") {

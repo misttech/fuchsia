@@ -621,6 +621,7 @@ template("_zither_kernel_sources") {
     "$output_dir/${output_namespace}/category.inc",
     "$output_dir/${output_namespace}/kernel.inc",
     "$output_dir/${output_namespace}/kernel-wrappers.inc",
+    "$output_dir/${output_namespace}/syscall_sigs.rs",
     "$output_dir/${output_namespace}/syscalls.inc",
     "$output_dir/${output_namespace}/zx-syscall-numbers.h",
   ]

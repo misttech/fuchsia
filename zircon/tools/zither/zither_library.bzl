@@ -368,6 +368,7 @@ def _zither_kernel_sources_impl(
         paths.join(output_dir, output_namespace, "category.inc"),
         paths.join(output_dir, output_namespace, "kernel.inc"),
         paths.join(output_dir, output_namespace, "kernel-wrappers.inc"),
+        paths.join(output_dir, output_namespace, "syscall_sigs.rs"),
         paths.join(output_dir, output_namespace, "syscalls.inc"),
         paths.join(output_dir, output_namespace, "zx-syscall-numbers.h"),
     ]

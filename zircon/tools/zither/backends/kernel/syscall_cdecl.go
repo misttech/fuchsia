@@ -12,6 +12,7 @@ import (
 
 	"go.fuchsia.dev/fuchsia/zircon/tools/zither"
 	"go.fuchsia.dev/fuchsia/zircon/tools/zither/backends/c"
+	"go.fuchsia.dev/fuchsia/zircon/tools/zither/backends/rust"
 )
 
 const syscallCDeclTemplate = `
@@ -181,4 +182,43 @@ func cDeclReturnType(syscall zither.Syscall) string {
 		return "void"
 	}
 	return c.DescribeType(*syscall.ReturnType).Type
+}
+
+func rustKernelParameterType(param zither.SyscallParameter) string {
+	kind := param.Type.Kind
+	typ := rust.DescribeType(param.Type, rust.CaseStyleSyscall)
+	if passedAsPointer(param) {
+		isPointer := kind.IsPointerLike()
+		elementType := typ
+		if kind == zither.TypeKindVoidPointer {
+			elementType = "u8"
+		} else if isPointer {
+			elementType = rust.DescribeType(*param.Type.ElementType, rust.CaseStyleSyscall)
+		}
+
+		switch param.Orientation {
+		case zither.ParameterOrientationIn:
+			typ = fmt.Sprintf("UserInPtr<%s>", elementType)
+		case zither.ParameterOrientationOut:
+			if kind == zither.TypeKindHandle && !param.HasTag(zither.ParameterTagDecayedFromVector) {
+				typ = fmt.Sprintf("*mut %s", elementType)
+			} else {
+				typ = fmt.Sprintf("UserOutPtr<%s>", elementType)
+			}
+		case zither.ParameterOrientationInOut:
+			typ = fmt.Sprintf("UserInOutPtr<%s>", elementType)
+		}
+	}
+	return typ
+}
+
+func rustKernelReturnType(syscall zither.Syscall) string {
+	if syscall.ReturnType == nil {
+		return "()"
+	}
+	typ := rust.DescribeType(*syscall.ReturnType, rust.CaseStyleSyscall)
+	if typ == "zx_status_t" {
+		return "Status"
+	}
+	return typ
 }

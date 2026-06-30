@@ -12,6 +12,7 @@ go_library("kernel") {
     "templates/category.inc.tmpl",
     "templates/kernel-wrappers.inc.tmpl",
     "templates/kernel.inc.tmpl",
+    "templates/syscall_sigs.rs.tmpl",
     "templates/syscalls.inc.tmpl",
     "templates/zx-syscall-numbers.h.tmpl",
   ]
@@ -19,5 +20,6 @@ go_library("kernel") {
     "//tools/fidl/lib/fidlgen",
     "//zircon/tools/zither:common",
     "//zircon/tools/zither/backends/c",
+    "//zircon/tools/zither/backends/rust",
   ]
 }
