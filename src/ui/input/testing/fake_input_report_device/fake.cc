@@ -4,6 +4,8 @@
 
 #include "src/ui/input/testing/fake_input_report_device/fake.h"
 
+#include <zircon/assert.h>
+
 #include <fbl/auto_lock.h>
 
 #include "lib/fidl/cpp/clone.h"
@@ -40,16 +42,9 @@ void FakeInputDevice::SendOutputReport(fuchsia::input::report::OutputReport repo
 
 void FakeInputDevice::GetInputReport(::fuchsia::input::report::DeviceType device_type,
                                      GetInputReportCallback callback) {
-  fbl::AutoLock lock(&lock_);
-  if (reports_.empty()) {
-    callback(
-        fuchsia::input::report::InputDevice_GetInputReport_Result::WithErr(ZX_ERR_NOT_SUPPORTED));
-  } else {
-    fuchsia::input::report::InputDevice_GetInputReport_Response response(std::move(reports_[0]));
-    callback(fuchsia::input::report::InputDevice_GetInputReport_Result::WithResponse(
-        std::move(response)));
-    reports_.erase(reports_.begin());
-  }
+  ZX_DEBUG_ASSERT(false);
+  callback(
+      fuchsia::input::report::InputDevice_GetInputReport_Result::WithErr(ZX_ERR_NOT_SUPPORTED));
 }
 
 void FakeInputDevice::GetFeatureReport(GetFeatureReportCallback callback) {

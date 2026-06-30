@@ -11,6 +11,7 @@
 #include <lib/async/cpp/task.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/input_report_reader/reader.h>
+#include <zircon/assert.h>
 
 #include <set>
 
@@ -53,10 +54,7 @@ class AdcButtonsDevice : public fidl::WireServer<fuchsia_input_report::InputDevi
                         SetFeatureReportCompleter::Sync& completer) override {
     completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
   }
-  void GetInputReport(GetInputReportRequestView request,
-                      GetInputReportCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
-  }
+
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_input_report::InputDevice> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {

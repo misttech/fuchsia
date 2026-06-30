@@ -441,8 +441,6 @@ void PrintInputReports(std::string filename, Printer* printer,
       });
 }
 
-
-
 zx::result<fidl::WireSharedClient<fuchsia_input_report::InputReportsReader>> GetReaderClient(
     fidl::WireSharedClient<fuchsia_input_report::InputDevice>* client,
     async_dispatcher_t* dispatcher) {

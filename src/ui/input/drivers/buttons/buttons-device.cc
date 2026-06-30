@@ -6,6 +6,7 @@
 
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/zx/clock.h>
+#include <zircon/assert.h>
 
 #include <cinttypes>
 #include <cstddef>
@@ -398,20 +399,8 @@ zx::result<ButtonsDevice::ButtonsInputReport> ButtonsDevice::GetInputReportInter
 
 void ButtonsDevice::GetInputReport(GetInputReportRequestView request,
                                    GetInputReportCompleter::Sync& completer) {
-  if (request->device_type != fuchsia_input_report::DeviceType::kConsumerControl) {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
-    return;
-  }
-  auto result = GetInputReportInternal();
-  if (!result.is_ok()) {
-    completer.ReplyError(result.error_value());
-    return;
-  }
-
-  fidl::Arena<> arena;
-  auto input_report = fuchsia_input_report::wire::InputReport::Builder(arena);
-  result->ToFidlInputReport(input_report, arena);
-  completer.ReplySuccess(input_report.Build());
+  ZX_DEBUG_ASSERT(false);
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
 zx::result<bool> ButtonsDevice::ReconfigurePolarity(size_t idx, uint64_t int_port) {

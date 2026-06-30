@@ -14,6 +14,7 @@
 #include <lib/trace/internal/event_common.h>
 #include <lib/zx/clock.h>
 #include <threads.h>
+#include <zircon/assert.h>
 #include <zircon/status.h>
 
 #include <fbl/alloc_checker.h>
@@ -24,24 +25,6 @@ namespace hid_input_report_dev {
 
 namespace fhidbus = fuchsia_hardware_hidbus;
 namespace finput = fuchsia_hardware_input;
-
-zx::result<hid_input_report::DeviceType> InputReport::InputReportDeviceTypeToHid(
-    const fuchsia_input_report::wire::DeviceType type) {
-  switch (type) {
-    case fuchsia_input_report::wire::DeviceType::kMouse:
-      return zx::ok(hid_input_report::DeviceType::kMouse);
-    case fuchsia_input_report::wire::DeviceType::kSensor:
-      return zx::ok(hid_input_report::DeviceType::kSensor);
-    case fuchsia_input_report::wire::DeviceType::kTouch:
-      return zx::ok(hid_input_report::DeviceType::kTouch);
-    case fuchsia_input_report::wire::DeviceType::kKeyboard:
-      return zx::ok(hid_input_report::DeviceType::kKeyboard);
-    case fuchsia_input_report::wire::DeviceType::kConsumerControl:
-      return zx::ok(hid_input_report::DeviceType::kConsumerControl);
-    default:
-      return zx::error(ZX_ERR_INVALID_ARGS);
-  }
-}
 
 void InputReport::RemoveReaderFromList(InputReportsReader* reader) {
   for (auto iter = readers_list_.begin(); iter != readers_list_.end(); ++iter) {
@@ -389,56 +372,8 @@ void InputReport::SetFeatureReport(SetFeatureReportRequestView request,
 
 void InputReport::GetInputReport(GetInputReportRequestView request,
                                  GetInputReportCompleter::Sync& completer) {
-  const auto device_type = InputReportDeviceTypeToHid(request->device_type);
-  if (device_type.is_error()) {
-    completer.ReplyError(device_type.error_value());
-    return;
-  }
-
-  fidl::Arena allocator;
-  fuchsia_input_report::wire::InputReport report(allocator);
-
-  for (auto& device : devices_) {
-    if (!device->InputReportId().has_value()) {
-      continue;
-    }
-    if (device->GetDeviceType() != device_type.value()) {
-      continue;
-    }
-    if (report.has_event_time()) {
-      // GetInputReport is not supported with multiple devices of the same type, as there is no
-      // way to distinguish between them.
-      completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
-      return;
-    }
-
-    auto result = input_device_->GetReport(fhidbus::ReportType::kInput, *device->InputReportId());
-    if (!result.ok()) {
-      completer.ReplyError(result.status());
-      return;
-    }
-    if (result->is_error()) {
-      completer.ReplyError(result->error_value());
-      return;
-    }
-
-    if (device->ParseInputReport(result.value()->report.data(), result.value()->report.size(),
-                                 allocator, report) != hid_input_report::ParseResult::kOk) {
-      fdf::error("GetInputReport: Device failed to parse report correctly");
-      completer.ReplyError(ZX_ERR_INTERNAL);
-      return;
-    }
-
-    report.set_report_id(*device->InputReportId());
-    report.set_event_time(allocator, zx_clock_get_monotonic());
-    report.set_trace_id(allocator, TRACE_NONCE());
-  }
-
-  if (report.has_event_time()) {
-    completer.ReplySuccess(report);
-  } else {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
-  }
+  ZX_DEBUG_ASSERT(false);
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
 zx_status_t InputReport::Start() {

@@ -57,8 +57,6 @@ std::optional<fidl::WireSharedClient<fuchsia_input_report::InputDevice>> GetClie
   return fidl::WireSharedClient(std::move(connection.value()), dispatcher);
 }
 
-
-
 int ReadAllDevices(async::Loop* loop, Printer* printer) {
   // Start watching the directory and read all of the input reports for each.
   auto watcher = fsl::DeviceWatcher::Create(

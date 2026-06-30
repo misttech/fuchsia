@@ -11,6 +11,7 @@
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/zx/clock.h>
 #include <unistd.h>
+#include <zircon/assert.h>
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/port.h>
 
@@ -510,36 +511,8 @@ void Tcs3400::SetFeatureReport(SetFeatureReportRequestView request,
 
 void Tcs3400::GetInputReport(GetInputReportRequestView request,
                              GetInputReportCompleter::Sync& completer) {
-  if (request->device_type != fuchsia_input_report::wire::DeviceType::kSensor) {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
-    return;
-  }
-
-  {
-    fbl::AutoLock lock(&feature_lock_);
-    if (feature_rpt_.reporting_state !=
-        fuchsia_input_report::wire::SensorReportingState::kReportAllEvents) {
-      // Light sensor data isn't continuously being read -- the data we have might be far out of
-      // date, and we can't block to read new data from the sensor.
-      completer.ReplyError(ZX_ERR_BAD_STATE);
-      return;
-    }
-  }
-
-  fidl::Arena<kFeatureAndDescriptorBufferSize> allocator;
-  auto report = fuchsia_input_report::wire::InputReport::Builder(allocator);
-
-  {
-    fbl::AutoLock lock(&input_lock_);
-    if (!input_rpt_.is_valid()) {
-      // The driver is in the right mode, but hasn't had a chance to read from the sensor yet.
-      completer.ReplyError(ZX_ERR_SHOULD_WAIT);
-      return;
-    }
-    input_rpt_.ToFidlInputReport(report, allocator);
-  }
-
-  completer.ReplySuccess(report.Build());
+  ZX_DEBUG_ASSERT(false);
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
 zx_status_t Tcs3400::InitGain(uint8_t gain) {

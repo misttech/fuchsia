@@ -14,6 +14,7 @@
 #include <lib/hid/boot.h>
 #include <lib/input_report_reader/reader.h>
 #include <lib/zx/interrupt.h>
+#include <zircon/assert.h>
 
 #include <condition_variable>
 
@@ -119,6 +120,7 @@ class I8042Device : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_INP
   }
   void GetInputReport(GetInputReportRequestView request,
                       GetInputReportCompleter::Sync& completer) override {
+    ZX_DEBUG_ASSERT(false);
     completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
   }
   void handle_unknown_method(

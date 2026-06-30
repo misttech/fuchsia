@@ -8,6 +8,7 @@ using zx;
 const MAX_DEVICE_REPORT_COUNT uint32 = 50;
 
 /// The InputReport field to be populated by InputDevice.GetInputReport.
+@available(removed=HEAD)
 type DeviceType = flexible enum {
     MOUSE = 0;
     SENSOR = 1;
@@ -72,6 +73,7 @@ open protocol InputDevice {
     /// method can be used to request a report from the device type indicated.
     /// Does not block, and returns ZX_ERR_NOT_SUPPORTED if `GetInputReport` or
     /// `device_type` are not supported.
+    @available(removed=HEAD)
     strict GetInputReport(struct {
         device_type DeviceType;
     }) -> (resource(added=NEXT) struct {

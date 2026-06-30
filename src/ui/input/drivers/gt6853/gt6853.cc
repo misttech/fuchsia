@@ -11,6 +11,7 @@
 #include <lib/zx/clock.h>
 #include <lib/zx/profile.h>
 #include <threads.h>
+#include <zircon/assert.h>
 #include <zircon/threads.h>
 
 #include <cstdint>
@@ -207,6 +208,7 @@ void Gt6853Device::SetFeatureReport(SetFeatureReportRequestView request,
 }
 void Gt6853Device::GetInputReport(GetInputReportRequestView request,
                                   GetInputReportCompleter::Sync& completer) {
+  ZX_DEBUG_ASSERT(false);
   completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 

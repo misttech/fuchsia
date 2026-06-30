@@ -121,8 +121,6 @@ TEST_F(PrintInputReport, PrintMouseInputReport) {
   printer.AssertSawAllStrings();
 }
 
-
-
 TEST_F(PrintInputReport, PrintMouseInputDescriptor) {
   auto descriptor = std::make_unique<fuchsia::input::report::DeviceDescriptor>();
   auto mouse = descriptor->mutable_mouse()->mutable_input();
@@ -248,8 +246,6 @@ TEST_F(PrintInputReport, PrintSensorInputReport) {
   printer.AssertSawAllStrings();
 }
 
-
-
 TEST_F(PrintInputReport, PrintTouchInputDescriptor) {
   auto descriptor = std::make_unique<fuchsia::input::report::DeviceDescriptor>();
   auto touch = descriptor->mutable_touch()->mutable_input();
@@ -344,8 +340,6 @@ TEST_F(PrintInputReport, PrintTouchInputReport) {
   loop_->RunUntilIdle();
   printer.AssertSawAllStrings();
 }
-
-
 
 TEST_F(PrintInputReport, PrintTouchInputDescriptorWithButtons) {
   auto descriptor = std::make_unique<fuchsia::input::report::DeviceDescriptor>();
@@ -483,8 +477,6 @@ TEST_F(PrintInputReport, PrintKeyboardInputReport) {
   loop_->RunUntilIdle();
   printer.AssertSawAllStrings();
 }
-
-
 
 TEST_F(PrintInputReport, PrintKeyboardInputReportNoKeys) {
   fuchsia::input::report::InputReport report;

@@ -16,6 +16,7 @@
 #include <lib/zx/interrupt.h>
 #include <lib/zx/result.h>
 #include <threads.h>
+#include <zircon/assert.h>
 #include <zircon/types.h>
 
 #include <atomic>
@@ -116,6 +117,7 @@ class Gt92xxDevice : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_IN
   }
   void GetInputReport(GetInputReportRequestView request,
                       GetInputReportCompleter::Sync& completer) override {
+    ZX_DEBUG_ASSERT(false);
     completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
   }
   void handle_unknown_method(

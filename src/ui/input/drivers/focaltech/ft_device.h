@@ -20,6 +20,7 @@
 #include <lib/zx/interrupt.h>
 #include <lib/zx/result.h>
 #include <threads.h>
+#include <zircon/assert.h>
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
@@ -137,6 +138,7 @@ class FtDevice : public fdf::DriverBase2,
   }
   void GetInputReport(GetInputReportRequestView request,
                       GetInputReportCompleter::Sync& completer) override {
+    ZX_DEBUG_ASSERT(false);
     completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
   }
   void handle_unknown_method(
