@@ -86,21 +86,21 @@ otError otPlatSettingsGet(otInstance *instance, uint16_t key, int index, uint8_t
   std::string key_str(std::to_string(key));
 
   size_t buffer_length = (value_length == NULL ? 0 : *value_length);
-  size_t actual_value_length;
+  size_t actual_value_length = 0;
   ThreadConfigMgrError error;
   if (config_manager == nullptr) {
     return OT_ERROR_NOT_FOUND;
   }
   error = config_manager->ReadConfigValueFromBinArray(key_str.c_str(), index, value, buffer_length,
                                                       &actual_value_length);
-  if (value_length != NULL) {
+  if (error == kThreadConfigMgrNoError && value_length != NULL) {
     if (actual_value_length > std::numeric_limits<uint16_t>::max()) {
       otPlatLog(OT_LOG_LEVEL_CRIT, OT_LOG_REGION_PLATFORM,
                 "otPlatSettingsGet: Key '%s' size (%zu) exceeds max uint16_t.", key_str.c_str(),
                 actual_value_length);
       return OT_ERROR_PARSE;
     } else {
-      *value_length = actual_value_length;
+      *value_length = static_cast<uint16_t>(actual_value_length);
     }
   }
 
