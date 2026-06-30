@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 #include "dai.h"
 
+#include <lib/async/cpp/task.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/metadata.h>
@@ -12,6 +13,7 @@
 #include <math.h>
 #include <string.h>
 
+#include <cstddef>
 #include <numeric>
 #include <optional>
 #include <utility>
@@ -22,7 +24,7 @@
 
 namespace audio::aml_g12 {
 
-enum {
+enum : uint8_t {
   FRAGMENT_PDEV,
   FRAGMENT_COUNT,
 };
@@ -67,8 +69,11 @@ void AmlG12TdmDai::InitDaiFormats() {
     case metadata::DaiType::Custom:
       dai_format_.frame_format.set_frame_format_custom(
           ::fuchsia::hardware::audio::DaiFrameFormatCustom{
-              true, metadata_.dai.custom_sclk_on_raising,
-              metadata_.dai.custom_frame_sync_sclks_offset, metadata_.dai.custom_frame_sync_size});
+              .left_justified = true,
+              .sclk_on_raising = metadata_.dai.custom_sclk_on_raising,
+              .frame_sync_sclks_offset = metadata_.dai.custom_frame_sync_sclks_offset,
+              .frame_sync_size = metadata_.dai.custom_frame_sync_size,
+          });
       break;
   }
 }
@@ -76,16 +81,20 @@ void AmlG12TdmDai::InitDaiFormats() {
 void AmlG12TdmDai::Connect(ConnectRequestView request, ConnectCompleter::Sync& completer) {
   ::fidl::InterfaceRequest<::fuchsia::hardware::audio::Dai> dai;
   dai.set_channel(request->dai_protocol.TakeChannel());
-  dai_binding_.emplace(this, std::move(dai), loop_.dispatcher());
-  dai_binding_->set_error_handler([this](zx_status_t status) -> void {
-    zxlogf(INFO, "DAI protocol %s", zx_status_get_string(status));
-    Stop([]() {});
-    delay_info_sent_ = false;
+  async::PostTask(loop_.dispatcher(), [this, dai = std::move(dai)]() mutable {
+    dai_binding_.emplace(this, std::move(dai), loop_.dispatcher());
+    dai_binding_->set_error_handler([this](zx_status_t status) -> void {
+      zxlogf(INFO, "DAI protocol %s", zx_status_get_string(status));
+      Stop([]() {});
+      delay_info_sent_ = false;
+    });
   });
 }
 
 zx_status_t AmlG12TdmDai::DaiConnect(zx::channel channel) {
-  dai_binding_.emplace(this, std::move(channel), loop_.dispatcher());
+  async::PostTask(loop_.dispatcher(), [this, channel = std::move(channel)]() mutable {
+    dai_binding_.emplace(this, std::move(channel), loop_.dispatcher());
+  });
   return ZX_OK;
 }
 
@@ -145,7 +154,9 @@ void AmlG12TdmDai::Shutdown() {
   if (rb_started_) {
     Stop([]() {});
   }
-  aml_audio_->Shutdown();
+  if (aml_audio_) {
+    aml_audio_->Shutdown();
+  }
   pinned_ring_buffer_.Unpin();
 }
 
@@ -158,7 +169,7 @@ void AmlG12TdmDai::GetVmo(uint32_t min_frames, uint32_t clock_recovery_notificat
   }
   frame_size_ = metadata_.ring_buffer.number_of_channels * metadata_.ring_buffer.bytes_per_sample;
   size_t ring_buffer_size =
-      fbl::round_up<size_t, size_t>(min_frames * frame_size_ + aml_audio_->fifo_depth(),
+      fbl::round_up<size_t, size_t>((min_frames * frame_size_) + aml_audio_->fifo_depth(),
                                     std::lcm(frame_size_, aml_audio_->GetBufferAlignment()));
   size_t out_frames = ring_buffer_size / frame_size_;
   if (out_frames > std::numeric_limits<uint32_t>::max()) {
@@ -197,7 +208,7 @@ void AmlG12TdmDai::GetVmo(uint32_t min_frames, uint32_t clock_recovery_notificat
 }
 
 void AmlG12TdmDai::Start(StartCallback callback) {
-  uint64_t start_time = 0;
+  int64_t start_time = 0;
   if (rb_started_) {
     zxlogf(ERROR, "Could not start: already started");
     ringbuffer_binding_->Close(ZX_ERR_BAD_STATE);
@@ -209,14 +220,14 @@ void AmlG12TdmDai::Start(StartCallback callback) {
     return;
   }
 
-  start_time = aml_audio_->Start();
+  start_time = static_cast<int64_t>(aml_audio_->Start());
   rb_started_ = true;
 
   uint32_t notifs = expected_notifications_per_ring_.load();
   if (notifs) {
-    us_per_notification_ =
-        static_cast<uint32_t>(1000 * pinned_ring_buffer_.region(0).size /
-                              (frame_size_ * dai_format_.frame_rate / 1000 * notifs));
+    us_per_notification_ = static_cast<uint32_t>(
+        pinned_ring_buffer_.region(0).size * 1'000'000 /
+        (static_cast<uint64_t>(frame_size_) * dai_format_.frame_rate * notifs));
     notify_timer_.PostDelayed(loop_.dispatcher(), zx::usec(us_per_notification_));
   } else {
     us_per_notification_ = 0;
@@ -226,6 +237,10 @@ void AmlG12TdmDai::Start(StartCallback callback) {
 }
 
 void AmlG12TdmDai::Stop(StopCallback callback) {
+  notify_timer_.Cancel();
+  us_per_notification_ = 0;
+  aml_audio_->Stop();
+  rb_started_ = false;
   if (!rb_fetched_) {
     zxlogf(ERROR, "GetVmo must successfully complete before calling Start or Stop");
     if (ringbuffer_binding_.has_value() && ringbuffer_binding_->is_bound()) {
@@ -233,13 +248,6 @@ void AmlG12TdmDai::Stop(StopCallback callback) {
     }
     return;
   }
-  if (!rb_started_) {
-    zxlogf(INFO, "Stop called while stopped; this is allowed");
-  }
-  notify_timer_.Cancel();
-  us_per_notification_ = 0;
-  aml_audio_->Stop();
-  rb_started_ = false;
   callback();
 }
 
@@ -331,8 +339,11 @@ void AmlG12TdmDai::GetDaiFormats(GetDaiFormatsCallback callback) {
       break;
     case metadata::DaiType::Custom:
       frame_format.set_frame_format_custom(::fuchsia::hardware::audio::DaiFrameFormatCustom{
-          true, metadata_.dai.custom_sclk_on_raising, metadata_.dai.custom_frame_sync_sclks_offset,
-          metadata_.dai.custom_frame_sync_size});
+          .left_justified = true,
+          .sclk_on_raising = metadata_.dai.custom_sclk_on_raising,
+          .frame_sync_sclks_offset = metadata_.dai.custom_frame_sync_sclks_offset,
+          .frame_sync_size = metadata_.dai.custom_frame_sync_size,
+      });
       break;
     default:
       ZX_ASSERT(0);  // Not supported.
@@ -388,12 +399,12 @@ void AmlG12TdmDai::CreateRingBuffer(
 }
 
 void AmlG12TdmDai::ResetRingBuffer() {
+  Stop([]() {});
   rb_fetched_ = false;
   rb_started_ = false;
   expected_notifications_per_ring_ = 0;
   position_callback_.reset();
   dai_format_ = {};
-  Stop([]() {});
 }
 
 void AmlG12TdmDai::GetProperties(
@@ -415,7 +426,7 @@ void AmlG12TdmDai::ProcessRingNotification() {
   info.position = aml_audio_->GetRingPosition();
   info.timestamp = zx::clock::get_monotonic().get();
   if (position_callback_) {
-    (*position_callback_)(std::move(info));
+    (*position_callback_)(info);
     position_callback_.reset();
   }
 }

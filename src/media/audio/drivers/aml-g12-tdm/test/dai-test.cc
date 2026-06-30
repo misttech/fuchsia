@@ -14,8 +14,6 @@
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/sync/completion.h>
 
-#include <thread>
-
 #include <soc/aml-common/aml-audio.h>
 #include <soc/aml-s905d2/s905d2-hw.h>
 #include <zxtest/zxtest.h>
@@ -65,7 +63,7 @@ metadata::AmlConfig GetDefaultMetadata() {
 }
 
 struct DaiClient {
-  DaiClient(ddk::DaiProtocolClient proto_client) {
+  explicit DaiClient(ddk::DaiProtocolClient proto_client) {
     proto_client_ = proto_client;
     ASSERT_TRUE(proto_client_.is_valid());
     zx::channel channel_remote, channel_local;
@@ -101,13 +99,16 @@ class TestAmlG12TdmDai : public AmlG12TdmDai {
     AmlG12TdmDai::Stop(std::move(callback));
     sync_completion_signal(&stopped_);
   }
-  void WaitUntilStopped() { sync_completion_wait(&stopped_, ZX_TIME_INFINITE); }
+  void WaitUntilStopped() {
+    sync_completion_wait(&stopped_, ZX_TIME_INFINITE);
+    sync_completion_reset(&stopped_);
+  }
   void handle_unknown_method(uint64_t ordinal, bool method_has_response) override {
     zxlogf(ERROR, "TestAmlG12TdmDai unknown method with ordinal %zd", ordinal);
   }
 
  private:
-  sync_completion_t stopped_ = {};
+  sync_completion_t stopped_;
 };
 
 struct IncomingNamespace {
@@ -180,15 +181,20 @@ TEST_F(AmlG12TdmDaiTest, InitializeI2sOut) {
   mmio_.reg(0x580).SetReadCallback([&step]() -> uint32_t {
     if (step == 0) {
       return 0xffff'ffff;
-    } else if (step == 3) {
+    }
+    if (step == 3) {
       return 0x0000'0000;
-    } else if (step == 6) {
+    }
+    if (step == 6) {
       return 0x3001'003f;
-    } else if (step == 7) {
+    }
+    if (step == 7) {
       return 0x0001'003f;
-    } else if (step == 8) {
+    }
+    if (step == 8) {
       return 0x2001'003f;
-    } else if (step == 9) {
+    }
+    if (step == 9) {
       return 0x8001'003f;
     }
     ADD_FAILURE();
@@ -288,15 +294,20 @@ TEST_F(AmlG12TdmDaiTest, InitializePcmOut) {
   mmio_.reg(0x580).SetReadCallback([&step]() -> uint32_t {
     if (step == 0) {
       return 0xffff'ffff;
-    } else if (step == 3) {
+    }
+    if (step == 3) {
       return 0x0000'0000;
-    } else if (step == 6) {
+    }
+    if (step == 6) {
       return 0x3001'000f;
-    } else if (step == 7) {
+    }
+    if (step == 7) {
       return 0x0001'000f;
-    } else if (step == 8) {
+    }
+    if (step == 8) {
       return 0x2001'000f;
-    } else if (step == 9) {
+    }
+    if (step == 9) {
       return 0x8001'000f;
     }
     ADD_FAILURE();
@@ -433,7 +444,7 @@ TEST_F(AmlG12TdmDaiTest, GetPropertiesInputDai) {
 }
 
 class AmlG12TdmDaiRingBufferTest : public AmlG12TdmDaiTest {
- protected:
+ public:
   void SetUp() override {
     AmlG12TdmDaiTest::SetUp();
     metadata::AmlConfig metadata = GetDefaultMetadata();
@@ -523,6 +534,7 @@ class AmlG12TdmDaiRingBufferTest : public AmlG12TdmDaiTest {
     ring_buffer_.emplace(std::move(local));
   }
 
+ protected:
   std::shared_ptr<zx_device> fake_parent_ = MockDevice::FakeRootParent();
   std::optional<DaiClient> client_;
   std::optional<::fuchsia::hardware::audio::RingBuffer_SyncProxy> ring_buffer_;
@@ -744,6 +756,50 @@ TEST_F(AmlG12TdmDaiRingBufferTest, GetDelayForMultipleRingBuffers) {
         ::fuchsia::hardware::audio::RingBuffer_WatchDelayInfo_Response(std::move(delay_info)));
     ASSERT_OK(ring_buffer.WatchDelayInfo(&result));
   }
+}
+
+TEST_F(AmlG12TdmDaiRingBufferTest, RingBufferPeerCloseStopsDma) {
+  auto frddr_ctrl0 = std::make_shared<std::atomic<uint32_t>>(0);
+  mmio_.reg(0x240).SetWriteCallback(
+      [frddr_ctrl0](size_t value) { *frddr_ctrl0 = static_cast<uint32_t>(value); });
+  std::atomic<uint32_t> pos_reads = 0;
+  mmio_.reg(0x258).SetReadCallback([&pos_reads]() {
+    pos_reads++;
+    return 0;
+  });
+
+  ::fidl::InterfaceHandle<fuchsia::hardware::audio::RingBuffer> ring_buffer_client;
+  ::fidl::InterfaceRequest<fuchsia::hardware::audio::RingBuffer> ring_buffer_server =
+      ring_buffer_client.NewRequest();
+
+  ::fuchsia::hardware::audio::DaiFormat dai_format;
+  dai_format_.Clone(&dai_format);
+  ::fuchsia::hardware::audio::Format ring_buffer_format;
+  ring_buffer_format_.Clone(&ring_buffer_format);
+  client_->dai_->CreateRingBuffer(std::move(dai_format), std::move(ring_buffer_format),
+                                  std::move(ring_buffer_server));
+
+  std::optional<::fuchsia::hardware::audio::RingBuffer_SyncProxy> ring_buffer;
+  ring_buffer.emplace(ring_buffer_client.TakeChannel());
+
+  ::fuchsia::hardware::audio::RingBuffer_GetVmo_Result vmo_result = {};
+  constexpr uint32_t kMinFrames = 8192;
+  ASSERT_OK(ring_buffer->GetVmo(kMinFrames, 0, &vmo_result));
+  ASSERT_TRUE(vmo_result.response().ring_buffer.is_valid());
+
+  int64_t start_time = 0;
+  ASSERT_OK(ring_buffer->Start(&start_time));
+  EXPECT_NE(*frddr_ctrl0 & (1u << 31), 0u);
+
+  // Close the ring buffer channel (triggering ResetRingBuffer).
+  ring_buffer.reset();
+
+  auto* child_dev = fake_parent_->GetLatestChild();
+  ASSERT_NOT_NULL(child_dev);
+  child_dev->GetDeviceContext<TestAmlG12TdmDai>()->WaitUntilStopped();
+
+  // DMA enable bit (bit 31) must be 0 after RingBuffer peer close cleanup.
+  EXPECT_EQ(*frddr_ctrl0 & (1u << 31), 0u);
 }
 
 }  // namespace audio::aml_g12
