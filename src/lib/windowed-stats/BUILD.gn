@@ -36,7 +36,6 @@ rustc_library("windowed-stats") {
   ]
 
   sources = [
-    "src/aggregations.rs",
     "src/experimental/clock.rs",
     "src/experimental/inspect.rs",
     "src/experimental/mod.rs",
