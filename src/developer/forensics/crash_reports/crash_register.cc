@@ -39,6 +39,11 @@ Product ToInternalProduct(const fuchsia::feedback::CrashReportingProduct& fidl_p
 
 void CrashRegister::Upsert(std::string component_url,
                            fuchsia::feedback::CrashReportingProduct product) {
+  if (component_url.find('\0') != std::string::npos) {
+    FX_LOGS(WARNING) << "component_url contains a null byte, ignoring: " << component_url;
+    return;
+  }
+
   if (!product.has_name()) {
     FX_LOGS(WARNING) << "Missing required name in product:" << product;
     return;

@@ -19,7 +19,8 @@ closed protocol CrashReportingProductRegister {
     /// Prefer UpsertWithAck() if the component also files crash reports itself, to avoid race
     /// conditions and mis-attribution.
     strict Upsert(struct {
-        // 2083 is the maximum expected component URL length.
+        /// 2083 is the maximum expected component URL length. The request will be rejected if
+        /// component_url contains a null byte.
         component_url string:2083;
         product CrashReportingProduct;
     });
@@ -30,7 +31,8 @@ closed protocol CrashReportingProductRegister {
     /// Otherwise if a crash report is filed before the upsert completes, the crash report will be
     /// attributed to the wrong product, leading to potentially incorrect crash data.
     strict UpsertWithAck(struct {
-        // 2083 is the maximum expected component URL length.
+        /// 2083 is the maximum expected component URL length. The request will be rejected if
+        /// component_url contains a null byte.
         component_url string:2083;
         product CrashReportingProduct;
     }) -> ();

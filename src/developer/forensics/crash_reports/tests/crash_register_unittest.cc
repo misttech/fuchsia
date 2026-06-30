@@ -159,6 +159,21 @@ TEST_F(CrashRegisterTest, Upsert_NoInsertOnMissingProductName) {
   EXPECT_TRUE(ReadRegisterJson().empty());
 }
 
+TEST_F(CrashRegisterTest, UpsertNoInsertOnNullByteInComponentUrl) {
+  CrashReportingProduct product;
+  product.set_name("some name");
+  product.set_version("some version");
+  product.set_channel("some channel");
+
+  const std::string url_with_null("some url with\0a null byte", 25);
+
+  Upsert(url_with_null, std::move(product));
+
+  EXPECT_THAT(InspectTree(),
+              ChildrenMatch(Not(Contains(NodeMatches(NameMatches("crash_register"))))));
+  EXPECT_TRUE(ReadRegisterJson().empty());
+}
+
 TEST_F(CrashRegisterTest, Upsert_UpdateIfSameComponentUrl) {
   CrashReportingProduct product;
   product.set_name("some name");
