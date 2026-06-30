@@ -28,10 +28,7 @@ void PrintInputReports(
     std::string filename, Printer* printer,
     fidl::WireSharedClient<fuchsia_input_report::InputReportsReader> reader, size_t num_reads,
     fit::closure callback = [] {});
-void GetAndPrintInputReport(
-    std::string filename, fuchsia_input_report::wire::DeviceType device_type, Printer* printer,
-    fidl::WireSharedClient<fuchsia_input_report::InputDevice> client,
-    fit::closure callback = [] {});
+
 
 void PrintDeviceInfo(Printer* printer,
                      const fuchsia_input_report::wire::DeviceInformation& device_info);
