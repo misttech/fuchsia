@@ -1522,11 +1522,11 @@ group("proptest-1.11.0") {
 }
 
 group("proptest-derive") {
-  public_deps = [ ":proptest-derive-v0_4_0($host_toolchain)" ]
+  public_deps = [ ":proptest-derive-v0_8_0($host_toolchain)" ]
 }
 
-group("proptest-derive-0.4.0") {
-  public_deps = [ ":proptest-derive-v0_4_0" ]
+group("proptest-derive-0.8.0") {
+  public_deps = [ ":proptest-derive-v0_8_0" ]
 }
 
 group("prost") {
@@ -15891,20 +15891,20 @@ rustc_library("proptest-v1_11_0") {
   applicable_licenses = [ ":proptest-v1_11_0.license" ]
 }
 
-license("proptest-derive-v0_4_0.license") {
+license("proptest-derive-v0_8_0.license") {
   public_package_name = "proptest_derive"
   license_files = [
-    "//third_party/rust_crates/vendor/proptest-derive-0.4.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/proptest-derive-0.4.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/proptest-derive-0.8.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/proptest-derive-0.8.0/LICENSE-MIT",
   ]
 }
 
-rustc_macro("proptest-derive-v0_4_0") {
+rustc_macro("proptest-derive-v0_8_0") {
   crate_name = "proptest_derive"
   source_root =
-      "//third_party/rust_crates/vendor/proptest-derive-0.4.0/src/lib.rs"
-  output_name = "proptest_derive-d56d4adeae3446a2"
-  edition = "2018"
+      "//third_party/rust_crates/vendor/proptest-derive-0.8.0/src/lib.rs"
+  output_name = "proptest_derive-f29707307bd6d345"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -15912,19 +15912,19 @@ rustc_macro("proptest-derive-v0_4_0") {
   deps = []
   deps += [ ":proc-macro2-v1_0_106" ]
   deps += [ ":quote-v1_0_45" ]
-  deps += [ ":syn-v1_0_109" ]
+  deps += [ ":syn-v2_0_117" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d56d4adeae3446a2",
-    "-Cextra-filename=-d56d4adeae3446a2",
+    "-Cmetadata=f29707307bd6d345",
+    "-Cextra-filename=-f29707307bd6d345",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":proptest-derive-v0_4_0.license" ]
+  applicable_licenses = [ ":proptest-derive-v0_8_0.license" ]
 }
 
 license("prost-v0_14_4.license") {

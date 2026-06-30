@@ -2077,14 +2077,14 @@ alias(
 )
 
 alias(
-    name = "proptest-derive-0.4.0",
-    actual = "//third_party/rust_crates/vendor/proptest-derive-0.4.0:proptest_derive",
+    name = "proptest-derive-0.8.0",
+    actual = "//third_party/rust_crates/vendor/proptest-derive-0.8.0:proptest_derive",
     tags = ["manual"],
 )
 
 alias(
     name = "proptest-derive",
-    actual = "//third_party/rust_crates/vendor/proptest-derive-0.4.0:proptest_derive",
+    actual = "//third_party/rust_crates/vendor/proptest-derive-0.8.0:proptest_derive",
     tags = ["manual"],
 )
 

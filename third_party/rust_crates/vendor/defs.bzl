@@ -611,7 +611,7 @@ _PROC_MACRO_DEPENDENCIES = {
             "num-derive": Label("//third_party/rust_crates/vendor/num-derive-0.4.2:num_derive"),
             "paste": Label("//third_party/rust_crates/vendor/paste-1.0.15:paste"),
             "pest_derive": Label("//third_party/rust_crates/vendor/pest_derive-2.8.6:pest_derive"),
-            "proptest-derive": Label("//third_party/rust_crates/vendor/proptest-derive-0.4.0:proptest_derive"),
+            "proptest-derive": Label("//third_party/rust_crates/vendor/proptest-derive-0.8.0:proptest_derive"),
             "serde_derive": Label("//third_party/rust_crates/vendor/serde_derive-1.0.228:serde_derive"),
             "serde_repr": Label("//third_party/rust_crates/vendor/serde_repr-0.1.7:serde_repr"),
             "strum_macros": Label("//third_party/rust_crates/vendor/strum_macros-0.28.0:strum_macros"),
