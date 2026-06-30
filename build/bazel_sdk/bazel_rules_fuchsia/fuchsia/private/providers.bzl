@@ -5,6 +5,12 @@
 """All Fuchsia Providers."""
 
 load(
+    "@fuchsia_rules_common//components:providers.bzl",
+    _FuchsiaComponentInfo = "FuchsiaComponentInfo",
+    _FuchsiaComponentManifestInfo = "FuchsiaComponentManifestInfo",
+    _FuchsiaPackagedComponentInfo = "FuchsiaPackagedComponentInfo",
+)
+load(
     "@fuchsia_rules_common//debug_symbols:providers.bzl",
     _FuchsiaCollectedUnstrippedBinariesInfo = "FuchsiaCollectedUnstrippedBinariesInfo",
     _FuchsiaUnstrippedBinaryInfo = "FuchsiaUnstrippedBinaryInfo",
@@ -13,11 +19,8 @@ load(
 load(
     "@fuchsia_rules_common//packages:providers.bzl",
     _FuchsiaCollectedPackageResourcesInfo = "FuchsiaCollectedPackageResourcesInfo",
-    _FuchsiaComponentInfo = "FuchsiaComponentInfo",
-    _FuchsiaComponentManifestInfo = "FuchsiaComponentManifestInfo",
     _FuchsiaDriverToolInfo = "FuchsiaDriverToolInfo",
     _FuchsiaPackageResourcesInfo = "FuchsiaPackageResourcesInfo",
-    _FuchsiaPackagedComponentInfo = "FuchsiaPackagedComponentInfo",
     _FuchsiaStructuredConfigInfo = "FuchsiaStructuredConfigInfo",
 )
 

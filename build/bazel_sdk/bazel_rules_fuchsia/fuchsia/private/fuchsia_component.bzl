@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 load(
-    "@fuchsia_rules_common//packages:fuchsia_component_common.bzl",
+    "@fuchsia_rules_common//components:fuchsia_component_common.bzl",
     "fuchsia_component_common",
 )
 

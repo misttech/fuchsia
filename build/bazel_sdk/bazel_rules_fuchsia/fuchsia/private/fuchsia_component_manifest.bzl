@@ -3,11 +3,11 @@
 # found in the LICENSE file.
 
 load(
-    "@fuchsia_rules_common//packages:component_manifest.bzl",
+    "@fuchsia_rules_common//components:component_manifest.bzl",
     "compile_component_manifest",
 )
 load(
-    "@fuchsia_rules_common//packages:providers.bzl",
+    "@fuchsia_rules_common//components:providers.bzl",
     "FuchsiaComponentManifestInfo",
 )
 

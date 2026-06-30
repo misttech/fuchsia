@@ -11,10 +11,13 @@ load(
     "merge_debug_symbol_infos",
 )
 load(
+    "@fuchsia_rules_common//packages:providers.bzl",
+    "FuchsiaPackageResourcesInfo",
+)
+load(
     ":providers.bzl",
     "FuchsiaComponentInfo",
     "FuchsiaComponentManifestInfo",
-    "FuchsiaPackageResourcesInfo",
 )
 
 def _make_fuchsia_component_providers(*, component_name, manifest, resources, is_driver, is_test, moniker, run_tag):

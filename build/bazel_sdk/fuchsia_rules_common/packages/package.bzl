@@ -12,13 +12,16 @@ load(
     "stub_executable",
 )
 load(
+    "@fuchsia_rules_common//components:providers.bzl",
+    "FuchsiaComponentInfo",
+    "FuchsiaPackagedComponentInfo",
+)
+load(
     "@fuchsia_rules_common//packages:providers.bzl",
     "FuchsiaCollectedPackageResourcesInfo",
-    "FuchsiaComponentInfo",
     "FuchsiaDriverToolInfo",
     "FuchsiaPackageInfo",
     "FuchsiaPackageResourcesInfo",
-    "FuchsiaPackagedComponentInfo",
     "FuchsiaStructuredConfigInfo",
 )
 

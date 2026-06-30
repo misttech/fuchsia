@@ -9,6 +9,7 @@ filegroup(
         "local_actions.bzl",
         "utils.bzl",
         "@fuchsia_rules_common//assembly:bzl_srcs",
+        "@fuchsia_rules_common//components:bzl_srcs",
         "@fuchsia_rules_common//debug_symbols:bzl_srcs",
         "@fuchsia_rules_common//packages:bzl_srcs",
     ],
