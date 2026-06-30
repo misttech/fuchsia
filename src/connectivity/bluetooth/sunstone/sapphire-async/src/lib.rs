@@ -5,6 +5,7 @@
 #![allow(unused_crate_dependencies)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
+pub mod broadcast;
 pub mod condition;
 pub mod executor;
 pub mod mpsc;

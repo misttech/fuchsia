@@ -79,6 +79,7 @@ if (is_host) {
     edition = "2024"
     source_root = "sapphire-async/src/lib.rs"
     sources = [
+      "sapphire-async/src/broadcast.rs",
       "sapphire-async/src/condition.rs",
       "sapphire-async/src/executor.rs",
       "sapphire-async/src/global_index.rs",
