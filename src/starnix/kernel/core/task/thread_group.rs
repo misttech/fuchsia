@@ -16,8 +16,8 @@ use crate::signals::{
 };
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::{
-    ControllingTerminal, CurrentTask, ExitStatus, Kernel, PidTable, ProcessGroup, Session,
-    SessionDisassociation, Task, TaskMutableState, TaskPersistentInfo, TypedWaitQueue,
+    ControllingTerminal, CurrentTask, ExitStatus, Kernel, PidTable, ProcessGroup, Session, Task,
+    TaskMutableState, TaskPersistentInfo, TypedWaitQueue,
 };
 use crate::time::{IntervalTimerHandle, TimerTable};
 use itertools::Itertools;
@@ -923,7 +923,7 @@ impl ThreadGroup {
                 ZombieProcess::new(state.as_ref(), &persistent_info.real_creds(), exit_info);
             pids.kill_process(self.leader, OwnedRef::downgrade(&zombie));
 
-            let session = state.leave_process_group(locked, &pids);
+            state.leave_process_group(locked, &pids);
 
             // I have no idea if dropping the lock here is correct, and I don't want to think about
             // it. If problems do turn up with another thread observing an intermediate state of
@@ -935,10 +935,6 @@ impl ThreadGroup {
             // https://docs.google.com/document/d/1YHrhBqNhU1WcrsYgGAu3JwwlVmFXPlwWHTJLAbwRebY/edit
             // for an idea.
             std::mem::drop(state);
-
-            // `disassociate_controlling_terminal` can not be called while holding the
-            // ThreadGroup state lock.
-            session.disassociate_controlling_terminal(locked);
 
             // Remove the process from the cgroup2 pid table after TG lock is dropped.
             // This function will hold the CgroupState lock which should be before the TG lock. See
@@ -1135,8 +1131,7 @@ impl ThreadGroup {
         }
         let process_group = ProcessGroup::new(self.leader, None);
         pids.add_process_group(process_group.clone());
-        let session = self.write().set_process_group(locked, process_group, &pids);
-        session.disassociate_controlling_terminal(locked);
+        self.write().set_process_group(locked, process_group, &pids);
         self.check_orphans(locked, &pids);
 
         Ok(())
@@ -1210,11 +1205,7 @@ impl ThreadGroup {
                 }
             }
 
-            let session = target_thread_group.set_process_group(locked, new_process_group, &pids);
-            std::mem::drop(target_thread_group);
-            // `disassociate_controlling_terminal` can not be called while holding the
-            // ThreadGroup state lock.
-            session.disassociate_controlling_terminal(locked);
+            target_thread_group.set_process_group(locked, new_process_group, &pids);
         }
 
         target.thread_group().check_orphans(locked, &pids);
@@ -2053,52 +2044,30 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
         }
     }
 
-    /// Changes the process group of the thread group.
-    ///
-    /// Returns a `SessionDisassociation`, which the caller must use to explicitly
-    /// disassociate the controlling terminal if the thread group was previously a session
-    /// leader.
-    /// This must be done after the ThreadGroup state lock is released to avoid lock order
-    /// violations.
     fn set_process_group<L>(
         &mut self,
         locked: &mut Locked<L>,
         process_group: Arc<ProcessGroup>,
         pids: &PidTable,
-    ) -> SessionDisassociation
-    where
+    ) where
         L: LockBefore<ProcessGroupState>,
     {
         if self.process_group == process_group {
-            return SessionDisassociation::new(None);
+            return;
         }
-        let session = self.leave_process_group(locked, pids);
+        self.leave_process_group(locked, pids);
         self.process_group = process_group;
         self.process_group.insert(locked, self.base);
-        session
     }
 
-    /// Removes the thread group from its current process group.
-    ///
-    /// Returns a `SessionDisassociation`, which the caller must use to explicitly
-    /// disassociate the controlling terminal if the thread group was previously a session
-    /// leader.
-    /// This must be done after the ThreadGroup state lock is released to avoid lock order
-    /// violations.
-    fn leave_process_group<L>(
-        &mut self,
-        locked: &mut Locked<L>,
-        pids: &PidTable,
-    ) -> SessionDisassociation
+    fn leave_process_group<L>(&mut self, locked: &mut Locked<L>, pids: &PidTable)
     where
         L: LockBefore<ProcessGroupState>,
     {
-        let (is_empty, disassociation) = self.process_group.remove(locked, self.base);
-        if is_empty {
+        if self.process_group.remove(locked, self.base) {
             self.process_group.session.write().remove(self.process_group.leader);
             pids.remove_process_group(self.process_group.leader);
         }
-        disassociation
     }
 
     /// Indicates whether the thread group is waitable via waitid and waitpid for

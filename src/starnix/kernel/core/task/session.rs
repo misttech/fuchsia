@@ -4,7 +4,9 @@
 
 // use macro_rules_attribute::apply;
 // use crate::mutable_state::{state_accessor, state_implementation};
-use starnix_sync::{LockBefore, LockDepRwLock, Locked, ProcessGroupState, SessionMutableStateLock};
+use starnix_sync::{
+    LockBefore, LockDepRwLock, Locked, ProcessGroupState, SessionMutableStateLock, allow_subclass,
+};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
 
@@ -106,6 +108,9 @@ impl Session {
             drop(state);
             drop(terminal_state);
             if let Some(pg) = process_group {
+                // TODO(https://fxbug.dev/529617819): This is actually incorrect. Taking the
+                // ThreadGroupMutableState in `send_signals` might encounter deadlock.
+                let _token = allow_subclass();
                 pg.send_signals(locked, &[SIGHUP, SIGCONT]);
             }
             return;
@@ -160,41 +165,5 @@ impl ControllingTerminal {
 
     pub fn matches(&self, terminal: &Terminal, is_main: bool) -> bool {
         std::ptr::eq(terminal, Arc::as_ptr(&self.terminal)) && is_main == self.is_main
-    }
-}
-
-/// Represents the disassociation of a session's controlling terminal when the session
-/// leader exits.
-///
-/// This struct wraps an optional session and ensures that `disassociate_controlling_terminal`
-/// is explicitly called by the caller, which must be done without holding any
-/// ThreadGroup's write lock.
-#[must_use = "The controlling terminal must be disassociated when the session leader exits."]
-pub struct SessionDisassociation {
-    session: Option<Arc<Session>>,
-}
-
-impl SessionDisassociation {
-    pub(crate) fn new(session: Option<Arc<Session>>) -> Self {
-        Self { session }
-    }
-
-    /// Disassociates the controlling terminal from the session.
-    ///
-    /// If the exiting thread group is the session leader, the controlling terminal must be
-    /// disassociated. This must be called after dropping the ThreadGroup write lock to
-    /// prevent a lock order violation.
-    ///
-    /// Calling it after the thread group has left the process group also ensures that
-    /// the exiting thread group is no longer in the process group when attempting to send
-    /// SIGHUP/SIGCONT to the foreground process group, avoiding a self-deadlock where the
-    /// exiting thread group attempts to write-lock itself.
-    pub fn disassociate_controlling_terminal<L>(self, locked: &mut Locked<L>)
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
-        if let Some(session) = self.session {
-            session.disassociate_controlling_terminal(locked);
-        }
     }
 }
