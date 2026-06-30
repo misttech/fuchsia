@@ -9,12 +9,12 @@ use crate::vfs::{
 };
 use bstr::BStr;
 use fuchsia_rcu::RcuReadScope;
-use fuchsia_sync::Mutex;
 use hex;
 use linux_uapi::AUDIT_AVC;
 use selinux::permission_check::{PermissionCheck, PermissionCheckResult};
 use selinux::{ClassPermission, KernelClass, KernelPermission, SecurityId};
 use starnix_logging::CATEGORY_STARNIX_SECURITY;
+use starnix_sync::{AuditDenyCountsLock, LockDepMutex};
 use std::collections::HashMap;
 use std::fmt::{Display, Error};
 use std::num::NonZeroU32;
@@ -30,8 +30,9 @@ struct AuditableInstance {
 }
 
 /// Stores count of todo_deny logged per auditable instance.
-static TODO_DENY_COUNTS: LazyLock<Mutex<HashMap<AuditableInstance, u32>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+static TODO_DENY_COUNTS: LazyLock<
+    LockDepMutex<HashMap<AuditableInstance, u32>, AuditDenyCountsLock>,
+> = LazyLock::new(|| LockDepMutex::new(HashMap::new()));
 
 /// Checks whether an audit log entry should still be emitted for this audit instance.
 fn should_audit(

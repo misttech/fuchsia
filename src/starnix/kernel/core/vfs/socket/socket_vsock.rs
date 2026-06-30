@@ -9,7 +9,10 @@ use crate::vfs::socket::{
     AcceptQueue, DEFAULT_LISTEN_BACKLOG, Socket, SocketAddress, SocketDomain, SocketHandle,
     SocketMessageFlags, SocketOps, SocketPeer, SocketProtocol, SocketShutdownFlags, SocketType,
 };
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
+use starnix_sync::{
+    FileOpsCore, LockDepGuard, LockDepMutex, LockEqualOrBefore, Locked, VsockSocketInnerLock,
+    allow_subclass,
+};
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -20,7 +23,7 @@ use starnix_uapi::{errno, error, ucred};
 // See https://man7.org/linux/man-pages/man7/vsock.7.html
 
 pub struct VsockSocket {
-    inner: Mutex<VsockSocketInner>,
+    inner: LockDepMutex<VsockSocketInner, VsockSocketInnerLock>,
 }
 
 struct VsockSocketInner {
@@ -59,7 +62,7 @@ fn downcast_socket_to_vsock(socket: &Socket) -> &VsockSocket {
 impl VsockSocket {
     pub fn new(_socket_type: SocketType) -> VsockSocket {
         VsockSocket {
-            inner: Mutex::new(VsockSocketInner {
+            inner: LockDepMutex::new(VsockSocketInner {
                 address: None,
                 waiters: WaitQueue::default(),
                 state: VsockSocketState::Disconnected,
@@ -68,7 +71,7 @@ impl VsockSocket {
     }
 
     /// Locks and returns the inner state of the Socket.
-    fn lock(&self) -> starnix_sync::MutexGuard<'_, VsockSocketInner> {
+    fn lock(&self) -> LockDepGuard<'_, VsockSocketInner> {
         self.inner.lock()
     }
 }
@@ -304,6 +307,9 @@ impl VsockSocket {
                     SocketProtocol::default(),
                     /* kernel_private = */ true,
                 )?;
+                // The lock on remote_socket is safe because the socket is not shared with any other
+                // thread yet.
+                let _token = allow_subclass();
                 downcast_socket_to_vsock(&remote_socket).lock().state =
                     VsockSocketState::Connected {
                         file,

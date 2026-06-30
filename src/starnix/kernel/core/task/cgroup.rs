@@ -13,8 +13,8 @@ use crate::task::{Kernel, ThreadGroup, ThreadGroupKey, WaitQueue, Waiter};
 use crate::vfs::{FsStr, FsString, PathBuilder};
 use starnix_logging::{CATEGORY_STARNIX, log_warn, track_stub};
 use starnix_sync::{
-    CgroupV1Level, FileOpsCore, LockBefore, LockDepMutex, Locked, Mutex, MutexGuard,
-    ThreadGroupLimits,
+    CgroupChildrenLock, CgroupPidTableLock, CgroupStateLock, CgroupV1Level, FileOpsCore,
+    LockBefore, LockDepGuard, LockDepMutex, Locked, ThreadGroupLimits, allow_subclass,
 };
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::SIGKILL;
@@ -111,7 +111,7 @@ impl KernelCgroups {
     /// Note: Mutex dependency graph:
     ///
     /// `KernelPidTable` -> `CgroupRootPidTable` -> `CgroupState` -> `ThreadGroupState`
-    pub fn lock_cgroup2_pid_table(&self) -> MutexGuard<'_, CgroupPidTable> {
+    pub fn lock_cgroup2_pid_table(&self) -> LockDepGuard<'_, CgroupPidTable> {
         self.cgroup2.pid_table.lock()
     }
 
@@ -328,10 +328,10 @@ pub struct CgroupRoot {
     pub hierarchy_id: u32,
 
     /// Look up cgroup by pid. Must be locked before child states.
-    pid_table: Mutex<CgroupPidTable>,
+    pid_table: LockDepMutex<CgroupPidTable, CgroupPidTableLock>,
 
     /// Sub-cgroups of this cgroup.
-    children: Mutex<CgroupChildren>,
+    children: LockDepMutex<CgroupChildren, CgroupChildrenLock>,
 
     /// Weak reference to self, used when creating child cgroups.
     weak_self: Weak<CgroupRoot>,
@@ -457,6 +457,10 @@ impl CgroupChildren {
         };
         let child = child_entry.get();
 
+        // This allow_subclass is safe because the lock is being acquired
+        // in a strictly top-down traversal of the Cgroup tree (from parent
+        // to child), so no lock ordering cycles can be formed.
+        let _token = allow_subclass();
         let mut child_state = child.state.lock();
         assert!(!child_state.deleted, "child cannot be deleted");
 
@@ -483,7 +487,18 @@ impl CgroupChildren {
     }
 
     fn count_descendants(&self) -> u64 {
-        self.0.values().map(|child| 1 + child.count_descendants()).sum()
+        self.0
+            .values()
+            .map(|child| {
+                1 + {
+                    // This allow_subclass is safe because the lock is being acquired
+                    // in a strictly top-down traversal of the Cgroup tree (from parent
+                    // to child), so no lock ordering cycles can be formed.
+                    let _token = allow_subclass();
+                    child.count_descendants()
+                }
+            })
+            .sum()
     }
 }
 
@@ -619,6 +634,10 @@ impl CgroupState {
 
         // Freeze all children cgroups while holding self state lock
         for child in self.children.get_children() {
+            // This allow_subclass is safe because the lock is being acquired
+            // in a strictly top-down traversal of the Cgroup tree (from parent
+            // to child), so no lock ordering cycles can be formed.
+            let _token = allow_subclass();
             child.state.lock().propagate_freeze(locked, FreezerState::Frozen);
         }
     }
@@ -628,6 +647,10 @@ impl CgroupState {
         if self.get_effective_freezer_state() == FreezerState::Thawed {
             self.wait_queue.notify_all();
             for child in self.children.get_children() {
+                // This allow_subclass is safe because the lock is being acquired
+                // in a strictly top-down traversal of the Cgroup tree (from parent
+                // to child), so no lock ordering cycles can be formed.
+                let _token = allow_subclass();
                 child.state.lock().propagate_thaw(FreezerState::Thawed);
             }
         }
@@ -643,6 +666,10 @@ impl CgroupState {
 
         // Recursively lock and kill children cgroups' processes.
         for child in self.children.get_children() {
+            // This allow_subclass is safe because the lock is being acquired
+            // in a strictly top-down traversal of the Cgroup tree (from parent
+            // to child), so no lock ordering cycles can be formed.
+            let _token = allow_subclass();
             child.state.lock().propagate_kill();
         }
     }
@@ -664,7 +691,7 @@ pub struct Cgroup {
     parent: Option<Weak<Cgroup>>,
 
     /// Internal state of the Cgroup.
-    state: Mutex<CgroupState>,
+    state: LockDepMutex<CgroupState, CgroupStateLock>,
 
     weak_self: Weak<Cgroup>,
 }
@@ -767,6 +794,10 @@ impl CgroupOps for Cgroup {
             return error!(ENOENT);
         }
         // New child should inherit the effective freezer state of the current cgroup.
+        // This allow_subclass is safe because the lock is being acquired
+        // in a strictly top-down traversal of the Cgroup tree (from parent
+        // to child), so no lock ordering cycles can be formed.
+        let _token = allow_subclass();
         new_child.state.lock().inherited_freezer_state = state.get_effective_freezer_state();
         state.children.insert_child(name.into(), new_child)
     }
@@ -814,7 +845,13 @@ impl CgroupOps for Cgroup {
             return true;
         }
 
-        state.children.get_children().into_iter().any(|child| child.is_populated())
+        state.children.get_children().into_iter().any(|child| {
+            // This allow_subclass is safe because the lock is being acquired
+            // in a strictly top-down traversal of the Cgroup tree (from parent
+            // to child), so no lock ordering cycles can be formed.
+            let _token = allow_subclass();
+            child.is_populated()
+        })
     }
 
     fn get_freezer_state(&self) -> CgroupFreezerState {

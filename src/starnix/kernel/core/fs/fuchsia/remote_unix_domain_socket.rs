@@ -361,7 +361,7 @@ mod tests {
     use fidl_fuchsia_unknown as funknown;
     use fuchsia_async as fasync;
     use futures::StreamExt;
-    use starnix_sync::Mutex;
+    use starnix_sync::{LockDepMutex, RemoteUnixDomainSocketStateLock};
     use std::sync::Arc;
 
     #[derive(Debug)]
@@ -418,7 +418,7 @@ mod tests {
 
     #[derive(Debug, Default)]
     struct UnixDomainSocketImpl {
-        state: Mutex<UnixDomainSocketImplState>,
+        state: LockDepMutex<UnixDomainSocketImplState, RemoteUnixDomainSocketStateLock>,
         close_on_read: bool,
     }
 

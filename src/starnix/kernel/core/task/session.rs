@@ -2,16 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use macro_rules_attribute::apply;
-use starnix_sync::{LockBefore, Locked, ProcessGroupState, RwLock};
+// use macro_rules_attribute::apply;
+// use crate::mutable_state::{state_accessor, state_implementation};
+use starnix_sync::{
+    LockBefore, LockDepRwLock, Locked, ProcessGroupState, SessionMutableStateLock, allow_subclass,
+};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
 
 use crate::device::terminal::Terminal;
-use crate::mutable_state::{state_accessor, state_implementation};
 use crate::task::ProcessGroup;
 use starnix_uapi::pid_t;
 use starnix_uapi::signals::{SIGCONT, SIGHUP};
+use std::ops::{Deref, DerefMut};
 
 #[derive(Debug)]
 pub struct SessionMutableState {
@@ -49,7 +52,7 @@ pub struct Session {
     pub leader: pid_t,
 
     /// The mutable state of the Session.
-    mutable_state: RwLock<SessionMutableState>,
+    pub mutable_state: LockDepRwLock<SessionMutableState, SessionMutableStateLock>,
 }
 
 impl PartialEq for Session {
@@ -62,7 +65,7 @@ impl Session {
     pub fn new(leader: pid_t) -> Arc<Session> {
         Arc::new(Session {
             leader,
-            mutable_state: RwLock::new(SessionMutableState {
+            mutable_state: LockDepRwLock::new(SessionMutableState {
                 process_groups: BTreeMap::new(),
                 foreground_process_group: leader,
                 controlling_terminal: None,
@@ -104,17 +107,25 @@ impl Session {
             drop(state);
             drop(terminal_state);
             if let Some(pg) = process_group {
+                // TODO(https://fxbug.dev/529617819): This is actually incorrect. Taking the
+                // ThreadGroupMutableState in `send_signals` might encounter deadlock.
+                let _token = allow_subclass();
                 pg.send_signals(locked, &[SIGHUP, SIGCONT]);
             }
             return;
         }
     }
 
-    state_accessor!(Session, mutable_state);
+    pub fn read(&self) -> impl Deref<Target = SessionMutableState> {
+        self.mutable_state.read()
+    }
+
+    pub fn write(&self) -> impl DerefMut<Target = SessionMutableState> {
+        self.mutable_state.write()
+    }
 }
 
-#[apply(state_implementation!)]
-impl SessionMutableState<Base = Session> {
+impl SessionMutableState {
     /// Removes the process group from the session. Returns whether the session is empty.
     pub fn remove(&mut self, pid: pid_t) {
         self.process_groups.remove(&pid);

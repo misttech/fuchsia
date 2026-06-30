@@ -16,11 +16,10 @@ use crate::vfs::{
 use anyhow::{Error, anyhow, ensure};
 use ext4_metadata::{Metadata, Node, NodeInfo};
 use fidl_fuchsia_io as fio;
-use fuchsia_sync::Mutex;
 use starnix_logging::{impossible_error, log_warn};
 use starnix_sync::{
-    DynamicLockDepRwLock, FileOpsCore, LockDepReadGuard, LockDepWriteGuard, LockEqualOrBefore,
-    Locked, Unlocked,
+    DynamicLockDepRwLock, FileOpsCore, LockDepMutex, LockDepReadGuard, LockDepWriteGuard,
+    LockEqualOrBefore, Locked, RemoteBundleInnerLock, Unlocked,
 };
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
@@ -183,7 +182,7 @@ impl FileSystemOps for RemoteBundle {
 }
 
 struct File {
-    inner: Mutex<Inner>,
+    inner: LockDepMutex<Inner, RemoteBundleInnerLock>,
 }
 
 enum Inner {
@@ -464,7 +463,11 @@ impl FsNodeOps for DirectoryObject {
                         server_end.into_channel(),
                     )
                     .map_err(|_| errno!(EIO))?;
-                Ok(fs.create_node(ino, File { inner: Mutex::new(Inner::NeedsVmo(file)) }, info))
+                Ok(fs.create_node(
+                    ino,
+                    File { inner: LockDepMutex::new(Inner::NeedsVmo(file)) },
+                    info,
+                ))
             }
         }
     }

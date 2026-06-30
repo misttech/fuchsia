@@ -19,7 +19,7 @@ use crate::vfs::{
     fileops_impl_seekless,
 };
 use starnix_logging::{Level, track_stub};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
+use starnix_sync::{DevKmsgLock, FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, Unlocked};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
@@ -250,14 +250,14 @@ pub fn open_kmsg(
         Syslog::validate_access(current_task, SyslogAccess::DevKmsgRead)?;
     }
     let subscription = if flags.can_read() {
-        Some(Mutex::new(Syslog::snapshot_then_subscribe(&current_task)?))
+        Some(LockDepMutex::new(Syslog::snapshot_then_subscribe(&current_task)?))
     } else {
         None
     };
     Ok(Box::new(DevKmsg(subscription)))
 }
 
-struct DevKmsg(Option<Mutex<LogSubscription>>);
+struct DevKmsg(Option<LockDepMutex<LogSubscription, DevKmsgLock>>);
 
 impl FileOps for DevKmsg {
     fileops_impl_noop_sync!();

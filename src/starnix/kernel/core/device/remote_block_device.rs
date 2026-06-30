@@ -19,7 +19,10 @@ use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_storage_block::BlockMarker;
 use futures::channel::oneshot;
 use futures::executor::block_on;
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
+use starnix_sync::{
+    FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, RemoteBlockDeviceRegistryDevicesLock,
+    Unlocked,
+};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_id::{BLOCK_EXTENDED_MAJOR, DeviceId};
 use starnix_uapi::errors::Errno;
@@ -42,36 +45,10 @@ impl RemoteBlockDevice {
             .context("read_at failed")
     }
 
-    fn new<L>(
-        locked: &mut Locked<L>,
-        current_task: &CurrentTask,
-        minor: u32,
-        name: &str,
-        block: ClientEnd<BlockMarker>,
-    ) -> Result<Arc<Self>, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
+    fn new(current_task: &CurrentTask, block: ClientEnd<BlockMarker>) -> Result<Arc<Self>, Errno> {
         let kernel = current_task.kernel();
-        let registry = &kernel.device_registry;
-        let device_name = FsString::from(name);
-        let virtual_block_class = registry.objects.virtual_block_class();
         let block_client = SyncBlockClient::new(&kernel.kthreads, block)?;
-        let device = Arc::new(Self { block_client });
-        let device_weak = Arc::<RemoteBlockDevice>::downgrade(&device);
-        registry.add_device(
-            locked,
-            current_task,
-            device_name.as_ref(),
-            DeviceMetadata::new(
-                device_name.clone(),
-                DeviceId::new(BLOCK_EXTENDED_MAJOR, minor),
-                DeviceMode::Block,
-            ),
-            virtual_block_class,
-            |device, dir| build_block_device_directory(device, device_weak, dir),
-        )?;
-        Ok(device)
+        Ok(Arc::new(Self { block_client }))
     }
 
     pub fn create_file_ops(&self) -> Box<dyn FileOps> {
@@ -398,7 +375,8 @@ pub fn remote_block_device_init(locked: &mut Locked<Unlocked>, current_task: &Cu
 
 #[derive(Default)]
 pub struct RemoteBlockDeviceRegistry {
-    devices: Mutex<BTreeMap<u32, Arc<RemoteBlockDevice>>>,
+    devices:
+        LockDepMutex<BTreeMap<u32, Arc<RemoteBlockDevice>>, RemoteBlockDeviceRegistryDevicesLock>,
     next_minor: AtomicU32,
 }
 
@@ -413,10 +391,34 @@ impl RemoteBlockDeviceRegistry {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        let mut devices = self.devices.lock();
+        // Create the device and insert it in the map, ensuring that it is available when the
+        // `registry.add_device` is called.
+        let device = RemoteBlockDevice::new(current_task, block)?;
         let minor = self.next_minor.fetch_add(1, Ordering::Relaxed);
-        let device = RemoteBlockDevice::new(locked, current_task, minor, name, block)?;
-        devices.insert(minor, device);
+        self.devices.lock().insert(minor, device.clone());
+
+        let kernel = current_task.kernel();
+        let registry = &kernel.device_registry;
+        let virtual_block_class = registry.objects.virtual_block_class();
+        let device_weak = Arc::<RemoteBlockDevice>::downgrade(&device);
+        let device_name = FsString::from(name);
+        let registration_result = registry.add_device(
+            locked,
+            current_task,
+            device_name.as_ref(),
+            DeviceMetadata::new(
+                device_name.clone(),
+                DeviceId::new(BLOCK_EXTENDED_MAJOR, minor),
+                DeviceMode::Block,
+            ),
+            virtual_block_class,
+            |device, dir| build_block_device_directory(device, device_weak, dir),
+        );
+        // If the registration failed, remove the device.
+        if registration_result.is_err() {
+            self.devices.lock().remove(&minor);
+            registration_result?;
+        }
         Ok(())
     }
 

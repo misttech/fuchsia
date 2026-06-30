@@ -8,7 +8,7 @@ use crate::vfs::buffers::{InputBuffer, MessageData, OutputBuffer};
 use crate::vfs::with_iovec_segments;
 
 use smallvec::SmallVec;
-use starnix_sync::{LockDepMutex, Mutex, VmspliceSegmentsLock};
+use starnix_sync::{InflightVmsplicedPayloadsLock, LockDepMutex, VmspliceSegmentsLock};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::range_ext::RangeExt as _;
 use starnix_uapi::user_address::UserAddress;
@@ -267,7 +267,7 @@ pub struct InflightVmsplicedPayloads {
     /// pipe to be performed without taking the memory manager's lock exclusively,
     /// this is protected by its own `Mutex` instead of relying on the memory
     /// manager's `RwLock`.
-    payloads: Mutex<Vec<Weak<VmsplicePayload>>>,
+    payloads: LockDepMutex<Vec<Weak<VmsplicePayload>>, InflightVmsplicedPayloadsLock>,
 }
 
 impl InflightVmsplicedPayloads {

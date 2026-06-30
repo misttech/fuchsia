@@ -9,7 +9,7 @@
 //! It uses a global registry to track active operations across all threads.
 
 use pin_project::pin_project;
-use starnix_sync::RwLock;
+use starnix_sync::{LockDepRwLock, ThreadLockupDetectorRegistryLock};
 use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -105,7 +105,7 @@ impl Borrow<zx::Koid> for RegisteredThread {
     }
 }
 
-// SAFETY: Access to the pointers in the global REGISTRY is protected by a RwLock,
+// SAFETY: Access to the pointers in the global REGISTRY is protected by a LockDepRwLock,
 // ensuring that a thread cannot free its data while another thread is reading it.
 unsafe impl Send for RegisteredThread {}
 // SAFETY: Same as above.
@@ -118,8 +118,9 @@ pub struct ThreadLockupInfo {
 }
 
 /// Global registry of all tracked threads.
-static REGISTRY: LazyLock<RwLock<HashSet<RegisteredThread>>> =
-    LazyLock::new(|| RwLock::new(HashSet::new()));
+static REGISTRY: LazyLock<
+    LockDepRwLock<HashSet<RegisteredThread>, ThreadLockupDetectorRegistryLock>,
+> = LazyLock::new(|| LockDepRwLock::new(HashSet::new()));
 
 impl ThreadLockupDetector {
     /// Starts an operation by storing the current time in the thread-local atomic.

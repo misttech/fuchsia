@@ -464,7 +464,7 @@ impl Kernel {
             weak_self: kernel.clone(),
             kthreads: KernelThreads::new(kernel.clone()),
             features,
-            pids: Default::default(),
+            pids: PidTable::default().into(),
             init_task: OnceLock::new(),
             pid_to_koid_mapping: Arc::new(LockDepRwLock::new(None)),
             expando: Default::default(),

@@ -9,6 +9,7 @@ use fidl_fuchsia_scheduler::{
 };
 use fuchsia_component::client::connect_to_protocol_sync;
 use starnix_logging::{impossible_error, log_debug, log_error, log_warn, track_stub};
+use starnix_sync::{LockDepMutex, ProfileHandleCacheLock};
 use starnix_task_command::TaskCommand;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{
@@ -16,19 +17,18 @@ use starnix_uapi::{
     SCHED_RR, errno, error, sched_param,
 };
 use std::collections::HashMap;
-use std::sync::Mutex;
 
 pub struct SchedulerManager {
     role_manager: Option<RoleManagerSynchronousProxy>,
     role_overrides: RoleOverrides,
-    profile_handle_cache: Mutex<HashMap<String, zx::Profile>>,
+    profile_handle_cache: LockDepMutex<HashMap<String, zx::Profile>, ProfileHandleCacheLock>,
 }
 
 impl SchedulerManager {
     /// Create a new SchedulerManager which will apply any provided `role_overrides` before
     /// computing a role name based on a Task's scheduler state.
     pub fn new(role_overrides: RoleOverrides) -> SchedulerManager {
-        let profile_handle_cache = Mutex::new(HashMap::new());
+        let profile_handle_cache = Default::default();
         let role_manager = fuchsia_runtime::with_thread_self(|thread| {
             let role_manager = connect_to_protocol_sync::<RoleManagerMarker>().unwrap();
             if let Err(e) = Self::set_thread_role_inner(
@@ -53,7 +53,7 @@ impl SchedulerManager {
         Self {
             role_manager: None,
             role_overrides: RoleOverrides::new().build().unwrap(),
-            profile_handle_cache: Mutex::new(HashMap::new()),
+            profile_handle_cache: Default::default(),
         }
     }
 
@@ -62,7 +62,7 @@ impl SchedulerManager {
         role_manager: Option<RoleManagerSynchronousProxy>,
         role_overrides: RoleOverrides,
     ) -> Self {
-        Self { role_manager, role_overrides, profile_handle_cache: Mutex::new(HashMap::new()) }
+        Self { role_manager, role_overrides, profile_handle_cache: Default::default() }
     }
 
     /// Return the currently active role name for this task. Requires read access to `task`'s state,
@@ -142,12 +142,12 @@ impl SchedulerManager {
         role_manager: &RoleManagerSynchronousProxy,
         thread: &zx::Thread,
         role_name: &str,
-        cache: &Mutex<HashMap<String, zx::Profile>>,
+        cache: &LockDepMutex<HashMap<String, zx::Profile>, ProfileHandleCacheLock>,
     ) -> Result<(), Errno> {
         log_debug!(role_name; "setting thread role");
 
         {
-            let params = cache.lock().unwrap();
+            let params = cache.lock();
             if let Some(profile) = params.get(role_name) {
                 match thread.set_profile(&profile, 0) {
                     Ok(_) => return Ok(()),
@@ -172,7 +172,7 @@ impl SchedulerManager {
                     log_warn!(e:%; "Failed to set thread profile from handle");
                     return error!(EINVAL);
                 }
-                cache.lock().unwrap().insert(role_name.to_string(), profile);
+                cache.lock().insert(role_name.to_string(), profile);
                 Ok(())
             }
             Ok(Err(e)) => {
@@ -852,7 +852,7 @@ mod tests {
             let manager = SchedulerManager {
                 role_manager: None,
                 role_overrides: overrides,
-                profile_handle_cache: Mutex::new(HashMap::new()),
+                profile_handle_cache: Default::default(),
             };
 
             // Set did_exec = true so custom role overrides are applied.
