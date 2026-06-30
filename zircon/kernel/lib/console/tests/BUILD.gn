@@ -1,0 +1,24 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//zircon/kernel/kernel_rust_crate.gni")
+
+kernel_rust_crate("console_tests_rust") {
+  testonly = true
+  sources = [ "src/lib.rs" ]
+  deps = [
+    "//sdk/rust/zx-status",
+    "//zircon/kernel/lib/console/rust:console_rust",
+  ]
+}
+
+source_set("tests") {
+  testonly = true
+  sources = [ "console_tests.cc" ]
+  deps = [
+    ":console_tests_rust",
+    "//zircon/kernel/lib/console",
+    "//zircon/kernel/lib/unittest",
+  ]
+}

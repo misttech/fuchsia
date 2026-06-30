@@ -379,6 +379,10 @@ foreach(level,
         ]) {
   variant("lk_debug_level_${level}") {
     defines = [ "LK_DEBUGLEVEL=$level" ]
+    rustflags = [ "--cfg=lk_debuglevel=\"${level}\"" ]
+    if (level > 0) {
+      rustflags += [ "--cfg=console_enabled" ]
+    }
   }
 }
 
