@@ -67,6 +67,24 @@ TEST(SyscallGenerationTest, RustSyscall) {
             "syscall_test_rust_8 doesn't add up");
 }
 
+TEST(SyscallGenerationTest, RustPointerSyscalls) {
+  int32_t value = 42;
+  int32_t out_value = 0;
+  ASSERT_OK(zx_syscall_test_rust_inptr(&value, &out_value));
+  EXPECT_EQ(42, out_value);
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, zx_syscall_test_rust_inptr(nullptr, &out_value));
+
+  int32_t out_ptr = 0;
+  ASSERT_OK(zx_syscall_test_rust_outptr(99, &out_ptr));
+  EXPECT_EQ(99, out_ptr);
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, zx_syscall_test_rust_outptr(99, nullptr));
+
+  int32_t inout_ptr = 15;
+  ASSERT_OK(zx_syscall_test_rust_inoutptr(&inout_ptr));
+  EXPECT_EQ(30, inout_ptr);
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, zx_syscall_test_rust_inoutptr(nullptr));
+}
+
 TEST(SyscallGenerationTest, HandleCreateSuccess) {
   zx_handle_t handle = ZX_HANDLE_INVALID;
   ASSERT_OK(zx_syscall_test_handle_create(ZX_OK, &handle));

@@ -136,5 +136,8 @@ group("boot_tests") {
 kernel_rust_crate("syscalls-rs") {
   source_root = "test.rs"
   sources = [ "test.rs" ]
-  deps = [ "//sdk/rust/zx-status" ]
+  deps = [
+    "//sdk/rust/zx-status",
+    "//zircon/kernel/lib/user_copy:user-copy-rs",
+  ]
 }

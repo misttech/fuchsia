@@ -508,6 +508,29 @@ closed protocol Syscall {
         c int32;
     }) -> () error Status;
 
+    @testonly
+    @rust
+    strict TestRustInptr(struct {
+        ptr experimental_pointer<int32>;
+    }) -> (struct {
+        value int32;
+    }) error Status;
+
+    @testonly
+    @rust
+    strict TestRustOutptr(struct {
+        value int32;
+        @out
+        ptr experimental_pointer<int32>;
+    }) -> () error Status;
+
+    @testonly
+    @rust
+    strict TestRustInoutptr(struct {
+        @inout
+        ptr experimental_pointer<int32>;
+    }) -> () error Status;
+
     /// ## Summary
     ///
     /// TODO(https://fxbug.dev/42108078)

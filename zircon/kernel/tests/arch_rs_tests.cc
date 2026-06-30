@@ -11,9 +11,9 @@
 
 extern "C" {  // Defined in Rust
 
-bool test_rust_interrupt_ops();
-uint32_t test_rust_curr_cpu_num();
-uint32_t test_rust_max_num_cpus();
+bool rust_arch_rs_tests_interrupt_ops();
+uint32_t rust_arch_rs_tests_curr_cpu_num();
+uint32_t rust_arch_rs_tests_max_num_cpus();
 
 }  // extern "C"
 
@@ -21,19 +21,19 @@ namespace {
 
 bool rust_interrupt_ops_test() {
   BEGIN_TEST;
-  EXPECT_TRUE(test_rust_interrupt_ops());
+  EXPECT_TRUE(rust_arch_rs_tests_interrupt_ops());
   END_TEST;
 }
 
 bool rust_curr_cpu_num_test() {
   BEGIN_TEST;
-  EXPECT_EQ(test_rust_curr_cpu_num(), arch_curr_cpu_num());
+  EXPECT_EQ(rust_arch_rs_tests_curr_cpu_num(), arch_curr_cpu_num());
   END_TEST;
 }
 
 bool rust_max_num_cpus_test() {
   BEGIN_TEST;
-  EXPECT_EQ(test_rust_max_num_cpus(), arch_max_num_cpus());
+  EXPECT_EQ(rust_arch_rs_tests_max_num_cpus(), arch_max_num_cpus());
   END_TEST;
 }
 

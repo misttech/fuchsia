@@ -5,7 +5,7 @@
 #![no_std]
 
 #[unsafe(no_mangle)]
-pub extern "C" fn test_rust_interrupt_ops() -> bool {
+pub extern "C" fn rust_arch_rs_tests_interrupt_ops() -> bool {
     let initially_disabled = arch_rs::ints_disabled();
     if initially_disabled {
         return false;
@@ -22,11 +22,11 @@ pub extern "C" fn test_rust_interrupt_ops() -> bool {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn test_rust_curr_cpu_num() -> u32 {
+pub extern "C" fn rust_arch_rs_tests_curr_cpu_num() -> u32 {
     arch_rs::curr_cpu_num()
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn test_rust_max_num_cpus() -> u32 {
+pub extern "C" fn rust_arch_rs_tests_max_num_cpus() -> u32 {
     arch_rs::max_num_cpus()
 }

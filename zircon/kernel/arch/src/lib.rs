@@ -4,32 +4,44 @@
 
 #![no_std]
 
+use zx_status::Status;
+
 unsafe extern "C" {
-    fn cpp_ints_disabled() -> bool;
-    fn cpp_disable_ints();
-    fn cpp_enable_ints();
-    fn cpp_interrupt_save() -> InterruptSavedState;
-    fn cpp_interrupt_restore(state: InterruptSavedState);
-    fn cpp_curr_cpu_num() -> u32;
-    fn cpp_max_num_cpus() -> u32;
+    fn cpp_arch_ints_disabled() -> bool;
+    fn cpp_arch_disable_ints();
+    fn cpp_arch_enable_ints();
+    fn cpp_arch_interrupt_save() -> InterruptSavedState;
+    fn cpp_arch_interrupt_restore(state: InterruptSavedState);
+    fn cpp_arch_curr_cpu_num() -> u32;
+    fn cpp_arch_max_num_cpus() -> u32;
+    fn cpp_arch_copy_from_user(
+        dst: *mut core::ffi::c_void,
+        src: *const core::ffi::c_void,
+        len: usize,
+    ) -> i32;
+    fn cpp_arch_copy_to_user(
+        dst: *mut core::ffi::c_void,
+        src: *const core::ffi::c_void,
+        len: usize,
+    ) -> i32;
 }
 
 /// Returns true if interrupts are disabled on the current CPU.
 #[inline(always)]
 pub fn ints_disabled() -> bool {
-    unsafe { cpp_ints_disabled() }
+    unsafe { cpp_arch_ints_disabled() }
 }
 
 /// Disable interrupts on the current CPU.
 #[inline(always)]
 pub fn disable_ints() {
-    unsafe { cpp_disable_ints() }
+    unsafe { cpp_arch_disable_ints() }
 }
 
 /// Enable interrupts on the current CPU.
 #[inline(always)]
 pub fn enable_ints() {
-    unsafe { cpp_enable_ints() }
+    unsafe { cpp_arch_enable_ints() }
 }
 
 /// The saved interrupt state, representing architecture-specific interrupt flags.
@@ -48,13 +60,13 @@ pub struct InterruptSavedState(bool);
 /// and disable interrupts on the current CPU.
 #[inline(always)]
 pub fn arch_interrupt_save() -> InterruptSavedState {
-    unsafe { cpp_interrupt_save() }
+    unsafe { cpp_arch_interrupt_save() }
 }
 
 /// Restore the interrupt state on the current CPU to a previously saved state.
 #[inline(always)]
 pub fn arch_interrupt_restore(state: InterruptSavedState) {
-    unsafe { cpp_interrupt_restore(state) }
+    unsafe { cpp_arch_interrupt_restore(state) }
 }
 
 /// A guard that disables interrupts on the current CPU when created,
@@ -80,11 +92,39 @@ impl Drop for InterruptDisableGuard {
 /// Returns the CPU number of the calling CPU.
 #[inline(always)]
 pub fn curr_cpu_num() -> u32 {
-    unsafe { cpp_curr_cpu_num() }
+    unsafe { cpp_arch_curr_cpu_num() }
 }
 
 /// Returns the maximum number of CPUs in the system.
 #[inline(always)]
 pub fn max_num_cpus() -> u32 {
-    unsafe { cpp_max_num_cpus() }
+    unsafe { cpp_arch_max_num_cpus() }
+}
+
+/// Copies `len` bytes from user memory at `src` into kernel memory at `dst`.
+///
+/// # Safety
+/// Caller must ensure `dst` points to at least `len` bytes of valid memory
+/// and `src` is a user pointer.
+#[inline(always)]
+pub unsafe fn arch_copy_from_user(
+    dst: *mut core::ffi::c_void,
+    src: *const core::ffi::c_void,
+    len: usize,
+) -> Result<(), Status> {
+    Status::ok(unsafe { cpp_arch_copy_from_user(dst, src, len) })
+}
+
+/// Copies `len` bytes from kernel memory at `src` into user memory at `dst`.
+///
+/// # Safety
+/// Caller must ensure `src` points to at least `len` bytes of valid memory
+/// and `dst` is a user pointer.
+#[inline(always)]
+pub unsafe fn arch_copy_to_user(
+    dst: *mut core::ffi::c_void,
+    src: *const core::ffi::c_void,
+    len: usize,
+) -> Result<(), Status> {
+    Status::ok(unsafe { cpp_arch_copy_to_user(dst, src, len) })
 }
