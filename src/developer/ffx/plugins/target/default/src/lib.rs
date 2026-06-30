@@ -7,8 +7,14 @@ use async_trait::async_trait;
 use ffx_config::keys::TARGET_DEFAULT_KEY;
 use ffx_config::{ConfigLevel, EnvironmentContext};
 use ffx_target_default_args::{SubCommand, TargetDefaultCommand};
-use ffx_writer::{SimpleWriter, ToolIO};
-use fho::{FfxMain, FfxTool};
+use ffx_writer::{ToolIO, VerifiedMachineWriter};
+use fho::{FfxContext, FfxMain, FfxTool};
+use std::io::Write;
+
+#[derive(serde::Serialize, schemars::JsonSchema)]
+pub struct TargetDefaultInfo {
+    pub target: Option<String>,
+}
 
 #[derive(FfxTool)]
 pub struct TargetDefaultTool {
@@ -21,7 +27,7 @@ fho::embedded_plugin!(TargetDefaultTool);
 
 #[async_trait(?Send)]
 impl FfxMain for TargetDefaultTool {
-    type Writer = SimpleWriter;
+    type Writer = VerifiedMachineWriter<TargetDefaultInfo>;
 
     type Error = ::fho::Error;
 
@@ -35,10 +41,10 @@ const TARGET_GET_NO_TARGET_MSG: &str = "\
 No default target.\n\
 If exactly one target is connected, ffx will use that.\n";
 
-pub async fn exec_target_default_impl<W: std::io::Write + ToolIO>(
+pub async fn exec_target_default_impl(
     context: &EnvironmentContext,
     cmd: TargetDefaultCommand,
-    writer: &mut W,
+    writer: &mut VerifiedMachineWriter<TargetDefaultInfo>,
 ) -> Result<()> {
     match &cmd.subcommand {
         SubCommand::Get(_) => {
@@ -49,11 +55,17 @@ pub async fn exec_target_default_impl<W: std::io::Write + ToolIO>(
                 .query(TARGET_DEFAULT_KEY)
                 .level(Some(ConfigLevel::Default))
                 .build()
-                .get_optional::<Option<String>>(context)?;
-            match target {
-                Some(target) if !target.is_empty() => writeln!(writer, "{}", target),
-                _ => write!(writer.stderr(), "{}", TARGET_GET_NO_TARGET_MSG),
-            }?
+                .get_optional::<Option<String>>(context)
+                .bug_context("Failed to get default target from config")?;
+            let info = TargetDefaultInfo { target: target.filter(|t| !t.is_empty()) };
+            if writer.is_machine() {
+                writer.machine(&info)?;
+            } else {
+                match &info.target {
+                    Some(target) => writeln!(writer, "{}", target)?,
+                    _ => write!(writer.stderr(), "{}", TARGET_GET_NO_TARGET_MSG)?,
+                }
+            }
         }
     };
     Ok(())
@@ -67,7 +79,7 @@ mod test {
     use super::*;
     use ffx_config::test_env;
     use ffx_target_default_args::*;
-    use ffx_writer::TestBuffers;
+    use ffx_writer::{Format, TestBuffers};
     use fho::{FfxCommandLine, FhoEnvironment, TryFromEnv};
     use tempfile::tempdir;
 
@@ -75,7 +87,7 @@ mod test {
     async fn test_get_env_unset() -> Result<()> {
         let env = test_env().build().unwrap();
         let test_buffers = TestBuffers::default();
-        let mut writer = SimpleWriter::new_test(&test_buffers);
+        let mut writer = VerifiedMachineWriter::<TargetDefaultInfo>::new_test(None, &test_buffers);
 
         exec_target_default_impl(
             &env.context,
@@ -99,7 +111,7 @@ mod test {
             .build()
             .unwrap();
         let test_buffers = TestBuffers::default();
-        let mut writer = SimpleWriter::new_test(&test_buffers);
+        let mut writer = VerifiedMachineWriter::<TargetDefaultInfo>::new_test(None, &test_buffers);
 
         exec_target_default_impl(
             &env.context,
@@ -127,7 +139,7 @@ mod test {
             .build()
             .unwrap();
         let test_buffers = TestBuffers::default();
-        let mut writer = SimpleWriter::new_test(&test_buffers);
+        let mut writer = VerifiedMachineWriter::<TargetDefaultInfo>::new_test(None, &test_buffers);
 
         exec_target_default_impl(
             &env.context,
@@ -157,7 +169,7 @@ mod test {
             .build()
             .unwrap();
         let test_buffers = TestBuffers::default();
-        let mut writer = SimpleWriter::new_test(&test_buffers);
+        let mut writer = VerifiedMachineWriter::<TargetDefaultInfo>::new_test(None, &test_buffers);
 
         exec_target_default_impl(
             &env.context,
@@ -173,9 +185,32 @@ mod test {
         Ok(())
     }
 
-    // The next two tests are not about "ffx target default" specifically, but are as good
-    // a place as any to ensure that a real tool that uses SimpleWriter correctly
-    // handles "--machine"
+    #[fuchsia::test]
+    async fn test_get_machine() -> Result<()> {
+        let test_build_dir = tempdir().expect("output directory");
+        let env = test_env()
+            .in_tree(&test_build_dir.path())
+            .env_var("FUCHSIA_NODENAME", "stateless-nodename-target")
+            .env_var("FUCHSIA_DEVICE_ADDR", "stateless-device-addr-target")
+            .build()
+            .unwrap();
+        let test_buffers = TestBuffers::default();
+        let mut writer =
+            VerifiedMachineWriter::<TargetDefaultInfo>::new_test(Some(Format::Json), &test_buffers);
+
+        exec_target_default_impl(
+            &env.context,
+            TargetDefaultCommand { subcommand: SubCommand::Get(TargetDefaultGetCommand {}) },
+            &mut writer,
+        )
+        .await
+        .unwrap();
+
+        let (stdout, stderr) = test_buffers.into_strings();
+        assert_eq!(stdout, "{\"target\":\"stateless-device-addr-target\"}\n");
+        assert_eq!(stderr, "");
+        Ok(())
+    }
 
     #[fuchsia::test]
     async fn test_target_default_with_machine_raw() {
@@ -185,19 +220,19 @@ mod test {
                 .unwrap();
         let env = FhoEnvironment::new(&config_env.context, &ffx);
 
-        let result = SimpleWriter::try_from_env(&env).await;
-        assert!(result.is_ok(), "SimpleWriter should support --machine raw");
+        let result = VerifiedMachineWriter::<TargetDefaultInfo>::try_from_env(&env).await;
+        assert!(result.is_ok(), "VerifiedMachineWriter should support --machine raw");
     }
 
     #[fuchsia::test]
-    async fn test_target_default_with_machine_json_fails() {
+    async fn test_target_default_with_machine_json_succeeds() {
         let config_env = ffx_config::test_env().build().unwrap();
         let ffx =
             FfxCommandLine::new(None, &["ffx", "--machine", "json", "target", "default", "get"])
                 .unwrap();
         let env = FhoEnvironment::new(&config_env.context, &ffx);
 
-        let result = SimpleWriter::try_from_env(&env).await;
-        assert!(result.is_err(), "SimpleWriter should NOT support --machine json");
+        let result = VerifiedMachineWriter::<TargetDefaultInfo>::try_from_env(&env).await;
+        assert!(result.is_ok(), "VerifiedMachineWriter should support --machine json");
     }
 }

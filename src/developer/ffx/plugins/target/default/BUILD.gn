@@ -25,6 +25,8 @@ ffx_plugin("ffx_target_default") {
     "//src/developer/ffx/lib/writer:lib",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
+    "//third_party/rust_crates:schemars",
+    "//third_party/rust_crates:serde",
   ]
   test_deps = [
     "//src/developer/ffx/lib/writer:lib",
