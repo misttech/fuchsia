@@ -305,6 +305,9 @@ open protocol ConnectedIsochronousGroup {
     /// in the parameters. On successful initiation of the operation, an OnEstablished() event will
     /// be sent on the IsochronousStream.
     ///
+    /// Only one `EstablishStreams` call may be active at a time. Calling `EstablishStreams` while
+    /// another is pending will result in the channel being closed with `ZX_ERR_BAD_STATE`.
+    ///
     /// On error, no CISes are established and an appropriate `EstablishStreamsError` code will be
     /// returned.
     ///
