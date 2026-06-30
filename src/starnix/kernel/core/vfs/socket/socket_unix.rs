@@ -147,7 +147,7 @@ struct UnixSocketInner {
 impl UnixSocket {
     pub fn new(_socket_type: SocketType) -> UnixSocket {
         UnixSocket {
-            inner: LockDepMutex::new(UnixSocketInner {
+            inner: UnixSocketInner {
                 messages: MessageQueue::new(SOCKET_DEFAULT_SIZE),
                 address: None,
                 is_shutdown: false,
@@ -163,7 +163,8 @@ impl UnixSocket {
                 bpf_program: None,
                 credentials: None,
                 state: UnixSocketState::Disconnected,
-            }),
+            }
+            .into(),
             waiters: WaitQueue::default(),
         }
     }

@@ -934,7 +934,7 @@ pub struct WaitQueue(Arc<LockDepMutex<WaitQueueImpl, WaitQueueImplLock>>);
 
 impl WaitQueue {
     pub fn new() -> Self {
-        Self(Arc::new(LockDepMutex::new(WaitQueueImpl::default())))
+        Self(Arc::new(WaitQueueImpl::default().into()))
     }
 }
 

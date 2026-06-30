@@ -257,7 +257,7 @@ impl TimerFile {
                 timer,
                 timeline,
                 wakeup_type,
-                timer_file_info: Arc::new(LockDepMutex::new(timer_file_info)),
+                timer_file_info: Arc::new(timer_file_info.into()),
             }),
             flags,
             "[timerfd]",

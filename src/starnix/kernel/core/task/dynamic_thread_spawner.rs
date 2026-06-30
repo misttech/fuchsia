@@ -284,11 +284,10 @@ impl DynamicThreadSpawner {
         let persistent_thread =
             RunningThread::new_persistent(system_task.clone(), debug_name.into());
         Self {
-            state: Arc::new(LockDepMutex::new(DynamicThreadSpawnerState {
-                max_idle_threads,
-                idle_threads: 0,
-                threads: vec![],
-            })),
+            state: Arc::new(
+                DynamicThreadSpawnerState { max_idle_threads, idle_threads: 0, threads: vec![] }
+                    .into(),
+            ),
             system_task,
             persistent_thread,
         }

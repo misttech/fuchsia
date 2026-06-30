@@ -31,7 +31,7 @@ pub struct MemoryDirectoryFile {
 
 impl MemoryDirectoryFile {
     pub fn new() -> MemoryDirectoryFile {
-        MemoryDirectoryFile { readdir_position: LockDepMutex::new(Bound::Unbounded) }
+        MemoryDirectoryFile { readdir_position: Bound::Unbounded.into() }
     }
 }
 

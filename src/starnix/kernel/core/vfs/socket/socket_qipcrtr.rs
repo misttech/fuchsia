@@ -86,7 +86,7 @@ struct QipcrtrSocketInner {
 
 impl QipcrtrSocket {
     pub fn new(_socket_type: SocketType) -> Self {
-        Self { inner: LockDepMutex::new(None) }
+        Self { inner: Default::default() }
     }
 
     /// Locks and returns the inner state of the socket. If the socket is not connected to the
@@ -548,7 +548,7 @@ mod tests {
             recv_buf_size: RECV_BUF_DEFAULT_SIZE,
         };
 
-        (QipcrtrSocket { inner: LockDepMutex::new(Some(inner)) }, server_end)
+        (QipcrtrSocket { inner: Some(inner).into() }, server_end)
     }
 
     #[::fuchsia::test]

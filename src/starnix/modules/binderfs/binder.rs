@@ -1967,7 +1967,7 @@ impl BinderDriver {
         let handler = match handler {
             EventHandler::None | EventHandler::HandleOnce(_) => handler,
             EventHandler::Enqueue { .. } | EventHandler::Epoll(_) => {
-                EventHandler::HandleOnce(Arc::new(LockDepMutex::new(Some(handler))))
+                EventHandler::HandleOnce(Arc::new(Some(handler).into()))
             }
         };
 

@@ -818,12 +818,15 @@ pub type SeccompNotifierHandle = Arc<LockDepMutex<SeccompNotifier, SeccompNotifi
 
 impl SeccompNotifier {
     pub fn new() -> SeccompNotifierHandle {
-        Arc::new(LockDepMutex::new(SeccompNotifier {
-            waiters: WaitQueue::default(),
-            pending_notifications: HashMap::default(),
-            num_active_threads: 0,
-            is_closed: false,
-        }))
+        Arc::new(
+            SeccompNotifier {
+                waiters: WaitQueue::default(),
+                pending_notifications: HashMap::default(),
+                num_active_threads: 0,
+                is_closed: false,
+            }
+            .into(),
+        )
     }
 
     fn add_thread(&mut self) {

@@ -793,9 +793,9 @@ impl TaskPersistentInfoState {
         Arc::new(Self {
             tid,
             thread_group_key,
-            command: LockDepMutex::new(command),
+            command: command.into(),
             creds: RcuArc::new(creds),
-            creds_lock: LockDepRwLock::new(()),
+            creds_lock: Default::default(),
         })
     }
 
@@ -1112,7 +1112,7 @@ impl Task {
                 vfork_event,
                 stop_state: AtomicStopState::new(StopState::Awake),
                 flags: AtomicTaskFlags::new(TaskFlags::empty()),
-                mutable_state: starnix_sync::LockDepRwLock::new(TaskMutableState {
+                mutable_state: TaskMutableState {
                     clear_child_tid: UserRef::default(),
                     signals: SignalState::with_mask(signal_mask),
                     run_state: RunState::default(),
@@ -1130,7 +1130,8 @@ impl Task {
                     ptrace: None,
                     captured_thread_state: None,
                     last_applied_role: None,
-                }),
+                }
+                .into(),
                 persistent_info: TaskPersistentInfoState::new(
                     tid,
                     thread_group_key,

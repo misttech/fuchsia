@@ -75,9 +75,8 @@ where
     let process_handle = task_builder.task.thread_group().process.raw_handle();
 
     let kernel = task_builder.task.kernel();
-    let create_vmars = kernel
-        .expando
-        .get_or_init(|| ExecutorVmarManager(LockDepMutex::new(ThreadCreateVmars::new())));
+    let create_vmars =
+        kernel.expando.get_or_init(|| ExecutorVmarManager(ThreadCreateVmars::new().into()));
     let mut create_vmars = create_vmars.0.lock();
 
     // SAFETY: thread_set_zx_create_handles only manipulates the handles for the current thread and

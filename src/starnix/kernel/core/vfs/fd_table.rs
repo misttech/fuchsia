@@ -543,7 +543,7 @@ impl Default for FdTableInner {
             share_count: AtomicUsize::new(1),
             entries: Default::default(),
             next_fd: AtomicFdNumber::default(),
-            writer_queue: LockDepMutex::new(()),
+            writer_queue: Default::default(),
         }
     }
 }
@@ -555,7 +555,7 @@ impl Clone for FdTableInner {
             share_count: AtomicUsize::new(1),
             entries: self.entries.clone(),
             next_fd: self.next_fd.clone(),
-            writer_queue: LockDepMutex::new(()),
+            writer_queue: Default::default(),
         }
     }
 }

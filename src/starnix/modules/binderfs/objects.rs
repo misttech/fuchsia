@@ -551,10 +551,11 @@ impl BinderObject {
             owner: owner.weak_self.clone(),
             local,
             flags,
-            state: LockDepMutex::new(BinderObjectMutableState {
+            state: BinderObjectMutableState {
                 strong_count: ObjectReferenceCount::WaitingAck(1),
                 ..Default::default()
-            }),
+            }
+            .into(),
         });
         let guard = StrongRefGuard::new(object.clone());
         (object, guard)

@@ -179,7 +179,7 @@ impl BinderThread {
         let inner_state = BinderThreadState::new(tid, binder_proc.base.identifier);
         let command_queue_waiters = inner_state.command_queue.waiters.clone();
         let available_threads = binder_proc.base.available_threads.clone();
-        let state = LockDepMutex::new(inner_state);
+        let state = inner_state.into();
 
         OwnedRef::new_cyclic(|weak_self| Self {
             weak_self,

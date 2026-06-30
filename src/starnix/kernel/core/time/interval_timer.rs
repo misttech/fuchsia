@@ -220,14 +220,15 @@ impl IntervalTimer {
             hr_timer,
             timeline,
             signal_event,
-            state: LockDepMutex::new(IntervalTimerMutableState {
+            state: IntervalTimerMutableState {
                 target_time: timeline.zero_time(),
                 abort_handle: Default::default(),
                 armed: Default::default(),
                 interval: Default::default(),
                 overrun_cur: Default::default(),
                 overrun_last: Default::default(),
-            }),
+            }
+            .into(),
         }))
     }
 

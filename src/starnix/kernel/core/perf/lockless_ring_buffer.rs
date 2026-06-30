@@ -244,7 +244,7 @@ impl LocklessRingBuffer {
             ),
             write_event_async_id,
             reader_active: std::sync::atomic::AtomicBool::new(false),
-            state_mutex: LockDepMutex::new(()),
+            state_mutex: Default::default(),
         };
         Ok(buffer)
     }

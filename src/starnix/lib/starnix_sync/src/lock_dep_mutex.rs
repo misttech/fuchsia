@@ -905,10 +905,10 @@ mod tests {
     #[test]
     fn test_valid_lock_ordering() {
         tracking::clear_state();
-        let lock_a: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
-        let lock_b: LockDepMutex<i32, LevelB> = LockDepMutex::new(0);
-        let lock_c: LockDepMutex<i32, TerminalC> = LockDepMutex::new(0);
-        let lock_d: LockDepMutex<i32, TerminalD> = LockDepMutex::new(0);
+        let lock_a: LockDepMutex<i32, LevelA> = 0.into();
+        let lock_b: LockDepMutex<i32, LevelB> = 0.into();
+        let lock_c: LockDepMutex<i32, TerminalC> = 0.into();
+        let lock_d: LockDepMutex<i32, TerminalD> = 0.into();
 
         let _guard_a = lock_a.lock();
         let _guard_b = lock_b.lock();
@@ -930,9 +930,9 @@ mod tests {
     #[test]
     fn test_valid_lock_subclass_ordering() {
         tracking::clear_state();
-        let lock_a1: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
-        let lock_a2: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
-        let lock_a3: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
+        let lock_a1: LockDepMutex<i32, LevelA> = 0.into();
+        let lock_a2: LockDepMutex<i32, LevelA> = 0.into();
+        let lock_a3: LockDepMutex<i32, LevelA> = 0.into();
 
         let _guard_a1 = lock_a1.lock();
         let _token1 = allow_subclass();
@@ -945,8 +945,8 @@ mod tests {
     fn test_raii_subclass_guard() {
         tracking::clear_state();
         {
-            let lock_a1: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
-            let lock_a2: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
+            let lock_a1: LockDepMutex<i32, LevelA> = 0.into();
+            let lock_a2: LockDepMutex<i32, LevelA> = 0.into();
 
             let _guard_a1 = lock_a1.lock();
             let _token = allow_subclass();
@@ -958,8 +958,8 @@ mod tests {
     fn test_subclass_guard_dropped_and_reacquired() {
         tracking::clear_state();
         {
-            let lock_a1: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
-            let lock_a2: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
+            let lock_a1: LockDepMutex<i32, LevelA> = 0.into();
+            let lock_a2: LockDepMutex<i32, LevelA> = 0.into();
 
             let _guard_a1 = lock_a1.lock();
             let _token1 = allow_subclass();
@@ -972,8 +972,8 @@ mod tests {
     #[test]
     fn test_multiple_subclass_same_level() {
         tracking::clear_state();
-        let lock_a1: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
-        let lock_a2: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
+        let lock_a1: LockDepMutex<i32, LevelA> = 0.into();
+        let lock_a2: LockDepMutex<i32, LevelA> = 0.into();
 
         let _guard_a1 = lock_a1.lock();
         let _token1 = allow_subclass();
@@ -988,9 +988,9 @@ mod tests {
     fn test_raii_subclass_guard_limit() {
         tracking::clear_state();
         {
-            let lock_a1: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
-            let lock_a2: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
-            let lock_a3: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
+            let lock_a1: LockDepMutex<i32, LevelA> = 0.into();
+            let lock_a2: LockDepMutex<i32, LevelA> = 0.into();
+            let lock_a3: LockDepMutex<i32, LevelA> = 0.into();
 
             let _guard_a1 = lock_a1.lock();
             let _token = allow_subclass();
@@ -1004,9 +1004,9 @@ mod tests {
     fn test_raii_subclass_guard_multiple() {
         tracking::clear_state();
         {
-            let lock_a1: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
-            let lock_a2: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
-            let lock_a3: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
+            let lock_a1: LockDepMutex<i32, LevelA> = 0.into();
+            let lock_a2: LockDepMutex<i32, LevelA> = 0.into();
+            let lock_a3: LockDepMutex<i32, LevelA> = 0.into();
 
             let _guard_a1 = lock_a1.lock();
             let _token1 = allow_subclass();
@@ -1022,8 +1022,8 @@ mod tests {
     fn test_invalid_lock_ordering_cycle() {
         tracking::clear_state();
         {
-            let lock_a: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
-            let lock_b: LockDepMutex<i32, LevelB> = LockDepMutex::new(0);
+            let lock_a: LockDepMutex<i32, LevelA> = 0.into();
+            let lock_b: LockDepMutex<i32, LevelB> = 0.into();
 
             let _guard_b = lock_b.lock();
             let _guard_a = lock_a.lock(); // Should panic because B > A
@@ -1035,7 +1035,7 @@ mod tests {
     fn test_self_deadlock() {
         tracking::clear_state();
         {
-            let lock_a: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
+            let lock_a: LockDepMutex<i32, LevelA> = 0.into();
 
             let _guard_a1 = lock_a.lock();
             let _guard_a2 = lock_a.lock();
@@ -1049,8 +1049,8 @@ mod tests {
     fn test_terminal_locks_self_deadlock() {
         tracking::clear_state();
         {
-            let lock_c: LockDepMutex<i32, TerminalC> = LockDepMutex::new(0);
-            let lock_d: LockDepMutex<i32, TerminalD> = LockDepMutex::new(0);
+            let lock_c: LockDepMutex<i32, TerminalC> = 0.into();
+            let lock_d: LockDepMutex<i32, TerminalD> = 0.into();
 
             let _guard_c = lock_c.lock();
             let _guard_d = lock_d.lock();
@@ -1060,9 +1060,9 @@ mod tests {
     #[test]
     fn test_subclass_drop_out_of_order() {
         tracking::clear_state();
-        let lock_a1: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
-        let lock_a2: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
-        let lock_a3: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
+        let lock_a1: LockDepMutex<i32, LevelA> = 0.into();
+        let lock_a2: LockDepMutex<i32, LevelA> = 0.into();
+        let lock_a3: LockDepMutex<i32, LevelA> = 0.into();
 
         let _guard_a1 = lock_a1.lock();
         let _token1 = allow_subclass();
@@ -1079,7 +1079,7 @@ mod tests {
     #[should_panic(expected = "LockDep: Attempted to drop a lock with active subclass tokens!")]
     fn test_drop_lock_with_active_tokens() {
         tracking::clear_state();
-        let lock_a: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
+        let lock_a: LockDepMutex<i32, LevelA> = 0.into();
         let guard = lock_a.lock();
         let _token = allow_subclass();
         std::mem::drop(guard);
@@ -1091,8 +1091,8 @@ mod tests {
     )]
     fn test_panic_message_contains_names() {
         tracking::clear_state();
-        let lock_a: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
-        let lock_b: LockDepMutex<i32, LevelB> = LockDepMutex::new(0);
+        let lock_a: LockDepMutex<i32, LevelA> = 0.into();
+        let lock_b: LockDepMutex<i32, LevelB> = 0.into();
 
         let _guard_b = lock_b.lock();
         let _guard_a = lock_a.lock();
@@ -1102,7 +1102,7 @@ mod tests {
     #[should_panic(expected = "Invalid lock ordering cycle detected")]
     fn test_assert_lock_level_panic() {
         tracking::clear_state();
-        let lock_b: LockDepMutex<i32, LevelB> = LockDepMutex::new(0);
+        let lock_b: LockDepMutex<i32, LevelB> = 0.into();
 
         let _guard_b = lock_b.lock();
         // LevelA is before LevelB in the ordering.
@@ -1113,8 +1113,8 @@ mod tests {
     #[test]
     fn test_ordered_lock() {
         tracking::clear_state();
-        let lock1: LockDepMutex<i32, LevelA> = LockDepMutex::new(1);
-        let lock2: LockDepMutex<i32, LevelA> = LockDepMutex::new(2);
+        let lock1: LockDepMutex<i32, LevelA> = 1.into();
+        let lock2: LockDepMutex<i32, LevelA> = 2.into();
 
         {
             let (g1, g2) = ordered_lock(&lock1, &lock2);
@@ -1132,9 +1132,9 @@ mod tests {
     #[test]
     fn test_ordered_lock_vec() {
         tracking::clear_state();
-        let l0: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
-        let l1: LockDepMutex<i32, LevelA> = LockDepMutex::new(1);
-        let l2: LockDepMutex<i32, LevelA> = LockDepMutex::new(2);
+        let l0: LockDepMutex<i32, LevelA> = 0.into();
+        let l1: LockDepMutex<i32, LevelA> = 1.into();
+        let l2: LockDepMutex<i32, LevelA> = 2.into();
 
         {
             let guards = ordered_lock_vec(&[&l0, &l1, &l2]);
@@ -1154,7 +1154,7 @@ mod tests {
     #[test]
     fn test_ordered_lock_vec_many_locks() {
         tracking::clear_state();
-        let locks: Vec<LockDepMutex<i32, LevelA>> = (0..20).map(|i| LockDepMutex::new(i)).collect();
+        let locks: Vec<LockDepMutex<i32, LevelA>> = (0..20).map(|i| i.into()).collect();
         let lock_refs: Vec<&LockDepMutex<i32, LevelA>> = locks.iter().collect();
 
         let guards = ordered_lock_vec(&lock_refs);
@@ -1196,7 +1196,7 @@ mod tests {
     #[test]
     fn test_try_lock() {
         tracking::clear_state();
-        let l1: LockDepMutex<i32, LevelA> = LockDepMutex::new(1);
+        let l1: LockDepMutex<i32, LevelA> = 1.into();
         let g1 = l1.try_lock();
         assert!(g1.is_some());
         std::thread::scope(|s| {
@@ -1205,7 +1205,7 @@ mod tests {
             });
         });
 
-        let l2: LockDepRwLock<i32, LevelB> = LockDepRwLock::new(2);
+        let l2: LockDepRwLock<i32, LevelB> = 2.into();
         let g2 = l2.try_read();
         assert!(g2.is_some());
         std::thread::scope(|s| {
@@ -1231,8 +1231,8 @@ mod tests {
     #[should_panic(expected = "Invalid lock ordering cycle detected")]
     fn test_try_lock_ordering_failure() {
         tracking::clear_state();
-        let l1: LockDepMutex<i32, LevelA> = LockDepMutex::new(1);
-        let l2: LockDepMutex<i32, LevelB> = LockDepMutex::new(2);
+        let l1: LockDepMutex<i32, LevelA> = 1.into();
+        let l2: LockDepMutex<i32, LevelB> = 2.into();
 
         let _g2 = l2.try_lock();
         let _g1 = l1.try_lock(); // This should panic since we hold B and request A.
