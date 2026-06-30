@@ -11779,67 +11779,28 @@ rustc_library("jsonway-v2_0_0") {
   applicable_licenses = [ ":jsonway-v2_0_0.license" ]
 }
 
-license("kqueue-v1_0_7.license") {
-  public_package_name = "kqueue"
-  license_files = [ "//third_party/rust_crates/vendor/kqueue-1.0.7/LICENSE" ]
-}
-
-rustc_library("kqueue-v1_0_7") {
+rustc_library("kqueue-v1_2_0") {
   crate_name = "kqueue"
-  source_root = "//third_party/rust_crates/vendor/kqueue-1.0.7/src/lib.rs"
-  output_name = "kqueue-8ba64de94884151f"
-  edition = "2018"
+  source_root = "//third_party/rust_crates/empty/kqueue/src/lib.rs"
+  output_name = "kqueue-d16ec6b28b9e6275"
+  edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":kqueue-sys-v1_0_4" ]
-  deps += [ ":libc-v0_2_186" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=8ba64de94884151f",
-    "-Cextra-filename=-8ba64de94884151f",
+    "-Cmetadata=d16ec6b28b9e6275",
+    "-Cextra-filename=-d16ec6b28b9e6275",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":kqueue-v1_0_7.license" ]
-}
-
-license("kqueue-sys-v1_0_4.license") {
-  public_package_name = "kqueue_sys"
-  license_files =
-      [ "//third_party/rust_crates/vendor/kqueue-sys-1.0.4/LICENSE" ]
-}
-
-rustc_library("kqueue-sys-v1_0_4") {
-  crate_name = "kqueue_sys"
-  source_root = "//third_party/rust_crates/vendor/kqueue-sys-1.0.4/src/lib.rs"
-  output_name = "kqueue_sys-68e4d7bf95b344b7"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":bitflags-v1_3_2" ]
-  deps += [ ":libc-v0_2_186" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=68e4d7bf95b344b7",
-    "-Cextra-filename=-68e4d7bf95b344b7",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":kqueue-sys-v1_0_4.license" ]
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
 license("lazy_static-v1_5_0.license") {
@@ -13184,7 +13145,7 @@ rustc_library("notify-v5_2_0") {
   deps += [ ":filetime-v0_2_29" ]
   deps += [ ":libc-v0_2_186" ]
   if (false || false || false || false) {
-    deps += [ ":kqueue-v1_0_7" ]
+    deps += [ ":kqueue-v1_2_0" ]
     deps += [ ":mio-v0_8_11" ]
   }
   if (current_os == "linux" || false) {

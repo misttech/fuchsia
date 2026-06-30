@@ -403,6 +403,7 @@ hermit-abi = { path = "empty/hermit-abi" }
 hermit-abi-0_1_19 = { package = "hermit-abi", path = "empty/hermit-abi-0.1.19" }
 iana-time-zone-haiku = { path = "empty/iana-time-zone-haiku" }
 js-sys-102 = { package = "js-sys", path = "empty/js-sys-102" }
+kqueue = { path = "empty/kqueue" }
 miow = { path = "empty/miow" }
 ntapi = { path = "empty/ntapi" }
 output_vt100 = { path = "empty/output_vt100" }
