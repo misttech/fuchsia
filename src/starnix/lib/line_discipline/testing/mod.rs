@@ -64,6 +64,8 @@ enum Event {
     SetPacketMode { enabled: bool },
     #[serde(rename = "set_termios")]
     SetTermios { termios: TermiosConfig },
+    #[serde(rename = "flush")]
+    Flush { side: String, queue_selector: String },
 }
 
 struct TestBuffer {
@@ -317,6 +319,20 @@ fn run_scenario(scenario: Scenario) {
                     }
                 }
                 let _ = ld.set_termios(termios);
+            }
+            Event::Flush { side, queue_selector } => {
+                let is_main = match side.as_str() {
+                    "main" => true,
+                    "replica" => false,
+                    _ => panic!("Unknown side {}", side),
+                };
+                let queue_selector_val = match queue_selector.as_str() {
+                    "TCIFLUSH" => starnix_uapi::TCIFLUSH,
+                    "TCOFLUSH" => starnix_uapi::TCOFLUSH,
+                    "TCIOFLUSH" => starnix_uapi::TCIOFLUSH,
+                    _ => panic!("Unknown queue_selector {}", queue_selector),
+                };
+                ld.flush(is_main, queue_selector_val).expect("flush failed");
             }
         }
     }

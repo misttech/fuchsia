@@ -225,6 +225,8 @@ class ScenarioRunner:
                 )
             elif action == "set_termios":
                 self._handle_set_termios(self.slave_fd, evt, "set_termios")
+            elif action == "flush":
+                self._handle_flush(evt, "flush")
             elif action == "sleep":
                 time.sleep(evt.get("duration", 0.05))
 
@@ -244,6 +246,35 @@ class ScenarioRunner:
         set_termios(fd, evt["termios"])
         self.recorded_events.append(
             {"type": event_type, "termios": evt["termios"]}
+        )
+
+    def _handle_flush(self, evt: Dict[str, Any], event_type: str) -> None:
+        side = evt["side"]
+        queue_selector_str = evt["queue_selector"]
+
+        if side == "main":
+            fd = self.master_fd
+        elif side == "replica":
+            fd = self.slave_fd
+        else:
+            raise ValueError(f"Unknown side: {side}")
+
+        if queue_selector_str == "TCIFLUSH":
+            queue_selector = termios.TCIFLUSH
+        elif queue_selector_str == "TCOFLUSH":
+            queue_selector = termios.TCOFLUSH
+        elif queue_selector_str == "TCIOFLUSH":
+            queue_selector = termios.TCIOFLUSH
+        else:
+            raise ValueError(f"Unknown queue_selector: {queue_selector_str}")
+
+        termios.tcflush(fd, queue_selector)
+        self.recorded_events.append(
+            {
+                "type": event_type,
+                "side": side,
+                "queue_selector": queue_selector_str,
+            }
         )
 
     def _handle_write(

@@ -207,28 +207,19 @@ impl LineDiscipline {
         }
     }
 
-    /// Flushes input and/or output queues according to `arg` (TCIFLUSH, TCOFLUSH, TCIOFLUSH).
+    /// Flushes input queues according to `arg` (TCIFLUSH, TCIOFLUSH).
+    /// Since we're a PTY, transmission is instant and there is never buffered output,
+    /// making TCOFLUSH a no-op.
     pub fn flush(&mut self, is_main: bool, queue_selector: u32) -> Result<(), Errno> {
-        let (flush_input, flush_output) = match queue_selector {
-            uapi::TCIFLUSH => (true, false),
-            uapi::TCOFLUSH => (false, true),
-            uapi::TCIOFLUSH => (true, true),
+        match (is_main, queue_selector) {
+            (_, uapi::TCOFLUSH) => {}
+            (true, uapi::TCIFLUSH) | (true, uapi::TCIOFLUSH) => {
+                self.output_queue.as_mut().unwrap().flush();
+            }
+            (false, uapi::TCIFLUSH) | (false, uapi::TCIOFLUSH) => {
+                self.input_queue.as_mut().unwrap().flush();
+            }
             _ => return error!(EINVAL),
-        };
-        let (flush_input_queue, flush_output_queue) = if is_main {
-            // For main, input is output_queue (data from replica), output is input_queue (data to
-            // replica).
-            (flush_output, flush_input)
-        } else {
-            // For replica, input is input_queue (data from main), output is output_queue (data to
-            // main).
-            (flush_input, flush_output)
-        };
-        if flush_input_queue {
-            self.input_queue.as_mut().unwrap().flush();
-        }
-        if flush_output_queue {
-            self.output_queue.as_mut().unwrap().flush();
         }
         Ok(())
     }
@@ -1237,6 +1228,117 @@ mod tests {
         assert_eq!(termios.signal(3), None); // Normally ^C (SIGINT)
         assert_eq!(termios.signal(28), None); // Normally ^\ (SIGQUIT)
         assert_eq!(termios.signal(26), None); // Normally ^Z (SIGSTOP)
+    }
+
+    struct TestBuffer {
+        data: Vec<u8>,
+    }
+
+    impl InputBuffer for TestBuffer {
+        fn available(&self) -> usize {
+            self.data.len()
+        }
+        fn read_to_vec_exact(&mut self, size: usize) -> Result<Vec<u8>, Errno> {
+            if size > self.data.len() {
+                return error!(EAGAIN);
+            }
+            Ok(self.data.drain(0..size).collect())
+        }
+    }
+
+    impl OutputBuffer for TestBuffer {
+        fn write(&mut self, data: &[u8]) -> Result<usize, Errno> {
+            self.data.extend_from_slice(data);
+            Ok(data.len())
+        }
+    }
+
+    #[::fuchsia::test]
+    fn test_flush() {
+        fn make_ld() -> LineDiscipline {
+            let mut ld = LineDiscipline::default();
+            ld.main_open();
+            ld.replica_open();
+
+            let mut termios = get_default_termios();
+            termios.c_lflag &= !ECHO;
+            termios.c_oflag &= !OPOST;
+            let _ = ld.set_termios(termios);
+
+            // Write some data from main to the replica.
+            // This goes to input_queue.
+            let mut input = TestBuffer { data: b"ping\n".to_vec() };
+            let (written, signals) = ld.main_write(&mut input).unwrap();
+            assert_eq!(written, 5);
+            assert!(signals.signals().is_empty());
+
+            // Write some data from replica to main.
+            // This goes to output_queue.
+            let mut output = TestBuffer { data: b"pong\n".to_vec() };
+            let written = ld.replica_write(&mut output).unwrap();
+            assert_eq!(written, 5);
+            ld
+        }
+
+        let mut read_buf = TestBuffer { data: vec![] };
+
+        // A TCIFLUSH from the main side should flush only the main's input (output_queue)
+        let mut ld = make_ld();
+        ld.flush(true, uapi::TCIFLUSH).unwrap();
+        read_buf.data.clear();
+        assert_eq!(error!(EAGAIN), ld.main_read(&mut read_buf));
+        assert!(read_buf.data.is_empty());
+        read_buf.data.clear();
+        assert!(ld.replica_read(&mut read_buf).is_ok());
+        assert_eq!(read_buf.data, b"ping\n");
+
+        // A TCIFLUSH from the replica side should flush only the replica's input (input_queue)
+        let mut ld = make_ld();
+        ld.flush(false, uapi::TCIFLUSH).unwrap();
+        read_buf.data.clear();
+        assert!(ld.main_read(&mut read_buf).is_ok());
+        assert_eq!(read_buf.data, b"pong\n");
+        read_buf.data.clear();
+        assert_eq!(error!(EAGAIN), ld.replica_read(&mut read_buf));
+        assert!(read_buf.data.is_empty());
+
+        // A TCOFLUSH from the main side should do nothing (instantaneous transmission)
+        let mut ld = make_ld();
+        ld.flush(true, uapi::TCOFLUSH).unwrap();
+        read_buf.data.clear();
+        assert!(ld.main_read(&mut read_buf).is_ok());
+        assert_eq!(read_buf.data, b"pong\n");
+        read_buf.data.clear();
+        assert!(ld.replica_read(&mut read_buf).is_ok());
+        assert_eq!(read_buf.data, b"ping\n");
+
+        // A TCOFLUSH from the replica side should do nothing
+        let mut ld = make_ld();
+        ld.flush(false, uapi::TCOFLUSH).unwrap();
+        read_buf.data.clear();
+        assert!(ld.main_read(&mut read_buf).is_ok());
+        assert_eq!(read_buf.data, b"pong\n");
+        read_buf.data.clear();
+        assert!(ld.replica_read(&mut read_buf).is_ok());
+        assert_eq!(read_buf.data, b"ping\n");
+
+        // A TCIOFLUSH from main should flush only main's input (output_queue)
+        let mut ld = make_ld();
+        ld.flush(true, uapi::TCIOFLUSH).unwrap();
+        read_buf.data.clear();
+        assert_eq!(error!(EAGAIN), ld.main_read(&mut read_buf));
+        read_buf.data.clear();
+        assert!(ld.replica_read(&mut read_buf).is_ok());
+        assert_eq!(read_buf.data, b"ping\n");
+
+        // A TCIOFLUSH from replica should flush only replica's input (input_queue)
+        let mut ld = make_ld();
+        ld.flush(false, uapi::TCIOFLUSH).unwrap();
+        read_buf.data.clear();
+        assert!(ld.main_read(&mut read_buf).is_ok());
+        assert_eq!(read_buf.data, b"pong\n");
+        read_buf.data.clear();
+        assert_eq!(error!(EAGAIN), ld.replica_read(&mut read_buf));
     }
 }
 

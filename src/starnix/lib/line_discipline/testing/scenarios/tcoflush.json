@@ -1,0 +1,25 @@
+{
+    "name": "tcoflush",
+    "initial_termios": {
+        "c_lflag": []
+    },
+    "events": [
+        {
+            "action": "write_to_slave",
+            "data": "hello"
+        },
+        {
+            "action": "flush",
+            "side": "replica",
+            "queue_selector": "TCOFLUSH"
+        },
+        {
+            "action": "write_to_slave",
+            "data": "world"
+        },
+        {
+            "action": "read_from_master",
+            "data": "world"
+        }
+    ]
+}
