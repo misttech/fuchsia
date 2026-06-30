@@ -1813,6 +1813,7 @@ pub async fn replace_child_with_object<'a, S: HandleOwner>(
 ) -> Result<ReplacedChild, Error> {
     let deleted_info =
         if is_same_dir_casefold_rename { None } else { dst.0.lookup_ext(dst.1).await? };
+
     let (deleted_id_and_descriptor, dst_key) = match deleted_info {
         Some(entry) => (Some((entry.object_id, entry.descriptor.clone())), Some(entry.key)),
         None => (None, None),
@@ -1936,6 +1937,39 @@ mod tests {
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
     use test_case::test_case;
+
+    #[fuchsia::test]
+    fn test_casefold_equality_implies_hash_equality() {
+        use fxfs_unicode::CasefoldString;
+
+        let test_cases = vec![
+            ("Hello", "hello"),
+            ("straße", "STRASSE"),
+            ("e\u{0301}", "\u{00c9}"), // e + acute accent vs E with acute accent
+            ("hello\u{00ad}", "hello"), // soft hyphen (ignorable)
+            ("foo\u{200b}bar", "FOOBAR"), // zero width space (ignorable)
+        ];
+
+        for (a, b) in test_cases {
+            let cf_a = CasefoldString::new(a.to_string());
+            let cf_b = CasefoldString::new(b.to_string());
+            assert_eq!(cf_a, cf_b, "Strings {:?} and {:?} should be equal under casefolding", a, b);
+
+            let bytes_a: Vec<u8> =
+                cf_a.casefold_normalized_chars().collect::<String>().into_bytes();
+            let bytes_b: Vec<u8> =
+                cf_b.casefold_normalized_chars().collect::<String>().into_bytes();
+            assert_eq!(
+                bytes_a, bytes_b,
+                "Normalized bytes for {:?} and {:?} should be identical",
+                a, b
+            );
+
+            let hash_a = fscrypt::direntry::tea_hash_filename(bytes_a);
+            let hash_b = fscrypt::direntry::tea_hash_filename(bytes_b);
+            assert_eq!(hash_a, hash_b, "Hashes for {:?} and {:?} should be identical", a, b);
+        }
+    }
 
     const TEST_DEVICE_BLOCK_SIZE: u32 = 512;
     const WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(2);

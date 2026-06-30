@@ -109,7 +109,8 @@ fn get_dir_entries(
                 }
                 let filename_str = if is_casefolded {
                     // We must have valid UTF-8 for casefolding.
-                    String::from_utf8(filename).context("Bad UTF-8 in encrypted casefolded filename")?
+                    String::from_utf8(filename)
+                        .context("Bad UTF-8 in encrypted casefolded filename")?
                 } else {
                     let filename_len = filename.len();
                     String::from_utf8(filename)
@@ -119,7 +120,7 @@ fn get_dir_entries(
                 // If using both encryption and casefold, use hkdf-seeded hash instead.
                 let hash_code = if is_casefolded {
                     fscrypt::direntry::casefold_encrypt_hash_filename(
-                        &filename_str,
+                        filename_str.as_str().into(),
                         &decryptor.dirhash_key(),
                     )
                 } else {

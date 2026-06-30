@@ -23,7 +23,7 @@ use anyhow::{Error, bail};
 use fxfs_crypto::{Crypt, WrappedKey, key_to_cipher};
 use rustc_hash::FxHashSet as HashSet;
 use std::cell::UnsafeCell;
-use std::collections::btree_map::BTreeMap;
+use std::collections::BTreeMap;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -683,7 +683,8 @@ impl<'a> ScannedStore<'a> {
                             child_id,
                         ))?;
                     }
-                    let casefolded = fxfs_unicode::casefold(name.chars()).flat_map(fxfs_unicode::utf8_bytes);
+                    let casefolded =
+                        fxfs_unicode::casefold(name.chars()).flat_map(fxfs_unicode::utf8_bytes);
                     let expected_hash = fscrypt::direntry::tea_hash_filename(casefolded);
                     if *hash_code != expected_hash {
                         self.fsck.error(FsckError::BadCasefoldHash(

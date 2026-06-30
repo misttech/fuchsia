@@ -204,6 +204,11 @@ impl From<&str> for CasefoldString {
     }
 }
 
+impl<'a> From<&'a str> for &'a CasefoldStr {
+    fn from(item: &'a str) -> Self {
+        CasefoldStr::new(item)
+    }
+}
 #[cfg(test)]
 mod test {
     use super::*;

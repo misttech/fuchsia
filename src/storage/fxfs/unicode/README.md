@@ -9,7 +9,7 @@ As of June 2024, this is around 25kiBi for UCD version 12.1.0.
   * NFD normalization
   * Case folding
   * Default ignorable character mappings.
-  * A convenience comparator `casefold_cmp` that combines the above three.
+  * A convenience comparator `CasefoldStr` that combines the above three.
 
 ## Updating unicode versions
 

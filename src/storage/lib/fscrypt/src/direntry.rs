@@ -1,6 +1,7 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+use fxfs_unicode::CasefoldStr;
 use siphasher::sip::SipHasher;
 use std::hash::Hasher;
 
@@ -29,13 +30,21 @@ fn tea(input: &[u32; 4], buf: &mut [u32; 2]) {
     buf[1] = buf[1].wrapping_add(v[1]);
 }
 
-/// This is the function used unless both casefolding + encryption are enabled.
+/// This algorithm is not cryptographically secure. It is used for
+/// filename hashing for compatibility reasons. `name_bytes` can be one of:
+///   * A case-sensitive UTF-8 filename (unencrypted)
+///   * A casefolded (+ nfd + default_ignorable) filename (unencrypted)
+///   * An encrypted case-sensitive UTF-8 filename (hashed over encrypted bytes)
+/// Encrypted casefolded filenames always use `casefold_encrypt_hash_filename()`.
 pub fn tea_hash_filename(name_bytes: impl IntoIterator<Item = u8>) -> u32 {
+    let mut name_bytes = name_bytes.into_iter().peekable();
+    if name_bytes.peek().is_none() {
+        return 0;
+    }
     // The tea hash algorithm operates on groups of [4; u32], but the u32
     // need to be big-endian.
     let mut buf = [0x67452301, 0xefcdab89];
     let mut done = false;
-    let mut name_bytes = name_bytes.into_iter();
     let mut bytes = [0u8; 16];
     while !done {
         let mut out = 0;
@@ -69,10 +78,36 @@ pub fn tea_hash_filename(name_bytes: impl IntoIterator<Item = u8>) -> u32 {
     buf[0]
 }
 
-// A stronger hash function is used if casefold + FBE are used together.
-// Nb: If encryption is used without casefolding, the hash_code is based on the encrypted filename.
-pub fn casefold_encrypt_hash_filename(name: &str, dirhash_key: &[u8; 16]) -> u32 {
+/// Hashes a filename for direntry indexing when both encryption and casefolding are enabled.
+/// Under this configuration, we need to avoid the hash_code leaking details of the filename
+/// but we also need it to be case insensitive so we cannot simply hash the encrypted form.
+pub fn casefold_encrypt_hash_filename(filename: &CasefoldStr, dirhash_key: &[u8; 16]) -> u32 {
+    if filename.as_str().is_empty() {
+        return 0;
+    }
     let mut hasher = SipHasher::new_with_key(dirhash_key);
-    hasher.write(name.as_bytes());
+    for b in filename.casefold_normalized_chars().flat_map(fxfs_unicode::utf8_bytes) {
+        hasher.write_u8(b);
+    }
     hasher.finish() as u32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tea_hash_empty_filename() {
+        assert_eq!(tea_hash_filename(std::iter::empty()), 0);
+        // Verify non-empty still works (regression check)
+        assert_ne!(tea_hash_filename(b"a".iter().copied()), 0);
+    }
+
+    #[test]
+    fn test_casefold_encrypt_hash_empty_filename() {
+        let key = [0u8; 16];
+        assert_eq!(casefold_encrypt_hash_filename("".into(), &key), 0);
+        // Verify non-empty still works
+        assert_ne!(casefold_encrypt_hash_filename("a".into(), &key), 0);
+    }
 }

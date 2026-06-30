@@ -76,8 +76,7 @@ impl Cipher for FscryptInoLblk32DirCipher {
     }
 
     fn hash_code_casefold(&self, filename: &str) -> u32 {
-        let casefolded_filename: String = fxfs_unicode::casefold(filename.chars()).collect();
-        fscrypt::direntry::casefold_encrypt_hash_filename(&casefolded_filename, &self.dir_hash_key)
+        fscrypt::direntry::casefold_encrypt_hash_filename(filename.into(), &self.dir_hash_key)
     }
 
     fn supports_inline_encryption(&self) -> bool {

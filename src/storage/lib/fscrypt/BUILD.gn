@@ -16,6 +16,7 @@ rustc_library("fscrypt") {
     "src/proxy_filename.rs",
   ]
   deps = [
+    "//src/storage/fxfs/unicode",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:base64",
     "//third_party/rust_crates:hmac",
