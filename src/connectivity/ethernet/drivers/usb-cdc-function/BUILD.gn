@@ -8,7 +8,7 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 
 driver_bind_rules("usb_cdc_bind") {
-  rules = "meta/usb_cdc.bind"
+  rules = "meta/usb-cdc-function.bind"
   bind_output = "usb-cdc-function.bindbc"
   tests = "meta/bind-tests.json"
   deps = [

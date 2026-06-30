@@ -8,7 +8,7 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 
 driver_bind_rules("rndis_function_bind") {
-  rules = "meta/rndis_function.bind"
+  rules = "meta/rndis-function.bind"
   bind_output = "rndis-function.bindbc"
   tests = "meta/bind-tests.json"
   deps = [

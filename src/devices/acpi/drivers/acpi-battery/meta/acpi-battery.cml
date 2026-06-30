@@ -9,7 +9,7 @@
     ],
     program: {
         runner: "driver",
-        bind: "meta/bind/acpi_battery.bindbc",
+        bind: "meta/bind/acpi-battery.bindbc",
         colocate: "true",
         compat: "driver/acpi-battery.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],

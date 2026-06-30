@@ -13,7 +13,7 @@ fidl("fuchsia.board.test") {
 
 driver_bind_rules("test-bus-bind") {
   testonly = true
-  rules = "meta/test-bus.bind"
+  rules = "meta/integration-test.bind"
   deps = [
     "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib",
     "//src/devices/bind/fuchsia.test.platform",

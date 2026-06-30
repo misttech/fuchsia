@@ -5,8 +5,8 @@
 import("//build/drivers.gni")
 
 driver_bind_rules("bind") {
-  rules = "meta/toy_driver.bind"
-  bind_output = "toy_driver.bindbc"
+  rules = "meta/toy-driver.bind"
+  bind_output = "toy-driver.bindbc"
   deps = [ "//src/devices/bind/fuchsia.block.gpt" ]
 }
 
@@ -26,7 +26,7 @@ fuchsia_cc_driver("driver") {
 
 fuchsia_driver_component("toy-driver") {
   testonly = true
-  manifest = "meta/toy_driver.cml"
+  manifest = "meta/toy-driver.cml"
   component_name = "toy_driver"
   deps = [ ":driver" ]
   info = "meta/info.json"

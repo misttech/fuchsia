@@ -16,7 +16,7 @@ group("tests") {
 }
 
 driver_bind_rules("aml_uart_bind") {
-  rules = "meta/aml_uart.bind"
+  rules = "meta/aml-uart.bind"
   bind_output = "aml-uart.bindbc"
   tests = "meta/bind_tests.json"
   deps = [

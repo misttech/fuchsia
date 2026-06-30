@@ -5,5 +5,5 @@
 import("//build/bind/bind.gni")
 
 bind_library("fuchsia.usb.hid.test") {
-  source = "fuchsia.usb.hid.test.bind"
+  source = "fuchsia.usb.hid.bind.bind"
 }

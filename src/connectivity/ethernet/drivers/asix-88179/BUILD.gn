@@ -9,7 +9,7 @@ import("//build/fidl/fidl.gni")
 import("//build/test.gni")
 
 driver_bind_rules("ethernet_ax88179_bind") {
-  rules = "meta/ethernet_ax88179.bind"
+  rules = "meta/asix-88179.bind"
   bind_output = "asix-88179.bindbc"
   tests = "meta/ethernet_ax88179-bind-tests.json"
   deps = [ "//src/devices/bind/fuchsia.usb" ]

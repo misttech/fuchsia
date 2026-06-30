@@ -9,7 +9,7 @@
     program: {
         runner: "driver",
         binary: "driver/usb-fastboot-function.so",
-        bind: "meta/bind/usb_fastboot_function.bindbc",
+        bind: "meta/bind/usb-fastboot-function.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         colocate: "true",
     },

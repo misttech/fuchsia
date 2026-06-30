@@ -7,7 +7,7 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 
 driver_bind_rules("rndishost_bind") {
-  rules = "meta/rndishost.bind"
+  rules = "meta/rndis-host.bind"
   tests = "meta/bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia.usb",
@@ -52,7 +52,7 @@ fuchsia_driver_component("driver") {
   component_name = "rndis-host"
   deps = [ ":fuchsia_driver" ]
   info = "meta/driver-info.json"
-  manifest = "meta/driver.cml"
+  manifest = "meta/rndis-host.cml"
 }
 
 fuchsia_driver_package("rndis-host") {

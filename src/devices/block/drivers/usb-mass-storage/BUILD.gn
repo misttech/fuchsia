@@ -8,7 +8,7 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 
 driver_bind_rules("usb_mass_storage_bind") {
-  rules = "meta/usb_mass_storage.bind"
+  rules = "meta/usb-mass-storage.bind"
   bind_output = "usb-mass-storage.bindbc"
   tests = "meta/bind_tests.json"
   deps = [

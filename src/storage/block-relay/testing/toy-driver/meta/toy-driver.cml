@@ -9,7 +9,7 @@
     program: {
         runner: "driver",
         binary: "driver/toy_driver.so",
-        bind: "meta/bind/toy_driver.bindbc",
+        bind: "meta/bind/toy-driver.bindbc",
     },
     capabilities: [
         { service: "fuchsia.testing.simple.Service" },

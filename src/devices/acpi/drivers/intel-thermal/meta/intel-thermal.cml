@@ -9,7 +9,7 @@
     ],
     program: {
         runner: "driver",
-        bind: "meta/bind/intel_thermal.bindbc",
+        bind: "meta/bind/intel-thermal.bindbc",
         colocate: "true",
         compat: "driver/intel-thermal.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],

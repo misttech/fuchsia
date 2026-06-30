@@ -9,7 +9,7 @@ import("//build/fuzz.gni")
 import("//build/test.gni")
 
 driver_bind_rules("ethernet_usb_cdc_ecm_bind") {
-  rules = "meta/ethernet_usb_cdc_ecm.bind"
+  rules = "meta/usb-cdc-ecm.bind"
   bind_output = "usb-cdc-ecm.bindbc"
   tests = "meta/bind-tests.json"
   deps = [

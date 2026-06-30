@@ -61,7 +61,7 @@ fuchsia_driver_component("virtual-audio-legacy-driver-component") {
   component_name = "virtual-audio-legacy-driver"
   deps = [ ":virtual-audio-legacy-driver" ]
   info = "meta/virtual-audio-legacy-info.json"
-  manifest = "meta/virtual-audio-legacy-driver.cml"
+  manifest = "meta/virtual-audio-legacy.cml"
 }
 
 kernel_cmdline("kernel-logging") {

@@ -8,7 +8,7 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 
 bind_library("testlib_bind") {
-  source = "test_lib.bind"
+  source = "tests.bind"
   name = "testlib"
 }
 

@@ -37,7 +37,7 @@ fuchsia_driver_component("msd_vsi") {
   info = "meta/msd_vsi-info.json"
   component_name = "libmsd_vsi"
   deps = [ ":msd_vsi-driver" ]
-  manifest = "meta/msd_vsi.cml"
+  manifest = "meta/msd-vsi-vip.cml"
 }
 
 fuchsia_cc_driver("msd_vsi_test-driver") {
@@ -59,7 +59,7 @@ fuchsia_driver_component("msd_vsi_test") {
 }
 
 driver_bind_rules("msd_vsi_bind") {
-  rules = "meta/msd_vsi.bind"
+  rules = "meta/msd-vsi-vip.bind"
   tests = "tests/bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia.platform",

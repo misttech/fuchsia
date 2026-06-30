@@ -8,7 +8,7 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 
 driver_bind_rules("ti_tas5720-bind") {
-  rules = "meta/ti_tas5720.bind"
+  rules = "meta/tas5720.bind"
   bind_output = "tas5720.bindbc"
   tests = "meta/tests.json"
   deps = [

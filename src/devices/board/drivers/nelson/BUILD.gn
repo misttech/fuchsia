@@ -179,7 +179,7 @@ fuchsia_driver_component("nelson-module") {
   component_name = "nelson-module"
   deps = [ ":nelson-module-driver" ]
   info = "meta/nelson-module-info.json"
-  manifest = "meta/nelson-module.cml"
+  manifest = "meta/nelson.cml"
 }
 
 fuchsia_driver_package("package") {

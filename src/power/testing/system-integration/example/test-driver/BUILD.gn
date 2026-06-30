@@ -5,7 +5,7 @@
 import("//build/drivers.gni")
 
 driver_bind_rules("bind") {
-  rules = "meta/driver.bind"
+  rules = "meta/test-driver.bind"
   deps = [ "//src/devices/bind/fuchsia.test" ]
   bind_output = "power-system-integration-example-test-driver.bindbc"
 }
@@ -22,7 +22,7 @@ fuchsia_cc_driver("driver") {
 }
 
 fuchsia_driver_component("component") {
-  manifest = "meta/driver.cml"
+  manifest = "meta/test-driver.cml"
   component_name = "power-system-integration-example-test-driver"
   deps = [
     ":bind",

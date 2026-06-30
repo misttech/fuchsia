@@ -9,7 +9,7 @@ import("//build/test.gni")
 import("//build/testing/cc_test_executable.gni")
 
 driver_bind_rules("bt_transport_usb_bind") {
-  rules = "meta/bt_transport_usb.bind"
+  rules = "meta/usb.bind"
   bind_output = "bt-transport-usb.bindbc"
   tests = "meta/bind_tests.json"
   deps = [
@@ -37,7 +37,7 @@ fuchsia_driver_component("bt-transport-usb") {
   component_name = "bt-transport-usb"
   deps = [ ":bt-transport-usb-driver" ]
   info = "meta/bt-transport-usb-info.json"
-  manifest = "meta/bt-transport-usb.cml"
+  manifest = "meta/usb.cml"
 }
 
 fuchsia_driver_package("package") {

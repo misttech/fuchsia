@@ -10,7 +10,7 @@
     program: {
         runner: "driver",
         binary: "driver/virtio_pmem.so",
-        bind: "meta/bind/virtio_pmem.bindbc",
+        bind: "meta/bind/virtio-pmem.bindbc",
     },
     capabilities: [
         { service: "fuchsia.hardware.virtio.pmem.Service" },

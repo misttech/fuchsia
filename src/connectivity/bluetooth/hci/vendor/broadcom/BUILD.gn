@@ -14,7 +14,7 @@ import("//tools/power_config/build/config.gni")
 import("$dir_pigweed/third_party/emboss/build_defs.gni")
 
 driver_bind_rules("bcm_hci_bind") {
-  rules = "meta/bcm_hci.bind"
+  rules = "meta/broadcom.bind"
   bind_output = "bt-hci-broadcom.bindbc"
   tests = "meta/bind_tests.json"
   deps = [
@@ -24,7 +24,7 @@ driver_bind_rules("bcm_hci_bind") {
 
 fuchsia_component_manifest("bt-hci-broadcom-manifest") {
   component_name = "bt-hci-broadcom"
-  manifest = "meta/bt-hci-broadcom.cml"
+  manifest = "meta/broadcom.cml"
 }
 
 fuchsia_structured_config_cpp_elf_lib("bt-hci-broadcom-config") {
@@ -84,7 +84,7 @@ fuchsia_driver_component("bt-hci-broadcom") {
   component_name = "bt-hci-broadcom"
   deps = [ ":bt-hci-broadcom-driver" ]
   info = "meta/bt-hci-broadcom-info.json"
-  manifest = "meta/bt-hci-broadcom.cml"
+  manifest = "meta/broadcom.cml"
 }
 
 power_config("broadcom-power-config") {

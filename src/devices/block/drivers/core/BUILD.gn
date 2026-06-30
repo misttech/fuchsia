@@ -82,7 +82,7 @@ fuchsia_unittest_package("core-unittest") {
 }
 
 driver_bind_rules("block-core-bind") {
-  rules = "meta/block-core.bind"
+  rules = "meta/core.bind"
   bind_output = "block.bindbc"
   tests = "meta/bind-tests.json"
   deps = [ "//src/devices/bind/fuchsia.block" ]

@@ -25,8 +25,8 @@ config("config") {
 }
 
 driver_bind_rules("x64-bind") {
-  rules = "meta/x64.bind"
-  bind_output = "platform-bus-x64.bindbc"
+  rules = "meta/x86.bind"
+  bind_output = "platform-bus-x86.bindbc"
   tests = "meta/bind-tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib",
@@ -105,7 +105,7 @@ fuchsia_cc_driver("platform-bus-x86-driver") {
 
 fuchsia_component_manifest("manifest") {
   component_name = "platform-bus-x86"
-  manifest = "meta/platform-bus-x86.cml"
+  manifest = "meta/x86.cml"
 }
 
 fuchsia_structured_config_cpp_elf_lib("x86-config") {

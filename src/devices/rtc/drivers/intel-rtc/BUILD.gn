@@ -10,7 +10,7 @@ import("//build/test.gni")
 assert(target_cpu == "x64")
 
 driver_bind_rules("intel_rtc_bind") {
-  rules = "meta/intel_rtc.bind"
+  rules = "meta/intel-rtc.bind"
   tests = "meta/bind-tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.interrupt:fuchsia.hardware.interrupt_bindlib",

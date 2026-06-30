@@ -6,7 +6,7 @@ import("//build/bind/bind.gni")
 import("//build/drivers.gni")
 
 driver_bind_rules("machina_board_bind") {
-  rules = "meta/machina_board.bind"
+  rules = "meta/machina.bind"
   tests = "meta/bind_tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib",

@@ -8,7 +8,7 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 
 driver_bind_rules("usb_hid_bind") {
-  rules = "meta/usb_hid.bind"
+  rules = "meta/usb-hid.bind"
   bind_output = "usb-hid.bindbc"
   tests = "meta/usb_hid_bind_tests.json"
   deps = [ "//src/devices/bind/fuchsia.usb" ]

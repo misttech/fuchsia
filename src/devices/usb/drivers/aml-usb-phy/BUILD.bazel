@@ -15,7 +15,7 @@ load(
 fuchsia_driver_bind_bytecode(
     name = "aml-usb-phy-bind",
     output = "aml-usb-phy.bindbc",
-    rules = "meta/aml_usb_phy.bind",
+    rules = "meta/aml-usb-phy.bind",
     deps = [
         "@fuchsia_sdk//bind/fuchsia.amlogic.platform",
         "@fuchsia_sdk//bind/fuchsia.clock",

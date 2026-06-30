@@ -16,7 +16,7 @@ group("tests") {
 }
 
 driver_bind_rules("aml_gpu_bind") {
-  rules = "meta/aml_gpu.bind"
+  rules = "meta/aml-gpu.bind"
   bind_output = "aml-gpu.bindbc"
   tests = "meta/bind_tests.json"
   deps = [

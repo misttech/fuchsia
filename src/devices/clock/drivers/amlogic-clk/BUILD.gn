@@ -15,7 +15,7 @@ group("tests") {
 }
 
 driver_bind_rules("aml-clk-bind") {
-  rules = "meta/aml-clk.bind"
+  rules = "meta/amlogic-clk.bind"
   bind_output = "amlogic-clk.bindbc"
 
   tests = "meta/bind-tests.json"

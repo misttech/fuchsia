@@ -9,7 +9,7 @@
     ],
     program: {
         runner: "driver",
-        bind: "meta/bind/chromiumos_ec_lpc.bindbc",
+        bind: "meta/bind/chromiumos-ec-lpc.bindbc",
         colocate: "true",
         compat: "driver/chromiumos-ec-lpc.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],

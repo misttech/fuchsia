@@ -10,7 +10,7 @@ import("//build/test.gni")
 
 driver_bind_rules("log-test-driver-bind") {
   testonly = true
-  rules = "meta/log-test.bind"
+  rules = "meta/log-test-driver.bind"
   deps = [
     "//src/devices/bind/fuchsia.test",
     "//src/devices/bind/fuchsia.test.platform",

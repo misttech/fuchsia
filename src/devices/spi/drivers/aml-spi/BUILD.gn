@@ -8,7 +8,7 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 
 driver_bind_rules("aml_spi_bind") {
-  rules = "meta/aml_spi.bind"
+  rules = "meta/aml-spi.bind"
   bind_output = "aml-spi.bindbc"
   tests = "meta/bind_tests.json"
 

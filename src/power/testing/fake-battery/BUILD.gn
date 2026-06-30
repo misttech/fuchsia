@@ -7,8 +7,8 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 
 driver_bind_rules("fake_battery_bind") {
-  rules = "meta/fake_battery_driver.bind"
-  bind_output = "fake_battery_driver.bindbc"
+  rules = "meta/fake-battery.bind"
+  bind_output = "fake-battery.bindbc"
   deps = [ "//src/devices/bind/fuchsia.test" ]
   deps += [ "//src/devices/bind/fuchsia.platform" ]
 }
@@ -41,7 +41,7 @@ fuchsia_cc_driver("fake_battery_driver") {
 
 fuchsia_driver_component("fake_battery_component") {
   component_name = "fake_battery"
-  manifest = "meta/fake_battery_driver.cml"
+  manifest = "meta/fake-battery.cml"
   deps = [
     ":fake_battery_bind",
     ":fake_battery_driver",

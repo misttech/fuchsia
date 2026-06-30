@@ -20,8 +20,8 @@ group("tests") {
 }
 
 driver_bind_rules("chromeos_acpi_bind") {
-  rules = "meta/chromeos_acpi.bind"
-  bind_output = "chromeos_acpi.bindbc"
+  rules = "meta/chromeos-acpi.bind"
+  bind_output = "chromeos-acpi.bindbc"
   tests = "meta/bind-tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.interrupt:fuchsia.hardware.interrupt_bindlib",

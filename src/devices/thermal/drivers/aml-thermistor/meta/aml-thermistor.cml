@@ -7,7 +7,7 @@
         "driver/platform-device.shard.cml",
     ],
     program: {
-        bind: "meta/bind/aml-thermistor.bindbc",
+        bind: "meta/bind/aml-aml-thermistor.bindbc",
         compat: "driver/aml-thermistor.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },

@@ -9,7 +9,7 @@ import("//build/test.gni")
 import("//build/testing/cc_test_executable.gni")
 
 driver_bind_rules("bt_transport_uart_bind") {
-  rules = "meta/bt_transport_uart.bind"
+  rules = "meta/uart.bind"
   bind_output = "bt-transport-uart.bindbc"
   tests = "meta/bind_tests.json"
   deps = [
@@ -20,7 +20,7 @@ driver_bind_rules("bt_transport_uart_bind") {
 
 fuchsia_component_manifest("bt-transport-uart-manifest") {
   component_name = "bt-transport-uart"
-  manifest = "meta/bt-transport-uart.cml"
+  manifest = "meta/uart.cml"
 }
 
 fuchsia_structured_config_cpp_elf_lib("bt-transport-uart-config") {
@@ -71,7 +71,7 @@ fuchsia_cc_driver("bt-transport-uart-driver") {
 fuchsia_driver_component("bt-transport-uart") {
   component_name = "bt-transport-uart"
   info = "meta/bt-transport-uart-info.json"
-  manifest = "meta/bt-transport-uart.cml"
+  manifest = "meta/uart.cml"
   deps = [ ":bt-transport-uart-driver" ]
 }
 

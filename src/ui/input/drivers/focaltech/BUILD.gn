@@ -9,7 +9,7 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 
 driver_bind_rules("focaltech_touch_bind") {
-  rules = "meta/focaltech_touch.bind"
+  rules = "meta/focaltech.bind"
   bind_output = "focaltech.bindbc"
   tests = "meta/bind_tests.json"
   deps = [

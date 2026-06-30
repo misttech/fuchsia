@@ -8,7 +8,7 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 
 driver_bind_rules("usb_vsock_service_bind") {
-  rules = "meta/usb_vsock_service.bind"
+  rules = "meta/usb-vsock-service.bind"
   bind_output = "usb-vsock-service.bindbc"
   tests = "meta/bind_tests.json"
   deps =

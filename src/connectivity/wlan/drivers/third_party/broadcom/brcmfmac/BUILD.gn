@@ -239,7 +239,7 @@ fuchsia_cc_driver("fuchsia_driver-driver") {
 
 fuchsia_driver_component("fuchsia_driver") {
   component_name = "brcmfmac"
-  manifest = "meta/brcmfmac_sdio.cml"
+  manifest = "meta/brcmfmac.cml"
   deps = [ ":fuchsia_driver-driver" ]
   visibility += [
     "//bundles/drivers/pci",

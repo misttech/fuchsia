@@ -8,7 +8,7 @@ import("//build/fidl/fidl.gni")
 import("//build/test.gni")
 
 bind_library("fuchsia.usb.test") {
-  source = "fuchsia.usb.test.bind"
+  source = "tests.bind"
 }
 
 fidl("fuchsia.hardware.usb.virtualbustest") {

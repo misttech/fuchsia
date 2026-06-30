@@ -11,7 +11,7 @@ fuchsia_driver_package("qmi-usb-transport") {
 }
 
 driver_bind_rules("qmi_usb_bind") {
-  rules = "meta/qmi_usb.bind"
+  rules = "meta/qmi-usb-transport.bind"
   tests = "meta/bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia.sierra.platform.usb",
@@ -37,7 +37,7 @@ fuchsia_driver_component("qmi_driver") {
   component_name = "qmi-transport"
   deps = [ ":qmi_driver-driver" ]
   info = "meta/qmi_driver-info.json"
-  manifest = "meta/qmi_driver.cml"
+  manifest = "meta/qmi-usb-transport.cml"
 }
 
 source_set("qmi_driver_src") {

@@ -7,7 +7,7 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 
 driver_bind_rules("virtio_rng_bind") {
-  rules = "meta/virtio_rng.bind"
+  rules = "meta/virtio-rng.bind"
   tests = "meta/tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib",
@@ -43,7 +43,7 @@ fuchsia_cc_driver("virtio_rng-driver") {
 fuchsia_driver_component("virtio_rng") {
   info = "meta/virtio_rng-info.json"
   component_name = "virtio_rng"
-  manifest = "meta/virtio_rng.cml"
+  manifest = "meta/virtio-rng.cml"
   deps = [ ":virtio_rng-driver" ]
 }
 

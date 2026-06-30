@@ -11,7 +11,7 @@ bazel_driver_package("bazel_package") {
     "dw-i2c.cc",
     "dw-i2c.h",
     "dw-i2c-regs.h",
-    "meta/dw_i2c.bind",
+    "meta/dw-i2c.bind",
     "meta/dw-i2c.cml",
   ]
 }

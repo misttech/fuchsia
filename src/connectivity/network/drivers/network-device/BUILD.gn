@@ -8,7 +8,7 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 
 driver_bind_rules("network-device_bind") {
-  rules = "meta/network_device.bind"
+  rules = "meta/network-device.bind"
   bind_output = "network-device.bindbc"
   tests = "meta/bind-tests.json"
   deps = [

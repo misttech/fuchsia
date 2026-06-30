@@ -8,7 +8,7 @@ import("//build/bazel/drivers/bazel_driver_package.gni")
 import("//build/bind/bind.gni")
 
 driver_bind_rules("aml_usb_phy_bind") {
-  rules = "meta/aml_usb_phy.bind"
+  rules = "meta/aml-usb-phy.bind"
   bind_output = "aml-usb-phy.bindbc"
   tests = "meta/test_bind.json"
   deps = [

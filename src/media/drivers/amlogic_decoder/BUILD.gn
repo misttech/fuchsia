@@ -14,7 +14,7 @@ declare_args() {
 }
 
 driver_bind_rules("amlogic_video_bind") {
-  rules = "meta/amlogic_video.bind"
+  rules = "meta/amlogic_decoder.bind"
   tests = "meta/bind_tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.amlogiccanvas:fuchsia.hardware.amlogiccanvas_bindlib",
@@ -30,7 +30,7 @@ driver_bind_rules("amlogic_video_bind") {
 # Note: This target uses the same source as above, the only difference is the
 # addition of `diasable_autobind = true`, and tests are omitted.
 driver_bind_rules("amlogic_video_test_bind") {
-  rules = "meta/amlogic_video.bind"
+  rules = "meta/amlogic_decoder.bind"
   disable_autobind = true
   deps = [
     "//sdk/fidl/fuchsia.hardware.amlogiccanvas:fuchsia.hardware.amlogiccanvas_bindlib",
@@ -77,7 +77,7 @@ if (target_cpu == "arm64") {
     component_name = "amlogic_video_decoder"
     deps = [ ":amlogic_video_decoder-driver" ]
     info = "meta/amlogic_video_decoder-info.json"
-    manifest = "meta/amlogic_video_decoder-component.cml"
+    manifest = "meta/amlogic_decoder.cml"
   }
 
   config("sources_include_config") {

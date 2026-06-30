@@ -69,7 +69,7 @@ fuchsia_driver_component("driver") {
   component_name = "usb_video"
   deps = [ ":fuchsia_driver" ]
   info = "meta/driver-info.json"
-  manifest = "meta/driver.cml"
+  manifest = "meta/usb_video.cml"
 }
 
 fuchsia_driver_package("usb_video") {

@@ -9,7 +9,7 @@
     ],
     program: {
         runner: "driver",
-        bind: "meta/bind/platform-bus-x64.bindbc",
+        bind: "meta/bind/platform-bus-x86.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         compat: "driver/platform-bus-x86.so",
         colocate: "true",

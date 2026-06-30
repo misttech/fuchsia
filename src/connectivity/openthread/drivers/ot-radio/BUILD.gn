@@ -6,7 +6,7 @@ import("//build/drivers.gni")
 import("config.gni")
 
 driver_bind_rules("ot_radio_bind") {
-  rules = "meta/ot_radio.bind"
+  rules = "meta/ot-radio.bind"
   tests = "meta/bind_tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib",

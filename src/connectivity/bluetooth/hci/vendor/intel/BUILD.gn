@@ -12,7 +12,7 @@ import("//build_overrides/pigweed.gni")
 import("$dir_pigweed/third_party/emboss/build_defs.gni")
 
 driver_bind_rules("bt_hci_intel_bind") {
-  rules = "meta/bt_hci_intel.bind"
+  rules = "meta/intel.bind"
   tests = "meta/bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia.bluetooth",
@@ -74,7 +74,7 @@ fuchsia_driver_component("driver") {
   component_name = "bt-hci-intel"
   deps = [ ":fuchsia_driver" ]
   info = "meta/driver-info.json"
-  manifest = "meta/driver.cml"
+  manifest = "meta/intel.cml"
 }
 
 if (internal_access) {

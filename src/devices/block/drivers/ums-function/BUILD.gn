@@ -6,7 +6,7 @@ import("//build/bind/bind.gni")
 import("//build/drivers.gni")
 
 driver_bind_rules("usb_ums_bind") {
-  rules = "meta/usb_ums.bind"
+  rules = "meta/ums-function.bind"
   bind_output = "ums-function.bindbc"
   tests = "meta/bind_tests.json"
   deps = [

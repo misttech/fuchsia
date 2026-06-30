@@ -8,7 +8,7 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 
 driver_bind_rules("virtio_socket_bind") {
-  rules = "meta/virtio_socket.bind"
+  rules = "meta/virtio-socket.bind"
   tests = "meta/bind_tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib",
@@ -51,7 +51,7 @@ fuchsia_cc_driver("virtio_socket-driver") {
 fuchsia_driver_component("virtio_socket") {
   info = "meta/virtio_socket-info.json"
   component_name = "virtio_socket"
-  manifest = "meta/virtio_socket.cml"
+  manifest = "meta/virtio-socket.cml"
   deps = [ ":virtio_socket-driver" ]
 }
 

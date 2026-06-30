@@ -11,7 +11,7 @@ import("//build/test.gni")
 import("//build/testing/cc_test_executable.gni")
 
 driver_bind_rules("ihda_controller_bind") {
-  rules = "meta/intel_hda.bind"
+  rules = "meta/controller.bind"
   deps = [
     "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib",
     "//src/devices/bind/fuchsia.acpi",

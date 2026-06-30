@@ -19,7 +19,7 @@ declare_args() {
 }
 
 driver_bind_rules("vim3_mcu_bind") {
-  rules = "meta/vim3_mcu.bind"
+  rules = "meta/vim3-mcu.bind"
   tests = "meta/bind_tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_bindlib",

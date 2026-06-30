@@ -16,7 +16,7 @@ group("tests") {
 }
 
 driver_bind_rules("aml_mipi_bind") {
-  rules = "meta/aml_mipi.bind"
+  rules = "meta/aml_mipicsi.bind"
   tests = "meta/bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia.amlogic.platform",
@@ -60,7 +60,7 @@ fuchsia_driver_component("aml_mipicsi_driver") {
   component_name = "aml_mipicsi"
   deps = [ ":aml_mipicsi_driver-driver" ]
   info = "meta/aml_mipicsi_driver-info.json"
-  manifest = "meta/aml_mipicsi_driver.cml"
+  manifest = "meta/aml_mipicsi.cml"
 }
 
 fuchsia_driver_package("driver_package") {

@@ -9,7 +9,7 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 
 driver_bind_rules("gt92xx_bind") {
-  rules = "meta/gt92xx.bind"
+  rules = "meta/goodix.bind"
   bind_output = "goodix.bindbc"
   tests = "meta/bind_tests.json"
   deps = [

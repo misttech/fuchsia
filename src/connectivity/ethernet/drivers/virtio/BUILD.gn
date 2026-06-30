@@ -8,7 +8,7 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 
 driver_bind_rules("virtio_ethernet_bind") {
-  rules = "meta/virtio_netdevice.bind"
+  rules = "meta/virtio.bind"
   tests = "meta/bind-tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib",
@@ -80,7 +80,7 @@ fuchsia_driver_component("virtio_netdevice") {
   component_name = "virtio_netdevice"
   deps = [ ":virtio_netdevice-driver" ]
   info = "meta/virtio_ethernet-info.json"
-  manifest = "meta/virtio_netdevice.cml"
+  manifest = "meta/virtio.cml"
 }
 
 fuchsia_driver_package("package") {

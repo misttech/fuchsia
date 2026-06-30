@@ -8,7 +8,7 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 
 driver_bind_rules("usb_composite_bind") {
-  rules = "meta/usb_composite.bind"
+  rules = "meta/usb-composite.bind"
   bind_output = "usb-composite.bindbc"
   tests = "meta/bind_tests.json"
   deps = [ "//src/devices/bind/fuchsia.usb" ]

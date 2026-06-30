@@ -54,7 +54,7 @@ fuchsia_driver_component("virtual-audio-driver-component") {
     ":virtual-audio-driver",
   ]
   info = "meta/virtual-audio-info.json"
-  manifest = "meta/virtual-audio-driver.cml"
+  manifest = "meta/virtual-audio.cml"
 }
 
 fuchsia_driver_package("virtual-audio") {

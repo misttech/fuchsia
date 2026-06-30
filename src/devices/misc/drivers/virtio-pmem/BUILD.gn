@@ -17,8 +17,8 @@ group("tests") {
 }
 
 driver_bind_rules("virtio_pmem_bind") {
-  bind_output = "virtio_pmem.bindbc"
-  rules = "meta/virtio_pmem.bind"
+  bind_output = "virtio-pmem.bindbc"
+  rules = "meta/virtio-pmem.bind"
   tests = "tests/bind_tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib",
@@ -62,7 +62,7 @@ fuchsia_driver_component("component") {
     ":virtio_pmem_bind",
   ]
   info = "meta/virtio_pmem-info.json"
-  manifest = "meta/virtio_pmem.cml"
+  manifest = "meta/virtio-pmem.cml"
 }
 
 fuchsia_driver_package("package") {

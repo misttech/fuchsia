@@ -32,7 +32,7 @@ fuchsia_driver_component("coordinator") {
   component_name = "display-coordinator"
   deps = [ ":coordinator-driver" ]
   info = "meta/coordinator-info.json"
-  manifest = "meta/display-coordinator.cml"
+  manifest = "meta/coordinator.cml"
 }
 
 fuchsia_driver_package("package") {
