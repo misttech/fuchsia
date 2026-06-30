@@ -82,6 +82,7 @@ if (is_host) {
       "sapphire-async/src/condition.rs",
       "sapphire-async/src/executor.rs",
       "sapphire-async/src/lib.rs",
+      "sapphire-async/src/mpsc.rs",
       "sapphire-async/src/notification.rs",
       "sapphire-async/src/notification/intrusive_list.rs",
       "sapphire-async/src/semaphore.rs",

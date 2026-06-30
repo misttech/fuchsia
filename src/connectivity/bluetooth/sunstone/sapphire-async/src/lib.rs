@@ -7,6 +7,7 @@
 
 pub mod condition;
 pub mod executor;
+pub mod mpsc;
 pub mod notification;
 pub mod semaphore;
 
