@@ -1789,14 +1789,14 @@ alias(
 )
 
 alias(
-    name = "openssl-0.10.71",
-    actual = "//third_party/rust_crates/forks/openssl-0.10.71:openssl",
+    name = "openssl-0.10.81",
+    actual = "//third_party/rust_crates/forks/openssl-0.10.81:openssl",
     tags = ["manual"],
 )
 
 alias(
     name = "openssl",
-    actual = "//third_party/rust_crates/forks/openssl-0.10.71:openssl",
+    actual = "//third_party/rust_crates/forks/openssl-0.10.81:openssl",
     tags = ["manual"],
 )
 

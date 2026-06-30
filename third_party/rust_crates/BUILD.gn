@@ -1295,15 +1295,15 @@ if (current_os == "fuchsia") {
 
 if (current_os == "fuchsia") {
   group("openssl") {
-    public_deps = [ ":openssl-v0_10_71" ]
+    public_deps = [ ":openssl-v0_10_81" ]
 
     visibility = openssl_visibility
   }
 }
 
 if (current_os == "fuchsia") {
-  group("openssl-0.10.71") {
-    public_deps = [ ":openssl-v0_10_71" ]
+  group("openssl-0.10.81") {
+    public_deps = [ ":openssl-v0_10_81" ]
 
     visibility = openssl_visibility
   }
@@ -13827,18 +13827,18 @@ rustc_library("openat-v0_1_21") {
   applicable_licenses = [ ":openat-v0_1_21.license" ]
 }
 
-license("openssl-v0_10_71.license") {
+license("openssl-v0_10_81.license") {
   public_package_name = "openssl"
   license_files = [
-    "//third_party/rust_crates/forks/openssl-0.10.71/LICENSE",
-    "//third_party/rust_crates/forks/openssl-0.10.71/LICENSE-APACHE",
+    "//third_party/rust_crates/forks/openssl-0.10.81/LICENSE",
+    "//third_party/rust_crates/forks/openssl-0.10.81/LICENSE-APACHE",
   ]
 }
 
-rustc_library("openssl-v0_10_71") {
+rustc_library("openssl-v0_10_81") {
   crate_name = "openssl"
-  source_root = "//third_party/rust_crates/forks/openssl-0.10.71/src/lib.rs"
-  output_name = "openssl-edabd54f77d41c78"
+  source_root = "//third_party/rust_crates/forks/openssl-0.10.81/src/lib.rs"
+  output_name = "openssl-86febdd4c04d4b8c"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -13850,27 +13850,26 @@ rustc_library("openssl-v0_10_71") {
   deps += [ ":cfg-if-v1_0_4" ]
   deps += [ ":foreign-types-v0_3_2" ]
   deps += [ ":libc-v0_2_186" ]
-  deps += [ ":once_cell-v1_21_3" ]
   deps += [ ":openssl-macros-v0_1_1($host_toolchain)" ]
-  deps += [ ":openssl-sys-v0_9_106" ]
+  deps += [ ":openssl-sys-v0_9_117" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=edabd54f77d41c78",
-    "-Cextra-filename=-edabd54f77d41c78",
+    "-Cmetadata=86febdd4c04d4b8c",
+    "-Cextra-filename=-86febdd4c04d4b8c",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"unstable_boringssl\"",
     "--cfg=boringssl",
   ]
 
   aliased_deps = {
-    ffi = ":openssl-sys-v0_9_106.actual"
+    ffi = ":openssl-sys-v0_9_117.actual"
   }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":openssl-v0_10_71.license" ]
+  applicable_licenses = [ ":openssl-v0_10_81.license" ]
 }
 
 license("openssl-macros-v0_1_1.license") {
@@ -13942,20 +13941,21 @@ rustc_library("openssl-probe-v0_1_6") {
   applicable_licenses = [ ":openssl-probe-v0_1_6.license" ]
 }
 
-license("openssl-sys-v0_9_106.license") {
+license("openssl-sys-v0_9_117.license") {
   public_package_name = "openssl_sys"
   license_files =
-      [ "//third_party/rust_crates/vendor/openssl-sys-0.9.106/LICENSE-MIT" ]
+      [ "//third_party/rust_crates/vendor/openssl-sys-0.9.117/LICENSE-MIT" ]
 }
 
-rustc_library("openssl-sys-v0_9_106") {
+rustc_library("openssl-sys-v0_9_117") {
   crate_name = "openssl_sys"
   source_root =
-      "//third_party/rust_crates/vendor/openssl-sys-0.9.106/src/lib.rs"
-  output_name = "openssl_sys-9427f69410b25a12"
+      "//third_party/rust_crates/vendor/openssl-sys-0.9.117/src/lib.rs"
+  output_name = "openssl_sys-9f531f4d95fe1cc5"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
+  configs += [ "//third_party/boringssl/rust:osslconf" ]
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
@@ -13966,15 +13966,16 @@ rustc_library("openssl-sys-v0_9_106") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=9427f69410b25a12",
-    "-Cextra-filename=-9427f69410b25a12",
+    "-Cmetadata=9f531f4d95fe1cc5",
+    "-Cextra-filename=-9f531f4d95fe1cc5",
     "--cfg=feature=\"bssl-sys\"",
     "--cfg=feature=\"unstable_boringssl\"",
+    "--cfg=boringssl",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":openssl-sys-v0_9_106.license" ]
+  applicable_licenses = [ ":openssl-sys-v0_9_117.license" ]
 }
 
 rustc_library("output_vt100-v0_1_3") {
