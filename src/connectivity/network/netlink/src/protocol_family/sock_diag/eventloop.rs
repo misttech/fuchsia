@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::NetlinkSockDiag;
+use super::{NetlinkSockDiag, NetlinkSockDiagNotifiedGroup};
 
 use std::convert::Infallible as Never;
 
@@ -13,7 +13,7 @@ use fidl_fuchsia_net_sockets_ext as fnet_sockets_ext;
 use fidl_fuchsia_net_tcp as fnet_tcp;
 use fidl_fuchsia_net_udp as fnet_udp;
 use futures::channel::{mpsc, oneshot};
-use futures::{StreamExt as _, pin_mut};
+use futures::{FutureExt as _, StreamExt as _, pin_mut};
 use linux_uapi::{AF_INET, AF_INET6};
 use net_types::ip::{Ip, IpAddress as _};
 use netlink_packet_core::{NLM_F_MULTIPART, NetlinkMessage};
@@ -25,7 +25,7 @@ use netlink_packet_sock_diag::{
     TCP_LAST_ACK, TCP_LISTEN, TCP_SYN_RECV, TCP_SYN_SENT, TCP_TIME_WAIT,
 };
 
-use crate::client::{AsyncWorkItem, InternalClient};
+use crate::client::{AsyncWorkItem, ClientTable, InternalClient};
 use crate::logging::{log_debug, log_error};
 use crate::messaging::Sender;
 use crate::netlink_packet::errno::Errno;
@@ -77,10 +77,20 @@ pub(crate) struct SockDiagEventLoop<
     socket_diagnostics: fnet_sockets::DiagnosticsProxy,
     socket_control: fnet_sockets::ControlProxy,
     request_stream: mpsc::Receiver<Request<S>>,
-    // TODO(https://fxbug.dev/470079735): Support multicast socket destruction
-    // notifications.
-    #[expect(dead_code)]
     async_work_receiver: mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkSockDiag>>,
+    client_table: ClientTable<NetlinkSockDiag, S>,
+
+    tcp_v4_clients: u64,
+    tcp_v6_clients: u64,
+    udp_v4_clients: u64,
+    udp_v6_clients: u64,
+    // This watcher is Some whenever there are any clients and None otherwise.
+    destruction_watcher_stream: Option<
+        futures::stream::BoxStream<
+            'static,
+            Result<fnet_sockets_ext::IpSocketState, fnet_sockets_ext::DestructionWatcherError>,
+        >,
+    >,
 }
 
 impl<S: crate::messaging::Sender<<NetlinkSockDiag as ProtocolFamily>::Response>>
@@ -91,9 +101,129 @@ impl<S: crate::messaging::Sender<<NetlinkSockDiag as ProtocolFamily>::Response>>
         socket_control: fnet_sockets::ControlProxy,
         request_stream: mpsc::Receiver<Request<S>>,
         async_work_receiver: mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkSockDiag>>,
+        client_table: ClientTable<NetlinkSockDiag, S>,
     ) -> Self {
-        Self { socket_diagnostics, socket_control, request_stream, async_work_receiver }
+        Self {
+            socket_diagnostics,
+            socket_control,
+            request_stream,
+            async_work_receiver,
+            client_table,
+            tcp_v4_clients: 0,
+            tcp_v6_clients: 0,
+            udp_v4_clients: 0,
+            udp_v6_clients: 0,
+            destruction_watcher_stream: None,
+        }
     }
+
+    fn clients_count(&self, group: NetlinkSockDiagNotifiedGroup) -> u64 {
+        match group {
+            NetlinkSockDiagNotifiedGroup::TcpV4Destroy => self.tcp_v4_clients,
+            NetlinkSockDiagNotifiedGroup::TcpV6Destroy => self.tcp_v6_clients,
+            NetlinkSockDiagNotifiedGroup::UdpV4Destroy => self.udp_v4_clients,
+            NetlinkSockDiagNotifiedGroup::UdpV6Destroy => self.udp_v6_clients,
+        }
+    }
+
+    fn clients_count_mut(&mut self, group: NetlinkSockDiagNotifiedGroup) -> &mut u64 {
+        match group {
+            NetlinkSockDiagNotifiedGroup::TcpV4Destroy => &mut self.tcp_v4_clients,
+            NetlinkSockDiagNotifiedGroup::TcpV6Destroy => &mut self.tcp_v6_clients,
+            NetlinkSockDiagNotifiedGroup::UdpV4Destroy => &mut self.udp_v4_clients,
+            NetlinkSockDiagNotifiedGroup::UdpV6Destroy => &mut self.udp_v6_clients,
+        }
+    }
+
+    fn has_destruction_clients(&self) -> bool {
+        self.tcp_v4_clients > 0
+            || self.tcp_v6_clients > 0
+            || self.udp_v4_clients > 0
+            || self.udp_v6_clients > 0
+    }
+
+    async fn handle_join(&mut self, group: NetlinkSockDiagNotifiedGroup) {
+        let clients = self.clients_count_mut(group);
+        *clients = clients.checked_add(1).expect("number of clients can't overflow a u64");
+
+        if self.destruction_watcher_stream.is_none() {
+            match fnet_sockets_ext::watch_destruction(&self.socket_diagnostics).await {
+                Ok(stream) => {
+                    self.destruction_watcher_stream = Some(stream.boxed());
+                }
+                Err(e) => {
+                    panic!("failed to get destruction watcher: {:?}", e);
+                }
+            }
+        }
+    }
+
+    fn handle_leave(&mut self, group: NetlinkSockDiagNotifiedGroup) {
+        let clients = self.clients_count_mut(group);
+        *clients = clients.checked_sub(1).expect("each added client is removed once");
+
+        if !self.has_destruction_clients() {
+            self.destruction_watcher_stream = None;
+        }
+    }
+
+    async fn handle_async_work(&mut self, work: AsyncWorkItem<NetlinkSockDiag>) {
+        match work {
+            AsyncWorkItem::OnJoinMulticastGroup(group, sender) => {
+                self.handle_join(group).await;
+                let _ = sender.send(());
+            }
+            AsyncWorkItem::OnLeaveMulticastGroup(groups) => {
+                for group in groups.into_iter() {
+                    self.handle_leave(group);
+                }
+            }
+            AsyncWorkItem::OnSetMulticastGroups { joined, left, complete } => {
+                // Process joined groups before left groups to avoid possibly
+                // passing through 0, which would drop the destruction watcher.
+                if let Some(groups) = joined {
+                    for group in groups.into_iter() {
+                        self.handle_join(group).await;
+                    }
+                }
+                if let Some(groups) = left {
+                    for group in groups.into_iter() {
+                        self.handle_leave(group);
+                    }
+                }
+                if let Some(complete) = complete {
+                    let _ = complete.send(());
+                }
+            }
+            AsyncWorkItem::Inner(never) => match never {},
+        }
+    }
+
+    fn handle_destruction_event(
+        &mut self,
+        event: Option<
+            Result<fnet_sockets_ext::IpSocketState, fnet_sockets_ext::DestructionWatcherError>,
+        >,
+    ) {
+        match event {
+            Some(Ok(socket)) => {
+                let group = NetlinkSockDiagNotifiedGroup::from_socket_state(&socket);
+                if self.clients_count(group) > 0 {
+                    let mut msg: NetlinkMessage<SockDiagResponse> =
+                        ip_socket_to_netlink_response(socket).into();
+                    msg.finalize();
+                    self.client_table.send_message_to_group(msg, group.into());
+                }
+            }
+            Some(Err(e)) => {
+                panic!("unexpected socket destruction watcher error: {e:?}");
+            }
+            None => {
+                panic!("destruction watcher stream ended unexpectedly");
+            }
+        }
+    }
+
     pub(crate) async fn run(mut self) -> Never {
         loop {
             self.run_one_step().await;
@@ -101,12 +231,27 @@ impl<S: crate::messaging::Sender<<NetlinkSockDiag as ProtocolFamily>::Response>>
     }
 
     async fn run_one_step(&mut self) {
-        let Self { socket_diagnostics, socket_control, request_stream, async_work_receiver: _ } =
-            self;
+        let destruction_stream_next = async {
+            if let Some(stream) = &mut self.destruction_watcher_stream {
+                stream.next().await
+            } else {
+                futures::future::pending().await
+            }
+        };
+        pin_mut!(destruction_stream_next);
 
-        let request = request_stream.next().await.expect("request stream cannot end");
-
-        handle_request(socket_diagnostics, socket_control, request).await;
+        futures::select! {
+            async_work = self.async_work_receiver.select_next_some() => {
+                self.handle_async_work(async_work).await;
+            }
+            event = destruction_stream_next.fuse() => {
+                self.handle_destruction_event(event);
+            }
+            request = self.request_stream.select_next_some() => {
+                handle_request(&mut self.socket_diagnostics, &mut self.socket_control, request)
+                    .await;
+            }
+        };
     }
 }
 
@@ -417,6 +562,7 @@ mod tests {
     use ip_test_macro::ip_test;
     use net_declare::fidl_ip;
 
+    use crate::client::ClientId;
     use crate::logging::testutils::set_logger_for_test;
     use crate::messaging::testutil::SentMessage;
     use crate::protocol_family::sock_diag::testutil::TestIpExt;
@@ -471,6 +617,7 @@ mod tests {
             control_proxy,
             request_stream,
             async_work_receiver,
+            ClientTable::default(),
         );
 
         let (mut client_sink, client, async_work_drain_task) =
@@ -936,5 +1083,407 @@ mod tests {
         expected.finalize();
 
         assert_eq!(response, expected);
+    }
+
+    // Validates that destruction notifications from the Netstack are delivered
+    // to the correct group and only that group.
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn destruction_notification_routing() {
+        set_logger_for_test();
+
+        let (diagnostics_proxy, mut diagnostics_request_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fnet_sockets::DiagnosticsMarker>();
+        let (control_proxy, _control_request_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fnet_sockets::ControlMarker>();
+        let (_request_sink, request_stream) = mpsc::channel(1);
+        let (async_work_sink, async_work_receiver) = mpsc::unbounded();
+
+        let client_table = ClientTable::<NetlinkSockDiag, _>::default();
+        let mut event_loop = SockDiagEventLoop::new(
+            diagnostics_proxy,
+            control_proxy,
+            request_stream,
+            async_work_receiver,
+            client_table.clone(),
+        );
+
+        let (mock_watcher_tx, mut mock_watcher_rx) = mpsc::unbounded();
+
+        let mock_diagnostics_fut = async move {
+            while let Some(req) = diagnostics_request_stream.next().await {
+                match req.unwrap() {
+                    fnet_sockets::DiagnosticsRequest::GetDestructionWatcher {
+                        watcher,
+                        responder,
+                    } => {
+                        let stream = watcher.into_stream();
+                        responder.send().unwrap();
+                        let _ = mock_watcher_tx.unbounded_send(stream);
+                    }
+                    req => panic!("unexpected diagnostics request: {:?}", req),
+                }
+            }
+        };
+
+        let scope = fasync::Scope::new();
+        let _diagnostics_task = scope.spawn(mock_diagnostics_fut);
+
+        async fn set_up_client(
+            client_id: ClientId,
+            group: NetlinkSockDiagNotifiedGroup,
+            client_table: &ClientTable<
+                NetlinkSockDiag,
+                crate::messaging::testutil::FakeSender<SockDiagResponse>,
+            >,
+            async_work_sink: &mpsc::UnboundedSender<AsyncWorkItem<NetlinkSockDiag>>,
+            event_loop: &mut SockDiagEventLoop<
+                crate::messaging::testutil::FakeSender<SockDiagResponse>,
+            >,
+        ) -> crate::messaging::testutil::FakeSenderSink<SockDiagResponse> {
+            let (sender, sink) = crate::messaging::testutil::fake_sender_with_sink();
+            let (ext_client, int_client) =
+                crate::client::new_client_pair(client_id, sender, async_work_sink.clone());
+            client_table.add_client(int_client);
+            let waiter = ext_client.add_membership(group.into()).unwrap();
+
+            event_loop.run_one_step().await;
+
+            waiter.wait_until_complete();
+            sink
+        }
+
+        let (watcher_stream_opt, mut sink_tcp_v4) = future::join(
+            mock_watcher_rx.next(),
+            set_up_client(
+                crate::client::testutil::CLIENT_ID_1,
+                NetlinkSockDiagNotifiedGroup::TcpV4Destroy,
+                &client_table,
+                &async_work_sink,
+                &mut event_loop,
+            ),
+        )
+        .await;
+        let mut watcher_stream = watcher_stream_opt.unwrap();
+
+        let mut sink_tcp_v6 = set_up_client(
+            crate::client::testutil::CLIENT_ID_2,
+            NetlinkSockDiagNotifiedGroup::TcpV6Destroy,
+            &client_table,
+            &async_work_sink,
+            &mut event_loop,
+        )
+        .await;
+
+        let mut sink_udp_v4 = set_up_client(
+            crate::client::testutil::CLIENT_ID_3,
+            NetlinkSockDiagNotifiedGroup::UdpV4Destroy,
+            &client_table,
+            &async_work_sink,
+            &mut event_loop,
+        )
+        .await;
+
+        let mut sink_udp_v6 = set_up_client(
+            crate::client::testutil::CLIENT_ID_4,
+            NetlinkSockDiagNotifiedGroup::UdpV6Destroy,
+            &client_table,
+            &async_work_sink,
+            &mut event_loop,
+        )
+        .await;
+
+        async fn inject_and_verify(
+            event_loop: &mut SockDiagEventLoop<
+                crate::messaging::testutil::FakeSender<SockDiagResponse>,
+            >,
+            watcher_stream: &mut fnet_sockets::DestructionWatcherRequestStream,
+            sink_tcp_v4: &mut crate::messaging::testutil::FakeSenderSink<SockDiagResponse>,
+            sink_tcp_v6: &mut crate::messaging::testutil::FakeSenderSink<SockDiagResponse>,
+            sink_udp_v4: &mut crate::messaging::testutil::FakeSenderSink<SockDiagResponse>,
+            sink_udp_v6: &mut crate::messaging::testutil::FakeSenderSink<SockDiagResponse>,
+            socket_state: &fnet_sockets::IpSocketState,
+            expected_group: NetlinkSockDiagNotifiedGroup,
+        ) {
+            let run_step = event_loop.run_one_step();
+            let next_req = watcher_stream.next();
+            pin_mut!(run_step, next_req);
+            let (watch_req, event_loop_fut) = match future::select(next_req, run_step).await {
+                future::Either::Left((req, fut)) => (req.unwrap().unwrap(), fut),
+                future::Either::Right(_) => unreachable!("event loop should not finish first"),
+            };
+            let responder = match watch_req {
+                fnet_sockets::DestructionWatcherRequest::Watch { responder } => responder,
+                fnet_sockets::DestructionWatcherRequest::_UnknownMethod { .. } => {
+                    panic!("unknown method request");
+                }
+            };
+            responder.send(&[socket_state.clone()]).unwrap();
+
+            event_loop_fut.await;
+
+            let msg_tcp_v4 = sink_tcp_v4.take_messages();
+            let msg_tcp_v6 = sink_tcp_v6.take_messages();
+            let msg_udp_v4 = sink_udp_v4.take_messages();
+            let msg_udp_v6 = sink_udp_v6.take_messages();
+
+            let expected_payload =
+                ip_socket_to_netlink_response(socket_state.clone().try_into().unwrap());
+            let expected_raw_payload = NetlinkMessage::from(expected_payload).payload;
+
+            let check = |messages: Vec<SentMessage<SockDiagResponse>>, is_expected: bool| {
+                if is_expected {
+                    assert_eq!(messages.len(), 1);
+                    assert_eq!(messages[0].message.payload, expected_raw_payload);
+                } else {
+                    assert_eq!(messages.len(), 0);
+                }
+            };
+
+            check(msg_tcp_v4, expected_group == NetlinkSockDiagNotifiedGroup::TcpV4Destroy);
+            check(msg_tcp_v6, expected_group == NetlinkSockDiagNotifiedGroup::TcpV6Destroy);
+            check(msg_udp_v4, expected_group == NetlinkSockDiagNotifiedGroup::UdpV4Destroy);
+            check(msg_udp_v6, expected_group == NetlinkSockDiagNotifiedGroup::UdpV6Destroy);
+        }
+
+        let socket_tcp_v4 = fnet_sockets::IpSocketState {
+            family: Some(fnet::IpVersion::V4),
+            src_addr: Some(fidl_ip!("192.168.1.1")),
+            dst_addr: Some(fidl_ip!("192.168.1.2")),
+            cookie: Some(1),
+            marks: Some(fnet::Marks {
+                mark_1: None,
+                mark_2: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
+            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
+                fnet_sockets::IpSocketTcpState {
+                    src_port: Some(1111),
+                    dst_port: Some(2222),
+                    state: Some(fnet_tcp::State::Close),
+                    tcp_info: None,
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        };
+        inject_and_verify(
+            &mut event_loop,
+            &mut watcher_stream,
+            &mut sink_tcp_v4,
+            &mut sink_tcp_v6,
+            &mut sink_udp_v4,
+            &mut sink_udp_v6,
+            &socket_tcp_v4,
+            NetlinkSockDiagNotifiedGroup::TcpV4Destroy,
+        )
+        .await;
+
+        let socket_tcp_v6 = fnet_sockets::IpSocketState {
+            family: Some(fnet::IpVersion::V6),
+            src_addr: Some(fidl_ip!("fe80::1")),
+            dst_addr: Some(fidl_ip!("fe80::2")),
+            cookie: Some(2),
+            marks: Some(fnet::Marks {
+                mark_1: None,
+                mark_2: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
+            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
+                fnet_sockets::IpSocketTcpState {
+                    src_port: Some(1111),
+                    dst_port: Some(2222),
+                    state: Some(fnet_tcp::State::Close),
+                    tcp_info: None,
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        };
+        inject_and_verify(
+            &mut event_loop,
+            &mut watcher_stream,
+            &mut sink_tcp_v4,
+            &mut sink_tcp_v6,
+            &mut sink_udp_v4,
+            &mut sink_udp_v6,
+            &socket_tcp_v6,
+            NetlinkSockDiagNotifiedGroup::TcpV6Destroy,
+        )
+        .await;
+
+        let socket_udp_v4 = fnet_sockets::IpSocketState {
+            family: Some(fnet::IpVersion::V4),
+            src_addr: Some(fidl_ip!("192.168.1.1")),
+            dst_addr: Some(fidl_ip!("192.168.1.2")),
+            cookie: Some(3),
+            marks: Some(fnet::Marks {
+                mark_1: None,
+                mark_2: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
+            transport: Some(fnet_sockets::IpSocketTransportState::Udp(
+                fnet_sockets::IpSocketUdpState {
+                    src_port: Some(1111),
+                    dst_port: Some(2222),
+                    state: Some(fnet_udp::State::Bound),
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        };
+        inject_and_verify(
+            &mut event_loop,
+            &mut watcher_stream,
+            &mut sink_tcp_v4,
+            &mut sink_tcp_v6,
+            &mut sink_udp_v4,
+            &mut sink_udp_v6,
+            &socket_udp_v4,
+            NetlinkSockDiagNotifiedGroup::UdpV4Destroy,
+        )
+        .await;
+
+        let socket_udp_v6 = fnet_sockets::IpSocketState {
+            family: Some(fnet::IpVersion::V6),
+            src_addr: Some(fidl_ip!("fe80::1")),
+            dst_addr: Some(fidl_ip!("fe80::2")),
+            cookie: Some(4),
+            marks: Some(fnet::Marks {
+                mark_1: None,
+                mark_2: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
+            transport: Some(fnet_sockets::IpSocketTransportState::Udp(
+                fnet_sockets::IpSocketUdpState {
+                    src_port: Some(1111),
+                    dst_port: Some(2222),
+                    state: Some(fnet_udp::State::Bound),
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        };
+        inject_and_verify(
+            &mut event_loop,
+            &mut watcher_stream,
+            &mut sink_tcp_v4,
+            &mut sink_tcp_v6,
+            &mut sink_udp_v4,
+            &mut sink_udp_v6,
+            &socket_udp_v6,
+            NetlinkSockDiagNotifiedGroup::UdpV6Destroy,
+        )
+        .await;
+
+        drop(event_loop);
+        scope.join().await;
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_watcher_stream_lifecycle() {
+        set_logger_for_test();
+
+        let (diagnostics_proxy, mut diagnostics_request_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fnet_sockets::DiagnosticsMarker>();
+        let (control_proxy, _control_request_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fnet_sockets::ControlMarker>();
+        let (_request_sink, request_stream) = mpsc::channel(1);
+        let (async_work_sink, async_work_receiver) = mpsc::unbounded();
+
+        let client_table = ClientTable::<NetlinkSockDiag, _>::default();
+        let mut event_loop = SockDiagEventLoop::new(
+            diagnostics_proxy,
+            control_proxy,
+            request_stream,
+            async_work_receiver,
+            client_table.clone(),
+        );
+
+        let (watcher_tx, mut watcher_rx) = mpsc::unbounded();
+
+        let mock_diagnostics_fut = async move {
+            while let Some(req) = diagnostics_request_stream.next().await {
+                match req.unwrap() {
+                    fnet_sockets::DiagnosticsRequest::GetDestructionWatcher {
+                        watcher,
+                        responder,
+                    } => {
+                        let stream = watcher.into_stream();
+                        responder.send().unwrap();
+                        let _ = watcher_tx.unbounded_send(stream);
+                    }
+                    req => panic!("unexpected diagnostics request: {:?}", req),
+                }
+            }
+        };
+
+        let scope = fasync::Scope::new();
+        let _diagnostics_task = scope.spawn(mock_diagnostics_fut);
+
+        // Client 1: TCP V4
+        let (sender_1, _sink_1) = crate::messaging::testutil::fake_sender_with_sink();
+        let (ext_client_1, int_client_1) = crate::client::new_client_pair(
+            crate::client::testutil::CLIENT_ID_1,
+            sender_1,
+            async_work_sink.clone(),
+        );
+        client_table.add_client(int_client_1);
+
+        // Client 2: UDP V4
+        let (sender_2, _sink_2) = crate::messaging::testutil::fake_sender_with_sink();
+        let (ext_client_2, int_client_2) = crate::client::new_client_pair(
+            crate::client::testutil::CLIENT_ID_2,
+            sender_2,
+            async_work_sink.clone(),
+        );
+        client_table.add_client(int_client_2);
+
+        assert!(event_loop.destruction_watcher_stream.is_none());
+
+        // Connect client 1 -> Destruction stream created.
+        let w1 =
+            ext_client_1.add_membership(NetlinkSockDiagNotifiedGroup::TcpV4Destroy.into()).unwrap();
+        let run_join = async {
+            event_loop.run_one_step().await;
+        };
+        let (watcher_stream_1_opt, ()) = future::join(watcher_rx.next(), run_join).await;
+        let _watcher_stream_1 = watcher_stream_1_opt.unwrap();
+        w1.wait_until_complete();
+
+        assert!(event_loop.destruction_watcher_stream.is_some());
+
+        // Connect client 2 -> No change to destruction stream.
+        let w2 =
+            ext_client_2.add_membership(NetlinkSockDiagNotifiedGroup::UdpV4Destroy.into()).unwrap();
+        event_loop.run_one_step().await;
+        w2.wait_until_complete();
+        assert!(event_loop.destruction_watcher_stream.is_some());
+        // No new watcher request was made
+        assert!(watcher_rx.try_next().is_err());
+
+        // Disconnect client 1 -> No change to destruction stream.
+        ext_client_1.del_membership(NetlinkSockDiagNotifiedGroup::TcpV4Destroy.into()).unwrap();
+        event_loop.run_one_step().await;
+
+        assert!(event_loop.destruction_watcher_stream.is_some());
+
+        // Disconnect client 2 -> Destruction stream dropped because no clients.
+        ext_client_2.del_membership(NetlinkSockDiagNotifiedGroup::UdpV4Destroy.into()).unwrap();
+        event_loop.run_one_step().await;
+
+        assert!(event_loop.destruction_watcher_stream.is_none());
+
+        // Connect client 1 again -> Destruction stream recreated.
+        let w3 =
+            ext_client_1.add_membership(NetlinkSockDiagNotifiedGroup::TcpV4Destroy.into()).unwrap();
+        let run_join_again = async {
+            event_loop.run_one_step().await;
+        };
+        let (_watcher_stream_2_opt, ()) = future::join(watcher_rx.next(), run_join_again).await;
+        w3.wait_until_complete();
+        assert!(event_loop.destruction_watcher_stream.is_some());
+
+        drop(event_loop);
+        scope.join().await;
     }
 }

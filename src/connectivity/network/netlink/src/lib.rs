@@ -454,15 +454,19 @@ pub async fn run_netlink_worker_with_protocols<
     let sock_diag_clients = ClientTable::default();
     let (sock_diag_request_sink, sock_diag_request_stream) = mpsc::channel(1);
 
-    let sock_diag_event_loop = async move {
-        SockDiagEventLoop::new(
-            socket_diagnostics,
-            socket_control,
-            sock_diag_request_stream,
-            sock_diag_async_work_receiver,
-        )
-        .run()
-        .await;
+    let sock_diag_event_loop = {
+        let sock_diag_clients = sock_diag_clients.clone();
+        async move {
+            SockDiagEventLoop::new(
+                socket_diagnostics,
+                socket_control,
+                sock_diag_request_stream,
+                sock_diag_async_work_receiver,
+                sock_diag_clients,
+            )
+            .run()
+            .await;
+        }
     };
 
     let sock_diag_client_receiver_loop = async move {

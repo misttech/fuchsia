@@ -13,11 +13,7 @@ pub(crate) use request::NetlinkSockDiagRequestHandler;
 use std::convert::Infallible as Never;
 use std::num::NonZeroU32;
 
-use linux_uapi::{
-    sknetlink_groups_SKNLGRP_INET_TCP_DESTROY, sknetlink_groups_SKNLGRP_INET_UDP_DESTROY,
-    sknetlink_groups_SKNLGRP_INET6_TCP_DESTROY, sknetlink_groups_SKNLGRP_INET6_UDP_DESTROY,
-    sknetlink_groups_SKNLGRP_NONE,
-};
+use fidl_fuchsia_net_sockets_ext as fnet_sockets_ext;
 use netlink_packet_sock_diag::{SockDiagRequest, SockDiagResponse};
 
 use crate::client::{AsyncWorkCompletionWaiter, ExternalClient};
@@ -32,30 +28,85 @@ use crate::protocol_family::{NamedNetlinkFamily, NetlinkClient, ProtocolFamily};
 pub(crate) struct NetlinkSockDiag;
 
 impl MulticastCapableNetlinkFamily for NetlinkSockDiag {
-    #[allow(non_upper_case_globals)]
-    fn check_support(
-        ModernGroup(group): &ModernGroup,
-    ) -> Result<GroupSupport, InvalidModernGroupError> {
-        match *group {
-            sknetlink_groups_SKNLGRP_INET_TCP_DESTROY
-            | sknetlink_groups_SKNLGRP_INET_UDP_DESTROY
-            | sknetlink_groups_SKNLGRP_INET6_TCP_DESTROY
-            | sknetlink_groups_SKNLGRP_INET6_UDP_DESTROY
-            | sknetlink_groups_SKNLGRP_NONE => Ok(GroupSupport::Unsupported),
-            _ => Err(InvalidModernGroupError),
+    fn check_support(group: &ModernGroup) -> Result<GroupSupport, InvalidModernGroupError> {
+        if group.0 == linux_uapi::sknetlink_groups_SKNLGRP_NONE {
+            Ok(GroupSupport::Unsupported)
+        } else {
+            NetlinkSockDiagNotifiedGroup::try_from(*group).map(|_| GroupSupport::Supported)
         }
     }
 }
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
-// TODO(https://fxbug.dev/470079735): Support multicast socket closure
-// notifications.
-#[expect(dead_code)]
 pub(crate) enum NetlinkSockDiagNotifiedGroup {
     TcpV4Destroy,
     TcpV6Destroy,
     UdpV4Destroy,
     UdpV6Destroy,
+}
+
+impl TryFrom<ModernGroup> for NetlinkSockDiagNotifiedGroup {
+    type Error = InvalidModernGroupError;
+
+    fn try_from(ModernGroup(group): ModernGroup) -> Result<Self, Self::Error> {
+        match group {
+            linux_uapi::sknetlink_groups_SKNLGRP_INET_TCP_DESTROY => {
+                Ok(NetlinkSockDiagNotifiedGroup::TcpV4Destroy)
+            }
+            linux_uapi::sknetlink_groups_SKNLGRP_INET6_TCP_DESTROY => {
+                Ok(NetlinkSockDiagNotifiedGroup::TcpV6Destroy)
+            }
+            linux_uapi::sknetlink_groups_SKNLGRP_INET_UDP_DESTROY => {
+                Ok(NetlinkSockDiagNotifiedGroup::UdpV4Destroy)
+            }
+            linux_uapi::sknetlink_groups_SKNLGRP_INET6_UDP_DESTROY => {
+                Ok(NetlinkSockDiagNotifiedGroup::UdpV6Destroy)
+            }
+            _ => Err(InvalidModernGroupError),
+        }
+    }
+}
+
+impl From<NetlinkSockDiagNotifiedGroup> for ModernGroup {
+    fn from(group: NetlinkSockDiagNotifiedGroup) -> Self {
+        match group {
+            NetlinkSockDiagNotifiedGroup::TcpV4Destroy => {
+                ModernGroup(linux_uapi::sknetlink_groups_SKNLGRP_INET_TCP_DESTROY)
+            }
+            NetlinkSockDiagNotifiedGroup::TcpV6Destroy => {
+                ModernGroup(linux_uapi::sknetlink_groups_SKNLGRP_INET6_TCP_DESTROY)
+            }
+            NetlinkSockDiagNotifiedGroup::UdpV4Destroy => {
+                ModernGroup(linux_uapi::sknetlink_groups_SKNLGRP_INET_UDP_DESTROY)
+            }
+            NetlinkSockDiagNotifiedGroup::UdpV6Destroy => {
+                ModernGroup(linux_uapi::sknetlink_groups_SKNLGRP_INET6_UDP_DESTROY)
+            }
+        }
+    }
+}
+
+impl NetlinkSockDiagNotifiedGroup {
+    pub(crate) fn from_socket_state(socket: &fnet_sockets_ext::IpSocketState) -> Self {
+        match socket {
+            fnet_sockets_ext::IpSocketState::V4(s) => match &s.transport {
+                fnet_sockets_ext::IpSocketTransportState::Tcp(_) => {
+                    NetlinkSockDiagNotifiedGroup::TcpV4Destroy
+                }
+                fnet_sockets_ext::IpSocketTransportState::Udp(_) => {
+                    NetlinkSockDiagNotifiedGroup::UdpV4Destroy
+                }
+            },
+            fnet_sockets_ext::IpSocketState::V6(s) => match &s.transport {
+                fnet_sockets_ext::IpSocketTransportState::Tcp(_) => {
+                    NetlinkSockDiagNotifiedGroup::TcpV6Destroy
+                }
+                fnet_sockets_ext::IpSocketTransportState::Udp(_) => {
+                    NetlinkSockDiagNotifiedGroup::UdpV6Destroy
+                }
+            },
+        }
+    }
 }
 
 impl MessageWithPermission for SockDiagRequest {
@@ -116,12 +167,9 @@ impl ProtocolFamily for NetlinkSockDiag {
     type AsyncWorkItem = Never;
 
     fn should_notify_on_group_membership_change(
-        _group: ModernGroup,
+        group: ModernGroup,
     ) -> Option<Self::NotifiedMulticastGroup> {
-        // TODO(https://fxbug.dev/470079735): All membership changes need to
-        // be notified so the system can avoid generating socket destruction
-        // messages when nobody is listening.
-        None
+        NetlinkSockDiagNotifiedGroup::try_from(group).ok()
     }
 }
 
