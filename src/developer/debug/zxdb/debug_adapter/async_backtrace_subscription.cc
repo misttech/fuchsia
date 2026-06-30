@@ -22,7 +22,7 @@ DAP_IMPLEMENT_STRUCT_TYPEINFO(AsyncTaskNode, "", DAP_FIELD(id, "id"), DAP_FIELD(
                               DAP_FIELD(file, "file"), DAP_FIELD(line, "line"),
                               DAP_FIELD(children, "children"))
 
-DAP_IMPLEMENT_STRUCT_TYPEINFO(AsyncBacktraceUpdate, "vscode-fuchsia.updateAsyncBacktrace",
+DAP_IMPLEMENT_STRUCT_TYPEINFO(AsyncBacktraceUpdate, "zxdb.updateAsyncBacktrace",
                               DAP_FIELD(id, "id"), DAP_FIELD(name, "name"),
                               DAP_FIELD(tasks, "tasks"))
 
