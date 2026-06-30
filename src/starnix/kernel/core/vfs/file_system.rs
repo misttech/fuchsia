@@ -198,10 +198,11 @@ impl FileSystem {
             },
             node_cache,
             dcache: match cache_mode {
-                CacheMode::Permanent => DirEntryCache::Permanent(Default::default()),
-                CacheMode::Cached(CacheConfig { capacity }) => {
-                    DirEntryCache::Lru(LruCache { capacity, entries: Default::default() })
-                }
+                CacheMode::Permanent => DirEntryCache::Permanent(LockDepMutex::new(HashSet::new())),
+                CacheMode::Cached(CacheConfig { capacity }) => DirEntryCache::Lru(LruCache {
+                    capacity,
+                    entries: LockDepMutex::new(LinkedHashMap::new()),
+                }),
                 CacheMode::Uncached => DirEntryCache::Uncached,
             },
             security_state,

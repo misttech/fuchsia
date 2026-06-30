@@ -120,7 +120,7 @@ pub struct ThreadLockupInfo {
 /// Global registry of all tracked threads.
 static REGISTRY: LazyLock<
     LockDepRwLock<HashSet<RegisteredThread>, ThreadLockupDetectorRegistryLock>,
-> = LazyLock::new(|| Default::default());
+> = LazyLock::new(|| LockDepRwLock::new(HashSet::new()));
 
 impl ThreadLockupDetector {
     /// Starts an operation by storing the current time in the thread-local atomic.

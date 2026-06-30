@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn test_rw_seq_lock() {
-        let lock: RwSeqLock<LockDepMutex<u32, TestLevel>> = RwSeqLock::new(0.into());
+        let lock: RwSeqLock<LockDepMutex<u32, TestLevel>> = RwSeqLock::new(LockDepMutex::new(0));
         let data = AtomicU32::new(0);
 
         let read_val = lock.read_seq(|| data.load(Ordering::Relaxed));
@@ -163,7 +163,7 @@ mod tests {
         }
 
         let data = Arc::new(TestData {
-            lock: RwSeqLock::new(Default::default()),
+            lock: RwSeqLock::new(LockDepMutex::new(())),
             val1: AtomicU32::new(0),
             val2: AtomicU32::new(0),
         });

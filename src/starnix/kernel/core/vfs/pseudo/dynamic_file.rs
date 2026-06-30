@@ -190,7 +190,7 @@ pub struct DynamicFile<Source: SequenceFileSource> {
 
 impl<Source: SequenceFileSource> DynamicFile<Source> {
     pub fn new(source: Source) -> Self {
-        DynamicFile { state: DynamicFileState::new(source).into() }
+        DynamicFile { state: LockDepMutex::new(DynamicFileState::new(source)) }
     }
 }
 

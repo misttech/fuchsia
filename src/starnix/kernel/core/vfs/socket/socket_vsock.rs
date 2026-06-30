@@ -62,12 +62,11 @@ fn downcast_socket_to_vsock(socket: &Socket) -> &VsockSocket {
 impl VsockSocket {
     pub fn new(_socket_type: SocketType) -> VsockSocket {
         VsockSocket {
-            inner: VsockSocketInner {
+            inner: LockDepMutex::new(VsockSocketInner {
                 address: None,
                 waiters: WaitQueue::default(),
                 state: VsockSocketState::Disconnected,
-            }
-            .into(),
+            }),
         }
     }
 

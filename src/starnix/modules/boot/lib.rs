@@ -167,7 +167,7 @@ struct File {
 
 impl File {
     fn new(sender: Sender<bool>) -> Arc<Self> {
-        Arc::new(Self { booted: false.into(), sender })
+        Arc::new(Self { booted: LockDepMutex::new(false), sender })
     }
 }
 

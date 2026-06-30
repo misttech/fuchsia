@@ -440,7 +440,7 @@ impl OperationQueue {
     fn new(max_operations: usize) -> Self {
         Self {
             max_operations,
-            pending: Default::default(),
+            pending: LockDepMutex::new(Default::default()),
             read_waiters: Default::default(),
             write_waiters: Default::default(),
         }

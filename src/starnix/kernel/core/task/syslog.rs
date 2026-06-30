@@ -63,7 +63,9 @@ impl Syslog {
         });
 
         let subscription = LogSubscription::snapshot_then_subscribe(system_task)?;
-        self.syscall_subscription.set(subscription.into()).expect("syslog inititialized once");
+        self.syscall_subscription
+            .set(LockDepMutex::new(subscription))
+            .expect("syslog inititialized once");
         Ok(())
     }
 

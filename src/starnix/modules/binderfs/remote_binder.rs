@@ -465,7 +465,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
     fn new(current_task: &CurrentTask) -> Arc<Self> {
         Arc::new(Self {
             kernel: current_task.kernel().clone(),
-            state: RemoteBinderHandleState {
+            state: LockDepMutex::new(RemoteBinderHandleState {
                 thread_group: Arc::downgrade(&current_task.thread_group()),
                 koid_to_task: Default::default(),
                 unassigned_tasks: Default::default(),
@@ -474,8 +474,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                 taskless_requests: Default::default(),
                 exit: Default::default(),
                 exit_notifiers: Default::default(),
-            }
-            .into(),
+            }),
             waiters: Default::default(),
             _phantom: Default::default(),
         })

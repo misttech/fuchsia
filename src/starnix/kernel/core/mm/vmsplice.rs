@@ -102,7 +102,7 @@ impl VmsplicePayload {
         segments: SmallVec<[VmsplicePayloadSegment; 1]>,
     ) -> Arc<Self> {
         let mapping_strong = mapping.upgrade();
-        let payload = Arc::new(Self { mapping, segments: segments.into() });
+        let payload = Arc::new(Self { mapping, segments: LockDepMutex::new(segments) });
         if let Some(mapping) = mapping_strong {
             mapping.inflight_vmspliced_payloads.handle_new_payload(&payload);
         }

@@ -250,7 +250,7 @@ pub fn open_kmsg(
         Syslog::validate_access(current_task, SyslogAccess::DevKmsgRead)?;
     }
     let subscription = if flags.can_read() {
-        Some(Syslog::snapshot_then_subscribe(&current_task)?.into())
+        Some(LockDepMutex::new(Syslog::snapshot_then_subscribe(&current_task)?))
     } else {
         None
     };

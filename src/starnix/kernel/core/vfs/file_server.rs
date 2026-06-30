@@ -63,7 +63,7 @@ impl FileServerRegistry {
         let mut is_new = false;
         let registry = kernel.expando.get_or_init(|| {
             is_new = true;
-            Self { stats: Default::default() }
+            Self { stats: LockDepMutex::new(HashMap::new()) }
         });
         if is_new {
             let registry_weak = Arc::downgrade(&registry);

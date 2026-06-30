@@ -65,12 +65,11 @@ impl Session {
     pub fn new(leader: pid_t) -> Arc<Session> {
         Arc::new(Session {
             leader,
-            mutable_state: SessionMutableState {
+            mutable_state: LockDepRwLock::new(SessionMutableState {
                 process_groups: BTreeMap::new(),
                 foreground_process_group: leader,
                 controlling_terminal: None,
-            }
-            .into(),
+            }),
         })
     }
 

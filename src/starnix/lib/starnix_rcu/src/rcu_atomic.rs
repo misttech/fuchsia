@@ -20,7 +20,7 @@ impl<T: AsAtomic + std::fmt::Debug, L: LockLevel> std::fmt::Debug for RcuAtomic<
 
 impl<T: AsAtomic, L: LockLevel> RcuAtomic<T, L> {
     pub fn new(value: T) -> Self {
-        Self { mutex: value.into(), atomic: T::Atomic::new(value) }
+        Self { mutex: LockDepMutex::new(value), atomic: T::Atomic::new(value) }
     }
 
     /// Read the value from the atomic without taking the lock.

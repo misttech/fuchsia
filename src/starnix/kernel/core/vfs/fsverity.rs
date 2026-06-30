@@ -99,10 +99,9 @@ enum MetadataType {
 }
 
 /// Per-file fsverity state stored in FsNode.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub enum FsVerityState {
     /// This file does not use fsverity.
-    #[default]
     None,
     /// The state when building the merkle-tree for this file.
     ///

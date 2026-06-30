@@ -167,7 +167,7 @@ impl KernelCgroups {
 
 impl Default for KernelCgroups {
     fn default() -> Self {
-        Self { cgroup2: CgroupRoot::new(0), cgroup1: Default::default() }
+        Self { cgroup2: CgroupRoot::new(0), cgroup1: LockDepMutex::new(CgroupV1State::default()) }
     }
 }
 

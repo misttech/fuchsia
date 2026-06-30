@@ -453,7 +453,7 @@ impl StubbedNetlinkSocket {
             TODO("https://fxbug.dev/278565021"),
             format!("Creating StubbedNetlinkSocket: {:?}", family).as_str()
         );
-        StubbedNetlinkSocket { inner: NetlinkSocketInner::new(family).into() }
+        StubbedNetlinkSocket { inner: LockDepMutex::new(NetlinkSocketInner::new(family)) }
     }
 
     /// Locks and returns the inner state of the Socket.
@@ -651,7 +651,9 @@ impl Default for UEventNetlinkSocket {
     #[allow(clippy::let_and_return)]
     fn default() -> Self {
         let result = Self {
-            inner: Arc::new(NetlinkSocketInner::new(NetlinkFamily::KobjectUevent).into()),
+            inner: Arc::new(LockDepMutex::new(NetlinkSocketInner::new(
+                NetlinkFamily::KobjectUevent,
+            ))),
             device_listener_key: Default::default(),
         };
         #[cfg(any(test, debug_assertions))]
@@ -1527,7 +1529,7 @@ pub struct AuditNetlinkClient {
 
 impl AuditNetlinkClient {
     fn new(audit_logger: Arc<AuditLogger>) -> Self {
-        Self { audit_logger, waiters: Default::default(), audit_response: Default::default() }
+        Self { audit_logger, waiters: Default::default(), audit_response: LockDepMutex::new(None) }
     }
 
     pub fn notify(&self) {

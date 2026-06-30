@@ -751,7 +751,7 @@ impl ThreadGroup {
                 pending_signals: Default::default(),
                 has_pending_signals: Default::default(),
                 start_time: zx::MonotonicInstant::get(),
-                mutable_state: ThreadGroupMutableState {
+                mutable_state: LockDepRwLock::new(ThreadGroupMutableState {
                     parent: parent
                         .as_ref()
                         .map(|p| ThreadGroupParent::new(p.base.weak_self.clone())),
@@ -775,8 +775,7 @@ impl ThreadGroup {
                     allowed_ptracers: PtraceAllowedPtracers::None,
                     exit_notifier: None,
                     notifier: None,
-                }
-                .into(),
+                }),
                 log_syscalls_as_info: AtomicBool::new(false),
             };
 

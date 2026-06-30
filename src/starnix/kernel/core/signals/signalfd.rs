@@ -37,7 +37,7 @@ impl SignalFd {
         Anon::new_private_file(
             locked,
             current_task,
-            Box::new(SignalFd { mask: mask.into() }),
+            Box::new(SignalFd { mask: LockDepMutex::new(mask) }),
             open_flags,
             "[signalfd]",
         )

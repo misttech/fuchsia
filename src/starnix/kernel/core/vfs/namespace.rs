@@ -391,7 +391,7 @@ impl Mount {
         Arc::new(Self {
             id: kernel.get_next_mount_id(),
             flags: (flags & MountpointFlags::STORED_ON_MOUNT).into(),
-            flags_lock: Default::default(),
+            flags_lock: LockDepMutex::new(()),
             root,
             active_client_counter: Default::default(),
             fs,

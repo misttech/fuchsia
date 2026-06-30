@@ -122,7 +122,7 @@ struct PerfState {
 
 impl Default for PerfState {
     fn default() -> Self {
-        Self { format_id_lookup_table: Default::default() }
+        Self { format_id_lookup_table: LockDepMutex::new(HashMap::new()) }
     }
 }
 
@@ -1110,7 +1110,7 @@ pub fn sys_perf_event_open(
     let file = Box::new(PerfEventFile {
         _tid: tid,
         _cpu: cpu,
-        perf_event_file: perf_event_file.into(),
+        perf_event_file: LockDepRwLock::new(perf_event_file),
         security_state: security::perf_event_alloc(current_task),
         seq_lock: seq_lock,
     });

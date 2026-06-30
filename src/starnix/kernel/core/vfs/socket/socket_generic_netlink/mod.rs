@@ -321,7 +321,9 @@ struct GenericNetlinkServer<S> {
 
 impl<S: Sender<GenericMessage>> GenericNetlinkServer<S> {
     fn new(new_family_sender: mpsc::UnboundedSender<Arc<dyn GenericNetlinkFamily<S>>>) -> Self {
-        Self { state: Arc::new(GenericNetlinkServerState::new(new_family_sender).into()) }
+        Self {
+            state: Arc::new(LockDepMutex::new(GenericNetlinkServerState::new(new_family_sender))),
+        }
     }
 
     async fn handle_generic_message(

@@ -3307,7 +3307,7 @@ impl MemoryManager {
                 private_anonymous: private_anonymous
                     .unwrap_or_else(|| PrivateAnonymousMemoryManager::new(backing_size)),
             },
-            state: MemoryManagerState {
+            state: LockDepRwLock::new(MemoryManagerState {
                 mappings: Default::default(),
                 userfaultfds: Default::default(),
                 shadow_mappings_for_mlock: Default::default(),
@@ -3317,8 +3317,7 @@ impl MemoryManager {
                     mmap_top,
                     ..Default::default()
                 },
-            }
-            .into(),
+            }),
             // TODO(security): Reset to DISABLE, or the value in the fs.suid_dumpable sysctl, under
             // certain conditions as specified in the prctl(2) man page.
             dumpable: OrderedMutex::new(DumpPolicy::User),

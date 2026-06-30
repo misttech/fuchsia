@@ -519,7 +519,7 @@ pub(super) struct FileSystemState {
 
 impl FileSystemState {
     fn new(mount_options: FileSystemMountOptions, _ops: &dyn FileSystemOps) -> Self {
-        let pending_entries = IndexSet::new().into();
+        let pending_entries = LockDepMutex::new(IndexSet::new());
         let label = OnceLock::new();
 
         Self { mount_options, pending_entries, label }
@@ -569,7 +569,7 @@ impl Default for FsNodeState {
                 label: FsNodeLabel::Uninitialized,
                 class: None,
             }),
-            update_lock: Default::default(),
+            update_lock: LockDepMutex::new(()),
         }
     }
 }
