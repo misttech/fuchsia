@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::doctor_ledger::{DoctorLedger, LedgerMode, LedgerOutcome};
+use crate::doctor_ledger::{LedgerMode, LedgerNodeGuard, LedgerOutcome};
 use anyhow::Result;
 use ffx_config::EnvironmentContext;
 use std::io::Write;
@@ -122,38 +122,36 @@ impl UsbDriverFinder for CommandUsbDriverFinder {
 
 pub async fn check_usb_driver<W: Write, D: UsbDriverFinder>(
     finder: &D,
-    ledger: &mut DoctorLedger<W>,
+    ledger: &mut LedgerNodeGuard<'_, W>,
     env_context: &EnvironmentContext,
 ) -> Result<()> {
     if !env_context.get(ffx_config::keys::USB_ENABLED).unwrap_or(false) {
         return Ok(());
     }
-    let usb_driver_node = ledger.add_node("FFX USB Driver", LedgerMode::Automatic)?;
+    let mut usb_driver_node = ledger.add_node("FFX USB Driver", LedgerMode::Automatic)?;
 
     let usb_driver_statuses = match finder.find().await {
         Ok(statuses) => statuses,
         Err(FindUsbDriverError::DriverIsNotRunning) => {
-            let info_node = ledger.add_node(
+            let info_node = usb_driver_node.add_node(
                 "The ffx-usb-driver is not running. It should be started automatically when \
                 needed. If this error persists and there are ongoing issues communicating with the \
                 target, this may be a bug.",
                 LedgerMode::Automatic,
             )?;
-            ledger.set_outcome(info_node, LedgerOutcome::Warning)?;
-            ledger.close(usb_driver_node)?;
+            info_node.set_outcome(LedgerOutcome::Warning)?;
             return Ok(());
         }
         Err(e) => {
-            let node = ledger.add_node(&format!("{}", e), LedgerMode::Automatic)?;
-            ledger.set_outcome(node, LedgerOutcome::Failure)?;
-            ledger.close(usb_driver_node)?;
+            let node = usb_driver_node.add_node(&format!("{}", e), LedgerMode::Automatic)?;
+            node.set_outcome(LedgerOutcome::Failure)?;
             return Ok(());
         }
     };
     let pid_socket_ledger_mode = if usb_driver_statuses.len() > 1 {
-        let warning_node =
-            ledger.add_node("Multiple ffx-usb-driver processes running.", LedgerMode::Automatic)?;
-        ledger.set_outcome(warning_node, LedgerOutcome::Warning)?;
+        let warning_node = usb_driver_node
+            .add_node("Multiple ffx-usb-driver processes running.", LedgerMode::Automatic)?;
+        warning_node.set_outcome(LedgerOutcome::Warning)?;
         LedgerMode::Automatic
     } else {
         LedgerMode::Verbose
@@ -163,7 +161,7 @@ pub async fn check_usb_driver<W: Write, D: UsbDriverFinder>(
         match env_context.get(usb_driver_api::CONFIG_USB_SOCKET_PATH) {
             Ok(pb) => pb,
             Err(e) => {
-                let warning_node = ledger.add_node(
+                let warning_node = usb_driver_node.add_node(
                     format!(
                         "Could not find USB Driver Socket path with config {}. Error: {}",
                         usb_driver_api::CONFIG_USB_SOCKET_PATH,
@@ -172,8 +170,7 @@ pub async fn check_usb_driver<W: Write, D: UsbDriverFinder>(
                     .as_str(),
                     LedgerMode::Automatic,
                 )?;
-                ledger.set_outcome(warning_node, LedgerOutcome::Warning)?;
-                ledger.close(usb_driver_node)?;
+                warning_node.set_outcome(LedgerOutcome::Warning)?;
                 return Ok(());
             }
         };
@@ -181,27 +178,32 @@ pub async fn check_usb_driver<W: Write, D: UsbDriverFinder>(
     for usb_driver_status in usb_driver_statuses {
         let UsbDriverStatus { pid, socket_path } = usb_driver_status;
 
-        let running_node = ledger.add_node("ffx-usb-driver is running.", LedgerMode::Automatic)?;
-        let pid_node = ledger.add_node(&format!("PID: {}", pid), pid_socket_ledger_mode)?;
-        ledger.set_outcome(pid_node, LedgerOutcome::Success)?;
-        let socket_node =
-            ledger.add_node(&format!("Socket: {}", socket_path), pid_socket_ledger_mode)?;
-        ledger.set_outcome(socket_node, LedgerOutcome::Success)?;
-
-        if expected_socket_path.as_path() != std::path::Path::new(&socket_path) {
-            let warning_node = ledger.add_node(
-                &format!(
-                    "ffx-usb-driver is listening on a different socket than what is configured: {}. Expected: {}",
-                    socket_path,
-                    expected_socket_path.display()
-                ),
-                LedgerMode::Automatic,
+        {
+            let mut running_node =
+                usb_driver_node.add_node("ffx-usb-driver is running.", LedgerMode::Automatic)?;
+            running_node.add_node_with_outcome(
+                &format!("PID: {}", pid),
+                pid_socket_ledger_mode,
+                LedgerOutcome::Success,
             )?;
-            ledger.set_outcome(warning_node, LedgerOutcome::Warning)?;
-            ledger.close(warning_node)?;
+            running_node.add_node_with_outcome(
+                &format!("Socket: {}", socket_path),
+                pid_socket_ledger_mode,
+                LedgerOutcome::Success,
+            )?;
+
+            if expected_socket_path.as_path() != std::path::Path::new(&socket_path) {
+                running_node.add_node_with_outcome(
+                    &format!(
+                        "ffx-usb-driver is listening on a different socket than what is configured: {}. Expected: {}",
+                        socket_path,
+                        expected_socket_path.display()
+                    ),
+                    LedgerMode::Automatic,
+                    LedgerOutcome::Warning,
+                )?;
+            }
         }
-        ledger.close(running_node)?;
     }
-    ledger.close(usb_driver_node)?;
     Ok(())
 }

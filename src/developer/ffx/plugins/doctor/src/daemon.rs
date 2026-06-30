@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::doctor_ledger::{DoctorLedger, LedgerMode, LedgerOutcome};
+use crate::doctor_ledger::{LedgerMode, LedgerNodeGuard, LedgerOutcome};
 use crate::types::{get_abi_revision, get_api_level};
 use anyhow::Result;
 use doctor_utils::DaemonManager;
@@ -15,15 +15,18 @@ use timeout::timeout;
 
 pub async fn get_daemon_pid<W: Write>(
     daemon_manager: &impl DaemonManager,
-    ledger: &mut DoctorLedger<W>,
+    ledger: &mut LedgerNodeGuard<'_, W>,
 ) -> Option<Vec<usize>> {
     match daemon_manager.get_pid().await {
         Ok(vec) => return Some(vec),
         Err(e) => {
-            let node = ledger
-                .add_node(&format!("Error getting daemon pid: {}", e), LedgerMode::Automatic)
+            ledger
+                .add_node_with_outcome(
+                    &format!("Error getting daemon pid: {}", e),
+                    LedgerMode::Automatic,
+                    LedgerOutcome::SoftWarning,
+                )
                 .ok()?;
-            ledger.set_outcome(node, LedgerOutcome::SoftWarning).ok()?;
             return None;
         }
     }
@@ -55,7 +58,7 @@ impl DaemonPidState {
     pub async fn update<W: Write>(
         &mut self,
         daemon_manager: &impl DaemonManager,
-        ledger: &mut DoctorLedger<W>,
+        ledger: &mut LedgerNodeGuard<'_, W>,
     ) {
         self.added_pids.clear();
         self.dropped_pids.clear();
@@ -86,63 +89,61 @@ impl DaemonPidState {
 pub async fn daemon_restart<W: Write>(
     daemon_manager: &impl DaemonManager,
     retry_delay: Duration,
-    ledger: &mut DoctorLedger<W>,
+    ledger: &mut LedgerNodeGuard<'_, W>,
 ) -> Result<()> {
-    let mut main_node = ledger.add_node("Killing Daemon", LedgerMode::Automatic)?;
-
     let mut pid_state = DaemonPidState::new();
+    let daemon_killed = {
+        let mut main_node = ledger.add_node("Killing Daemon", LedgerMode::Automatic)?;
+        pid_state.update(daemon_manager, &mut main_node).await;
 
-    pid_state.update(daemon_manager, ledger).await;
+        let killed = if daemon_manager.is_daemon_running().await {
+            main_node.add_node_with_outcome(
+                "Killing running daemons.",
+                LedgerMode::Automatic,
+                LedgerOutcome::Success,
+            )?;
+            daemon_manager.kill_all().await?;
+            true
+        } else {
+            match daemon_manager.kill_all().await {
+                Ok(true) => {
+                    main_node.add_node_with_outcome(
+                        "Killing zombie daemons.",
+                        LedgerMode::Automatic,
+                        LedgerOutcome::Success,
+                    )?;
+                    true
+                }
+                Ok(false) => {
+                    main_node.add_node_with_outcome(
+                        "No running daemons found.",
+                        LedgerMode::Automatic,
+                        LedgerOutcome::Success,
+                    )?;
+                    false
+                }
+                Err(e) => return Err(e.into()),
+            }
+        };
 
-    // Kill the daemon if it is running.
-    let daemon_killed = if daemon_manager.is_daemon_running().await {
-        let node = ledger.add_node("Killing running daemons.", LedgerMode::Automatic)?;
-        if let Err(e) = daemon_manager.kill_all().await {
-            let _ = ledger.close(main_node);
-            return Err(e.into());
-        }
-        ledger.set_outcome(node, LedgerOutcome::Success)?;
-        true
-    } else {
-        match daemon_manager.kill_all().await {
-            Ok(true) => {
-                let node = ledger.add_node("Killing zombie daemons.", LedgerMode::Automatic)?;
-                ledger.set_outcome(node, LedgerOutcome::Success)?;
-                true
-            }
-            Ok(false) => {
-                let node = ledger.add_node("No running daemons found.", LedgerMode::Automatic)?;
-                ledger.set_outcome(node, LedgerOutcome::Success)?;
-                false
-            }
-            Err(e) => {
-                let _ = ledger.close(main_node);
-                return Err(e.into());
-            }
-        }
-    };
-
-    // Display killed daemon PIDs.
-    pid_state.update(daemon_manager, ledger).await;
-    if daemon_killed && !pid_state.has_error {
-        {
-            let node = ledger.add_node(
+        pid_state.update(daemon_manager, &mut main_node).await;
+        if killed && !pid_state.has_error {
+            main_node.add_node_with_outcome(
                 &format!("Killed daemon PID: {:?}", pid_state.dropped_pids),
                 LedgerMode::Automatic,
+                LedgerOutcome::Success,
             )?;
-            ledger.set_outcome(node, LedgerOutcome::Success)?;
-        }
 
-        if !pid_state.current_pids.is_empty() {
-            let node = ledger.add_node(
-                &format!("Daemon are still running, PID: {:?}", pid_state.current_pids),
-                LedgerMode::Automatic,
-            )?;
-            ledger.set_outcome(node, LedgerOutcome::Warning)?;
+            if !pid_state.current_pids.is_empty() {
+                main_node.add_node_with_outcome(
+                    &format!("Daemon is still running, PID: {:?}", pid_state.current_pids),
+                    LedgerMode::Automatic,
+                    LedgerOutcome::Warning,
+                )?;
+            }
         }
-    }
-
-    ledger.close(main_node)?;
+        killed
+    };
 
     if daemon_killed {
         // HACK: Wait a few seconds before spawning a new daemon. Attempting
@@ -152,111 +153,129 @@ pub async fn daemon_restart<W: Write>(
         fuchsia_async::Timer::new(Duration::from_millis(5000)).await;
     };
 
-    main_node = ledger.add_node("Starting Daemon", LedgerMode::Automatic)?;
+    {
+        let mut main_node = ledger.add_node("Starting Daemon", LedgerMode::Automatic)?;
 
-    // Spawn daemon.
-    match timeout(retry_delay, daemon_manager.spawn()).await {
-        Ok(Ok(_)) => {
-            let node = ledger.add_node("Daemon spawned", LedgerMode::Automatic)?;
-            ledger.set_outcome(node, LedgerOutcome::Success)?;
+        // Spawn daemon.
+        match timeout(retry_delay, daemon_manager.spawn()).await {
+            Ok(Ok(_)) => {
+                main_node.add_node_with_outcome(
+                    "Daemon spawned",
+                    LedgerMode::Automatic,
+                    LedgerOutcome::Success,
+                )?;
+            }
+            Ok(Err(e)) => {
+                main_node.add_node_with_outcome(
+                    &format!("Error spawning daemon: {}", e),
+                    LedgerMode::Automatic,
+                    LedgerOutcome::Failure,
+                )?;
+                return Ok(());
+            }
+            Err(_) => {
+                main_node.add_node_with_outcome(
+                    "Timeout spawning daemon",
+                    LedgerMode::Automatic,
+                    LedgerOutcome::Failure,
+                )?;
+                return Ok(());
+            }
         }
-        Ok(Err(e)) => {
-            let node =
-                ledger.add_node(&format!("Error spawning daemon: {}", e), LedgerMode::Automatic)?;
-            ledger.set_outcome(node, LedgerOutcome::Failure)?;
-            ledger.close(main_node)?;
-            return Ok(());
+
+        pid_state.update(daemon_manager, &mut main_node).await;
+        if !pid_state.has_error {
+            main_node.add_node_with_outcome(
+                &format!("Daemon PID: {:?}", pid_state.added_pids),
+                LedgerMode::Automatic,
+                LedgerOutcome::Success,
+            )?;
         }
-        Err(_) => {
-            let node = ledger.add_node("Timeout spawning daemon", LedgerMode::Automatic)?;
-            ledger.set_outcome(node, LedgerOutcome::Failure)?;
-            ledger.close(main_node)?;
-            return Ok(());
+
+        // Check daemon connection.
+        let daemon_proxy = match timeout(retry_delay, daemon_manager.find_and_connect()).await {
+            Ok(Ok(val)) => {
+                main_node.add_node_with_outcome(
+                    "Connected to daemon",
+                    LedgerMode::Automatic,
+                    LedgerOutcome::Success,
+                )?;
+                val
+            }
+            Ok(Err(e)) => {
+                main_node.add_node_with_outcome(
+                    &format!(
+                        "Error connecting to daemon: {}. Run `ffx doctor --restart-daemon`",
+                        e
+                    ),
+                    LedgerMode::Automatic,
+                    LedgerOutcome::Failure,
+                )?;
+                return Ok(());
+            }
+            Err(_) => {
+                main_node.add_node_with_outcome(
+                    "Timeout while connecting to daemon. Run `ffx doctor --restart-daemon`",
+                    LedgerMode::Automatic,
+                    LedgerOutcome::Failure,
+                )?;
+                return Ok(());
+            }
+        };
+
+        match timeout(retry_delay, daemon_proxy.get_version_info()).await {
+            Ok(Ok(v)) => {
+                let daemon_version =
+                    v.build_version.clone().unwrap_or_else(|| "UNKNOWN".to_string());
+                main_node.add_node_with_outcome(
+                    &format!("Daemon version: {}", daemon_version),
+                    LedgerMode::Automatic,
+                    LedgerOutcome::Success,
+                )?;
+                main_node.add_node_with_outcome(
+                    &format!("abi-revision: {}", get_abi_revision(v.abi_revision)),
+                    LedgerMode::Automatic,
+                    LedgerOutcome::Success,
+                )?;
+                main_node.add_node_with_outcome(
+                    &format!("api-level: {}", get_api_level(v.api_level)),
+                    LedgerMode::Automatic,
+                    LedgerOutcome::Success,
+                )?;
+            }
+            Ok(Err(e)) => {
+                main_node.add_node_with_outcome(
+                    &format!("Error getting daemon version: {}", e),
+                    LedgerMode::Automatic,
+                    LedgerOutcome::Failure,
+                )?;
+                return Ok(());
+            }
+            Err(_) => {
+                main_node.add_node_with_outcome(
+                    "Timeout while getting daemon version",
+                    LedgerMode::Automatic,
+                    LedgerOutcome::Failure,
+                )?;
+                return Ok(());
+            }
         }
     }
-
-    pid_state.update(daemon_manager, ledger).await;
-    if !pid_state.has_error {
-        let node = ledger
-            .add_node(&format!("Daemon PID: {:?}", pid_state.added_pids), LedgerMode::Automatic)?;
-        ledger.set_outcome(node, LedgerOutcome::Success)?;
-    }
-
-    // Check daemon connection.
-    let daemon_proxy = match timeout(retry_delay, daemon_manager.find_and_connect()).await {
-        Ok(Ok(val)) => {
-            let node = ledger.add_node("Connected to daemon", LedgerMode::Automatic)?;
-            ledger.set_outcome(node, LedgerOutcome::Success)?;
-            val
-        }
-        Ok(Err(e)) => {
-            let node = ledger.add_node(
-                &format!("Error connecting to daemon: {}. Run `ffx doctor --restart-daemon`", e),
-                LedgerMode::Automatic,
-            )?;
-            ledger.set_outcome(node, LedgerOutcome::Failure)?;
-            ledger.close(main_node)?;
-            return Ok(());
-        }
-        Err(_) => {
-            let node = ledger.add_node(
-                "Timeout while connecting to daemon. Run `ffx doctor --restart-daemon`",
-                LedgerMode::Automatic,
-            )?;
-            ledger.set_outcome(node, LedgerOutcome::Failure)?;
-            ledger.close(main_node)?;
-            return Ok(());
-        }
-    };
-
-    match timeout(retry_delay, daemon_proxy.get_version_info()).await {
-        Ok(Ok(v)) => {
-            let daemon_version = v.build_version.clone().unwrap_or_else(|| "UNKNOWN".to_string());
-            let node = ledger
-                .add_node(&format!("Daemon version: {}", daemon_version), LedgerMode::Automatic)?;
-            ledger.set_outcome(node, LedgerOutcome::Success)?;
-
-            let node = ledger.add_node(
-                &format!("abi-revision: {}", get_abi_revision(v.abi_revision)),
-                LedgerMode::Automatic,
-            )?;
-            ledger.set_outcome(node, LedgerOutcome::Success)?;
-
-            let node = ledger.add_node(
-                &format!("api-level: {}", get_api_level(v.api_level)),
-                LedgerMode::Automatic,
-            )?;
-            ledger.set_outcome(node, LedgerOutcome::Success)?;
-        }
-        Ok(Err(e)) => {
-            let node = ledger
-                .add_node(&format!("Error getting daemon version: {}", e), LedgerMode::Automatic)?;
-            ledger.set_outcome(node, LedgerOutcome::Failure)?;
-            ledger.close(main_node)?;
-            return Ok(());
-        }
-        Err(_) => {
-            let node =
-                ledger.add_node("Timeout while getting daemon version", LedgerMode::Automatic)?;
-            ledger.set_outcome(node, LedgerOutcome::Failure)?;
-            ledger.close(main_node)?;
-            return Ok(());
-        }
-    }
-
-    ledger.close(main_node)?;
     Ok(())
 }
 
 pub async fn doctor_daemon_restart<W: Write>(
     daemon_manager: &impl DaemonManager,
     spawn_delay: Duration,
-    ledger: &mut DoctorLedger<W>,
+    ledger: &mut LedgerNodeGuard<'_, W>,
 ) -> Result<()> {
     match daemon_restart(daemon_manager, spawn_delay, ledger).await {
         Err(err) => {
-            let node = ledger.add_node(&format!("Error: {}", err), LedgerMode::Automatic)?;
-            ledger.set_outcome(node, LedgerOutcome::Failure)?;
+            ledger.add_node_with_outcome(
+                &format!("Error: {}", err),
+                LedgerMode::Automatic,
+                LedgerOutcome::Failure,
+            )?;
         }
         _ => (),
     };
@@ -265,61 +284,63 @@ pub async fn doctor_daemon_restart<W: Write>(
 }
 
 pub async fn check_daemon_status<W: Write>(
-    ledger: &mut DoctorLedger<W>,
+    ledger: &mut LedgerNodeGuard<'_, W>,
     direct_mode: bool,
     daemon_manager: &impl DaemonManager,
     retry_delay: Duration,
     version_info: &VersionInfo,
     target_spec: &Result<Option<String>, String>,
 ) -> Result<Option<DaemonProxy>> {
-    let main_node = ledger.add_node("Checking daemon", LedgerMode::Automatic)?;
+    let mut main_node = ledger.add_node("Checking daemon", LedgerMode::Automatic)?;
 
     if daemon_manager.is_daemon_running().await {
-        let pid_vec = get_daemon_pid(daemon_manager, ledger).await.unwrap_or_default();
-        let node =
-            ledger.add_node(&format!("Daemon found: {:?}", pid_vec), LedgerMode::Automatic)?;
-        ledger.set_outcome(node, LedgerOutcome::Success)?;
+        let pid_vec = get_daemon_pid(daemon_manager, &mut main_node).await.unwrap_or_default();
+        main_node.add_node_with_outcome(
+            &format!("Daemon found: {:?}", pid_vec),
+            LedgerMode::Automatic,
+            LedgerOutcome::Success,
+        )?;
     } else {
         if direct_mode {
-            let node = ledger.add_node("No running daemons found.", LedgerMode::Automatic)?;
-            ledger.set_outcome(node, LedgerOutcome::Info)?;
-            if let Err(e) = report_default_target(ledger, target_spec) {
-                let _ = ledger.close(main_node);
-                return Err(e);
-            }
+            main_node.add_node_with_outcome(
+                "No running daemons found.",
+                LedgerMode::Automatic,
+                LedgerOutcome::Info,
+            )?;
+            report_default_target(&mut main_node, target_spec)?;
         } else {
-            let node = ledger.add_node(
+            main_node.add_node_with_outcome(
                 "No running daemons found. Run `ffx doctor --restart-daemon`",
                 LedgerMode::Automatic,
+                LedgerOutcome::Failure,
             )?;
-            ledger.set_outcome(node, LedgerOutcome::Failure)?;
         }
-        ledger.close(main_node)?;
         return Ok(None);
     }
 
     let daemon_proxy = match timeout(retry_delay, daemon_manager.find_and_connect()).await {
         Ok(Ok(val)) => {
-            let node = ledger.add_node("Connecting to daemon", LedgerMode::Automatic)?;
-            ledger.set_outcome(node, LedgerOutcome::Success)?;
+            main_node.add_node_with_outcome(
+                "Connecting to daemon",
+                LedgerMode::Automatic,
+                LedgerOutcome::Success,
+            )?;
             val
         }
         Ok(Err(e)) => {
-            let node = ledger.add_node(
+            main_node.add_node_with_outcome(
                 &format!("Error connecting to daemon: {}. Run `ffx doctor --restart-daemon`", e),
                 LedgerMode::Automatic,
+                LedgerOutcome::Failure,
             )?;
-            ledger.set_outcome(node, LedgerOutcome::Failure)?;
-            ledger.close(main_node)?;
             return Ok(None);
         }
         Err(_) => {
-            let node = ledger.add_node(
+            main_node.add_node_with_outcome(
                 "Timeout while connecting to daemon. Run `ffx doctor --restart-daemon`",
                 LedgerMode::Automatic,
+                LedgerOutcome::Failure,
             )?;
-            ledger.set_outcome(node, LedgerOutcome::Failure)?;
-            ledger.close(main_node)?;
             return Ok(None);
         }
     };
@@ -327,76 +348,77 @@ pub async fn check_daemon_status<W: Write>(
     match timeout(retry_delay, daemon_proxy.get_version_info()).await {
         Ok(Ok(v)) => {
             let daemon_version = v.build_version.clone().unwrap_or_else(|| "UNKNOWN".to_string());
-            let node = ledger
-                .add_node(&format!("Daemon version: {}", daemon_version), LedgerMode::Verbose)?;
-            ledger.set_outcome(node, LedgerOutcome::Success)?;
+            main_node.add_node_with_outcome(
+                &format!("Daemon version: {}", daemon_version),
+                LedgerMode::Verbose,
+                LedgerOutcome::Success,
+            )?;
 
             let path = std::env::current_exe().map(|x| x.to_string_lossy().to_string()).ok();
             let have_path = path.is_some();
             if let (Some(path), Some(exec_path)) = (path, v.exec_path.clone()) {
                 if path != exec_path {
-                    let node = ledger.add_node(
+                    main_node.add_node_with_outcome(
                         &format!("Daemon ran from {} but this command is {}. Run `ffx doctor --restart-daemon`", exec_path, path),
                         LedgerMode::Automatic,
+                        LedgerOutcome::SoftWarning,
                     )?;
-                    ledger.set_outcome(node, LedgerOutcome::SoftWarning)?;
                 }
 
-                let node = ledger.add_node(&format!("path: {}", exec_path), LedgerMode::Verbose)?;
-                ledger.set_outcome(node, LedgerOutcome::Success)?;
+                main_node.add_node_with_outcome(
+                    &format!("path: {}", exec_path),
+                    LedgerMode::Verbose,
+                    LedgerOutcome::Success,
+                )?;
             } else if !have_path {
-                let node = ledger.add_node(
+                main_node.add_node_with_outcome(
                     "Could not get current command path to compare with daemon",
                     LedgerMode::Automatic,
+                    LedgerOutcome::SoftWarning,
                 )?;
-                ledger.set_outcome(node, LedgerOutcome::SoftWarning)?;
             } else {
-                let node = ledger.add_node("Daemon is too old to report its executable path. Run `ffx doctor --restart-daemon`", LedgerMode::Automatic)?;
-                ledger.set_outcome(node, LedgerOutcome::SoftWarning)?;
+                main_node.add_node_with_outcome("Daemon is too old to report its executable path. Run `ffx doctor --restart-daemon`", LedgerMode::Automatic, LedgerOutcome::SoftWarning)?;
             }
 
-            let node = ledger.add_node(
+            main_node.add_node_with_outcome(
                 &format!("abi-revision: {}", get_abi_revision(v.abi_revision)),
                 LedgerMode::Verbose,
+                LedgerOutcome::Success,
             )?;
-            ledger.set_outcome(node, LedgerOutcome::Success)?;
 
-            let node = ledger.add_node(
+            main_node.add_node_with_outcome(
                 &format!("api-level: {}", get_api_level(v.api_level)),
                 LedgerMode::Verbose,
+                LedgerOutcome::Success,
             )?;
-            ledger.set_outcome(node, LedgerOutcome::Success)?;
 
             if v.api_level != version_info.api_level {
-                let node = ledger.add_node("Daemon and frontend are at different API levels. Run `ffx doctor --restart-daemon`", LedgerMode::Automatic)?;
-                ledger.set_outcome(node, LedgerOutcome::SoftWarning)?;
+                main_node.add_node_with_outcome("Daemon and frontend are at different API levels. Run `ffx doctor --restart-daemon`", LedgerMode::Automatic, LedgerOutcome::SoftWarning)?;
             }
         }
         Ok(Err(e)) => {
-            let node = ledger
-                .add_node(&format!("Error getting daemon version: {}", e), LedgerMode::Verbose)?;
-            ledger.set_outcome(node, LedgerOutcome::Failure)?;
-            // Continue, not a critical error.
+            main_node.add_node_with_outcome(
+                &format!("Error getting daemon version: {}", e),
+                LedgerMode::Verbose,
+                LedgerOutcome::Failure,
+            )?;
         }
         Err(_) => {
-            let node =
-                ledger.add_node("Timeout while getting daemon version", LedgerMode::Verbose)?;
-            ledger.set_outcome(node, LedgerOutcome::Failure)?;
-            // Continue, not a critical error.
+            main_node.add_node_with_outcome(
+                "Timeout while getting daemon version",
+                LedgerMode::Verbose,
+                LedgerOutcome::Failure,
+            )?;
         }
     }
 
-    if let Err(e) = report_default_target(ledger, target_spec) {
-        let _ = ledger.close(main_node);
-        return Err(e);
-    }
+    report_default_target(&mut main_node, target_spec)?;
 
-    ledger.close(main_node)?;
     Ok(Some(daemon_proxy))
 }
 
 pub fn report_default_target<W: Write>(
-    ledger: &mut DoctorLedger<W>,
+    ledger: &mut LedgerNodeGuard<'_, W>,
     target_spec: &std::result::Result<Option<String>, String>,
 ) -> Result<()> {
     Ok(match target_spec {
@@ -408,16 +430,18 @@ pub fn report_default_target<W: Write>(
                     t.as_ref().unwrap().clone()
                 }
             };
-            let node = ledger.add_node(
+            ledger.add_node_with_outcome(
                 &format!("Default target: {}", default_target_display),
                 LedgerMode::Verbose,
+                LedgerOutcome::Success,
             )?;
-            ledger.set_outcome(node, LedgerOutcome::Success)?;
         }
         Err(e) => {
-            let node =
-                ledger.add_node(&format!("config read failed: {:?}", e), LedgerMode::Verbose)?;
-            ledger.set_outcome(node, LedgerOutcome::Failure)?;
+            ledger.add_node_with_outcome(
+                &format!("config read failed: {:?}", e),
+                LedgerMode::Verbose,
+                LedgerOutcome::Failure,
+            )?;
         }
     })
 }

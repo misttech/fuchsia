@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::doctor_ledger::{DoctorLedger, LedgerMode, LedgerOutcome};
+use crate::doctor_ledger::{LedgerMode, LedgerNodeGuard, LedgerOutcome};
 use crate::types::{get_abi_revision, get_api_level};
 use anyhow::Result;
 use emulator_instance::{EmulatorInstanceInfo, EmulatorInstances};
@@ -70,83 +70,87 @@ pub fn get_user_config(ctx: &EnvironmentContext) -> Result<String> {
 }
 
 pub async fn check_ffx_info<W: Write>(
-    ledger: &mut DoctorLedger<W>,
+    ledger: &mut LedgerNodeGuard<'_, W>,
     version_info: &VersionInfo,
-) -> Result<usize> {
-    let ffx_node = ledger.add_node("FFX doctor", LedgerMode::Automatic)?;
+) -> Result<()> {
+    let mut ffx_node = ledger.add_node("FFX doctor", LedgerMode::Automatic)?;
     let frontend_version =
         version_info.build_version.clone().unwrap_or_else(|| "UNKNOWN".to_string());
-    let version_node =
-        ledger.add_node(&format!("Frontend version: {}", frontend_version), LedgerMode::Verbose)?;
-    ledger.set_outcome(version_node, LedgerOutcome::Success)?;
-
-    let abi_revision_node = ledger.add_node(
+    ffx_node.add_node_with_outcome(
+        &format!("Frontend version: {}", frontend_version),
+        LedgerMode::Verbose,
+        LedgerOutcome::Success,
+    )?;
+    ffx_node.add_node_with_outcome(
         &format!("abi-revision: {}", get_abi_revision(version_info.abi_revision)),
         LedgerMode::Verbose,
+        LedgerOutcome::Success,
     )?;
-    ledger.set_outcome(abi_revision_node, LedgerOutcome::Success)?;
-
-    let api_level_node = ledger.add_node(
+    ffx_node.add_node_with_outcome(
         &format!("api-level: {}", get_api_level(version_info.api_level)),
         LedgerMode::Verbose,
+        LedgerOutcome::Success,
     )?;
-    ledger.set_outcome(api_level_node, LedgerOutcome::Success)?;
 
     let ffx_path = match std::env::current_exe() {
         Ok(path) => format!("{}", path.display()),
         _ => "not found".to_string(),
     };
-    let ffx_path_node =
-        ledger.add_node(&format!("Path to ffx: {}", ffx_path), LedgerMode::Normal)?;
-    ledger.set_outcome(ffx_path_node, LedgerOutcome::Info)?;
+    ffx_node.add_node_with_outcome(
+        &format!("Path to ffx: {}", ffx_path),
+        LedgerMode::Normal,
+        LedgerOutcome::Info,
+    )?;
 
-    ledger.close(ffx_node)?;
-
-    Ok(ffx_node)
+    Ok(())
 }
 
 pub async fn check_emulators<W: Write>(
-    ledger: &mut DoctorLedger<W>,
+    ledger: &mut LedgerNodeGuard<'_, W>,
     env_context: &EnvironmentContext,
 ) -> Result<(), anyhow::Error> {
     let emu_instance_root = env_context.get(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)?;
     let emu_instances = EmulatorInstances::new(emu_instance_root);
     let instances = emu_instances.get_all_instances()?;
-    let emu_node = ledger.add_node("FFX Emulator Instances", LedgerMode::Normal)?;
+    let mut emu_node = ledger.add_node("FFX Emulator Instances", LedgerMode::Normal)?;
     for instance in &instances {
-        let instance_node = ledger.add_node("Instance", LedgerMode::Normal)?;
-        let instance_name_node =
-            ledger.add_node(&format!("Name: {}", instance.get_name()), LedgerMode::Normal)?;
-        ledger.set_outcome(instance_name_node, LedgerOutcome::Info)?;
-        let instance_running_node = ledger
-            .add_node(&format!("Is Running: {}", instance.is_running()), LedgerMode::Normal)?;
-        ledger.set_outcome(instance_running_node, LedgerOutcome::Info)?;
-        let instance_state_node = ledger.add_node(
+        let mut instance_node = emu_node.add_node("Instance", LedgerMode::Normal)?;
+        instance_node.add_node_with_outcome(
+            &format!("Name: {}", instance.get_name()),
+            LedgerMode::Normal,
+            LedgerOutcome::Info,
+        )?;
+        instance_node.add_node_with_outcome(
+            &format!("Is Running: {}", instance.is_running()),
+            LedgerMode::Normal,
+            LedgerOutcome::Info,
+        )?;
+        instance_node.add_node_with_outcome(
             &format!("Engine State: {}", instance.get_engine_state()),
             LedgerMode::Normal,
+            LedgerOutcome::Info,
         )?;
-        ledger.set_outcome(instance_state_node, LedgerOutcome::Info)?;
-        ledger.close(instance_node)?;
     }
     if instances.is_empty() {
-        let empty_node = ledger.add_node("No Emulator instances", LedgerMode::Normal)?;
-        ledger.set_outcome(empty_node, LedgerOutcome::Info)?;
-        ledger.close(empty_node)?;
+        emu_node.add_node_with_outcome(
+            "No Emulator instances",
+            LedgerMode::Normal,
+            LedgerOutcome::Info,
+        )?;
     }
-    ledger.close(emu_node)?;
     Ok(())
 }
 
 pub async fn check_env_context<W: Write>(
-    ledger: &mut DoctorLedger<W>,
+    ledger: &mut LedgerNodeGuard<'_, W>,
     env_context: &EnvironmentContext,
 ) -> Result<(), anyhow::Error> {
-    let env_node = ledger.add_node("FFX Environment Context", LedgerMode::Normal)?;
-    let environment_kind_node = ledger.add_node(
+    let mut env_node = ledger.add_node("FFX Environment Context", LedgerMode::Normal)?;
+    env_node.add_node_with_outcome(
         &format!("Kind of Environment: {kind}", kind = env_context.env_kind()),
         LedgerMode::Normal,
+        LedgerOutcome::Success,
     )?;
-    ledger.set_outcome(environment_kind_node, LedgerOutcome::Success)?;
     let (outcome, description) = match env_context.env_file_path() {
         Ok(env_file) => (
             LedgerOutcome::Success,
@@ -156,38 +160,34 @@ pub async fn check_env_context<W: Write>(
             (LedgerOutcome::Failure, format!("Error find or loading the environment file: {e:?}"))
         }
     };
-    let env_file_node = ledger.add_node(&description, LedgerMode::Verbose)?;
-    ledger.set_outcome(env_file_node, outcome)?;
-    let build_dir_node = if let Some(build_dir) = env_context.build_dir() {
-        ledger.add_node(
+    env_node.add_node_with_outcome(&description, LedgerMode::Verbose, outcome)?;
+    if let Some(build_dir) = env_context.build_dir() {
+        env_node.add_node_with_outcome(
             &format!(
                 "Environment-default build directory: {build_dir}",
                 build_dir = build_dir.display()
             ),
             LedgerMode::Normal,
-        )?
+            LedgerOutcome::Success,
+        )?;
     } else {
-        ledger.add_node("No build directory discovered in the environment.", LedgerMode::Verbose)?
+        env_node.add_node_with_outcome(
+            "No build directory discovered in the environment.",
+            LedgerMode::Verbose,
+            LedgerOutcome::Success,
+        )?;
     };
-    ledger.set_outcome(build_dir_node, LedgerOutcome::Success)?;
-    if let Err(e) = check_lock_files(ledger, env_context).await {
-        let _ = ledger.close(env_node);
-        return Err(e);
-    }
-    if let Err(e) = check_ssh_keys(env_context, ledger).await {
-        let _ = ledger.close(env_node);
-        return Err(e);
-    }
-    ledger.close(env_node)?;
+    check_lock_files(&mut env_node, env_context).await?;
+    check_ssh_keys(env_context, &mut env_node).await?;
     Ok(())
 }
 
 pub async fn check_lock_files<W: Write>(
-    ledger: &mut DoctorLedger<W>,
+    ledger: &mut LedgerNodeGuard<'_, W>,
     env_context: &EnvironmentContext,
 ) -> Result<(), anyhow::Error> {
     let locks = ffx_config::environment::Environment::check_locks(env_context).await?;
-    let lock_node = ledger.add_node("Config Lock Files", LedgerMode::Automatic)?;
+    let mut lock_node = ledger.add_node("Config Lock Files", LedgerMode::Automatic)?;
     for (file, locked) in locks {
         let (outcome, description) = match locked {
             Ok(lockfile) => (
@@ -227,18 +227,15 @@ pub async fn check_lock_files<W: Write>(
                 ),
             },
         };
-        let node = ledger.add_node(&description, LedgerMode::Automatic)?;
-        ledger.set_outcome(node, outcome)?;
+        lock_node.add_node_with_outcome(&description, LedgerMode::Automatic, outcome)?;
     }
-    ledger.close(lock_node)?;
     Ok(())
 }
 
 pub async fn check_ssh_keys<W: Write>(
     ctx: &EnvironmentContext,
-    ledger: &mut DoctorLedger<W>,
+    ledger: &mut LedgerNodeGuard<'_, W>,
 ) -> Result<()> {
-    let ssh_node: usize;
     match SshKeyFiles::load(ctx) {
         Ok(ssh_files) => {
             let (description, outcome) = match ssh_files.check_keys(false) {
@@ -276,43 +273,43 @@ pub async fn check_ssh_keys<W: Write>(
                     ),
                 },
             };
-            ssh_node = ledger.add_node(&description, LedgerMode::Automatic)?;
-            ledger.set_outcome(ssh_node, outcome)?;
+            ledger.add_node_with_outcome(&description, LedgerMode::Automatic, outcome)?;
         }
         Err(e) => {
-            ssh_node = ledger
-                .add_node(&format!("Could not get SSH key paths {e}"), LedgerMode::Automatic)?;
-            ledger.set_outcome(ssh_node, LedgerOutcome::Failure)?;
+            ledger.add_node_with_outcome(
+                &format!("Could not get SSH key paths {e}"),
+                LedgerMode::Automatic,
+                LedgerOutcome::Failure,
+            )?;
         }
     };
-    ledger.close(ssh_node)?;
     Ok(())
 }
 
 #[cfg(all(target_os = "linux", not(test)))]
-pub async fn check_inotify_watches<W: Write>(ledger: &mut DoctorLedger<W>) -> Result<()> {
+pub async fn check_inotify_watches<W: Write>(ledger: &mut LedgerNodeGuard<'_, W>) -> Result<()> {
     use std::os::unix::fs::MetadataExt;
-    let watch_node = ledger.add_node("System Inotify Watches", LedgerMode::Automatic)?;
+    let mut watch_node = ledger.add_node("System Inotify Watches", LedgerMode::Automatic)?;
     let mut total_watches = 0;
 
     let max_watches = match std::fs::read_to_string("/proc/sys/fs/inotify/max_user_watches") {
         Ok(content) => match content.trim().parse::<usize>() {
             Ok(v) => v,
             Err(_) => {
-                let node =
-                    ledger.add_node("Could not parse max_user_watches", LedgerMode::Verbose)?;
-                ledger.set_outcome(node, LedgerOutcome::Failure)?;
-                ledger.close(watch_node)?;
+                watch_node.add_node_with_outcome(
+                    "Could not parse max_user_watches",
+                    LedgerMode::Verbose,
+                    LedgerOutcome::Failure,
+                )?;
                 return Ok(());
             }
         },
         Err(e) => {
-            let node = ledger.add_node(
+            watch_node.add_node_with_outcome(
                 &format!("Could not read max_user_watches: {}", e),
                 LedgerMode::Verbose,
+                LedgerOutcome::Failure,
             )?;
-            ledger.set_outcome(node, LedgerOutcome::Failure)?;
-            ledger.close(watch_node)?;
             return Ok(());
         }
     };
@@ -320,10 +317,11 @@ pub async fn check_inotify_watches<W: Write>(ledger: &mut DoctorLedger<W>) -> Re
     let uid = match std::fs::metadata("/proc/self") {
         Ok(m) => m.uid(),
         Err(e) => {
-            let node =
-                ledger.add_node(&format!("Could not get uid: {}", e), LedgerMode::Verbose)?;
-            ledger.set_outcome(node, LedgerOutcome::Failure)?;
-            ledger.close(watch_node)?;
+            watch_node.add_node_with_outcome(
+                &format!("Could not get uid: {}", e),
+                LedgerMode::Verbose,
+                LedgerOutcome::Failure,
+            )?;
             return Ok(());
         }
     };
@@ -373,33 +371,32 @@ pub async fn check_inotify_watches<W: Write>(ledger: &mut DoctorLedger<W>) -> Re
         let percent = (total_watches * 100) / max_watches;
         let remaining = max_watches.saturating_sub(total_watches);
         if percent >= 80 && remaining < 10000 {
-            let node = ledger.add_node(
+            watch_node.add_node_with_outcome(
                 &format!("User is consuming {} / {} inotify watches", total_watches, max_watches),
                 LedgerMode::Automatic,
+                LedgerOutcome::Warning,
             )?;
-            ledger.set_outcome(node, LedgerOutcome::Warning)?;
-            let suggestion = ledger.add_node(
+            watch_node.add_node_with_outcome(
                 &format!(
                     "Consider increasing max_user_watches: `sudo sysctl fs.inotify.max_user_watches={}`",
                     max_watches + 1048576
                 ),
                 LedgerMode::Automatic,
+                LedgerOutcome::Warning,
             )?;
-            ledger.set_outcome(suggestion, LedgerOutcome::Warning)?;
         } else {
-            let node = ledger.add_node(
+            watch_node.add_node_with_outcome(
                 &format!("User is consuming {} / {} inotify watches", total_watches, max_watches),
                 LedgerMode::Verbose,
+                LedgerOutcome::Success,
             )?;
-            ledger.set_outcome(node, LedgerOutcome::Success)?;
         }
     }
 
-    ledger.close(watch_node)?;
     Ok(())
 }
 
 #[cfg(any(not(target_os = "linux"), test))]
-pub async fn check_inotify_watches<W: Write>(_ledger: &mut DoctorLedger<W>) -> Result<()> {
+pub async fn check_inotify_watches<W: Write>(_ledger: &mut LedgerNodeGuard<'_, W>) -> Result<()> {
     Ok(())
 }

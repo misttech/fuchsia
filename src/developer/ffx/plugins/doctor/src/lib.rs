@@ -256,7 +256,7 @@ pub async fn doctor_cmd_impl<
 
     doctor(
         &mut handler,
-        &mut ledger,
+        &mut ledger.root_guard(),
         context.get_direct_connection_mode(),
         &daemon_manager,
         &target_str,
@@ -295,7 +295,7 @@ pub async fn doctor_cmd_impl<
 
 async fn doctor<W: Write>(
     step_handler: &mut impl DoctorStepHandler,
-    ledger: &mut DoctorLedger<W>,
+    ledger: &mut LedgerNodeGuard<'_, W>,
     direct_mode: bool,
     daemon_manager: &impl DaemonManager,
     target_str: &str,
@@ -342,8 +342,8 @@ async fn doctor<W: Write>(
     Ok(())
 }
 
-fn print_summary_outcome<W: Write>(ledger: &mut DoctorLedger<W>, main_node: usize) -> Result<()> {
-    match ledger.calc_outcome(main_node) {
+fn print_summary_outcome<W: Write>(ledger: &mut LedgerNodeGuard<'_, W>) -> Result<()> {
+    match ledger.calc_outcome_at_next_depth() {
         LedgerOutcome::Failure => {
             let msg = match ledger.get_ledger_mode() {
                 LedgerViewMode::Normal => String::from(
@@ -353,11 +353,11 @@ fn print_summary_outcome<W: Write>(ledger: &mut DoctorLedger<W>, main_node: usiz
                 _ => String::from("Doctor found issues in one or more categories."),
             };
             let node = ledger.add_node(&msg, LedgerMode::Automatic)?;
-            ledger.set_outcome(node, LedgerOutcome::Failure)?;
+            node.set_outcome(LedgerOutcome::Failure)?;
         }
         _ => {
             let node = ledger.add_node("No issues found", LedgerMode::Automatic)?;
-            ledger.set_outcome(node, LedgerOutcome::Success)?;
+            node.set_outcome(LedgerOutcome::Success)?;
         }
     }
     Ok(())
@@ -376,7 +376,7 @@ async fn doctor_summary<W: Write>(
     run_additional_diagnostics: bool,
     usb_driver_finder: impl UsbDriverFinder,
     gchecker: impl gcheck::GChecker,
-    ledger: &mut DoctorLedger<W>,
+    ledger: &mut LedgerNodeGuard<'_, W>,
 ) -> Result<()> {
     match ledger.get_ledger_mode() {
         LedgerViewMode::Normal => {
@@ -387,7 +387,7 @@ async fn doctor_summary<W: Write>(
         }
     }
 
-    let main_node_depth = check_ffx_info(ledger, &version_info).await?;
+    check_ffx_info(ledger, &version_info).await?;
     check_env_context(ledger, env_context).await?;
     check_emulators(ledger, env_context).await?;
     check_inotify_watches(ledger).await?;
@@ -423,7 +423,7 @@ async fn doctor_summary<W: Write>(
         }
     }
 
-    print_summary_outcome(ledger, main_node_depth)?;
+    print_summary_outcome(ledger)?;
 
     Ok(())
 }
@@ -1264,7 +1264,7 @@ mod test {
         let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
-            &mut ledger,
+            &mut ledger.root_guard(),
             false,
             &fake,
             "",
@@ -1363,7 +1363,7 @@ mod test {
 
         doctor(
             &mut handler,
-            &mut ledger,
+            &mut ledger.root_guard(),
             false,
             &fake,
             "",
@@ -1464,7 +1464,7 @@ mod test {
 
         doctor(
             &mut handler,
-            &mut ledger,
+            &mut ledger.root_guard(),
             false,
             &fake,
             "",
@@ -1509,7 +1509,7 @@ mod test {
         let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
-            &mut ledger,
+            &mut ledger.root_guard(),
             false,
             &fake,
             "",
@@ -1600,7 +1600,7 @@ mod test {
         let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
-            &mut ledger,
+            &mut ledger.root_guard(),
             false,
             &fake,
             "",
@@ -1682,7 +1682,7 @@ mod test {
         let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
-            &mut ledger,
+            &mut ledger.root_guard(),
             false,
             &fake,
             "",
@@ -1771,7 +1771,7 @@ mod test {
         let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
-            &mut ledger,
+            &mut ledger.root_guard(),
             false,
             &fake,
             "",
@@ -1862,7 +1862,9 @@ mod test {
                 LedgerViewMode::Verbose,
             );
 
-            doctor_daemon_restart(&fake, DEFAULT_RETRY_DELAY, &mut ledger).await.unwrap();
+            doctor_daemon_restart(&fake, DEFAULT_RETRY_DELAY, &mut ledger.root_guard())
+                .await
+                .unwrap();
 
             assert_eq!(
                 ledger.writer.get_data(),
@@ -1887,7 +1889,9 @@ mod test {
                 LedgerViewMode::Verbose,
             );
 
-            doctor_daemon_restart(&fake, DEFAULT_RETRY_DELAY, &mut ledger).await.unwrap();
+            doctor_daemon_restart(&fake, DEFAULT_RETRY_DELAY, &mut ledger.root_guard())
+                .await
+                .unwrap();
 
             assert_eq!(
                 ledger.writer.get_data(),
@@ -1969,7 +1973,7 @@ mod test {
         let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
-            &mut ledger,
+            &mut ledger.root_guard(),
             false,
             &fake,
             "",
@@ -2036,13 +2040,12 @@ mod test {
             \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
             \n[✓] Searching for targets\
             \n    [✓] 1 targets found\
-            \n[✗] Verifying Targets\
-            \n    [✗] Target: {SSH_ERR_NODENAME}\
-            \n        [!] Compatibility state: absent\
-            \n            [!] Compatibility information is not available\
-            \n        [✓] Opened target handle\
-            \n        [✓] Connecting to RCS\
-            \n        [✗] Error while connecting to RCS: <reason omitted>\
+            \n[✗] Target: {SSH_ERR_NODENAME}\
+            \n    [!] Compatibility state: absent\
+            \n        [!] Compatibility information is not available\
+            \n    [✓] Opened target handle\
+            \n    [✓] Connecting to RCS\
+            \n    [✗] Error while connecting to RCS: <reason omitted>\
             \n[✗] Doctor found issues in one or more categories.\n",
                 ffx_path = ffx_path(),
                 isolated_root = test_env.isolate_root.path().display(),
@@ -2127,20 +2130,19 @@ mod test {
             \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
             \n[✓] Searching for targets\
             \n    [✓] 2 targets found\
-            \n[✓] Verifying Targets\
-            \n    [✓] Target: {NODENAME}\
-            \n        [!] Compatibility state: absent\
-            \n            [!] Compatibility information is not available\
-            \n        [✓] Opened target handle\
-            \n        [✓] Connecting to RCS\
-            \n        [✓] Communicating with RCS\
-            \n    [✗] Target: {UNRESPONSIVE_NODENAME}\
-            \n        [!] Compatibility state: absent\
-            \n            [!] Compatibility information is not available\
-            \n        [✓] Opened target handle\
-            \n        [✓] Connecting to RCS\
-            \n        [✗] Timeout while communicating with RCS\
-            \n[✓] No issues found\n",
+            \n[✓] Target: {NODENAME}\
+            \n    [!] Compatibility state: absent\
+            \n        [!] Compatibility information is not available\
+            \n    [✓] Opened target handle\
+            \n    [✓] Connecting to RCS\
+            \n    [✓] Communicating with RCS\
+            \n[✗] Target: {UNRESPONSIVE_NODENAME}\
+            \n    [!] Compatibility state: absent\
+            \n        [!] Compatibility information is not available\
+            \n    [✓] Opened target handle\
+            \n    [✓] Connecting to RCS\
+            \n    [✗] Timeout while communicating with RCS\
+            \n[✗] Doctor found issues in one or more categories.\n",
                 ffx_path = ffx_path(),
                 isolated_root = test_env.isolate_root.path().display(),
                 env_file = test_env.env_file.path().display(),
@@ -2181,10 +2183,10 @@ mod test {
                 \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
                 \n[✓] Searching for targets\
                 \n    [✓] 2 targets found\
-                \n[✓] Verifying Targets\
-                \n    [✓] Target: {NODENAME}\
-                \n    [✗] Target: {UNRESPONSIVE_NODENAME}\
-                \n[✓] No issues found\n",
+                \n[✓] Target: {NODENAME}\
+                \n[✗] Target: {UNRESPONSIVE_NODENAME}\
+                \n[✗] Doctor found issues in one or more categories; \
+                run 'ffx doctor -v' for more details.\n",
                 ffx_path = ffx_path(),
                 isolated_root = test_env.isolate_root.path().display(),
                 user_file = test_env.user_file.path().display(),
@@ -2219,7 +2221,7 @@ mod test {
         let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
-            &mut ledger,
+            &mut ledger.root_guard(),
             false,
             &fake,
             &NODENAME,
@@ -2275,13 +2277,12 @@ mod test {
             \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
             \n[✓] Searching for targets\
             \n    [✓] 1 targets found\
-            \n[✓] Verifying Targets\
-            \n    [✓] Target: {NODENAME}\
-            \n        [!] Compatibility state: absent\
-            \n            [!] Compatibility information is not available\
-            \n        [✓] Opened target handle\
-            \n        [✓] Connecting to RCS\
-            \n        [✓] Communicating with RCS\
+            \n[✓] Target: {NODENAME}\
+            \n    [!] Compatibility state: absent\
+            \n        [!] Compatibility information is not available\
+            \n    [✓] Opened target handle\
+            \n    [✓] Connecting to RCS\
+            \n    [✓] Communicating with RCS\
             \n[✓] No issues found\n",
                 ffx_path = ffx_path(),
                 isolated_root = test_env.isolate_root.path().display(),
@@ -2319,7 +2320,7 @@ mod test {
         let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
-            &mut ledger,
+            &mut ledger.root_guard(),
             false,
             &fake,
             &NON_EXISTENT_NODENAME,
@@ -2403,7 +2404,7 @@ mod test {
             LedgerViewMode::Verbose,
         );
 
-        doctor_daemon_restart(&fake, DEFAULT_RETRY_DELAY, &mut ledger).await.unwrap();
+        doctor_daemon_restart(&fake, DEFAULT_RETRY_DELAY, &mut ledger.root_guard()).await.unwrap();
 
         assert_eq!(
             ledger.writer.get_data(),
@@ -2444,7 +2445,7 @@ mod test {
             LedgerViewMode::Verbose,
         );
 
-        doctor_daemon_restart(&fake, DEFAULT_RETRY_DELAY, &mut ledger).await.unwrap();
+        doctor_daemon_restart(&fake, DEFAULT_RETRY_DELAY, &mut ledger.root_guard()).await.unwrap();
 
         assert_eq!(
             ledger.writer.get_data(),
@@ -2490,7 +2491,7 @@ mod test {
         let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
-            &mut ledger,
+            &mut ledger.root_guard(),
             false,
             &fake,
             "",
@@ -2590,7 +2591,7 @@ mod test {
         assert!(
             doctor(
                 &mut handler,
-                &mut ledger,
+                &mut ledger.root_guard(),
                 false,
                 &fake,
                 "",
@@ -2702,7 +2703,7 @@ mod test {
         let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
-            &mut ledger,
+            &mut ledger.root_guard(),
             false,
             &fake,
             "",
@@ -2767,19 +2768,18 @@ mod test {
                 \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
                 \n[✓] Searching for targets\
                 \n    [✓] 2 targets found\
-                \n[✗] Verifying Targets\
-                \n    [✗] Target: <unknown>\
-                \n        [!] Compatibility state: absent\
-                \n            [!] Compatibility information is not available\
-                \n        [✓] Opened target handle\
-                \n        [✓] Connecting to RCS\
-                \n        [✗] Timeout while communicating with RCS\
-                \n    [✗] Target: {UNRESPONSIVE_NODENAME}\
-                \n        [!] Compatibility state: absent\
-                \n            [!] Compatibility information is not available\
-                \n        [✓] Opened target handle\
-                \n        [✓] Connecting to RCS\
-                \n        [✗] Timeout while communicating with RCS\
+                \n[✗] Target: <unknown>\
+                \n    [!] Compatibility state: absent\
+                \n        [!] Compatibility information is not available\
+                \n    [✓] Opened target handle\
+                \n    [✓] Connecting to RCS\
+                \n    [✗] Timeout while communicating with RCS\
+                \n[✗] Target: {UNRESPONSIVE_NODENAME}\
+                \n    [!] Compatibility state: absent\
+                \n        [!] Compatibility information is not available\
+                \n    [✓] Opened target handle\
+                \n    [✓] Connecting to RCS\
+                \n    [✗] Timeout while communicating with RCS\
                 \n[✗] Doctor found issues in one or more categories.\n",
                 ffx_path = ffx_path(),
                 isolated_root = test_env.isolate_root.path().display(),
@@ -2822,9 +2822,8 @@ mod test {
                 \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
                 \n[✓] Searching for targets\
                 \n    [✓] 2 targets found\
-                \n[✗] Verifying Targets\
-                \n    [✗] Target: <unknown>\
-                \n    [✗] Target: {UNRESPONSIVE_NODENAME}\
+                \n[✗] Target: <unknown>\
+                \n[✗] Target: {UNRESPONSIVE_NODENAME}\
                 \n[✗] Doctor found issues in one or more categories; \
                 run 'ffx doctor -v' for more details.\n",
                 ffx_path = ffx_path(),
@@ -2859,7 +2858,7 @@ mod test {
         let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
-            &mut ledger,
+            &mut ledger.root_guard(),
             false,
             &fake,
             "",
@@ -2914,8 +2913,7 @@ mod test {
             \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
             \n[✓] Searching for targets\
             \n    [✓] 1 targets found\
-            \n[✓] Verifying Targets\
-            \n    [✓] Target found in fastboot mode: {SERIAL_NUMBER}\
+            \n[✓] Target found in fastboot mode: {SERIAL_NUMBER}\
             \n[✓] No issues found\n",
                 ffx_path = ffx_path(),
                 isolated_root = test_env.isolate_root.path().display(),
@@ -2950,7 +2948,7 @@ mod test {
         let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
-            &mut ledger,
+            &mut ledger.root_guard(),
             false,
             &fake,
             "",
@@ -3056,7 +3054,7 @@ mod test {
         let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
-            &mut ledger,
+            &mut ledger.root_guard(),
             false,
             &fake,
             "",
@@ -3111,8 +3109,7 @@ mod test {
             \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
             \n[✓] Searching for targets\
             \n    [✓] 1 targets found\
-            \n[✓] Verifying Targets\
-            \n    [✓] Target found in fastboot mode: {SERIAL_NUMBER}\
+            \n[✓] Target found in fastboot mode: {SERIAL_NUMBER}\
             \n[✓] No issues found\n",
                 ffx_path = ffx_path(),
                 isolated_root = test_env.isolate_root.path().display(),
@@ -3217,7 +3214,7 @@ mod test {
         let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
-            &mut ledger,
+            &mut ledger.root_guard(),
             false,
             &fake_daemon,
             "",
@@ -3277,7 +3274,7 @@ mod test {
                 Box::new(VisualLedgerView::new()),
                 LedgerViewMode::Verbose,
             );
-            check_emulators(&mut ledger, &test_env.context).await?;
+            check_emulators(&mut ledger.root_guard(), &test_env.context).await?;
             let output = writer.get_data();
             assert!(output.contains("FFX Emulator Instances"));
             assert!(!output.contains("Name:"), "got instance on empty dir: {}", output);
@@ -3299,7 +3296,7 @@ mod test {
                 Box::new(VisualLedgerView::new()),
                 LedgerViewMode::Verbose,
             );
-            check_emulators(&mut ledger, &test_env.context).await?;
+            check_emulators(&mut ledger.root_guard(), &test_env.context).await?;
             let output = writer.get_data();
             assert!(output.contains("FFX Emulator Instances"));
             assert!(output.contains("Name: fuchsia-emulator"));
@@ -3319,7 +3316,7 @@ mod test {
                 Box::new(VisualLedgerView::new()),
                 LedgerViewMode::Verbose,
             );
-            check_emulators(&mut ledger, &test_env.context).await?;
+            check_emulators(&mut ledger.root_guard(), &test_env.context).await?;
             let output = writer.get_data();
             assert!(output.contains("FFX Emulator Instances"));
             assert!(output.contains("Name: fuchsia-emulator"));
