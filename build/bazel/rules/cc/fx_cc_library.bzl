@@ -2,25 +2,42 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "@fuchsia_rules_common//build_flags:cc.bzl",
+    "BUILD_FLAGS_ATTRS_KWARGS",
+    "wrap_cc_macro_args_with_build_flags",
+)
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
 def _fx_cc_library_impl(
         name,
         configs,  # buildifier: disable=unused-variable - For GN conversion only.
         public_configs,  # buildifier: disable=unused-variable - For GN conversion only.
+        build_flags,
+        disable_build_flags,
         **kwargs):
     """Implementation for the fx_cc_library() macro."""
 
+    wrapped_kwargs = wrap_cc_macro_args_with_build_flags(
+        kwargs = kwargs,
+        name = name,
+        cc_rule_name = "cc_library",
+        build_flags = build_flags,
+        disable_build_flags = disable_build_flags,
+        target_type = "common",
+    )
+
     cc_library(
         name = name,
-        **kwargs
+        **wrapped_kwargs
     )
 
 fx_cc_library = macro(
     doc = """Wrapper for cc_library() libraries for Fuchsia.
 
-  For now, it just allows passing attributes to bazel2gn.
-  """,
+    Toolchain overrides can be specified using build_flags and
+    disable_build_flags. These will not affect dependencies.
+    """,
     implementation = _fx_cc_library_impl,
     # TODO(https://fxbug.dev/446694542): Remove `native.` once the
     # `cc_library()` wrapper is a symbolic macro.
@@ -34,5 +51,5 @@ fx_cc_library = macro(
             doc = "Unused in Bazel, for GN conversion only.",
             default = [],
         ),
-    },
+    } | BUILD_FLAGS_ATTRS_KWARGS,
 )

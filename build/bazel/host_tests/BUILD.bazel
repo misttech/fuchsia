@@ -5,6 +5,7 @@
 test_suite(
     name = "host_tests",
     tests = [
+        "//build/bazel/host_tests/build_flags:build_flags_tests",
         "//build/bazel/host_tests/cc_tests",
         "//build/bazel/host_tests/go_tests",
         "//build/bazel/host_tests/host_test_data_tests",
