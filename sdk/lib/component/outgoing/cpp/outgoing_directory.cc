@@ -136,6 +136,31 @@ zx::result<> OutgoingDirectory::AddUnmanagedProtocolAt(AnyHandler handler, std::
   return zx::ok();
 }
 
+zx::result<> OutgoingDirectory::RemoveUnmanagedProtocolAt(std::string_view path,
+                                                          std::string_view name) {
+  std::lock_guard guard(inner().checker_);
+
+  // More thorough path validation is done in |svc_add_service|.
+  if (path.empty() || name.empty()) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  std::string directory_entry(path);
+  std::string protocol_entry(name);
+  if (inner().registered_handlers_.count(directory_entry) == 0 &&
+      inner().registered_handlers_[directory_entry].count(protocol_entry) == 0) {
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+
+  if (zx_status_t status = svc_directory_remove_entry(
+          inner().root_, directory_entry.c_str(), directory_entry.size(), name.data(), name.size());
+      status != ZX_OK) {
+    return zx::error(status);
+  }
+
+  return zx::ok();
+}
+
 zx::result<> OutgoingDirectory::AddDirectory(fidl::ClientEnd<fuchsia_io::Directory> remote_dir,
                                              std::string_view directory_name) {
   return AddDirectoryAt(std::move(remote_dir), /*path=*/"", directory_name);
@@ -180,6 +205,13 @@ zx::result<> OutgoingDirectory::AddServiceAt(ServiceInstanceHandler handler, std
     if (result.is_error()) {
       // If we encounter an error with any of the instance members, scrub entire
       // directory entry.
+      for (auto& [member_name_2, member_handler_2] : handlers) {
+        // It's possible that we'll get an error from this call if we hit an
+        // error before attempting to add everything in our list. The error is
+        // harmless, so we ignore the return value.
+        zx::result<> result_2 = RemoveUnmanagedProtocolAt(fullpath, member_name_2);
+        (void)result_2;
+      }
       inner().registered_handlers_.erase(fullpath);
       return result;
     }

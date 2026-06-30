@@ -335,6 +335,10 @@ class OutgoingDirectory final {
     return RemoveProtocolAt(path, name);
   }
 
+  // Same as |RemoveProtocolAt| but is untyped and allows the usage of setting the
+  // parent directory in which the protocol will be removed.
+  zx::result<> RemoveUnmanagedProtocolAt(std::string_view path, std::string_view name);
+
   // Same as above but untyped.
   zx::result<> RemoveProtocolAt(std::string_view directory, std::string_view name);
 
