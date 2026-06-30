@@ -7,3 +7,7 @@ import("//build/bazel/export_fuchsia_package_to_bazel.gni")
 export_fuchsia_package_to_bazel("package") {
   package = "//src/bringup/bin/console-launcher:package"
 }
+
+export_fuchsia_package_to_bazel("package-eng") {
+  package = "//src/bringup/bin/console-launcher:package-eng"
+}

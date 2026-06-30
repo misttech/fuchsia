@@ -4,14 +4,17 @@
 {
     include: [
         "//sdk/lib/syslog/client.shard.cml",
-        "//src/sys/test_runners/elf/create_raw_processes_ambient_exec.shard.cml",
+        "//src/sys/test_runners/elf/create_raw_processes.shard.cml",
     ],
     program: {
         binary: "test/elf-search",
     },
     use: [
         {
-            protocol: [ "fuchsia.process.Launcher" ],
+            protocol: [
+                "fuchsia.kernel.VmexResource",
+                "fuchsia.process.Launcher",
+            ],
         },
     ],
 }

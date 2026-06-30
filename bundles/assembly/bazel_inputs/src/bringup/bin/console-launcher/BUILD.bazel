@@ -10,3 +10,8 @@ prebuilt_package(
     name = "package",
     archive = "@gn_targets//bundles/assembly/bazel_inputs/src/bringup/bin/console-launcher:package",
 )
+
+prebuilt_package(
+    name = "package-eng",
+    archive = "@gn_targets//bundles/assembly/bazel_inputs/src/bringup/bin/console-launcher:package-eng",
+)

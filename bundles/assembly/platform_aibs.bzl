@@ -24,6 +24,7 @@ bringup_platform_aib_names = [
 
     # Diagnostics
     "console",
+    "console-eng",
 
     # Driver Framework
     "driver_framework_common",

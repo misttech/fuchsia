@@ -507,6 +507,13 @@ group("console") {
   ]
 }
 
+group("console-eng") {
+  deps = [
+    "//bundles/assembly/bazel_inputs/src/bringup/bin/console:package",
+    "//bundles/assembly/bazel_inputs/src/bringup/bin/console-launcher:package-eng",
+  ]
+}
+
 group("ptysvc") {
   deps = [ "//bundles/assembly/bazel_inputs/src/bringup/bin/ptysvc:package" ]
 }

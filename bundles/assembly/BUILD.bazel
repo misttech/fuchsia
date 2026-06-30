@@ -1008,6 +1008,22 @@ assembly_input_bundle(
     ],
 )
 
+# The console-eng AIB is used in eng products instead of console
+assembly_input_bundle(
+    name = "console-eng",
+    allowed_in = [
+        "eng",
+    ],
+    bootfs_packages = [
+        "//bundles/assembly/bazel_inputs/src/bringup/bin/console:package",
+        "//bundles/assembly/bazel_inputs/src/bringup/bin/console-launcher:package-eng",
+    ],
+    bootstrap_shards = [
+        "//src/bringup/bin/console:meta/console.shard.cml",
+        "//src/bringup/bin/console:meta/console_eng.shard.cml",
+    ],
+)
+
 # The ptysvc AIB is included by all eng and userdebug products.
 #
 # buildifier: leave-alone

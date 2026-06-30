@@ -3,6 +3,9 @@
 # found in the LICENSE file.
 
 exports_files(
-    ["meta/console.shard.cml"],
+    [
+        "meta/console.shard.cml",
+        "meta/console_eng.shard.cml",
+    ],
     visibility = ["//bundles/assembly:__subpackages__"],
 )

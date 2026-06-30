@@ -67,7 +67,11 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
 
         // Console is enabled unless specifically turned off.
         if !no_console {
-            builder.platform_bundle("console")?;
+            if *context.build_type == BuildType::Eng {
+                builder.platform_bundle("console-eng")?;
+            } else {
+                builder.platform_bundle("console")?;
+            }
         }
 
         // LINT.IfChange

@@ -32,8 +32,11 @@ test("elf-search") {
   sources = [ "elf-search-test.cc" ]
   deps = [
     "..",
+    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
+    "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
     "//src/lib/elfldltl",
+    "//src/zircon/testing/maybe-standalone-test",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/test-utils",
     "//zircon/system/ulib/zx",
@@ -50,5 +53,6 @@ bootfs_test("elf-search-bootfs-test") {
 fuchsia_unittest_package("elf-search-test-pkg") {
   package_name = "elf-search-test"
   manifest = "meta/elf-search-test.cml"
+  test_type = "system"
   deps = [ ":elf-search" ]
 }

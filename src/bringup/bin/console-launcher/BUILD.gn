@@ -80,6 +80,14 @@ fuchsia_component_manifest("manifest") {
   manifest = "meta/console-launcher.cml"
 }
 
+cmc_merge("manifest-eng-cml") {
+  sources = [
+    "meta/console-launcher-eng.shard.cml",
+    "meta/console-launcher.cml",
+  ]
+  output_name = "console-launcher-eng.cml"
+}
+
 fuchsia_structured_config_cpp_elf_lib("console_launcher_config") {
   cm_label = ":manifest"
 }
@@ -89,9 +97,25 @@ fuchsia_component("component") {
   deps = [ ":bin" ]
 }
 
+fuchsia_component("component-eng") {
+  merge_target = ":manifest-eng-cml"
+  deps = [
+    ":bin",
+    merge_target,
+  ]
+  merge_outputs = get_target_outputs(merge_target)
+  manifest = merge_outputs[0]
+  component_name = "console-launcher"
+}
+
 fuchsia_package("package") {
   package_name = "console-launcher"
   deps = [ ":component" ]
+}
+
+fuchsia_package("package-eng") {
+  package_name = "console-launcher"
+  deps = [ ":component-eng" ]
 }
 
 cc_test_executable("unittests") {

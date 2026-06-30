@@ -4,7 +4,9 @@
 
 #include <elf-search.h>
 #include <elf.h>
+#include <fidl/fuchsia.kernel/cpp/wire.h>
 #include <inttypes.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/elfldltl/constants.h>
 #include <lib/elfldltl/container.h>
 #include <lib/elfldltl/diagnostics.h>
@@ -14,6 +16,7 @@
 #include <lib/elfldltl/vmo.h>
 #include <lib/elfldltl/zircon.h>
 #include <lib/fit/defer.h>
+#include <lib/maybe-standalone-test/maybe-standalone.h>
 #include <lib/zx/job.h>
 #include <lib/zx/port.h>
 #include <lib/zx/process.h>
@@ -105,6 +108,27 @@ struct Module {
   zx::vmo vmo;
 };
 
+zx::resource GetVmexResource() {
+  zx::unowned_resource system_resource = maybe_standalone::GetSystemResource();
+  if (system_resource->is_valid()) {
+    zx::result<zx::resource> vmex_result =
+        maybe_standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_VMEX_BASE);
+    if (vmex_result.is_ok()) {
+      return std::move(vmex_result.value());
+    }
+  }
+
+  zx::result client = component::Connect<fuchsia_kernel::VmexResource>();
+  if (client.is_ok()) {
+    fidl::WireResult result = fidl::WireCall(client.value())->Get();
+    if (result.ok()) {
+      return std::move(result.value().resource);
+    }
+  }
+
+  return zx::resource();
+}
+
 void MakeELF(Module<Elf64_Phdr>* mod) {
   size_t size = 0;
   for (const auto& phdr : mod->phdrs) {
@@ -112,7 +136,9 @@ void MakeELF(Module<Elf64_Phdr>* mod) {
   }
   ASSERT_OK(zx::vmo::create(size, 0, &mod->vmo));
   EXPECT_OK(mod->vmo.set_property(ZX_PROP_NAME, mod->name.data(), mod->name.size()));
-  EXPECT_OK(mod->vmo.replace_as_executable(zx::resource(), &mod->vmo));
+  zx::resource vmex = GetVmexResource();
+  ASSERT_TRUE(vmex.is_valid());
+  EXPECT_OK(mod->vmo.replace_as_executable(vmex, &mod->vmo));
 
   ASSERT_NO_FATAL_FAILURE((WriteHeaders<Elf64_Ehdr, Elf64_Phdr>(mod->phdrs, mod->vmo)));
 
@@ -130,7 +156,9 @@ void MakeELF(Module<Elf32_Phdr>* mod) {
   }
   ASSERT_OK(zx::vmo::create(size, 0, &mod->vmo));
   EXPECT_OK(mod->vmo.set_property(ZX_PROP_NAME, mod->name.data(), mod->name.size()));
-  EXPECT_OK(mod->vmo.replace_as_executable(zx::resource(), &mod->vmo));
+  zx::resource vmex = GetVmexResource();
+  ASSERT_TRUE(vmex.is_valid());
+  EXPECT_OK(mod->vmo.replace_as_executable(vmex, &mod->vmo));
 
   ASSERT_NO_FATAL_FAILURE((WriteHeaders<Elf32_Ehdr, Elf32_Phdr>(
       mod->phdrs, mod->vmo, elfldltl::ElfClass::k32, elfldltl::ElfMachine::kArm)));
