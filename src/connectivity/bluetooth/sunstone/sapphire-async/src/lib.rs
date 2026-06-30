@@ -8,6 +8,7 @@
 pub mod condition;
 pub mod executor;
 pub mod notification;
+pub mod semaphore;
 
 #[cfg(feature = "testing")]
 pub mod testing;
