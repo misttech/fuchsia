@@ -410,6 +410,11 @@
             to: "#testing",
         },
         {
+            service: "fuchsia.hardware.cpu.ctrl.Service",
+            from: "parent",
+            to: "#testing",
+        },
+        {
             service: "fuchsia.hardware.nfc.Service",
             from: "parent",
             to: "#testing",
