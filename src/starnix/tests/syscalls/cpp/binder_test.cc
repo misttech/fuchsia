@@ -13,7 +13,9 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
 #include <format>
+#include <thread>
 
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
@@ -21,7 +23,9 @@
 #include <linux/android/binderfs.h>
 #include <linux/netlink.h>
 
+#include "src/starnix/tests/syscalls/cpp/binder/common.h"
 #include "src/starnix/tests/syscalls/cpp/binder/manager_provider_client_test.h"
+#include "src/starnix/tests/syscalls/cpp/binder_helper.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
@@ -283,6 +287,92 @@ TEST_F(BinderTest, BinderControlInvalidPathSlash) {
   std::ranges::copy(kBinderName, new_device.name);
   EXPECT_THAT(ioctl(binder_control.get(), BINDER_CTL_ADD, &new_device),
               SyscallFailsWithErrno(EACCES));
+}
+
+// This test verifies that sending a file descriptor to a process that is in the middle of exiting
+// does not crash the kernel or return a protocol error. Instead, it should fail gracefully,
+// eventually returning BR_DEAD_REPLY or BR_FAILED_REPLY.
+TEST_F(BinderTest, SendFdToExitingProcess) {
+  using namespace starnix_binder;
+
+  auto manager_ready = test_helper::MakeRendezvous();
+  pid_t manager_pid = 0;
+
+  // Spawn the manager using the framework helper.
+  auto manager = ManagerProcess(
+      TestPath("binderfs"),
+      [&](test_helper::ForkHelper& fork_helper, fit::closure manager_behavior) {
+        manager_pid = fork_helper.RunInForkedProcess(std::move(manager_behavior));
+        return manager_pid;
+      },
+      std::move(manager_ready.poker));
+
+  manager_ready.holder.hold();
+
+  auto binder_and_map = OpenBinderAndMap(TestPath("binderfs"));
+  ASSERT_TRUE(binder_and_map.fd_);
+  ASSERT_TRUE(binder_and_map.mapping_.is_ok());
+  const auto& binder = binder_and_map.fd_;
+
+  // Prepare transaction with FD.
+  fbl::unique_fd fd_to_send(SAFE_SYSCALL(open("/dev/null", O_RDONLY)));
+  FdTransaction fd_transaction(0, kServiceSendFd, fd_to_send.get());
+  const auto& write_buffer = fd_transaction.write_buffer;
+
+  // Spawn a background thread that continuously sends the transaction with the FD to the manager.
+  // The transaction is two-way and the manager does not reply, so the thread will block in ioctl()
+  // until the manager process is killed.
+  auto send_started = test_helper::MakeRendezvous();
+  std::atomic<int> ioctl_errno(0);
+  std::atomic<bool> got_error(false);
+  std::atomic<bool> got_dead_or_failed_reply(false);
+  std::thread send_thread([&, send_started = std::move(send_started.poker)]() mutable {
+    bool starting = true;
+    while (true) {
+      struct binder_write_read bwr = {};
+      bwr.write_buffer = (binder_uintptr_t)&write_buffer;
+      bwr.write_size = sizeof(write_buffer);
+      bwr.write_consumed = 0;
+
+      uint32_t read_buf[32] = {};
+      bwr.read_buffer = (binder_uintptr_t)read_buf;
+      bwr.read_size = sizeof(read_buf);
+      bwr.read_consumed = 0;
+
+      // Wait to poke send_started until we are about to enter ioctl().
+      if (starting) {
+        starting = false;
+        send_started.poke();
+      }
+      if (ioctl(binder.get(), BINDER_WRITE_READ, &bwr) < 0) {
+        ioctl_errno = errno;
+        break;
+      }
+
+      ParsedMessage pm = ParseMessage((binder_uintptr_t)read_buf, bwr.read_consumed);
+      for (auto cmd : pm.returns_) {
+        if (cmd == BR_ERROR) {
+          got_error = true;
+          return;
+        }
+        if (cmd == BR_DEAD_REPLY || cmd == BR_FAILED_REPLY) {
+          got_dead_or_failed_reply = true;
+          return;
+        }
+      }
+    }
+  });
+
+  send_started.holder.hold();
+
+  // Kill the manager and wait for the send thread to finish.
+  manager.call();
+  send_thread.join();
+
+  // We expect the transactions to fail with BR_DEAD_REPLY or BR_FAILED_REPLY after the child died.
+  EXPECT_FALSE(got_error.load());
+  EXPECT_TRUE(got_dead_or_failed_reply.load());
+  EXPECT_THAT(ioctl_errno.load(), SyscallSucceedsWithValue(0));
 }
 
 }  // namespace

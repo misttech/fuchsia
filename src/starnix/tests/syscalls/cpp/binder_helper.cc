@@ -62,7 +62,10 @@ ParsedMessage ParseMessage(const binder_uintptr_t start, const binder_size_t len
       case BR_FINISHED:
       case BR_NOOP:
       case BR_FAILED_REPLY:
+        break;
       case BR_ERROR:
+        ptr += sizeof(int32_t);
+        break;
       default:
         break;
     }
@@ -80,5 +83,23 @@ void EnterLooper(const fbl::unique_fd& binder_fd) {
 
   ASSERT_THAT(ioctl(binder_fd.get(), BINDER_WRITE_READ, &write_read), SyscallSucceeds());
 }
+
+FdTransaction::FdTransaction(uint32_t target_handle, uint32_t code, int fd)
+    : fd_object{
+          .hdr = {.type = BINDER_TYPE_FD},
+          .pad_flags = 0x7f | FLAT_BINDER_FLAG_ACCEPTS_FDS,
+          .fd = static_cast<uint32_t>(fd),
+      },
+      offset(0),
+      write_buffer{.command = BC_TRANSACTION,
+                   .data = {.target = {.handle = target_handle},
+                            .code = code,
+                            .flags = TF_ACCEPT_FDS,
+                            .data_size = sizeof(struct binder_fd_object),
+                            .offsets_size = sizeof(binder_size_t),
+                            .data = {.ptr = {
+                                         .buffer = (binder_uintptr_t)&fd_object,
+                                         .offsets = (binder_uintptr_t)&offset,
+                                     }}}} {}
 
 }  // namespace starnix_binder

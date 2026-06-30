@@ -21,7 +21,7 @@ use starnix_types::ownership::{
     OwnedRef, Releasable, ReleaseGuard, TempRef, WeakRef, release_on_error,
 };
 use starnix_types::user_buffer::UserBuffer;
-use starnix_uapi::errors::{EACCES, EPERM, Errno};
+use starnix_uapi::errors::{EACCES, EPERM, ESRCH, Errno};
 use starnix_uapi::user_address::UserRef;
 use starnix_uapi::{
     binder_driver_return_protocol, binder_driver_return_protocol_BR_ACQUIRE,
@@ -914,6 +914,7 @@ impl From<Errno> for TransactionError {
     fn from(errno: Errno) -> TransactionError {
         match errno.code {
             EACCES | EPERM => TransactionError::Failure,
+            ESRCH => TransactionError::Dead,
             _ => TransactionError::Malformed(errno),
         }
     }

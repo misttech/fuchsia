@@ -554,7 +554,10 @@ impl BinderDriver {
                     return Ok((context_manager_object, owner));
                 }
                 None => {
+                    // The context manager was registered, but its owner process has died. Returning
+                    // ESRCH dispatches BR_DEAD_REPLY to the client.
                     *context_manager = None;
+                    return error!(ESRCH);
                 }
             }
         }

@@ -50,6 +50,17 @@ struct __attribute__((packed)) ReplyWriteBuffer {
 
 void EnterLooper(const fbl::unique_fd& binder_fd);
 
+// A helper helper to prepare a transaction that sends a single file descriptor.
+struct FdTransaction {
+  struct binder_fd_object fd_object;
+  binder_size_t offset;
+  TransactionWriteBuffer write_buffer;
+
+  FdTransaction(uint32_t target_handle, uint32_t code, int fd);
+  FdTransaction(const FdTransaction&) = delete;
+  FdTransaction(FdTransaction&&) = delete;
+};
+
 }  // namespace starnix_binder
 
 #endif  // SRC_STARNIX_TESTS_SYSCALLS_CPP_BINDER_HELPER_H_
