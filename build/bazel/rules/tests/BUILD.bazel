@@ -63,6 +63,8 @@ filegroup(
         "//zircon/system/ulib/zircon-internal",
         # Tests `fx_package()`.
         "//src/security/bin/root_ssl_certificates",
+        # Tests `fx_component()`.
+        "//src/developer/build_info:build-info",
     ],
     # This target is only intended to be built in Fuchsia configurations.
     # Individual test groups can use a transition to build targets in host

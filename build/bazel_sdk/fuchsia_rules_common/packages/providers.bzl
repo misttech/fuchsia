@@ -30,6 +30,15 @@ FuchsiaComponentInfo = provider(
     },
 )
 
+FuchsiaComponentManifestInfo = provider(
+    "Contains information about a Fuchsia component manifest",
+    fields = {
+        "compiled_manifest": "A File pointing to the compiled manifest",
+        "component_name": "The name of the component",
+        "config_package_path": "The path to the generated cvf file",
+    },
+)
+
 FuchsiaPackagedComponentInfo = provider(
     doc = "Contains information about a fuchsia component that has been included in a package",
     fields = {

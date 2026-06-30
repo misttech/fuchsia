@@ -2,7 +2,37 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+
 exports_files(
     ["meta/build_info.core_shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+fx_component_manifest(
+    name = "build-info-manifest",
+    component_name = "build-info",
+    includes = [
+        "//sdk/lib/syslog:client.shard.cml",
+        "//sdk/lib/syslog:offer.shard.cml",
+        "//sdk/lib/syslog:use.shard.cml",
+    ],
+    manifest = "meta/build_info.cml",
+)
+
+fx_component(
+    name = "build-info",
+    compiled_manifest = ":build-info-manifest",
+    visibility = [
+        # TODO(https://fxbug.dev/490178129): Remove this visibility when build-info-service package
+        # is added to the Bazel assembly.
+        "//build/bazel/rules/tests:__subpackages__",
+    ],
+    deps = [
+        # TODO(https://fxbug.dev/490178129): Migrate build-info binary and add here as a dep.
+    ],
 )

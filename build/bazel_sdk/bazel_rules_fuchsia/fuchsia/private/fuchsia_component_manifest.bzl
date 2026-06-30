@@ -2,12 +2,20 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "@fuchsia_rules_common//packages:component_manifest.bzl",
+    "compile_component_manifest",
+)
+load(
+    "@fuchsia_rules_common//packages:providers.bzl",
+    "FuchsiaComponentManifestInfo",
+)
+
 # buildifier: disable=module-docstring
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load(
     ":providers.bzl",
-    "FuchsiaComponentManifestInfo",
     "FuchsiaComponentManifestShardCollectionInfo",
     "FuchsiaComponentManifestShardInfo",
 )
@@ -74,10 +82,6 @@ fuchsia_component_manifest_shard = rule(
 def _compile_component_manifest(ctx, manifest_in, component_name, includes_in):
     sdk = get_fuchsia_sdk_toolchain(ctx)
 
-    # output should have the .cm extension
-    manifest_out = ctx.actions.declare_file("meta/{}.cm".format(component_name))
-    config_package_path = "meta/%s.cvf" % component_name
-
     if ctx.configuration.coverage_enabled:
         coverage_shard = ctx.attr._sdk_coverage_shard[FuchsiaComponentManifestShardInfo]
         manifest_merged = ctx.actions.declare_file("%s_merged.cml" % _component_name_from_cml_file(manifest_in))
@@ -109,41 +113,19 @@ def _compile_component_manifest(ctx, manifest_in, component_name, includes_in):
             includes.append(shard.file)
             include_path_dict[(shard.file.owner.workspace_root or ".") + "/" + shard.base_path] = 1
 
-    include_path = []
+    include_paths = []
     for w in include_path_dict.keys():
-        include_path.extend(["--includepath", w])
+        include_paths.append(w)
 
-    config_values_package_path_args = [
-        "--config-package-path",
-        config_package_path,
-    ]
-
-    ctx.actions.run(
-        executable = sdk.cmc,
-        arguments = [
-            "compile",
-            "--output",
-            manifest_out.path,
-            manifest_in.path,
-            "--includeroot",
-            manifest_in.path[:-len(manifest_in.basename)],
-        ] + include_path + config_values_package_path_args,
-        inputs = [manifest_in] + includes,
-        outputs = [
-            manifest_out,
-        ],
-        mnemonic = "CmcCompile",
+    return compile_component_manifest(
+        ctx = ctx,
+        cmc_tool = sdk.cmc,
+        manifest_in = manifest_in,
+        component_name = component_name,
+        includes = includes,
+        include_paths = include_paths,
         toolchain = FUCHSIA_TOOLCHAIN_DEFINITION,
     )
-
-    return [
-        DefaultInfo(files = depset([manifest_out])),
-        FuchsiaComponentManifestInfo(
-            compiled_manifest = manifest_out,
-            component_name = component_name,
-            config_package_path = config_package_path,
-        ),
-    ]
 
 def _fuchsia_component_manifest_impl(ctx):
     if bool(ctx.file.src) == bool(ctx.attr.content):

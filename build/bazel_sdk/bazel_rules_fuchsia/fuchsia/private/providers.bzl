@@ -14,6 +14,7 @@ load(
     "@fuchsia_rules_common//packages:providers.bzl",
     _FuchsiaCollectedPackageResourcesInfo = "FuchsiaCollectedPackageResourcesInfo",
     _FuchsiaComponentInfo = "FuchsiaComponentInfo",
+    _FuchsiaComponentManifestInfo = "FuchsiaComponentManifestInfo",
     _FuchsiaDriverToolInfo = "FuchsiaDriverToolInfo",
     _FuchsiaPackageResourcesInfo = "FuchsiaPackageResourcesInfo",
     _FuchsiaPackagedComponentInfo = "FuchsiaPackagedComponentInfo",
@@ -26,6 +27,7 @@ FuchsiaDriverToolInfo = _FuchsiaDriverToolInfo
 FuchsiaPackageResourcesInfo = _FuchsiaPackageResourcesInfo
 FuchsiaPackagedComponentInfo = _FuchsiaPackagedComponentInfo
 FuchsiaStructuredConfigInfo = _FuchsiaStructuredConfigInfo
+FuchsiaComponentManifestInfo = _FuchsiaComponentManifestInfo
 
 FuchsiaAssembledArtifactInfo = provider(
     "Artifacts that can be included into a product. It consists of the artifact and the corresponding config data.",
@@ -54,15 +56,6 @@ FuchsiaDeviceTreeSegmentInfo = provider(
 FuchsiaCollectedUnstrippedBinariesInfo = _FuchsiaCollectedUnstrippedBinariesInfo
 FuchsiaUnstrippedBinaryInfo = _FuchsiaUnstrippedBinaryInfo
 make_fuchsia_unstripped_binary_info = _make_fuchsia_unstripped_binary_info
-
-FuchsiaComponentManifestInfo = provider(
-    "Contains information about a Fuchsia component manifest",
-    fields = {
-        "compiled_manifest": "A File pointing to the compiled manifest",
-        "component_name": "The name of the component",
-        "config_package_path": "The path to the generated cvf file",
-    },
-)
 
 FuchsiaComponentManifestShardInfo = provider(
     "Contains information about a Fuchsia component manifest shard",
