@@ -78,7 +78,16 @@ if (is_host) {
   rustc_test("sapphire_async_test") {
     edition = "2024"
     source_root = "sapphire-async/src/lib.rs"
-    sources = [ "sapphire-async/src/lib.rs" ]
+    sources = [
+      "sapphire-async/src/condition.rs",
+      "sapphire-async/src/executor.rs",
+      "sapphire-async/src/lib.rs",
+      "sapphire-async/src/notification.rs",
+      "sapphire-async/src/notification/intrusive_list.rs",
+      "sapphire-async/src/testing.rs",
+      "sapphire-async/src/testing/executor.rs",
+      "sapphire-async/src/testing/executor/waker.rs",
+    ]
     features = [
       "std",
       "testing",
