@@ -12,9 +12,9 @@ const DEFAULT_LEDGER_MODE: LedgerMode = LedgerMode::Normal;
 
 // Main interface for LedgerNode.
 pub trait LedgerNodeOp {
-    fn add(&mut self, node: LedgerNode) -> Result<usize>;
-    fn close(&mut self, depth: usize) -> Result<()>;
-    fn set_outcome(&mut self, depth: usize, outcome: LedgerOutcome) -> Result<()>;
+    fn add(&mut self, node: LedgerNode) -> usize;
+    fn close(&mut self, depth: usize);
+    fn set_outcome(&mut self, depth: usize, outcome: LedgerOutcome);
     fn make_view(&self, depth: usize, display_mode: LedgerViewMode) -> Option<LedgerViewNode>;
     fn make_all(&self, display_mode: LedgerViewMode) -> Vec<LedgerViewNode>;
 }
@@ -168,18 +168,18 @@ impl LedgerNode {
 
 impl LedgerNodeOp for LedgerNode {
     // Add node as a child of the most recent open node, return depth
-    fn add(&mut self, node: LedgerNode) -> Result<usize> {
-        return self.add_at_max_depth(node, 0);
+    fn add(&mut self, node: LedgerNode) -> usize {
+        return self.add_at_max_depth(node, 0).expect("Failed to add ledger node");
     }
 
     // Close the most recent node at the specified depth.
-    fn close(&mut self, depth: usize) -> Result<()> {
-        return self.close_at_depth(0, depth);
+    fn close(&mut self, depth: usize) {
+        self.close_at_depth(0, depth).expect("Failed to close ledger node");
     }
 
     // Set the most recent node's outcome at the specified depth.
-    fn set_outcome(&mut self, depth: usize, outcome: LedgerOutcome) -> Result<()> {
-        return self.set_outcome_at_depth(0, depth, outcome);
+    fn set_outcome(&mut self, depth: usize, outcome: LedgerOutcome) {
+        self.set_outcome_at_depth(0, depth, outcome).expect("Failed to set ledger node outcome");
     }
 
     // Return the display node tree for the most recent node at the specified depth.
@@ -266,45 +266,36 @@ impl<'a, W: Write> LedgerNodeGuard<'a, W> {
         Self { ledger, depth, is_closed: false }
     }
 
-    pub fn add_node(&mut self, data: &str, mode: LedgerMode) -> Result<LedgerNodeGuard<'_, W>> {
-        let depth = self.ledger.add_node_internal(data, mode)?;
-        Ok(LedgerNodeGuard::new(self.ledger, depth))
+    pub fn add_node(&mut self, data: &str, mode: LedgerMode) -> LedgerNodeGuard<'_, W> {
+        let depth = self.ledger.add_node_internal(data, mode);
+        LedgerNodeGuard::new(self.ledger, depth)
     }
 
-    pub fn add(&mut self, node: LedgerNode) -> Result<LedgerNodeGuard<'_, W>> {
-        let depth = self.ledger.add_internal(node)?;
-        Ok(LedgerNodeGuard::new(self.ledger, depth))
+    pub fn add(&mut self, node: LedgerNode) -> LedgerNodeGuard<'_, W> {
+        let depth = self.ledger.add_internal(node);
+        LedgerNodeGuard::new(self.ledger, depth)
     }
 
-    pub fn set_outcome(mut self, outcome: LedgerOutcome) -> Result<()> {
+    pub fn set_outcome(mut self, outcome: LedgerOutcome) {
         self.is_closed = true;
-        self.ledger.set_outcome_internal(self.depth, outcome)?;
-        Ok(())
+        self.ledger.set_outcome_internal(self.depth, outcome);
     }
 
-    pub fn close(mut self) -> Result<()> {
+    pub fn close(mut self) {
         if !self.is_closed {
             self.is_closed = true;
-            self.ledger.close_internal(self.depth)?;
+            self.ledger.close_internal(self.depth);
         }
-        Ok(())
     }
 
-    pub fn add_node_with_outcome(
-        &mut self,
-        data: &str,
-        mode: LedgerMode,
-        outcome: LedgerOutcome,
-    ) -> Result<()> {
-        let node = self.add_node(data, mode)?;
-        node.set_outcome(outcome)?;
-        Ok(())
+    pub fn add_node_with_outcome(&mut self, data: &str, mode: LedgerMode, outcome: LedgerOutcome) {
+        let node = self.add_node(data, mode);
+        node.set_outcome(outcome);
     }
 
-    pub fn add_with_outcome(&mut self, node: LedgerNode, outcome: LedgerOutcome) -> Result<()> {
-        let guard = self.add(node)?;
-        guard.set_outcome(outcome)?;
-        Ok(())
+    pub fn add_with_outcome(&mut self, node: LedgerNode, outcome: LedgerOutcome) {
+        let guard = self.add(node);
+        guard.set_outcome(outcome);
     }
 
     pub fn calc_outcome_at_next_depth(&self) -> LedgerOutcome {
@@ -319,7 +310,7 @@ impl<'a, W: Write> LedgerNodeGuard<'a, W> {
         self.ledger.get_ledger_mode()
     }
 
-    pub fn write_all(&self, ledger_view: &mut dyn LedgerView) -> Result<String> {
+    pub fn write_all(&self, ledger_view: &mut dyn LedgerView) -> String {
         self.ledger.write_all(ledger_view)
     }
 }
@@ -327,7 +318,7 @@ impl<'a, W: Write> LedgerNodeGuard<'a, W> {
 impl<'a, W: Write> Drop for LedgerNodeGuard<'a, W> {
     fn drop(&mut self) {
         if !self.is_closed {
-            let _ = self.ledger.close_internal(self.depth);
+            self.ledger.close_internal(self.depth);
         }
     }
 }
@@ -357,11 +348,11 @@ impl<W: Write> DoctorLedger<W> {
         self.root_node
     }
 
-    fn add_internal(&mut self, node: LedgerNode) -> Result<usize> {
+    fn add_internal(&mut self, node: LedgerNode) -> usize {
         return self.root_node.add(node);
     }
 
-    fn add_node_internal(&mut self, data: &str, mode: LedgerMode) -> Result<usize> {
+    fn add_node_internal(&mut self, data: &str, mode: LedgerMode) -> usize {
         return self.add_internal(LedgerNode::new(data.to_string(), mode));
     }
 
@@ -369,27 +360,26 @@ impl<W: Write> DoctorLedger<W> {
         return self.root_node.calc_outcome_at_depth(depth);
     }
 
-    fn set_outcome_internal(&mut self, depth: usize, outcome: LedgerOutcome) -> Result<()> {
-        self.root_node.set_outcome(depth, outcome)?;
-        self.close_internal(depth)?;
-        return Ok(());
+    fn set_outcome_internal(&mut self, depth: usize, outcome: LedgerOutcome) {
+        self.root_node.set_outcome(depth, outcome);
+        self.close_internal(depth);
     }
 
-    fn close_internal(&mut self, depth: usize) -> Result<()> {
+    fn close_internal(&mut self, depth: usize) {
         if depth == 1 {
-            self.display()?;
+            self.display();
         }
-        return self.root_node.close(depth);
+        self.root_node.close(depth);
     }
 
-    pub fn add(&mut self, node: LedgerNode) -> Result<LedgerNodeGuard<'_, W>> {
-        let depth = self.add_internal(node)?;
-        Ok(LedgerNodeGuard::new(self, depth))
+    pub fn add(&mut self, node: LedgerNode) -> LedgerNodeGuard<'_, W> {
+        let depth = self.add_internal(node);
+        LedgerNodeGuard::new(self, depth)
     }
 
-    pub fn add_node(&mut self, data: &str, mode: LedgerMode) -> Result<LedgerNodeGuard<'_, W>> {
-        let depth = self.add_node_internal(data, mode)?;
-        Ok(LedgerNodeGuard::new(self, depth))
+    pub fn add_node(&mut self, data: &str, mode: LedgerMode) -> LedgerNodeGuard<'_, W> {
+        let depth = self.add_node_internal(data, mode);
+        LedgerNodeGuard::new(self, depth)
     }
 
     pub fn root_guard(&mut self) -> LedgerNodeGuard<'_, W> {
@@ -400,24 +390,24 @@ impl<W: Write> DoctorLedger<W> {
         return self.ledger_mode;
     }
 
-    fn display(&mut self) -> Result<()> {
+    fn display(&mut self) {
         match self.root_node.make_view(1, self.ledger_mode) {
             Some(node) => {
                 self.ledger_view.set(node);
-                write!(self.writer, "{}", self.ledger_view)?;
+                write!(self.writer, "{}", self.ledger_view)
+                    .expect("Failed to write to ledger writer");
             }
             None => (),
         }
-        return Ok(());
     }
 
-    pub fn write_all(&self, ledger_view: &mut dyn LedgerView) -> Result<String> {
+    pub fn write_all(&self, ledger_view: &mut dyn LedgerView) -> String {
         let mut output = "".to_string();
         for node in self.root_node.make_all(self.ledger_mode) {
             ledger_view.set(node);
             output = format!("{}{}", output, ledger_view);
         }
-        return Ok(output);
+        return output;
     }
 }
 
@@ -481,22 +471,20 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_outcome() -> Result<()> {
+    async fn test_outcome() {
         let ledger_view = Box::new(FakeLedgerView::new());
         let mut ledger = doctorledger_test_new(ledger_view, LedgerViewMode::Verbose);
 
         ledger
-            .add(LedgerNode::new("a".to_string(), MODE_VERBOSE))?
-            .set_outcome(LedgerOutcome::Success)?;
+            .add(LedgerNode::new("a".to_string(), MODE_VERBOSE))
+            .set_outcome(LedgerOutcome::Success);
         ledger
-            .add(LedgerNode::new("b".to_string(), MODE_VERBOSE))?
-            .set_outcome(LedgerOutcome::Warning)?;
+            .add(LedgerNode::new("b".to_string(), MODE_VERBOSE))
+            .set_outcome(LedgerOutcome::Warning);
         ledger
-            .add(LedgerNode::new("c".to_string(), MODE_VERBOSE))?
-            .set_outcome(LedgerOutcome::Failure)?;
-        ledger
-            .add(LedgerNode::new("d".to_string(), MODE_VERBOSE))?
-            .set_outcome(LedgerOutcome::Info)?;
+            .add(LedgerNode::new("c".to_string(), MODE_VERBOSE))
+            .set_outcome(LedgerOutcome::Failure);
+        ledger.add(LedgerNode::new("d".to_string(), MODE_VERBOSE)).set_outcome(LedgerOutcome::Info);
 
         assert_eq!(
             doctorledger_debug(&ledger),
@@ -506,36 +494,32 @@ mod test {
                 \n[✗] c\
                 \n[i] d\n"
         );
-        Ok(())
     }
 
-    fn setup_simple_mode(ledger: &mut DoctorLedger<MockWriter>) -> Result<()> {
+    fn setup_simple_mode(ledger: &mut DoctorLedger<MockWriter>) {
         ledger
-            .add(LedgerNode::new("a".to_string(), MODE_VERBOSE))?
-            .set_outcome(LedgerOutcome::Success)?;
+            .add(LedgerNode::new("a".to_string(), MODE_VERBOSE))
+            .set_outcome(LedgerOutcome::Success);
         ledger
-            .add(LedgerNode::new("b".to_string(), MODE_NORMAL))?
-            .set_outcome(LedgerOutcome::Warning)?;
+            .add(LedgerNode::new("b".to_string(), MODE_NORMAL))
+            .set_outcome(LedgerOutcome::Warning);
         ledger
-            .add(LedgerNode::new("c".to_string(), MODE_DEFAULT))?
-            .set_outcome(LedgerOutcome::Failure)?;
+            .add(LedgerNode::new("c".to_string(), MODE_DEFAULT))
+            .set_outcome(LedgerOutcome::Failure);
         ledger
-            .add(LedgerNode::new("d".to_string(), MODE_VERBOSE))?
-            .set_outcome(LedgerOutcome::Failure)?;
+            .add(LedgerNode::new("d".to_string(), MODE_VERBOSE))
+            .set_outcome(LedgerOutcome::Failure);
         ledger
-            .add(LedgerNode::new("e".to_string(), MODE_NORMAL))?
-            .set_outcome(LedgerOutcome::Success)?;
-        ledger
-            .add(LedgerNode::new("f".to_string(), MODE_NORMAL))?
-            .set_outcome(LedgerOutcome::Info)?;
-        Ok(())
+            .add(LedgerNode::new("e".to_string(), MODE_NORMAL))
+            .set_outcome(LedgerOutcome::Success);
+        ledger.add(LedgerNode::new("f".to_string(), MODE_NORMAL)).set_outcome(LedgerOutcome::Info);
     }
 
     #[fuchsia::test]
-    async fn test_mode_verbose() -> Result<()> {
+    async fn test_mode_verbose() {
         let ledger_view = Box::new(FakeLedgerView::new());
         let mut ledger = doctorledger_test_new(ledger_view, LedgerViewMode::Verbose);
-        setup_simple_mode(&mut ledger)?;
+        setup_simple_mode(&mut ledger);
 
         assert_eq!(
             doctorledger_debug(&ledger),
@@ -548,14 +532,13 @@ mod test {
                 \n[i] f\
                 \n"
         );
-        Ok(())
     }
 
     #[fuchsia::test]
-    async fn test_mode_normal() -> Result<()> {
+    async fn test_mode_normal() {
         let ledger_view = Box::new(FakeLedgerView::new());
         let mut ledger = doctorledger_test_new(ledger_view, LedgerViewMode::Normal);
-        setup_simple_mode(&mut ledger)?;
+        setup_simple_mode(&mut ledger);
 
         assert_eq!(
             doctorledger_debug(&ledger),
@@ -565,61 +548,60 @@ mod test {
                 \n[✓] e\
                 \n[i] f\n"
         );
-        Ok(())
     }
 
     #[fuchsia::test]
-    async fn test_group_outcome() -> Result<()> {
+    async fn test_group_outcome() {
         let ledger_view = Box::new(FakeLedgerView::new());
         let mut ledger = doctorledger_test_new(ledger_view, LedgerViewMode::Normal);
 
         {
-            let mut main_node = ledger.add(LedgerNode::new("a".to_string(), MODE_NORMAL))?;
+            let mut main_node = ledger.add(LedgerNode::new("a".to_string(), MODE_NORMAL));
             main_node
-                .add(LedgerNode::new("1".to_string(), MODE_VERBOSE))?
-                .set_outcome(LedgerOutcome::Success)?;
+                .add(LedgerNode::new("1".to_string(), MODE_VERBOSE))
+                .set_outcome(LedgerOutcome::Success);
             main_node
-                .add(LedgerNode::new("2".to_string(), MODE_VERBOSE))?
-                .set_outcome(LedgerOutcome::Success)?;
+                .add(LedgerNode::new("2".to_string(), MODE_VERBOSE))
+                .set_outcome(LedgerOutcome::Success);
             main_node
-                .add(LedgerNode::new("3".to_string(), MODE_VERBOSE))?
-                .set_outcome(LedgerOutcome::Success)?;
+                .add(LedgerNode::new("3".to_string(), MODE_VERBOSE))
+                .set_outcome(LedgerOutcome::Success);
         }
         {
-            let mut main_node = ledger.add(LedgerNode::new("b".to_string(), MODE_NORMAL))?;
+            let mut main_node = ledger.add(LedgerNode::new("b".to_string(), MODE_NORMAL));
             main_node
-                .add(LedgerNode::new("1".to_string(), MODE_VERBOSE))?
-                .set_outcome(LedgerOutcome::Success)?;
+                .add(LedgerNode::new("1".to_string(), MODE_VERBOSE))
+                .set_outcome(LedgerOutcome::Success);
             main_node
-                .add(LedgerNode::new("2".to_string(), MODE_VERBOSE))?
-                .set_outcome(LedgerOutcome::Warning)?;
+                .add(LedgerNode::new("2".to_string(), MODE_VERBOSE))
+                .set_outcome(LedgerOutcome::Warning);
             main_node
-                .add(LedgerNode::new("3".to_string(), MODE_VERBOSE))?
-                .set_outcome(LedgerOutcome::Success)?;
+                .add(LedgerNode::new("3".to_string(), MODE_VERBOSE))
+                .set_outcome(LedgerOutcome::Success);
         }
         {
-            let mut main_node = ledger.add(LedgerNode::new("c".to_string(), MODE_NORMAL))?;
+            let mut main_node = ledger.add(LedgerNode::new("c".to_string(), MODE_NORMAL));
             main_node
-                .add(LedgerNode::new("1".to_string(), MODE_VERBOSE))?
-                .set_outcome(LedgerOutcome::Success)?;
+                .add(LedgerNode::new("1".to_string(), MODE_VERBOSE))
+                .set_outcome(LedgerOutcome::Success);
             main_node
-                .add(LedgerNode::new("2".to_string(), MODE_VERBOSE))?
-                .set_outcome(LedgerOutcome::SoftWarning)?;
+                .add(LedgerNode::new("2".to_string(), MODE_VERBOSE))
+                .set_outcome(LedgerOutcome::SoftWarning);
             main_node
-                .add(LedgerNode::new("3".to_string(), MODE_VERBOSE))?
-                .set_outcome(LedgerOutcome::Success)?;
+                .add(LedgerNode::new("3".to_string(), MODE_VERBOSE))
+                .set_outcome(LedgerOutcome::Success);
         }
         {
-            let mut main_node = ledger.add(LedgerNode::new("d".to_string(), MODE_NORMAL))?;
+            let mut main_node = ledger.add(LedgerNode::new("d".to_string(), MODE_NORMAL));
             main_node
-                .add(LedgerNode::new("1".to_string(), MODE_VERBOSE))?
-                .set_outcome(LedgerOutcome::Success)?;
+                .add(LedgerNode::new("1".to_string(), MODE_VERBOSE))
+                .set_outcome(LedgerOutcome::Success);
             main_node
-                .add(LedgerNode::new("2".to_string(), MODE_VERBOSE))?
-                .set_outcome(LedgerOutcome::Failure)?;
+                .add(LedgerNode::new("2".to_string(), MODE_VERBOSE))
+                .set_outcome(LedgerOutcome::Failure);
             main_node
-                .add(LedgerNode::new("3".to_string(), MODE_VERBOSE))?
-                .set_outcome(LedgerOutcome::Success)?;
+                .add(LedgerNode::new("3".to_string(), MODE_VERBOSE))
+                .set_outcome(LedgerOutcome::Success);
         }
 
         assert_eq!(
@@ -631,6 +613,5 @@ mod test {
                 \n[✗] d\
                 \n"
         );
-        Ok(())
     }
 }

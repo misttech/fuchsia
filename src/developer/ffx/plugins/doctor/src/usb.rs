@@ -124,11 +124,11 @@ pub async fn check_usb_driver<W: Write, D: UsbDriverFinder>(
     finder: &D,
     ledger: &mut LedgerNodeGuard<'_, W>,
     env_context: &EnvironmentContext,
-) -> Result<()> {
+) {
     if !env_context.get(ffx_config::keys::USB_ENABLED).unwrap_or(false) {
-        return Ok(());
+        return;
     }
-    let mut usb_driver_node = ledger.add_node("FFX USB Driver", LedgerMode::Automatic)?;
+    let mut usb_driver_node = ledger.add_node("FFX USB Driver", LedgerMode::Automatic);
 
     let usb_driver_statuses = match finder.find().await {
         Ok(statuses) => statuses,
@@ -138,20 +138,20 @@ pub async fn check_usb_driver<W: Write, D: UsbDriverFinder>(
                 needed. If this error persists and there are ongoing issues communicating with the \
                 target, this may be a bug.",
                 LedgerMode::Automatic,
-            )?;
-            info_node.set_outcome(LedgerOutcome::Warning)?;
-            return Ok(());
+            );
+            info_node.set_outcome(LedgerOutcome::Warning);
+            return;
         }
         Err(e) => {
-            let node = usb_driver_node.add_node(&format!("{}", e), LedgerMode::Automatic)?;
-            node.set_outcome(LedgerOutcome::Failure)?;
-            return Ok(());
+            let node = usb_driver_node.add_node(&format!("{}", e), LedgerMode::Automatic);
+            node.set_outcome(LedgerOutcome::Failure);
+            return;
         }
     };
     let pid_socket_ledger_mode = if usb_driver_statuses.len() > 1 {
         let warning_node = usb_driver_node
-            .add_node("Multiple ffx-usb-driver processes running.", LedgerMode::Automatic)?;
-        warning_node.set_outcome(LedgerOutcome::Warning)?;
+            .add_node("Multiple ffx-usb-driver processes running.", LedgerMode::Automatic);
+        warning_node.set_outcome(LedgerOutcome::Warning);
         LedgerMode::Automatic
     } else {
         LedgerMode::Verbose
@@ -169,9 +169,9 @@ pub async fn check_usb_driver<W: Write, D: UsbDriverFinder>(
                     )
                     .as_str(),
                     LedgerMode::Automatic,
-                )?;
-                warning_node.set_outcome(LedgerOutcome::Warning)?;
-                return Ok(());
+                );
+                warning_node.set_outcome(LedgerOutcome::Warning);
+                return;
             }
         };
 
@@ -180,17 +180,17 @@ pub async fn check_usb_driver<W: Write, D: UsbDriverFinder>(
 
         {
             let mut running_node =
-                usb_driver_node.add_node("ffx-usb-driver is running.", LedgerMode::Automatic)?;
+                usb_driver_node.add_node("ffx-usb-driver is running.", LedgerMode::Automatic);
             running_node.add_node_with_outcome(
                 &format!("PID: {}", pid),
                 pid_socket_ledger_mode,
                 LedgerOutcome::Success,
-            )?;
+            );
             running_node.add_node_with_outcome(
                 &format!("Socket: {}", socket_path),
                 pid_socket_ledger_mode,
                 LedgerOutcome::Success,
-            )?;
+            );
 
             if expected_socket_path.as_path() != std::path::Path::new(&socket_path) {
                 running_node.add_node_with_outcome(
@@ -201,9 +201,8 @@ pub async fn check_usb_driver<W: Write, D: UsbDriverFinder>(
                     ),
                     LedgerMode::Automatic,
                     LedgerOutcome::Warning,
-                )?;
+                );
             }
         }
     }
-    Ok(())
 }

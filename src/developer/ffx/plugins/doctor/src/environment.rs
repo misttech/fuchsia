@@ -72,25 +72,25 @@ pub fn get_user_config(ctx: &EnvironmentContext) -> Result<String> {
 pub async fn check_ffx_info<W: Write>(
     ledger: &mut LedgerNodeGuard<'_, W>,
     version_info: &VersionInfo,
-) -> Result<()> {
-    let mut ffx_node = ledger.add_node("FFX doctor", LedgerMode::Automatic)?;
+) {
+    let mut ffx_node = ledger.add_node("FFX doctor", LedgerMode::Automatic);
     let frontend_version =
         version_info.build_version.clone().unwrap_or_else(|| "UNKNOWN".to_string());
     ffx_node.add_node_with_outcome(
         &format!("Frontend version: {}", frontend_version),
         LedgerMode::Verbose,
         LedgerOutcome::Success,
-    )?;
+    );
     ffx_node.add_node_with_outcome(
         &format!("abi-revision: {}", get_abi_revision(version_info.abi_revision)),
         LedgerMode::Verbose,
         LedgerOutcome::Success,
-    )?;
+    );
     ffx_node.add_node_with_outcome(
         &format!("api-level: {}", get_api_level(version_info.api_level)),
         LedgerMode::Verbose,
         LedgerOutcome::Success,
-    )?;
+    );
 
     let ffx_path = match std::env::current_exe() {
         Ok(path) => format!("{}", path.display()),
@@ -100,9 +100,7 @@ pub async fn check_ffx_info<W: Write>(
         &format!("Path to ffx: {}", ffx_path),
         LedgerMode::Normal,
         LedgerOutcome::Info,
-    )?;
-
-    Ok(())
+    );
 }
 
 pub async fn check_emulators<W: Write>(
@@ -112,31 +110,31 @@ pub async fn check_emulators<W: Write>(
     let emu_instance_root = env_context.get(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)?;
     let emu_instances = EmulatorInstances::new(emu_instance_root);
     let instances = emu_instances.get_all_instances()?;
-    let mut emu_node = ledger.add_node("FFX Emulator Instances", LedgerMode::Normal)?;
+    let mut emu_node = ledger.add_node("FFX Emulator Instances", LedgerMode::Normal);
     for instance in &instances {
-        let mut instance_node = emu_node.add_node("Instance", LedgerMode::Normal)?;
+        let mut instance_node = emu_node.add_node("Instance", LedgerMode::Normal);
         instance_node.add_node_with_outcome(
             &format!("Name: {}", instance.get_name()),
             LedgerMode::Normal,
             LedgerOutcome::Info,
-        )?;
+        );
         instance_node.add_node_with_outcome(
             &format!("Is Running: {}", instance.is_running()),
             LedgerMode::Normal,
             LedgerOutcome::Info,
-        )?;
+        );
         instance_node.add_node_with_outcome(
             &format!("Engine State: {}", instance.get_engine_state()),
             LedgerMode::Normal,
             LedgerOutcome::Info,
-        )?;
+        );
     }
     if instances.is_empty() {
         emu_node.add_node_with_outcome(
             "No Emulator instances",
             LedgerMode::Normal,
             LedgerOutcome::Info,
-        )?;
+        );
     }
     Ok(())
 }
@@ -145,12 +143,12 @@ pub async fn check_env_context<W: Write>(
     ledger: &mut LedgerNodeGuard<'_, W>,
     env_context: &EnvironmentContext,
 ) -> Result<(), anyhow::Error> {
-    let mut env_node = ledger.add_node("FFX Environment Context", LedgerMode::Normal)?;
+    let mut env_node = ledger.add_node("FFX Environment Context", LedgerMode::Normal);
     env_node.add_node_with_outcome(
         &format!("Kind of Environment: {kind}", kind = env_context.env_kind()),
         LedgerMode::Normal,
         LedgerOutcome::Success,
-    )?;
+    );
     let (outcome, description) = match env_context.env_file_path() {
         Ok(env_file) => (
             LedgerOutcome::Success,
@@ -160,7 +158,7 @@ pub async fn check_env_context<W: Write>(
             (LedgerOutcome::Failure, format!("Error find or loading the environment file: {e:?}"))
         }
     };
-    env_node.add_node_with_outcome(&description, LedgerMode::Verbose, outcome)?;
+    env_node.add_node_with_outcome(&description, LedgerMode::Verbose, outcome);
     if let Some(build_dir) = env_context.build_dir() {
         env_node.add_node_with_outcome(
             &format!(
@@ -169,16 +167,16 @@ pub async fn check_env_context<W: Write>(
             ),
             LedgerMode::Normal,
             LedgerOutcome::Success,
-        )?;
+        );
     } else {
         env_node.add_node_with_outcome(
             "No build directory discovered in the environment.",
             LedgerMode::Verbose,
             LedgerOutcome::Success,
-        )?;
+        );
     };
     check_lock_files(&mut env_node, env_context).await?;
-    check_ssh_keys(env_context, &mut env_node).await?;
+    check_ssh_keys(env_context, &mut env_node).await;
     Ok(())
 }
 
@@ -187,7 +185,7 @@ pub async fn check_lock_files<W: Write>(
     env_context: &EnvironmentContext,
 ) -> Result<(), anyhow::Error> {
     let locks = ffx_config::environment::Environment::check_locks(env_context).await?;
-    let mut lock_node = ledger.add_node("Config Lock Files", LedgerMode::Automatic)?;
+    let mut lock_node = ledger.add_node("Config Lock Files", LedgerMode::Automatic);
     for (file, locked) in locks {
         let (outcome, description) = match locked {
             Ok(lockfile) => (
@@ -227,7 +225,7 @@ pub async fn check_lock_files<W: Write>(
                 ),
             },
         };
-        lock_node.add_node_with_outcome(&description, LedgerMode::Automatic, outcome)?;
+        lock_node.add_node_with_outcome(&description, LedgerMode::Automatic, outcome);
     }
     Ok(())
 }
@@ -235,7 +233,7 @@ pub async fn check_lock_files<W: Write>(
 pub async fn check_ssh_keys<W: Write>(
     ctx: &EnvironmentContext,
     ledger: &mut LedgerNodeGuard<'_, W>,
-) -> Result<()> {
+) {
     match SshKeyFiles::load(ctx) {
         Ok(ssh_files) => {
             let (description, outcome) = match ssh_files.check_keys(false) {
@@ -273,23 +271,22 @@ pub async fn check_ssh_keys<W: Write>(
                     ),
                 },
             };
-            ledger.add_node_with_outcome(&description, LedgerMode::Automatic, outcome)?;
+            ledger.add_node_with_outcome(&description, LedgerMode::Automatic, outcome);
         }
         Err(e) => {
             ledger.add_node_with_outcome(
                 &format!("Could not get SSH key paths {e}"),
                 LedgerMode::Automatic,
                 LedgerOutcome::Failure,
-            )?;
+            );
         }
     };
-    Ok(())
 }
 
 #[cfg(all(target_os = "linux", not(test)))]
-pub async fn check_inotify_watches<W: Write>(ledger: &mut LedgerNodeGuard<'_, W>) -> Result<()> {
+pub async fn check_inotify_watches<W: Write>(ledger: &mut LedgerNodeGuard<'_, W>) {
     use std::os::unix::fs::MetadataExt;
-    let mut watch_node = ledger.add_node("System Inotify Watches", LedgerMode::Automatic)?;
+    let mut watch_node = ledger.add_node("System Inotify Watches", LedgerMode::Automatic);
     let mut total_watches = 0;
 
     let max_watches = match std::fs::read_to_string("/proc/sys/fs/inotify/max_user_watches") {
@@ -300,8 +297,8 @@ pub async fn check_inotify_watches<W: Write>(ledger: &mut LedgerNodeGuard<'_, W>
                     "Could not parse max_user_watches",
                     LedgerMode::Verbose,
                     LedgerOutcome::Failure,
-                )?;
-                return Ok(());
+                );
+                return;
             }
         },
         Err(e) => {
@@ -309,8 +306,8 @@ pub async fn check_inotify_watches<W: Write>(ledger: &mut LedgerNodeGuard<'_, W>
                 &format!("Could not read max_user_watches: {}", e),
                 LedgerMode::Verbose,
                 LedgerOutcome::Failure,
-            )?;
-            return Ok(());
+            );
+            return;
         }
     };
 
@@ -321,8 +318,8 @@ pub async fn check_inotify_watches<W: Write>(ledger: &mut LedgerNodeGuard<'_, W>
                 &format!("Could not get uid: {}", e),
                 LedgerMode::Verbose,
                 LedgerOutcome::Failure,
-            )?;
-            return Ok(());
+            );
+            return;
         }
     };
 
@@ -375,7 +372,7 @@ pub async fn check_inotify_watches<W: Write>(ledger: &mut LedgerNodeGuard<'_, W>
                 &format!("User is consuming {} / {} inotify watches", total_watches, max_watches),
                 LedgerMode::Automatic,
                 LedgerOutcome::Warning,
-            )?;
+            );
             watch_node.add_node_with_outcome(
                 &format!(
                     "Consider increasing max_user_watches: `sudo sysctl fs.inotify.max_user_watches={}`",
@@ -383,20 +380,16 @@ pub async fn check_inotify_watches<W: Write>(ledger: &mut LedgerNodeGuard<'_, W>
                 ),
                 LedgerMode::Automatic,
                 LedgerOutcome::Warning,
-            )?;
+            );
         } else {
             watch_node.add_node_with_outcome(
                 &format!("User is consuming {} / {} inotify watches", total_watches, max_watches),
                 LedgerMode::Verbose,
                 LedgerOutcome::Success,
-            )?;
+            );
         }
     }
-
-    Ok(())
 }
 
 #[cfg(any(not(target_os = "linux"), test))]
-pub async fn check_inotify_watches<W: Write>(_ledger: &mut LedgerNodeGuard<'_, W>) -> Result<()> {
-    Ok(())
-}
+pub async fn check_inotify_watches<W: Write>(_ledger: &mut LedgerNodeGuard<'_, W>) {}

@@ -312,7 +312,7 @@ async fn doctor<W: Write>(
     run_additional_diagnostics: bool,
 ) -> Result<()> {
     if restart_daemon {
-        doctor_daemon_restart(daemon_manager, retry_delay, ledger).await?;
+        doctor_daemon_restart(daemon_manager, retry_delay, ledger).await;
     }
 
     doctor_summary(
@@ -334,7 +334,7 @@ async fn doctor<W: Write>(
 
     if record_params.record {
         let mut record_view = RecordLedgerView::new();
-        let data = ledger.write_all(&mut record_view)?;
+        let data = ledger.write_all(&mut record_view);
         step_handler.record(StepType::Output(data)).await?;
         doctor_record(env_context, step_handler, record_params).await?;
     }
@@ -342,7 +342,7 @@ async fn doctor<W: Write>(
     Ok(())
 }
 
-fn print_summary_outcome<W: Write>(ledger: &mut LedgerNodeGuard<'_, W>) -> Result<()> {
+fn print_summary_outcome<W: Write>(ledger: &mut LedgerNodeGuard<'_, W>) {
     match ledger.calc_outcome_at_next_depth() {
         LedgerOutcome::Failure => {
             let msg = match ledger.get_ledger_mode() {
@@ -352,15 +352,14 @@ fn print_summary_outcome<W: Write>(ledger: &mut LedgerNodeGuard<'_, W>) -> Resul
                 ),
                 _ => String::from("Doctor found issues in one or more categories."),
             };
-            let node = ledger.add_node(&msg, LedgerMode::Automatic)?;
-            node.set_outcome(LedgerOutcome::Failure)?;
+            let node = ledger.add_node(&msg, LedgerMode::Automatic);
+            node.set_outcome(LedgerOutcome::Failure);
         }
         _ => {
-            let node = ledger.add_node("No issues found", LedgerMode::Automatic)?;
-            node.set_outcome(LedgerOutcome::Success)?;
+            let node = ledger.add_node("No issues found", LedgerMode::Automatic);
+            node.set_outcome(LedgerOutcome::Success);
         }
     }
-    Ok(())
 }
 
 async fn doctor_summary<W: Write>(
@@ -387,10 +386,10 @@ async fn doctor_summary<W: Write>(
         }
     }
 
-    check_ffx_info(ledger, &version_info).await?;
+    check_ffx_info(ledger, &version_info).await;
     check_env_context(ledger, env_context).await?;
     check_emulators(ledger, env_context).await?;
-    check_inotify_watches(ledger).await?;
+    check_inotify_watches(ledger).await;
 
     // Even in direct mode, we might as well at least report the status of the daemon.
     let daemon_proxy = check_daemon_status(
@@ -403,7 +402,7 @@ async fn doctor_summary<W: Write>(
     )
     .await?;
 
-    check_usb_driver(&usb_driver_finder, ledger, env_context).await?;
+    check_usb_driver(&usb_driver_finder, ledger, env_context).await;
 
     run_google_network_checks(ledger, env_context, &gchecker).await?;
     if direct_mode {
@@ -423,7 +422,7 @@ async fn doctor_summary<W: Write>(
         }
     }
 
-    print_summary_outcome(ledger)?;
+    print_summary_outcome(ledger);
 
     Ok(())
 }
@@ -1862,9 +1861,7 @@ mod test {
                 LedgerViewMode::Verbose,
             );
 
-            doctor_daemon_restart(&fake, DEFAULT_RETRY_DELAY, &mut ledger.root_guard())
-                .await
-                .unwrap();
+            doctor_daemon_restart(&fake, DEFAULT_RETRY_DELAY, &mut ledger.root_guard()).await;
 
             assert_eq!(
                 ledger.writer.get_data(),
@@ -1889,9 +1886,7 @@ mod test {
                 LedgerViewMode::Verbose,
             );
 
-            doctor_daemon_restart(&fake, DEFAULT_RETRY_DELAY, &mut ledger.root_guard())
-                .await
-                .unwrap();
+            doctor_daemon_restart(&fake, DEFAULT_RETRY_DELAY, &mut ledger.root_guard()).await;
 
             assert_eq!(
                 ledger.writer.get_data(),
@@ -2404,7 +2399,7 @@ mod test {
             LedgerViewMode::Verbose,
         );
 
-        doctor_daemon_restart(&fake, DEFAULT_RETRY_DELAY, &mut ledger.root_guard()).await.unwrap();
+        doctor_daemon_restart(&fake, DEFAULT_RETRY_DELAY, &mut ledger.root_guard()).await;
 
         assert_eq!(
             ledger.writer.get_data(),
@@ -2445,7 +2440,7 @@ mod test {
             LedgerViewMode::Verbose,
         );
 
-        doctor_daemon_restart(&fake, DEFAULT_RETRY_DELAY, &mut ledger.root_guard()).await.unwrap();
+        doctor_daemon_restart(&fake, DEFAULT_RETRY_DELAY, &mut ledger.root_guard()).await;
 
         assert_eq!(
             ledger.writer.get_data(),

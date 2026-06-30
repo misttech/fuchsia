@@ -32,8 +32,8 @@ impl<W: Write> Notifier for LedgerNotifier<'_, '_, W> {
             NotificationType::Warning => LedgerOutcome::Warning,
             NotificationType::Error => LedgerOutcome::Failure,
         };
-        let node = self.ledger.add_node(status.into().as_str(), LedgerMode::Automatic)?;
-        node.set_outcome(ledger_outcome)?;
+        let node = self.ledger.add_node(status.into().as_str(), LedgerMode::Automatic);
+        node.set_outcome(ledger_outcome);
         Ok(())
     }
 }

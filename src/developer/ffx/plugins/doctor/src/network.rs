@@ -27,7 +27,7 @@ pub async fn run_google_network_checks<W: Write>(
                 // If the command exists in the workspace call it and show the results
                 Some(wcmd) => {
                     let mut main_node =
-                        ledger.add_node("Google Network Checks", LedgerMode::Automatic)?;
+                        ledger.add_node("Google Network Checks", LedgerMode::Automatic);
                     let run_res = wcmd.run_and_capture();
                     let (_exit_status, stdout, _stderr) = run_res?;
                     for line in stdout.trim().lines().filter(|l| !l.trim().is_empty()) {
@@ -36,12 +36,12 @@ pub async fn run_google_network_checks<W: Write>(
                                 let node = main_node.add_node(
                                     &format!("{}: {}", data.name, data.message),
                                     LedgerMode::Automatic,
-                                )?;
+                                );
                                 node.set_outcome(match data.result {
                                     CheckResult::Passed => LedgerOutcome::Success,
                                     CheckResult::Failed => LedgerOutcome::Failure,
                                     CheckResult::Info => LedgerOutcome::Info,
-                                })?;
+                                });
                             }
                             Err(e) => {
                                 eprintln!(
@@ -55,14 +55,14 @@ pub async fn run_google_network_checks<W: Write>(
                 None => {
                     if gchecker.is_gcorp_machine() {
                         let mut network_check_node =
-                            ledger.add_node("Google Network Checks", LedgerMode::Automatic)?;
+                            ledger.add_node("Google Network Checks", LedgerMode::Automatic);
                         let node = network_check_node.add_node(
                                 &format!(
                                     "Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`"
                                 ),
                                 LedgerMode::Automatic,
-                            )?;
-                        node.set_outcome(LedgerOutcome::Failure)?;
+                            );
+                        node.set_outcome(LedgerOutcome::Failure);
                     }
                 }
             }
