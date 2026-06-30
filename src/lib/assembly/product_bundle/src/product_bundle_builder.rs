@@ -285,7 +285,7 @@ impl ProductBundleBuilder {
             ProductBundleBuildError::Other("checking if temporary directory is UTF-8".to_string())
         })?;
         let update_package = if let Some(update_details) = update_details {
-            let ota_manifest_version = if let Some(vf) = &update_details.version_file {
+            let version: String = if let Some(vf) = &update_details.version_file {
                 std::fs::read_to_string(vf).map_err(|e| {
                     ProductBundleBuildError::Other(format!("reading version file: {}", e))
                 })?
@@ -296,7 +296,7 @@ impl ProductBundleBuilder {
                 && let Some(key_path) = &update_details.ota_manifest_key_path
             {
                 write_ota_manifest(
-                    &ota_manifest_version,
+                    &version,
                     &update_details.epoch,
                     &key_path,
                     repository_details.delivery_blob_type,
@@ -311,6 +311,7 @@ impl ProductBundleBuilder {
                 .map_err(ProductBundleBuildError::WriteOtaManifest)?;
             }
             Some(write_update_package(
+                &version,
                 update_details,
                 &packages_a,
                 &system_a,
@@ -455,6 +456,7 @@ fn write_partitions(
 
 /// Write the update package to `out_dir`.
 fn write_update_package(
+    version: &str,
     update_details: UpdateDetails,
     packages: &Vec<(Option<Utf8PathBuf>, PackageManifest)>,
     system_a: &Option<AssembledSystem>,
@@ -465,10 +467,17 @@ fn write_update_package(
 ) -> std::result::Result<UpdatePackage, ProductBundleBuildError> {
     let out_dir = out_dir.as_ref();
 
+    let update_package_version = if let Some(version_file) = &update_details.version_file {
+        std::fs::read_to_string(version_file)
+            .map_err(|e| ProductBundleBuildError::Other(format!("reading version file: {}", e)))?
+    } else {
+        version.to_string()
+    };
+
     let mut builder = UpdatePackageBuilder::new(
         partitions.clone(),
         partitions.hardware_revision.clone(),
-        update_details.version_file.as_ref(),
+        Some(&update_package_version),
         update_details.epoch,
         out_dir,
     );
@@ -856,11 +865,6 @@ mod test {
         let mut zbi_file = std::fs::File::create(&zbi_path).unwrap();
         zbi_file.write_all(b"zbi contents").unwrap();
 
-        // Write a test version file for the update package.
-        let version_path = tempdir.join("version.txt");
-        let mut version_file = std::fs::File::create(&version_path).unwrap();
-        version_file.write_all(b"1.2.3.4").unwrap();
-
         // Write a test key for the OTA manifest.
         let rng = ring::rand::SystemRandom::new();
         let pkcs8_bytes = ring::signature::Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
@@ -899,7 +903,7 @@ mod test {
         let size_report_path = tempdir.join("size_report.json");
         let product_bundle_path = tempdir.join("pb");
         let product_bundle = ProductBundleBuilder::new("name")
-            .version("version")
+            .version("1.2.3.4")
             .sdk_version("custom_sdk_version".into())
             .system(system, Slot::A)
             .virtual_device(
@@ -907,7 +911,7 @@ mod test {
                 VirtualDevice::V1(VirtualDeviceV1::new("my_virtual_device", Hardware::default())),
             )
             .recommended_virtual_device("my_virtual_device")
-            .update_package(Some(version_path), 42, Some(ota_key_path))
+            .update_package(None::<Utf8PathBuf>, 42, Some(ota_key_path))
             .repository(delivery_blob::DeliveryBlobType::Type1, tuf_keys)
             .gerrit_size_report(&size_report_path)
             .build(Box::new(tools), &product_bundle_path)
@@ -917,7 +921,7 @@ mod test {
         // Ensure the PB is correct.
         let expected = ProductBundle::V2(ProductBundleV2 {
             product_name: "name".into(),
-            product_version: "version".into(),
+            product_version: "1.2.3.4".into(),
             partitions: PartitionsConfig {
                 hardware_revision: "hw".into(),
                 partitions: vec![Partition::ZBI {
@@ -954,7 +958,7 @@ mod test {
             virtual_devices_path: Some(product_bundle_path.join("virtual_devices/manifest.json")),
             release_info: Some(ProductBundleReleaseInfo {
                 name: "name".to_string(),
-                version: "version".to_string(),
+                version: "1.2.3.4".to_string(),
                 sdk_version: "custom_sdk_version".to_string(),
                 system_a: Some(SystemReleaseInfo::new_for_testing()),
                 system_b: None,

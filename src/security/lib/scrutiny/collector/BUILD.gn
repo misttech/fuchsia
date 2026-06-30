@@ -146,7 +146,6 @@ if (is_fuchsia) {
     ]
     system_a = files.assembly_outdir
     update = {
-      version_file = files.version
       epoch = "1"
     }
   }

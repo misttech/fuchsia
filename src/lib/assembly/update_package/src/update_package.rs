@@ -18,8 +18,6 @@ use fuchsia_pkg::{PackageBuilder, PackageManifest};
 use fuchsia_url::RepositoryUrl;
 use fuchsia_url::fuchsia_pkg::PinnedAbsolutePackageUrl;
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
-use utf8_path::PathToStringExt;
 
 /// Maximum size of 200 KiB.
 const UPDATE_PACKAGE_BUDGET: u64 = 200 * 1024;
@@ -48,7 +46,7 @@ pub struct UpdatePackageBuilder {
     board_name: String,
 
     /// Version of the update.
-    version_file: Option<PathBuf>,
+    version: Option<String>,
 
     /// The epoch of the system.
     /// Fuchsia confirms that the epoch changes in increasing order before applying an update.
@@ -183,7 +181,7 @@ impl UpdatePackageBuilder {
     pub fn new(
         partitions: PartitionsConfig,
         board_name: impl AsRef<str>,
-        version_file: Option<impl AsRef<Path>>,
+        version: Option<&str>,
         epoch: EpochFile,
         outdir: impl AsRef<Utf8Path>,
     ) -> Self {
@@ -191,7 +189,7 @@ impl UpdatePackageBuilder {
             name: "update".into(),
             partitions,
             board_name: board_name.as_ref().into(),
-            version_file: version_file.map(|v| v.as_ref().to_path_buf()),
+            version: version.map(|v| v.to_string()),
             epoch,
             slot_primary: None,
             slot_recovery: None,
@@ -451,19 +449,20 @@ impl UpdatePackageBuilder {
             &self.gendir,
         )?;
         builder.package.add_contents_as_blob("board", &self.board_name, &self.gendir)?;
-        if let Some(version_file) = &self.version_file {
-            builder.package.add_file_as_blob("version", version_file.path_to_string()?)?;
+
+        // Find the version.  If one isn't provided, use the version from the system images.
+        let resolved_version = if let Some(version) = &self.version {
+            Some(version.clone())
+        } else if let Some(slot) = &self.slot_primary {
+            Some(slot.manifest().system_release_info.product.info.version.clone())
+        } else if let Some(slot) = &self.slot_recovery {
+            Some(slot.manifest().system_release_info.product.info.version.clone())
         } else {
-            let resolved_version =
-                [&self.slot_primary, &self.slot_recovery].into_iter().find_map(|slot| match slot {
-                    Some(Slot::Primary(s)) | Some(Slot::Recovery(s)) => {
-                        Some(s.system_release_info.product.info.version.clone())
-                    }
-                    None => None,
-                });
-            let version = get_release_version(&resolved_version, &None)?;
-            builder.package.add_contents_as_blob("version", version, &self.gendir)?;
-        }
+            None
+        };
+        let version = get_release_version(&resolved_version, &None)?;
+        builder.package.add_contents_as_blob("version", version, &self.gendir)?;
+
         let (_, manifest) = builder.build()?;
 
         // Ensure the update package is within size budget.
@@ -505,7 +504,8 @@ mod tests {
     use fuchsia_pkg::{MetaContents, PackagePath};
     use serde_json::json;
     use std::fs::File;
-    use std::io::{BufReader, Write};
+    use std::io::BufReader;
+    use std::path::Path;
     use std::str::FromStr;
     use tempfile::{NamedTempFile, tempdir};
     use update_package::images::{self, AssetType, VersionedImagePackagesManifest};
@@ -536,13 +536,8 @@ mod tests {
             ssh_key_upload_method: None,
         };
         let epoch = EpochFile::Version1 { epoch: 0 };
-        let mut builder = UpdatePackageBuilder::new(
-            partitions_config,
-            "board",
-            None::<&Path>,
-            epoch.clone(),
-            &outdir,
-        );
+        let mut builder =
+            UpdatePackageBuilder::new(partitions_config, "board", None, epoch.clone(), &outdir);
 
         // Add a ZBI to the update.
         let fake_zbi_tmp = NamedTempFile::new().unwrap();
@@ -679,12 +674,10 @@ mod tests {
             ssh_key_upload_method: None,
         };
         let epoch = EpochFile::Version1 { epoch: 0 };
-        let mut fake_version = NamedTempFile::new().unwrap();
-        writeln!(fake_version, "1.2.3.4").unwrap();
         let mut builder = UpdatePackageBuilder::new(
             partitions_config,
             "board",
-            Some(fake_version.path()),
+            Some("1.2.3.4"),
             epoch.clone(),
             &outdir,
         );
@@ -841,12 +834,10 @@ mod tests {
 
         let partitions_config = PartitionsConfig::default();
         let epoch = EpochFile::Version1 { epoch: 0 };
-        let mut fake_version = NamedTempFile::new().unwrap();
-        writeln!(fake_version, "1.2.3.4").unwrap();
         let builder = UpdatePackageBuilder::new(
             partitions_config,
             "board",
-            Some(fake_version.path()),
+            Some("1.2.3.4"),
             epoch.clone(),
             &outdir,
         );
@@ -893,12 +884,10 @@ mod tests {
             ..PartitionsConfig::default()
         };
         let epoch = EpochFile::Version1 { epoch: 0 };
-        let mut fake_version = NamedTempFile::new().unwrap();
-        writeln!(fake_version, "1.2.3.4").unwrap();
         let mut builder = UpdatePackageBuilder::new(
             partitions_config,
             "board",
-            Some(fake_version.path()),
+            Some("1.2.3.4"),
             epoch.clone(),
             &outdir,
         );
@@ -968,12 +957,10 @@ mod tests {
         let tmp = tempdir().unwrap();
         let outdir = Utf8Path::from_path(tmp.path()).unwrap();
 
-        let mut fake_version = NamedTempFile::new().unwrap();
-        writeln!(fake_version, "1.2.3.4").unwrap();
         let mut builder = UpdatePackageBuilder::new(
             PartitionsConfig::default(),
             "board",
-            Some(fake_version.path()),
+            Some("1.2.3.4"),
             EpochFile::Version1 { epoch: 0 },
             &outdir,
         );
@@ -992,12 +979,10 @@ mod tests {
         let tmp = tempdir().unwrap();
         let outdir = Utf8Path::from_path(tmp.path()).unwrap();
 
-        let mut fake_version = NamedTempFile::new().unwrap();
-        writeln!(fake_version, "1.2.3.4").unwrap();
         let mut builder = UpdatePackageBuilder::new(
             PartitionsConfig::default(),
             "board",
-            Some(fake_version.path()),
+            Some("1.2.3.4"),
             EpochFile::Version1 { epoch: 0 },
             &outdir,
         );
@@ -1022,12 +1007,10 @@ mod tests {
         let tmp = tempdir().unwrap();
         let outdir = Utf8Path::from_path(tmp.path()).unwrap();
 
-        let mut fake_version = NamedTempFile::new().unwrap();
-        writeln!(fake_version, "1.2.3.4").unwrap();
         let mut builder = UpdatePackageBuilder::new(
             PartitionsConfig::default(),
             "board",
-            Some(fake_version.path()),
+            Some("1.2.3.4"),
             EpochFile::Version1 { epoch: 0 },
             &outdir,
         );

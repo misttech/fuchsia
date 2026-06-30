@@ -86,10 +86,8 @@ if (is_fuchsia) {
       },
     ]
     update = {
-      version_file = build_info_files.version
       epoch = "1"
     }
-    deps = [ "//build/info:build_info_files" ]
   }
 }
 

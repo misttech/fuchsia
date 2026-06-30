@@ -46,7 +46,6 @@ fuchsia_product_bundle(
     recovery = "//products/zedboot:x64",
     repository_keys = "//src/sys/pkg/repositories/devhost/keys",
     update_epoch = "1",
-    update_version_file = "//build/info:version",
     virtual_devices = [
         "//build/bazel/assembly/virtual_devices:x64-emu-recommended",
         "//build/bazel/assembly/virtual_devices:x64-emu-min",
@@ -75,7 +74,6 @@ fuchsia_product_bundle(
     recovery = "//products/zedboot:arm64",
     repository_keys = "//src/sys/pkg/repositories/devhost/keys",
     update_epoch = "1",
-    update_version_file = "//build/info:version",
     virtual_devices = [
         "//build/bazel/assembly/virtual_devices:arm64-emu-recommended",
         "//build/bazel/assembly/virtual_devices:arm64-emu-min",
@@ -103,7 +101,6 @@ fuchsia_product_bundle(
     recovery = "//products/zedboot:vim3_recovery",
     repository_keys = "//src/sys/pkg/repositories/devhost/keys",
     update_epoch = "1",
-    update_version_file = "//build/info:version",
 )
 
 fuchsia_product(
@@ -125,7 +122,6 @@ fuchsia_product_bundle(
     product_bundle_version = build_info_version,
     repository_keys = "//src/sys/pkg/repositories/devhost/keys",
     update_epoch = "1",
-    update_version_file = "//build/info:version",
 )
 
 fuchsia_product(
@@ -149,7 +145,6 @@ fuchsia_product_bundle(
     recovery = "//products/zedboot:riscv64",
     repository_keys = "//src/sys/pkg/repositories/devhost/keys",
     update_epoch = "1",
-    update_version_file = "//build/info:version",
     virtual_devices = [
         "//build/bazel/assembly/virtual_devices:riscv64-emu-recommended",
         "//build/bazel/assembly/virtual_devices:riscv64-emu-min",

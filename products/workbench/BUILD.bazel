@@ -31,7 +31,6 @@ fuchsia_product_bundle(
     recovery = "//products/zedboot:x64",
     repository_keys = "//src/sys/pkg/repositories/devhost/keys",
     update_epoch = "1",
-    update_version_file = "//build/info:version",
     virtual_devices = [
         ":workbench_emu",
     ],
@@ -47,7 +46,6 @@ fuchsia_product_bundle(
     recovery = "//products/zedboot:arm64",
     repository_keys = "//src/sys/pkg/repositories/devhost/keys",
     update_epoch = "1",
-    update_version_file = "//build/info:version",
     virtual_devices = [
         ":workbench_emu.arm64",
     ],
@@ -62,7 +60,6 @@ fuchsia_product_bundle(
     recovery = "//products/zedboot:vim3_recovery",
     repository_keys = "//src/sys/pkg/repositories/devhost/keys",
     update_epoch = "1",
-    update_version_file = "//build/info:version",
 )
 
 fuchsia_product(

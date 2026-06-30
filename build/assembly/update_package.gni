@@ -135,12 +135,6 @@ template("update_package") {
       "--epoch",
       invoker.epoch,
     ]
-    if (defined(invoker.version_file)) {
-      args += [
-        "--version-file",
-        rebase_path(invoker.version_file, root_build_dir),
-      ]
-    }
 
     if (defined(invoker.rewrite_default_repo)) {
       args += [
@@ -177,9 +171,6 @@ template("update_package") {
     ]
 
     inputs = [ files.partitions_json ]
-    if (defined(invoker.version_file)) {
-      inputs += [ invoker.version_file ]
-    }
     deps += [ invoker.partitions ]
 
     # Used by create-update for size checks.

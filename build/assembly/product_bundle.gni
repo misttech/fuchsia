@@ -22,7 +22,6 @@ main_product_bundle_name = "${build_info_product}.${build_info_board}"
 #
 #   version (optional)
 #     [string] The version of the product bundle.
-#     Either this field or "version_file" must be set.
 #
 #   system_a (optional)
 #     [path] The path to the images manifest that describes images intended
@@ -39,9 +38,6 @@ main_product_bundle_name = "${build_info_product}.${build_info_board}"
 #   update (optional)
 #     [scope] If provided, an update package will be built. The scope has
 #     a couple required fields.
-#
-#       version_file (optional)
-#         [path] A file containing the version to put in the update package.
 #
 #       epoch (required)
 #         [int] A 64-bit integer that sets an anti-rollback epoch for the
