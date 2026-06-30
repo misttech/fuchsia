@@ -294,6 +294,15 @@ pub struct VBMeta {
     /// Optional descriptors to add to the VBMeta image.
     #[serde(default)]
     pub additional_descriptors: Vec<VBMetaDescriptor>,
+
+    /// Optional name to override the default name of the vbmeta image.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    /// Whether to include the base merkle root command line descriptor.
+    #[serde(default)]
+    pub include_base_merkle: bool,
 }
 
 /// The parameters of a VBMeta descriptor to add to a VBMeta image.

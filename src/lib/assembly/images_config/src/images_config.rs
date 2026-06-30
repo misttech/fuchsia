@@ -93,6 +93,10 @@ pub struct VBMeta {
     /// Optional descriptors to add to the VBMeta image.
     #[serde(default)]
     pub additional_descriptors: Vec<VBMetaDescriptor>,
+
+    /// Whether to include the base merkle root command line descriptor.
+    #[serde(default)]
+    pub include_base_merkle: bool,
 }
 
 fn default_vbmeta_name() -> String {
@@ -383,13 +387,21 @@ impl ImagesConfig {
             postprocessing_script: board.zbi.postprocessing_script.clone(),
         }));
         if let Some(vbmeta) = &board.vbmeta {
-            let bfc::VBMeta { style, key, key_metadata, additional_descriptors } = vbmeta.clone();
+            let bfc::VBMeta {
+                name,
+                style,
+                key,
+                key_metadata,
+                additional_descriptors,
+                include_base_merkle,
+            } = vbmeta.clone();
             images.push(Image::VBMeta(VBMeta {
-                name: product.image_name.0.clone(),
+                name: name.unwrap_or_else(|| product.image_name.0.clone()),
                 style,
                 key: key.into(),
                 key_metadata: key_metadata.map(Into::into),
                 additional_descriptors,
+                include_base_merkle,
             }));
         }
 
@@ -515,6 +527,8 @@ mod tests {
                 key: "path/to/key".into(),
                 key_metadata: Some("path/to/metadata".into()),
                 additional_descriptors: vec![],
+                name: Some("fuchsia".into()),
+                include_base_merkle: false,
             }),
             fxfs: bfc::Fxfs {
                 size_bytes: Some(1234),
@@ -565,6 +579,8 @@ mod tests {
                 key: "path/to/key".into(),
                 key_metadata: Some("path/to/metadata".into()),
                 additional_descriptors: vec![],
+                name: Some("fuchsia".into()),
+                include_base_merkle: false,
             }),
             fxfs: bfc::Fxfs {
                 size_bytes: Some(1234),
@@ -632,11 +648,12 @@ mod tests {
                         }),
                     }),
                     Image::VBMeta(VBMeta {
-                        name: "a-product".into(),
+                        name: "fuchsia".into(),
                         style: bfc::VBMetaStyle::Fuchsia,
                         key: "path/to/key".into(),
                         key_metadata: Some("path/to/metadata".into()),
                         additional_descriptors: vec![],
+                        include_base_merkle: false,
                     }),
                 ],
             }
@@ -672,11 +689,12 @@ mod tests {
                         }),
                     }),
                     Image::VBMeta(VBMeta {
-                        name: "a-product".into(),
+                        name: "fuchsia".into(),
                         style: bfc::VBMetaStyle::Fuchsia,
                         key: "path/to/key".into(),
                         key_metadata: Some("path/to/metadata".into()),
                         additional_descriptors: vec![],
+                        include_base_merkle: false,
                     }),
                     Image::Fxfs(Fxfs {
                         size_bytes: Some(1234),
@@ -723,11 +741,12 @@ mod tests {
                         }),
                     }),
                     Image::VBMeta(VBMeta {
-                        name: "a-product".into(),
+                        name: "fuchsia".into(),
                         style: bfc::VBMetaStyle::Fuchsia,
                         key: "path/to/key".into(),
                         key_metadata: Some("path/to/metadata".into()),
                         additional_descriptors: vec![],
+                        include_base_merkle: false,
                     }),
                     Image::Fvm(Fvm {
                         slice_size: 5678,
@@ -820,11 +839,12 @@ mod tests {
                         }),
                     }),
                     Image::VBMeta(VBMeta {
-                        name: "a-product".into(),
+                        name: "fuchsia".into(),
                         style: bfc::VBMetaStyle::Fuchsia,
                         key: "path/to/key".into(),
                         key_metadata: Some("path/to/metadata".into()),
                         additional_descriptors: vec![],
+                        include_base_merkle: false,
                     }),
                     Image::Fvm(Fvm {
                         slice_size: 5678,

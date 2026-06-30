@@ -92,7 +92,8 @@ pub fn construct_vbmeta(
         builder = builder.key_metadata(metadata.clone());
     }
 
-    if let Some(bp) = base_package {
+    let bp = if vbmeta_config.include_base_merkle { base_package } else { None };
+    if let Some(bp) = bp {
         builder = builder.base_merkle(bp.merkle.to_string());
     }
 
@@ -175,6 +176,7 @@ mod tests {
             key: key_path,
             key_metadata: Some(metadata_path),
             additional_descriptors: vec![],
+            include_base_merkle: false,
         };
 
         // Create a fake zbi.
@@ -216,6 +218,7 @@ mod tests {
             key: key_path,
             key_metadata: Some(metadata_path),
             additional_descriptors: vec![],
+            include_base_merkle: true,
         };
 
         // Create a fake zbi.
@@ -277,6 +280,7 @@ mod tests {
                     key: key_path.clone(),
                     key_metadata: None,
                     additional_descriptors: vec![],
+                    include_base_merkle: false,
                 };
 
                 let vbmeta = construct_vbmeta(
