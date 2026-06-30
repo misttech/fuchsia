@@ -498,7 +498,7 @@
     <!-- SHAC static analysis tooling -->
     <package name="fuchsia/shac/${platform}"
              path="prebuilt/tools/shac"
-             version="git_revision:82234204215cb9042386f6281182ce73ce4d9e4c"
+             version="git_revision:97509c1f33dd3e64e8a420b4c8e94384da724b1d"
              platforms="linux-amd64,linux-arm64"/>
 
     <!-- keep-sorted tool -->
