@@ -2039,9 +2039,9 @@ impl FsNode {
         &self,
         current_task: &CurrentTask,
         child: &FsNodeHandle,
-        info: &FsNodeInfo,
+        self_info: &FsNodeInfo,
     ) -> Result<(), Errno> {
-        if info.mode.contains(FileMode::ISVTX)
+        if self_info.mode.contains(FileMode::ISVTX)
             && child.info().uid != current_task.current_creds().fsuid
         {
             security::check_task_capable(current_task, CAP_FOWNER)?;

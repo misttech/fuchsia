@@ -191,7 +191,7 @@ impl TmpFs {
         let mode = if let Some(mode) = mount_options.remove(b"mode") {
             FileMode::from_string(mode.as_ref())?
         } else {
-            mode!(IFDIR, 0o777)
+            mode!(IFDIR, 0o1777)
         };
         let uid = if let Some(uid) = mount_options.remove(b"uid") {
             fs_args::parse::<uid_t>(uid.as_ref())?
@@ -204,7 +204,7 @@ impl TmpFs {
             0
         };
         let root_ino = fs.allocate_ino();
-        let mut info = FsNodeInfo::new(mode!(IFDIR, 0o777), FsCred { uid, gid });
+        let mut info = FsNodeInfo::new(mode!(IFDIR, 0o1777), FsCred { uid, gid });
         info.chmod(mode);
         fs.create_root_with_info(root_ino, TmpFsDirectory::new(), info);
 

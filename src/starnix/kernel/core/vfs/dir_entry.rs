@@ -788,6 +788,12 @@ impl DirEntry {
             let mut state =
                 state.lock_info(old_parent, new_parent, &renamed, lookup_replaced.as_ref().ok());
 
+            // If new_parent is a descendant of renamed, the operation would
+            // create a cycle. That's disallowed.
+            if new_parent.is_descendant_of(&renamed) {
+                return error!(EINVAL);
+            }
+
             // Check whether the sticky bit on the old parent prevents us from
             // removing this child.
             {
@@ -800,12 +806,6 @@ impl DirEntry {
                     &renamed.node,
                     state.old_parent_info(),
                 )?;
-            }
-
-            // If new_parent is a descendant of renamed, the operation would
-            // create a cycle. That's disallowed.
-            if new_parent.is_descendant_of(&renamed) {
-                return error!(EINVAL);
             }
 
             // Check whether the renamed entry is a mountpoint.
