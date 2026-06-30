@@ -700,6 +700,54 @@ where
     }
 }
 
+/// Errors returned by the stream returned from [`watch_destruction`].
+#[derive(Debug, Error)]
+pub enum DestructionWatcherError {
+    /// A low-level FIDL error was encountered on the call to
+    /// `DestructionWatcher.Watch`.
+    #[error("fidl error during DestructionWatcher.Watch call: {0}")]
+    Fidl(fidl::Error),
+    /// An error was encountered while converting a socket state.
+    #[error("error converting socket state: {0}")]
+    Conversion(IpSocketStateError),
+    /// The netstack returned an empty batch of sockets.
+    #[error("received empty batch of sockets")]
+    EmptyBatch,
+}
+
+impl From<fidl::Error> for DestructionWatcherError {
+    fn from(e: fidl::Error) -> Self {
+        DestructionWatcherError::Fidl(e)
+    }
+}
+
+/// Get a destruction watcher and drive it to yield individual sockets.
+pub async fn watch_destruction(
+    diagnostics: &fnet_sockets::DiagnosticsProxy,
+) -> Result<impl Stream<Item = Result<IpSocketState, DestructionWatcherError>> + use<>, fidl::Error>
+{
+    let (proxy, server_end) =
+        fidl::endpoints::create_proxy::<fnet_sockets::DestructionWatcherMarker>();
+    diagnostics.get_destruction_watcher(server_end).await?;
+
+    Ok(futures::stream::try_unfold(proxy, |proxy| async {
+        let batch = proxy.watch().await?;
+        if batch.is_empty() {
+            Err(DestructionWatcherError::EmptyBatch)
+        } else {
+            let batch = batch
+                .into_iter()
+                .map(|s| s.try_into().map_err(DestructionWatcherError::Conversion))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok::<_, DestructionWatcherError>(Some((
+                futures::stream::iter(batch.into_iter().map(Ok)),
+                proxy,
+            )))
+        }
+    })
+    .try_flatten())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1504,5 +1552,197 @@ mod tests {
                 socket_3.clone().try_into().unwrap()
             ]
         );
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn watch_destruction_success() {
+        let socket_1 = fnet_sockets::IpSocketState {
+            family: Some(fnet::IpVersion::V4),
+            src_addr: Some(fidl_ip!("192.168.1.1")),
+            dst_addr: Some(fidl_ip!("192.168.1.2")),
+            cookie: Some(1234),
+            marks: Some(fnet::Marks {
+                mark_1: Some(1111),
+                mark_2: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
+            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
+                fnet_sockets::IpSocketTcpState {
+                    src_port: Some(1111),
+                    dst_port: Some(2222),
+                    state: Some(fnet_tcp::State::Established),
+                    tcp_info: None,
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        };
+
+        let socket_2 = fnet_sockets::IpSocketState {
+            family: Some(fnet::IpVersion::V4),
+            src_addr: Some(fidl_ip!("192.168.8.1")),
+            dst_addr: Some(fidl_ip!("192.168.8.2")),
+            cookie: Some(9876),
+            marks: Some(fnet::Marks {
+                mark_1: None,
+                mark_2: Some(2222),
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
+            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
+                fnet_sockets::IpSocketTcpState {
+                    src_port: Some(3333),
+                    dst_port: Some(4444),
+                    state: Some(fnet_tcp::State::TimeWait),
+                    tcp_info: None,
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        };
+
+        let (diagnostics, diagnostics_server_end) =
+            fidl::endpoints::create_proxy::<fnet_sockets::DiagnosticsMarker>();
+        let serve_watcher = async |req: fnet_sockets::DiagnosticsRequest| match req {
+            fnet_sockets::DiagnosticsRequest::GetDestructionWatcher { watcher, responder } => {
+                responder.send().unwrap();
+                let mut stream = watcher.into_stream();
+                let batches = [
+                    Some(vec![socket_1.clone()]),
+                    Some(vec![socket_2.clone(), socket_1.clone()]),
+                    None,
+                ];
+                for batch in batches {
+                    let req = stream.next().await.unwrap().unwrap();
+                    let responder = match req {
+                        fnet_sockets::DestructionWatcherRequest::Watch { responder } => responder,
+                        fnet_sockets::DestructionWatcherRequest::_UnknownMethod { .. } => {
+                            unreachable!()
+                        }
+                    };
+                    if let Some(batch) = batch {
+                        responder.send(&batch).unwrap();
+                    } else {
+                        drop(responder);
+                    }
+                }
+            }
+            fnet_sockets::DiagnosticsRequest::IterateIp { .. } => unreachable!(),
+        };
+
+        let (mut diagnostics_request_stream, _control_handle) =
+            diagnostics_server_end.into_stream_and_control_handle();
+        let server_fut = diagnostics_request_stream
+            .next()
+            .then(|req| serve_watcher(req.expect("Request stream ended unexpectedly").unwrap()))
+            .fuse();
+
+        let expected_socket_1: IpSocketState = socket_1.clone().try_into().unwrap();
+        let expected_socket_2: IpSocketState = socket_2.clone().try_into().unwrap();
+
+        let client_fut = async {
+            let stream = watch_destruction(&diagnostics).await.unwrap();
+            pin_mut!(stream);
+
+            assert_matches!(
+                stream.next().await,
+                Some(Ok(sock)) => assert_eq!(sock, expected_socket_1)
+            );
+            assert_matches!(
+                stream.next().await,
+                Some(Ok(sock)) => assert_eq!(sock, expected_socket_2)
+            );
+            assert_matches!(
+                stream.next().await,
+                Some(Ok(sock)) => assert_eq!(sock, expected_socket_1)
+            );
+            assert_matches!(stream.next().await, Some(Err(DestructionWatcherError::Fidl(_))));
+        };
+
+        let _: ((), ()) = future::join(server_fut, client_fut).await;
+    }
+
+    #[test_case(
+        None,
+        DestructionWatcherError::EmptyBatch;
+        "empty_batch"
+    )]
+    #[test_case(
+        Some(fnet_sockets::IpSocketState {
+            family: None,
+            src_addr: Some(fidl_ip!("192.168.1.1")),
+            dst_addr: Some(fidl_ip!("192.168.1.2")),
+            cookie: Some(1234),
+            marks: Some(fnet::Marks {
+                mark_1: Some(1111),
+                mark_2: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
+            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
+                fnet_sockets::IpSocketTcpState {
+                    src_port: Some(1111),
+                    dst_port: Some(2222),
+                    state: Some(fnet_tcp::State::Established),
+                    tcp_info: None,
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        }),
+        DestructionWatcherError::Conversion(IpSocketStateError::MissingField("family"));
+        "conversion_error"
+    )]
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn watch_destruction_error(
+        socket: Option<fnet_sockets::IpSocketState>,
+        expected_error: DestructionWatcherError,
+    ) {
+        let (diagnostics, diagnostics_server_end) =
+            fidl::endpoints::create_proxy::<fnet_sockets::DiagnosticsMarker>();
+        let serve_watcher = async |req: fnet_sockets::DiagnosticsRequest| match req {
+            fnet_sockets::DiagnosticsRequest::GetDestructionWatcher { watcher, responder } => {
+                responder.send().unwrap();
+                let mut stream = watcher.into_stream();
+                let req = stream.next().await.unwrap().unwrap();
+                let responder = match req {
+                    fnet_sockets::DestructionWatcherRequest::Watch { responder } => responder,
+                    fnet_sockets::DestructionWatcherRequest::_UnknownMethod { .. } => {
+                        unreachable!()
+                    }
+                };
+                let batch = match socket {
+                    None => vec![],
+                    Some(s) => vec![s],
+                };
+                responder.send(&batch).unwrap();
+            }
+            fnet_sockets::DiagnosticsRequest::IterateIp { .. } => unreachable!(),
+        };
+
+        let (mut diagnostics_request_stream, _control_handle) =
+            diagnostics_server_end.into_stream_and_control_handle();
+        let server_fut = diagnostics_request_stream
+            .next()
+            .then(|req| serve_watcher(req.expect("Request stream ended unexpectedly").unwrap()))
+            .fuse();
+
+        let client_fut = async {
+            let stream = watch_destruction(&diagnostics).await.unwrap();
+            pin_mut!(stream);
+
+            let result = stream.next().await.expect("got a result");
+            assert_matches!(stream.next().await, None);
+            result
+        };
+
+        let ((), result) = future::join(server_fut, client_fut).await;
+        match expected_error {
+            DestructionWatcherError::EmptyBatch => {
+                assert_matches!(result, Err(DestructionWatcherError::EmptyBatch));
+            }
+            DestructionWatcherError::Conversion(b) => {
+                assert_matches!(result, Err(DestructionWatcherError::Conversion(a)) if a == b);
+            }
+            DestructionWatcherError::Fidl(_) => unreachable!(),
+        }
     }
 }
