@@ -12749,18 +12749,18 @@ rustc_macro("mockall_derive-v0_14_0") {
   applicable_licenses = [ ":mockall_derive-v0_14_0.license" ]
 }
 
-license("multimap-v0_8_3.license") {
+license("multimap-v0_10_1.license") {
   public_package_name = "multimap"
   license_files = [
-    "//third_party/rust_crates/vendor/multimap-0.8.3/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/multimap-0.8.3/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/multimap-0.10.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/multimap-0.10.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("multimap-v0_8_3") {
+rustc_library("multimap-v0_10_1") {
   crate_name = "multimap"
-  source_root = "//third_party/rust_crates/vendor/multimap-0.8.3/src/lib.rs"
-  output_name = "multimap-60f5095b2d01969a"
+  source_root = "//third_party/rust_crates/vendor/multimap-0.10.1/src/lib.rs"
+  output_name = "multimap-cc5234654f55414f"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -12772,13 +12772,13 @@ rustc_library("multimap-v0_8_3") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=60f5095b2d01969a",
-    "-Cextra-filename=-60f5095b2d01969a",
+    "-Cmetadata=cc5234654f55414f",
+    "-Cextra-filename=-cc5234654f55414f",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":multimap-v0_8_3.license" ]
+  applicable_licenses = [ ":multimap-v0_10_1.license" ]
 }
 
 license("munge-v0_4_4.license") {
@@ -15986,7 +15986,7 @@ rustc_library("prost-build-v0_14_4") {
   deps += [ ":heck-v0_5_0" ]
   deps += [ ":itertools-v0_14_0" ]
   deps += [ ":log-v0_4_29" ]
-  deps += [ ":multimap-v0_8_3" ]
+  deps += [ ":multimap-v0_10_1" ]
   deps += [ ":prettyplease-v0_2_37" ]
   deps += [ ":prost-types-v0_14_4" ]
   deps += [ ":prost-v0_14_4" ]

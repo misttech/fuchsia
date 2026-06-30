@@ -78,7 +78,7 @@ rust_library(
         "//third_party/rust_crates/vendor/heck-0.5.0:heck",
         "//third_party/rust_crates/vendor/itertools-0.14.0:itertools",
         "//third_party/rust_crates/vendor/log-0.4.29:log",
-        "//third_party/rust_crates/vendor/multimap-0.8.3:multimap",
+        "//third_party/rust_crates/vendor/multimap-0.10.1:multimap",
         "//third_party/rust_crates/vendor/prettyplease-0.2.37:prettyplease",
         "//third_party/rust_crates/vendor/prost-0.14.4:prost",
         "//third_party/rust_crates/vendor/prost-types-0.14.4:prost_types",
