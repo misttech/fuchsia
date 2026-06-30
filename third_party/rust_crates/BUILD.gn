@@ -794,11 +794,11 @@ if (current_os == "fuchsia") {
 }
 
 group("getrandom") {
-  public_deps = [ ":getrandom-v0_4_2" ]
+  public_deps = [ ":getrandom-v0_4_3" ]
 }
 
-group("getrandom-0.4.2") {
-  public_deps = [ ":getrandom-v0_4_2" ]
+group("getrandom-0.4.3") {
+  public_deps = [ ":getrandom-v0_4_3" ]
 }
 
 group("glob") {
@@ -2829,7 +2829,7 @@ rustc_library("ahash-v0_8_12") {
 
   deps = []
   deps += [ ":cfg-if-v1_0_4" ]
-  deps += [ ":getrandom-v0_3_3" ]
+  deps += [ ":getrandom-v0_3_4" ]
   deps += [ ":zerocopy-v0_8_48" ]
   if (!(false && false)) {
     deps += [ ":once_cell-v1_21_3" ]
@@ -9685,18 +9685,18 @@ rustc_library("getopts-v0_2_24") {
   applicable_licenses = [ ":getopts-v0_2_24.license" ]
 }
 
-license("getrandom-v0_2_10.license") {
+license("getrandom-v0_2_17.license") {
   public_package_name = "getrandom"
   license_files = [
-    "//third_party/rust_crates/vendor/getrandom-0.2.10/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/getrandom-0.2.10/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/getrandom-0.2.17/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/getrandom-0.2.17/LICENSE-MIT",
   ]
 }
 
-rustc_library("getrandom-v0_2_10") {
+rustc_library("getrandom-v0_2_17") {
   crate_name = "getrandom"
-  source_root = "//third_party/rust_crates/vendor/getrandom-0.2.10/src/lib.rs"
-  output_name = "getrandom-fbe0538dc0c6360c"
+  source_root = "//third_party/rust_crates/vendor/getrandom-0.2.17/src/lib.rs"
+  output_name = "getrandom-6c97616ab5d987fc"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -9713,34 +9713,34 @@ rustc_library("getrandom-v0_2_10") {
 
   rustenv = [
     "CARGO_PKG_NAME=getrandom",
-    "CARGO_PKG_VERSION=0.2.10",
-    "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/getrandom-0.2.10",
+    "CARGO_PKG_VERSION=0.2.17",
+    "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/getrandom-0.2.17",
   ]
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=fbe0538dc0c6360c",
-    "-Cextra-filename=-fbe0538dc0c6360c",
+    "-Cmetadata=6c97616ab5d987fc",
+    "-Cextra-filename=-6c97616ab5d987fc",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":getrandom-v0_2_10.license" ]
+  applicable_licenses = [ ":getrandom-v0_2_17.license" ]
 }
 
-license("getrandom-v0_3_3.license") {
+license("getrandom-v0_3_4.license") {
   public_package_name = "getrandom"
   license_files = [
-    "//third_party/rust_crates/vendor/getrandom-0.3.3/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/getrandom-0.3.3/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/getrandom-0.3.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/getrandom-0.3.4/LICENSE-MIT",
   ]
 }
 
-rustc_library("getrandom-v0_3_3") {
+rustc_library("getrandom-v0_3_4") {
   crate_name = "getrandom"
-  source_root = "//third_party/rust_crates/vendor/getrandom-0.3.3/src/lib.rs"
-  output_name = "getrandom-bc139e18a0f4d72c"
+  source_root = "//third_party/rust_crates/vendor/getrandom-0.3.4/src/lib.rs"
+  output_name = "getrandom-66ec94cdd935904"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -9753,7 +9753,7 @@ rustc_library("getrandom-v0_3_3") {
     deps += [ ":libc-v0_2_186" ]
   }
   if (current_cpu == "wasm32" && false && false) {
-    deps += [ ":wasi-v0_14_0" ]
+    deps += [ ":wasip2-v1_0_4+wasi-0_2_12" ]
   }
   if (false && false) {
     deps += [ ":r-efi-v5_3_0" ]
@@ -9782,34 +9782,34 @@ rustc_library("getrandom-v0_3_3") {
 
   rustenv = [
     "CARGO_PKG_NAME=getrandom",
-    "CARGO_PKG_VERSION=0.3.3",
-    "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/getrandom-0.3.3",
+    "CARGO_PKG_VERSION=0.3.4",
+    "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/getrandom-0.3.4",
   ]
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=bc139e18a0f4d72c",
-    "-Cextra-filename=-bc139e18a0f4d72c",
+    "-Cmetadata=66ec94cdd935904",
+    "-Cextra-filename=-66ec94cdd935904",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":getrandom-v0_3_3.license" ]
+  applicable_licenses = [ ":getrandom-v0_3_4.license" ]
 }
 
-license("getrandom-v0_4_2.license") {
+license("getrandom-v0_4_3.license") {
   public_package_name = "getrandom"
   license_files = [
-    "//third_party/rust_crates/vendor/getrandom-0.4.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/getrandom-0.4.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/getrandom-0.4.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/getrandom-0.4.3/LICENSE-MIT",
   ]
 }
 
-rustc_library("getrandom-v0_4_2") {
+rustc_library("getrandom-v0_4_3") {
   crate_name = "getrandom"
-  source_root = "//third_party/rust_crates/vendor/getrandom-0.4.2/src/lib.rs"
-  output_name = "getrandom-8aa00cff48b1eaba"
+  source_root = "//third_party/rust_crates/vendor/getrandom-0.4.3/src/lib.rs"
+  output_name = "getrandom-ff0545eacb93ce03"
   edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
@@ -9820,12 +9820,6 @@ rustc_library("getrandom-v0_4_2") {
   if ((current_os == "linux" || false) &&
       !((current_os == "linux" && false) || false || false || false || false)) {
     deps += [ ":libc-v0_2_186" ]
-  }
-  if (current_cpu == "wasm32" && false && false) {
-    deps += [ ":wasip2-v1_0_4+wasi-0_2_12" ]
-  }
-  if (current_cpu == "wasm32" && false && false) {
-    deps += [ ":wasip3-v0_4_0+wasi-0_3_0-rc-2026-01-06" ]
   }
   if (false && false) {
     deps += [ ":r-efi-v6_0_0" ]
@@ -9854,20 +9848,20 @@ rustc_library("getrandom-v0_4_2") {
 
   rustenv = [
     "CARGO_PKG_NAME=getrandom",
-    "CARGO_PKG_VERSION=0.4.2",
-    "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/getrandom-0.4.2",
+    "CARGO_PKG_VERSION=0.4.3",
+    "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/getrandom-0.4.3",
   ]
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=8aa00cff48b1eaba",
-    "-Cextra-filename=-8aa00cff48b1eaba",
+    "-Cmetadata=ff0545eacb93ce03",
+    "-Cextra-filename=-ff0545eacb93ce03",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":getrandom-v0_4_2.license" ]
+  applicable_licenses = [ ":getrandom-v0_4_3.license" ]
 }
 
 license("ghash-v0_5_0.license") {
@@ -16688,7 +16682,7 @@ rustc_library("rand_core-v0_6_4") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":getrandom-v0_2_10" ]
+  deps += [ ":getrandom-v0_2_17" ]
 
   rustenv = []
 
@@ -16725,7 +16719,7 @@ rustc_library("rand_core-v0_9_5") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":getrandom-v0_3_3" ]
+  deps += [ ":getrandom-v0_3_4" ]
 
   rustenv = []
 
@@ -17682,7 +17676,7 @@ rustc_library("ring-v0_17_8") {
 
   deps = []
   deps += [ ":cfg-if-v1_0_4" ]
-  deps += [ ":getrandom-v0_2_10" ]
+  deps += [ ":getrandom-v0_2_17" ]
   deps += [ ":untrusted-v0_9_0" ]
   if ((false || current_os == "linux") && (current_cpu == "arm64" || false)) {
     deps += [ ":libc-v0_2_186" ]
@@ -21169,7 +21163,7 @@ rustc_library("tempfile-v3_27_0") {
     deps += [ ":rustix-v1_1_4" ]
   }
   if (true || false || false) {
-    deps += [ ":getrandom-v0_4_2" ]
+    deps += [ ":getrandom-v0_3_4" ]
   }
   if (false) {
     deps += [ ":windows-sys-v0_61_2" ]
@@ -23658,7 +23652,7 @@ rustc_library("uuid-v1_23_3") {
     deps += [ ":js-sys-v0_3_102" ]
   }
   if (!(current_cpu == "wasm32" && (current_os == "unknown" || false))) {
-    deps += [ ":getrandom-v0_4_2" ]
+    deps += [ ":getrandom-v0_4_3" ]
   }
 
   rustenv = []
@@ -23949,30 +23943,6 @@ rustc_library("want-v0_3_1") {
   applicable_licenses = [ ":want-v0_3_1.license" ]
 }
 
-rustc_library("wasi-v0_14_0") {
-  crate_name = "wasi"
-  source_root = "//third_party/rust_crates/empty/wasi/src/lib.rs"
-  output_name = "wasi-f6abec7a7ea8c2f0"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=f6abec7a7ea8c2f0",
-    "-Cextra-filename=-f6abec7a7ea8c2f0",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
-}
-
 rustc_library("wasi-v0_11_0+wasi-snapshot-preview1") {
   crate_name = "wasi"
   source_root = "//third_party/rust_crates/empty/wasi-0.11.0-wasi-snapshot-preview1/src/lib.rs"
@@ -24014,30 +23984,6 @@ rustc_library("wasip2-v1_0_4+wasi-0_2_12") {
     "--cap-lints=allow",
     "-Cmetadata=e8bab3cb50b8d6f0",
     "-Cextra-filename=-e8bab3cb50b8d6f0",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
-}
-
-rustc_library("wasip3-v0_4_0+wasi-0_3_0-rc-2026-01-06") {
-  crate_name = "wasip3"
-  source_root = "//third_party/rust_crates/empty/wasip3/src/lib.rs"
-  output_name = "wasip3-c67276c5bd6b24a6"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=c67276c5bd6b24a6",
-    "-Cextra-filename=-c67276c5bd6b24a6",
   ]
 
   visibility = [ ":*" ]

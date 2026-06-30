@@ -77,6 +77,6 @@ rust_library(
     }),
     version = "0.9.5",
     deps = [
-        "//third_party/rust_crates/vendor/getrandom-0.3.3:getrandom",
+        "//third_party/rust_crates/vendor/getrandom-0.3.4:getrandom",
     ],
 )

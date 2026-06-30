@@ -20,9 +20,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "uuid",
-    package_url = "https://github.com/uuid-rs/uuid",
-    package_version = "1.23.3",
+    package_name = "getrandom",
+    package_url = "https://github.com/rust-random/getrandom",
+    package_version = "0.2.17",
 )
 
 license(
@@ -35,7 +35,7 @@ license(
 )
 
 rust_library(
-    name = "uuid",
+    name = "getrandom",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -53,20 +53,16 @@ rust_library(
         ],
     ),
     crate_features = [
-        "default",
-        "rng",
-        "serde",
         "std",
-        "v4",
     ],
     crate_root = "src/lib.rs",
-    edition = "2021",
+    edition = "2018",
     rustc_flags = [
         "--cap-lints=allow",
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=uuid",
+        "crate-name=getrandom",
         "manual",
         "noclippy",
         "norustfmt",
@@ -78,9 +74,22 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.23.3",
+    version = "0.2.17",
     deps = [
-        "//third_party/rust_crates/vendor/getrandom-0.4.3:getrandom",
-        "//third_party/rust_crates/vendor/serde_core-1.0.228:serde_core",
-    ],
+        "//third_party/rust_crates/vendor/cfg-if-1.0.4:cfg_if",
+    ] + select({
+        "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [
+            "//third_party/rust_crates/vendor/libc-0.2.186:libc",  # cfg(unix)
+        ],
+        "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
+            "//third_party/rust_crates/vendor/libc-0.2.186:libc",  # cfg(unix)
+        ],
+        "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [
+            "//third_party/rust_crates/vendor/libc-0.2.186:libc",  # cfg(unix)
+        ],
+        "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
+            "//third_party/rust_crates/vendor/libc-0.2.186:libc",  # cfg(unix)
+        ],
+        "//conditions:default": [],
+    }),
 )

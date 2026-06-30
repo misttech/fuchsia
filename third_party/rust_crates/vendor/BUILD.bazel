@@ -1135,14 +1135,14 @@ alias(
 )
 
 alias(
-    name = "getrandom-0.4.2",
-    actual = "//third_party/rust_crates/vendor/getrandom-0.4.2:getrandom",
+    name = "getrandom-0.4.3",
+    actual = "//third_party/rust_crates/vendor/getrandom-0.4.3:getrandom",
     tags = ["manual"],
 )
 
 alias(
     name = "getrandom",
-    actual = "//third_party/rust_crates/vendor/getrandom-0.4.2:getrandom",
+    actual = "//third_party/rust_crates/vendor/getrandom-0.4.3:getrandom",
     tags = ["manual"],
 )
 
