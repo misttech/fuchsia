@@ -923,11 +923,6 @@
                 // xattr_test
                 "XattrTest.SecurityCapacityXattr",
 
-                // TODO(https://fxbug.dev/404199474): Fix and re-enable
-                "PtyTest.PacketModeWriteMasterToReplica",
-                "PtyTest.PacketModeWriteReplicaToMaster",
-                "PtyTest.PacketModeFailsOnReplica",
-
                 // TODO(https://fxbug.dev/525046044): TIOCGPTPEER is not implemented in Starnix.
                 "BasicPtyTest.TIOCGPTPEER*",
 

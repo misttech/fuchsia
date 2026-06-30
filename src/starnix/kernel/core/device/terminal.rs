@@ -298,6 +298,13 @@ impl TerminalMutableState<Base = Terminal> {
         self.line_discipline.termios()
     }
 
+    pub fn set_packet_mode(&mut self, enabled: bool) {
+        if enabled != self.line_discipline.is_packet_mode_enabled() {
+            self.line_discipline.set_packet_mode(enabled);
+            self.notify_waiters();
+        }
+    }
+
     /// Returns the number of available bytes to read from the side of the terminal described by
     /// `is_main`.
     pub fn get_available_read_size(&self, is_main: bool) -> usize {
@@ -308,7 +315,8 @@ impl TerminalMutableState<Base = Terminal> {
     fn set_termios(&mut self, termios: uapi::termios2) -> PendingSignals {
         let old_canon_enabled = self.line_discipline.is_canon_enabled();
         let signals = self.line_discipline.set_termios(termios);
-        if old_canon_enabled && !self.line_discipline.is_canon_enabled() {
+        let canon_disabled = old_canon_enabled && !self.line_discipline.is_canon_enabled();
+        if canon_disabled || self.line_discipline.has_packet_mode_pending_events() {
             self.notify_waiters();
         }
         signals

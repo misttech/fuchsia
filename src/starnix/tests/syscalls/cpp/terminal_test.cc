@@ -668,4 +668,99 @@ TEST_F(Pty, SessionLeaderAndChildExitConcurrently) {
   ASSERT_TRUE(helper.WaitForChildren());
 }
 
+TEST_F(Pty, PacketMode) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    int main_fd = OpenMainTerminal();
+    int replica_fd = SAFE_SYSCALL(open(ptsname(main_fd), O_RDWR | O_NOCTTY));
+
+    // ioctl(replica, TIOCPKT) should fail with ENOTTY
+    int on = 1;
+    ASSERT_EQ(ioctl(replica_fd, TIOCPKT, &on), -1);
+    EXPECT_EQ(errno, ENOTTY);
+
+    // ioctl(main, TIOCPKT) should succeed
+    ASSERT_EQ(ioctl(main_fd, TIOCPKT, &on), 0);
+
+    // Write to replica, read from main (packet mode)
+    const char* msg = "hello";
+    ASSERT_EQ(write(replica_fd, msg, 5), 5);
+
+    // Read 1 byte from main. It should be the control byte (0 for data).
+    char c = -1;
+    ASSERT_EQ(read(main_fd, &c, 1), 1);
+    EXPECT_EQ(c, 0);  // TIOCPKT_DATA
+
+    // Read again. Since we didn't consume any data, it should still have "hello", and 0 should be
+    // prepended again.
+    char buf[10];
+    memset(buf, 0, sizeof(buf));
+    ASSERT_EQ(read(main_fd, buf, sizeof(buf)), 6);  // 1 control byte + 5 data bytes
+    EXPECT_EQ(buf[0], 0);
+    EXPECT_STREQ(buf + 1, "hello");
+
+    // Write again, read with enough space
+    ASSERT_EQ(write(replica_fd, "world", 5), 5);
+    memset(buf, 0, sizeof(buf));
+    ASSERT_EQ(read(main_fd, buf, sizeof(buf)), 6);
+    EXPECT_EQ(buf[0], 0);
+    EXPECT_STREQ(buf + 1, "world");
+
+    // Disable packet mode, write, read
+    int off = 0;
+    ASSERT_EQ(ioctl(main_fd, TIOCPKT, &off), 0);
+    ASSERT_EQ(write(replica_fd, "test", 4), 4);
+
+    memset(buf, 0, sizeof(buf));
+    // Without packet mode, we should not get any control bytes.
+    ASSERT_EQ(read(main_fd, buf, sizeof(buf)), 4);
+    EXPECT_STREQ(buf, "test");
+
+    close(replica_fd);
+    close(main_fd);
+  });
+}
+
+TEST_F(Pty, PacketModeEvents) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    // Open in non-blocking mode so we can easily check for no-event case.
+    int master_fd = OpenMainTerminal(O_NONBLOCK);
+    int replica_fd = SAFE_SYSCALL(open(ptsname(master_fd), O_RDWR | O_NOCTTY | O_NONBLOCK));
+
+    int on = 1;
+    ASSERT_EQ(ioctl(master_fd, TIOCPKT, &on), 0);
+
+    // Verify no immediate event.
+    char c = -1;
+    ASSERT_EQ(read(master_fd, &c, 1), -1);
+    EXPECT_EQ(errno, EAGAIN);
+
+    // Ensure IXON is enabled initially to force a state change when we disable it.
+    struct termios t;
+    ASSERT_EQ(tcgetattr(replica_fd, &t), 0);
+    t.c_iflag |= IXON;
+    ASSERT_EQ(tcsetattr(replica_fd, TCSANOW, &t), 0);
+
+    // Consume any pending events (like TIOCPKT_DOSTOP).
+    while (read(master_fd, &c, 1) == 1) {
+    }
+
+    // Disable IXON.
+    ASSERT_EQ(tcgetattr(replica_fd, &t), 0);
+    t.c_iflag &= ~IXON;
+    ASSERT_EQ(tcsetattr(replica_fd, TCSANOW, &t), 0);
+
+    struct pollfd fds = {master_fd, POLLPRI | POLLIN, 0};
+    ASSERT_EQ(poll(&fds, 1, 1000), 1);
+    EXPECT_TRUE(fds.revents & (POLLPRI | POLLIN));
+
+    ASSERT_EQ(read(master_fd, &c, 1), 1);
+    EXPECT_EQ(c, TIOCPKT_NOSTOP);
+
+    close(replica_fd);
+    close(master_fd);
+  });
+}
+
 }  // namespace

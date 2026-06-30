@@ -18,8 +18,11 @@ struct Scenario {
 
 #[derive(Deserialize, Debug)]
 struct TermiosConfig {
+    #[serde(default)]
     c_iflag: Vec<String>,
+    #[serde(default)]
     c_oflag: Vec<String>,
+    #[serde(default)]
     c_lflag: Vec<String>,
     #[allow(dead_code)]
     c_cflag: Option<u32>, // Keeping cflag simple for now or assume default
@@ -57,6 +60,10 @@ enum Event {
     WriteToSlaveBlocked { data: TraceData },
     #[serde(rename = "write_to_slave_unexpected_success")]
     WriteToSlaveUnexpectedSuccess { data: TraceData },
+    #[serde(rename = "set_packet_mode")]
+    SetPacketMode { enabled: bool },
+    #[serde(rename = "set_termios")]
+    SetTermios { termios: TermiosConfig },
 }
 
 struct TestBuffer {
@@ -290,6 +297,26 @@ fn run_scenario(scenario: Scenario) {
                 let _ = ld
                     .replica_write(&mut buffer)
                     .expect("replica_write failed (unexpected success case)");
+            }
+            Event::SetPacketMode { enabled } => {
+                ld.set_packet_mode(enabled);
+            }
+            Event::SetTermios { termios: ref termios_config } => {
+                let mut termios = crate::get_default_termios();
+                termios.c_iflag = parse_flags(&termios_config.c_iflag, &iflags);
+                termios.c_oflag = parse_flags(&termios_config.c_oflag, &oflags);
+                termios.c_lflag = parse_flags(&termios_config.c_lflag, &lflags);
+                if let Some(cc) = &termios_config.c_cc {
+                    let mapping = get_cc_mapping();
+                    for (name, &val) in cc {
+                        if let Some(&idx) = mapping.get(name.as_str()) {
+                            if idx < termios.c_cc.len() {
+                                termios.c_cc[idx] = val;
+                            }
+                        }
+                    }
+                }
+                let _ = ld.set_termios(termios);
             }
         }
     }

@@ -10,7 +10,7 @@ use starnix_uapi::{
     ECHO, ECHOCTL, ECHOE, ECHOK, ECHOKE, ECHONL, ECHOPRT, ICANON, ICRNL, IEXTEN, IGNCR, INLCR,
     ISIG, IUCLC, IUTF8, IXANY, IXON, NOFLSH, OCRNL, OLCUC, ONLCR, ONLRET, ONOCR, OPOST, TABDLY,
     VEOF, VEOL, VEOL2, VERASE, VINTR, VKILL, VLNEXT, VQUIT, VREPRINT, VSTART, VSTOP, VSUSP,
-    VWERASE, XTABS, cc_t, error, tcflag_t, uapi,
+    VWERASE, XTABS, cc_t, errno, error, tcflag_t, uapi,
 };
 use std::collections::VecDeque;
 
@@ -68,6 +68,14 @@ pub struct LineDiscipline {
     /// Location in a row of the cursor. Needed to handle certain special characters like
     /// backspace.
     column: usize,
+
+    /// Packet mode state (TIOCPKT).
+    #[derivative(Default(value = "false"))]
+    packet_mode_enabled: bool,
+
+    /// Packet mode pending events.
+    #[derivative(Default(value = "0"))]
+    packet_mode_pending_events: u8,
 
     /// The number of active references to the main part of the terminal. Starts as `None`. The
     /// main part of the terminal is considered closed when this is `Some(0)`.
@@ -156,6 +164,21 @@ impl LineDiscipline {
         self.termios.has_local_flags(ICANON)
     }
 
+    pub fn is_packet_mode_enabled(&self) -> bool {
+        self.packet_mode_enabled
+    }
+
+    pub fn set_packet_mode(&mut self, enabled: bool) {
+        self.packet_mode_enabled = enabled;
+        if !enabled {
+            self.packet_mode_pending_events = 0;
+        }
+    }
+
+    pub fn has_packet_mode_pending_events(&self) -> bool {
+        self.packet_mode_enabled && self.packet_mode_pending_events != 0
+    }
+
     /// Returns the number of available bytes to read from the side of the terminal described by
     /// `is_main`.
     pub fn get_available_read_size(&self, is_main: bool) -> usize {
@@ -166,7 +189,17 @@ impl LineDiscipline {
     /// Sets the terminal configuration.
     pub fn set_termios(&mut self, termios: uapi::termios2) -> PendingSignals {
         let old_canon_enabled = self.is_canon_enabled();
+        let old_ixon = self.termios.c_iflag & uapi::IXON != 0;
         self.termios = termios;
+
+        if self.packet_mode_enabled {
+            let new_ixon = self.termios.c_iflag & uapi::IXON != 0;
+            if old_ixon != new_ixon {
+                let event = if new_ixon { uapi::TIOCPKT_DOSTOP } else { uapi::TIOCPKT_NOSTOP };
+                self.packet_mode_pending_events |= event as u8;
+            }
+        }
+
         if old_canon_enabled && !self.is_canon_enabled() {
             with_queue!(self.input_queue.on_canon_disabled(self))
         } else {
@@ -219,13 +252,38 @@ impl LineDiscipline {
         if self.is_replica_closed() && self.output_queue().readable_size() == 0 {
             return FdEvents::POLLOUT | FdEvents::POLLHUP;
         }
-        self.output_queue().read_readiness() | self.input_queue().write_readiness()
+        let mut events =
+            self.output_queue().read_readiness() | self.input_queue().write_readiness();
+        if self.packet_mode_enabled && self.packet_mode_pending_events != 0 {
+            events |= FdEvents::POLLIN | FdEvents::POLLPRI;
+        }
+        events
     }
 
     /// `read` implementation of the main side of the terminal.
     pub fn main_read(&mut self, data: &mut dyn OutputBuffer) -> Result<usize, Errno> {
         if self.is_replica_closed() && self.output_queue().readable_size() == 0 {
             return error!(EIO);
+        }
+        if self.packet_mode_enabled {
+            if self.packet_mode_pending_events != 0 {
+                let event = self.packet_mode_pending_events;
+                self.packet_mode_pending_events = 0;
+                return data.write(&[event]);
+            }
+            if self.output_queue().readable_size() == 0 {
+                return error!(EAGAIN);
+            }
+            let written = data.write(&[0])?;
+            if written == 0 {
+                return Ok(0);
+            }
+            let res = with_queue!(self.output_queue.read(self, data));
+            match res {
+                Ok(n) => return Ok(n + 1),
+                Err(e) if e == errno!(EAGAIN) => return Ok(1),
+                Err(e) => return Err(e),
+            }
         }
         with_queue!(self.output_queue.read(self, data))
     }

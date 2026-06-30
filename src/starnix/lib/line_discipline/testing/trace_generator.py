@@ -219,8 +219,32 @@ class ScenarioRunner:
                 self._handle_read(self.master_fd, evt, "read_from_master")
             elif action == "read_from_slave":
                 self._handle_read(self.slave_fd, evt, "read_from_slave")
+            elif action == "set_packet_mode":
+                self._handle_set_packet_mode(
+                    self.master_fd, evt, "set_packet_mode"
+                )
+            elif action == "set_termios":
+                self._handle_set_termios(self.slave_fd, evt, "set_termios")
             elif action == "sleep":
                 time.sleep(evt.get("duration", 0.05))
+
+    def _handle_set_packet_mode(
+        self, fd: int, evt: Dict[str, Any], event_type: str
+    ) -> None:
+        enabled = evt["enabled"]
+
+        TIOCPKT = getattr(termios, "TIOCPKT", 0x5420)
+        mode = struct.pack("i", 1 if enabled else 0)
+        fcntl.ioctl(fd, TIOCPKT, mode)
+        self.recorded_events.append({"type": event_type, "enabled": enabled})
+
+    def _handle_set_termios(
+        self, fd: int, evt: Dict[str, Any], event_type: str
+    ) -> None:
+        set_termios(fd, evt["termios"])
+        self.recorded_events.append(
+            {"type": event_type, "termios": evt["termios"]}
+        )
 
     def _handle_write(
         self, fd: int, evt: Dict[str, Any], event_type: str

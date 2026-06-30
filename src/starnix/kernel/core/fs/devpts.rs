@@ -820,8 +820,12 @@ where
             error!(ENOSYS)
         }
         TIOCPKT => {
-            track_stub!(TODO("https://fxbug.dev/322893148"), "devpts ioctl TIOCPKT", is_main);
-            error!(ENOSYS)
+            if !is_main {
+                return error!(ENOTTY);
+            }
+            let value = current_task.read_object(UserRef::<i32>::new(user_addr))?;
+            terminal.write().set_packet_mode(value != 0);
+            Ok(SUCCESS)
         }
         FIONBIO => {
             track_stub!(TODO("https://fxbug.dev/322893957"), "devpts ioctl FIONBIO", is_main);
