@@ -12,7 +12,7 @@ otherwise part of the build.
 
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules:stamp_group.bzl", "stamp_group")
-load(":rules.bzl", "build_for_host", "build_with_platform_api_level")
+load(":rules.bzl", "build_for_host")
 
 # Runs all tests and writes a stamp file.
 stamp_group(
@@ -53,12 +53,12 @@ filegroup(
     name = "quick_build_only_tests",
     testonly = True,
     srcs = [
-        ":quick_build_only_tests_requiring_api_level",
         ":build_only_tests_in_host_configuration",
-
-        # Fuchsia tests that do not require defining the Clang API level as "PLATFORM".
         "//build/bazel/bazel_idk/tests:analysis_tests",
         "//build/bazel/bazel_idk/tests:api_level_and_cpu_combinations_build_only_tests",
+        "//build/bazel/bazel_idk/tests:build_only_tests",
+        # Not yet built elsewhere.
+        "//sdk/lib/zxio",
         # Tests `fx_cc_library_headers()`.
         "//zircon/system/ulib/zircon-internal",
         # Tests `fx_package()`.
@@ -68,19 +68,6 @@ filegroup(
     # Individual test groups can use a transition to build targets in host
     # configurations if needed.
     target_compatible_with = ["@platforms//os:fuchsia"],
-)
-
-# A subset of ":quick_build_only_tests" that requires the API level to be defined.
-build_with_platform_api_level(
-    name = "quick_build_only_tests_requiring_api_level",
-    testonly = True,
-    stamp = "quick_build_only_tests_requiring_api_level.stamp",
-    # This target is only intended to be built in Fuchsia configurations.
-    target_compatible_with = ["@platforms//os:fuchsia"],
-    deps = [
-        "//build/bazel/bazel_idk/tests:build_only_tests",
-        "//sdk/lib/zxio",
-    ],
 )
 
 filegroup(
@@ -129,7 +116,9 @@ filegroup(
     name = "long_build_only_tests",
     testonly = True,
     srcs = [
-        ":long_build_only_tests_requiring_api_level",
+        # Build the IDKs to exercise all the atoms migrated so far.
+        "//sdk:fuchsia_idk_molecule_idk",
+        "//sdk:in_tree_idk_molecule_idk",
 
         # Some libraries represented by atoms are not built with the IDK atom
         # targets, so build them here for each combination of API level and CPU
@@ -146,18 +135,4 @@ filegroup(
     # Individual test groups can use a transition to build targets in host
     # configurations if needed.
     target_compatible_with = ["@platforms//os:fuchsia"],
-)
-
-# A subset of ":long_build_only_tests" that requires the API level to be defined.
-build_with_platform_api_level(
-    name = "long_build_only_tests_requiring_api_level",
-    testonly = True,
-    stamp = "long_build_only_tests_requiring_api_level.stamp",
-    # This target is only intended to be built in Fuchsia configurations.
-    target_compatible_with = ["@platforms//os:fuchsia"],
-    deps = [
-        # Build the IDKs to exercise all the atoms migrated so far.
-        "//sdk:fuchsia_idk_molecule_idk",
-        "//sdk:in_tree_idk_molecule_idk",
-    ],
 )
