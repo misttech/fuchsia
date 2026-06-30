@@ -106,3 +106,73 @@ async fn backpressure_across_senders() {
     // Ensure all sends resolve.
     join(send1_exceeding_buffer, send2_exceeding_buffer).await;
 }
+
+// Tests that `send_or_disconnect` drops full receivers instead of applying backpressure.
+//
+// Standard `send()` applies backpressure when any receiver's buffer is full, blocking asynchronous
+// send operations until space is available. In broadcast server loops, the entire service would be
+// blocked if a single client watcher stalls or stops consuming `send()` messages.
+//
+// Instead, `send_or_disconnect()` uses non-blocking `try_send()` checks. If a receiver returns
+// `Full`, we drop its corresponding sender from the active list, closing the channel immediately.
+//
+// This test constructs a sender with buffer size 0 and three receivers (`r1`, `r2`, and `r3`).
+// It sends msg 10, consuming it on `r2` and `r3` but leaving `r1` full. Sending msg 20 then
+// disconnects `r1` while buffering in `r2` and `r3`. Only `r3` consumes msg 20, so `r2` is now
+// full. Sending msg 30 disconnects `r2` while keeping `r3` connected, verifying that receivers are
+// evaluated independently on each send and can be sequentially disconnected as they lag behind.
+#[fasync::run_singlethreaded]
+#[test]
+async fn send_or_disconnect_disconnects_full_receivers() {
+    let s: Sender<usize> = Sender::with_buffer_size(0);
+    let mut r1 = s.new_receiver();
+    let mut r2 = s.new_receiver();
+    let mut r3 = s.new_receiver();
+
+    // -------------------------------------
+    // Send msg 10 to all receivers.
+    s.send_or_disconnect(10).await;
+    // All buffers are now full (capacity = 1).
+
+    // r1 does not consume msg 10 - it will remain full.
+
+    // r2 and r3 consume msg 10 so their buffers have space.
+    assert_eq!(r2.next().await, Some(10));
+    assert_eq!(r3.next().await, Some(10));
+
+    // -------------------------------------
+    // Send msg 20.
+    s.send_or_disconnect(20).await;
+    // r1 is full and disconnects.
+    // r2 and r3 receive msg 20 and become full again.
+
+    // r1 was disconnected after it buffered msg 10.
+    assert_eq!(r1.next().await, Some(10));
+    assert_eq!(r1.next().await, None);
+
+    // r2 does not consume msg 20 - it will remain full.
+
+    // r3 consumes msg 20 so it has space again.
+    assert_eq!(r3.next().await, Some(20));
+
+    // -------------------------------------
+    // Send msg 30.
+    s.send_or_disconnect(30).await;
+    // r2 is full and disconnects.
+    // r3 receives msg 30.
+
+    // r2 was disconnected after it buffered msg 20.
+    assert_eq!(r2.next().await, Some(20));
+    assert_eq!(r2.next().await, None);
+
+    // r3 remains fully functional, receiving msg 30
+    assert_eq!(r3.next().await, Some(30));
+
+    // -------------------------------------
+    // Send msg 40.
+    s.send_or_disconnect(40).await;
+    // After the sender disconnects two receivers, sender and r3 continue to function properly.
+
+    // r3 receives msg 40.
+    assert_eq!(r3.next().await, Some(40));
+}

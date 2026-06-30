@@ -150,8 +150,7 @@ impl Discovery {
         }
     }
 
-    /// Connects a sink to the stream of `PlayerProxyEvents` for the set of
-    /// all sessions.
+    /// Connects a sink to the stream of `PlayerProxyEvents` for the set of all sessions.
     async fn connect_session_watcher(
         &mut self,
         watch_options: WatchOptions,
@@ -205,7 +204,7 @@ impl Discovery {
 
             self.catch_up_events.insert(*id, player_update.clone());
         }
-        self.player_update_sender.send(player_update).await;
+        self.player_update_sender.send_or_disconnect(player_update).await;
     }
 
     async fn handle_interruption(&mut self, Interruption { usage, stage }: Interruption) {
@@ -452,6 +451,95 @@ mod test {
         player_sink.send(player).await?;
 
         // The test passes by not panicking.
+        Ok(())
+    }
+
+    // Ensure that slow or unresponsive session watchers do not block the Discovery service.
+    //
+    // If a FIDL client connects via `WatchSessions` then stops consuming events, its internal
+    // broadcast channel buffer fills up. If the publisher awaited space in this lagging client's
+    // queue, all other clients would be blocked.
+    //
+    // Instead `Discovery::handle_player_update` broadcasts events via `send_or_disconnect`. When a
+    // client watcher's buffer is full, `send_or_disconnect` drops and disconnects that receiver
+    // rather waiting for it to have available space.
+    //
+    // This test connects a slow watcher (whose channel is never read) and a responsive fast
+    // watcher. It broadcasts 150 player updates (exceeding the channel buffer capacity of 100)
+    // and verifies that the slow watcher is dropped while the fast watcher continues receiving
+    // all events without any stalling or hanging in the Discovery service.
+    #[fuchsia::test]
+    async fn slow_watcher_does_not_block_discovery() -> Result<()> {
+        let (mut player_sink, player_stream) = mpsc::channel(100);
+        let (mut discovery_request_sink, discovery_request_stream) = mpsc::channel(100);
+        let (_observer_request_sink, observer_request_stream) = mpsc::channel(100);
+        let (player_published_sink, _player_published_receiver) = oneshot::channel();
+        let dummy_control_handle =
+            create_endpoints::<DiscoveryMarker>().1.into_stream_and_control_handle().1;
+
+        let (usage_reporter_proxy, _server_end) = create_proxy::<UsageReporterMarker>();
+        let under_test = Discovery::new(player_stream, usage_reporter_proxy);
+        spawn_log_error(under_test.serve(discovery_request_stream, observer_request_stream));
+
+        // Connect slow watcher (we never read from its server endpoint).
+        let (slow_watcher_client, _slow_watcher_server) =
+            create_endpoints::<SessionsWatcherMarker>();
+        discovery_request_sink
+            .send(DiscoveryRequest::WatchSessions {
+                watch_options: Default::default(),
+                session_watcher: slow_watcher_client,
+                control_handle: dummy_control_handle.clone(),
+            })
+            .await?;
+
+        // Connect fast watcher.
+        let (fast_watcher_client, fast_watcher_server) =
+            create_endpoints::<SessionsWatcherMarker>();
+        let mut fast_watcher = fast_watcher_server.into_stream();
+        discovery_request_sink
+            .send(DiscoveryRequest::WatchSessions {
+                watch_options: Default::default(),
+                session_watcher: fast_watcher_client,
+                control_handle: dummy_control_handle.clone(),
+            })
+            .await?;
+
+        // Add a player.
+        let inspector = Inspector::default();
+        let (player_client, player_server) = create_endpoints::<PlayerMarker>();
+        let player = Player::new(
+            Id::new()?,
+            player_client,
+            PlayerRegistration {
+                domain: Some(String::from("test_domain://")),
+                ..Default::default()
+            },
+            inspector.root().create_child("test_player"),
+            player_published_sink,
+        )?;
+        player_sink.send(player).await?;
+
+        let mut player_requests = player_server.into_stream();
+
+        // Send enough updates to exceed CHANNEL_BUFFER_SIZE (100).
+        for _ in 0..150 {
+            let info_change_responder = player_requests
+                .try_next()
+                .await?
+                .expect("Receiving a request")
+                .into_watch_info_change()
+                .expect("Receiving info change responder");
+            info_change_responder.send(&Default::default())?;
+
+            // Fast watcher successfully receives every update and responds without hanging.
+            let req = fast_watcher.try_next().await?.expect("Receiving watcher request");
+            if let SessionsWatcherRequest::SessionUpdated { responder, .. } = req {
+                responder.send()?;
+            } else {
+                panic!("Unexpected request");
+            }
+        }
+
         Ok(())
     }
 }

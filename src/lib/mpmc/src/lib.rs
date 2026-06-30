@@ -7,11 +7,11 @@
 //! A library with futures-aware mpmc channels.
 
 use crossbeam::queue::SegQueue;
+use futures::Stream;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::sink::SinkExt;
 use futures::stream::FusedStream;
-use futures::Stream;
 use std::pin::Pin;
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
@@ -66,6 +66,24 @@ impl<T: Clone> Sender<T> {
             };
 
             if should_live {
+                living_senders.push(sender);
+            }
+        }
+        inner.append(&mut living_senders);
+    }
+
+    /// Sends `payload` to all receivers that exist at the time of send.
+    ///
+    /// Receivers whose buffers are full will be disconnected instead of applying backpressure.
+    pub async fn send_or_disconnect(&self, payload: T) {
+        let mut inner = self.inner.lock().await;
+        while let Some(new_sender) = self.enqueued_senders.pop() {
+            inner.push(new_sender);
+        }
+
+        let mut living_senders = vec![];
+        for mut sender in inner.drain(0..) {
+            if sender.try_send(payload.clone()).is_ok() {
                 living_senders.push(sender);
             }
         }
