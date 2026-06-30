@@ -1763,6 +1763,15 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
   cow_clone.locked().page_list_ = ktl::move(initial_page_list);
   cow_clone.locked().continuous_attribution_tracker_ = ktl::move(initial_page_list_tracker);
 
+  // Hidden parent immediately inherits the once-pinned pages, so it must carry the ever_pinned_
+  // flag. Propagation to the sibling clone is delayed until the once-pinned pages are actually
+  // migrated into it (or merged during parent collapse). As all pages have been moved to the
+  // hidden parent, we also clear the flag on the current node.
+  if (ever_pinned_.load(ktl::memory_order_relaxed)) {
+    hidden_parent.locked().ever_pinned_.store(true, ktl::memory_order_release);
+    ever_pinned_.store(false, ktl::memory_order_release);
+  }
+
   // Checking this node's hierarchy will also check the parent's hierarchy.
   CONTINUOUS_ATTRIBUTION_VALIDATION_ASSERT(DebugValidateContinuousAttribution());
 
@@ -2229,6 +2238,12 @@ bool VmCowPages::MergeContentWithChildLocked() {
   // limit will be 0.
   DEBUG_ASSERT(child.parent_limit_ == 0 ||
                (parent_offset_ + parent_limit_ >= child.parent_offset_ + child.parent_limit_));
+
+  // During parent collapse/merge, any remaining once-pinned pages from the parent are
+  // migrated to the child, so the child must inherit the ever_pinned_ flag.
+  if (ever_pinned_.load(ktl::memory_order_relaxed)) {
+    child.ever_pinned_.store(true, ktl::memory_order_release);
+  }
 
   // We don't check the hierarchy because it is inconsistent at this point.
   // It will be made consistent by the caller and checked then.
@@ -2711,6 +2726,13 @@ zx_status_t VmCowPages::CloneCowPageLocked(uint64_t offset, list_node_t* alloc_l
     pmm_page_queues()->Remove(removed_page);
 
     *out_page = removed_page;
+
+    // Page is being migrated from a once-pinned hidden parent into a sibling child.
+    // Sibling child must now carry the ever_pinned_ flag so that delayed reuse is correctly
+    // triggered if it later frees the page.
+    if (page_owner->ever_pinned_.load(ktl::memory_order_relaxed)) {
+      ever_pinned_.store(true, ktl::memory_order_release);
+    }
   }
 
   // Now that we can no longer fail to insert the new page into this node, complete the add page

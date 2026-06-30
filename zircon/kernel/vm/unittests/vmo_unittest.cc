@@ -5300,6 +5300,150 @@ static bool vmo_get_page_offset_test() {
   END_TEST;
 }
 
+// Tests that when creating a bidirectional clone (snapshot) of a once-pinned VMO,
+// the newly created hidden parent correctly inherits the `ever_pinned_` flag.
+static bool vmo_ever_pinned_hidden_parent_creation_test() {
+  BEGIN_TEST;
+
+  AutoVmScannerDisable scanner_disable;
+
+  constexpr size_t kVmoSize = kPageSize;
+
+  // Create root VMO.
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(VmObjectPaged::Create(0, 0, kVmoSize, &vmo));
+
+  // Commit a page at offset 0.
+  uint32_t val = 0x42;
+  ASSERT_OK(vmo->Write(&val, 0, sizeof(val)));
+
+  fbl::RefPtr<VmCowPages> cow = vmo->DebugGetCowPages();
+  ASSERT_NONNULL(cow);
+
+  // Initially, ever_pinned_ should be false.
+  EXPECT_TRUE(cow->should_delay_reuse_on_free() == PmmOptDelayReuse::Default);
+
+  // Pin the page.
+  ASSERT_OK(vmo->CommitRangePinned(0, kVmoSize, true));
+
+  // ever_pinned_ should be true.
+  EXPECT_TRUE(cow->should_delay_reuse_on_free() == PmmOptDelayReuse::Yes);
+
+  // Unpin the page.
+  vmo->Unpin(0, kVmoSize);
+
+  // ever_pinned_ should still be true.
+  EXPECT_TRUE(cow->should_delay_reuse_on_free() == PmmOptDelayReuse::Yes);
+
+  // Create a bidirectional clone (snapshot) of the root VMO.
+  fbl::RefPtr<VmObject> clone;
+  ASSERT_OK(
+      vmo->CreateClone(Resizability::NonResizable, SnapshotType::Full, 0, kVmoSize, true, &clone));
+
+  // Retrieve the hidden parent.
+  fbl::RefPtr<VmCowPages> h_cow = cow->DebugGetParent();
+  ASSERT_NONNULL(h_cow);
+
+  EXPECT_EQ(PmmOptDelayReuse::Yes, h_cow->should_delay_reuse_on_free());
+  EXPECT_EQ(PmmOptDelayReuse::Default, cow->should_delay_reuse_on_free());
+
+  END_TEST;
+}
+
+// Tests that when a once-pinned page is migrated into a sibling clone during copy-on-write page
+// migration, the sibling clone correctly inherits the `ever_pinned_` flag.
+static bool vmo_ever_pinned_page_migration_test() {
+  BEGIN_TEST;
+
+  AutoVmScannerDisable scanner_disable;
+
+  constexpr size_t kVmoSize = kPageSize;
+
+  // Create root VMO.
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(VmObjectPaged::Create(0, 0, kVmoSize, &vmo));
+
+  // Commit a page at offset 0.
+  uint32_t val = 0x42;
+  ASSERT_OK(vmo->Write(&val, 0, sizeof(val)));
+
+  fbl::RefPtr<VmCowPages> cow = vmo->DebugGetCowPages();
+  ASSERT_NONNULL(cow);
+
+  // Pin and unpin the page.
+  ASSERT_OK(vmo->CommitRangePinned(0, kVmoSize, true));
+  vmo->Unpin(0, kVmoSize);
+
+  // Create a bidirectional clone (snapshot) of the root VMO.
+  fbl::RefPtr<VmObject> clone;
+  ASSERT_OK(
+      vmo->CreateClone(Resizability::NonResizable, SnapshotType::Full, 0, kVmoSize, true, &clone));
+
+  fbl::RefPtr<VmCowPages> c_cow = DownCastVmObject<VmObjectPaged>(clone.get())->DebugGetCowPages();
+  ASSERT_NONNULL(c_cow);
+
+  // The sibling clone is created with ever_pinned_ = false.
+  EXPECT_TRUE(c_cow->should_delay_reuse_on_free() == PmmOptDelayReuse::Default);
+
+  // Write to the root VMO to fork the page. The original once-pinned page in the hidden parent is
+  // now only visible to the clone.
+  uint32_t val2 = 0x43;
+  ASSERT_OK(vmo->Write(&val2, 0, sizeof(val2)));
+
+  // Write to the clone to trigger page migration from the hidden parent to the clone.
+  ASSERT_OK(clone->Write(&val, 0, sizeof(val)));
+
+  // The clone should now have ever_pinned_ = true since the once-pinned page was migrated into it.
+  EXPECT_EQ(PmmOptDelayReuse::Yes, c_cow->should_delay_reuse_on_free());
+
+  END_TEST;
+}
+
+// Tests that when a hidden parent collapses and merges its pages into a child clone, the child
+// clone correctly inherits the `ever_pinned_` flag.
+static bool vmo_ever_pinned_parent_merge_test() {
+  BEGIN_TEST;
+
+  AutoVmScannerDisable scanner_disable;
+
+  constexpr size_t kVmoSize = kPageSize;
+
+  // Create root VMO.
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(VmObjectPaged::Create(0, 0, kVmoSize, &vmo));
+
+  // Commit a page at offset 0.
+  uint32_t val = 0x42;
+  ASSERT_OK(vmo->Write(&val, 0, sizeof(val)));
+
+  fbl::RefPtr<VmCowPages> cow = vmo->DebugGetCowPages();
+  ASSERT_NONNULL(cow);
+
+  // Pin and unpin the page.
+  ASSERT_OK(vmo->CommitRangePinned(0, kVmoSize, true));
+  vmo->Unpin(0, kVmoSize);
+
+  // Create a bidirectional clone (snapshot) of the root VMO.
+  fbl::RefPtr<VmObject> clone;
+  ASSERT_OK(
+      vmo->CreateClone(Resizability::NonResizable, SnapshotType::Full, 0, kVmoSize, true, &clone));
+
+  fbl::RefPtr<VmCowPages> c_cow = DownCastVmObject<VmObjectPaged>(clone.get())->DebugGetCowPages();
+  ASSERT_NONNULL(c_cow);
+
+  // The sibling clone is created with ever_pinned_ = false.
+  EXPECT_TRUE(c_cow->should_delay_reuse_on_free() == PmmOptDelayReuse::Default);
+
+  // Close the root VMO. This merges the hidden parent's pages into the clone.
+  vmo.reset();
+
+  // The clone should now have ever_pinned_ = true since the hidden parent collapsed and
+  // merged its pages into the clone.
+  EXPECT_EQ(PmmOptDelayReuse::Yes, c_cow->should_delay_reuse_on_free());
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(vmo_tests)
 VM_UNITTEST(vmo_create_test)
 VM_UNITTEST(vmo_create_maximum_size)
@@ -5379,6 +5523,9 @@ VM_UNITTEST(vmo_always_pinned_with_no_pages_test)
 VM_UNITTEST(vmo_lookup_readable_simple_test)
 VM_UNITTEST(vmo_lookup_readable_clone_test)
 VM_UNITTEST(vmo_get_page_offset_test)
+VM_UNITTEST(vmo_ever_pinned_hidden_parent_creation_test)
+VM_UNITTEST(vmo_ever_pinned_page_migration_test)
+VM_UNITTEST(vmo_ever_pinned_parent_merge_test)
 UNITTEST_END_TESTCASE(vmo_tests, "vmo", "VmObject tests")
 
 }  // namespace
