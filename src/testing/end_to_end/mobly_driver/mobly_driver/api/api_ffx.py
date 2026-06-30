@@ -90,7 +90,7 @@ class FfxClient:
         ]
 
         try:
-            output = subprocess.check_output(cmd, timeout=5).decode()
+            output = subprocess.check_output(cmd, timeout=15).decode()
         except (
             subprocess.CalledProcessError,
             subprocess.TimeoutExpired,
@@ -141,7 +141,7 @@ class FfxClient:
             "serials",
         ]
         try:
-            output = subprocess.check_output(cmd, timeout=5).decode().strip()
+            output = subprocess.check_output(cmd, timeout=15).decode().strip()
         except (
             subprocess.CalledProcessError,
             subprocess.TimeoutExpired,
@@ -186,7 +186,7 @@ class FfxClient:
             target_name,
         ]
         try:
-            output = subprocess.check_output(cmd, timeout=5).decode().strip()
+            output = subprocess.check_output(cmd, timeout=15).decode().strip()
         except (
             subprocess.CalledProcessError,
             subprocess.TimeoutExpired,

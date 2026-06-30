@@ -34,13 +34,14 @@ class DriverRestartStressTest(fuchsia_base_test.FuchsiaBaseTest):
         for iteration in range(1, iterations + 1):
             test_args.append((iteration,))
 
-        if self.mechanism in ("host_restart", "both"):
+        mechanism = self.user_params.get("mechanism", "both")
+        if mechanism in ("host_restart", "both"):
             self.generate_tests(
                 test_logic=self._test_logic_restart,
                 name_func=self._name_func_restart,
                 arg_sets=test_args,
             )
-        if self.mechanism in ("disable_enable", "both"):
+        if mechanism in ("disable_enable", "both"):
             self.generate_tests(
                 test_logic=self._test_logic_disable_enable,
                 name_func=self._name_func_disable_enable,
