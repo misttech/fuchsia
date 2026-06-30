@@ -3,10 +3,7 @@
 // found in the LICENSE file.
 
 mod convert;
-mod inspect;
 pub mod processors;
-
-use self::inspect::{Stats, inspect_record_stats};
 use crate::fetch::FetchError;
 use crate::ping::PingError;
 use crate::telemetry::processors::link_properties_state::{
@@ -25,14 +22,13 @@ use fuchsia_async as fasync;
 use fuchsia_cobalt_builders::MetricEventExt;
 use fuchsia_inspect::Node as InspectNode;
 use fuchsia_sync::Mutex;
-use futures::channel::{mpsc, oneshot};
+use futures::channel::mpsc;
 use futures::{Future, StreamExt, select};
 use log::{info, warn};
 use network_policy_metrics_registry as metrics;
 use static_assertions::const_assert_eq;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use windowed_stats::aggregations::SumAndCount;
 use windowed_stats::experimental::inspect::TimeMatrixClient;
 
 #[cfg(test)]
@@ -109,22 +105,6 @@ struct SystemStateSummary {
     system_state: IpVersions<Option<State>>,
 }
 
-impl SystemStateSummary {
-    fn ipv4_link_state_val(&self) -> u32 {
-        match self.system_state.ipv4 {
-            Some(s) => s.link as u32,
-            None => 0u32,
-        }
-    }
-
-    fn ipv6_link_state_val(&self) -> u32 {
-        match self.system_state.ipv6 {
-            Some(s) => s.link as u32,
-            None => 0u32,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default, PartialEq)]
 struct NetworkConfig {
     has_default_ipv4_route: bool,
@@ -176,10 +156,6 @@ pub enum TelemetryEvent {
         interface_identifiers: Vec<InterfaceIdentifier>,
         fetch_parameters: FetchParameters,
         fetch_result: Result<u16, FetchError>,
-    },
-    /// Get the TimeSeries held by telemetry loop. Intended for test only.
-    GetTimeSeries {
-        sender: oneshot::Sender<Arc<Mutex<Stats>>>,
     },
 }
 
@@ -272,8 +248,6 @@ fn serve_telemetry_inner(
                     }
                 }
                 _ = report_interval_stream.next() => {
-                    telemetry.handle_ten_secondly_telemetry();
-
                     interval_tick += 1;
                     if interval_tick % INTERVAL_TICKS_PER_HR == 0 {
                         telemetry.handle_hourly_telemetry().await;
@@ -311,13 +285,6 @@ macro_rules! log_cobalt_batch {
     }};
 }
 
-fn round_to_nearest_second(duration: zx::MonotonicDuration) -> i64 {
-    const MILLIS_PER_SEC: i64 = 1000;
-    let millis = duration.into_millis();
-    let rounded_portion = if millis % MILLIS_PER_SEC >= 500 { 1 } else { 0 };
-    millis / MILLIS_PER_SEC + rounded_portion
-}
-
 struct Telemetry {
     cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
     state_summary: Option<SystemStateSummary>,
@@ -333,7 +300,6 @@ struct Telemetry {
     interface_aware_logger: InterfaceAwareLogger,
 
     _inspect_node: InspectNode,
-    stats: Arc<Mutex<Stats>>,
 }
 
 impl Telemetry {
@@ -344,8 +310,6 @@ impl Telemetry {
         interface_aware_logger: InterfaceAwareLogger,
         inspect_node: InspectNode,
     ) -> Self {
-        let stats = Arc::new(Mutex::new(Stats::new()));
-        inspect_record_stats(&inspect_node, "stats", Arc::clone(&stats));
         Self {
             cobalt_proxy,
             state_summary: None,
@@ -357,7 +321,6 @@ impl Telemetry {
             link_properties_state_logger,
             interface_aware_logger,
             _inspect_node: inspect_node,
-            stats,
         }
     }
 
@@ -452,9 +415,6 @@ impl Telemetry {
                     &fetch_result,
                 );
             }
-            TelemetryEvent::GetTimeSeries { sender } => {
-                let _result = sender.send(Arc::clone(&self.stats));
-            }
         }
     }
 
@@ -465,11 +425,7 @@ impl Telemetry {
         ctx: &'static str,
     ) {
         let duration_cobalt = now - self.state_last_refreshed_for_cobalt;
-        let duration_sec_inspect =
-            round_to_nearest_second(now - self.state_last_refreshed_for_inspect) as i32;
         let mut metric_events = vec![];
-
-        self.stats.lock().total_duration_sec.log_value(&duration_sec_inspect);
 
         if let Some(prev) = &self.state_summary {
             if prev.system_state.has_interface_up() {
@@ -507,16 +463,6 @@ impl Telemetry {
                         .as_integer(duration_cobalt.into_micros()),
                     );
                 }
-
-                if prev.system_state.has_internet() {
-                    self.stats.lock().internet_available_sec.log_value(&duration_sec_inspect);
-                }
-                if prev.system_state.has_dns() {
-                    self.stats.lock().dns_active_sec.log_value(&duration_sec_inspect);
-                }
-                if prev.system_state.has_http() {
-                    self.stats.lock().http_active_sec.log_value(&duration_sec_inspect);
-                }
             }
         }
 
@@ -535,7 +481,6 @@ impl Telemetry {
                     );
                     self.reachability_lost_at = Some((now, route_config_dim));
                 }
-                self.stats.lock().reachability_lost_count.log_value(&1);
             }
 
             if !previously_reachable && now_reachable {
@@ -548,17 +493,6 @@ impl Telemetry {
                 }
                 self.reachability_lost_at = None;
             }
-        }
-
-        if let Some(new_state) = &new_state {
-            self.stats
-                .lock()
-                .ipv4_state
-                .log_value(&SumAndCount { sum: new_state.ipv4_link_state_val(), count: 1 });
-            self.stats
-                .lock()
-                .ipv6_state
-                .log_value(&SumAndCount { sum: new_state.ipv6_link_state_val(), count: 1 });
         }
 
         if !metric_events.is_empty() {
@@ -613,36 +547,6 @@ impl Telemetry {
             self.network_config = Some(new_config);
         }
         self.network_config_last_refreshed = now;
-    }
-
-    pub fn handle_ten_secondly_telemetry(&mut self) {
-        let now = fasync::MonotonicInstant::now();
-        let duration_sec_inspect =
-            round_to_nearest_second(now - self.state_last_refreshed_for_inspect) as i32;
-
-        self.stats.lock().total_duration_sec.log_value(&duration_sec_inspect);
-
-        if let Some(current) = &self.state_summary {
-            if current.system_state.has_internet() {
-                self.stats.lock().internet_available_sec.log_value(&duration_sec_inspect);
-            }
-            if current.system_state.has_dns() {
-                self.stats.lock().dns_active_sec.log_value(&duration_sec_inspect);
-            }
-            if current.system_state.has_http() {
-                self.stats.lock().http_active_sec.log_value(&duration_sec_inspect);
-            }
-
-            self.stats
-                .lock()
-                .ipv4_state
-                .log_value(&SumAndCount { sum: current.ipv4_link_state_val(), count: 1 });
-            self.stats
-                .lock()
-                .ipv6_state
-                .log_value(&SumAndCount { sum: current.ipv6_link_state_val(), count: 1 });
-        }
-        self.state_last_refreshed_for_inspect = now;
     }
 
     pub async fn handle_hourly_telemetry(&mut self) {
@@ -915,196 +819,6 @@ mod tests {
     }
 
     #[test]
-    fn test_state_snapshot_duration_inspect_stats() {
-        let (mut test_helper, mut test_fut) = setup_test();
-
-        test_helper.advance_by(zx::MonotonicDuration::from_seconds(25), &mut test_fut);
-
-        let time_series = test_helper.get_time_series(&mut test_fut);
-        let internet_available_sec: Vec<_> =
-            time_series.lock().internet_available_sec.minutely_iter().map(|v| *v).collect();
-        let dns_active_sec: Vec<_> =
-            time_series.lock().dns_active_sec.minutely_iter().map(|v| *v).collect();
-        let http_active_sec: Vec<_> =
-            time_series.lock().http_active_sec.minutely_iter().map(|v| *v).collect();
-        let total_duration_sec: Vec<_> =
-            time_series.lock().total_duration_sec.minutely_iter().map(|v| *v).collect();
-        assert_eq!(internet_available_sec, vec![0]);
-        assert_eq!(dns_active_sec, vec![0]);
-        assert_eq!(http_active_sec, vec![0]);
-        assert_eq!(total_duration_sec, vec![20]);
-
-        let mut update = SystemStateUpdate {
-            system_state: IpVersions {
-                ipv4: Some(State { link: LinkState::Internet, ..Default::default() }),
-                ipv6: None,
-            },
-        };
-        test_helper
-            .telemetry_sender
-            .send(TelemetryEvent::SystemStateUpdate { update: update.clone() });
-        test_helper.advance_test_fut(&mut test_fut);
-        let time_series = test_helper.get_time_series(&mut test_fut);
-        let total_duration_sec: Vec<_> =
-            time_series.lock().total_duration_sec.minutely_iter().map(|v| *v).collect();
-        assert_eq!(total_duration_sec, vec![25]);
-
-        test_helper.advance_by(zx::MonotonicDuration::from_seconds(15), &mut test_fut);
-
-        // Now 40 seconds mark
-
-        let time_series = test_helper.get_time_series(&mut test_fut);
-        let internet_available_sec: Vec<_> =
-            time_series.lock().internet_available_sec.minutely_iter().map(|v| *v).collect();
-        let dns_active_sec: Vec<_> =
-            time_series.lock().dns_active_sec.minutely_iter().map(|v| *v).collect();
-        let http_active_sec: Vec<_> =
-            time_series.lock().http_active_sec.minutely_iter().map(|v| *v).collect();
-        let total_duration_sec: Vec<_> =
-            time_series.lock().total_duration_sec.minutely_iter().map(|v| *v).collect();
-        assert_eq!(internet_available_sec, vec![15]);
-        assert_eq!(dns_active_sec, vec![0]);
-        assert_eq!(http_active_sec, vec![0]);
-        assert_eq!(total_duration_sec, vec![40]);
-
-        update.system_state = IpVersions {
-            ipv4: Some(State {
-                link: LinkState::Internet,
-                application: ApplicationState { dns_resolved: true, ..Default::default() },
-            }),
-            ipv6: None,
-        };
-        test_helper
-            .telemetry_sender
-            .send(TelemetryEvent::SystemStateUpdate { update: update.clone() });
-
-        test_helper.advance_by(zx::MonotonicDuration::from_seconds(50), &mut test_fut);
-
-        // Now 90 seconds mark
-
-        let time_series = test_helper.get_time_series(&mut test_fut);
-        let internet_available_sec: Vec<_> =
-            time_series.lock().internet_available_sec.minutely_iter().map(|v| *v).collect();
-        let dns_active_sec: Vec<_> =
-            time_series.lock().dns_active_sec.minutely_iter().map(|v| *v).collect();
-        let http_active_sec: Vec<_> =
-            time_series.lock().http_active_sec.minutely_iter().map(|v| *v).collect();
-        let total_duration_sec: Vec<_> =
-            time_series.lock().total_duration_sec.minutely_iter().map(|v| *v).collect();
-        assert_eq!(internet_available_sec, vec![25, 40]);
-        assert_eq!(dns_active_sec, vec![10, 40]);
-        assert_eq!(http_active_sec, vec![0]);
-        assert_eq!(total_duration_sec, vec![40]);
-
-        update.system_state = IpVersions {
-            ipv4: Some(State {
-                link: LinkState::Internet,
-                application: ApplicationState { dns_resolved: true, http_fetch_succeeded: true },
-            }),
-            ipv6: None,
-        };
-        test_helper
-            .telemetry_sender
-            .send(TelemetryEvent::SystemStateUpdate { update: update.clone() });
-
-        test_helper.advance_by(zx::MonotonicDuration::from_seconds(60), &mut test_fut);
-
-        // Now 120 seconds mark
-
-        let time_series = test_helper.get_time_series(&mut test_fut);
-        let internet_available_sec: Vec<_> =
-            time_series.lock().internet_available_sec.minutely_iter().map(|v| *v).collect();
-        let dns_active_sec: Vec<_> =
-            time_series.lock().dns_active_sec.minutely_iter().map(|v| *v).collect();
-        let http_active_sec: Vec<_> =
-            time_series.lock().http_active_sec.minutely_iter().map(|v| *v).collect();
-        let total_duration_sec: Vec<_> =
-            time_series.lock().total_duration_sec.minutely_iter().map(|v| *v).collect();
-        assert_eq!(internet_available_sec, vec![25, 60, 40]);
-        assert_eq!(dns_active_sec, vec![10, 60, 40]);
-        assert_eq!(http_active_sec, vec![0, 20, 40]);
-        assert_eq!(total_duration_sec, vec![40]);
-    }
-
-    #[test]
-    fn test_reachability_lost_count_inspect_stats() {
-        let (mut test_helper, mut test_fut) = setup_test();
-
-        let mut update = SystemStateUpdate {
-            system_state: IpVersions {
-                ipv4: None,
-                ipv6: Some(State {
-                    link: LinkState::Internet,
-                    application: ApplicationState { dns_resolved: true, ..Default::default() },
-                }),
-            },
-            ..SystemStateUpdate::default()
-        };
-        test_helper
-            .telemetry_sender
-            .send(TelemetryEvent::SystemStateUpdate { update: update.clone() });
-        test_helper.advance_test_fut(&mut test_fut);
-
-        let time_series = test_helper.get_time_series(&mut test_fut);
-        let reachability_lost_count: Vec<_> =
-            time_series.lock().reachability_lost_count.minutely_iter().map(|v| *v).collect();
-        assert_eq!(reachability_lost_count, vec![0]);
-
-        update.system_state = IpVersions {
-            ipv4: None,
-            ipv6: Some(State { link: LinkState::Internet, ..Default::default() }),
-        };
-        test_helper
-            .telemetry_sender
-            .send(TelemetryEvent::SystemStateUpdate { update: update.clone() });
-        test_helper.advance_test_fut(&mut test_fut);
-
-        let time_series = test_helper.get_time_series(&mut test_fut);
-        let reachability_lost_count: Vec<_> =
-            time_series.lock().reachability_lost_count.minutely_iter().map(|v| *v).collect();
-        assert_eq!(reachability_lost_count, vec![1]);
-    }
-
-    #[test]
-    fn test_avg_state_inspect_stats() {
-        let (mut test_helper, mut test_fut) = setup_test();
-
-        let mut update = SystemStateUpdate {
-            system_state: IpVersions {
-                ipv4: None,
-                ipv6: Some(State { link: LinkState::Gateway, ..Default::default() }),
-            },
-            ..SystemStateUpdate::default()
-        };
-        test_helper
-            .telemetry_sender
-            .send(TelemetryEvent::SystemStateUpdate { update: update.clone() });
-        test_helper.advance_test_fut(&mut test_fut);
-
-        let time_series = test_helper.get_time_series(&mut test_fut);
-        let ipv4_state: Vec<_> =
-            time_series.lock().ipv4_state.minutely_iter().map(|v| *v).collect();
-        let ipv6_state: Vec<_> =
-            time_series.lock().ipv6_state.minutely_iter().map(|v| *v).collect();
-        assert_eq!(ipv4_state, vec![SumAndCount { sum: 0, count: 1 }]);
-        assert_eq!(ipv6_state, vec![SumAndCount { sum: 25, count: 1 }]);
-
-        update.system_state.ipv6 = Some(State { link: LinkState::Internet, ..Default::default() });
-        test_helper
-            .telemetry_sender
-            .send(TelemetryEvent::SystemStateUpdate { update: update.clone() });
-        test_helper.advance_test_fut(&mut test_fut);
-
-        let time_series = test_helper.get_time_series(&mut test_fut);
-        let ipv4_state: Vec<_> =
-            time_series.lock().ipv4_state.minutely_iter().map(|v| *v).collect();
-        let ipv6_state: Vec<_> =
-            time_series.lock().ipv6_state.minutely_iter().map(|v| *v).collect();
-        assert_eq!(ipv4_state, vec![SumAndCount { sum: 0, count: 2 }]);
-        assert_eq!(ipv6_state, vec![SumAndCount { sum: 55, count: 2 }]);
-    }
-
-    #[test]
     fn test_link_properties_update() {
         let (mut test_helper, mut test_fut) = setup_test();
 
@@ -1282,19 +996,6 @@ mod tests {
 
         fn get_logged_metrics(&self, metric_id: u32) -> Vec<MetricEvent> {
             self.cobalt_events.iter().filter(|ev| ev.metric_id == metric_id).cloned().collect()
-        }
-
-        fn get_time_series<T>(
-            &mut self,
-            test_fut: &mut (impl Future<Output = T> + Unpin),
-        ) -> Arc<Mutex<Stats>> {
-            let (sender, mut receiver) = oneshot::channel();
-            self.telemetry_sender.send(TelemetryEvent::GetTimeSeries { sender });
-            self.advance_test_fut(test_fut);
-            match receiver.try_recv() {
-                Ok(Some(stats)) => stats,
-                _ => panic!("Expect Stats to be returned"),
-            }
         }
     }
 

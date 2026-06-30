@@ -69,7 +69,6 @@ rustc_library("lib") {
     "src/ping.rs",
     "src/route_table.rs",
     "src/telemetry/convert.rs",
-    "src/telemetry/inspect.rs",
     "src/telemetry/mod.rs",
     "src/telemetry/processors/interface_aware_logger.rs",
     "src/telemetry/processors/link_properties_state.rs",
