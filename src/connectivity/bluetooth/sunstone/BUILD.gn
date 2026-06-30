@@ -81,6 +81,7 @@ if (is_host) {
     sources = [
       "sapphire-async/src/condition.rs",
       "sapphire-async/src/executor.rs",
+      "sapphire-async/src/global_index.rs",
       "sapphire-async/src/lib.rs",
       "sapphire-async/src/mpsc.rs",
       "sapphire-async/src/notification.rs",

@@ -11,5 +11,7 @@ pub mod mpsc;
 pub mod notification;
 pub mod semaphore;
 
+pub(crate) mod global_index;
+
 #[cfg(feature = "testing")]
 pub mod testing;
