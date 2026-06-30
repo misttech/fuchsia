@@ -9,7 +9,7 @@ using zx;
 /// An `InputReport` can contain one of many different report types. The report
 /// types are not mutually exclusive. The `event_time` is the time in
 /// nanoseconds when the report was generated.
-type InputReport = resource(added=HEAD) table {
+type InputReport = resource(added=NEXT) table {
     /// The monotonic time when the event was generated.
     ///
     /// Required.
@@ -44,7 +44,7 @@ type InputReport = resource(added=HEAD) table {
     8: report_id uint8;
 
     /// Optional wake lease for power baton passing.
-    @available(added=HEAD)
+    @available(added=NEXT)
     9: wake_lease zx.Handle:EVENTPAIR;
 };
 

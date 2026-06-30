@@ -26,7 +26,7 @@ closed protocol InputReportsReader {
     /// report available.
     /// If there is already one outstanding Hanging-Get, calling this
     /// again will return ZX_ERR_ALREADY_BOUND.
-    strict ReadInputReports() -> (resource(added=HEAD) struct {
+    strict ReadInputReports() -> (resource(added=NEXT) struct {
         reports vector<InputReport>:MAX_DEVICE_REPORT_COUNT;
     }) error zx.Status;
 };
@@ -74,7 +74,7 @@ open protocol InputDevice {
     /// `device_type` are not supported.
     strict GetInputReport(struct {
         device_type DeviceType;
-    }) -> (resource(added=HEAD) struct {
+    }) -> (resource(added=NEXT) struct {
         report InputReport;
     }) error zx.Status;
 };

@@ -427,7 +427,8 @@
     },
     {
         "kind": "struct",
-        "name": "fuchsia.input.report/InputDevice_GetInputReport_Response"
+        "name": "fuchsia.input.report/InputDevice_GetInputReport_Response",
+        "resourceness": "resource"
     },
     {
         "kind": "table/member",
@@ -478,8 +479,15 @@
         "type": "uint64"
     },
     {
+        "kind": "table/member",
+        "name": "fuchsia.input.report/InputReport.wake_lease",
+        "ordinal": "9",
+        "type": "zx/Handle:EVENTPAIR"
+    },
+    {
         "kind": "table",
-        "name": "fuchsia.input.report/InputReport"
+        "name": "fuchsia.input.report/InputReport",
+        "resourceness": "resource"
     },
     {
         "kind": "protocol/member",
@@ -504,7 +512,8 @@
     },
     {
         "kind": "struct",
-        "name": "fuchsia.input.report/InputReportsReader_ReadInputReports_Response"
+        "name": "fuchsia.input.report/InputReportsReader_ReadInputReports_Response",
+        "resourceness": "resource"
     },
     {
         "kind": "const",
