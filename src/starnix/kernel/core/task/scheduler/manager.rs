@@ -77,14 +77,20 @@ impl SchedulerManager {
         task: &Task,
         scheduler_state: SchedulerState,
     ) -> Result<&str, Errno> {
-        let process_name = task
-            .thread_group()
-            .read()
-            .get_task(task.thread_group().leader)
-            .ok_or_else(|| errno!(EINVAL))?
-            .command();
-        let thread_name = task.command();
-        Ok(self.resolve_role_name(&process_name, &thread_name, scheduler_state))
+        let thread_group = task.thread_group();
+        let thread_group_state = thread_group.read();
+        // Only inherit custom roles if the process has executed `execve`. Child processes created
+        // via `fork` only inherit standard scheduling policies (SCHED_NORMAL/SCHED_FIFO) with
+        // default profiles to maintain basic parity with Linux and prevent demand amplification.
+        if thread_group_state.did_exec {
+            let process_name = thread_group_state
+                .get_task(thread_group.leader)
+                .ok_or_else(|| errno!(EINVAL))?
+                .command();
+            let thread_name = task.command();
+            return Ok(self.resolve_role_name(&process_name, &thread_name, scheduler_state));
+        }
+        Ok(scheduler_state.role_name())
     }
 
     pub fn resolve_role_name(
@@ -849,6 +855,8 @@ mod tests {
                 profile_handle_cache: Mutex::new(HashMap::new()),
             };
 
+            // Set did_exec = true so custom role overrides are applied.
+            current_task.thread_group().write().did_exec = true;
             current_task.set_command_name(starnix_task_command::TaskCommand::new(b"my_task"));
 
             let mut state = SchedulerState::default();

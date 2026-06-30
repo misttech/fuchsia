@@ -1783,4 +1783,34 @@ mod test {
         })
         .await;
     }
+
+    #[::fuchsia::test]
+    async fn test_fork_does_not_inherit_custom_role() {
+        use crate::task::{RoleOverrides, SchedulerManager};
+
+        let mut builder = RoleOverrides::new();
+        builder.add("renamed-thread", "renamed-thread", "test-role");
+        let overrides = builder.build().unwrap();
+
+        let scheduler_manager = SchedulerManager::new_for_tests(None, overrides);
+
+        spawn_kernel_with_scheduler_and_run_sync(scheduler_manager, |locked, current_task| {
+            // Fork a child process (which sets did_exec = false on the child's thread group)
+            let child = current_task.clone_task_for_test(locked, 0, None);
+
+            let scheduler = &current_task.thread_group().kernel.scheduler;
+
+            // Before rename, check child's role name.
+            let initial_role = scheduler.role_name(&child).unwrap();
+            assert_ne!(initial_role, "test-role");
+
+            // Rename the child's thread to renamed-thread. Since did_exec is false on the child,
+            // this should NOT map to "test-role" from the overrides.
+            child.set_command_name(starnix_task_command::TaskCommand::new(b"renamed-thread"));
+
+            let renamed_role = scheduler.role_name(&child).unwrap();
+            assert_ne!(renamed_role, "test-role");
+        })
+        .await;
+    }
 }
