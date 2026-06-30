@@ -9,11 +9,6 @@ visibility([
     "//build/bazel/rules/idk/...",
     "//build/bazel/rules/packages/...",
     "//build/bazel/toolchains/...",
-
-    # TODO(https://fxbug.dev/521882370): Remove uses of `fuchsia_api_level_copts()` and delete.
-    "//sdk/lib/...",
-    "//src/connectivity/network/netstack/udp_serde/...",
-    "//zircon/system/ulib/zx/...",
 ])
 
 def get_integer_for_api_level(api_level):
@@ -50,8 +45,3 @@ def get_integer_for_api_level(api_level):
             fail("Special API levels should be given by name, not number: %s" % api_level_integer)
 
         return api_level_integer
-
-# TODO(https://fxbug.dev/521882370): Remove uses and delete.
-def fuchsia_api_level_copts():
-    """Obsolete. Do not use."""
-    return []

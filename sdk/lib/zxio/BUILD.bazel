@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel:fuchsia_api_level.bzl", "fuchsia_api_level_copts")
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
 load("//build/bazel/rules/cc:fx_cc_library_headers.bzl", "fx_cc_library_headers")
 
@@ -113,7 +112,7 @@ fx_cc_library(
         # TODO(https://fxbug.dev/42085293): delete the below and fix compiler warnings
         "-Wno-vla-cxx-extension",
         "-Wno-deprecated-pragma",
-    ] + fuchsia_api_level_copts(),
+    ],
     implementation_deps = [
         ":inception",
         ":udp_socket_private",

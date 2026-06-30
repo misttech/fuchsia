@@ -967,31 +967,6 @@ func TestCCConversion(t *testing.T) {
 }`,
 		},
 		{
-			name: "ignore fuchsia_api_level_copts",
-			bazel: `cc_library(
-	name = "foo",
-	copts = [
-		"-Wno-vla-cxx-extension",
-	] + fuchsia_api_level_copts(),
-)
-`,
-			wantGN: `static_library("foo") {
-	configs += [
-		"//build/config:Wno-vla-cxx-extension",
-	]
-}`,
-		},
-		{
-			name: "ignore only fuchsia_api_level_copts",
-			bazel: `cc_library(
-	name = "foo",
-	copts = fuchsia_api_level_copts(),
-)
-`,
-			wantGN: `static_library("foo") {
-}`,
-		},
-		{
 			name: "alwayslink = True converts to source_set",
 			bazel: `cc_library(
 	name = "foo",

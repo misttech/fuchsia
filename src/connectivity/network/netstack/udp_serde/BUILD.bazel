@@ -3,13 +3,11 @@
 # found in the LICENSE file.
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//build/bazel:fuchsia_api_level.bzl", "fuchsia_api_level_copts")
 
 cc_library(
     name = "udp_serde",
     srcs = ["udp_serde.cc"],
     hdrs = ["udp_serde.h"],
-    copts = fuchsia_api_level_copts(),
     implementation_deps = [
         "//sdk/lib/zxio:udp_socket_private",
     ],

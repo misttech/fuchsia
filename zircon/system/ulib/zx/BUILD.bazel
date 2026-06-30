@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel:fuchsia_api_level.bzl", "fuchsia_api_level_copts")
 load("//build/bazel/rules/idk:idk_cc_source_library.bzl", "idk_cc_source_library_zx")
 
 # LINT.IfChange
@@ -88,7 +87,6 @@ idk_cc_source_library_zx(
     api_area = "Kernel",
     api_file_path = "//sdk/lib/zx:zx.api",
     category = "partner",
-    copts = fuchsia_api_level_copts(),
     idk_name = "zx",
     implementation_deps = [
         # TODO(https://fxbug.dev/456186321): Explain why this .as-needed target

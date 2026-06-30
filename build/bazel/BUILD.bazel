@@ -58,7 +58,15 @@ _api_level_condition_visibility = [
 config_setting(
     name = "is_api_level_PLATFORM",
     flag_values = {"//build/bazel:fuchsia_api_level": "PLATFORM"},
-    visibility = ["//visibility:public"],
+    visibility = _api_level_condition_visibility + [
+        "//build/bazel/rules:__subpackages__",
+
+        # `go_binary_host_tool()` is a legacy macro, so uses must be visible
+        # where that macro is used.
+        "//build/beads/.agent/skills:__subpackages__",
+        "//build/tools:__subpackages__",
+        "//tools:__subpackages__",
+    ],
 )
 
 config_setting(
