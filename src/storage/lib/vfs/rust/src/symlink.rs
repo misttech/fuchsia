@@ -8,7 +8,7 @@ use crate::common::{
     decode_extended_attribute_value, encode_extended_attribute_value, extended_attributes_sender,
 };
 use crate::execution_scope::ExecutionScope;
-use crate::name::parse_name;
+use crate::name::Name;
 use crate::node::{Node, OpenNode};
 use crate::object_request::{ConnectionCreator, Representation, run_synchronous_future_or_spawn};
 use crate::request_handler::{RequestHandler, RequestListener};
@@ -262,7 +262,7 @@ impl<T: Symlink> Connection<T> {
         target_parent_token: flex_client::Event,
         target_name: String,
     ) -> Result<(), Status> {
-        let target_name = parse_name(target_name).map_err(|_| Status::INVALID_ARGS)?;
+        let target_name = Name::try_from(target_name).map_err(|_| Status::INVALID_ARGS)?;
 
         let (target_parent, target_rights) = self
             .scope

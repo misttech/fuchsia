@@ -66,43 +66,42 @@ impl From<ParseNameError> for Status {
     }
 }
 
-impl Name {
-    pub fn from<S: Into<String>>(s: S) -> Result<Name, ParseNameError> {
-        parse_name(s.into())
-    }
-}
-
 impl Display for Name {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
     }
 }
 
-/// Parses a string name into a [Name].
-pub fn parse_name(name: String) -> Result<Name, ParseNameError> {
-    validate_name(&name)?;
-    Ok(Name(name.into_boxed_str()))
-}
-
-/// Check whether a string name will be a valid input to [Name].
+/// Validates whether a string slice is a valid node name.
+///
+/// A valid node name must meet the following criteria:
+/// * It cannot be longer than [MAX_NAME_LENGTH] (255 bytes).
+/// * It cannot be empty.
+/// * It cannot be "." (single dot) or ".." (dot-dot).
+/// * It cannot contain "/" (slash) or embedded NUL (`\0`) characters.
 pub fn validate_name(name: &str) -> Result<(), ParseNameError> {
-    if name.len() > MAX_NAME_LENGTH {
+    let len = name.len();
+    if len > MAX_NAME_LENGTH {
         return Err(ParseNameError::TooLong);
     }
-    if name.len() == 0 {
+    if len == 0 {
         return Err(ParseNameError::Empty);
     }
-    if name == "." {
-        return Err(ParseNameError::Dot);
+    let bytes = name.as_bytes();
+    if bytes[0] == b'.' {
+        if len == 1 {
+            return Err(ParseNameError::Dot);
+        }
+        if len == 2 && bytes[1] == b'.' {
+            return Err(ParseNameError::DotDot);
+        }
     }
-    if name == ".." {
-        return Err(ParseNameError::DotDot);
-    }
-    if name.chars().any(|c: char| c == '/') {
-        return Err(ParseNameError::Slash);
-    }
-    if name.chars().any(|c: char| c == '\0') {
-        return Err(ParseNameError::EmbeddedNul);
+    if let Some(idx) = memchr::memchr2(b'/', 0, name.as_bytes()) {
+        if name.as_bytes()[idx] == 0 {
+            return Err(ParseNameError::EmbeddedNul);
+        } else {
+            return Err(ParseNameError::Slash);
+        }
     }
     Ok(())
 }
@@ -117,7 +116,8 @@ impl TryFrom<String> for Name {
     type Error = ParseNameError;
 
     fn try_from(value: String) -> Result<Name, ParseNameError> {
-        parse_name(value)
+        validate_name(&value)?;
+        Ok(Name(value.into_boxed_str()))
     }
 }
 
@@ -139,33 +139,6 @@ impl Borrow<str> for Name {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-
-    #[test]
-    fn test_parse_name() {
-        assert_matches!(parse_name("a".repeat(1000)), Err(ParseNameError::TooLong));
-        assert_matches!(
-            parse_name(
-                std::str::from_utf8(&vec![65; fio::MAX_NAME_LENGTH as usize + 1])
-                    .unwrap()
-                    .to_string()
-            ),
-            Err(ParseNameError::TooLong)
-        );
-        assert_matches!(
-            parse_name(
-                std::str::from_utf8(&vec![65; fio::MAX_NAME_LENGTH as usize]).unwrap().to_string()
-            ),
-            Ok(_)
-        );
-        assert_matches!(parse_name("".to_string()), Err(ParseNameError::Empty));
-        assert_matches!(parse_name(".".to_string()), Err(ParseNameError::Dot));
-        assert_matches!(parse_name("..".to_string()), Err(ParseNameError::DotDot));
-        assert_matches!(parse_name(".a".to_string()), Ok(Name(name)) if &*name == ".a");
-        assert_matches!(parse_name("..a".to_string()), Ok(Name(name)) if &*name == "..a");
-        assert_matches!(parse_name("a/b".to_string()), Err(ParseNameError::Slash));
-        assert_matches!(parse_name("a\0b".to_string()), Err(ParseNameError::EmbeddedNul));
-        assert_matches!(parse_name("abc".to_string()), Ok(Name(name)) if &*name == "abc");
-    }
 
     #[test]
     fn test_validate_name() {

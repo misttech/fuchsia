@@ -17,6 +17,7 @@ rustc_library("name") {
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/rust/zx-status",
+    "//third_party/rust_crates:memchr",
     "//third_party/rust_crates:static_assertions",
     "//third_party/rust_crates:thiserror",
   ]

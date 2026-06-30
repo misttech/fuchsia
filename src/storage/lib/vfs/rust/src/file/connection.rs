@@ -9,7 +9,7 @@ use crate::common::{
 use crate::execution_scope::ExecutionScope;
 use crate::file::common::new_connection_validate_options;
 use crate::file::{File, FileIo, FileOptions, RawFileIoConnection, SyncMode};
-use crate::name::parse_name;
+use crate::name::Name;
 use crate::node::OpenNode;
 use crate::object_request::{
     ConnectionCreator, ObjectRequest, Representation, run_synchronous_future_or_spawn,
@@ -990,7 +990,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
         target_parent_token: flex_client::Event,
         target_name: String,
     ) -> Result<(), Status> {
-        let target_name = parse_name(target_name).map_err(|_| Status::INVALID_ARGS)?;
+        let target_name = Name::try_from(target_name).map_err(|_| Status::INVALID_ARGS)?;
 
         #[cfg(fuchsia_api_level_at_least = "HEAD")]
         if !self.options.is_linkable {
