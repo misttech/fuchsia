@@ -667,7 +667,12 @@ func fuchsiaLogChecks() []FailureModeCheck {
 		// For https://fxbug.dev/500045713
 		// This is for driver manager removal and bootup hangs.
 		&stringInLogCheck{
-			String:      "Removal hanging, nodes remaining:",
+			String:      "Full node removal hanging",
+			Type:        serialLogType,
+			AlwaysFlake: true,
+		},
+		&stringInLogCheck{
+			String:      "Package node removal hanging",
 			Type:        serialLogType,
 			AlwaysFlake: true,
 		},

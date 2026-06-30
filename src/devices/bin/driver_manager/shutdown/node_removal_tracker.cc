@@ -15,8 +15,6 @@ namespace driver_manager {
 
 namespace {
 
-zx::duration kRemovalTimeoutDuration = zx::sec(15);
-
 const char* GetNodeStateDescription(NodeState state) {
   switch (state) {
     case NodeState::kWaitingOnDriverBind:
@@ -72,9 +70,9 @@ void NodeRemovalTracker::Notify(NodeId id, NodeState state) {
   }
   itr->second.state = state;
 
-  if (handle_timeout_task_.is_pending()) {
-    handle_timeout_task_.Cancel();
-    handle_timeout_task_.PostDelayed(dispatcher_, kRemovalTimeoutDuration);
+  if (check_removal_task_.is_pending()) {
+    check_removal_task_.Cancel();
+    check_removal_task_.PostDelayed(dispatcher_, kRemovalCheckDelay);
   }
 
   if (state != NodeState::kDestroyed) {
@@ -89,15 +87,32 @@ void NodeRemovalTracker::Notify(NodeId id, NodeState state) {
   CheckRemovalDone();
 }
 
-void NodeRemovalTracker::OnRemovalTimeout() {
+void NodeRemovalTracker::CheckRemoval() {
   timeout_count_++;
+  const bool pkg_only = !all_callback_ && pkg_callback_;
+
   // This log message is used by tefmocheck to detect driver removal hangs.
   // LINT.IfChange
-  fdf_log::info("Removal hanging, nodes remaining: {} pkg, {} pkg+boot", remaining_pkg_node_count(),
-                remaining_node_count());
+  if (pkg_callback_ && all_callback_) {
+    fdf_log::info("Full node removal hanging: Waiting on {} nodes ({} package nodes)",
+                  remaining_node_count(), remaining_pkg_node_count());
+  } else if (pkg_only) {
+    fdf_log::info("Package node removal hanging: Waiting on {} package nodes",
+                  remaining_pkg_node_count());
+  } else {
+    fdf_log::info("Full node removal hanging: Waiting on {} nodes", remaining_node_count());
+    if (!all_callback_ && !pkg_callback_) {
+      fdf_log::warn("Node-removal tracker is running but no one is listening");
+    }
+  }
   // LINT.ThenChange(/tools/testing/tefmocheck/string_in_log_check.go)
+
   for (auto& [id, node] : nodes_) {
     if (node.state == NodeState::kDestroyed || node.state == NodeState::kPrestop) {
+      continue;
+    }
+    if (pkg_only && node.collection != Collection::kPackage) {
+      // Don't print non-package nodes if we are only waiting for package nodes to be removed.
       continue;
     }
 
@@ -114,10 +129,10 @@ void NodeRemovalTracker::OnRemovalTimeout() {
     fdf_log::info("  '{}' ('{}'): {}", node.name, node.driver_url,
                   GetNodeStateDescription(node.state));
   }
-  if (timeout_count_ >= 3) {
+  if (timeout_count_ >= kMaxRemovalCheckCount) {
     on_removal_timeout_callback_();
   }
-  handle_timeout_task_.PostDelayed(dispatcher_, kRemovalTimeoutDuration);
+  check_removal_task_.PostDelayed(dispatcher_, kRemovalCheckDelay);
 }
 
 void NodeRemovalTracker::CheckRemovalDone() {
@@ -129,12 +144,17 @@ void NodeRemovalTracker::CheckRemovalDone() {
     fdf_log::info("NodeRemovalTracker: package removal completed");
     pkg_callback_();
     pkg_callback_ = nullptr;
+    // If we are not waiting for all nodes to be removed, then the removal is complete and we can
+    // cancel the task.
+    if (!all_callback_) {
+      check_removal_task_.Cancel();
+    }
   }
   if (all_callback_ && remaining_node_count() == 0) {
     fdf_log::info("NodeRemovalTracker: all nodes removed");
     all_callback_();
     all_callback_ = nullptr;
-    handle_timeout_task_.Cancel();
+    check_removal_task_.Cancel();
     nodes_.clear();
   }
 }
@@ -151,7 +171,7 @@ void NodeRemovalTracker::SetOnRemovalTimeoutCallback(fit::callback<void()> callb
 
 void NodeRemovalTracker::FinishEnumeration() {
   fully_enumerated_ = true;
-  handle_timeout_task_.PostDelayed(dispatcher_, kRemovalTimeoutDuration);
+  check_removal_task_.PostDelayed(dispatcher_, kRemovalCheckDelay);
   CheckRemovalDone();
 }
 
