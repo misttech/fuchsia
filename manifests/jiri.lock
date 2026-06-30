@@ -355,6 +355,16 @@
         "instance_id": "hFTgVo_2yEhQoxqQABn7kcd_3sV1ohWd7CSVxQWbIHwC"
     },
     {
+        "package": "fuchsia/third_party/3pp/pigz/linux-amd64",
+        "version": "version:2@2.8",
+        "instance_id": "b_DtNRb_qmSfLqakAmac1HDh3qIbCCL4KcaLU_FGpT8C"
+    },
+    {
+        "package": "fuchsia/third_party/3pp/pigz/linux-arm64",
+        "version": "version:2@2.8",
+        "instance_id": "9wnqNohAbCRxzD0pp_GQu0dV6G8zpDHMeLs4k5R5rl8C"
+    },
+    {
         "package": "fuchsia/third_party/android/aemu/release-gfxstream/linux-amd64",
         "version": "bid:13279406",
         "instance_id": "vyFeetWMDQWxFDexo-JnYBtKSDSYrUra2dry6AcWLcMC"
@@ -578,16 +588,6 @@
         "package": "fuchsia/third_party/openssh-portable/linux-arm64",
         "version": "version:2@9.1",
         "instance_id": "56gf7ew5kOwf7wO89-nI4rQHuUmQkoWShhQFRz8NfpsC"
-    },
-    {
-        "package": "fuchsia/third_party/pigz/linux-amd64",
-        "version": "version:2@2.7",
-        "instance_id": "HeZ0sn9eRGabF7xjgwN0mtj6zIoLGquSew6bcXZeMKYC"
-    },
-    {
-        "package": "fuchsia/third_party/pigz/linux-arm64",
-        "version": "version:2@2.7",
-        "instance_id": "dOBsjt7xCf-ysddiQUOUFkbfnwYTiZJS7wmsu0h3suAC"
     },
     {
         "package": "fuchsia/third_party/qemu/linux-amd64",
