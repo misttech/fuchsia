@@ -11,7 +11,7 @@ use crate::task::{
 };
 use crate::vfs::{FdTable, FsContext};
 use starnix_sync::{
-    LockBefore, Locked, ProcessGroupState, RwLockWriteGuard, TaskRelease, Unlocked, allow_subclass,
+    LockBefore, Locked, ProcessGroupState, RwLockWriteGuard, TaskRelease, Unlocked,
 };
 use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
@@ -187,9 +187,6 @@ where
     )?;
     {
         let mut init_writer = init_task.thread_group().write();
-        // Init is the parent of every other process, so this match the lock ordering from parent to
-        // child.
-        let _token = allow_subclass();
         let mut new_process_writer = task.thread_group().write();
         new_process_writer.parent =
             Some(ThreadGroupParent::new(Arc::downgrade(&init_task.thread_group())));

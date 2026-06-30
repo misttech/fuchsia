@@ -4,7 +4,7 @@
 
 use crate::task::{CurrentTask, WaitQueue, Waiter};
 use crate::vfs::{FdTableId, FileObject, FileObjectId};
-use starnix_sync::{LockDepMutex, Locked, RecordLocksStateLock, Unlocked};
+use starnix_sync::{Locked, Mutex, Unlocked};
 use starnix_uapi::errors::{EAGAIN, Errno};
 use starnix_uapi::{
     __kernel_off_t, F_GETLK, F_GETLK64, F_OFD_GETLK, F_OFD_SETLK, F_OFD_SETLKW, F_RDLCK, F_SETLK,
@@ -411,7 +411,7 @@ impl RecordLockCommand {
 
 #[derive(Default, Debug)]
 pub struct RecordLocks {
-    state: LockDepMutex<RecordLocksState, RecordLocksStateLock>,
+    state: Mutex<RecordLocksState>,
 }
 
 impl RecordLocks {

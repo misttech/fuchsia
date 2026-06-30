@@ -9,7 +9,7 @@ use crate::vfs::{
     Buffer, FileObject, FileOps, FsNodeOps, OutputBufferCallback, PeekBufferSegmentsCallback,
     SeekTarget, default_seek, fileops_impl_noop_sync,
 };
-use starnix_sync::{DynamicFileStateLock, FileOpsCore, LockDepMutex, Locked};
+use starnix_sync::{FileOpsCore, Locked, Mutex};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error, off_t};
 use std::collections::VecDeque;
@@ -185,12 +185,12 @@ where
 /// ```
 ///
 pub struct DynamicFile<Source: SequenceFileSource> {
-    state: LockDepMutex<DynamicFileState<Source>, DynamicFileStateLock>,
+    state: Mutex<DynamicFileState<Source>>,
 }
 
 impl<Source: SequenceFileSource> DynamicFile<Source> {
     pub fn new(source: Source) -> Self {
-        DynamicFile { state: LockDepMutex::new(DynamicFileState::new(source)) }
+        DynamicFile { state: Mutex::new(DynamicFileState::new(source)) }
     }
 }
 

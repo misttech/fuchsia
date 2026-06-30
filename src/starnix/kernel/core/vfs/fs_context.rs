@@ -6,7 +6,7 @@ use crate::security;
 use crate::task::{CurrentTask, MountsWriteToken};
 use crate::vfs::{ActiveNamespaceNode, CheckAccessReason, Namespace, NamespaceNode};
 use starnix_logging::log_trace;
-use starnix_sync::{FileOpsCore, LockDepRwLock, LockEqualOrBefore, Locked};
+use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, RwLock};
 use starnix_uapi::auth::CAP_SYS_CHROOT;
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
@@ -63,7 +63,8 @@ impl FsContextState {
 /// performed using this context.
 #[derive(Debug)]
 pub struct FsContext {
-    state: LockDepRwLock<FsContextState, starnix_sync::FsContextStateLock>,
+    /// The mutable state for this FsContext.
+    state: RwLock<FsContextState>,
 }
 
 impl FsContext {
@@ -74,7 +75,7 @@ impl FsContext {
     pub fn new(namespace: Arc<Namespace>) -> Arc<FsContext> {
         let root = namespace.root();
         Arc::new(FsContext {
-            state: LockDepRwLock::new(FsContextState {
+            state: RwLock::new(FsContextState {
                 namespace,
                 root: root.clone().into_active(),
                 cwd: root.into_active(),
@@ -89,7 +90,7 @@ impl FsContext {
         //
         // See <https://man7.org/linux/man-pages/man2/umask.2.html>
 
-        Arc::new(FsContext { state: LockDepRwLock::new(self.state.read().clone()) })
+        Arc::new(FsContext { state: RwLock::new(self.state.read().clone()) })
     }
 
     /// Returns a reference to the current working directory.

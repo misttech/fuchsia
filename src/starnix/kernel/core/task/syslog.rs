@@ -15,7 +15,7 @@ use fuchsia_component::client::connect_to_protocol_sync;
 use fuchsia_inspect::Inspector;
 use futures::FutureExt;
 use serde::Deserialize;
-use starnix_sync::{LockDepMutex, Locked, SyslogStateLock, SyslogSubscriptionLock, Unlocked};
+use starnix_sync::{LockDepMutex, Locked, Mutex, SyslogStateLock, Unlocked};
 use starnix_uapi::auth::CAP_SYSLOG;
 use starnix_uapi::errors::{EAGAIN, Errno, errno, error};
 use starnix_uapi::syslog::SyslogAction;
@@ -34,7 +34,7 @@ const MICROS_PER_NANOSECOND: i64 = 1_000;
 
 #[derive(Default)]
 pub struct Syslog {
-    syscall_subscription: OnceLock<LockDepMutex<LogSubscription, SyslogSubscriptionLock>>,
+    syscall_subscription: OnceLock<Mutex<LogSubscription>>,
     state: Arc<LockDepMutex<TimelineEstimator<DefaultFetcher>, SyslogStateLock>>,
 }
 
@@ -63,9 +63,7 @@ impl Syslog {
         });
 
         let subscription = LogSubscription::snapshot_then_subscribe(system_task)?;
-        self.syscall_subscription
-            .set(LockDepMutex::new(subscription))
-            .expect("syslog inititialized once");
+        self.syscall_subscription.set(Mutex::new(subscription)).expect("syslog inititialized once");
         Ok(())
     }
 
@@ -114,15 +112,13 @@ impl Syslog {
         LogSubscription::subscribe(current_task)
     }
 
-    fn subscription(
-        &self,
-    ) -> Result<&LockDepMutex<LogSubscription, SyslogSubscriptionLock>, Errno> {
+    fn subscription(&self) -> Result<&Mutex<LogSubscription>, Errno> {
         self.syscall_subscription.get().ok_or_else(|| errno!(ENOENT))
     }
 }
 
 pub struct GrantedSyslog<'a> {
-    syscall_subscription: &'a LockDepMutex<LogSubscription, SyslogSubscriptionLock>,
+    syscall_subscription: &'a Mutex<LogSubscription>,
 }
 
 impl GrantedSyslog<'_> {
@@ -146,12 +142,13 @@ impl GrantedSyslog<'_> {
         current_task: &CurrentTask,
         out: &mut dyn OutputBuffer,
     ) -> Result<i32, Errno> {
+        let mut subscription = self.syscall_subscription.lock();
         let mut write_log = |log: Vec<u8>| {
             let size_to_write = cmp::min(log.len(), out.available() as usize);
             out.write(&log[..size_to_write])?;
             Ok(size_to_write as i32)
         };
-        match self.syscall_subscription.lock().try_next() {
+        match subscription.try_next() {
             Err(errno) if errno == EAGAIN => {}
             Err(errno) => return Err(errno),
             Ok(Some(log)) => return write_log(log),
@@ -159,16 +156,17 @@ impl GrantedSyslog<'_> {
         }
         let waiter = Waiter::new();
         loop {
-            let mut subscription = self.syscall_subscription.lock();
-            subscription.wait(&waiter, FdEvents::POLLIN | FdEvents::POLLHUP, WaitCallback::none());
+            let _w = subscription.wait(
+                &waiter,
+                FdEvents::POLLIN | FdEvents::POLLHUP,
+                WaitCallback::none(),
+            );
             match subscription.try_next() {
                 Err(errno) if errno == EAGAIN => {}
                 Err(errno) => return Err(errno),
                 Ok(Some(log)) => return write_log(log),
                 Ok(None) => return Ok(0),
             }
-            // Drop the subscription lock to avoid holding a lock while waiting.
-            std::mem::drop(subscription);
             waiter.wait(locked, current_task)?;
         }
     }

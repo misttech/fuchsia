@@ -1166,10 +1166,6 @@ impl CurrentTask {
             thread_group_state.exit_signal = Some(SIGCHLD);
             for (_, weak_child) in &mut thread_group_state.children {
                 if let Some(child) = weak_child.upgrade() {
-                    // This allow_subclass is safe because locking parent then child strictly
-                    // follows the top-down traversal of the thread group tree, which cannot form
-                    // cycles.
-                    let _token = starnix_sync::allow_subclass();
                     let mut child_state = child.write();
                     child_state.exit_signal = Some(SIGCHLD);
                 }
@@ -1726,14 +1722,10 @@ impl CurrentTask {
 
             #[cfg(any(test, debug_assertions))]
             {
-                // Take the lock on the thread group and its child in the correct order to ensure
-                // any wrong ordering will trigger the tracing-mutex at the right call site.
+                // Take the lock on the thread group and its child in the correct order to ensure any wrong ordering
+                // will trigger the tracing-mutex at the right call site.
                 if !clone_thread {
                     let _l1 = self.thread_group().read();
-                    // This allow_subclass is safe because locking parent then child strictly
-                    // follows the top-down traversal of the thread group tree, which cannot form
-                    // cycles.
-                    let _token = starnix_sync::allow_subclass();
                     let _l2 = child.thread_group().read();
                 }
             }
@@ -1748,13 +1740,10 @@ impl CurrentTask {
                 // all the combinations of these flags, which means doing these operations here
                 // might actually be correct. However, if you find a test that fails because of the
                 // placement of this logic here, we might need to move it.
-                let (sigaltstack, signal_mask) = {
-                    let state = self.read();
-                    (state.sigaltstack(), state.signal_mask())
-                };
                 let mut child_state = child.write();
-                child_state.set_sigaltstack(sigaltstack);
-                child_state.set_signal_mask(signal_mask);
+                let state = self.read();
+                child_state.set_sigaltstack(state.sigaltstack());
+                child_state.set_signal_mask(state.signal_mask());
             }
 
             if !clone_vm {

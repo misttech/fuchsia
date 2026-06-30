@@ -20,7 +20,7 @@ use starnix_logging::{impossible_error, track_stub};
 use starnix_sync::{FileOpsCore, Locked, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::math::round_up_to_system_page_size;
-use starnix_uapi::errors::{EFBIG, Errno};
+use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{AccessCheck, mode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::resource_limits::Resource;
@@ -243,7 +243,7 @@ impl MemoryRegularFile {
         let mut want_write = data.available();
         let buf = data.peek_all()?;
 
-        let result = file.node().update_info(|info| {
+        file.node().update_info(|info| {
             let mut write_end = offset + want_write;
             let mut update_content_size = false;
 
@@ -286,12 +286,13 @@ impl MemoryRegularFile {
                 }
             }
 
-            // Check against the FSIZE limit
+            // Check against the FSIZE limt
             let fsize_limit =
                 current_task.thread_group().get_rlimit(locked, Resource::FSIZE) as usize;
             if write_end > fsize_limit {
                 if offset >= fsize_limit {
-                    // Write starts beyond the FSIZE limit.
+                    // Write starts beyond the FSIZE limt.
+                    send_standard_signal(locked, current_task, SignalInfo::kernel(SIGXFSZ));
                     return error!(EFBIG);
                 }
 
@@ -313,16 +314,7 @@ impl MemoryRegularFile {
             }
             data.advance(want_write)?;
             Ok(want_write)
-        });
-        match result {
-            Err(ref e) if *e == EFBIG => {
-                // EFBIF must trigger a signal. Sending the signal must be done outside of the
-                // update_info method to ensure no deadlock.
-                send_standard_signal(locked, current_task, SignalInfo::kernel(SIGXFSZ));
-            }
-            _ => {}
-        }
-        result
+        })
     }
 
     pub fn get_memory(

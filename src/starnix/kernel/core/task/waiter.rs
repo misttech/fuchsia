@@ -11,8 +11,8 @@ use smallvec::SmallVec;
 use starnix_lifecycle::AtomicCounter;
 use starnix_sync::{
     EventHandlerReadyQueueLock, EventWaitGuard, FileOpsCore, InterruptibleEvent, LockDepMutex,
-    LockEqualOrBefore, Locked, NotifyKind, PortEvent, PortWaitResult, PortWaiterCallbacksLock,
-    PortWaiterWaitQueuesLock, WaitQueueImplLock, WaiterEventHandlerLock,
+    LockEqualOrBefore, Locked, Mutex, NotifyKind, PortEvent, PortWaitResult,
+    WaiterEventHandlerLock,
 };
 use starnix_types::ownership::debug_assert_no_local_temp_ref;
 use starnix_uapi::error;
@@ -163,7 +163,7 @@ pub enum WaitCallback {
 }
 
 struct WaitCancelerQueue {
-    wait_queue: Weak<LockDepMutex<WaitQueueImpl, WaitQueueImplLock>>,
+    wait_queue: Weak<Mutex<WaitQueueImpl>>,
     waiter: WaiterRef,
     wait_key: WaitKey,
     waiter_id: WaitEntryId,
@@ -370,7 +370,7 @@ bitflags! {
 /// a Waiter should have a single owner. So the Arc is hidden inside Waiter.
 struct PortWaiter {
     port: PortEvent,
-    callbacks: LockDepMutex<HashMap<WaitKey, WaitCallback>, PortWaiterCallbacksLock>, // the key 0 is reserved for 'no handler'
+    callbacks: Mutex<HashMap<WaitKey, WaitCallback>>, // the key 0 is reserved for 'no handler'
     next_key: AtomicCounter<u64>,
     options: WaiterOptions,
 
@@ -378,10 +378,7 @@ struct PortWaiter {
     /// can remove itself from the queues.
     ///
     /// This lock is nested inside the WaitQueue.waiters lock.
-    wait_queues: LockDepMutex<
-        HashMap<WaitKey, Weak<LockDepMutex<WaitQueueImpl, WaitQueueImplLock>>>,
-        PortWaiterWaitQueuesLock,
-    >,
+    wait_queues: Mutex<HashMap<WaitKey, Weak<Mutex<WaitQueueImpl>>>>,
 }
 
 impl PortWaiter {
@@ -756,7 +753,7 @@ impl PartialEq for Waiter {
 
 pub struct SimpleWaiter {
     event: Arc<InterruptibleEvent>,
-    wait_queues: Vec<Weak<LockDepMutex<WaitQueueImpl, WaitQueueImplLock>>>,
+    wait_queues: Vec<Weak<Mutex<WaitQueueImpl>>>,
 }
 
 impl SimpleWaiter {
@@ -930,13 +927,7 @@ impl NotifiableRef {
 /// has occurred. The waiters will then wake up on their own thread to handle
 /// the event.
 #[derive(Default, Debug, Clone)]
-pub struct WaitQueue(Arc<LockDepMutex<WaitQueueImpl, WaitQueueImplLock>>);
-
-impl WaitQueue {
-    pub fn new() -> Self {
-        Self(Arc::new(LockDepMutex::new(WaitQueueImpl::default())))
-    }
-}
+pub struct WaitQueue(Arc<Mutex<WaitQueueImpl>>);
 
 #[derive(Debug)]
 struct WaitEntryWithId {

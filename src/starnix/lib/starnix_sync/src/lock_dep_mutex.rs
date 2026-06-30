@@ -42,7 +42,7 @@ mod tracking {
     /// Panics if a self-deadlock or lock cycle is detected.
     #[inline(always)]
     fn check_and_push_lock(target_value: usize, name: &'static str) {
-        let _ = STATE.try_with(|state| {
+        STATE.with(|state| {
             let mut s = state.borrow_mut();
             if let Some(last) = s.held_locks.last() {
                 let last_value = last.encoded_value;
@@ -63,9 +63,8 @@ mod tracking {
                 }
                 if target_level < last_level {
                     panic!(
-                        "LockDep: Invalid lock ordering cycle detected: \
-                        attempted to acquire '{name}' after '{}' \
-                        ({target_level} < {last_level})!",
+                        "Invalid lock ordering cycle detected: attempted to acquire '{name}' \
+                        after '{}' ({target_level} < {last_level})!",
                         last.name
                     );
                 }
@@ -90,7 +89,7 @@ mod tracking {
     /// Removes a lock from the thread-local stack when it is released.
     #[inline(always)]
     fn pop_lock(target_value: usize) {
-        let _ = STATE.try_with(|state| {
+        STATE.with(|state| {
             let mut s = state.borrow_mut();
             let Some(pos) = s.held_locks.iter().rposition(|v| v.encoded_value == target_value)
             else {
@@ -127,18 +126,16 @@ mod tracking {
     /// Returns `0` if no subclass is currently authorized.
     #[inline(always)]
     fn get_subclass(lock_id: usize) -> u8 {
-        STATE
-            .try_with(|state| {
-                let s = state.borrow();
-                if let Some(last) = s.held_locks.last() {
-                    let last_lock_id = last.encoded_value & !0xF;
-                    if last_lock_id == lock_id && last.active_subclass_tokens > 0 {
-                        return (last.encoded_value & 0xF) as u8 + 1;
-                    }
+        STATE.with(|state| {
+            let s = state.borrow();
+            if let Some(last) = s.held_locks.last() {
+                let last_lock_id = last.encoded_value & !0xF;
+                if last_lock_id == lock_id && last.active_subclass_tokens > 0 {
+                    return (last.encoded_value & 0xF) as u8 + 1;
                 }
-                0
-            })
-            .unwrap_or(0)
+            }
+            0
+        })
     }
 
     /// Authorizes an incremented subclass for the currently maximal held lock.
@@ -146,18 +143,16 @@ mod tracking {
     /// Returns the lock ID and the new subclass level.
     #[inline(always)]
     fn enable_subclass_for_maximal() -> usize {
-        STATE
-            .try_with(|state| {
-                let mut s = state.borrow_mut();
-                if let Some(last) = s.held_locks.last_mut() {
-                    last.active_subclass_tokens += 1;
-                    last.encoded_value
-                } else {
-                    // No locks held. Return placeholder.
-                    usize::MAX
-                }
-            })
-            .unwrap_or(0)
+        STATE.with(|state| {
+            let mut s = state.borrow_mut();
+            if let Some(last) = s.held_locks.last_mut() {
+                last.active_subclass_tokens += 1;
+                last.encoded_value
+            } else {
+                // No locks held. Return placeholder.
+                usize::MAX
+            }
+        })
     }
 
     /// Revokes the subclass authorization for the given lock ID when a `SubclassToken` is dropped.
@@ -166,7 +161,7 @@ mod tracking {
         if encoded_value == usize::MAX {
             return;
         }
-        let _ = STATE.try_with(|state| {
+        STATE.with(|state| {
             let mut s = state.borrow_mut();
             let Some(pos) = s.held_locks.iter().rposition(|v| v.encoded_value == encoded_value)
             else {
@@ -213,14 +208,14 @@ mod tracking {
         }
 
         pub(super) fn check_maximal(&self) {
-            let _ = STATE.try_with(|state| {
+            STATE.with(|state| {
                 if let Some(last) = state.borrow().held_locks.last() {
                     assert_eq!(
                         last.encoded_value, self.inner.target_value,
                         "Condvar wait requires the lock to be the latest acquired lock.",
                     );
                 }
-            });
+            })
         }
     }
 

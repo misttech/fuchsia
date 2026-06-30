@@ -83,7 +83,12 @@ impl ProcessGroup {
         process_group
     }
 
-    ordered_state_accessor!(ProcessGroup, mutable_state, ProcessGroupState);
+    ordered_state_accessor!(
+        ProcessGroup,
+        mutable_state,
+        ProcessGroupState,
+        ProcessGroupMutableState
+    );
 
     pub fn insert<L>(&self, locked: &mut Locked<L>, thread_group: &ThreadGroup)
     where

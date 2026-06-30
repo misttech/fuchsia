@@ -27,10 +27,7 @@ use ebpf_api::{
     SOCKET_FILTER_SK_BUF_TYPE, SocketFilterProgramContext, SocketRef,
 };
 use starnix_logging::track_stub;
-use starnix_sync::{
-    FileOpsCore, LockDepGuard, LockDepMutex, LockEqualOrBefore, Locked, UnixSocketInnerLock,
-    Unlocked, allow_subclass,
-};
+use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::errors::{EACCES, EINTR, EPERM, Errno};
 use starnix_uapi::file_mode::Access;
@@ -68,7 +65,7 @@ const SOCKET_MAX_SIZE: usize = 4 << 20;
 ///            +---------------+          +---------------+
 ///
 pub struct UnixSocket {
-    inner: LockDepMutex<UnixSocketInner, UnixSocketInnerLock>,
+    inner: Mutex<UnixSocketInner>,
     waiters: WaitQueue,
 }
 
@@ -110,28 +107,28 @@ struct UnixSocketInner {
     peer_closed_with_unread_data: bool,
 
     /// See SO_LINGER.
-    linger: uapi::linger,
+    pub linger: uapi::linger,
 
     /// See SO_PASSCRED.
-    passcred: bool,
+    pub passcred: bool,
 
     /// See SO_PASSSEC.
-    passsec: bool,
+    pub passsec: bool,
 
     /// See SO_BROADCAST.
-    broadcast: bool,
+    pub broadcast: bool,
 
     /// See SO_NO_CHECK.
-    no_check: bool,
+    pub no_check: bool,
 
     /// See SO_REUSEPORT.
-    reuseport: bool,
+    pub reuseport: bool,
 
     /// See SO_REUSEADDR.
-    reuseaddr: bool,
+    pub reuseaddr: bool,
 
     /// See SO_KEEPALIVE.
-    keepalive: bool,
+    pub keepalive: bool,
 
     /// See SO_ATTACH_BPF.
     bpf_program: Option<UnixSocketFilter>,
@@ -147,7 +144,7 @@ struct UnixSocketInner {
 impl UnixSocket {
     pub fn new(_socket_type: SocketType) -> UnixSocket {
         UnixSocket {
-            inner: LockDepMutex::new(UnixSocketInner {
+            inner: Mutex::new(UnixSocketInner {
                 messages: MessageQueue::new(SOCKET_DEFAULT_SIZE),
                 address: None,
                 is_shutdown: false,
@@ -248,10 +245,7 @@ impl UnixSocket {
 
         let unix_socket_peer = downcast_socket_to_unix(peer);
         {
-            // Lock ordering is client before listener.
-            let _token = allow_subclass();
             let mut listener = unix_socket_peer.lock();
-
             // Must check this again because we released the listener lock for a moment
             let queue = match &listener.state {
                 UnixSocketState::Listening(queue) => queue,
@@ -276,10 +270,6 @@ impl UnixSocket {
             client.state = UnixSocketState::Connected(server.clone());
             client.credentials = Some(current_task.current_ucred());
             {
-                // This allow_subclass is safe because `server` is a newly created socket
-                // that hasn't been added to any public table or returned to the user yet.
-                // It is unreachable by other threads, making lock ordering cycles impossible.
-                let _token = allow_subclass();
                 let mut server = downcast_socket_to_unix(&server).lock();
                 server.state = UnixSocketState::Connected(socket.clone());
                 server.address = listener.address.clone();
@@ -332,7 +322,7 @@ impl UnixSocket {
     }
 
     /// Locks and returns the inner state of the Socket.
-    fn lock(&self) -> LockDepGuard<'_, UnixSocketInner> {
+    fn lock(&self) -> starnix_sync::MutexGuard<'_, UnixSocketInner> {
         self.inner.lock()
     }
 
@@ -959,7 +949,7 @@ impl SocketOps for UnixSocket {
 }
 
 impl UnixSocketInner {
-    fn bind(&mut self, socket_address: SocketAddress) -> Result<(), Errno> {
+    pub fn bind(&mut self, socket_address: SocketAddress) -> Result<(), Errno> {
         if self.address.is_some() {
             return error!(EINVAL);
         }

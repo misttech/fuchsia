@@ -9,7 +9,7 @@ use crate::vfs::{
     fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_unbounded_seek,
     fs_node_impl_dir_readonly,
 };
-use starnix_sync::{FileOpsCore, LockDepMutex, Locked, SimpleDirectoryEntriesLock};
+use starnix_sync::{FileOpsCore, Locked, Mutex};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errno;
@@ -84,7 +84,7 @@ impl SimpleDirectoryMutator {
 /// `SimpleDirectoryMutator` is used to populate the directory with child `FsNode`s allocated
 /// in the desired (usually kernel-internal, e.g. "sysfs", "proc", etc) filesystem.
 pub struct SimpleDirectory {
-    entries: LockDepMutex<BTreeMap<FsString, FsNodeHandle>, SimpleDirectoryEntriesLock>,
+    entries: Mutex<BTreeMap<FsString, FsNodeHandle>>,
     not_found_handler:
         Box<dyn Fn(&FsStr, &BTreeMap<FsString, FsNodeHandle>) -> Errno + Send + Sync + 'static>,
 }

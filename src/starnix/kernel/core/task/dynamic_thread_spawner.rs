@@ -12,10 +12,11 @@ use crate::task::{
     CurrentTask, DelayedReleaser, LockedAndTask, Task, ThreadLockupDetector, WrappedFuture,
     with_new_current_task,
 };
+use fuchsia_sync::Mutex;
 use futures::TryFutureExt;
 use futures::channel::oneshot;
 use starnix_logging::{CATEGORY_STARNIX, log_debug, log_error};
-use starnix_sync::{DynamicThreadSpawnerLock, LockDepMutex, Locked, Unlocked};
+use starnix_sync::{Locked, Unlocked};
 use starnix_task_command::TaskCommand;
 use starnix_types::ownership::release_after;
 use starnix_uapi::errno;
@@ -193,7 +194,7 @@ where
 /// idle threads.
 #[derive(Debug)]
 pub struct DynamicThreadSpawner {
-    state: Arc<LockDepMutex<DynamicThreadSpawnerState, DynamicThreadSpawnerLock>>,
+    state: Arc<Mutex<DynamicThreadSpawnerState>>,
     /// The weak system task to create the kernel thread associated with each thread.
     system_task: Weak<Task>,
     /// A persistent thread that is used to create new thread. This ensures that threads are
@@ -284,7 +285,7 @@ impl DynamicThreadSpawner {
         let persistent_thread =
             RunningThread::new_persistent(system_task.clone(), debug_name.into());
         Self {
-            state: Arc::new(LockDepMutex::new(DynamicThreadSpawnerState {
+            state: Arc::new(Mutex::new(DynamicThreadSpawnerState {
                 max_idle_threads,
                 idle_threads: 0,
                 threads: vec![],
@@ -376,7 +377,7 @@ struct RunningThread {
 
 impl RunningThread {
     fn new(
-        state: Arc<LockDepMutex<DynamicThreadSpawnerState, DynamicThreadSpawnerLock>>,
+        state: Arc<Mutex<DynamicThreadSpawnerState>>,
         system_task: Weak<Task>,
         debug_task_name: String,
         f: BoxedClosure,

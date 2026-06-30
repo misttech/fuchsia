@@ -13,7 +13,7 @@ use macro_rules_attribute::apply;
 use line_discipline::{LineDiscipline, PendingSignals};
 use starnix_sync::{
     DeviceTerminalsLock, LockBefore, LockDepMutex, LockDepRwLock, Locked, ProcessGroupState,
-    PtsIdsSetLock,
+    PtsIdsSetLock, RwLock,
 };
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
@@ -102,8 +102,7 @@ pub struct Terminal {
     pub id: u32,
 
     /// The mutable state of the Terminal.
-    mutable_state:
-        starnix_sync::LockDepRwLock<TerminalMutableState, starnix_sync::TerminalMutableStateLock>,
+    mutable_state: RwLock<TerminalMutableState>,
 }
 
 impl Terminal {
@@ -119,7 +118,7 @@ impl Terminal {
             dev_pts_root,
             fscred,
             id,
-            mutable_state: starnix_sync::LockDepRwLock::new(Default::default()),
+            mutable_state: RwLock::new(Default::default()),
         })
     }
 

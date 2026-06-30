@@ -25,8 +25,8 @@ use macro_rules_attribute::apply;
 use starnix_logging::{log_warn, set_zx_name};
 use starnix_registers::HeapRegs;
 use starnix_sync::{
-    FutexTableStateLock, LockBefore, LockDepGuard, LockDepMutex, LockDepReadGuard, LockDepRwLock,
-    LockDepWriteGuard, Locked, TaskCommandLevel, TaskCredsLock,
+    FutexTableStateLock, LockBefore, LockDepGuard, LockDepMutex, Locked, RwLock, RwLockReadGuard,
+    RwLockWriteGuard, TaskCommandLevel,
 };
 use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
@@ -753,12 +753,12 @@ pub struct TaskPersistentInfoState {
 
     // A lock for the security credentials. Writers must take the lock, readers that need to ensure
     // that the task state does not change may take the lock.
-    creds_lock: LockDepRwLock<(), TaskCredsLock>,
+    creds_lock: RwLock<()>,
 }
 
 /// Guard for reading locked credentials.
 pub struct CredentialsReadGuard<'a> {
-    _lock: LockDepReadGuard<'a, ()>,
+    _lock: RwLockReadGuard<'a, ()>,
     creds: RcuReadGuard<Credentials>,
 }
 
@@ -773,7 +773,7 @@ impl<'a> Deref for CredentialsReadGuard<'a> {
 /// Guard for writing credentials. No `CredentialsReadGuard` to the same task can concurrently
 ///  exist.
 pub struct CredentialsWriteGuard<'a> {
-    _lock: LockDepWriteGuard<'a, ()>,
+    _lock: RwLockWriteGuard<'a, ()>,
     creds: &'a RcuArc<Credentials>,
 }
 
@@ -795,7 +795,7 @@ impl TaskPersistentInfoState {
             thread_group_key,
             command: LockDepMutex::new(command),
             creds: RcuArc::new(creds),
-            creds_lock: LockDepRwLock::new(()),
+            creds_lock: RwLock::new(()),
         })
     }
 
@@ -838,9 +838,7 @@ impl TaskPersistentInfoState {
         // SAFETY: `creds_lock` remains live via the `persistent_info` reference to `Self`.
         let lock = unsafe {
             let raw_lock = self.creds_lock.write();
-            std::mem::transmute::<LockDepWriteGuard<'_, ()>, LockDepWriteGuard<'static, ()>>(
-                raw_lock,
-            )
+            std::mem::transmute::<RwLockWriteGuard<'_, ()>, RwLockWriteGuard<'static, ()>>(raw_lock)
         };
         CurrentTaskCredentialsWriteGuard { _lock: lock, persistent_info }
     }
@@ -852,7 +850,7 @@ pub struct CurrentTaskCredentialsWriteGuard {
     // Drop order is critical: the lock must be dropped BEFORE the persistent_info Arc.
     // Rust drops fields in declaration order (top-to-bottom).
     // So _lock is dropped first, then persistent_info.
-    _lock: LockDepWriteGuard<'static, ()>,
+    _lock: RwLockWriteGuard<'static, ()>,
     pub persistent_info: TaskPersistentInfo,
 }
 
@@ -938,8 +936,7 @@ pub struct Task {
     flags: AtomicTaskFlags,
 
     /// The mutable state of the Task.
-    mutable_state:
-        starnix_sync::LockDepRwLock<TaskMutableState, starnix_sync::TaskMutableStateLock>,
+    mutable_state: RwLock<TaskMutableState>,
 
     /// The information of the task that needs to be available to the `ThreadGroup` while computing
     /// which process a wait can target.
@@ -1112,7 +1109,7 @@ impl Task {
                 vfork_event,
                 stop_state: AtomicStopState::new(StopState::Awake),
                 flags: AtomicTaskFlags::new(TaskFlags::empty()),
-                mutable_state: starnix_sync::LockDepRwLock::new(TaskMutableState {
+                mutable_state: RwLock::new(TaskMutableState {
                     clear_child_tid: UserRef::default(),
                     signals: SignalState::with_mask(signal_mask),
                     run_state: RunState::default(),

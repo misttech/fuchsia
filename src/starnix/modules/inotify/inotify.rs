@@ -9,9 +9,7 @@ use starnix_core::vfs::{
     Anon, DirEntryHandle, FileHandle, FileObject, FileObjectState, FileOps, FsStr, FsString,
     WdNumber, default_ioctl, fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
-use starnix_sync::{
-    FileOpsCore, InotifyStateLock, LockDepMutex, LockEqualOrBefore, Locked, Unlocked,
-};
+use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::errors::Errno;
@@ -32,7 +30,7 @@ const DATA_SIZE: usize = size_of::<inotify_event>();
 
 // InotifyFileObject represents an inotify instance created by inotify_init(2) or inotify_init1(2).
 pub struct InotifyFileObject {
-    state: LockDepMutex<InotifyState, InotifyStateLock>,
+    state: Mutex<InotifyState>,
 }
 
 struct InotifyState {

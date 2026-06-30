@@ -12,10 +12,7 @@ use crate::vfs::{
 };
 use itertools::Itertools;
 use starnix_logging::log_warn;
-use starnix_sync::{
-    EpollStateLock, EpollWaitableStateLock, FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked,
-    allow_subclass,
-};
+use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
 use starnix_uapi::error;
 use starnix_uapi::errors::{EINTR, ETIMEDOUT, Errno};
 use starnix_uapi::open_flags::OpenFlags;
@@ -60,8 +57,8 @@ pub type EpollKey = usize;
 pub struct EpollFileObject {
     waiter: Waiter,
     /// Mutable state of this epoll object.
-    state: LockDepMutex<EpollState, EpollStateLock>,
-    waitable_state: Arc<LockDepMutex<EpollWaitableState, EpollWaitableStateLock>>,
+    state: Mutex<EpollState>,
+    waitable_state: Arc<Mutex<EpollWaitableState>>,
 }
 
 #[derive(Default)]
@@ -141,12 +138,7 @@ impl EpollFileObject {
         L: LockEqualOrBefore<FileOpsCore>,
     {
         let Some(target) = wait_object.target() else { return Ok(()) };
-        let events = {
-            // Target might be itself an epoll object. Because there is no loop, this allow_subclass
-            // is safe.
-            let _token = allow_subclass();
-            target.query_events(locked, current_task)?
-        };
+        let events = target.query_events(locked, current_task)?;
         if !(events & wait_object.events).is_empty() {
             self.waiter.wake_immediately(events, self.new_wait_handler(key));
             if let Some(wait_canceler) = wait_object.wait_canceler.take() {
@@ -204,8 +196,6 @@ impl EpollFileObject {
             if Arc::ptr_eq(&child, parent) {
                 return error!(ELOOP);
             }
-            // Child is not part of a loop, so subclassing is safe.
-            let _token = allow_subclass();
             child_file.check_eloop(parent, depth_left - 1)?;
         }
 
@@ -550,7 +540,7 @@ impl FileOps for EpollFileObject {
 #[derive(Clone)]
 pub struct EpollEventHandler {
     key: ReadyItemKey,
-    waitable_state: Arc<LockDepMutex<EpollWaitableState, EpollWaitableStateLock>>,
+    waitable_state: Arc<Mutex<EpollWaitableState>>,
 }
 
 impl EpollEventHandler {

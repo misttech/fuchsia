@@ -7,7 +7,7 @@ use crate::task::{CurrentTask, Task, ThreadGroupReadGuard, WaitQueue, Waiter};
 use crate::time::IntervalTimerHandle;
 use fuchsia_trace::{TraceCategoryContext, trace_site_t};
 
-use starnix_sync::{LockDepRwLock, SignalActionsLock};
+use starnix_sync::RwLock;
 use starnix_types::arch::ArchWidth;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::{SigSet, Signal, UNBLOCKABLE_SIGNALS, UncheckedSignal};
@@ -61,14 +61,14 @@ impl From<SignalInfo> for KernelSignalInfo {
 /// `SignalActions` contains a `sigaction_t` for each valid signal.
 #[derive(Debug)]
 pub struct SignalActions {
-    actions: LockDepRwLock<[sigaction_t; Signal::NUM_SIGNALS as usize + 1], SignalActionsLock>,
+    actions: RwLock<[sigaction_t; Signal::NUM_SIGNALS as usize + 1]>,
 }
 
 impl SignalActions {
     /// Returns a collection of `sigaction_t`s that contains default values for each signal.
     pub fn default() -> Arc<SignalActions> {
         Arc::new(SignalActions {
-            actions: LockDepRwLock::new([sigaction_t::default(); Signal::NUM_SIGNALS as usize + 1]),
+            actions: RwLock::new([sigaction_t::default(); Signal::NUM_SIGNALS as usize + 1]),
         })
     }
 
@@ -87,7 +87,7 @@ impl SignalActions {
     }
 
     pub fn fork(&self) -> Arc<SignalActions> {
-        Arc::new(SignalActions { actions: LockDepRwLock::new(*self.actions.read()) })
+        Arc::new(SignalActions { actions: RwLock::new(*self.actions.read()) })
     }
 
     /// Resets all signal actions to the default, except that ignored

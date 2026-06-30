@@ -14,9 +14,7 @@ use anyhow::Context;
 use fidl::endpoints::{SynchronousProxy, create_sync_proxy};
 use fidl_fuchsia_hardware_qualcomm_router as fqrtr;
 use starnix_logging::{log_warn, track_stub};
-use starnix_sync::{
-    FileOpsCore, LockDepGuard, LockDepMutex, Locked, MappedLockDepGuard, QipcrtrSocketInnerLock,
-};
+use starnix_sync::{FileOpsCore, Locked, MappedMutexGuard, Mutex, MutexGuard};
 use starnix_uapi::errors::{Errno, from_status_like_fdio};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
@@ -55,7 +53,7 @@ pub const RECV_BUF_MAX_SIZE: usize = 1 << 31;
 pub const RECV_BUF_DEFAULT_SIZE: usize = 256;
 
 pub struct QipcrtrSocket {
-    inner: LockDepMutex<Option<QipcrtrSocketInner>, QipcrtrSocketInnerLock>,
+    inner: Mutex<Option<QipcrtrSocketInner>>,
 }
 
 struct QipcrtrSocketInner {
@@ -86,12 +84,12 @@ struct QipcrtrSocketInner {
 
 impl QipcrtrSocket {
     pub fn new(_socket_type: SocketType) -> Self {
-        Self { inner: LockDepMutex::new(None) }
+        Self { inner: Mutex::new(None) }
     }
 
     /// Locks and returns the inner state of the socket. If the socket is not connected to the
     /// driver, a connection will be established, binding to an ephemeral port number.
-    fn connecting_lock(&self) -> Result<MappedLockDepGuard<'_, QipcrtrSocketInner>, Errno> {
+    fn connecting_lock(&self) -> Result<MappedMutexGuard<'_, QipcrtrSocketInner>, Errno> {
         let mut inner = self.inner.lock();
         if inner.is_none() {
             *inner = Some(QipcrtrSocketInner::new(fqrtr::ConnectionOptions {
@@ -99,7 +97,7 @@ impl QipcrtrSocket {
                 ..Default::default()
             })?);
         }
-        Ok(LockDepGuard::map(inner, |inner| inner.as_mut().unwrap()))
+        Ok(MutexGuard::map(inner, |inner| inner.as_mut().unwrap()))
     }
 
     fn close(&self) {
@@ -548,7 +546,7 @@ mod tests {
             recv_buf_size: RECV_BUF_DEFAULT_SIZE,
         };
 
-        (QipcrtrSocket { inner: LockDepMutex::new(Some(inner)) }, server_end)
+        (QipcrtrSocket { inner: Mutex::new(Some(inner)) }, server_end)
     }
 
     #[::fuchsia::test]

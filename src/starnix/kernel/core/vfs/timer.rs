@@ -15,7 +15,7 @@ use crate::vfs::{
 };
 use futures::channel::mpsc;
 use starnix_logging::{log_debug, log_warn};
-use starnix_sync::{FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, TimerFileInfoLock};
+use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
 use starnix_types::time::{duration_from_timespec, timespec_from_duration, timespec_is_zero};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -208,7 +208,7 @@ pub struct TimerFile {
 
     /// Details about the timeline, deadline and cancel behavior requested from this
     /// [TimerFile].
-    timer_file_info: Arc<LockDepMutex<TimerFileInfo, TimerFileInfoLock>>,
+    timer_file_info: Arc<Mutex<TimerFileInfo>>,
 }
 
 impl TimerFile {
@@ -257,7 +257,7 @@ impl TimerFile {
                 timer,
                 timeline,
                 wakeup_type,
-                timer_file_info: Arc::new(LockDepMutex::new(timer_file_info)),
+                timer_file_info: Arc::new(Mutex::new(timer_file_info)),
             }),
             flags,
             "[timerfd]",
