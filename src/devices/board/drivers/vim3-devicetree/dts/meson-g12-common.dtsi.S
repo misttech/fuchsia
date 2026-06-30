@@ -308,7 +308,7 @@
 			phy-names = "dwc2-phy";
 			g-rx-fifo-size = <256>;
 			g-np-tx-fifo-size = <32>;
-			g-tx-fifo-size = <128 4 128 16>;
+			g-tx-fifo-size = <128 4 128 128>;
 			g-turnaround-time = <9>;
 			dma-burst-len = <5>;
 
