@@ -187,22 +187,6 @@ source_set("intl_provider") {
   ]
 }
 
-source_set("last_reboot_info_provider") {
-  testonly = true
-
-  sources = [
-    "last_reboot_info_provider.cc",
-    "last_reboot_info_provider.h",
-  ]
-
-  public_deps = [
-    ":fidl_server_hlcpp",
-    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_hlcpp",
-  ]
-
-  deps = [ "//sdk/lib/syslog/cpp" ]
-}
-
 source_set("loader") {
   testonly = true
 
@@ -237,26 +221,6 @@ source_set("product_info_provider") {
   ]
 
   deps = [ "//sdk/lib/syslog/cpp" ]
-}
-
-source_set("network_reachability_provider") {
-  testonly = true
-
-  sources = [
-    "network_reachability_provider.cc",
-    "network_reachability_provider.h",
-  ]
-
-  public_deps = [
-    ":fidl_server_hlcpp",
-    "//sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces_hlcpp",
-  ]
-
-  deps = [
-    "//sdk/lib/fit",
-    "//sdk/lib/syslog/cpp",
-    "//src/lib/testing/predicates",
-  ]
 }
 
 source_set("system_activity_governor") {
