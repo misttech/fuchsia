@@ -431,13 +431,13 @@ group("cmac-0.7.2") {
 
 if (current_os == "fuchsia") {
   group("coset") {
-    public_deps = [ ":coset-v0_3_8" ]
+    public_deps = [ ":coset-v0_4_2" ]
   }
 }
 
 if (current_os == "fuchsia") {
-  group("coset-0.3.8") {
-    public_deps = [ ":coset-v0_3_8" ]
+  group("coset-0.4.2") {
+    public_deps = [ ":coset-v0_4_2" ]
   }
 }
 
@@ -6037,15 +6037,15 @@ rustc_library("core-foundation-sys-v0_8_7") {
   applicable_licenses = [ ":core-foundation-sys-v0_8_7.license" ]
 }
 
-license("coset-v0_3_8.license") {
+license("coset-v0_4_2.license") {
   public_package_name = "coset"
-  license_files = [ "//third_party/rust_crates/vendor/coset-0.3.8/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/coset-0.4.2/LICENSE" ]
 }
 
-rustc_library("coset-v0_3_8") {
+rustc_library("coset-v0_4_2") {
   crate_name = "coset"
-  source_root = "//third_party/rust_crates/vendor/coset-0.3.8/src/lib.rs"
-  output_name = "coset-c7a9d80a17a336b0"
+  source_root = "//third_party/rust_crates/vendor/coset-0.4.2/src/lib.rs"
+  output_name = "coset-ce3ad41629adcac1"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -6059,15 +6059,15 @@ rustc_library("coset-v0_3_8") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=c7a9d80a17a336b0",
-    "-Cextra-filename=-c7a9d80a17a336b0",
+    "-Cmetadata=ce3ad41629adcac1",
+    "-Cextra-filename=-ce3ad41629adcac1",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":coset-v0_3_8.license" ]
+  applicable_licenses = [ ":coset-v0_4_2.license" ]
 }
 
 license("cpio-v0_4_1.license") {

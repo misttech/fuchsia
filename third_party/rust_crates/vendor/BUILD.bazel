@@ -631,14 +631,14 @@ alias(
 )
 
 alias(
-    name = "coset-0.3.8",
-    actual = "//third_party/rust_crates/vendor/coset-0.3.8:coset",
+    name = "coset-0.4.2",
+    actual = "//third_party/rust_crates/vendor/coset-0.4.2:coset",
     tags = ["manual"],
 )
 
 alias(
     name = "coset",
-    actual = "//third_party/rust_crates/vendor/coset-0.3.8:coset",
+    actual = "//third_party/rust_crates/vendor/coset-0.4.2:coset",
     tags = ["manual"],
 )
 

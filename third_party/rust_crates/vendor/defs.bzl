@@ -548,7 +548,7 @@ _NORMAL_DEPENDENCIES = {
             "zip": Label("//third_party/rust_crates/vendor/zip-8.6.0:zip"),
         },
         "cfg(target_os = \"fuchsia\")": {
-            "coset": Label("//third_party/rust_crates/vendor/coset-0.3.8:coset"),
+            "coset": Label("//third_party/rust_crates/vendor/coset-0.4.2:coset"),
             "der": Label("//third_party/rust_crates/vendor/der-0.7.10:der"),
             "euclid": Label("//third_party/rust_crates/vendor/euclid-0.22.14:euclid"),
             "flagset": Label("//third_party/rust_crates/vendor/flagset-0.4.7:flagset"),

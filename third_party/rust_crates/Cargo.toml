@@ -283,7 +283,7 @@ zstd = "0.13.3"
 # Target-side only dependencies
 [target.'cfg(target_os = "fuchsia")'.dependencies]
 # keep-sorted start
-coset = { version = "0.3.8", features = ["std"] }
+coset = { version = "0.4.2", features = ["std"] }
 # do not add back without verifying certificate transparency is ready to use - see https://fxbug.dev/25100
 # ct-logs = "0.6"
 der = { version = "0.7.10", features = ["alloc", "derive", "flagset", "oid", "zeroize"] }
