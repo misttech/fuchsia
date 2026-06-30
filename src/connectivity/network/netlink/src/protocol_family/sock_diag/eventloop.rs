@@ -10,7 +10,6 @@ use derivative::Derivative;
 use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_sockets as fnet_sockets;
 use fidl_fuchsia_net_sockets_ext as fnet_sockets_ext;
-use fidl_fuchsia_net_sockets_ext::{IpSocketState, IpSocketStateSpecific};
 use fidl_fuchsia_net_tcp as fnet_tcp;
 use fidl_fuchsia_net_udp as fnet_udp;
 use futures::channel::{mpsc, oneshot};
@@ -75,18 +74,26 @@ pub(crate) struct Request<S: Sender<<NetlinkSockDiag as ProtocolFamily>::Respons
 pub(crate) struct SockDiagEventLoop<
     S: crate::messaging::Sender<<NetlinkSockDiag as ProtocolFamily>::Response>,
 > {
-    pub(crate) socket_diagnostics: fnet_sockets::DiagnosticsProxy,
-    pub(crate) socket_control: fnet_sockets::ControlProxy,
-    pub(crate) request_stream: mpsc::Receiver<Request<S>>,
+    socket_diagnostics: fnet_sockets::DiagnosticsProxy,
+    socket_control: fnet_sockets::ControlProxy,
+    request_stream: mpsc::Receiver<Request<S>>,
     // TODO(https://fxbug.dev/470079735): Support multicast socket destruction
     // notifications.
     #[expect(dead_code)]
-    pub(crate) async_work_receiver: mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkSockDiag>>,
+    async_work_receiver: mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkSockDiag>>,
 }
 
 impl<S: crate::messaging::Sender<<NetlinkSockDiag as ProtocolFamily>::Response>>
     SockDiagEventLoop<S>
 {
+    pub(crate) fn new(
+        socket_diagnostics: fnet_sockets::DiagnosticsProxy,
+        socket_control: fnet_sockets::ControlProxy,
+        request_stream: mpsc::Receiver<Request<S>>,
+        async_work_receiver: mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkSockDiag>>,
+    ) -> Self {
+        Self { socket_diagnostics, socket_control, request_stream, async_work_receiver }
+    }
     pub(crate) async fn run(mut self) -> Never {
         loop {
             self.run_one_step().await;
@@ -208,17 +215,18 @@ async fn handle_request<S>(
 /// Returns `None` if any of the required fields are not set. Fills any
 /// unsupported fields with the maximum supported value to hopefully make it
 /// more obvious if something in userspace is depending on it.
-fn ip_socket_to_netlink_response(socket: IpSocketState) -> SockDiagResponse {
+fn ip_socket_to_netlink_response(socket: fnet_sockets_ext::IpSocketState) -> SockDiagResponse {
     match socket {
-        IpSocketState::V4(state) => ip_socket_to_netlink_response_inner(state),
-        IpSocketState::V6(state) => ip_socket_to_netlink_response_inner(state),
+        fnet_sockets_ext::IpSocketState::V4(state) => ip_socket_to_netlink_response_inner(state),
+        fnet_sockets_ext::IpSocketState::V6(state) => ip_socket_to_netlink_response_inner(state),
     }
 }
 
 fn ip_socket_to_netlink_response_inner<I: Ip>(
-    socket: IpSocketStateSpecific<I>,
+    socket: fnet_sockets_ext::IpSocketStateSpecific<I>,
 ) -> SockDiagResponse {
-    let IpSocketStateSpecific { src_addr, dst_addr, cookie, marks, transport } = socket;
+    let fnet_sockets_ext::IpSocketStateSpecific { src_addr, dst_addr, cookie, marks, transport } =
+        socket;
 
     let mut nlas = Vec::new();
     let (socket_id, state) = match transport {
@@ -458,12 +466,12 @@ mod tests {
         let (mut request_sink, request_stream) = mpsc::channel(1);
         let (_async_work_sink, async_work_receiver) = mpsc::unbounded();
 
-        let event_loop = SockDiagEventLoop {
-            socket_diagnostics: diagnostics_proxy,
-            socket_control: control_proxy,
+        let event_loop = SockDiagEventLoop::new(
+            diagnostics_proxy,
+            control_proxy,
             request_stream,
             async_work_receiver,
-        };
+        );
 
         let (mut client_sink, client, async_work_drain_task) =
             crate::client::testutil::new_fake_client::<NetlinkSockDiag>(

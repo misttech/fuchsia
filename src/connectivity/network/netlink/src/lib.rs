@@ -455,12 +455,12 @@ pub async fn run_netlink_worker_with_protocols<
     let (sock_diag_request_sink, sock_diag_request_stream) = mpsc::channel(1);
 
     let sock_diag_event_loop = async move {
-        SockDiagEventLoop {
+        SockDiagEventLoop::new(
             socket_diagnostics,
             socket_control,
-            request_stream: sock_diag_request_stream,
-            async_work_receiver: sock_diag_async_work_receiver,
-        }
+            sock_diag_request_stream,
+            sock_diag_async_work_receiver,
+        )
         .run()
         .await;
     };
