@@ -44,6 +44,7 @@ template("access_ota_blob_as_executable") {
   # System assembly for base system version at start of test.
   assemble_security_pkg_test_system("${test_name}_v0") {
     update_domain = invoker.update_domain
+    product_name = test_name
     board_name = board_name
     root_ssl_cert = root_ssl_cert
     tuf_repo_configs = invoker.tuf_repo_configs
@@ -76,6 +77,7 @@ template("access_ota_blob_as_executable") {
   # System assembly for system version to OTA from package server.
   assemble_security_pkg_test_system("${test_name}_v1") {
     update_domain = invoker.update_domain
+    product_name = test_name
     board_name = board_name
     root_ssl_cert = root_ssl_cert
     tuf_repo_configs = invoker.tuf_repo_configs

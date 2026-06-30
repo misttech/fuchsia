@@ -49,7 +49,6 @@ build_info_files = {
 }
 
 default_product_build_info = {
-  name = build_info_product
   version = "version.txt"
   jiri_snapshot = "../../.jiri_root/update_history/latest"
   latest_commit_date = "latest-commit-date.txt"
