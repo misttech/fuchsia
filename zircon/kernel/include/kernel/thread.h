@@ -80,7 +80,9 @@ static inline fbl::NullLock is_current_thread_token;
 // Returns a string constant for the given thread state.
 const char* ToString(enum thread_state state);
 
-typedef int (*thread_start_routine)(void* arg);
+// TODO(https://fxbug.dev/528405969): Remove cfi_unchecked_callee once cross-language
+// CFI between Clang C++ and rustc is supported in the kernel.
+typedef int (*thread_start_routine)(void* arg) [[clang::cfi_unchecked_callee]];
 
 // Thread trampolines are always called with:
 //

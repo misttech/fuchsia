@@ -38,7 +38,7 @@ rustc_library("cbuf-rs") {
 }
 
 # TODO(b/517130174): Refactor these tests once fxr/1631555 lands.
-kernel_rust_crate("cbuf-rs-kernel-tests") {
+kernel_rust_crate("cbuf-rs-tests") {
   testonly = true
   source_root = "tests/kernel.rs"
   sources = [ "tests/kernel.rs" ]
@@ -58,15 +58,15 @@ group("tests") {
 
 source_set("kernel-tests") {
   testonly = true
-  sources = [ "cbuf_tests.cc" ]
+  sources = [
+    "cbuf_tests.cc",
+    "tests/cbuf_tests_launcher.cc",
+  ]
   deps = [
-    ".",
+    ":cbuf",
+    ":cbuf-rs-tests",
     "//zircon/kernel/lib/unittest",
   ]
-  if (enable_rust_in_zircon) {
-    sources += [ "tests/cbuf_tests_launcher.cc" ]
-    deps += [ ":cbuf-rs-kernel-tests" ]
-  }
 }
 
 group("phys-tests") {
