@@ -72,6 +72,7 @@ main() {
   check_dep zerofree
   check_dep qemu-img qemu-utils
   check_dep fstrim util-linux
+  check_dep tune2fs e2fsprogs
 
   # Create a temporary working directory.
   local working_dir

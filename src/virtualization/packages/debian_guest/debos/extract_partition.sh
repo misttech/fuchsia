@@ -26,6 +26,9 @@ BLOCK_DEVICE=/dev/disk/by-label/root
 # Unmount the disk.
 umount ${BLOCK_DEVICE}
 
+# Enable casefold feature.
+tune2fs -O casefold ${BLOCK_DEVICE}
+
 # Zero out free blocks in the image. This zeros out temporary/deleted data,
 # improving compression of the final image.
 zerofree  ${BLOCK_DEVICE}
