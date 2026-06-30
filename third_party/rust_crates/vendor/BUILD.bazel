@@ -2149,26 +2149,26 @@ alias(
 )
 
 alias(
-    name = "rand-0.9.2",
-    actual = "//third_party/rust_crates/vendor/rand-0.9.2:rand",
+    name = "rand-0.9.4",
+    actual = "//third_party/rust_crates/vendor/rand-0.9.4:rand",
     tags = ["manual"],
 )
 
 alias(
     name = "rand",
-    actual = "//third_party/rust_crates/vendor/rand-0.9.2:rand",
+    actual = "//third_party/rust_crates/vendor/rand-0.9.4:rand",
     tags = ["manual"],
 )
 
 alias(
-    name = "rand_core-0.9.3",
-    actual = "//third_party/rust_crates/vendor/rand_core-0.9.3:rand_core",
+    name = "rand_core-0.9.5",
+    actual = "//third_party/rust_crates/vendor/rand_core-0.9.5:rand_core",
     tags = ["manual"],
 )
 
 alias(
     name = "rand_core",
-    actual = "//third_party/rust_crates/vendor/rand_core-0.9.3:rand_core",
+    actual = "//third_party/rust_crates/vendor/rand_core-0.9.5:rand_core",
     tags = ["manual"],
 )
 

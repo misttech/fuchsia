@@ -1578,19 +1578,19 @@ if (!(current_os == "fuchsia")) {
 }
 
 group("rand") {
-  public_deps = [ ":rand-v0_9_2" ]
+  public_deps = [ ":rand-v0_9_4" ]
 }
 
-group("rand-0.9.2") {
-  public_deps = [ ":rand-v0_9_2" ]
+group("rand-0.9.4") {
+  public_deps = [ ":rand-v0_9_4" ]
 }
 
 group("rand_core") {
-  public_deps = [ ":rand_core-v0_9_3" ]
+  public_deps = [ ":rand_core-v0_9_5" ]
 }
 
-group("rand_core-0.9.3") {
-  public_deps = [ ":rand_core-v0_9_3" ]
+group("rand_core-0.9.5") {
+  public_deps = [ ":rand_core-v0_9_5" ]
 }
 
 group("rand_xorshift") {
@@ -15867,7 +15867,7 @@ rustc_library("proptest-v1_11_0") {
   deps += [ ":bit-vec-v0_8_0" ]
   deps += [ ":bitflags-v2_13_0" ]
   deps += [ ":num-traits-v0_2_19" ]
-  deps += [ ":rand-v0_9_2" ]
+  deps += [ ":rand-v0_9_4" ]
   deps += [ ":rand_chacha-v0_9_0" ]
   deps += [ ":rand_xorshift-v0_4_0" ]
   deps += [ ":regex-syntax-v0_8_10" ]
@@ -16466,19 +16466,19 @@ rustc_library("rand-v0_8_4") {
   applicable_licenses = [ ":rand-v0_8_4.license" ]
 }
 
-license("rand-v0_9_2.license") {
+license("rand-v0_9_4.license") {
   public_package_name = "rand"
   license_files = [
-    "//third_party/rust_crates/vendor/rand-0.9.2/COPYRIGHT",
-    "//third_party/rust_crates/vendor/rand-0.9.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/rand-0.9.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/rand-0.9.4/COPYRIGHT",
+    "//third_party/rust_crates/vendor/rand-0.9.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/rand-0.9.4/LICENSE-MIT",
   ]
 }
 
-rustc_library("rand-v0_9_2") {
+rustc_library("rand-v0_9_4") {
   crate_name = "rand"
-  source_root = "//third_party/rust_crates/vendor/rand-0.9.2/src/lib.rs"
-  output_name = "rand-d9681a6fc5ce8310"
+  source_root = "//third_party/rust_crates/vendor/rand-0.9.4/src/lib.rs"
+  output_name = "rand-3ddf32e00e7aa604"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -16486,14 +16486,14 @@ rustc_library("rand-v0_9_2") {
 
   deps = []
   deps += [ ":rand_chacha-v0_9_0" ]
-  deps += [ ":rand_core-v0_9_3" ]
+  deps += [ ":rand_core-v0_9_5" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d9681a6fc5ce8310",
-    "-Cextra-filename=-d9681a6fc5ce8310",
+    "-Cmetadata=3ddf32e00e7aa604",
+    "-Cextra-filename=-3ddf32e00e7aa604",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"os_rng\"",
@@ -16505,7 +16505,7 @@ rustc_library("rand-v0_9_2") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rand-v0_9_2.license" ]
+  applicable_licenses = [ ":rand-v0_9_4.license" ]
 }
 
 license("rand_chacha-v0_1_1.license") {
@@ -16593,7 +16593,7 @@ rustc_library("rand_chacha-v0_9_0") {
 
   deps = []
   deps += [ ":ppv-lite86-v0_2_21" ]
-  deps += [ ":rand_core-v0_9_3" ]
+  deps += [ ":rand_core-v0_9_5" ]
 
   rustenv = []
 
@@ -16706,19 +16706,19 @@ rustc_library("rand_core-v0_6_4") {
   applicable_licenses = [ ":rand_core-v0_6_4.license" ]
 }
 
-license("rand_core-v0_9_3.license") {
+license("rand_core-v0_9_5.license") {
   public_package_name = "rand_core"
   license_files = [
-    "//third_party/rust_crates/vendor/rand_core-0.9.3/COPYRIGHT",
-    "//third_party/rust_crates/vendor/rand_core-0.9.3/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/rand_core-0.9.3/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/rand_core-0.9.5/COPYRIGHT",
+    "//third_party/rust_crates/vendor/rand_core-0.9.5/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/rand_core-0.9.5/LICENSE-MIT",
   ]
 }
 
-rustc_library("rand_core-v0_9_3") {
+rustc_library("rand_core-v0_9_5") {
   crate_name = "rand_core"
-  source_root = "//third_party/rust_crates/vendor/rand_core-0.9.3/src/lib.rs"
-  output_name = "rand_core-43a97f6035f69aca"
+  source_root = "//third_party/rust_crates/vendor/rand_core-0.9.5/src/lib.rs"
+  output_name = "rand_core-9287ee59aff47268"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -16731,15 +16731,15 @@ rustc_library("rand_core-v0_9_3") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=43a97f6035f69aca",
-    "-Cextra-filename=-43a97f6035f69aca",
+    "-Cmetadata=9287ee59aff47268",
+    "-Cextra-filename=-9287ee59aff47268",
     "--cfg=feature=\"os_rng\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rand_core-v0_9_3.license" ]
+  applicable_licenses = [ ":rand_core-v0_9_5.license" ]
 }
 
 license("rand_hc-v0_1_0.license") {
@@ -16775,8 +16775,11 @@ rustc_library("rand_hc-v0_1_0") {
 
 license("rand_hc-v0_3_1.license") {
   public_package_name = "rand_hc"
-  license_files =
-      [ "//third_party/rust_crates/vendor/rand_hc-0.3.1/LICENSE-APACHE" ]
+  license_files = [
+    "//third_party/rust_crates/vendor/rand_hc-0.3.1/COPYRIGHT",
+    "//third_party/rust_crates/vendor/rand_hc-0.3.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/rand_hc-0.3.1/LICENSE-MIT",
+  ]
 }
 
 rustc_library("rand_hc-v0_3_1") {
@@ -17003,7 +17006,7 @@ rustc_library("rand_xorshift-v0_4_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":rand_core-v0_9_3" ]
+  deps += [ ":rand_core-v0_9_5" ]
 
   rustenv = []
 
@@ -21166,7 +21169,7 @@ rustc_library("tempfile-v3_27_0") {
     deps += [ ":rustix-v1_1_4" ]
   }
   if (true || false || false) {
-    deps += [ ":getrandom-v0_3_3" ]
+    deps += [ ":getrandom-v0_4_2" ]
   }
   if (false) {
     deps += [ ":windows-sys-v0_61_2" ]
