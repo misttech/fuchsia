@@ -55,6 +55,7 @@ source_set("top") {
       "//zircon/kernel/lib/flow-id:flow-id-rs",
       "//zircon/kernel/lib/ktrace:ktrace-rs",
       "//zircon/kernel/platform:platform-rs",
+      "//zircon/kernel/vm:vm-rs",
     ]
   }
 }

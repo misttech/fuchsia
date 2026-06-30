@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// LINT.IfChange(vm_page_state)
 // Defines the state of a VM page (|vm_page_t|).
 //
 // Be sure to keep this enum in sync with the definition of |vm_page_t|.
@@ -29,6 +30,7 @@ enum class vm_page_state : uint8_t {
 
   COUNT_
 };
+// LINT.ThenChange(//zircon/kernel/vm/page_state.rs:VmPageState)
 
 static inline constexpr size_t VmPageStateIndex(vm_page_state state) {
   return static_cast<size_t>(state);

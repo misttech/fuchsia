@@ -23,6 +23,7 @@
 
 class FreeLoanedPagesHolder;
 
+// LINT.IfChange(vm_page)
 // core per page structure allocated at pmm arena creation time
 struct vm_page {
   struct list_node queue_node;
@@ -253,6 +254,7 @@ struct vm_page {
   static constexpr uintptr_t kObjectOrStackOwnerHasWaiter = 0x2;
   static constexpr uintptr_t kObjectOrStackOwnerFlags = 0x3;
 };
+// LINT.ThenChange(//zircon/kernel/vm/page.rs:VmPagePtr)
 
 // Provide a type alias using modern syntax to avoid clang-tidy warnings.
 using vm_page_t = vm_page;

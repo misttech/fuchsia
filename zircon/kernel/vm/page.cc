@@ -92,3 +92,33 @@ static int cmd_vm_page(int argc, const cmd_args* argv, uint32_t flags) {
 STATIC_COMMAND_START
 STATIC_COMMAND("vm_page", "vm_page debug commands", &cmd_vm_page)
 STATIC_COMMAND_END(vm_page)
+
+extern "C" {
+uint64_t cpp_get_count(vm_page_state state);
+void cpp_add_to_initial_count(vm_page_state state, uint64_t n);
+bool cpp_vm_page_is_loaned(vm_page_t* page);
+bool cpp_vm_page_is_loan_cancelled(vm_page_t* page);
+void cpp_vm_page_set_is_loaned(vm_page_t* page);
+void cpp_vm_page_clear_is_loaned(vm_page_t* page);
+void cpp_vm_page_set_is_loan_cancelled(vm_page_t* page);
+void cpp_vm_page_clear_is_loan_cancelled(vm_page_t* page);
+void cpp_vm_page_dump(vm_page_t* page);
+paddr_t cpp_vm_page_paddr(vm_page_t* page);
+vm_page_state cpp_vm_page_state(vm_page_t* page);
+void cpp_vm_page_set_state(vm_page_t* page, vm_page_state new_state);
+
+uint64_t cpp_get_count(vm_page_state state) { return vm_page_t::get_count(state); }
+void cpp_add_to_initial_count(vm_page_state state, uint64_t n) {
+  vm_page_t::add_to_initial_count(state, n);
+}
+bool cpp_vm_page_is_loaned(vm_page_t* page) { return page->is_loaned(); }
+bool cpp_vm_page_is_loan_cancelled(vm_page_t* page) { return page->is_loan_cancelled(); }
+void cpp_vm_page_set_is_loaned(vm_page_t* page) { page->set_is_loaned(); }
+void cpp_vm_page_clear_is_loaned(vm_page_t* page) { page->clear_is_loaned(); }
+void cpp_vm_page_set_is_loan_cancelled(vm_page_t* page) { page->set_is_loan_cancelled(); }
+void cpp_vm_page_clear_is_loan_cancelled(vm_page_t* page) { page->clear_is_loan_cancelled(); }
+void cpp_vm_page_dump(vm_page_t* page) { page->dump(); }
+paddr_t cpp_vm_page_paddr(vm_page_t* page) { return page->paddr(); }
+vm_page_state cpp_vm_page_state(vm_page_t* page) { return page->state(); }
+void cpp_vm_page_set_state(vm_page_t* page, vm_page_state new_state) { page->set_state(new_state); }
+}

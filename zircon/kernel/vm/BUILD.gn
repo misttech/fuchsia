@@ -5,6 +5,7 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/cpp/library_headers.gni")
+import("//build/rust/rustc_library.gni")
 import("//zircon/kernel/params.gni")
 
 source_set("vm") {
@@ -127,6 +128,18 @@ library_headers("headers") {
     # But this is a circular dependency, so we can't use its :headers in deps.
     "//zircon/kernel/object:headers.config",
   ]
+}
+
+rustc_library("vm-rs") {
+  edition = "2024"
+  name = "vm"
+  source_root = "vm.rs"
+  sources = [
+    "page.rs",
+    "page_state.rs",
+  ]
+
+  deps = [ "//zircon/kernel/kernel:kernel-rs" ]
 }
 
 config("suppress-nonheap-warning") {
