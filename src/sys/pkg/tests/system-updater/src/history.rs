@@ -172,7 +172,7 @@ async fn writes_history(update_url: &str, update_hash: &str, system_image_hash: 
     let vbmeta_hash = fuchsia_merkle::root_from_slice(vbmeta_content);
 
     let manifest = OtaManifest {
-        build_info_version: "0.2".parse().unwrap(),
+        product_bundle_version: "0.2".parse().unwrap(),
         images: vec![
             manifest::Image {
                 slot: manifest::Slot::AB,
@@ -381,7 +381,7 @@ async fn increments_attempts_counter_on_retry(
     let vbmeta_hash = fuchsia_merkle::root_from_slice(vbmeta_content);
 
     let manifest = OtaManifest {
-        build_info_version: "".parse().unwrap(),
+        product_bundle_version: "".parse().unwrap(),
         images: vec![
             manifest::Image {
                 slot: manifest::Slot::AB,

@@ -8,9 +8,9 @@ package fuchsia.update.manifest;
 
 // The root message for an Over-The-Air (OTA) update manifest.
 message OtaManifest {
-  // The version from the `build-info` of the target build. This field is for
+  // The version of the product bundle. This field is for
   // informational purposes only and does not change the updater's behavior.
-  string build_info_version = 1;
+  string product_bundle_version = 1;
 
   // The board this OTA is for (e.g., "x64", "arm64"). The system updater will
   // reject the OTA if this does not match the device's expected board name

@@ -34,9 +34,9 @@ pub enum OtaManifestError {
 /// Information about a particular version of the OS.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OtaManifest {
-    /// The version from the `build-info` of the target build. This field is for
+    /// The version from the product bundle of the target build. This field is for
     /// informational purposes only and does not change the updater's behavior.
-    pub build_info_version: SystemVersion,
+    pub product_bundle_version: SystemVersion,
     /// The board this OTA is for (e.g., "x64", "arm64"). The system updater will
     /// reject the OTA if this does not match the device's expected board name
     /// from `build-info`.
@@ -123,9 +123,9 @@ impl TryFrom<proto::OtaManifest> for OtaManifest {
     fn try_from(proto: proto::OtaManifest) -> Result<Self, Self::Error> {
         let mode = proto.mode().into();
         let version: Result<_, Infallible> =
-            crate::SystemVersion::from_str(&proto.build_info_version);
+            crate::SystemVersion::from_str(&proto.product_bundle_version);
         Ok(Self {
-            build_info_version: version.unwrap(),
+            product_bundle_version: version.unwrap(),
             board: proto.board,
             epoch: proto.epoch,
             mode,
@@ -143,7 +143,7 @@ impl TryFrom<proto::OtaManifest> for OtaManifest {
 impl From<OtaManifest> for proto::OtaManifest {
     fn from(manifest: OtaManifest) -> Self {
         Self {
-            build_info_version: manifest.build_info_version.to_string(),
+            product_bundle_version: manifest.product_bundle_version.to_string(),
             board: manifest.board,
             epoch: manifest.epoch,
             mode: proto::UpdateMode::from(manifest.mode).into(),
@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn test_parse_ota_manifest_success() {
         let proto_manifest = proto::OtaManifest {
-            build_info_version: "1.2.3.4".to_string(),
+            product_bundle_version: "1.2.3.4".to_string(),
             board: "test-board".to_string(),
             epoch: 1,
             mode: proto::UpdateMode::Normal.into(),
@@ -295,7 +295,7 @@ mod tests {
         let buf = proto_manifest.encode_to_vec();
 
         let manifest = parse_ota_manifest(&buf).unwrap();
-        assert_eq!(manifest.build_info_version, SystemVersion::from_str("1.2.3.4").unwrap());
+        assert_eq!(manifest.product_bundle_version, SystemVersion::from_str("1.2.3.4").unwrap());
         assert_eq!(manifest.board, "test-board");
         assert_eq!(manifest.epoch, 1);
         assert_eq!(manifest.mode, UpdateMode::Normal);
@@ -326,7 +326,7 @@ mod tests {
     #[test]
     fn test_parse_ota_manifest_invalid_manifest() {
         let proto_manifest = proto::OtaManifest {
-            build_info_version: "1.2.3.4".to_string(),
+            product_bundle_version: "1.2.3.4".to_string(),
             board: "test-board".to_string(),
             epoch: 1,
             mode: proto::UpdateMode::Normal.into(),
@@ -350,7 +350,7 @@ mod tests {
     #[test]
     fn test_serialize_ota_manifest() {
         let manifest = OtaManifest {
-            build_info_version: SystemVersion::from_str("1.2.3.4").unwrap(),
+            product_bundle_version: SystemVersion::from_str("1.2.3.4").unwrap(),
             board: "test-board".to_string(),
             epoch: 1,
             mode: UpdateMode::Normal,

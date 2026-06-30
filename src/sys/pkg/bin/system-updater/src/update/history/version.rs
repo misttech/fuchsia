@@ -138,7 +138,7 @@ impl Version {
                 .map(|image| image.blob.fuchsia_merkle_root.to_string())
                 .unwrap_or_default()
         });
-        let build_version = manifest.build_info_version.clone();
+        let build_version = manifest.product_bundle_version.clone();
         let epoch = manifest.epoch.to_string();
         Self { vbmeta_hash, zbi_hash, build_version, epoch, ..Self::default() }
     }

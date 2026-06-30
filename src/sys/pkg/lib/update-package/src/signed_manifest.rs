@@ -235,7 +235,7 @@ mod tests {
 
     fn make_ota_manifest() -> OtaManifest {
         OtaManifest {
-            build_info_version: "1.2.3.4".parse().unwrap(),
+            product_bundle_version: "1.2.3.4".parse().unwrap(),
             board: "test-board".to_string(),
             epoch: 1,
             mode: crate::update_mode::UpdateMode::Normal,

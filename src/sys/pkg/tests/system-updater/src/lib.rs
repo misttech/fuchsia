@@ -119,7 +119,7 @@ pub fn make_images_json_recovery() -> String {
 
 fn make_manifest(blobs: impl IntoIterator<Item = ::update_package::manifest::Blob>) -> OtaManifest {
     OtaManifest {
-        build_info_version: "1.2.3.4".parse().unwrap(),
+        product_bundle_version: "1.2.3.4".parse().unwrap(),
         board: "x64".to_string(),
         epoch: SOURCE_EPOCH,
         mode: ::update_package::UpdateMode::Normal,

@@ -173,7 +173,7 @@ pub fn write_ota_manifest(
         .collect();
 
     let manifest = OtaManifest {
-        build_info_version: version,
+        product_bundle_version: version,
         board: partitions.hardware_revision.clone(),
         epoch: match epoch {
             EpochFile::Version1 { epoch } => *epoch,
@@ -300,7 +300,7 @@ mod tests {
             update_package::signed_manifest::parse_and_verify(&manifest_bytes, &[public_key])
                 .unwrap();
 
-        assert_eq!(manifest.build_info_version, "1.2.3.4".parse().unwrap());
+        assert_eq!(manifest.product_bundle_version, "1.2.3.4".parse().unwrap());
         assert_eq!(manifest.epoch, 1);
         assert_eq!(manifest.board, "board");
         assert_eq!(manifest.mode, update_package::UpdateMode::Normal);
@@ -476,7 +476,7 @@ mod tests {
             update_package::signed_manifest::parse_and_verify(&manifest_bytes, &[public_key])
                 .unwrap();
 
-        assert_eq!(manifest.build_info_version, "1.2.3.4".parse().unwrap());
+        assert_eq!(manifest.product_bundle_version, "1.2.3.4".parse().unwrap());
         assert_eq!(manifest.epoch, 1);
         assert_eq!(manifest.board, "board");
         assert_eq!(manifest.images.len(), 6); // 3 from A, 2 from R, 1 bootloader

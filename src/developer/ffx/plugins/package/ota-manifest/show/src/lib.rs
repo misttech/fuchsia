@@ -18,7 +18,7 @@ use update_package::manifest::{Blob, Image, ImageType, Slot};
 pub struct OtaManifestOutput {
     manifest_version: u32,
     signatures: SignaturesOutput,
-    build_info_version: String,
+    product_bundle_version: String,
     board: String,
     epoch: u64,
     mode: String,
@@ -60,7 +60,7 @@ impl OtaManifestOutput {
         Ok(Self {
             manifest_version: raw.version,
             signatures,
-            build_info_version: manifest.build_info_version.to_string(),
+            product_bundle_version: manifest.product_bundle_version.to_string(),
             board: manifest.board,
             epoch: manifest.epoch,
             mode: match manifest.mode {
@@ -155,7 +155,7 @@ fn write_table(
     writeln!(writer, "Manifest Signature: {}", output.signatures.manifest_signature)?;
     writeln!(writer, "Manifest Public Key: {}", output.signatures.manifest_public_key)?;
     writeln!(writer, "Manifest Key Signature: {}", output.signatures.manifest_key_signature)?;
-    writeln!(writer, "Build Info Version: {}", output.build_info_version)?;
+    writeln!(writer, "Product Bundle Version: {}", output.product_bundle_version)?;
     writeln!(writer, "Board: {}", output.board)?;
     writeln!(writer, "Epoch: {}", output.epoch)?;
     writeln!(writer, "Mode: {}", output.mode)?;
@@ -220,7 +220,7 @@ mod tests {
 
     fn make_ota_manifest() -> OtaManifest {
         OtaManifest {
-            build_info_version: SystemVersion::from_str("1.2.3.4").unwrap(),
+            product_bundle_version: SystemVersion::from_str("1.2.3.4").unwrap(),
             board: "test-board".to_string(),
             epoch: 1,
             mode: UpdateMode::Normal,
@@ -298,7 +298,7 @@ mod tests {
                 "manifest_public_key": expected_pubkey,
                 "manifest_key_signature": expected_keysig,
             },
-            "build_info_version": "1.2.3.4",
+            "product_bundle_version": "1.2.3.4",
             "board": "test-board",
             "epoch": 1,
             "mode": "Normal",
@@ -366,7 +366,7 @@ mod tests {
 Manifest Signature: {expected_sig}
 Manifest Public Key: {expected_pubkey}
 Manifest Key Signature: {expected_keysig}
-Build Info Version: 1.2.3.4
+Product Bundle Version: 1.2.3.4
 Board: test-board
 Epoch: 1
 Mode: Normal
