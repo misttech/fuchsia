@@ -117,10 +117,6 @@ type AudioCompressedFormatCvsd = table {};
 @available(added=HEAD)
 type AudioCompressedFormatLc3 = table {};
 
-/// AudioPcmMode
-///
-// TODO(dustingreen): Keep or discard any non-linear formats for purposes of the
-// Codec interface?
 @strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AudioPcmMode = strict enum {
     // 16 bit signed int linear or 32 bit float linear, for now
@@ -139,13 +135,7 @@ type AudioPcmMode = strict enum {
 ///
 /// Used in specifying which audio channel is for which speaker location / type.
 ///
-/// TODO(dustingreen): Do we need more channel IDs than this?
-///
-// TODO(dustingreen): Check with mpuryear@ re. naming consistency for "S" vs.
-// "R" as we move these to a common definition.  Also the ordering of LS/RS vs.
-// LR/RR - probably LR/RR being first would make more sense re. how channels
-// get added incrementally, but changing the order would no longer match
-// Android's ordering.
+/// TODO(b/529511595): Do we need/want more channel IDs than this?
 @strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AudioChannelId = strict enum {
     SKIP = 0; // unused channel
@@ -172,9 +162,6 @@ type AudioChannelId = strict enum {
 /// PcmFormat
 ///
 /// PCM audio format details.
-///
-// TODO(dustingreen): Discuss with mpuryear@ re. where definitions for these
-// details go and make sure the common details can specify at least this much.
 type PcmFormat = struct {
     // Implicit details:
     //   * For bits_per_sample > 8, host-endian is implied.
@@ -207,10 +194,6 @@ type PcmFormat = struct {
     // If a channel has no suitable AudioChannelId, an ad-hoc value can be used
     // in a range starting from AudioChannel_ExtendedChannelIdBase.
     channel_map vector<AudioChannelId>:16;
-
-    // TODO(dustingreen): Add unsigned 8 bit, float 32 bit, maybe others. FWIW,
-    // AOSP appears to support signed 16 bit, unsigned 8 bit, and float 32 bit
-    // under "Pcm", AFAICT based on OMX_NUMERICALDATATYPE and ACodec.cpp code.
 };
 
 /// AudioUncompressedFormat
@@ -239,17 +222,15 @@ type AudioFormat = strict union {
 // oob_bytes as appropriate + in-band data.
 @strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type VideoCompressedFormat = strict union {
-    // TODO(dustingreen): Any compressed video formats that aren't sufficiently
-    // self-describing to select and create a Codec instance to decode it?
-
-    // TODO(dustingreen): temp field to make the compiler happy until we have at
-    // least one real field.
+    /// Temp field to make the compiler happy until we have at least one real
+    /// field. Do not reference this field in code.
     1: temp_field_todo_remove uint32;
 };
 
+// Deprecated. Do not use.
 @strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
+@available(added=7, deprecated=NEXT)
 type VideoColorSpace = strict enum {
-    // TODO(dustingreen): add to this list
     INVALID = 0;
 };
 
@@ -257,12 +238,8 @@ type VideoColorSpace = strict enum {
 ///
 /// Uncompressed video format details.
 ///
-// TODO(dustingreen): Integrate with a system-wide structure for this purpose.
-// In progress - see image_format field below which will take the place of this
-// struct/table.
+// TODO(b/529511595): Switch to fuchsia.images2.ImageFormat for this purpose.
 type VideoUncompressedFormat = struct {
-    // TODO(dustingreen): This will replace VideoUncompressedFormat (after
-    // struct to table change merges).
     image_format fuchsia.sysmem.ImageFormat_2;
 
     // fourcc
@@ -761,40 +738,19 @@ type FormatDetails = table {
     // vs. the last FormatDetails received for the same context.
     1: format_details_version_ordinal uint64;
 
-    // "mime_type" strings used by particular decoders / encoders so far:
-    //
-    // SW AAC decoder:
-    //   * input:
-    //     * "audio/aac-adts" - ATDS AAC; self-contained format, but
-    //       implementation for now requires oob_bytes to contain
-    //       AudioSpecificConfig() reconstructed from ADTS header data - see
-    //       also make_AudioSpecificConfig_from_ADTS_header() for now.
-    //   * output:
-    //     * "audio/raw" - stereo linear 16 bit integer PCM
-    //
-    // TODO(dustingreen): avoid requiring oob_bytes when using SoftAAC2.cpp
-    // for AAC ADTS.
-    //
-    // TODO(dustingreen): Add non-ADTS AAC support (which naturally needs
-    // oob_bytes).
-    //
-    // TODO(dustingreen): Consider "pseudo_mime_type", or an enum, + "domain"
-    // details as needed instead, since calling this "mime_type" could lead to
-    // confusion.
+    // See also `DetailedCodecDescription.mime_type`.
     2: mime_type string;
 
     // Some streams have their own binary configuration structure.  For those
     // streams we allow that binary structure to be directly conveyed to the
-    // stream processor here.
+    // stream processor here. For many bitstream formats, this can alternately
+    // be provided in-band within the stream.
     //
-    // audio/aac - this is an AudioSpecificConfig().
-    // audio/aac-adts - this is not set.
-    // TODO(dustingreen): make the audio/aac-adts statement true soon.  At the
-    // moment we set this with make_AudioSpecificConfig_from_ADTS_header(), but
-    // that should not be the client's job for ADTS.
+    // For example:
+    //   * audio/aac - this is an AudioSpecificConfig().
     //
-    // For some formats whose "ES" data format is self-contained, or for which
-    // there is no format-defined binary OOB config, this is null.
+    // For some formats whose "ES" data format is always self-contained, or for
+    // which there is no format-defined binary OOB config, this is null.
     //
     // A server can close the channel if the count of bytes is >
     // kMaxOobBytesSize or is larger than makes any sense for the stream
@@ -824,15 +780,16 @@ type FormatDetails = table {
     // in the output FormatDetails to allow for cases where a downstream
     // consumer knowing the encoder settings could be useful.
     //
-    // TODO(dustingreen): Decide if we want to retain this, or if we'd prefer to
-    // split out config settings and maybe only represent a few encoder settings
-    // as best-effort optional aux data, like bitrate.
-    //
     // Encoder input format / decoder output format:
     //
     // This field contains fairly detailed information re. uncompressed data
     // format details, which tends to _not_ be self-describing in-band.
     4: domain DomainFormat;
+
+    // TODO(b/476248640): Soft migration from VideoUncompressedFormat to an
+    // ImageFormat field here.
+    //
+    // X: image_format fuchsia.images2.ImageFormat;
 
     // See comments above on Parameter.  At the time we lock relevant FIDL
     // interfaces, there should be zero use of this field outside tests, but

@@ -5,9 +5,8 @@
 #ifndef SRC_MEDIA_LIB_CODEC_IMPL_INCLUDE_LIB_MEDIA_CODEC_IMPL_LOG_H_
 #define SRC_MEDIA_LIB_CODEC_IMPL_INCLUDE_LIB_MEDIA_CODEC_IMPL_LOG_H_
 
-#include <lib/ddk/debug.h>
-
-#include <string_view>
+#include <lib/syslog/structured_backend/fuchsia_syslog.h>
+#include <zircon/compiler.h>
 
 #define VLOG_ENABLED 0
 
@@ -24,24 +23,22 @@
     LOG(INFO, format, ##__VA_ARGS__); \
   } while (0)
 
-// Temporary solution for logging in driver and non-driver contexts by logging to stderr.
-// TODO(b/299990391): Replace with syslog logging interface that accommodates both driver and
-// non-driver contexts, when available.
-#define LOG(severity, format, ...)                            \
-  do {                                                        \
-    static_assert(true || DDK_LOG_##severity);                \
-    if (DDK_LOG_##severity > DDK_LOG_INFO) {                  \
-      fprintf(stderr, "[codec_impl] " format, ##__VA_ARGS__); \
-    }                                                         \
+#define FUCHSIA_LOG_WARN FUCHSIA_LOG_WARNING
+#define LOG(severity, format, formatted_args...)                                            \
+  do {                                                                                      \
+    codec_impl::internal::log_via_environment((FUCHSIA_LOG_##severity), __FILE__, __LINE__, \
+                                              "(%s) " format, __func__, ##formatted_args);  \
   } while (0)
+
+#define DBG_LINE() LOG(INFO, "")
 
 namespace codec_impl {
 namespace internal {
 
-constexpr std::string_view BaseName(std::string_view path) {
-  size_t pos = path.find_last_of('/') + 1;
-  return (pos < path.size()) ? path.substr(pos) : path;
-}
+const char* BaseName(const char* path);
+
+void log_via_environment(FuchsiaLogSeverity severity, const char* file, int line, const char* msg,
+                         ...) __PRINTFLIKE(4, 5);
 
 }  // namespace internal
 }  // namespace codec_impl

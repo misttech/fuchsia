@@ -13,6 +13,12 @@
     },
     {
         "kind": "const",
+        "name": "fuchsia.mediacodec/CODEC_FACTORY_MAX_CODEC_SPECIFIER_LENGTH",
+        "type": "uint32",
+        "value": "256"
+    },
+    {
+        "kind": "const",
         "name": "fuchsia.mediacodec/CODEC_FACTORY_MAX_MIME_TYPE_LENGTH",
         "type": "uint32",
         "value": "256"
@@ -204,6 +210,18 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.mediacodec/CreateDecoder_Params.codec_specifier",
+        "ordinal": "14",
+        "type": "string:256"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.mediacodec/CreateDecoder_Params.force_new_buffers_for_new_dimensions",
+        "ordinal": "13",
+        "type": "bool"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.mediacodec/CreateDecoder_Params.input_details",
         "ordinal": "1",
         "type": "fuchsia.media/FormatDetails"
@@ -252,6 +270,12 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.mediacodec/CreateDecoder_Params.require_supports_dynamic_buffers",
+        "ordinal": "12",
+        "type": "bool"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.mediacodec/CreateDecoder_Params.require_sw",
         "ordinal": "11",
         "type": "bool"
@@ -271,6 +295,12 @@
     {
         "kind": "table",
         "name": "fuchsia.mediacodec/CreateDecoder_Params"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.mediacodec/CreateEncoder_Params.codec_specifier",
+        "ordinal": "3",
+        "type": "string:256"
     },
     {
         "kind": "table/member",
@@ -366,9 +396,33 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.mediacodec/DetailedCodecDescription.codec_specifier",
+        "ordinal": "9",
+        "type": "string:256"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.mediacodec/DetailedCodecDescription.codec_type",
         "ordinal": "1",
         "type": "fuchsia.mediacodec/CodecType"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.mediacodec/DetailedCodecDescription.dynamic_buffers_input_max",
+        "ordinal": "6",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.mediacodec/DetailedCodecDescription.dynamic_buffers_output_max",
+        "ordinal": "7",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.mediacodec/DetailedCodecDescription.dynamic_buffers_video_decoder_output_safe",
+        "ordinal": "8",
+        "type": "uint32"
     },
     {
         "kind": "table/member",
@@ -387,6 +441,12 @@
         "name": "fuchsia.mediacodec/DetailedCodecDescription.profile_descriptions",
         "ordinal": "4",
         "type": "fuchsia.mediacodec/ProfileDescriptions"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.mediacodec/DetailedCodecDescription.supports_dynamic_buffers",
+        "ordinal": "5",
+        "type": "bool"
     },
     {
         "kind": "table",

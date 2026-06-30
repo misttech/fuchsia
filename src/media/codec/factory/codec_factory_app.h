@@ -5,10 +5,13 @@
 #ifndef SRC_MEDIA_CODEC_FACTORY_CODEC_FACTORY_APP_H_
 #define SRC_MEDIA_CODEC_FACTORY_CODEC_FACTORY_APP_H_
 
+#include <fidl/fuchsia.gpu.magma/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.mediacodec/cpp/fidl.h>
 #include <fuchsia/gpu/magma/cpp/fidl.h>
 #include <fuchsia/mediacodec/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async/cpp/task.h>
+#include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/fit/function.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/sys/cpp/component_context.h>
@@ -17,9 +20,15 @@
 #include <list>
 #include <memory>
 #include <optional>
+#include <random>
 
 #include "codec_factory_policy.h"
 #include "src/lib/fsl/io/device_watcher.h"
+
+using CodecServiceMemberWatcher =
+    component::ServiceMemberWatcher<fuchsia_hardware_mediacodec::Service::Device>;
+using MagmaServiceMemberWatcher =
+    component::ServiceMemberWatcher<fuchsia_gpu_magma::Service::Device>;
 
 // CodecFactoryApp is singleton per-process.
 class CodecFactoryApp {
@@ -155,8 +164,8 @@ class CodecFactoryApp {
   // This list is ordered by reverse discovery order.
   std::list<std::unique_ptr<CodecFactoryEntry>> hw_factories_;
 
-  std::unique_ptr<fsl::DeviceWatcher> device_watcher_;
-  std::unique_ptr<fsl::DeviceWatcher> gpu_device_watcher_;
+  CodecServiceMemberWatcher codec_service_watcher_;
+  MagmaServiceMemberWatcher magma_service_watcher_;
 
   // This queue is to ensure we process discovered devices in the order
   // discovered, so that devices discovered later take priority over devices
@@ -189,9 +198,6 @@ class CodecFactoryApp {
     std::shared_ptr<fuchsia::gpu::magma::IcdLoaderDevicePtr> magma_device;
 
     std::string component_url;
-
-    // Purely as FYI for log output.
-    std::string device_path;
   };
   std::list<std::unique_ptr<DeviceDiscoveryEntry>> device_discovery_queue_;
   bool existing_devices_discovered_ = false;
@@ -200,6 +206,8 @@ class CodecFactoryApp {
   vfs::PseudoDir* outgoing_codec_aux_service_directory_ = nullptr;
 
   uint32_t num_codec_discoveries_in_flight_{};
+
+  uint64_t next_inspect_ordinal_ = 0;
 
   FXL_DISALLOW_COPY_AND_ASSIGN(CodecFactoryApp);
 };

@@ -324,6 +324,11 @@ struct UseVideoDecoderTestParams final {
   static constexpr bool kDefaultSkipFormattingOutputPixels = false;
   bool skip_formatting_output_pixels = kDefaultSkipFormattingOutputPixels;
 
+  // If false, use SetInput/OutputBufferPartialSettings. If true, use ParticipateInAllocation,
+  // AddBuffer, RemoveBuffer.
+  static constexpr bool kDefaultIsDynamicBuffers = false;
+  bool is_dynamic_buffers = kDefaultIsDynamicBuffers;
+
  private:
   // Client code should not exploit knowledge of this value, and should not directly initialize or
   // directly set magic_validated_ to any value.

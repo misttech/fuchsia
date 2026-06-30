@@ -169,12 +169,28 @@ void CodecClient::Start() {
   // We're not on the FIDL thread, so we need to async::PostTask() over to the
   // FIDL thread to send any FIDL message.
 
+  std::optional<uint32_t> dynamic_buffer_count;
+  if (is_dynamic_buffers_) {
+    ZX_ASSERT(input_constraints_->has_buffer_count_for_server_current());
+    // For input there is no field corresponding to
+    // dynamic_buffers_video_decoder_output_safe, and
+    // buffer_count_for_server_current gives the min needed number of input
+    // buffers, and the min number of needed input buffers doesn't change
+    // dynamically (unlike for video decoder output).
+    ZX_ASSERT(input_constraints_->buffer_count_for_server_current() != 0);
+    // +2 for some slack, as buffer_count_for_server_current doesn't include any
+    // slack, yet most clients will want to add some, so do what non-test
+    // clients are likely to do here. We've already checked above that
+    // buffer_count_for_server_current isn't 0.
+    dynamic_buffer_count = input_constraints_->buffer_count_for_server_current() + 2;
+  }
+
   uint32_t input_packet_count;
   fuchsia::sysmem2::BufferCollectionInfo buffer_collection_info;
   if (!ConfigurePortBufferCollection(false, kInputBufferLifetimeOrdinal,
                                      input_constraints_->buffer_constraints_version_ordinal(),
-                                     &input_packet_count, &input_buffer_collection_,
-                                     &buffer_collection_info)) {
+                                     dynamic_buffer_count, &input_packet_count,
+                                     &input_buffer_collection_, &buffer_collection_info)) {
     FX_LOGS(FATAL) << "ConfigurePortBufferCollection failed (input)";
   }
 
@@ -604,7 +620,12 @@ std::unique_ptr<CodecOutput> CodecClient::BlockingGetEmittedOutput() {
       return packet;
     }
 
-    // We have a required output config change to deal with here.
+    // We have an output config change to deal with here. It's either "required"
+    // to allocate new buffers, or we must at least pay attention to the new
+    // buffer_count_for_server_current if the value has gone up. For now we
+    // always reallocate buffers regardless of which of these cases, but in
+    // future we could adjust the buffer count up or down using
+    // AddBuffer/RemoveBuffer when is_dynamic_buffers and not "required".
 
     // The server implicitly has relinquished ownership of all output packets
     // and all output buffers as a semantic of the required config change.  This
@@ -628,7 +649,7 @@ std::unique_ptr<CodecOutput> CodecClient::BlockingGetEmittedOutput() {
     //
     // Because of the client allowing itself to send RecycleOutputPacket() for a
     // while longer than fundamentally necessary, we delay upkeep on
-    // output_free_packet_bits_ until here.  This upkeep isn't really fundamentally
+    // output_used_packet_indexes_ until here.  This upkeep isn't really fundamentally
     // necessary between OnOutputConstraints() with action required true and the
     // last AddOutputBuffer() as part of output re-configuration, but ... this
     // explicit delayed upkeep _may_ help illustrate how it's acceptable for a
@@ -650,15 +671,7 @@ std::unique_ptr<CodecOutput> CodecClient::BlockingGetEmittedOutput() {
       // We know this because we're only here if we have pending constraints.
       ZX_ASSERT(constraints);
 
-      // Not really critical to do this, as we'll just end up setting these
-      // back to true under the same lock hold interval as we set
-      // output_config_action_pending_ to false, but see comment above re.
-      // how this might help illustrate how late RecycleOutputPacket() can be
-      // sent.
-      //
-      // Think of this assignment as slightly more than a comment in this
-      // example, rather than any real need.
-      output_free_packet_bits_.resize(0);
+      output_used_packet_indexes_.clear();
 
       // Free the old output buffers, if any.
       all_output_buffers_.clear();
@@ -690,12 +703,24 @@ std::unique_ptr<CodecOutput> CodecClient::BlockingGetEmittedOutput() {
     const fuchsia::media::StreamBufferConstraints& buffer_constraints =
         snapped_constraints->buffer_constraints();
 
+    std::optional<uint32_t> dynamic_buffer_count;
+    if (is_dynamic_buffers_) {
+      auto& output_constraints = snapped_constraints->buffer_constraints();
+      ZX_ASSERT(output_constraints.has_buffer_count_for_server_current());
+      ZX_ASSERT(output_constraints.buffer_count_for_server_current() != 0);
+      // +2 for some slack, as buffer_count_for_server_current doesn't include
+      // any slack, yet most clients will want to add some, so do what non-test
+      // clients are likely to do here. We've already checked above that
+      // buffer_count_for_server_current isn't 0.
+      dynamic_buffer_count = output_constraints.buffer_count_for_server_current() + 2;
+    }
+
     uint32_t packet_count;
     fuchsia::sysmem2::BufferCollectionInfo buffer_collection_info;
     if (!ConfigurePortBufferCollection(true, new_output_buffer_lifetime_ordinal,
                                        buffer_constraints.buffer_constraints_version_ordinal(),
-                                       &packet_count, &output_buffer_collection_,
-                                       &buffer_collection_info)) {
+                                       dynamic_buffer_count, &packet_count,
+                                       &output_buffer_collection_, &buffer_collection_info)) {
       FX_LOGS(FATAL) << "ConfigurePortBufferCollection failed (output)";
     }
 
@@ -715,10 +740,6 @@ std::unique_ptr<CodecOutput> CodecClient::BlockingGetEmittedOutput() {
         }
         ZX_ASSERT(all_output_buffers_.size() == i);
         all_output_buffers_.push_back(std::move(buffer));
-
-        if (i == packet_count - 1) {
-          output_free_packet_bits_.resize(packet_count, true);
-        }
       }
 
       current_output_buffer_lifetime_ordinal_ = new_output_buffer_lifetime_ordinal;
@@ -785,22 +806,15 @@ std::unique_ptr<CodecOutput> CodecClient::BlockingGetEmittedOutput() {
 
 bool CodecClient::ConfigurePortBufferCollection(
     bool is_output, uint64_t new_buffer_lifetime_ordinal,
-    uint64_t buffer_constraints_version_ordinal, uint32_t* out_packet_count,
-    fuchsia::sysmem2::BufferCollectionPtr* out_buffer_collection,
+    uint64_t buffer_constraints_version_ordinal, std::optional<uint32_t> dynamic_buffer_count,
+    uint32_t* out_packet_count, fuchsia::sysmem2::BufferCollectionPtr* out_buffer_collection,
     fuchsia::sysmem2::BufferCollectionInfo* out_buffer_collection_info) {
-  fuchsia::media::StreamBufferPartialSettings settings;
-  settings.set_buffer_lifetime_ordinal(new_buffer_lifetime_ordinal);
-  settings.set_buffer_constraints_version_ordinal(buffer_constraints_version_ordinal);
-
   fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
   fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> codec_sysmem_token;
   if (!CreateAndSyncBufferCollection(&buffer_collection, &codec_sysmem_token)) {
     FX_LOGS(FATAL) << "CreateAndSyncBufferCollection failed (output)";
     return false;
   }
-
-  settings.set_sysmem_token(fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken>(
-      codec_sysmem_token.TakeChannel()));
 
   fuchsia::sysmem2::BufferCollectionConstraints constraints;
   // TODO(https://fxbug.dev/42098793): Hardcoded to read/write to allow direct Vulkan import on
@@ -816,12 +830,16 @@ bool CodecClient::ConfigurePortBufferCollection(
                                          fuchsia::sysmem2::CPU_USAGE_WRITE_OFTEN);
   }
 
-  // TODO(dustingreen): Make this more flexible once we're more flexible on
-  // frame_count on output of decoder.
-  if (is_output) {
-    constraints.set_min_buffer_count_for_camping(kMinInputBufferCountForCamping);
+  if (dynamic_buffer_count.has_value()) {
+    // For now CodecClient still allocates a collection, not each buffer separately, but the
+    // AddBuffer messages are separate below.
+    constraints.set_min_buffer_count(*dynamic_buffer_count);
   } else {
-    constraints.set_min_buffer_count_for_camping(kMinOutputBufferCountForCamping);
+    if (is_output) {
+      constraints.set_min_buffer_count_for_camping(kMinInputBufferCountForCamping);
+    } else {
+      constraints.set_min_buffer_count_for_camping(kMinOutputBufferCountForCamping);
+    }
   }
   ZX_DEBUG_ASSERT(!constraints.has_min_buffer_count_for_dedicated_slack());
   ZX_DEBUG_ASSERT(!constraints.has_min_buffer_count_for_shared_slack());
@@ -830,17 +848,16 @@ bool CodecClient::ConfigurePortBufferCollection(
   ZX_DEBUG_ASSERT(!constraints.has_max_buffer_count());
 
   auto& bmc = *constraints.mutable_buffer_memory_constraints();
-  // Sysmem has a built-in min_size_bytes of 1, so no need to really constrain
-  // min_size_bytes here, unless output, in which case setting a min_size_bytes
-  // allows for seamless video frame dimension changes.  If the client code says
-  // 0 that's fine.
-  //
-  // Similar for min_buffer_count, but un-set means 0 / no constraint in that case.
+  // Sysmem has a built-in min_size_bytes of 1, so no need to really constrain min_size_bytes here,
+  // unless output, in which case setting a min_size_bytes allows for seamless video frame dimension
+  // changes. If the client code says 0 that's fine.
   ZX_DEBUG_ASSERT(!bmc.has_min_size_bytes());
-  ZX_DEBUG_ASSERT(!constraints.has_min_buffer_count());
   if (is_output) {
     bmc.set_min_size_bytes(min_output_buffer_size_);
-    constraints.set_min_buffer_count(min_output_buffer_count_);
+    if (!constraints.has_min_buffer_count() ||
+        min_output_buffer_count_ > constraints.min_buffer_count()) {
+      constraints.set_min_buffer_count(min_output_buffer_count_);
+    }
   } else {
     bmc.set_min_size_bytes(min_input_buffer_size_);
   }
@@ -880,16 +897,35 @@ bool CodecClient::ConfigurePortBufferCollection(
     ZX_DEBUG_ASSERT(!constraints.has_image_format_constraints());
   }
 
-  PostToFidlThread([this, is_output, settings = std::move(settings)]() mutable {
-    if (!codec_) {
-      return;
-    }
-    if (is_output) {
-      codec_->SetOutputBufferPartialSettings(std::move(settings));
-    } else {
-      codec_->SetInputBufferPartialSettings(std::move(settings));
-    }
-  });
+  if (!dynamic_buffer_count.has_value()) {
+    fuchsia::media::StreamBufferPartialSettings settings;
+    settings.set_buffer_lifetime_ordinal(new_buffer_lifetime_ordinal);
+    settings.set_buffer_constraints_version_ordinal(buffer_constraints_version_ordinal);
+    settings.set_sysmem2_token(std::move(codec_sysmem_token));
+    PostToFidlThread([this, is_output, settings = std::move(settings)]() mutable {
+      if (!codec_) {
+        return;
+      }
+      if (is_output) {
+        codec_->SetOutputBufferPartialSettings(std::move(settings));
+      } else {
+        codec_->SetInputBufferPartialSettings(std::move(settings));
+      }
+    });
+  } else {
+    fuchsia::media::StreamProcessorParticipateInBufferAllocationRequest participate_request;
+    participate_request.set_buffer_lifetime_ordinal(new_buffer_lifetime_ordinal);
+    participate_request.set_buffer_constraints_version_ordinal(buffer_constraints_version_ordinal);
+    participate_request.set_port(is_output ? fuchsia::media::Port::OUTPUT
+                                           : fuchsia::media::Port::INPUT);
+    participate_request.set_sysmem2_token(std::move(codec_sysmem_token));
+    PostToFidlThread([this, participate_request = std::move(participate_request)]() mutable {
+      if (!codec_) {
+        return;
+      }
+      codec_->ParticipateInBufferAllocation(std::move(participate_request));
+    });
+  }
 
   buffer_collection->SetConstraints(
       std::move(fuchsia::sysmem2::BufferCollectionSetConstraintsRequest{}.set_constraints(
@@ -908,6 +944,48 @@ bool CodecClient::ConfigurePortBufferCollection(
     // min_output_buffer_count_ forces higher buffer counts, that's fine.
     ZX_ASSERT(buffer_collection_info.buffers().size() <= kMaxExpectedBufferCount ||
               min_output_buffer_count_ > kMaxExpectedBufferCount);
+  }
+
+  if (dynamic_buffer_count.has_value()) {
+    std::vector<std::unique_ptr<CodecBuffer>>& all_buffers =
+        is_output ? all_output_buffers_ : all_input_buffers_;
+    ZX_ASSERT(all_buffers.size() == 0 || is_output);
+    // remove old buffers if any
+    for (uint32_t i = 0; i < all_buffers.size(); ++i) {
+      // input gets configured once and never re-configured
+      ZX_ASSERT(is_output);
+      fuchsia::media::StreamProcessorRemoveBufferRequest remove_request;
+      remove_request.set_port(is_output ? fuchsia::media::Port::OUTPUT
+                                        : fuchsia::media::Port::INPUT);
+      remove_request.set_buffer_lifetime_ordinal(current_output_buffer_lifetime_ordinal_);
+      remove_request.set_buffer_index(i);
+      PostToFidlThread([this, remove_request = std::move(remove_request)]() mutable {
+        if (!codec_) {
+          return;
+        }
+        codec_->RemoveBuffer(std::move(remove_request),
+                             [](fuchsia::media::StreamProcessor_RemoveBuffer_Result result) {});
+      });
+    }
+    // add new buffers
+    for (uint32_t i = 0; i < buffer_collection_info.buffers().size(); ++i) {
+      auto& vmo = buffer_collection_info.buffers().at(i).vmo();
+      zx::vmo dup_vmo;
+      zx_status_t dup_status = vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup_vmo);
+      ZX_ASSERT(dup_status == ZX_OK);
+      fuchsia::media::StreamProcessorAddBufferRequest add_request;
+      add_request.set_port(is_output ? fuchsia::media::Port::OUTPUT : fuchsia::media::Port::INPUT);
+      add_request.set_buffer_constraints_version_ordinal(buffer_constraints_version_ordinal);
+      add_request.set_buffer_lifetime_ordinal(new_buffer_lifetime_ordinal);
+      add_request.set_buffer_index(i);
+      add_request.set_buffer(std::move(dup_vmo));
+      PostToFidlThread([this, add_request = std::move(add_request)]() mutable {
+        if (!codec_) {
+          return;
+        }
+        codec_->AddBuffer(std::move(add_request));
+      });
+    }
   }
 
   fuchsia::sysmem2::BufferCollectionPtr buffer_collection_ptr;
@@ -939,7 +1017,8 @@ void CodecClient::RecycleOutputPacket(fuchsia::media::PacketHeader free_packet) 
   ZX_ASSERT(free_packet.has_packet_index());
   {  // scope lock
     std::unique_lock<std::mutex> lock(lock_);
-    output_free_packet_bits_[free_packet.packet_index()] = true;
+    size_t erased_count = output_used_packet_indexes_.erase(free_packet.packet_index());
+    ZX_ASSERT(erased_count == 1);
   }  // ~lock
   async::PostTask(dispatcher_, [this, free_packet = std::move(free_packet)]() mutable {
     codec_->RecycleOutputPacket(std::move(free_packet));
@@ -1069,7 +1148,7 @@ void CodecClient::OnOutputPacket(fuchsia::media::Packet output_packet, bool erro
       FX_LOGS(FATAL) << "server incorrectly sent output packet while required "
                         "constraints change pending";
     }
-    if (!output_free_packet_bits_[packet_index]) {
+    if (output_used_packet_indexes_.contains(packet_index)) {
       // The packet was emitted twice by the server without it becoming free in
       // between, which is broken server behavior.
       FX_LOGS(FATAL) << "server incorrectly emitted an output packet without it becoming "
@@ -1078,7 +1157,7 @@ void CodecClient::OnOutputPacket(fuchsia::media::Packet output_packet, bool erro
     // Emitted by server, so not free until later when we send it back to server
     // with RecycleOutputPacket(), or until we re-configure output buffers in
     // which case all the output packets start free with the server.
-    output_free_packet_bits_[packet_index] = false;
+    output_used_packet_indexes_.insert(packet_index);
     emitted_output_.push_back(std::move(output));
     is_format_since_last_packet_ = false;
     if (!output_pending_) {

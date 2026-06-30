@@ -92,12 +92,23 @@ class CodecAdmission {
   CodecAdmission(const CodecAdmission& from) = delete;
   CodecAdmission& operator=(const CodecAdmission& from) = delete;
 
+  // Only use this method if the codec doesn't expose any single-instance modes
+  // where other instances are impossible while that single-instance mode is
+  // active.
+  //
+  // When a codec always allows multi-instance, this can be used to create a
+  // nop CodecAdmission.
+  [[nodiscard]] static std::unique_ptr<CodecAdmission> NoAdmissionControlNeeded();
+
   // Sets the channel CodecAdmissionControl should check for ZX_CHANNEL_PEER_CLOSED - if that's
   // received, the CodecAdmission is assumed to be closing soon.
   void SetChannelToWaitOn(const zx::channel& channel);
   // Tell the codec admission control that this codec will be closing soon. When the class is
   // destroyed |close_handle_| will be destructed and that allows pending callbacks to run.
   void SetCodecIsClosing() {
+    if (nop_instance_) {
+      return;
+    }
     std::lock_guard<std::mutex> lock(codec_admission_control_->lock_);
     SetCodecIsClosingLocked();
   }
@@ -107,15 +118,22 @@ class CodecAdmission {
  private:
   friend class CodecAdmissionControl;
   CodecAdmission(CodecAdmissionControl* codec_admission_control, bool multi_instance);
+  // creates a nop instance with nop_instance_ true
+  CodecAdmission();
   void SetCodecIsClosingLocked() __TA_NO_THREAD_SAFETY_ANALYSIS {
-    if (!close_handle_)
+    if (nop_instance_) {
+      return;
+    }
+    if (!close_handle_) {
       close_handle_ = codec_admission_control_->OnCodecIsClosing();
+    }
   }
 
   CodecAdmissionControl* codec_admission_control_ = nullptr;
-  bool multi_instance_;
+  bool multi_instance_ = false;
   std::shared_ptr<CodecAdmissionControl::PreviousCloseHandle> close_handle_;
   uint64_t port_key_ = 0;
+  bool nop_instance_ = false;
 };
 
 #endif  // SRC_MEDIA_LIB_CODEC_IMPL_INCLUDE_LIB_MEDIA_CODEC_IMPL_CODEC_ADMISSION_CONTROL_H_

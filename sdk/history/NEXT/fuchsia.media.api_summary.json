@@ -3116,6 +3116,27 @@
         "name": "fuchsia.media/PcmFormat"
     },
     {
+        "kind": "enum/member",
+        "name": "fuchsia.media/Port.INPUT",
+        "value": "1"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.media/Port.INVALID",
+        "value": "0"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.media/Port.OUTPUT",
+        "value": "2"
+    },
+    {
+        "kind": "enum",
+        "name": "fuchsia.media/Port",
+        "strictness": "flexible",
+        "type": "uint32"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.media/ProfileProvider.RegisterHandlerWithCapacity",
         "strictness": "strict",
@@ -3509,6 +3530,12 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.media/StreamBufferConstraints.buffer_count_for_server_current",
+        "ordinal": "14",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.media/StreamBufferConstraints.default_settings",
         "ordinal": "2",
         "type": "fuchsia.media/StreamBufferSettings"
@@ -3575,9 +3602,21 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.media/StreamBufferConstraints.pixel_format",
+        "ordinal": "16",
+        "type": "fuchsia.images2/PixelFormat"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.media/StreamBufferConstraints.single_buffer_mode_allowed",
         "ordinal": "12",
         "type": "bool"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.media/StreamBufferConstraints.size",
+        "ordinal": "15",
+        "type": "fuchsia.math/SizeU"
     },
     {
         "kind": "table",
@@ -3860,6 +3899,14 @@
     },
     {
         "kind": "protocol/member",
+        "name": "fuchsia.media/StreamProcessor.AddBuffer",
+        "strictness": "flexible",
+        "ordinal": "7983324400092842714",
+        "direction": "one_way",
+        "request": "fuchsia.media/StreamProcessorAddBufferRequest"
+    },
+    {
+        "kind": "protocol/member",
         "name": "fuchsia.media/StreamProcessor.CloseCurrentStream",
         "strictness": "strict",
         "ordinal": "2128627376331999751",
@@ -3876,9 +3923,30 @@
     },
     {
         "kind": "protocol/member",
+        "name": "fuchsia.media/StreamProcessor.EnableForceOutputBuffersFixedImageSize",
+        "strictness": "flexible",
+        "ordinal": "4149134949818941929",
+        "direction": "one_way"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.media/StreamProcessor.EnableOldOutputBuffers",
+        "strictness": "flexible",
+        "ordinal": "4246313832906528944",
+        "direction": "one_way"
+    },
+    {
+        "kind": "protocol/member",
         "name": "fuchsia.media/StreamProcessor.EnableOnStreamFailed",
         "strictness": "strict",
         "ordinal": "4125458432014413867",
+        "direction": "one_way"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.media/StreamProcessor.EnableSameOutputBufferConcurrentlyInFlight",
+        "strictness": "flexible",
+        "ordinal": "2616203546656704999",
         "direction": "one_way"
     },
     {
@@ -3939,11 +4007,27 @@
     },
     {
         "kind": "protocol/member",
+        "name": "fuchsia.media/StreamProcessor.OnOutputTimestampHasNoOutput",
+        "strictness": "flexible",
+        "ordinal": "8373956937122995412",
+        "direction": "event",
+        "request": "fuchsia.media/StreamProcessorOnOutputTimestampHasNoOutputRequest"
+    },
+    {
+        "kind": "protocol/member",
         "name": "fuchsia.media/StreamProcessor.OnStreamFailed",
         "strictness": "strict",
         "ordinal": "8632546215338299278",
         "direction": "event",
         "request": "fuchsia.media/StreamProcessorOnStreamFailedRequest"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.media/StreamProcessor.ParticipateInBufferAllocation",
+        "strictness": "flexible",
+        "ordinal": "1309390461892395979",
+        "direction": "one_way",
+        "request": "fuchsia.media/StreamProcessorParticipateInBufferAllocationRequest"
     },
     {
         "kind": "protocol/member",
@@ -3979,6 +4063,15 @@
     },
     {
         "kind": "protocol/member",
+        "name": "fuchsia.media/StreamProcessor.RemoveBuffer",
+        "strictness": "flexible",
+        "ordinal": "4663873236829919811",
+        "direction": "two_way",
+        "request": "fuchsia.media/StreamProcessorRemoveBufferRequest",
+        "response": "fuchsia.media/StreamProcessor_RemoveBuffer_Response"
+    },
+    {
+        "kind": "protocol/member",
         "name": "fuchsia.media/StreamProcessor.SetInputBufferPartialSettings",
         "strictness": "strict",
         "ordinal": "793443214039246020",
@@ -4005,6 +4098,41 @@
         "name": "fuchsia.media/StreamProcessor",
         "openness": "open",
         "transport": "channel"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.media/StreamProcessorAddBufferRequest.buffer",
+        "ordinal": "5",
+        "type": "zx/Handle:VMO"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.media/StreamProcessorAddBufferRequest.buffer_constraints_version_ordinal",
+        "ordinal": "2",
+        "type": "uint64"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.media/StreamProcessorAddBufferRequest.buffer_index",
+        "ordinal": "4",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.media/StreamProcessorAddBufferRequest.buffer_lifetime_ordinal",
+        "ordinal": "3",
+        "type": "uint64"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.media/StreamProcessorAddBufferRequest.port",
+        "ordinal": "1",
+        "type": "fuchsia.media/Port"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.media/StreamProcessorAddBufferRequest",
+        "resourceness": "resource"
     },
     {
         "kind": "struct/member",
@@ -4127,6 +4255,22 @@
         "name": "fuchsia.media/StreamProcessorOnOutputPacketRequest"
     },
     {
+        "kind": "table/member",
+        "name": "fuchsia.media/StreamProcessorOnOutputTimestampHasNoOutputRequest.stream_lifetime_ordinal",
+        "ordinal": "1",
+        "type": "uint64"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.media/StreamProcessorOnOutputTimestampHasNoOutputRequest.timestamp_ish",
+        "ordinal": "2",
+        "type": "uint64"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.media/StreamProcessorOnOutputTimestampHasNoOutputRequest"
+    },
+    {
         "kind": "struct/member",
         "name": "fuchsia.media/StreamProcessorOnStreamFailedRequest.error",
         "ordinal": "2",
@@ -4141,6 +4285,41 @@
     {
         "kind": "struct",
         "name": "fuchsia.media/StreamProcessorOnStreamFailedRequest"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.media/StreamProcessorParticipateInBufferAllocationRequest.allow_single_buffer",
+        "ordinal": "5",
+        "type": "bool"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.media/StreamProcessorParticipateInBufferAllocationRequest.buffer_constraints_version_ordinal",
+        "ordinal": "2",
+        "type": "uint64"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.media/StreamProcessorParticipateInBufferAllocationRequest.buffer_lifetime_ordinal",
+        "ordinal": "4",
+        "type": "uint64"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.media/StreamProcessorParticipateInBufferAllocationRequest.port",
+        "ordinal": "1",
+        "type": "fuchsia.media/Port"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.media/StreamProcessorParticipateInBufferAllocationRequest.sysmem2_token",
+        "ordinal": "3",
+        "type": "fuchsia.sysmem2/BufferCollectionToken"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.media/StreamProcessorParticipateInBufferAllocationRequest",
+        "resourceness": "resource"
     },
     {
         "kind": "struct/member",
@@ -4187,6 +4366,29 @@
     {
         "kind": "struct",
         "name": "fuchsia.media/StreamProcessorRecycleOutputPacketRequest"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.media/StreamProcessorRemoveBufferRequest.buffer_index",
+        "ordinal": "3",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.media/StreamProcessorRemoveBufferRequest.buffer_lifetime_ordinal",
+        "ordinal": "2",
+        "type": "uint64"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.media/StreamProcessorRemoveBufferRequest.port",
+        "ordinal": "1",
+        "type": "fuchsia.media/Port"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.media/StreamProcessorRemoveBufferRequest",
+        "resourceness": "resource"
     },
     {
         "kind": "struct/member",

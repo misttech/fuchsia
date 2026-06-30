@@ -96,6 +96,7 @@ class DummyEvents : public CodecAdapterEvents {
                                bool error_detected_during) override {}
   void onCoreCodecOutputEndOfStream(bool error_detected_before) override {}
   void onCoreCodecInputPacketDone(CodecPacket* packet) override {}
+  void onCoreCodecOutputTimestampHasNoOutput(uint64_t timestamp_ish) override {}
   void onCoreCodecLogEvent(
       media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent event_code) override {}
 };

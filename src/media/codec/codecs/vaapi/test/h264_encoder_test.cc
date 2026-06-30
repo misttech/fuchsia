@@ -85,6 +85,8 @@ class FakeCodecAdapterEvents : public CodecAdapterEvents {
     cond_.notify_all();
   }
 
+  void onCoreCodecOutputTimestampHasNoOutput(uint64_t timestamp_ish) override {}
+
   void onCoreCodecOutputEndOfStream(bool error_detected_before) override {
     printf("Got onCoreCodecOutputEndOfStream\n");
     fflush(stdout);
@@ -136,7 +138,7 @@ class FakeCodecAdapterEvents : public CodecAdapterEvents {
   std::mutex lock_;
   std::condition_variable cond_;
 
-  std::vector<CodecPacket *> input_packets_done_;
+  std::vector<const CodecPacket *> input_packets_done_;
   std::vector<CodecPacket *> output_packets_done_;
   bool buffer_initialization_completed_ = false;
 };

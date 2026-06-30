@@ -14,6 +14,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <unordered_set>
 #include <vector>
 
 #include "codec_buffer.h"
@@ -135,6 +136,7 @@ class CodecClient {
   void set_is_input_secure(bool is_input_secure) { is_input_secure_ = is_input_secure; }
   void set_in_lax_mode(bool lax_mode) { in_lax_mode_ = lax_mode; }
   void set_is_output_tiled(bool is_output_tiled) { is_output_tiled_ = is_output_tiled; }
+  void set_is_dynamic_buffers(bool is_dynamic_buffers) { is_dynamic_buffers_ = is_dynamic_buffers; }
 
   // On this thread, while the codec is being fed input data on
  private:
@@ -154,10 +156,11 @@ class CodecClient {
       bool is_output, fuchsia::sysmem2::BufferCollectionSyncPtr* buffer_collection_param,
       fuchsia::sysmem2::BufferCollectionInfo* out_buffer_collection_info);
 
+  // dynamic_buffer_count.has_value() also controls whether we use dynamic buffers
   bool ConfigurePortBufferCollection(
       bool is_output, uint64_t new_buffer_lifetime_ordinal,
-      uint64_t buffer_constraints_version_ordinal, uint32_t* out_packet_count,
-      fuchsia::sysmem2::BufferCollectionPtr* out_buffer_collection,
+      uint64_t buffer_constraints_version_ordinal, std::optional<uint32_t> dynamic_buffer_count,
+      uint32_t* out_packet_count, fuchsia::sysmem2::BufferCollectionPtr* out_buffer_collection,
       fuchsia::sysmem2::BufferCollectionInfo* out_buffer_collection_info);
 
   //
@@ -206,6 +209,7 @@ class CodecClient {
   uint32_t min_output_buffer_size_ = 0;
   uint32_t min_output_buffer_count_ = 0;
   bool is_output_tiled_ = false;
+  bool is_dynamic_buffers_ = false;
   // This only temporarily holds the Codec request that was created during the
   // constructor.  If the caller asks for this more than once, the subsequent
   // requests give back a !is_valid() request.
@@ -265,16 +269,22 @@ class CodecClient {
   // to free/busy status of packets.  In general a client shouldn't let a
   // badly-behaved server cause the client to crash.
   //
+  // When using dynamic buffers the client is allowed to use arbitrary
+  // packet_index values. Currently we pack them sequentially regardless of
+  // is_dynamic_buffers.
+  //
   // true - free
   // false - not free (from when we queue a lambda that'll end up sending the
   //   packet to the codec, to when we receive the message from the codec saying
   //   the packet is free again)
   std::vector<bool> input_free_packet_bits_;
 
-  // Which output packets are free from the client point of view.  If the server
-  // tries to emit the same packet more than once concurrently, these bits are
-  // how we notice.
-  std::vector<bool> output_free_packet_bits_;
+  // Which output packet_index(s) are used from the client point of view.  If
+  // the server tries to emit the same packet more than once concurrently, this
+  // is how we notice. When using dynamic_buffers, the server is allowed to
+  // assign arbitrary packet_index values, so we track the used packet_index
+  // values sparsely here.
+  std::unordered_set<uint32_t> output_used_packet_indexes_;
 
   // The server must order its output strictly by stream_lifetime_ordinal - once
   // a new stream_lifetime_ordinal has started the server can't output anything

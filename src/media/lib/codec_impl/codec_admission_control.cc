@@ -114,15 +114,24 @@ void CodecAdmissionControl::CleanOutPreviousClosures() {
 }
 
 CodecAdmission::~CodecAdmission() {
+  if (nop_instance_) {
+    return;
+  }
   codec_admission_control_->RemoveCodec(multi_instance_, port_key_);
 }
 
 CodecAdmission::CodecAdmission(CodecAdmissionControl* codec_admission_control, bool multi_instance)
     : codec_admission_control_(codec_admission_control), multi_instance_(multi_instance) {
   ZX_DEBUG_ASSERT(codec_admission_control_);
+  ZX_DEBUG_ASSERT(!nop_instance_);
 }
 
+CodecAdmission::CodecAdmission() : nop_instance_(true) {}
+
 void CodecAdmission::SetChannelToWaitOn(const zx::channel& channel) {
+  if (nop_instance_) {
+    return;
+  }
   ZX_DEBUG_ASSERT(channel);
   ZX_DEBUG_ASSERT(!port_key_);
   std::lock_guard<std::mutex> lock(codec_admission_control_->lock_);
@@ -134,4 +143,9 @@ void CodecAdmission::SetChannelToWaitOn(const zx::channel& channel) {
   zx_status_t status = channel.wait_async(codec_admission_control_->close_port_, port_key_,
                                           ZX_CHANNEL_PEER_CLOSED, 0);
   ZX_ASSERT(status == ZX_OK);
+}
+
+// static
+std::unique_ptr<CodecAdmission> CodecAdmission::NoAdmissionControlNeeded() {
+  return std::unique_ptr<CodecAdmission>(new CodecAdmission());
 }

@@ -38,6 +38,8 @@ fidl_library(
     deps = [
         "//sdk/fidl/fuchsia.hardware.audio",
         "//sdk/fidl/fuchsia.images",
+        "//sdk/fidl/fuchsia.images2",
+        "//sdk/fidl/fuchsia.math",
         "//sdk/fidl/fuchsia.media.audio",
         "//sdk/fidl/fuchsia.sysmem",
         "//sdk/fidl/fuchsia.sysmem2",

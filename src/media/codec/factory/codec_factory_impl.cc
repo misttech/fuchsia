@@ -17,9 +17,10 @@
 
 #include <algorithm>
 
-#include "codec_isolate.h"
 #include "lib/zx/eventpair.h"
 #include "src/lib/fxl/strings/string_printf.h"
+#include "src/media/codec/factory/codec_isolate.h"
+#include "src/media/codec/factory/codec_specifier.h"
 
 namespace {
 
@@ -35,89 +36,151 @@ const std::string kIsolateRelativeUrlCvsd = "#meta/codec_runner_sw_cvsd.cm";
 const std::string kIsolateRelativeUrlFfmpeg = "#meta/codec_runner_sw_ffmpeg.cm";
 const std::string kIsolateRelativeUrlLc3 = "#meta/codec_runner_sw_lc3.cm";
 
+struct EncoderSupportsCodec {
+  std::string mime_type;
+  std::function<bool(const fuchsia::media::EncoderSettings&)> supports_settings;
+  std::string codec_specifier;
+};
+
 struct EncoderSupportSpec {
   std::string isolate_url;
-  std::vector<std::string> mime_types;
-  std::function<bool(const fuchsia::media::EncoderSettings&)> supports_settings;
-  bool supports_mime_type(const std::string& mime_type) const {
-    return std::find(mime_types.begin(), mime_types.end(), mime_type) != mime_types.end();
-  }
-  bool supports(const std::string& mime_type,
-                const fuchsia::media::EncoderSettings& settings) const {
-    return supports_mime_type(mime_type) && supports_settings(settings);
+  std::vector<EncoderSupportsCodec> codecs;
+  bool supports(const std::string& mime_type, const fuchsia::media::EncoderSettings& settings,
+                const std::optional<std::string>& codec_specifier) const {
+    auto iter = std::ranges::find_if(codecs, [&](const EncoderSupportsCodec& to_check) -> bool {
+      if (to_check.mime_type != mime_type) {
+        return false;
+      }
+      if (!to_check.supports_settings(settings)) {
+        return false;
+      }
+      if (codec_specifier.has_value() && *codec_specifier != to_check.codec_specifier) {
+        return false;
+      }
+      return true;
+    });
+    return iter != codecs.end();
   }
 };
 
 const EncoderSupportSpec kSbcEncoderSupportSpec = {
     .isolate_url = kIsolateRelativeUrlSbc,
-    .mime_types = {"audio/pcm"},
-    .supports_settings =
-        [](const fuchsia::media::EncoderSettings& settings) {
-          return settings.is_sbc() || settings.is_msbc();
+    .codecs =
+        {
+            {.mime_type = "audio/pcm",
+             .supports_settings =
+                 [](const fuchsia::media::EncoderSettings& settings) {
+                   return settings.is_sbc() || settings.is_msbc();
+                 },
+             .codec_specifier = CreateRandomCodecSpecifier()},
         },
 };
 
 const EncoderSupportSpec kAacEncoderSupportSpec = {
     .isolate_url = kIsolateRelativeUrlAac,
-    .mime_types = {"audio/pcm"},
-    .supports_settings =
-        [](const fuchsia::media::EncoderSettings& settings) { return settings.is_aac(); },
+    .codecs =
+        {
+            {
+                .mime_type = "audio/pcm",
+                .supports_settings =
+                    [](const fuchsia::media::EncoderSettings& settings) {
+                      return settings.is_aac();
+                    },
+                .codec_specifier = CreateRandomCodecSpecifier(),
+            },
+        },
 };
 
 const EncoderSupportSpec kCvsdEncoderSupportSpec = {
     .isolate_url = kIsolateRelativeUrlCvsd,
-    .mime_types = {"audio/pcm"},
-    .supports_settings =
-        [](const fuchsia::media::EncoderSettings& settings) { return settings.is_cvsd(); },
+    .codecs = {{
+        .mime_type = "audio/pcm",
+        .supports_settings =
+            [](const fuchsia::media::EncoderSettings& settings) { return settings.is_cvsd(); },
+        .codec_specifier = CreateRandomCodecSpecifier(),
+    }},
 };
 
 const EncoderSupportSpec kLc3EncoderSupportSpec = {
     .isolate_url = kIsolateRelativeUrlLc3,
-    .mime_types = {"audio/pcm"},
-    .supports_settings =
-        [](const fuchsia::media::EncoderSettings& settings) { return settings.is_lc3(); },
+    .codecs =
+        {
+            {
+                .mime_type = "audio/pcm",
+                .supports_settings =
+                    [](const fuchsia::media::EncoderSettings& settings) {
+                      return settings.is_lc3();
+                    },
+                .codec_specifier = CreateRandomCodecSpecifier(),
+            },
+        },
 };
 
 const EncoderSupportSpec supported_encoders[] = {kSbcEncoderSupportSpec, kAacEncoderSupportSpec,
                                                  kCvsdEncoderSupportSpec, kLc3EncoderSupportSpec};
 
+struct MimeTypeAndCodecSpecifier {
+  std::string mime_type;
+  std::string codec_specifier;
+};
+
 struct DecoderSupportSpec {
   std::string isolate_url;
-  std::vector<std::string> mime_types;
-  bool supports(const std::string& mime_type) const {
-    return std::find(mime_types.begin(), mime_types.end(), mime_type) != mime_types.end();
+  std::vector<MimeTypeAndCodecSpecifier> mime_types_and_codec_specifiers;
+  bool supports(const std::string& mime_type,
+                const std::optional<std::string>& codec_specifier) const {
+    auto iter = std::ranges::find_if(
+        mime_types_and_codec_specifiers, [&](const MimeTypeAndCodecSpecifier& to_check) -> bool {
+          if (to_check.mime_type != mime_type) {
+            return false;
+          }
+          if (codec_specifier.has_value() && (to_check.codec_specifier != *codec_specifier)) {
+            return false;
+          }
+          return true;
+        });
+    return iter != mime_types_and_codec_specifiers.end();
   }
 };
 
 const DecoderSupportSpec kFfmpegSupportSpec = {
     .isolate_url = kIsolateRelativeUrlFfmpeg,
-    .mime_types = {"video/h264"},
+    .mime_types_and_codec_specifiers = {{.mime_type = "video/h264",
+                                         .codec_specifier = CreateRandomCodecSpecifier()}},
 };
 
-const DecoderSupportSpec kSbcDecoderSuportSpec = {
+const DecoderSupportSpec kSbcDecoderSupportSpec = {
     .isolate_url = kIsolateRelativeUrlSbc,
-    .mime_types = {"audio/sbc", "audio/msbc"},
+    .mime_types_and_codec_specifiers =
+        {
+            {.mime_type = "audio/sbc", .codec_specifier = CreateRandomCodecSpecifier()},
+            {.mime_type = "audio/msbc", .codec_specifier = CreateRandomCodecSpecifier()},
+        },
 };
 
 const DecoderSupportSpec kCvsdDecoderSupportSpec = {
     .isolate_url = kIsolateRelativeUrlCvsd,
-    .mime_types = {"audio/cvsd"},
+    .mime_types_and_codec_specifiers = {{.mime_type = "audio/cvsd",
+                                         .codec_specifier = CreateRandomCodecSpecifier()}},
 };
 
 const DecoderSupportSpec kLc3DecoderSupportSpec = {
     .isolate_url = kIsolateRelativeUrlLc3,
-    .mime_types = {"audio/lc3"},
+    .mime_types_and_codec_specifiers = {{.mime_type = "audio/lc3",
+                                         .codec_specifier = CreateRandomCodecSpecifier()}},
 };
 
-const DecoderSupportSpec supported_decoders[] = {kFfmpegSupportSpec, kSbcDecoderSuportSpec,
+const DecoderSupportSpec supported_decoders[] = {kFfmpegSupportSpec, kSbcDecoderSupportSpec,
                                                  kCvsdDecoderSupportSpec, kLc3DecoderSupportSpec};
 
 std::optional<std::string> FindEncoder(const std::string& mime_type,
-                                       const fuchsia::media::EncoderSettings& settings) {
-  auto encoder = std::find_if(std::begin(supported_encoders), std::end(supported_encoders),
-                              [&mime_type, &settings](const EncoderSupportSpec& encoder) {
-                                return encoder.supports(mime_type, settings);
-                              });
+                                       const fuchsia::media::EncoderSettings& settings,
+                                       const std::optional<std::string> codec_specifier) {
+  auto encoder =
+      std::find_if(std::begin(supported_encoders), std::end(supported_encoders),
+                   [&mime_type, &settings, &codec_specifier](const EncoderSupportSpec& encoder) {
+                     return encoder.supports(mime_type, settings, codec_specifier);
+                   });
 
   if (encoder == std::end(supported_encoders)) {
     return std::nullopt;
@@ -126,10 +189,12 @@ std::optional<std::string> FindEncoder(const std::string& mime_type,
   return encoder->isolate_url;
 }
 
-std::optional<std::string> FindDecoder(const std::string& mime_type) {
-  auto decoder = std::find_if(
-      std::begin(supported_decoders), std::end(supported_decoders),
-      [&mime_type](const DecoderSupportSpec& decoder) { return decoder.supports(mime_type); });
+std::optional<std::string> FindDecoder(const std::string& mime_type,
+                                       std::optional<std::string> codec_specifier) {
+  auto decoder = std::find_if(std::begin(supported_decoders), std::end(supported_decoders),
+                              [&mime_type, &codec_specifier](const DecoderSupportSpec& decoder) {
+                                return decoder.supports(mime_type, codec_specifier);
+                              });
 
   if (decoder == std::end(supported_decoders)) {
     return std::nullopt;
@@ -172,8 +237,8 @@ CodecFactoryImpl::CodecFactoryImpl(
       binding_(this, std::move(request), app_->dispatcher()) {
   binding_.set_error_handler([this](zx_status_t status) { self_.reset(); });
 
-  // The app already has all hardware codecs loaded by the time we get to talk
-  // to it, so we don't need to wait for it now.
+  // The app already has all pre-existing hardware codecs loaded by the time we get to talk to it,
+  // so we don't need to wait for it now.
   //
   // This message is deprecated, but is sent for the benefit of clients that haven't yet moved to
   // GetDetailedCodecDescriptions.
@@ -201,6 +266,9 @@ void CodecFactoryImpl::CreateDecoder(
     return;
   }
 
+  auto codec_specifier =
+      params.has_codec_specifier() ? std::optional{params.codec_specifier()} : std::nullopt;
+
   // We don't have any need to bind the codec_request locally to this process.
   // Instead, we find where to delegate the request to.
 
@@ -210,7 +278,7 @@ void CodecFactoryImpl::CreateDecoder(
     // First, try to find a hw-accelerated codec to satisfy the request.
     auto mime_type = params.input_details().mime_type();
     const fuchsia::mediacodec::CodecFactoryPtr* factory = app_->FindHwCodec(
-        [&mime_type](
+        [&mime_type, &codec_specifier](
             const fuchsia::mediacodec::DetailedCodecDescription& hw_codec_description) -> bool {
           // TODO(dustingreen): pay attention to the bool constraints of the
           // params vs. the hw_codec_description bools.  For the moment we just
@@ -218,7 +286,9 @@ void CodecFactoryImpl::CreateDecoder(
           constexpr fuchsia::mediacodec::CodecType codec_type =
               fuchsia::mediacodec::CodecType::DECODER;
           return (codec_type == hw_codec_description.codec_type()) &&
-                 (mime_type == hw_codec_description.mime_type());
+                 (mime_type == hw_codec_description.mime_type() &&
+                  (!codec_specifier.has_value() ||
+                   *codec_specifier == hw_codec_description.codec_specifier()));
         });
     if (factory && (!params.has_require_hw() || !params.require_hw()) && !AdmitHwDecoder(params)) {
       factory = nullptr;
@@ -232,7 +302,7 @@ void CodecFactoryImpl::CreateDecoder(
       return;
     }
     hw_isolate = app_->FindHwIsolate(
-        [&mime_type](
+        [&mime_type, &codec_specifier](
             const fuchsia::mediacodec::DetailedCodecDescription& hw_codec_description) -> bool {
           // TODO(dustingreen): pay attention to the bool constraints of the
           // params vs. the hw_codec_description bools.  For the moment we just
@@ -240,7 +310,9 @@ void CodecFactoryImpl::CreateDecoder(
           constexpr fuchsia::mediacodec::CodecType codec_type =
               fuchsia::mediacodec::CodecType::DECODER;
           return (codec_type == hw_codec_description.codec_type()) &&
-                 (mime_type == hw_codec_description.mime_type());
+                 (mime_type == hw_codec_description.mime_type() &&
+                  (!codec_specifier.has_value() ||
+                   *codec_specifier == hw_codec_description.codec_specifier()));
         });
     if (hw_isolate) {
       isolate_type = IsolateType::kMagma;
@@ -257,11 +329,17 @@ void CodecFactoryImpl::CreateDecoder(
   }
 
   auto maybe_decoder_isolate_url = hw_isolate;
-  if (!maybe_decoder_isolate_url)
-    maybe_decoder_isolate_url = FindDecoder(params.input_details().mime_type());
+  if (!maybe_decoder_isolate_url) {
+    maybe_decoder_isolate_url = FindDecoder(params.input_details().mime_type(), codec_specifier);
+  }
 
   if (!maybe_decoder_isolate_url) {
-    FX_LOGS(WARNING) << "No decoder supports " << params.input_details().mime_type();
+    if (!codec_specifier.has_value()) {
+      FX_LOGS(WARNING) << "No decoder supports " << params.input_details().mime_type();
+    } else {
+      FX_LOGS(WARNING) << "No decoder supports " << params.input_details().mime_type()
+                       << " with codec_specifier " << codec_specifier->c_str();
+    }
     return;
   }
 
@@ -312,7 +390,9 @@ void CodecFactoryImpl::CreateEncoder(
       [&encoder_params](
           const fuchsia::mediacodec::DetailedCodecDescription& hw_codec_description) -> bool {
         return (fuchsia::mediacodec::CodecType::ENCODER == hw_codec_description.codec_type()) &&
-               (encoder_params.input_details().mime_type() == hw_codec_description.mime_type());
+               (encoder_params.input_details().mime_type() == hw_codec_description.mime_type()) &&
+               (!encoder_params.has_codec_specifier() ||
+                encoder_params.codec_specifier() == hw_codec_description.codec_specifier());
       });
 
   if (factory && !AdmitHwEncoder(encoder_params)) {
@@ -329,7 +409,9 @@ void CodecFactoryImpl::CreateEncoder(
       [&encoder_params](
           const fuchsia::mediacodec::DetailedCodecDescription& hw_codec_description) -> bool {
         return (fuchsia::mediacodec::CodecType::ENCODER == hw_codec_description.codec_type()) &&
-               (encoder_params.input_details().mime_type() == hw_codec_description.mime_type());
+               (encoder_params.input_details().mime_type() == hw_codec_description.mime_type()) &&
+               (!encoder_params.has_codec_specifier() ||
+                encoder_params.codec_specifier() == hw_codec_description.codec_specifier());
       });
   IsolateType isolate_type = IsolateType::kSw;
   if (hw_isolate) {
@@ -346,7 +428,10 @@ void CodecFactoryImpl::CreateEncoder(
   auto maybe_encoder_isolate_url = hw_isolate;
   if (!maybe_encoder_isolate_url) {
     maybe_encoder_isolate_url = FindEncoder(encoder_params.input_details().mime_type(),
-                                            encoder_params.input_details().encoder_settings());
+                                            encoder_params.input_details().encoder_settings(),
+                                            encoder_params.has_codec_specifier()
+                                                ? std::optional{encoder_params.codec_specifier()}
+                                                : std::nullopt);
   }
 
   if (!maybe_encoder_isolate_url) {

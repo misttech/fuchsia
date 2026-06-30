@@ -937,6 +937,7 @@ void VideoDecoderRunner::Run() {
   codec_client_->set_is_input_secure(params_.is_secure_input);
   codec_client_->set_in_lax_mode(params_.lax_mode);
   codec_client_->set_is_output_tiled(params_.test_params->is_output_y_tiled);
+  codec_client_->set_is_dynamic_buffers(params_.test_params->is_dynamic_buffers);
 
   std::string mime_type;
   switch (format_) {

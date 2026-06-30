@@ -20,13 +20,16 @@ source_set("factory_source") {
     "codec_factory_policy.h",
     "codec_isolate.cc",
     "codec_isolate.h",
+    "codec_specifier.cc",
+    "codec_specifier.h",
   ]
 
   public_deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_hlcpp",
     "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_hlcpp",
+    "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma_cpp",
     "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma_hlcpp",
-    "//sdk/fidl/fuchsia.hardware.mediacodec:fuchsia.hardware.mediacodec_hlcpp",
+    "//sdk/fidl/fuchsia.hardware.mediacodec:fuchsia.hardware.mediacodec_cpp",
     "//sdk/fidl/fuchsia.media:fuchsia.media_hlcpp",
     "//sdk/fidl/fuchsia.mediacodec:fuchsia.mediacodec_hlcpp",
     "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_hlcpp",
@@ -46,13 +49,13 @@ source_set("factory_source") {
   deps = [ "//sdk/lib/vfs/cpp" ]
 }
 
-fuchsia_component("component") {
+fuchsia_component("codec_factory_component") {
   manifest = "meta/codec_factory.cml"
-  deps = [ ":factory" ]
+  deps = [ ":codec_factory_bin" ]
   component_name = "codec_factory"
 }
 
-executable("factory") {
+executable("codec_factory_bin") {
   output_name = "codec_factory"
 
   sources = [ "main.cc" ]
@@ -131,6 +134,7 @@ cc_test_executable("codec_factory_integration_test_exe") {
 
   deps = [
     "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma_hlcpp",
+    "//sdk/fidl/fuchsia.hardware.mediacodec:fuchsia.hardware.mediacodec_hlcpp",
     "//sdk/fidl/fuchsia.mediacodec:fuchsia.mediacodec_hlcpp",
     "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_hlcpp",
     "//sdk/lib/async-loop:async-loop-cpp",
@@ -171,8 +175,8 @@ fuchsia_component("fake_codec_factory") {
 
 fuchsia_unittest_package("codec_factory_integration_test") {
   deps = [
+    ":codec_factory_component",
     ":codec_factory_integration_test_exe",
-    ":component",
     ":fake_codec_factory",
   ]
   manifest = "meta/codec_factory_integration_test.cml"

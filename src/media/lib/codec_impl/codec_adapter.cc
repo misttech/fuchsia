@@ -8,11 +8,6 @@
 #include <limits>
 #include <memory>
 
-namespace {
-constexpr uint64_t kInputBufferConstraintsVersionOrdinal = 1;
-
-}  // namespace
-
 CodecAdapter::CodecAdapter(std::mutex& lock, CodecAdapterEvents* codec_adapter_events)
     : lock_(lock),
       events_(codec_adapter_events),
@@ -25,8 +20,6 @@ CodecAdapter::CodecAdapter(std::mutex& lock, CodecAdapterEvents* codec_adapter_e
 CodecAdapter::~CodecAdapter() {
   // nothing to do here
 }
-
-void SetCodecMetrics(CodecMetrics* codec_metrics);
 
 void CodecAdapter::SetCodecDiagnostics(CodecDiagnostics* codec_diagnostics) {
   // Default implementation does nothing with diagnostic data
@@ -53,9 +46,14 @@ void CodecAdapter::CoreCodecSetSecureMemoryMode(
 
 std::unique_ptr<const fuchsia::media::StreamBufferConstraints>
 CodecAdapter::CoreCodecBuildNewInputConstraints() {
-  auto constraints = std::make_unique<fuchsia::media::StreamBufferConstraints>();
-  constraints->set_buffer_constraints_version_ordinal(kInputBufferConstraintsVersionOrdinal);
-  return constraints;
+  ZX_PANIC("never called");
+}
+
+std::unique_ptr<const fuchsia::media::StreamOutputConstraints>
+CodecAdapter::CoreCodecBuildNewOutputConstraints(
+    uint64_t stream_lifetime_ordinal, uint64_t new_output_buffer_constraints_version_ordinal,
+    bool buffer_constraints_action_required) {
+  ZX_PANIC("never called");
 }
 
 void CodecAdapter::CoreCodecResetStreamAfterCurrentFrame() {

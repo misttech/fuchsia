@@ -8,6 +8,9 @@
 #include <fuchsia/media/cpp/fidl.h>
 #include <lib/media/codec_impl/codec_metrics.h>
 
+#include <optional>
+
+class CodecBuffer;
 class CodecPacket;
 
 //
@@ -43,19 +46,37 @@ class CodecAdapterEvents {
 
   // "Mid-stream" can mean at the start of a stream also - it's just required
   // that a stream be active currently.  The core codec must ensure that this
-  // call is propertly ordered with respect to onCoreCodecOutputPacket() and
+  // call is properly ordered with respect to onCoreCodecOutputPacket() and
   // onCoreCodecOutputEndOfStream() calls.
   //
-  // A call to onCoreCodecMidStreamOutputConstraintsChange(true) must not be
-  // followed by any more output (including EndOfStream) until the associated
-  // output re-config is completed by a call to
-  // CoreCodecMidStreamOutputBufferReConfigFinish().
+  // When not using dynamic buffers, a call to
+  // onCoreCodecMidStreamOutputConstraintsChange2 must not be followed by any
+  // more output (including EndOfStream) until the associated output re-config
+  // is completed by a call to CoreCodecMidStreamOutputBufferReConfigFinish().
+  //
+  // When using dynamic buffers there is no such restriction - the core codec is
+  // free to output a packet or EOS using any currently-added buffer (see also
+  // EnableSameOutputBufferConcurrentlyInFlight).
+  //
+  // The constraints_version value is in the same sequence as
+  // CoreCodecGetBufferCollectionConstraints3Result.constraints_version.
+  virtual void onCoreCodecMidStreamOutputConstraintsChange2(uint64_t constraints_version) {
+    // Some tests use CodecAdapterEvents without overriding
+    // onCoreCodecMidStreamOutputConstraintsChange2, but they don't call it.
+    ZX_PANIC("not implemented");
+  }
+  // Deprecated; use onCoreCodecMidStreamOutputConstraintsChange2 instead.
+  //
+  // Passing false for output_re_config_required is deprecated (and has been for
+  // a long time) and passing false will terminate the current process in
+  // release builds as well as debug builds. The old meaning of false is now
+  // communicated using onCoreCodecOutputFormatChange instead.
   virtual void onCoreCodecMidStreamOutputConstraintsChange(bool output_re_config_required) = 0;
 
   // When the core codec calls this method, the CodecImpl will note that the
   // format has changed, and on next onCoreCodecOutputPacket(), the CodecImpl
   // will ask the core codec for the format and generate and send an
-  // OnOutputformat() message before that output packet.  This way, the core
+  // OnOutputFormat() message before that output packet.  This way, the core
   // codec is free to call onCoreCodecOutputFormat() repeatedly without any
   // packet in between, with CodecImpl collapsing these into one
   // OnOutputFormat() to avoid the extra message (so it doesn't have to be sent
@@ -64,8 +85,16 @@ class CodecAdapterEvents {
 
   virtual void onCoreCodecInputPacketDone(CodecPacket* packet) = 0;
 
+  // CodecAdapter(s) should take care to call onCoreCodecOutputPacket
+  // referencing a buffer before any dropping of any CodecAdapter(s) handle(s)
+  // to the referenced buffer.
   virtual void onCoreCodecOutputPacket(CodecPacket* packet, bool error_detected_before,
                                        bool error_detected_during) = 0;
+
+  // This must only be called between onCorecodecInputPacketDone and onCoreCodecOutputEndOfStream.
+  // This does not need to be called if CoreCodecStopStream is called before a timestamp_ish value
+  // has been resolved as to whether it would have generated output.
+  virtual void onCoreCodecOutputTimestampHasNoOutput(uint64_t timestamp_ish) = 0;
 
   virtual void onCoreCodecOutputEndOfStream(bool error_detected_before) = 0;
 

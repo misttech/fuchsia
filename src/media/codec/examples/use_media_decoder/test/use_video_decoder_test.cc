@@ -74,7 +74,7 @@ int use_video_decoder_test(std::string input_file_path, int expected_frame_count
   {
     std::lock_guard<std::mutex> lock(tags_lock);
     fuchsia_logging::LogSettingsBuilder builder;
-    builder.WithTags({"video_decoder_fuzzer_test"}).BuildAndInitialize();
+    builder.WithTags({"use_video_decoder_test"}).BuildAndInitialize();
   }
 
   thrd_t fidl_thread;

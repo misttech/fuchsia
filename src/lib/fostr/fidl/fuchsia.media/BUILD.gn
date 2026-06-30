@@ -10,6 +10,8 @@ fostr_fidl("fuchsia.media") {
   deps = [
     "//src/lib/fostr/fidl/fuchsia.hardware.audio",
     "//src/lib/fostr/fidl/fuchsia.images",
+    "//src/lib/fostr/fidl/fuchsia.images2",
+    "//src/lib/fostr/fidl/fuchsia.math",
     "//src/lib/fostr/fidl/fuchsia.media.audio",
     "//src/lib/fostr/fidl/fuchsia.sysmem",
     "//src/lib/fostr/fidl/fuchsia.sysmem2",

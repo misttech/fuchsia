@@ -6,6 +6,7 @@
 #define SRC_MEDIA_LIB_CODEC_IMPL_INCLUDE_LIB_MEDIA_CODEC_IMPL_CODEC_PACKET_H_
 
 #include <fuchsia/media/cpp/fidl.h>
+#include <lib/media/codec_impl/codec_buffer.h>
 #include <stdint.h>
 
 #include <limits>
@@ -13,7 +14,7 @@
 
 #include <fbl/macros.h>
 
-class CodecBuffer;
+class CodecImpl;
 class CodecPacketForTest;
 
 // Instances of this class are 1:1 with fuchsia::media::Packet.
@@ -23,6 +24,12 @@ class CodecPacket {
 
   uint64_t buffer_lifetime_ordinal() const;
 
+  // This will assert in debug if is_supports_dynamic_buffers_ true.
+  //
+  // This is deprecated. CodecAdapter(s) should not call this, and should also
+  // not need to call protocol_packet_index or allocated_packet_index (both are
+  // private). The CodecPacket* itself is how CodecImpl and CodecAdapter
+  // communicate regarding a CodecPacket.
   uint32_t packet_index() const;
 
   void SetBuffer(const CodecBuffer* buffer);
@@ -43,6 +50,8 @@ class CodecPacket {
   bool has_timestamp_ish() const;
   uint64_t timestamp_ish() const;
 
+  // from CodecImpl / protocol point of view; CodecAdapter's point of view can be different for
+  // short time intervals
   void SetFree(bool is_free);
   bool is_free() const;
 
@@ -72,15 +81,58 @@ class CodecPacket {
   // the Packet lifetime.
   CodecPacket(uint64_t buffer_lifetime_ordinal, uint32_t packet_index);
 
+  // This is separate from the constructor because some core codec tests use
+  // CodecPacket but don't have a CodecImpl, and there's no compelling reason to
+  // create a CodecPacketOwner interface.
+  void SetParent(const CodecImpl* parent);
+
   void ClearStartOffset();
   void ClearValidLengthBytes();
 
-  uint64_t buffer_lifetime_ordinal_ = 0;
-  uint32_t packet_index_ = 0;
+  // This is intentionally private so that the CodecAdapter can't call this.
+  //
+  // CodecImpl handles the protocol packet_index and ensures that the
+  // CodecAdapter can track packets by CodecPacket*, without worrying about the
+  // protocol packet_index.
+  //
+  // This is only valid to call when is_free() true, and this will assert in
+  // debug if is_free() false.
+  //
+  // In general this value can change as a CodecPacket is associated with
+  // different protocol packet_index values over time.
+  void SetProtocolPacketIndex(uint32_t protocol_packet_index);
+  void ClearProtocolPacketIndex();
+  // Until SetProtocolPacketIndex() is called the first time, this will be the
+  // same value as allocated_packet_index().
+  uint32_t protocol_packet_index() const;
 
-  // The buffer_ is meaningful only while a packet_index is in-flight, not
-  // while the packet_index is free.
+  // This is intentionally private so that the CodecAdapter can't call this.
+  //
+  // This is the index within the vector in CodecImpl.active_packets_ of this
+  // CodecPacket. In general this is not the same as protocol_packet_index().
+  //
+  // This value doesn't change for a given constructed CodecPacket.
+  uint32_t allocated_packet_index() const;
+
+  const CodecImpl* parent_ = nullptr;
+
+  const uint64_t buffer_lifetime_ordinal_ = 0;
+
+  const uint32_t allocated_packet_index_ = 0;
+  std::optional<uint32_t> protocol_packet_index_ = 0;
+
+  // From CodecImpl's point of view, the buffer_ is meaningful only while a
+  // packet_index is in-flight, not while the packet_index is free from
+  // CodecImpl's point of view (per is_free()).
+  //
+  // A CodecAdapter can optionally ensure this is nullptr when a packet becomes
+  // free from the CodecAdapter's point of view (during handling of
+  // CoreCodecRecycleOutputPacket, whether the handling is sync or async).
+  //
+  // A CodecAdapter can rely on this being nullptr at the start of the first
+  // CoreCodecRecycleOutputPacket call for this packet.
   const CodecBuffer* buffer_ = nullptr;
+  std::optional<CodecBuffer::KeepAlive> buffer_keep_alive_;
 
   uint32_t start_offset_ = kStartOffsetNotSet;
   uint32_t valid_length_bytes_ = kValidLengthBytesNotSet;

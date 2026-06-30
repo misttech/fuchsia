@@ -16,7 +16,9 @@ void OutputSink::AddOutputPacket(CodecPacket* output_packet) {
 
   if (output_packet->buffer()) {
     free_output_buffers_.Push(std::move(output_packet->buffer()));
+    output_packet->SetBuffer(nullptr);
   }
+  ZX_DEBUG_ASSERT(output_packet->buffer() == nullptr);
 
   free_output_packets_.Push(std::move(output_packet));
 }

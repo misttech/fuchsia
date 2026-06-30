@@ -220,6 +220,77 @@ type CreateDecoder_Params = table {
     ///
     /// If not set, interpreted as false.
     11: require_sw bool;
+
+    /// If set to true, require that the created codec supports dynamic buffers.
+    /// See also
+    /// `[fuchsia.mediacodec/DetailedCodecDescription.supports_dynamic_buffers]`.
+    ///
+    /// Support for dynamic buffers doesn't imply support for non-sysmem
+    /// buffers.
+    @available(added=NEXT)
+    12: require_supports_dynamic_buffers bool;
+
+    /// This field is only meaningful for video decoders. If this is set to
+    /// true, require_supports_dynamic_buffers must also be set to true.
+    ///
+    /// The default when this field isn't set is false, which avoids buffer
+    /// reallocation on mid-stream dimensions changes as long as (a) the decoder
+    /// implements re-use of existing buffers and (b) the new image size in
+    /// bytes still fits within the existing buffer size in bytes.
+    ///
+    /// Dimensions changes, both up and down, are extremely common in practice
+    /// for nearly all streaming scenarios (RTC or not). It's quite common for a
+    /// stream to lower dimensions to help ride out network conditions and/or an
+    /// image complexity spike, then raise the dimensions back up once
+    /// conditions improve. By keeping the larger buffers (only allocating new
+    /// buffers when the image size in bytes (or in width and height considered
+    /// separately) exceeds the high-water mark seen so far), this lowers the
+    /// risk of jank for most mid-stream dimension switches.
+    ///
+    /// When this is set to true, _some_ HW video decoders may be able to avoid
+    /// buffer reallocation in some cases by using the same ImageFormat.size
+    /// with a compensating ImageFormat.display_rect. However, not all HW video
+    /// decoders can do this (not all allow specifying a large stride for a
+    /// narrow image for HW video decoder output).
+    ///
+    /// A video decoder may use force_new_buffers_for_new_dimensions as part of
+    /// determining how the video decoder sets sysmem constraints, and this in
+    /// turn may impact how a small frame in a larger buffer is formatted and
+    /// how its ImageFormat.size is reported to the client. Video decoders are
+    /// strongly encouraged to fill out ImageFormat.valid_size to be the
+    /// bitstream-specified coded size, regardless of how the ImageFormat.size
+    /// is determined. Video decoders must report a consistent (with the
+    /// bitstream) and correct ImageFormat.display_rect regardless of how
+    /// ImageFormat.size is determined.
+    ///
+    /// true: a given buffer has fixed dimensions (ImageFormat.size) and stride
+    /// (ImageFormat.bytes_per_row) for lifetime of the buffer; if current
+    /// buffers don't have sufficient dimensions (width and height considered
+    /// separately) and sufficient bytes_per_row, new buffers will be requested
+    /// by the video decoder.
+    ///
+    /// false: a given buffer can be re-used to hold any image dimensions (any
+    /// ImageFormat.size) that are small enough to fit in the buffer (and
+    /// consistent with aggregated sysmem constraints); the bytes_per_row can
+    /// also change when the buffer is re-used (consistent with aggregated
+    /// sysmem constraints) - if current buffers are too small (in bytes), new
+    /// buffers will be requested
+    @available(added=NEXT)
+    13: force_new_buffers_for_new_dimensions bool;
+
+    /// If set to a value obtained from
+    /// `[fuchsia.mediacodec/DetailedCodecDescription.codec_specifier]`, the
+    /// create request will create the specified codec or fail. The client
+    /// should still set other fields in this table as appropriate, so that the
+    /// codec factory can ensure that the codec will meet the client's
+    /// requirements (and to convey oob_bytes as needed). More than one codec
+    /// reported by from `[fuchsia.mediacodec/DetailedCodecDescription]` can
+    /// have the same codec_specifier iff the underlying implementation is the
+    /// same. A codec implementation may change its codec_specifier(s) each
+    /// boot, whether updated to a new implementation version or not. A
+    /// codec_specifier value is unique per boot and codec implementation.
+    @available(added=NEXT)
+    14: codec_specifier string:CODEC_FACTORY_MAX_CODEC_SPECIFIER_LENGTH;
 };
 
 /// Parameters used to request an encoder.
@@ -236,6 +307,19 @@ type CreateEncoder_Params = table {
     ///
     /// If not set, interpreted as false.
     2: require_hw bool;
+
+    /// If set to a value obtained from
+    /// `[fuchsia.mediacodec/DetailedCodecDescription.codec_specifier]`, the
+    /// create request will create the specified codec or fail. The client
+    /// should still set other fields in this table as appropriate, so that the
+    /// codec factory can ensure that the codec will meet the client's
+    /// requirements (and to convey oob_bytes as needed). More than one codec
+    /// reported by from `[fuchsia.mediacodec/DetailedCodecDescription]` can
+    /// have the same codec_specifier iff the underlying implementation is the
+    /// same. A codec implementation may change its codec_specifier(s) each
+    /// boot, whether updated to a new implementation version or not.
+    @available(added=NEXT)
+    3: codec_specifier string:CODEC_FACTORY_MAX_CODEC_SPECIFIER_LENGTH;
 };
 
 @strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
@@ -244,8 +328,13 @@ type CodecType = strict enum {
     ENCODER = 1;
 };
 
-/// Constrain the mime_type to a size that won't cause problems.
+/// Constrain the mime_type to a size that won't cause problems. Most will be substantially shorter.
 const CODEC_FACTORY_MAX_MIME_TYPE_LENGTH uint32 = 256;
+
+/// Constrain the codec_specifier to a size that won't cause problems. Most will be substantially
+/// shorter.
+@available(added=NEXT)
+const CODEC_FACTORY_MAX_CODEC_SPECIFIER_LENGTH uint32 = 256;
 
 /// More than this many calls to AttachLifetimeTracking()
 /// without a Create{X}() call will result in CodecFactory channel closing from
@@ -472,8 +561,8 @@ type DecoderProfileDescription = table {
     /// as h264 SPS and PPS headers) to be delivered in the same packet as the subsequent chunk
     /// which conveys compressed image data (such as an h264 slice).
     ///
-    /// Splitting a single header between codec_oob_bytes and the stream data is never supported (as
-    /// in, never to be relied on by clients), not even when this field is set to true.
+    /// Splitting a single header between oob_bytes and the stream data is never supported (as in,
+    /// never to be relied on by clients), not even when this field is set to true.
     ///
     /// See also can_stream_bytes_input.
     ///
@@ -538,6 +627,64 @@ type DetailedCodecDescription = table {
     /// A list of profile descriptions that describe what codec profiles this
     /// encoder/decoder supports along with requirements for using each profile.
     4: profile_descriptions ProfileDescriptions;
+
+    /// If set to true, dynamic buffers are supported by the codec. See also
+    /// `[fuchsia.mediacodec/StreamProcessor.AddBuffer]` and
+    /// `[fuchsia.mediacodec/StreamProcessor.RemoveBuffer]` which are required
+    /// to use dynamic buffers.
+    ///
+    /// Regardless of whether `AddBuffer` and `RemoveBuffer` are used (vs.
+    /// `SetInputBufferPartialSettings` / `SetOutputBufferPartialSettings`), see
+    /// `[fuchsia.mediacodec/StreamProcessor.EnableOldOutputBuffers]` and
+    /// `[fuchsia.mediacodec/StreamProcessor.EnableSameOutputBufferConcurrentlyInFlight]`
+    /// which are only permitted when `supports_dynamic_buffers` is true. Both
+    /// of those are required to achieve full bitstream spec compliance with
+    /// some video bitstream formats such as VP9 (when show_existing_frame is
+    /// used in unusual ways).
+    ///
+    /// This does not imply support for non-sysmem-provided VMOs.
+    @available(added=NEXT)
+    5: supports_dynamic_buffers bool;
+
+    /// Having more than this many input buffers added and not yet completely
+    /// removed under the latest buffer_lifetime_ordinal will result in async
+    /// StreamProcessor channel closure.
+    @available(added=NEXT)
+    6: dynamic_buffers_input_max uint32;
+    /// Having more than this many output buffers added and not yet completely
+    /// removed under the latest buffer_lifetime_ordinal will result in async
+    /// StreamProcessor channel closure.
+    @available(added=NEXT)
+    7: dynamic_buffers_output_max uint32;
+    /// This field is set when a codec both supports dynamic buffers and is a
+    /// video decoder. Adding this many buffers to a video decoder's output, and
+    /// ensuring that the buffers will be usable by the decoder prior to the
+    /// whole pipeline blocking on lack of availability of usable output buffers
+    /// in the decoder, will ensure that the decoder doesn't get stuck waiting
+    /// for an available output buffer. See also
+    /// `[fuchsia.mediacodec/StreamBufferConstraints.buffer_count_for_server_current]`
+    /// which may occasionally indicate a lower number of output buffers needed,
+    /// based on headers of the bitstream. However, implementers of clients may
+    /// wish to first check if the relevant headers in relevant streams are
+    /// actually set, since this can be rare in practice unfortunately, making
+    /// paying attention to buffer_count_for_server_current potentially not
+    /// actually worthwhile, depending on the expected streams' headers.
+    @available(added=NEXT)
+    8: dynamic_buffers_video_decoder_output_safe uint32;
+
+    /// Optionally set
+    /// `[fuchsia.mediacodec/CreateDecoder_Params.codec_specifier]` to this
+    /// string to require an instance of this specific codec. The created codec
+    /// will still be checked against other requirements specified there for the
+    /// codec to be created successfully.
+    ///
+    /// This is only valid and specific per boot, not across boots. This allows
+    /// a discovered codec to be requested without any ambiguity, but is
+    /// intentionally not a way for clients to hard code which specific codec
+    /// implementation they want to connect to, as codec selection is by
+    /// properties / capabilities, not by specific codec implementation.
+    @available(added=NEXT)
+    9: codec_specifier string:CODEC_FACTORY_MAX_CODEC_SPECIFIER_LENGTH;
 };
 
 // CodecFactory

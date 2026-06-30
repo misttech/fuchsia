@@ -43,6 +43,8 @@ class FakeCodecAdapterEvents : public CodecAdapterEvents {
   void onCoreCodecOutputPacket(CodecPacket *packet, bool error_detected_before,
                                bool error_detected_during) override;
 
+  void onCoreCodecOutputTimestampHasNoOutput(uint64_t timestamp_ish) override;
+
   void onCoreCodecOutputEndOfStream(bool error_detected_before) override;
 
   void onCoreCodecLogEvent(
@@ -63,7 +65,7 @@ class FakeCodecAdapterEvents : public CodecAdapterEvents {
   std::mutex lock_;
   std::condition_variable cond_;
 
-  std::vector<CodecPacket *> input_packets_done_ FXL_GUARDED_BY(lock_);
+  std::vector<const CodecPacket *> input_packets_done_ FXL_GUARDED_BY(lock_);
 };
 
 class VaapiFuzzerTestFixture : public FakeCodecAdapterEvents::Owner {

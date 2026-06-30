@@ -58,6 +58,8 @@ void FakeCodecAdapterEvents::onCoreCodecOutputPacket(CodecPacket *packet,
   auto output_format = codec_adapter_->CoreCodecGetOutputFormat(1u, 1u);
 }
 
+void FakeCodecAdapterEvents::onCoreCodecOutputTimestampHasNoOutput(uint64_t timestamp_ish) {}
+
 void FakeCodecAdapterEvents::onCoreCodecOutputEndOfStream(bool error_detected_before) {
   std::lock_guard lock(lock_);
   end_of_stream_count_++;

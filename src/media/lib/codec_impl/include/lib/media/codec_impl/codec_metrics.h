@@ -12,14 +12,15 @@
 #include <memory>
 #include <unordered_map>
 
-#include <src/lib/metrics_buffer/metrics_buffer.h>
+#include "src/lib/metrics_buffer/metrics_buffer.h"
 
 #include <src/media/lib/metrics/metrics.cb.h>
 
 // Methods of this class can be called on any thread.
 //
-// TODO(https://fxbug.dev/42167507): This wrapper is temporary to minimize files with diffs in a CL for https://fxbug.dev/42167507.
-// We can switch to using MetricsBuffer/MetricBuffer directly in a later CL.
+// TODO(https://fxbug.dev/42167507): This wrapper is temporary to minimize files with diffs in a CL
+// for https://fxbug.dev/42167507. We can switch to using MetricsBuffer/MetricBuffer directly in a
+// later CL.
 class CodecMetrics final {
  public:
   // A nop instance so unit tests don't need to wire up cobalt.

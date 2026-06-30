@@ -156,6 +156,7 @@ class CodecAdapterSW : public CodecAdapter {
       CodecInputItem input_item = std::move(queued_input_items.front());
       queued_input_items.pop();
       if (input_item.is_packet()) {
+        input_item.packet()->SetBuffer(nullptr);
         events_->onCoreCodecInputPacketDone(input_item.packet());
       }
     }
@@ -172,6 +173,7 @@ class CodecAdapterSW : public CodecAdapter {
       return;
     }
     if (packet->buffer()) {
+      packet->SetBuffer(nullptr);
       LocalOutput local_output;
       {
         std::lock_guard<std::mutex> lock(lock_);

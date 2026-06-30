@@ -14,10 +14,27 @@
 
 CodecBuffer::CodecBuffer(CodecImpl* parent, Info buffer_info, CodecVmoRange vmo_range)
     : parent_(parent), buffer_info_(std::move(buffer_info)), vmo_range_(std::move(vmo_range)) {
-  // nothing else to do here
+  zx_info_vmo vmo_info{};
+  zx_status_t get_info_status =
+      vmo_range_.vmo().get_info(ZX_INFO_VMO, &vmo_info, sizeof(vmo_info), nullptr, nullptr);
+  ZX_ASSERT(get_info_status == ZX_OK);
+  zx_status_t vmo_status =
+      vmo_range_.vmo().create_child(ZX_VMO_CHILD_SLICE, 0, vmo_info.size_bytes, &vmo_);
+  ZX_ASSERT(vmo_status == ZX_OK);
+  zx_status_t parent_status =
+      vmo_range_.vmo().create_child(ZX_VMO_CHILD_SLICE, 0, vmo_info.size_bytes, &parent_vmo_);
+  ZX_ASSERT(parent_status == ZX_OK);
+  zx::vmo until_remove_started_child_vmo;
+  zx_status_t until_remove_started_status = parent_vmo_.create_child(
+      ZX_VMO_CHILD_SLICE, 0, vmo_info.size_bytes, &until_remove_started_child_vmo);
+  ZX_ASSERT(until_remove_started_status == ZX_OK);
+  until_remove_started_child_vmo_ =
+      std::make_shared<zx::vmo>(std::move(until_remove_started_child_vmo));
+  zero_children_wait_.emplace(this, parent_vmo_.get(), ZX_VMO_ZERO_CHILDREN);
 }
 
 CodecBuffer::~CodecBuffer() {
+  VLOGF("codec_buffer: %p", this);
   zx_status_t status;
   if (is_mapped_) {
     ZX_DEBUG_ASSERT(buffer_base_);
@@ -28,8 +45,8 @@ CodecBuffer::~CodecBuffer() {
         unmap_address;
     status = zx::vmar::root_self()->unmap(unmap_address, unmap_len);
     if (status != ZX_OK) {
-      parent_->FailFatalLocked("CodecBuffer::~CodecBuffer() failed to unmap() Buffer - status: %d",
-                               status);
+      parent_->FailFatal("CodecBuffer::~CodecBuffer() failed to unmap() Buffer - status: %d",
+                         status);
     }
     buffer_base_ = nullptr;
     is_mapped_ = false;
@@ -39,9 +56,16 @@ CodecBuffer::~CodecBuffer() {
     ZX_ASSERT(status == ZX_OK);
     ZX_ASSERT(!pinned_);
     if (status != ZX_OK) {
-      parent_->FailFatalLocked("CodecBuffer::~CodecBuffer() failed unpin() - status: %d", status);
+      parent_->FailFatal("CodecBuffer::~CodecBuffer() failed unpin() - status: %d", status);
     }
   }
+  magic_ = 0xfefefefe;
+}
+
+void CodecBuffer::SetDoDelete(DoDelete do_delete) { do_delete_ = std::move(do_delete); }
+
+void CodecBuffer::BeginWaitForZeroChildren(async_dispatcher_t* dispatcher) {
+  zero_children_wait_->Begin(dispatcher);
 }
 
 bool CodecBuffer::Map() {
@@ -94,15 +118,23 @@ zx_paddr_t CodecBuffer::physical_base() const {
 
 size_t CodecBuffer::size() const { return vmo_range_.size(); }
 
-const zx::vmo& CodecBuffer::vmo() const { return vmo_range_.vmo(); }
+const zx::vmo& CodecBuffer::vmo() const { return vmo_; }
+
+zx::vmo CodecBuffer::GetChildVmo() const {
+  ZX_ASSERT(!!until_remove_started_child_vmo_);
+  zx::vmo dup;
+  zx_status_t dup_status = until_remove_started_child_vmo_->duplicate(ZX_RIGHT_SAME_RIGHTS, &dup);
+  ZX_ASSERT_MSG(dup_status == ZX_OK, "dup_status: %s", zx_status_get_string(dup_status));
+  return dup;
+}
 
 uint64_t CodecBuffer::vmo_offset() const { return vmo_range_.offset(); }
 
 void CodecBuffer::SetVideoFrame(std::weak_ptr<VideoFrame> video_frame) const {
-  video_frame_ = video_frame;
+  deprecated_video_frame_ = video_frame;
 }
 
-std::weak_ptr<VideoFrame> CodecBuffer::video_frame() const { return video_frame_; }
+std::weak_ptr<VideoFrame> CodecBuffer::video_frame() const { return deprecated_video_frame_; }
 
 zx_status_t CodecBuffer::Pin() {
   if (is_pinned()) {
@@ -179,4 +211,33 @@ void CodecBuffer::CacheFlushInternal(uint32_t flush_offset, uint32_t length,
     }
   }
   BarrierAfterFlush();
+}
+
+void CodecBuffer::OnZeroChildren(async_dispatcher_t* dispatcher, async::WaitBase* wait,
+                                 zx_status_t status, const zx_packet_signal_t* signal) {
+  if (status == ZX_ERR_CANCELED) {
+    VLOGF("status == ZX_ERR_CANCELED - codec_buffer: %p", this);
+    // forced destruction; do nothing
+    return;
+  }
+  VLOGF("normal (not cancelled) - codec_buffer: %p", this);
+  ZX_DEBUG_ASSERT(status == ZX_OK);
+  ZX_DEBUG_ASSERT(signal->trigger & ZX_VMO_ZERO_CHILDREN);
+  // some tests don't use SetDoDelete
+  auto local_do_delete = std::move(do_delete_);
+  ZX_DEBUG_ASSERT(!do_delete_);
+  if (local_do_delete) {
+    // will delete "this"
+    std::move(local_do_delete)(this);
+    ZX_DEBUG_ASSERT(!local_do_delete);
+  }
+}
+
+CodecBuffer::KeepAlive CodecBuffer::GetKeepAlive() const {
+  ZX_DEBUG_ASSERT(until_remove_started_child_vmo_);
+  return KeepAlive(until_remove_started_child_vmo_);
+}
+
+fit::function<void(ScopedLock&)> CodecBuffer::TakePendingRemoveCompletion() {
+  return std::move(pending_remove_completion_);
 }

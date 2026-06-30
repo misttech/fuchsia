@@ -152,6 +152,7 @@ class CodecAdapterVaApiEncoder : public CodecAdapter {
       return;
     }
     if (packet->buffer()) {
+      packet->SetBuffer(nullptr);
       VaApiEncoderOutput local_output;
       {
         std::lock_guard<std::mutex> lock(lock_);

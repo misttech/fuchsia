@@ -340,6 +340,23 @@ fuchsia_unittest_package("use_h264_decoder_secure_input_output_test") {
   }
 }
 
+fuchsia_unittest_package("use_h264_decoder_dynamic_buffers_test") {
+  restricted_features = [ "allow_non_hermetic_packages" ]
+  manifest = "use_media_decoder/meta/use_h264_decoder_dynamic_buffers_test.cml"
+  deps = [
+    ":bear_h264",
+    "//src/media/codec:codec_factory",
+    "//src/media/codec/examples/use_media_decoder:use_h264_decoder_dynamic_buffers_test",
+  ]
+  test_specs = {
+    environments = [
+      # TODO(b/478359574): Enable on sorrel_env after prerequisites elsewhere.
+      # sorrel_env
+    ]
+  }
+  test_type = "system"
+}
+
 fuchsia_unittest_component("h264_decoder_fuzzer_test_comp") {
   restricted_features = [ "allow_non_hermetic_packages" ]
   manifest = "use_media_decoder/meta/h264_decoder_fuzzer_test.cml"

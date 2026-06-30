@@ -305,6 +305,7 @@ class CodecAdapterVaApiDecoder : public CodecAdapter {
     if (packet->buffer()) {
       ZX_ASSERT(surface_buffer_manager_);
       surface_buffer_manager_->RecycleBuffer(packet->buffer());
+      packet->SetBuffer(nullptr);
     }
 
     free_output_packets_.Push(packet);

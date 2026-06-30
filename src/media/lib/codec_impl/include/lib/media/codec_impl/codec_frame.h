@@ -11,8 +11,8 @@
 
 class CodecBuffer;
 
-// CodecFrame is used by some core codecs, regardless of whether there's a CodecBuffer or just a
-// VMO.
+// CodecFrame is used by some core codecs.
+//
 // Move-only class
 class CodecFrame {
  public:
@@ -41,12 +41,13 @@ class CodecFrame {
   BufferSpec& buffer_spec() { return buffer_spec_; }
   const CodecBuffer* buffer_ptr() { return buffer_ptr_; }
 
-  // This count _may_ be used to indicate to some core codecs which CodecFrame(s) are initially
-  // free vs. initially used (and how many times) until they become free for the first time when
-  // "returned" enough times later (without the core codec instance ever having indicated the frame
-  // as being output; the logical frame became used when output by a previous core codec instance,
-  // or is simply not being provided to the core codec just yet).  Not all core codecs use this
-  // field.
+  // Within some core codec instances (with a sequence of different core codec instances below a
+  // single CodecAdapter instance), this count _may_ be used to indicate which CodecFrame(s) are
+  // initially free vs. initially used (and how many times) until they become free for the first
+  // time when "returned" enough times later (without the new core codec instance ever having
+  // indicated the frame as being output; the logical frame became used when output by a previous
+  // core codec instance (under the same CodecAdapter), or is simply not being provided to the core
+  // codec instance just yet). Not all core codecs use this field.
   uint32_t& initial_usage_count() { return initial_usage_count_; }
 
  private:
