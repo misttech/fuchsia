@@ -676,6 +676,186 @@ class KTraceTests {
     EXPECT_TRUE(rust_ktrace_test_global_lifecycle());
     END_TEST;
   }
+
+  static bool TestRustMacros() {
+    BEGIN_TEST;
+
+    TestKTrace ktrace;
+    const uint32_t total_bufsize = kPageSize * arch_max_num_cpus();
+    ktrace.Init(total_bufsize, 0xfff);
+    ASSERT_OK(ktrace.Control(KTRACE_ACTION_START, 0xfff));
+
+    const cpu_num_t target_cpu = [&]() {
+      InterruptDisableGuard guard;
+
+      // Call the Rust FFI function to write all macro events
+      rust_ktrace_test_macros();
+
+      return arch_curr_cpu_num();
+    }();
+
+    // The total bytes written by the 10 macro events is 408 bytes.
+    constexpr size_t total_size = 408;
+    uint8_t actual[total_size];
+    auto copy_out = [&](uint32_t offset, ktl::span<ktl::byte> src) {
+      memcpy(actual + offset, src.data(), src.size());
+      return ZX_OK;
+    };
+    zx::result<size_t> read_result = ktrace.percpu_buffers_[target_cpu].Read(copy_out, total_size);
+    ASSERT_OK(read_result.status_value());
+    ASSERT_EQ(total_size, read_result.value());
+
+    // Verify each record sequentially
+    size_t offset = 0;
+
+    // Helper to get a word from the buffer
+    auto get_word = [&](size_t word_offset) -> uint64_t {
+      uint64_t val;
+      memcpy(&val, actual + offset + (word_offset * 8), 8);
+      return val;
+    };
+
+    // 1. Instant Event (size 40 bytes = 5 words)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(4u, header & 0xf);           // kEvent
+      ASSERT_EQ(5u, (header >> 4) & 0xfff);  // Size
+      ASSERT_EQ(0u, (header >> 16) & 0xf);   // kInstant
+      ASSERT_EQ(1u, (header >> 20) & 0xf);   // Arg count
+      uint64_t arg_header = get_word(4);
+      ASSERT_EQ(2u, arg_header & 0xf);  // kUint32
+      ASSERT_EQ(101u, arg_header >> 32);
+      offset += 40;
+    }
+
+    // 2. DurationBegin (size 40 bytes)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(4u, header & 0xf);
+      ASSERT_EQ(5u, (header >> 4) & 0xfff);
+      ASSERT_EQ(2u, (header >> 16) & 0xf);  // kDurationBegin
+      ASSERT_EQ(1u, (header >> 20) & 0xf);
+      uint64_t arg_header = get_word(4);
+      ASSERT_EQ(2u, arg_header & 0xf);
+      ASSERT_EQ(102u, arg_header >> 32);
+      offset += 40;
+    }
+
+    // 3. DurationEnd (size 40 bytes)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(4u, header & 0xf);
+      ASSERT_EQ(5u, (header >> 4) & 0xfff);
+      ASSERT_EQ(3u, (header >> 16) & 0xf);  // kDurationEnd
+      ASSERT_EQ(1u, (header >> 20) & 0xf);
+      uint64_t arg_header = get_word(4);
+      ASSERT_EQ(2u, arg_header & 0xf);
+      ASSERT_EQ(103u, arg_header >> 32);
+      offset += 40;
+    }
+
+    // 4. Counter (size 48 bytes = 6 words)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(4u, header & 0xf);
+      ASSERT_EQ(6u, (header >> 4) & 0xfff);
+      ASSERT_EQ(1u, (header >> 16) & 0xf);  // kCounter
+      ASSERT_EQ(1u, (header >> 20) & 0xf);
+      uint64_t arg_header = get_word(4);
+      ASSERT_EQ(2u, arg_header & 0xf);
+      ASSERT_EQ(105u, arg_header >> 32);
+      ASSERT_EQ(104u, get_word(5));  // Counter ID
+      offset += 48;
+    }
+
+    // 5. FlowBegin (size 48 bytes)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(4u, header & 0xf);
+      ASSERT_EQ(6u, (header >> 4) & 0xfff);
+      ASSERT_EQ(8u, (header >> 16) & 0xf);  // kFlowBegin
+      ASSERT_EQ(1u, (header >> 20) & 0xf);
+      uint64_t arg_header = get_word(4);
+      ASSERT_EQ(2u, arg_header & 0xf);
+      ASSERT_EQ(107u, arg_header >> 32);
+      ASSERT_EQ(106u, get_word(5));  // Flow ID
+      offset += 48;
+    }
+
+    // 6. FlowStep (size 48 bytes)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(4u, header & 0xf);
+      ASSERT_EQ(6u, (header >> 4) & 0xfff);
+      ASSERT_EQ(9u, (header >> 16) & 0xf);  // kFlowStep
+      ASSERT_EQ(1u, (header >> 20) & 0xf);
+      uint64_t arg_header = get_word(4);
+      ASSERT_EQ(2u, arg_header & 0xf);
+      ASSERT_EQ(108u, arg_header >> 32);
+      ASSERT_EQ(106u, get_word(5));  // Flow ID
+      offset += 48;
+    }
+
+    // 7. FlowEnd (size 48 bytes)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(4u, header & 0xf);
+      ASSERT_EQ(6u, (header >> 4) & 0xfff);
+      ASSERT_EQ(10u, (header >> 16) & 0xf);  // kFlowEnd
+      ASSERT_EQ(1u, (header >> 20) & 0xf);
+      uint64_t arg_header = get_word(4);
+      ASSERT_EQ(2u, arg_header & 0xf);
+      ASSERT_EQ(109u, arg_header >> 32);
+      ASSERT_EQ(106u, get_word(5));  // Flow ID
+      offset += 48;
+    }
+
+    // 8. DurationComplete (size 48 bytes)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(4u, header & 0xf);
+      ASSERT_EQ(6u, (header >> 4) & 0xfff);
+      ASSERT_EQ(4u, (header >> 16) & 0xf);  // kDurationComplete
+      ASSERT_EQ(1u, (header >> 20) & 0xf);
+      ASSERT_EQ(110u, get_word(1));  // Start timestamp
+      uint64_t arg_header = get_word(4);
+      ASSERT_EQ(2u, arg_header & 0xf);
+      ASSERT_EQ(111u, arg_header >> 32);
+      offset += 48;
+    }
+
+    // 9. KernelObject (size 24 bytes = 3 words)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(7u, header & 0xf);           // kKernelObject
+      ASSERT_EQ(3u, (header >> 4) & 0xfff);  // Size
+      ASSERT_EQ(1u, (header >> 16) & 0xff);  // Object Type
+      ASSERT_EQ(1u, (header >> 40) & 0xf);   // Arg count
+      ASSERT_EQ(112u, get_word(1));          // KOID
+      uint64_t arg_header = get_word(2);
+      ASSERT_EQ(2u, arg_header & 0xf);
+      ASSERT_EQ(113u, arg_header >> 32);
+      offset += 24;
+    }
+
+    // 10. KernelObjectAlways (size 24 bytes)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(7u, header & 0xf);
+      ASSERT_EQ(3u, (header >> 4) & 0xfff);
+      ASSERT_EQ(2u, (header >> 16) & 0xff);  // Object Type
+      ASSERT_EQ(1u, (header >> 40) & 0xf);
+      ASSERT_EQ(114u, get_word(1));  // KOID
+      uint64_t arg_header = get_word(2);
+      ASSERT_EQ(2u, arg_header & 0xf);
+      ASSERT_EQ(115u, arg_header >> 32);
+      offset += 24;
+    }
+
+    ASSERT_EQ(total_size, offset);
+
+    END_TEST;
+  }
 #endif
 };
 
@@ -694,5 +874,6 @@ UNITTEST("rust_write", KTraceTests::TestRustWrite)
 UNITTEST("rust_dropped_record_tracking", KTraceTests::TestRustDroppedRecordTracking)
 UNITTEST("rust_emit_drop_stats", KTraceTests::TestRustEmitDropStats)
 UNITTEST("rust_global_lifecycle", KTraceTests::TestRustGlobalLifecycle)
+UNITTEST("rust_macros", KTraceTests::TestRustMacros)
 #endif
 UNITTEST_END_TESTCASE(ktrace_tests, "ktrace", "KTrace tests")

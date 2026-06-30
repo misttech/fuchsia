@@ -23,10 +23,12 @@ source_set("ktrace") {
 }
 
 common_deps = [
+  "macro:ktrace-macro",
   "//sdk/rust/zx-status",
   "//src/lib/kalloc",
   "//src/lib/kstring",
   "//zircon/kernel/arch:arch-rs",
+  "//zircon/kernel/kernel:kernel-rs",
   "//zircon/kernel/lib/spsc_buffer:spsc-buffer-rs",
   "//zircon/kernel/platform:platform-rs",
 ]

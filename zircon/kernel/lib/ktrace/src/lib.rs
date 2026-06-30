@@ -4,17 +4,24 @@
 
 #![no_std]
 
-use arch_rs::{curr_cpu_num, ints_disabled};
+use arch_rs::{InterruptDisableGuard, curr_cpu_num, ints_disabled};
 use core::cell::UnsafeCell;
 use core::mem::{MaybeUninit, size_of};
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering};
 use core::{ffi, ptr, slice};
 use kalloc::Box;
+use kernel::thread::{FxtRef, ThreadPtr};
 use kstring::interned_category::InternedCategory;
+use kstring::interned_string::InternedString;
 use kstring::{declare_interned_category, declare_interned_string};
 use platform_rs::timer_current_boot_ticks;
 use spsc_buffer::{Buffer, NoOpAllocator, Reservation};
 use zx_status::Status;
+
+// Re-export the ktrace macros from the sub-crate.
+pub use ktrace_macro::*;
+#[allow(unused_extern_crates)]
+extern crate self as ktrace_rs;
 
 // LINT.IfChange(KTraceState)
 #[repr(C)]
@@ -29,6 +36,200 @@ declare_interned_category!(META_CAT, "kernel:meta", extern);
 declare_interned_string!(DROP_STATS_REF, "drop_stats", extern);
 declare_interned_string!(NUM_RECORDS_REF, "num_records", extern);
 declare_interned_string!(NUM_BYTES_REF, "num_bytes", extern);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Context {
+    Thread = 0,
+    Cpu = 1,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventType {
+    Instant = 0,
+    Counter = 1,
+    DurationBegin = 2,
+    DurationEnd = 3,
+    DurationComplete = 4,
+    FlowBegin = 8,
+    FlowStep = 9,
+    FlowEnd = 10,
+}
+
+/// The value of a trace argument.
+pub enum ArgValue<'a> {
+    Null,
+    Bool(bool),
+    Int32(i32),
+    Uint32(u32),
+    Int64(i64),
+    Uint64(u64),
+    Double(f64),
+    String(&'a str),
+    Pointer(usize),
+    Koid(u64),
+}
+
+impl<'a> From<bool> for ArgValue<'a> {
+    fn from(v: bool) -> Self {
+        ArgValue::Bool(v)
+    }
+}
+impl<'a> From<i32> for ArgValue<'a> {
+    fn from(v: i32) -> Self {
+        ArgValue::Int32(v)
+    }
+}
+impl<'a> From<u32> for ArgValue<'a> {
+    fn from(v: u32) -> Self {
+        ArgValue::Uint32(v)
+    }
+}
+impl<'a> From<i64> for ArgValue<'a> {
+    fn from(v: i64) -> Self {
+        ArgValue::Int64(v)
+    }
+}
+impl<'a> From<u64> for ArgValue<'a> {
+    fn from(v: u64) -> Self {
+        ArgValue::Uint64(v)
+    }
+}
+impl<'a> From<f64> for ArgValue<'a> {
+    fn from(v: f64) -> Self {
+        ArgValue::Double(v)
+    }
+}
+impl<'a> From<&'a str> for ArgValue<'a> {
+    fn from(v: &'a str) -> Self {
+        ArgValue::String(v)
+    }
+}
+
+pub struct Argument<'a> {
+    name: &'static InternedString,
+    value: ArgValue<'a>,
+}
+
+impl<'a> Argument<'a> {
+    pub fn new(name: &'static InternedString, value: impl Into<ArgValue<'a>>) -> Self {
+        Self { name, value: value.into() }
+    }
+
+    /// Returns the size of this argument in 64-bit words.
+    fn size_words(&self) -> usize {
+        match &self.value {
+            ArgValue::Null | ArgValue::Bool(_) | ArgValue::Int32(_) | ArgValue::Uint32(_) => 1,
+            ArgValue::Int64(_)
+            | ArgValue::Uint64(_)
+            | ArgValue::Double(_)
+            | ArgValue::Pointer(_)
+            | ArgValue::Koid(_) => 2,
+            ArgValue::String(s) => 1 + (s.len() + 7) / 8,
+        }
+    }
+
+    fn write(&self, res: &mut KTraceReservation<'_>) -> Result<(), Status> {
+        let name_id = self.name.id() as u64;
+        let mut header = 0u64;
+        header |= (name_id & 0xffff) << 16; // NameRef
+
+        match &self.value {
+            ArgValue::Null => {
+                header |= 0u64; // ArgumentType::kNull (0)
+                res.write_word(header)?;
+            }
+            ArgValue::Int32(v) => {
+                header |= 1u64; // ArgumentType::kInt32 (1)
+                header |= ((*v as u32) as u64) << 32;
+                res.write_word(header)?;
+            }
+            ArgValue::Uint32(v) => {
+                header |= 2u64; // ArgumentType::kUint32 (2)
+                header |= (*v as u64) << 32;
+                res.write_word(header)?;
+            }
+            ArgValue::Int64(v) => {
+                header |= 3u64; // ArgumentType::kInt64 (3)
+                res.write_word(header)?;
+                res.write_word(*v as u64)?;
+            }
+            ArgValue::Uint64(v) => {
+                header |= 4u64; // ArgumentType::kUint64 (4)
+                res.write_word(header)?;
+                res.write_word(*v)?;
+            }
+            ArgValue::Double(v) => {
+                header |= 5u64; // ArgumentType::kDouble (5)
+                res.write_word(header)?;
+                res.write_word(v.to_bits())?;
+            }
+            ArgValue::String(s) => {
+                header |= 6u64; // ArgumentType::kString (6)
+                let string_len = s.len();
+                header |= (((string_len + 7) / 8) as u64) << 4; // ArgumentSize in words
+                header |= (string_len as u64) << 32; // String length in bytes
+                res.write_word(header)?;
+                res.write_bytes(s.as_bytes())?;
+            }
+            ArgValue::Pointer(v) => {
+                header |= 7u64; // ArgumentType::kPointer (7)
+                res.write_word(header)?;
+                res.write_word(*v as u64)?;
+            }
+            ArgValue::Koid(v) => {
+                header |= 8u64; // ArgumentType::kKoid (8)
+                res.write_word(header)?;
+                res.write_word(*v)?;
+            }
+            ArgValue::Bool(v) => {
+                header |= 9u64; // ArgumentType::kBool (9)
+                header |= ((*v as u64) & 1) << 32;
+                res.write_word(header)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+pub struct KTraceScope<'a> {
+    category: &'static InternedCategory,
+    name: &'static InternedString,
+    timestamp: i64,
+    context: Context,
+    args: &'a [Argument<'a>],
+}
+
+impl<'a> KTraceScope<'a> {
+    #[inline(never)]
+    #[cold]
+    pub fn begin(
+        category: &'static InternedCategory,
+        name: &'static InternedString,
+        context: Context,
+        args: &'a [Argument<'a>],
+    ) -> Self {
+        let timestamp = timer_current_boot_ticks();
+        Self { category, name, timestamp, context, args }
+    }
+}
+
+impl<'a> Drop for KTraceScope<'a> {
+    #[inline(never)]
+    #[cold]
+    fn drop(&mut self) {
+        let end_time = timer_current_boot_ticks();
+        let ktrace = KTrace::get_instance();
+        ktrace.emit_event(
+            EventType::DurationComplete,
+            self.category,
+            self.name,
+            self.timestamp,
+            self.context,
+            Some(end_time as u64),
+            self.args,
+        );
+    }
+}
 
 // LINT.IfChange(DroppedRecordDurationEvent)
 #[repr(C)]
@@ -138,7 +339,7 @@ impl KTraceBuffer {
 
     /// Reserves a block of the given size in the buffer, interposing to write dropped record
     /// statistics if any were tracked.
-    pub fn reserve(&mut self, header: u64) -> Result<KTraceReservation<'_>, Status> {
+    fn reserve(&mut self, header: u64) -> Result<KTraceReservation<'_>, Status> {
         debug_assert!(ints_disabled());
         // Compute the number of bytes we need to reserve from the provided fxt header.
         let record_type = (header & 0xf) as u32;
@@ -255,7 +456,7 @@ impl KTraceBuffer {
 
 /// KTraceReservation encapsulates a pending write to the buffer.
 #[derive(Debug)]
-pub struct KTraceReservation<'a> {
+struct KTraceReservation<'a> {
     reservation: Reservation<'a>,
 }
 
@@ -267,13 +468,13 @@ impl<'a> KTraceReservation<'a> {
     }
 
     /// Writes a single 64-bit word into the reservation.
-    pub fn write_word(&mut self, word: u64) -> Result<(), Status> {
+    fn write_word(&mut self, word: u64) -> Result<(), Status> {
         debug_assert!(ints_disabled());
         self.reservation.write(&word.to_ne_bytes())
     }
 
     /// Writes a byte slice into the reservation, padding to an 8-byte boundary.
-    pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Status> {
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Status> {
         debug_assert!(ints_disabled());
         self.reservation.write(bytes)?;
         let num_bytes = bytes.len();
@@ -287,7 +488,7 @@ impl<'a> KTraceReservation<'a> {
     }
 
     /// Commits the reservation, making it visible to the reader.
-    pub fn commit(self) -> Result<(), Status> {
+    fn commit(self) -> Result<(), Status> {
         debug_assert!(ints_disabled());
         self.reservation.commit()
     }
@@ -329,7 +530,7 @@ impl KTrace {
     /// # Safety
     ///
     /// This method MUST be invoked with interrupts disabled to enforce the single-writer invariant.
-    pub unsafe fn reserve(&self, header: u64) -> Result<KTraceReservation<'_>, Status> {
+    unsafe fn reserve(&self, header: u64) -> Result<KTraceReservation<'_>, Status> {
         debug_assert!(ints_disabled());
         if !self.writes_enabled() {
             return Err(Status::BAD_STATE);
@@ -363,6 +564,120 @@ impl KTrace {
         }
         let bitmask = self.categories_bitmask();
         (bitmask & (1 << category_index)) != 0
+    }
+
+    /// Low-level helper to write an FXT kernel object record.
+    ///
+    /// This is not inlined to reduce code size at the instrumentation sites.
+    #[inline(never)]
+    #[cold]
+    pub fn emit_kernel_object_outlined(
+        &self,
+        koid: u64,
+        obj_type: u32,
+        name: &InternedString,
+        args: &[Argument<'_>],
+    ) {
+        let _guard = InterruptDisableGuard::new();
+        if !self.writes_enabled() {
+            return;
+        }
+
+        let base_size = 2; // Header, KOID
+        let args_size: usize = args.iter().map(|a| a.size_words()).sum();
+        let total_size_words = base_size + args_size;
+
+        if total_size_words > 0xfff {
+            return;
+        }
+
+        let mut header = 7u64; // RecordType::kKernelObject (7)
+        header |= (total_size_words as u64) << 4; // RecordSize
+        header |= (obj_type as u64) << 16; // ObjectType
+        header |= (name.id() as u64) << 24; // NameStringRef
+        header |= (args.len() as u64) << 40; // ArgumentCount
+
+        if let Ok(mut res) = unsafe { self.reserve(header) } {
+            let _ = res.write_word(koid);
+            for arg in args {
+                let _ = arg.write(&mut res);
+            }
+            let _ = res.commit();
+        }
+    }
+
+    /// Low-level helper to write a generic FXT event record.
+    ///
+    /// This is not inlined to reduce code size at the instrumentation sites.
+    #[inline(never)]
+    #[cold]
+    pub fn emit_event(
+        &self,
+        event_type: EventType,
+        category: &InternedCategory,
+        name: &InternedString,
+        timestamp: i64,
+        context: Context,
+        content: Option<u64>,
+        args: &[Argument<'_>],
+    ) {
+        let _guard = InterruptDisableGuard::new();
+        if !self.writes_enabled() {
+            return;
+        }
+
+        // 1. Get the process/thread KOIDs for the context.
+        let (process_koid, thread_koid) = match context {
+            Context::Thread => {
+                // SAFETY: ktrace is initialized and running after threading has been initialized.
+                let FxtRef { pid, tid } = unsafe { ThreadPtr::current().fxt_ref() };
+                (pid, tid)
+            }
+            Context::Cpu => {
+                let cpu = curr_cpu_num() as usize;
+                let ptr = self.buffers[cpu].load(Ordering::Acquire);
+                if ptr.is_null() {
+                    return;
+                }
+                let buf = unsafe { &*ptr };
+                (buf.process_koid, buf.thread_koid)
+            }
+        };
+
+        // 2. Calculate the record size.
+        let base_size = 4; // Header, Timestamp, Process KOID, Thread KOID
+        let content_size = if content.is_some() { 1 } else { 0 };
+        let args_size: usize = args.iter().map(|a| a.size_words()).sum();
+        let total_size_words = base_size + content_size + args_size;
+
+        if total_size_words > 0xfff {
+            return;
+        }
+
+        // 3. Construct the header.
+        let mut header = 4u64; // RecordType::kEvent (4)
+        header |= (total_size_words as u64) << 4; // RecordSize
+        header |= (event_type as u32 as u64) << 16; // EventType
+        header |= (args.len() as u64) << 20; // ArgumentCount
+        header |= (category.label().id() as u64) << 32; // CategoryStringRef
+        header |= (name.id() as u64) << 48; // NameStringRef
+
+        // 4. Reserve space and write the record.
+        if let Ok(mut res) = unsafe { self.reserve(header) } {
+            let _ = res.write_word(timestamp as u64);
+            let _ = res.write_word(process_koid);
+            let _ = res.write_word(thread_koid);
+
+            for arg in args {
+                let _ = arg.write(&mut res);
+            }
+
+            if let Some(c) = content {
+                let _ = res.write_word(c);
+            }
+
+            let _ = res.commit();
+        }
     }
 }
 
@@ -453,7 +768,7 @@ pub unsafe extern "C" fn rust_ktrace_init_cpu_buffer(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arch_rs::{InterruptDisableGuard, max_num_cpus};
+    use arch_rs::max_num_cpus;
 
     declare_interned_category!(META_CAT, "kernel:meta", extern);
     declare_interned_category!(MEMORY_CAT, "kernel:memory", extern);
@@ -485,6 +800,26 @@ mod tests {
         } else {
             -1
         }
+    }
+
+    /// Test-only FFI helper to exercise all ktrace macros from Rust.
+    ///
+    /// # Safety
+    ///
+    /// This must be called with interrupts disabled and KTrace active.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn rust_ktrace_test_macros() {
+        // Exercise each macro. We'll write specific, distinguishable events.
+        instant!("kernel:meta", "rust_instant", Context::Thread, "val" => 101u32);
+        duration_begin!("kernel:meta", "rust_duration", Context::Thread, "val" => 102u32);
+        duration_end!("kernel:meta", "rust_duration", Context::Thread, "val" => 103u32);
+        counter!("kernel:meta", "rust_counter", 104u64, "val" => 105u32);
+        flow_begin!("kernel:meta", "rust_flow", 106u64, "val" => 107u32);
+        flow_step!("kernel:meta", "rust_flow", 106u64, "val" => 108u32);
+        flow_end!("kernel:meta", "rust_flow", 106u64, "val" => 109u32);
+        complete!("kernel:meta", "rust_complete", 110i64, "val" => 111u32);
+        kernel_object!("kernel:meta", 112u64, 1u32, "rust_kernel_obj", "val" => 113u32);
+        kernel_object_always!(114u64, 2u32, "rust_kernel_obj_always", "val" => 115u32);
     }
 
     /// Verifies KTraceBuffer initialization and size/metadata attributes.
@@ -978,6 +1313,111 @@ mod tests {
             return false;
         }
         if u64::from_ne_bytes(read_bytes[8..16].try_into().unwrap()) != 0x1234567890abcdef {
+            return false;
+        }
+
+        // 6. Test Rust macros!
+        let mask = (1 << META_CAT.index()) | (1 << MEMORY_CAT.index());
+        local_state.categories_bitmask.store(mask, Ordering::Release);
+        if !ktrace.is_category_enabled(&META_CAT) {
+            return false;
+        }
+
+        // Let's emit an instant event using the macro!
+        instant!(META_CAT, "my_event", "arg1" => 42i32, "arg2" => "hello");
+
+        // Now let's read the record back and verify it!
+        let mut read_bytes = [0u8; 128];
+        let read_len = match buf.read(
+            |offset, src| {
+                read_bytes[offset as usize..offset as usize + src.len()].copy_from_slice(src);
+                Ok(())
+            },
+            56,
+        ) {
+            Ok(l) => l,
+            Err(_) => return false,
+        };
+
+        if read_len != 56 {
+            return false;
+        }
+
+        // Verify Header Word
+        let header_word = u64::from_ne_bytes(read_bytes[0..8].try_into().unwrap());
+        if (header_word & 0xf) != 4 {
+            return false;
+        }
+        if ((header_word >> 4) & 0xfff) != 7 {
+            return false;
+        }
+        if ((header_word >> 16) & 0xf) != 0 {
+            return false;
+        }
+        if ((header_word >> 20) & 0xf) != 2 {
+            return false;
+        }
+        if ((header_word >> 32) & 0xffff) != u64::from(META_CAT.label().id()) {
+            return false;
+        }
+        let name_id = (header_word >> 48) & 0xffff;
+        if name_id == 0 {
+            return false;
+        }
+
+        // Verify Timestamp (word 1)
+        let timestamp_word = u64::from_ne_bytes(read_bytes[8..16].try_into().unwrap());
+        if timestamp_word == 0 {
+            return false;
+        }
+
+        // Verify KOIDs (words 2 & 3)
+        let process_koid = u64::from_ne_bytes(read_bytes[16..24].try_into().unwrap());
+        let thread_koid = u64::from_ne_bytes(read_bytes[24..32].try_into().unwrap());
+        // SAFETY: Tests run after threading has been initialized.
+        let FxtRef { pid: expected_proc, tid: expected_thread } =
+            unsafe { ThreadPtr::current().fxt_ref() };
+        if process_koid != expected_proc {
+            return false;
+        }
+        if thread_koid != expected_thread {
+            return false;
+        }
+
+        // Verify Argument 1 ("arg1" => 42i32) (word 4)
+        let arg1_header = u64::from_ne_bytes(read_bytes[32..40].try_into().unwrap());
+        if (arg1_header & 0xf) != 1 {
+            return false;
+        }
+        if ((arg1_header >> 32) & 0xffffffff) != 42 {
+            return false;
+        }
+        let arg1_name_id = (arg1_header >> 16) & 0xffff;
+        if arg1_name_id == 0 {
+            return false;
+        }
+
+        // Verify Argument 2 ("arg2" => "hello") (words 5 & 6)
+        let arg2_header = u64::from_ne_bytes(read_bytes[40..48].try_into().unwrap());
+        if (arg2_header & 0xf) != 6 {
+            return false;
+        }
+        if ((arg2_header >> 4) & 0xf) != 1 {
+            return false;
+        }
+        if ((arg2_header >> 32) & 0xffffffff) != 5 {
+            return false;
+        }
+        let arg2_name_id = (arg2_header >> 16) & 0xffff;
+        if arg2_name_id == 0 {
+            return false;
+        }
+
+        let arg2_val = &read_bytes[48..56];
+        if &arg2_val[0..5] != b"hello" {
+            return false;
+        }
+        if &arg2_val[5..8] != &[0, 0, 0] {
             return false;
         }
 
