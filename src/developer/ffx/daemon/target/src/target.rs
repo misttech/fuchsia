@@ -134,6 +134,8 @@ pub use self::update::{TargetUpdate, TargetUpdateBuilder};
 
 const DEFAULT_SSH_PORT: u16 = 22;
 const CONFIG_HOST_PIPE_SSH_TIMEOUT: &str = "daemon.host_pipe_ssh_timeout";
+const STABLE_CONNECTION_RUNTIME: std::time::Duration = std::time::Duration::from_secs(10);
+const MAX_RELAUNCH_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
 
 pub(crate) type SharedIdentity = Rc<Identity>;
 pub(crate) type WeakIdentity = Weak<Identity>;
@@ -408,7 +410,21 @@ pub struct Target {
 
     compatibility_status: RefCell<Option<CompatibilityInfo>>,
 
+    host_pipe_backoff: RefCell<ExponentialBackoff>,
+
     context: EnvironmentContext,
+}
+
+enum ConnectionType {
+    /// Remote Control Service (RCS) is already active and healthy, so no new host-pipe is needed.
+    RcsActive,
+    /// Connect using VSOCK port with the given CID.
+    Vsock(u32),
+    /// Connect using USB driver with the given CID and host interface.
+    Usb { cid: u32, host: std::sync::Arc<usb_driver_api::Driver> },
+    /// Connect using standard SSH client (default fallback). Address and timeouts are
+    /// determined dynamically from the target configuration context during connection spawn.
+    Ssh,
 }
 
 impl Target {
@@ -439,6 +455,11 @@ impl Target {
             fastboot_interface: RefCell::new(None),
             preferred_ssh_address: RefCell::new(None),
             compatibility_status: RefCell::new(None),
+            host_pipe_backoff: RefCell::new(ExponentialBackoff::new(
+                crate::RETRY_DELAY,
+                MAX_RELAUNCH_DELAY,
+                STABLE_CONNECTION_RUNTIME,
+            )),
             context: context.clone(),
         });
         target.target_event_synthesizer.target.replace(Rc::downgrade(&target));
@@ -1300,6 +1321,7 @@ impl Target {
         self: &Rc<Self>,
         roid_sender: Option<channel::oneshot::Sender<Option<u64>>>,
     ) {
+        self.reset_backoff();
         if self.host_pipe.borrow().is_some() {
             let HostPipeState { task, overnet_node, .. } = self.host_pipe.take().unwrap();
             // Anyone already waiting on an overnet-id will get an error
@@ -1368,6 +1390,226 @@ impl Target {
     // will eventually send the resulting roid (even if it is None) back to the caller.
     //
     // This function can also take a HostPipeChildBuilder, for test purposes
+
+    fn add_waiter_to_existing_host_pipe(&self, sender: channel::oneshot::Sender<Option<u64>>) {
+        if let Some(ref mut hp) = *self.host_pipe.borrow_mut() {
+            match &mut hp.remote_overnet_id {
+                RemoteOvernetIdState::Pending(waiters) => waiters.push(sender),
+                RemoteOvernetIdState::Ready(roid) => {
+                    log::debug!(
+                        "Got request for host pipe overnet id for an already-running host-pipe -- sending back {roid:?}",
+                    );
+                    let _ = sender.send(*roid);
+                }
+            }
+        }
+    }
+
+    /// Determine the type of connection to establish with the target.
+    ///
+    /// The purpose of a host pipe is to ultimately get us connected to RCS and let us transition
+    /// to the RCS connected state. If we're already in that state, and the RCS connection is
+    /// active, we don't need a host pipe. This will start happening more as we introduce USB
+    /// links, where the first thing we hear about a target is its appearance as an Overnet peer,
+    /// and thus we have an RCS connection from inception.
+    async fn determine_connection_type(self: &Rc<Self>) -> ConnectionType {
+        let state = self.state.borrow().clone();
+        if let TargetConnectionState::Rcs(rcs) = state {
+            if knock_rcs(&rcs.proxy).await.is_ok() {
+                if let Some(host_pipe) = self.host_pipe.borrow_mut().as_mut() {
+                    host_pipe.flush_waiters();
+                }
+                return ConnectionType::RcsActive;
+            }
+        }
+
+        self.addrs()
+            .into_iter()
+            .find_map(|addr| match addr {
+                TargetAddr::VSockCtx(cid) => self
+                    .context
+                    .get(keys::VSOCK_ENABLED)
+                    .unwrap_or(false)
+                    .then(|| ConnectionType::Vsock(cid)),
+                TargetAddr::UsbCtx(cid) => Target::get_usb_driver_connection()
+                    .map(|host| ConnectionType::Usb { cid, host }),
+                _ => None,
+            })
+            .unwrap_or(ConnectionType::Ssh)
+    }
+
+    fn handle_successful_ssh_spawn(
+        &self,
+        ssh_addr: std::net::SocketAddr,
+        ssh_host_address: Option<HostAddr>,
+        overnet_id: Option<u64>,
+    ) {
+        if let Some(host_pipe) = self.host_pipe.borrow_mut().as_mut() {
+            // If there's no host-pipe, it's because the target
+            // has dropped the task containing our host-pipe,
+            // so it's fine to not follow through and set target
+            // information that come from this connection.
+            // Clients waiting for the overnet_id will have
+            // gotten an error when the host-pipe was dropped.
+            host_pipe.ssh_addr = Some(ssh_addr);
+            host_pipe.ssh_host_address = ssh_host_address;
+            log::debug!("Got host pipe overnet id {:?} -- sending to waiters", overnet_id);
+            if let RemoteOvernetIdState::Pending(waiters) = std::mem::replace(
+                &mut host_pipe.remote_overnet_id,
+                RemoteOvernetIdState::Ready(overnet_id),
+            ) {
+                for sender in waiters.into_iter() {
+                    let _ = sender.send(overnet_id);
+                }
+            } else {
+                unreachable!()
+            }
+        }
+    }
+
+    fn handle_failed_ssh_spawn(&self, error: &anyhow::Error) {
+        let compatibility_status = Some(CompatibilityInfo {
+            status: CompatibilityState::Error,
+            platform_abi: 0,
+            message: format!("Host connection failed: {error}"),
+        });
+        self.set_compatibility_status(&compatibility_status);
+        if let Some(host_pipe) = self.host_pipe.borrow_mut().as_mut() {
+            host_pipe.flush_waiters();
+        }
+        self.host_pipe_backoff.borrow_mut().update_on_failure();
+    }
+
+    fn log_host_pipe_exit_result(&self, res: Result<(), anyhow::Error>) {
+        match res {
+            Ok(r) => {
+                // This was an info. Moved to debug as this is not informational or
+                // actionable to end users.
+                log::debug!("HostPipeConnection returned: {:?}", r);
+            }
+            Err(r) => {
+                log::warn!(
+                    "The host pipe connection to ['{}@{}'] returned: {:?}",
+                    self.nodename_str(),
+                    self.id(),
+                    r
+                );
+            }
+        }
+    }
+
+    async fn run_vsock_or_usb_connection(
+        weak_target: Weak<Target>,
+        node: Arc<overnet_core::Router>,
+        cid: u32,
+        host: Option<std::sync::Arc<usb_driver_api::Driver>>,
+        conn_type: &'static str,
+    ) {
+        let start_time = std::time::Instant::now();
+        if let Some(target) = weak_target.upgrade() {
+            target.host_pipe_backoff.borrow_mut().record_start(start_time);
+
+            // We might be able to connect on VSOCK port 201 to call the
+            // identify service and then we could get something to return to
+            // these waiters.
+            if let Some(host_pipe) = target.host_pipe.borrow_mut().as_mut() {
+                host_pipe.flush_waiters();
+            }
+
+            if target.ssh_address().is_some() {
+                target.refresh_ssh_host_addr();
+            }
+        }
+
+        // We have a VSOCK or USB connection. Use that to connect instead of SSH.
+        emit_host_pipe_connection_event(conn_type).await;
+        if let Some(host) = host {
+            Box::pin(spawn_usb(host, cid, node)).await;
+        } else {
+            spawn_vsock(cid, node).await;
+        }
+
+        weak_target.upgrade().and_then(|target| {
+            target.host_pipe_backoff.borrow_mut().update_on_exit(start_time.elapsed());
+            log::debug!(
+                "Exiting run_host_pipe for {} ({conn_type} connection)",
+                target.nodename_str()
+            );
+            target.host_pipe.borrow_mut().take()
+        });
+    }
+
+    async fn run_ssh_connection<T>(
+        weak_target: Weak<Target>,
+        node: Arc<overnet_core::Router>,
+        host_pipe_child_builder: T,
+        ssh_timeout: u16,
+        watchdogs: bool,
+    ) where
+        T: HostPipeChildBuilder + Clone + 'static,
+    {
+        let start_time = std::time::Instant::now();
+        if let Some(target) = weak_target.upgrade() {
+            target.host_pipe_backoff.borrow_mut().record_start(start_time);
+        }
+
+        emit_host_pipe_connection_event("SSH").await;
+
+        let nr = spawn(
+            weak_target.clone(),
+            watchdogs,
+            ssh_timeout,
+            std::sync::Arc::clone(&node),
+            host_pipe_child_builder,
+        )
+        .await;
+
+        match nr {
+            Ok((mut hp, ssh_host_addr)) => {
+                if let Some(target) = weak_target.upgrade() {
+                    let compatibility_status = hp.get_compatibility_status();
+                    target.set_compatibility_status(&compatibility_status);
+                    target.handle_successful_ssh_spawn(
+                        hp.get_address(),
+                        ssh_host_addr,
+                        hp.overnet_id(),
+                    );
+                }
+
+                let wait_res = hp.wait(&node).await;
+
+                if let Some(target) = weak_target.upgrade() {
+                    target.log_host_pipe_exit_result(wait_res);
+                    target.host_pipe_backoff.borrow_mut().update_on_exit(start_time.elapsed());
+                }
+            }
+            Err(e) => {
+                // Change this to a debug message (from warn). We will get any error from
+                // SSH client in the logs so this is redundant.
+                log::debug!("Host pipe spawn {:?}", e);
+                if let Some(target) = weak_target.upgrade() {
+                    target.handle_failed_ssh_spawn(&e);
+                }
+            }
+        }
+
+        weak_target.upgrade().and_then(|target| {
+            log::debug!("Exiting run_host_pipe for {}", target.nodename_str());
+            target.host_pipe.borrow_mut().take()
+        });
+    }
+
+    // This function allows the caller to receive the remote-overnet-id of the target.
+    // The r-o-id can be used to determine whether this host-pipe is connecting to the
+    // same target as one we've already connected to, which is important when using
+    // Overnet, because Overnet (due to its mesh-network topology) will not inform the
+    // daemon of a "new peer" since it will consider the peer to be the same.
+    // That being said, not all callers need the r-o-id, and not all targets will have
+    // one (in particular, older targets will not have implemented this in their protocol).
+    // If the caller asks for it, the host-pipe code _must_ return it, so every code path
+    // will eventually send the resulting roid (even if it is None) back to the caller.
+    //
+    // This function can also take a HostPipeChildBuilder, for test purposes
     fn run_host_pipe_with<T>(
         self: &Rc<Self>,
         overnet_node: &Arc<overnet_core::Router>,
@@ -1384,209 +1626,84 @@ impl Target {
             return;
         }
 
-        if let Some(ref mut hp) = *self.host_pipe.borrow_mut() {
-            // The host-pipe already exists
+        if self.is_host_pipe_running() {
+            // A host-pipe connection is already active or setting up.
+            // If the caller wants the remote overnet ID, add them to the waiters
+            // so they are notified when the connection completes.
             if let Some(sender) = roid_sender {
-                // The caller is waiting for a response
-                match &mut hp.remote_overnet_id {
-                    RemoteOvernetIdState::Pending(waiters) => waiters.push(sender),
-                    RemoteOvernetIdState::Ready(roid) => {
-                        log::debug!(
-                            "Got request for host pipe overnet id for an already-running host-pipe -- sending back {roid:?}",
-                        );
-                        let _ = sender.send(*roid);
-                    }
-                }
+                self.add_waiter_to_existing_host_pipe(sender);
             }
-            // log::debug!("Host pipe is already set for {}@{}.", self.nodename_str(), self.id());
+            return;
+        }
+
+        if let Some(remaining) = self.host_pipe_backoff.borrow().remaining_delay() {
+            log::debug!(
+                "Throttling host pipe connection for {}. Backing off for remaining {:.2}s",
+                self.nodename_str(),
+                remaining.as_secs_f64()
+            );
+            if let Some(sender) = roid_sender {
+                let _ = sender.send(None);
+            }
             return;
         }
 
         let weak_target = Rc::downgrade(self);
-        let target_name_str = format!("{}@{}", self.nodename_str(), self.id());
         let node = Arc::clone(overnet_node);
         let overnet_node = Arc::clone(overnet_node);
         let roid_waiters =
             if let Some(roid_sender) = roid_sender { vec![roid_sender] } else { vec![] };
         let context_clone = self.context.clone();
+
+        // Start a background task to manage the asynchronous connection lifecycle.
+        // This task will resolve the appropriate connection type (mDNS/VSOCK/USB/SSH)
+        // and delegate to either `run_vsock_or_usb_connection` or `run_ssh_connection`
+        // to spawn the host-pipe process, wait for the connection to terminate, and
+        // update the exponential backoff metrics upon completion.
+        // Stored in `self.host_pipe` so the daemon can track this active attempt.
         let task = async move {
-            // The purpose of a host pipe is to ultimately get us connected to RCS and let us transition
-            // to the RCS connected state. If we're already in that state, and the RCS connection is
-            // active, we don't need a host pipe. This will start happening more as we introduce USB
-            // links, where the first thing we hear about a target is its appearance as an Overnet peer,
-            // and thus we have an RCS connection from inception.
-            let cid_and_usb_host = {
-                let Some(target) = weak_target.upgrade() else {
-                    // weird that self is already gone, but ¯\_(ツ)_/¯
-                    // Unfortunately that means we have no access to its remote-overnet-id waiters :-(
-                    return;
-                };
-                let state = target.state.borrow().clone();
-                if let TargetConnectionState::Rcs(rcs) = state {
-                    if knock_rcs(&rcs.proxy).await.is_ok() {
-                        if let Some(host_pipe) = target.host_pipe.borrow_mut().as_mut() {
-                            host_pipe.flush_waiters();
-                        }
+            let Some(target) = weak_target.upgrade() else {
+                // weird that self is already gone, but ¯\_(ツ)_/¯
+                // Unfortunately that means we have no access to its remote-overnet-id waiters :-(
+                return;
+            };
+            let connection_type = target.determine_connection_type().await;
+
+            // Even though we have a strong `target` reference (`Rc<Target>`) here, we do not
+            // pass it to the helper functions below. The helper functions perform `.await` calls
+            // that can block for a long time, and passing a strong reference would cause the
+            // async task's state machine to hold the target alive, creating a reference cycle.
+            // Therefore, we must pass `weak_target` to allow them to upgrade and drop the strong
+            // reference locally around each `.await` boundary.
+            match connection_type {
+                ConnectionType::RcsActive => {}
+                ConnectionType::Vsock(cid) => {
+                    Self::run_vsock_or_usb_connection(weak_target, node, cid, None, "VSOCK").await;
+                }
+                ConnectionType::Usb { cid, host } => {
+                    Self::run_vsock_or_usb_connection(weak_target, node, cid, Some(host), "USB")
+                        .await;
+                }
+                ConnectionType::Ssh => {
+                    if !context_clone.get(keys::NETWORK_ENABLED).unwrap_or(true) {
+                        log::debug!("Networking disabled, quitting host pipe");
                         return;
                     }
-                }
-
-                target.addrs().into_iter().find_map(|addr| {
-                    if let TargetAddr::VSockCtx(cid) = addr {
-                        if context_clone.get(keys::VSOCK_ENABLED).unwrap_or(false) {
-                            Some((cid, None))
-                        } else {
-                            None
-                        }
-                    } else if let TargetAddr::UsbCtx(cid) = addr {
-                        let ret = if let Some(host) = Target::get_usb_driver_connection() {
-                            Some((cid, Some(host)))
-                        } else {
-                            None
-                        };
-                        ret
-                    } else {
-                        None
-                    }
-                })
-            };
-
-            if let Some((cid, host)) = cid_and_usb_host {
-                // We have a VSOCK. Use that to connect instead of SSH.
-
-                let conn_type = if host.is_some() { "USB" } else { "VSOCK" };
-
-                // We might be able to connect on VSOCK port 201 to call the
-                // identify service and then we could get something to return to
-                // these waiters.
-                if let Some(target) = weak_target.upgrade() {
-                    if let Some(host_pipe) = target.host_pipe.borrow_mut().as_mut() {
-                        if let RemoteOvernetIdState::Pending(waiters) = std::mem::replace(
-                            &mut host_pipe.remote_overnet_id,
-                            RemoteOvernetIdState::Ready(None),
-                        ) {
-                            for waiter in waiters {
-                                let _ = waiter.send(None);
-                            }
-                        }
-                    }
-
-                    if target.ssh_address().is_some() {
-                        target.refresh_ssh_host_addr();
-                    }
-                }
-
-                emit_host_pipe_connection_event(conn_type).await;
-                if let Some(host) = host {
-                    let _ = &host;
-                    Box::pin(spawn_usb(host, cid, node)).await;
-                } else {
-                    spawn_vsock(cid, node).await;
-                }
-
-                weak_target.upgrade().and_then(|target| {
-                    log::debug!(
-                        "Exiting run_host_pipe for {target_name_str} ({conn_type} connection)"
-                    );
-                    target.host_pipe.borrow_mut().take()
-                });
-                return;
-            }
-
-            emit_host_pipe_connection_event("SSH").await;
-
-            if !context_clone.get(keys::NETWORK_ENABLED).unwrap_or(true) {
-                log::debug!("Networking disabled, quitting host pipe");
-                return;
-            }
-
-            let watchdogs: bool = context_clone.get("watchdogs.host_pipe.enabled").unwrap_or(false);
-
-            let ssh_timeout: u16 = context_clone.get(CONFIG_HOST_PIPE_SSH_TIMEOUT).unwrap_or(50);
-            let nr = spawn(
-                weak_target.clone(),
-                watchdogs,
-                ssh_timeout,
-                std::sync::Arc::clone(&node),
-                host_pipe_child_builder,
-            )
-            .await;
-
-            match nr {
-                Ok((mut hp, ssh_host_addr)) => {
-                    log::debug!("host pipe spawn returned OK for {target_name_str}");
-                    eprintln!("host pipe spawn returned OK for {target_name_str}");
-                    let compatibility_status = hp.get_compatibility_status();
-
-                    if let Some(target) = weak_target.upgrade() {
-                        target.set_compatibility_status(&compatibility_status);
-
-                        // If there's no host-pipe, it's because the target
-                        // has dropped the task containing our host-pipe,
-                        // so it's fine to not follow through and set target
-                        // information that come from this connection.
-                        // Clients waiting for the overnet_id will have
-                        // gotten an error when the host-pipe was dropped.
-                        if let Some(host_pipe) = target.host_pipe.borrow_mut().as_mut() {
-                            host_pipe.ssh_addr = Some(hp.get_address());
-                            host_pipe.ssh_host_address = ssh_host_addr;
-                            let overnet_id = hp.overnet_id();
-                            log::debug!(
-                                "Got host pipe overnet id {:?} -- sending to waiters",
-                                overnet_id
-                            );
-                            if let RemoteOvernetIdState::Pending(waiters) = std::mem::replace(
-                                &mut host_pipe.remote_overnet_id,
-                                RemoteOvernetIdState::Ready(overnet_id),
-                            ) {
-                                for sender in waiters.into_iter() {
-                                    let _ = sender.send(overnet_id);
-                                }
-                            } else {
-                                // We only go through this path once, so the state will always be Pending above.
-                                unreachable!()
-                            }
-                        }
-                    }
-
-                    // wait for the host pipe to exit.
-                    let _r = match hp.wait(&node).await {
-                        Ok(r) => {
-                            // This was an info. Moved to debug as this is not informational or
-                            // actionable to end users.
-                            log::debug!("HostPipeConnection returned: {:?}", r);
-                        }
-                        Err(r) => {
-                            log::warn!(
-                                "The host pipe connection to ['{target_name_str}'] returned: {:?}",
-                                r
-                            );
-                        }
-                    };
-                }
-                Err(e) => {
-                    // Change this to a debug message (from warn). We will get any error from
-                    // SSH client in the logs so this is redundant.
-                    log::debug!("Host pipe spawn {:?}", e);
-                    let compatibility_status = Some(CompatibilityInfo {
-                        status: CompatibilityState::Error,
-                        platform_abi: 0,
-                        message: format!("Host connection failed: {e}"),
-                    });
-                    if let Some(target) = weak_target.upgrade() {
-                        target.set_compatibility_status(&compatibility_status);
-                        if let Some(host_pipe) = target.host_pipe.borrow_mut().as_mut() {
-                            host_pipe.flush_waiters();
-                        }
-                    }
+                    let watchdogs =
+                        context_clone.get("watchdogs.host_pipe.enabled").unwrap_or(false);
+                    let ssh_timeout = context_clone.get(CONFIG_HOST_PIPE_SSH_TIMEOUT).unwrap_or(50);
+                    Self::run_ssh_connection(
+                        weak_target,
+                        node,
+                        host_pipe_child_builder,
+                        ssh_timeout,
+                        watchdogs,
+                    )
+                    .await;
                 }
             }
-
-            weak_target.upgrade().and_then(|target| {
-                log::debug!("Exiting run_host_pipe for {target_name_str}");
-                target.host_pipe.borrow_mut().take()
-            });
         };
+
         self.host_pipe.borrow_mut().replace(HostPipeState {
             task: Task::local(task),
             overnet_node,
@@ -1733,6 +1850,10 @@ impl Target {
 
     pub fn is_waiting_for_rcs_identity(&self) -> bool {
         self.is_manual() && self.is_host_pipe_running() && self.identity().is_none()
+    }
+
+    pub fn reset_backoff(&self) {
+        self.host_pipe_backoff.borrow_mut().reset();
     }
 
     pub fn disconnect(&self) {
@@ -1900,6 +2021,75 @@ async fn emit_host_pipe_connection_event(ty: &str) {
         [].into_iter().collect(),
     )
     .await;
+}
+
+/// Helper to manage exponential backoff metrics for host-pipe connections.
+///
+/// **Design Intent & Throttling Behavior:**
+///
+/// The backoff is enforced passively (throttling connection attempts at the entry point of
+/// `run_host_pipe_with`) rather than by explicitly sleeping or holding tasks open.
+///
+/// There are two main sources of connection attempts:
+/// 1. **Daemon's Periodic Checker:** Ticks once per second. Since the tick rate is coarser than the
+///    initial sub-second delays (200ms, 400ms, 800ms), the first few retries from the background loop
+///    will naturally happen exactly 1 second apart. This provides a gentler ramp-up for short-lived drops.
+/// 2. **External Events / User Commands:** Commands like `ffx target list` or external scripts can
+///    trigger connection attempts in rapid succession (e.g., multiple times within a few milliseconds).
+///    The sub-second starting backoff (200ms) acts as a critical shield, immediately throttling these
+///    high-frequency external attempts to prevent SSH connection spam.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ExponentialBackoff {
+    pub(crate) last_start: Option<Instant>,
+    pub(crate) delay: Duration,
+    pub(crate) initial_delay: Duration,
+    pub(crate) max_delay: Duration,
+    pub(crate) stable_runtime_threshold: Duration,
+}
+
+impl ExponentialBackoff {
+    pub(crate) fn new(
+        initial_delay: Duration,
+        max_delay: Duration,
+        stable_runtime_threshold: Duration,
+    ) -> Self {
+        Self {
+            last_start: None,
+            delay: initial_delay,
+            initial_delay,
+            max_delay,
+            stable_runtime_threshold,
+        }
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.delay = self.initial_delay;
+        self.last_start = None;
+    }
+
+    fn increase_delay(&mut self) {
+        self.delay = std::cmp::min(self.delay * 2, self.max_delay);
+    }
+
+    pub(crate) fn update_on_exit(&mut self, runtime: Duration) {
+        if runtime >= self.stable_runtime_threshold {
+            self.reset();
+        } else {
+            self.increase_delay();
+        }
+    }
+
+    pub(crate) fn update_on_failure(&mut self) {
+        self.increase_delay();
+    }
+
+    pub(crate) fn record_start(&mut self, time: Instant) {
+        self.last_start = Some(time);
+    }
+
+    pub(crate) fn remaining_delay(&self) -> Option<Duration> {
+        self.last_start.and_then(|start| self.delay.checked_sub(start.elapsed()))
+    }
 }
 
 #[cfg(test)]
@@ -2855,6 +3045,46 @@ mod test {
 
         assert_eq!(TargetConnectionState::Disconnected, target.get_connection_state());
         assert!(target.host_pipe.borrow().is_none());
+    }
+
+    #[fuchsia::test]
+    async fn test_target_host_pipe_backoff() {
+        let env = ffx_config::test_init().unwrap();
+        let target = Target::new(&env.context);
+
+        // Initially there should be no backoff restrictions.
+        assert_eq!(target.host_pipe_backoff.borrow().delay, crate::RETRY_DELAY);
+        assert!(target.host_pipe_backoff.borrow().last_start.is_none());
+
+        // Increment backoff on failure
+        target.host_pipe_backoff.borrow_mut().update_on_failure();
+        assert_eq!(target.host_pipe_backoff.borrow().delay, crate::RETRY_DELAY * 2);
+
+        // Successful long run resets backoff
+        target.host_pipe_backoff.borrow_mut().update_on_exit(Duration::from_secs(11));
+        assert_eq!(target.host_pipe_backoff.borrow().delay, crate::RETRY_DELAY);
+
+        // Short run doubles backoff
+        target.host_pipe_backoff.borrow_mut().update_on_exit(Duration::from_secs(5));
+        assert_eq!(target.host_pipe_backoff.borrow().delay, crate::RETRY_DELAY * 2);
+
+        // Reset backoff clears state
+        target.reset_backoff();
+        assert_eq!(target.host_pipe_backoff.borrow().delay, crate::RETRY_DELAY);
+        assert!(target.host_pipe_backoff.borrow().last_start.is_none());
+
+        // Test custom runtime threshold parameter directly on ExponentialBackoff
+        let mut custom_backoff = ExponentialBackoff::new(
+            Duration::from_millis(200),
+            Duration::from_secs(30),
+            Duration::from_secs(5),
+        );
+        // Runtime less than threshold (4s < 5s) doubles backoff
+        custom_backoff.update_on_exit(Duration::from_secs(4));
+        assert_eq!(custom_backoff.delay, Duration::from_millis(400));
+        // Runtime greater than threshold (6s >= 5s) resets backoff
+        custom_backoff.update_on_exit(Duration::from_secs(6));
+        assert_eq!(custom_backoff.delay, Duration::from_millis(200));
     }
 
     #[fuchsia::test]

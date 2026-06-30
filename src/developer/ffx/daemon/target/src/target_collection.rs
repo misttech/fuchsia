@@ -14,7 +14,7 @@ use async_utils::event::Event;
 use chrono::Utc;
 use ffx_config::EnvironmentContext;
 use ffx_daemon_core::events::{self, EventSynthesizer};
-use ffx_daemon_events::{DaemonEvent, TargetEvent};
+use ffx_daemon_events::{DaemonEvent, TargetConnectionState, TargetEvent};
 use ffx_target::TargetInfoQuery;
 use fidl_fuchsia_developer_ffx as ffx;
 use std::borrow::Borrow;
@@ -719,6 +719,25 @@ impl TargetCollection {
             *to_update.fastboot_interface.borrow_mut() = Some(fastboot_interface);
         }
 
+        // If the target is actively discovered or updated (via mDNS, Vsock, Manual, Fastboot,
+        // or Zedboot), it indicates that the target is likely booting up, online, or has been
+        // manually interacted with. Reset the backoff here to bypass any active 30-second
+        // throttling delays and attempt to connect immediately. If the target's services (like SSH)
+        // are not ready yet, subsequent failures will safely reinstate a short backoff.
+        //
+        // Note: Since discovery events (such as mDNS keepalives) typically occur every 20 seconds,
+        // actively discovered targets will rarely reach the maximum 30-second backoff delay.
+        // This is acceptable because discovery packets represent a strong online signal.
+        match new_target.get_connection_state() {
+            TargetConnectionState::Mdns(_)
+            | TargetConnectionState::Vsock(_)
+            | TargetConnectionState::Manual
+            | TargetConnectionState::Fastboot(_)
+            | TargetConnectionState::Zedboot(_) => {
+                to_update.reset_backoff();
+            }
+            _ => {}
+        }
         to_update.update_connection_state(|_| new_target.get_connection_state());
 
         if new_target.is_transient() {
