@@ -35,40 +35,7 @@ fuchsia_unittest_package("block-common-test") {
   }
 }
 
-library_headers("headers-dfv1") {
-  headers = [ "common-dfv1.h" ]
-  public_deps = [
-    "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
-    "//src/lib/ddk",
-  ]
-}
-
-source_set("common-dfv1") {
-  public_deps = [ ":headers-dfv1" ]
-}
-
-test("common-dfv1-test") {
-  sources = [ "common-dfv1-test.cc" ]
-  deps = [
-    ":common-dfv1",
-    "//src/devices/testing/mock-ddk",  # For building zxlogf().
-    "//zircon/system/ulib/zxtest",
-  ]
-}
-
-fuchsia_unittest_package("block-common-dfv1-test") {
-  deps = [ ":common-dfv1-test" ]
-  test_specs = {
-    log_settings = {
-      max_severity = "ERROR"
-    }
-  }
-}
-
 group("tests") {
   testonly = true
-  deps = [
-    ":block-common-dfv1-test",
-    ":block-common-test",
-  ]
+  deps = [ ":block-common-test" ]
 }

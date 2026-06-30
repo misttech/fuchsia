@@ -130,7 +130,6 @@ static_library("ddk") {
     "//src/devices/block/drivers/ramdisk:*",
     "//src/devices/block/drivers/ums-function:*",
     "//src/devices/block/drivers/usb-mass-storage:*",
-    "//src/devices/block/lib/common:*",
     "//src/devices/board/drivers/astro:*",
     "//src/devices/board/drivers/astro/post-init:*",
     "//src/devices/board/drivers/integration-test:*",
