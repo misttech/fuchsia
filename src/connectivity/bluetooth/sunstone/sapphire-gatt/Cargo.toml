@@ -7,7 +7,11 @@ edition = "2024"
 zerocopy = { version = "0.8.48", features = ["derive"] }
 strum = { version = "0.28.0", default-features = false }
 strum_macros = "0.28.0"
+thiserror = {version = "2.0.18", default-features = false}
+futures = {version = "=0.3.31", default-features = false, features = ["async-await"]}
+sapphire-async = { path = "../sapphire-async" }
+sapphire-sync = { path = "../sapphire-sync" }
+sapphire-collections = { path = "../sapphire-collections" }
 
 [dev-dependencies]
-futures = "=0.3.31"
-
+sapphire-async = { path = "../sapphire-async", features = ["testing"] }

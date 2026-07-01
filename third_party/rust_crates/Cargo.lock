@@ -4708,8 +4708,13 @@ version = "0.1.0"
 name = "sapphire-gatt"
 version = "0.1.0"
 dependencies = [
+ "futures",
+ "sapphire-async",
+ "sapphire-collections",
+ "sapphire-sync",
  "strum",
  "strum_macros",
+ "thiserror 2.0.18",
  "zerocopy 0.8.48",
 ]
 

@@ -5,7 +5,7 @@
 use core::num::NonZero;
 
 /// L2CAP Channel identifier
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Cid(NonZero<u16>);
 
 impl Cid {
@@ -21,7 +21,7 @@ impl Cid {
 }
 
 /// Represents a fixed CID as defined by the Bluetooth Core specification.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct FixedCid(Cid);
 
 impl FixedCid {

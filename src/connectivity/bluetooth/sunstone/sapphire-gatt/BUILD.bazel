@@ -63,7 +63,12 @@ rust_library(
     }),
     version = "0.1.0",
     deps = [
+        "//third_party/rust_crates/intree/sunstone/sapphire-async:sapphire_async",
+        "//third_party/rust_crates/intree/sunstone/sapphire-collections:sapphire_collections",
+        "//third_party/rust_crates/intree/sunstone/sapphire-sync:sapphire_sync",
+        "//third_party/rust_crates/vendor/futures-0.3.31:futures",
         "//third_party/rust_crates/vendor/strum-0.28.0:strum",
+        "//third_party/rust_crates/vendor/thiserror-2.0.18:thiserror",
         "//third_party/rust_crates/vendor/zerocopy-0.8.48:zerocopy",
     ],
 )

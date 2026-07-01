@@ -18930,8 +18930,13 @@ rustc_library("sapphire-gatt-v0_1_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":sapphire-async-v0_1_0" ]
+  deps += [ ":sapphire-collections-v0_1_0" ]
+  deps += [ ":sapphire-sync-v0_1_0" ]
+  deps += [ ":futures-v0_3_31" ]
   deps += [ ":strum-v0_28_0" ]
   deps += [ ":strum_macros-v0_28_0($host_toolchain)" ]
+  deps += [ ":thiserror-v2_0_18" ]
   deps += [ ":zerocopy-v0_8_48" ]
 
   rustenv = []

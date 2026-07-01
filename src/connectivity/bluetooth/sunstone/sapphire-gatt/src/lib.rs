@@ -5,6 +5,7 @@
 //! The `sapphire-gatt` crate, providing Bluetooth GATT and ATT implementations.
 
 #![cfg_attr(not(test), no_std)]
+#![allow(async_fn_in_trait)]
 
 pub mod att;
 pub mod gatt;

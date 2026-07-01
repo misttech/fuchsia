@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// TODO(jsonyi): Remove once it's being used in ATT
+// TODO(https://fxbug.dev/530178022): Remove once it's being used in ATT
 #![allow(unused)]
 
 pub mod cid;
@@ -11,7 +11,11 @@ use core::mem::MaybeUninit;
 
 pub use cid::{Cid, FixedCid};
 
+#[cfg(test)]
+pub mod mock;
+
 #[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum L2CapEstablishChannelError {
     /// The requested channel already has an owner
     AlreadyInUse,
@@ -20,6 +24,7 @@ pub enum L2CapEstablishChannelError {
 }
 
 #[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum L2CapSendError {
     /// Underlying logical link was closed
     LinkClosed,
@@ -28,6 +33,7 @@ pub enum L2CapSendError {
 }
 
 #[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum L2CapRecvError {
     /// Underlying logical link was closed
     LinkClosed,

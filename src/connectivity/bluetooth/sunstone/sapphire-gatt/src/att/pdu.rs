@@ -76,6 +76,14 @@ pub struct Header {
     pub opcode: Opcode,
 }
 
+/// A generic unsized ATT packet containing a verified header and variable payload data.
+#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug)]
+#[repr(C)]
+pub struct Packet {
+    pub header: Header,
+    pub data: [u8],
+}
+
 /// Parameters for Exchange MTU Request PDU (OpCode = 0x02)
 ///
 /// (see Vol 3, Part F, 3.4.2.1)
