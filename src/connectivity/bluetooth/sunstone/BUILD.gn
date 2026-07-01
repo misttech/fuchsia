@@ -46,6 +46,7 @@ if (is_host) {
       "sapphire-gatt/src/att/attribute.rs",
       "sapphire-gatt/src/att/bearer.rs",
       "sapphire-gatt/src/att/client.rs",
+      "sapphire-gatt/src/att/database.rs",
       "sapphire-gatt/src/att/l2cap.rs",
       "sapphire-gatt/src/att/l2cap/cid.rs",
       "sapphire-gatt/src/att/l2cap/mock.rs",

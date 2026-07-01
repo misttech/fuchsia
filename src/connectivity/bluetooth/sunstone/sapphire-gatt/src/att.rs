@@ -3,12 +3,14 @@
 // found in the LICENSE file.
 
 use core::num::NonZeroU16;
+use thiserror::Error;
 mod bearer;
 mod l2cap;
 pub mod pdu;
 
 pub mod attribute;
 pub mod client;
+pub mod database;
 pub mod server;
 
 /// A valid, non-zero ATT Attribute Handle (0x0001 - 0xFFFF).
@@ -27,6 +29,24 @@ impl AttributeHandle {
     }
 }
 
+/// Error type for invalid handle conversions (e.g. converting 0).
+#[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
+#[error("Invalid attribute handle")]
+pub struct InvalidAttributeHandle;
+
+impl TryFrom<u16> for AttributeHandle {
+    type Error = InvalidAttributeHandle;
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or(InvalidAttributeHandle)
+    }
+}
+
+impl From<AttributeHandle> for u16 {
+    fn from(handle: AttributeHandle) -> Self {
+        handle.value()
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -45,6 +65,23 @@ mod tests {
         assert!(AttributeHandle::new(0).is_none());
         assert_eq!(AttributeHandle::new(1).unwrap().value(), 1);
         assert_eq!(AttributeHandle::new(0xFFFF).unwrap().value(), 0xFFFF);
+    }
+
+    #[test]
+    fn test_attribute_handle_try_from() {
+        assert_eq!(AttributeHandle::try_from(0), Err(InvalidAttributeHandle));
+        assert_eq!(AttributeHandle::try_from(1).unwrap(), AttributeHandle::new(1).unwrap());
+        assert_eq!(
+            AttributeHandle::try_from(0xFFFF).unwrap(),
+            AttributeHandle::new(0xFFFF).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_attribute_handle_from() {
+        let handle = AttributeHandle::new(42).unwrap();
+        let value: u16 = u16::from(handle);
+        assert_eq!(value, 42);
     }
 
     #[test]
