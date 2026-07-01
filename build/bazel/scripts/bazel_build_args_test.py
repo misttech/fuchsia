@@ -14,6 +14,66 @@ from pathlib import Path
 _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 import bazel_build_args
+import build_utils
+from bazel_build_args import (
+    ParsedAction,
+    ResolvedBuildArgsFlags,
+    ResolvedBuildArgsMap,
+    ResponseFileTarget,
+)
+
+
+class PathToLabelTest(unittest.TestCase):
+    def test_valid_path_parsing(self) -> None:
+        TEST_CASES = [
+            (
+                "bazel-out/k8-fastbuild/bin/build/bazel/examples/hello_world/main.cpp_compile.build_flags",
+                ResponseFileTarget(
+                    "@@//build/bazel/examples/hello_world:main.final_build_flags",
+                    "cpp_compile",
+                ),
+            ),
+            (
+                "bazel-out/fuchsia_platform_arm64-fastbuild/bin/src/my_pkg/tool.cpp_link.build_flags",
+                ResponseFileTarget(
+                    "@@//src/my_pkg:tool.final_build_flags", "cpp_link"
+                ),
+            ),
+            (
+                "execroot/_main/bazel-out/linux_x64-opt/bin/external/rules_rust/tool.rust_compile.build_flags",
+                ResponseFileTarget(
+                    "@@rules_rust//:tool.final_build_flags", "rust_compile"
+                ),
+            ),
+            (
+                "${pwd}/bazel-out/k8-fastbuild/bin/build/target.rust_compile.build_flags",
+                ResponseFileTarget(
+                    "@@//build:target.final_build_flags", "rust_compile"
+                ),
+            ),
+            (
+                "${pwd}/bazel-out/k8-fastbuild/bin/build/target.rustc_env_file.build_flags",
+                ResponseFileTarget(
+                    "@@//build:target.final_build_flags", "rust_compile"
+                ),
+            ),
+        ]
+        for path, expected in TEST_CASES:
+            result = ResponseFileTarget.from_execroot_path(path)
+            self.assertEqual(result, expected, msg=f"For path [{path}]")
+
+    def test_invalid_path_returns_none(self) -> None:
+        TEST_CASES = [
+            "src/my_pkg/tool.cpp_compile.build_flags",  # no bazel-out/../bin/
+            "bazel-out/k8-fastbuild/bin/build/target.unknown_suffix",
+            "bazel-out/bin/too_short.cpp_compile.build_flags",  # config dir missing
+            "",
+        ]
+        for path in TEST_CASES:
+            self.assertIsNone(
+                ResponseFileTarget.from_execroot_path(path),
+                msg=f"Expected None for [{path}]",
+            )
 
 
 class ParseAqueryOutputTest(unittest.TestCase):
@@ -32,7 +92,7 @@ class ParseAqueryOutputTest(unittest.TestCase):
       "targetId": 1,
       "mnemonic": "CppCompile",
       "configurationId": 1,
-      "arguments": ["exec", "clang", "-c", "src/main.cc", "-o", "main.o"],
+      "arguments": ["exec", "clang", "-c", "src/main.cc", "@bazel-out/k8-fastbuild/bin/src/main.cpp_compile.build_flags", "-o", "main.o"],
       "environmentVariables": [
         { "key": "PATH", "value": "/bin" }
       ]
@@ -41,7 +101,7 @@ class ParseAqueryOutputTest(unittest.TestCase):
       "targetId": 1,
       "mnemonic": "CppLink",
       "configurationId": 1,
-      "arguments": ["exec", "clang", "main.o", "-o", "bin"]
+      "arguments": ["exec", "clang", "main.o", "-o", "bin", "@bazel-out/k8-fastbuild/bin/main.cpp_link.build_flags"]
     }
   ]
 }
@@ -59,6 +119,7 @@ class ParseAqueryOutputTest(unittest.TestCase):
                 "clang",
                 "-c",
                 "src/main.cc",
+                "@bazel-out/k8-fastbuild/bin/src/main.cpp_compile.build_flags",
                 "-o",
                 "main.o",
             ],
@@ -73,7 +134,24 @@ class ParseAqueryOutputTest(unittest.TestCase):
                 "main.o",
                 "-o",
                 "bin",
+                "@bazel-out/k8-fastbuild/bin/main.cpp_link.build_flags",
             ],
+        )
+
+        self.assertDictEqual(
+            result.response_files_map,
+            {
+                "bazel-out/k8-fastbuild/bin/src/main.cpp_compile.build_flags": (
+                    ResponseFileTarget(
+                        "@@//src:main.final_build_flags", "cpp_compile"
+                    )
+                ),
+                "bazel-out/k8-fastbuild/bin/main.cpp_link.build_flags": (
+                    ResponseFileTarget(
+                        "@@//:main.final_build_flags", "cpp_link"
+                    )
+                ),
+            },
         )
 
     def test_parse_aquery_with_mnemonic_filter(self) -> None:
@@ -91,13 +169,13 @@ class ParseAqueryOutputTest(unittest.TestCase):
       "targetId": 1,
       "mnemonic": "CppCompile",
       "configurationId": 1,
-      "arguments": ["exec", "clang", "-c", "src/main.cc"]
+      "arguments": ["exec", "clang", "-c", "src/main.cc", "@bazel-out/k8-fastbuild/bin/src/main.cpp_compile.build_flags"]
     },
     {
       "targetId": 2,
       "mnemonic": "CppLink",
       "configurationId": 1,
-      "arguments": ["exec", "clang", "main.o", "-o", "bin"]
+      "arguments": ["exec", "clang", "main.o", "-o", "bin", "@bazel-out/k8-fastbuild/bin/main.cpp_link.build_flags"]
     }
   ]
 }
@@ -109,6 +187,16 @@ class ParseAqueryOutputTest(unittest.TestCase):
 
         self.assertEqual(len(result.actions), 1)
         self.assertEqual(result.actions[0].mnemonic, "CppCompile")
+        self.assertDictEqual(
+            result.response_files_map,
+            {
+                "bazel-out/k8-fastbuild/bin/src/main.cpp_compile.build_flags": (
+                    ResponseFileTarget(
+                        "@@//src:main.final_build_flags", "cpp_compile"
+                    )
+                ),
+            },
+        )
 
     def test_parse_aquery_malformed_json_returns_empty(self) -> None:
         suppressed_stderr = io.StringIO()
@@ -120,6 +208,7 @@ class ParseAqueryOutputTest(unittest.TestCase):
             sys.stderr = orig_stderr
 
         self.assertEqual(len(result.actions), 0)
+        self.assertEqual(len(result.response_files_map), 0)
 
 
 class ExpandArgsFromDiskTest(unittest.TestCase):
@@ -245,6 +334,206 @@ class ExpandArgsFromDiskTest(unittest.TestCase):
             self.assertListEqual(
                 result_not_stripped.expanded_args, ["-DPWD_FOLDER_FLAG"]
             )
+
+
+class ExpandArgsStaticTest(unittest.TestCase):
+    def test_static_expansion(self) -> None:
+        raw_args = [
+            "exec",
+            "clang",
+            "@bazel-out/k8-fastbuild/bin/src/main.cpp_compile.build_flags",
+            "@bazel-out/k8-fastbuild/bin/target.params",
+            "--env-file",
+            "bazel-out/k8-fastbuild/bin/env.rustc_env_file.build_flags",
+        ]
+
+        response_files_map = {
+            "bazel-out/k8-fastbuild/bin/src/main.cpp_compile.build_flags": (
+                ResponseFileTarget(
+                    "@@//src:main.final_build_flags", "cpp_compile"
+                )
+            ),
+            "bazel-out/k8-fastbuild/bin/env.rustc_env_file.build_flags": (
+                ResponseFileTarget(
+                    "@@//src:main.final_build_flags", "rust_compile"
+                )
+            ),
+        }
+
+        build_args_map = ResolvedBuildArgsMap(
+            {
+                "@@//src:main.final_build_flags": ResolvedBuildArgsFlags(
+                    label="@@//src:main.final_build_flags",
+                    cflags=["-DCOMPILE_FLAG"],
+                    cflags_c=[],
+                    cflags_cc=["-DCC_FLAG"],
+                    defines=[],
+                    include_dirs=[],
+                    ldflags=[],
+                    lib_dirs=[],
+                    rustflags=[],
+                    rustenv=["KEY=VAL"],
+                )
+            }
+        )
+
+        result = bazel_build_args.expand_args_with_build_args_map(
+            raw_args, {}, response_files_map, build_args_map
+        )
+
+        self.assertListEqual(
+            result.expanded_args,
+            [
+                "exec",
+                "clang",
+                "-DCOMPILE_FLAG",
+                "-DCC_FLAG",
+                "@bazel-out/k8-fastbuild/bin/target.params",
+            ],
+        )
+        self.assertListEqual(result.env_vars, ["KEY=VAL"])
+
+        # Verify that the standard .params file registers a warning and is kept verbatim
+        self.assertEqual(len(result.warnings), 1)
+        self.assertIn("cannot be expanded with queries", result.warnings[0])
+
+
+class GetBazelExpandedActionsTest(unittest.TestCase):
+    def test_get_bazel_expanded_actions_static(self) -> None:
+        # Setup mocks
+        mock_launcher = build_utils.MockBazelLauncher()
+        mock_launcher.push_expected_outputs(['{"some": "json"}'])
+
+        # Mock aquery result
+        actions = [
+            ParsedAction(
+                name="action1",
+                target="//src:main",
+                config="config",
+                mnemonic="CppCompile",
+                args=[
+                    "exec",
+                    "clang",
+                    "@bazel-out/bin/main.cpp_compile.build_flags",
+                ],
+                env_vars={"FOO": "foo"},
+            )
+        ]
+        response_files_map = {
+            "bazel-out/bin/main.cpp_compile.build_flags": ResponseFileTarget(
+                "@@//src:main.final_build_flags", "cpp_compile"
+            )
+        }
+
+        # Monkeypatch
+        orig_parse_aquery = bazel_build_args.parse_aquery_output
+        orig_query_flags = bazel_build_args.query_build_flags_from_bazel
+
+        bazel_build_args.parse_aquery_output = (
+            lambda aquery_output, filter_mnemonics=None: (
+                bazel_build_args.ParsedAqueryResult(
+                    actions=actions,
+                    response_files_map=response_files_map,
+                    uses_bazel_params_file=False,
+                )
+            )
+        )
+        bazel_build_args.query_build_flags_from_bazel = lambda labels, launcher, config_args: (
+            ResolvedBuildArgsMap(
+                {
+                    "@@//src:main.final_build_flags": ResolvedBuildArgsFlags(
+                        label="@@//src:main.final_build_flags",
+                        cflags=["-DSTATIC_FLAG"],
+                        cflags_c=[],
+                        cflags_cc=[],
+                        defines=[],
+                        include_dirs=[],
+                        ldflags=[],
+                        lib_dirs=[],
+                        rustflags=[],
+                        rustenv=[],
+                    )
+                }
+            )
+        )
+
+        try:
+            expanded = bazel_build_args.get_bazel_expanded_actions(
+                bazel_launcher=mock_launcher,
+                bazel_execroot="/dummy_root",
+                bazel_target="//src:main",
+                config_args=["--config=fuchsia"],
+                read_response_files=False,
+            )
+
+            self.assertEqual(len(expanded), 1)
+            self.assertEqual(expanded[0].action, "action1")
+            self.assertEqual(expanded[0].target, "//src:main")
+            self.assertListEqual(
+                expanded[0].args, ["exec", "clang", "-DSTATIC_FLAG"]
+            )
+            self.assertListEqual(expanded[0].env_vars, ["FOO=foo"])
+            self.assertEqual(len(expanded[0].warnings), 0)
+        finally:
+            # Restore original functions
+            bazel_build_args.parse_aquery_output = orig_parse_aquery
+            bazel_build_args.query_build_flags_from_bazel = orig_query_flags
+
+    def test_get_bazel_expanded_actions_dynamic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            execroot = Path(tmp_dir)
+            flags_file = execroot / "bazel-out/bin/main.cpp_compile.build_flags"
+            flags_file.parent.mkdir(parents=True, exist_ok=True)
+            flags_file.write_text("-DDYNAMIC_FLAG\n")
+
+            mock_launcher = build_utils.MockBazelLauncher()
+            mock_launcher.push_expected_outputs(["{}"])
+
+            actions = [
+                ParsedAction(
+                    name="action1",
+                    target="//src:main",
+                    config="config",
+                    mnemonic="CppCompile",
+                    args=[
+                        "exec",
+                        "clang",
+                        f"@bazel-out/bin/main.cpp_compile.build_flags",
+                    ],
+                    env_vars={"FOO": "foo"},
+                )
+            ]
+
+            # Monkeypatch
+            orig_parse_aquery = bazel_build_args.parse_aquery_output
+            bazel_build_args.parse_aquery_output = (
+                lambda aquery_output, filter_mnemonics=None: (
+                    bazel_build_args.ParsedAqueryResult(
+                        actions=actions,
+                        response_files_map={},
+                        uses_bazel_params_file=False,
+                    )
+                )
+            )
+
+            try:
+                expanded = bazel_build_args.get_bazel_expanded_actions(
+                    bazel_launcher=mock_launcher,
+                    bazel_execroot=str(execroot),
+                    bazel_target="//src:main",
+                    config_args=[],
+                    read_response_files=True,
+                )
+
+                self.assertEqual(len(expanded), 1)
+                self.assertEqual(expanded[0].action, "action1")
+                self.assertListEqual(
+                    expanded[0].args, ["exec", "clang", "-DDYNAMIC_FLAG"]
+                )
+                self.assertListEqual(expanded[0].env_vars, ["FOO=foo"])
+            finally:
+                # Restore
+                bazel_build_args.parse_aquery_output = orig_parse_aquery
 
 
 if __name__ == "__main__":

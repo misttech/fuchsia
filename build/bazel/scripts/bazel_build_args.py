@@ -7,10 +7,13 @@
 import dataclasses
 import json
 import os
+import re
 import shlex
 import sys
 from typing import Any
 
+# Manually modify sys.path to allow other modules to import
+# this one without worrying about its dependencies.
 _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 import build_utils
@@ -57,6 +60,7 @@ def get_bazel_expanded_actions(
     bazel_target: str,
     config_args: list[str],
     filter_mnemonics: None | list[str] = None,
+    read_response_files: bool = False,
 ) -> list[ExpandedAction]:
     """Return the expanded command-line of all actions used to build a given Bazel target.
 
@@ -67,6 +71,10 @@ def get_bazel_expanded_actions(
         config_args: Additional configuration arguments to pass to Bazel, such as --config=NAME.
         filter_mnemonics: Optional list of mnemonics to filter by. If provided only actions
             whose mnemonic match these values will be included in the returned list.
+        read_response_files: Optional flag. When True, the content of response files will be
+            read directly from the Bazel execroot and no cqueries will be performed. This requires
+            the target to have been built before calling this function to ensure the response
+            file's content is correct.
 
     Returns:
         A list of ExpandedAction objects with the expanded command lines.
@@ -85,14 +93,44 @@ def get_bazel_expanded_actions(
 
     aquery_result = parse_aquery_output(ret.stdout, filter_mnemonics)
 
-    execroot = os.path.realpath(bazel_execroot)
+    if aquery_result.uses_bazel_params_file:
+        read_response_files = True
 
-    # 2. Perform Expansion
+    if not read_response_files:
+        # 1.1 Perform cqueries to extract the BuildFlagsInfo provider values directly,
+        #     without accessing the disk, then use them to expand the response file paths
+        #     in the parsed actions' command lines.
+        build_args_map = query_build_flags_from_bazel(
+            aquery_result.get_final_build_flags_target_labels(),
+            bazel_launcher,
+            config_args,
+        )
+
+        def expand_action_args(
+            action: ParsedAction,
+        ) -> ArgumentsExpansionResult:
+            return expand_args_with_build_args_map(
+                action.args,
+                action.env_vars,
+                aquery_result.response_files_map,
+                build_args_map,
+            )
+
+    else:
+        # 1.2 Read the response files directly from the Bazel execroot instead of
+        # performing cqueries. This is required when Bazel decides to use a .params
+        # response file to split command lines that are too long.
+        execroot = os.path.realpath(bazel_execroot)
+
+        def expand_action_args(
+            action: ParsedAction,
+        ) -> ArgumentsExpansionResult:
+            return expand_args_from_disk(action.args, action.env_vars, execroot)
+
+    # 4. Perform Expansion
     expanded_actions: list[ExpandedAction] = []
     for action in aquery_result.actions:
-        expanded_result = expand_args_from_disk(
-            action.args, action.env_vars, execroot
-        )
+        expanded_result = expand_action_args(action)
 
         # Skip actions that don't have any arguments. These are not useful to inspect.
         # This corresponds to Bazel's creation of symlink trees and runfiles manifests.
@@ -111,6 +149,102 @@ def get_bazel_expanded_actions(
             )
         )
     return expanded_actions
+
+
+##############################################################################################
+##############################################################################################
+#####
+#####    B U I L D   F L A G S   I M P L E M E N T A T I O N   D E T A I L S
+#####
+
+# Constants used to identify the type of actions that require build_flags() response.
+# LINT.IfChange(action_kinds)
+ACTION_KIND_CPP_COMPILE = "cpp_compile"
+ACTION_KIND_C_COMPILE = "c_compile"
+ACTION_KIND_CPP_LINK = "cpp_link"
+ACTION_KIND_RUST_COMPILE = "rust_compile"
+
+ACTION_KINDS = {
+    ACTION_KIND_CPP_COMPILE,
+    ACTION_KIND_C_COMPILE,
+    ACTION_KIND_CPP_LINK,
+    ACTION_KIND_RUST_COMPILE,
+}
+# LINT.ThenChange(//build/bazel_sdk/fuchsia_rules_common/build_flags/build_flags.bzl:action_kinds)
+
+# A map from response file suffixes to their corresponding
+# action kind. See _generate_response_file() in build_flags.bzl.
+_BUILD_FLAGS_RESPONSE_FILE_SUFFIX_MAP = {
+    f".{kind}.build_flags": kind for kind in ACTION_KINDS
+} | {
+    ".rustc_env_file.build_flags": ACTION_KIND_RUST_COMPILE,
+}
+
+
+@dataclasses.dataclass(frozen=True)
+class ResolvedBuildArgsFlags:
+    """Models the BuildFlagsInfo values extracted from Bazel cqueries."""
+
+    label: str
+    cflags: list[str]
+    cflags_c: list[str]
+    cflags_cc: list[str]
+    defines: list[str]
+    include_dirs: list[str]
+    ldflags: list[str]
+    lib_dirs: list[str]
+    rustflags: list[str]
+    rustenv: list[str]
+
+    @property
+    def include_flags(self) -> list[str]:
+        return [f"-I{include_dir}" for include_dir in self.include_dirs]
+
+    @property
+    def define_flags(self) -> list[str]:
+        return [f"-D{define}" for define in self.defines]
+
+    def get_flags_for(self, kind: str) -> list[str]:
+        """Return the list of flags for the given action kind."""
+        result: list[str] = []
+        if kind == ACTION_KIND_CPP_COMPILE:
+            result += self.include_flags
+            result += self.define_flags
+            result.extend(self.cflags)
+            result.extend(self.cflags_cc)
+        elif kind == ACTION_KIND_C_COMPILE:
+            result += self.include_flags
+            result += self.define_flags
+            result.extend(self.cflags)
+            result.extend(self.cflags_c)
+        elif kind == ACTION_KIND_RUST_COMPILE:
+            result.extend(self.rustflags)
+            result.extend([f"-Lnative={lib_dir}" for lib_dir in self.lib_dirs])
+        elif kind == ACTION_KIND_CPP_LINK:
+            result.extend([f"-Wl,-L{lib_dir}" for lib_dir in self.lib_dirs])
+            result.extend(self.ldflags)
+        else:
+            raise AssertionError(f"Unknown action kind: {kind}")
+        return result
+
+    @staticmethod
+    def from_json(data: dict[str, Any]) -> "ResolvedBuildArgsFlags":
+        return ResolvedBuildArgsFlags(
+            label=data["label"],
+            cflags=data.get("cflags", []),
+            cflags_c=data.get("cflags_c", []),
+            cflags_cc=data.get("cflags_cc", []),
+            defines=data.get("defines", []),
+            include_dirs=data.get("include_dirs", []),
+            ldflags=data.get("ldflags", []),
+            lib_dirs=data.get("lib_dirs", []),
+            rustflags=data.get("rustflags", []),
+            rustenv=data.get("rustenv", []),
+        )
+
+
+class ResolvedBuildArgsMap(dict[str, ResolvedBuildArgsFlags]):
+    """Map from target labels to their resolved build flags."""
 
 
 ##############################################################################################
@@ -139,6 +273,110 @@ class ParsedAction:
     env_vars: dict[str, str]
 
 
+# A regular expression to match paths in the Bazel execroot that contain
+# bazel-out/<config_dir>/bin/
+_BAZEL_OUT_BIN_RE = re.compile(r"bazel-out/[^/]+/bin/")
+
+
+@dataclasses.dataclass(frozen=True)
+class ResponseFileTarget:
+    """Models a build_flags() response file target and its type.
+
+    The build_flags() implementation relies on the following implementation details of
+    its wrapper macros:
+
+    - Creating a _compute_final_build_flags() target that does not generate anything
+      but provides the *final* BuildFlagsInfo values to use for the wrapped target.
+
+    - Creating one or more _generate_response_file() targets, that depend on the previously
+      listed one, but *only* generating response files, whose paths are added to the wrapped
+      target's final command-line.
+
+    This type is used to convert a response file path, as it appears on the action's command
+    line, into the label of the _compute_final_build_flags() target, and the kind of action
+    the response file corresponds to.
+
+    This will allow performing cqueries on the returned target label to extract the final
+    command-line flags, in order to expand the response file without accessing build artifacts.
+    """
+
+    label: str  # Label of the _compute_final_build_flags() target created by a wrapper macro.
+    kind: str  # Type of action, see ACTION_KINDS defined above.
+
+    @staticmethod
+    def from_execroot_path(path: str) -> "None | ResponseFileTarget":
+        """Try to convert a response file path into a ResponseFileTarget instance.
+
+        Check the path of a response file as it appears on an action's command-line.
+        If it happens to be in the Bazel execroot (typically within bazel-out/<config_dir>/bin/)
+        and uses one of the known file extensions implemented for response files in build_flags.bzl,
+        then return a new ResponseFileTarget value.
+
+        Args:
+            path: The response file path string (e.g. a compiler argument starting with '@').
+
+        Result:
+            A ResponseFileTarget instance mapping the path to its cquery label and action kind,
+            or None if the path is not a recognized generated wrapper response file.
+        """
+        match = _BAZEL_OUT_BIN_RE.search(path)
+        if not match:
+            return None
+
+        rel_path = path[match.end() :]
+
+        if rel_path.startswith("external/"):
+            # This artifact is generated by a target defined in an external repository.
+            # Its path begins with external/<repo_canonical_repo_name>/
+            parts = rel_path.split("/")
+            repo_name = parts[1]
+            rest = parts[2:]
+        else:
+            # This artifact is generated by a target from the root workspace.
+            repo_name = ""
+            rest = rel_path.split("/")
+
+        target_full_name = rest[-1]
+        package = "/".join(rest[:-1])
+
+        action_kind = None
+        base_target_name = None
+
+        for suffix, kind in _BUILD_FLAGS_RESPONSE_FILE_SUFFIX_MAP.items():
+            if target_full_name.endswith(suffix):
+                base_target_name = target_full_name.removesuffix(suffix)
+                action_kind = kind
+                break
+
+        if not base_target_name:
+            return None
+
+        label = f"@@{repo_name}//{package}:{base_target_name}.final_build_flags"
+
+        assert action_kind is not None
+        return ResponseFileTarget(label, action_kind)
+
+
+class ResponseFileMap(dict[str, ResponseFileTarget]):
+    """A map from response file path to the corresponding ResponseFileTarget value.
+
+    Used to record the paths of build_flags.bzl response files found in an
+    action's original command-line, then extract the list of targets to use
+    for cqueries later. Usage is:
+
+    1) Create instance
+
+    2) Call try_path() for each response file path that appears in
+       the input action's command-line. If this matches the format of a response
+       file generated by build_flags.bzl wrapper macros, it will be recorded.
+    """
+
+    def try_path(self, response_path: str) -> None:
+        target = ResponseFileTarget.from_execroot_path(response_path)
+        if target:
+            self[response_path] = target
+
+
 @dataclasses.dataclass(frozen=True)
 class ParsedAqueryResult:
     """The result of parsing aquery outputs.
@@ -146,14 +384,30 @@ class ParsedAqueryResult:
     This provides:
       - A list of ParsedAction values corresponding to all non-empty actions returned
         by the aquery command.
+
+      - A dictionary mapping response file paths (as they appear on actions command lines)
+        to the matching ResponseFileTarget. These can be used later to perform cqueries
+        to extract the list of final BuildFlagsInfo values.
+
+      - A flag that will be True if any parsed action uses a Bazel .params file.
+
+        This happens when an action's command-line is too long and is instead written to
+        a response file that is generated internally by Bazel and thus cannot be
+        accessed with queries (it must be read from disk after building the target).
     """
 
     actions: list[ParsedAction]
+    response_files_map: ResponseFileMap
+    uses_bazel_params_file: bool
 
     @staticmethod
     def new_empty() -> "ParsedAqueryResult":
         """Create a new ParsedAqueryResult with empty values."""
-        return ParsedAqueryResult([])
+        return ParsedAqueryResult([], ResponseFileMap(), False)
+
+    def get_final_build_flags_target_labels(self) -> set[str]:
+        """Return a set of target labels to use for cquery queries."""
+        return {t.label for t in self.response_files_map.values()}
 
 
 def parse_aquery_output(
@@ -194,12 +448,14 @@ def parse_aquery_output(
         configs_map = {
             c["id"]: c["mnemonic"] for c in data.get("configuration", [])
         }
-
     except Exception as e:
         print(f"ERROR: Failed to parse aquery jsonproto: {e}", file=sys.stderr)
         return ParsedAqueryResult.new_empty()
 
     actions: list[ParsedAction] = []
+    response_files_map = ResponseFileMap()
+
+    uses_bazel_params_file = False
 
     raw_actions = data.get("actions", [])
     for action in raw_actions:
@@ -223,6 +479,17 @@ def parse_aquery_output(
             if "value" in item
         }
 
+        for i, arg in enumerate(cmd_args):
+            if arg == "--env-file" and i + 1 < len(cmd_args):
+                env_path = _normalize_path(cmd_args[i + 1])
+                response_files_map.try_path(env_path)
+            elif arg.startswith("@"):
+                path = _normalize_path(arg[1:])
+                if ".params" in os.path.basename(path):
+                    uses_bazel_params_file = True
+                else:
+                    response_files_map.try_path(path)
+
         actions.append(
             ParsedAction(
                 name=action_name,
@@ -234,7 +501,11 @@ def parse_aquery_output(
             )
         )
 
-    return ParsedAqueryResult(actions=actions)
+    return ParsedAqueryResult(
+        actions=actions,
+        response_files_map=response_files_map,
+        uses_bazel_params_file=uses_bazel_params_file,
+    )
 
 
 ##############################################################################################
@@ -472,7 +743,7 @@ def expand_args_from_disk(
                     # Save path in stack.
                     active_path.append(abs_path)
                     continue
-                except Exception as e:
+                except OSError as e:
                     # Something went wrong, keep @path for debugging.
                     warnings.append(
                         f"Failed to read parameter file {item} from disk: {e}"
@@ -486,6 +757,153 @@ def expand_args_from_disk(
         # Either a normal item, or something went wrong in the @path
         # case, and we keep it for debugging the issue.
         expanded.append(item)
+
+    return ArgumentsExpansionResult(
+        expanded_args=expanded, env_vars=env_list, warnings=warnings
+    )
+
+
+##############################################################################################
+##############################################################################################
+#####
+#####    C Q U E R I E S   F O R   B U I L D   F L A G S   I N F O
+#####
+
+# Path to the .cquery file used by query_build_flags_from_bazel.
+_EXPAND_BUILD_ARGS_JSON_CQUERY_PATH = os.path.join(
+    _SCRIPT_DIR, "../starlark/expand_build_args_json.cquery"
+)
+
+
+def query_build_flags_from_bazel(
+    final_build_flags_labels: set[str],
+    bazel_launcher: build_utils.BazelLauncher,
+    config_args: list[str],
+) -> ResolvedBuildArgsMap:
+    """Runs cquery to fetch custom build flags statically.
+
+    This takes as input a ParseAqueryOutput value and uses it to perform a number
+    of Bazel cqueries to compute ResolvedBuildArgsFlags values.
+
+    Args:
+        final_build_flags_labels: The labels of the _compute_final_build_flags() target that
+            will be queries for their provider information by this function. E.g. the result
+            of ParsedAqueryResult.get_final_build_flags_target_labels().
+
+        bazel_launcher: The BazelLauncher instance used to invoke bazel.
+        config_args: Extra configuration-specific flags (like --config) to pass to cquery.
+
+    Returns:
+        A ResolvedBuildArgsMap value.
+    Raises:
+        RuntimeError if there is a problem calling bazel cquery.
+    """
+    flags_map = ResolvedBuildArgsMap()
+    if final_build_flags_labels:
+        cquery_expr = f"set({' '.join(sorted(final_build_flags_labels))})"
+        cquery_file = os.path.realpath(_EXPAND_BUILD_ARGS_JSON_CQUERY_PATH)
+
+        print(f"Running cquery for response files flags ...", file=sys.stderr)
+        cquery_args = [
+            "--output=starlark",
+            f"--starlark:file={cquery_file}",
+            "--consistent_labels",
+        ]
+        cquery_args.extend(config_args)
+        cquery_args.append(cquery_expr)
+
+        ret = bazel_launcher.run_query(
+            "cquery", cquery_args, ignore_errors=False
+        )
+        if ret.returncode != 0:
+            raise RuntimeError(f"Error running bazel cquery:\n\n{ret.stderr}\n")
+
+        cquery_output = ret.stdout
+
+        for line in cquery_output.splitlines():
+            line = line.strip()
+            if line.startswith("{") and line.endswith("}"):
+                try:
+                    data = json.loads(line)
+                    if data:  # Ignore empty objects returned by the cquery
+                        flags = ResolvedBuildArgsFlags.from_json(data)
+                        flags_map[flags.label] = flags
+                except json.JSONDecodeError as e:
+                    raise RuntimeError(
+                        f"Error parsing JSON line: {line}, error: {e}"
+                    )
+    return flags_map
+
+
+def expand_args_with_build_args_map(
+    args: list[str],
+    env_vars: dict[str, str],
+    response_files_map: ResponseFileMap,
+    build_args_map: ResolvedBuildArgsMap,
+) -> ArgumentsExpansionResult:
+    """Expand command line arguments without touching the filesystem.
+
+    This function is similar to expand_args_from_disk() except that it will not read any
+    file from disk. Instead, it relies on a BuildArgsMap to provide the collected final
+    BuildFlagsInfo provider values, and map the response files that appear in the input
+    arguments to the corresponding flags.
+
+    Args:
+        args: The raw command line arguments list to expand.
+        env_vars: The dictionary of environment variables to use for expansion.
+        response_files_map: Pre-computed mapping of argument paths to Starlark targets and kinds.
+        build_args_map: A ResolvedBuildArgsMap value.
+
+    Result:
+        A ArgumentsExpansionResult containing:
+        - A new list of arguments with all custom build_flags response files expanded recursively.
+        - A list of resolved environment variables (e.g., "KEY=VALUE") from env files.
+        - A list of warning strings.
+    """
+    expanded = []
+    env_list = [f"{k}={v}" for k, v in env_vars.items()]
+    warnings = []
+    skip_next = False
+    for i, arg in enumerate(args):
+        if skip_next:
+            skip_next = False
+            continue
+
+        if arg == "--env-file" and i + 1 < len(args):
+            env_path = _normalize_path(args[i + 1])
+            res_target = response_files_map.get(env_path)
+            if res_target:
+                data = build_args_map.get(res_target.label)
+                if data is None:
+                    warnings.append(
+                        f"Could not resolve Rust env vars for {env_path} via cquery."
+                    )
+                else:
+                    env_list.extend(data.rustenv)
+            skip_next = True
+            continue
+
+        if arg.startswith("@"):
+            path = _normalize_path(arg[1:])
+            res_target = response_files_map.get(path)
+            if not res_target:
+                expanded.append(arg)
+                warnings.append(
+                    f"Standard parameter file {arg} cannot be expanded with queries. "
+                )
+                continue
+
+            data = build_args_map.get(res_target.label)
+            if data:
+                flags = data.get_flags_for(res_target.kind)
+                expanded.extend(flags)
+            else:
+                expanded.append(arg)
+                warnings.append(
+                    f"Could not resolve flags for custom response file {arg} via cquery."
+                )
+        else:
+            expanded.append(arg)
 
     return ArgumentsExpansionResult(
         expanded_args=expanded, env_vars=env_list, warnings=warnings

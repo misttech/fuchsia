@@ -347,6 +347,16 @@ In the presence of response files, this will try to read them directly from the
 Bazel execroot. This requires the target having been built to ensure their
 content is correct.
 
+By default, it only performs queries and does not read any file from the Bazel execroot.
+
+Note that when the command-line is very long, Bazel automatically spills it to a
+'.params' file, whose content is not available through queries, and thus cannot be
+expanded in the result.
+
+The --read-response-files flag can be used to instruct the command to read the content
+of response files from the Bazel execroot directly to solve this issue. However, this
+requires building the target first to ensure their content is correct.
+
 Example usage:
 
     fx bazel-tool expand //build/bazel/host_tests -- --config=host
@@ -404,11 +414,15 @@ Example usage:
             help="Filter actions to only those matching the given mnemonic name(s) (comma-separated, e.g., CppCompile,CppLink,Rustc)",
         )
         parser.add_argument(
+            "--read-response-files",
+            action="store_true",
+            help="Read response files from the execroot instead of using cqueries. Requires the target to have been built.",
+        )
+        parser.add_argument(
             "target_label", help="Bazel target label to inspect."
         )
         parser.add_argument(
-            "--",
-            dest="extra_args",
+            "extra_args",
             default=[],
             nargs=argparse.REMAINDER,
             help="extra Bazel query-compatible arguments (e.g. --config=host).",
@@ -440,12 +454,6 @@ Example usage:
         execroot = str(bazel_paths.execroot)
         bazel_launcher = build_utils.BazelLauncher(bazel_paths.launcher)
 
-        # Extract extra config args from -- if passed
-        config_args = []
-        if args.extra_args:
-            # The first element of extra_args is the "--" separator.
-            config_args = args.extra_args[1:]
-
         filter_mnemonics = None
         if args.mnemonic:
             filter_mnemonics = [m.strip() for m in args.mnemonic.split(",")]
@@ -455,8 +463,9 @@ Example usage:
             bazel_launcher=bazel_launcher,
             bazel_execroot=execroot,
             bazel_target=target,
-            config_args=config_args,
+            config_args=args.extra_args,
             filter_mnemonics=filter_mnemonics,
+            read_response_files=args.read_response_files,
         )
 
         # 4. Print the results according to format. Use a pager to make
@@ -474,7 +483,7 @@ Example usage:
                         action.target,
                         action.configuration,
                         action.mnemonic,
-                        action.command,
+                        action.args,
                         env_vars=action.env_vars if action.env_vars else None,
                         warnings=action.warnings if action.warnings else None,
                     )

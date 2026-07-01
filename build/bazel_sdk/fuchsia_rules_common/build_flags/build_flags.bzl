@@ -255,6 +255,7 @@ compute_final_build_flags = rule(
 
 # Constants used to identify the type of actions that require build flags.
 # These are NOT the @rules_cc//cc:action_names.bzl names.
+# LINT.IfChange(action_kinds)
 ACTION_KIND_CPP_COMPILE = "cpp_compile"
 ACTION_KIND_C_COMPILE = "c_compile"
 ACTION_KIND_CPP_LINK = "cpp_link"
@@ -264,3 +265,12 @@ CC_ACTION_KINDS = [
     ACTION_KIND_C_COMPILE,
     ACTION_KIND_CPP_LINK,
 ]
+
+ACTION_KIND_RUST_COMPILE = "rust_compile"
+
+RUST_ACTION_KINDS = [
+    ACTION_KIND_RUST_COMPILE,
+]
+
+ACTION_KINDS = CC_ACTION_KINDS + RUST_ACTION_KINDS
+# LINT.ThenChange(//build/bazel/scripts/bazel_build_args.py:action_kinds)
