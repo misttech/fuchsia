@@ -63,6 +63,10 @@ Resulting product is not supported and may misbehave!
     {
         product_config.platform.ui.enable_dso = true;
     }
+    #[cfg(feature = "experimental_sched")]
+    {
+        product_config.platform.ui.input_noncritical = true;
+    }
     #[cfg(feature = "experimental_memory_opt")]
     {
         product_config.platform.kernel.oom.experimental_expand_memory_stall = true;

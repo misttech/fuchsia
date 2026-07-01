@@ -135,6 +135,10 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
             Config::new(ConfigValueType::Bool, ui_config.use_separate_input_thread.into()),
         )?;
         builder.set_config_capability(
+            "fuchsia.scenic.InputNoncritical",
+            Config::new(ConfigValueType::Bool, ui_config.input_noncritical.into()),
+        )?;
+        builder.set_config_capability(
             "fuchsia.scenic.DisplayComposition",
             Config::new(ConfigValueType::Bool, ui_config.display_composition.into()),
         )?;

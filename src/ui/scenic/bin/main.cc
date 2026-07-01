@@ -91,9 +91,10 @@ int main(int argc, const char** argv) {
         << "Failed to start input thread: " << zx_status_get_string(input_thread_status);
 
     // Set the role for the input thread.
-    async::PostTask(input_loop->dispatcher(), [] {
-      const zx_status_t role_status =
-          fuchsia_scheduler::SetRoleForThisThread("fuchsia.scenic.input");
+    async::PostTask(input_loop->dispatcher(), [input_noncritical = config.input_noncritical()] {
+      const char* role =
+          input_noncritical ? "fuchsia.scenic.input.noncritical" : "fuchsia.scenic.input";
+      const zx_status_t role_status = fuchsia_scheduler::SetRoleForThisThread(role);
       if (role_status != ZX_OK) {
         FX_LOGS(WARNING) << "Failed to apply profile to input thread: " << role_status;
       }

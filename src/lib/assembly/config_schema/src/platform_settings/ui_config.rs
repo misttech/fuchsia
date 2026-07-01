@@ -113,6 +113,10 @@ pub struct PlatformUiConfig {
     /// (https://fxbug.dev/403545512)
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub enable_dso: bool,
+
+    /// Whether to use noncritical profile for the input thread.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub input_noncritical: bool,
 }
 
 impl Default for PlatformUiConfig {
@@ -139,6 +143,7 @@ impl Default for PlatformUiConfig {
             attach_a11y_view: true,
             enable_merge_touch_events: false,
             enable_dso: false,
+            input_noncritical: false,
         }
     }
 }

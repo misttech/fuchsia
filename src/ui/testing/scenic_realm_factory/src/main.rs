@@ -140,6 +140,7 @@ async fn assemble_realm(
                 ))
                 .capability(Capability::configuration("fuchsia.scenic.ICanHazDisplayId"))
                 .capability(Capability::configuration("fuchsia.scenic.ICanHazDisplayMode"))
+                .capability(Capability::configuration("fuchsia.scenic.InputNoncritical"))
                 .capability(Capability::configuration(
                     "fuchsia.scenic.MaxDisplayHorizontalResolutionPx",
                 ))

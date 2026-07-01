@@ -212,6 +212,11 @@
             type: "bool",
         },
         {
+            config: "fuchsia.scenic.InputNoncritical",
+            key: "input_noncritical",
+            type: "bool",
+        },
+        {
             // If this value is >= 2, then client images will be tinted whenever Flatland falls back
             // to GPU composition.  If this value is >= 3, then a frame counter will be displayed
             // above all client images (equivalent to `fuchsia.scenic.FrameCounterOverlay`).

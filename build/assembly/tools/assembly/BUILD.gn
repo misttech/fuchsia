@@ -15,6 +15,10 @@ declare_args() {
   # see https://fxbug.dev/403545512
   experimental_dso_enabled = false
 
+  # If true, experimental scheduler changes will be enabled. Currently this
+  # just includes non-critical thread profiles for input.
+  experimental_sched_enabled = false
+
   # If true, experimental memory optimization features like the
   # `kernel.oom.experimental_expand_memory_stall` kernel argument will be
   # enabled.
@@ -28,6 +32,9 @@ rustc_binary("assembly") {
   features = []
   if (experimental_dso_enabled) {
     features += [ "experimental_dso" ]
+  }
+  if (experimental_sched_enabled) {
+    features += [ "experimental_sched" ]
   }
   if (experimental_mem_enabled) {
     features += [ "experimental_memory_opt" ]

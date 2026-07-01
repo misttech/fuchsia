@@ -15,6 +15,7 @@
     max_display_refresh_rate_millihertz: -1,
     enable_frame_counter_overlay: false,
     use_separate_input_thread: true,
+    input_noncritical: false,
     visual_debugging_level: 0,
     prefetch: false,
 }
