@@ -30,8 +30,9 @@ class PacketQueue : public ReadableStream {
               std::shared_ptr<Clock> audio_clock);
 
   bool empty() const {
-    std::lock_guard<std::mutex> locker(pending_mutex_);
-    return pending_packet_queue_.empty();
+    std::scoped_lock locker(pending_mutex_);
+    return pending_packet_queue_.empty() && pending_flush_packet_queue_.empty() &&
+           !read_lock_in_progress_;
   }
 
   void set_usage(const StreamUsage& usage) {
@@ -52,13 +53,14 @@ class PacketQueue : public ReadableStream {
   TimelineFunctionSnapshot ref_time_to_frac_presentation_frame() const override;
   std::shared_ptr<Clock> reference_clock() override { return audio_clock_; }
 
- private:
+ protected:
   // |media::audio::ReadableStream|
   std::optional<ReadableStream::Buffer> ReadLockImpl(ReadLockContext& ctx, Fixed frame,
                                                      int64_t frame_count) override;
   void TrimImpl(Fixed frame) override;
   void ReadUnlock() override;
 
+ private:
   void ReportUnderflow(const fbl::RefPtr<Packet>& packet, Fixed underflow_frames)
       FXL_REQUIRE(pending_mutex_);
 

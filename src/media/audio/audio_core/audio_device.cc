@@ -163,6 +163,7 @@ zx_status_t AudioDevice::Init() {
 
 void AudioDevice::Cleanup() {
   TRACE_DURATION("audio", "AudioDevice::Cleanup");
+  link_matrix_.Unlink(*this);
   mix_wakeup_.Deactivate();
   // ThrottleOutput devices have no driver, so check for that.
   if (driver_ != nullptr) {

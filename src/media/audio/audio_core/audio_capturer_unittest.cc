@@ -303,5 +303,19 @@ TEST_F(AudioCapturerBadFormatTest, SetFormatAfterAddPayloadBufferShouldDisconnec
   EXPECT_EQ(*received_status, ZX_ERR_PEER_CLOSED);
 }
 
+// Verify calling BeginShutdown reentrantly or multiple times: no duplicate teardown tasks or UAFs.
+TEST_F(AudioCapturerTest, ReentrantBeginShutdown) {
+  struct TestCapturer : public AudioCapturer {
+    using AudioCapturer::BeginShutdown;
+  };
+  bool channel_dropped = false;
+  fidl_capturer_.set_error_handler([&channel_dropped](zx_status_t) { channel_dropped = true; });
+  auto* tc = static_cast<TestCapturer*>(capturer_);
+  tc->BeginShutdown();
+  tc->BeginShutdown();
+  RunLoopUntilIdle();
+  EXPECT_TRUE(channel_dropped);
+}
+
 }  // namespace
 }  // namespace media::audio

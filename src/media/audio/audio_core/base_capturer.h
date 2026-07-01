@@ -217,6 +217,7 @@ class BaseCapturer : public AudioObject,
   Context& context_;
   ThreadingModel::OwnedDomainPtr mix_domain_;
   std::atomic<State> state_;
+  bool shutting_down_ = false;
   zx::duration presentation_delay_;
 
   // Capture format and gain state.

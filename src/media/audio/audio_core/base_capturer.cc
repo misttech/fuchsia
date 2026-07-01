@@ -112,9 +112,11 @@ fpromise::promise<> BaseCapturer::Cleanup() {
                   });
 
   // After CleanupFromMixThread is done, no more work will happen on the mix dispatch thread. We
-  // need to now ensure our ready_packets signal is De-asserted.
-  return bridge.consumer.promise().then(
-      [this](fpromise::result<>&) { ready_packets_wakeup_.Deactivate(); });
+  // need to now ensure our ready_packets signal is De-asserted. Use shared_from_this() to ensure
+  // we don't get freed before the task runs.
+  return bridge.consumer.promise().then([self = shared_from_this()](fpromise::result<>&) {
+    self->ready_packets_wakeup_.Deactivate();
+  });
 }
 
 void BaseCapturer::CleanupFromMixThread() {
@@ -126,11 +128,19 @@ void BaseCapturer::CleanupFromMixThread() {
 }
 
 void BaseCapturer::BeginShutdown() {
+  if (shutting_down_) {
+    return;
+  }
+  shutting_down_ = true;
   if (auto pq = packet_queue(); pq) {
     pq->Shutdown();
   }
-  context_.threading_model().FidlDomain().ScheduleTask(Cleanup().then(
-      [this](fpromise::result<>&) { context_.route_graph().RemoveCapturer(*this); }));
+  // Remove the capturer from the route graph. Use shared_from_this() to ensure we don't get
+  // freed before the task runs.
+  context_.threading_model().FidlDomain().ScheduleTask(
+      Cleanup().then([self = shared_from_this()](fpromise::result<>&) {
+        self->context_.route_graph().RemoveCapturer(*self);
+      }));
 }
 
 void BaseCapturer::OnStateChanged(State old_state, State new_state) {

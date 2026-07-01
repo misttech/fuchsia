@@ -135,7 +135,7 @@ void AudioRenderer::SetReferenceClock(zx::clock ref_clock) {
 
   // Lock after storing |cleanup| to ensure |mutex_| is released upon function return, rather than
   // |cleanup| completion.
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::scoped_lock lock(mutex_);
 
   // We cannot change the reference clock, once it is set. Also, calling `SetPcmStreamType` will
   // automatically sets the default reference clock, if one has not been explicitly set.
@@ -163,7 +163,7 @@ void AudioRenderer::SetPcmStreamType(fuchsia::media::AudioStreamType stream_type
   TRACE_DURATION("audio", "AudioRenderer::SetPcmStreamType");
   auto cleanup = fit::defer([this]() { context().route_graph().RemoveRenderer(*this); });
 
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::scoped_lock lock(mutex_);
 
   // We cannot change the format while we are currently operational
   if (IsOperating()) {
@@ -463,20 +463,21 @@ void AudioRenderer::RealizeVolume(VolumeCommand volume_command) {
         }
 
         // shared_from_this: ensure this object lives long enough for the async task to run
-        link.mix_domain->PostTask(
-            [self = shared_from_this(), link, volume_command, gain_db, reporter = &reporter()]() {
-              auto& gain = link.mixer->gain;
+        link.mix_domain->PostTask([self = shared_from_this(), link, volume_command, gain_db]() {
+          auto& gain = link.mixer->gain;
 
-              // Stop any in-progress ramping; use this new ramp or gain_db instead
-              if (volume_command.ramp.has_value()) {
-                gain.SetDestGainWithRamp(gain_db, volume_command.ramp->duration,
-                                         volume_command.ramp->ramp_type);
-              } else {
-                gain.SetDestGain(gain_db);
-              }
+          // Stop any in-progress ramping; use this new ramp or gain_db instead
+          if (volume_command.ramp.has_value()) {
+            gain.SetDestGainWithRamp(gain_db, volume_command.ramp->duration,
+                                     volume_command.ramp->ramp_type);
+          } else {
+            gain.SetDestGain(gain_db);
+          }
 
-              reporter->SetCompleteGain(link.mixer->gain.GetUnadjustedGainDb());
-            });
+          static_cast<AudioRenderer*>(self.get())
+              ->reporter()
+              .SetCompleteGain(link.mixer->gain.GetUnadjustedGainDb());
+        });
       });
 }
 
@@ -510,8 +511,7 @@ void AudioRenderer::PostStreamGainMute(StreamGainCommand gain_command) {
     }
 
     // shared_from_this: ensure this object lives long enough for the async task to run
-    link.mix_domain->PostTask([self = shared_from_this(), link, gain_command,
-                               reporter = &reporter()]() mutable {
+    link.mix_domain->PostTask([self = shared_from_this(), link, gain_command]() mutable {
       auto& gain = link.mixer->gain;
       switch (gain_command.control) {
         case StreamGainCommand::Control::ADJUSTMENT:
@@ -542,7 +542,9 @@ void AudioRenderer::PostStreamGainMute(StreamGainCommand gain_command) {
       // It is "unadjusted" because it omits temporary factors such as in-progress ramping.
       auto complete_unadjusted_gain_db = gain.GetUnadjustedGainDb();
       // Potentially post this as a delayed task instead, if there is a ramp.
-      reporter->SetCompleteGain(complete_unadjusted_gain_db);
+      static_cast<AudioRenderer*>(self.get())
+          ->reporter()
+          .SetCompleteGain(complete_unadjusted_gain_db);
     });
   });
 }
@@ -551,7 +553,7 @@ void AudioRenderer::PostStreamGainMute(StreamGainCommand gain_command) {
 // stages. In playback, renderer gain is pre-mix and hence is "source" gain; the usage gain (or
 // output gain, if the mixer topology is single-tier) is "dest" gain.
 void AudioRenderer::SetGain(float gain_db) {
-  SerializeWithPause(std::bind(&AudioRenderer::SetGainInternal, this, gain_db));
+  SerializeWithPause([this, gain_db] { SetGainInternal(gain_db); });
 }
 
 void AudioRenderer::SetGainInternal(float gain_db) {
@@ -580,8 +582,9 @@ void AudioRenderer::SetGainInternal(float gain_db) {
 // hence is the Source component in the Gain object.
 void AudioRenderer::SetGainWithRamp(float gain_db, int64_t duration_ns,
                                     fuchsia::media::audio::RampType ramp_type) {
-  SerializeWithPause(
-      std::bind(&AudioRenderer::SetGainWithRampInternal, this, gain_db, duration_ns, ramp_type));
+  SerializeWithPause([this, gain_db, duration_ns, ramp_type] {
+    SetGainWithRampInternal(gain_db, duration_ns, ramp_type);
+  });
 }
 
 void AudioRenderer::SetGainWithRampInternal(float gain_db, int64_t duration_ns,
@@ -616,7 +619,7 @@ void AudioRenderer::SetGainWithRampInternal(float gain_db, int64_t duration_ns,
 
 // Set a stream mute, in each Renderer -> Output audio path.
 void AudioRenderer::SetMute(bool mute) {
-  SerializeWithPause(std::bind(&AudioRenderer::SetMuteInternal, this, mute));
+  SerializeWithPause([this, mute] { SetMuteInternal(mute); });
 }
 
 void AudioRenderer::SetMuteInternal(bool mute) {
@@ -638,7 +641,7 @@ void AudioRenderer::SetMuteInternal(bool mute) {
 
 void AudioRenderer::NotifyGainMuteChanged() {
   TRACE_DURATION("audio", "AudioRenderer::NotifyGainMuteChanged");
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::scoped_lock lock(mutex_);
   if (notified_gain_db_ == stream_gain_db_ && notified_mute_ == mute_) {
     return;
   }

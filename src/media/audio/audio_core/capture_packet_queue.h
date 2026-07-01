@@ -192,7 +192,7 @@ class CapturePacketQueue {
   CapturePacketQueue(Mode mode, const fzl::VmoMapper& payload_buffer, const Format& format);
 
  private:
-  fbl::RefPtr<Packet> Alloc(size_t frame_offset, size_t num_frames, CaptureAtCallback callback);
+  fbl::RefPtr<Packet> Alloc(size_t offset_frames, size_t num_frames, CaptureAtCallback callback);
   void PopPendingLocked() FXL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   const Mode mode_;

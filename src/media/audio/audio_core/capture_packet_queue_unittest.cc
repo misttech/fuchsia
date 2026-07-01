@@ -390,4 +390,13 @@ TEST_F(CapturePacketQueueTest, DynamicallyAllocatedPushErrors) {
   ASSERT_TRUE(push_result.is_error());
 }
 
+// Verify that WaitForPendingPacket returns immediately on shutdown: no block or double-unlock.
+TEST_F(CapturePacketQueueTest, WaitForPendingPacketShutdown) {
+  CreateMapper(50);
+  auto pq = CapturePacketQueue::CreateDynamicallyAllocated(payload_buffer_, kFormat);
+  pq->Shutdown();
+
+  pq->WaitForPendingPacket();
+}
+
 }  // namespace media::audio

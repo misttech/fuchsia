@@ -37,7 +37,7 @@ CapturePacketQueue::CreatePreallocated(const fzl::VmoMapper& payload_buffer, con
   auto out = std::make_shared<CapturePacketQueue>(Mode::Preallocated, payload_buffer, format);
 
   // Locking is not strictly necessary here, but it makes the lock analysis simpler.
-  std::lock_guard<std::mutex> lock(out->mutex_);
+  std::scoped_lock lock(out->mutex_);
 
   // Sanity check the number of frames per packet the user is asking for.
   //
@@ -82,23 +82,23 @@ fbl::RefPtr<Packet> CapturePacketQueue::Alloc(size_t offset_frames, size_t num_f
 }
 
 bool CapturePacketQueue::empty() const {
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::scoped_lock lock(mutex_);
   return pending_.empty() && ready_.empty();
 }
 
 size_t CapturePacketQueue::PendingSize() const {
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::scoped_lock lock(mutex_);
   return pending_.size();
 }
 
 size_t CapturePacketQueue::ReadySize() const {
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::scoped_lock lock(mutex_);
   return ready_.size();
 }
 
 std::optional<CapturePacketQueue::PacketMixState> CapturePacketQueue::NextMixerJob() {
   TRACE_INSTANT("audio", "CapturePacketQueue::NextMixerJob", TRACE_SCOPE_THREAD);
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::scoped_lock lock(mutex_);
   if (shutdown_ || pending_.empty()) {
     return std::nullopt;
   }
@@ -107,7 +107,7 @@ std::optional<CapturePacketQueue::PacketMixState> CapturePacketQueue::NextMixerJ
       .packet = p,
       .capture_timestamp = p->state_.capture_timestamp,
       .flags = p->state_.flags,
-      .target = p->payload_buffer_start_ + p->state_.filled_frames * format_.bytes_per_frame(),
+      .target = p->payload_buffer_start_ + (p->state_.filled_frames * format_.bytes_per_frame()),
       .frames = p->num_frames_ - p->state_.filled_frames,
   };
 }
@@ -115,7 +115,7 @@ std::optional<CapturePacketQueue::PacketMixState> CapturePacketQueue::NextMixerJ
 CapturePacketQueue::PacketMixStatus CapturePacketQueue::FinishMixerJob(
     const PacketMixState& state) {
   TRACE_INSTANT("audio", "CapturePacketQueue::FinishMixerJob", TRACE_SCOPE_THREAD);
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::scoped_lock lock(mutex_);
   if (pending_.empty() || pending_.front() != state.packet) {
     return PacketMixStatus::Discarded;
   }
@@ -132,7 +132,7 @@ CapturePacketQueue::PacketMixStatus CapturePacketQueue::FinishMixerJob(
 
 void CapturePacketQueue::DiscardPendingPackets() {
   TRACE_INSTANT("audio", "CapturePacketQueue::DiscardPendingPackets", TRACE_SCOPE_THREAD);
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::scoped_lock lock(mutex_);
   while (!pending_.empty()) {
     PopPendingLocked();
   }
@@ -159,7 +159,7 @@ void CapturePacketQueue::PopPendingLocked() {
 
 fbl::RefPtr<CapturePacketQueue::Packet> CapturePacketQueue::PopReady() {
   TRACE_INSTANT("audio", "CapturePacketQueue::PopReady", TRACE_SCOPE_THREAD);
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::scoped_lock lock(mutex_);
   if (ready_.empty()) {
     return nullptr;
   }
@@ -194,7 +194,7 @@ fpromise::result<void, std::string> CapturePacketQueue::PushPending(size_t offse
         "packet queue is too large; exceeded limit after %lu packets", kMaxPackets));
   }
 
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::scoped_lock lock(mutex_);
   if (!shutdown_) {
     pending_.push_back(p);
     pending_signal_.notify_all();
@@ -206,7 +206,7 @@ fpromise::result<void, std::string> CapturePacketQueue::Recycle(const StreamPack
   TRACE_INSTANT("audio", "CapturePacketQueue::Recycle", TRACE_SCOPE_THREAD);
   FX_CHECK(mode_ == Mode::Preallocated);
 
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::scoped_lock lock(mutex_);
   if (shutdown_) {
     return fpromise::ok();
   }
@@ -237,7 +237,7 @@ fpromise::result<void, std::string> CapturePacketQueue::Recycle(const StreamPack
 }
 
 void CapturePacketQueue::Shutdown() {
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::scoped_lock lock(mutex_);
   shutdown_ = true;
   pending_signal_.notify_all();
 }
@@ -250,7 +250,7 @@ namespace {
 class FXL_SCOPED_LOCKABLE scoped_unique_lock : public std::unique_lock<std::mutex> {
  public:
   explicit scoped_unique_lock(std::mutex& m) FXL_ACQUIRE(m) : std::unique_lock<std::mutex>(m) {}
-  ~scoped_unique_lock() FXL_RELEASE() { std::unique_lock<std::mutex>::~unique_lock(); }
+  ~scoped_unique_lock() FXL_RELEASE() {}
 };
 }  // namespace
 

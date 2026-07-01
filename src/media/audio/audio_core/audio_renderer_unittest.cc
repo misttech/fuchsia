@@ -169,7 +169,7 @@ TEST_F(AudioRendererTestSyntheticClocks, AllocatePacketQueueForLinks) {
   packet.payload_buffer_id = 0;
   packet.payload_offset = 0;
   packet.payload_size = kFrames * sizeof(float);
-  fidl_renderer_->SendPacketNoReply(std::move(packet));
+  fidl_renderer_->SendPacketNoReply(packet);
   RunLoopUntilIdle();
 
   std::vector<LinkMatrix::LinkHandle> links;
@@ -191,7 +191,7 @@ TEST_F(AudioRendererTestSyntheticClocks, AllocatePacketQueueForLinks) {
   }
 }
 
-TEST_F(AudioRendererTestSyntheticClocks, SendPacket_NO_TIMESTAMP) {
+TEST_F(AudioRendererTestSyntheticClocks, SendPacketNoTimestamp) {
   context().route_graph().AddRenderer(std::move(renderer_));
   context().route_graph().AddDeviceToRoutes(fake_output_.get());
 
@@ -239,7 +239,8 @@ TEST_F(AudioRendererTestSyntheticClocks, SendPacket_NO_TIMESTAMP) {
     // Read enough frames to include all three packets in the same buffer.
     // The buffer should appear PresentationDelay+30ms after expected_packet_pts.
     auto delay_ms = stream->GetPresentationDelay().to_msecs() + 30 + 1 /* round up */;
-    auto total_packets = 3 * kPacketSizeFrames + delay_ms * kAudioRendererUnittestFrameRate / 1000;
+    auto total_packets =
+        (3 * kPacketSizeFrames) + (delay_ms * kAudioRendererUnittestFrameRate / 1000);
     auto buffer = stream->ReadLock(rlctx, Fixed(expected_packet_pts), total_packets);
     ASSERT_TRUE(buffer);
     // GT here as we are not continuous with the previous packet.
@@ -259,7 +260,7 @@ TEST_F(AudioRendererTestSyntheticClocks, SendPacket_NO_TIMESTAMP) {
   }
 }
 
-TEST_F(AudioRendererTestSyntheticClocks, SendPacket_ContinuityUnderflow) {
+TEST_F(AudioRendererTestSyntheticClocks, SendPacketContinuityUnderflow) {
   context().route_graph().AddRenderer(std::move(renderer_));
   context().route_graph().AddDeviceToRoutes(fake_output_.get());
 
@@ -303,7 +304,7 @@ TEST_F(AudioRendererTestSyntheticClocks, SendPacket_ContinuityUnderflow) {
   RunLoopUntilIdle();
   {
     auto delay_ms = stream->GetPresentationDelay().to_msecs() + 10 + 1 /* round up */;
-    auto total_to_read = kPacketSizeFrames + delay_ms * kAudioRendererUnittestFrameRate / 1000;
+    auto total_to_read = kPacketSizeFrames + (delay_ms * kAudioRendererUnittestFrameRate / 1000);
     auto buffer = stream->ReadLock(rlctx, Fixed(expected_packet_pts), total_to_read);
     ASSERT_TRUE(buffer);
     EXPECT_EQ(buffer->length(), kPacketSizeFrames);
@@ -317,7 +318,7 @@ TEST_F(AudioRendererTestSyntheticClocks, SendPacket_ContinuityUnderflow) {
   }
 }
 
-TEST_F(AudioRendererTestSyntheticClocks, SendPacket_TimestampUnderflow) {
+TEST_F(AudioRendererTestSyntheticClocks, SendPacketTimestampUnderflow) {
   context().route_graph().AddRenderer(std::move(renderer_));
   context().route_graph().AddDeviceToRoutes(fake_output_.get());
 
@@ -598,7 +599,7 @@ TEST_F(AudioRendererTestSyntheticClocks, RemoveRendererWhileBufferLocked) {
   packet.payload_buffer_id = 0;
   packet.payload_offset = 0;
   packet.payload_size = 128;
-  fidl_renderer_->SendPacketNoReply(std::move(packet));
+  fidl_renderer_->SendPacketNoReply(packet);
   RunLoopUntilIdle();
 
   // This will be the packet queue created when the link between the renderer and output was formed.
@@ -617,6 +618,18 @@ TEST_F(AudioRendererTestSyntheticClocks, RemoveRendererWhileBufferLocked) {
 
   // Now release the buffer.
   buf = std::nullopt;
+  RunLoopUntilIdle();
+}
+
+// Verify AudioRenderer unbind or shutdown cleanly purges links: no dangling reporters or domains.
+TEST_F(AudioRendererTestSyntheticClocks, GainAfterBeginShutdown) {
+  context().route_graph().AddDeviceToRoutes(fake_output_.get());
+  context().route_graph().AddRenderer(std::move(renderer_));
+  fidl_renderer_->SetPcmStreamType(stream_type_);
+  fidl_renderer_->AddPayloadBuffer(0, std::move(vmo_));
+  RunLoopUntilIdle();
+
+  fidl_renderer_.Unbind();
   RunLoopUntilIdle();
 }
 

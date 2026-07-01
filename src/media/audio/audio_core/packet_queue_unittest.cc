@@ -525,5 +525,24 @@ TEST_F(PacketQueueTest, ReportUnderflow) {
   EXPECT_TRUE(packet_queue->empty());
 }
 
+// Verify that empty() returns false if a read lock is active or if flushed packets are waiting for
+// read unlock. This prevents races when checking the operating state.
+TEST_F(PacketQueueTest, EmptyDuringReadLockAndFlush) {
+  auto packet_queue = CreatePacketQueue();
+  packet_queue->PushPacket(CreatePacket(0, 0, 20));
+  EXPECT_FALSE(packet_queue->empty());
+
+  {
+    auto buffer = packet_queue->ReadLock(rlctx, Fixed(0), 20);
+    ASSERT_TRUE(buffer);
+    EXPECT_FALSE(packet_queue->empty());
+
+    packet_queue->Flush();
+    EXPECT_FALSE(packet_queue->empty());
+  }
+
+  EXPECT_TRUE(packet_queue->empty());
+}
+
 }  // namespace
 }  // namespace media::audio
