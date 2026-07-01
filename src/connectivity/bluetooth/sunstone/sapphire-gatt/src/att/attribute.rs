@@ -48,4 +48,9 @@ pub trait Attribute {
     /// * `Err(ErrorCode)` indicating the reason for failure.
     async fn write_chunk(&self, peer_id: PeerId, offset: u16, data: &[u8])
     -> Result<(), ErrorCode>;
+
+    /// Returns the ending handle of the group if this attribute is a group declaration.
+    fn group_end_handle(&self) -> Option<u16> {
+        None
+    }
 }

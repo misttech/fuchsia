@@ -5,21 +5,23 @@
 use crate::att::AttributeHandle;
 use crate::att::attribute::Attribute;
 use crate::att::bearer::{
-    BearerRecvError, BearerRx, BearerSendError, BearerTx, DEFAULT_STARTING_MTU, MAX_SUPPORTED_MTU,
+    BearerRecvError, BearerRx, BearerSendError, BearerTx, DEFAULT_STARTING_MTU, MAX_ATTRIBUTE_SIZE,
+    MAX_SUPPORTED_MTU,
 };
 use crate::att::database::Database;
 use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
 use crate::att::pdu::{
-    DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp, FindInformationReq,
-    FindInformationRspHeader, Header, InformationData, InformationData16, InformationData128,
-    Opcode, Packet, PacketBuilder, UuidFormat,
+    DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp, FindByTypeValueReq,
+    FindInformationReq, FindInformationRspHeader, HandlesInformation, Header, InformationData,
+    InformationData16, InformationData128, Opcode, Packet, PacketBuilder, UuidFormat,
 };
 use core::cmp::{max, min};
 use core::convert::Infallible;
 use core::mem::MaybeUninit;
+use sapphire_peer_cache::PeerId;
 use thiserror::Error;
 use zerocopy::byteorder::little_endian::U16;
-use zerocopy::{FromBytes, Immutable, IntoBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, TryFromBytes};
 
 #[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServerError {
@@ -43,6 +45,7 @@ enum TransactionError {
 
 /// The ATT Server protocol wrapper.
 pub struct Server<Tx, Rx, DB> {
+    peer_id: PeerId,
     bearer_tx: BearerTx<Tx>,
     bearer_rx: BearerRx<Rx>,
     server_rx_mtu: u16,
@@ -57,6 +60,7 @@ where
 {
     /// Creates a new ATT Server instance.
     pub fn new(
+        peer_id: PeerId,
         bearer_tx: BearerTx<Tx>,
         bearer_rx: BearerRx<Rx>,
         server_rx_mtu: u16,
@@ -68,7 +72,7 @@ where
             server_rx_mtu,
             MAX_SUPPORTED_MTU
         );
-        Self { bearer_tx, bearer_rx, server_rx_mtu, database }
+        Self { peer_id, bearer_tx, bearer_rx, server_rx_mtu, database }
     }
 
     /// Runs the server receive loop, processing inbound requests sequentially
@@ -126,6 +130,7 @@ where
         let transaction_result = match rx_packet.header.opcode {
             Opcode::ExchangeMtuReq => self.handle_exchange_mtu(&rx_packet.data).await,
             Opcode::FindInformationReq => self.handle_find_information(&rx_packet.data).await,
+            Opcode::FindByTypeValueReq => self.handle_find_by_type_value(&rx_packet.data).await,
             other => Err(TransactionError::UnexpectedPdu { received_opcode: other }),
         };
 
@@ -193,24 +198,16 @@ where
         let start = req.starting_handle.get();
         let end = req.ending_handle.get();
 
-        // Convert raw range values into sorted AttributeHandles and query the database.
-        let to_handle = |val: u16| {
-            AttributeHandle::try_from(val).map_err(|_| TransactionError::ErrorResponse {
-                request_opcode: Opcode::FindInformationReq,
-                attribute_handle: val,
-                error_code: ErrorCode::InvalidHandle,
-            })
-        };
-        let start_handle = to_handle(start)?;
-        let end_handle = to_handle(end)?;
-
-        if start_handle > end_handle {
+        if start > end {
             return Err(TransactionError::ErrorResponse {
                 request_opcode: Opcode::FindInformationReq,
                 attribute_handle: start,
                 error_code: ErrorCode::InvalidHandle,
             });
         }
+
+        let start_handle = to_handle(start, Opcode::FindInformationReq)?;
+        let end_handle = to_handle(end, Opcode::FindInformationReq)?;
         let mut attributes = self.database.query_range(start_handle, end_handle).peekable();
         let format = match attributes.peek() {
             Some((_, attr)) => UuidFormat::from(*attr.uuid()),
@@ -279,6 +276,83 @@ where
         builder.as_packet()
     }
 
+    /// Handles an incoming Find By Type Value Request.
+    ///
+    /// Queries the database for attributes matching the requested range, type, and value,
+    /// and responds with their handle ranges. If no matches are found, returns `AttributeNotFound`.
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.3.3).
+    async fn handle_find_by_type_value(&mut self, data: &[u8]) -> Result<(), TransactionError> {
+        let req = FindByTypeValueReq::try_ref_from_bytes(data).map_err(|_| {
+            TransactionError::InvalidPdu { request_opcode: Opcode::FindByTypeValueReq }
+        })?;
+        let start = req.header.starting_handle.get();
+        let end = req.header.ending_handle.get();
+        let attr_type = req.header.attribute_type.get();
+        let requested_value = &req.value;
+
+        if start > end {
+            return Err(TransactionError::ErrorResponse {
+                request_opcode: Opcode::FindByTypeValueReq,
+                attribute_handle: start,
+                error_code: ErrorCode::InvalidHandle,
+            });
+        }
+
+        let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
+        assert!(
+            tx_buf.len() >= usize::from(self.mtu()),
+            "Programming error: transmission buffer size is smaller than the negotiated MTU."
+        );
+
+        // DynamicPacketBuilder is used for a variable-length list of response entries.
+        let header = Header { opcode: Opcode::FindByTypeValueRsp };
+
+        let mut builder = DynamicPacketBuilder::<_, HandlesInformation>::new(
+            &mut tx_buf,
+            header,
+            self.mtu() as usize,
+        );
+
+        let start_handle = to_handle(start, Opcode::FindByTypeValueReq)?;
+        let end_handle = to_handle(end, Opcode::FindByTypeValueReq)?;
+        let attributes = self.database.query_range(start_handle, end_handle).filter(|(_, attr)| {
+            <[u8; 2]>::try_from(*attr.uuid())
+                .is_ok_and(|bytes16| u16::from_le_bytes(bytes16) == attr_type)
+        });
+        for (handle, attr) in attributes {
+            // TODO(https://fxbug.dev/527551044): Implement zero-copy value matching in Attribute trait to avoid stack copying in ATT Server
+            // Should be done when production GATT Database is implemented (which will implement the Attribute trait)
+            let mut read_buf = [0u8; MAX_ATTRIBUTE_SIZE];
+            if let Ok(read_len) = attr.read_chunk(self.peer_id, 0, &mut read_buf).await {
+                if read_len == requested_value.len() && &read_buf[..read_len] == requested_value {
+                    let group_end = attr.group_end_handle().unwrap_or_else(|| handle.value());
+                    let entry = HandlesInformation {
+                        attribute_handle: U16::new(handle.value()),
+                        group_end_handle: U16::new(group_end),
+                    };
+                    // Stop packing if adding the entry would exceed the negotiated MTU.
+                    if builder.push(entry).is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+
+        let tx_packet = builder.as_packet();
+        if tx_packet.data.is_empty() {
+            return Err(TransactionError::ErrorResponse {
+                request_opcode: Opcode::FindByTypeValueReq,
+                attribute_handle: start,
+                error_code: ErrorCode::AttributeNotFound,
+            });
+        }
+
+        self.send_packet(tx_packet).await?;
+
+        Ok(())
+    }
+
     async fn send_packet(&mut self, packet: &Packet) -> Result<(), ServerError> {
         match self.bearer_tx.send(packet).await {
             Ok(()) => Ok(()),
@@ -320,13 +394,28 @@ where
     }
 }
 
+/// Converts a raw 16-bit value into a valid `AttributeHandle`.
+///
+/// If `val` is invalid (i.e. `0x0000`), returns an ATT Error Response with
+/// `ErrorCode::InvalidHandle` for the given request `opcode`.
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.2.2).
+fn to_handle(val: u16, opcode: Opcode) -> Result<AttributeHandle, TransactionError> {
+    AttributeHandle::try_from(val).map_err(|_| TransactionError::ErrorResponse {
+        request_opcode: opcode,
+        attribute_handle: val,
+        error_code: ErrorCode::InvalidHandle,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::att::attribute::testing::MockAttribute;
     use crate::att::database::testing::MockDb;
     use crate::att::l2cap::mock::setup_mock_channel;
-    use crate::att::pdu::{FindInformationRsp, InformationData16};
+    use crate::att::pdu::{FindByTypeValueReqHeader, FindInformationRsp, InformationData16};
+
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
     use sapphire_uuid::Uuid;
@@ -345,6 +434,7 @@ mod tests {
             let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
 
             let mut server = Server::new(
+                PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
                 SERVER_MTU,
@@ -393,6 +483,7 @@ mod tests {
             let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
 
             let mut server = Server::new(
+                PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
                 SERVER_MTU,
@@ -452,6 +543,7 @@ mod tests {
             let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
 
             let mut server = Server::new(
+                PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
                 SERVER_MTU,
@@ -494,6 +586,7 @@ mod tests {
             let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
 
             let mut server = Server::new(
+                PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
                 SERVER_MTU,
@@ -549,6 +642,7 @@ mod tests {
             let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
 
             let mut server = Server::new(
+                PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
                 SERVER_MTU,
@@ -588,6 +682,7 @@ mod tests {
             let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
 
             let mut server = Server::new(
+                PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
                 SERVER_MTU,
@@ -629,15 +724,20 @@ mod tests {
             let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
 
             let mut db = MockDb::new();
-            let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00)); // handle 1
+            let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone"); // handle 1
             let custom_uuid =
                 Uuid::from_le_bytes([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
-            let custom_attr = MockAttribute::new(custom_uuid); // handle 2
+            let custom_attr = MockAttribute::new(custom_uuid, b"Custom"); // handle 2
             db.insert(h(1), name_attr);
             db.insert(h(2), custom_attr);
 
-            let mut server =
-                Server::new(BearerTx::new(test_tx), BearerRx::new(test_rx), SERVER_MTU, db);
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                db,
+            );
 
             let client_handle = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); 64];
@@ -707,11 +807,16 @@ mod tests {
             let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
 
             let mut db = MockDb::new();
-            let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00)); // handle 1
+            let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone"); // handle 1
             db.insert(h(1), name_attr);
 
-            let mut server =
-                Server::new(BearerTx::new(test_tx), BearerRx::new(test_rx), SERVER_MTU, db);
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                db,
+            );
 
             let client_handle = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); 64];
@@ -777,6 +882,128 @@ mod tests {
 
             executor.run_until_stalled();
 
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_find_by_type_value_success() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            // Handle 1: Primary Service (0x2800) with value 0x180D (Heart Rate), ends at 5
+            let svc_attr = MockAttribute::new_grouped(Uuid::from_u16(0x2800), &[0x0D, 0x18], 5);
+            // Handle 6: Primary Service (0x2800) with value 0x180F (Battery Service), ends at 8
+            let svc_attr2 = MockAttribute::new_grouped(Uuid::from_u16(0x2800), &[0x0F, 0x18], 8);
+            db.insert(h(1), svc_attr);
+            db.insert(h(6), svc_attr2);
+
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut client_tx_bearer = BearerTx::new(app_channel.sender);
+
+                // Send request for 0x2800 with value 0x180D
+                let header = PacketBuilder {
+                    header: Header { opcode: Opcode::FindByTypeValueReq },
+                    payload: FindByTypeValueReqHeader {
+                        starting_handle: U16::new(1),
+                        ending_handle: U16::new(10),
+                        attribute_type: U16::new(0x2800),
+                    },
+                };
+                let mut tx_buf = [0u8; 64];
+                let mut builder = DynamicPacketBuilder::<_, u8>::new(
+                    &mut tx_buf,
+                    header,
+                    CLIENT_PREFERRED_MTU as usize,
+                );
+                builder.extend_from_slice(&[0x0D, 0x18]).unwrap();
+                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                // Expect FindByTypeValueRsp with entry [1, 5]
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::FindByTypeValueRsp);
+                let entries = <[HandlesInformation]>::ref_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0].attribute_handle.get(), 1);
+                assert_eq!(entries[0].group_end_handle.get(), 5);
+            });
+
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_find_by_type_value_errors() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            let svc_attr = MockAttribute::new_grouped(Uuid::from_u16(0x2800), &[0x0D, 0x18], 5);
+            db.insert(h(1), svc_attr);
+
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut client_tx_bearer = BearerTx::new(app_channel.sender);
+
+                // 1. Attribute Not Found (value mismatch 0x180F)
+                let header = PacketBuilder {
+                    header: Header { opcode: Opcode::FindByTypeValueReq },
+                    payload: FindByTypeValueReqHeader {
+                        starting_handle: U16::new(1),
+                        ending_handle: U16::new(10),
+                        attribute_type: U16::new(0x2800),
+                    },
+                };
+                let mut tx_buf = [0u8; 64];
+                let mut builder = DynamicPacketBuilder::<_, u8>::new(
+                    &mut tx_buf,
+                    header,
+                    CLIENT_PREFERRED_MTU as usize,
+                );
+                builder.extend_from_slice(&[0x0F, 0x18]).unwrap();
+                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(err.request_opcode, Opcode::FindByTypeValueReq as u8);
+                assert_eq!(err.error_code, ErrorCode::AttributeNotFound);
+            });
+
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
             assert!(client_handle.is_finished());
             assert!(server_handle.is_finished());
         });

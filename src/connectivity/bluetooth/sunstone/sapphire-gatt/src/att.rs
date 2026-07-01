@@ -59,6 +59,7 @@ mod tests {
     use core::mem::MaybeUninit;
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
+    use sapphire_peer_cache::PeerId;
     use sapphire_uuid::Uuid;
 
     const CLIENT_PREFERRED_MTU: u16 = 512;
@@ -100,6 +101,7 @@ mod tests {
             );
 
             let mut server = Server::new(
+                PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
                 SERVER_MTU,
@@ -134,10 +136,10 @@ mod tests {
             let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
 
             let mut db = MockDb::new();
-            let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00)); // handle 1
+            let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone"); // handle 1
             let custom_uuid =
                 Uuid::from_le_bytes([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
-            let custom_attr = MockAttribute::new(custom_uuid); // handle 2
+            let custom_attr = MockAttribute::new(custom_uuid, b"Custom"); // handle 2
             db.insert(h(1), name_attr);
             db.insert(h(2), custom_attr);
 
@@ -147,8 +149,13 @@ mod tests {
                 CLIENT_PREFERRED_MTU,
             );
 
-            let mut server =
-                Server::new(BearerTx::new(server_tx), BearerRx::new(server_rx), SERVER_MTU, db);
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(server_tx),
+                BearerRx::new(server_rx),
+                SERVER_MTU,
+                db,
+            );
 
             // Server task
             let server_handle = executor.spawn(async move {
@@ -205,6 +212,74 @@ mod tests {
         });
     }
 
+    #[test]
+    fn test_client_server_integration_find_by_type_value() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            // Group 1: handles 1 to 5. Type 0x2800 (Primary Service), value 0x180D (Heart Rate Service)
+            let svc1 = MockAttribute::new_grouped(Uuid::from_u16(0x2800), &[0x0D, 0x18], 5);
+            let name = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone");
+            // Group 2: handles 6 to 10. Type 0x2800, value 0x180A (Device Info Service)
+            let svc2 = MockAttribute::new_grouped(Uuid::from_u16(0x2800), &[0x0A, 0x18], 10);
+
+            db.insert(h(1), svc1);
+            db.insert(h(2), name);
+            db.insert(h(6), svc2);
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(server_tx),
+                BearerRx::new(server_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            // Server task
+            let server_handle = executor.spawn(async move {
+                // 1. Handshake
+                server.handle_request().await.unwrap();
+                // 2. Find by Type Value (Group 1 query)
+                server.handle_request().await.unwrap();
+                // 3. Find by Type Value (Group 2 query)
+                server.handle_request().await.unwrap();
+            });
+
+            // Client task
+            let client_handle = executor.spawn(async move {
+                client.exchange_mtu().await.unwrap();
+
+                let mut rx_buf = [MaybeUninit::uninit(); 256];
+                let results1 = client
+                    .find_by_type_value(h(1), h(10), 0x2800, &[0x0D, 0x18], &mut rx_buf)
+                    .await
+                    .unwrap();
+                assert_eq!(results1.len(), 1);
+                assert_eq!(results1[0].attribute_handle.get(), 1);
+                assert_eq!(results1[0].group_end_handle.get(), 5);
+
+                let mut rx_buf2 = [MaybeUninit::uninit(); 256];
+                let results2 = client
+                    .find_by_type_value(h(1), h(10), 0x2800, &[0x0A, 0x18], &mut rx_buf2)
+                    .await
+                    .unwrap();
+                assert_eq!(results2.len(), 1);
+                assert_eq!(results2[0].attribute_handle.get(), 6);
+                assert_eq!(results2[0].group_end_handle.get(), 10);
+            });
+
+            executor.run_until_stalled();
+            assert!(server_handle.is_finished());
+            assert!(client_handle.is_finished());
+        });
+    }
     mod proptests {
         use super::*;
         use crate::att::attribute::Attribute;
@@ -216,6 +291,7 @@ mod tests {
         };
         use core::mem::MaybeUninit;
         use proptest::prelude::*;
+        use sapphire_peer_cache::PeerId;
         use sapphire_uuid::Uuid;
         use zerocopy::TryFromBytes;
         use zerocopy::byteorder::little_endian::U16;
@@ -223,20 +299,20 @@ mod tests {
         fn setup_db() -> MockDb {
             let mut db = MockDb::new();
             // Handle 1: UUID 16-bit
-            db.insert(h(1), MockAttribute::new(Uuid::from_u16(0x2A00)));
+            db.insert(h(1), MockAttribute::new(Uuid::from_u16(0x2A00), b"Value1"));
             // Handle 2: UUID 128-bit
             let custom_uuid =
                 Uuid::from_le_bytes([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
-            db.insert(h(2), MockAttribute::new(custom_uuid));
+            db.insert(h(2), MockAttribute::new(custom_uuid, b"Value2"));
             // Handle 10: UUID 16-bit
-            db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A01)));
+            db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A01), b"Value10"));
             // Handle 11: UUID 16-bit
-            db.insert(h(11), MockAttribute::new(Uuid::from_u16(0x2A02)));
+            db.insert(h(11), MockAttribute::new(Uuid::from_u16(0x2A02), b"Value11"));
             // Handle 20: UUID 128-bit
             let custom_uuid2 = Uuid::from_le_bytes([
                 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
             ]);
-            db.insert(h(20), MockAttribute::new(custom_uuid2));
+            db.insert(h(20), MockAttribute::new(custom_uuid2, b"Value20"));
             db
         }
 
@@ -249,7 +325,13 @@ mod tests {
             ) {
                 BoundedExecutor::new(TestExecutor::new(), |executor| {
                     let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-                    let mut server = Server::new(BearerTx::new(server_tx), BearerRx::new(server_rx), SERVER_MTU, setup_db());
+                    let mut server = Server::new(
+                        PeerId::new(1).unwrap(),
+                        BearerTx::new(server_tx),
+                        BearerRx::new(server_rx),
+                        SERVER_MTU,
+                        setup_db(),
+                    );
                     let server_handle = executor.spawn(async move {
                         let _ = server.run().await;
                     });
@@ -303,7 +385,13 @@ mod tests {
                 BoundedExecutor::new(TestExecutor::new(), |executor| {
                     let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
                     let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
-                    let mut server = Server::new(BearerTx::new(server_tx), BearerRx::new(server_rx), SERVER_MTU, setup_db());
+                    let mut server = Server::new(
+                        PeerId::new(1).unwrap(),
+                        BearerTx::new(server_tx),
+                        BearerRx::new(server_rx),
+                        SERVER_MTU,
+                        setup_db(),
+                    );
                     let server_handle = executor.spawn(async move {
                         let _ = server.run().await;
                     });
@@ -327,7 +415,13 @@ mod tests {
                 BoundedExecutor::new(TestExecutor::new(), |executor| {
                     let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
                     let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
-                    let mut server = Server::new(BearerTx::new(server_tx), BearerRx::new(server_rx), SERVER_MTU, setup_db());
+                    let mut server = Server::new(
+                        PeerId::new(1).unwrap(),
+                        BearerTx::new(server_tx),
+                        BearerRx::new(server_rx),
+                        SERVER_MTU,
+                        setup_db(),
+                    );
                     let server_handle = executor.spawn(async move {
                         let _ = server.run().await;
                     });
@@ -356,7 +450,13 @@ mod tests {
                 BoundedExecutor::new(TestExecutor::new(), |executor| {
                     let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
                     let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
-                    let mut server = Server::new(BearerTx::new(server_tx), BearerRx::new(server_rx), SERVER_MTU, setup_db());
+                    let mut server = Server::new(
+                        PeerId::new(1).unwrap(),
+                        BearerTx::new(server_tx),
+                        BearerRx::new(server_rx),
+                        SERVER_MTU,
+                        setup_db(),
+                    );
                     let server_handle = executor.spawn(async move {
                         let _ = server.run().await;
                     });
@@ -388,6 +488,156 @@ mod tests {
                             }
                             Err(ClientError::ErrorResponse(ErrorCode::AttributeNotFound)) => {
                                 assert!(!db.has_attributes_in_range(start.value(), end.value()));
+                            }
+                            other => panic!("Unexpected result: {:?}", other),
+                        }
+                    });
+
+                    executor.run_until_stalled();
+                    assert!(client_handle.is_finished());
+                    assert!(server_handle.is_finished());
+                });
+            }
+
+            #[test]
+            fn test_find_by_type_value_invalid_ranges(
+                (start, end) in (2..=0xFFFFu16).prop_flat_map(|s| {
+                    (Just(AttributeHandle::new(s).unwrap()), (1..s).prop_map(|e| AttributeHandle::new(e).unwrap()))
+                }),
+                target_type in 0..=0xFFFFu16,
+                target_value in prop::collection::vec(any::<u8>(), 0..20),
+            ) {
+                let target_value: Vec<u8> = target_value;
+                BoundedExecutor::new(TestExecutor::new(), |executor| {
+                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+                    let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
+                    let mut server = Server::new(
+                        PeerId::new(1).unwrap(),
+                        BearerTx::new(server_tx),
+                        BearerRx::new(server_rx),
+                        SERVER_MTU,
+                        setup_db(),
+                    );
+                    let server_handle = executor.spawn(async move {
+                        let _ = server.run().await;
+                    });
+                    let client_handle = executor.spawn(async move {
+                        client.exchange_mtu().await.unwrap();
+                        let mut rx_buf = [MaybeUninit::uninit(); 512];
+                        let result = client.find_by_type_value(start, end, target_type, &target_value, &mut rx_buf).await;
+                        assert_eq!(result, Err(ClientError::ErrorResponse(ErrorCode::InvalidHandle)));
+                    });
+
+                    executor.run_until_stalled();
+                    assert!(client_handle.is_finished());
+                    assert!(server_handle.is_finished());
+                });
+            }
+
+            #[test]
+            fn test_find_by_type_value_response_consistency(
+                start in (1..=0xFFFFu16).prop_map(|v| AttributeHandle::new(v).unwrap()),
+                end in (1..=0xFFFFu16).prop_map(|v| AttributeHandle::new(v).unwrap()),
+                target_type in 0..=0xFFFFu16,
+                target_value in prop::collection::vec(any::<u8>(), 0..20),
+            ) {
+                let target_value: Vec<u8> = target_value;
+                BoundedExecutor::new(TestExecutor::new(), |executor| {
+                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+                    let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
+                    let mut server = Server::new(
+                        PeerId::new(1).unwrap(),
+                        BearerTx::new(server_tx),
+                        BearerRx::new(server_rx),
+                        SERVER_MTU,
+                        setup_db(),
+                    );
+                    let server_handle = executor.spawn(async move {
+                        let _ = server.run().await;
+                    });
+                    let client_handle = executor.spawn(async move {
+                        client.exchange_mtu().await.unwrap();
+                        let mut rx_buf1 = [MaybeUninit::uninit(); 512];
+                        let result1 = client.find_by_type_value(start, end, target_type, &target_value, &mut rx_buf1).await;
+
+                        let mut rx_buf2 = [MaybeUninit::uninit(); 512];
+                        let result2 = client.find_by_type_value(start, end, target_type, &target_value, &mut rx_buf2).await;
+
+                        assert_eq!(result1, result2);
+                    });
+
+                    executor.run_until_stalled();
+                    assert!(client_handle.is_finished());
+                    assert!(server_handle.is_finished());
+                });
+            }
+
+            #[test]
+            fn test_find_by_type_value_valid_range(
+                (start, end) in (1..=0xFFFFu16).prop_flat_map(|s| {
+                    (Just(AttributeHandle::new(s).unwrap()), (s..=0xFFFFu16).prop_map(|e| AttributeHandle::new(e).unwrap()))
+                }),
+                use_existing in proptest::bool::weighted(0.5),
+                random_type in 0..=0xFFFFu16,
+                random_value in prop::collection::vec(any::<u8>(), 0..20),
+            ) {
+                let random_value: Vec<u8> = random_value;
+                BoundedExecutor::new(TestExecutor::new(), |executor| {
+                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+                    let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
+                    let mut server = Server::new(
+                        PeerId::new(1).unwrap(),
+                        BearerTx::new(server_tx),
+                        BearerRx::new(server_rx),
+                        SERVER_MTU,
+                        setup_db(),
+                    );
+                    let server_handle = executor.spawn(async move {
+                        let _ = server.run().await;
+                    });
+
+                    let (target_type, target_value) = if use_existing {
+                        (0x2A01u16, b"Value10".to_vec())
+                    } else {
+                        (random_type, random_value)
+                    };
+
+                    let db = setup_db();
+                    let client_handle = executor.spawn(async move {
+                        client.exchange_mtu().await.unwrap();
+                        let mut rx_buf = [MaybeUninit::uninit(); 512];
+                        let result = client
+                            .find_by_type_value(start, end, target_type, &target_value, &mut rx_buf)
+                            .await;
+
+                        match result {
+                            Ok(entries) => {
+                                assert!(!entries.is_empty());
+                                for entry in entries {
+                                    let h = entry.attribute_handle.get();
+                                    let group_end = entry.group_end_handle.get();
+                                    assert!(h >= start.value() && h <= end.value());
+                                    assert!(group_end >= h && group_end <= end.value());
+
+                                    let handle = AttributeHandle::try_from(h).unwrap();
+                                    let attr = db.find_attribute(handle).expect("attribute must exist in db");
+                                    let matches_type = if let Ok(bytes16) = <[u8; 2]>::try_from(*attr.uuid()) {
+                                        u16::from_le_bytes(bytes16) == target_type
+                                    } else {
+                                        false
+                                    };
+                                    assert!(matches_type);
+                                }
+                            }
+                            Err(ClientError::ErrorResponse(ErrorCode::AttributeNotFound)) => {
+                                // Verify that no attributes in the range match the type and value.
+                                // Handle 1: type 0x2A00, value b"Value1"
+                                // Handle 10: type 0x2A01, value b"Value10"
+                                // Handle 11: type 0x2A02, value b"Value11"
+                                let matches_1 = 1 >= start.value() && 1 <= end.value() && target_type == 0x2A00 && target_value == b"Value1";
+                                let matches_10 = 10 >= start.value() && 10 <= end.value() && target_type == 0x2A01 && target_value == b"Value10";
+                                let matches_11 = 11 >= start.value() && 11 <= end.value() && target_type == 0x2A02 && target_value == b"Value11";
+                                assert!(!(matches_1 || matches_10 || matches_11));
                             }
                             other => panic!("Unexpected result: {:?}", other),
                         }

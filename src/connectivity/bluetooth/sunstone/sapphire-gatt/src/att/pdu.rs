@@ -24,6 +24,8 @@ pub enum Opcode {
     ExchangeMtuRsp = 0x03,
     FindInformationReq = 0x04,
     FindInformationRsp = 0x05,
+    FindByTypeValueReq = 0x06,
+    FindByTypeValueRsp = 0x07,
 }
 
 /// The UUID format types supported in Find Information Response.
@@ -247,6 +249,41 @@ impl InformationData for InformationData128 {
     const FORMAT: UuidFormat = UuidFormat::Uuid128;
 }
 
+/// Parameters for Find By Type Value Request PDU (OpCode = 0x06).
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.3.3).
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed)]
+pub struct FindByTypeValueReqHeader {
+    pub starting_handle: U16,
+    pub ending_handle: U16,
+    pub attribute_type: U16, // 16-bit UUID only
+}
+
+/// The complete Find By Type Value Request PDU (OpCode = 0x06).
+///
+/// Contains the fixed header fields followed by the variable-length attribute value.
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.3.3).
+#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug)]
+#[repr(C)]
+pub struct FindByTypeValueReq {
+    /// Fixed header fields of the request.
+    pub header: FindByTypeValueReqHeader,
+    /// Variable-length attribute value to search for.
+    pub value: [u8],
+}
+
+/// Handles Information structure for Find By Type Value Response (OpCode = 0x07).
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.3.4).
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed)]
+pub struct HandlesInformation {
+    pub attribute_handle: U16,
+    pub group_end_handle: U16,
+}
+
 /// Parameters for Error Response PDU (OpCode = 0x01)
 ///
 /// (see Vol 3, Part F, 3.4.1.1)
@@ -305,6 +342,20 @@ impl<'a, H: IntoBytes + Immutable, T: IntoBytes + Immutable + KnownLayout>
         }
         self.buf[self.offset..self.offset + entry_size].copy_from_slice(entry.as_bytes());
         self.offset += entry_size;
+        Ok(())
+    }
+
+    /// Attempts to serialize a slice of entries into the buffer.
+    ///
+    /// Returns `Err(PushError::BufferFull)` if adding the entries would exceed the negotiated
+    /// MTU limit or the buffer capacity.
+    pub fn extend_from_slice(&mut self, entries: &[T]) -> Result<(), PushError> {
+        let entries_size = entries.len() * size_of::<T>();
+        if self.offset + entries_size > self.limit {
+            return Err(PushError::BufferFull);
+        }
+        self.buf[self.offset..self.offset + entries_size].copy_from_slice(entries.as_bytes());
+        self.offset += entries_size;
         Ok(())
     }
 
@@ -416,6 +467,25 @@ mod tests {
                 uuid: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
             }
         );
+    }
+
+    #[test]
+    fn test_find_by_type_value_req() {
+        // start 0x0001, end 0x000A, type 0x2800
+        let req_bytes = [0x01, 0x00, 0x0a, 0x00, 0x00, 0x28];
+        let parsed = FindByTypeValueReqHeader::read_from_bytes(&req_bytes[..]).unwrap();
+        assert_eq!(parsed.starting_handle.get(), 1);
+        assert_eq!(parsed.ending_handle.get(), 10);
+        assert_eq!(parsed.attribute_type.get(), 0x2800);
+    }
+
+    #[test]
+    fn test_handles_information_slice_cast() {
+        let rsp_bytes = [0x01, 0x00, 0x05, 0x00]; // handle 1, end_handle 5
+        let entries = <[HandlesInformation]>::ref_from_bytes(&rsp_bytes[..]).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].attribute_handle.get(), 1);
+        assert_eq!(entries[0].group_end_handle.get(), 5);
     }
 
     #[test]
