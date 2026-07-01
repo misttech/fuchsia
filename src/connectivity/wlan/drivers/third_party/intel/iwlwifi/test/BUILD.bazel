@@ -188,6 +188,7 @@ fuchsia_cc_test(
         "@fuchsia_sdk//pkg/async",
         "@fuchsia_sdk//pkg/async_patterns_testing_cpp",
         "@fuchsia_sdk//pkg/driver_runtime",
+        "@fuchsia_sdk//pkg/driver_testing_cpp",
     ],
 )
 
