@@ -184,5 +184,8 @@ fuchsia_unittest_package("dso_runner_tests") {
 
 group("tests") {
   testonly = true
-  deps = [ ":dso_runner_tests" ]
+  deps = [
+    ":dso_runner_tests",
+    "tests",
+  ]
 }
