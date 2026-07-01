@@ -26,6 +26,7 @@
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
 #include <fbl/auto_lock.h>
+#include <safemath/safe_math.h>
 
 namespace nand {
 
@@ -274,7 +275,9 @@ zx_status_t SkipBlockDevice::ValidateOperationLocked(const ReadWriteOperation& o
   if (op.block_count == 0) {
     return ZX_ERR_INVALID_ARGS;
   }
-  if (op.block + op.block_count > GetBlockCountLocked()) {
+  uint32_t end_block;
+  if (!safemath::CheckAdd(op.block, op.block_count).AssignIfValid(&end_block) ||
+      end_block > GetBlockCountLocked()) {
     return ZX_ERR_OUT_OF_RANGE;
   }
 
@@ -283,7 +286,10 @@ zx_status_t SkipBlockDevice::ValidateOperationLocked(const ReadWriteOperation& o
   if (status != ZX_OK) {
     return ZX_ERR_INVALID_ARGS;
   }
-  if (vmo_size < op.vmo_offset + op.block_count * GetBlockSize()) {
+  uint64_t required_vmo_size;
+  if (!safemath::CheckAdd(safemath::CheckMul(op.block_count, GetBlockSize()), op.vmo_offset)
+           .AssignIfValid(&required_vmo_size) ||
+      vmo_size < required_vmo_size) {
     return ZX_ERR_OUT_OF_RANGE;
   }
   return ZX_OK;
@@ -296,7 +302,11 @@ zx_status_t SkipBlockDevice::ValidateOperationLocked(const WriteBytesOperation& 
   if (op.offset % nand_info_.page_size != 0 || op.size % nand_info_.page_size != 0) {
     return ZX_ERR_INVALID_ARGS;
   }
-  if (fbl::round_up(op.offset + op.size, GetBlockSize()) > GetBlockCountLocked() * GetBlockSize()) {
+  const uint64_t block_size = GetBlockSize();
+  uint64_t blocks_needed;
+  if (!((safemath::CheckedNumeric<uint64_t>(op.offset) + op.size + block_size - 1) / block_size)
+           .AssignIfValid(&blocks_needed) ||
+      blocks_needed > GetBlockCountLocked()) {
     return ZX_ERR_OUT_OF_RANGE;
   }
 
@@ -305,7 +315,9 @@ zx_status_t SkipBlockDevice::ValidateOperationLocked(const WriteBytesOperation& 
   if (status != ZX_OK) {
     return ZX_ERR_INVALID_ARGS;
   }
-  if (vmo_size < op.vmo_offset + op.size) {
+  uint64_t required_vmo_size;
+  if (!safemath::CheckAdd(op.vmo_offset, op.size).AssignIfValid(&required_vmo_size) ||
+      vmo_size < required_vmo_size) {
     return ZX_ERR_OUT_OF_RANGE;
   }
   return ZX_OK;

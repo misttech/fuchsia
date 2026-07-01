@@ -47,6 +47,7 @@ source_set("common") {
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zx",
+    "//zircon/third_party/ulib/safemath",
   ]
   public_deps = [
     "//sdk/banjo/fuchsia.hardware.badblock:fuchsia.hardware.badblock_banjo_cpp",
