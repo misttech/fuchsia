@@ -14,8 +14,8 @@ pub struct UsbConfig {
     pub peripheral: UsbPeripheralConfig,
 
     /// Set this to `true` to enable the USB policy and health services.
-    #[serde(default, skip_serializing_if = "crate::common::is_default")]
-    pub enable_policy: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_policy: Option<bool>,
 }
 
 /// Configure how the USB peripheral subsystem should work.

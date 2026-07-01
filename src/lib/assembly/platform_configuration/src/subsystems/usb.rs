@@ -4,15 +4,16 @@
 
 use crate::subsystems::prelude::*;
 use assembly_config_capabilities::{Config, ConfigNestedValueType, ConfigValueType};
+use assembly_config_schema::platform_settings::starnix_config::PlatformStarnixConfig;
 use assembly_config_schema::platform_settings::usb_config::{UsbConfig, UsbPeripheralFunction};
 use assembly_constants::BoardFeature;
 
 pub(crate) struct UsbSubsystem;
 
-impl DefineSubsystemConfiguration<UsbConfig> for UsbSubsystem {
+impl DefineSubsystemConfiguration<(&UsbConfig, &PlatformStarnixConfig)> for UsbSubsystem {
     fn define_configuration(
         context: &ConfigurationContext<'_>,
-        usb: &UsbConfig,
+        (usb, starnix): &(&UsbConfig, &PlatformStarnixConfig),
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
         let usb_peripheral_functions: Vec<String> =
@@ -36,11 +37,19 @@ impl DefineSubsystemConfiguration<UsbConfig> for UsbSubsystem {
         if context.board_config.provides_feature(BoardFeature::UsbHost) {
             builder.platform_bundle("usb_host_drivers")?;
         }
+        let enable_policy = usb.enable_policy.unwrap_or(
+            matches!(
+                context.feature_set_level,
+                FeatureSetLevel::Utility | FeatureSetLevel::Standard
+            ) && matches!(context.build_type, BuildType::UserDebug | BuildType::Eng),
+        );
+
         if context.board_config.provides_feature(BoardFeature::UsbPeripheralSupport) {
-            if usb.enable_policy
-                && matches!(context.build_type, BuildType::UserDebug | BuildType::Eng)
-            {
+            if enable_policy {
                 builder.platform_bundle("usb_policy")?;
+                if starnix.enabled {
+                    builder.platform_bundle("usb_policy_starnix")?;
+                }
             }
             for function in usb.peripheral.functions() {
                 match (function, context.feature_set_level, context.build_type) {

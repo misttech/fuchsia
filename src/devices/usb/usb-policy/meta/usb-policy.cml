@@ -22,6 +22,9 @@
         {
             service: [ "fuchsia.hardware.usb.policy.Service" ],
         },
+        {
+            protocol: [ "fuchsia.diagnostics.ArchiveAccessor" ],
+        },
     ],
     expose: [
         {
