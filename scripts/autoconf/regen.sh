@@ -9,7 +9,6 @@ source "$FUCHSIA_DIR"/tools/devshell/lib/vars.sh
 
 set -euxo pipefail
 
-FXSET_WITH_ADDITIONAL=""
 FXBUILD_WITH_ADDITIONAL=""
 CPPFLAGS_ADDITIONAL=""
 LDFLAGS_ADDITIONAL=""
@@ -22,7 +21,6 @@ for ARGUMENT in "$@"; do
   case "$KEY" in
   FUCHSIA_OUT_CONFIG_H) FUCHSIA_OUT_CONFIG_H="$VALUE" ;;
   LINUX_OUT_CONFIG_H) LINUX_OUT_CONFIG_H="$VALUE" ;;
-  FXSET_WITH_ADDITIONAL) FXSET_WITH_ADDITIONAL="$VALUE" ;;
   FXBUILD_WITH_ADDITIONAL) FXBUILD_WITH_ADDITIONAL="$VALUE" ;;
   CPPFLAGS_ADDITIONAL) CPPFLAGS_ADDITIONAL="$VALUE" ;;
   LDFLAGS_ADDITIONAL) LDFLAGS_ADDITIONAL="$VALUE" ;;
@@ -35,7 +33,6 @@ Variables:
 
   FUCHSIA_OUT_CONFIG_H        Path to the generated config.h for fuchsia (required)
   LINUX_OUT_CONFIG_H          Path to the generated config.h for linux (required)
-  FXSET_WITH_ADDITIONAL       Additional args for fx set
   FXBUILD_WITH_ADDITIONAL     Additional args for fx build
   CPPFLAGS_ADDITIONAL         Addtional CPP flags (passed to the configure script)
   LDFLAGS_ADDITIONAL          Additional LD flags
@@ -48,10 +45,15 @@ EOF
   esac
 done
 
-fx set core.x64 $FXSET_WITH_ADDITIONAL
+readonly BUILD_DIR="$(fx get-build-dir)"
 fx build sdk:zircon_sysroot $FXBUILD_WITH_ADDITIONAL
 
-readonly BUILD_DIR="$FUCHSIA_OUT_DIR/core.x64"
+readonly ARCH="$(ls -1 "$BUILD_DIR/sdk/exported/zircon_sysroot/arch" | head -n 1)"
+if [ "$ARCH" != "x64" ]; then
+  echo "ERROR: Active build directory must target x64 (detected architecture: $ARCH)" >&2
+  exit 1
+fi
+
 readonly FUCHSIA_SYSROOT_DIR="$BUILD_DIR/sdk/exported/zircon_sysroot/arch/x64/sysroot"
 readonly LINUX_SYSROOT_DIR="$FUCHSIA_DIR/prebuilt/third_party/sysroot/linux"
 readonly TARGET=x86_64-unknown-fuchsia

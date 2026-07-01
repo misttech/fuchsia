@@ -14,7 +14,6 @@ readonly CONFIG_H="$REPO_DIR/config.h"
 "$FUCHSIA_DIR"/scripts/autoconf/regen.sh \
   FUCHSIA_OUT_CONFIG_H="${CONFIG_H}.fuchsia" \
   LINUX_OUT_CONFIG_H="${CONFIG_H}.linux" \
-  FXSET_WITH_ADDITIONAL="--with=//third_party/libpcap" \
   FXBUILD_WITH_ADDITIONAL="third_party/libpcap" \
   CPPFLAGS_ADDITIONAL="-I$FUCHSIA_DIR/third_party/libpcap/src" \
   LDFLAGS_ADDITIONAL="-lpcap" \
