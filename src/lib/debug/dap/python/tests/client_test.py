@@ -8,6 +8,7 @@ import json
 import unittest
 
 from pydap.client import DapClient
+from pydap.dap_types import Source, SourceBreakpoint
 from pydap.models import *
 
 
@@ -546,3 +547,52 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(req_val["arguments"]["variablesReference"], 100)
         self.assertEqual(req_val["arguments"]["start"], 5)
         self.assertEqual(req_val["arguments"]["count"], 10)
+
+    async def test_set_breakpoints(self) -> None:
+        client = DapClient()
+        writer = MockWriter()
+        args = SetBreakpointsArguments(
+            source=Source(path="/path/to/file.rs"),
+            breakpoints=[SourceBreakpoint(line=12)],
+        )
+        send_task = asyncio.create_task(
+            client.set_breakpoints(writer, args)  # type: ignore
+        )
+
+        await asyncio.sleep(0.1)
+
+        buffer_val = writer.buffer.getvalue()
+        headers, body = buffer_val.split(b"\r\n\r\n", 1)
+        req_val = json.loads(body.decode("utf-8"))
+        seq = req_val["seq"]
+
+        response = {
+            "seq": 10,
+            "type": "response",
+            "request_seq": seq,
+            "success": True,
+            "command": "setBreakpoints",
+            "body": {
+                "breakpoints": [
+                    {
+                        "id": 1,
+                        "verified": True,
+                        "source": {"path": "/path/to/file.rs"},
+                        "line": 12,
+                    }
+                ]
+            },
+        }
+
+        if seq in client._pending_requests:
+            client._pending_requests[seq].set_result(response)
+
+        resp = await send_task
+        self.assertTrue(resp.success)
+        self.assertEqual(len(resp.body.breakpoints), 1)
+        self.assertEqual(resp.body.breakpoints[0].id, 1)
+        self.assertTrue(resp.body.breakpoints[0].verified)
+        self.assertEqual(resp.body.breakpoints[0].line, 12)
+        self.assertEqual(
+            req_val["arguments"]["source"]["path"], "/path/to/file.rs"
+        )

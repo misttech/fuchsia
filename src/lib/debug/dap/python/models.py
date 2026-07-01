@@ -7,7 +7,16 @@ from typing import Any
 
 from pydantic import Field, model_serializer
 
-from .dap_types import DapBaseModel, Scope, StackFrame, Thread, Variable
+from .dap_types import (
+    Breakpoint,
+    DapBaseModel,
+    Scope,
+    Source,
+    SourceBreakpoint,
+    StackFrame,
+    Thread,
+    Variable,
+)
 
 
 class MessageType(str, Enum):
@@ -306,3 +315,33 @@ class VariablesResponse(Response):
     """
 
     body: VariablesResponseBody
+
+
+class SetBreakpointsArguments(DapBaseModel):
+    """Arguments for `setBreakpoints` request.
+
+    Attributes:
+        source: The source location of the breakpoints.
+        breakpoints: The code locations of the breakpoints.
+        source_modified: Deprecated, client should not use this.
+    """
+
+    source: Source
+    breakpoints: list[SourceBreakpoint] | None = None
+    source_modified: bool | None = None
+
+
+class SetBreakpointsResponseBody(DapBaseModel):
+    """Body of response to `setBreakpoints` request."""
+
+    breakpoints: list[Breakpoint]
+
+
+class SetBreakpointsResponse(Response):
+    """Response to `setBreakpoints` request.
+
+    Attributes:
+        body: The setBreakpoints response body.
+    """
+
+    body: SetBreakpointsResponseBody

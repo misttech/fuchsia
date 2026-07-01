@@ -118,3 +118,49 @@ class Variable(DapBaseModel):
     value: str
     variables_reference: int
     type: str | None = None
+
+
+class SourceBreakpoint(DapBaseModel):
+    """A SourceBreakpoint.
+
+    Attributes:
+        line: The source line of the breakpoint.
+        column: An optional source column of the breakpoint.
+        condition: An optional expression for conditional breakpoints.
+        hit_condition: An optional expression that controls how many times the breakpoint must be hit.
+        log_message: If this attribute exists, the breakpoint behaves as a logpoint.
+    """
+
+    line: int
+    column: int | None = None
+    condition: str | None = None
+    hit_condition: str | None = None
+    log_message: str | None = None
+
+
+class Breakpoint(DapBaseModel):
+    """Information about a Breakpoint.
+
+    Attributes:
+        id: An optional unique identifier for the breakpoint.
+        verified: If true, the breakpoint could be set (its location can be resolved).
+        message: An optional message about the state of the breakpoint.
+        source: The source where the breakpoint is located.
+        line: The start line of the actual range covered by the breakpoint.
+        column: An optional start column of the actual range covered by the breakpoint.
+        end_line: An optional end line of the actual range covered by the breakpoint.
+        end_column: An optional end column of the actual range covered by the breakpoint.
+        instruction_reference: An optional memory reference to where the breakpoint is set.
+        offset: An optional offset from the instruction reference.
+    """
+
+    id: int | None = None
+    verified: bool
+    message: str | None = None
+    source: Source | None = None
+    line: int | None = None
+    column: int | None = None
+    end_line: int | None = None
+    end_column: int | None = None
+    instruction_reference: str | None = None
+    offset: int | None = None

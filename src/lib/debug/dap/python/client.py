@@ -21,6 +21,8 @@ from .models import (
     Response,
     ScopesArguments,
     ScopesResponse,
+    SetBreakpointsArguments,
+    SetBreakpointsResponse,
     StackTraceArguments,
     StackTraceResponse,
     ThreadsResponse,
@@ -281,6 +283,21 @@ class DapClient:
         """
         resp = await self._send_request(writer, "variables", args)
         return VariablesResponse.model_validate(resp)
+
+    async def set_breakpoints(
+        self, writer: asyncio.StreamWriter, args: SetBreakpointsArguments
+    ) -> SetBreakpointsResponse:
+        """Sends a setBreakpoints request.
+
+        Args:
+            writer: Stream writer to send the request to.
+            args: Arguments for the setBreakpoints request.
+
+        Returns:
+            The setBreakpoints response model.
+        """
+        resp = await self._send_request(writer, "setBreakpoints", args)
+        return SetBreakpointsResponse.model_validate(resp)
 
     async def _read_message(
         self, reader: asyncio.StreamReader
