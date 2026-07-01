@@ -7,6 +7,7 @@
 # also grants ownership to service accounts.
 *
 
+per-file SOURCE_OWNERS = file:/manifests/SOURCE_OWNERS
 per-file toolchain = set noparent
 per-file toolchain = file: /build/config/OWNERS
 per-file toolchain = global-integration-roller@fuchsia-infra.iam.gserviceaccount.com #{LAST_RESORT_SUGGESTION}
