@@ -26,6 +26,8 @@ pub enum Opcode {
     FindInformationRsp = 0x05,
     FindByTypeValueReq = 0x06,
     FindByTypeValueRsp = 0x07,
+    ReadByTypeReq = 0x08,
+    ReadByTypeRsp = 0x09,
     ReadReq = 0x0A,
     ReadRsp = 0x0B,
     ReadBlobReq = 0x0C,
@@ -335,6 +337,11 @@ impl<'a, H: IntoBytes + Immutable, T: IntoBytes + Immutable + KnownLayout>
         Self { buf, offset: header_len, limit, _phantom: core::marker::PhantomData }
     }
 
+    /// Returns the current serialized length of the packet.
+    pub fn len(&self) -> usize {
+        self.offset
+    }
+
     /// Attempts to serialize a single entry into the buffer.
     ///
     /// Returns `Err(PushError::BufferFull)` if adding the entry would exceed the negotiated
@@ -390,6 +397,40 @@ pub struct ReadBlobReq {
     pub value_offset: U16,
 }
 
+/// Parameters for Read By Type Request PDU Header (OpCode = 0x08)
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.7).
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed)]
+pub struct ReadByTypeReqHeader {
+    pub starting_handle: U16,
+    pub ending_handle: U16,
+}
+
+/// The complete Read By Type Request PDU (OpCode = 0x08).
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.7).
+#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug)]
+#[repr(C)]
+pub struct ReadByTypeReq {
+    pub header: ReadByTypeReqHeader,
+    pub attribute_type: [u8], // 2 bytes (16-bit UUID) or 16 bytes (128-bit UUID)
+}
+
+/// The complete Read By Type Response PDU (OpCode = 0x09).
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.8).
+///
+/// NOTE: The individual elements inside `attribute_data_list` are not represented
+/// as static structs because they contain variable-length attribute values. Instead,
+/// the server packs them dynamically, and the client parses them using an iterator.
+#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug)]
+#[repr(C)]
+pub struct ReadByTypeRsp {
+    pub length: u8,
+    pub attribute_data_list: [u8],
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,6 +467,23 @@ mod tests {
         // Serialization check
         let new_req = ReadBlobReq { attribute_handle: U16::new(1), value_offset: U16::new(2) };
         assert_eq!(new_req.as_bytes(), &req_bytes[..]);
+    }
+
+    #[test]
+    fn test_read_by_type_req() {
+        let req_bytes = [0x01, 0x00, 0x05, 0x00, 0x00, 0x28]; // start 0x0001, end 0x0005, type 0x2800 (Primary Service)
+        let parsed = ReadByTypeReq::try_ref_from_bytes(&req_bytes[..]).unwrap();
+        assert_eq!(parsed.header.starting_handle.get(), 1);
+        assert_eq!(parsed.header.ending_handle.get(), 5);
+        assert_eq!(parsed.attribute_type, [0x00, 0x28]);
+    }
+
+    #[test]
+    fn test_read_by_type_rsp_layout() {
+        let rsp_bytes = [0x0A, 0x01, 0x02, 0x03]; // length = 10, data = [1, 2, 3]
+        let parsed = ReadByTypeRsp::try_ref_from_bytes(&rsp_bytes[..]).unwrap();
+        assert_eq!(parsed.length, 10);
+        assert_eq!(parsed.attribute_data_list, [0x01, 0x02, 0x03]);
     }
 
     #[test]

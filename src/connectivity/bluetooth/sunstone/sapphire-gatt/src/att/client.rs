@@ -10,11 +10,12 @@ use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
 use crate::att::pdu::{
     DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp,
     FindByTypeValueReqHeader, FindInformationReq, FindInformationRsp, HandlesInformation, Header,
-    InformationData16, InformationData128, Opcode, Packet, PacketBuilder, ReadBlobReq, ReadReq,
-    UuidFormat,
+    InformationData16, InformationData128, Opcode, Packet, PacketBuilder, ReadBlobReq,
+    ReadByTypeReqHeader, ReadByTypeRsp, ReadReq, UuidFormat,
 };
 use core::cmp::{max, min};
-use core::mem::MaybeUninit;
+use core::mem::{MaybeUninit, size_of};
+use sapphire_uuid::Uuid;
 use thiserror::Error;
 use zerocopy::byteorder::little_endian::U16;
 use zerocopy::{FromBytes, TryFromBytes};
@@ -35,6 +36,79 @@ pub enum ClientError {
 pub enum DiscoveredInformation<'a> {
     Uuid16(&'a [InformationData16]),
     Uuid128(&'a [InformationData128]),
+}
+
+/// A single handle-value pair returned by a Read By Type Response.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AttributeData<'a> {
+    pub handle: AttributeHandle,
+    pub value: &'a [u8],
+}
+
+/// A structured view over a Read By Type Response's handle-value pairs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReadByTypeResults<'a> {
+    length: usize,
+    data: &'a [u8],
+}
+
+impl<'a> ReadByTypeResults<'a> {
+    pub fn iter(&self) -> ReadByTypeIter<'a> {
+        ReadByTypeIter { length: self.length, data: self.data }
+    }
+}
+
+impl<'a> IntoIterator for ReadByTypeResults<'a> {
+    type Item = Result<AttributeData<'a>, ClientError>;
+    type IntoIter = ReadByTypeIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, 'b> IntoIterator for &'b ReadByTypeResults<'a> {
+    type Item = Result<AttributeData<'a>, ClientError>;
+    type IntoIter = ReadByTypeIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+pub struct ReadByTypeIter<'a> {
+    length: usize,
+    data: &'a [u8],
+}
+
+impl<'a> ReadByTypeIter<'a> {
+    fn next_chunk(&mut self) -> Result<AttributeData<'a>, ClientError> {
+        let (chunk, rest) =
+            self.data.split_at_checked(self.length).ok_or(ClientError::InvalidIncomingData)?;
+        self.data = rest;
+
+        let (handle_bytes, value) = chunk.split_at(size_of::<AttributeHandle>());
+        let handle_u16 =
+            U16::try_ref_from_bytes(handle_bytes).map_err(|_| ClientError::InvalidIncomingData)?;
+        let handle = AttributeHandle::try_from(handle_u16.get())
+            .map_err(|_| ClientError::InvalidIncomingData)?;
+
+        Ok(AttributeData { handle, value })
+    }
+}
+
+impl<'a> Iterator for ReadByTypeIter<'a> {
+    type Item = Result<AttributeData<'a>, ClientError>;
+
+    /// Parses and returns the next attribute handle-value entry from the response buffer.
+    fn next(&mut self) -> Option<Self::Item> {
+        // Check if the end of the data list has been reached.
+        if self.data.is_empty() {
+            return None;
+        }
+
+        Some(self.next_chunk())
+    }
 }
 
 /// ATT Client protocol wrapper.
@@ -228,7 +302,7 @@ where
         };
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
         let mut builder =
-            DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header_builder, self.mtu() as usize);
+            DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header_builder, self.effective_mtu());
         builder
             .extend_from_slice(attribute_value)
             .expect("Programming error: request packet size exceeds negotiated MTU.");
@@ -291,6 +365,62 @@ where
 
     pub fn mtu(&self) -> u16 {
         self.bearer_tx.mtu()
+    }
+
+    fn effective_mtu(&self) -> usize {
+        usize::try_from(self.mtu()).unwrap_or(usize::MAX)
+    }
+
+    /// Initiates a Read By Type procedure to obtain the values of attributes with a specific
+    /// attribute type (UUID).
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.7 & 3.4.4.8).
+    pub async fn read_by_type<'a>(
+        &mut self,
+        starting_handle: AttributeHandle,
+        ending_handle: AttributeHandle,
+        attribute_type: &Uuid,
+        rx_buf: &'a mut [MaybeUninit<u8>],
+    ) -> Result<ReadByTypeResults<'a>, ClientError> {
+        // Serialize the variable-length UUID parameter onto the end of the request header.
+        let type_bytes = attribute_type.as_bytes();
+        let header_builder = PacketBuilder {
+            header: Header { opcode: Opcode::ReadByTypeReq },
+            payload: ReadByTypeReqHeader {
+                starting_handle: U16::new(starting_handle.value()),
+                ending_handle: U16::new(ending_handle.value()),
+            },
+        };
+        let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
+        let mut builder =
+            DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header_builder, self.effective_mtu());
+        builder
+            .extend_from_slice(type_bytes)
+            .expect("Programming error: request packet size exceeds negotiated MTU.");
+        let tx_packet = builder.as_packet();
+
+        // Perform the transaction and await the response.
+        let rx_packet = self
+            .transaction(Opcode::ReadByTypeReq, tx_packet, rx_buf, Opcode::ReadByTypeRsp)
+            .await?;
+
+        // Parse the response PDU.
+        let rsp = ReadByTypeRsp::try_ref_from_bytes(&rx_packet.data)
+            .map_err(|_| ClientError::InvalidIncomingData)?;
+        let length = usize::from(rsp.length);
+
+        // Each returned attribute-value pair must contain at least a handle.
+        if length < size_of::<AttributeHandle>() {
+            return Err(ClientError::InvalidIncomingData);
+        }
+
+        // The data list must not be empty and must partition cleanly into fixed-size entries.
+        let data_list = &rsp.attribute_data_list;
+        if data_list.is_empty() || data_list.len() % length != 0 {
+            return Err(ClientError::InvalidIncomingData);
+        }
+
+        Ok(ReadByTypeResults { length, data: data_list })
     }
 }
 
@@ -834,6 +964,138 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 64];
                 let res = client.read_blob(h(1), 100, &mut rx_buf).await;
                 assert_eq!(res, Err(ClientError::ErrorResponse(ErrorCode::InvalidOffset)));
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_read_by_type_success() {
+        use crate::att::pdu::ReadByTypeReq;
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            let uuid = Uuid::from_u16(0x2800); // Primary Service 16-bit UUID
+            const VALUE_SIZE: usize = 8; // b"PrimaryS".len()
+            const ENTRY_SIZE: u8 = (size_of::<AttributeHandle>() + VALUE_SIZE) as u8;
+
+            let server_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 32];
+                let mut server_rx_bearer = BearerRx::new(server_rx);
+                let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ReadByTypeReq);
+
+                let req = ReadByTypeReq::try_ref_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(req.header.starting_handle.get(), 1);
+                assert_eq!(req.header.ending_handle.get(), 10);
+                assert_eq!(&req.attribute_type, uuid.as_bytes());
+
+                let mut tx_buf = [0u8; 64];
+                let header = Header { opcode: Opcode::ReadByTypeRsp };
+                let mut builder = DynamicPacketBuilder::<_, u8>::new(
+                    &mut tx_buf,
+                    header,
+                    CLIENT_PREFERRED_MTU as usize,
+                );
+                builder.push(ENTRY_SIZE).unwrap();
+                // Push entry 1: handle = 2, value = b"PrimaryS"
+                builder.push(0x02).unwrap();
+                builder.push(0x00).unwrap();
+                builder.extend_from_slice(b"PrimaryS").unwrap();
+                // Push entry 2: handle = 6, value = b"PrimaryS"
+                builder.push(0x06).unwrap();
+                builder.push(0x00).unwrap();
+                builder.extend_from_slice(b"PrimaryS").unwrap();
+
+                let tx_packet = builder.as_packet();
+                let mut server_tx_bearer = BearerTx::new(server_tx);
+                server_tx_bearer.send(tx_packet).await.unwrap();
+            });
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let results = client.read_by_type(h(1), h(10), &uuid, &mut rx_buf).await.unwrap();
+
+                // Verify IntoIterator for &results
+                let mut count = 0;
+                for entry in &results {
+                    let entry = entry.unwrap();
+                    if count == 0 {
+                        assert_eq!(entry.handle, h(2));
+                        assert_eq!(entry.value, b"PrimaryS");
+                    } else if count == 1 {
+                        assert_eq!(entry.handle, h(6));
+                        assert_eq!(entry.value, b"PrimaryS");
+                    }
+                    count += 1;
+                }
+                assert_eq!(count, 2);
+
+                // Verify IntoIterator for owned results
+                let mut count_owned = 0;
+                for entry in results {
+                    let entry = entry.unwrap();
+                    if count_owned == 0 {
+                        assert_eq!(entry.handle, h(2));
+                        assert_eq!(entry.value, b"PrimaryS");
+                    } else if count_owned == 1 {
+                        assert_eq!(entry.handle, h(6));
+                        assert_eq!(entry.value, b"PrimaryS");
+                    }
+                    count_owned += 1;
+                }
+                assert_eq!(count_owned, 2);
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_read_by_type_error() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            let server_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 32];
+                let mut server_rx_bearer = BearerRx::new(server_rx);
+                let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ReadByTypeReq);
+
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ErrorRsp },
+                    payload: ErrorRsp {
+                        request_opcode: Opcode::ReadByTypeReq as u8,
+                        attribute_handle: U16::new(1),
+                        error_code: ErrorCode::AttributeNotFound,
+                    },
+                };
+                let mut server_tx_bearer = BearerTx::new(server_tx);
+                server_tx_bearer.send(builder.as_packet()).await.unwrap();
+            });
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let uuid = Uuid::from_u16(0x2800);
+                let res = client.read_by_type(h(1), h(10), &uuid, &mut rx_buf).await;
+                assert_eq!(res, Err(ClientError::ErrorResponse(ErrorCode::AttributeNotFound)));
             });
 
             executor.run_until_stalled();

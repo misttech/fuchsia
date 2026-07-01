@@ -13,13 +13,14 @@ use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
 use crate::att::pdu::{
     DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp, FindByTypeValueReq,
     FindInformationReq, FindInformationRspHeader, HandlesInformation, Header, InformationData,
-    InformationData16, InformationData128, Opcode, Packet, PacketBuilder, ReadBlobReq, ReadReq,
-    UuidFormat,
+    InformationData16, InformationData128, Opcode, Packet, PacketBuilder, ReadBlobReq,
+    ReadByTypeReq, ReadReq, UuidFormat,
 };
 use core::cmp::{max, min};
 use core::convert::Infallible;
 use core::mem::{MaybeUninit, size_of};
 use sapphire_peer_cache::PeerId;
+use sapphire_uuid::Uuid;
 use thiserror::Error;
 use zerocopy::byteorder::little_endian::U16;
 use zerocopy::{FromBytes, Immutable, IntoBytes, TryFromBytes};
@@ -134,6 +135,7 @@ where
             Opcode::FindByTypeValueReq => self.handle_find_by_type_value(&rx_packet.data).await,
             Opcode::ReadReq => self.handle_read(&rx_packet.data).await,
             Opcode::ReadBlobReq => self.handle_read_blob(&rx_packet.data).await,
+            Opcode::ReadByTypeReq => self.handle_read_by_type(&rx_packet.data).await,
             other => Err(TransactionError::UnexpectedPdu { received_opcode: other }),
         };
 
@@ -240,13 +242,13 @@ where
             UuidFormat::Uuid16 => Self::pack_find_info_rsp::<InformationData16>(
                 &mut tx_buf,
                 header,
-                self.mtu() as usize,
+                self.effective_mtu(),
                 attributes,
             ),
             UuidFormat::Uuid128 => Self::pack_find_info_rsp::<InformationData128>(
                 &mut tx_buf,
                 header,
-                self.mtu() as usize,
+                self.effective_mtu(),
                 attributes,
             ),
         };
@@ -314,7 +316,7 @@ where
         let mut builder = DynamicPacketBuilder::<_, HandlesInformation>::new(
             &mut tx_buf,
             header,
-            self.mtu() as usize,
+            self.effective_mtu(),
         );
 
         let start_handle = to_handle(start, Opcode::FindByTypeValueReq)?;
@@ -368,7 +370,7 @@ where
 
         // Read the attribute value from the database, capped to the maximum possible response size.
         let mut val_buf = [0u8; MAX_ATTRIBUTE_SIZE];
-        let response_capacity = self.mtu() as usize - size_of::<Header>();
+        let response_capacity = self.effective_mtu() - size_of::<Header>();
         let read_len = self
             .read_attribute_at(handle_val, 0, Opcode::ReadReq, &mut val_buf[..response_capacity])
             .await?;
@@ -378,7 +380,7 @@ where
         let mut builder = DynamicPacketBuilder::<_, u8>::new(
             &mut tx_buf,
             Header { opcode: Opcode::ReadRsp },
-            self.mtu() as usize,
+            self.effective_mtu(),
         );
         builder.extend_from_slice(&val_buf[..read_len]).expect("read response fits within MTU");
         self.send_packet(builder.as_packet()).await?;
@@ -399,7 +401,7 @@ where
 
         // Read the attribute chunk starting from the requested offset, capped to the response size.
         let mut val_buf = [0u8; MAX_ATTRIBUTE_SIZE];
-        let response_capacity = self.mtu() as usize - size_of::<Header>();
+        let response_capacity = self.effective_mtu() - size_of::<Header>();
         let read_len = self
             .read_attribute_at(
                 handle_val,
@@ -414,13 +416,127 @@ where
         let mut builder = DynamicPacketBuilder::<_, u8>::new(
             &mut tx_buf,
             Header { opcode: Opcode::ReadBlobRsp },
-            self.mtu() as usize,
+            self.effective_mtu(),
         );
         builder
             .extend_from_slice(&val_buf[..read_len])
             .expect("read blob response fits within MTU");
         self.send_packet(builder.as_packet()).await?;
 
+        Ok(())
+    }
+
+    /// Handles a Read By Type Request, querying the database for attributes
+    /// matching the given UUID type and handle range,
+    /// and returning a packed list of handles and values.
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Sections 3.4.4.7 & 3.4.4.8).
+    async fn handle_read_by_type(&mut self, payload: &[u8]) -> Result<(), TransactionError> {
+        let req = ReadByTypeReq::try_ref_from_bytes(payload)
+            .map_err(|_| TransactionError::InvalidPdu { request_opcode: Opcode::ReadByTypeReq })?;
+
+        let start_handle_val = req.header.starting_handle.get();
+        let end_handle_val = req.header.ending_handle.get();
+
+        let start_handle = to_handle(start_handle_val, Opcode::ReadByTypeReq)?;
+        let end_handle = to_handle(end_handle_val, Opcode::ReadByTypeReq)?;
+
+        // The starting handle must not be greater than the ending handle.
+        if start_handle > end_handle {
+            return Err(TransactionError::ErrorResponse {
+                request_opcode: Opcode::ReadByTypeReq,
+                attribute_handle: start_handle_val,
+                error_code: ErrorCode::InvalidHandle,
+            });
+        }
+
+        // Parse the variable-length attribute type parameter.
+        let uuid = Uuid::try_from(&req.attribute_type)
+            .map_err(|_| TransactionError::InvalidPdu { request_opcode: Opcode::ReadByTypeReq })?;
+
+        // Query the database for attributes matching the range and UUID.
+        let mut attributes = self
+            .database
+            .query_range(start_handle, end_handle)
+            .filter(|(_, attr)| attr.uuid() == &uuid)
+            .peekable();
+
+        // Return Error Response if no matching attributes are found.
+        if attributes.peek().is_none() {
+            return Err(TransactionError::ErrorResponse {
+                request_opcode: Opcode::ReadByTypeReq,
+                attribute_handle: start_handle_val,
+                error_code: ErrorCode::AttributeNotFound,
+            });
+        }
+
+        // We must read the first attribute to establish the element length
+        // before initializing the builder, so that the header is populated correctly.
+        let (first_handle, first_attr) = attributes.next().unwrap();
+        const MIN_PAYLOAD_SIZE: u8 =
+            (size_of::<Header>() + size_of::<u8>() + size_of::<AttributeHandle>()) as u8;
+
+        // The Length field is 1 byte, so the maximum size of an entry is u8::MAX (255).
+        // Since each entry must contain a handle, the maximum value length is
+        // u8::MAX - handle size = 253 bytes
+        const MAX_READ_BY_TYPE_VALUE_LEN: usize = u8::MAX as usize - size_of::<AttributeHandle>();
+
+        let limit = self.effective_mtu();
+
+        // If the attribute value is longer than (ATT_MTU - 4) octets, only the first
+        // (ATT_MTU - 4) octets are read in this response
+        //
+        // (see Bluetooth Core Spec v6.0, Vol 3, Part F, Section 3.4.4.8).
+        let first_read_limit = min(limit - MIN_PAYLOAD_SIZE as usize, MAX_READ_BY_TYPE_VALUE_LEN);
+
+        let mut first_val_buf = [0u8; MAX_ATTRIBUTE_SIZE];
+        let first_read_len = match first_attr
+            .read_chunk(self.peer_id, 0, &mut first_val_buf[..first_read_limit])
+            .await
+        {
+            Ok(len) => len,
+            Err(error_code) => {
+                return Err(TransactionError::ErrorResponse {
+                    request_opcode: Opcode::ReadByTypeReq,
+                    attribute_handle: first_handle.value(),
+                    error_code,
+                });
+            }
+        };
+
+        // Initialize the output packet builder with the correct header length.
+        let header = PacketBuilder {
+            header: Header { opcode: Opcode::ReadByTypeRsp },
+            payload: u8::try_from(size_of::<AttributeHandle>() + first_read_len)
+                .expect("ReadByTypeRsp payload length fits in u8"),
+        };
+        let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
+        let mut builder = DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header, limit);
+
+        // Pack the first attribute.
+        let first_handle_bytes = first_handle.value().to_le_bytes();
+        builder.extend_from_slice(&first_handle_bytes).unwrap();
+        builder.extend_from_slice(&first_val_buf[..first_read_len]).unwrap();
+
+        // Iterate and pack matching attributes into the response buffer.
+        for (handle, attr) in attributes {
+            if builder.len() + size_of::<AttributeHandle>() + first_read_len > limit {
+                break;
+            }
+
+            let mut val_buf = [0u8; MAX_ATTRIBUTE_SIZE];
+            match attr.read_chunk(self.peer_id, 0, &mut val_buf[..first_read_len]).await {
+                Ok(read_len) if read_len != first_read_len => break,
+                Ok(read_len) => {
+                    let handle_bytes = handle.value().to_le_bytes();
+                    builder.extend_from_slice(&handle_bytes).unwrap();
+                    builder.extend_from_slice(&val_buf[..read_len]).unwrap();
+                }
+                Err(_) => break, // Gracefully stop packing if subsequent reads fail
+            }
+        }
+
+        self.send_packet(builder.as_packet()).await?;
         Ok(())
     }
 
@@ -488,6 +604,10 @@ where
     pub fn mtu(&self) -> u16 {
         self.bearer_tx.mtu()
     }
+
+    fn effective_mtu(&self) -> usize {
+        usize::try_from(self.mtu()).unwrap_or(usize::MAX)
+    }
 }
 
 /// Converts a raw 16-bit value into a valid `AttributeHandle`.
@@ -510,7 +630,9 @@ mod tests {
     use crate::att::attribute::testing::MockAttribute;
     use crate::att::database::testing::MockDb;
     use crate::att::l2cap::mock::setup_mock_channel;
-    use crate::att::pdu::{FindByTypeValueReqHeader, FindInformationRsp, InformationData16};
+    use crate::att::pdu::{
+        FindByTypeValueReqHeader, FindInformationRsp, InformationData16, ReadByTypeReqHeader,
+    };
 
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
@@ -1445,6 +1567,159 @@ mod tests {
                 assert_eq!(packet.header.opcode, Opcode::ReadBlobRsp);
                 let expected: &[u8] = b"5678901234567890123456";
                 assert_eq!(packet.data, *expected);
+            });
+
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_read_by_type_success() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            db.insert(h(2), MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone"));
+            db.insert(h(4), MockAttribute::new(Uuid::from_u16(0x2A00), b"Sapphire"));
+            db.insert(h(6), MockAttribute::new(Uuid::from_u16(0x2A00), b"Gatt")); // different length!
+
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut client_tx_bearer = BearerTx::new(app_channel.sender);
+
+                let uuid = Uuid::from_u16(0x2A00);
+                let header_builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ReadByTypeReq },
+                    payload: ReadByTypeReqHeader {
+                        starting_handle: U16::new(1),
+                        ending_handle: U16::new(10),
+                    },
+                };
+                let mut tx_buf = [0u8; 64];
+                let mut builder = DynamicPacketBuilder::<_, u8>::new(
+                    &mut tx_buf,
+                    header_builder,
+                    SERVER_MTU as usize,
+                );
+                builder.extend_from_slice(uuid.as_bytes()).unwrap();
+                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ReadByTypeRsp);
+
+                const VALUE_SIZE: usize = 8;
+                const ENTRY_SIZE: u8 = (size_of::<AttributeHandle>() + VALUE_SIZE) as u8;
+
+                assert_eq!(packet.data[0], ENTRY_SIZE);
+
+                // Entry 1 (handle 2, "Sunstone")
+                let h1_val = u16::from_le_bytes([packet.data[1], packet.data[2]]);
+                assert_eq!(h1_val, 2);
+                assert_eq!(&packet.data[3..11], b"Sunstone");
+
+                // Entry 2 (handle 4, "Sapphire")
+                let h2_val = u16::from_le_bytes([packet.data[11], packet.data[12]]);
+                assert_eq!(h2_val, 4);
+                assert_eq!(&packet.data[13..21], b"Sapphire");
+
+                assert_eq!(packet.data.len(), 1 + ENTRY_SIZE as usize * 2);
+            });
+
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_read_by_type_errors() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            db.insert(h(2), MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone"));
+
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut client_tx_bearer = BearerTx::new(app_channel.sender);
+
+                // 1. Query for non-existent UUID 0x2A01
+                let uuid = Uuid::from_u16(0x2A01);
+                let header_builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ReadByTypeReq },
+                    payload: ReadByTypeReqHeader {
+                        starting_handle: U16::new(1),
+                        ending_handle: U16::new(10),
+                    },
+                };
+                let mut tx_buf = [0u8; 64];
+                let mut builder = DynamicPacketBuilder::<_, u8>::new(
+                    &mut tx_buf,
+                    header_builder,
+                    SERVER_MTU as usize,
+                );
+                builder.extend_from_slice(uuid.as_bytes()).unwrap();
+                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(err.request_opcode, Opcode::ReadByTypeReq as u8);
+                assert_eq!(err.error_code, ErrorCode::AttributeNotFound);
+
+                // 2. Query with invalid range (start > end)
+                let uuid = Uuid::from_u16(0x2A00);
+                let header_builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ReadByTypeReq },
+                    payload: ReadByTypeReqHeader {
+                        starting_handle: U16::new(10), // start = 10
+                        ending_handle: U16::new(5),    // end = 5
+                    },
+                };
+                let mut tx_buf = [0u8; 64];
+                let mut builder = DynamicPacketBuilder::<_, u8>::new(
+                    &mut tx_buf,
+                    header_builder,
+                    SERVER_MTU as usize,
+                );
+                builder.extend_from_slice(uuid.as_bytes()).unwrap();
+                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(err.request_opcode, Opcode::ReadByTypeReq as u8);
+                assert_eq!(err.error_code, ErrorCode::InvalidHandle);
             });
 
             let server_handle = executor.spawn(async move {

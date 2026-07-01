@@ -17,6 +17,9 @@ impl Uuid {
     /// The size of a 32-bit UUID in bytes.
     const SIZE_32: usize = 4;
 
+    /// The size of a 128-bit UUID in bytes.
+    const SIZE_128: usize = 16;
+
     /// The offset (in bytes) where a 16-bit or 32-bit UUID value is inserted into
     /// the 128-bit Base UUID (96 bits = 12 bytes offset).
     ///
@@ -156,6 +159,27 @@ impl TryFrom<Uuid> for [u8; 4] {
         Ok(u32::try_from(uuid)?.to_le_bytes())
     }
 }
+impl TryFrom<&[u8]> for Uuid {
+    type Error = UuidError;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        if bytes.len() == Self::SIZE_16 {
+            let arr: [u8; Self::SIZE_16] =
+                bytes.try_into().map_err(|_| UuidError::InvalidConversion)?;
+            Ok(Self::from_u16(u16::from_le_bytes(arr)))
+        } else if bytes.len() == Self::SIZE_32 {
+            let arr: [u8; Self::SIZE_32] =
+                bytes.try_into().map_err(|_| UuidError::InvalidConversion)?;
+            Ok(Self::from_u32(u32::from_le_bytes(arr)))
+        } else if bytes.len() == Self::SIZE_128 {
+            let arr: [u8; Self::SIZE_128] =
+                bytes.try_into().map_err(|_| UuidError::InvalidConversion)?;
+            Ok(Self::from_le_bytes(arr))
+        } else {
+            Err(UuidError::InvalidConversion)
+        }
+    }
+}
 
 impl From<u16> for Uuid {
     fn from(value: u16) -> Self {
@@ -234,6 +258,28 @@ mod tests {
         let u128_val = 0x123456789abcdef01122334455667788;
         let uuid_128: Uuid = u128_val.into();
         assert_eq!(uuid_128, Uuid::from_u128(u128_val));
+    }
+
+    #[test]
+    fn test_uuid_try_from_slice() {
+        // Valid 16-bit UUID slice
+        let uuid_16_bytes = [0x0F, 0x18];
+        let uuid_16 = Uuid::try_from(&uuid_16_bytes[..]);
+        assert_eq!(uuid_16, Ok(Uuid::from_u16(0x180F)));
+
+        // Valid 128-bit UUID slice
+        let uuid_128_bytes = [1u8; 16];
+        let uuid_128 = Uuid::try_from(&uuid_128_bytes[..]);
+        assert_eq!(uuid_128, Ok(Uuid::from_le_bytes(uuid_128_bytes)));
+
+        // Valid 32-bit UUID slice
+        let uuid_32_bytes = [0x78, 0x56, 0x34, 0x12];
+        let uuid_32 = Uuid::try_from(&uuid_32_bytes[..]);
+        assert_eq!(uuid_32, Ok(Uuid::from_u32(0x12345678)));
+
+        // Invalid length slices (e.g. 3 bytes or 0 bytes)
+        assert_eq!(Uuid::try_from(&[1, 2, 3][..]), Err(UuidError::InvalidConversion));
+        assert_eq!(Uuid::try_from(&[][..]), Err(UuidError::InvalidConversion));
     }
 
     #[cfg(feature = "testing")]
