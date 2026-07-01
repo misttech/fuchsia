@@ -6,10 +6,8 @@
 #include <fidl/fuchsia.hardware.audio/cpp/wire.h>
 #include <lib/inspect/testing/cpp/zxtest/inspect.h>
 #include <lib/simple-audio-stream/simple-audio-stream.h>
-#include <lib/sync/completion.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/clock.h>
-#include <threads.h>
 #include <zircon/errors.h>
 
 #include <set>
@@ -97,7 +95,7 @@ class MockSimpleAudio : public SimpleAudioStream {
 
     external_delay_nsec_ = kTestExternalDelay;
     driver_transfer_bytes_ = kTestDriverTransferBytes;
-    clock_domain_ = kTestClockDomain;
+    clock_domain_ = static_cast<int32_t>(kTestClockDomain);
 
     // Set our gain capabilities.
     cur_gain_state_.cur_gain = 0;
@@ -292,21 +290,29 @@ TEST_F(SimpleAudioTest, WatchGainAndCloseStreamBeforeReply) {
   ASSERT_EQ(MockSimpleAudio::kTestGain, gain_state.value().gain_state.gain_db());
 
   // A second watch with no reply since there is no change of gain.
-  auto f = [](void* arg) -> int {
-    auto stream_client = static_cast<fidl::WireSyncClient<audio_fidl::StreamConfig>*>(arg);
-    [[maybe_unused]] auto result = (*stream_client)->WatchGainState();
-    return 0;
-  };
-  thrd_t th;
-  ASSERT_OK(thrd_create_with_name(&th, f, &stream_client, "test-thread"));
+  // We use an asynchronous WireClient on a local client_loop to send this hanging get without
+  // blocking the main test thread.
+  async::Loop client_loop(&kAsyncLoopConfigAttachToCurrentThread);
+  std::optional<fidl::WireClient<audio_fidl::StreamConfig>> client;
+  client.emplace(stream_client.TakeClientEnd(), client_loop.dispatcher());
 
-  // We want the watch to be started before we reset the channel triggering a deactivation.
-  zx::nanosleep(zx::deadline_after(zx::msec(100)));
-  stream_client.TakeClientEnd().TakeChannel().reset();
+  // Send secondary WatchGainState request on the channel. Because the gain state has not changed
+  // since the initial reply above, the server will not reply immediately; this becomes a pending
+  // hanging get request on the server side.
+  (*client)->WatchGainState().Then([](auto& result) {});
 
-  int result = -1;
-  thrd_join(th, &result);
-  ASSERT_EQ(result, 0);
+  bool watch_ready = false;
+  (*client)->GetProperties().Then([&](auto& result) { watch_ready = true; });
+
+  // Run the loop, blocking until events are processed, rather than busy-waiting.
+  // Passing once=true causes Run() to return after processing a single event.
+  while (!watch_ready) {
+    client_loop.Run(zx::time::infinite(), /* once= */ true);
+  }
+
+  // Now close the channel while the secondary WatchGainState hanging get is still pending.
+  // This verifies that SimpleAudioStream cleanly handles peer closure during pending hanging gets.
+  client.reset();
   loop_.Shutdown();
   server->DdkAsyncRemove();
   mock_ddk::ReleaseFlaggedDevices(root_.get());
@@ -935,35 +941,58 @@ TEST_F(SimpleAudioTest, MultipleChannelsGainStateNotify) {
   ASSERT_EQ(0.0f, state2a.value().gain_state.gain_db());
   ASSERT_EQ(0.0f, state3a.value().gain_state.gain_db());
 
-  auto f = [](void* arg) -> int {
-    zx::nanosleep(zx::deadline_after(zx::msec(100)));
-    auto stream_client = static_cast<fidl::WireSyncClient<audio_fidl::StreamConfig>*>(arg);
+  // Use asynchronous WireClients on a local client_loop to send secondary WatchGainState requests
+  // without blocking the main test thread.
+  async::Loop client_loop(&kAsyncLoopConfigAttachToCurrentThread);
+  std::optional<fidl::WireClient<audio_fidl::StreamConfig>> client1;
+  client1.emplace(stream_client1.TakeClientEnd(), client_loop.dispatcher());
+  std::optional<fidl::WireClient<audio_fidl::StreamConfig>> client2;
+  client2.emplace(stream_client2.TakeClientEnd(), client_loop.dispatcher());
+  std::optional<fidl::WireClient<audio_fidl::StreamConfig>> client3;
+  client3.emplace(stream_client3.TakeClientEnd(), client_loop.dispatcher());
 
-    fidl::Arena allocator;
-    auto gain_state = audio_fidl::wire::GainState::Builder(allocator)
-                          .muted(false)
-                          .agc_enabled(false)
-                          .gain_db(MockSimpleAudio::kTestGain)
-                          .Build();
-    auto result = (*stream_client)->SetGain(gain_state);
-    return result.ok() ? 0 : 1;
-  };
-  thrd_t th;
-  ASSERT_OK(thrd_create_with_name(&th, f, &stream_client1, "test-thread"));
+  bool watch1_done = false, watch2_done = false, watch3_done = false;
+  (*client1)->WatchGainState().Then([&](auto& result) {
+    ASSERT_OK(result.status());
+    ASSERT_EQ(MockSimpleAudio::kTestGain, result.value().gain_state.gain_db());
+    watch1_done = true;
+  });
+  (*client2)->WatchGainState().Then([&](auto& result) {
+    ASSERT_OK(result.status());
+    ASSERT_EQ(MockSimpleAudio::kTestGain, result.value().gain_state.gain_db());
+    watch2_done = true;
+  });
+  (*client3)->WatchGainState().Then([&](auto& result) {
+    ASSERT_OK(result.status());
+    ASSERT_EQ(MockSimpleAudio::kTestGain, result.value().gain_state.gain_db());
+    watch3_done = true;
+  });
 
-  auto state1b = stream_client1->WatchGainState();
-  auto state2b = stream_client2->WatchGainState();
-  auto state3b = stream_client3->WatchGainState();
-  ASSERT_OK(state1b.status());
-  ASSERT_OK(state2b.status());
-  ASSERT_OK(state3b.status());
-  ASSERT_EQ(MockSimpleAudio::kTestGain, state1b.value().gain_state.gain_db());
-  ASSERT_EQ(MockSimpleAudio::kTestGain, state2b.value().gain_state.gain_db());
-  ASSERT_EQ(MockSimpleAudio::kTestGain, state3b.value().gain_state.gain_db());
+  // Use GetProperties as a FIFO barrier on each channel to ensure the server has dequeued and
+  // registered all three hanging get requests before we change the gain.
+  bool ready1 = false, ready2 = false, ready3 = false;
+  (*client1)->GetProperties().Then([&](auto& result) { ready1 = true; });
+  (*client2)->GetProperties().Then([&](auto& result) { ready2 = true; });
+  (*client3)->GetProperties().Then([&](auto& result) { ready3 = true; });
 
-  int result = -1;
-  thrd_join(th, &result);
-  ASSERT_EQ(result, 0);
+  while (!ready1 || !ready2 || !ready3) {
+    client_loop.Run(zx::time::infinite(), /* once= */ true);
+  }
+
+  // Now change the gain. This should trigger completion of the pending WatchGainState requests
+  // on all three channels.
+  fidl::Arena allocator;
+  auto gain_state = audio_fidl::wire::GainState::Builder(allocator)
+                        .muted(false)
+                        .agc_enabled(false)
+                        .gain_db(MockSimpleAudio::kTestGain)
+                        .Build();
+  auto status = (*client1)->SetGain(gain_state);
+  ASSERT_OK(status.status());
+
+  while (!watch1_done || !watch2_done || !watch3_done) {
+    client_loop.Run(zx::time::infinite(), /* once= */ true);
+  }
   loop_.Shutdown();
   server->DdkAsyncRemove();
   mock_ddk::ReleaseFlaggedDevices(root_.get());
@@ -1262,23 +1291,27 @@ TEST_F(SimpleAudioTest, WatchPositionAndCloseRingBufferBeforeReply) {
   auto start = fidl::WireCall(local)->Start();
   ASSERT_OK(start.status());
 
-  // Watch position notifications.
-  auto f = [](void* arg) -> int {
-    auto ch = static_cast<fidl::ClientEnd<audio_fidl::RingBuffer>*>(arg);
-    [[maybe_unused]] auto result = fidl::WireCall(*ch)->WatchClockRecoveryPositionInfo();
-    return 0;
-  };
-  thrd_t th;
-  ASSERT_OK(thrd_create_with_name(&th, f, &local, "test-thread"));
+  // Watch position notifications using an asynchronous WireClient on a local client_loop to send
+  // this hanging get without blocking the main test thread.
+  async::Loop client_loop(&kAsyncLoopConfigAttachToCurrentThread);
+  std::optional<fidl::WireClient<audio_fidl::RingBuffer>> client;
+  client.emplace(std::move(local), client_loop.dispatcher());
 
-  // We want the watch to be started before we reset the channel triggering a deactivation.
-  zx::nanosleep(zx::deadline_after(zx::msec(100)));
-  local.reset();
+  (*client)->WatchClockRecoveryPositionInfo().Then([](auto& result) {});
+
+  // Use GetProperties as a FIFO barrier to ensure the server has dequeued and registered the
+  // WatchClockRecoveryPositionInfo hanging get before we close the channel.
+  bool watch_ready = false;
+  (*client)->GetProperties().Then([&](auto& result) { watch_ready = true; });
+
+  while (!watch_ready) {
+    client_loop.Run(zx::time::infinite(), /* once= */ true);
+  }
+
+  // Now close the channel while the WatchClockRecoveryPositionInfo hanging get is still pending.
+  // This verifies that SimpleAudioStream cleanly handles peer closure during pending hanging gets.
+  client.reset();
   stream_client.TakeClientEnd().TakeChannel().reset();
-
-  int result = -1;
-  thrd_join(th, &result);
-  ASSERT_EQ(result, 0);
   loop_.Shutdown();
   server->DdkAsyncRemove();
   mock_ddk::ReleaseFlaggedDevices(root_.get());
