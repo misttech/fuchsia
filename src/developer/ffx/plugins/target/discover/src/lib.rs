@@ -89,8 +89,9 @@ impl DiscoveryRunner for RealDiscoveryRunner {
         let devices =
             ffx_target::create_target_cache(&self.context).await.map_err(anyhow::Error::from)?;
         if matches!(self.output_mode, Output::All) {
+            let mut stdout = std::io::stdout();
             for h in devices {
-                print_device(h);
+                let _ = print_device(&mut stdout, h);
             }
         }
         Ok(())
@@ -454,12 +455,29 @@ fn format_addrs(addrs: &[TargetAddr]) -> String {
     addrs.iter().map(|a| a.optional_port_str()).collect::<Vec<_>>().join(",")
 }
 
-fn print_device(info: ffx_target::TargetInfo) {
+fn format_serial(serial: &Option<String>) -> String {
+    match serial {
+        Some(serial) => format!(" (serial: {})", serial),
+        None => "".to_string(),
+    }
+}
+
+fn print_device<W: std::io::Write>(
+    writer: &mut W,
+    info: ffx_target::TargetInfo,
+) -> std::io::Result<()> {
     let node_s = match info.nodename {
         Some(name) => name,
         None => "<unknown>".to_string(),
     };
-    println!("{node_s} ({}): {}", info.target_state, format_addrs(&info.addresses));
+    let serial_s = format_serial(&info.serial_number);
+    writeln!(
+        writer,
+        "{node_s} ({}): {}{}",
+        info.target_state,
+        format_addrs(&info.addresses),
+        serial_s
+    )
 }
 
 // Minimal version of tokio-stream::wrappers::SignalStream, since we don't currently have that
@@ -556,6 +574,44 @@ mod tests {
                 Ok(())
             }
         }
+    }
+
+    #[test]
+    fn test_print_device_with_serial() {
+        let mut buf = Vec::new();
+        let info = ffx_target::TargetInfo {
+            nodename: Some("test-device".to_string()),
+            target_state: ffx_target::info::TargetState::Product,
+            addresses: vec![TargetAddr::new(
+                std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
+                0,
+                8022,
+            )],
+            serial_number: Some("12345".to_string()),
+            ..Default::default()
+        };
+        print_device(&mut buf, info).unwrap();
+        let output = String::from_utf8(buf).unwrap();
+        assert_eq!(output, "test-device (product): 127.0.0.1:8022 (serial: 12345)\n");
+    }
+
+    #[test]
+    fn test_print_device_no_serial() {
+        let mut buf = Vec::new();
+        let info = ffx_target::TargetInfo {
+            nodename: Some("test-device".to_string()),
+            target_state: ffx_target::info::TargetState::Product,
+            addresses: vec![TargetAddr::new(
+                std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
+                0,
+                8022,
+            )],
+            serial_number: None,
+            ..Default::default()
+        };
+        print_device(&mut buf, info).unwrap();
+        let output = String::from_utf8(buf).unwrap();
+        assert_eq!(output, "test-device (product): 127.0.0.1:8022\n");
     }
 
     #[fuchsia::test]
