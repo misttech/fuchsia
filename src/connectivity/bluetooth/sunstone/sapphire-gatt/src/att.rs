@@ -7,6 +7,7 @@ mod bearer;
 mod l2cap;
 pub mod pdu;
 
+pub mod attribute;
 pub mod client;
 pub mod server;
 
