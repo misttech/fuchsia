@@ -4,14 +4,12 @@
 
 #include "src/graphics/display/lib/driver-framework-migration-utils/metadata/metadata-getter-dfv2.h"
 
-#include <fidl/fuchsia.component.runner/cpp/fidl.h>
-#include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/component/incoming/cpp/constants.h>
 #include <lib/driver/compat/cpp/device_server.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/incoming/cpp/namespace.h>
-#include <lib/driver/testing/cpp/driver_runtime.h>
-#include <lib/driver/testing/cpp/internal/test_environment.h>
-#include <lib/driver/testing/cpp/test_node.h>
+#include <lib/driver/testing/cpp/driver_test.h>
 
 #include <gtest/gtest.h>
 
@@ -35,55 +33,78 @@ constexpr TestMetadata kTestMetadata = {
     .device_id = 0x9a'ab'bc'cd,
 };
 
-struct IncomingNamespace {
-  fdf_testing::TestNode node{std::string("root")};
-  fdf_testing::internal::TestEnvironment env{fdf::Dispatcher::GetCurrent()->get()};
-  compat::DeviceServer compat_server;
+class Dfv2Driver : public fdf::DriverBase2 {
+ public:
+  static DriverRegistration GetDriverRegistration() {
+    return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer2<Dfv2Driver>::initialize,
+                                          fdf_internal::DriverServer2<Dfv2Driver>::destroy);
+  }
+
+  Dfv2Driver() : fdf::DriverBase2("dfv2-driver") {}
+
+  zx::result<> Start(fdf::DriverContext context) override {
+    incoming_namespace_ = context.take_incoming();
+    return zx::ok();
+  }
+
+  std::shared_ptr<fdf::Namespace> incoming_namespace() const { return incoming_namespace_; }
+
+ private:
+  std::shared_ptr<fdf::Namespace> incoming_namespace_;
 };
 
-// WARNING: Don't use this test as a template for new tests as it uses the old driver testing
-// library.
-class MetadataGetterDfv2Test : public testing::Test {
+class DriverTestEnvironment : public fdf_testing::Environment {
  public:
-  // implements `testing::Test`.
+  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
+    compat_server_.Initialize(component::kDefaultInstance);
+
+    zx_status_t add_metadata_status =
+        compat_server_.AddMetadata(kTestMetadataType, &kTestMetadata, sizeof(TestMetadata));
+    if (add_metadata_status != ZX_OK) {
+      return zx::error(add_metadata_status);
+    }
+
+    zx_status_t serve_status =
+        compat_server_.Serve(fdf::Dispatcher::GetCurrent()->async_dispatcher(), &to_driver_vfs);
+    if (serve_status != ZX_OK) {
+      return zx::error(serve_status);
+    }
+
+    return zx::ok();
+  }
+
+ private:
+  compat::DeviceServer compat_server_;
+};
+
+class TestConfig final {
+ public:
+  using DriverType = Dfv2Driver;
+  using EnvironmentType = DriverTestEnvironment;
+};
+
+class MetadataGetterDfv2Test : public ::testing::Test {
+ public:
   void SetUp() override {
-    zx::result<fdf_testing::TestNode::CreateStartArgsResult> start_args_result = incoming_.SyncCall(
-        [&](IncomingNamespace* incoming) { return incoming->node.CreateStartArgsAndServe(); });
+    zx::result<> start_result = driver_test().StartDriver();
+    ASSERT_OK(start_result.status_value());
 
-    ASSERT_TRUE(start_args_result.is_ok());
+    namespace_ = driver_test().driver()->incoming_namespace();
+    ASSERT_NE(namespace_, nullptr);
+  }
 
-    zx::result test_environment_init_result = incoming_.SyncCall([&](IncomingNamespace* incoming) {
-      return incoming->env.Initialize(std::move(start_args_result->incoming_directory_server));
-    });
-    ASSERT_TRUE(test_environment_init_result.is_ok());
-
-    incoming_.SyncCall([&](IncomingNamespace* incoming) {
-      incoming->compat_server.Initialize(component::kDefaultInstance);
-
-      zx_status_t add_metadata_status = incoming->compat_server.AddMetadata(
-          kTestMetadataType, &kTestMetadata, sizeof(TestMetadata));
-      ASSERT_OK(add_metadata_status);
-
-      zx_status_t serve_status = incoming->compat_server.Serve(env_dispatcher_->async_dispatcher(),
-                                                               &incoming->env.incoming_directory());
-      ASSERT_OK(serve_status);
-    });
-
-    zx::result<fdf::Namespace> namespace_result =
-        fdf::Namespace::Create(*start_args_result->start_args.incoming());
-    ASSERT_OK(namespace_result.status_value());
-
-    namespace_ = std::make_shared<fdf::Namespace>(std::move(namespace_result).value());
+  void TearDown() override {
+    zx::result<> stop_result = driver_test().StopDriver();
+    ASSERT_OK(stop_result.status_value());
   }
 
  protected:
-  fdf_testing::DriverRuntime runtime_;
-  fdf::UnownedSynchronizedDispatcher env_dispatcher_ = runtime_.StartBackgroundDispatcher();
-
-  async_patterns::TestDispatcherBound<IncomingNamespace> incoming_{
-      env_dispatcher_->async_dispatcher(), std::in_place};
+  fdf_testing::ForegroundDriverTest<TestConfig>& driver_test() { return driver_test_; }
 
   std::shared_ptr<fdf::Namespace> namespace_;
+
+ private:
+  fdf_testing::ForegroundDriverTest<TestConfig> driver_test_;
 };
 
 TEST_F(MetadataGetterDfv2Test, GetMetadata) {

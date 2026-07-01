@@ -78,12 +78,10 @@ test("metadata-getter-dfv2-tests-bin") {
 
   deps = [
     ":metadata-getter-dfv2",
-    "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_cpp",
-    "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/incoming/cpp",
-    "//sdk/lib/driver/runtime:driver_runtime_cpp",
     "//sdk/lib/driver/testing/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
