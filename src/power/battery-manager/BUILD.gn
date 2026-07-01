@@ -25,7 +25,6 @@ battery_manager_deps = [
   "//sdk/lib/power/state_recorder/rust",
   "//sdk/rust/zx",
   "//src/lib/async-utils",
-  "//src/lib/diagnostics/inspect/contrib/rust",
   "//src/lib/diagnostics/inspect/runtime/rust",
   "//src/lib/diagnostics/inspect/rust",
   "//src/lib/fidl/rust/fidl",

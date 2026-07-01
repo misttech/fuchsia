@@ -9,7 +9,7 @@ mod polisher;
 
 use crate::battery_manager::{BatteryManager, BatterySimulationStateObserver};
 use crate::battery_simulator::SimulatedBatteryInfoSource;
-use crate::history_logger::{HistoryLogger, HistoryLoggerConfig, RecorderConfig};
+use crate::history_logger::RecorderConfig;
 use anyhow::Error;
 use battery_manager_config::Config;
 use fidl_fuchsia_hardware_power_battery as fbattery;
@@ -23,7 +23,6 @@ use fuchsia_inspect::{self as inspect};
 use futures::prelude::*;
 use inspect_runtime::PublishOptions;
 use log::{error, info, warn};
-use std::path::Path;
 use std::sync::{Arc, Weak};
 
 pub(crate) enum BatteryInfoSource {
@@ -36,17 +35,7 @@ enum IncomingService {
     BatterySimulator(spower::BatterySimulatorRequestStream),
 }
 
-const MAX_BATTERY_LEVEL_MEASUREMENTS: usize = 1440;
-
 const CURR_BOOT_BATTERY_HISTORY_FILE: &str = "/data/history.txt";
-const PREV_BOOT_BATTERY_HISTORY_FILE: &str = "/tmp/history.txt";
-
-// Record up to 144 battery charge status changes.
-//
-// This value was picked assuming there will be 1 charge status change for every 10 battery
-// level measurements and it's expected the charge status change history will cover more time than
-// the battery level measurements.
-const MAX_CHARGE_STATUS_MEASUREMENTS: usize = 144;
 
 async fn get_battery_info_source() -> Result<BatteryInfoSource, Error> {
     info!("Looking for battery info service (new or old)...");
@@ -122,32 +111,11 @@ async fn get_battery_info_source() -> Result<BatteryInfoSource, Error> {
     }
 }
 
-fn move_battery_history() {
-    // The previous boot values being present means this isn't the first time the component has
-    // started in this boot. The previous boot values are stored in /tmp and aren't persisted
-    // across boots.
-    if Path::new(PREV_BOOT_BATTERY_HISTORY_FILE).exists() {
-        warn!("Not moving history, {} already exists", PREV_BOOT_BATTERY_HISTORY_FILE);
-        return;
-    }
-
-    // Move content by reading then writing it for moves from /data to /tmp.
-    let content = match std::fs::read_to_string(CURR_BOOT_BATTERY_HISTORY_FILE) {
-        Ok(c) => c,
-        Err(e) => {
-            info!("Could not read current boot history, not moving: {}", e);
-            return;
-        }
-    };
-
-    if let Err(e) = std::fs::write(PREV_BOOT_BATTERY_HISTORY_FILE, &content) {
-        warn!("Could not write previous boot history: {}", e);
-        return;
-    }
-
-    if let Err(e) = std::fs::File::create(CURR_BOOT_BATTERY_HISTORY_FILE) {
-        warn!("Could not clear current boot history: {}", e);
-    }
+// TODO(b/523292405): Remove this function and the CURR_BOOT_BATTERY_HISTORY_FILE constant
+// once we are confident that the legacy history file has been cleaned up from all user devices.
+fn remove_battery_history() {
+    // Remove legacy battery history file if it exists.
+    let _ = std::fs::remove_file(CURR_BOOT_BATTERY_HISTORY_FILE);
 }
 
 #[fuchsia::main(logging_tags = ["battery_manager"])]
@@ -158,21 +126,11 @@ async fn main() -> Result<(), Error> {
     let _inspect_server_task = inspect_runtime::publish(inspector, PublishOptions::default());
     inspect::component::serve_inspect_stats();
 
-    // Move the battery history files before the service starts to ensure they're in the locations
-    // it expects.
-    move_battery_history();
-
-    let logger_config = HistoryLoggerConfig {
-        curr_boot_path: CURR_BOOT_BATTERY_HISTORY_FILE.to_string(),
-        prev_boot_path: PREV_BOOT_BATTERY_HISTORY_FILE.to_string(),
-        battery_level_buffer_capacity: MAX_BATTERY_LEVEL_MEASUREMENTS,
-        charge_status_buffer_capacity: MAX_CHARGE_STATUS_MEASUREMENTS,
-    };
-
-    let logger = HistoryLogger::from_file(inspector.root(), logger_config);
+    // Remove the legacy battery history file before the service starts.
+    remove_battery_history();
 
     let config = RecorderConfig::default();
-    let battery_manager = Arc::new(BatteryManager::new_with_logger(logger, config));
+    let battery_manager = Arc::new(BatteryManager::new(config));
     let battery_manager_clone = battery_manager.clone();
 
     let config = Config::take_from_startup_handle();

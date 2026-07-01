@@ -3,9 +3,7 @@
 // found in the LICENSE file.
 
 use crate::BatteryInfoSource;
-use crate::history_logger::{
-    BatteryInfoRecorders, FaultRecoveryEvent, HistoryLogger, RecorderConfig,
-};
+use crate::history_logger::{BatteryInfoRecorders, FaultRecoveryEvent, RecorderConfig};
 use crate::polisher::Polisher;
 use anyhow::Error;
 use async_utils::hanging_get::client::HangingGetStream;
@@ -126,13 +124,10 @@ pub struct BatteryManager {
     simulation_state: RefCell<bool>,
     simulated_battery_info: RefCell<fpower::BatteryInfo>,
     data_polisher: RefCell<Polisher>,
-    /// Publishes battery events to Inspect.
-    history_logger: Rc<RefCell<HistoryLogger>>,
     info_recorders: BatteryInfoRecorders,
     /// Blocking suspension if charging
     charge_wake_lease: RefCell<Option<fsystem::LeaseToken>>,
 
-    previous_level: RefCell<Option<f32>>,
     update_sender: mpsc::Sender<(fpower::BatteryInfo, Option<zx::EventPair>)>,
 }
 
@@ -142,10 +137,7 @@ fn get_current_time() -> i64 {
 }
 
 impl BatteryManager {
-    pub fn new_with_logger(
-        logger: HistoryLogger,
-        recorder_config: RecorderConfig,
-    ) -> BatteryManager {
+    pub fn new(recorder_config: RecorderConfig) -> BatteryManager {
         let watchers_rc = Rc::new(RefCell::new(Vec::new()));
         // For now the size is arbitrary chosen. Will log error and catch in CQ.
         let (sender, receiver) = futures::channel::mpsc::channel(10);
@@ -177,10 +169,8 @@ impl BatteryManager {
                 ..Default::default()
             }),
             data_polisher: RefCell::new(Polisher::new()),
-            history_logger: Rc::new(RefCell::new(logger)),
             info_recorders: BatteryInfoRecorders::new(recorder_config),
             charge_wake_lease: RefCell::new(None),
-            previous_level: RefCell::new(None),
             update_sender: sender,
         }
     }
@@ -289,16 +279,6 @@ impl BatteryManager {
         }
     }
 
-    fn publish_battery_level_on_change(&self, new_level: Option<f32>) {
-        if let Some(level_to_publish) = new_level {
-            let mut previous_level = self.previous_level.borrow_mut();
-            if new_level != *previous_level {
-                *previous_level = new_level;
-                self.publish_battery_level(level_to_publish);
-            }
-        }
-    }
-
     async fn update_battery_info(
         &self,
         info: fpower::BatteryInfo,
@@ -335,9 +315,6 @@ impl BatteryManager {
     }
 
     fn publish_to_inspect(&self, info: &fpower::BatteryInfo) {
-        self.publish_battery_level_on_change(info.level_percent);
-        self.publish_charge_status(info.charge_status);
-
         self.info_recorders.record_level_on_change(info);
         self.info_recorders.record_present_voltage(info.present_voltage_mv);
         self.info_recorders.record_remaining_capacity(info.remaining_charge_uah);
@@ -540,14 +517,6 @@ impl BatteryManager {
         res
     }
 
-    fn publish_battery_level(&self, percent: f32) {
-        self.history_logger.borrow_mut().add_battery_level(zx::BootInstant::get(), percent as i32);
-    }
-
-    fn publish_charge_status(&self, status: Option<fpower::ChargeStatus>) {
-        self.history_logger.borrow_mut().update_charge_status(zx::BootInstant::get(), status);
-    }
-
     // This function takes a reference to an Option<zx::EventPair>
     // and returns a new Option containing a duplicated handle, or None.
     fn duplicate_wake_lease(wake_lease_ref: &Option<zx::EventPair>) -> Option<zx::EventPair> {
@@ -562,47 +531,24 @@ impl BatteryManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::HistoryLoggerConfig;
     use crate::history_logger::PersistenceDirs;
     use async_utils::hanging_get::server::HangingGet;
     use fidl::endpoints::create_request_stream;
     use fuchsia_inspect::{self as inspect};
     use futures::channel::oneshot;
-    use futures::future::*;
+    use futures::future::{join, join3};
     use log::info;
     use std::collections::VecDeque;
     use std::fs;
     use std::sync::Arc;
     use tempfile::{TempDir, tempdir};
 
-    fn create_config(
-        dir: &TempDir,
-        battery_level_buffer_capacity: usize,
-        charge_status_buffer_capacity: usize,
-        curr_boot_file: &str,
-        prev_boot_file: &str,
-    ) -> HistoryLoggerConfig {
-        HistoryLoggerConfig {
-            curr_boot_path: dir.path().join(curr_boot_file).to_str().unwrap().to_string(),
-            prev_boot_path: dir.path().join(prev_boot_file).to_str().unwrap().to_string(),
-            battery_level_buffer_capacity,
-            charge_status_buffer_capacity,
-        }
-    }
-
     pub fn create_manager() -> (TempDir, BatteryManager) {
-        let inspector = inspect::Inspector::default();
         let dir = tempdir().unwrap();
         let storage_path = dir.path().join("data");
         let volatile_path = dir.path().join("tmp");
         fs::create_dir(&storage_path).unwrap();
         fs::create_dir(&volatile_path).unwrap();
-
-        let config = create_config(&dir, 3, 3, "curr_data.txt", "prev_data.txt");
-        let mut logger = HistoryLogger::from_file(inspector.root(), config);
-        logger.change_temporary_file_for_renaming_for_test(
-            dir.path().join("tmp.txt").to_str().unwrap().to_string(),
-        );
 
         let storage_dir = dir.path().to_str().unwrap().to_string();
         let volatile_dir = dir.path().to_str().unwrap().to_string();
@@ -610,7 +556,7 @@ mod tests {
         let recorder_config = RecorderConfig {
             persistence_dirs: Some(PersistenceDirs { storage_dir, volatile_dir }),
         };
-        let battery_manager = BatteryManager::new_with_logger(logger, recorder_config);
+        let battery_manager = BatteryManager::new(recorder_config);
         (dir, battery_manager)
     }
 
