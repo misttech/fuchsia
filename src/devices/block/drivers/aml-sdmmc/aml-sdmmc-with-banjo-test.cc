@@ -19,8 +19,7 @@
 #include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/driver/power/cpp/testing/fake_element_control.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
-#include <lib/driver/testing/cpp/internal/driver_lifecycle.h>
-#include <lib/driver/testing/cpp/internal/test_environment.h>
+#include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/driver/testing/cpp/test_node.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/inspect/testing/cpp/zxtest/inspect.h>
@@ -247,25 +246,76 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology> {
   std::vector<PowerElement> servers_;
 };
 
-struct IncomingNamespace {
-  fdf_testing::TestNode node{"root"};
-  fdf_testing::internal::TestEnvironment env{fdf::Dispatcher::GetCurrent()->get()};
-  fdf_fake::FakePDev pdev_server;
-  fdf_fake::FakeClock clock_server;
-  FakePowerBroker power_broker;
+class AmlSdmmcTestEnvironment : public fdf_testing::Environment {
+ public:
+  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
+    fdf_fake::FakePDev::Config config{.use_fake_irq = true, .device_info = fdf::PDev::DeviceInfo{}};
+    zx::vmo dup;
+    zx_status_t status = mmio_buffer_.get_vmo()->duplicate(ZX_RIGHT_SAME_RIGHTS, &dup);
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+    config.mmios[0] = fdf::PDev::MmioInfo{
+        .offset = mmio_buffer_.get_offset(),
+        .size = mmio_buffer_.get_size(),
+        .vmo = std::move(dup),
+    };
+    config.btis[0] = std::move(bti_);
+    pdev_server_.SetConfig(std::move(config));
+
+    zx_status_t metadata_status =
+        pdev_server_.AddFidlMetadata(fuchsia_hardware_sdmmc::SdmmcMetadata::kSerializableName,
+                                     fuchsia_hardware_sdmmc::SdmmcMetadata{});
+    if (metadata_status != ZX_OK) {
+      return zx::error(metadata_status);
+    }
+
+    async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
+    zx::result<> result = to_driver_vfs.AddService<fuchsia_hardware_platform_device::Service>(
+        pdev_server_.GetInstanceHandler(dispatcher), "default");
+    if (result.is_error()) {
+      return result.take_error();
+    }
+
+    result = to_driver_vfs.AddService<fuchsia_hardware_clock::Service>(
+        clock_server_.CreateInstanceHandler(dispatcher), "clock-gate");
+    if (result.is_error()) {
+      return result.take_error();
+    }
+
+    result = to_driver_vfs.component().AddUnmanagedProtocol<fuchsia_power_broker::Topology>(
+        power_broker_.CreateHandler());
+    if (result.is_error()) {
+      return result.take_error();
+    }
+
+    return zx::ok();
+  }
+
+  void SetBti(zx::bti bti) { bti_ = std::move(bti); }
+
+  fdf_fake::FakePDev& pdev_server() { return pdev_server_; }
+  fdf_fake::FakeClock& clock_server() { return clock_server_; }
+  FakePowerBroker& power_broker() { return power_broker_; }
+  fdf::MmioBuffer& mmio_buffer() { return mmio_buffer_; }
+
+ private:
+  fdf_fake::FakePDev pdev_server_;
+  fdf_fake::FakeClock clock_server_;
+  FakePowerBroker power_broker_;
+  zx::bti bti_;
+  fdf::MmioBuffer mmio_buffer_ =
+      fdf_testing::CreateMmioBuffer(S912_SD_EMMC_B_LENGTH, ZX_CACHE_POLICY_UNCACHED_DEVICE);
 };
 
-// WARNING: Don't use this test as a template for new tests as it uses the old driver testing
-// library.
+struct TestConfig {
+  using DriverType = TestAmlSdmmcWithBanjo;
+  using EnvironmentType = AmlSdmmcTestEnvironment;
+};
+
 class AmlSdmmcWithBanjoTest : public zxtest::Test {
  public:
-  AmlSdmmcWithBanjoTest()
-      : env_dispatcher_(runtime_.StartBackgroundDispatcher()),
-        incoming_(env_dispatcher_->async_dispatcher(), std::in_place),
-        mmio_buffer_(
-            fdf_testing::CreateMmioBuffer(S912_SD_EMMC_B_LENGTH, ZX_CACHE_POLICY_UNCACHED_DEVICE)) {
-    mmio_.emplace(mmio_buffer_.View(0));
-  }
+  AmlSdmmcWithBanjoTest() {}
 
   void StartDriver(bool create_fake_bti_with_paddrs = false, bool supply_power_framework = false) {
     // This is used by AmlSdmmc::Init() to create the descriptor buffer -- can be any nonzero paddr.
@@ -274,10 +324,15 @@ class AmlSdmmcWithBanjoTest : public zxtest::Test {
                                                     : fake_bti::CreateFakeBti();
     ASSERT_TRUE(result.is_ok());
     zx::bti bti = std::move(result.value());
-    bti_ = bti.borrow();
 
-    // Initialize driver test environment.
-    fuchsia_driver_framework::DriverStartArgs start_args;
+    ASSERT_OK(bti.duplicate(ZX_RIGHT_SAME_RIGHTS, &bti_owned_));
+    bti_ = bti_owned_.borrow();
+
+    driver_test().RunInEnvironmentTypeContext(
+        [bti = std::move(bti)](AmlSdmmcTestEnvironment& env) mutable {
+          env.SetBti(std::move(bti));
+        });
+
     std::optional<fuchsia_driver_framework::PowerElementArgs> power_args;
     if (supply_power_framework) {
       auto [element_control_client, element_control_server] =
@@ -298,79 +353,32 @@ class AmlSdmmcWithBanjoTest : public zxtest::Test {
 
       power_args = std::move(local_power_args);
 
-      incoming_.SyncCall(
+      driver_test().RunInEnvironmentTypeContext(
           [control_server = std::move(element_control_server),
            runner_client = std::move(element_runner_client),
-           lessor_server = std::move(lessor_server)](IncomingNamespace* incoming) mutable {
-            incoming->power_broker.AddHardwarePowerElement(
+           lessor_server = std::move(lessor_server)](AmlSdmmcTestEnvironment& env) mutable {
+            env.power_broker().AddHardwarePowerElement(
                 std::move(control_server), std::move(runner_client), std::move(lessor_server));
           });
     }
-    incoming_.SyncCall([&, bti = std::move(bti)](IncomingNamespace* incoming) mutable {
-      auto start_args_result = incoming->node.CreateStartArgsAndServe();
-      ASSERT_TRUE(start_args_result.is_ok());
-      start_args = std::move(start_args_result->start_args);
-      outgoing_directory_client_ = std::move(start_args_result->outgoing_directory_client);
 
-      ASSERT_OK(incoming->env.Initialize(std::move(start_args_result->incoming_directory_server)));
+    zx::result<> start_result = driver_test().StartDriverWithCustomStartArgs(
+        [supply_power_framework,
+         &power_args](fuchsia_driver_framework::DriverStartArgs& start_args) {
+          aml_sdmmc_config::Config fake_config;
+          fake_config.enable_suspend() = supply_power_framework;
+          start_args.config(fake_config.ToVmo());
 
-      // Serve (fake) pdev_server.
-      fdf_fake::FakePDev::Config config{.use_fake_irq = true,
-                                        .device_info = fdf::PDev::DeviceInfo{}};
-      zx::vmo dup;
-      mmio_buffer_.get_vmo()->duplicate(ZX_RIGHT_SAME_RIGHTS, &dup);
-      config.mmios[0] = fdf::PDev::MmioInfo{
-          .offset = mmio_buffer_.get_offset(),
-          .size = mmio_buffer_.get_size(),
-          .vmo = std::move(dup),
-      };
-      config.btis[0] = std::move(bti);
-      incoming->pdev_server.SetConfig(std::move(config));
-      ASSERT_OK(incoming->pdev_server.AddFidlMetadata(
-          fuchsia_hardware_sdmmc::SdmmcMetadata::kSerializableName,
-          fuchsia_hardware_sdmmc::SdmmcMetadata{}));
-      {
-        auto result = incoming->env.incoming_directory()
-                          .AddService<fuchsia_hardware_platform_device::Service>(
-                              std::move(incoming->pdev_server.GetInstanceHandler(
-                                  fdf::Dispatcher::GetCurrent()->async_dispatcher())),
-                              "default");
-        ASSERT_TRUE(result.is_ok());
-      }
+          if (supply_power_framework) {
+            start_args.power_element_args(std::move(power_args.value()));
+          }
+        });
+    ASSERT_OK(start_result.status_value());
 
-      // Serve (fake) clock_server.
-      {
-        auto result =
-            incoming->env.incoming_directory().AddService<fuchsia_hardware_clock::Service>(
-                incoming->clock_server.CreateInstanceHandler(
-                    fdf::Dispatcher::GetCurrent()->async_dispatcher()),
-                "clock-gate");
-        ASSERT_TRUE(result.is_ok());
-      }
+    driver_test().RunInEnvironmentTypeContext(
+        [&](AmlSdmmcTestEnvironment& env) { mmio_.emplace(env.mmio_buffer().View(0)); });
 
-      // Serve (fake) power_broker.
-      {
-        auto result = incoming->env.incoming_directory()
-                          .component()
-                          .AddUnmanagedProtocol<fuchsia_power_broker::Topology>(
-                              incoming->power_broker.CreateHandler());
-        ASSERT_TRUE(result.is_ok());
-      }
-    });
-
-    {
-      aml_sdmmc_config::Config fake_config;
-      fake_config.enable_suspend() = supply_power_framework;
-      start_args.config(fake_config.ToVmo());
-    }
-
-    if (supply_power_framework) {
-      start_args.power_element_args(std::move(power_args.value()));
-    }
-
-    // Start dut_.
-    ASSERT_OK(runtime_.RunToCompletion(dut_.Start(std::move(start_args))));
-
+    dut_ = driver_test().driver();
     descs_ = dut_->SetTestHooks();
 
     mmio_->Write32(0xff, kAmlSdmmcDelay1Offset);
@@ -387,31 +395,18 @@ class AmlSdmmcWithBanjoTest : public zxtest::Test {
   }
 
   void TearDown() override {
-    zx::result prepare_stop_result = runtime_.RunToCompletion(dut_.PrepareStop());
-    EXPECT_OK(prepare_stop_result.status_value());
+    zx::result<> stop_result = driver_test().StopDriver();
+    EXPECT_OK(stop_result.status_value());
+    dut_ = nullptr;
+  }
 
-    incoming_.reset();
-    runtime_.ShutdownAllDispatchers(fdf::Dispatcher::GetCurrent()->get());
-
-    EXPECT_OK(dut_.Stop());
+  bool IsClockEnabled() {
+    return driver_test().RunInEnvironmentTypeContext<bool>(
+        [](AmlSdmmcTestEnvironment& env) { return env.clock_server().enabled(); });
   }
 
   fidl::ClientEnd<fuchsia_io::Directory> CreateDriverSvcClient() {
-    fidl::ClientEnd<fuchsia_io::Directory> client_end;
-
-    [&]() {
-      // Open the svc directory in the driver's outgoing, and store a client to it.
-      auto [svc_client_end, svc_server_end] = fidl::Endpoints<fuchsia_io::Directory>::Create();
-
-      zx_status_t status =
-          fdio_open3_at(outgoing_directory_client_.handle()->get(), "/svc",
-                        static_cast<uint64_t>(fuchsia_io::wire::Flags::kProtocolDirectory),
-                        svc_server_end.TakeChannel().release());
-      ASSERT_EQ(ZX_OK, status);
-      client_end = std::move(svc_client_end);
-    }();
-
-    return client_end;
+    return driver_test().ConnectToDriverSvcDir();
   }
 
   fdf::WireSyncClient<fuchsia_hardware_sdmmc::Sdmmc> GetClient() {
@@ -428,6 +423,8 @@ class AmlSdmmcWithBanjoTest : public zxtest::Test {
 
     return client;
   }
+
+  fdf_testing::ForegroundDriverTest<TestConfig>& driver_test() { return driver_test_; }
 
  protected:
   static zx_koid_t GetVmoKoid(const zx::vmo& vmo) {
@@ -469,16 +466,13 @@ class AmlSdmmcWithBanjoTest : public zxtest::Test {
   aml_sdmmc_desc_t* descriptors() const { return reinterpret_cast<aml_sdmmc_desc_t*>(descs_); }
 
   zx::unowned_bti bti_;
+  zx::bti bti_owned_;
 
   std::optional<fdf::MmioView> mmio_;
-  fdf_testing::DriverRuntime runtime_;
-  fdf::UnownedSynchronizedDispatcher env_dispatcher_;
-  async_patterns::TestDispatcherBound<IncomingNamespace> incoming_;
-  fidl::ClientEnd<fuchsia_io::Directory> outgoing_directory_client_;
-  fdf_testing::internal::DriverUnderTest<TestAmlSdmmcWithBanjo> dut_;
+  TestAmlSdmmcWithBanjo* dut_ = nullptr;
 
  private:
-  fdf::MmioBuffer mmio_buffer_;
+  fdf_testing::ForegroundDriverTest<TestConfig> driver_test_;
   void* descs_ = nullptr;
 };
 
@@ -2153,79 +2147,76 @@ TEST_F(AmlSdmmcWithBanjoTest, PowerSuspendResume) {
   ASSERT_OK(dut_->Init(TestAmlSdmmcWithBanjo::kInstance));
 
   // Set power level to kPowerLevelOn first to satisfy Suspendable's first_activation_occurred_.
-  incoming_.SyncCall([](IncomingNamespace* incoming) {
-    incoming->power_broker.hardware_power_element_runner_client_->SetLevel(AmlSdmmc::kPowerLevelOn)
+  driver_test().RunInEnvironmentTypeContext([](AmlSdmmcTestEnvironment& env) {
+    env.power_broker()
+        .hardware_power_element_runner_client_->SetLevel(AmlSdmmc::kPowerLevelOn)
         .ThenExactlyOnce([&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
           EXPECT_TRUE(result.is_ok());
         });
   });
-  runtime_.PerformBlockingWork([&] {
+  driver_test().runtime().PerformBlockingWork([&] {
     bool clock_enabled;
     do {
-      clock_enabled = incoming_.SyncCall(
-          [](IncomingNamespace* incoming) { return incoming->clock_server.enabled(); });
+      clock_enabled = IsClockEnabled();
     } while (!clock_enabled);
   });
 
   // Transition element to off to set up our initial state.
-  incoming_.SyncCall([](IncomingNamespace* incoming) {
-    incoming->power_broker.hardware_power_element_runner_client_->SetLevel(AmlSdmmc::kPowerLevelOff)
+  driver_test().RunInEnvironmentTypeContext([](AmlSdmmcTestEnvironment& env) {
+    env.power_broker()
+        .hardware_power_element_runner_client_->SetLevel(AmlSdmmc::kPowerLevelOff)
         .ThenExactlyOnce([&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
           EXPECT_TRUE(result.is_ok());
         });
   });
-  runtime_.PerformBlockingWork([&] {
+  driver_test().runtime().PerformBlockingWork([&] {
     bool clock_enabled;
     do {
-      clock_enabled = incoming_.SyncCall(
-          [](IncomingNamespace* incoming) { return incoming->clock_server.enabled(); });
+      clock_enabled = IsClockEnabled();
     } while (clock_enabled);
   });
 
   dut_->ExpectInspectBoolPropertyValue("power_suspended", true);
   EXPECT_EQ(clock.ReadFrom(&*mmio_).cfg_div(), 0);
-  EXPECT_FALSE(incoming_.SyncCall(
-      [](IncomingNamespace* incoming) { return incoming->clock_server.enabled(); }));
+  EXPECT_FALSE(IsClockEnabled());
 
   // Trigger power level change to kPowerLevelOn.
-  incoming_.SyncCall([](IncomingNamespace* incoming) {
-    incoming->power_broker.hardware_power_element_runner_client_->SetLevel(AmlSdmmc::kPowerLevelOn)
+  driver_test().RunInEnvironmentTypeContext([](AmlSdmmcTestEnvironment& env) {
+    env.power_broker()
+        .hardware_power_element_runner_client_->SetLevel(AmlSdmmc::kPowerLevelOn)
         .ThenExactlyOnce([&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
           EXPECT_TRUE(result.is_ok());
         });
   });
-  runtime_.PerformBlockingWork([&] {
+  driver_test().runtime().PerformBlockingWork([&] {
     bool clock_enabled;
     do {
-      clock_enabled = incoming_.SyncCall(
-          [](IncomingNamespace* incoming) { return incoming->clock_server.enabled(); });
+      clock_enabled = IsClockEnabled();
     } while (!clock_enabled);
   });
 
   dut_->ExpectInspectBoolPropertyValue("power_suspended", false);
   EXPECT_NE(clock.ReadFrom(&*mmio_).cfg_div(), 0);
-  EXPECT_TRUE(incoming_.SyncCall(
-      [](IncomingNamespace* incoming) { return incoming->clock_server.enabled(); }));
+  EXPECT_TRUE(IsClockEnabled());
 
   // Trigger power level change to kPowerLevelOff.
-  incoming_.SyncCall([](IncomingNamespace* incoming) {
-    incoming->power_broker.hardware_power_element_runner_client_->SetLevel(AmlSdmmc::kPowerLevelOff)
+  driver_test().RunInEnvironmentTypeContext([](AmlSdmmcTestEnvironment& env) {
+    env.power_broker()
+        .hardware_power_element_runner_client_->SetLevel(AmlSdmmc::kPowerLevelOff)
         .ThenExactlyOnce([&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
           EXPECT_TRUE(result.is_ok());
         });
   });
-  runtime_.PerformBlockingWork([&] {
+  driver_test().runtime().PerformBlockingWork([&] {
     bool clock_enabled;
     do {
-      clock_enabled = incoming_.SyncCall(
-          [](IncomingNamespace* incoming) { return incoming->clock_server.enabled(); });
+      clock_enabled = IsClockEnabled();
     } while (clock_enabled);
   });
 
   dut_->ExpectInspectBoolPropertyValue("power_suspended", true);
   EXPECT_EQ(clock.ReadFrom(&*mmio_).cfg_div(), 0);
-  EXPECT_FALSE(incoming_.SyncCall(
-      [](IncomingNamespace* incoming) { return incoming->clock_server.enabled(); }));
+  EXPECT_FALSE(IsClockEnabled());
 }
 
 TEST_F(AmlSdmmcWithBanjoTest, PowerTokenProvider) {
@@ -2239,7 +2230,7 @@ TEST_F(AmlSdmmcWithBanjoTest, PowerTokenProvider) {
   ASSERT_OK(client_end);
   ASSERT_TRUE(client_end.value().is_valid());
 
-  runtime_.PerformBlockingWork([&] {
+  driver_test().runtime().PerformBlockingWork([&] {
     auto get_token = fidl::WireCall(client_end.value())->GetToken();
     ASSERT_OK(get_token);
     ASSERT_TRUE(get_token->is_ok());
