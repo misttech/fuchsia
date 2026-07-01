@@ -206,8 +206,8 @@ impl SimulatedBatteryInfoSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::battery_info_recorders::RecorderConfig;
     use crate::battery_manager::BatteryManager;
-    use crate::history_logger::RecorderConfig;
     use fidl::endpoints::create_request_stream;
     use futures::TryStreamExt;
     use futures::future::*;

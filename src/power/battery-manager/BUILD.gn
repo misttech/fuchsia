@@ -40,9 +40,9 @@ battery_manager_deps = [
 ]
 
 battery_manager_sources = [
+  "src/battery_info_recorders.rs",
   "src/battery_manager.rs",
   "src/battery_simulator.rs",
-  "src/history_logger.rs",
   "src/main.rs",
   "src/polisher.rs",
 ]

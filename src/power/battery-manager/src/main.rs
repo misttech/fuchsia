@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+mod battery_info_recorders;
 mod battery_manager;
 mod battery_simulator;
-mod history_logger;
 mod polisher;
 
+use crate::battery_info_recorders::RecorderConfig;
 use crate::battery_manager::{BatteryManager, BatterySimulationStateObserver};
 use crate::battery_simulator::SimulatedBatteryInfoSource;
-use crate::history_logger::RecorderConfig;
 use anyhow::Error;
 use battery_manager_config::Config;
 use fidl_fuchsia_hardware_power_battery as fbattery;

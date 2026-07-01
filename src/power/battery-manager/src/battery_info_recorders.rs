@@ -208,9 +208,15 @@ impl FaultDetector {
             Some(ChargeStatus::Charging) => {
                 if let Some(level) = new_raw_level {
                     if level <= 95.0 {
-                        // Only notify if the level is actually new
                         if new_raw_level != prev_raw_level {
                             recovery_event = self.notify_state_change();
+                        } else if new_charge_status != prev_charge_status {
+                            // Reset the watchdog timer and activity baseline when transitioning to
+                            // Charging to allow a full fresh timeout window for level changes.
+                            // Do not call notify_state_change so we don't clear existing faults.
+                            self.state.borrow_mut().last_activity_time =
+                                fasync::MonotonicInstant::now();
+                            self.reset_watchdog();
                         }
                     } else {
                         recovery_event = self.stop();
@@ -218,10 +224,14 @@ impl FaultDetector {
                 }
             }
             Some(ChargeStatus::Discharging) => {
-                if (new_raw_level.is_some() && new_raw_level != prev_raw_level)
-                    || new_charge_status != prev_charge_status
-                {
+                if new_raw_level.is_some() && new_raw_level != prev_raw_level {
                     recovery_event = self.notify_state_change();
+                } else if new_charge_status != prev_charge_status {
+                    // Reset the watchdog timer and activity baseline when transitioning to
+                    // Discharging to allow a full fresh timeout window for level changes.
+                    // Do not call notify_state_change so we don't clear existing faults.
+                    self.state.borrow_mut().last_activity_time = fasync::MonotonicInstant::now();
+                    self.reset_watchdog();
                 }
             }
             Some(ChargeStatus::Full) | Some(ChargeStatus::NotCharging) => {
@@ -355,9 +365,7 @@ impl BatteryInfoRecorders {
         let mut health_opts = PersistenceOptions::new("health".to_string());
         let mut charge_status_opts = PersistenceOptions::new("charge_status".to_string());
 
-        let fault_detector = FaultDetector::new(STALE_DATA_TIMER, config.persistence_dirs.clone());
-
-        // Apply overrides if they exist
+        // Apply overrides and create persistence directories before initializing any recorders
         if let Some(PersistenceDirs { storage_dir, volatile_dir }) = &config.persistence_dirs {
             let _ = std::fs::create_dir_all(storage_dir);
             let _ = std::fs::create_dir_all(volatile_dir);
@@ -380,6 +388,8 @@ impl BatteryInfoRecorders {
             charge_status_opts =
                 charge_status_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
         }
+
+        let fault_detector = FaultDetector::new(STALE_DATA_TIMER, config.persistence_dirs);
 
         let raw_level_percent_recorder = Self::create_recorder(
             "raw_level_percent",
@@ -943,6 +953,82 @@ mod tests {
             FaultState::NoUpdate,
             "Watchdog should have started and fired after status change"
         );
+    }
+
+    #[fuchsia::test]
+    fn test_fault_detector_charging_status_change_without_level_restarts_watchdog() {
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
+        let timeout = zx::Duration::from_minutes(5);
+        let (_dir, detector) = create_detector(timeout);
+
+        // Start at 50% and NotCharging status (watchdog is stopped)
+        assert_eq!(
+            detector.update(Some(50.0), Some(ChargeStatus::NotCharging)),
+            FaultRecoveryEvent::None
+        );
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // Advance 6 minutes and ensure no fault
+        executor.set_fake_time(fasync::MonotonicInstant::now() + zx::Duration::from_minutes(6));
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+        assert_eq!(get_fault_state(&detector), FaultState::None);
+
+        // Change status to Charging with the same battery level (50%).
+        // This should start the watchdog.
+        assert_eq!(
+            detector.update(Some(50.0), Some(ChargeStatus::Charging)),
+            FaultRecoveryEvent::None
+        );
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // Advance time by 6 minutes. A NoUpdate fault should be triggered.
+        executor.set_fake_time(fasync::MonotonicInstant::now() + zx::Duration::from_minutes(6));
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+        assert_eq!(
+            get_fault_state(&detector),
+            FaultState::NoUpdate,
+            "Watchdog should have started and fired after status change to Charging"
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_fault_detector_status_change_without_level_does_not_clear_existing_fault() {
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
+        let timeout = zx::Duration::from_minutes(5);
+        let (_dir, detector) = create_detector(timeout);
+
+        // Start at 50% and Charging status
+        assert_eq!(
+            detector.update(Some(50.0), Some(ChargeStatus::Charging)),
+            FaultRecoveryEvent::None
+        );
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // Advance 6 minutes to trigger the NoUpdate fault
+        executor.set_fake_time(fasync::MonotonicInstant::now() + zx::Duration::from_minutes(6));
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+        assert_eq!(get_fault_state(&detector), FaultState::NoUpdate);
+
+        // Change status to Discharging but keep the same battery level (50%)
+        // This should NOT clear the NoUpdate fault since the battery level has not progressed.
+        assert_eq!(
+            detector.update(Some(50.0), Some(ChargeStatus::Discharging)),
+            FaultRecoveryEvent::None
+        );
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+        assert_eq!(get_fault_state(&detector), FaultState::NoUpdate);
+
+        // Advance time by 6 minutes, the fault should still be NoUpdate
+        executor.set_fake_time(fasync::MonotonicInstant::now() + zx::Duration::from_minutes(6));
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+        assert_eq!(get_fault_state(&detector), FaultState::NoUpdate);
+
+        // Now send a level update (e.g. 49% while discharging) to recover from the fault
+        assert_eq!(
+            detector.update(Some(49.0), Some(ChargeStatus::Discharging)),
+            FaultRecoveryEvent::Recovered
+        );
+        assert_eq!(get_fault_state(&detector), FaultState::None);
     }
 
     #[fuchsia::test]

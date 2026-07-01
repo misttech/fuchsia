@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::BatteryInfoSource;
-use crate::history_logger::{BatteryInfoRecorders, FaultRecoveryEvent, RecorderConfig};
+use crate::battery_info_recorders::{BatteryInfoRecorders, FaultRecoveryEvent, RecorderConfig};
 use crate::polisher::Polisher;
 use anyhow::Error;
 use async_utils::hanging_get::client::HangingGetStream;
@@ -531,7 +531,7 @@ impl BatteryManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::history_logger::PersistenceDirs;
+    use crate::battery_info_recorders::PersistenceDirs;
     use async_utils::hanging_get::server::HangingGet;
     use fidl::endpoints::create_request_stream;
     use fuchsia_inspect::{self as inspect};
@@ -550,8 +550,8 @@ mod tests {
         fs::create_dir(&storage_path).unwrap();
         fs::create_dir(&volatile_path).unwrap();
 
-        let storage_dir = dir.path().to_str().unwrap().to_string();
-        let volatile_dir = dir.path().to_str().unwrap().to_string();
+        let storage_dir = storage_path.to_str().unwrap().to_string();
+        let volatile_dir = volatile_path.to_str().unwrap().to_string();
 
         let recorder_config = RecorderConfig {
             persistence_dirs: Some(PersistenceDirs { storage_dir, volatile_dir }),
