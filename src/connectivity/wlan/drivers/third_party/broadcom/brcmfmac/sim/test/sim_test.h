@@ -7,10 +7,7 @@
 
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
-#include <lib/driver/testing/cpp/driver_runtime.h>
-#include <lib/driver/testing/cpp/internal/driver_lifecycle.h>
-#include <lib/driver/testing/cpp/internal/test_environment.h>
-#include <lib/driver/testing/cpp/test_node.h>
+#include <lib/driver/testing/cpp/driver_test.h>
 #include <zircon/types.h>
 
 #include <map>
@@ -228,8 +225,25 @@ class SimInterface : public fidl::WireServer<fuchsia_wlan_fullmac::WlanFullmacIm
   std::vector<std::vector<uint8_t>> scan_results_ies_;
 };
 
-// WARNING: Don't use this test as a template for new tests as it uses the old driver testing
-// library.
+class SimEnvironment : public fdf_testing::Environment {
+ public:
+  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
+    dispatcher_ = fdf::Dispatcher::GetCurrent()->async_dispatcher();
+    return zx::ok();
+  }
+
+  async_dispatcher_t* dispatcher() const { return dispatcher_; }
+
+ private:
+  async_dispatcher_t* dispatcher_ = nullptr;
+};
+
+class TestConfig final {
+ public:
+  using DriverType = brcmfmac::SimDevice;
+  using EnvironmentType = SimEnvironment;
+};
+
 // A base class that can be used for creating simulation tests. It provides functionality that
 // should be common to most tests (like creating a new device instance and setting up and plugging
 // into the environment). It also provides a factory method for creating a new interface on the
@@ -290,10 +304,15 @@ class SimTest : public ::zxtest::Test, public simulation::StationIfc {
 
   fidl::ClientEnd<fuchsia_io::Directory> CreateDriverSvcClient();
 
-  async_dispatcher_t* df_env_dispatcher() { return df_env_dispatcher_->async_dispatcher(); }
+  async_dispatcher_t* df_env_dispatcher() {
+    async_dispatcher_t* dispatcher = nullptr;
+    driver_test().RunInEnvironmentTypeContext(
+        [&](SimEnvironment& env) { dispatcher = env.dispatcher(); });
+    return dispatcher;
+  }
 
-  async_dispatcher_t* driver_dispatcher() { return driver_dispatcher_->async_dispatcher(); }
-  fdf_testing::DriverRuntime& runtime() { return runtime_; }
+  fdf_testing::DriverRuntime& runtime() { return driver_test_.runtime(); }
+  fdf_testing::BackgroundDriverTest<TestConfig>& driver_test() { return driver_test_; }
   zx_status_t CreateFactoryClient();
 
   std::unique_ptr<simulation::Environment> env_;
@@ -306,32 +325,8 @@ class SimTest : public ::zxtest::Test, public simulation::StationIfc {
   fdf::Arena test_arena_;
 
  private:
-  async_patterns::TestDispatcherBound<fdf_testing::internal::DriverUnderTest<brcmfmac::SimDevice>>&
-  dut() {
-    return dut_;
-  }
-
-  // Attaches a foreground dispatcher for us automatically.
-  fdf_testing::DriverRuntime runtime_;
-
-  // Env dispatcher. Managed by driver runtime threads.
-  fdf::UnownedSynchronizedDispatcher df_env_dispatcher_ = runtime().StartBackgroundDispatcher();
-
-  // Driver dispatcher set as a background dispatcher.
-  fdf::UnownedSynchronizedDispatcher driver_dispatcher_ = runtime().StartBackgroundDispatcher();
-
-  // Serves the fdf::Node protocol to the driver.
-  async_patterns::TestDispatcherBound<fdf_testing::TestNode> node_server_{
-      df_env_dispatcher(), std::in_place, std::string("root")};
-
-  async_patterns::TestDispatcherBound<fdf_testing::internal::TestEnvironment> test_environment_{
-      df_env_dispatcher(), std::in_place};
-
-  // The driver under test.
-  async_patterns::TestDispatcherBound<fdf_testing::internal::DriverUnderTest<brcmfmac::SimDevice>>
-      dut_{driver_dispatcher(), std::in_place};
-
-  fidl::ClientEnd<fuchsia_io::Directory> driver_outgoing_;
+  fdf_testing::BackgroundDriverTest<TestConfig> driver_test_;
+  fidl::ClientEnd<fuchsia_io::Directory> sim_outgoing_client_;
 
   bool driver_created_{false};
 

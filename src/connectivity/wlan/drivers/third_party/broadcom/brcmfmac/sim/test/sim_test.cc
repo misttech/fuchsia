@@ -542,38 +542,36 @@ SimTest::~SimTest() {
       BRCMF_ERR("Delete iface: %u failed", iface.first);
     }
   }
-  // Make sure to synchronously shut down the device here to avoid any in-flight FIDL calls arriving
-  // during the rest of the destruction.
-  zx::result prepare_stop_result = runtime().RunToCompletion(
-      dut_.SyncCall(&fdf_testing::internal::DriverUnderTest<brcmfmac::SimDevice>::PrepareStop));
-  EXPECT_OK(prepare_stop_result.status_value());
-
-  zx::result stop_result =
-      dut_.SyncCall(&fdf_testing::internal::DriverUnderTest<brcmfmac::Device>::Stop);
-  EXPECT_OK(stop_result.status_value());
+  if (driver_created_) {
+    zx::result<> result = driver_test().StopDriver();
+    EXPECT_EQ(ZX_OK, result.status_value());
+    driver_test().ShutdownAndDestroyDriver();
+  }
 }
 
 zx_status_t SimTest::PreInit() {
-  zx::result start_args = node_server_.SyncCall(&fdf_testing::TestNode::CreateStartArgsAndServe);
-  EXPECT_OK(start_args.status_value());
+  zx::result<> result = driver_test().StartDriverWithCustomStartArgs(
+      [&](fuchsia_driver_framework::DriverStartArgs& start_args) {
+        // 1. Create a new endpoints pair for the outgoing directory of the driver.
+        auto [client, server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
+        sim_outgoing_client_ = std::move(client);
 
-  driver_outgoing_ = std::move(start_args->outgoing_directory_client);
+        // 2. Intercept and replace the outgoing directory server end.
+        auto orig_outgoing = std::move(start_args.outgoing_dir().value());
+        start_args.outgoing_dir(std::move(server));
 
-  zx::result init_result =
-      test_environment_.SyncCall(&fdf_testing::internal::TestEnvironment::Initialize,
-                                 std::move(start_args->incoming_directory_server));
-  EXPECT_OK(init_result.status_value());
-
-  // Calling SimDevice::Start also allocates the dut. Trying to access the underlying
-  // brcmfmac::SimDevice is invalid before this step.
-  zx::result start_result = runtime().RunToCompletion(
-      dut_.SyncCall(&fdf_testing::internal::DriverUnderTest<brcmfmac::SimDevice>::Start,
-                    std::move(start_args->start_args)));
-
-  EXPECT_OK(start_result.status_value());
+        // 3. Forward open requests from the test framework's original server end
+        //    to the actual driver outgoing directory.
+        zx_status_t status = fdio_open3_at(
+            sim_outgoing_client_.handle()->get(), ".",
+            uint64_t{fuchsia_io::wire::kPermReadable | fuchsia_io::wire::Flags::kProtocolDirectory},
+            orig_outgoing.TakeChannel().release());
+        ZX_ASSERT_MSG(status == ZX_OK, "fdio_open3_at failed: %s", zx_status_get_string(status));
+      });
+  EXPECT_OK(result.status_value());
 
   WithSimDevice([this](brcmfmac::SimDevice* device) {
-    device->InitWithEnv(env_.get(), driver_outgoing_.borrow());
+    device->InitWithEnv(env_.get(), sim_outgoing_client_);
   });
 
   driver_created_ = true;
@@ -612,14 +610,10 @@ zx_status_t SimTest::Init() {
 }
 
 zx_status_t SimTest::CreateFactoryClient() {
-  // Connect to the service (device connector) provided by the devfs node
-  zx::result conn_status = node_server_.SyncCall([](fdf_testing::TestNode* root_node) {
-    return root_node->children().at("factory-broadcom").ConnectToDevice();
-  });
-  EXPECT_EQ(ZX_OK, conn_status.status_value());
-  // Bind to the client end
-  fidl::ClientEnd<fuchsia_factory_wlan::Iovar> client_end(std::move(conn_status.value()));
-  factory_client_.Bind(std::move(client_end));
+  zx::result<fidl::ClientEnd<fuchsia_factory_wlan::Iovar>> client_end =
+      driver_test().ConnectThroughDevfs<fuchsia_factory_wlan::Iovar>("factory-broadcom");
+  EXPECT_EQ(ZX_OK, client_end.status_value());
+  factory_client_.Bind(std::move(client_end.value()));
   EXPECT_EQ(true, factory_client_.is_valid());
   return ZX_OK;
 }
@@ -667,8 +661,7 @@ zx_status_t SimTest::StartInterface(wlan_common::WlanMacRole role, SimInterface*
           CreateDriverSvcClient(), instance_name);
   EXPECT_EQ(ZX_OK, driver_connect_result.status_value());
 
-  status = sim_ifc->Connect(std::move(driver_connect_result.value()),
-                            df_env_dispatcher_->async_dispatcher());
+  status = sim_ifc->Connect(std::move(driver_connect_result.value()), df_env_dispatcher());
   if (status != ZX_OK) {
     BRCMF_ERR("Failed to establish FIDL connection with WlanInterface: %s",
               zx_status_get_string(status));
@@ -704,13 +697,14 @@ zx_status_t SimTest::InterfaceDestroyed(SimInterface* ifc) {
 }
 
 uint32_t SimTest::DeviceCount() {
-  return node_server_.SyncCall([](fdf_testing::TestNode* root) { return root->children().size(); });
+  return driver_test().RunInNodeContext<uint32_t>(
+      [](fdf_testing::TestNode& root) { return root.children().size(); });
 }
 
 uint32_t SimTest::DeviceCountWithProperty(const fuchsia_driver_framework::NodeProperty2& property) {
-  return node_server_.SyncCall([&](fdf_testing::TestNode* root) {
+  return driver_test().RunInNodeContext<uint32_t>([&](fdf_testing::TestNode& root) {
     uint32_t count = 0;
-    for (const auto& [_, child] : root->children()) {
+    for (const auto& [_, child] : root.children()) {
       for (const fuchsia_driver_framework::NodeProperty2& child_property : child.GetProperties()) {
         if (child_property == property) {
           count++;
@@ -746,12 +740,8 @@ void SimTest::WaitForRecoveryComplete() {
 }
 
 void SimTest::WithSimDevice(fit::function<void(brcmfmac::SimDevice*)> callback) {
-  dut().SyncCall([callback = std::move(callback)](
-                     fdf_testing::internal::DriverUnderTest<brcmfmac::SimDevice>* dut) mutable {
-    // *dut dereferences the pointer and yields a DriverUnderTest<SimDevice>
-    // *(DriverUnderTest<SimDevice>) (i.e., **dut) yields a SimDevice*
-    callback(**dut);
-  });
+  driver_test().RunInDriverContext(
+      [callback = std::move(callback)](brcmfmac::SimDevice& device) mutable { callback(&device); });
 }
 
 zx_status_t SimTest::DeleteInterface(SimInterface* ifc) {
@@ -784,14 +774,7 @@ zx_status_t SimTest::DeleteInterface(SimInterface* ifc) {
 }
 
 fidl::ClientEnd<fuchsia_io::Directory> SimTest::CreateDriverSvcClient() {
-  // Open the svc directory in the driver's outgoing, and store a client to it.
-  auto svc_endpoints = fidl::Endpoints<fuchsia_io::Directory>::Create();
-
-  zx_status_t status = fdio_open3_at(driver_outgoing_.handle()->get(), "/svc",
-                                     static_cast<uint64_t>(fuchsia_io::Flags::kProtocolDirectory),
-                                     svc_endpoints.server.TakeChannel().release());
-  EXPECT_EQ(ZX_OK, status);
-  return std::move(svc_endpoints.client);
+  return driver_test().ConnectToDriverSvcDir();
 }
 
 }  // namespace wlan::brcmfmac
