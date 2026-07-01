@@ -4,7 +4,7 @@
 
 use crate::doctor_ledger::*;
 use std::fmt;
-use termion::{color, style};
+use termio::Colors;
 
 const INDENT_STR: &str = "    ";
 
@@ -34,20 +34,15 @@ impl From<LedgerOutcome> for LedgerViewOutcome {
 }
 
 impl LedgerViewOutcome {
-    pub fn format(&self, with_color: bool) -> String {
+    pub fn format(&self, colors: &Colors) -> String {
         let (symbol, color) = match self {
-            LedgerViewOutcome::Info => ("i".to_string(), format!("{}", color::Fg(color::Green))),
-            LedgerViewOutcome::Success => ("✓".to_string(), format!("{}", color::Fg(color::Green))),
-            LedgerViewOutcome::Warning => {
-                ("!".to_string(), format!("{}", color::Fg(color::Yellow)))
-            }
-            LedgerViewOutcome::Failure => ("✗".to_string(), format!("{}", color::Fg(color::Red))),
-            LedgerViewOutcome::Invalid => (" ".to_string(), format!("{}", color::Fg(color::Red))),
+            LedgerViewOutcome::Info => ("i", colors.green),
+            LedgerViewOutcome::Success => ("✓", colors.green),
+            LedgerViewOutcome::Warning => ("!", colors.yellow),
+            LedgerViewOutcome::Failure => ("✗", colors.red),
+            LedgerViewOutcome::Invalid => (" ", colors.red),
         };
-        match with_color {
-            true => format!("{}{}{}", color, symbol, style::Reset),
-            false => format!("{}", symbol),
-        }
+        format!("{}{}{}", color, symbol, colors.reset)
     }
 }
 
@@ -67,16 +62,16 @@ impl Default for LedgerViewNode {
     }
 }
 
-fn gen_output(parent_node: &LedgerViewNode, with_color: bool, indent_level: usize) -> String {
+fn gen_output(parent_node: &LedgerViewNode, colors: &Colors, indent_level: usize) -> String {
     let mut output_str = format!(
         "{}[{}] {}\n",
         INDENT_STR.repeat(indent_level),
-        parent_node.outcome.format(with_color),
+        parent_node.outcome.format(colors),
         parent_node.data
     );
 
     for child_node in &parent_node.children {
-        let child_str = gen_output(child_node, with_color, indent_level + 1);
+        let child_str = gen_output(child_node, colors, indent_level + 1);
         output_str = format!("{}{}", output_str, child_str);
     }
 
@@ -90,7 +85,7 @@ pub struct VisualLedgerView {
 
 impl fmt::Display for VisualLedgerView {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "{}", gen_output(&self.tree, true, 0))
+        writeln!(f, "{}", gen_output(&self.tree, &Colors::current(), 0))
     }
 }
 
@@ -112,7 +107,7 @@ pub struct RecordLedgerView {
 
 impl fmt::Display for RecordLedgerView {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "{}", gen_output(&self.tree, false, 0))
+        writeln!(f, "{}", gen_output(&self.tree, &Colors::disabled(), 0))
     }
 }
 

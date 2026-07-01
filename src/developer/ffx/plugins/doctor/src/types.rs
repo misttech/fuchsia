@@ -10,7 +10,7 @@ use doctor_utils::Recorder;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
-use termion::style;
+use termio::Colors;
 
 pub const DOCTOR_OUTPUT_FILENAME: &str = "doctor_output.txt";
 
@@ -47,15 +47,10 @@ impl std::fmt::Display for StepType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             StepType::DoctorSummaryInitNormal => {
-                write!(
-                    f,
-                    "\n{}Doctor summary (to see all details, run ffx doctor -v):{}\n",
-                    style::Bold,
-                    style::Reset
-                )
+                write!(f, "\nDoctor summary (to see all details, run ffx doctor -v):\n")
             }
             StepType::DoctorSummaryInitVerbose => {
-                write!(f, "\n{}Doctor summary:{}\n", style::Bold, style::Reset)
+                write!(f, "\nDoctor summary:\n")
             }
             StepType::GeneratingRecord => write!(f, "Generating record..."),
             StepType::Output(data_str) => write!(f, "{}", data_str),
@@ -74,6 +69,23 @@ impl std::fmt::Display for StepType {
     }
 }
 
+impl StepType {
+    pub fn format(&self, colors: &Colors) -> String {
+        match self {
+            StepType::DoctorSummaryInitNormal => {
+                format!(
+                    "\n{}Doctor summary (to see all details, run ffx doctor -v):{}\n",
+                    colors.bold, colors.reset
+                )
+            }
+            StepType::DoctorSummaryInitVerbose => {
+                format!("\n{}Doctor summary:{}\n", colors.bold, colors.reset)
+            }
+            _ => format!("{}", self),
+        }
+    }
+}
+
 #[async_trait]
 pub trait DoctorStepHandler {
     async fn step(&mut self, step: StepType) -> Result<()>;
@@ -85,28 +97,29 @@ pub trait DoctorStepHandler {
 pub struct DefaultDoctorStepHandler {
     pub recorder: Arc<Mutex<dyn Recorder + Send>>,
     pub writer: Box<dyn Write + Send + Sync>,
+    pub colors: Colors,
 }
 
 #[async_trait]
 impl DoctorStepHandler for DefaultDoctorStepHandler {
     async fn step(&mut self, step: StepType) -> Result<()> {
-        write!(&mut self.writer, "{}", step)?;
+        write!(&mut self.writer, "{}", step.format(&self.colors))?;
         self.writer.flush()?;
         let mut r = self.recorder.lock().await;
-        r.add_content(DOCTOR_OUTPUT_FILENAME, format!("{}", step));
+        r.add_content(DOCTOR_OUTPUT_FILENAME, step.format(&Colors::disabled()));
         Ok(())
     }
 
     async fn output_step(&mut self, step: StepType) -> Result<()> {
-        writeln!(&mut self.writer, "{}", step)?;
+        writeln!(&mut self.writer, "{}", step.format(&self.colors))?;
         let mut r = self.recorder.lock().await;
-        r.add_content(DOCTOR_OUTPUT_FILENAME, format!("{}\n", step));
+        r.add_content(DOCTOR_OUTPUT_FILENAME, format!("{}\n", step.format(&Colors::disabled())));
         Ok(())
     }
 
     async fn record(&mut self, step: StepType) -> Result<()> {
         let mut r = self.recorder.lock().await;
-        r.add_content(DOCTOR_OUTPUT_FILENAME, format!("{}", step));
+        r.add_content(DOCTOR_OUTPUT_FILENAME, step.format(&Colors::disabled()));
         Ok(())
     }
 
@@ -122,8 +135,9 @@ impl DefaultDoctorStepHandler {
     pub fn new(
         recorder: Arc<Mutex<dyn Recorder + Send>>,
         writer: Box<dyn Write + Send + Sync>,
+        colors: Colors,
     ) -> Self {
-        Self { recorder, writer }
+        Self { recorder, writer, colors }
     }
 }
 

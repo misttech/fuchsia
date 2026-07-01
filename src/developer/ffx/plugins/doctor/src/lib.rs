@@ -22,7 +22,7 @@ use std::io::{Write, stdout};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use termion::{color, style};
+use termio::Colors;
 
 mod daemon;
 mod doctor_ledger;
@@ -156,6 +156,7 @@ pub async fn doctor_cmd_impl<
     let target_spec = ffx_target::get_target_specifier(&context)?;
     let target_str = target_spec.unwrap_or_else(String::default);
     let version_info: VersionInfo = context.build_info();
+    let colors = Colors::current();
     let mut log_root = None;
     let mut output_dir = None;
     let mut record = cmd.record;
@@ -170,8 +171,7 @@ pub async fn doctor_cmd_impl<
                 writeln!(
                     &mut writer,
                     "{}WARNING:{} --record was provided but ffx logs are not enabled. This means your record will only include doctor output.",
-                    color::Fg(color::Red),
-                    style::Reset
+                    colors.red, colors.reset
                 )?;
                 writeln!(
                     &mut writer,
@@ -200,9 +200,7 @@ pub async fn doctor_cmd_impl<
             writeln!(
                 &mut writer,
                 "{}WARNING:{} getting log status from ffx config failed. The error was: {:?}",
-                color::Fg(color::Red),
-                style::Reset,
-                e
+                colors.red, colors.reset, e
             )?;
             if cmd.record {
                 writeln!(
@@ -241,7 +239,7 @@ pub async fn doctor_cmd_impl<
     }
 
     let recorder = Arc::new(Mutex::new(DoctorRecorder::new()));
-    let mut handler = DefaultDoctorStepHandler::new(recorder.clone(), writer);
+    let mut handler = DefaultDoctorStepHandler::new(recorder.clone(), writer, colors);
     let target_spec =
         get_target_specifier(&context).map_err(|e| format!("{:?}", e).replace("\n", ""));
 
@@ -576,7 +574,7 @@ mod test {
             let mut output_str = format!(
                 "{}[{}] {}\n",
                 INDENT_STR.repeat(indent_level),
-                parent_node.outcome.format(false),
+                parent_node.outcome.format(&Colors::disabled()),
                 data
             );
 

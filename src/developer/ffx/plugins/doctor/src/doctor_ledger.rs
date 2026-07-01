@@ -416,6 +416,7 @@ mod test {
     use super::*;
     use ffx_doctor_test_utils::MockWriter;
     use std::fmt;
+    use termio::Colors;
 
     const MODE_VERBOSE: LedgerMode = LedgerMode::Verbose;
     const MODE_NORMAL: LedgerMode = LedgerMode::Normal;
@@ -445,7 +446,7 @@ mod test {
             let mut output_str = format!(
                 "{}[{}] {}\n",
                 INDENT_STR.repeat(indent_level),
-                parent_node.outcome.format(false),
+                parent_node.outcome.format(&Colors::disabled()),
                 &parent_node.data
             );
 

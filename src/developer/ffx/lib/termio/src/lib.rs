@@ -8,6 +8,7 @@ use std::sync::LazyLock;
 pub struct Colors {
     pub red: &'static str,
     pub green: &'static str,
+    pub yellow: &'static str,
     pub bold: &'static str,
     pub reset: &'static str,
 }
@@ -32,10 +33,20 @@ impl Colors {
 
     fn new_with_enabled(enabled: bool) -> Self {
         if enabled {
-            Colors { red: "\x1b[31m", green: "\x1b[32m", bold: "\x1b[1m", reset: "\x1b[0m" }
+            Colors {
+                red: "\x1b[31m",
+                green: "\x1b[32m",
+                yellow: "\x1b[33m",
+                bold: "\x1b[1m",
+                reset: "\x1b[0m",
+            }
         } else {
-            Colors { red: "", green: "", bold: "", reset: "" }
+            Colors { red: "", green: "", yellow: "", bold: "", reset: "" }
         }
+    }
+
+    pub fn disabled() -> Self {
+        Self::new_with_enabled(false)
     }
 }
 
@@ -63,24 +74,28 @@ mod tests {
         let colors = Colors::get_for_term(Some("xterm-256color".to_string()), true);
         assert_eq!(colors.red, "\x1b[31m");
         assert_eq!(colors.green, "\x1b[32m");
+        assert_eq!(colors.yellow, "\x1b[33m");
         assert_eq!(colors.bold, "\x1b[1m");
         assert_eq!(colors.reset, "\x1b[0m");
 
         let colors = Colors::get_for_term(Some("xterm-256color".to_string()), false);
         assert_eq!(colors.red, "");
         assert_eq!(colors.green, "");
+        assert_eq!(colors.yellow, "");
         assert_eq!(colors.bold, "");
         assert_eq!(colors.reset, "");
 
         let colors = Colors::get_for_term(Some("dumb".to_string()), true);
         assert_eq!(colors.red, "");
         assert_eq!(colors.green, "");
+        assert_eq!(colors.yellow, "");
         assert_eq!(colors.bold, "");
         assert_eq!(colors.reset, "");
 
         let colors = Colors::get_for_term(None, true);
         assert_eq!(colors.red, "");
         assert_eq!(colors.green, "");
+        assert_eq!(colors.yellow, "");
         assert_eq!(colors.bold, "");
         assert_eq!(colors.reset, "");
     }
