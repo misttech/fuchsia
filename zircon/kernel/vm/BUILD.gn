@@ -13,6 +13,7 @@ source_set("vm") {
 
   sources = [
     "anonymous_page_request.cc",
+    "arch_vm_aspace_ffi.cc",
     "compression.cc",
     "compressor.cc",
     "continuous_attribution_tracker.cc",
@@ -135,12 +136,16 @@ rustc_library("vm-rs") {
   name = "vm"
   source_root = "vm.rs"
   sources = [
+    "arch_vm_aspace.rs",
     "page.rs",
     "page_state.rs",
     "vm.rs",
   ]
 
-  deps = [ "//zircon/kernel/kernel:kernel-rs" ]
+  deps = [
+    "//sdk/rust/zx-status",
+    "//zircon/kernel/kernel:kernel-rs",
+  ]
 }
 
 config("suppress-nonheap-warning") {

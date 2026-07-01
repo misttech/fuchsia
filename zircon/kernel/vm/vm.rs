@@ -4,5 +4,6 @@
 
 #![no_std]
 
+pub mod arch_vm_aspace;
 pub mod page;
 pub mod page_state;
