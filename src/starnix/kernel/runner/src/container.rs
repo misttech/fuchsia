@@ -1,4 +1,4 @@
-// Copyright 2022 The Fuchsia Authors. All rights reserved.
+// Copyright 2028 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -1044,12 +1044,13 @@ fn init_remote_block_devices(
                 continue;
             }
         }
-        system_task.kernel().remote_block_device_registry.create_remote_block_device(
-            locked,
-            system_task,
-            entry.file_name().to_str().unwrap(),
-            client_end,
-        )?;
+        let name = entry.file_name();
+        let name_str = name.to_str().unwrap();
+        system_task
+            .kernel()
+            .remote_block_device_registry
+            .create_remote_block_device(locked, system_task, &name_str, client_end)
+            .with_source_context(|| format!("creating remote block device: {name_str}"))?;
     }
     Ok(())
 }
