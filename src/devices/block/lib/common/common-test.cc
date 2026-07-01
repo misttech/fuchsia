@@ -17,77 +17,20 @@ class TestWithLogger : public zxtest::Test {
 };
 
 TEST_F(TestWithLogger, CheckIoRangeTest) {
-  block_read_write rw;
-
-  rw = {
-      .length = 0,
-      .offset_dev = 10,
-  };
-  EXPECT_EQ(CheckIoRange(rw, 100, logger_.logger()), ZX_ERR_OUT_OF_RANGE);
-
-  rw = {
-      .length = 11,
-      .offset_dev = 90,
-  };
-  EXPECT_EQ(CheckIoRange(rw, 100, logger_.logger()), ZX_ERR_OUT_OF_RANGE);
-
-  rw = {
-      .length = 1,
-      .offset_dev = 100,
-  };
-  EXPECT_EQ(CheckIoRange(rw, 100, logger_.logger()), ZX_ERR_OUT_OF_RANGE);
-
-  rw = {
-      .length = 2,
-      .offset_dev = 99,
-  };
-  EXPECT_EQ(CheckIoRange(rw, 100, logger_.logger()), ZX_ERR_OUT_OF_RANGE);
-
-  rw = {
-      .length = 101,
-      .offset_dev = 0,
-  };
-  EXPECT_EQ(CheckIoRange(rw, 100, logger_.logger()), ZX_ERR_OUT_OF_RANGE);
-
-  rw = {
-      .length = 1,
-      .offset_dev = 0,
-  };
-  EXPECT_OK(CheckIoRange(rw, 100, logger_.logger()));
-
-  rw = {
-      .length = 1,
-      .offset_dev = 99,
-  };
-  EXPECT_OK(CheckIoRange(rw, 100, logger_.logger()));
-
-  rw = {
-      .length = 100,
-      .offset_dev = 0,
-  };
-  EXPECT_OK(CheckIoRange(rw, 100, logger_.logger()));
+  EXPECT_EQ(CheckIoRange(10, 0, 100, logger_.logger()), ZX_ERR_OUT_OF_RANGE);
+  EXPECT_EQ(CheckIoRange(90, 11, 100, logger_.logger()), ZX_ERR_OUT_OF_RANGE);
+  EXPECT_EQ(CheckIoRange(100, 1, 100, logger_.logger()), ZX_ERR_OUT_OF_RANGE);
+  EXPECT_EQ(CheckIoRange(99, 2, 100, logger_.logger()), ZX_ERR_OUT_OF_RANGE);
+  EXPECT_EQ(CheckIoRange(0, 101, 100, logger_.logger()), ZX_ERR_OUT_OF_RANGE);
+  EXPECT_OK(CheckIoRange(0, 1, 100, logger_.logger()));
+  EXPECT_OK(CheckIoRange(99, 1, 100, logger_.logger()));
+  EXPECT_OK(CheckIoRange(0, 100, 100, logger_.logger()));
 }
 
 TEST_F(TestWithLogger, CheckIoRangeMaxTransferTest) {
-  block_trim trim;
-
-  trim = {
-      .length = 26,
-      .offset_dev = 0,
-  };
-  EXPECT_EQ(CheckIoRange(trim, 100, 25, logger_.logger()), ZX_ERR_OUT_OF_RANGE);
-
-  trim = {
-      .length = 2,
-      .offset_dev = 99,
-  };
-  EXPECT_EQ(CheckIoRange(trim, 100, 25, logger_.logger()), ZX_ERR_OUT_OF_RANGE);
-
-  trim = {
-      .length = 25,
-      .offset_dev = 0,
-  };
-  EXPECT_OK(CheckIoRange(trim, 100, 25, logger_.logger()));
+  EXPECT_EQ(CheckIoRange(0, 26, 100, 25, logger_.logger()), ZX_ERR_OUT_OF_RANGE);
+  EXPECT_EQ(CheckIoRange(99, 2, 100, 25, logger_.logger()), ZX_ERR_OUT_OF_RANGE);
+  EXPECT_OK(CheckIoRange(0, 25, 100, 25, logger_.logger()));
 }
 
 TEST_F(TestWithLogger, CheckFlushValidTest) {

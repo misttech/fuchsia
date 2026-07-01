@@ -13,19 +13,19 @@
 namespace block {
 
 // Check whether the IO request fits within the block device.
-template <typename T>
-inline zx_status_t CheckIoRange(const T& io, uint64_t total_block_count, fdf::Logger& logger) {
-  if (io.length == 0 || io.length > total_block_count) {
+inline zx_status_t CheckIoRange(uint64_t block_offset, uint32_t transfer_blocks,
+                                uint64_t total_block_count, fdf::Logger& logger) {
+  if (transfer_blocks == 0 || transfer_blocks > total_block_count) {
     logger.log(fdf::ERROR,
                "IO request length ({} blocks) is zero or exceeds the total block count ({}).",
-               io.length, total_block_count);
+               transfer_blocks, total_block_count);
     return ZX_ERR_OUT_OF_RANGE;
   }
-  if (io.offset_dev >= total_block_count || io.offset_dev > total_block_count - io.length) {
+  if (block_offset >= total_block_count || block_offset > total_block_count - transfer_blocks) {
     logger.log(fdf::ERROR,
                "IO request offset ({} blocks) and length ({} blocks) does not fit within the total "
                "block count ({}).",
-               io.offset_dev, io.length, total_block_count);
+               block_offset, transfer_blocks, total_block_count);
     return ZX_ERR_OUT_OF_RANGE;
   }
   return ZX_OK;
@@ -33,15 +33,15 @@ inline zx_status_t CheckIoRange(const T& io, uint64_t total_block_count, fdf::Lo
 
 // Check whether the IO request fits within the block device.
 // Also check that the IO request length does not exceed the max transfer size.
-template <typename T>
-inline zx_status_t CheckIoRange(const T& io, uint64_t total_block_count,
-                                uint32_t max_tranfser_blocks, fdf::Logger& logger) {
-  if (io.length > max_tranfser_blocks) {
+inline zx_status_t CheckIoRange(uint64_t block_offset, uint32_t transfer_blocks,
+                                uint64_t total_block_count, uint32_t max_transfer_blocks,
+                                fdf::Logger& logger) {
+  if (transfer_blocks > max_transfer_blocks) {
     logger.log(fdf::ERROR, "IO request length ({} blocks) exceeds max transfer size ({} blocks).",
-               io.length, max_tranfser_blocks);
+               transfer_blocks, max_transfer_blocks);
     return ZX_ERR_OUT_OF_RANGE;
   }
-  return CheckIoRange(io, total_block_count, logger);
+  return CheckIoRange(block_offset, transfer_blocks, total_block_count, logger);
 }
 
 // Check that the data arguments are cleared for a flush request.

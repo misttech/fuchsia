@@ -234,8 +234,8 @@ void BlockDevice::BlockImplQueue(block_op_t* op, block_impl_queue_callback compl
   switch (op->command.opcode) {
     case BLOCK_OPCODE_READ:
     case BLOCK_OPCODE_WRITE: {
-      if (zx_status_t status =
-              block::CheckIoRange(op->rw, block_count_, max_transfer_blocks_, logger());
+      if (zx_status_t status = block::CheckIoRange(op->rw.offset_dev, op->rw.length, block_count_,
+                                                   max_transfer_blocks_, logger());
           status != ZX_OK) {
         completion_cb(cookie, status, op);
         return;
@@ -304,8 +304,8 @@ void BlockDevice::BlockImplQueue(block_op_t* op, block_impl_queue_callback compl
         completion_cb(cookie, ZX_ERR_NOT_SUPPORTED, op);
         return;
       }
-      if (zx_status_t status =
-              block::CheckIoRange(op->trim, block_count_, max_transfer_blocks_, logger());
+      if (zx_status_t status = block::CheckIoRange(op->trim.offset_dev, op->trim.length,
+                                                   block_count_, max_transfer_blocks_, logger());
           status != ZX_OK) {
         completion_cb(cookie, status, op);
         return;

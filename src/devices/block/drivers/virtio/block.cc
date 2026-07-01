@@ -150,7 +150,8 @@ void BlockDevice::BlockImplQueue(block_op_t* bop, block_impl_queue_callback comp
     case BLOCK_OPCODE_READ:
     case BLOCK_OPCODE_WRITE:
     case BLOCK_OPCODE_TRIM:
-      if (zx_status_t status = block::CheckIoRange(txn->op.rw, config_.capacity, logger());
+      if (zx_status_t status = block::CheckIoRange(txn->op.rw.offset_dev, txn->op.rw.length,
+                                                   config_.capacity, logger());
           status != ZX_OK) {
         completion_cb(cookie, status, bop);
         return;
