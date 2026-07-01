@@ -634,4 +634,18 @@ TEST_fx-build-does-not-invoke-fuchsia-cog-when-no-checks() {
     BT_EXPECT [ ! -f "${fuchsia_cog}.mock_state" ]
 }
 
+TEST_fx-build-rbe-preflight-failure() {
+    setup_build_test
+    cat > "${BT_TEMP_DIR}/tools/devshell/rbe.mock_side_effects" <<EOF
+if [[ "\$1" == "preflight" ]]; then
+  # Use exit status 5 as an arbitrary non-zero value to verify that
+  # the preflight check exit code is propagated correctly.
+  exit 5
+fi
+EOF
+    local status=0
+    "${fx}" build //src:foo || status=$?
+    BT_EXPECT_EQ "${status}" "5"
+}
+
 BT_RUN_TESTS "$@"

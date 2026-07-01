@@ -721,7 +721,14 @@ function main {
   # When using any remote build services, do a quick authentication
   # check before starting the build.
   if [[ "$skip_auth_check" == 0 ]]; then
+    # Return instead of exit to bypass exit-with-message, since RBE
+    # authentication failures do not require a build bug report hint.
     fx-command-run rbe preflight
+    local -r preflight_status="$?"
+    if [[ "${preflight_status}" -ne 0 ]]; then
+      fx-error "RBE preflight check failed. If this is an authentication issue, please run: fx rbe auth"
+      return "${preflight_status}"
+    fi
   fi
 
   if [[ "${FX_BUILD_MODE}" == "bazel" ]]; then
