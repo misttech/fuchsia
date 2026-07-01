@@ -745,6 +745,137 @@ TEST_F(TunTest, InvalidPortConfigs) {
   }
 }
 
+TEST_F(TunTest, DefaultDeviceConfigs) {
+  auto device_endpoints = fidl::Endpoints<fuchsia_hardware_network::Device>::Create();
+
+  zx::result client_end = CreateDevice(DefaultDeviceConfig());
+  ASSERT_OK(client_end.status_value());
+  fidl::WireSyncClient tun{std::move(client_end.value())};
+  ASSERT_OK(tun->GetDevice(std::move(device_endpoints.server)).status());
+
+  fidl::WireSyncClient device{std::move(device_endpoints.client)};
+  fidl::WireResult info_result = device->GetInfo();
+  ASSERT_OK(info_result.status());
+  ASSERT_TRUE(info_result.value().info.has_base_info());
+  const fuchsia_hardware_network::wire::DeviceBaseInfo& base_info =
+      info_result.value().info.base_info();
+  ASSERT_TRUE(base_info.has_min_rx_buffer_length());
+  EXPECT_EQ(base_info.min_rx_buffer_length(), 1u);
+  ASSERT_TRUE(base_info.has_min_tx_buffer_length());
+  EXPECT_EQ(base_info.min_tx_buffer_length(), 1u);
+}
+
+TEST_F(TunTest, CustomDeviceConfigs) {
+  constexpr uint32_t kMinRxBufferLength = 5;
+  constexpr uint32_t kMinTxBufferLength = 6;
+  auto device_endpoints = fidl::Endpoints<fuchsia_hardware_network::Device>::Create();
+
+  fuchsia_net_tun::wire::DeviceConfig config = DefaultDeviceConfig();
+  fuchsia_net_tun::wire::BaseDeviceConfig base_config(alloc_);
+  base_config.set_min_rx_buffer_length(kMinRxBufferLength);
+  base_config.set_min_tx_buffer_length(kMinTxBufferLength);
+  config.set_base(alloc_, std::move(base_config));
+
+  zx::result client_end = CreateDevice(std::move(config));
+  ASSERT_OK(client_end.status_value());
+  fidl::WireSyncClient tun{std::move(client_end.value())};
+  ASSERT_OK(tun->GetDevice(std::move(device_endpoints.server)).status());
+
+  fidl::WireSyncClient device{std::move(device_endpoints.client)};
+  fidl::WireResult info_result = device->GetInfo();
+  ASSERT_OK(info_result.status());
+  ASSERT_TRUE(info_result.value().info.has_base_info());
+  const fuchsia_hardware_network::wire::DeviceBaseInfo& base_info =
+      info_result.value().info.base_info();
+  ASSERT_TRUE(base_info.has_min_rx_buffer_length());
+  EXPECT_EQ(base_info.min_rx_buffer_length(), kMinRxBufferLength);
+  ASSERT_TRUE(base_info.has_min_tx_buffer_length());
+  EXPECT_EQ(base_info.min_tx_buffer_length(), kMinTxBufferLength);
+}
+
+TEST_F(TunTest, InvalidDeviceConfigs) {
+  auto wait_for_device_error = [this](fuchsia_net_tun::wire::DeviceConfig config) -> zx_status_t {
+    zx::result endpoints = fidl::CreateEndpoints<fuchsia_net_tun::Device>();
+    if (endpoints.is_error()) {
+      return endpoints.status_value();
+    }
+    zx::result tun = Connect();
+    if (tun.is_error()) {
+      return tun.status_value();
+    }
+    fidl::Status result =
+        tun.value()->CreateDevice(std::move(config), std::move(endpoints->server));
+    if (!result.ok()) {
+      return result.status();
+    }
+
+    CapturingEventHandler<fuchsia_net_tun::Device> handler;
+    fidl::WireClient client(std::move(endpoints->client), dispatcher(), &handler);
+
+    if (!RunLoopWithTimeoutOrUntil([&handler] { return handler.info_.has_value(); }, kTimeout)) {
+      return ZX_ERR_TIMED_OUT;
+    }
+    return handler.info_.value().status();
+  };
+
+  auto wait_for_pair_error = [this](fuchsia_net_tun::wire::DevicePairConfig config) -> zx_status_t {
+    zx::result endpoints = fidl::CreateEndpoints<fuchsia_net_tun::DevicePair>();
+    if (endpoints.is_error()) {
+      return endpoints.status_value();
+    }
+    zx::result tun = Connect();
+    if (tun.is_error()) {
+      return tun.status_value();
+    }
+    fidl::Status result = tun.value()->CreatePair(std::move(config), std::move(endpoints->server));
+    if (!result.ok()) {
+      return result.status();
+    }
+
+    CapturingEventHandler<fuchsia_net_tun::DevicePair> handler;
+    fidl::WireClient client(std::move(endpoints->client), dispatcher(), &handler);
+
+    if (!RunLoopWithTimeoutOrUntil([&handler] { return handler.info_.has_value(); }, kTimeout)) {
+      return ZX_ERR_TIMED_OUT;
+    }
+    return handler.info_.value().status();
+  };
+
+  // min_rx_buffer_length = 0 is invalid
+  {
+    fuchsia_net_tun::wire::DeviceConfig config = DefaultDeviceConfig();
+    fuchsia_net_tun::wire::BaseDeviceConfig base_config(alloc_);
+    base_config.set_min_rx_buffer_length(0);
+    config.set_base(alloc_, std::move(base_config));
+    ASSERT_STATUS(wait_for_device_error(std::move(config)), ZX_ERR_INVALID_ARGS);
+  }
+
+  {
+    fuchsia_net_tun::wire::DevicePairConfig config = DefaultDevicePairConfig();
+    fuchsia_net_tun::wire::BaseDeviceConfig base_config(alloc_);
+    base_config.set_min_rx_buffer_length(0);
+    config.set_base(alloc_, std::move(base_config));
+    ASSERT_STATUS(wait_for_pair_error(std::move(config)), ZX_ERR_INVALID_ARGS);
+  }
+
+  // min_tx_buffer_length = 0 is invalid
+  {
+    fuchsia_net_tun::wire::DeviceConfig config = DefaultDeviceConfig();
+    fuchsia_net_tun::wire::BaseDeviceConfig base_config(alloc_);
+    base_config.set_min_tx_buffer_length(0);
+    config.set_base(alloc_, std::move(base_config));
+    ASSERT_STATUS(wait_for_device_error(std::move(config)), ZX_ERR_INVALID_ARGS);
+  }
+
+  {
+    fuchsia_net_tun::wire::DevicePairConfig config = DefaultDevicePairConfig();
+    fuchsia_net_tun::wire::BaseDeviceConfig base_config(alloc_);
+    base_config.set_min_tx_buffer_length(0);
+    config.set_base(alloc_, std::move(base_config));
+    ASSERT_STATUS(wait_for_pair_error(std::move(config)), ZX_ERR_INVALID_ARGS);
+  }
+}
+
 TEST_F(TunTest, ConnectNetworkDevice) {
   auto device_endpoints = fidl::Endpoints<fuchsia_hardware_network::Device>::Create();
 

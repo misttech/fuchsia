@@ -15,8 +15,8 @@ class BasePortConfig {
  public:
   static std::optional<BasePortConfig> Create(const fuchsia_net_tun::wire::BasePortConfig& config);
 
-  uint8_t port_id;
-  uint32_t mtu;
+  uint8_t port_id = 0;
+  uint32_t mtu = fuchsia_net_tun::wire::kMaxMtu;
   std::vector<fuchsia_hardware_network::wire::FrameType> rx_types;
   std::vector<fuchsia_hardware_network::wire::FrameTypeSupport> tx_types;
   fuchsia_hardware_network::wire::PortClass port_class;
@@ -25,13 +25,10 @@ class BasePortConfig {
 
 class DevicePortConfig : public BasePortConfig {
  public:
-  DevicePortConfig() = delete;
-  DevicePortConfig(DevicePortConfig&&) = default;
-
   static std::optional<DevicePortConfig> Create(
       const fuchsia_net_tun::wire::DevicePortConfig& config);
 
-  bool online;
+  bool online = false;
   std::optional<fuchsia_net::wire::MacAddress> mac;
 
  private:
@@ -40,9 +37,6 @@ class DevicePortConfig : public BasePortConfig {
 
 class DevicePairPortConfig : public BasePortConfig {
  public:
-  DevicePairPortConfig() = delete;
-  DevicePairPortConfig(DevicePairPortConfig&&) = default;
-
   static std::optional<DevicePairPortConfig> Create(
       const fuchsia_net_tun::wire::DevicePairPortConfig& config);
 
@@ -55,29 +49,34 @@ class DevicePairPortConfig : public BasePortConfig {
 
 class BaseDeviceConfig {
  public:
-  explicit BaseDeviceConfig(const fuchsia_net_tun::wire::BaseDeviceConfig& config);
-
-  BaseDeviceConfig(BaseDeviceConfig&&) = default;
+  static std::optional<BaseDeviceConfig> Create(
+      const fuchsia_net_tun::wire::BaseDeviceConfig& config);
 
   bool report_metadata = false;
-  uint32_t min_tx_buffer_length = 0;
-  uint32_t min_rx_buffer_length = 0;
+  uint32_t min_tx_buffer_length = 1;
+  uint32_t min_rx_buffer_length = 1;
 };
 
 class DeviceConfig : public BaseDeviceConfig {
  public:
-  explicit DeviceConfig(const fuchsia_net_tun::wire::DeviceConfig& config);
-  DeviceConfig(DeviceConfig&&) = default;
+  static std::optional<DeviceConfig> Create(const fuchsia_net_tun::wire::DeviceConfig& config);
 
   bool blocking = false;
+
+ private:
+  explicit DeviceConfig(const BaseDeviceConfig& base) : BaseDeviceConfig(base) {}
 };
 
 class DevicePairConfig : public BaseDeviceConfig {
  public:
-  explicit DevicePairConfig(const fuchsia_net_tun::wire::DevicePairConfig& config);
+  static std::optional<DevicePairConfig> Create(
+      const fuchsia_net_tun::wire::DevicePairConfig& config);
 
   bool fallible_transmit_left = false;
   bool fallible_transmit_right = false;
+
+ private:
+  explicit DevicePairConfig(const BaseDeviceConfig& base) : BaseDeviceConfig(base) {}
 };
 
 }  // namespace tun

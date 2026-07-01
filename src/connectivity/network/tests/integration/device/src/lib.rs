@@ -386,8 +386,8 @@ const LARGE_BODY: usize = ETH_BODY + 1024;
 const LARGE_FRAME: usize = ETHERNET_HDR_LEN_NO_TAG + LARGE_BODY;
 #[netstack_test]
 #[variant(N, Netstack)]
-#[test_case(fposix_socket_packet::Kind::Network, 0, 0; "network no padding")]
-#[test_case(fposix_socket_packet::Kind::Link, 0, 0; "link no padding")]
+#[test_case(fposix_socket_packet::Kind::Network, 1, 0; "network no padding")]
+#[test_case(fposix_socket_packet::Kind::Link, 1, 0; "link no padding")]
 #[test_case(fposix_socket_packet::Kind::Network, ETH_HDR, 0; "network header only")]
 #[test_case(fposix_socket_packet::Kind::Link, ETH_HDR, 0; "link header only")]
 #[test_case(fposix_socket_packet::Kind::Network, MIN_ETH_FRAME, ETH_BODY ; "network min eth")]

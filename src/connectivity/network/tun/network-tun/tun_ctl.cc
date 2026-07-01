@@ -56,6 +56,12 @@ TunCtl::~TunCtl() {
 }
 
 void TunCtl::CreateDevice(CreateDeviceRequestView request, CreateDeviceCompleter::Sync& completer) {
+  std::optional config = DeviceConfig::Create(request->config);
+  if (!config.has_value()) {
+    FX_LOGST(ERROR, "tun") << "TunCtl: Invalid DeviceConfig";
+    request->device.Close(ZX_ERR_INVALID_ARGS);
+    return;
+  }
   zx::result tun_device = TunDevice::Create(
       dispatchers_->Unowned(), netdev_dispatcher_.borrow(),
       [this](TunDevice* dev) {
@@ -66,7 +72,7 @@ void TunCtl::CreateDevice(CreateDeviceRequestView request, CreateDeviceCompleter
           TryFireShutdownCallback();
         });
       },
-      DeviceConfig(request->config));
+      std::move(config.value()));
 
   if (tun_device.is_error()) {
     FX_PLOGST(ERROR, "tun", tun_device.status_value()) << "TunCtl: TunDevice creation failed";
@@ -80,6 +86,12 @@ void TunCtl::CreateDevice(CreateDeviceRequestView request, CreateDeviceCompleter
 }
 
 void TunCtl::CreatePair(CreatePairRequestView request, CreatePairCompleter::Sync& completer) {
+  std::optional config = DevicePairConfig::Create(request->config);
+  if (!config.has_value()) {
+    FX_LOGST(ERROR, "tun") << "TunCtl: Invalid DevicePairConfig";
+    request->device_pair.Close(ZX_ERR_INVALID_ARGS);
+    return;
+  }
   zx::result tun_pair = TunPair::Create(
       dispatchers_->Unowned(), netdev_dispatcher_.borrow(), fidl_dispatcher_,
       [this](TunPair* pair) {
@@ -88,7 +100,7 @@ void TunCtl::CreatePair(CreatePairRequestView request, CreatePairCompleter::Sync
           TryFireShutdownCallback();
         });
       },
-      DevicePairConfig(request->config));
+      std::move(config.value()));
 
   if (tun_pair.is_error()) {
     FX_PLOGST(ERROR, "tun", tun_pair.status_value()) << "TunCtl: TunPair creation failed";

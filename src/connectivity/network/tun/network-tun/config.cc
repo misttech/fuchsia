@@ -39,10 +39,8 @@ std::optional<BasePortConfig> BasePortConfig::Create(
   if (tx_types.empty()) {
     return std::nullopt;
   }
-  if (config.has_rx_checksum_offload() && config.rx_checksum_offload()) {
-    out.rx_checksum_offload = true;
-  }
   std::copy(tx_types.begin(), tx_types.end(), std::back_inserter(out.tx_types));
+  out.rx_checksum_offload = config.has_rx_checksum_offload() && config.rx_checksum_offload();
   return out;
 }
 
@@ -84,45 +82,50 @@ std::optional<DevicePairPortConfig> DevicePairPortConfig::Create(
   return out;
 }
 
-BaseDeviceConfig::BaseDeviceConfig(const fuchsia_net_tun::wire::BaseDeviceConfig& config) {
-  if (config.has_report_metadata()) {
-    report_metadata = config.report_metadata();
-  }
+std::optional<BaseDeviceConfig> BaseDeviceConfig::Create(
+    const fuchsia_net_tun::wire::BaseDeviceConfig& config) {
+  BaseDeviceConfig out;
+  out.report_metadata = config.has_report_metadata() && config.report_metadata();
   if (config.has_min_tx_buffer_length()) {
-    min_tx_buffer_length = config.min_tx_buffer_length();
+    if (config.min_tx_buffer_length() == 0) {
+      return std::nullopt;
+    }
+    out.min_tx_buffer_length = config.min_tx_buffer_length();
   }
   if (config.has_min_rx_buffer_length()) {
-    min_rx_buffer_length = config.min_rx_buffer_length();
+    if (config.min_rx_buffer_length() == 0) {
+      return std::nullopt;
+    }
+    out.min_rx_buffer_length = config.min_rx_buffer_length();
   }
+  return out;
 }
 
-DeviceConfig::DeviceConfig(const fuchsia_net_tun::wire::DeviceConfig& config)
-    : BaseDeviceConfig([&config]() {
-        if (config.has_base()) {
-          return BaseDeviceConfig(config.base());
-        } else {
-          return BaseDeviceConfig(fuchsia_net_tun::wire::BaseDeviceConfig());
-        }
-      }()) {
-  if (config.has_blocking()) {
-    blocking = config.blocking();
+std::optional<DeviceConfig> DeviceConfig::Create(
+    const fuchsia_net_tun::wire::DeviceConfig& config) {
+  std::optional base = BaseDeviceConfig::Create(
+      config.has_base() ? config.base() : fuchsia_net_tun::wire::BaseDeviceConfig());
+  if (!base.has_value()) {
+    return std::nullopt;
   }
+  DeviceConfig out(base.value());
+  out.blocking = config.has_blocking() && config.blocking();
+  return out;
 }
 
-DevicePairConfig::DevicePairConfig(const fuchsia_net_tun::wire::DevicePairConfig& config)
-    : BaseDeviceConfig([&config]() {
-        if (config.has_base()) {
-          return BaseDeviceConfig(config.base());
-        } else {
-          return BaseDeviceConfig(fuchsia_net_tun::wire::BaseDeviceConfig());
-        }
-      }()) {
-  if (config.has_fallible_transmit_left()) {
-    fallible_transmit_left = config.fallible_transmit_left();
+std::optional<DevicePairConfig> DevicePairConfig::Create(
+    const fuchsia_net_tun::wire::DevicePairConfig& config) {
+  std::optional base = BaseDeviceConfig::Create(
+      config.has_base() ? config.base() : fuchsia_net_tun::wire::BaseDeviceConfig());
+  if (!base.has_value()) {
+    return std::nullopt;
   }
-  if (config.has_fallible_transmit_right()) {
-    fallible_transmit_right = config.fallible_transmit_right();
-  }
+  DevicePairConfig out(base.value());
+  out.fallible_transmit_left =
+      config.has_fallible_transmit_left() && config.fallible_transmit_left();
+  out.fallible_transmit_right =
+      config.has_fallible_transmit_right() && config.fallible_transmit_right();
+  return out;
 }
 
 }  // namespace tun
