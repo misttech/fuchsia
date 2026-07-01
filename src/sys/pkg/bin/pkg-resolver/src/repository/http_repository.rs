@@ -107,7 +107,7 @@ where
                         });
                     } else {
                         return Err(tuf::Error::Opaque(format!(
-                            "HTTP Get failed {error:?} {status_code:?} {status_line:?}"
+                            "HTTP Get failed {error:?} {status_code:?} {status_line:?} {uri}"
                         )));
                     }
                 }
