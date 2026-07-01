@@ -16,7 +16,9 @@ source_set("top") {
   ]
   deps = [
     "//src/lib/elfldltl",
+    "//src/lib/ksync",
     "//src/lib/zbitl",
+    "//zircon/kernel/arch:arch-rs",
     "//zircon/kernel/arch/$zircon_cpu",
     "//zircon/kernel/dev:init",
     "//zircon/kernel/dev/hw_rng",
@@ -26,9 +28,11 @@ source_set("top") {
     "//zircon/kernel/lib/code-patching:self-test",
     "//zircon/kernel/lib/console",
     "//zircon/kernel/lib/counters",
+    "//zircon/kernel/lib/counters:counters-rs",
     "//zircon/kernel/lib/crashlog",
     "//zircon/kernel/lib/cxxabi-dynamic-init:headers",
     "//zircon/kernel/lib/debuglog",
+    "//zircon/kernel/lib/flow-id:flow-id-rs",
     "//zircon/kernel/lib/heap",
     "//zircon/kernel/lib/init",
     "//zircon/kernel/lib/io",
@@ -42,20 +46,10 @@ source_set("top") {
     "//zircon/kernel/phys:handoff",
     "//zircon/kernel/phys:zircon-abi-spec",
     "//zircon/kernel/platform",
+    "//zircon/kernel/platform:platform-rs",
+    "//zircon/kernel/vm:vm-rs",
   ]
-
   if (enable_rust_in_zircon) {
-    # Temporary dependencies on kernel Rust crates to build them while we are
-    # working on bringing up more functionality in Rust. At the moment, this
-    # code is not actually used by the kernel.
-    deps += [
-      "//src/lib/ksync",
-      "//zircon/kernel/arch:arch-rs",
-      "//zircon/kernel/lib/counters:counters-rs",
-      "//zircon/kernel/lib/flow-id:flow-id-rs",
-      "//zircon/kernel/lib/ktrace:ktrace-rs",
-      "//zircon/kernel/platform:platform-rs",
-      "//zircon/kernel/vm:vm-rs",
-    ]
+    deps += [ "//zircon/kernel/lib/ktrace:ktrace-rs" ]
   }
 }

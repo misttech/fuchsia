@@ -137,6 +137,7 @@ rustc_library("vm-rs") {
   sources = [
     "page.rs",
     "page_state.rs",
+    "vm.rs",
   ]
 
   deps = [ "//zircon/kernel/kernel:kernel-rs" ]
