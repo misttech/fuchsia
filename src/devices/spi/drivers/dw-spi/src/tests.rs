@@ -17,6 +17,7 @@ use fidl_next_fuchsia_hardware_platform_device as fdevice;
 use fidl_next_fuchsia_hardware_spiimpl as fspiimpl;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
+use futures::future::{self, Either};
 use zx::Vmo;
 
 #[fuchsia::test]
@@ -59,6 +60,7 @@ async fn test_init() {
     let mut pdev_config: fake_pdev::Config = Default::default();
     let mmio = fdevice::natural::Mmio { offset: Some(0), size: Some(0x100), vmo: Some(dup) };
     pdev_config.mmios.insert(0, mmio);
+    pdev_config.use_fake_irq = true;
     pdev.set_config(pdev_config);
 
     let powerdomain = FakePowerDomain::new();
@@ -124,9 +126,14 @@ async fn test_exchange_vector() {
     .expect("Failed to map VMO");
 
     let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed to duplicate VMO");
+    let irq = zx::VirtualInterrupt::create_virtual().expect("Failed to create virtual interrupt");
+    let irq_dup =
+        irq.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed to duplicate interrupt");
+
     let mut pdev_config: fake_pdev::Config = Default::default();
     let mmio = fdevice::natural::Mmio { offset: Some(0), size: Some(0x100), vmo: Some(dup) };
     pdev_config.mmios.insert(0, mmio);
+    pdev_config.irqs.insert(0, zx::Interrupt::from(irq.into_handle()));
     pdev.set_config(pdev_config);
 
     let powerdomain = FakePowerDomain::new();
@@ -167,12 +174,63 @@ async fn test_exchange_vector() {
         mapping.write_at(offset, &value.to_le_bytes());
     };
 
-    // Set SR.TFE and SR.RFNE to indicate that the FIFO can always be read from and written to.
-    write_u32(0x28, 0x0c);
+    // Set TXFLR and ISR.TXEIS to indicate TX FIFO empty, then trigger the interrupt.
+    write_u32(0x20, 0x0);
+    write_u32(0x30, 0x01);
 
+    irq_dup.trigger(zx::BootInstant::ZERO).expect("Failed to trigger interrupt");
+
+    // Call exchange_vector(), but don't await on it yet.
     let txdata = vec![1u8, 2, 3, 4, 5];
-    let response = client.exchange_vector(0, &txdata).await;
+    let exchange_future = client.exchange_vector(0, &txdata);
+    let exchange_future = std::pin::pin!(exchange_future);
+
+    // The driver should handle the interrupt then ack it. Wait for this to happen before starting
+    // the RX portion of the transfer.
+    let untriggered_future =
+        fasync::OnSignals::new(&irq_dup, zx::Signals::VIRTUAL_INTERRUPT_UNTRIGGERED);
+    let untriggered_future = std::pin::pin!(untriggered_future);
+
+    // The actual exchange_vector() FIDL call is made the first time its future is polled, so the
+    // two futures must be selected here. The untriggered future will always complete first.
+    let exchange_future = match future::select(exchange_future, untriggered_future).await {
+        Either::Left((res, _)) => {
+            panic!("exchange_vector completed prematurely: {:?}", res);
+        }
+        Either::Right((res, remaining_exchange_future)) => {
+            res.expect("Failed to wait for untriggered signal");
+            remaining_exchange_future
+        }
+    };
+
+    // Verify register values after the first interrupt (TX empty) is handled:
+    // - TXFTLR: Remains at the default 128.
+    // - RXFTLR: Set to 4 (calculated as rx_remaining (5) - 1).
+    // - IMR: Only RXFIFO interrupt remains unmasked (and error interrupts). TX FIFO empty interrupt
+    //        is masked since TX is done.
+    assert_eq!(read_u32(0x18), 128);
+    assert_eq!(read_u32(0x1c), 4);
+    assert_eq!(read_u32(0x2c), 0x1e);
+
+    // Set RXFLR and ISR.RXFIS to indicate that 5 bytes can be read from the RX FIFO, then trigger
+    // the interrupt again.
+    write_u32(0x24, 0x5);
+    write_u32(0x30, 0x10);
+
+    irq_dup.trigger(zx::BootInstant::ZERO).expect("Failed to trigger interrupt");
+
+    // The driver should be able to complete the request now.
+    let response = exchange_future.await;
     assert!(response.is_ok());
+
+    // Verify register values after the transfer is complete:
+    // - TXFTLR: Remains at the default 128.
+    // - RXFTLR: Set to 0 (calculated as rx_remaining.max(1) - 1, which is 1 - 1 = 0 when
+    //           rx_remaining is 0).
+    // - IMR: All interrupts are masked.
+    assert_eq!(read_u32(0x18), 128);
+    assert_eq!(read_u32(0x1c), 0);
+    assert_eq!(read_u32(0x2c), 0);
 
     let rxdata = response.unwrap().unwrap().rxdata;
     assert_eq!(rxdata.len(), txdata.len());

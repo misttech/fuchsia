@@ -7,7 +7,7 @@ use fidl_next_fuchsia_hardware_gpio as fgpio;
 use fidl_next_fuchsia_hardware_spiimpl::{
     self, SpiImplExchangeVectorResponse, SpiImplReceiveVectorResponse, spi_impl as fspi_impl,
 };
-use log::{error, warn};
+use log::{debug, error, warn};
 use mmio::Register;
 use mmio::region::MmioRegion;
 use mmio::vmo::VmoMemory;
@@ -21,14 +21,16 @@ const FIFO_SIZE: usize = 256;
 pub struct DwSpiDevice {
     mmio: DwSpiRegsBlock<MmioRegion<VmoMemory>>,
     cs_gpio: Option<fidl_next::Client<fgpio::Gpio>>,
+    interrupt: zx::Interrupt,
 }
 
 impl DwSpiDevice {
     pub fn new(
         mmio: MmioRegion<VmoMemory>,
         cs_gpio: Option<fidl_next::Client<fgpio::Gpio>>,
+        interrupt: zx::Interrupt,
     ) -> Self {
-        DwSpiDevice { mmio: DwSpiRegsBlock { mmio }, cs_gpio }
+        DwSpiDevice { mmio: DwSpiRegsBlock { mmio }, cs_gpio, interrupt }
     }
 
     fn set_baud_rate(
@@ -116,6 +118,13 @@ impl DwSpiDevice {
         // Mask all interrupts initially in IMR
         self.mmio.imr_mut().write(registers::Imr::from_raw(0));
 
+        // Configure the controller to interrupt us when the TX FIFO is half empty.
+        self.mmio.txftlr_mut().write({
+            let mut txftlr = registers::Txftlr::from_raw(0);
+            txftlr.set_tft((FIFO_SIZE / 2).try_into().unwrap());
+            txftlr
+        });
+
         // Enable SSI
         self.mmio.ssi_enr_mut().write({
             let mut ssi_enr = registers::SsiEnr::from_raw(0);
@@ -126,12 +135,117 @@ impl DwSpiDevice {
         Ok(())
     }
 
+    fn exchange_pio_loop(
+        &mut self,
+        mut txdata: &[u8],
+        rx: bool,
+        size: usize,
+    ) -> Result<Vec<u8>, Status> {
+        // Don't unmask RXFIM since we know there won't be any RX data to start.
+        self.mmio.imr_mut().write({
+            let mut imr = registers::Imr::from_raw(0);
+            imr.set_rxoim(true);
+            imr.set_rxuim(true);
+            imr.set_txoim(true);
+            imr.set_txeim(true);
+            imr
+        });
+
+        if self.mmio.sr().read().rfne() {
+            warn!("RX FIFO is not empty before starting transfer");
+        }
+
+        let mut tx_remaining = size;
+        let mut rx_remaining = size;
+
+        let mut rxdata = Vec::<u8>::with_capacity(if rx { size } else { 0 });
+
+        loop {
+            let isr = self.mmio.isr().read();
+
+            debug!("Interrupt {:#02x}: TX: {tx_remaining} RX: {rx_remaining}", isr.to_raw());
+
+            if isr.txois() || isr.rxuis() || isr.rxois() {
+                warn!("Unexpected interrupt {:#02x}", isr.to_raw());
+                return Err(Status::IO);
+            }
+            if !isr.txeis() && !isr.rxfis() {
+                warn!("Spurious interrupt {:#02x}", isr.to_raw());
+            }
+
+            // The controller may still be draining the TX FIFO and filling the RX FIFO while we're
+            // handling this interrupt. Reading TX words first prevents us from accidentally
+            // overflowing the RX FIFO due to the RX count increasing after we've read it.
+            let tx_words = self.mmio.txflr().read().txtfl() as usize;
+            let rx_words = self.mmio.rxflr().read().rxtfl() as usize;
+
+            assert!(tx_words <= FIFO_SIZE);
+            let tx_free = FIFO_SIZE - tx_words;
+
+            debug!("  RX words {rx_words}, TX words {tx_words} (free {tx_free})");
+
+            // Drain the RX FIFO first. If it's full, writing to the TX FIFO first will overflow it.
+            let transfer_size = std::cmp::min(rx_remaining, rx_words);
+            for _ in 0..transfer_size {
+                let data = self.mmio.dr0().read().dr() as u8;
+                if rx {
+                    rxdata.push(data);
+                }
+            }
+
+            rx_remaining -= transfer_size;
+
+            self.mmio.rxftlr_mut().write({
+                // If there are FIFO_SIZE or fewer bytes left to receive, we can configure the
+                // controller to wait for the FIFO to be completely full before interrupting us.
+                // Otherwise, have it interrupt us when the FIFO is half full.
+                let fifo_level =
+                    if rx_remaining <= FIFO_SIZE { rx_remaining.max(1) } else { FIFO_SIZE / 2 };
+                let mut rxftlr = registers::Rxftlr::from_raw(0);
+                rxftlr.set_rft((fifo_level - 1).try_into().unwrap());
+                debug!("  New RXFTLR: {:#02x}", rxftlr.to_raw());
+                rxftlr
+            });
+
+            // Next fill the TX FIFO.
+            let transfer_size = std::cmp::min(tx_remaining, tx_free);
+            for i in 0..transfer_size {
+                let data = if txdata.len() > 0 { txdata[i] } else { 0xFF };
+                self.mmio.dr0_mut().write(registers::Dr0::from_raw(data as u32));
+            }
+
+            tx_remaining -= transfer_size;
+            if txdata.len() > 0 {
+                txdata = &txdata[transfer_size..];
+            }
+
+            // Enable/disable FIFO threshold interrupts depending on how many bytes we have left to
+            // transmit/receive.
+            self.mmio.imr_mut().update(|imr| {
+                imr.set_txeim(tx_remaining > 0);
+                imr.set_rxfim(rx_remaining > 0);
+                debug!("  New IMR: {:#02x}", imr.to_raw());
+            });
+
+            if tx_remaining == 0 && rx_remaining == 0 {
+                break;
+            }
+
+            // TODO(https://fxbug.dev/529838127): Switch to OnInterrupt.
+            self.interrupt.wait()?;
+        }
+
+        self.mmio.imr_mut().write(registers::Imr::from_raw(0));
+
+        Ok(rxdata)
+    }
+
     async fn exchange_pio(
         &mut self,
         chip_select: u32,
-        mut txdata: &[u8],
+        txdata: &[u8],
         rx: bool,
-        mut size: usize,
+        size: usize,
     ) -> Result<Vec<u8>, Status> {
         if size == 0 {
             return Ok(vec![]);
@@ -154,7 +268,7 @@ impl DwSpiDevice {
             )?;
         }
 
-        // TODO(https://fxbug.dev/500865936): Support DMA transfers for larger sizes.
+        // TODO(https://fxbug.dev/529838127): Support DMA transfers for larger sizes.
         // This is a placeholder indicating where DMA support would be added.
         // For now, we only implement PIO.
 
@@ -165,40 +279,7 @@ impl DwSpiDevice {
             ser
         });
 
-        let mut rxdata = Vec::<u8>::with_capacity(if rx { size } else { 0 });
-
-        while size > 0 {
-            if self.mmio.sr().read().rfne() {
-                warn!("RX FIFO is not empty before starting transfer");
-            }
-
-            // Wait for the TX FIFO to be empty.
-            while !self.mmio.sr().read().tfe() {}
-
-            let transfer_size = std::cmp::min(size, FIFO_SIZE);
-
-            // Fill the TX FIFO up to available space or remaining data.
-            for i in 0..transfer_size {
-                let data = if txdata.len() > 0 { txdata[i] } else { 0xFF };
-                self.mmio.dr0_mut().write(registers::Dr0::from_raw(data as u32));
-            }
-
-            // Read the RX FIFO for the bytes we just sent.
-            for _ in 0..transfer_size {
-                // Wait for at least one byte to be in the RX FIFO.
-                while !self.mmio.sr().read().rfne() {}
-
-                let data = self.mmio.dr0().read().dr() as u8;
-                if rx {
-                    rxdata.push(data);
-                }
-            }
-
-            size -= transfer_size;
-            if txdata.len() > 0 {
-                txdata = &txdata[transfer_size..];
-            }
-        }
+        let rxdata = self.exchange_pio_loop(txdata, rx, size);
 
         self.mmio.ser_mut().write(registers::Ser::from_raw(0));
 
@@ -211,7 +292,7 @@ impl DwSpiDevice {
             )?;
         }
 
-        return Ok(rxdata);
+        rxdata
     }
 }
 
@@ -332,7 +413,12 @@ mod tests {
     fn test_set_baud_rate_and_delay() {
         let vmo = Vmo::create(0x100).expect("Failed to create VMO");
         let mmio = VmoMapping::map(0, 0x100, vmo).expect("Failed to map VMO");
-        let mut device = DwSpiDevice::new(mmio, None);
+        let irq = zx::Interrupt::from(
+            zx::VirtualInterrupt::create_virtual()
+                .expect("Failed to create virtual interrupt")
+                .into_handle(),
+        );
+        let mut device = DwSpiDevice::new(mmio, None, irq);
 
         device.set_baud_rate(200_000_000, 20_000_000, 25).unwrap();
 
@@ -344,7 +430,12 @@ mod tests {
     fn test_set_baud_rate_too_slow() {
         let vmo = Vmo::create(0x100).expect("Failed to create VMO");
         let mmio = VmoMapping::map(0, 0x100, vmo).expect("Failed to map VMO");
-        let mut device = DwSpiDevice::new(mmio, None);
+        let irq = zx::Interrupt::from(
+            zx::VirtualInterrupt::create_virtual()
+                .expect("Failed to create virtual interrupt")
+                .into_handle(),
+        );
+        let mut device = DwSpiDevice::new(mmio, None, irq);
 
         let result = device.set_baud_rate(200_000_000, 2_000, 0);
         assert_eq!(result.unwrap_err(), Status::INVALID_ARGS);
@@ -354,7 +445,12 @@ mod tests {
     fn test_set_baud_divider_rounded_up() {
         let vmo = Vmo::create(0x100).expect("Failed to create VMO");
         let mmio = VmoMapping::map(0, 0x100, vmo).expect("Failed to map VMO");
-        let mut device = DwSpiDevice::new(mmio, None);
+        let irq = zx::Interrupt::from(
+            zx::VirtualInterrupt::create_virtual()
+                .expect("Failed to create virtual interrupt")
+                .into_handle(),
+        );
+        let mut device = DwSpiDevice::new(mmio, None, irq);
 
         device.set_baud_rate(200_000_000, 3_600_000, 0).unwrap();
 
@@ -366,7 +462,12 @@ mod tests {
     fn test_set_baud_rate_invalid_delay_remainder() {
         let vmo = Vmo::create(0x100).expect("Failed to create VMO");
         let mmio = VmoMapping::map(0, 0x100, vmo).expect("Failed to map VMO");
-        let mut device = DwSpiDevice::new(mmio, None);
+        let irq = zx::Interrupt::from(
+            zx::VirtualInterrupt::create_virtual()
+                .expect("Failed to create virtual interrupt")
+                .into_handle(),
+        );
+        let mut device = DwSpiDevice::new(mmio, None, irq);
 
         let result = device.set_baud_rate(200_000_000, 20_000_000, 28);
         assert_eq!(result.unwrap_err(), Status::INVALID_ARGS);
@@ -376,7 +477,12 @@ mod tests {
     fn test_set_baud_rate_invalid_delay_too_large() {
         let vmo = Vmo::create(0x100).expect("Failed to create VMO");
         let mmio = VmoMapping::map(0, 0x100, vmo).expect("Failed to map VMO");
-        let mut device = DwSpiDevice::new(mmio, None);
+        let irq = zx::Interrupt::from(
+            zx::VirtualInterrupt::create_virtual()
+                .expect("Failed to create virtual interrupt")
+                .into_handle(),
+        );
+        let mut device = DwSpiDevice::new(mmio, None, irq);
 
         let result = device.set_baud_rate(200_000_000, 20_000_000, 5000);
         assert_eq!(result.unwrap_err(), Status::INVALID_ARGS);

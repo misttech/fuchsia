@@ -106,7 +106,9 @@ impl Driver for DwSpiDriver {
         };
 
         let pdev = context.connect_to_pdev()?;
-        let mut device = DwSpiDevice::new(pdev.map_mmio_by_id(0).await?, cs_gpio);
+        let interrupt =
+            pdev.get_interrupt_by_id(0, 0).await?.context("Failed to get interrupt")?.irq;
+        let mut device = DwSpiDevice::new(pdev.map_mmio_by_id(0).await?, cs_gpio, interrupt);
 
         let max_bus_clock_hz = DwSpiDriver::get_max_bus_clock(&pdev).await;
         let config: DwSpiConfig = pdev

@@ -40,6 +40,26 @@ register! {
         pub sckdv, set_sckdv: 15, 0;
     }
 
+    #[register(offset = 0x18, mode = RW)]
+    pub struct Txftlr(u32) {
+        pub tft, set_tft: 8, 0;
+    }
+
+    #[register(offset = 0x1c, mode = RW)]
+    pub struct Rxftlr(u32) {
+        pub rft, set_rft: 8, 0;
+    }
+
+    #[register(offset = 0x20, mode = RO)]
+    pub struct Txflr(u32) {
+        pub txtfl, _: 8, 0;
+    }
+
+    #[register(offset = 0x24, mode = RO)]
+    pub struct Rxflr(u32) {
+        pub rxtfl, _: 8, 0;
+    }
+
     #[register(offset = 0x28, mode = RO)]
     pub struct Sr(u32) {
         pub dcol, _: 6;
@@ -61,6 +81,16 @@ register! {
         pub txeim, set_txeim: 0;
     }
 
+    #[register(offset = 0x30, mode = RO)]
+    pub struct Isr(u32) {
+        pub mstis, _: 5;
+        pub rxfis, _: 4;
+        pub rxois, _: 3;
+        pub rxuis, _: 2;
+        pub txois, _: 1;
+        pub txeis, _: 0;
+    }
+
     #[register(offset = 0x60, mode = RW)]
     pub struct Dr0(u32) {
         pub dr, set_dr: 7, 0;
@@ -79,8 +109,13 @@ register_block! {
         pub ssi_enr: SsiEnr,
         pub ser: Ser,
         pub baudr: Baudr,
+        pub txftlr: Txftlr,
+        pub rxftlr: Rxftlr,
+        pub txflr: Txflr,
+        pub rxflr: Rxflr,
         pub sr: Sr,
         pub imr: Imr,
+        pub isr: Isr,
         pub dr0: Dr0,
         pub rx_sample_dly: RxSampleDly,
     }
