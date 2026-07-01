@@ -52,6 +52,7 @@ rustc_library("settings_input") {
   sources = [
     "src/input_controller.rs",
     "src/input_device_configuration.rs",
+    "src/input_device_limit_tests.rs",
     "src/input_fidl_handler.rs",
     "src/input_test_environment.rs",
     "src/input_tests.rs",

@@ -177,6 +177,18 @@ impl InputState {
     pub(crate) fn device_types(&self) -> HashSet<InputDeviceType> {
         self.input_categories.keys().cloned().collect()
     }
+
+    /// Returns true if a device with the given `device_type` and `device_name` is present.
+    pub(crate) fn contains_device(&self, device_type: InputDeviceType, device_name: &str) -> bool {
+        self.input_categories
+            .get(&device_type)
+            .is_some_and(|category| category.devices.contains_key(device_name))
+    }
+
+    /// Returns the total number of devices present across all categories.
+    pub(crate) fn total_devices(&self) -> usize {
+        self.input_categories.values().map(|category| category.devices.len()).sum()
+    }
 }
 
 impl From<InputConfiguration> for InputState {

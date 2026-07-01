@@ -106,6 +106,8 @@ where
 }
 
 #[cfg(test)]
+mod input_device_limit_tests;
+#[cfg(test)]
 mod input_test_environment;
 #[cfg(test)]
 mod input_tests;

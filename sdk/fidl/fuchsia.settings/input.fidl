@@ -3,6 +3,16 @@
 // found in the LICENSE file.
 library fuchsia.settings;
 
+// The following limits mitigate the chance of OOMs, and prevent exceeding the FIDL transport limit.
+// By limiting both the device name lenght and the maximum input devices, we can ensure that the
+// Settings service isn't vulnerable to denial of service attacks by bad clients overloading the
+// service's storage and memory with numerous input devices.
+
+/// The string length limit for dynamically added input device names.
+const MAX_DEVICE_NAME_LENGTH uint32 = 128;
+/// The maximum number of input devices which can be registered to Settings.
+const MAX_INPUT_DEVICES uint32 = 256;
+
 /// Settings related to input to the device.
 ///
 /// Supported SettingsEpitaph enums:
@@ -36,7 +46,7 @@ closed protocol Input {
     /// it will add a new input device. Devices not included in input_states
     /// will not be modified.
     strict Set(struct {
-        input_states vector<InputState>:MAX;
+        input_states vector<InputState>:MAX_INPUT_DEVICES;
     }) -> () error Error;
 
     @available(deprecated=7, removed=9)
@@ -46,7 +56,7 @@ closed protocol Input {
 
     @available(deprecated=7, removed=9)
     strict SetStates(struct {
-        input_states vector<InputState>:MAX;
+        input_states vector<InputState>:MAX_INPUT_DEVICES;
     }) -> () error Error;
 };
 
@@ -85,6 +95,9 @@ type DeviceStateSource = strict enum {
 /// [DeviceType], then the name defaults to the same as the device type, e.g.
 /// DeviceType::Microphone -> "microphone".
 type InputSettings = table {
+    // Note that `devices` does not abide by the MAX_INPUT_DEVICES constant, because the product
+    // owners can bake in InputDevice definitions which exceed this limit. Instead,
+    // MAX_INPUT_DEVICES is meant to limit the dynamically added devices.
     1: devices vector<InputDevice>:MAX;
 };
 
@@ -92,7 +105,7 @@ type InputSettings = table {
 /// by the combination of device_name and device_type.
 type InputDevice = table {
     /// Uniquely identifies a device within a device type.
-    1: device_name string:MAX;
+    1: device_name string:MAX_DEVICE_NAME_LENGTH;
     /// The type of input device (e.g. camera, microphone).
     2: device_type DeviceType;
     /// The state for each individual [DeviceStateSource].
@@ -119,7 +132,7 @@ type SourceState = table {
 /// A subset of |DeviceState|'s properties that clients may pass to change the
 /// software state of an InputDevice.
 type InputState = table {
-    1: name string:MAX;
+    1: name string:MAX_DEVICE_NAME_LENGTH;
     2: device_type DeviceType;
     3: state DeviceState;
 };

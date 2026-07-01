@@ -4,7 +4,7 @@
 
 use super::listener_logger::ListenerInspectLogger;
 use crate::service_context::ExternalServiceEvent;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use futures::channel::mpsc::UnboundedSender;
 use std::cell::Cell;
 use std::marker::PhantomData;
@@ -140,6 +140,7 @@ pub enum ResponseType {
     IrrecoverableError,
     TimeoutError,
     AlreadySubscribed,
+    MaximumInputDevicesReached,
 }
 
 #[derive(Copy, Clone, Debug)]

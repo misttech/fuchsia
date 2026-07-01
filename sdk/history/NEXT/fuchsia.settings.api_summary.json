@@ -692,7 +692,7 @@
         "kind": "table/member",
         "name": "fuchsia.settings/InputDevice.device_name",
         "ordinal": "1",
-        "type": "string"
+        "type": "string:128"
     },
     {
         "kind": "table/member",
@@ -726,7 +726,7 @@
         "kind": "struct/member",
         "name": "fuchsia.settings/InputSetRequest.input_states",
         "ordinal": "1",
-        "type": "vector<fuchsia.settings/InputState>"
+        "type": "vector<fuchsia.settings/InputState>:256"
     },
     {
         "kind": "struct",
@@ -752,7 +752,7 @@
         "kind": "table/member",
         "name": "fuchsia.settings/InputState.name",
         "ordinal": "1",
-        "type": "string"
+        "type": "string:128"
     },
     {
         "kind": "table/member",
@@ -1143,6 +1143,18 @@
         "name": "fuchsia.settings/LowLightMode",
         "strictness": "strict",
         "type": "uint32"
+    },
+    {
+        "kind": "const",
+        "name": "fuchsia.settings/MAX_DEVICE_NAME_LENGTH",
+        "type": "uint32",
+        "value": "128"
+    },
+    {
+        "kind": "const",
+        "name": "fuchsia.settings/MAX_INPUT_DEVICES",
+        "type": "uint32",
+        "value": "256"
     },
     {
         "kind": "const",

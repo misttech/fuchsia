@@ -30,6 +30,11 @@ use std::rc::Rc;
 pub(crate) const DEFAULT_CAMERA_NAME: &str = "camera";
 pub(crate) const DEFAULT_MIC_NAME: &str = "microphone";
 
+// The MAX_INPUT_DEVICES, in conjunction with the FIDL API's constraint of 128-byte names, ensures
+// that we don't exceed the 64 KiB default transport limit for the API (with some padding). It also
+// lessens the chance that we OOM while loading the device list from disk to memory.
+pub(crate) const MAX_INPUT_DEVICES: usize = fidl_fuchsia_settings::MAX_INPUT_DEVICES as usize;
+
 type UpdateInputResult = Result<Option<InputInfo>, InputError>;
 fn check_publish(
     result: UpdateInputResult,
@@ -48,6 +53,8 @@ pub(crate) enum InputError {
     ExternalFailure(Cow<'static, str>, Cow<'static, str>, Cow<'static, str>),
     #[error("Write failed for Input: {0:?}")]
     WriteFailure(Error),
+    #[error("The maximum number of input devices has been reached.")]
+    MaximumInputDeviceLimitReached(Cow<'static, str>),
     #[error("Unexpected error: {0}")]
     UnexpectedError(Cow<'static, str>),
 }
@@ -59,6 +66,9 @@ impl From<&InputError> for ResponseType {
             InputError::Unsupported(..) => ResponseType::UnsupportedError,
             InputError::ExternalFailure(..) => ResponseType::ExternalFailure,
             InputError::WriteFailure(..) => ResponseType::StorageFailure,
+            InputError::MaximumInputDeviceLimitReached(..) => {
+                ResponseType::MaximumInputDevicesReached
+            }
             InputError::UnexpectedError(..) => ResponseType::UnexpectedError,
         }
     }
@@ -447,15 +457,44 @@ impl InputController {
     ) -> UpdateInputResult {
         let mut input_info = self.get_stored_info().await;
         let device_types = input_info.input_device_state.device_types();
-
         let cam_state = self.get_cam_sw_state().ok();
 
+        // Firstly, do a validation pass to make sure the input_devices contain only valid devices,
+        // and any newly added devices are not going to exceed our maximum device limit.
+        let mut new_devices = Vec::new();
         for input_device in input_devices.iter() {
             if !device_types.contains(&input_device.device_type) {
                 return Err(InputError::Unsupported(input_device.device_type));
             }
+
+            let already_exists = input_info
+                .input_device_state
+                .contains_device(input_device.device_type, &input_device.name);
+
+            let already_counted = new_devices
+                .iter()
+                .any(|(dt, name)| *dt == input_device.device_type && *name == &input_device.name);
+
+            if !already_exists && !already_counted {
+                new_devices.push((input_device.device_type, &input_device.name));
+            }
+        }
+
+        // Abort if applying these new devices would exceed the limit.
+        if input_info.input_device_state.total_devices() + new_devices.len() > MAX_INPUT_DEVICES {
+            log::error!(
+                "Maximum number of supported input devices ({MAX_INPUT_DEVICES}) has been reached."
+            );
+            return Err(InputError::MaximumInputDeviceLimitReached(
+                format!("Maximum limit of {MAX_INPUT_DEVICES} input devices has been reached.")
+                    .into(),
+            ));
+        }
+
+        // Commit the new input_devices to storage.
+        for input_device in input_devices {
             input_info.input_device_state.insert_device(input_device.clone(), source);
-            self.input_device_state.insert_device(input_device.clone(), source);
+            self.input_device_state.insert_device(input_device, source);
         }
 
         // If the device has a camera, it should successfully get the sw state, and
@@ -704,5 +743,58 @@ mod tests {
         )
         .await
         .expect("Should have controller");
+    }
+
+    #[fuchsia::test]
+    async fn test_set_input_states_limit() {
+        let (event_tx, _event_rx) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(event_tx);
+        let storage_factory = InMemoryStorageFactory::new();
+        storage_factory
+            .initialize::<InputController>()
+            .await
+            .expect("controller should have impls");
+        let (value_tx, _value_rx) = mpsc::unbounded();
+        let setting_value_publisher = SettingValuePublisher::new(value_tx);
+
+        let mut device_configs = Vec::new();
+        for i in 0..MAX_INPUT_DEVICES {
+            device_configs.push(InputDeviceConfiguration {
+                device_name: format!("mic{i}"),
+                device_type: InputDeviceType::MICROPHONE,
+                source_states: vec![SourceState { source: DeviceStateSource::SOFTWARE, state: 0 }],
+                mutable_toggle_state: 0,
+            });
+        }
+
+        let mut controller: InputController =
+            InputController::create_with_config::<InMemoryStorageFactory>(
+                Rc::new(ServiceContext::new(None)),
+                InputConfiguration { devices: device_configs },
+                &storage_factory,
+                setting_value_publisher,
+                external_publisher,
+            )
+            .await;
+
+        let _ = controller.restore().await;
+
+        let overflow_dev = InputDevice {
+            name: "mic_max_exceeded".to_string(),
+            device_type: InputDeviceType::MICROPHONE,
+            source_states: [(DeviceStateSource::SOFTWARE, DeviceState::AVAILABLE)].into(),
+            state: DeviceState::AVAILABLE,
+        };
+        let res =
+            controller.set_input_states(vec![overflow_dev], DeviceStateSource::SOFTWARE).await;
+        match res {
+            Err(InputError::MaximumInputDeviceLimitReached(msg)) => {
+                assert_eq!(
+                    msg,
+                    format!("Maximum limit of {MAX_INPUT_DEVICES} input devices has been reached.")
+                );
+            }
+            _ => panic!("Expected MaximumInputDeviceLimitReached, got {res:?}"),
+        }
     }
 }
