@@ -12,6 +12,9 @@ extern crate self as unittest;
 
 use core::ffi::c_char;
 
+#[doc(hidden)]
+pub use zx_status::Status as __Status;
+
 /// Attribute macro defining suite of unit tests defined as module.
 ///
 /// Tests are idiomatically modeled as functions, and so modules of such
@@ -421,13 +424,13 @@ macro_rules! expect_ok {
         $crate::expect_ok!($actual, "")
     };
     ($actual:expr, $msg:expr) => {
-        let a: zx_status::Status = $actual.into();
+        let a: ::unittest::__Status = $actual.into();
         $crate::check_comparison!(
-            a == zx_status::Status::OK,
+            a == ::unittest::__Status::OK,
             false,
             "==",
-            zx_status::Status::OK,
-            zx_status::Status::OK.into_raw(),
+            ::unittest::__Status::OK,
+            ::unittest::__Status::OK.into_raw(),
             a,
             a.into_raw(),
             $msg
@@ -442,13 +445,13 @@ macro_rules! assert_ok {
         $crate::assert_ok!($actual, "")
     };
     ($actual:expr, $msg:expr) => {
-        let a: zx_status::Status = $actual.into();
+        let a: ::unittest::__Status = $actual.into();
         $crate::check_comparison!(
-            a == zx_status::Status::OK,
+            a == ::unittest::__Status::OK,
             true,
             "==",
-            zx_status::Status::OK,
-            zx_status::Status::OK.into_raw(),
+            ::unittest::__Status::OK,
+            ::unittest::__Status::OK.into_raw(),
             a,
             a.into_raw(),
             $msg
