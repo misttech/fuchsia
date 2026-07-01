@@ -7,12 +7,11 @@
 #include <fidl/fuchsia.component.runner/cpp/fidl.h>
 #include <fidl/fuchsia.io/cpp/fidl.h>
 #include <fidl/test.display.namespace/cpp/fidl.h>
-#include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
-#include <lib/component/outgoing/cpp/outgoing_directory.h>
+#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/incoming/cpp/namespace.h>
-#include <lib/driver/testing/cpp/driver_runtime.h>
-#include <lib/driver/testing/cpp/internal/test_environment.h>
-#include <lib/driver/testing/cpp/test_node.h>
+#include <lib/driver/symbols/symbols.h>
+#include <lib/driver/testing/cpp/driver_test.h>
 
 #include <gtest/gtest.h>
 
@@ -21,6 +20,26 @@
 namespace display {
 
 namespace {
+
+class TestDriver : public fdf::DriverBase2 {
+ public:
+  TestDriver() : fdf::DriverBase2("test-driver") {}
+
+  zx::result<> Start(fdf::DriverContext context) override {
+    incoming_namespace_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+    return zx::ok();
+  }
+
+  const std::shared_ptr<fdf::Namespace>& incoming_namespace() const { return incoming_namespace_; }
+
+  static DriverRegistration GetDriverRegistration() {
+    return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer2<TestDriver>::initialize,
+                                          fdf_internal::DriverServer2<TestDriver>::destroy);
+  }
+
+ private:
+  std::shared_ptr<fdf::Namespace> incoming_namespace_;
+};
 
 class MultiProtocolService : public fidl::Server<test_display_namespace::Incrementer>,
                              public fidl::Server<test_display_namespace::Decrementer> {
@@ -77,66 +96,63 @@ class SingleProtocolService : public fidl::Server<test_display_namespace::Echo> 
   fidl::ServerBindingGroup<test_display_namespace::Echo> bindings_;
 };
 
-// WARNING: Don't use this test as a template for new tests as it uses the old driver testing
-// library.
-class NamespaceDfv2Test : public testing::Test {
+class NamespaceDfv2TestEnvironment : public fdf_testing::Environment {
  public:
-  // implements `testing::Test`.
-  void SetUp() override {
-    zx::result<fdf_testing::TestNode::CreateStartArgsResult> start_args_result =
-        node_server_.SyncCall(&fdf_testing::TestNode::CreateStartArgsAndServe);
-    ASSERT_TRUE(start_args_result.is_ok());
+  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
+    async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
 
-    zx::result test_environment_init_result =
-        test_environment_.SyncCall(&fdf_testing::internal::TestEnvironment::Initialize,
-                                   std::move(start_args_result->incoming_directory_server));
-    ASSERT_TRUE(test_environment_init_result.is_ok());
+    zx::result<> multi_protocol_add_service_result =
+        to_driver_vfs.AddService<test_display_namespace::MultiProtocolService>(
+            multi_protocol_service_.GetServiceInstanceHandler(dispatcher),
+            "multi-protocol-fragment");
+    if (multi_protocol_add_service_result.is_error()) {
+      return multi_protocol_add_service_result.take_error();
+    }
 
-    test_environment_.SyncCall([&](fdf_testing::internal::TestEnvironment* environment) {
-      zx::result<> multi_protocol_add_service_result =
-          environment->incoming_directory()
-              .AddService<test_display_namespace::MultiProtocolService>(
-                  multi_protocol_service_.GetServiceInstanceHandler(
-                      env_dispatcher_->async_dispatcher()),
-                  "multi-protocol-fragment");
-      ASSERT_OK(multi_protocol_add_service_result.status_value());
+    zx::result<> single_protocol_add_service_result =
+        to_driver_vfs.AddService<test_display_namespace::SingleProtocolService>(
+            single_protocol_service_.GetServiceInstanceHandler(dispatcher),
+            "single-protocol-fragment");
+    if (single_protocol_add_service_result.is_error()) {
+      return single_protocol_add_service_result.take_error();
+    }
 
-      zx::result<> single_protocol_add_service_result =
-          environment->incoming_directory()
-              .AddService<test_display_namespace::SingleProtocolService>(
-                  single_protocol_service_.GetServiceInstanceHandler(
-                      env_dispatcher_->async_dispatcher()),
-                  "single-protocol-fragment");
-      ASSERT_OK(single_protocol_add_service_result.status_value());
-    });
-
-    zx::result<fdf::Namespace> namespace_result =
-        fdf::Namespace::Create(*start_args_result->start_args.incoming());
-    ASSERT_OK(namespace_result.status_value());
-
-    namespace_ = std::move(namespace_result).value();
+    return zx::ok();
   }
 
-  // implements `testing::Test`.
-  void TearDown() override {}
-
- protected:
+ private:
   MultiProtocolService multi_protocol_service_;
   SingleProtocolService single_protocol_service_;
+};
 
-  fdf_testing::DriverRuntime runtime_;
-  fdf::UnownedSynchronizedDispatcher env_dispatcher_ = runtime_.StartBackgroundDispatcher();
+class TestConfig final {
+ public:
+  using DriverType = TestDriver;
+  using EnvironmentType = NamespaceDfv2TestEnvironment;
+};
 
-  async_patterns::TestDispatcherBound<fdf_testing::TestNode> node_server_{
-      env_dispatcher_->async_dispatcher(), std::in_place, std::string("root")};
-  async_patterns::TestDispatcherBound<fdf_testing::internal::TestEnvironment> test_environment_{
-      env_dispatcher_->async_dispatcher(), std::in_place};
+class NamespaceDfv2Test : public ::testing::Test {
+ public:
+  void SetUp() override {
+    zx::result<> result = driver_test().StartDriver();
+    ASSERT_EQ(ZX_OK, result.status_value());
+  }
 
-  fdf::Namespace namespace_;
+  void TearDown() override {
+    zx::result<> result = driver_test().StopDriver();
+    ASSERT_EQ(ZX_OK, result.status_value());
+  }
+
+  fdf_testing::ForegroundDriverTest<TestConfig>& driver_test() { return driver_test_; }
+
+  fdf::Namespace* fdf_namespace() { return driver_test().driver()->incoming_namespace().get(); }
+
+ private:
+  fdf_testing::ForegroundDriverTest<TestConfig> driver_test_;
 };
 
 TEST_F(NamespaceDfv2Test, ConnectToFidlProtocol) {
-  zx::result<std::unique_ptr<Namespace>> namespace_result = NamespaceDfv2::Create(&namespace_);
+  zx::result<std::unique_ptr<Namespace>> namespace_result = NamespaceDfv2::Create(fdf_namespace());
   ASSERT_OK(namespace_result.status_value());
   std::unique_ptr<Namespace> incoming = std::move(namespace_result).value();
 
@@ -152,7 +168,7 @@ TEST_F(NamespaceDfv2Test, ConnectToFidlProtocol) {
 }
 
 TEST_F(NamespaceDfv2Test, ConnectToFidlProtocolUsingProvidedServerEnd) {
-  zx::result<std::unique_ptr<Namespace>> namespace_result = NamespaceDfv2::Create(&namespace_);
+  zx::result<std::unique_ptr<Namespace>> namespace_result = NamespaceDfv2::Create(fdf_namespace());
   ASSERT_OK(namespace_result.status_value());
   std::unique_ptr<Namespace> incoming = std::move(namespace_result).value();
 
@@ -174,7 +190,7 @@ TEST_F(NamespaceDfv2Test, ConnectToFidlProtocolUsingProvidedServerEnd) {
 }
 
 TEST_F(NamespaceDfv2Test, ConnectToDifferentServiceMemberProtocols) {
-  zx::result<std::unique_ptr<Namespace>> namespace_result = NamespaceDfv2::Create(&namespace_);
+  zx::result<std::unique_ptr<Namespace>> namespace_result = NamespaceDfv2::Create(fdf_namespace());
   ASSERT_OK(namespace_result.status_value());
   std::unique_ptr<Namespace> incoming = std::move(namespace_result).value();
 
@@ -196,12 +212,11 @@ TEST_F(NamespaceDfv2Test, ConnectToDifferentServiceMemberProtocols) {
   fidl::SyncClient decrementer_client(std::move(connect_decrementer_result).value());
   fidl::Result decrement_result = decrementer_client->Decrement({{.x = 1}});
   ASSERT_TRUE(decrement_result.is_ok());
-#include <lib/fdf/cpp/dispatcher.h>
   EXPECT_EQ(decrement_result.value().result(), 0);
 }
 
 TEST_F(NamespaceDfv2Test, ConnectToDifferentServiceMemberProtocolsUsingProvidedServerEnd) {
-  zx::result<std::unique_ptr<Namespace>> namespace_result = NamespaceDfv2::Create(&namespace_);
+  zx::result<std::unique_ptr<Namespace>> namespace_result = NamespaceDfv2::Create(fdf_namespace());
   ASSERT_OK(namespace_result.status_value());
   std::unique_ptr<Namespace> incoming = std::move(namespace_result).value();
 
@@ -239,7 +254,7 @@ TEST_F(NamespaceDfv2Test, ConnectToDifferentServiceMemberProtocolsUsingProvidedS
 }
 
 TEST_F(NamespaceDfv2Test, ConnectToDifferentFragments) {
-  zx::result<std::unique_ptr<Namespace>> namespace_result = NamespaceDfv2::Create(&namespace_);
+  zx::result<std::unique_ptr<Namespace>> namespace_result = NamespaceDfv2::Create(fdf_namespace());
   ASSERT_OK(namespace_result.status_value());
   std::unique_ptr<Namespace> incoming = std::move(namespace_result).value();
 
@@ -265,7 +280,7 @@ TEST_F(NamespaceDfv2Test, ConnectToDifferentFragments) {
 }
 
 TEST_F(NamespaceDfv2Test, ConnectToDifferentFragmentsUsingProvidedServerEnd) {
-  zx::result<std::unique_ptr<Namespace>> namespace_result = NamespaceDfv2::Create(&namespace_);
+  zx::result<std::unique_ptr<Namespace>> namespace_result = NamespaceDfv2::Create(fdf_namespace());
   ASSERT_OK(namespace_result.status_value());
   std::unique_ptr<Namespace> incoming = std::move(namespace_result).value();
 
@@ -302,7 +317,7 @@ TEST_F(NamespaceDfv2Test, ConnectToDifferentFragmentsUsingProvidedServerEnd) {
 }
 
 TEST_F(NamespaceDfv2Test, ErrorOnInvalidFragment) {
-  zx::result<std::unique_ptr<Namespace>> namespace_result = NamespaceDfv2::Create(&namespace_);
+  zx::result<std::unique_ptr<Namespace>> namespace_result = NamespaceDfv2::Create(fdf_namespace());
   ASSERT_OK(namespace_result.status_value());
   std::unique_ptr<Namespace> incoming = std::move(namespace_result).value();
 
@@ -334,13 +349,13 @@ TEST_F(NamespaceDfv2Test, ErrorOnInvalidFragment) {
   ASSERT_OK(connect_incrementer_using_server_end_result.status_value());
 
   fidl::SyncClient incrementer_client2(std::move(incrementer_client_end));
-  fidl::Result increment_result2 = incrementer_client->Increment({{.x = 1}});
+  fidl::Result increment_result2 = incrementer_client2->Increment({{.x = 1}});
   ASSERT_TRUE(increment_result2.is_error());
   EXPECT_EQ(increment_result2.error_value().reason(), fidl::Reason::kPeerClosedWhileReading);
 }
 
 TEST_F(NamespaceDfv2Test, ErrorOnServiceDoesntMatchFragment) {
-  zx::result<std::unique_ptr<Namespace>> namespace_result = NamespaceDfv2::Create(&namespace_);
+  zx::result<std::unique_ptr<Namespace>> namespace_result = NamespaceDfv2::Create(fdf_namespace());
   ASSERT_OK(namespace_result.status_value());
   std::unique_ptr<Namespace> incoming = std::move(namespace_result).value();
 
@@ -372,7 +387,7 @@ TEST_F(NamespaceDfv2Test, ErrorOnServiceDoesntMatchFragment) {
   ASSERT_OK(connect_incrementer_using_server_end_result.status_value());
 
   fidl::SyncClient incrementer_client2(std::move(incrementer_client_end));
-  fidl::Result increment_result2 = incrementer_client->Increment({{.x = 1}});
+  fidl::Result increment_result2 = incrementer_client2->Increment({{.x = 1}});
   ASSERT_TRUE(increment_result2.is_error());
   EXPECT_EQ(increment_result2.error_value().reason(), fidl::Reason::kPeerClosedWhileReading);
 }
