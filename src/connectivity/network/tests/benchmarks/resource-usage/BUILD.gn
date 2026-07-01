@@ -12,6 +12,7 @@ rustc_binary("resource_usage_benchmark") {
   sources = [
     "src/interfaces.rs",
     "src/main.rs",
+    "src/paced_traffic.rs",
     "src/sockets.rs",
   ]
   deps = [
@@ -20,6 +21,7 @@ rustc_binary("resource_usage_benchmark") {
     "//sdk/fidl/fuchsia.net.debug:fuchsia.net.debug_rust",
     "//sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces_rust",
     "//sdk/fidl/fuchsia.net.interfaces.admin:fuchsia.net.interfaces.admin_rust",
+    "//sdk/fidl/fuchsia.net.neighbor:fuchsia.net.neighbor_rust",
     "//sdk/fidl/fuchsia.net.tun:fuchsia.net.tun_rust",
     "//sdk/rust/zx",
     "//src/connectivity/lib/net-declare",

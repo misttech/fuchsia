@@ -16,6 +16,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 mod interfaces;
+mod paced_traffic;
 mod sockets;
 
 #[derive(FromArgs)]
@@ -44,16 +45,21 @@ async fn main() {
     const BENCHMARK_NAME: &str = "fuchsia.netstack.resource_usage";
     let metrics = if netstack3 {
         let benchmark_name = format!("{BENCHMARK_NAME}.netstack3");
-        [
+        vec![
             run_benchmark::<sockets::UdpSockets, ProdNetstack3>(&benchmark_name, perftest_mode)
                 .await,
             run_benchmark::<sockets::TcpSockets, ProdNetstack3>(&benchmark_name, perftest_mode)
                 .await,
             run_benchmark::<interfaces::Interfaces, ProdNetstack3>(&benchmark_name, perftest_mode)
                 .await,
+            run_benchmark::<paced_traffic::PacedTraffic, ProdNetstack3>(
+                &benchmark_name,
+                perftest_mode,
+            )
+            .await,
         ]
     } else {
-        [
+        vec![
             run_benchmark::<sockets::UdpSockets, ProdNetstack2>(BENCHMARK_NAME, perftest_mode)
                 .await,
             run_benchmark::<sockets::TcpSockets, ProdNetstack2>(BENCHMARK_NAME, perftest_mode)
@@ -76,9 +82,11 @@ async fn main() {
 trait Workload {
     const NAME: &'static str;
 
+    async fn create(netstack: &netemul::TestRealm<'_>) -> Self;
+
     /// Run a self-contained, repeatable workload against the provided hermetic
     /// netstack.
-    async fn run(netstack: &netemul::TestRealm<'_>, perftest_mode: bool);
+    async fn run(&self, netstack: &netemul::TestRealm<'_>, perftest_mode: bool);
 }
 
 async fn run_benchmark<W: Workload, N: Netstack>(
@@ -129,17 +137,19 @@ async fn run_benchmark<W: Workload, N: Netstack>(
     // Record baseline resource (memory + handle) usage.
     let baseline = ResourceUsage::record(&process);
 
+    let workload = W::create(&netstack).await;
+
     let (done, rx) = std::sync::mpsc::channel();
     let process_clone = process.clone();
     let measure_peak = std::thread::spawn(move || measure_peak_usage(rx, process_clone));
 
     let start_time = std::time::Instant::now();
 
-    W::run(&netstack, perftest_mode).await;
+    workload.run(&netstack, perftest_mode).await;
     let initial_increase = ResourceUsage::record(&process) - &baseline;
     let runs = if perftest_mode { PERF_TEST_MODE_RUNS.get() } else { UNIT_TEST_MODE_RUNS.get() };
     for _ in 0..runs - 1 {
-        W::run(&netstack, perftest_mode).await;
+        workload.run(&netstack, perftest_mode).await;
     }
 
     let runtime = start_time.elapsed();
@@ -155,6 +165,10 @@ async fn run_benchmark<W: Workload, N: Netstack>(
     // which does not actually leak in the sense that it can be reused if the
     // same workload is re-run.
     let increase = ResourceUsage::record(&process) - &baseline;
+
+    // We have finished measuring, release all the resources used by the
+    // workload.
+    drop(workload);
 
     eprintln!("================== workload: {} ==================\n", W::NAME);
     eprintln!("Running workload {runs} times took {runtime:?}\n");

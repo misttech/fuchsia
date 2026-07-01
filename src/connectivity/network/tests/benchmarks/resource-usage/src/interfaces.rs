@@ -28,7 +28,11 @@ pub struct Interfaces;
 impl crate::Workload for Interfaces {
     const NAME: &'static str = "Interfaces";
 
-    async fn run(netstack: &netemul::TestRealm<'_>, perftest_mode: bool) {
+    async fn create(_netstack: &netemul::TestRealm<'_>) -> Self {
+        Self
+    }
+
+    async fn run(&self, netstack: &netemul::TestRealm<'_>, perftest_mode: bool) {
         let interfaces_state = netstack
             .connect_to_protocol::<fnet_interfaces::StateMarker>()
             .expect("connect to protocol");

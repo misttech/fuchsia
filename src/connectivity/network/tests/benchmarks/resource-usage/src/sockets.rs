@@ -21,7 +21,11 @@ pub struct TcpSockets;
 impl crate::Workload for TcpSockets {
     const NAME: &'static str = "Sockets/TCP";
 
-    async fn run(netstack: &netemul::TestRealm<'_>, perftest_mode: bool) {
+    async fn create(_netstack: &netemul::TestRealm<'_>) -> Self {
+        Self
+    }
+
+    async fn run(&self, netstack: &netemul::TestRealm<'_>, perftest_mode: bool) {
         let pairs =
             if perftest_mode { PERF_TEST_MODE_SOCKET_PAIRS } else { UNIT_TEST_MODE_SOCKET_PAIRS };
         futures::stream::repeat(())
@@ -60,7 +64,11 @@ pub struct UdpSockets;
 impl crate::Workload for UdpSockets {
     const NAME: &'static str = "Sockets/UDP";
 
-    async fn run(netstack: &netemul::TestRealm<'_>, perftest_mode: bool) {
+    async fn create(_netstack: &netemul::TestRealm<'_>) -> Self {
+        Self
+    }
+
+    async fn run(&self, netstack: &netemul::TestRealm<'_>, perftest_mode: bool) {
         let pairs =
             if perftest_mode { PERF_TEST_MODE_SOCKET_PAIRS } else { UNIT_TEST_MODE_SOCKET_PAIRS };
         futures::stream::repeat(())
