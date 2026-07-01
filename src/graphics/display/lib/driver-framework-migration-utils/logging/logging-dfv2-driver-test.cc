@@ -2,11 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
-#include <lib/driver/testing/cpp/driver_runtime.h>
-#include <lib/driver/testing/cpp/internal/driver_lifecycle.h>
-#include <lib/driver/testing/cpp/internal/test_environment.h>
-#include <lib/driver/testing/cpp/test_node.h>
+#include <lib/driver/logging/cpp/logger.h>
+#include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/syslog/structured_backend/fuchsia_syslog.h>
 
 #include <vector>
@@ -23,63 +20,54 @@ namespace {
 
 using ::testing::Values;
 
-// WARNING: Don't use this test as a template for new tests as it uses the old driver testing
-// library.
+class DriverLoggingTestEnvironment : public fdf_testing::Environment {
+ public:
+  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
+    zx::result<> remove_result =
+        to_driver_vfs.component().RemoveProtocol<fuchsia_logger::LogSink>();
+    if (remove_result.is_error() && remove_result.error_value() != ZX_ERR_NOT_FOUND) {
+      fdf::error("Failed to remove LogSink protocol: {}", remove_result.status_string());
+    }
+    return to_driver_vfs.component().AddUnmanagedProtocol<fuchsia_logger::LogSink>(
+        [this](fidl::ServerEnd<fuchsia_logger::LogSink> server_end) {
+          log_sinks_.emplace_back(severity_, std::move(server_end));
+        });
+  }
+
+  void SetSeverity(fuchsia_logging::RawLogSeverity severity) { severity_ = severity; }
+
+ private:
+  fuchsia_logging::RawLogSeverity severity_ = FUCHSIA_LOG_INFO;
+  std::vector<fuchsia_logging::FakeLogSink> log_sinks_;
+};
+
+class TestConfig final {
+ public:
+  using DriverType = testing::Dfv2DriverWithLogging;
+  using EnvironmentType = DriverLoggingTestEnvironment;
+};
+
 class DriverLoggingTest : public ::testing::TestWithParam<fuchsia_logging::RawLogSeverity> {
  public:
   void SetUp() override {
-    // Create start args
-    node_server_.emplace("root");
-    zx::result start_args = node_server_->CreateStartArgsAndServe();
-    EXPECT_OK(start_args);
+    driver_test().RunInEnvironmentTypeContext(
+        [severity = GetParam()](DriverLoggingTestEnvironment& env) { env.SetSeverity(severity); });
 
-    // Start the test environment
-    test_environment_.emplace();
-    test_environment_.SyncCall([this, server = std::move(start_args->incoming_directory_server)](
-                                   fdf_testing::internal::TestEnvironment* env) mutable {
-      ASSERT_OK(env->AddLogSink([this](fidl::ServerEnd<fuchsia_logger::LogSink> server_end) {
-        log_sinks_.emplace_back(GetParam(), std::move(server_end));
-      }));
-
-      zx::result result = env->Initialize(std::move(server));
-      EXPECT_OK(result);
-    });
-
-    // Start driver
-    zx::result start_result =
-        runtime_.RunToCompletion(driver_.Start(std::move(start_args->start_args)));
+    zx::result<> start_result = driver_test().StartDriver();
     EXPECT_OK(start_result);
   }
 
   void TearDown() override {
-    zx::result stop_result = driver_.Stop();
+    zx::result<> stop_result = driver_test().StopDriver();
     EXPECT_OK(stop_result);
-
-    test_environment_.reset();
-    node_server_.reset();
-
-    runtime_.ShutdownAllDispatchers(fdf::Dispatcher::GetCurrent()->get());
   }
 
-  fdf_testing::internal::DriverUnderTest<testing::Dfv2DriverWithLogging>& driver() {
-    return driver_;
-  }
+  testing::Dfv2DriverWithLogging* driver() { return driver_test().driver(); }
+
+  fdf_testing::ForegroundDriverTest<TestConfig>& driver_test() { return driver_test_; }
 
  private:
-  // Attaches a foreground dispatcher for us automatically.
-  fdf_testing::DriverRuntime runtime_;
-
-  std::vector<fuchsia_logging::FakeLogSink> log_sinks_;
-
-  // We have to use a separate dispatcher to handle the log sink connection because we wait for the
-  // interest synchronously when constructing the driver.
-  fdf::SynchronizedDispatcher test_environment_dispatcher_;
-  async_patterns::TestDispatcherBound<fdf_testing::internal::TestEnvironment> test_environment_{
-      runtime_.StartBackgroundDispatcher()->async_dispatcher()};
-
-  // These will use the foreground dispatcher.
-  std::optional<fdf_testing::TestNode> node_server_;
-  fdf_testing::internal::DriverUnderTest<testing::Dfv2DriverWithLogging> driver_;
+  fdf_testing::ForegroundDriverTest<TestConfig> driver_test_;
 };
 
 TEST_P(DriverLoggingTest, MinimumLogLevel) {
