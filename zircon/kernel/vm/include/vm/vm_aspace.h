@@ -34,6 +34,9 @@ class GuestPhysicalAspace;
 
 class VmObject;
 
+class VmAspace;
+extern "C" void cpp_vm_aspace_free(VmAspace* aspace);
+
 class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCounted<VmAspace> {
  public:
   enum class Type : uint8_t {
@@ -267,6 +270,7 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
   // private destructor that can only be used from the ref ptr
   ~VmAspace();
   friend fbl::RefPtr<VmAspace>;
+  friend void ::cpp_vm_aspace_free(VmAspace* aspace);
 
   // complete initialization, may fail in OOM cases
   zx_status_t Init(ShareOpt share_opt);

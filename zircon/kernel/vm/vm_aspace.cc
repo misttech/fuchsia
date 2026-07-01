@@ -846,3 +846,116 @@ void VmAspace::HarvestAllUserAccessedBits(NonTerminalAction non_terminal_action,
     }
   }
 }
+
+extern "C" {
+fbl::RefCounted<VmAspace>* cpp_vm_aspace_get_ref_counted(VmAspace* aspace);
+VmAspace* cpp_vm_aspace_create(VmAspace::Type type, const char* name);
+VmAspace* cpp_vm_aspace_create_with_opts(vaddr_t base, size_t size, VmAspace::Type type,
+                                         const char* name, VmAspace::ShareOpt share_opt);
+VmAspace* cpp_vm_aspace_create_unified(VmAspace* shared, VmAspace* restricted, const char* name);
+VmAspace* cpp_vm_aspace_kernel_aspace();
+vaddr_t cpp_vm_aspace_base(VmAspace* aspace);
+size_t cpp_vm_aspace_size(VmAspace* aspace);
+const char* cpp_vm_aspace_name(VmAspace* aspace);
+bool cpp_vm_aspace_is_user(VmAspace* aspace);
+bool cpp_vm_aspace_is_aslr_enabled(VmAspace* aspace);
+bool cpp_vm_aspace_is_destroyed(VmAspace* aspace);
+zx_status_t cpp_vm_aspace_destroy(VmAspace* aspace);
+void cpp_vm_aspace_rename(VmAspace* aspace, const char* name);
+void cpp_vm_aspace_dump(VmAspace* aspace, bool verbose);
+void cpp_vm_aspace_attach_to_thread(VmAspace* aspace, Thread* thread);
+uintptr_t cpp_vm_aspace_vdso_base_address(VmAspace* aspace);
+uintptr_t cpp_vm_aspace_vdso_code_address(VmAspace* aspace);
+bool cpp_vm_aspace_is_high_memory_priority(VmAspace* aspace);
+zx_status_t cpp_vm_aspace_accessed_fault(VmAspace* aspace, vaddr_t va);
+zx_status_t cpp_vm_aspace_page_fault(VmAspace* aspace, vaddr_t va, uint flags);
+zx_status_t cpp_vm_aspace_soft_fault(VmAspace* aspace, vaddr_t va, uint flags);
+zx_status_t cpp_vm_aspace_soft_fault_in_range(VmAspace* aspace, vaddr_t va, uint flags, size_t len);
+void cpp_vm_aspace_drop_user_page_tables(VmAspace* aspace);
+void cpp_vm_aspace_drop_all_user_page_tables();
+void cpp_vm_aspace_dump_all_aspaces(bool verbose);
+void cpp_vm_aspace_harvest_all_user_accessed_bits(
+    ArchVmAspaceInterface::NonTerminalAction non_terminal_action,
+    ArchVmAspaceInterface::TerminalAction terminal_action);
+zx_status_t cpp_vm_aspace_alloc_physical(VmAspace* aspace, const char* name, size_t size,
+                                         void** ptr, uint8_t align_pow2, paddr_t paddr,
+                                         uint vmm_flags, arch_mmu_flags_t arch_mmu_flags);
+zx_status_t cpp_vm_aspace_alloc_contiguous(VmAspace* aspace, const char* name, size_t size,
+                                           void** ptr, uint8_t align_pow2, uint vmm_flags,
+                                           arch_mmu_flags_t arch_mmu_flags);
+zx_status_t cpp_vm_aspace_free_region(VmAspace* aspace, vaddr_t va);
+void cpp_vm_aspace_free(VmAspace* aspace);
+ArchVmAspace* cpp_vm_aspace_arch_aspace(VmAspace* aspace);
+
+fbl::RefCounted<VmAspace>* cpp_vm_aspace_get_ref_counted(VmAspace* aspace) { return aspace; }
+VmAspace* cpp_vm_aspace_create(VmAspace::Type type, const char* name) {
+  auto aspace = VmAspace::Create(type, name);
+  return fbl::ExportToRawPtr(&aspace);
+}
+VmAspace* cpp_vm_aspace_create_with_opts(vaddr_t base, size_t size, VmAspace::Type type,
+                                         const char* name, VmAspace::ShareOpt share_opt) {
+  auto aspace = VmAspace::Create(base, size, type, name, share_opt);
+  return fbl::ExportToRawPtr(&aspace);
+}
+VmAspace* cpp_vm_aspace_create_unified(VmAspace* shared, VmAspace* restricted, const char* name) {
+  auto aspace = VmAspace::CreateUnified(shared, restricted, name);
+  return fbl::ExportToRawPtr(&aspace);
+}
+VmAspace* cpp_vm_aspace_kernel_aspace() {
+  fbl::RefPtr<VmAspace> aspace(VmAspace::kernel_aspace());
+  return fbl::ExportToRawPtr(&aspace);
+}
+vaddr_t cpp_vm_aspace_base(VmAspace* aspace) { return aspace->base(); }
+size_t cpp_vm_aspace_size(VmAspace* aspace) { return aspace->size(); }
+const char* cpp_vm_aspace_name(VmAspace* aspace) { return aspace->name(); }
+bool cpp_vm_aspace_is_user(VmAspace* aspace) { return aspace->is_user(); }
+bool cpp_vm_aspace_is_aslr_enabled(VmAspace* aspace) { return aspace->is_aslr_enabled(); }
+bool cpp_vm_aspace_is_destroyed(VmAspace* aspace) { return aspace->is_destroyed(); }
+zx_status_t cpp_vm_aspace_destroy(VmAspace* aspace) { return aspace->Destroy(); }
+void cpp_vm_aspace_rename(VmAspace* aspace, const char* name) { aspace->Rename(name); }
+void cpp_vm_aspace_dump(VmAspace* aspace, bool verbose) { aspace->Dump(verbose); }
+void cpp_vm_aspace_attach_to_thread(VmAspace* aspace, Thread* thread) {
+  aspace->AttachToThread(thread);
+}
+uintptr_t cpp_vm_aspace_vdso_base_address(VmAspace* aspace) { return aspace->vdso_base_address(); }
+uintptr_t cpp_vm_aspace_vdso_code_address(VmAspace* aspace) { return aspace->vdso_code_address(); }
+bool cpp_vm_aspace_is_high_memory_priority(VmAspace* aspace) {
+  return aspace->IsHighMemoryPriority();
+}
+zx_status_t cpp_vm_aspace_accessed_fault(VmAspace* aspace, vaddr_t va) {
+  return aspace->AccessedFault(va);
+}
+zx_status_t cpp_vm_aspace_page_fault(VmAspace* aspace, vaddr_t va, uint flags) {
+  return aspace->PageFault(va, flags);
+}
+zx_status_t cpp_vm_aspace_soft_fault(VmAspace* aspace, vaddr_t va, uint flags) {
+  return aspace->SoftFault(va, flags);
+}
+zx_status_t cpp_vm_aspace_soft_fault_in_range(VmAspace* aspace, vaddr_t va, uint flags,
+                                              size_t len) {
+  return aspace->SoftFaultInRange(va, flags, len);
+}
+void cpp_vm_aspace_drop_user_page_tables(VmAspace* aspace) { aspace->DropUserPageTables(); }
+void cpp_vm_aspace_drop_all_user_page_tables() { VmAspace::DropAllUserPageTables(); }
+void cpp_vm_aspace_dump_all_aspaces(bool verbose) { VmAspace::DumpAllAspaces(verbose); }
+void cpp_vm_aspace_harvest_all_user_accessed_bits(
+    ArchVmAspaceInterface::NonTerminalAction non_terminal_action,
+    ArchVmAspaceInterface::TerminalAction terminal_action) {
+  VmAspace::HarvestAllUserAccessedBits(non_terminal_action, terminal_action);
+}
+zx_status_t cpp_vm_aspace_alloc_physical(VmAspace* aspace, const char* name, size_t size,
+                                         void** ptr, uint8_t align_pow2, paddr_t paddr,
+                                         uint vmm_flags, arch_mmu_flags_t arch_mmu_flags) {
+  return aspace->AllocPhysical(name, size, ptr, align_pow2, paddr, vmm_flags, arch_mmu_flags);
+}
+zx_status_t cpp_vm_aspace_alloc_contiguous(VmAspace* aspace, const char* name, size_t size,
+                                           void** ptr, uint8_t align_pow2, uint vmm_flags,
+                                           arch_mmu_flags_t arch_mmu_flags) {
+  return aspace->AllocContiguous(name, size, ptr, align_pow2, vmm_flags, arch_mmu_flags);
+}
+zx_status_t cpp_vm_aspace_free_region(VmAspace* aspace, vaddr_t va) {
+  return aspace->FreeRegion(va);
+}
+void cpp_vm_aspace_free(VmAspace* aspace) { delete aspace; }
+ArchVmAspace* cpp_vm_aspace_arch_aspace(VmAspace* aspace) { return &aspace->arch_aspace(); }
+}
