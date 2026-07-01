@@ -40,16 +40,24 @@ fn instantiate_symbolizer(
     for allocation in &snapshot.allocations {
         for program_address in &allocation.stack_trace.program_addresses {
             if searched_program_addresses.insert(*program_address) {
-                let _ = sorted_regions.binary_search_by(|(region_starting_address, region)| {
-                    if *region_starting_address + region.size < *program_address {
-                        std::cmp::Ordering::Less
-                    } else if *program_address < *region_starting_address {
-                        std::cmp::Ordering::Greater
-                    } else {
-                        referenced_regions.insert(*region_starting_address, region);
-                        std::cmp::Ordering::Equal
-                    }
-                });
+                let region_search_outcome =
+                    sorted_regions.binary_search_by(|(region_starting_address, region)| {
+                        if *region_starting_address + region.size < *program_address {
+                            std::cmp::Ordering::Less
+                        } else if *program_address < *region_starting_address {
+                            std::cmp::Ordering::Greater
+                        } else {
+                            referenced_regions.insert(*region_starting_address, region);
+                            std::cmp::Ordering::Equal
+                        }
+                    });
+                if region_search_outcome.is_err() {
+                    // NOTE(https://fxrev.dev/1684875): this can occur following a
+                    // believed-to-be-unlikely race condition during on-target data collection.
+                    eprintln!(
+                        "WARNING: No executable region found for program address {program_address:#016x}"
+                    );
+                }
             }
         }
     }
