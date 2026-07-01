@@ -15,7 +15,7 @@ pub struct SnapshotCommand {
     pub by_name: Option<String>,
     #[argh(option, description = "select process by koid")]
     pub by_koid: Option<u64>,
-    #[argh(option, description = "output protobuf file")]
+    #[argh(option, description = "output compressed protobuf file (extension: .pb.gz)")]
     pub output_file: String,
     #[argh(switch, description = "write per-block metadata (as tags) in the protobuf file")]
     pub with_tags: bool,

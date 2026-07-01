@@ -15,7 +15,7 @@ pub struct DownloadCommand {
     pub snapshot_id: u32,
     #[argh(switch, description = "write per-block metadata (as tags) in the protobuf file")]
     pub with_tags: bool,
-    #[argh(option, description = "output protobuf file")]
+    #[argh(option, description = "output compressed protobuf file (extension: .pb.gz)")]
     pub output_file: String,
     #[argh(switch, description = "symbolize the generated profile")]
     pub symbolize: bool,

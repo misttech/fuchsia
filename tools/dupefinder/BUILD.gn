@@ -25,10 +25,12 @@ if (is_host) {
 
   rustc_library("lib") {
     name = "dupefinder"
+    with_unit_tests = true
     edition = "2024"
     sources = [ "src/lib.rs" ]
     deps = [
-      "//src/performance/memory/pprof:pprof_proto",
+      "//src/performance/memory/pprof",
+      "//third_party/rust_crates:flate2",
       "//third_party/rust_crates:handlebars",
       "//third_party/rust_crates:log",
       "//third_party/rust_crates:percent-encoding",
@@ -54,6 +56,9 @@ if (is_host) {
 
   group("host_tests") {
     testonly = true
-    deps = [ "tests:host_tests" ]
+    deps = [
+      ":lib_test",
+      "tests:host_tests",
+    ]
   }
 }

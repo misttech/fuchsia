@@ -9,6 +9,7 @@ use log::info;
 use prost::Message;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::io::Read;
 use std::path::Path;
 use std::time::Duration;
 use tempfile::tempdir;
@@ -46,7 +47,10 @@ async fn wait_at_least_n_stored_snapshots(
 }
 
 fn load_profile_file(path: &Path) -> Result<pprof::Profile> {
-    let data = std::fs::read(path).context("reading file")?;
+    let file = std::fs::File::open(path).context("opening file")?;
+    let mut decoder = flate2::read::GzDecoder::new(file);
+    let mut data = Vec::new();
+    decoder.read_to_end(&mut data).context("decompressing file")?;
     let result = pprof::Profile::decode(&data[..]).context("decoding protobuf")?;
     Ok(result)
 }
@@ -84,7 +88,7 @@ async fn test_ffx_profile_heapdump() {
     info!("Validating the last stored snapshot...");
     {
         let snapshot_id = stored_snapshots.last().unwrap().snapshot_id;
-        let profile_path = scratch_dir.path().join("stored-snapshot.pb");
+        let profile_path = scratch_dir.path().join("stored-snapshot.pb.gz");
         emu.ffx(&[
             "profile",
             "heapdump",
@@ -103,7 +107,7 @@ async fn test_ffx_profile_heapdump() {
     // Take a live snapshot and verify that it can be read back.
     info!("Taking a live snapshot...");
     {
-        let profile_path = scratch_dir.path().join("live-snapshot.pb");
+        let profile_path = scratch_dir.path().join("live-snapshot.pb.gz");
         emu.ffx(&[
             "profile",
             "heapdump",
@@ -124,7 +128,7 @@ async fn test_ffx_profile_heapdump() {
     // - a block with known contents is present.
     info!("Taking a live snapshot with contents...");
     {
-        let profile_path = scratch_dir.path().join("live-snapshot-with-contents.pb");
+        let profile_path = scratch_dir.path().join("live-snapshot-with-contents.pb.gz");
         let contents_dir = scratch_dir.path().join("contents-dir");
         emu.ffx(&[
             "profile",
@@ -161,7 +165,7 @@ async fn test_ffx_profile_heapdump() {
     // functions on the stack match the expectations.
     info!("Taking a symbolized snapshot...");
     {
-        let profile_path = scratch_dir.path().join("symbolized-snapshot.pb");
+        let profile_path = scratch_dir.path().join("symbolized-snapshot.pb.gz");
         emu.ffx(&[
             "profile",
             "heapdump",

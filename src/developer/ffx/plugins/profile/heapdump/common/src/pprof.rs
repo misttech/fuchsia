@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result};
 use ffx_config::EnvironmentContext;
-
+use flate2::Compression;
 use heapdump_snapshot_fdomain::{ExecutableRegion, Snapshot};
 use itertools::Itertools;
 use prost::Message;
@@ -316,6 +316,7 @@ impl<'c> PProfProfileBuilder<'c> {
         Ok(())
     }
 
+    /// Finalizes the memory profile and returns it as a protobuf message.
     pub fn write_to_message(mut self) -> pprof::Profile {
         self.pprof.string_table = self.st.build();
 
@@ -350,9 +351,12 @@ impl<'c> PProfProfileBuilder<'c> {
         self.pprof
     }
 
-    pub fn write_to_file(self, dest: &mut std::fs::File) -> Result<()> {
+    /// Finalizes the memory profile and serializes it as a pprof-compatible `.pb.gz` file.
+    pub fn write_to_file(self, dest: &mut impl Write) -> Result<()> {
         let buf = self.write_to_message().encode_to_vec();
-        dest.write_all(&buf)?;
+        let mut encoder = flate2::write::GzEncoder::new(dest, Compression::default());
+        encoder.write_all(&buf)?;
+        encoder.finish()?;
         Ok(())
     }
 
@@ -712,7 +716,8 @@ mod tests {
         // Read it back.
         let mut buf = Vec::new();
         tempfile.rewind().unwrap();
-        tempfile.read_to_end(&mut buf).unwrap();
+        let mut decoder = flate2::read::GzDecoder::new(tempfile);
+        decoder.read_to_end(&mut buf).unwrap();
 
         // Verify that it can be decoded correctly.
         let profile = pprof::Profile::decode(&buf[..]).unwrap();

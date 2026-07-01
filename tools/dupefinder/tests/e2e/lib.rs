@@ -36,7 +36,7 @@ async fn dupefinder_smoke_test() {
 
     info!("Taking a live snapshot with contents...");
     let (profile_path, contents_dir) = loop {
-        let profile_path = test_dir.join("snapshot.pb");
+        let profile_path = test_dir.join("snapshot.pb.gz");
         let contents_dir = test_dir.join("heap_contents_dir");
         match emu
             .ffx(&[

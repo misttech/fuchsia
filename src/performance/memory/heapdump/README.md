@@ -27,13 +27,13 @@ point in time and export them in a
   program is called `example.cm`:
 
 ```
-ffx profile heapdump snapshot --by-name example.cm --output-file my_snapshot.pb
+ffx profile heapdump snapshot --by-name example.cm --output-file my_snapshot.pb.gz
 ```
 
 * Use the `fx pprof` command to analyze the memory profile you acquired:
 
 ```
-fx pprof -http=":" my_snapshot.pb
+fx pprof -http=":" my_snapshot.pb.gz
 ```
 
 Note: in alternative, when the component being profiled does not have access to
@@ -56,8 +56,8 @@ fx set ... --with src/performance/memory/heapdump/example
 ffx component run /core/ffx-laboratory:example fuchsia-pkg://fuchsia.com/heapdump-example#meta/heapdump-example.cm
 
 # Take a live snapshot and process it with pprof.
-ffx profile heapdump snapshot --output-file my_snapshot.pb
-fx pprof -http=":" my_snapshot.pb
+ffx profile heapdump snapshot --output-file my_snapshot.pb.gz
+fx pprof -http=":" my_snapshot.pb.gz
 ```
 
 ### Advanced: dealing with multiple instrumented processes at the same time
@@ -112,8 +112,8 @@ fx set ... \
 
 # Build and run Fuchsia as usual, then take a live snapshot of all the processes
 # in one go.
-ffx profile heapdump snapshot --output-file my_snapshot.pb --multi-process
-fx pprof -http=":" my_snapshot.pb
+ffx profile heapdump snapshot --output-file my_snapshot.pb.gz --multi-process
+fx pprof -http=":" my_snapshot.pb.gz
 ```
 
 It is possible to change the values in `local/BUILD.gn` to restrict the set of

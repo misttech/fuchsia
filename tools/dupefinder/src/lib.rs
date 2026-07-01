@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use handlebars::{handlebars_helper, Handlebars};
+use flate2::read::GzDecoder;
+use handlebars::{Handlebars, handlebars_helper};
 use log::debug;
-use pprof_proto::perfetto::third_party::perftools::profiles::Profile as RawProfile;
+use pprof::Profile as RawProfile;
 use prost::Message;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
 use thiserror::Error;
 
@@ -22,8 +23,17 @@ pub struct Sample {
 
 impl Sample {
     pub fn parse(profile_bytes: &[u8]) -> Result<Vec<Self>, DupefinderError> {
-        let raw_profile = RawProfile::decode(&profile_bytes[..])
-            .map_err(DupefinderError::DecodeRawProfileFailed)?;
+        // pprof profiles are often gzipped; handle both compressed and raw profiles transparently.
+        let mut decoded_bytes = Vec::new();
+        let mut decoder = GzDecoder::new(profile_bytes);
+        let profile_bytes = if decoder.read_to_end(&mut decoded_bytes).is_ok() {
+            &decoded_bytes
+        } else {
+            profile_bytes
+        };
+
+        let raw_profile =
+            RawProfile::decode(profile_bytes).map_err(DupefinderError::DecodeRawProfileFailed)?;
 
         let functions =
             raw_profile.function.iter().map(|f| (f.id, f.clone())).collect::<HashMap<_, _>>();
@@ -408,4 +418,68 @@ pub enum DupefinderError {
     HandlebarsSetupFailed(#[source] Box<handlebars::TemplateError>),
     #[error("couldn't render HTML")]
     RenderHtmlFailed(#[source] handlebars::RenderError),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use flate2::Compression;
+    use flate2::write::GzEncoder;
+    use pprof::{Label as RawLabel, Sample as RawSample};
+
+    #[test]
+    fn test_gzipped_profile_fallback() {
+        const FAKE_SAMPLE_ADDRESS: &str = "0x1234";
+        const FAKE_SAMPLE_SIZE: i64 = 100;
+        const FAKE_SAMPLE_TIMESTAMP: i64 = 1000;
+
+        // Create a minimal profile.
+        let mut string_table = pprof::StringTableBuilder::default();
+        let sample = vec![RawSample {
+            label: vec![
+                RawLabel {
+                    key: string_table.intern("address"),
+                    str: string_table.intern(FAKE_SAMPLE_ADDRESS),
+                    ..Default::default()
+                },
+                RawLabel {
+                    key: string_table.intern("bytes"),
+                    num: FAKE_SAMPLE_SIZE,
+                    ..Default::default()
+                },
+                RawLabel {
+                    key: string_table.intern("timestamp"),
+                    num: FAKE_SAMPLE_TIMESTAMP,
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }];
+        let profile =
+            RawProfile { string_table: string_table.build(), sample, ..Default::default() };
+
+        // Encode to protobuf.
+        let mut profile_bytes = Vec::new();
+        profile.encode(&mut profile_bytes).unwrap();
+
+        // Compress it.
+        let mut compressed_bytes = Vec::new();
+        let mut encoder = GzEncoder::new(&mut compressed_bytes, Compression::default());
+        encoder.write_all(&profile_bytes).unwrap();
+        encoder.finish().unwrap();
+
+        // Verify that it can be read back from the compressed form.
+        let samples = Sample::parse(&compressed_bytes).unwrap();
+        assert_eq!(samples.len(), 1);
+        assert_eq!(samples[0].metadata.address, FAKE_SAMPLE_ADDRESS);
+        assert_eq!(samples[0].metadata.size, FAKE_SAMPLE_SIZE);
+        assert_eq!(samples[0].metadata.timestamp, FAKE_SAMPLE_TIMESTAMP);
+
+        // Verify that it can be read back from the uncompressed form too.
+        let samples = Sample::parse(&profile_bytes).unwrap();
+        assert_eq!(samples.len(), 1);
+        assert_eq!(samples[0].metadata.address, FAKE_SAMPLE_ADDRESS);
+        assert_eq!(samples[0].metadata.size, FAKE_SAMPLE_SIZE);
+        assert_eq!(samples[0].metadata.timestamp, FAKE_SAMPLE_TIMESTAMP);
+    }
 }

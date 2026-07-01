@@ -6,7 +6,7 @@ To start, collect a heap snapshot (see http://go/fuchsia-heapdump for details):
 
 ```
 ffx profile heapdump snapshot \
-    --output-file /path/to/profile.pb \
+    --output-file /path/to/symbolized.pb.gz \
     --output-contents-dir /path/to/contents \
     --by-name instrumented-process.cm
     --symbolize

@@ -56,7 +56,7 @@
       "optionality": "required",
       "long": "--output-file",
       "short": null,
-      "description": "output protobuf file",
+      "description": "output compressed protobuf file (extension: .pb.gz)",
       "hidden": false
     },
     {

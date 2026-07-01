@@ -22,6 +22,7 @@ rustc_library("ffx_profile_heapdump_common") {
     "//src/sys/lib/cm_rust",
     "//src/sys/lib/component_debug:component_debug_fdomain",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:flate2",
     "//third_party/rust_crates:itertools",
     "//third_party/rust_crates:prost",
   ]
