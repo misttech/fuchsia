@@ -11,6 +11,7 @@ group("tests") {
     "android:tests",
     "async-utils:tests",
     "backoff:tests",
+    "bitrs:tests",
     "buf-read-ext:tests",
     "callback:tests",
     "chunked-compression:tests",
