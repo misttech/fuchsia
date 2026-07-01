@@ -2,19 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::logs::common::LogFormat;
 use crate::logs::utils::Listener;
 use crate::puppet::PuppetProxyExt;
 use crate::{test_topology, utils};
-use diagnostics_reader::ArchiveReader;
+use fidl_fuchsia_archivist_test as ftest;
+use fidl_fuchsia_diagnostics::Format;
 use fidl_fuchsia_diagnostics_types::Severity;
 use fidl_fuchsia_logger::{LogFilterOptions, LogLevelFilter, LogMarker, LogMessage, LogProxy};
+use fuchsia_async as fasync;
+use fuchsia_syslog_listener as syslog_listener;
 use futures::channel::mpsc;
 use futures::{Stream, StreamExt};
 use log::info;
-use {
-    fidl_fuchsia_archivist_test as ftest, fuchsia_async as fasync,
-    fuchsia_syslog_listener as syslog_listener,
-};
+use test_case::test_case;
 
 const PUPPET_NAME: &str = "puppet";
 
@@ -96,8 +97,11 @@ async fn listen_for_klog() {
     logs.filter(|m| futures::future::ready(m.msg == msg)).next().await;
 }
 
+#[test_case(LogFormat::Rust(Format::Json))]
+#[cfg_attr(fuchsia_api_level_at_least = "HEAD", test_case(LogFormat::Rust(Format::Fxt)))]
+#[cfg_attr(fuchsia_api_level_at_least = "HEAD", test_case(LogFormat::Ffi))]
 #[fuchsia::test]
-async fn listen_for_syslog_routed_stdio() {
+async fn listen_for_syslog_routed_stdio(format: LogFormat) {
     let realm_proxy = test_topology::create_realm(ftest::RealmOptions {
         puppets: Some(vec![test_topology::PuppetDeclBuilder::new(PUPPET_NAME).into()]),
         ..Default::default()
@@ -106,14 +110,7 @@ async fn listen_for_syslog_routed_stdio() {
     .unwrap();
 
     let accessor = utils::connect_accessor(&realm_proxy, utils::ALL_PIPELINE).await;
-    let mut reader = ArchiveReader::logs();
-    reader.with_archive(accessor);
-    let (mut logs, mut errors) = reader.snapshot_then_subscribe().unwrap().split_streams();
-    let _errors = fasync::Task::spawn(async move {
-        if let Some(e) = errors.next().await {
-            panic!("error in subscription: {e}");
-        }
-    });
+    let mut logs = format.build(accessor).get_test_snapshot_then_subscribe().await;
 
     let puppet = test_topology::connect_to_puppet(&realm_proxy, PUPPET_NAME).await.unwrap();
     info!("Connected to puppet");
@@ -124,12 +121,12 @@ async fn listen_for_syslog_routed_stdio() {
     let msg = format!("logger_integration_rust test_klog stdout {}", rand::random::<u64>());
     puppet.println(&msg).await.unwrap();
     info!("printed '{msg}' to stdout");
-    logs.by_ref().filter(|m| futures::future::ready(m.msg().unwrap() == msg)).next().await;
+    logs.by_ref().filter(|m| futures::future::ready(m.message == msg)).next().await;
 
     let msg = format!("logger_integration_rust test_klog stderr {}", rand::random::<u64>());
     puppet.eprintln(&msg).await.unwrap();
     info!("Printed '{msg}' to stderr");
-    logs.filter(|m| futures::future::ready(m.msg().unwrap() == msg)).next().await;
+    logs.filter(|m| futures::future::ready(m.message == msg)).next().await;
 
     // TODO(https://fxbug.dev/42126316): add test for multiline log once behavior is defined.
 }
