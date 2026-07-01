@@ -34,6 +34,14 @@ constexpr uint16_t kDeviceId = 0xd00d;
 constexpr uint16_t kVendorId = 0xfeed;
 constexpr uint8_t kRevisionId = 0x4;
 
+constexpr uint8_t kTestData[] = {1, 2, 3, 4, 5};
+
+void InitHeader(TpmCmdHeader& hdr, uint16_t tag, uint32_t size, uint32_t code) {
+  hdr.tag = htobe16(tag);
+  hdr.command_size = htobe32(size);
+  hdr.command_code = htobe32(code);
+}
+
 using fuchsia_hardware_tpmimpl::wire::RegisterAddress;
 class TpmTest : public zxtest::Test, public fidl::WireServer<fuchsia_hardware_tpmimpl::TpmImpl> {
  public:
@@ -342,4 +350,86 @@ TEST_F(TpmTest, TestSendVendorCommand) {
   ASSERT_EQ(result->value()->result, 0);
   ASSERT_EQ(result->value()->data.size(), 1);
   ASSERT_EQ(result->value()->data[0], 0x32);
+}
+
+TEST_F(TpmTest, TestExecuteCommandSuccess) {
+  auto dev = fake_root_->GetLatestChild();
+  dev->InitOp();
+  ASSERT_OK(dev->WaitUntilInitReplyCalled());
+
+  constexpr uint32_t kCommandCode = 0x1234;
+  struct TestCommand {
+    TpmCmdHeader hdr;
+    uint8_t data[sizeof(kTestData)];
+  } __PACKED;
+
+  handle_command_ = [kCommandCode](TpmCmdHeader* c, std::vector<uint8_t>& out) {
+    ASSERT_EQ(be32toh(c->command_code), kCommandCode);
+    ASSERT_EQ(be32toh(c->command_size), sizeof(TestCommand));
+    TestCommand* cmd = reinterpret_cast<TestCommand*>(c);
+    ASSERT_EQ(0, memcmp(cmd->data, kTestData, sizeof(kTestData)));
+
+    TpmResponseHeader r{
+        .tag = htobe16(TPM_ST_NO_SESSIONS),
+        .response_size = htobe32(sizeof(TpmResponseHeader)),
+        .response_code = 0,
+    };
+    out.resize(sizeof(r), 0);
+    memcpy(out.data(), &r, sizeof(r));
+  };
+
+  auto tpm = GetTpmClient();
+  TestCommand cmd;
+  InitHeader(cmd.hdr, TPM_ST_NO_SESSIONS, sizeof(TestCommand), kCommandCode);
+  memcpy(cmd.data, kTestData, sizeof(kTestData));
+
+  auto result = tpm->ExecuteCommand(fidl::VectorView<uint8_t>::FromExternal(
+      reinterpret_cast<uint8_t*>(&cmd), sizeof(TestCommand)));
+  ASSERT_OK(result.status());
+  ASSERT_TRUE(result->is_ok());
+  ASSERT_EQ(result->value()->data.size(), sizeof(TpmResponseHeader));
+  TpmResponseHeader* resp = reinterpret_cast<TpmResponseHeader*>(result->value()->data.data());
+  ASSERT_EQ(resp->ResponseCode(), 0);
+}
+
+TEST_F(TpmTest, TestExecuteCommandTooSmall) {
+  auto dev = fake_root_->GetLatestChild();
+  dev->InitOp();
+  ASSERT_OK(dev->WaitUntilInitReplyCalled());
+
+  auto tpm = GetTpmClient();
+  // Send data smaller than TpmCmdHeader.
+  uint8_t bad_data[sizeof(kTestData)];
+  memcpy(bad_data, kTestData, sizeof(kTestData));
+  auto result =
+      tpm->ExecuteCommand(fidl::VectorView<uint8_t>::FromExternal(bad_data, sizeof(bad_data)));
+
+  // This should fail with OUT_OF_RANGE and NOT crash.
+  ASSERT_OK(result.status());
+  ASSERT_EQ(result->error_value(), ZX_ERR_OUT_OF_RANGE);
+}
+
+TEST_F(TpmTest, TestExecuteCommandMismatchedSize) {
+  auto dev = fake_root_->GetLatestChild();
+  dev->InitOp();
+  ASSERT_OK(dev->WaitUntilInitReplyCalled());
+
+  auto tpm = GetTpmClient();
+
+  struct TestCommand {
+    TpmCmdHeader hdr;
+    uint8_t data[5];
+  } __PACKED;
+
+  TestCommand cmd;
+  // Claim size is larger than what we actually send.
+  InitHeader(cmd.hdr, TPM_ST_NO_SESSIONS, sizeof(TestCommand) + 10, 0x1234);
+
+  // We only send sizeof(TestCommand) bytes.
+  auto result = tpm->ExecuteCommand(fidl::VectorView<uint8_t>::FromExternal(
+      reinterpret_cast<uint8_t*>(&cmd), sizeof(TestCommand)));
+
+  // This should fail with INVALID_ARGS (or whatever we choose) and NOT crash/leak.
+  ASSERT_OK(result.status());
+  ASSERT_EQ(result->error_value(), ZX_ERR_INVALID_ARGS);
 }

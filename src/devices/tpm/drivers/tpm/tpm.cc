@@ -139,13 +139,22 @@ void TpmDevice::ExecuteVendorCommand(ExecuteVendorCommandRequestView request,
 
 void TpmDevice::ExecuteCommand(ExecuteCommandRequestView request,
                                ExecuteCommandCompleter::Sync &completer) {
-  auto cmd = std::make_unique<TpmCmd>(
-      cpp20::span<const uint8_t>(request->data.data(), request->data.size()));
   auto async = completer.ToAsync();
   // Ignore commands that are smaller than the minimum command header size.
   if (request->data.size() < sizeof(TpmCmdHeader)) {
     async.ReplyError(ZX_ERR_OUT_OF_RANGE);
+    return;
   }
+
+  const TpmCmdHeader *hdr = reinterpret_cast<const TpmCmdHeader *>(request->data.data());
+  size_t command_size = betoh32(hdr->command_size);
+  if (command_size != request->data.size()) {
+    async.ReplyError(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+
+  auto cmd = std::make_unique<TpmCmd>(
+      cpp20::span<const uint8_t>(request->data.data(), request->data.size()));
   QueueCommand(std::move(cmd),
                [async = std::move(async)](zx_status_t status, TpmResponseHeader *hdr) mutable {
                  if (status != ZX_OK) {

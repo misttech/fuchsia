@@ -63,7 +63,7 @@ struct TpmCmd {
   uint8_t data[fuchsia_tpm::wire::kMaxVendorCommandLen];
 
   TpmCmd(cpp20::span<const uint8_t> data_src) {
-    ZX_ASSERT(data_src.size_bytes() > sizeof(hdr));
+    ZX_ASSERT(data_src.size_bytes() >= sizeof(hdr));
     ZX_ASSERT(data_src.size_bytes() < sizeof(hdr) + sizeof(data));
     memcpy(&hdr, data_src.data(), sizeof(hdr));
     if (data_src.size_bytes() > sizeof(hdr)) {
