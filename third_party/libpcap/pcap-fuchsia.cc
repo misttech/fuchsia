@@ -56,21 +56,6 @@
 #undef min
 #undef max
 
-// TODO(https://fxbug.dev/524828251): Remove this when the soft
-// transition to upgrade libpcap is complete.
-#ifndef pcapint_charset_fopen
-#define pcapint_add_dev add_dev
-#define pcapint_breakloop_common pcap_breakloop_common
-#define pcapint_cleanup_live_common pcap_cleanup_live_common
-#define pcapint_create_interface pcap_create_interface
-#define pcapint_filter pcap_filter
-#define pcapint_findalldevs_interfaces pcap_findalldevs_interfaces
-#define pcapint_fmt_errmsg_for_errno pcap_fmt_errmsg_for_errno
-#define pcapint_install_bpf_program install_bpf_program
-#define pcapint_platform_finddevs pcap_platform_finddevs
-#define pcapint_strlcpy pcap_strlcpy
-#endif
-
 namespace {
 
 int loopback_ifindex() {

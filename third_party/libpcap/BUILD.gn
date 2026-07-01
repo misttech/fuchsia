@@ -26,10 +26,6 @@ if (is_fuchsia || is_linux) {
       "src/scanner.c",
       "src/sf-pcap.c",
       "src/sf-pcapng.c",
-
-      # TODO(https://fxbug.dev/524828251): Remove this when the soft
-      # transition to upgrade libpcap is complete.
-      "src/pcap-usb-linux-common.c",
     ]
 
     defines = [
