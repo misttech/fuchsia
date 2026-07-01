@@ -6,8 +6,11 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_DRIVER_FRAMEWORK_MIGRATION_UTILS_DISPATCHER_DRIVER_RUNTIME_BACKED_DISPATCHER_H_
 
 #include <lib/fdf/cpp/dispatcher.h>
+#include <lib/sync/cpp/completion.h>
 #include <lib/zx/result.h>
 #include <zircon/errors.h>
+
+#include <memory>
 
 #include <fbl/alloc_checker.h>
 
@@ -47,9 +50,12 @@ class DriverRuntimeBackedDispatcher final : public Dispatcher {
   // Prefer the `Create()` factory method.
   //
   // `fdf_dispatcher` must be valid.
-  explicit DriverRuntimeBackedDispatcher(fdf::SynchronizedDispatcher fdf_dispatcher);
+  explicit DriverRuntimeBackedDispatcher(fdf::SynchronizedDispatcher fdf_dispatcher,
+                                         std::shared_ptr<libsync::Completion> shutdown_completion);
 
   ~DriverRuntimeBackedDispatcher() override;
+
+  void Shutdown();
 
   DriverRuntimeBackedDispatcher(const DriverRuntimeBackedDispatcher&) = delete;
   DriverRuntimeBackedDispatcher(DriverRuntimeBackedDispatcher&&) = delete;
@@ -63,6 +69,8 @@ class DriverRuntimeBackedDispatcher final : public Dispatcher {
 
  private:
   fdf::Dispatcher fdf_dispatcher_;
+  std::shared_ptr<libsync::Completion> shutdown_completion_;
+  bool shut_down_ = false;
 };
 
 }  // namespace display

@@ -65,6 +65,7 @@ source_set("driver-runtime-backed-dispatcher") {
   public_deps = [
     ":dispatcher",
     "//sdk/lib/driver/runtime:driver_runtime_cpp",
+    "//zircon/system/ulib/sync:sync-cpp",
     "//zircon/system/ulib/zx",
   ]
 

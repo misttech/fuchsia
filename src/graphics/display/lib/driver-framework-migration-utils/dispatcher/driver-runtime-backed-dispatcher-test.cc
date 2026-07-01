@@ -3,12 +3,8 @@
 // found in the LICENSE file.
 
 #include <lib/async/cpp/irq.h>
-#include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/testing/cpp/driver_runtime.h>
-#include <lib/driver/testing/cpp/internal/driver_lifecycle.h>
-#include <lib/driver/testing/cpp/internal/test_environment.h>
-#include <lib/driver/testing/cpp/test_node.h>
+#include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/fpromise/promise.h>
 #include <lib/sync/cpp/completion.h>
 #include <lib/zx/interrupt.h>
@@ -26,92 +22,70 @@ namespace display {
 
 namespace {
 
-// WARNING: Don't use this test as a template for new tests as it uses the old driver testing
-// library.
-// Tests dispatching asynchronous tasks and IRQ handler events on the
-// `fdf::Dispatcher`-backed dispatcher.
-//
-// Note that this test doesn't test the functionality of setting the scheduler
-// role for dispatcher threads. This is because `fdf::Dispatcher` always
-// connects to the fucshia.scheduler.RoleManager protocol in the **component's**
-// incoming service directory to set the scheduler role. The only way to test
-// it is by creating a realm-manager-based integration test, which we haven't
-// implemented yet.
+class DriverDispatcherTestEnvironment : public fdf_testing::Environment {
+ public:
+  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override { return zx::ok(); }
+};
+
+class TestConfig final {
+ public:
+  using DriverType = display::testing::Dfv2DriverWithDispatcher;
+  using EnvironmentType = DriverDispatcherTestEnvironment;
+};
 
 class DriverDispatcherTest : public ::testing::Test {
  public:
   void SetUp() override {
-    // Create start args
-    node_server_.emplace("root");
-    zx::result start_args = node_server_->CreateStartArgsAndServe();
-    EXPECT_OK(start_args);
-
-    // Start the test environment
-    test_environment_.emplace();
-    test_environment_.SyncCall([server = std::move(start_args->incoming_directory_server)](
-                                   fdf_testing::internal::TestEnvironment* env) mutable {
-      zx::result result = env->Initialize(std::move(server));
-      EXPECT_OK(result);
-    });
-
-    // Start driver
-    zx::result start_result =
-        runtime_.RunToCompletion(driver_.Start(std::move(start_args->start_args)));
-    EXPECT_OK(start_result);
+    zx::result<> result = driver_test().StartDriver();
+    ASSERT_EQ(ZX_OK, result.status_value());
   }
 
   void TearDown() override {
     StopDriver();
-    node_server_.reset();
+    driver_test().ShutdownAndDestroyDriver();
   }
 
-  // Stops the driver, shuts down its all dispatchers and returns true, if the
-  // driver is not yet stopped. Otherwise returns false.
+  // Stops the driver, shuts down its background dispatcher.
   //
   // Must be called only from the main test thread.
-  bool StopDriver() {
+  void StopDriver() {
     if (driver_stopped_) {
-      return false;
+      return;
     }
-    zx::result prepare_stop_result = runtime_.RunToCompletion(driver_.PrepareStop());
-    EXPECT_OK(prepare_stop_result);
-    test_environment_.reset();
-    runtime_.ShutdownAllDispatchers(fdf::Dispatcher::GetCurrent()->get());
+    zx::result<> stop_result = driver_test().StopDriver();
+    EXPECT_OK(stop_result);
+    if (driver_test().driver() != nullptr) {
+      driver_test().driver()->ShutdownDispatcher();
+    }
     driver_stopped_ = true;
-    return true;
   }
 
  protected:
-  // Attaches a foreground dispatcher for us automatically.
-  fdf_testing::DriverRuntime runtime_;
+  fdf_testing::ForegroundDriverTest<TestConfig>& driver_test() { return driver_test_; }
 
-  async_patterns::TestDispatcherBound<fdf_testing::internal::TestEnvironment> test_environment_{
-      runtime_.StartBackgroundDispatcher()->async_dispatcher()};
-
-  // These will use the foreground dispatcher.
-  std::optional<fdf_testing::TestNode> node_server_;
-  fdf_testing::internal::DriverUnderTest<testing::Dfv2DriverWithDispatcher> driver_;
-
+ private:
+  fdf_testing::ForegroundDriverTest<TestConfig> driver_test_;
   bool driver_stopped_ = false;
 };
 
 TEST_F(DriverDispatcherTest, DispatchAsyncTask) {
   fpromise::bridge<uint32_t> bridge;
   static constexpr uint32_t kValueToPass = 0xabcd1234;
-  zx::result<> post_task_result = driver_->PostTask(
+  zx::result<> post_task_result = driver_test().driver()->PostTask(
       [completer = std::move(bridge.completer)]() mutable { completer.complete_ok(kValueToPass); });
   ASSERT_OK(post_task_result.status_value());
 
   fpromise::promise<uint32_t> promise = std::move(bridge.consumer).promise();
-  fpromise::result<uint32_t> promise_result = runtime_.RunPromise(std::move(promise));
+  fpromise::result<uint32_t> promise_result =
+      driver_test().runtime().RunPromise(std::move(promise));
   ASSERT_TRUE(promise_result.is_ok());
   EXPECT_EQ(promise_result.value(), kValueToPass);
 
-  ASSERT_TRUE(StopDriver());
+  StopDriver();
 
   // After the driver stops, no task can be posted to the driver's async
   // dispatcher.
-  zx::result<> post_task_after_driver_stop_result = driver_->PostTask(
+  zx::result<> post_task_after_driver_stop_result = driver_test().driver()->PostTask(
       [completer = std::move(bridge.completer)]() mutable { completer.complete_ok(0x1234abcd); });
   EXPECT_NE(ZX_OK, post_task_after_driver_stop_result.status_value());
 }
@@ -147,8 +121,8 @@ TEST_F(DriverDispatcherTest, HandleIrq) {
     zx::unowned_interrupt(irq->object())->ack();
   };
 
-  zx::result<> start_irq_handler_result =
-      driver_->StartIrqHandler(std::move(virtual_interrupt_driver_dup), std::move(handler));
+  zx::result<> start_irq_handler_result = driver_test().driver()->StartIrqHandler(
+      std::move(virtual_interrupt_driver_dup), std::move(handler));
   ASSERT_OK(start_irq_handler_result.status_value());
 
   // Manually trigger the virtual interrupt.
@@ -173,7 +147,7 @@ TEST_F(DriverDispatcherTest, HandleIrq) {
 
   // Stop the driver and its dispatchers. The handler should receive a
   // ZX_ERR_CANCELED signal.
-  ASSERT_TRUE(StopDriver());
+  StopDriver();
   irq_handler_canceled.Wait();
 }
 

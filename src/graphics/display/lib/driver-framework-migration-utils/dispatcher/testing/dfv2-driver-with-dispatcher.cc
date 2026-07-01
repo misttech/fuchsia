@@ -16,6 +16,8 @@
 #include <string>
 #include <utility>
 
+#include "src/graphics/display/lib/driver-framework-migration-utils/dispatcher/driver-runtime-backed-dispatcher.h"
+
 namespace display::testing {
 
 Dfv2DriverWithDispatcher::Dfv2DriverWithDispatcher()
@@ -51,6 +53,17 @@ zx::result<> Dfv2DriverWithDispatcher::StartIrqHandler(zx::interrupt irq,
   }
   irq_and_handlers_.push_back(std::move(irq_and_handler));
   return zx::ok();
+}
+
+void Dfv2DriverWithDispatcher::ShutdownDispatcher() {
+  if (dispatcher_) {
+    driver_runtime_backed_dispatcher()->Shutdown();
+  }
+}
+
+display::DriverRuntimeBackedDispatcher* Dfv2DriverWithDispatcher::driver_runtime_backed_dispatcher()
+    const {
+  return static_cast<display::DriverRuntimeBackedDispatcher*>(dispatcher_.get());
 }
 
 }  // namespace display::testing
