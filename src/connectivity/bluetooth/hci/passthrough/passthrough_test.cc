@@ -4,16 +4,7 @@
 
 #include "passthrough.h"
 
-#include <lib/async-loop/default.h>
-#include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
-#include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/testing/cpp/driver_runtime.h>
-#include <lib/driver/testing/cpp/internal/driver_lifecycle.h>
-#include <lib/driver/testing/cpp/internal/test_environment.h>
-#include <lib/driver/testing/cpp/test_node.h>
-#include <lib/fdf/env.h>
-#include <lib/fdf/testing.h>
+#include <lib/driver/testing/cpp/driver_test.h>
 
 #include <gtest/gtest.h>
 
@@ -54,74 +45,54 @@ class HciTransportServer : public fidl::WireServer<fuchsia_hardware_bluetooth::H
 
 }  // namespace
 
-// WARNING: Don't use this test as a template for new tests as it uses the old driver testing
-// library.
-class PassthroughTest : public ::testing::Test {
+class PassthroughTestEnvironment : public fdf_testing::Environment {
  public:
-  PassthroughTest() : test_environment_(runtime_.StartBackgroundDispatcher()->async_dispatcher()) {}
-
-  void SetUp() override {
-    node_server_.emplace("root");
-    zx::result start_args = node_server_->CreateStartArgsAndServe();
-    ASSERT_EQ(ZX_OK, start_args.status_value());
-
-    test_environment_.emplace();
-    test_environment_.SyncCall([&, server = std::move(start_args->incoming_directory_server)](
-                                   fdf_testing::internal::TestEnvironment* env) mutable {
-      zx::result result = env->Initialize(std::move(server));
-      ASSERT_EQ(ZX_OK, result.status_value());
-
-      auto hci_proto_handler = hci_server_.GetInstanceHandler();
-      zx::result add_service_result =
-          env->incoming_directory().AddService<fuchsia_hardware_bluetooth::HciService>(
-              std::move(hci_proto_handler));
-      ASSERT_EQ(ZX_OK, add_service_result.status_value());
-    });
-
-    zx::result start_result =
-        runtime_.RunToCompletion(driver_.Start(std::move(start_args->start_args)));
-    ASSERT_EQ(ZX_OK, start_result.status_value());
+  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
+    auto hci_proto_handler = hci_server_.GetInstanceHandler();
+    return to_driver_vfs.AddService<fuchsia_hardware_bluetooth::HciService>(
+        std::move(hci_proto_handler));
   }
-
-  void TearDown() override {
-    zx::result prepare_stop_result = runtime_.RunToCompletion(driver_.PrepareStop());
-    EXPECT_EQ(ZX_OK, prepare_stop_result.status_value());
-
-    test_environment_.reset();
-    node_server_.reset();
-
-    runtime_.ShutdownAllDispatchers(fdf::Dispatcher::GetCurrent()->get());
-  }
-
-  fdf_testing::internal::DriverUnderTest<bt::passthrough::PassthroughDevice>& driver() {
-    return driver_;
-  }
-
-  std::optional<fdf_testing::TestNode>& node_server() { return node_server_; }
-
-  async_dispatcher_t* dispatcher() { return fdf::Dispatcher::GetCurrent()->async_dispatcher(); }
 
   HciTransportServer& hci_server() { return hci_server_; }
 
- protected:
-  // Attaches a foreground dispatcher for us automatically.
-  fdf_testing::DriverRuntime runtime_;
-
+ private:
   HciTransportServer hci_server_;
+};
 
-  std::optional<fdf_testing::TestNode> node_server_;
-  async_patterns::TestDispatcherBound<fdf_testing::internal::TestEnvironment> test_environment_;
-  fdf_testing::internal::DriverUnderTest<bt::passthrough::PassthroughDevice> driver_;
+class TestConfig final {
+ public:
+  using DriverType = bt::passthrough::PassthroughDevice;
+  using EnvironmentType = PassthroughTestEnvironment;
+};
+
+class PassthroughTest : public ::testing::Test {
+ public:
+  void SetUp() override {
+    zx::result<> result = driver_test().StartDriver();
+    ASSERT_EQ(ZX_OK, result.status_value());
+  }
+
+  void TearDown() override {
+    zx::result<> result = driver_test().StopDriver();
+    ASSERT_EQ(ZX_OK, result.status_value());
+  }
+
+  fdf_testing::ForegroundDriverTest<TestConfig>& driver_test() { return driver_test_; }
+
+  async_dispatcher_t* dispatcher() { return fdf::Dispatcher::GetCurrent()->async_dispatcher(); }
+
+ private:
+  fdf_testing::ForegroundDriverTest<TestConfig> driver_test_;
 };
 
 TEST_F(PassthroughTest, Lifecycle) {}
 
 TEST_F(PassthroughTest, DevfsConnectAndSendCommand) {
-  zx::result<zx::channel> connect_result =
-      node_server()->children().at("bt-hci-passthrough").ConnectToDevice();
-  ASSERT_TRUE(connect_result.is_ok());
-  fidl::ClientEnd<fuchsia_hardware_bluetooth::Vendor> client_end(std::move(connect_result.value()));
-  fidl::WireClient<fuchsia_hardware_bluetooth::Vendor> client(std::move(client_end), dispatcher());
+  zx::result<fidl::ClientEnd<fuchsia_hardware_bluetooth::Vendor>> client_end =
+      driver_test().ConnectThroughDevfs<fuchsia_hardware_bluetooth::Vendor>("bt-hci-passthrough");
+  ASSERT_TRUE(client_end.is_ok());
+  fidl::WireClient<fuchsia_hardware_bluetooth::Vendor> client(std::move(client_end.value()),
+                                                              dispatcher());
 
   std::optional<fidl::ClientEnd<fuchsia_hardware_bluetooth::HciTransport>> hci_client_end;
   client->OpenHciTransport().Then(
@@ -129,7 +100,7 @@ TEST_F(PassthroughTest, DevfsConnectAndSendCommand) {
         ASSERT_TRUE(result->is_ok());
         hci_client_end = std::move(result->value()->channel);
       });
-  fdf_testing_run_until_idle();
+  driver_test().runtime().RunUntilIdle();
   ASSERT_TRUE(hci_client_end);
 
   fidl::WireClient<fuchsia_hardware_bluetooth::HciTransport> hci_client(std::move(*hci_client_end),
@@ -140,13 +111,15 @@ TEST_F(PassthroughTest, DevfsConnectAndSendCommand) {
       fidl::ObjectView<fidl::VectorView<uint8_t>>::FromExternal(&vec_view);
   hci_client->Send(::fuchsia_hardware_bluetooth::wire::SentPacket::WithCommand(object_view))
       .Then([&](fidl::WireUnownedResult<fuchsia_hardware_bluetooth::HciTransport::Send>& result) {
-        runtime_.Quit();
+        driver_test().runtime().Quit();
       });
 
-  runtime_.Run();
+  driver_test().runtime().Run();
 
-  ASSERT_EQ(hci_server().sent_command_packets().size(), 1u);
-  EXPECT_EQ(hci_server().sent_command_packets()[0][0], arr[0]);
+  driver_test().RunInEnvironmentTypeContext([&](PassthroughTestEnvironment& env) {
+    ASSERT_EQ(env.hci_server().sent_command_packets().size(), 1u);
+    EXPECT_EQ(env.hci_server().sent_command_packets()[0][0], arr[0]);
+  });
 
   auto endpoint = hci_client.UnbindMaybeGetEndpoint();
 }
