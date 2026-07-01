@@ -71,7 +71,7 @@ MixStage::MixStage(const Format& output_format, uint32_t block_size,
                    std::optional<float> max_gain_db)
     : ReadableStream("MixStage", output_format),
       output_buffer_frames_(block_size),
-      output_buffer_(block_size * output_format.channels()),
+      output_buffer_(static_cast<size_t>(block_size) * output_format.channels()),
       output_ref_clock_(std::move(ref_clock)),
       output_ref_clock_to_fractional_frame_(std::move(ref_time_to_frac_presentation_frame)),
       gain_limits_{

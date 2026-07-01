@@ -145,6 +145,7 @@ void Mixer::Mix(float* dest_ptr, int64_t dest_frames, int64_t* dest_offset_ptr,
     sampler_->Process(source, dest, Sampler::Gain{.type = media_audio::GainType::kUnity},
                       accumulate);
   } else if (gain.IsRamping()) {
+    dest.frame_count = std::min(dest.frame_count, *dest.frame_offset_ptr + kScaleArrLen);
     sampler_->Process(
         source, dest,
         Sampler::Gain{.type = media_audio::GainType::kRamping, .scale_ramp = scale_arr.get()},

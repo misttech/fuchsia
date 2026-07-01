@@ -37,5 +37,20 @@ TEST_F(EffectV1Test, MoveEffect) {
   ASSERT_FALSE(effect2);
 }
 
+// Verify that EffectV1 owns its instance_name string, preventing dangling view use-after-free when
+// the source string is destroyed.
+TEST_F(EffectV1Test, InstanceNameLifetime) {
+  test_effects().AddEffect("assign_to_1.0").WithAction(TEST_EFFECTS_ACTION_ASSIGN, 1.0);
+  std::unique_ptr<EffectV1> effect;
+  {
+    std::string temp_name = "temporary instance name";
+    effect = std::make_unique<EffectV1>(effects_loader()->CreateEffect(0, temp_name, 1, 1, 1, {}));
+    ASSERT_TRUE(*effect);
+    EXPECT_EQ(temp_name, effect->instance_name());
+  }
+  // temp_name is now out of scope and deallocated.
+  EXPECT_EQ("temporary instance name", effect->instance_name());
+}
+
 }  // namespace
 }  // namespace media::audio

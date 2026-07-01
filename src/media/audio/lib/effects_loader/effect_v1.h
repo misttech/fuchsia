@@ -9,6 +9,7 @@
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/types.h>
 
+#include <string>
 #include <string_view>
 
 #include "src/media/audio/lib/effects_loader/effects_module.h"
@@ -75,7 +76,7 @@ class EffectV1 {
  private:
   fuchsia_audio_effects_handle_t effects_handle_;
   EffectsModuleV1 module_;
-  std::string_view instance_name_;
+  std::string instance_name_;
 };
 
 }  // namespace media::audio

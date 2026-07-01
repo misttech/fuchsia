@@ -45,12 +45,15 @@ class MixStage : public ReadableStream {
                                   Mixer::Resampler sampler_hint = Mixer::Resampler::Default);
   void RemoveInput(const ReadableStream& stream);
 
- private:
-  FRIEND_TEST(MixStageTest, DontCrashOnDestOffsetRoundingError);
-
+ protected:
   std::optional<ReadableStream::Buffer> ReadLockImpl(ReadLockContext& ctx, Fixed dest_frame,
                                                      int64_t frame_count) override;
   void TrimImpl(Fixed dest_frame) override;
+
+ private:
+  FRIEND_TEST(MixStageTest, DontCrashOnDestOffsetRoundingError);
+  FRIEND_TEST(MixStageTest, BlockSizeMultiplication);
+
   void SetupMixBuffer(uint32_t max_mix_frames);
 
   struct MixJob {
@@ -73,7 +76,7 @@ class MixStage : public ReadableStream {
     std::shared_ptr<::media_audio::ClockSynchronizer> clock_sync;
   };
 
-  enum class TaskType { Mix, Trim };
+  enum class TaskType : uint8_t { Mix, Trim };
   void ForEachSource(TaskType task_type, Fixed dest_frame);
   void ReconcileClocksAndSetStepSize(::media_audio::ClockSynchronizer& clock_sync, Mixer& mixer,
                                      ReadableStream& stream);

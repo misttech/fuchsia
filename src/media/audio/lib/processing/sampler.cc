@@ -121,10 +121,11 @@ int64_t Sampler::State::DestFromSourceLength(Fixed source_length) const {
   // room for the max possible `step_size_modulo_`, and the largest possible `step_size_rebased`
   // exceeds the largest possible `source_length_rebased`.
   const auto source_length_rebased =
-      static_cast<__int128_t>(source_length.raw_value()) * step_size_denominator_ -
+      (static_cast<__int128_t>(source_length.raw_value()) * step_size_denominator_) -
       source_pos_modulo_;
   const auto step_size_rebased =
-      static_cast<__int128_t>(step_size_.raw_value()) * step_size_denominator_ + step_size_modulo_;
+      (static_cast<__int128_t>(step_size_.raw_value()) * step_size_denominator_) +
+      step_size_modulo_;
 
   // We know this `DCHECK` holds, because if we divide both top and bottom by
   // `step_size_denominator_`, then top is `std::numeric_limits<int64_t>::max()` or less, and bottom
@@ -142,7 +143,7 @@ Fixed Sampler::State::SourceFromDestLength(int64_t dest_length) const {
   // `step_size_modulo_` and `step_size_denominator_` are both arbitrarily large 64-bit types, so we
   // must up-cast to 128-bit.
   const auto running_modulo =
-      static_cast<__int128_t>(step_size_modulo_) * static_cast<__int128_t>(dest_length) +
+      (static_cast<__int128_t>(step_size_modulo_) * static_cast<__int128_t>(dest_length)) +
       static_cast<__int128_t>(source_pos_modulo_);
   // But `step_size_modulo_` and `source_pos_modulo_` are both `< step_size_denominator_`, so
   // `mod_contribution <= dest_length`.
@@ -157,7 +158,7 @@ Fixed Sampler::State::SourceFromDestLength(int64_t dest_length) const {
   // 2 ^ 63 / (192 * 2 ^ 13 + 1)`, which is `dest_length > 5.86e12`, which is `dest_length > 353
   // days at 192khz`.
   const int64_t source_length_raw =
-      step_size_.raw_value() * dest_length + static_cast<int64_t>(mod_contribution);
+      (step_size_.raw_value() * dest_length) + static_cast<int64_t>(mod_contribution);
   return Fixed::FromRaw(source_length_raw);
 }
 
@@ -218,7 +219,7 @@ zx::time Sampler::State::MonoTimeFromRunningSource(
 
   // First portion of our `TimelineFunction::Apply`.
   const __int128_t frac_src_modulo =
-      frac_source_from_offset * step_size_denominator_128 + source_pos_modulo_128;
+      (frac_source_from_offset * step_size_denominator_128) + source_pos_modulo_128;
 
   // Middle portion, including rate factors.
   __int128_t mono_modulo = frac_src_modulo * clock_mono_to_frac_source_frames.reference_delta();
@@ -233,7 +234,7 @@ zx::time Sampler::State::MonoTimeFromRunningSource(
   // While reducing from `mono_modulo` to nsec, we add `step_size_denominator_128 / 2` in order to
   // round.
   const __int128_t final_mono =
-      (mono_modulo + step_size_denominator_128 / 2) / step_size_denominator_128;
+      (mono_modulo + (step_size_denominator_128 / 2)) / step_size_denominator_128;
   // `final_mono` is 128-bit so we can double-check that we haven't overflowed. But we reduced
   // `step_size_denominator_128` as needed to avoid all overflows.
   FX_DCHECK(final_mono <= std::numeric_limits<int64_t>::max() &&
@@ -245,11 +246,6 @@ zx::time Sampler::State::MonoTimeFromRunningSource(
 }
 
 void Sampler::State::AdvancePositionsBy(int64_t dest_frames, bool advance_source_pos_modulo) {
-  FX_DCHECK(dest_frames >= 0) << "Unexpected negative advance:" << " dest_frames=" << dest_frames
-                              << " denom=" << step_size_denominator_
-                              << " rate_mod=" << step_size_modulo_ << " "
-                              << " source_pos_mod=" << source_pos_modulo_;
-
   int64_t frac_source_frame_delta = step_size_.raw_value() * dest_frames;
   if constexpr (kTracePositionEvents) {
     TRACE_DURATION("audio", __func__, "dest_frames", dest_frames, "advance_source_pos_modulo",
@@ -265,8 +261,17 @@ void Sampler::State::AdvancePositionsBy(int64_t dest_frames, bool advance_source
       source_pos_modulo_128 += source_pos_modulo_;
     }
 
-    const uint64_t new_source_pos_modulo =
-        static_cast<uint64_t>(source_pos_modulo_128 % step_size_denominator_128);
+    // C++ modulo operator (%) truncates towards zero, but we want always to round toward -infinity.
+    // This requires a positive modulo. To convert negative remainders into proper modulos (where 0
+    // <= rem < denom), we add the denominator to the remainder, then compensate (not unlike a
+    // "borrow" during subtraction), by also subtracting the denominator from the dividend
+    // (source_pos_modulo_128) so our eventual frac_source_frame_delta and modulo are accurate.
+    __int128_t rem = source_pos_modulo_128 % step_size_denominator_128;
+    if (rem < 0) {
+      rem += step_size_denominator_128;
+      source_pos_modulo_128 -= step_size_denominator_128;
+    }
+    const uint64_t new_source_pos_modulo = static_cast<uint64_t>(rem);
     if (advance_source_pos_modulo) {
       source_pos_modulo_ = new_source_pos_modulo;
     } else {

@@ -19,6 +19,8 @@
 
 namespace media_audio {
 
+class SamplerStatePositionTest;
+
 // Interface that takes an array of source samples in any format, and processes corresponding array
 // of destination samples in normalized 32-bit float format with a specified gain scale applied.
 //
@@ -66,6 +68,8 @@ class Sampler {
   // destination positions that are used for clock error detection/tuning.
   class State {
    public:
+    friend class SamplerStatePositionTest;
+
     // Advances all long-running positions to `dest_target_frame`. This is useful when resolving
     // discontinuities until an absolute target frame, without having to refer back to
     // `next_dest_frame`.
@@ -243,7 +247,7 @@ class Sampler {
   };
 
   // Sampler type.
-  enum class Type {
+  enum class Type : uint8_t {
     kDefault,
     kSincSampler,
   };

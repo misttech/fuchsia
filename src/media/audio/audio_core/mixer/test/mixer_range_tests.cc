@@ -316,4 +316,24 @@ TEST(DynamicRange, MixFloat32) {
       << std::setprecision(10) << AudioResult::FloorMixFloat;
 }
 
+// Verify Mixer::Mix with dest_frames exceeding kScaleArrLen during a ramp.
+TEST(DynamicRange, RampingMixExceedsScaleArrLen) {
+  auto mixer = SelectMixer(ASF::FLOAT, 1, 48000, 1, 48000, Resampler::SampleAndHold);
+  ASSERT_NE(mixer, nullptr);
+
+  constexpr int64_t kDestFrames = Mixer::kScaleArrLen * 2;
+  std::vector<float> source(kDestFrames, 1.0f);
+  std::vector<float> dest(kDestFrames, 0.0f);
+
+  int64_t dest_offset = 0;
+  auto source_offset = Fixed(0);
+
+  mixer->gain.SetSourceGainWithRamp(-20.0f, zx::sec(1));
+  mixer->Mix(dest.data(), kDestFrames, &dest_offset, source.data(), kDestFrames, &source_offset,
+             false);
+  // Without capping dest.frame_count to kScaleArrLen in Mixer::Mix during a gain ramp, calling
+  // Mix with 1920 destination frames would read past the end of the 960-float scale_arr buffer.
+  EXPECT_EQ(dest_offset, Mixer::kScaleArrLen);
+}
+
 }  // namespace media::audio::test

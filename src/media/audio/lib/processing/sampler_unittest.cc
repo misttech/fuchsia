@@ -348,9 +348,15 @@ TEST(SamplerStateTest, MonoTimeFromRunningSource) {
                 TimelineFunction(0, 31'556'736'000'000'000, {191'807'576'997, 122'070'312'500})),
             zx::time(62'838'086'000'000'000));
 }
+}  // namespace
 
 class SamplerStatePositionTest : public testing::Test {
  protected:
+  static void AdvancePositionsBy(media_audio::Sampler::State& state, int64_t dest_frames,
+                                 bool advance_source_pos_modulo) {
+    state.AdvancePositionsBy(dest_frames, advance_source_pos_modulo);
+  }
+
   static void TestWithNoRateModulo(bool advance_source_pos_modulo) {
     media_audio::Sampler::State state;
     state.ResetSourceStride(TimelineRate(Fixed(2).raw_value(), 1));
@@ -426,5 +432,16 @@ TEST_F(SamplerStatePositionTest, UpdateRunningPositionsWithRateModulo) {
   TestWithRateModulo(/*advance_source_pos_modulo=*/false);
 }
 
-}  // namespace
+// Verify that passing negative dest_frames to AdvancePositionsBy handles negative modulo remainders
+// without breaking step_size_denominator invariants or integer underflow.
+TEST_F(SamplerStatePositionTest, AdvancePositionsNegativeDestFrames) {
+  media_audio::Sampler::State state;
+  state.ResetSourceStride(TimelineRate(1, 10));
+  state.set_source_pos_modulo(2u);
+
+  AdvancePositionsBy(state, -5, /*advance_source_pos_modulo=*/true);
+  // source_pos_modulo is uint64 so "< step_size_denominator" is how we check for negative rollover.
+  EXPECT_LT(state.source_pos_modulo(), state.step_size_denominator());
+}
+
 }  // namespace media_audio

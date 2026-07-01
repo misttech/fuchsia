@@ -802,7 +802,7 @@ TEST_F(MixStageTest, FirstPacketOffsetLargerThanBlockSize) {
   }
 
   // Trim away the packet so its callback runs before we tear down the PacketFactory.
-  mix_stage_->Trim(Fixed(4 * kBlockSizeFrames));
+  mix_stage_->Trim(Fixed(4ul * kBlockSizeFrames));
   RunLoopUntilIdle();
 }
 
@@ -1270,6 +1270,63 @@ TEST_F(MixStagePositionTest, SourceDiscontinuityWithinThreshold) {
   mix_stage_->ReadLock(rlctx, Fixed(kDestFramesPerMix), kDestFramesPerMix);
   EXPECT_LT(state().next_source_frame(), expect_long_running_source_pos);
   EXPECT_EQ(state().next_dest_frame(), expect_long_running_dest_pos);
+}
+
+// Verify that multi-channel MixStages correctly compute buffer sizes without 32-bit overflow.
+TEST_F(MixStageTest, BlockSizeMultiplication) {
+  auto format = Format::Create(fuchsia::media::AudioStreamType{
+                                   .sample_format = fuchsia::media::AudioSampleFormat::FLOAT,
+                                   .channels = 8,
+                                   .frames_per_second = 48000,
+                               })
+                    .take_value();
+  auto stage = std::make_shared<MixStage>(
+      format, 1000, fbl::MakeRefCounted<VersionedTimelineFunction>(TimelineFunction(0, 0, 1, 1)),
+      context().clock_factory()->CreateClientFixed(
+          clock::testing::CreateCustomClock({.synthetic_offset_from_mono = zx::duration(0)})
+              .take_value()));
+  ASSERT_NE(stage, nullptr);
+  EXPECT_EQ(stage->format().channels(), 8);
+  EXPECT_EQ(stage->output_buffer_frames_, 1000);
+  EXPECT_EQ(stage->output_buffer_.size(), 8000u);
+}
+
+// Verify that when we call MixStage::ReadLock with frame_count exceeding kScaleArrLen during a
+// ramp, we don't read scale_arr out of bounds.
+TEST_F(MixStageTest, RampingMixExceedsScaleArrLen) {
+  constexpr uint32_t kRequestedFrames = Mixer::kScaleArrLen * 2;
+  auto stage = std::make_shared<MixStage>(
+      kDefaultFormat, kRequestedFrames,
+      fbl::MakeRefCounted<VersionedTimelineFunction>(TimelineFunction(0, 0, 1, 1)),
+      context().clock_factory()->CreateClientFixed(
+          clock::testing::CreateCustomClock({.synthetic_offset_from_mono = zx::duration(0)})
+              .take_value()));
+
+  auto timeline_function = TimelineFunction(
+      TimelineRate(Fixed(kDefaultFormat.frames_per_second()).raw_value(), zx::sec(1).to_nsecs()));
+  auto input = std::make_shared<testing::FakeStream>(kDefaultFormat, context().clock_factory(),
+                                                     zx_system_get_page_size() * 10);
+  input->timeline_function()->Update(timeline_function);
+  auto mixer = stage->AddInput(input);
+
+  mixer->gain.SetSourceGainWithRamp(-20.0f, zx::sec(1));
+
+  // Directly verify that a single call to Mixer::Mix during a ramp only processes at most
+  // kScaleArrLen (960 frames), even when requested to process 1920 frames.
+  int64_t dest_offset = 0;
+  auto source_offset = Fixed(0);
+  std::vector<float> dest_buf(kRequestedFrames * kDefaultNumChannels, 0.0f);
+  std::vector<float> source_buf(kRequestedFrames * kDefaultNumChannels, 1.0f);
+  mixer->Mix(dest_buf.data(), kRequestedFrames, &dest_offset, source_buf.data(), kRequestedFrames,
+             &source_offset, false);
+  EXPECT_EQ(dest_offset, Mixer::kScaleArrLen);
+
+  // Verify that MixStage::ReadLock safely loops over 960-frame chunks to complete the full mix.
+  auto buf = stage->ReadLock(rlctx, Fixed(0), kRequestedFrames);
+  ASSERT_TRUE(buf);
+  // Without capping dest.frame_count to kScaleArrLen inside Mixer::Mix during a gain ramp,
+  // processing 1920 requested frames in one mix step reads beyond our 960-float scale_arr buffer.
+  EXPECT_EQ(buf->length(), kRequestedFrames);
 }
 
 }  // namespace media::audio
