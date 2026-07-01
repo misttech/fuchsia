@@ -31,30 +31,9 @@ use crate::ipv6::{IPV6_FIXED_HDR_LEN, NEXT_HEADER_OFFSET};
 pub(crate) const IPV6_FRAGMENT_EXT_HDR_LEN: usize = 8;
 
 /// An IPv6 Extension Header.
-#[derive(Debug)]
-pub struct Ipv6ExtensionHeader<'a> {
-    // Marked as `pub(super)` because it is only used in tests within
-    // the `crate::ipv6` (`super`) module.
-    pub(super) next_header: u8,
-    data: Ipv6ExtensionHeaderData<'a>,
-}
-
-impl<'a> Ipv6ExtensionHeader<'a> {
-    /// Returns the extension header-specific data.
-    pub fn data(&self) -> &Ipv6ExtensionHeaderData<'a> {
-        &self.data
-    }
-
-    /// Consumes `self` returning only the containing data.
-    pub fn into_data(self) -> Ipv6ExtensionHeaderData<'a> {
-        self.data
-    }
-}
-
-/// The data associated with an IPv6 Extension Header.
 #[allow(missing_docs)]
 #[derive(Debug)]
-pub enum Ipv6ExtensionHeaderData<'a> {
+pub enum Ipv6ExtensionHeader<'a> {
     HopByHopOptions { options: HopByHopOptionsData<'a> },
     Routing { routing_data: RoutingData<'a> },
     Fragment { fragment_data: FragmentData },
@@ -192,10 +171,7 @@ impl Ipv6ExtensionHeaderImpl {
         context.position += expected_len;
         context.headers_parsed += 1;
 
-        Ok(ParsedRecord::Parsed(Ipv6ExtensionHeader {
-            next_header: context.next_header,
-            data: Ipv6ExtensionHeaderData::HopByHopOptions { options },
-        }))
+        Ok(ParsedRecord::Parsed(Ipv6ExtensionHeader::HopByHopOptions { options }))
     }
 
     /// Parse Routing Extension Header.
@@ -236,10 +212,7 @@ impl Ipv6ExtensionHeaderImpl {
             context.position += expected_len;
             context.headers_parsed += 1;
 
-            Ok(ParsedRecord::Parsed(Ipv6ExtensionHeader {
-                next_header: context.next_header,
-                data: Ipv6ExtensionHeaderData::Routing { routing_data },
-            }))
+            Ok(ParsedRecord::Parsed(Ipv6ExtensionHeader::Routing { routing_data }))
         } else {
             // As per RFC 8200, if we encounter a routing header with an unrecognized
             // routing type, and segments left is non-zero, we MUST discard the packet
@@ -274,18 +247,13 @@ impl Ipv6ExtensionHeaderImpl {
         context.position += 6;
         context.headers_parsed += 1;
 
-        Ok(ParsedRecord::Parsed(Ipv6ExtensionHeader {
-            next_header: context.next_header,
-            data: Ipv6ExtensionHeaderData::Fragment {
-                // First unwrap is safe because we already know data is at least
-                // 8 bytes long and we've consumed 2 bytes.
-                //
-                // Second unwrap is safe because we're converting from a slice
-                // of length 6 to an array of length 6.
-                fragment_data: FragmentData {
-                    bytes: data.take_front(6).unwrap().try_into().unwrap(),
-                },
-            },
+        Ok(ParsedRecord::Parsed(Ipv6ExtensionHeader::Fragment {
+            // First unwrap is safe because we already know data is at least
+            // 8 bytes long and we've consumed 2 bytes.
+            //
+            // Second unwrap is safe because we're converting from a slice
+            // of length 6 to an array of length 6.
+            fragment_data: FragmentData { bytes: data.take_front(6).unwrap().try_into().unwrap() },
         }))
     }
 
@@ -314,10 +282,7 @@ impl Ipv6ExtensionHeaderImpl {
         context.position += expected_len;
         context.headers_parsed += 1;
 
-        Ok(ParsedRecord::Parsed(Ipv6ExtensionHeader {
-            next_header: context.next_header,
-            data: Ipv6ExtensionHeaderData::DestinationOptions { options },
-        }))
+        Ok(ParsedRecord::Parsed(Ipv6ExtensionHeader::DestinationOptions { options }))
     }
 }
 
@@ -1511,14 +1476,13 @@ mod tests {
                 .unwrap();
         let ext_hdrs: Vec<Ipv6ExtensionHeader<'_>> = ext_hdrs.iter().collect();
         assert_eq!(ext_hdrs.len(), 1);
-        assert_eq!(ext_hdrs[0].next_header, IpProto::Tcp.into());
-        if let Ipv6ExtensionHeaderData::HopByHopOptions { options } = ext_hdrs[0].data() {
+        if let Ipv6ExtensionHeader::HopByHopOptions { options } = &ext_hdrs[0] {
             // Everything should have been a NOP/ignore except for the unrecognized type
             let options: Vec<HopByHopOption<'_>> = options.iter().collect();
             assert_eq!(options.len(), 1);
             assert_eq!(options[0].action, ExtensionHeaderOptionAction::SkipAndContinue);
         } else {
-            panic!("Should have matched HopByHopOptions {:?}", ext_hdrs[0].data());
+            panic!("Should have matched HopByHopOptions {:?}", ext_hdrs[0]);
         }
     }
 
@@ -1669,8 +1633,7 @@ mod tests {
                 .unwrap();
         let results: Vec<_> = ext_hdrs.iter().collect();
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].next_header, IpProto::Tcp.into());
-        if let Ipv6ExtensionHeaderData::Routing { routing_data } = results[0].data() {
+        if let Ipv6ExtensionHeader::Routing { routing_data } = &results[0] {
             assert_eq!(routing_data.routing_type(), Err(RoutingTypeParseError::UnsupportedType(0)));
             assert_eq!(routing_data.segments_left(), 0);
         } else {
@@ -1784,14 +1747,13 @@ mod tests {
                 .unwrap();
         let ext_hdrs: Vec<Ipv6ExtensionHeader<'_>> = ext_hdrs.iter().collect();
         assert_eq!(ext_hdrs.len(), 1);
-        assert_eq!(ext_hdrs[0].next_header, IpProto::Tcp.into());
 
-        if let Ipv6ExtensionHeaderData::Fragment { fragment_data } = ext_hdrs[0].data() {
+        if let Ipv6ExtensionHeader::Fragment { fragment_data } = &ext_hdrs[0] {
             assert_eq!(fragment_data.fragment_offset().into_raw(), 5063);
             assert_eq!(fragment_data.m_flag(), true);
             assert_eq!(fragment_data.identification(), 3266246449);
         } else {
-            panic!("Should have matched Fragment: {:?}", ext_hdrs[0].data());
+            panic!("Should have matched Fragment: {:?}", &ext_hdrs[0]);
         }
     }
 
@@ -1858,14 +1820,13 @@ mod tests {
                 .unwrap();
         let ext_hdrs: Vec<Ipv6ExtensionHeader<'_>> = ext_hdrs.iter().collect();
         assert_eq!(ext_hdrs.len(), 1);
-        assert_eq!(ext_hdrs[0].next_header, IpProto::Tcp.into());
-        if let Ipv6ExtensionHeaderData::DestinationOptions { options } = ext_hdrs[0].data() {
+        if let Ipv6ExtensionHeader::DestinationOptions { options } = &ext_hdrs[0] {
             // Everything should have been a NOP/ignore except for the unrecognized type
             let options: Vec<DestinationOption<'_>> = options.iter().collect();
             assert_eq!(options.len(), 1);
             assert_eq!(options[0].action, ExtensionHeaderOptionAction::SkipAndContinue);
         } else {
-            panic!("Should have matched DestinationOptions: {:?}", ext_hdrs[0].data());
+            panic!("Should have matched DestinationOptions: {:?}", &ext_hdrs[0]);
         }
     }
 
@@ -2014,32 +1975,29 @@ mod tests {
         assert_eq!(ext_hdrs.len(), 3);
 
         // Check first extension header (hop-by-hop options)
-        assert_eq!(ext_hdrs[0].next_header, Ipv6ExtHdrType::Routing.into());
-        if let Ipv6ExtensionHeaderData::HopByHopOptions { options } = ext_hdrs[0].data() {
+        if let Ipv6ExtensionHeader::HopByHopOptions { options } = &ext_hdrs[0] {
             // Everything should have been a NOP/ignore
             assert_eq!(options.iter().count(), 0);
         } else {
-            panic!("Should have matched HopByHopOptions: {:?}", ext_hdrs[0].data());
+            panic!("Should have matched HopByHopOptions: {:?}", &ext_hdrs[0]);
         }
 
         // Check second extension header (routing)
-        assert_eq!(ext_hdrs[1].next_header, Ipv6ExtHdrType::DestinationOptions.into());
-        if let Ipv6ExtensionHeaderData::Routing { routing_data } = ext_hdrs[1].data() {
+        if let Ipv6ExtensionHeader::Routing { routing_data } = &ext_hdrs[1] {
             assert_eq!(routing_data.routing_type(), Err(RoutingTypeParseError::UnsupportedType(0)));
             assert_eq!(routing_data.segments_left(), 0);
         } else {
-            panic!("Should have matched RoutingExtensionHeader: {:?}", ext_hdrs[1].data());
+            panic!("Should have matched RoutingExtensionHeader: {:?}", &ext_hdrs[1]);
         }
 
         // Check the third extension header (destination options)
-        assert_eq!(ext_hdrs[2].next_header, IpProto::Tcp.into());
-        if let Ipv6ExtensionHeaderData::DestinationOptions { options } = ext_hdrs[2].data() {
+        if let Ipv6ExtensionHeader::DestinationOptions { options } = &ext_hdrs[2] {
             // Everything should have been a NOP/ignore except for the unrecognized type
             let options: Vec<DestinationOption<'_>> = options.iter().collect();
             assert_eq!(options.len(), 1);
             assert_eq!(options[0].action, ExtensionHeaderOptionAction::SkipAndContinue);
         } else {
-            panic!("Should have matched DestinationOptions: {:?}", ext_hdrs[2].data());
+            panic!("Should have matched DestinationOptions: {:?}", ext_hdrs[2]);
         }
     }
 

@@ -8,7 +8,7 @@ use netstack3_base::{AnyDevice, DeviceIdContext, LocalFrameDestination};
 use packet_formats::ipv6::Ipv6Packet;
 use packet_formats::ipv6::ext_hdrs::{
     DestinationOptionData, ExtensionHeaderOption, FragmentData, HopByHopOptionData,
-    Ipv6ExtensionHeaderData, RoutingData, RoutingTypeParseError,
+    Ipv6ExtensionHeader, RoutingData, RoutingTypeParseError,
 };
 use zerocopy::SplitByteSlice;
 
@@ -61,8 +61,8 @@ pub(crate) fn handle_extension_headers<CC: DeviceIdContext<AnyDevice>, B: SplitB
                 Some(x) => x,
             };
 
-            match ext_hdr.data() {
-                Ipv6ExtensionHeaderData::HopByHopOptions { options } => {
+            match ext_hdr {
+                Ipv6ExtensionHeader::HopByHopOptions { options } => {
                     action = handle_hop_by_hop_options_ext_hdr(
                         core_ctx,
                         device,
@@ -71,20 +71,15 @@ pub(crate) fn handle_extension_headers<CC: DeviceIdContext<AnyDevice>, B: SplitB
                         options.iter(),
                     );
                 }
-                Ipv6ExtensionHeaderData::Routing { routing_data } => {
+                Ipv6ExtensionHeader::Routing { routing_data } => {
                     action =
-                        handle_routing_ext_hdr(core_ctx, device, frame_dst, packet, routing_data);
+                        handle_routing_ext_hdr(core_ctx, device, frame_dst, packet, &routing_data);
                 }
-                Ipv6ExtensionHeaderData::Fragment { fragment_data } => {
-                    action = handle_fragment_ext_hdr(
-                        core_ctx,
-                        device,
-                        frame_dst,
-                        packet,
-                        *fragment_data,
-                    );
+                Ipv6ExtensionHeader::Fragment { fragment_data } => {
+                    action =
+                        handle_fragment_ext_hdr(core_ctx, device, frame_dst, packet, fragment_data);
                 }
-                Ipv6ExtensionHeaderData::DestinationOptions { options } => {
+                Ipv6ExtensionHeader::DestinationOptions { options } => {
                     action = handle_destination_options_ext_hdr(
                         core_ctx,
                         device,
@@ -100,7 +95,7 @@ pub(crate) fn handle_extension_headers<CC: DeviceIdContext<AnyDevice>, B: SplitB
         // options extension header (which MUST be the first extension header if
         // it is present) as per RFC 8200 section 4.
         if let Some(ext_hdr) = iter.next() {
-            if let Ipv6ExtensionHeaderData::HopByHopOptions { options } = ext_hdr.data() {
+            if let Ipv6ExtensionHeader::HopByHopOptions { options } = ext_hdr {
                 action = handle_hop_by_hop_options_ext_hdr(
                     core_ctx,
                     device,

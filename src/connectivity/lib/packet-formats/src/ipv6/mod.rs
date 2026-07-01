@@ -45,8 +45,8 @@ use crate::udp::{UdpPacket, UdpParseArgs};
 
 use ext_hdrs::{
     HopByHopOption, HopByHopOptionData, IPV6_FRAGMENT_EXT_HDR_LEN, Ipv6ExtensionHeader,
-    Ipv6ExtensionHeaderData, Ipv6ExtensionHeaderImpl, Ipv6ExtensionHeaderParsingContext,
-    Ipv6ExtensionHeaderParsingError, is_valid_next_header_upper_layer,
+    Ipv6ExtensionHeaderImpl, Ipv6ExtensionHeaderParsingContext, Ipv6ExtensionHeaderParsingError,
+    is_valid_next_header_upper_layer,
 };
 
 /// Length of the IPv6 fixed header.
@@ -452,7 +452,7 @@ impl<B: SplitByteSlice> Ipv6Packet<B> {
 
             // Update the next header value in the fixed header within the buffer
             // to the next header value from the fragment header.
-            bytes[6] = ext_hdr.next_header;
+            bytes[6] = iter.context().next_header;
 
             // Copy extension headers that appear after the fragment header
             bytes.extend_from_slice(&self.extension_hdrs.bytes()[IPV6_FRAGMENT_EXT_HDR_LEN..]);
@@ -476,7 +476,7 @@ impl<B: SplitByteSlice> Ipv6Packet<B> {
                     .next()
                     .expect("exhausted all extension headers without finding fragment header");
 
-                if let Ipv6ExtensionHeaderData::Fragment { .. } = next_ext_hdr.data() {
+                if let Ipv6ExtensionHeader::Fragment { .. } = next_ext_hdr {
                     // The next extension header is the fragment header
                     // so we copy the buffer before and after the extension header
                     // into `bytes` and patch the next header value within the
@@ -499,15 +499,15 @@ impl<B: SplitByteSlice> Ipv6Packet<B> {
 
                     // Update the current `ext_hdr`'s next header value to the next
                     // header value within the fragment extension header.
-                    match ext_hdr.data() {
+                    match ext_hdr {
                         // The next header value is located in the first byte of the
                         // extension header.
-                        Ipv6ExtensionHeaderData::HopByHopOptions { .. }
-                        | Ipv6ExtensionHeaderData::DestinationOptions { .. }
-                        | Ipv6ExtensionHeaderData::Routing { .. } => {
-                            bytes[ext_hdr_start] = next_ext_hdr.next_header;
+                        Ipv6ExtensionHeader::HopByHopOptions { .. }
+                        | Ipv6ExtensionHeader::DestinationOptions { .. }
+                        | Ipv6ExtensionHeader::Routing { .. } => {
+                            bytes[ext_hdr_start] = iter.context().next_header;
                         }
-                        Ipv6ExtensionHeaderData::Fragment { .. } => unreachable!(
+                        Ipv6ExtensionHeader::Fragment { .. } => unreachable!(
                             "If we had a fragment header before `ext_hdr`, we should have used that instead"
                         ),
                     }
@@ -532,7 +532,7 @@ impl<B: SplitByteSlice> Ipv6Packet<B> {
 
     fn fragment_header_present(&self) -> bool {
         for ext_hdr in self.extension_hdrs.iter() {
-            if matches!(ext_hdr.data(), Ipv6ExtensionHeaderData::Fragment { .. }) {
+            if matches!(ext_hdr, Ipv6ExtensionHeader::Fragment { .. }) {
                 return true;
             }
         }
@@ -1803,8 +1803,7 @@ mod tests {
         let ext_hdrs: Vec<Ipv6ExtensionHeader<'_>> = packet.iter_extension_hdrs().collect();
         assert_eq!(ext_hdrs.len(), 3);
         // Check first extension header (hop-by-hop options)
-        assert_eq!(ext_hdrs[0].next_header, Ipv6ExtHdrType::Routing.into());
-        if let Ipv6ExtensionHeaderData::HopByHopOptions { options } = ext_hdrs[0].data() {
+        if let Ipv6ExtensionHeader::HopByHopOptions { options } = &ext_hdrs[0] {
             // Everything should have been a NOP/ignore
             assert_eq!(options.iter().count(), 0);
         } else {
@@ -1812,17 +1811,15 @@ mod tests {
         }
 
         // Check second extension header (routing)
-        assert_eq!(ext_hdrs[1].next_header, Ipv6ExtHdrType::DestinationOptions.into());
-        if let Ipv6ExtensionHeaderData::Routing { routing_data } = ext_hdrs[1].data() {
+        if let Ipv6ExtensionHeader::Routing { routing_data } = &ext_hdrs[1] {
             assert_eq!(routing_data.routing_type(), Err(RoutingTypeParseError::UnsupportedType(0)));
             assert_eq!(routing_data.segments_left(), 0);
         } else {
-            panic!("Should have matched RoutingExtensionHeader: {:?}", ext_hdrs[1].data());
+            panic!("Should have matched RoutingExtensionHeader: {:?}", &ext_hdrs[1]);
         }
 
         // Check the third extension header (destination options)
-        assert_eq!(ext_hdrs[2].next_header, IpProto::Tcp.into());
-        if let Ipv6ExtensionHeaderData::DestinationOptions { options } = ext_hdrs[2].data() {
+        if let Ipv6ExtensionHeader::DestinationOptions { options } = &ext_hdrs[2] {
             // Everything should have been a NOP/ignore
             assert_eq!(options.iter().count(), 0);
         } else {
@@ -1865,8 +1862,7 @@ mod tests {
         let ext_hdrs: Vec<Ipv6ExtensionHeader<'_>> = packet.iter_extension_hdrs().collect();
         assert_eq!(ext_hdrs.len(), 1);
         // Check first extension header (hop-by-hop options)
-        assert_eq!(ext_hdrs[0].next_header, Ipv6Proto::NoNextHeader.into());
-        if let Ipv6ExtensionHeaderData::HopByHopOptions { options } = ext_hdrs[0].data() {
+        if let Ipv6ExtensionHeader::HopByHopOptions { options } = &ext_hdrs[0] {
             // Everything should have been a NOP/ignore
             assert_eq!(options.iter().count(), 0);
         } else {
@@ -3011,8 +3007,8 @@ mod tests {
         let fragment_data = packet
             .extension_hdrs
             .into_iter()
-            .find_map(|ext_hdr| match ext_hdr.into_data() {
-                Ipv6ExtensionHeaderData::Fragment { fragment_data } => Some(fragment_data),
+            .find_map(|ext_hdr| match ext_hdr {
+                Ipv6ExtensionHeader::Fragment { fragment_data } => Some(fragment_data),
                 _ => None,
             })
             .unwrap();

@@ -625,7 +625,7 @@ mod tests {
     use packet::{Buffer, BufferView, GrowBuffer, Serializer};
     use packet_formats::ip::IpProto;
     use packet_formats::ipv4::Ipv4Packet;
-    use packet_formats::ipv6::ext_hdrs::Ipv6ExtensionHeaderData;
+    use packet_formats::ipv6::ext_hdrs::Ipv6ExtensionHeader;
     use packet_formats::ipv6::{Ipv6Header, Ipv6Packet};
     use test_case::test_case;
 
@@ -856,8 +856,8 @@ mod tests {
             assert_eq!(packet.proto(), IpProto::Udp.into());
             let fragment = packet
                 .iter_extension_hdrs()
-                .find_map(|h| match h.into_data() {
-                    Ipv6ExtensionHeaderData::Fragment { fragment_data } => Some(fragment_data),
+                .find_map(|h| match h {
+                    Ipv6ExtensionHeader::Fragment { fragment_data } => Some(fragment_data),
                     _ => None,
                 })
                 .expect("no fragment header");

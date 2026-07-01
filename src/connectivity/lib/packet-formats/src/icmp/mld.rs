@@ -866,7 +866,7 @@ mod tests {
     use crate::icmp::{IcmpPacketBuilder, IcmpParseArgs};
     use crate::ip::Ipv6Proto;
     use crate::ipv6::ext_hdrs::{
-        ExtensionHeaderOptionAction, HopByHopOption, HopByHopOptionData, Ipv6ExtensionHeaderData,
+        ExtensionHeaderOptionAction, HopByHopOption, HopByHopOptionData, Ipv6ExtensionHeader,
     };
     use crate::ipv6::{Ipv6Header, Ipv6Packet, Ipv6PacketBuilder, Ipv6PacketBuilderWithHbhOptions};
 
@@ -985,8 +985,8 @@ mod tests {
         assert_eq!(ip.dst_ip(), dst_ip);
         assert_eq!(ip.iter_extension_hdrs().count(), 1);
         let hbh = ip.iter_extension_hdrs().next().unwrap();
-        match hbh.data() {
-            Ipv6ExtensionHeaderData::HopByHopOptions { options } => {
+        match hbh {
+            Ipv6ExtensionHeader::HopByHopOptions { options } => {
                 assert_eq!(options.iter().count(), 1);
                 assert_eq!(
                     options.iter().next().unwrap(),

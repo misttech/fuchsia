@@ -862,7 +862,7 @@ mod tests {
     use packet_formats::icmp::{IcmpParseArgs, Icmpv6MessageType, Icmpv6Packet};
     use packet_formats::ip::IpPacket;
     use packet_formats::ipv6::Ipv6Packet;
-    use packet_formats::ipv6::ext_hdrs::Ipv6ExtensionHeaderData;
+    use packet_formats::ipv6::ext_hdrs::Ipv6ExtensionHeader;
 
     use super::*;
     use crate::internal::base::{IpPacketDestination, IpSendFrameError, SendIpPacketMeta};
@@ -1891,8 +1891,8 @@ mod tests {
             ipv6.iter_extension_hdrs()
                 .map(|h| {
                     let options = assert_matches!(
-                        h.data(),
-                        Ipv6ExtensionHeaderData::HopByHopOptions { options } => options
+                        h,
+                        Ipv6ExtensionHeader::HopByHopOptions { options } => options
                     );
                     assert_eq!(
                         options

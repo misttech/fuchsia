@@ -13,7 +13,7 @@ use packet_formats::ip::DscpAndEcn;
 use packet_formats::ipv4::Ipv4Header as _;
 use packet_formats::ipv4::options::Ipv4Option;
 use packet_formats::ipv6::Ipv6Header as _;
-use packet_formats::ipv6::ext_hdrs::{HopByHopOptionData, Ipv6ExtensionHeaderData};
+use packet_formats::ipv6::ext_hdrs::{HopByHopOptionData, Ipv6ExtensionHeader};
 
 /// Informs the transport layer of parameters for transparent local delivery.
 #[derive(Debug, GenericOverIp, Clone)]
@@ -121,8 +121,8 @@ impl IpHeaderInfo<Ipv6> for Ipv6HeaderInfo<'_> {
     }
 
     fn router_alert(&self) -> bool {
-        self.extension.iter().any(|h| match h.data() {
-            Ipv6ExtensionHeaderData::HopByHopOptions { options } => {
+        self.extension.iter().any(|h| match h {
+            Ipv6ExtensionHeader::HopByHopOptions { options } => {
                 options.iter().any(|h| matches!(h.data, HopByHopOptionData::RouterAlert { .. }))
             }
             _ => false,

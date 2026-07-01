@@ -17,7 +17,7 @@ use packet_formats::ip::{IpPacket as _, IpProto};
 use packet_formats::ipv4::options::Ipv4Option;
 use packet_formats::ipv4::{Ipv4PacketBuilder, Ipv4PacketBuilderWithOptions};
 use packet_formats::ipv6::ext_hdrs::{
-    ExtensionHeaderOptionAction, HopByHopOption, HopByHopOptionData, Ipv6ExtensionHeaderData,
+    ExtensionHeaderOptionAction, HopByHopOption, HopByHopOptionData, Ipv6ExtensionHeader,
 };
 use packet_formats::ipv6::{Ipv6PacketBuilder, Ipv6PacketBuilderWithHbhOptions};
 
@@ -179,8 +179,8 @@ impl IpExt for Ipv6 {
             dst_addr: packet.dst_ip(),
             proto: packet.proto(),
             ttl: packet.ttl(),
-            router_alert: packet.iter_extension_hdrs().find_map(|o| match o.data() {
-                Ipv6ExtensionHeaderData::HopByHopOptions { options } => {
+            router_alert: packet.iter_extension_hdrs().find_map(|o| match o {
+                Ipv6ExtensionHeader::HopByHopOptions { options } => {
                     options.iter().find_map(|hbh| match hbh.data {
                         HopByHopOptionData::RouterAlert { data } => Some(data),
                         _ => None,

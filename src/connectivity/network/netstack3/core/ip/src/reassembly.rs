@@ -49,7 +49,7 @@ use packet::BufferViewMut;
 use packet_formats::ip::{IpPacket, Ipv4Proto};
 use packet_formats::ipv4::{Ipv4Header, Ipv4Packet};
 use packet_formats::ipv6::Ipv6Packet;
-use packet_formats::ipv6::ext_hdrs::Ipv6ExtensionHeaderData;
+use packet_formats::ipv6::ext_hdrs::Ipv6ExtensionHeader;
 use zerocopy::{SplitByteSlice, SplitByteSliceMut};
 
 /// An IP extension trait supporting reassembly of fragments.
@@ -309,7 +309,7 @@ impl<B: SplitByteSlice> FragmentablePacket for Ipv4Packet<B> {
 impl<B: SplitByteSlice> FragmentablePacket for Ipv6Packet<B> {
     fn fragment_data(&self) -> (u32, u16, bool) {
         for ext_hdr in self.iter_extension_hdrs() {
-            if let Ipv6ExtensionHeaderData::Fragment { fragment_data } = ext_hdr.data() {
+            if let Ipv6ExtensionHeader::Fragment { fragment_data } = ext_hdr {
                 return (
                     fragment_data.identification(),
                     fragment_data.fragment_offset().into_raw(),
