@@ -14,7 +14,11 @@ visibility = [
 source_set("traits") {
   public = [ "//third_party/abseil-cpp/src/absl/random/internal/traits.h" ]
   public_configs = [ "//third_party/abseil-cpp:abseil_config" ]
-  deps = [ "../../base:config" ]
+  deps = [
+    "../../base:config",
+    "../../numeric:bits",
+    "../../numeric:int128",
+  ]
 }
 
 source_set("distribution_caller") {
@@ -25,6 +29,7 @@ source_set("distribution_caller") {
   deps = [
     "../../base:config",
     "../../base:fast_type_id",
+    "../../meta:type_traits",
     "../../utility",
   ]
 }
@@ -35,6 +40,7 @@ source_set("fast_uniform_bits") {
   ]
   public_configs = [ "//third_party/abseil-cpp:abseil_config" ]
   deps = [
+    ":traits",
     "../../base:config",
     "../../meta:type_traits",
   ]
@@ -57,19 +63,19 @@ source_set("seed_material") {
   ]
 }
 
-source_set("pool_urbg") {
-  sources = [ "//third_party/abseil-cpp/src/absl/random/internal/pool_urbg.cc" ]
-  public = [ "//third_party/abseil-cpp/src/absl/random/internal/pool_urbg.h" ]
+source_set("entropy_pool") {
+  sources =
+      [ "//third_party/abseil-cpp/src/absl/random/internal/entropy_pool.cc" ]
+  public =
+      [ "//third_party/abseil-cpp/src/absl/random/internal/entropy_pool.h" ]
   public_configs = [ "//third_party/abseil-cpp:abseil_config" ]
   deps = [
+    ":platform",
     ":randen",
     ":seed_material",
-    ":traits",
     "../../base",
     "../../base:config",
     "../../base:core_headers",
-    "../../base:endian",
-    "../../base:raw_logging_internal",
     "../../random:seed_gen_exception",
     "../../types:span",
   ]
@@ -134,13 +140,12 @@ source_set("nonsecure_base") {
       [ "//third_party/abseil-cpp/src/absl/random/internal/nonsecure_base.h" ]
   public_configs = [ "//third_party/abseil-cpp:abseil_config" ]
   deps = [
-    ":pool_urbg",
+    ":entropy_pool",
     ":salted_seed_seq",
     ":seed_material",
-    "../../base:core_headers",
+    "../../base:config",
+    "../../container:inlined_vector",
     "../../meta:type_traits",
-    "../../types:optional",
-    "../../types:span",
   ]
 }
 
@@ -173,10 +178,8 @@ source_set("platform") {
   sources = [
     "//third_party/abseil-cpp/src/absl/random/internal/randen_round_keys.cc",
   ]
-  public = [
-    "//third_party/abseil-cpp/src/absl/random/internal/platform.h",
-    "//third_party/abseil-cpp/src/absl/random/internal/randen_traits.h",
-  ]
+  public =
+      [ "//third_party/abseil-cpp/src/absl/random/internal/randen_traits.h" ]
   public_configs = [ "//third_party/abseil-cpp:abseil_config" ]
   deps = [ "../../base:config" ]
 }
@@ -219,6 +222,7 @@ source_set("randen_hwaes") {
     ":platform",
     ":randen_hwaes_impl",
     "../../base:config",
+    "../../types:optional",
   ]
 }
 
@@ -241,6 +245,7 @@ source_set("mock_helpers") {
   public =
       [ "//third_party/abseil-cpp/src/absl/random/internal/mock_helpers.h" ]
   deps = [
+    "../../base:config",
     "../../base:fast_type_id",
     "../../types:optional",
   ]

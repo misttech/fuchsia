@@ -1,5 +1,4 @@
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
-load("//private:docs.bzl", "starlark_doc_extract__maybe")
 
 filegroup(
     name = "bzl_files",
@@ -21,12 +20,6 @@ bzl_library(
         "//private:util",
         "@bazel_features_globals//:globals",
     ],
-)
-
-starlark_doc_extract__maybe(
-    name = "features.doc_extract",
-    src = "features.bzl",
-    deps = ["features"],
 )
 
 bzl_library(

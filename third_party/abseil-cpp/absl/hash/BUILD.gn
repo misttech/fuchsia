@@ -19,10 +19,11 @@ source_set("hash") {
 
   deps = [
     ":city",
-    ":low_level_hash",
+    ":weakly_mixed_integer",
     "//third_party/abseil-cpp/absl/base:config",
     "//third_party/abseil-cpp/absl/base:core_headers",
     "//third_party/abseil-cpp/absl/base:endian",
+    "//third_party/abseil-cpp/absl/base:prefetch",
     "//third_party/abseil-cpp/absl/container:fixed_array",
     "//third_party/abseil-cpp/absl/functional:function_ref",
     "//third_party/abseil-cpp/absl/meta:type_traits",
@@ -48,17 +49,12 @@ source_set("city") {
   ]
 }
 
-source_set("low_level_hash") {
+source_set("weakly_mixed_integer") {
   public_configs = [ "//third_party/abseil-cpp:abseil_config" ]
 
-  sources =
-      [ "//third_party/abseil-cpp/src/absl/hash/internal/low_level_hash.cc" ]
-  public =
-      [ "//third_party/abseil-cpp/src/absl/hash/internal/low_level_hash.h" ]
-
-  deps = [
-    "//third_party/abseil-cpp/absl/base:config",
-    "//third_party/abseil-cpp/absl/base:endian",
-    "//third_party/abseil-cpp/absl/numeric:int128",
+  public = [
+    "//third_party/abseil-cpp/src/absl/hash/internal/weakly_mixed_integer.h",
   ]
+
+  deps = [ "//third_party/abseil-cpp/absl/base:config" ]
 }

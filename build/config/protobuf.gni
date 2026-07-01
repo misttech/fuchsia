@@ -5,5 +5,5 @@
 declare_args() {
   # Temporary flag to switch GN compilation rules between the old and new
   # protobuf source repository versions.
-  use_new_protobuf = false
+  use_new_protobuf = true
 }

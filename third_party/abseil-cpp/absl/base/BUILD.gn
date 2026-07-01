@@ -57,13 +57,20 @@ source_set("no_destructor") {
 source_set("nullability") {
   public_configs = [ "//third_party/abseil-cpp:abseil_config" ]
 
-  sources =
-      [ "//third_party/abseil-cpp/src/absl/base/internal/nullability_impl.h" ]
   public = [ "//third_party/abseil-cpp/src/absl/base/nullability.h" ]
 
+  deps = [ ":config" ]
+}
+
+source_set("nullability_traits_internal") {
+  public_configs = [ "//third_party/abseil-cpp:abseil_config" ]
+
+  public =
+      [ "//third_party/abseil-cpp/src/absl/base/internal/nullability_traits.h" ]
+
   deps = [
-    ":core_headers",
-    "//third_party/abseil-cpp/absl/meta:type_traits",
+    ":config",
+    ":nullability",
   ]
 }
 
@@ -179,9 +186,6 @@ source_set("base_internal") {
 
   public = [
     "//third_party/abseil-cpp/src/absl/base/internal/hide_ptr.h",
-    "//third_party/abseil-cpp/src/absl/base/internal/identity.h",
-    "//third_party/abseil-cpp/src/absl/base/internal/inline_variable.h",
-    "//third_party/abseil-cpp/src/absl/base/internal/invoke.h",
     "//third_party/abseil-cpp/src/absl/base/internal/scheduling_mode.h",
   ]
 
@@ -282,7 +286,7 @@ source_set("strerror") {
 source_set("fast_type_id") {
   public_configs = [ "//third_party/abseil-cpp:abseil_config" ]
 
-  public = [ "//third_party/abseil-cpp/src/absl/base/internal/fast_type_id.h" ]
+  public = [ "//third_party/abseil-cpp/src/absl/base/fast_type_id.h" ]
 
   deps = [ ":config" ]
 }

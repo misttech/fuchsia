@@ -18,7 +18,7 @@
              revision="b995ff63d8a427be733e7094e96fbbc67c8ac850"/>
     <project name="third_party/abseil-cpp"
              path="third_party/abseil-cpp/src"
-             revision="4c2bfd70d75838de03952932b678645a81824c9a"
+             revision="255c84dadd029fd8ad25c5efb5933e47beaa00c7"
              remote="https://fuchsia.googlesource.com/third_party/abseil-cpp"/>
     <project name="third_party/acpica"
              path="third_party/acpica-migrating/src"
@@ -221,7 +221,7 @@
     <project name="third_party/grpc"
              path="third_party/grpc/src"
              remote="https://fuchsia.googlesource.com/third_party/grpc"
-             revision="67b2cb6661bfd4cc69ed39dbfb5d40330bff723a"
+             revision="f5e2d6e856176c2f6b7691032adfefe21e5f64c1"
              gerrithost="https://fuchsia-review.googlesource.com"/>
     <project name="third_party/inih"
              path="third_party/inih"
@@ -427,7 +427,7 @@
     <project name="third_party/protobuf"
              path="third_party/protobuf/src"
              remote="https://fuchsia.googlesource.com/third_party/protobuf"
-             revision="2d4414f384dc499af113b5991ce3eaa9df6dd931"
+             revision="8a74921d1cadfb987d7816d1cae9d2dbe89348a5"
              gerrithost="https://fuchsia-review.googlesource.com"/>
     <project name="protobuf-gn"
              path="build/secondary/third_party/protobuf"

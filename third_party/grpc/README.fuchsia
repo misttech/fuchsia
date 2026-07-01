@@ -1,14 +1,8 @@
 Name: gRPC - An RPC library and framework
 URL: https://fuchsia.googlesource.com/third_party/grpc
 Revision: 238f990024610534849f5b461c1951807d470622
-License File: src/LICENSE
+License File: LICENSE
 -> License File Format: Single License
 -> License Classifications: Apache-2.0, BSD-3-Clause, Copyright, MPL-2.0
-License File: src/NOTICE.txt
--> License File Format: Single License
--> License Classifications: Apache-2.0, Copyright
-License File: src/src/php/ext/grpc/LICENSE
--> License File Format: Single License
--> License Classifications: Apache-2.0, Copyright
 Description: Google Remote Procedure Call.
 Local Modifications: Local modifications are described by 1.65.0 merge commit 238f990024610534849f5b461c1951807d470622

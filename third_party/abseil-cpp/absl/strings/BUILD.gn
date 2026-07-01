@@ -15,7 +15,6 @@ visibility = [
 source_set("string_view") {
   public_configs = [ "//third_party/abseil-cpp:abseil_config" ]
 
-  sources = [ "//third_party/abseil-cpp/src/absl/strings/string_view.cc" ]
   public = [ "//third_party/abseil-cpp/src/absl/strings/string_view.h" ]
 
   deps = [
@@ -54,7 +53,6 @@ source_set("strings") {
     "//third_party/abseil-cpp/src/absl/strings/internal/charconv_bigint.h",
     "//third_party/abseil-cpp/src/absl/strings/internal/charconv_parse.h",
     "//third_party/abseil-cpp/src/absl/strings/internal/damerau_levenshtein_distance.h",
-    "//third_party/abseil-cpp/src/absl/strings/internal/has_absl_stringify.h",
     "//third_party/abseil-cpp/src/absl/strings/internal/memutil.h",
     "//third_party/abseil-cpp/src/absl/strings/internal/stl_type_traits.h",
     "//third_party/abseil-cpp/src/absl/strings/internal/str_join_internal.h",
@@ -191,7 +189,6 @@ source_set("cord") {
   sources = [
     "//third_party/abseil-cpp/src/absl/strings/cord.cc",
     "//third_party/abseil-cpp/src/absl/strings/cord_analysis.cc",
-    "//third_party/abseil-cpp/src/absl/strings/cord_buffer.cc",
   ]
   public = [
     "//third_party/abseil-cpp/src/absl/strings/cord.h",

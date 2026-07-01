@@ -5,7 +5,6 @@ Version: v29.0
 License: BSD
 License File: src/LICENSE
 License File: src/third_party/utf8_range/LICENSE
-License File: src/third_party/lunit/LICENSE
 
 Description: Google's data interchange format.
 

@@ -721,6 +721,14 @@
                 "paths": [
                     "third_party/tink-cc/src/third_party"
                 ]
+            },
+            {
+                "notes": [
+                    "Skip nested prebuilt directory in upstream protobuf which acts as a barrier name."
+                ],
+                "paths": [
+                    "third_party/protobuf/src/bazel/private/oss/toolchains/prebuilt"
+                ]
             }
         ]
     }

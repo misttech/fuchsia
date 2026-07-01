@@ -17,9 +17,9 @@ source_set("random") {
   deps = [
     ":distributions",
     ":seed_sequences",
+    "internal:entropy_pool",
     "internal:nonsecure_base",
     "internal:pcg_engine",
-    "internal:pool_urbg",
     "internal:randen_engine",
   ]
 }
@@ -76,8 +76,8 @@ source_set("seed_sequences") {
     ":seed_gen_exception",
     "../container:inlined_vector",
     "../types:span",
+    "internal:entropy_pool",
     "internal:nonsecure_base",
-    "internal:pool_urbg",
     "internal:salted_seed_seq",
     "internal:seed_material",
   ]

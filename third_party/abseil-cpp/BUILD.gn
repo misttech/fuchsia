@@ -22,7 +22,10 @@ group("absl") {
 }
 
 config("abseil_config") {
-  include_dirs = [ "//third_party/abseil-cpp/src" ]
+  include_dirs = [
+    "//third_party/abseil-cpp/include",
+    "//third_party/abseil-cpp/src",
+  ]
 
   cflags = [
     # Google style does not use unsigned integers, though STL containers
