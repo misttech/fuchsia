@@ -239,11 +239,17 @@ async fn parse_ip_addr_with_provider(
             .await
             .map_err(|err| {
                 io::Error::other(format!(
-                    "failed to get interface index from socket provider: {}",
+                    "failed to communicate with socket provider while getting interface index: {}",
                     err
                 ))
             })?
-            .map_err(|status| zx::Status::from_raw(status).into_io_error())?;
+            .map_err(|status| {
+                let status = zx::Status::from_raw(status);
+                io::Error::new(
+                    status.into_io_error_kind(),
+                    format!("failed to get interface index from socket provider: {status}"),
+                )
+            })?;
 
         // SocketAddrV6 only works with 32 bit scope ids.
         u32::try_from(id).map_err(|TryFromIntError { .. }| {
