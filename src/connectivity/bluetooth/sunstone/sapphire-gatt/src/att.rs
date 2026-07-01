@@ -65,6 +65,7 @@ mod tests {
     const CLIENT_PREFERRED_MTU: u16 = 512;
     const SERVER_MTU: u16 = 256;
     const SMALL_TEST_MTU: u16 = 23;
+    const READ_BLOB_OFFSET: u16 = 10;
 
     #[test]
     fn test_attribute_handle_new() {
@@ -380,6 +381,112 @@ mod tests {
                 // Value is smaller than SMALL_TEST_MTU - 1, so it is read entirely without truncation
                 assert!(short_val.len() < (SMALL_TEST_MTU - 1) as usize);
                 assert_eq!(val, short_val);
+            });
+
+            executor.run_until_stalled();
+            assert!(server_handle.is_finished());
+            assert!(client_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_server_integration_read_blob() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            let long_val = b"012345678901234567890123456789"; // 30 bytes
+            let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), long_val);
+            db.insert(h(1), name_attr);
+
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(server_tx),
+                BearerRx::new(server_rx),
+                SMALL_TEST_MTU,
+                db,
+            );
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            // Server task
+            let server_handle = executor.spawn(async move {
+                // 1. MTU Exchange
+                server.handle_request().await.unwrap();
+                // 2. Read Blob Request
+                server.handle_request().await.unwrap();
+            });
+
+            // Client task
+            let client_handle = executor.spawn(async move {
+                // 1. MTU Exchange
+                client.exchange_mtu().await.unwrap();
+
+                // 2. Read Blob Request starting at offset
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let val = client.read_blob(h(1), READ_BLOB_OFFSET, &mut rx_buf).await.unwrap();
+                // Remaining bytes fits in MTU - 1
+                assert_eq!(val, &long_val[READ_BLOB_OFFSET as usize..]);
+            });
+
+            executor.run_until_stalled();
+            assert!(server_handle.is_finished());
+            assert!(client_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_server_integration_read_blob_truncated() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            let long_val = b"0123456789012345678901234567890123456789"; // 40 bytes
+            let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), long_val);
+            db.insert(h(1), name_attr);
+
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(server_tx),
+                BearerRx::new(server_rx),
+                SMALL_TEST_MTU,
+                db,
+            );
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            // Server task
+            let server_handle = executor.spawn(async move {
+                // 1. MTU Exchange
+                server.handle_request().await.unwrap();
+                // 2. Read Blob Request
+                server.handle_request().await.unwrap();
+            });
+
+            // Client task
+            let client_handle = executor.spawn(async move {
+                // 1. MTU Exchange (negotiates MTU of 23)
+                client.exchange_mtu().await.unwrap();
+                assert_eq!(client.mtu(), SMALL_TEST_MTU);
+
+                // 2. Read Blob Request starting at offset
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let val = client.read_blob(h(1), READ_BLOB_OFFSET, &mut rx_buf).await.unwrap();
+                // Remaining bytes is truncated to MTU - 1
+                let expected_len = (SMALL_TEST_MTU - 1) as usize;
+                assert_eq!(val.len(), expected_len);
+                assert_eq!(
+                    val,
+                    &long_val[READ_BLOB_OFFSET as usize..READ_BLOB_OFFSET as usize + expected_len]
+                );
             });
 
             executor.run_until_stalled();

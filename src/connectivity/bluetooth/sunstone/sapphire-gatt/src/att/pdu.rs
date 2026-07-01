@@ -28,6 +28,8 @@ pub enum Opcode {
     FindByTypeValueRsp = 0x07,
     ReadReq = 0x0A,
     ReadRsp = 0x0B,
+    ReadBlobReq = 0x0C,
+    ReadBlobRsp = 0x0D,
 }
 
 /// The UUID format types supported in Find Information Response.
@@ -378,6 +380,16 @@ pub struct ReadReq {
     pub attribute_handle: U16,
 }
 
+/// Parameters for Read Blob Request PDU (OpCode = 0x0C)
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.3).
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed)]
+pub struct ReadBlobReq {
+    pub attribute_handle: U16,
+    pub value_offset: U16,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -401,6 +413,18 @@ mod tests {
 
         // Serialization check
         let new_req = ReadReq { attribute_handle: U16::new(1) };
+        assert_eq!(new_req.as_bytes(), &req_bytes[..]);
+    }
+
+    #[test]
+    fn test_read_blob_req() {
+        let req_bytes = [0x01, 0x00, 0x02, 0x00]; // handle = 1, offset = 2
+        let parsed = ReadBlobReq::read_from_bytes(&req_bytes[..]).unwrap();
+        assert_eq!(parsed.attribute_handle.get(), 1);
+        assert_eq!(parsed.value_offset.get(), 2);
+
+        // Serialization check
+        let new_req = ReadBlobReq { attribute_handle: U16::new(1), value_offset: U16::new(2) };
         assert_eq!(new_req.as_bytes(), &req_bytes[..]);
     }
 

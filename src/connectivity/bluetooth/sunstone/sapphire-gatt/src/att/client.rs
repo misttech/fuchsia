@@ -10,7 +10,8 @@ use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
 use crate::att::pdu::{
     DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp,
     FindByTypeValueReqHeader, FindInformationReq, FindInformationRsp, HandlesInformation, Header,
-    InformationData16, InformationData128, Opcode, Packet, PacketBuilder, ReadReq, UuidFormat,
+    InformationData16, InformationData128, Opcode, Packet, PacketBuilder, ReadBlobReq, ReadReq,
+    UuidFormat,
 };
 use core::cmp::{max, min};
 use core::mem::MaybeUninit;
@@ -259,6 +260,32 @@ where
             self.transaction(Opcode::ReadReq, builder.as_packet(), rx_buf, Opcode::ReadRsp).await?;
 
         // Return the variable-length attribute value.
+        Ok(&mut rsp_packet.data)
+    }
+
+    /// Sends a Read Blob Request and awaits a Read Blob Response.
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.3 & 3.4.4.4)
+    pub async fn read_blob<'a>(
+        &mut self,
+        handle: AttributeHandle,
+        offset: u16,
+        rx_buf: &'a mut [MaybeUninit<u8>],
+    ) -> Result<&'a mut [u8], ClientError> {
+        // Construct the Read Blob Request payload.
+        let req = ReadBlobReq {
+            attribute_handle: U16::new(handle.value()),
+            value_offset: U16::new(offset),
+        };
+        let builder =
+            PacketBuilder { header: Header { opcode: Opcode::ReadBlobReq }, payload: req };
+
+        // Perform the transaction and await the matching Read Blob Response.
+        let rsp_packet = self
+            .transaction(Opcode::ReadBlobReq, builder.as_packet(), rx_buf, Opcode::ReadBlobRsp)
+            .await?;
+
+        // Return the variable-length value chunk.
         Ok(&mut rsp_packet.data)
     }
 
@@ -719,6 +746,94 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); 64];
                 let res = client.read(h(1), &mut rx_buf).await;
                 assert_eq!(res, Err(ClientError::ErrorResponse(ErrorCode::InvalidHandle)));
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_read_blob_success() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            let server_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 32];
+                let mut server_rx_bearer = BearerRx::new(server_rx);
+                let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ReadBlobReq);
+
+                let req = ReadBlobReq::read_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(req.attribute_handle.get(), 1);
+                assert_eq!(req.value_offset.get(), 2);
+
+                let val = b"nstone"; // Part of "Sunstone" starting at offset 2
+                let mut tx_buf = [0u8; 64];
+                let mut builder = DynamicPacketBuilder::<_, u8>::new(
+                    &mut tx_buf,
+                    Header { opcode: Opcode::ReadBlobRsp },
+                    CLIENT_PREFERRED_MTU as usize,
+                );
+                builder.extend_from_slice(val).unwrap();
+                let tx_packet = builder.as_packet();
+                let mut server_tx_bearer = BearerTx::new(server_tx);
+                server_tx_bearer.send(tx_packet).await.unwrap();
+            });
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let val = client.read_blob(h(1), 2, &mut rx_buf).await.unwrap();
+                let expected: &[u8] = b"nstone";
+                assert_eq!(val, expected);
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_read_blob_error() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            let server_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 32];
+                let mut server_rx_bearer = BearerRx::new(server_rx);
+                let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ReadBlobReq);
+
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ErrorRsp },
+                    payload: ErrorRsp {
+                        request_opcode: Opcode::ReadBlobReq as u8,
+                        attribute_handle: U16::new(1),
+                        error_code: ErrorCode::InvalidOffset,
+                    },
+                };
+                let mut server_tx_bearer = BearerTx::new(server_tx);
+                server_tx_bearer.send(builder.as_packet()).await.unwrap();
+            });
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let res = client.read_blob(h(1), 100, &mut rx_buf).await;
+                assert_eq!(res, Err(ClientError::ErrorResponse(ErrorCode::InvalidOffset)));
             });
 
             executor.run_until_stalled();
