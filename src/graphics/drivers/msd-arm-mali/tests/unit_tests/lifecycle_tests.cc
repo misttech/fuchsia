@@ -6,10 +6,7 @@
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/fake-resource/cpp/fake-resource.h>
-#include <lib/driver/testing/cpp/driver_runtime.h>
-#include <lib/driver/testing/cpp/internal/driver_lifecycle.h>
-#include <lib/driver/testing/cpp/internal/test_environment.h>
-#include <lib/driver/testing/cpp/test_node.h>
+#include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/zx/result.h>
 
 #include <gtest/gtest.h>
@@ -51,45 +48,36 @@ class FakeInfoResource : public fidl::testing::WireTestBase<fuchsia_kernel::Info
   }
 };
 
-class TestEnvironmentWrapper {
+class MsdArmTestEnvironment : public fdf_testing::Environment {
  public:
-  fdf::DriverStartArgs Setup(fdf_fake::FakePDev::Config pdev_config) {
-    zx::result start_args_result = node_.CreateStartArgsAndServe();
-    EXPECT_EQ(ZX_OK, start_args_result.status_value());
+  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
+    async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
 
-    EXPECT_EQ(
-        ZX_OK,
-        env_.Initialize(std::move(start_args_result->incoming_directory_server)).status_value());
+    auto instance_handler = pdev_.GetInstanceHandler(dispatcher);
+    zx::result<> result = to_driver_vfs.AddService<fuchsia_hardware_platform_device::Service>(
+        std::move(instance_handler), "pdev");
+    if (result.is_error()) {
+      return result.take_error();
+    }
 
-    pdev_.SetConfig(std::move(pdev_config));
-
-    auto result = env_.incoming_directory().AddService<fuchsia_hardware_platform_device::Service>(
-        pdev_.GetInstanceHandler(fdf::Dispatcher::GetCurrent()->async_dispatcher()), "pdev");
-    EXPECT_EQ(ZX_OK, result.status_value());
-
-    EXPECT_EQ(ZX_OK,
-              env_.incoming_directory()
-                  .component()
-                  .AddProtocol<fuchsia_kernel::InfoResource>(std::make_unique<FakeInfoResource>())
-                  .status_value());
-
-    return std::move(start_args_result->start_args);
+    result = to_driver_vfs.component().AddProtocol<fuchsia_kernel::InfoResource>(
+        std::make_unique<FakeInfoResource>());
+    return result;
   }
 
+  fdf_fake::FakePDev& pdev() { return pdev_; }
+
  private:
-  fdf_testing::TestNode node_{"root"};
-  fdf_testing::internal::TestEnvironment env_;
   fdf_fake::FakePDev pdev_;
 };
 
-// WARNING: Don't use this test as a template for new tests as it uses the old driver testing
-// library.
-TEST(MsdArmDFv2, LoadDriver) {
-  fdf_testing::DriverRuntime runtime;
+struct MsdArmTestConfig {
+  using DriverType = fdf_testing::EmptyDriverType;
+  using EnvironmentType = MsdArmTestEnvironment;
+};
 
-  // This dispatcher is used by the test environment, and hosts the FakePDevFidl and incoming
-  // directory.
-  fdf::UnownedSynchronizedDispatcher test_env_dispatcher = runtime.StartBackgroundDispatcher();
+TEST(MsdArmDFv2, LoadDriver) {
+  fdf_testing::ForegroundDriverTest<MsdArmTestConfig> driver_test;
 
   // Initialize MMIOs and IRQs needed by the device.
   zx::interrupt gpu_interrupt;
@@ -113,11 +101,8 @@ TEST(MsdArmDFv2, LoadDriver) {
     config.mmios[0] = fdf::PDev::MmioInfo{.size = kMmioSize, .vmo = std::move(vmo)};
   }
 
-  async_patterns::TestDispatcherBound<TestEnvironmentWrapper> test_environment{
-      test_env_dispatcher->async_dispatcher(), std::in_place};
-
-  fdf::DriverStartArgs start_args =
-      test_environment.SyncCall(&TestEnvironmentWrapper::Setup, std::move(config));
+  driver_test.RunInEnvironmentTypeContext(
+      [&config](MsdArmTestEnvironment& env) { env.pdev().SetConfig(std::move(config)); });
 
   class MaliHook : public magma::RegisterIo::Hook {
    public:
@@ -153,21 +138,19 @@ TEST(MsdArmDFv2, LoadDriver) {
     mmio_buffer->Write32(kCoresEnabled, kShaderReadyOffset);
     mmio_buffer->Write<uint32_t>(kCoresEnabled, GpuFeatures::kShaderPresentLowOffset);
   }
-  {
-    config::Config fake_config;
-    fake_config.enable_suspend() = false;
-    start_args.config(fake_config.ToVmo());
-  }
 
-  fdf_testing::internal::DriverUnderTest<> driver;
-
-  zx::result start_result = runtime.RunToCompletion(driver.Start(std::move(start_args)));
+  zx::result<> start_result =
+      driver_test.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& start_args) {
+        config::Config fake_config;
+        fake_config.enable_suspend() = false;
+        start_args.config(fake_config.ToVmo());
+      });
   ASSERT_EQ(ZX_OK, start_result.status_value());
 
   // Hook ownership should have been taken by the driver.
   EXPECT_FALSE(hook_s);
 
-  zx::result stop_result = runtime.RunToCompletion(driver.PrepareStop());
+  zx::result<> stop_result = driver_test.StopDriver();
   ASSERT_EQ(ZX_OK, stop_result.status_value());
 }
 
