@@ -114,7 +114,7 @@ class PmfTestParams:
 @dataclass
 class VendorIeTestParams:
     vendor_ie_type: str
-    security: SecurityWpa2
+    security: SecurityWpa2 | SecurityWpa3 | SecurityWpa2Wpa3Mixed
     band: Band
 
 
@@ -169,7 +169,6 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             key_type = "hex" if params.hex_key else "chars"
             band_name = _get_band_name(params.band)
             name = f"test_associate_{band_name}_{params.security.uci_encryption}_{params.key_length}_{key_type}"
-            self.log.info(f"Generated test case: {name}")
             return name
 
         self.generate_tests(
@@ -207,7 +206,6 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             name = (
                 f"test_associate_{band_name}_{params.security.uci_encryption}"
             )
-            self.log.info(f"Generated test case: {name}")
             return name
 
         self.generate_tests(
@@ -241,7 +239,6 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             name = (
                 f"test_associate_{band_name}_{params.security.uci_encryption}"
             )
-            self.log.info(f"Generated test case: {name}")
             return name
 
         self.generate_tests(
@@ -282,7 +279,6 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         def generate_boundary_test_name(params: BoundaryTestParams) -> str:
             band_name = _get_band_name(params.band)
             name = f"test_associate_{band_name}_{params.password_type}_{params.security.uci_encryption}"
-            self.log.info(f"Generated test case: {name}")
             return name
 
         self.generate_tests(
@@ -318,7 +314,6 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         def generate_utf8_test_name(params: Utf8TestParams) -> str:
             band_name = _get_band_name(params.band)
             name = f"test_associate_{band_name}_utf8_{params.char_class}_{params.security.uci_encryption}"
-            self.log.info(f"Generated test case: {name}")
             return name
 
         self.generate_tests(
@@ -371,7 +366,6 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
             suffix = "_".join(parts)
             name = f"test_associate_{band_name}_{suffix}_{params.security.uci_encryption}"
-            self.log.info(f"Generated test case: {name}")
             return name
 
         self.generate_tests(
@@ -405,7 +399,6 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         def generate_pmf_test_name(params: PmfTestParams) -> str:
             band_name = _get_band_name(params.band)
             name = f"test_associate_{band_name}_pmf_{params.security.uci_encryption}"
-            self.log.info(f"Generated test case: {name}")
             return name
 
         self.generate_tests(
@@ -420,16 +413,24 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             VendorElements.ZERO_LENGTH_WITHOUT_DATA,
             VendorElements.SIMILAR_TO_WPA,
         ]
+        vendor_ie_securities: list[
+            SecurityWpa2 | SecurityWpa3 | SecurityWpa2Wpa3Mixed
+        ] = [
+            SecurityWpa2(cipher="ccmp"),
+            SecurityWpa3(cipher="ccmp"),
+            SecurityWpa2Wpa3Mixed(cipher="ccmp"),
+        ]
         for vendor_ie_type in vendor_ie_types:
-            vendor_ie_args.append(
-                (
-                    VendorIeTestParams(
-                        vendor_ie_type=vendor_ie_type,
-                        security=SecurityWpa2(cipher="ccmp"),
-                        band=self.rng.choice([Band.BAND_2G, Band.BAND_5G]),
-                    ),
+            for vendor_ie_security in vendor_ie_securities:
+                vendor_ie_args.append(
+                    (
+                        VendorIeTestParams(
+                            vendor_ie_type=vendor_ie_type,
+                            security=vendor_ie_security,
+                            band=self.rng.choice([Band.BAND_2G, Band.BAND_5G]),
+                        ),
+                    )
                 )
-            )
 
         def generate_vendor_ie_test_name(params: VendorIeTestParams) -> str:
             band_name = _get_band_name(params.band)
@@ -449,7 +450,6 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 f"test_associate_{band_name}_{ie_name}_vendor_ie_"
                 f"{params.security.uci_encryption}"
             )
-            self.log.info(f"Generated test case: {name}")
             return name
 
         self.generate_tests(
