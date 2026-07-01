@@ -73,6 +73,25 @@ impl Uuid {
     pub const fn to_128_bytes(&self) -> [u8; 16] {
         self.value
     }
+
+    /// Returns `true` if this UUID represents a standard 16-bit SIG UUID.
+    pub fn is_u16(&self) -> bool {
+        self.value[..Self::BASE_OFFSET] == Self::BASE_UUID_LE[..Self::BASE_OFFSET]
+            && self.value[Self::BASE_OFFSET + Self::SIZE_16] == 0
+            && self.value[Self::BASE_OFFSET + Self::SIZE_16 + 1] == 0
+    }
+
+    /// Returns the canonical byte representation of the UUID as a slice.
+    ///
+    /// Returns a 2-byte slice if this is a 16-bit SIG UUID, otherwise returns
+    /// the full 16-byte representation.
+    pub fn as_bytes(&self) -> &[u8] {
+        if self.is_u16() {
+            &self.value[Self::BASE_OFFSET..Self::BASE_OFFSET + Self::SIZE_16]
+        } else {
+            &self.value
+        }
+    }
 }
 
 /// Error type for UUID conversion failures.

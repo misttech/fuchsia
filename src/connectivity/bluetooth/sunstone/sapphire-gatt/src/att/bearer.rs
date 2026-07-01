@@ -13,12 +13,17 @@ use zerocopy::{IntoBytes, TryFromBytes};
 /// see (Vol 3, Part G, Section 5.2.1)
 pub const DEFAULT_STARTING_MTU: u16 = 23;
 
+/// The maximum attribute value size defined by the Bluetooth specification.
+///
+/// see (Vol 3, Part F, Section 3.2.9)
+pub const MAX_ATTRIBUTE_SIZE: usize = 512;
+
 /// The maximum supported ATT MTU size, accommodating the maximum attribute value
 /// size (512 bytes) plus the maximum header overhead for a Find By Type Value Request (7 bytes:
 /// 1 byte opcode + 2 bytes start handle + 2 bytes end handle + 2 bytes UUID type).
 ///
 /// see (Vol 3, Part F, Section 3.2.9) and (Vol 3, Part F, Section 3.4.2)
-pub const MAX_SUPPORTED_MTU: usize = 519;
+pub const MAX_SUPPORTED_MTU: usize = MAX_ATTRIBUTE_SIZE + 7;
 
 /// ATT Packet Transmission Errors.
 #[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]

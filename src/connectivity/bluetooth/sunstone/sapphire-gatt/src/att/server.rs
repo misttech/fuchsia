@@ -3,19 +3,23 @@
 // found in the LICENSE file.
 
 use crate::att::AttributeHandle;
+use crate::att::attribute::Attribute;
 use crate::att::bearer::{
     BearerRecvError, BearerRx, BearerSendError, BearerTx, DEFAULT_STARTING_MTU, MAX_SUPPORTED_MTU,
 };
+use crate::att::database::Database;
 use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
 use crate::att::pdu::{
-    ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp, Header, Opcode, Packet, PacketBuilder,
+    DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp, FindInformationReq,
+    FindInformationRspHeader, Header, InformationData, InformationData16, InformationData128,
+    Opcode, Packet, PacketBuilder, UuidFormat,
 };
 use core::cmp::{max, min};
 use core::convert::Infallible;
 use core::mem::MaybeUninit;
 use thiserror::Error;
 use zerocopy::byteorder::little_endian::U16;
-use zerocopy::{FromBytes, IntoBytes, TryFromBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 #[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServerError {
@@ -31,23 +35,40 @@ enum TransactionError {
     UnexpectedPdu { received_opcode: Opcode },
     #[error("Invalid PDU structure for request: {request_opcode:?}")]
     InvalidPdu { request_opcode: Opcode },
+    #[error(
+        "Error response {error_code:?} for request {request_opcode:?} on handle {attribute_handle:#06X}"
+    )]
+    ErrorResponse { request_opcode: Opcode, attribute_handle: u16, error_code: ErrorCode },
 }
 
 /// The ATT Server protocol wrapper.
-pub struct Server<Tx, Rx> {
+pub struct Server<Tx, Rx, DB> {
     bearer_tx: BearerTx<Tx>,
     bearer_rx: BearerRx<Rx>,
     server_rx_mtu: u16,
+    database: DB,
 }
 
-impl<Tx, Rx> Server<Tx, Rx>
+impl<Tx, Rx, DB> Server<Tx, Rx, DB>
 where
     Tx: L2CapChannelTx,
     Rx: L2CapChannelRx,
+    DB: Database,
 {
     /// Creates a new ATT Server instance.
-    pub fn new(bearer_tx: BearerTx<Tx>, bearer_rx: BearerRx<Rx>, server_rx_mtu: u16) -> Self {
-        Self { bearer_tx, bearer_rx, server_rx_mtu }
+    pub fn new(
+        bearer_tx: BearerTx<Tx>,
+        bearer_rx: BearerRx<Rx>,
+        server_rx_mtu: u16,
+        database: DB,
+    ) -> Self {
+        assert!(
+            usize::from(server_rx_mtu) <= MAX_SUPPORTED_MTU,
+            "server_rx_mtu ({}) exceeds MAX_SUPPORTED_MTU ({})",
+            server_rx_mtu,
+            MAX_SUPPORTED_MTU
+        );
+        Self { bearer_tx, bearer_rx, server_rx_mtu, database }
     }
 
     /// Runs the server receive loop, processing inbound requests sequentially
@@ -104,6 +125,7 @@ where
 
         let transaction_result = match rx_packet.header.opcode {
             Opcode::ExchangeMtuReq => self.handle_exchange_mtu(&rx_packet.data).await,
+            Opcode::FindInformationReq => self.handle_find_information(&rx_packet.data).await,
             other => Err(TransactionError::UnexpectedPdu { received_opcode: other }),
         };
 
@@ -116,6 +138,18 @@ where
             }
             Err(TransactionError::InvalidPdu { request_opcode }) => {
                 self.send_error_response(request_opcode, None, ErrorCode::InvalidPdu).await
+            }
+            Err(TransactionError::ErrorResponse {
+                request_opcode,
+                attribute_handle,
+                error_code,
+            }) => {
+                self.send_error_response(
+                    request_opcode,
+                    AttributeHandle::new(attribute_handle),
+                    error_code,
+                )
+                .await
             }
         }
     }
@@ -141,10 +175,108 @@ where
             payload: ExchangeMtuRsp { server_rx_mtu: U16::new(self.server_rx_mtu) },
         };
 
-        let tx_packet = Packet::try_ref_from_bytes(builder.as_bytes()).unwrap();
+        let tx_packet = builder.as_packet();
         self.send_packet(tx_packet).await?;
 
         Ok(())
+    }
+
+    /// Handles an incoming Find Information Request, querying the database and sending a
+    /// Find Information Response (or Error Response) back to the client.
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.3).
+    async fn handle_find_information(&mut self, data: &[u8]) -> Result<(), TransactionError> {
+        // Read request and validate handle range invariants.
+        let req = FindInformationReq::read_from_bytes(data).map_err(|_| {
+            TransactionError::InvalidPdu { request_opcode: Opcode::FindInformationReq }
+        })?;
+        let start = req.starting_handle.get();
+        let end = req.ending_handle.get();
+
+        // Convert raw range values into sorted AttributeHandles and query the database.
+        let to_handle = |val: u16| {
+            AttributeHandle::try_from(val).map_err(|_| TransactionError::ErrorResponse {
+                request_opcode: Opcode::FindInformationReq,
+                attribute_handle: val,
+                error_code: ErrorCode::InvalidHandle,
+            })
+        };
+        let start_handle = to_handle(start)?;
+        let end_handle = to_handle(end)?;
+
+        if start_handle > end_handle {
+            return Err(TransactionError::ErrorResponse {
+                request_opcode: Opcode::FindInformationReq,
+                attribute_handle: start,
+                error_code: ErrorCode::InvalidHandle,
+            });
+        }
+        let mut attributes = self.database.query_range(start_handle, end_handle).peekable();
+        let format = match attributes.peek() {
+            Some((_, attr)) => UuidFormat::from(*attr.uuid()),
+            None => {
+                return Err(TransactionError::ErrorResponse {
+                    request_opcode: Opcode::FindInformationReq,
+                    attribute_handle: start,
+                    error_code: ErrorCode::AttributeNotFound,
+                });
+            }
+        };
+
+        let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
+        assert!(
+            tx_buf.len() >= usize::from(self.mtu()),
+            "Programming error: transmission buffer size is smaller than the negotiated MTU."
+        );
+
+        // Serialize the PDU-specific header using PacketBuilder
+        let header = PacketBuilder {
+            header: Header { opcode: Opcode::FindInformationRsp },
+            payload: FindInformationRspHeader { format },
+        };
+
+        // Pack as many contiguous, format-matching attributes as fit in the MTU.
+        let tx_packet = match format {
+            UuidFormat::Uuid16 => Self::pack_find_info_rsp::<InformationData16>(
+                &mut tx_buf,
+                header,
+                self.mtu() as usize,
+                attributes,
+            ),
+            UuidFormat::Uuid128 => Self::pack_find_info_rsp::<InformationData128>(
+                &mut tx_buf,
+                header,
+                self.mtu() as usize,
+                attributes,
+            ),
+        };
+
+        self.send_packet(tx_packet).await?;
+
+        Ok(())
+    }
+
+    fn pack_find_info_rsp<'a, 'buf, T>(
+        tx_buf: &'buf mut [u8],
+        header: impl IntoBytes + Immutable,
+        mtu: usize,
+        attributes: impl Iterator<Item = (AttributeHandle, &'a DB::Attr)>,
+    ) -> &'buf Packet
+    where
+        T: InformationData,
+        DB::Attr: 'a,
+    {
+        let mut builder = DynamicPacketBuilder::<_, T>::new(tx_buf, header, mtu);
+        for (handle, attr) in
+            attributes.take_while(|(_, attr)| UuidFormat::from(*attr.uuid()) == T::FORMAT)
+        {
+            let entry = T::try_from((handle.value(), attr.uuid()))
+                .expect("UUID format matches but TryFrom failed");
+            if builder.push(entry).is_err() {
+                break;
+            }
+        }
+        builder.as_packet()
     }
 
     async fn send_packet(&mut self, packet: &Packet) -> Result<(), ServerError> {
@@ -191,9 +323,18 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::att::attribute::testing::MockAttribute;
+    use crate::att::database::testing::MockDb;
     use crate::att::l2cap::mock::setup_mock_channel;
+    use crate::att::pdu::{FindInformationRsp, InformationData16};
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
+    use sapphire_uuid::Uuid;
+    use zerocopy::{IntoBytes, TryFromBytes};
+
+    fn h(val: u16) -> AttributeHandle {
+        AttributeHandle::try_from(val).unwrap()
+    }
 
     const CLIENT_PREFERRED_MTU: u16 = 512;
     const SERVER_MTU: u16 = 256;
@@ -203,8 +344,12 @@ mod tests {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
             let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
 
-            let mut server =
-                Server::new(BearerTx::new(test_tx), BearerRx::new(test_rx), SERVER_MTU);
+            let mut server = Server::new(
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                MockDb::new(),
+            );
 
             // Spawn client driver task
             let client_handle = executor.spawn(async move {
@@ -247,8 +392,12 @@ mod tests {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
             let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
 
-            let mut server =
-                Server::new(BearerTx::new(test_tx), BearerRx::new(test_rx), SERVER_MTU);
+            let mut server = Server::new(
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                MockDb::new(),
+            );
 
             let client_handle = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
@@ -302,8 +451,12 @@ mod tests {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
             let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
 
-            let mut server =
-                Server::new(BearerTx::new(test_tx), BearerRx::new(test_rx), SERVER_MTU);
+            let mut server = Server::new(
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                MockDb::new(),
+            );
 
             let client_handle = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
@@ -340,8 +493,12 @@ mod tests {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
             let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
 
-            let mut server =
-                Server::new(BearerTx::new(test_tx), BearerRx::new(test_rx), SERVER_MTU);
+            let mut server = Server::new(
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                MockDb::new(),
+            );
 
             let client_handle = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
@@ -391,8 +548,12 @@ mod tests {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
             let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
 
-            let mut server =
-                Server::new(BearerTx::new(test_tx), BearerRx::new(test_rx), SERVER_MTU);
+            let mut server = Server::new(
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                MockDb::new(),
+            );
 
             let client_handle = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); 32];
@@ -426,8 +587,12 @@ mod tests {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
             let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
 
-            let mut server =
-                Server::new(BearerTx::new(test_tx), BearerRx::new(test_rx), SERVER_MTU);
+            let mut server = Server::new(
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                MockDb::new(),
+            );
 
             let client_handle = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); 64];
@@ -453,6 +618,165 @@ mod tests {
             });
 
             executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_find_information_success() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00)); // handle 1
+            let custom_uuid =
+                Uuid::from_le_bytes([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+            let custom_attr = MockAttribute::new(custom_uuid); // handle 2
+            db.insert(h(1), name_attr);
+            db.insert(h(2), custom_attr);
+
+            let mut server =
+                Server::new(BearerTx::new(test_tx), BearerRx::new(test_rx), SERVER_MTU, db);
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut client_tx_bearer = BearerTx::new(app_channel.sender);
+
+                // 1. Send FindInformationReq for 1..=2
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::FindInformationReq },
+                    payload: FindInformationReq {
+                        starting_handle: U16::new(1),
+                        ending_handle: U16::new(2),
+                    },
+                };
+                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                // Expect FindInformationRsp with only handle 1 (since handle 2 has a different format)
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::FindInformationRsp);
+
+                let rsp =
+                    FindInformationRsp::<InformationData16>::try_ref_from_bytes(&packet.data[..])
+                        .unwrap();
+                assert_eq!(rsp.format, UuidFormat::Uuid16);
+                assert_eq!(rsp.info.len(), 1);
+                assert_eq!(rsp.info[0].handle.get(), 1);
+                assert_eq!(rsp.info[0].uuid, [0x00, 0x2a]);
+
+                // 2. Send FindInformationReq for 1..=0xFFFF (querying past end of database)
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::FindInformationReq },
+                    payload: FindInformationReq {
+                        starting_handle: U16::new(1),
+                        ending_handle: U16::new(0xFFFF),
+                    },
+                };
+                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                // Expect the same FindInformationRsp containing only handle 1
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::FindInformationRsp);
+
+                let rsp =
+                    FindInformationRsp::<InformationData16>::try_ref_from_bytes(&packet.data[..])
+                        .unwrap();
+                assert_eq!(rsp.format, UuidFormat::Uuid16);
+                assert_eq!(rsp.info.len(), 1);
+                assert_eq!(rsp.info[0].handle.get(), 1);
+                assert_eq!(rsp.info[0].uuid, [0x00, 0x2a]);
+            });
+
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
+
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_find_information_errors() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00)); // handle 1
+            db.insert(h(1), name_attr);
+
+            let mut server =
+                Server::new(BearerTx::new(test_tx), BearerRx::new(test_rx), SERVER_MTU, db);
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut client_tx_bearer = BearerTx::new(app_channel.sender);
+
+                // 1. Invalid Handle (start = 0)
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::FindInformationReq },
+                    payload: FindInformationReq {
+                        starting_handle: U16::new(0),
+                        ending_handle: U16::new(2),
+                    },
+                };
+                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(err.request_opcode, Opcode::FindInformationReq as u8);
+                assert_eq!(err.attribute_handle.get(), 0);
+                assert_eq!(err.error_code, ErrorCode::InvalidHandle);
+
+                // 2. Invalid Handle (start > end)
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::FindInformationReq },
+                    payload: FindInformationReq {
+                        starting_handle: U16::new(3),
+                        ending_handle: U16::new(2),
+                    },
+                };
+                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(err.request_opcode, Opcode::FindInformationReq as u8);
+                assert_eq!(err.attribute_handle.get(), 3);
+                assert_eq!(err.error_code, ErrorCode::InvalidHandle);
+
+                // 3. Attribute Not Found (no attributes in 5..=10)
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::FindInformationReq },
+                    payload: FindInformationReq {
+                        starting_handle: U16::new(5),
+                        ending_handle: U16::new(10),
+                    },
+                };
+                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(err.request_opcode, Opcode::FindInformationReq as u8);
+                assert_eq!(err.attribute_handle.get(), 5);
+                assert_eq!(err.error_code, ErrorCode::AttributeNotFound);
+            });
+
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
+
             assert!(client_handle.is_finished());
             assert!(server_handle.is_finished());
         });

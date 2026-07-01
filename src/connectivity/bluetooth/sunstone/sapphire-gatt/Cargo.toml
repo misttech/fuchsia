@@ -17,3 +17,5 @@ sapphire-peer-cache = { path = "../sapphire-peer-cache" }
 
 [dev-dependencies]
 sapphire-async = { path = "../sapphire-async", features = ["testing"] }
+proptest = "1.11.0"
+

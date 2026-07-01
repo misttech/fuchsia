@@ -4,9 +4,12 @@
 
 //! Attribute Protocol (ATT) Packet Data Unit (PDU) definitions and parsing utilities.
 
+use core::cmp::min;
+use core::mem::size_of;
+use sapphire_uuid::Uuid;
 use strum_macros::FromRepr;
 use zerocopy::byteorder::little_endian::U16;
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
 /// ATT opcodes
 ///
@@ -19,6 +22,51 @@ pub enum Opcode {
     ErrorRsp = 0x01,
     ExchangeMtuReq = 0x02,
     ExchangeMtuRsp = 0x03,
+    FindInformationReq = 0x04,
+    FindInformationRsp = 0x05,
+}
+
+/// The UUID format types supported in Find Information Response.
+#[derive(
+    TryFromBytes,
+    IntoBytes,
+    KnownLayout,
+    Immutable,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    FromRepr,
+    Unaligned,
+)]
+#[repr(u8)]
+pub enum UuidFormat {
+    Uuid16 = 0x01,
+    Uuid128 = 0x02,
+}
+impl TryFrom<u8> for UuidFormat {
+    type Error = u8;
+
+    fn try_from(val: u8) -> Result<Self, Self::Error> {
+        Self::from_repr(val).ok_or(val)
+    }
+}
+
+impl From<UuidFormat> for u8 {
+    fn from(fmt: UuidFormat) -> Self {
+        fmt as u8
+    }
+}
+
+impl From<Uuid> for UuidFormat {
+    /// Determines the serialization format for a given UUID.
+    ///
+    /// If the UUID can be represented as a 16-bit SIG UUID, returns `UuidFormat::Uuid16`.
+    /// Otherwise, returns `UuidFormat::Uuid128`.
+    fn from(uuid: Uuid) -> Self {
+        if uuid.is_u16() { Self::Uuid16 } else { Self::Uuid128 }
+    }
 }
 
 impl TryFrom<u8> for Opcode {
@@ -121,6 +169,84 @@ pub struct ExchangeMtuRsp {
     pub server_rx_mtu: U16,
 }
 
+/// Parameters for Find Information Request PDU (OpCode = 0x04)
+///
+/// (see Vol 3, Part F, 3.4.3.1)
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed)]
+pub struct FindInformationReq {
+    pub starting_handle: U16,
+    pub ending_handle: U16,
+}
+
+/// Parameters for Find Information Response PDU Header (OpCode = 0x05)
+///
+/// (see Vol 3, Part F, 3.4.3.2)
+#[derive(TryFromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed)]
+pub struct FindInformationRspHeader {
+    pub format: UuidFormat,
+}
+
+/// The Find Information Response PDU structure (OpCode = 0x05).
+///
+/// Contains the format byte indicating UUID size, and a variable-length list of entries.
+#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug)]
+#[repr(C)]
+pub struct FindInformationRsp<T> {
+    pub format: UuidFormat,
+    pub info: [T],
+}
+
+/// A trait linking the Information Data structure types to their corresponding UUID format.
+pub trait InformationData:
+    IntoBytes + Immutable + KnownLayout + for<'a> TryFrom<(u16, &'a Uuid), Error = ()>
+{
+    const FORMAT: UuidFormat;
+}
+
+impl InformationData for InformationData16 {
+    const FORMAT: UuidFormat = UuidFormat::Uuid16;
+}
+
+/// Information Data structure for 16-bit UUID format (Format = 0x01)
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed)]
+pub struct InformationData16 {
+    pub handle: U16,
+    pub uuid: [u8; 2],
+}
+
+impl TryFrom<(u16, &Uuid)> for InformationData16 {
+    type Error = ();
+
+    fn try_from((handle, uuid): (u16, &Uuid)) -> Result<Self, Self::Error> {
+        let bytes: [u8; 2] = uuid.as_bytes().try_into().map_err(|_| ())?;
+        Ok(Self { handle: U16::new(handle), uuid: bytes })
+    }
+}
+
+impl TryFrom<(u16, &Uuid)> for InformationData128 {
+    type Error = ();
+
+    fn try_from((handle, uuid): (u16, &Uuid)) -> Result<Self, Self::Error> {
+        let bytes: [u8; 16] = uuid.as_bytes().try_into().map_err(|_| ())?;
+        Ok(Self { handle: U16::new(handle), uuid: bytes })
+    }
+}
+
+/// Information Data structure for 128-bit UUID format (Format = 0x02)
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed)]
+pub struct InformationData128 {
+    pub handle: U16,
+    pub uuid: [u8; 16],
+}
+
+impl InformationData for InformationData128 {
+    const FORMAT: UuidFormat = UuidFormat::Uuid128;
+}
+
 /// Parameters for Error Response PDU (OpCode = 0x01)
 ///
 /// (see Vol 3, Part F, 3.4.1.1)
@@ -130,6 +256,64 @@ pub struct ErrorRsp {
     pub request_opcode: u8,
     pub attribute_handle: U16,
     pub error_code: ErrorCode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PushError {
+    BufferFull,
+}
+
+/// A generic, stateful builder for serializing dynamically sized ATT response PDUs (DSTs)
+/// containing a variable-length list of entries of type `T` directly into a byte buffer.
+///
+/// The caller must serialize any PDU-specific headers into the buffer *before* initializing
+/// the builder, specifying the `header_len`. The builder will write entries starting after
+/// the header, ensuring that entries do not exceed the buffer capacity or the negotiated MTU.
+pub struct DynamicPacketBuilder<'a, H, T> {
+    buf: &'a mut [u8],
+    offset: usize,
+    limit: usize,
+    _phantom: core::marker::PhantomData<(H, T)>,
+}
+
+impl<'a, H: IntoBytes + Immutable, T: IntoBytes + Immutable + KnownLayout>
+    DynamicPacketBuilder<'a, H, T>
+{
+    /// Creates a new builder for serializing entries of type `T` into the buffer.
+    ///
+    /// Writes the `header` directly into the start of the buffer.
+    /// Asserts that the buffer and MTU limit are large enough to contain the header.
+    pub fn new(buf: &'a mut [u8], header: H, mtu: usize) -> Self {
+        let header_len = size_of::<H>();
+        assert!(buf.len() >= header_len, "buffer too small for header");
+        assert!(mtu >= header_len, "MTU too small for header");
+
+        buf[..header_len].copy_from_slice(header.as_bytes());
+
+        let limit = min(buf.len(), mtu);
+        Self { buf, offset: header_len, limit, _phantom: core::marker::PhantomData }
+    }
+
+    /// Attempts to serialize a single entry into the buffer.
+    ///
+    /// Returns `Err(PushError::BufferFull)` if adding the entry would exceed the negotiated
+    /// MTU limit or the buffer capacity.
+    pub fn push(&mut self, entry: T) -> Result<(), PushError> {
+        let entry_size = size_of::<T>();
+        if self.offset + entry_size > self.limit {
+            return Err(PushError::BufferFull);
+        }
+        self.buf[self.offset..self.offset + entry_size].copy_from_slice(entry.as_bytes());
+        self.offset += entry_size;
+        Ok(())
+    }
+
+    /// Consumes the builder and returns the serialized packet view of the written data.
+    pub fn as_packet(self) -> &'a Packet {
+        Packet::try_ref_from_bytes(&self.buf[..self.offset]).expect(
+            "Programming error: serialized DynamicPacketBuilder violates Packet layout constraints.",
+        )
+    }
 }
 
 #[cfg(test)]
@@ -155,6 +339,83 @@ mod tests {
 
         let new_rsp = ExchangeMtuRsp { server_rx_mtu: U16::new(256) };
         assert_eq!(new_rsp.as_bytes(), &rsp_bytes[..]);
+    }
+
+    #[test]
+    fn test_find_information_req() {
+        let req_bytes = [0x01, 0x00, 0xff, 0xff]; // start 0x0001, end 0xffff
+        let parsed = FindInformationReq::read_from_bytes(&req_bytes[..]).unwrap();
+        assert_eq!(parsed.starting_handle.get(), 1);
+        assert_eq!(parsed.ending_handle.get(), 0xffff);
+
+        let new_req =
+            FindInformationReq { starting_handle: U16::new(1), ending_handle: U16::new(0xffff) };
+        assert_eq!(new_req.as_bytes(), &req_bytes[..]);
+    }
+
+    #[test]
+    fn test_find_information_rsp_header() {
+        let hdr_bytes_16 = [0x01]; // format 0x01
+        let parsed_16 = FindInformationRspHeader::try_read_from_bytes(&hdr_bytes_16[..]).unwrap();
+        assert_eq!(parsed_16.format, UuidFormat::Uuid16);
+
+        let hdr_bytes_128 = [0x02]; // format 0x02
+        let parsed_128 = FindInformationRspHeader::try_read_from_bytes(&hdr_bytes_128[..]).unwrap();
+        assert_eq!(parsed_128.format, UuidFormat::Uuid128);
+
+        // Rejects invalid format
+        let invalid_bytes = [0x03];
+        assert!(FindInformationRspHeader::try_read_from_bytes(&invalid_bytes[..]).is_err());
+    }
+
+    #[test]
+    fn test_information_data_16_slice_cast() {
+        let data_bytes = [
+            0x01, 0x00, 0x00, 0x2a, // handle 1, UUID 0x2A00
+            0x05, 0x00, 0x19, 0x2a, // handle 5, UUID 0x2A19
+        ];
+
+        // Zero-copy cast slice of entries
+        let entries = <[InformationData16]>::ref_from_bytes(&data_bytes[..]).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].handle.get(), 1);
+        assert_eq!(entries[0].uuid, [0x00, 0x2a]);
+        assert_eq!(entries[1].handle.get(), 5);
+        assert_eq!(entries[1].uuid, [0x19, 0x2a]);
+    }
+
+    #[test]
+    fn test_information_data_128_slice_cast() {
+        let data_bytes = [
+            0x0a, 0x00, // handle 10
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, // UUID
+        ];
+
+        let entries = <[InformationData128]>::ref_from_bytes(&data_bytes[..]).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].handle.get(), 10);
+        assert_eq!(entries[0].uuid, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+    }
+
+    #[test]
+    fn test_find_information_rsp_decoding() {
+        let bytes_16 = [0x01, 1, 0, 0, 0x2A]; // format Uuid16, handle 1, UUID 0x2A00
+        let rsp_16 =
+            FindInformationRsp::<InformationData16>::try_ref_from_bytes(&bytes_16[..]).unwrap();
+        assert_eq!(rsp_16.format, UuidFormat::Uuid16);
+        assert_eq!(rsp_16.info[0], InformationData16 { handle: U16::new(1), uuid: [0, 0x2A] });
+
+        let bytes_128 = [0x02, 10, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        let rsp_128 =
+            FindInformationRsp::<InformationData128>::try_ref_from_bytes(&bytes_128[..]).unwrap();
+        assert_eq!(rsp_128.format, UuidFormat::Uuid128);
+        assert_eq!(
+            rsp_128.info[0],
+            InformationData128 {
+                handle: U16::new(10),
+                uuid: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+            }
+        );
     }
 
     #[test]

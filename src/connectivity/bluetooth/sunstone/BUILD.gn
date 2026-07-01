@@ -44,9 +44,11 @@ if (is_host) {
     sources = [
       "sapphire-gatt/src/att.rs",
       "sapphire-gatt/src/att/attribute.rs",
+      "sapphire-gatt/src/att/attribute/testing.rs",
       "sapphire-gatt/src/att/bearer.rs",
       "sapphire-gatt/src/att/client.rs",
       "sapphire-gatt/src/att/database.rs",
+      "sapphire-gatt/src/att/database/testing.rs",
       "sapphire-gatt/src/att/l2cap.rs",
       "sapphire-gatt/src/att/l2cap/cid.rs",
       "sapphire-gatt/src/att/l2cap/mock.rs",
@@ -60,6 +62,7 @@ if (is_host) {
     features = []
     deps = [
       "//third_party/rust_crates:futures",
+      "//third_party/rust_crates:proptest",
       "//third_party/rust_crates:sapphire-async",
       "//third_party/rust_crates:sapphire-collections",
       "//third_party/rust_crates:sapphire-peer-cache",
