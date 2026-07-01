@@ -2,7 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "pcap-int.h"
+#ifndef THIRD_PARTY_LIBPCAP_PCAP_FUCHSIA_H_
+#define THIRD_PARTY_LIBPCAP_PCAP_FUCHSIA_H_
+
+#include <pcap/pcap.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,3 +35,5 @@ pcap_t *pcap_create_common_fuchsia(char *ebuf);
 #ifdef __cplusplus
 }  // extern "C"
 #endif
+
+#endif  // THIRD_PARTY_LIBPCAP_PCAP_FUCHSIA_H_

@@ -4,6 +4,10 @@
 
 #include "pcap-fuchsia.h"
 
+#include <config.h>
+
+#include "pcap-int.h"
+
 pcap_t *pcap_create_common_fuchsia(char *ebuf) {
   return PCAP_CREATE_COMMON(ebuf, struct pcap_fuchsia);
 }

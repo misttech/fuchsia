@@ -26,10 +26,9 @@
 //
 // See pcap_platform_finddevs and pcap_create_interface for more details.
 
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif
+#include "pcap-fuchsia.h"
 
+#include <config.h>
 #include <errno.h>
 #include <lib/fit/defer.h>
 #include <net/if.h>
@@ -50,9 +49,27 @@
 
 #include <netpacket/packet.h>
 
-#include "pcap-fuchsia.h"
 #include "pcap-int.h"
 #include "pcap/sll.h"
+
+// pcap-int.h defines C macros min and max which conflict with C++ std::min / std::max.
+#undef min
+#undef max
+
+// TODO(https://fxbug.dev/524828251): Remove this when the soft
+// transition to upgrade libpcap is complete.
+#ifndef pcapint_charset_fopen
+#define pcapint_add_dev add_dev
+#define pcapint_breakloop_common pcap_breakloop_common
+#define pcapint_cleanup_live_common pcap_cleanup_live_common
+#define pcapint_create_interface pcap_create_interface
+#define pcapint_filter pcap_filter
+#define pcapint_findalldevs_interfaces pcap_findalldevs_interfaces
+#define pcapint_fmt_errmsg_for_errno pcap_fmt_errmsg_for_errno
+#define pcapint_install_bpf_program install_bpf_program
+#define pcapint_platform_finddevs pcap_platform_finddevs
+#define pcapint_strlcpy pcap_strlcpy
+#endif
 
 namespace {
 
@@ -87,7 +104,7 @@ void pcap_cleanup_fuchsia(pcap_t *handle) {
     handlep->poll_breakloop_fd = 0;
   }
 
-  pcap_cleanup_live_common(handle);
+  pcapint_cleanup_live_common(handle);
 }
 
 void pcap_setnonblock_fuchsia(pcap_t *handle, bool nonblock) {
@@ -236,7 +253,7 @@ int pcap_activate_fuchsia(pcap_t *handle) {
       if (errno == ENXIO) {
         return PCAP_ERROR_NO_SUCH_DEVICE;
       }
-      pcap_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE, errno, "if_nametoindex");
+      pcapint_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE, errno, "if_nametoindex");
       return PCAP_ERROR;
     }
   }
@@ -248,7 +265,7 @@ int pcap_activate_fuchsia(pcap_t *handle) {
       fprintf(stderr, "The any device does not have a promiscuous mode; ignoring...\n");
     } else {
       // TODO(https://fxbug.dev/42169226): Put the device in promiscuous mode.
-      pcap_strlcpy(handle->errbuf, "promiscuous mode not supported", PCAP_ERRBUF_SIZE);
+      pcapint_strlcpy(handle->errbuf, "promiscuous mode not supported", PCAP_ERRBUF_SIZE);
       return PCAP_WARNING_PROMISC_NOTSUP;
     }
   }
@@ -263,7 +280,7 @@ int pcap_activate_fuchsia(pcap_t *handle) {
   // Always start the socket in non-blocking mode - we block with poll.
   handle->fd = socket(AF_PACKET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
   if (handle->fd < 0) {
-    pcap_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE, errno, "socket");
+    pcapint_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE, errno, "socket");
     if (errno == EPERM || errno == EACCES) {
       // No access to packet sockets.
       return PCAP_ERROR_PERM_DENIED;
@@ -279,7 +296,7 @@ int pcap_activate_fuchsia(pcap_t *handle) {
       .sll_ifindex = (handlep->ifindex == kAnyDeviceIndex) ? 0 : handlep->ifindex,
   };
   if (bind(handle->fd, reinterpret_cast<const sockaddr *>(&sll), sizeof(sll)) != 0) {
-    pcap_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE, errno, "bind");
+    pcapint_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE, errno, "bind");
 
     switch (errno) {
       case ENETDOWN:
@@ -299,8 +316,8 @@ int pcap_activate_fuchsia(pcap_t *handle) {
   }
   handle->buffer = malloc(handle->snapshot);
   if (handle->buffer == NULL) {
-    pcap_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE, errno,
-                              "can't allocate packet buffer");
+    pcapint_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE, errno,
+                                 "can't allocate packet buffer");
     return PCAP_ERROR;
   }
   handle->bufsize = handle->snapshot;
@@ -379,7 +396,7 @@ int pcap_activate_fuchsia(pcap_t *handle) {
 
       if (n < 0) {
         if (errno != EINTR) {
-          pcap_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE, errno, "poll error");
+          pcapint_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE, errno, "poll error");
           return PCAP_ERROR;
         }
 
@@ -394,13 +411,13 @@ int pcap_activate_fuchsia(pcap_t *handle) {
 
       if (socket_fd.revents != 0) {
         if (socket_fd.revents & POLLNVAL) {
-          pcap_strlcpy(handle->errbuf, "invalid polling request on packet socket",
-                       PCAP_ERRBUF_SIZE);
+          pcapint_strlcpy(handle->errbuf, "invalid polling request on packet socket",
+                          PCAP_ERRBUF_SIZE);
           return PCAP_ERROR;
         }
 
         if (socket_fd.revents & (POLLHUP | POLLRDHUP)) {
-          pcap_strlcpy(handle->errbuf, "hangup on packet socket", PCAP_ERRBUF_SIZE);
+          pcapint_strlcpy(handle->errbuf, "hangup on packet socket", PCAP_ERRBUF_SIZE);
           return PCAP_ERROR;
         }
 
@@ -411,8 +428,8 @@ int pcap_activate_fuchsia(pcap_t *handle) {
             err = errno;
           }
 
-          pcap_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE, err,
-                                    "error on packet socket");
+          pcapint_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE, err,
+                                       "error on packet socket");
           return PCAP_ERROR;
         }
       }
@@ -422,8 +439,8 @@ int pcap_activate_fuchsia(pcap_t *handle) {
         uint64_t value;
         ssize_t nread = read(handlep->poll_breakloop_fd, &value, sizeof(value));
         if (nread < 0) {
-          pcap_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE, errno,
-                                    "error reading from breakloop FD");
+          pcapint_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE, errno,
+                                       "error reading from breakloop FD");
           return PCAP_ERROR;
         }
 
@@ -468,8 +485,8 @@ int pcap_activate_fuchsia(pcap_t *handle) {
           // Nothing else to read for now.
           break;
         }
-        pcap_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE, errno,
-                                  "error reading packet socket");
+        pcapint_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE, errno,
+                                     "error reading packet socket");
         return PCAP_ERROR;
       }
       if (src_addr_len != sizeof(src_addr)) {
@@ -493,7 +510,7 @@ int pcap_activate_fuchsia(pcap_t *handle) {
       };
 
       if (gettimeofday(&pcap_header.ts, NULL) != 0) {
-        pcap_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE, errno, "gettimeofday");
+        pcapint_fmt_errmsg_for_errno(handle->errbuf, PCAP_ERRBUF_SIZE, errno, "gettimeofday");
         return PCAP_ERROR;
       }
 
@@ -510,7 +527,7 @@ int pcap_activate_fuchsia(pcap_t *handle) {
              sizeof(src_addr.sll_addr));
 
       if ((handle->fcode.bf_insns == NULL) ||
-          pcap_filter(handle->fcode.bf_insns, buffer, pcap_header.len, pcap_header.caplen)) {
+          pcapint_filter(handle->fcode.bf_insns, buffer, pcap_header.len, pcap_header.caplen)) {
         handlep->stat.ps_recv++;
         processed++;
 
@@ -539,7 +556,8 @@ int pcap_activate_fuchsia(pcap_t *handle) {
   //   set the errbuf member of the pcap_t to an error message and return
   //   PCAP_ERROR.  Otherwise, it should return the number of bytes injected.
   handle->inject_op = [](pcap_t *handle, const void *buf, int size) -> int {
-    pcap_strlcpy(handle->errbuf, "injecting packets isn't supported on Fuchsia", PCAP_ERRBUF_SIZE);
+    pcapint_strlcpy(handle->errbuf, "injecting packets isn't supported on Fuchsia",
+                    PCAP_ERRBUF_SIZE);
     return PCAP_ERROR;
   };
 
@@ -579,7 +597,7 @@ int pcap_activate_fuchsia(pcap_t *handle) {
   //   to the setfilter routine can just be set to point to
   //   install_bpf_program; the module does not need a routine of its own to
   //   handle that.
-  handle->setfilter_op = install_bpf_program;
+  handle->setfilter_op = pcapint_install_bpf_program;
 
   // Sets the direction to filter for.
   //
@@ -597,7 +615,8 @@ int pcap_activate_fuchsia(pcap_t *handle) {
   };
 
   handle->set_datalink_op = [](pcap_t *handle, int dlt) -> int {
-    pcap_strlcpy(handle->errbuf, "setting the datalink isn't support on Fuchsia", PCAP_ERRBUF_SIZE);
+    pcapint_strlcpy(handle->errbuf, "setting the datalink isn't support on Fuchsia",
+                    PCAP_ERRBUF_SIZE);
     return PCAP_ERROR;
   };
 
@@ -620,7 +639,7 @@ int pcap_activate_fuchsia(pcap_t *handle) {
   };
 
   handle->breakloop_op = [](pcap_t *handle) {
-    pcap_breakloop_common(handle);
+    pcapint_breakloop_common(handle);
     pcap_fuchsia *const handlep = fuchsia_handle(handle);
 
     uint64_t value = 1;
@@ -697,7 +716,7 @@ int pcap_activate_fuchsia(pcap_t *handle) {
 //
 //   Once you've set the activate_op and, if necessary, the can_set_rfmon_op,
 //   you must return the pcap_t * that was returned to you.
-pcap_t *pcap_create_interface(const char *device _U_, char *ebuf) {
+pcap_t *pcapint_create_interface(const char *device _U_, char *ebuf) {
   pcap_t *const handle = pcap_create_common_fuchsia(ebuf);
   if (handle == NULL) {
     return NULL;
@@ -757,9 +776,9 @@ pcap_t *pcap_create_interface(const char *device _U_, char *ebuf) {
 //
 //   If your routine succeeds, it must return 0.  If it fails, it must fill
 //   in the error message buffer with an error string and return -1.
-int pcap_platform_finddevs(pcap_if_list_t *devlistp, char *errbuf) {
+int pcapint_platform_finddevs(pcap_if_list_t *devlistp, char *errbuf) {
   // Get the list of regular devices.
-  int res = pcap_findalldevs_interfaces(
+  int res = pcapint_findalldevs_interfaces(
       devlistp, errbuf, [](const char *name) -> int { return 1; } /* can_be_bound */,
       [](const char *name, bpf_u_int32 *flags,
          char *errbuf) { /* get_if_flags */
@@ -777,9 +796,9 @@ int pcap_platform_finddevs(pcap_if_list_t *devlistp, char *errbuf) {
   }
 
   // Add the any device used to capture on all devices.
-  if (add_dev(devlistp, kAnyDeviceName,
-              PCAP_IF_UP | PCAP_IF_RUNNING | PCAP_IF_CONNECTION_STATUS_NOT_APPLICABLE,
-              kAnyDeviceDescription, errbuf) == NULL) {
+  if (pcapint_add_dev(devlistp, kAnyDeviceName,
+                      PCAP_IF_UP | PCAP_IF_RUNNING | PCAP_IF_CONNECTION_STATUS_NOT_APPLICABLE,
+                      kAnyDeviceDescription, errbuf) == NULL) {
     return -1;
   }
 

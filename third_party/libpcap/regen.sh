@@ -17,11 +17,6 @@ readonly CONFIG_H="$REPO_DIR/config.h"
   FUCHSIA_OUT_CONFIG_H="$CONFIG_H.fuchsia" \
   LINUX_OUT_CONFIG_H="$CONFIG_H.linux" \
   REPO_ZIP_URL="https://github.com/the-tcpdump-group/libpcap/archive/refs/tags/$LIBPCAP_TAG.zip" \
-  REPO_EXTRACTED_FOLDER="libpcap-$LIBPCAP_TAG"
-
-# Manually override some symbols we don't need on Linux since we don't need
-# sniffing of USB or netfilter messages and not defining these preprocessor
-# variables allow us to not have to pull in source code that we don't need.
-for i in PCAP_SUPPORT_{LINUX_USBMON,NETFILTER}; do
-  sed -i "s,^#define $i 1$,/* #undef $i */," "$CONFIG_H.linux"
-done
+  REPO_EXTRACTED_FOLDER="libpcap-$LIBPCAP_TAG" \
+  CONFIGURE_ARGS_FUCHSIA="--with-pcap=null" \
+  CONFIGURE_ARGS_LINUX="--disable-usb ac_cv_netfilter_can_compile=no"

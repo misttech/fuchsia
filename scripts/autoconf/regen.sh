@@ -13,6 +13,8 @@ FXBUILD_WITH_ADDITIONAL=""
 CPPFLAGS_ADDITIONAL=""
 LDFLAGS_ADDITIONAL=""
 LINUX_LIBRARY=""
+CONFIGURE_ARGS_FUCHSIA=""
+CONFIGURE_ARGS_LINUX=""
 
 for ARGUMENT in "$@"; do
   KEY=$(echo "$ARGUMENT" | cut -f1 -d=)
@@ -25,6 +27,8 @@ for ARGUMENT in "$@"; do
   CPPFLAGS_ADDITIONAL) CPPFLAGS_ADDITIONAL="$VALUE" ;;
   LDFLAGS_ADDITIONAL) LDFLAGS_ADDITIONAL="$VALUE" ;;
   LINUX_LIBRARY) LINUX_LIBRARY="$VALUE" ;;
+  CONFIGURE_ARGS_FUCHSIA) CONFIGURE_ARGS_FUCHSIA="$VALUE" ;;
+  CONFIGURE_ARGS_LINUX) CONFIGURE_ARGS_LINUX="$VALUE" ;;
   REPO_ZIP_URL) REPO_URL="$VALUE" ;;
   REPO_EXTRACTED_FOLDER) REPO_EXTRACTED_FOLDER="$VALUE" ;;
   *)
@@ -37,6 +41,8 @@ Variables:
   CPPFLAGS_ADDITIONAL         Addtional CPP flags (passed to the configure script)
   LDFLAGS_ADDITIONAL          Additional LD flags
   LINUX_LIBRARY               Path to library to link with on linux host
+  CONFIGURE_ARGS_FUCHSIA      Additional configure flags for fuchsia target
+  CONFIGURE_ARGS_LINUX        Additional configure flags for linux target
   REPO_ZIP_URL                The URL for the upstream repo (required)
   REPO_EXTRACTED_FOLDER       The folder that the repo unzips to (required)
 EOF
@@ -77,6 +83,7 @@ autoreconf "$TMP_REPO_EXTRACTED"
 cd "$TMP_REPO_EXTRACTED"
 ./configure \
   --host $TARGET \
+  $CONFIGURE_ARGS_FUCHSIA \
   CC="$CC" \
   CFLAGS="-target $TARGET -nostdinc -nostdlib" \
   CPPFLAGS="-I$FUCHSIA_SYSROOT_DIR/include -I$CC_INCLUDE $CPPFLAGS_ADDITIONAL" \
@@ -94,6 +101,7 @@ if [ "$LINUX_LIBRARY" ]; then
   LDFLAGS="-L$BUILD_DIR/host_x64/obj/$LINUX_LIBRARY $LDFLAGS"
 fi
 ./configure \
+  $CONFIGURE_ARGS_LINUX \
   CC="$CC" \
   CFLAGS="--sysroot=$LINUX_SYSROOT_DIR" \
   CPPFLAGS="$CPPFLAGS_ADDITIONAL" \

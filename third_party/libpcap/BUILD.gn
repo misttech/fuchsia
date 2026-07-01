@@ -20,13 +20,16 @@ if (is_fuchsia || is_linux) {
       "src/nametoaddr.c",
       "src/optimize.c",
       "src/pcap-common.c",
-      "src/pcap-usb-linux-common.c",
       "src/pcap-util.c",
       "src/pcap.c",
       "src/savefile.c",
       "src/scanner.c",
       "src/sf-pcap.c",
       "src/sf-pcapng.c",
+
+      # TODO(https://fxbug.dev/524828251): Remove this when the soft
+      # transition to upgrade libpcap is complete.
+      "src/pcap-usb-linux-common.c",
     ]
 
     defines = [
@@ -108,11 +111,9 @@ config("suppress_warnings") {
     "-Wno-implicit-fallthrough",
     "-Wno-int-conversion",
     "-Wno-unused-but-set-variable",
+    "-Wno-implicit-int-conversion",
   ]
   if (is_linux) {
-    cflags += [
-      "-Wno-macro-redefined",
-      "-Wno-implicit-int-conversion",
-    ]
+    cflags += [ "-Wno-macro-redefined" ]
   }
 }
