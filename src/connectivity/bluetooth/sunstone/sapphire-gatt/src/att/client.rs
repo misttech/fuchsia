@@ -10,7 +10,7 @@ use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
 use crate::att::pdu::{
     DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp,
     FindByTypeValueReqHeader, FindInformationReq, FindInformationRsp, HandlesInformation, Header,
-    InformationData16, InformationData128, Opcode, Packet, PacketBuilder, UuidFormat,
+    InformationData16, InformationData128, Opcode, Packet, PacketBuilder, ReadReq, UuidFormat,
 };
 use core::cmp::{max, min};
 use core::mem::MaybeUninit;
@@ -240,6 +240,26 @@ where
         let entries = <[HandlesInformation]>::ref_from_bytes(&rx_packet.data[..])
             .map_err(|_| ClientError::InvalidIncomingData)?;
         Ok(entries)
+    }
+
+    /// Sends a Read Request and awaits a Read Response.
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.1 & 3.4.4.2)
+    pub async fn read<'a>(
+        &mut self,
+        handle: AttributeHandle,
+        rx_buf: &'a mut [MaybeUninit<u8>],
+    ) -> Result<&'a mut [u8], ClientError> {
+        // Construct the Read Request payload.
+        let req = ReadReq { attribute_handle: U16::new(handle.value()) };
+        let builder = PacketBuilder { header: Header { opcode: Opcode::ReadReq }, payload: req };
+
+        // Perform the transaction and await the matching Read Response.
+        let rsp_packet =
+            self.transaction(Opcode::ReadReq, builder.as_packet(), rx_buf, Opcode::ReadRsp).await?;
+
+        // Return the variable-length attribute value.
+        Ok(&mut rsp_packet.data)
     }
 
     pub fn mtu(&self) -> u16 {
@@ -612,6 +632,93 @@ mod tests {
                     .find_by_type_value(h(1), h(10), 0x2800, &[0x0D, 0x18], &mut rx_buf)
                     .await;
                 assert_eq!(res, Err(ClientError::ErrorResponse(ErrorCode::AttributeNotFound)));
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_read_success() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            let server_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 32];
+                let mut server_rx_bearer = BearerRx::new(server_rx);
+                let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ReadReq);
+
+                let req = ReadReq::read_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(req.attribute_handle.get(), 1);
+
+                let val = b"Sunstone";
+                let mut tx_buf = [0u8; 64];
+                let mut builder = DynamicPacketBuilder::<_, u8>::new(
+                    &mut tx_buf,
+                    Header { opcode: Opcode::ReadRsp },
+                    CLIENT_PREFERRED_MTU as usize,
+                );
+                builder.extend_from_slice(val).unwrap();
+                let tx_packet = builder.as_packet();
+                let mut server_tx_bearer = BearerTx::new(server_tx);
+                server_tx_bearer.send(tx_packet).await.unwrap();
+            });
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let val = client.read(h(1), &mut rx_buf).await.unwrap();
+                let expected: &[u8] = b"Sunstone";
+                assert_eq!(val, expected);
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_read_error() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            let server_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 32];
+                let mut server_rx_bearer = BearerRx::new(server_rx);
+                let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ReadReq);
+
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ErrorRsp },
+                    payload: ErrorRsp {
+                        request_opcode: Opcode::ReadReq as u8,
+                        attribute_handle: U16::new(1),
+                        error_code: ErrorCode::InvalidHandle,
+                    },
+                };
+                let mut server_tx_bearer = BearerTx::new(server_tx);
+                server_tx_bearer.send(builder.as_packet()).await.unwrap();
+            });
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let res = client.read(h(1), &mut rx_buf).await;
+                assert_eq!(res, Err(ClientError::ErrorResponse(ErrorCode::InvalidHandle)));
             });
 
             executor.run_until_stalled();

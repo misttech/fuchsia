@@ -26,6 +26,8 @@ pub enum Opcode {
     FindInformationRsp = 0x05,
     FindByTypeValueReq = 0x06,
     FindByTypeValueRsp = 0x07,
+    ReadReq = 0x0A,
+    ReadRsp = 0x0B,
 }
 
 /// The UUID format types supported in Find Information Response.
@@ -367,6 +369,15 @@ impl<'a, H: IntoBytes + Immutable, T: IntoBytes + Immutable + KnownLayout>
     }
 }
 
+/// Parameters for Read Request PDU (OpCode = 0x0A)
+///
+/// (see Vol 3, Part F, 3.4.4.1)
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed)]
+pub struct ReadReq {
+    pub attribute_handle: U16,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -379,6 +390,17 @@ mod tests {
 
         // Serialization check
         let new_req = ExchangeMtuReq { client_rx_mtu: U16::new(512) };
+        assert_eq!(new_req.as_bytes(), &req_bytes[..]);
+    }
+
+    #[test]
+    fn test_read_req() {
+        let req_bytes = [0x01, 0x00]; // 1 in little endian
+        let parsed = ReadReq::read_from_bytes(&req_bytes[..]).unwrap();
+        assert_eq!(parsed.attribute_handle.get(), 1);
+
+        // Serialization check
+        let new_req = ReadReq { attribute_handle: U16::new(1) };
         assert_eq!(new_req.as_bytes(), &req_bytes[..]);
     }
 

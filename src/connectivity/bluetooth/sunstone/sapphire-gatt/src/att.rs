@@ -64,6 +64,7 @@ mod tests {
 
     const CLIENT_PREFERRED_MTU: u16 = 512;
     const SERVER_MTU: u16 = 256;
+    const SMALL_TEST_MTU: u16 = 23;
 
     #[test]
     fn test_attribute_handle_new() {
@@ -280,6 +281,113 @@ mod tests {
             assert!(client_handle.is_finished());
         });
     }
+
+    #[test]
+    fn test_client_server_integration_read() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            let long_val = b"012345678901234567890123456789"; // 30 bytes
+            let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), long_val);
+            db.insert(h(1), name_attr);
+
+            // Server MTU is SMALL_TEST_MTU bytes (so max read response is SMALL_TEST_MTU - 1 bytes)
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(server_tx),
+                BearerRx::new(server_rx),
+                SMALL_TEST_MTU,
+                db,
+            );
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            // Server task
+            let server_handle = executor.spawn(async move {
+                // 1. MTU Exchange
+                server.handle_request().await.unwrap();
+                // 2. Read Request
+                server.handle_request().await.unwrap();
+            });
+
+            // Client task
+            let client_handle = executor.spawn(async move {
+                // 1. MTU Exchange (negotiated MTU will be SMALL_TEST_MTU, since server MTU is SMALL_TEST_MTU)
+                client.exchange_mtu().await.unwrap();
+                assert_eq!(client.mtu(), SMALL_TEST_MTU);
+
+                // 2. Read Request
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let val = client.read(h(1), &mut rx_buf).await.unwrap();
+                // Max read response is SMALL_TEST_MTU - 1 bytes
+                assert_eq!(val, &long_val[..(SMALL_TEST_MTU - 1) as usize]);
+            });
+
+            executor.run_until_stalled();
+            assert!(server_handle.is_finished());
+            assert!(client_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_server_integration_read_entire_value() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            let short_val = b"Sunstone"; // 8 bytes
+            let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), short_val);
+            db.insert(h(1), name_attr);
+
+            // Server MTU is SMALL_TEST_MTU bytes (so max read response is SMALL_TEST_MTU - 1 bytes)
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(server_tx),
+                BearerRx::new(server_rx),
+                SMALL_TEST_MTU,
+                db,
+            );
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            // Server task
+            let server_handle = executor.spawn(async move {
+                // 1. MTU Exchange
+                server.handle_request().await.unwrap();
+                // 2. Read Request
+                server.handle_request().await.unwrap();
+            });
+
+            // Client task
+            let client_handle = executor.spawn(async move {
+                // 1. MTU Exchange (negotiated MTU will be SMALL_TEST_MTU, since server MTU is SMALL_TEST_MTU)
+                client.exchange_mtu().await.unwrap();
+                assert_eq!(client.mtu(), SMALL_TEST_MTU);
+
+                // 2. Read Request
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let val = client.read(h(1), &mut rx_buf).await.unwrap();
+
+                // Value is smaller than SMALL_TEST_MTU - 1, so it is read entirely without truncation
+                assert!(short_val.len() < (SMALL_TEST_MTU - 1) as usize);
+                assert_eq!(val, short_val);
+            });
+
+            executor.run_until_stalled();
+            assert!(server_handle.is_finished());
+            assert!(client_handle.is_finished());
+        });
+    }
+
     mod proptests {
         use super::*;
         use crate::att::attribute::Attribute;

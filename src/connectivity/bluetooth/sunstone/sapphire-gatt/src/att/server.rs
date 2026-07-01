@@ -13,11 +13,11 @@ use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
 use crate::att::pdu::{
     DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp, FindByTypeValueReq,
     FindInformationReq, FindInformationRspHeader, HandlesInformation, Header, InformationData,
-    InformationData16, InformationData128, Opcode, Packet, PacketBuilder, UuidFormat,
+    InformationData16, InformationData128, Opcode, Packet, PacketBuilder, ReadReq, UuidFormat,
 };
 use core::cmp::{max, min};
 use core::convert::Infallible;
-use core::mem::MaybeUninit;
+use core::mem::{MaybeUninit, size_of};
 use sapphire_peer_cache::PeerId;
 use thiserror::Error;
 use zerocopy::byteorder::little_endian::U16;
@@ -131,6 +131,7 @@ where
             Opcode::ExchangeMtuReq => self.handle_exchange_mtu(&rx_packet.data).await,
             Opcode::FindInformationReq => self.handle_find_information(&rx_packet.data).await,
             Opcode::FindByTypeValueReq => self.handle_find_by_type_value(&rx_packet.data).await,
+            Opcode::ReadReq => self.handle_read(&rx_packet.data).await,
             other => Err(TransactionError::UnexpectedPdu { received_opcode: other }),
         };
 
@@ -353,6 +354,50 @@ where
         Ok(())
     }
 
+    /// Handles an incoming Read Request and responds with a Read Response containing the value.
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.1 & 3.4.4.2)
+    async fn handle_read(&mut self, data: &[u8]) -> Result<(), TransactionError> {
+        // Parse the incoming Read Request.
+        let req = ReadReq::read_from_bytes(data)
+            .map_err(|_| TransactionError::InvalidPdu { request_opcode: Opcode::ReadReq })?;
+
+        let handle_val = req.attribute_handle.get();
+
+        // Find the requested attribute in the local database.
+        let handle = to_handle(handle_val, Opcode::ReadReq)?;
+        let attr = self.database.find_attribute(handle).ok_or_else(|| {
+            TransactionError::ErrorResponse {
+                request_opcode: Opcode::ReadReq,
+                attribute_handle: handle_val,
+                error_code: ErrorCode::InvalidHandle,
+            }
+        })?;
+
+        // Read the attribute value from the database, capped to the maximum possible response size.
+        let mut val_buf = [0u8; MAX_ATTRIBUTE_SIZE];
+        let val_buf = &mut val_buf[..self.mtu() as usize - size_of::<Header>()];
+        let read_len = attr.read_chunk(self.peer_id, 0, val_buf).await.map_err(|error_code| {
+            TransactionError::ErrorResponse {
+                request_opcode: Opcode::ReadReq,
+                attribute_handle: handle_val,
+                error_code,
+            }
+        })?;
+
+        // Format and send the Read Response.
+        let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
+        let mut builder = DynamicPacketBuilder::<_, u8>::new(
+            &mut tx_buf,
+            Header { opcode: Opcode::ReadRsp },
+            self.mtu() as usize,
+        );
+        builder.extend_from_slice(&val_buf[..read_len]).expect("read response fits within MTU");
+        self.send_packet(builder.as_packet()).await?;
+
+        Ok(())
+    }
+
     async fn send_packet(&mut self, packet: &Packet) -> Result<(), ServerError> {
         match self.bearer_tx.send(packet).await {
             Ok(()) => Ok(()),
@@ -427,6 +472,7 @@ mod tests {
 
     const CLIENT_PREFERRED_MTU: u16 = 512;
     const SERVER_MTU: u16 = 256;
+    const TEST_RX_BUF_SIZE: usize = 64;
 
     #[test]
     fn test_server_handle_mtu_exchange_success() {
@@ -996,6 +1042,201 @@ mod tests {
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(err.request_opcode, Opcode::FindByTypeValueReq as u8);
                 assert_eq!(err.error_code, ErrorCode::AttributeNotFound);
+            });
+
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_read_success() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone");
+            db.insert(h(1), name_attr);
+
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut client_tx_bearer = BearerTx::new(app_channel.sender);
+
+                // Send ReadReq for handle 1
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ReadReq },
+                    payload: ReadReq { attribute_handle: U16::new(1) },
+                };
+                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                // Expect ReadRsp containing "Sunstone"
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ReadRsp);
+                let expected: &[u8] = b"Sunstone";
+                assert_eq!(packet.data, *expected);
+            });
+
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_read_invalid_handle() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone");
+            db.insert(h(1), name_attr);
+
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); TEST_RX_BUF_SIZE];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut client_tx_bearer = BearerTx::new(app_channel.sender);
+
+                // Read Request for handle 0 (invalid handle value)
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ReadReq },
+                    payload: ReadReq { attribute_handle: U16::new(0) },
+                };
+                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                // Expect ErrorRsp indicating InvalidHandle for handle 0
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(err.request_opcode, Opcode::ReadReq as u8);
+                assert_eq!(err.attribute_handle.get(), 0);
+                assert_eq!(err.error_code, ErrorCode::InvalidHandle);
+            });
+
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_read_attribute_not_found() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone");
+            db.insert(h(1), name_attr);
+
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); TEST_RX_BUF_SIZE];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut client_tx_bearer = BearerTx::new(app_channel.sender);
+
+                // Read Request for handle 99 (non-existent handle)
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ReadReq },
+                    payload: ReadReq { attribute_handle: U16::new(99) },
+                };
+                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                // Expect ErrorRsp indicating InvalidHandle for handle 99
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(err.request_opcode, Opcode::ReadReq as u8);
+                assert_eq!(err.attribute_handle.get(), 99);
+                assert_eq!(err.error_code, ErrorCode::InvalidHandle);
+            });
+
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_read_truncated() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            // 30-byte long value
+            let long_val = b"012345678901234567890123456789";
+            let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), long_val);
+            db.insert(h(1), name_attr);
+
+            // Set server MTU to 23 bytes
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                23,
+                db,
+            );
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut client_tx_bearer = BearerTx::new(app_channel.sender);
+
+                // Send ReadReq for handle 1
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ReadReq },
+                    payload: ReadReq { attribute_handle: U16::new(1) },
+                };
+                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                // Expect ReadRsp containing first 22 bytes of long_val (MTU - 1)
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ReadRsp);
+                let expected: &[u8] = b"0123456789012345678901";
+                assert_eq!(packet.data, *expected);
             });
 
             let server_handle = executor.spawn(async move {
