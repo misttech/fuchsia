@@ -129,9 +129,7 @@
             {{#if (eq host.architecture "arm64")}}
                 "host",
             {{else}}
-                {{! TODO(https://fxbug.dev/529537810): Disable avx512f to prevent the
-                    emulator from forwarding it from the host, as it is not supported. }}
-                "host,migratable=no,+invtsc,-avx512f",
+                "host,migratable=no,+invtsc",
             {{/if}}
         {{else}}
             {{#if (eq host.os "macos")}}
