@@ -13,33 +13,45 @@ use zerocopy::{IntoBytes, TryFromBytes};
 /// see (Vol 3, Part G, Section 5.2.1)
 pub const DEFAULT_STARTING_MTU: u16 = 23;
 
-/// ATT Bearer Errors
+/// The maximum supported ATT MTU size, accommodating the maximum attribute value
+/// size (512 bytes) plus the maximum header overhead for a Find By Type Value Request (7 bytes:
+/// 1 byte opcode + 2 bytes start handle + 2 bytes end handle + 2 bytes UUID type).
+///
+/// see (Vol 3, Part F, Section 3.2.9) and (Vol 3, Part F, Section 3.4.2)
+pub const MAX_SUPPORTED_MTU: usize = 519;
+
+/// ATT Packet Transmission Errors.
 #[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BearerError {
+pub enum BearerSendError {
+    #[error("Underlying logical link was closed")]
+    LinkClosed,
+    #[error("Outgoing packet size exceeds the negotiated ATT MTU boundary")]
+    PacketTooLarge,
+}
+
+/// ATT Packet Reception Errors.
+///
+/// `PacketTooLarge` and `InvalidOpcode` require notifying the peer with an ATT Error Response PDU.
+///
+/// see (Vol 3, Part F, 3.4.1.1)
+#[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BearerRecvError {
     #[error("Underlying logical link was closed")]
     LinkClosed,
     #[error("Incoming packet buffer too small to fit the received payload")]
     BufferTooSmall,
     #[error("Received packet too short to contain a valid ATT header")]
     HeaderTooShort,
-    #[error("Packet size exceeds the negotiated ATT MTU boundary")]
-    PacketTooLarge,
+    #[error(
+        "Incoming packet with opcode {opcode:#04X} size exceeds the negotiated ATT MTU boundary"
+    )]
+    PacketTooLarge { opcode: u8 },
     #[error("Received packet contains an invalid or unsupported ATT opcode: {0:#04X}")]
     InvalidOpcode(u8),
 }
 
-/// Map raw L2CAP receiver errors into BearerErrors automatically.
-impl From<L2CapRecvError> for BearerError {
-    fn from(err: L2CapRecvError) -> Self {
-        match err {
-            L2CapRecvError::LinkClosed => Self::LinkClosed,
-            L2CapRecvError::BufferTooSmall => Self::BufferTooSmall,
-        }
-    }
-}
-
-/// Map raw L2CAP sender errors into BearerErrors automatically.
-impl From<L2CapSendError> for BearerError {
+/// Map raw L2CAP sender errors into BearerSendErrors automatically.
+impl From<L2CapSendError> for BearerSendError {
     fn from(err: L2CapSendError) -> Self {
         match err {
             L2CapSendError::LinkClosed => Self::LinkClosed,
@@ -63,11 +75,20 @@ where
         Self { channel_tx, mtu: DEFAULT_STARTING_MTU }
     }
 
+    /// Updates the negotiated ATT MTU boundary.
+    pub fn set_mtu(&mut self, mtu: u16) {
+        self.mtu = mtu;
+    }
+
+    /// Returns the current negotiated MTU.
+    pub fn mtu(&self) -> u16 {
+        self.mtu
+    }
     /// Transmits an ATT packet down the underlying L2CAP channel.
-    pub async fn send(&mut self, packet: &Packet) -> Result<(), BearerError> {
+    pub async fn send(&mut self, packet: &Packet) -> Result<(), BearerSendError> {
         // 1. MTU Validation using the actual byte size of the unsized packet
         if core::mem::size_of_val(packet) > usize::from(self.mtu) {
-            return Err(BearerError::PacketTooLarge);
+            return Err(BearerSendError::PacketTooLarge);
         }
 
         // 2. Forward the verified packet bytes down to the L2CAP physical channel
@@ -91,29 +112,49 @@ where
         Self { channel_rx, mtu: DEFAULT_STARTING_MTU }
     }
 
+    /// Updates the negotiated ATT MTU boundary.
+    pub fn set_mtu(&mut self, mtu: u16) {
+        self.mtu = mtu;
+    }
     /// Pulls the next incoming SDU from the channel, validates the header invariants,
     /// and returns a structured zero-copy reference to the parsed ATT Packet.
     pub async fn next_packet<'a>(
         &mut self,
         buf: &'a mut [MaybeUninit<u8>],
-    ) -> Result<&'a mut Packet, BearerError> {
+    ) -> Result<&'a mut Packet, BearerRecvError> {
+        let buf_len = buf.len();
         // 1. Wait for raw SDU bytes from L2CAP receiver half
-        let sdu = self.channel_rx.recv(buf).await?;
+        let sdu = match self.channel_rx.recv(buf).await {
+            Ok(sdu) => sdu,
+            Err(L2CapRecvError::LinkClosed) => return Err(BearerRecvError::LinkClosed),
+            Err(L2CapRecvError::BufferTooSmall) => {
+                if buf_len < usize::from(self.mtu) {
+                    // Our fault (programming error: buffer provided is smaller than the negotiated MTU)
+                    return Err(BearerRecvError::BufferTooSmall);
+                } else {
+                    // TODO(https://fxbug.dev/530174753): Extract opcode once L2CAP Trait is
+                    // Finalized
+                    //
+                    // Peer's fault (protocol violation: packet size exceeds negotiated MTU / buffer size)
+                    return Err(BearerRecvError::PacketTooLarge { opcode: 0x00 });
+                }
+            }
+        };
 
         // 2. Minimum Length Validation (must cover at least the header)
         if sdu.len() < core::mem::size_of::<Header>() {
-            return Err(BearerError::HeaderTooShort);
+            return Err(BearerRecvError::HeaderTooShort);
         }
 
         // 3. MTU Validation (Peer protocol violation check):
         if sdu.len() > self.mtu.into() {
-            return Err(BearerError::PacketTooLarge);
+            return Err(BearerRecvError::PacketTooLarge { opcode: sdu[0] });
         }
 
         // 4. Validate and parse the structured ATT packet header.
         let raw_opcode = sdu[0];
-        let packet =
-            Packet::try_mut_from_bytes(sdu).map_err(|_| BearerError::InvalidOpcode(raw_opcode))?;
+        let packet = Packet::try_mut_from_bytes(sdu)
+            .map_err(|_| BearerRecvError::InvalidOpcode(raw_opcode))?;
 
         Ok(packet)
     }
@@ -187,7 +228,7 @@ mod tests {
                 let mut bearer_rx = BearerRx::new(app_channel.receiver);
                 let mut buf = [MaybeUninit::uninit(); 32];
                 let result = bearer_rx.next_packet(&mut buf).await;
-                assert_eq!(result.err(), Some(BearerError::HeaderTooShort));
+                assert_eq!(result.err(), Some(BearerRecvError::HeaderTooShort));
             });
 
             let send_handle = executor.spawn(async move {
@@ -209,7 +250,7 @@ mod tests {
                 let mut bearer_rx = BearerRx::new(app_channel.receiver);
                 let mut buf = [MaybeUninit::uninit(); 32];
                 let result = bearer_rx.next_packet(&mut buf).await;
-                assert_eq!(result.err(), Some(BearerError::InvalidOpcode(0xff)));
+                assert_eq!(result.err(), Some(BearerRecvError::InvalidOpcode(0xff)));
             });
 
             let send_handle = executor.spawn(async move {
@@ -232,7 +273,7 @@ mod tests {
                 let mut bearer_rx = BearerRx::new(app_channel.receiver);
                 let mut buf = [MaybeUninit::uninit(); 32];
                 let result = bearer_rx.next_packet(&mut buf).await;
-                assert_eq!(result.err(), Some(BearerError::LinkClosed));
+                assert_eq!(result.err(), Some(BearerRecvError::LinkClosed));
             });
 
             executor.run_until_stalled();
@@ -256,7 +297,10 @@ mod tests {
                 let mut oversized_packet = [0u8; DEFAULT_STARTING_MTU as usize + 1];
                 oversized_packet[0] = 0x02; // ExchangeMtuReq
                 let packet = Packet::try_ref_from_bytes(&oversized_packet[..]).unwrap();
-                assert_eq!(bearer_tx.send(packet).await.err(), Some(BearerError::PacketTooLarge));
+                assert_eq!(
+                    bearer_tx.send(packet).await.err(),
+                    Some(BearerSendError::PacketTooLarge)
+                );
             });
 
             executor.run_until_stalled();
@@ -272,10 +316,8 @@ mod tests {
             let verify_handle = executor.spawn(async move {
                 let mut bearer_rx = BearerRx::new(app_channel.receiver);
                 let mut buf = [MaybeUninit::uninit(); 32];
-                assert_eq!(
-                    bearer_rx.next_packet(&mut buf).await.err(),
-                    Some(BearerError::PacketTooLarge)
-                );
+                let err = bearer_rx.next_packet(&mut buf).await.err();
+                assert_eq!(err, Some(BearerRecvError::PacketTooLarge { opcode: 0x02 }));
             });
 
             let send_handle = executor.spawn(async move {

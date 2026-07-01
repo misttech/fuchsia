@@ -1,3 +1,460 @@
 // Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+use crate::att::AttributeHandle;
+use crate::att::bearer::{
+    BearerRecvError, BearerRx, BearerSendError, BearerTx, DEFAULT_STARTING_MTU, MAX_SUPPORTED_MTU,
+};
+use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
+use crate::att::pdu::{
+    ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp, Header, Opcode, Packet, PacketBuilder,
+};
+use core::cmp::{max, min};
+use core::convert::Infallible;
+use core::mem::MaybeUninit;
+use thiserror::Error;
+use zerocopy::byteorder::little_endian::U16;
+use zerocopy::{FromBytes, IntoBytes, TryFromBytes};
+
+#[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServerError {
+    #[error("Underlying logical link was closed")]
+    LinkClosed,
+}
+
+#[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
+enum TransactionError {
+    #[error(transparent)]
+    ServerError(#[from] ServerError),
+    #[error("Unexpected PDU opcode: {received_opcode:?}")]
+    UnexpectedPdu { received_opcode: Opcode },
+    #[error("Invalid PDU structure for request: {request_opcode:?}")]
+    InvalidPdu { request_opcode: Opcode },
+}
+
+/// The ATT Server protocol wrapper.
+pub struct Server<Tx, Rx> {
+    bearer_tx: BearerTx<Tx>,
+    bearer_rx: BearerRx<Rx>,
+    server_rx_mtu: u16,
+}
+
+impl<Tx, Rx> Server<Tx, Rx>
+where
+    Tx: L2CapChannelTx,
+    Rx: L2CapChannelRx,
+{
+    /// Creates a new ATT Server instance.
+    pub fn new(bearer_tx: BearerTx<Tx>, bearer_rx: BearerRx<Rx>, server_rx_mtu: u16) -> Self {
+        Self { bearer_tx, bearer_rx, server_rx_mtu }
+    }
+
+    /// Runs the server receive loop, processing inbound requests sequentially
+    /// until the underlying channel is closed or an error occurs.
+    pub async fn run(&mut self) -> Result<Infallible, ServerError> {
+        loop {
+            self.handle_request().await?;
+        }
+    }
+
+    /// Processes a single inbound request packet.
+    pub async fn handle_request(&mut self) -> Result<(), ServerError> {
+        // TODO(https://fxbug.dev/530178099): Reconsider stack allocation here, as it bloats the generated Future's
+        // size. Consider storing a reusable buffer in Server or heap-allocating to match MTU.
+        let mut rx_buf = [MaybeUninit::uninit(); MAX_SUPPORTED_MTU];
+        let rx_packet = match self.bearer_rx.next_packet(&mut rx_buf).await {
+            Ok(pkt) => pkt,
+            // Channel disconnected. Terminate server.
+            Err(BearerRecvError::LinkClosed) => return Err(ServerError::LinkClosed),
+
+            // If the Attribute Opcode cannot be determined because the request was too short or
+            // exceeded MAX_SUPPORTED_MTU, the server responds with an Error Response (Invalid PDU)
+            // setting the Opcode In Error to 0x00.
+            //
+            // see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.1.1)
+            Err(BearerRecvError::HeaderTooShort) => {
+                self.send_error_response(0u8, None, ErrorCode::InvalidPdu).await?;
+                return Ok(());
+            }
+            Err(BearerRecvError::BufferTooSmall) => {
+                panic!(
+                    "Programming error: provided buffer size is smaller than the negotiated MTU."
+                );
+            }
+
+            // Packet size exceeds MTU. According to BT Spec, the server shall return an
+            // Error Response with the error code set to Invalid PDU (0x04).
+            //
+            // see (Vol 3, Part F, 3.4.1.1)
+            Err(BearerRecvError::PacketTooLarge { opcode }) => {
+                self.send_error_response(opcode, None, ErrorCode::InvalidPdu).await?;
+                return Ok(());
+            }
+
+            // Unknown or unsupported opcode. According to BT Spec, the server shall respond
+            // with Request Not Supported (0x06).
+            //
+            // see (Vol 3, Part F, 3.4.1.1)
+            Err(BearerRecvError::InvalidOpcode(raw_opcode)) => {
+                self.send_error_response(raw_opcode, None, ErrorCode::RequestNotSupported).await?;
+                return Ok(());
+            }
+        };
+
+        let transaction_result = match rx_packet.header.opcode {
+            Opcode::ExchangeMtuReq => self.handle_exchange_mtu(&rx_packet.data).await,
+            other => Err(TransactionError::UnexpectedPdu { received_opcode: other }),
+        };
+
+        match transaction_result {
+            Ok(()) => Ok(()),
+            Err(TransactionError::ServerError(e)) => Err(e),
+            Err(TransactionError::UnexpectedPdu { received_opcode }) => {
+                self.send_error_response(received_opcode, None, ErrorCode::RequestNotSupported)
+                    .await
+            }
+            Err(TransactionError::InvalidPdu { request_opcode }) => {
+                self.send_error_response(request_opcode, None, ErrorCode::InvalidPdu).await
+            }
+        }
+    }
+
+    /// Handles an incoming Exchange MTU Request and responds with an Exchange MTU Response.
+    /// Negotiates the ATT_MTU for the connection.
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.2.1) and (Vol 3, Part G, Section 5.2.1)
+    async fn handle_exchange_mtu(&mut self, data: &[u8]) -> Result<(), TransactionError> {
+        let req = ExchangeMtuReq::read_from_bytes(data)
+            .map_err(|_| TransactionError::InvalidPdu { request_opcode: Opcode::ExchangeMtuReq })?;
+        let client_mtu = req.client_rx_mtu.get();
+
+        let negotiated_mtu = max(DEFAULT_STARTING_MTU, min(client_mtu, self.server_rx_mtu));
+
+        // Update MTU for both active bearer halves
+        self.bearer_tx.set_mtu(negotiated_mtu);
+        self.bearer_rx.set_mtu(negotiated_mtu);
+
+        // Respond with ExchangeMtuRsp containing our supported rx MTU
+        let builder = PacketBuilder {
+            header: Header { opcode: Opcode::ExchangeMtuRsp },
+            payload: ExchangeMtuRsp { server_rx_mtu: U16::new(self.server_rx_mtu) },
+        };
+
+        let tx_packet = Packet::try_ref_from_bytes(builder.as_bytes()).unwrap();
+        self.send_packet(tx_packet).await?;
+
+        Ok(())
+    }
+
+    async fn send_packet(&mut self, packet: &Packet) -> Result<(), ServerError> {
+        match self.bearer_tx.send(packet).await {
+            Ok(()) => Ok(()),
+            // Channel disconnected. Terminate server.
+            Err(BearerSendError::LinkClosed) => Err(ServerError::LinkClosed),
+            // Outgoing packet size exceeds MTU. This is a local logic error.
+            Err(BearerSendError::PacketTooLarge) => {
+                panic!("Programming error: outgoing packet size exceeds the negotiated MTU.");
+            }
+        }
+    }
+
+    /// Formats and transmits an ATT Error Response PDU.
+    ///
+    /// Accepts the `request_opcode` as an `impl Into<u8>` (which fits both the typed `Opcode`
+    /// enum and raw `u8` invalid opcodes) to satisfy the Bluetooth Specification requirements
+    /// for error reporting on unknown/invalid opcodes.
+    async fn send_error_response(
+        &mut self,
+        request_opcode: impl Into<u8>,
+        attribute_handle: Option<AttributeHandle>,
+        error_code: ErrorCode,
+    ) -> Result<(), ServerError> {
+        let handle_raw = attribute_handle.map(|h| h.value()).unwrap_or(0);
+        let builder = PacketBuilder {
+            header: Header { opcode: Opcode::ErrorRsp },
+            payload: ErrorRsp {
+                request_opcode: request_opcode.into(),
+                attribute_handle: U16::new(handle_raw),
+                error_code,
+            },
+        };
+        let tx_packet = builder.as_packet();
+        self.send_packet(tx_packet).await
+    }
+
+    pub fn mtu(&self) -> u16 {
+        self.bearer_tx.mtu()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::att::l2cap::mock::setup_mock_channel;
+    use sapphire_async::executor::BoundedExecutor;
+    use sapphire_async::testing::TestExecutor;
+
+    const CLIENT_PREFERRED_MTU: u16 = 512;
+    const SERVER_MTU: u16 = 256;
+
+    #[test]
+    fn test_server_handle_mtu_exchange_success() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut server =
+                Server::new(BearerTx::new(test_tx), BearerRx::new(test_rx), SERVER_MTU);
+
+            // Spawn client driver task
+            let client_handle = executor.spawn(async move {
+                // Send ExchangeMtuReq requesting 512-byte MTU
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ExchangeMtuReq },
+                    payload: ExchangeMtuReq { client_rx_mtu: U16::new(CLIENT_PREFERRED_MTU) },
+                };
+
+                let tx_packet = builder.as_packet();
+                let mut client_tx_bearer = BearerTx::new(app_channel.sender);
+                client_tx_bearer.send(tx_packet).await.unwrap();
+
+                // Receive ExchangeMtuRsp from server
+                let mut rx_buf = [MaybeUninit::uninit(); 32];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ExchangeMtuRsp);
+
+                let rsp = ExchangeMtuRsp::read_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(rsp.server_rx_mtu.get(), SERVER_MTU);
+            });
+
+            // Spawn server driver task
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+                assert_eq!(server.mtu(), SERVER_MTU);
+            });
+
+            executor.run_until_stalled();
+
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handles_unsupported_request_and_continues() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut server =
+                Server::new(BearerTx::new(test_tx), BearerRx::new(test_rx), SERVER_MTU);
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 32];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut client_tx_bearer = BearerTx::new(app_channel.sender);
+
+                // 1. Send ExchangeMtuRsp (0x03) as a request (valid opcode but unsupported request)
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ExchangeMtuRsp },
+                    payload: ExchangeMtuRsp { server_rx_mtu: U16::new(SERVER_MTU) },
+                };
+                let tx_packet = builder.as_packet();
+                client_tx_bearer.send(tx_packet).await.unwrap();
+
+                // Expect ErrorRsp indicating RequestNotSupported (0x06) for ExchangeMtuRsp (0x03)
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(err.request_opcode, Opcode::ExchangeMtuRsp as u8);
+                assert_eq!(err.error_code, ErrorCode::RequestNotSupported);
+
+                // 2. Server should still be running! Send valid ExchangeMtuReq (0x02)
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ExchangeMtuReq },
+                    payload: ExchangeMtuReq { client_rx_mtu: U16::new(CLIENT_PREFERRED_MTU) },
+                };
+                let tx_packet = builder.as_packet();
+                client_tx_bearer.send(tx_packet).await.unwrap();
+
+                // Expect ExchangeMtuRsp from server
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ExchangeMtuRsp);
+                let rsp = ExchangeMtuRsp::read_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(rsp.server_rx_mtu.get(), SERVER_MTU);
+            });
+
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
+
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handles_invalid_payload_and_continues() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut server =
+                Server::new(BearerTx::new(test_tx), BearerRx::new(test_rx), SERVER_MTU);
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 32];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut client_tx_bearer = BearerTx::new(app_channel.sender);
+
+                // 1. Send ExchangeMtuReq but with truncated (empty) payload
+                let tx_packet =
+                    Packet::try_ref_from_bytes(&[Opcode::ExchangeMtuReq as u8]).unwrap();
+                client_tx_bearer.send(tx_packet).await.unwrap();
+
+                // Expect ErrorRsp indicating InvalidPdu (0x04) for ExchangeMtuReq (0x02)
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(err.request_opcode, Opcode::ExchangeMtuReq as u8);
+                assert_eq!(err.error_code, ErrorCode::InvalidPdu);
+            });
+
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
+
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handles_large_packet_and_continues() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut server =
+                Server::new(BearerTx::new(test_tx), BearerRx::new(test_rx), SERVER_MTU);
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 32];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut sender = app_channel.sender;
+
+                // 1. Bypass BearerTx and send a packet larger than MAX_SUPPORTED_MTU (519) directly over L2CAP
+                let large_packet = [0u8; 600];
+                sender.send(&large_packet).await.unwrap();
+
+                // Expect ErrorRsp indicating InvalidPdu for opcode 0x00
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(err.request_opcode, 0x00);
+                assert_eq!(err.error_code, ErrorCode::InvalidPdu);
+
+                // 2. Server should log the error and stay alive. Send a valid ExchangeMtuReq.
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ExchangeMtuReq },
+                    payload: ExchangeMtuReq { client_rx_mtu: U16::new(CLIENT_PREFERRED_MTU) },
+                };
+                let tx_packet = builder.as_packet();
+                sender.send(tx_packet.as_bytes()).await.unwrap();
+
+                // Expect ExchangeMtuRsp
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ExchangeMtuRsp);
+                let rsp = ExchangeMtuRsp::read_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(rsp.server_rx_mtu.get(), SERVER_MTU);
+            });
+
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
+
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handles_invalid_opcode() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut server =
+                Server::new(BearerTx::new(test_tx), BearerRx::new(test_rx), SERVER_MTU);
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 32];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut sender = app_channel.sender;
+
+                // Send a packet with raw invalid opcode 0x99
+                sender.send(&[0x99, 0x01, 0x02]).await.unwrap();
+
+                // Expect ErrorRsp indicating RequestNotSupported for request opcode 0x99
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(err.request_opcode, 0x99);
+                assert_eq!(err.error_code, ErrorCode::RequestNotSupported);
+            });
+
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handles_exceeding_mtu_packet() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut server =
+                Server::new(BearerTx::new(test_tx), BearerRx::new(test_rx), SERVER_MTU);
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut sender = app_channel.sender;
+
+                // Default MTU is 23. Send a 30-byte packet directly over L2CAP.
+                let mut oversized = [0u8; 30];
+                oversized[0] = Opcode::ExchangeMtuReq.into();
+                sender.send(&oversized).await.unwrap();
+
+                // Expect ErrorRsp indicating InvalidPdu for request opcode 0x02
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(err.request_opcode, Opcode::ExchangeMtuReq as u8);
+                assert_eq!(err.error_code, ErrorCode::InvalidPdu);
+            });
+
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+}

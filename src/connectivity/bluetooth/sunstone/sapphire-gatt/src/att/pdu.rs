@@ -44,7 +44,7 @@ pub enum ErrorCode {
     InvalidHandle = 0x01,
     ReadNotPermitted = 0x02,
     WriteNotPermitted = 0x03,
-    InvalidPDU = 0x04,
+    InvalidPdu = 0x04,
     InsufficientAuthentication = 0x05,
     RequestNotSupported = 0x06,
     InvalidOffset = 0x07,
@@ -82,6 +82,25 @@ pub struct Header {
 pub struct Packet {
     pub header: Header,
     pub data: [u8],
+}
+
+/// A helper struct to build fixed-size outbound packets statically on the stack
+/// without manual byte serialization or indexing.
+#[derive(IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed)]
+pub struct PacketBuilder<P> {
+    pub header: Header,
+    pub payload: P,
+}
+
+impl<P> PacketBuilder<P>
+where
+    Self: IntoBytes + Immutable,
+{
+    /// Casts the builder reference directly to a validated read-only Packet reference.
+    pub fn as_packet(&self) -> &Packet {
+        Packet::try_ref_from_bytes(self.as_bytes()).expect("valid PacketBuilder layout")
+    }
 }
 
 /// Parameters for Exchange MTU Request PDU (OpCode = 0x02)
