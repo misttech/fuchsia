@@ -217,6 +217,9 @@ void Config::IntegratePublication(const rapidjson::Value& value, const DnsName& 
     }
   }
 
+  FX_LOGS(INFO) << "Publishing service " << service << " instance " << instance
+                << " per configuration.";
+
   std::vector<std::string> text;
   if (value.HasMember(kTextKey)) {
     FX_DCHECK(value[kTextKey].IsArray());
@@ -246,9 +249,12 @@ void Config::IntegratePublication(const rapidjson::Value& value, const DnsName& 
 
   if (include_serial && serial != "") {
     text.push_back("serial=" + serial);
+  } else if (include_serial) {
+    FX_LOGS(WARNING) << "Configuration indicated to include the serial number in mDNS "
+                     << "messages, but no serial number was provided. Continuing without.";
   } else {
-    FX_LOGS(WARNING) << "We were requested to include the serial number in our mDNS "
-                     << "broadcasts, but no serial number was provided. Continuing without.";
+    FX_LOGS(INFO) << "Not including device serial number " << serial
+                  << " in mDNS messages, per configuration.";
   }
 
   Media media = Media::kBoth;
@@ -261,6 +267,27 @@ void Config::IntegratePublication(const rapidjson::Value& value, const DnsName& 
       media = Media::kWireless;
     } else {
       FX_DCHECK(media_string == kMediaValueBoth);
+    }
+  }
+
+  for (const auto& existing : publications_) {
+    if (existing.service_ == service && existing.instance_ == instance) {
+      if (existing.media_ == media || existing.media_ == Media::kBoth || media == Media::kBoth) {
+        auto media_to_string = [](Media m) {
+          switch (m) {
+            case Media::kBoth:
+              return "both";
+            case Media::kWired:
+              return "wired";
+            case Media::kWireless:
+              return "wireless";
+          }
+        };
+        FX_LOGS(WARNING) << "Duplicate publication detected in configuration for service "
+                         << service << " and instance " << instance << " on media "
+                         << media_to_string(media) << " (conflicts with existing on "
+                         << media_to_string(existing.media_) << ")";
+      }
     }
   }
 
