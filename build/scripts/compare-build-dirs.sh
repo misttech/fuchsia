@@ -258,6 +258,8 @@ function diff_file_relpath() {
     images.json) expect=skip ;;  # too many diffs
 
     transfer.json) expect=skip ;;  # look like list of blob hashes
+    size_report.json) expect=skip ;;  # contains sizes of images which differ
+                                      # already and are expect=unknown.
 
     compile_commands.json) expect=skip ;;  # too many
 
