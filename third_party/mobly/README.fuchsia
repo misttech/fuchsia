@@ -1,6 +1,6 @@
 Name: mobly
 URL: https://github.com/google/mobly
-Revision: 566695c3ac676d6c2a45d5c6ed5d4c9438480386
+Revision: 8554b0e364ba7aaf5d3ab11a6f74330bacc2eeee
 License: Apache 2.0
 License File: src/LICENSE
 Description: Python E2E test framework
