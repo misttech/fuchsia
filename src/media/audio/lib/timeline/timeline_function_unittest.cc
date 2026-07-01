@@ -58,17 +58,18 @@ void VerifyBasics(int64_t subject_time, int64_t reference_time, uint64_t subject
 // have expected properties.
 void VerifyInverse(int64_t subject_time, int64_t reference_time, uint64_t subject_delta,
                    uint64_t reference_delta) {
+  auto was_ref_time = reference_time, was_subj_time = subject_time;
+  auto was_ref_delta = reference_delta, was_subj_delta = subject_delta;
+
   TimelineFunction under_test_1(subject_time, reference_time, subject_delta, reference_delta);
-  VerifyBasics(under_test_1.Inverse(), reference_time, subject_time, reference_delta,
-               subject_delta);
+  VerifyBasics(under_test_1.Inverse(), was_ref_time, was_subj_time, was_ref_delta, was_subj_delta);
 
   TimelineFunction under_test_2(subject_time, reference_time,
                                 TimelineRate(subject_delta, reference_delta));
-  VerifyBasics(under_test_2.Inverse(), reference_time, subject_time, reference_delta,
-               subject_delta);
+  VerifyBasics(under_test_2.Inverse(), was_ref_time, was_subj_time, was_ref_delta, was_subj_delta);
 
   TimelineFunction under_test_3(TimelineRate(subject_delta, reference_delta));
-  VerifyBasics(under_test_3.Inverse(), 0, 0, reference_delta, subject_delta);
+  VerifyBasics(under_test_3.Inverse(), 0, 0, was_ref_delta, was_subj_delta);
 }
 
 // Verifies that TimelineFunction::Apply (in various forms) works as expected for given arguments.
@@ -151,8 +152,8 @@ TEST(TimelineFunctionTest, Apply) {
   VerifyApply(0, -10, 0, 1, 0, 0);
   VerifyApply(0, -10, 1, 1, 0, 10);
   VerifyApply(1234, 0, 1, 2, 0, 1234);
-  VerifyApply(1234, 0, 1, 2, 1234, 1234 + 1234 / 2);
-  VerifyApply(1234, 0, 2, 1, 1234, 1234 + 1234 * 2);
+  VerifyApply(1234, 0, 1, 2, 1234, 1234 + (1234 / 2));
+  VerifyApply(1234, 0, 2, 1, 1234, 1234 + (1234 * 2));
   VerifyApply(0, 0, 2, 1, std::numeric_limits<int64_t>::max(), TimelineRate::kOverflow);
   VerifyApply(0, 0, 2, 1, std::numeric_limits<int64_t>::min(), TimelineRate::kUnderflow);
 }
@@ -170,8 +171,8 @@ TEST(TimelineFunctionTest, ApplyInverse) {
   VerifyApplyInverse(0, 10, 1, 1, -10, 0);
   VerifyApplyInverse(0, -10, 1, 1, 10, 0);
   VerifyApplyInverse(1234, 0, 1, 2, 1234, 0);
-  VerifyApplyInverse(1234, 0, 1, 2, 1234 + 1234 / 2, 1234);
-  VerifyApplyInverse(1234, 0, 2, 1, 1234 + 1234 * 2, 1234);
+  VerifyApplyInverse(1234, 0, 1, 2, 1234 + (1234 / 2), 1234);
+  VerifyApplyInverse(1234, 0, 2, 1, 1234 + (1234 * 2), 1234);
 }
 
 // Tests TimelineFunction::Compose.
@@ -190,6 +191,48 @@ TEST(TimelineFunctionTest, Compose) {
                 TimelineFunction(0, 0, 1, 4));
   VerifyCompose(TimelineFunction(0, 0, 1, 2), TimelineFunction(0, 0, 2, 1), true,
                 TimelineFunction(0, 0, 1, 1));
+}
+
+// Test extreme boundary conditions in TimelineFunction::Apply. Subtracting distant timestamps
+// (reference_input - reference_time) or adding offset (scaled_value + subject_time) can overflow
+// signed 64-bit bounds. This test validates that 128-bit arithmetic prevents incorrect
+// over/underflow, clamping results to kOverflow/kUnderflow sentinels (and only when necessary).
+TEST(TimelineFunctionTest, ApplyOverflow) {
+  constexpr int64_t kInt64Max = std::numeric_limits<int64_t>::max();
+  constexpr int64_t kInt64Min = std::numeric_limits<int64_t>::min();
+
+  // TimelineFunction::Apply entails the delta between two points, and scaling across a rate.
+  // The calculation includes an initial subtraction, then a Rate::Scale, then a final addition.
+
+  // Test overflow in the initial subtraction (reference_input - reference_time > kInt64Max).
+  EXPECT_EQ(TimelineRate::kOverflow,
+            TimelineFunction::Apply(0, -10, TimelineRate(1, 1), kInt64Max));
+  // This initial subtraction WOULD overflow except the rate brings it back into bounds.
+  EXPECT_EQ(static_cast<int64_t>((static_cast<__int128_t>(kInt64Max) + 10) / 2),
+            TimelineFunction::Apply(0, -10, TimelineRate(1, 2), kInt64Max));
+
+  // Test underflow in the initial subtraction (reference_input - reference_time < kInt64Min).
+  EXPECT_EQ(TimelineRate::kUnderflow,
+            TimelineFunction::Apply(0, 10, TimelineRate(1, 1), kInt64Min));
+  // This initial subtraction WOULD underflow except the rate brings it back into bounds.
+  EXPECT_EQ(static_cast<int64_t>((static_cast<__int128_t>(kInt64Min) - 10) / 2),
+            TimelineFunction::Apply(0, 10, TimelineRate(1, 2), kInt64Min));
+
+  // Test overflow/underflow in the rate scaling step.
+  // Even though the final addition MIGHT pull the result back toward zero, any overflow or
+  // underflow during rate scaling returns the clamp sentinels immediately.
+  EXPECT_EQ(TimelineRate::kOverflow,
+            TimelineFunction::Apply(-1000, 0, TimelineRate(2, 1), kInt64Max));
+  EXPECT_EQ(TimelineRate::kUnderflow,
+            TimelineFunction::Apply(1000, 0, TimelineRate(2, 1), kInt64Min));
+
+  // Test overflow in the final addition (scaled_value + subject_time > kInt64Max).
+  EXPECT_EQ(TimelineRate::kOverflow,
+            TimelineFunction::Apply(100, 0, TimelineRate(1, 1), kInt64Max - 50));
+
+  // Test underflow in the final addition (scaled_value + subject_time < kInt64Min).
+  EXPECT_EQ(TimelineRate::kUnderflow,
+            TimelineFunction::Apply(-100, 0, TimelineRate(1, 1), kInt64Min + 50));
 }
 
 }  // namespace

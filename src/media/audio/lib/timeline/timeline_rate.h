@@ -70,12 +70,20 @@ class TimelineRate final {
   };
 
   // Scales the value by this rate. Returns kOverflow on overflow and kUnderflow on underflow.
-  int64_t Scale(int64_t value, RoundingMode mode = RoundingMode::Truncate) const;
+  int64_t Scale(int64_t value, RoundingMode mode = RoundingMode::Truncate) const {
+    return Scale128(static_cast<__int128_t>(value), mode);
+  }
 
   uint64_t subject_delta() const { return subject_delta_; }
   uint64_t reference_delta() const { return reference_delta_; }
 
  private:
+  // Needed for access to Scale128()
+  friend class TimelineFunction;
+  friend class TimelineRateTest_Scale128_Test;
+
+  int64_t Scale128(__int128_t value, RoundingMode mode = RoundingMode::Truncate) const;
+
   // Multiplier for double-to-TimelineRate conversion (doubles have fixed bit-width mantissas).
   static constexpr uint64_t kDoubleFactor = 1ul << 52;
 

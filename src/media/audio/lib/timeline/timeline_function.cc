@@ -17,31 +17,37 @@ namespace media {
 // corresponding subject value. Returns kOverflow if result can't fit in an int64_t.
 int64_t TimelineFunction::Apply(int64_t subject_time, int64_t reference_time, TimelineRate rate,
                                 int64_t reference_input) {
-  // Round down when scaling. This ensures that we preserve the scaled distance between positive
-  // and negative points on the timeline. For example, suppose we call this twice:
+  // Round down (toward negative infinity) when scaling. This preserves scaled distances between
+  // positive and negative points on the timeline.
+  // For example, suppose we call this twice:
   //
   //   1. reference_input - reference_time = 20, ratio = 1/8, scaled_value = 2.5
   //   2. reference_input - reference_time = -20, ratio = 1/8, scaled_value = -2.5
   //
-  // If we truncate, the scaled values are 2 and -2, which have a difference of 4, while the true
-  // scaled difference should be 40*1/8 = 5. However, if we round down, the scaled values are
-  // 2 and -3, which have a difference of 5.
-  int64_t scaled_value =
-      rate.Scale(reference_input - reference_time, TimelineRate::RoundingMode::Floor);
+  // If we truncate (round toward zero), the scaled values are 2 and -2, for a difference of 4,
+  // while the true scaled difference should be 40*1/8 = 5. If we round down, the scaled values are
+  // 2 and -3, for a (correct) difference of 5.
+  //
+  // Perform subtraction in 128-bit space to prevent signed integer overflow undefined behavior when
+  // handling distant timestamps (e.g. INT64_MAX - (-10)).
+  __int128_t reference_delta = static_cast<__int128_t>(reference_input) - reference_time;
+  int64_t scaled_value = rate.Scale128(reference_delta, TimelineRate::RoundingMode::Floor);
   if (scaled_value == TimelineRate::kOverflow || scaled_value == TimelineRate::kUnderflow) {
     return scaled_value;
   }
 
-  int64_t result_value = scaled_value + subject_time;
-  auto result_value_128 = static_cast<__int128_t>(scaled_value) + subject_time;
-  if (result_value_128 != result_value) {
-    if (result_value_128 > 0) {
-      return TimelineRate::kOverflow;
-    }
+  // Perform addition in 128-bit space and explicitly check bounds before casting down to int64_t.
+  // Doing 64-bit addition first would trigger C++ UB on overflow, allowing compiler optimizations
+  // to elide post-addition bounds checks.
+  __int128_t result_value_128 = static_cast<__int128_t>(scaled_value) + subject_time;
+  if (result_value_128 > TimelineRate::kOverflow) {
+    return TimelineRate::kOverflow;
+  }
+  if (result_value_128 < TimelineRate::kUnderflow) {
     return TimelineRate::kUnderflow;
   }
 
-  return result_value;
+  return static_cast<int64_t>(result_value_128);
 }
 
 // static

@@ -98,7 +98,7 @@ void VerifyInverse(uint64_t subject_delta, uint64_t reference_delta) {
 }
 
 // Tests ctor(float). Although converted internally to double, incoming floats have limitations.
-TEST(TimelineRateTest, Constructor_Float) {
+TEST(TimelineRateTest, ConstructorFloat) {
   TimelineRate unity_float(1.0f);
   EXPECT_EQ(unity_float.subject_delta(), 1ull);
   EXPECT_EQ(unity_float.reference_delta(), 1ull);
@@ -119,7 +119,7 @@ TEST(TimelineRateTest, Constructor_Float) {
 }
 
 // Tests the double-based TimelineRate constructor
-TEST(TimelineRateTest, Constructor_Double) {
+TEST(TimelineRateTest, ConstructorDouble) {
   TimelineRate unity_double(1.0);
   EXPECT_EQ(unity_double.subject_delta(), 1ull);
   EXPECT_EQ(unity_double.reference_delta(), 1ull);
@@ -269,4 +269,33 @@ TEST(TimelineRateTest, Inverse) {
 }
 
 }  // namespace
+
+// Tests TimelineRate::Scale with __int128_t inputs.
+// When scaling values outside 64-bit bounds, two overflow modes are possible:
+// (1) Internal intermediate multiplication (value * subject_delta) can overflow 128 bits.
+// (2) Final scaled result can exceed int64_t limits.
+//
+// For (1), validate that division bounds pre-checks prevent multiplication overflow.
+// For (2), validate that clamping prevents final results from exceeding int64_t limits.
+TEST(TimelineRateTest, Scale128) {
+  constexpr __int128_t kInt64Max = std::numeric_limits<int64_t>::max();
+  constexpr __int128_t kInt64Min = std::numeric_limits<int64_t>::min();
+
+  // (1) These would internally overflow, without internal 128-bit math. Expect correct results.
+  TimelineRate half(1, 2);
+  EXPECT_EQ(static_cast<int64_t>(kInt64Max), half.Scale128(kInt64Max * 2));
+  EXPECT_EQ(static_cast<int64_t>(kInt64Min), half.Scale128(kInt64Min * 2));
+
+  // (1) For extreme values that internally overflow even with 128-bit math, expect clamp sentinels.
+  TimelineRate double_rate(2, 1);
+  constexpr __int128_t kInt128Max = static_cast<__int128_t>(static_cast<__uint128_t>(-1) >> 1);
+  constexpr __int128_t kInt128Min = -kInt128Max - 1;
+  EXPECT_EQ(TimelineRate::kOverflow, double_rate.Scale128(kInt128Max));
+  EXPECT_EQ(TimelineRate::kUnderflow, double_rate.Scale128(kInt128Min));
+
+  // (2) Final scaled result exceeds int64_t limits. Expect clamp sentinels.
+  EXPECT_EQ(TimelineRate::kOverflow, double_rate.Scale128(kInt64Max + 10));
+  EXPECT_EQ(TimelineRate::kUnderflow, double_rate.Scale128(kInt64Min - 10));
+}
+
 }  // namespace media

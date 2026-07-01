@@ -135,10 +135,10 @@ TimelineRate TimelineRate::Product(TimelineRate a, TimelineRate b, bool exact) {
 
     if constexpr (kDebugPrecisionLoss) {
       if (bits_lost > 0) {
-        std::cout << "*************************************************************" << std::endl;
+        std::cout << "*************************************************************" << '\n';
         std::cout << "During TimelineRate::Product, bit-precision was reduced by " << bits_lost
-                  << std::endl;
-        std::cout << "*************************************************************" << std::endl;
+                  << '\n';
+        std::cout << "*************************************************************" << '\n';
       }
     }
   }
@@ -153,31 +153,50 @@ TimelineRate TimelineRate::Product(TimelineRate a, TimelineRate b, bool exact) {
 // static
 // Scales a reference value by a given rate, returning kOverflow if the result exceeds an int64_t.
 //
-// Internally, our int128_t can accommodate all possible [int64 * uint64] values (and then some).
-// INT64_MIN * UINT64_MAX == INT128MIN     + INT64_MIN                 : plenty of room to spare
-// INT64_MAX * UINT64_MAX == UINT128_MAX   - (UINT64_MAX + INT64_MAX)  : even more extra space
-//
-int64_t TimelineRate::Scale(int64_t value, RoundingMode rounding_mode) const {
-  __int128_t product = static_cast<__int128_t>(value) * subject_delta_;
+// For 64-bit inputs, our int128_t easily accommodates all possible [int64 * uint64] values.
+// However, when accepting extreme __int128_t inputs (such as timestamp differences > 2^63),
+// [int128 * uint64] could overflow 128 bits. We fast-path standard 64-bit range values to avoid
+// runtime 128-bit division in time-sensitive real-time audio loops, performing division bounds
+// checks against kInt128Max/kInt128Min only for out-of-range values.
+int64_t TimelineRate::Scale128(__int128_t value, RoundingMode rounding_mode) const {
+  constexpr __int128_t kInt128Max = static_cast<__int128_t>(static_cast<__uint128_t>(-1) >> 1);
+  constexpr __int128_t kInt128Min = -kInt128Max - 1;
+
+  if (subject_delta_ == 0 || value == 0) {
+    return 0;
+  }
+  if (value > std::numeric_limits<int64_t>::max() || value < std::numeric_limits<int64_t>::min()) {
+    if (value > kInt128Max / subject_delta_) {
+      return kOverflow;
+    }
+    if (value < kInt128Min / subject_delta_) {
+      return kUnderflow;
+    }
+  }
+
+  __int128_t product = value * subject_delta_;
   __int128_t result;
 
   switch (rounding_mode) {
     case RoundingMode::Truncate:
+      // Round any fractional values toward zero. This is how int division works by default.
       result = product / reference_delta_;
       break;
 
     case RoundingMode::Floor: {
+      // Round any fractional values toward negative infinity.
       // If value is negative, truncation cuts the wrong direction (e.g. -1/2 == 0, we want -1),
       // so round_down represents that adjustment, if needed.
       int round_down = (value < 0 && product % reference_delta_ != 0) ? -1 : 0;
-      result = product / reference_delta_ + round_down;
+      result = (product / reference_delta_) + round_down;
       break;
     }
 
     case RoundingMode::Ceiling: {
+      // Round any fractional values toward positive infinity.
       // As for Floor, but inverted for positive/negative.
       int round_up = (value > 0 && product % reference_delta_ != 0) ? 1 : 0;
-      result = product / reference_delta_ + round_up;
+      result = (product / reference_delta_) + round_up;
       break;
     }
   }
