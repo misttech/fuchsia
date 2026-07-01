@@ -20,7 +20,6 @@ rustc_library("region-alloc") {
     "//sdk/rust/zx-status",
     "//src/lib/kalloc",
     "//src/lib/ksync",
-    "//src/lib/zr",
     "//third_party/rust_crates:pin-init",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]

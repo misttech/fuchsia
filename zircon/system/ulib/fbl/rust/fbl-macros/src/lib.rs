@@ -68,7 +68,7 @@ pub fn ref_counted(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
 
         // Compile-time validation that ref_count is at offset 0
-        ::zr::static_assert!(core::mem::offset_of!(#name, ref_count) == 0);
+        ::fbl::__static_assert!(core::mem::offset_of!(#name, ref_count) == 0);
     };
 
     TokenStream::from(expanded)

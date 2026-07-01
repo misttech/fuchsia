@@ -72,3 +72,6 @@ pub use vector::Vector;
 pub use wavl_tree::{
     Cursor, CursorMut, WavlTree, WavlTreeContainable, WavlTreeKeyable, WavlTreeNode,
 };
+
+#[doc(hidden)]
+pub use zr::static_assert as __static_assert;

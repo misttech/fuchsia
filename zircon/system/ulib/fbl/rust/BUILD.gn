@@ -50,7 +50,6 @@ rustc_library("fbl") {
     "//src/lib/zr",
     "//third_party/rust_crates:pin-init",
   ]
-  public_deps = [ "//src/lib/zr" ]
 }
 
 source_set("test_support") {
