@@ -40,6 +40,19 @@ impl<T: HasRefCount + Recyclable> RefPtr<T> {
         unsafe { RefPtr { ptr: NonNull::new_unchecked(ptr as *mut T) } }
     }
 
+    /// Constructs a `RefPtr` from a raw pointer that has already been adopted, unless the pointer
+    /// is null.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `ptr` is either null or, if not null that:
+    /// - a ref count already acquired.
+    /// - has been allocated in such a way that calling `T::recycle(ptr)` is a correct way to
+    ///   deallocate the pointer.
+    pub unsafe fn try_from_raw(ptr: *const T) -> Option<Self> {
+        NonNull::new(ptr as *mut T).map(|ptr| RefPtr { ptr })
+    }
+
     /// Helper function that allocates a new instance of `T` using `T::allocate` and
     /// returns a `RefPtr` wrapping it.
     ///
@@ -233,6 +246,7 @@ mod tests {
     use super::*;
     use core::ffi::c_void;
     use core::pin::Pin;
+    use core::ptr::null;
     use core::sync::atomic::{AtomicBool, Ordering};
 
     extern crate alloc;
@@ -345,5 +359,11 @@ mod tests {
         };
         let res = RefPtr::try_pin_init(init);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_null_try_from() {
+        let maybe_ref_ptr = unsafe { RefPtr::try_from_raw(null::<TestRustRefCounted>()) };
+        assert!(maybe_ref_ptr.is_none());
     }
 }
