@@ -7,9 +7,11 @@
 
 use async_generator::Yield;
 use fidl_fuchsia_update_installer_ext::{
-    FetchFailureReason, PrepareFailureReason, Progress, StageFailureReason, State, UpdateInfo,
-    UpdateInfoAndProgress,
+    FetchFailureReason, PrepareFailureReason, Progress, StageFailureReason, State, StateId,
+    UpdateInfo, UpdateInfoAndProgress,
 };
+use fuchsia_async as fasync;
+use std::time::Duration;
 
 /// Tracks a numeric goal and the current progress towards that goal, ensuring progress can only go
 /// forwards and never exceeds 100%.
@@ -17,11 +19,20 @@ use fidl_fuchsia_update_installer_ext::{
 struct ProgressTracker {
     goal: u64,
     current: u64,
+    last_reported_fraction: f32,
+    last_reported_time: fasync::BootInstant,
+    last_reported_state_id: Option<StateId>,
 }
 
 impl ProgressTracker {
     fn new(goal: u64) -> Self {
-        Self { goal, current: 0 }
+        Self {
+            goal,
+            current: 0,
+            last_reported_fraction: 0.0,
+            last_reported_time: fasync::BootInstant::INFINITE_PAST,
+            last_reported_state_id: None,
+        }
     }
 
     fn add(&mut self, n: u64) {
@@ -37,6 +48,29 @@ impl ProgressTracker {
 
     fn as_fraction(&self) -> f32 {
         if self.goal == 0 { 1.0 } else { self.current as f32 / self.goal as f32 }
+    }
+
+    /// Yields `state` if enough time or progress has elapsed since the last report,
+    /// or if the goal or state has changed. Updates throttle timestamps when yielding.
+    async fn yield_if_due(&mut self, co: &mut Yield<State>, state: State) {
+        let now = fasync::BootInstant::now();
+        let current_fraction = self.as_fraction();
+        let delta_fraction = current_fraction - self.last_reported_fraction;
+        let elapsed_time = now - self.last_reported_time;
+        let state_id = Some(state.id());
+
+        if self.last_reported_state_id == state_id
+            && !self.done()
+            && delta_fraction < 0.001
+            && elapsed_time < Duration::from_millis(100).into()
+        {
+            return;
+        }
+
+        self.last_reported_fraction = current_fraction;
+        self.last_reported_time = now;
+        self.last_reported_state_id = state_id;
+        co.yield_(state).await;
     }
 }
 
@@ -99,16 +133,15 @@ impl Stage {
         UpdateInfoAndProgress::builder().info(self.info).progress(self.progress()).build()
     }
 
-    /// Increment the progress by `n` and emit a status update.
+    /// Increment the progress by `n` and emit a status update if not throttled.
     pub async fn add_progress(&mut self, co: &mut Yield<State>, n: u64) {
         self.progress.add(n);
-        co.yield_(State::Stage(self.info_progress())).await;
+        self.progress.yield_if_due(co, State::Stage(self.info_progress())).await;
     }
 
     /// Transition to the Fetch state.
-    pub async fn enter_fetch(self, co: &mut Yield<State>) -> Fetch {
-        co.yield_(State::Fetch(self.info_progress())).await;
-
+    pub async fn enter_fetch(mut self, co: &mut Yield<State>) -> Fetch {
+        self.progress.yield_if_due(co, State::Fetch(self.info_progress())).await;
         Fetch { bytes: self.bytes, progress: self.progress }
     }
 
@@ -141,10 +174,10 @@ impl Fetch {
         UpdateInfoAndProgress::builder().info(self.info()).progress(self.progress()).build()
     }
 
-    /// Increment the progress by `n` and emit a status update.
+    /// Increment the progress by `n` and emit a status update if not throttled.
     pub async fn add_progress(&mut self, co: &mut Yield<State>, n: u64) {
         self.progress.add(n);
-        co.yield_(State::Fetch(self.info_progress())).await;
+        self.progress.yield_if_due(co, State::Fetch(self.info_progress())).await;
     }
 
     /// Transition to the Commit state.
@@ -216,6 +249,8 @@ impl WaitToReboot {
 mod tests {
     use super::*;
     use futures::prelude::*;
+    use std::assert_matches;
+    use std::task::Poll;
 
     #[test]
     fn progress_no_goal_is_done() {
@@ -466,6 +501,85 @@ mod tests {
                     .with_stage_reason(StageFailureReason::Internal)
                 ),
             ]
+        );
+    }
+
+    #[test]
+    fn throttling_skips_small_updates_in_short_time() {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+
+        let generator = async_generator::generate(|mut co| async move {
+            let info = UpdateInfo::builder().download_size(0).build();
+            let mut state = Prepare::enter(&mut co).await.enter_stage(&mut co, info, 100_000).await;
+
+            state.add_progress(&mut co, 10).await;
+            state.add_progress(&mut co, 10).await;
+            state.add_progress(&mut co, 1000).await;
+        })
+        .into_yielded();
+        let mut generator = std::pin::pin!(generator);
+
+        assert_matches!(
+            exec.run_until_stalled(&mut generator.next()),
+            Poll::Ready(Some(State::Prepare))
+        );
+        assert_matches!(
+            exec.run_until_stalled(&mut generator.next()),
+            Poll::Ready(Some(State::Stage(uip)))
+                if uip.progress().fraction_completed() == 0.0
+        );
+        assert_matches!(
+            exec.run_until_stalled(&mut generator.next()),
+            Poll::Ready(Some(State::Stage(uip)))
+                if uip.progress().fraction_completed() == 0.0001
+        );
+        assert_matches!(
+            exec.run_until_stalled(&mut generator.next()),
+            Poll::Ready(Some(State::Stage(uip)))
+                if uip.progress().fraction_completed() == 0.0102
+        );
+    }
+
+    #[test]
+    fn throttling_reports_after_time_elapsed() {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+        let (tx, rx) = futures::channel::oneshot::channel();
+
+        let generator = async_generator::generate(|mut co| async move {
+            let info = UpdateInfo::builder().download_size(0).build();
+            let mut state = Prepare::enter(&mut co).await.enter_stage(&mut co, info, 100_000).await;
+
+            state.add_progress(&mut co, 10).await;
+            state.add_progress(&mut co, 10).await;
+            let _ = rx.await;
+            state.add_progress(&mut co, 10).await;
+        })
+        .into_yielded();
+        let mut generator = std::pin::pin!(generator);
+
+        assert_matches!(
+            exec.run_until_stalled(&mut generator.next()),
+            Poll::Ready(Some(State::Prepare))
+        );
+        assert_matches!(
+            exec.run_until_stalled(&mut generator.next()),
+            Poll::Ready(Some(State::Stage(uip)))
+                if uip.progress().fraction_completed() == 0.0
+        );
+        assert_matches!(
+            exec.run_until_stalled(&mut generator.next()),
+            Poll::Ready(Some(State::Stage(uip)))
+                if uip.progress().fraction_completed() == 0.0001
+        );
+        assert_matches!(exec.run_until_stalled(&mut generator.next()), Poll::Pending);
+
+        exec.set_fake_time(exec.now() + Duration::from_millis(100).into());
+        tx.send(()).unwrap();
+
+        assert_matches!(
+            exec.run_until_stalled(&mut generator.next()),
+            Poll::Ready(Some(State::Stage(uip)))
+                if uip.progress().fraction_completed() == 0.0003
         );
     }
 }
