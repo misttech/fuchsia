@@ -931,7 +931,7 @@
     },
     {
         "package": "perfetto/trace_processor_shell/linux-amd64",
-        "version": "git_tag:v56.1",
-        "instance_id": "GxOwQQH-FFk3v7wVZjgYNSrWRbK-N9UqJOc_EmdGaHgC"
+        "version": "git_tag:v57.0",
+        "instance_id": "BOGPuBNfm_oQeLPv2rvvuNhXp9u4cBD0i-osZsC0gbMC"
     }
 ]
