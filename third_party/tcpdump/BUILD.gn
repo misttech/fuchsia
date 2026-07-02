@@ -199,12 +199,6 @@ if (is_fuchsia || is_linux) {
 
     defines = [ "HAVE_CONFIG_H" ]
 
-    # TODO(https://fxbug.dev/524829092): Remove once soft transition upgrade is complete.
-    tcpdump_version = read_file("src/RELEASE_VERSION", "trim string")
-    if (tcpdump_version == "4.99.4") {
-      sources += [ "src/print-otv.c" ]
-    }
-
     if (is_fuchsia) {
       sources += [ "init.cc" ]
     }

@@ -52,10 +52,6 @@
 /* Define to 1 if you have the 'EVP_DecryptInit_ex' function. */
 /* #undef HAVE_EVP_DECRYPTINIT_EX */
 
-/* TODO(https://fxbug.dev/524829092): Remove once soft transition upgrade is complete. */
-/* Define to 1 if you have the <fcntl.h> header file. */
-#define HAVE_FCNTL_H 1
-
 /* Define to 1 if you have the 'fork' function. */
 /* #undef HAVE_FORK */
 
