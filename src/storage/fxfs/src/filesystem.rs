@@ -38,6 +38,12 @@ use std::task::Poll;
 use std::time::{Duration, Instant};
 use storage_device::{Device, DeviceHolder};
 
+#[cfg(test)]
+use crate::test_callback::TestCallback;
+
+#[cfg(test)]
+pub static CALLBACK_BEFORE_COMMIT: TestCallback = TestCallback::new();
+
 pub const MIN_BLOCK_SIZE: u64 = 4096;
 pub const MAX_BLOCK_SIZE: u64 = u16::MAX as u64 + 1;
 
@@ -754,6 +760,10 @@ impl FxFilesystem {
         }
 
         self.maybe_start_flush_task();
+
+        #[cfg(test)]
+        CALLBACK_BEFORE_COMMIT.call();
+
         let _guard = debug_assert_not_too_long!(self.commit_mutex.lock());
         let journal_offset = if self.journal().image_builder_mode().is_some() {
             let journal_checkpoint =

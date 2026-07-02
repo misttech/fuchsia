@@ -98,7 +98,7 @@ const TRANSACTION_MUTATION_THRESHOLD: usize = 200;
 // transaction, T2 flushes and consumes one of the keys.  T1 then commits the transaction. The next
 // time a flush occurs, there's a key ready. If T1 had only ensured there was one key, there'd be no
 // key.
-const CACHED_KEYS_LIMIT: usize = 1;
+const CACHED_KEYS_LIMIT: usize = 2;
 
 // Encrypted files and directories use the fscrypt key (identified by `FSCRYPT_KEY_ID`) to encrypt
 // file contents and filenames respectively. All non-fscrypt encrypted files otherwise default to
@@ -5228,6 +5228,91 @@ mod tests {
         // Commit transaction 2 should FAIL because it tries to top up (since cache size is 1 < 2)
         // and the crypt service is dead.
         assert!(transaction2.commit().await.is_err());
+
+        fs.close().await.expect("Close failed");
+    }
+
+    #[fuchsia::test(threads = 10)]
+    async fn test_key_exhaustion_race() {
+        let fs = test_filesystem().await;
+
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+        let crypt = Arc::new(new_insecure_crypt());
+        let store = root_volume
+            .new_volume(
+                "vol",
+                NewChildStoreOptions {
+                    options: StoreOptions { crypt: Some(crypt.clone()), ..Default::default() },
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("new_volume failed");
+
+        let root_directory =
+            Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
+
+        // Commit a transaction to ensure the store has dirty mutations and needs a flush.
+        let mut transaction = store
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        root_directory
+            .create_child_dir(&mut transaction, "dir")
+            .await
+            .expect("create_child_dir failed");
+        transaction.commit().await.expect("commit failed");
+
+        let fs_clone = fs.clone();
+        let in_hook = Arc::new(Mutex::new(false));
+        let _guard = crate::filesystem::CALLBACK_BEFORE_COMMIT.set(move || {
+            {
+                let mut in_hook = in_hook.lock();
+                if *in_hook {
+                    return;
+                }
+                *in_hook = true;
+            }
+            let fs = fs_clone.clone();
+
+            // Run compaction. Since this hook runs before the next transaction acquires the
+            // commit lock, this compaction will flush the mutations committed above and consume
+            // one cached key.
+            futures::executor::block_on(fs.journal().force_compact()).expect("compact failed");
+        });
+
+        // Start a second transaction. When we commit this transaction, the hook we set up above
+        // will trigger.
+        let mut transaction = store
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        root_directory
+            .create_child_file(&mut transaction, "file1")
+            .await
+            .expect("create_child_file failed");
+
+        // When we commit:
+        // 1. `prepare_commit` runs. It checks the key cache. If the limit is 1, it sees 1 key
+        //    (which is >= the limit), so it does not top up. If the limit is 2, it sees 2 keys
+        //    (which is >= the limit), so it also does not top up.
+        // 2. The hook runs compaction. Compaction flushes the first transaction's mutations,
+        //    consuming one cached key.
+        // 3. This transaction commits. The store is marked as needing a flush. If the limit was
+        //    1, the cache is now empty. If the limit was 2, the cache has 1 key left.
+        transaction.commit().await.expect("commit failed");
+
+        // Run compaction again. It will try to flush the second transaction's mutations.
+        // If the limit is 1, this will fail because the cache is empty.
+        // If the limit is 2, `prepare_commit` would have topped up the cache to 2 keys, so
+        // compaction would have left 1 key, and this compaction will succeed.
+        fs.journal().force_compact().await.expect("compaction failed");
 
         fs.close().await.expect("Close failed");
     }

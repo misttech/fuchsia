@@ -58,7 +58,7 @@ const SPARE_SIZE: u64 = TRANSACTION_METADATA_MAX_AMOUNT;
 // change the kernel state in between them. These two callbacks allow us to place actions between
 // the atomic steps in order to coerce whatever ordering we want.
 #[cfg(test)]
-use crate::fuchsia::testing::TestCallback;
+use fxfs::test_callback::TestCallback;
 #[cfg(test)]
 static CALLBACK_BEFORE_RANGE_COLLECTION: TestCallback = TestCallback::new();
 #[cfg(test)]

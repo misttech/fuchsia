@@ -13,7 +13,6 @@ use anyhow::{Context, Error};
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_memorypressure::WatcherProxy;
-use fuchsia_sync::Mutex;
 use fxfs::filesystem::{FxFilesystem, FxFilesystemBuilder, OpenFxFilesystem, PreCommitHook};
 use fxfs::fsck::errors::FsckIssue;
 use fxfs::fsck::{FsckOptions, fsck_volume_with_options, fsck_with_options};
@@ -333,45 +332,6 @@ impl TestFixture {
 impl Drop for TestFixture {
     fn drop(&mut self) {
         assert!(self.state.is_none(), "Did you forget to call TestFixture::close?");
-    }
-}
-
-pub struct TestCallback(Mutex<Option<Arc<dyn Fn() + Send + Sync>>>);
-pub struct TestCallbackGuard(&'static TestCallback);
-
-impl Drop for TestCallbackGuard {
-    fn drop(&mut self) {
-        *self.0.0.lock() = None;
-    }
-}
-
-impl TestCallback {
-    pub const fn new() -> Self {
-        Self(Mutex::new(None))
-    }
-
-    /// Returns a guard that invalidates this callback and releases the resources when dropped.
-    pub fn set<F>(&'static self, callback: F) -> TestCallbackGuard
-    where
-        F: Fn() + Send + Sync + 'static,
-    {
-        let arc: Arc<dyn Fn() + Send + Sync> = Arc::new(callback);
-        {
-            let mut inner = self.0.lock();
-            assert!(inner.is_none(), "Resetting TestCallback without dropping old guard.");
-            *inner = Some(arc.clone());
-        }
-        TestCallbackGuard(&self)
-    }
-
-    pub fn call(&self) {
-        let cb = self.0.lock().as_ref().map(|cb| cb.clone());
-        // Call the callback outside the lock. This isn't really a race though, since just calling
-        // the callback doesn't ensure that any action will actually be done inside it, and this
-        // delay to calling the callback is impossible to differentiate from that delay.
-        if let Some(cb) = cb {
-            cb();
-        }
     }
 }
 
