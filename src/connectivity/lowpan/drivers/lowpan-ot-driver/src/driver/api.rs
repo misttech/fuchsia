@@ -821,20 +821,20 @@ where
         })?;
 
         if !dataset.is_complete() {
-            warn!(tag = "api"; "attach_all_nodes_to: Given dataset not complete: {:?}", dataset);
+            warn!(tag = "api"; "attach_all_nodes_to: Given dataset not complete");
+            debug!(tag = "api"; "attach_all_nodes_to: Dataset: {:?}", dataset);
             return Err(ZxStatus::INVALID_ARGS);
         }
 
         if dataset.get_pending_timestamp().is_some() {
-            warn!(
-                tag = "api";
-                "attach_all_nodes_to: Dataset contains pending timestamp: {:?}", dataset
-            );
+            warn!(tag = "api"; "attach_all_nodes_to: Dataset contains pending timestamp");
+            debug!(tag = "api"; "attach_all_nodes_to: Dataset: {:?}", dataset);
             return Err(ZxStatus::INVALID_ARGS);
         }
 
         if dataset.get_delay().is_some() {
-            warn!(tag = "api"; "attach_all_nodes_to: Dataset contains delay timer: {:?}", dataset);
+            warn!(tag = "api"; "attach_all_nodes_to: Dataset contains delay timer");
+            debug!(tag = "api"; "attach_all_nodes_to: Dataset: {:?}", dataset);
             return Err(ZxStatus::INVALID_ARGS);
         }
 
