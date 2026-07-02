@@ -12,7 +12,7 @@
         {
             type: "skip",
             matchers: [
-                // Flaky test.
+                // TODO(https://fxbug.dev/530314562): Flakey only in CI, root cause unknown.
                 "LocalSocketTest.smoke",
 
                 // TODO(https://fxbug.dev/445433238): Connect syscall to a vsock not supported.
