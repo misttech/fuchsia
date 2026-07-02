@@ -1086,8 +1086,6 @@
                 "FlockTest.TestSharedLockFailExclusiveHolderBlocking",
                 "FlockTest.TestExclusiveLockFailExclusiveHolderBlocking",
 
-                // TODO(https://fxbug.dev/42056557): Re-enable once flake is resolved.
-                "Waiters/WaitSpecificChildTest.MultipleForkOutOfOrder/*",
 
                 // TODO(https://fxbug.dev/42071800): Re-enable once flake is resolved.
                 "SharedPrivate/PrivateAndSharedFutexTest.Wait_BitsetTimeout/*",
