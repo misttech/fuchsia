@@ -505,7 +505,7 @@
     <project name="third_party/github.com/the-tcpdump-group/tcpdump"
              path="third_party/tcpdump/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/the-tcpdump-group/tcpdump"
-             revision="f4fc0ad5d17e75a1bb3e028ddb6221c8ac5a5cba"/>
+             revision="7d5f6e526733c542732edcb6d27d9555bf876d99"/>
     <project name="third_party/tink"
              path="third_party/tink"
              remote="https://fuchsia.googlesource.com/third_party/tink"
