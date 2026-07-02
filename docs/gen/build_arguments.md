@@ -946,7 +946,7 @@ This should never be set as a build argument.
 }
   aarch64_unknown_linux_gnu = {
   libclang_rt_profile_a = "lib/clang/23/lib/aarch64-unknown-linux-gnu/libclang_rt.profile.a"
-  libunwind_so = "../../../../out/not-default/libunwind.so"
+  libunwind_so = ""
   resource_dir = "lib/clang/23"
   variants = {
   asan = {
@@ -1021,7 +1021,7 @@ This should never be set as a build argument.
 }
   lsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
@@ -4275,7 +4275,16 @@ enabled.
 
 **Current value (from the default):** `false`
 
-From //build/assembly/tools/assembly/BUILD.gn:21
+From //build/assembly/tools/assembly/BUILD.gn:25
+
+### experimental_sched_enabled
+
+If true, experimental scheduler changes will be enabled. Currently this
+just includes non-critical thread profiles for input.
+
+**Current value (from the default):** `false`
+
+From //build/assembly/tools/assembly/BUILD.gn:20
 
 ### experimental_thread_sampler_enabled
 
@@ -9835,7 +9844,7 @@ From //sdk/lib/c/libc.gni:21
 Temporary flag to switch GN compilation rules between the old and new
 protobuf source repository versions.
 
-**Current value (from the default):** `false`
+**Current value (from the default):** `true`
 
 From //build/config/protobuf.gni:8
 
