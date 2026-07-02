@@ -202,7 +202,7 @@ Flatland::Flatland(std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
       register_touch_source_(std::move(register_touch_source)),
       register_mouse_source_(std::move(register_mouse_source)),
       config_(config),
-      main_thread_executor_(async_get_default_dispatcher()) {
+      executor_(dispatcher_holder_->dispatcher()) {
   FX_DCHECK(flatland_presenter_);
 
   FX_LOGS(INFO) << "Flatland NEW session_id=" << session_id_;
@@ -1464,7 +1464,7 @@ void Flatland::CreateImage(ContentId image_id,
             CloseConnection(FlatlandError::kBadOperation);
             return fpromise::error();
           });
-  main_thread_executor_.schedule_task(std::move(join_promise));
+  executor_.schedule_task(std::move(join_promise));
 }
 
 void Flatland::SetImageSampleRegion(SetImageSampleRegionRequest& request,

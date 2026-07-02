@@ -27,6 +27,8 @@ enum class BufferCollectionUsage { kClientImage, kRenderTarget, kReadback };
 // that would like to also have access to the collection and set their own constraints. This
 // interface allows Flatland to remain agnostic as to the implementation details of a buffer
 // collection consumer.
+//
+// NOTE: Implementations of BufferCollectionImporter must be thread-safe.
 class BufferCollectionImporter {
  public:
   // Allows the service to set its own constraints on the buffer collection. Must be set before
