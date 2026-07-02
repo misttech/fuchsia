@@ -70,6 +70,13 @@ TEST_F(LogParserTest, Module) {
   ProcessOneLine("context2: {{{module:0x5:libc.so:elf:8ce60b:unnecessary_content}}}");
   EXPECT_CALL(symbolizer_, Module(3, "", "8ce60b"));
   ProcessOneLine("context3: {{{module:0x3::elf:8ce60b}}}");
+  EXPECT_CALL(symbolizer_, Module(4, "<VMO#16651=bootfs:blob/29c1ed67...>", "cd01d7d47fe..."));
+  ProcessOneLine(
+      "context5: {{{module:0x4:<VMO#16651=bootfs:blob/29c1ed67...>:elf:cd01d7d47fe...}}}");
+  EXPECT_CALL(symbolizer_, Module(6, "<VMO#16651=bootfs:blob/29c1ed67...>", "cd01d7d47fe..."));
+  ProcessOneLine(
+      "context6: "
+      "{{{module:0x6:<VMO#16651=bootfs:blob/29c1ed67...>:elf:cd01d7d47fe...:unnecessary_stuff}}}");
   ASSERT_EQ(output_.str(), "");
   EXPECT_CALL(symbolizer_, Module).Times(0);
   ProcessOneLine("context4: {{{module:0x5:libc.so:not_elf:8ce60b}}}");

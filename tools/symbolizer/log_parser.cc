@@ -24,6 +24,8 @@ namespace {
 constexpr std::string_view kDartStackTraceMagic =
     "*** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***";
 
+constexpr std::string_view kElfTypeDelimiter = ":elf:";
+
 // Converts the string in dec or hex into an integer. Returns whether the conversion is complete.
 template <typename int_t>
 bool ParseInt(std::string_view string, int_t &i, int base = 10) {
@@ -101,15 +103,32 @@ bool LogParser::ProcessMarkup(std::string_view markup, Symbolizer::StringOutputF
   }
 
   if (tag == "module") {
-    // module:0x{id}:{name}:elf:{build_id}
-    if (splitted.size() < 5)
+    // module:0x{id}:{name}:elf:{build_id}(:extra)*
+    size_t first_colon = markup.find(':');
+    if (first_colon == std::string_view::npos)
+      return false;
+    size_t second_colon = markup.find(':', first_colon + 1);
+    if (second_colon == std::string_view::npos)
       return false;
 
+    std::string_view id_str = markup.substr(first_colon + 1, second_colon - first_colon - 1);
     uint64_t id;
-    if (!ParseInt(splitted[1], id) || splitted[3] != "elf")
+    if (!ParseInt(id_str, id))
       return false;
 
-    symbolizer_->Module(id, splitted[2], splitted[4]);
+    std::string_view rest = markup.substr(second_colon + 1);
+    size_t elf_pos = rest.rfind(kElfTypeDelimiter);
+    if (elf_pos == std::string_view::npos)
+      return false;
+
+    std::string_view name = rest.substr(0, elf_pos);
+    std::string_view after_elf = rest.substr(elf_pos + kElfTypeDelimiter.size());
+
+    size_t next_colon = after_elf.find(':');
+    std::string_view build_id =
+        (next_colon == std::string_view::npos) ? after_elf : after_elf.substr(0, next_colon);
+
+    symbolizer_->Module(id, name, build_id);
     return true;
   }
 
