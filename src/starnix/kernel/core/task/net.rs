@@ -6,7 +6,7 @@ use crate::device::kobject::Device;
 use crate::task::Kernel;
 use crate::task::waiter::WaitQueue;
 use crate::vfs::{FsStr, FsString};
-use starnix_sync::Mutex;
+use starnix_sync::{LockDepMutex, NetstackDevicesLock};
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
 use std::sync::atomic::AtomicBool;
@@ -21,7 +21,7 @@ pub struct NetstackDevice {
 #[derive(Default)]
 pub struct NetstackDevices {
     /// The known netstack devices.
-    devices: Mutex<BTreeMap<FsString, NetstackDevice>>,
+    devices: LockDepMutex<BTreeMap<FsString, NetstackDevice>, NetstackDevicesLock>,
     /// `NetstackDevices` listens for events from the netlink worker, which
     /// is initialized lazily and asynchronously. This waits for at least
     /// the `Idle` event is observed on the interface watcher.

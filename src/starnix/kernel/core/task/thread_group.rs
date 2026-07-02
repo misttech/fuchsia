@@ -25,8 +25,10 @@ use macro_rules_attribute::apply;
 use starnix_lifecycle::{AtomicCounter, DropNotifier};
 use starnix_logging::{log_debug, log_error, log_info, log_warn, track_stub};
 use starnix_sync::{
-    LockBefore, LockDepMutex, Locked, OrderedMutex, ProcessGroupState, RwLock, RwLockWriteGuard,
-    ThreadGroupLimits, ThreadGroupPendingSignalsLock, ThreadGroupPtraceesLock, Unlocked,
+    LockBefore, LockDepMutex, LockDepRwLock, Locked, OrderedMutex, ProcessGroupState,
+    RwLockWriteGuard, ThreadGroupLimits, ThreadGroupMutableStateLock,
+    ThreadGroupPendingSignalsLock, ThreadGroupPtraceesLock, Unlocked, allow_subclass,
+    ordered_write_lock,
 };
 use starnix_task_command::TaskCommand;
 use starnix_types::ownership::{OwnedRef, Releasable};
@@ -141,11 +143,11 @@ pub struct DeferredZombiePTracer {
 }
 
 impl DeferredZombiePTracer {
-    fn new(tracer: &ThreadGroup, tracee: &Task) -> Self {
+    fn new(tracer: &ThreadGroup, tracee: &Task, tracee_pgid: pid_t) -> Self {
         Self {
             tracer_thread_group_key: tracer.into(),
             tracee_tid: tracee.tid,
-            tracee_pgid: tracee.thread_group().read().process_group.leader,
+            tracee_pgid,
             tracee_thread_group_key: tracee.thread_group_key.clone(),
         }
     }
@@ -298,7 +300,7 @@ pub struct ThreadGroup {
     stop_state: AtomicStopState,
 
     /// The mutable state of the ThreadGroup.
-    mutable_state: RwLock<ThreadGroupMutableState>,
+    mutable_state: LockDepRwLock<ThreadGroupMutableState, ThreadGroupMutableStateLock>,
 
     /// The resource limits for this thread group.  This is outside mutable_state
     /// to avoid deadlocks where the thread_group lock is held when acquiring
@@ -749,7 +751,7 @@ impl ThreadGroup {
                 pending_signals: Default::default(),
                 has_pending_signals: Default::default(),
                 start_time: zx::MonotonicInstant::get(),
-                mutable_state: RwLock::new(ThreadGroupMutableState {
+                mutable_state: LockDepRwLock::new(ThreadGroupMutableState {
                     parent: parent
                         .as_ref()
                         .map(|p| ThreadGroupParent::new(p.base.weak_self.clone())),
@@ -949,9 +951,18 @@ impl ThreadGroup {
                     let reaper = reaper.upgrade();
                     {
                         let mut reaper_state = reaper.write();
+                        // This allow_subclass is safe because we lock the reaper (an ancestor)
+                        // before locking `self` and its children. Lock ordering follows
+                        // strictly top-down traversal in the process tree, avoiding cycles.
+                        let _token = allow_subclass();
                         let mut state = self.write();
                         for (_pid, weak_child) in std::mem::take(&mut state.children) {
                             if let Some(child) = weak_child.upgrade() {
+                                // This allow_subclass is safe because we lock the reaper (an
+                                // ancestor) before locking `self` and its children. Lock ordering
+                                // follows strictly top-down traversal in the process tree, avoiding
+                                // cycles.
+                                let _token = allow_subclass();
                                 let mut child_state = child.write();
 
                                 child_state.exit_signal = Some(SIGCHLD);
@@ -1063,10 +1074,13 @@ impl ThreadGroup {
                 // the notification.
                 {
                     // Tell the parent to expect a notification later.
+                    let tracee_pgid = tracee.thread_group().read().process_group.leader;
                     let mut parent_state = parent.write();
-                    parent_state
-                        .deferred_zombie_ptracers
-                        .push(DeferredZombiePTracer::new(self, tracee));
+                    parent_state.deferred_zombie_ptracers.push(DeferredZombiePTracer::new(
+                        self,
+                        tracee,
+                        tracee_pgid,
+                    ));
                     parent_state.children.remove(&tracee.get_pid());
                 }
                 // Tell the tracer that there is a notification pending.
@@ -1380,7 +1394,24 @@ impl ThreadGroup {
         let state = self.read();
         let process_group = &state.process_group;
         let mut terminal_state = terminal.write();
-        let mut session_writer = process_group.session.write();
+
+        // It might be necessary to lock the existing session, to steal the terminal
+        // for it. Because of ordering requirement, it must be locked now.
+        let other_session = terminal_state.controller.as_ref().and_then(|cs| cs.session.upgrade());
+        let (mut session_writer, other_session) =
+            if let Some(other_session) = other_session.as_ref() {
+                if *other_session == process_group.session {
+                    (process_group.session.mutable_state.write(), None)
+                } else {
+                    let (session_writer, other_session_writer) = ordered_write_lock(
+                        &process_group.session.mutable_state,
+                        &other_session.mutable_state,
+                    );
+                    (session_writer, Some((other_session, other_session_writer)))
+                }
+            } else {
+                (process_group.session.mutable_state.write(), None)
+            };
 
         // "The calling process must be a session leader and not have a
         // controlling terminal already." - tty_ioctl(4)
@@ -1397,19 +1428,16 @@ impl ThreadGroup {
         // has the CAP_SYS_ADMIN capability and arg equals 1, in which case the
         // terminal is stolen, and all processes that had it as controlling
         // terminal lose it." - tty_ioctl(4)
-        if let Some(other_session) =
-            terminal_state.controller.as_ref().and_then(|cs| cs.session.upgrade())
-        {
-            if other_session != process_group.session {
-                if !steal {
-                    return error!(EPERM);
-                }
-                security::check_task_capable(current_task, CAP_SYS_ADMIN)?;
-                has_admin_capability_determined = true;
-
-                // Steal the TTY away. Unlike TIOCNOTTY, don't send signals.
-                other_session.write().controlling_terminal = None;
+        if let Some((other_session, mut other_session_writer)) = other_session {
+            debug_assert!(*other_session != process_group.session);
+            if !steal {
+                return error!(EPERM);
             }
+            security::check_task_capable(current_task, CAP_SYS_ADMIN)?;
+            has_admin_capability_determined = true;
+
+            // Steal the TTY away. Unlike TIOCNOTTY, don't send signals.
+            other_session_writer.controlling_terminal = None;
         }
 
         if !is_readable && !has_admin_capability_determined {
@@ -2091,6 +2119,10 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
             ProcessSelector::Any => true,
             ProcessSelector::Pid(pid) => child.leader == pid,
             ProcessSelector::Pgid(pgid) => {
+                // This allow_subclass is safe because the lock is being acquired
+                // in a strictly top-down traversal of the ThreadGroup tree (from parent
+                // to child), so no lock ordering cycles can be formed.
+                let _token = allow_subclass();
                 pids.get_process_group(pgid).as_ref() == Some(&child.read().process_group)
             }
             ProcessSelector::Process(ref key) => *key == ThreadGroupKey::from(child),
@@ -2101,6 +2133,10 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
             if options.wait_for_all {
                 return true;
             }
+            // This allow_subclass is safe because the lock is being acquired
+            // in a strictly top-down traversal of the ThreadGroup tree (from parent
+            // to child), so no lock ordering cycles can be formed.
+            let _token = allow_subclass();
             Self::is_correct_exit_signal(options.wait_for_clone, child.read().exit_signal)
         };
 
@@ -2127,6 +2163,10 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
             return WaitableChildResult::NoneFound;
         }
         for child in selected_children {
+            // This allow_subclass is safe because the lock is being acquired
+            // in a strictly top-down traversal of the ThreadGroup tree (from parent
+            // to child), so no lock ordering cycles can be formed.
+            let _token = allow_subclass();
             let child = child.write();
             if child.last_signal.is_some() {
                 let build_wait_result = |mut child: ThreadGroupWriteGuard<'_>,

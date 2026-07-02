@@ -12,7 +12,10 @@ use crate::vfs::{
 };
 use itertools::Itertools;
 use starnix_logging::log_warn;
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
+use starnix_sync::{
+    EpollStateLock, EpollWaitableStateLock, FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked,
+    allow_subclass,
+};
 use starnix_uapi::error;
 use starnix_uapi::errors::{EINTR, ETIMEDOUT, Errno};
 use starnix_uapi::open_flags::OpenFlags;
@@ -57,8 +60,11 @@ pub type EpollKey = usize;
 pub struct EpollFileObject {
     waiter: Waiter,
     /// Mutable state of this epoll object.
-    state: Mutex<EpollState>,
-    waitable_state: Arc<Mutex<EpollWaitableState>>,
+    state: LockDepMutex<EpollState, EpollStateLock>,
+    waitable_state: Arc<LockDepMutex<EpollWaitableState, EpollWaitableStateLock>>,
+    /// A list of waiters waiting for events from this
+    /// epoll instance.
+    waiters: Arc<WaitQueue>,
 }
 
 #[derive(Default)]
@@ -87,9 +93,6 @@ struct EpollWaitableState {
     /// trigger_list is a FIFO of events that have
     /// happened, but have not yet been processed.
     trigger_list: VecDeque<ReadyItem>,
-    /// A list of waiters waiting for events from this
-    /// epoll instance.
-    waiters: WaitQueue,
 }
 
 impl EpollFileObject {
@@ -138,7 +141,12 @@ impl EpollFileObject {
         L: LockEqualOrBefore<FileOpsCore>,
     {
         let Some(target) = wait_object.target() else { return Ok(()) };
-        let events = target.query_events(locked, current_task)?;
+        let events = {
+            // Target might be itself an epoll object. Because there is no loop,
+            // this allow_subclass is safe.
+            let _token = allow_subclass();
+            target.query_events(locked, current_task)?
+        };
         if !(events & wait_object.events).is_empty() {
             self.waiter.wake_immediately(events, self.new_wait_handler(key));
             if let Some(wait_canceler) = wait_object.wait_canceler.take() {
@@ -196,6 +204,8 @@ impl EpollFileObject {
             if Arc::ptr_eq(&child, parent) {
                 return error!(ELOOP);
             }
+            // Child is not part of a loop, so subclassing is safe.
+            let _token = allow_subclass();
             child_file.check_eloop(parent, depth_left - 1)?;
         }
 
@@ -327,10 +337,13 @@ impl EpollFileObject {
                     // out from under us. If this happens it is not an error: ignore it and
                     // continue.
                     if let Some(target) = wait.target.upgrade() {
-                        let ready = ReadyItem {
-                            key: pending.key,
-                            events: target.query_events(locked, current_task)?,
+                        let events = {
+                            // Target might be itself an epoll object. Because there is no loop,
+                            // this allow_subclass is safe.
+                            let _token = allow_subclass();
+                            target.query_events(locked, current_task)?
                         };
+                        let ready = ReadyItem { key: pending.key, events };
                         if ready.events.intersects(wait.events) {
                             pending_list.push(ready);
                         } else {
@@ -493,7 +506,7 @@ impl FileOps for EpollFileObject {
         events: FdEvents,
         handler: EventHandler,
     ) -> Option<WaitCanceler> {
-        Some(self.waitable_state.lock().waiters.wait_async_fd_events(waiter, events, handler))
+        Some(self.waiters.wait_async_fd_events(waiter, events, handler))
     }
 
     fn query_events(
@@ -509,8 +522,11 @@ impl FileOps for EpollFileObject {
             events |= FdEvents::POLLIN;
         } else {
             for key in &state.recheck_list {
-                let wait_object = state.wait_objects.get(&key).unwrap();
+                let wait_object = state.wait_objects.get(key).unwrap();
                 let Some(target) = wait_object.target() else { continue };
+                // Target might be itself an epoll object. Because there is no loop,
+                // this allow_subclass is safe.
+                let _token = allow_subclass();
                 if !(target.query_events(locked, current_task)? & wait_object.events).is_empty() {
                     events |= FdEvents::POLLIN;
                     break;
@@ -540,14 +556,17 @@ impl FileOps for EpollFileObject {
 #[derive(Clone)]
 pub struct EpollEventHandler {
     key: ReadyItemKey,
-    waitable_state: Arc<Mutex<EpollWaitableState>>,
+    waitable_state: Arc<LockDepMutex<EpollWaitableState, EpollWaitableStateLock>>,
+    waiters: Arc<WaitQueue>,
 }
 
 impl EpollEventHandler {
     pub fn handle(self, events: FdEvents) {
-        let mut waitable_state = self.waitable_state.lock();
-        waitable_state.trigger_list.push_back(ReadyItem { key: self.key, events });
-        waitable_state.waiters.notify_fd_events(FdEvents::POLLIN);
+        {
+            let mut waitable_state = self.waitable_state.lock();
+            waitable_state.trigger_list.push_back(ReadyItem { key: self.key, events });
+        }
+        self.waiters.notify_fd_events(FdEvents::POLLIN);
     }
 }
 
@@ -556,6 +575,7 @@ impl EpollFileObject {
         EventHandler::Epoll(EpollEventHandler {
             key,
             waitable_state: Arc::clone(&self.waitable_state),
+            waiters: Arc::clone(&self.waiters),
         })
     }
 }
@@ -938,7 +958,7 @@ mod tests {
 
             std::mem::drop(event);
 
-            assert!(epoll_file.waitable_state.lock().waiters.is_empty());
+            assert!(epoll_file.waiters.is_empty());
         })
         .await;
     }

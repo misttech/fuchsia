@@ -30,7 +30,9 @@ use starnix_core::vfs::{
 };
 use starnix_core::{security, signals};
 use starnix_logging::{log_debug, log_error, log_info, log_warn};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
+use starnix_sync::{
+    ComponentMountRecordLock, FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, Unlocked,
+};
 use starnix_task_command::TaskCommand;
 use starnix_uapi::auth::{Capabilities, Credentials};
 use starnix_uapi::device_id::DeviceId;
@@ -141,7 +143,8 @@ pub async fn start_component(
             )?;
             let pkg_path = format!("{component_path}/pkg");
 
-            let mount_record = Arc::new(Mutex::new(MountRecord::default()));
+            let mount_record =
+                Arc::new(LockDepMutex::<_, ComponentMountRecordLock>::new(MountRecord::default()));
 
             let ns = start_info.ns.take().ok_or_else(|| anyhow!("Missing namespace"))?;
 

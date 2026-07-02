@@ -4,7 +4,7 @@
 
 use crate::task::{Kernel, PidTable};
 use starnix_logging::{log_debug, log_error, log_info};
-use starnix_sync::RwLock;
+use starnix_sync::LockDepRwLock;
 use starnix_uapi::{pid_t, tid_t};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -18,7 +18,8 @@ pub struct KoidPair {
 }
 
 /// The Linux pid/tid to Koid map is a thread safe hashmap.
-pub type PidToKoidMap = Arc<RwLock<HashMap<tid_t, KoidPair>>>;
+pub type PidToKoidMap =
+    Arc<LockDepRwLock<HashMap<tid_t, KoidPair>, starnix_sync::PidToKoidMapInnerLock>>;
 
 pub struct TracePerformanceEventManager {
     // This is the map of pid/tid to koid where the tuple is the process koid, thread koid.

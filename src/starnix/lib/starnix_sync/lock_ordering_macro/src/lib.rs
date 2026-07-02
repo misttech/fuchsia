@@ -93,12 +93,13 @@ fn build_lock_graph(
         }
         all_paths.insert(Edge { from: p.clone(), to: current.clone() });
     }
-    let node = current.clone();
-    past.push(node);
-    for id in &adj_list[current] {
-        build_lock_graph(&id, past, adj_list, all_paths)
+    if let Some(adjacents) = adj_list.get(current) {
+        past.push(current.clone());
+        for id in adjacents {
+            build_lock_graph(&id, past, adj_list, all_paths)
+        }
+        past.pop();
     }
-    past.pop();
 }
 
 /// This macro takes a definition of the lock ordering graph in the form of

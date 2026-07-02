@@ -67,20 +67,23 @@ pub type PipeHandle = Arc<Mutex<Pipe>>;
 
 impl Pipe {
     pub fn new(default_pipe_capacity: usize) -> PipeHandle {
-        Arc::new(Mutex::new(Pipe {
-            messages: MessageQueue::new(default_pipe_capacity),
-            waiters: WaitQueue::default(),
-            reader_count: 0,
-            had_reader: false,
-            writer_count: 0,
-            had_writer: false,
-        }))
+        Arc::new(
+            Pipe {
+                messages: MessageQueue::new(default_pipe_capacity),
+                waiters: WaitQueue::default(),
+                reader_count: 0,
+                had_reader: false,
+                writer_count: 0,
+                had_writer: false,
+            }
+            .into(),
+        )
     }
 
     pub fn open(
         locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
-        pipe: &Arc<Mutex<Self>>,
+        pipe: &PipeHandle,
         flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
         let mut events = FdEvents::empty();
@@ -475,7 +478,7 @@ pub fn register_pipe_fs(fs_registry: &FsRegistry) {
 }
 
 pub struct PipeFileObject {
-    pipe: Arc<Mutex<Pipe>>,
+    pipe: PipeHandle,
 }
 
 impl FileOps for PipeFileObject {

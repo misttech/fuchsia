@@ -20,7 +20,7 @@ use netlink_packet_generic::ctrl::{GenlCtrl, GenlCtrlCmd};
 use netlink_packet_generic::{GenlHeader, GenlMessage};
 use netlink_packet_utils::Emitable;
 use starnix_logging::track_stub;
-use starnix_sync::Mutex;
+use starnix_sync::{GenericNetlinkServerStateLock, LockDepMutex};
 use std::collections::{HashMap, HashSet};
 use std::num::NonZero;
 use std::ops::DerefMut;
@@ -316,12 +316,14 @@ impl<S: Sender<GenericMessage>> GenericNetlinkServerState<S> {
 /// Coordinates all generic netlink clients and families.
 #[derive(Clone)]
 struct GenericNetlinkServer<S> {
-    state: Arc<Mutex<GenericNetlinkServerState<S>>>,
+    state: Arc<LockDepMutex<GenericNetlinkServerState<S>, GenericNetlinkServerStateLock>>,
 }
 
 impl<S: Sender<GenericMessage>> GenericNetlinkServer<S> {
     fn new(new_family_sender: mpsc::UnboundedSender<Arc<dyn GenericNetlinkFamily<S>>>) -> Self {
-        Self { state: Arc::new(Mutex::new(GenericNetlinkServerState::new(new_family_sender))) }
+        Self {
+            state: Arc::new(LockDepMutex::new(GenericNetlinkServerState::new(new_family_sender))),
+        }
     }
 
     async fn handle_generic_message(
@@ -543,7 +545,7 @@ mod test_utils {
 
     #[derive(Clone)]
     pub(crate) struct TestSender<M> {
-        pub messages: Arc<Mutex<Vec<NetlinkMessage<M>>>>,
+        pub messages: Arc<starnix_sync::Mutex<Vec<NetlinkMessage<M>>>>,
     }
 
     impl<M: Clone + NetlinkSerializable + Send + Sync> Sender<M> for TestSender<M> {
@@ -587,7 +589,7 @@ mod tests {
     }
 
     struct TestFamily {
-        messages_to_server: Mutex<Vec<Vec<u8>>>,
+        messages_to_server: starnix_sync::Mutex<Vec<Vec<u8>>>,
         multicast_message_sinks: RcuHashMap<
             String,
             mpsc::UnboundedSender<NetlinkMessage<GenericMessage>>,
@@ -598,7 +600,7 @@ mod tests {
     impl Default for TestFamily {
         fn default() -> Self {
             Self {
-                messages_to_server: Mutex::default(),
+                messages_to_server: starnix_sync::Mutex::default(),
                 multicast_message_sinks: RcuHashMap::with_hasher(
                     std::collections::hash_map::RandomState::new(),
                 ),
@@ -656,11 +658,11 @@ mod tests {
     fn new_client(
         netlink: &GenericNetlink<TestSender<GenericMessage>>,
     ) -> (
-        Arc<Mutex<Vec<NetlinkMessage<GenericMessage>>>>,
+        Arc<starnix_sync::Mutex<Vec<NetlinkMessage<GenericMessage>>>>,
         mpsc::UnboundedSender<NetlinkMessage<GenericMessage>>,
         GenericNetlinkClientHandle<TestSender<GenericMessage>>,
     ) {
-        let messages_to_client = Arc::new(Mutex::new(vec![]));
+        let messages_to_client = Arc::new(starnix_sync::Mutex::new(vec![]));
         let (netlink_sender, receiver) = mpsc::unbounded();
         let sender = TestSender { messages: messages_to_client.clone() };
         let client_handle =

@@ -32,7 +32,7 @@ use starnix_lifecycle::DropNotifier;
 use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, log_error, log_warn, track_stub};
 use starnix_sync::{
     LockBefore, Locked, MmDumpable, OrderedMutex, RwLock, RwLockWriteGuard, ThreadGroupLimits,
-    Unlocked, UserFaultInner,
+    Unlocked, UserFaultInner, ordered_write_lock,
 };
 use starnix_types::arch::ArchWidth;
 use starnix_types::futex_address::FutexAddress;
@@ -3163,7 +3163,7 @@ pub struct MemoryManager {
     /// For details on why we need to keep track of in-flight vmspliced payloads,
     /// see [`VmsplicePayload`].
     ///
-    /// For details on why this isn't under the `RwLock` protected `MemoryManagerState`,
+    /// For details on why this isn't under the `LockDepRwLock` protected `MemoryManagerState`,
     /// See [`InflightVmsplicedPayloads::payloads`].
     pub inflight_vmspliced_payloads: InflightVmsplicedPayloads,
 
@@ -3307,7 +3307,7 @@ impl MemoryManager {
                 private_anonymous: private_anonymous
                     .unwrap_or_else(|| PrivateAnonymousMemoryManager::new(backing_size)),
             },
-            state: RwLock::new(MemoryManagerState {
+            state: MemoryManagerState {
                 mappings: Default::default(),
                 userfaultfds: Default::default(),
                 shadow_mappings_for_mlock: Default::default(),
@@ -3317,7 +3317,8 @@ impl MemoryManager {
                     mmap_top,
                     ..Default::default()
                 },
-            }),
+            }
+            .into(),
             // TODO(security): Reset to DISABLE, or the value in the fs.suid_dumpable sysctl, under
             // certain conditions as specified in the prctl(2) man page.
             dumpable: OrderedMutex::new(DumpPolicy::User),
@@ -3567,8 +3568,7 @@ impl MemoryManager {
         // Hold the lock throughout the operation to uphold memory manager's invariants.
         // See mm/README.md.
         {
-            let state: &mut MemoryManagerState = &mut source_mm.state.write();
-            let mut target_state = target.state.write();
+            let (state, mut target_state) = ordered_write_lock(&source_mm.state, &target.state);
             debug_assert_eq!(
                 source_mm.mapping_context.user_vmar_info,
                 target.mapping_context.user_vmar_info

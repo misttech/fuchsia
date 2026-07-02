@@ -148,7 +148,7 @@
 //! }
 //! ```
 
-use starnix_sync::{MutexGuard, RwLockReadGuard, RwLockWriteGuard};
+use starnix_sync::{LockDepReadGuard, LockDepWriteGuard, MutexGuard};
 use std::ops::{Deref, DerefMut};
 
 /// Create the read() and write() accessor to respectively access the read guard and write guard.
@@ -179,17 +179,17 @@ macro_rules! state_accessor {
 /// For a base struct named `Foo`, the read guard will be a struct named `FooReadGuard` and the
 /// write guard a struct named `FooWriteGuard`.
 macro_rules! ordered_state_accessor {
-    ($base_name:ident, $field_name:ident, $base_type:ty, $lock_level:ident, $mutable_type:ty) => {
+    ($base_name:ident, $field_name:ident, $base_type:ty, $lock_level:ident) => {
         paste::paste! {
         #[allow(dead_code)]
-        pub fn read<'a, L>(self: &'a $base_type, locked: &'a mut starnix_sync::Locked<L>) -> $crate::mutable_state::Guard<'a, $base_type, starnix_sync::LockDepReadGuard<'a, $mutable_type>>
+        pub fn read<'a, L>(self: &'a $base_type, locked: &'a mut starnix_sync::Locked<L>) -> [<$base_name ReadGuard>]<'a>
         where
             L: starnix_sync::LockBefore<$lock_level>
         {
             $crate::mutable_state::Guard::new(self, self.$field_name.read(locked))
         }
         #[allow(dead_code)]
-        pub fn write<'a, L>(self: &'a $base_type, locked: &'a mut starnix_sync::Locked<L>) -> $crate::mutable_state::Guard<'a, $base_type, starnix_sync::LockDepWriteGuard<'a, $mutable_type>>
+        pub fn write<'a, L>(self: &'a $base_type, locked: &'a mut starnix_sync::Locked<L>) -> [<$base_name WriteGuard>]<'a>
         where
             L: starnix_sync::LockBefore<$lock_level>
         {
@@ -197,8 +197,8 @@ macro_rules! ordered_state_accessor {
         }
         }
     };
-    ($base_name:ident, $field_name:ident, $lock_level:ident, $mutable_type:ty) => {
-        ordered_state_accessor!($base_name, $field_name, $base_name, $lock_level, $mutable_type);
+    ($base_name:ident, $field_name:ident, $lock_level:ident) => {
+        ordered_state_accessor!($base_name, $field_name, $base_name, $lock_level);
     };
 }
 
@@ -245,8 +245,8 @@ pub struct Guard<'a, B, G> {
     pub base: &'a B,
     guard: G,
 }
-pub type ReadGuard<'a, B, S> = Guard<'a, B, RwLockReadGuard<'a, S>>;
-pub type WriteGuard<'a, B, S> = Guard<'a, B, RwLockWriteGuard<'a, S>>;
+pub type ReadGuard<'a, B, S> = Guard<'a, B, LockDepReadGuard<'a, S>>;
+pub type WriteGuard<'a, B, S> = Guard<'a, B, LockDepWriteGuard<'a, S>>;
 pub type StateRef<'a, B, S> = Guard<'a, B, &'a S>;
 pub type StateMutRef<'a, B, S> = Guard<'a, B, &'a mut S>;
 
@@ -295,7 +295,10 @@ pub(crate) use state_implementation;
 #[cfg(test)]
 mod test {
     use macro_rules_attribute::apply;
-    use starnix_sync::RwLock;
+    use starnix_sync::{LockDepRwLock, lock_ordering};
+    lock_ordering! {
+        Terminal(FooLock),
+    }
 
     pub struct FooMutableState {
         y: i32,
@@ -303,12 +306,12 @@ mod test {
 
     pub struct Foo {
         x: i32,
-        mutable_state: RwLock<FooMutableState>,
+        mutable_state: LockDepRwLock<FooMutableState, FooLock>,
     }
 
     impl Foo {
         fn new() -> Self {
-            Self { x: 2, mutable_state: RwLock::new(FooMutableState { y: 3 }) }
+            Self { x: 2, mutable_state: FooMutableState { y: 3 }.into() }
         }
 
         state_accessor!(Foo, mutable_state);

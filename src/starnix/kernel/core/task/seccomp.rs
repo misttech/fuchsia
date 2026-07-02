@@ -21,7 +21,7 @@ use ebpf_api::SECCOMP_CBPF_CONFIG;
 use linux_uapi::AUDIT_SECCOMP;
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{log_warn, track_stub};
-use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
+use starnix_sync::{FileOpsCore, LockDepMutex, Locked, SeccompNotifierLock, Unlocked};
 use starnix_syscalls::decls::Syscall;
 use starnix_syscalls::{SyscallArg, SyscallResult};
 use starnix_uapi::errors::Errno;
@@ -814,11 +814,11 @@ pub struct SeccompNotifier {
     pub is_closed: bool,
 }
 
-pub type SeccompNotifierHandle = Arc<Mutex<SeccompNotifier>>;
+pub type SeccompNotifierHandle = Arc<LockDepMutex<SeccompNotifier, SeccompNotifierLock>>;
 
 impl SeccompNotifier {
     pub fn new() -> SeccompNotifierHandle {
-        Arc::new(Mutex::new(SeccompNotifier {
+        Arc::new(LockDepMutex::new(SeccompNotifier {
             waiters: WaitQueue::default(),
             pending_notifications: HashMap::default(),
             num_active_threads: 0,

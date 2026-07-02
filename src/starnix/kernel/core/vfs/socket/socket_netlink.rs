@@ -29,7 +29,10 @@ use netlink_packet_route::{RouteNetlinkMessage, RouteNetlinkMessageParseMode};
 use netlink_packet_sock_diag::SockDiagRequest;
 use netlink_packet_sock_diag::message::EmptyDeserializeOptions as EmptyDeserializeSockDiagOptions;
 use netlink_packet_utils::{DecodeError, Emitable as _};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
+use starnix_sync::{
+    AuditNetlinkClientAuditResponseLock, FileOpsCore, LockDepGuard, LockDepMutex,
+    LockEqualOrBefore, Locked, NetlinkSocketInnerLock, UEventNetlinkSocketDeviceListenerKeyLock,
+};
 use std::io::Write;
 use std::marker::PhantomData;
 use std::num::{NonZeroI32, NonZeroU32};
@@ -441,7 +444,7 @@ impl NetlinkSocketInner {
 /// Used as a placeholder implementation for protocol families that lack a real
 /// implementation.
 struct StubbedNetlinkSocket {
-    inner: Mutex<NetlinkSocketInner>,
+    inner: LockDepMutex<NetlinkSocketInner, NetlinkSocketInnerLock>,
 }
 
 impl StubbedNetlinkSocket {
@@ -450,11 +453,11 @@ impl StubbedNetlinkSocket {
             TODO("https://fxbug.dev/278565021"),
             format!("Creating StubbedNetlinkSocket: {:?}", family).as_str()
         );
-        StubbedNetlinkSocket { inner: Mutex::new(NetlinkSocketInner::new(family)) }
+        StubbedNetlinkSocket { inner: LockDepMutex::new(NetlinkSocketInner::new(family)) }
     }
 
     /// Locks and returns the inner state of the Socket.
-    fn lock(&self) -> starnix_sync::MutexGuard<'_, NetlinkSocketInner> {
+    fn lock(&self) -> LockDepGuard<'_, NetlinkSocketInner> {
         self.inner.lock()
     }
 }
@@ -639,15 +642,18 @@ impl SocketOps for StubbedNetlinkSocket {
 
 /// Socket implementation for the NETLINK_KOBJECT_UEVENT family of netlink sockets.
 struct UEventNetlinkSocket {
-    inner: Arc<Mutex<NetlinkSocketInner>>,
-    device_listener_key: Mutex<Option<DeviceListenerKey>>,
+    inner: Arc<LockDepMutex<NetlinkSocketInner, NetlinkSocketInnerLock>>,
+    device_listener_key:
+        LockDepMutex<Option<DeviceListenerKey>, UEventNetlinkSocketDeviceListenerKeyLock>,
 }
 
 impl Default for UEventNetlinkSocket {
     #[allow(clippy::let_and_return)]
     fn default() -> Self {
         let result = Self {
-            inner: Arc::new(Mutex::new(NetlinkSocketInner::new(NetlinkFamily::KobjectUevent))),
+            inner: Arc::new(LockDepMutex::new(NetlinkSocketInner::new(
+                NetlinkFamily::KobjectUevent,
+            ))),
             device_listener_key: Default::default(),
         };
         #[cfg(any(test, debug_assertions))]
@@ -661,7 +667,7 @@ impl Default for UEventNetlinkSocket {
 
 impl UEventNetlinkSocket {
     /// Locks and returns the inner state of the Socket.
-    fn lock(&self) -> starnix_sync::MutexGuard<'_, NetlinkSocketInner> {
+    fn lock(&self) -> LockDepGuard<'_, NetlinkSocketInner> {
         self.inner.lock()
     }
 
@@ -669,7 +675,7 @@ impl UEventNetlinkSocket {
         &self,
         locked: &mut Locked<L>,
         current_task: &CurrentTask,
-        state: starnix_sync::MutexGuard<'_, NetlinkSocketInner>,
+        state: LockDepGuard<'_, NetlinkSocketInner>,
     ) where
         L: LockEqualOrBefore<FileOpsCore>,
     {
@@ -839,7 +845,7 @@ impl SocketOps for UEventNetlinkSocket {
     }
 }
 
-impl DeviceListener for Arc<Mutex<NetlinkSocketInner>> {
+impl DeviceListener for Arc<LockDepMutex<NetlinkSocketInner, NetlinkSocketInnerLock>> {
     fn on_device_event(&self, action: UEventAction, device: Device, context: UEventContext) {
         let path = device.path_from_depth(0);
 
@@ -870,7 +876,7 @@ impl DeviceListener for Arc<Mutex<NetlinkSocketInner>> {
 #[derive(Clone)]
 pub struct NetlinkToClientSender<M> {
     /// The inner socket implementation, which holds a message queue.
-    inner: Arc<Mutex<NetlinkSocketInner>>,
+    inner: Arc<LockDepMutex<NetlinkSocketInner, NetlinkSocketInnerLock>>,
 
     /// `PhantomData<fn(M) -> M>` is used instead of `PhantomData<M>` in order
     /// to ensure that the type is invariant over `M` and that it implements
@@ -879,7 +885,7 @@ pub struct NetlinkToClientSender<M> {
 }
 
 impl<M> NetlinkToClientSender<M> {
-    fn new(inner: Arc<Mutex<NetlinkSocketInner>>) -> Self {
+    fn new(inner: Arc<LockDepMutex<NetlinkSocketInner, NetlinkSocketInnerLock>>) -> Self {
         NetlinkToClientSender { _message_type: Default::default(), inner }
     }
 }
@@ -995,7 +1001,7 @@ impl NetlinkContext for NetlinkContextImpl {
 }
 
 fn new_route_socket(kernel: &Arc<Kernel>) -> Result<NetlinkSocket<NetlinkRouteClient>, Errno> {
-    let inner = Arc::new(Mutex::new(NetlinkSocketInner::new(NetlinkFamily::Route)));
+    let inner = Arc::new(LockDepMutex::new(NetlinkSocketInner::new(NetlinkFamily::Route)));
     let (message_sender, message_receiver) = mpsc::unbounded();
     let client = match kernel
         .network_netlink()
@@ -1016,7 +1022,7 @@ fn new_route_socket(kernel: &Arc<Kernel>) -> Result<NetlinkSocket<NetlinkRouteCl
 fn new_sock_diag_socket(
     kernel: &Arc<Kernel>,
 ) -> Result<NetlinkSocket<NetlinkSockDiagClient>, Errno> {
-    let inner = Arc::new(Mutex::new(NetlinkSocketInner::new(NetlinkFamily::SockDiag)));
+    let inner = Arc::new(LockDepMutex::new(NetlinkSocketInner::new(NetlinkFamily::SockDiag)));
     let (message_sender, message_receiver) = mpsc::unbounded();
     let client = match kernel
         .network_netlink()
@@ -1037,7 +1043,7 @@ fn new_sock_diag_socket(
 /// An abstraction over common networking-specific netlink sockets.
 struct NetlinkSocket<C: NetlinkClient> {
     /// The inner Netlink socket implementation
-    inner: Arc<Mutex<NetlinkSocketInner>>,
+    inner: Arc<LockDepMutex<NetlinkSocketInner, NetlinkSocketInnerLock>>,
     /// The implementation of a client (socket connection) to a netlink protocol
     /// family.
     client: C,
@@ -1315,14 +1321,14 @@ where
 
 /// Socket implementation for the NETLINK_GENERIC family of netlink sockets.
 struct GenericNetlinkSocket {
-    inner: Arc<Mutex<NetlinkSocketInner>>,
+    inner: Arc<LockDepMutex<NetlinkSocketInner, NetlinkSocketInnerLock>>,
     client: GenericNetlinkClientHandle<NetlinkToClientSender<GenericMessage>>,
     message_sender: mpsc::UnboundedSender<NetlinkMessage<GenericMessage>>,
 }
 
 impl GenericNetlinkSocket {
     pub fn new(kernel: &Kernel) -> Result<Self, Errno> {
-        let inner = Arc::new(Mutex::new(NetlinkSocketInner::new(NetlinkFamily::Generic)));
+        let inner = Arc::new(LockDepMutex::new(NetlinkSocketInner::new(NetlinkFamily::Generic)));
         let (message_sender, message_receiver) = mpsc::unbounded();
         match kernel
             .generic_netlink()
@@ -1341,7 +1347,7 @@ impl GenericNetlinkSocket {
     }
 
     /// Locks and returns the inner state of the Socket.
-    fn lock(&self) -> starnix_sync::MutexGuard<'_, NetlinkSocketInner> {
+    fn lock(&self) -> LockDepGuard<'_, NetlinkSocketInner> {
         self.inner.lock()
     }
 }
@@ -1517,12 +1523,13 @@ pub struct AuditNetlinkClient {
     /// The waiters queue present in `AuditNetlinkSocket`.
     waiters: WaitQueue,
     /// Optional response from the `AuditLogger`.
-    audit_response: Mutex<Option<NetlinkMessage<GenericMessage>>>,
+    audit_response:
+        LockDepMutex<Option<NetlinkMessage<GenericMessage>>, AuditNetlinkClientAuditResponseLock>,
 }
 
 impl AuditNetlinkClient {
     fn new(audit_logger: Arc<AuditLogger>) -> Self {
-        Self { audit_logger, waiters: Default::default(), audit_response: Mutex::new(None) }
+        Self { audit_logger, waiters: Default::default(), audit_response: LockDepMutex::new(None) }
     }
 
     pub fn notify(&self) {
@@ -1908,7 +1915,7 @@ mod tests {
             (0, message.buffer_len())
         };
 
-        let socket_inner = Arc::new(Mutex::new(NetlinkSocketInner {
+        let socket_inner = Arc::new(LockDepMutex::new(NetlinkSocketInner {
             receive_buffer: MessageQueue::new(initial_queue_size),
             ..NetlinkSocketInner::new(NetlinkFamily::Route)
         }));

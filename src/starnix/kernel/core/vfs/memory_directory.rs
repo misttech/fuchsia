@@ -7,7 +7,7 @@ use crate::vfs::{
     DirectoryEntryType, DirentSink, FileObject, FileOps, FsString, SeekTarget, default_seek,
     fileops_impl_directory, fileops_impl_noop_sync,
 };
-use starnix_sync::{FileOpsCore, Locked, Mutex};
+use starnix_sync::{FileOpsCore, LockDepMutex, Locked, MemoryDirectoryReaddirPositionLock};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{error, off_t};
 use std::ops::Bound;
@@ -26,12 +26,12 @@ pub struct MemoryDirectoryFile {
     ///
     /// The initial "." and ".." entries are not recorded here. They are
     /// represented only in the offset field in the FileObject.
-    readdir_position: Mutex<Bound<FsString>>,
+    readdir_position: LockDepMutex<Bound<FsString>, MemoryDirectoryReaddirPositionLock>,
 }
 
 impl MemoryDirectoryFile {
     pub fn new() -> MemoryDirectoryFile {
-        MemoryDirectoryFile { readdir_position: Mutex::new(Bound::Unbounded) }
+        MemoryDirectoryFile { readdir_position: LockDepMutex::new(Bound::Unbounded) }
     }
 }
 
