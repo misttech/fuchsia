@@ -10,9 +10,7 @@
 #include <lib/fit/result.h>
 #include <lib/zx/result.h>
 
-#include <functional>
-#include <memory>
-#include <utility>
+#include "pcf8563.h"
 
 namespace pcf8563 {
 

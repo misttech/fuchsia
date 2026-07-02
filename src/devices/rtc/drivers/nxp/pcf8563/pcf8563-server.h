@@ -7,11 +7,10 @@
 
 #include <fidl/fuchsia.hardware.rtc/cpp/fidl.h>
 
-#include "pcf8563.h"
-
 namespace pcf8563 {
 
 class RtcDriver;
+
 class RtcServer : public fidl::Server<fuchsia_hardware_rtc::Device> {
  public:
   explicit RtcServer(RtcDriver* device) : device_(device) {}
