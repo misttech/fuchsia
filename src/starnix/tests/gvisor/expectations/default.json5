@@ -1055,11 +1055,6 @@
                 // Times out.
                 "ItimerTest.DeliversSIGPROFToThreadsRoughlyFairlyIdle",
 
-                // https://fxbug.dev/42085936
-                "AllSocketPairTest.RecvTimeoutRecvmsgOneSecondSucceeds/*",
-                "FilesystemUnixSockets/AllSocketPairTest.RecvTimeoutUsecNeg/*",
-                "AllSocketPairTest.SendTimeoutUsecTooLarge/*",
-                "AllSocketPairTest.SetGetRecvTimeoutLargerArg/*",
 
                 // Passes in debian image, remove.
                 "PingSocket.ICMPPortExhaustion",
@@ -1090,8 +1085,6 @@
                 // TODO(https://fxbug.dev/42071800): Re-enable once flake is resolved.
                 "SharedPrivate/PrivateAndSharedFutexTest.Wait_BitsetTimeout/*",
 
-                // TODO(https://fxbug.dev/42071802): Re-enable once flake is resolved.
-                "FilesystemUnixSockets/AllSocketPairTest.RecvTimeoutUsecTooLarge/*",
 
                 // These tests are flaky.
                 "ExceptionTest.IOAccessFault",
