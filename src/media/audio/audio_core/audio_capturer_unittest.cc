@@ -6,6 +6,8 @@
 #include <fuchsia/media/cpp/fidl.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/syslog/cpp/macros.h>
+#include <lib/zx/pager.h>
+#include <lib/zx/port.h>
 #include <lib/zx/vmo.h>
 
 #include <gtest/gtest.h>
@@ -298,6 +300,65 @@ TEST_F(AudioCapturerBadFormatTest, SetFormatAfterAddPayloadBufferShouldDisconnec
   ASSERT_FALSE(received_status.has_value());
 
   fidl_capturer_->SetPcmStreamType(stream_type_);
+  RunLoopUntilIdle();
+  ASSERT_TRUE(received_status.has_value());
+  EXPECT_EQ(*received_status, ZX_ERR_PEER_CLOSED);
+}
+
+// If given a resizable payload buffer, an AudioCapturer should disconnect.
+TEST_F(AudioCapturerBadFormatTest, AddPayloadBufferResizableShouldDisconnect) {
+  fuchsia::media::InputAudioCapturerConfiguration input_configuration;
+  input_configuration.set_usage2(fuchsia::media::AudioCaptureUsage2::BACKGROUND);
+  std::optional<Format> format;
+  auto capturer = AudioCapturer::Create(
+      fuchsia::media::AudioCapturerConfiguration::WithInput(std::move(input_configuration)), format,
+      fidl_capturer_.NewRequest(), &context());
+  std::optional<zx_status_t> received_status;
+  fidl_capturer_.set_error_handler([&received_status](auto status) { received_status = status; });
+
+  context().route_graph().AddCapturer(std::move(capturer));
+  fidl_capturer_->SetPcmStreamType(stream_type_);
+  RunLoopUntilIdle();
+  ASSERT_FALSE(received_status.has_value());
+
+  zx::vmo vmo, duplicate;
+  ASSERT_EQ(zx::vmo::create(4096, ZX_VMO_RESIZABLE, &vmo), ZX_OK);
+  ASSERT_EQ(
+      vmo.duplicate(ZX_RIGHT_TRANSFER | ZX_RIGHT_WRITE | ZX_RIGHT_READ | ZX_RIGHT_MAP, &duplicate),
+      ZX_OK);
+  fidl_capturer_->AddPayloadBuffer(0, std::move(duplicate));
+  RunLoopUntilIdle();
+  ASSERT_TRUE(received_status.has_value());
+  EXPECT_EQ(*received_status, ZX_ERR_PEER_CLOSED);
+}
+
+// If given a pager-backed payload buffer, an AudioCapturer should disconnect.
+TEST_F(AudioCapturerBadFormatTest, AddPayloadBufferPagerBackedShouldDisconnect) {
+  fuchsia::media::InputAudioCapturerConfiguration input_configuration;
+  input_configuration.set_usage2(fuchsia::media::AudioCaptureUsage2::BACKGROUND);
+  std::optional<Format> format;
+  auto capturer = AudioCapturer::Create(
+      fuchsia::media::AudioCapturerConfiguration::WithInput(std::move(input_configuration)), format,
+      fidl_capturer_.NewRequest(), &context());
+  std::optional<zx_status_t> received_status;
+  fidl_capturer_.set_error_handler([&received_status](auto status) { received_status = status; });
+
+  context().route_graph().AddCapturer(std::move(capturer));
+  fidl_capturer_->SetPcmStreamType(stream_type_);
+  RunLoopUntilIdle();
+  ASSERT_FALSE(received_status.has_value());
+
+  zx::pager pager;
+  ASSERT_EQ(zx::pager::create(0, &pager), ZX_OK);
+  zx::port port;
+  ASSERT_EQ(zx::port::create(0, &port), ZX_OK);
+  zx::vmo vmo, duplicate;
+  // Creating a VMO via pager.create_vmo sets the ZX_INFO_VMO_PAGER_BACKED flag on the VMO.
+  ASSERT_EQ(pager.create_vmo(0, port, 0, 4096, &vmo), ZX_OK);
+  ASSERT_EQ(
+      vmo.duplicate(ZX_RIGHT_TRANSFER | ZX_RIGHT_WRITE | ZX_RIGHT_READ | ZX_RIGHT_MAP, &duplicate),
+      ZX_OK);
+  fidl_capturer_->AddPayloadBuffer(0, std::move(duplicate));
   RunLoopUntilIdle();
   ASSERT_TRUE(received_status.has_value());
   EXPECT_EQ(*received_status, ZX_ERR_PEER_CLOSED);

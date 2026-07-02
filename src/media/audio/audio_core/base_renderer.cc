@@ -244,7 +244,14 @@ void BaseRenderer::AddPayloadBufferInternal(uint32_t id, zx::vmo payload_buffer)
 
   // Resizable VMOs are disallowed because we map the VMO: shrinking the VMO size can cause a crash.
   if ((info.flags & ZX_INFO_VMO_RESIZABLE) != 0) {
-    FX_PLOGS(ERROR, status) << "Resizable payload buffers not supported";
+    FX_LOGS(ERROR) << "Resizable payload buffers not supported";
+    return;
+  }
+
+  // Pager-backed VMOs are disallowed because page faults on audio threads can stall or terminate
+  // audio_core.
+  if ((info.flags & ZX_INFO_VMO_PAGER_BACKED) != 0) {
+    FX_LOGS(ERROR) << "Pager-backed payload buffers not supported";
     return;
   }
 

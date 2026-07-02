@@ -6,6 +6,8 @@
 #include <fuchsia/media/cpp/fidl.h>
 #include <lib/fzl/vmar-manager.h>
 #include <lib/syslog/cpp/macros.h>
+#include <lib/zx/pager.h>
+#include <lib/zx/port.h>
 #include <lib/zx/vmo.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
@@ -787,6 +789,45 @@ TEST_F(AudioRendererBadFormatTest, SetFormatWhileOperatingShouldDisconnect) {
 
   // Even if SetPcmStreamType doesn't change the format, it cannot be called if packets are active.
   fidl_renderer_->SetPcmStreamType(PcmStreamType());
+  RunLoopUntilIdle();
+  ASSERT_TRUE(received_status.has_value());
+  EXPECT_EQ(*received_status, ZX_ERR_PEER_CLOSED);
+}
+
+// If given a resizable payload buffer, an AudioRenderer should disconnect.
+TEST_F(AudioRendererBadFormatTest, AddPayloadBufferResizableShouldDisconnect) {
+  context().route_graph().AddRenderer(std::move(renderer_));
+  std::optional<zx_status_t> received_status;
+  fidl_renderer_.set_error_handler([&received_status](auto status) { received_status = status; });
+
+  zx::vmo vmo, duplicate;
+  ASSERT_EQ(zx::vmo::create(4096, ZX_VMO_RESIZABLE, &vmo), ZX_OK);
+  ASSERT_EQ(
+      vmo.duplicate(ZX_RIGHT_TRANSFER | ZX_RIGHT_WRITE | ZX_RIGHT_READ | ZX_RIGHT_MAP, &duplicate),
+      ZX_OK);
+  fidl_renderer_->AddPayloadBuffer(0, std::move(duplicate));
+  RunLoopUntilIdle();
+  ASSERT_TRUE(received_status.has_value());
+  EXPECT_EQ(*received_status, ZX_ERR_PEER_CLOSED);
+}
+
+// If given a pager-backed payload buffer, an AudioRenderer should disconnect.
+TEST_F(AudioRendererBadFormatTest, AddPayloadBufferPagerBackedShouldDisconnect) {
+  context().route_graph().AddRenderer(std::move(renderer_));
+  std::optional<zx_status_t> received_status;
+  fidl_renderer_.set_error_handler([&received_status](auto status) { received_status = status; });
+
+  zx::pager pager;
+  ASSERT_EQ(zx::pager::create(0, &pager), ZX_OK);
+  zx::port port;
+  ASSERT_EQ(zx::port::create(0, &port), ZX_OK);
+  zx::vmo vmo, duplicate;
+  // Creating a VMO via pager.create_vmo sets the ZX_INFO_VMO_PAGER_BACKED flag on the VMO.
+  ASSERT_EQ(pager.create_vmo(0, port, 0, 4096, &vmo), ZX_OK);
+  ASSERT_EQ(
+      vmo.duplicate(ZX_RIGHT_TRANSFER | ZX_RIGHT_WRITE | ZX_RIGHT_READ | ZX_RIGHT_MAP, &duplicate),
+      ZX_OK);
+  fidl_renderer_->AddPayloadBuffer(0, std::move(duplicate));
   RunLoopUntilIdle();
   ASSERT_TRUE(received_status.has_value());
   EXPECT_EQ(*received_status, ZX_ERR_PEER_CLOSED);

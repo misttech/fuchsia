@@ -4,6 +4,8 @@
 
 #include "src/media/audio/services/common/memory_mapped_buffer.h"
 
+#include <lib/zx/pager.h>
+#include <lib/zx/port.h>
 #include <zircon/types.h>
 
 #include <gmock/gmock.h>
@@ -25,6 +27,20 @@ TEST(MemoryMappedBufferTest, FailsBadHandle) {
 TEST(MemoryMappedBufferTest, FailsResizable) {
   zx::vmo vmo;
   ASSERT_EQ(zx::vmo::create(kContentSize, ZX_VMO_RESIZABLE, &vmo), ZX_OK);
+
+  auto result = MemoryMappedBuffer::Create(vmo, kContentSize, false);
+  ASSERT_FALSE(result.is_ok());
+}
+
+// Validate that creating a MemoryMappedBuffer fails if the VMO is pager-backed.
+TEST(MemoryMappedBufferTest, FailsPagerBacked) {
+  zx::pager pager;
+  ASSERT_EQ(zx::pager::create(0, &pager), ZX_OK);
+  zx::port port;
+  ASSERT_EQ(zx::port::create(0, &port), ZX_OK);
+  zx::vmo vmo;
+  // Creating a VMO via pager.create_vmo sets the ZX_INFO_VMO_PAGER_BACKED flag on the VMO.
+  ASSERT_EQ(pager.create_vmo(0, port, 0, zx_system_get_page_size(), &vmo), ZX_OK);
 
   auto result = MemoryMappedBuffer::Create(vmo, kContentSize, false);
   ASSERT_FALSE(result.is_ok());

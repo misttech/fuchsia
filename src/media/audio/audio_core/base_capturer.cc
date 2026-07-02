@@ -237,12 +237,26 @@ void BaseCapturer::AddPayloadBuffer(uint32_t id, zx::vmo payload_buf_vmo) {
   FX_DCHECK(payload_buf_.start() == nullptr);
   FX_DCHECK(payload_buf_.size() == 0);
 
-  size_t payload_buf_size;
-  res = payload_buf_vmo.get_size(&payload_buf_size);
+  zx_info_vmo_t info;
+  res = payload_buf_vmo.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr);
   if (res != ZX_OK) {
-    FX_PLOGS(ERROR, res) << "Failed to fetch payload buffer VMO size";
+    FX_PLOGS(ERROR, res) << "Failed to fetch payload buffer VMO info";
     return;
   }
+
+  // Resizable VMOs are disallowed because we map the VMO: shrinking the VMO size can cause a crash.
+  if ((info.flags & ZX_INFO_VMO_RESIZABLE) != 0) {
+    FX_LOGS(ERROR) << "Resizable payload buffers not supported";
+    return;
+  }
+
+  // Pager-backed VMOs are disallowed: page faults on audio threads can stall/terminate audio_core.
+  if ((info.flags & ZX_INFO_VMO_PAGER_BACKED) != 0) {
+    FX_LOGS(ERROR) << "Pager-backed payload buffers not supported";
+    return;
+  }
+
+  size_t payload_buf_size = info.size_bytes;
 
   constexpr uint64_t max_uint32 = std::numeric_limits<uint32_t>::max();
   if ((payload_buf_size < format_->bytes_per_frame()) ||

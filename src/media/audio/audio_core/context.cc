@@ -41,7 +41,7 @@ std::shared_ptr<EffectsLoaderV2> CreateEffectsLoaderV2(
 // enough to avoid unnecessary page table fragmentation.
 constexpr size_t kAudioRendererVmarSize = 16ull * 1024 * 1024 * 1024;
 constexpr zx_vm_option_t kAudioRendererVmarFlags =
-    ZX_VM_COMPACT | ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE | ZX_VM_ALIGN_1GB;
+    ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE | ZX_VM_ALIGN_1GB;
 
 class ContextImpl : public Context {
  public:

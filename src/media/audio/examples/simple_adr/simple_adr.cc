@@ -511,8 +511,7 @@ namespace {
 
 fbl::RefPtr<fzl::VmarManager>* CreateVmarManager() {
   constexpr size_t kSize = 16ull * 1024 * 1024 * 1024;
-  constexpr zx_vm_option_t kFlags =
-      ZX_VM_COMPACT | ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE | ZX_VM_ALIGN_1GB;
+  constexpr zx_vm_option_t kFlags = ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE | ZX_VM_ALIGN_1GB;
 
   auto ptr = new fbl::RefPtr<fzl::VmarManager>;
   *ptr = fzl::VmarManager::Create(kSize, nullptr, kFlags);
@@ -535,6 +534,10 @@ bool MediaApp::MapRingBufferVmo() {
   }
   if ((info.flags & ZX_INFO_VMO_RESIZABLE) != 0) {
     std::cout << "WARNING: vmo is resizable, which is not permittted" << '\n';
+    return false;
+  }
+  if ((info.flags & ZX_INFO_VMO_PAGER_BACKED) != 0) {
+    std::cout << "WARNING: vmo is pager-backed, which is not permitted" << '\n';
     return false;
   }
 

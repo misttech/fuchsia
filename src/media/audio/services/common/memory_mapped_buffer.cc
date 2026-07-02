@@ -27,8 +27,7 @@ fbl::RefPtr<fzl::VmarManager>* CreateVmarManager() {
   //
   // For historical context, see https://fxbug.dev/42083488 and fxrev.dev/286608.
   constexpr size_t kSize = 16ull * 1024 * 1024 * 1024;
-  constexpr zx_vm_option_t kFlags =
-      ZX_VM_COMPACT | ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE | ZX_VM_ALIGN_1GB;
+  constexpr zx_vm_option_t kFlags = ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE | ZX_VM_ALIGN_1GB;
 
   auto ptr = new fbl::RefPtr<fzl::VmarManager>;
   *ptr = fzl::VmarManager::Create(kSize, nullptr, kFlags);
@@ -50,6 +49,9 @@ fpromise::result<std::shared_ptr<MemoryMappedBuffer>, std::string> MemoryMappedB
   }
   if ((info.flags & ZX_INFO_VMO_RESIZABLE) != 0) {
     return fpromise::error("vmo is resizable");
+  }
+  if ((info.flags & ZX_INFO_VMO_PAGER_BACKED) != 0) {
+    return fpromise::error("vmo is pager-backed");
   }
 
   if (size > info.size_bytes) {
