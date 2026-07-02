@@ -6,10 +6,14 @@
 
 extern "C" {
 
-zx_instant_mono_ticks_t rust_timer_current_mono_ticks();
-zx_instant_boot_ticks_t rust_timer_current_boot_ticks();
+zx_instant_mono_ticks_t cpp_timer_current_mono_ticks();
+zx_instant_boot_ticks_t cpp_timer_current_boot_ticks();
+zx_instant_mono_t cpp_current_mono_time();
+zx_instant_boot_t cpp_current_boot_time();
 
-zx_instant_mono_ticks_t rust_timer_current_mono_ticks() { return timer_current_mono_ticks(); }
-zx_instant_boot_ticks_t rust_timer_current_boot_ticks() { return timer_current_boot_ticks(); }
+zx_instant_mono_ticks_t cpp_timer_current_mono_ticks() { return timer_current_mono_ticks(); }
+zx_instant_boot_ticks_t cpp_timer_current_boot_ticks() { return timer_current_boot_ticks(); }
+zx_instant_mono_t cpp_current_mono_time() { return current_mono_time(); }
+zx_instant_boot_t cpp_current_boot_time() { return current_boot_time(); }
 
 }  // extern "C"

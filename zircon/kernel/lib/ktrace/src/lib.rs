@@ -14,7 +14,7 @@ use kernel::thread::{FxtRef, ThreadPtr};
 use kstring::interned_category::InternedCategory;
 use kstring::interned_string::InternedString;
 use kstring::{declare_interned_category, declare_interned_string};
-use platform_rs::timer_current_boot_ticks;
+use platform_rs::{InstantBootTicks, timer_current_boot_ticks};
 use spsc_buffer::{Buffer, NoOpAllocator, Reservation};
 use zx_status::Status;
 
@@ -194,7 +194,7 @@ impl<'a> Argument<'a> {
 pub struct KTraceScope<'a> {
     category: &'static InternedCategory,
     name: &'static InternedString,
-    timestamp: i64,
+    timestamp: InstantBootTicks,
     context: Context,
     args: &'a [Argument<'a>],
 }
@@ -225,7 +225,7 @@ impl<'a> Drop for KTraceScope<'a> {
             self.name,
             self.timestamp,
             self.context,
-            Some(end_time as u64),
+            Some(end_time.0 as u64),
             self.args,
         );
     }
@@ -235,12 +235,12 @@ impl<'a> Drop for KTraceScope<'a> {
 #[repr(C)]
 struct DroppedRecordDurationEvent {
     header: u64,
-    start: i64,
+    start: InstantBootTicks,
     process_id: u64,
     thread_id: u64,
     num_dropped_arg: u64,
     bytes_dropped_arg: u64,
-    end: i64,
+    end: InstantBootTicks,
 }
 const _: () = assert!(size_of::<DroppedRecordDurationEvent>() == 56);
 // LINT.ThenChange(//zircon/kernel/lib/percpu_writer/include/lib/percpu_writer/buffer.h:DroppedRecordDurationEvent)
@@ -253,8 +253,8 @@ const _: () = assert!(size_of::<DroppedRecordDurationEvent>() == 56);
 #[repr(C)]
 #[derive(Default, Debug, Clone)]
 struct DroppedRecordStats {
-    first_dropped: i64,
-    last_dropped: i64,
+    first_dropped: InstantBootTicks,
+    last_dropped: InstantBootTicks,
 
     /// By storing num_dropped and bytes_dropped in 32-bit values, we ensure that they can each
     /// be stored in a single 64-bit word in the FXT record we emit when space is available.
@@ -267,14 +267,14 @@ const _: () = assert!(size_of::<DroppedRecordStats>() == 32);
 
 impl DroppedRecordStats {
     fn reset(&mut self) {
-        self.first_dropped = 0;
-        self.last_dropped = 0;
+        self.first_dropped = InstantBootTicks(0);
+        self.last_dropped = InstantBootTicks(0);
         self.num_dropped = 0;
         self.bytes_dropped = 0;
         self.has_dropped = false;
     }
 
-    fn track(&mut self, now: i64, size: u32) {
+    fn track(&mut self, now: InstantBootTicks, size: u32) {
         if !self.has_dropped {
             self.first_dropped = now;
             self.has_dropped = true;
@@ -616,7 +616,7 @@ impl KTrace {
         event_type: EventType,
         category: &InternedCategory,
         name: &InternedString,
-        timestamp: i64,
+        timestamp: InstantBootTicks,
         context: Context,
         content: Option<u64>,
         args: &[Argument<'_>],
@@ -664,7 +664,7 @@ impl KTrace {
 
         // 4. Reserve space and write the record.
         if let Ok(mut res) = unsafe { self.reserve(header) } {
-            let _ = res.write_word(timestamp as u64);
+            let _ = res.write_word(timestamp.0 as u64);
             let _ = res.write_word(process_koid);
             let _ = res.write_word(thread_koid);
 
@@ -817,7 +817,7 @@ mod tests {
         flow_begin!("kernel:meta", "rust_flow", 106u64, "val" => 107u32);
         flow_step!("kernel:meta", "rust_flow", 106u64, "val" => 108u32);
         flow_end!("kernel:meta", "rust_flow", 106u64, "val" => 109u32);
-        complete!("kernel:meta", "rust_complete", 110i64, "val" => 111u32);
+        complete!("kernel:meta", "rust_complete", InstantBootTicks(110i64), "val" => 111u32);
         kernel_object!("kernel:meta", 112u64, 1u32, "rust_kernel_obj", "val" => 113u32);
         kernel_object_always!(114u64, 2u32, "rust_kernel_obj_always", "val" => 115u32);
     }

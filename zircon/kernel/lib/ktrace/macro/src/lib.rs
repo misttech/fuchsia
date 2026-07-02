@@ -356,9 +356,9 @@ macro_rules! complete {
                     ::ktrace_rs::EventType::DurationComplete,
                     category,
                     $crate::resolve_string!($label),
-                    $start_timestamp as i64,
+                    $start_timestamp,
                     $context,
-                    Some(::ktrace_rs::timer_current_boot_ticks() as u64),
+                    Some(::ktrace_rs::timer_current_boot_ticks().0 as u64),
                     &[
                         $(::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
                     ],
