@@ -11,7 +11,7 @@ use linux_uapi::{
 };
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::log_warn;
-use starnix_sync::{AuditQueueLock, LockDepMutex, Mutex, MutexGuard};
+use starnix_sync::{AuditQueueLock, AuditSinkLock, LockDepGuard, LockDepMutex};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{audit_status, error, pid_t};
 use std::collections::VecDeque;
@@ -75,7 +75,7 @@ struct AuditConfig {
     /// Action to take in case of audit failure.
     fail_action: AtomicU8,
     /// Socket to which the logger writes audit messages.
-    audit_sink: Mutex<AuditNetlinkClientRef>,
+    audit_sink: LockDepMutex<AuditNetlinkClientRef, AuditSinkLock>,
 }
 
 impl Default for AuditConfig {
@@ -152,11 +152,7 @@ impl AuditLogger {
         if self.configuration.audit_mode == AuditMode::Disabled {
             return;
         }
-        self.add_audit_to_backlog(
-            audit_type,
-            audit_formatter,
-            &mut self.configuration.audit_sink.lock(),
-        );
+        self.add_audit_to_backlog(audit_type, audit_formatter);
     }
 
     /// Called by the `NetlinkAuditClient` to pull the next audit log from the backlog.
@@ -185,11 +181,8 @@ impl AuditLogger {
             client_guard.client = None;
             client_guard.pid = 0;
             client_guard.messages.clear();
-            self.add_audit_to_backlog(
-                AUDIT_CONFIG_CHANGE as u16,
-                || format!("audit sink detached pid={pid}"),
-                &mut client_guard,
-            );
+            drop(client_guard);
+            self.audit_log(AUDIT_CONFIG_CHANGE as u16, || format!("audit sink detached pid={pid}"));
         }
     }
 
@@ -222,15 +215,17 @@ impl AuditLogger {
 
     /// Retrieve the `AuditConfig` as `audit_status` struct.
     pub fn get_status(&self) -> audit_status {
+        let pid = self.configuration.audit_sink.lock().pid as u32;
+        let backlog = self.audit_queue.lock().len() as u32;
         audit_status {
             mask: Default::default(),
             enabled: Default::default(),
             failure: self.configuration.fail_action.load(Ordering::Acquire) as u32,
-            pid: self.configuration.audit_sink.lock().pid as u32,
+            pid,
             rate_limit: u32::MAX,
             backlog_limit: self.configuration.backlog_limit.load(Ordering::Acquire),
             lost: self.lost_audit_messages.load(Ordering::Acquire),
-            backlog: self.audit_queue.lock().len() as u32,
+            backlog,
             __bindgen_anon_1: Default::default(),
             backlog_wait_time: Default::default(),
             backlog_wait_time_actual: Default::default(),
@@ -279,11 +274,8 @@ impl AuditLogger {
         }
         client_guard.client = Some(client.clone());
         client_guard.pid = pid;
-        self.add_audit_to_backlog(
-            AUDIT_CONFIG_CHANGE as u16,
-            || format!("new audit sink attached pid={pid}"),
-            &mut client_guard,
-        );
+        drop(client_guard);
+        self.audit_log(AUDIT_CONFIG_CHANGE as u16, || format!("new audit sink attached pid={pid}"));
         Ok(())
     }
 
@@ -292,11 +284,11 @@ impl AuditLogger {
         &self,
         audit_type: u16,
         audit_formatter: T,
-        client_guard: &mut MutexGuard<'_, AuditNetlinkClientRef>,
     ) {
         // At this point, we know that the audit framework is not disabled until reboot.
         let audit_message = self.prepend_audit_metadata(audit_formatter);
 
+        let mut client_guard = self.configuration.audit_sink.lock();
         // If there is no audit sink and the auditing is partially enabled, print and return
         // without pushing the message to the backlog.
         if client_guard.client.is_none() {
@@ -304,8 +296,12 @@ impl AuditLogger {
         }
 
         if client_guard.client.is_some() || self.configuration.audit_mode == AuditMode::Enabled {
-            self.push_back_audit(audit_type, audit_message, client_guard);
-            client_guard.client.as_ref().inspect(|client| client.notify());
+            self.push_back_audit(audit_type, audit_message, &mut client_guard);
+            let client = client_guard.client.clone();
+            drop(client_guard);
+            if let Some(client) = client {
+                client.notify();
+            }
         }
     }
 
@@ -314,7 +310,7 @@ impl AuditLogger {
         &self,
         audit_type: u16,
         audit_message: String,
-        client_guard: &mut MutexGuard<'_, AuditNetlinkClientRef>,
+        client_guard: &mut LockDepGuard<'_, AuditNetlinkClientRef>,
     ) {
         // TODO: https://fxbug.dev/440090442 - implement backlog waiting.
         if self.check_backlog(client_guard.messages.len() as u32) {

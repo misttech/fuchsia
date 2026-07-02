@@ -147,6 +147,7 @@ lock_ordering! {
     Terminal(AuditDenyCountsLock),
     Terminal(AuditNetlinkClientAuditResponseLock),
     Terminal(AuditQueueLock),
+    Terminal(AuditSinkLock),
     Terminal(BootedLock),
     Terminal(ComponentControllerLock),
     Terminal(DynamicThreadSpawnerLock),
