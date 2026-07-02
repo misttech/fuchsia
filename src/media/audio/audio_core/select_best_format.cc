@@ -20,6 +20,9 @@ namespace {
 bool IsSampleFormatInSupported(
     fuchsia::hardware::audio::SampleFormat sample_format, uint8_t bytes_per_sample,
     const fuchsia::hardware::audio::PcmSupportedFormats& supported_formats) {
+  if (!supported_formats.has_sample_formats() || !supported_formats.has_bytes_per_sample()) {
+    return false;
+  }
   auto& sf = supported_formats.sample_formats();
   if (std::find(sf.begin(), sf.end(), sample_format) == sf.end()) {
     return false;
@@ -33,8 +36,11 @@ bool IsSampleFormatInSupported(
 
 bool IsNumberOfChannelsInSupported(uint32_t number_of_channels,
                                    const fuchsia::hardware::audio::PcmSupportedFormats& format) {
+  if (!format.has_channel_sets()) {
+    return false;
+  }
   for (auto& channel_set : format.channel_sets()) {
-    if (channel_set.attributes().size() == number_of_channels) {
+    if (channel_set.has_attributes() && channel_set.attributes().size() == number_of_channels) {
       return true;
     }
   }
@@ -43,6 +49,9 @@ bool IsNumberOfChannelsInSupported(uint32_t number_of_channels,
 
 bool IsRateInSupported(uint32_t frame_rate,
                        const fuchsia::hardware::audio::PcmSupportedFormats& format) {
+  if (!format.has_frame_rates()) {
+    return false;
+  }
   for (auto rate : format.frame_rates()) {
     if (rate == frame_rate) {
       return true;
@@ -98,6 +107,23 @@ zx_status_t SelectBestFormat(const std::vector<fuchsia::hardware::audio::PcmSupp
   uint32_t best_frame_rate_delta = std::numeric_limits<uint32_t>::max();
 
   for (const auto& format : fmts) {
+    if (!format.has_sample_formats() || format.sample_formats().empty() ||
+        !format.has_bytes_per_sample() || format.bytes_per_sample().empty() ||
+        !format.has_channel_sets() || format.channel_sets().empty() || !format.has_frame_rates() ||
+        format.frame_rates().empty()) {
+      continue;
+    }
+    bool has_valid_channel_set = false;
+    for (const auto& cs : format.channel_sets()) {
+      if (cs.has_attributes() && !cs.attributes().empty()) {
+        has_valid_channel_set = true;
+        break;
+      }
+    }
+    if (!has_valid_channel_set) {
+      continue;
+    }
+
     // Start by scoring our sample format. Direct match gets 5 points. Otherwise, supported sample
     // formats are scored by decreasing preference.
     DriverSampleFormat this_sample_format;
@@ -140,10 +166,16 @@ zx_status_t SelectBestFormat(const std::vector<fuchsia::hardware::audio::PcmSupp
     } else {
       auto compare = [](const fuchsia::hardware::audio::ChannelSet& left,
                         const fuchsia::hardware::audio::ChannelSet& right) {
-        return left.attributes().size() < right.attributes().size();
+        size_t left_size = left.has_attributes() ? left.attributes().size() : 0;
+        size_t right_size = right.has_attributes() ? right.attributes().size() : 0;
+        return left_size < right_size;
       };
       auto channel_set =
           std::max_element(format.channel_sets().begin(), format.channel_sets().end(), compare);
+      if (channel_set == format.channel_sets().end() || !channel_set->has_attributes() ||
+          channel_set->attributes().empty()) {
+        continue;
+      }
       this_channels = static_cast<uint32_t>(channel_set->attributes().size());
       channel_count_score = 1;
     }

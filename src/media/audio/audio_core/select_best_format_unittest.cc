@@ -295,6 +295,19 @@ TEST(SelectBestFormatTest, SelectBestFormatError) {
   ASSERT_EQ(
       SelectBestFormat(empty_fmts, &frames_per_second_inout, &channels_inout, &sample_format_inout),
       ZX_ERR_NOT_SUPPORTED);
+
+  // Test empty channel_sets vector (b/525552666)
+  std::vector<fuchsia::hardware::audio::PcmSupportedFormats> empty_channel_sets_fmts;
+  fuchsia::hardware::audio::PcmSupportedFormats bad_format = {};
+  bad_format.mutable_sample_formats()->push_back(fuchsia::hardware::audio::SampleFormat::PCM_FLOAT);
+  bad_format.mutable_bytes_per_sample()->push_back(4);
+  bad_format.mutable_valid_bits_per_sample()->push_back(32);
+  bad_format.mutable_frame_rates()->push_back(48'000);
+  bad_format.mutable_channel_sets();
+  empty_channel_sets_fmts.push_back(std::move(bad_format));
+  ASSERT_EQ(SelectBestFormat(empty_channel_sets_fmts, &frames_per_second_inout, &channels_inout,
+                             &sample_format_inout),
+            ZX_ERR_NOT_SUPPORTED);
 }
 
 TEST(SelectBestFormatTest, SelectBestFormatErrorNewFidl) {
@@ -307,6 +320,18 @@ TEST(SelectBestFormatTest, SelectBestFormatErrorNewFidl) {
       .frames_per_second = 1,
   });
   auto result = SelectBestFormat(empty_fmts, pref);
+  ASSERT_FALSE(result.is_ok());
+  EXPECT_EQ(result.error_value(), ZX_ERR_NOT_SUPPORTED);
+
+  // Test empty channel_sets vector in PcmFormatSet (b/525552666)
+  std::vector<fuchsia_audio_device::PcmFormatSet> empty_channel_sets_fmts;
+  fuchsia_audio_device::PcmFormatSet bad_format = {};
+  bad_format.sample_types() =
+      std::vector<fuchsia_audio::SampleType>{fuchsia_audio::SampleType::kFloat32};
+  bad_format.frame_rates() = std::vector<uint32_t>{48'000};
+  bad_format.channel_sets() = std::vector<fuchsia_audio_device::ChannelSet>{};
+  empty_channel_sets_fmts.push_back(std::move(bad_format));
+  result = SelectBestFormat(empty_channel_sets_fmts, pref);
   ASSERT_FALSE(result.is_ok());
   EXPECT_EQ(result.error_value(), ZX_ERR_NOT_SUPPORTED);
 }
