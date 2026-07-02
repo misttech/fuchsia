@@ -41,10 +41,7 @@ def _create_test_atom_info_impl(ctx):
             api_contents_map = ctx.attr.api_contents_map,
             atom_files_map = atom_files_map,
             deps = ctx.attr.deps,
-            atoms_depset = depset(
-                direct = ctx.attr.deps,
-                transitive = [dep[FuchsiaIdkAtomInfo].atoms_depset for dep in ctx.attr.deps],
-            ),
+            atoms_depset = depset(ctx.attr.atoms_depset_as_list),
             atom_build_deps = ctx.attr.atom_build_deps,
             additional_prebuild_info = ctx.attr.additional_prebuild_info,
         ),
@@ -83,7 +80,11 @@ create_test_atom_info = rule(
         "deps": attr.label_list(mandatory = True),
         "atom_build_deps": attr.label_list(mandatory = True),
         "additional_prebuild_info": attr.string_dict(mandatory = True),
-        "atoms_depset": attr.label_list(mandatory = False),
+        "atoms_depset_as_list": attr.label_list(
+            doc = "List of atoms to include in the `atoms_depset`. " +
+                  "This is necessary since a depset cannot be passed as an attribute.",
+            mandatory = True,
+        ),
     },
 )
 # LINT.ThenChange(//build/bazel/rules/idk/private/providers.bzl:idk_atom_info)

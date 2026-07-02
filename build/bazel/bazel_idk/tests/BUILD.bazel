@@ -69,6 +69,7 @@ create_test_atom_info(
     atom_files_map_source_files = {
         "data/config/test_data_public_name/config.json": "//build/bazel/bazel_idk/tests:include/lib/test_lib/test_header.h",
     },
+    atoms_depset_as_list = [],
     category = "partner",
     id = "sdk://data/test_data_public_name",
     idk_name = "test_data_public_name",
@@ -159,13 +160,13 @@ create_test_atom_info(
         "pkg/test_source_set/internal/helper.cc": "//build/bazel/bazel_idk/tests:internal/helper.cc",
         "pkg/test_source_set/some_library.cc": "//build/bazel/bazel_idk/tests:some_library.cc",
     },
-    atoms_depset = depset([
+    atoms_depset_as_list = [
         "//build/bazel/bazel_idk/tests:test_source_set_subdependency_idk",
         "//build/bazel/bazel_idk/tests:test_noop_atom_idk",
         "//build/bazel/bazel_idk/tests:tests_idk",
         "//build/bazel/bazel_idk/tests:test_source_set_dependency2_idk",
         "//build/bazel/bazel_idk/tests:test_source_set_dependency_idk",
-    ]),
+    ],
     category = "partner",
     id = "sdk://pkg/test_source_set",
     idk_name = "test_source_set",
@@ -261,11 +262,12 @@ create_test_atom_info(
     atom_files_map_source_files = {
         "pkg/test_shared_library/include/lib/test_lib/test_header.h": "include/lib/test_lib/test_header.h",
     },
-    atoms_depset = depset([
+    atoms_depset_as_list = [
+        "//build/bazel/bazel_idk/tests:test_source_set_subdependency_idk",
         "//build/bazel/bazel_idk/tests:tests_idk",
         "//build/bazel/bazel_idk/tests:test_source_set_dependency2_idk",
         "//build/bazel/bazel_idk/tests:test_source_set_dependency_idk",
-    ]),
+    ],
     category = "partner",
     id = "sdk://pkg/test_shared_library",
     idk_name = "test_shared_library",
@@ -426,12 +428,13 @@ create_test_atom_info(
     atom_files_map_source_files = {
         "pkg/test_static_library/include/lib/test_lib/test_header.h": "//build/bazel/bazel_idk/tests:include/lib/test_lib/test_header.h",
     },
-    atoms_depset = depset([
+    atoms_depset_as_list = [
+        "//build/bazel/bazel_idk/tests:test_source_set_subdependency_idk",
         "//build/bazel/bazel_idk/tests:tests_idk",
         "//build/bazel/bazel_idk/tests:test_source_set_dependency2_idk",
         "//src/zircon/lib/zircon:zircon_idk",
         "//build/bazel/bazel_idk/tests:test_source_set_dependency_idk",
-    ]),
+    ],
     category = "partner",
     id = "sdk://pkg/test_static_library",
     idk_name = "test_static_library",
@@ -549,7 +552,7 @@ create_test_atom_info(
         "pkg/platform_dependent_source_library/platform_dependent_library.cc": "//build/bazel/bazel_idk/tests:platform_dependent_library.cc",
         "pkg/platform_dependent_source_library/fuchsia_only_source.cc": "//build/bazel/bazel_idk/tests:fuchsia_only_source.cc",
     },
-    atoms_depset = depset([]),
+    atoms_depset_as_list = [],
     category = "partner",
     id = "sdk://pkg/platform_dependent_source_library",
     idk_name = "platform_dependent_source_library",
