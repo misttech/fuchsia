@@ -1287,13 +1287,7 @@ struct Thread : public ChainLockable {
   // Returns a unique flow id for lock contention tracing. The same value is
   // returned by lock_flow_id() until another id is allocated for this thread
   // by calling this method again.
-  uint64_t TakeNextLockFlowId() {
-#if ENABLE_RUST_IN_ZIRCON
-    return lock_flow_id_ = flow_id_generate();
-#else
-    return lock_flow_id_ = FlowId::Generate();
-#endif
-  }
+  uint64_t TakeNextLockFlowId() { return lock_flow_id_ = flow_id_generate(); }
 
   void RecomputeEffectiveProfile() TA_REQ(get_lock()) {
     scheduler_state_.RecomputeEffectiveProfile();
