@@ -198,7 +198,13 @@ class SharedReader final : public Reader {
   uint64_t length() const final { return length_; }
 
   fpromise::result<void, std::string> Read(uint64_t offset, std::span<uint8_t> buffer) const final {
-    if (offset + buffer.size() > length_) {
+    size_t image_length = image_reader_->length();
+    if (offset_ > image_length || length_ > image_length - offset_) {
+      return fpromise::error("SharedReader bounds exceed underlying image reader bounds. Offset: " +
+                             std::to_string(offset_) + " Length: " + std::to_string(length_) +
+                             " Max Length: " + std::to_string(image_length) + ".");
+    }
+    if (offset > length_ || buffer.size() > length_ - offset) {
       return fpromise::error("SharedReader::Read out of bounds. Offset: " + std::to_string(offset) +
                              " Length: " + std::to_string(buffer.size()) +
                              " Max Length: " + std::to_string(length_) + ".");

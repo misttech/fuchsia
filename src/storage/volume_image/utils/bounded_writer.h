@@ -8,6 +8,7 @@
 #include <lib/fpromise/result.h>
 
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <string_view>
 
@@ -24,11 +25,15 @@ class BoundedWriter final : public Writer {
 
   fpromise::result<void, std::string> Write(uint64_t offset,
                                             std::span<const uint8_t> buffer) final {
-    if (offset + buffer.size() > length_) {
+    if (length_ > std::numeric_limits<uint64_t>::max() - offset_) {
+      return fpromise::error("BoundedWriter bounds overflow. offset_: " + std::to_string(offset_) +
+                             " length_: " + std::to_string(length_) + ".");
+    }
+    if (offset > length_ || buffer.size() > length_ - offset) {
       return fpromise::error(
-          "BoundedWriter::Write out of bounds. offset: " + std::to_string(offset) + " byte_cout: " +
-          std::to_string(buffer.size()) + " min_offset: " + std::to_string(offset_) +
-          " max_offset: " + std::to_string(offset_ + length_ - 1) + ".");
+          "BoundedWriter::Write out of bounds. offset: " + std::to_string(offset) +
+          " byte_count: " + std::to_string(buffer.size()) +
+          " min_offset: " + std::to_string(offset_) + " length: " + std::to_string(length_) + ".");
     }
     return writer_->Write(offset_ + offset, buffer);
   }

@@ -15,12 +15,17 @@ fpromise::result<void, std::string> BlockWriter::Write(uint64_t offset,
     return fpromise::ok();
   }
 
-  if (offset + buffer.size() > block_count_ * block_size_) {
+  uint64_t max_bytes;
+  if (__builtin_mul_overflow(block_count_, block_size_, &max_bytes)) {
+    return fpromise::error("BlockWriter::Write failed due to overflow in calculating max bytes.");
+  }
+
+  if (offset > max_bytes || buffer.size() > max_bytes - offset) {
     return fpromise::error("BlockWriter::Write out of bounds. Offset " + std::to_string(offset) +
                            " Write Size: " + std::to_string(buffer.size()) + " with " +
                            std::to_string(block_count_) + " blocks of size " +
                            std::to_string(block_size_) +
-                           " (Max Offset: " + std::to_string(block_size_ * block_count_) + ").");
+                           " (Max Offset: " + std::to_string(max_bytes) + ").");
   }
 
   // First block is unaligned.
