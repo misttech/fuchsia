@@ -192,6 +192,7 @@ kernel_rust_crate("syscall-signatures") {
     ":zx_zither.kernel.gen($default_toolchain)",
     "//sdk/rust/zx-status",
     "//zircon/kernel/lib/user_copy:user-copy-rs",
+    "//zircon/kernel/object:object-rs",
   ]
 }
 

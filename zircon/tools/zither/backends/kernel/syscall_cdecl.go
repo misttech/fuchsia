@@ -208,6 +208,8 @@ func rustKernelParameterType(param zither.SyscallParameter) string {
 		case zither.ParameterOrientationInOut:
 			typ = fmt.Sprintf("UserInOutPtr<%s>", elementType)
 		}
+	} else if kind == zither.TypeKindHandle {
+		typ = "HandleValue"
 	}
 	return typ
 }

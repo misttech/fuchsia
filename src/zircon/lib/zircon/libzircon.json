@@ -159,6 +159,7 @@
     "zx_syscall_test_rust_6",
     "zx_syscall_test_rust_7",
     "zx_syscall_test_rust_8",
+    "zx_syscall_test_rust_handle",
     "zx_syscall_test_rust_inoutptr",
     "zx_syscall_test_rust_inptr",
     "zx_syscall_test_rust_outptr",

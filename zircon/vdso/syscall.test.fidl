@@ -531,6 +531,14 @@ closed protocol Syscall {
         ptr experimental_pointer<int32>;
     }) -> () error Status;
 
+    @testonly
+    @rust
+    strict TestRustHandle(resource struct {
+        handle Handle;
+    }) -> (struct {
+        value uint32;
+    }) error Status;
+
     /// ## Summary
     ///
     /// TODO(https://fxbug.dev/42108078)

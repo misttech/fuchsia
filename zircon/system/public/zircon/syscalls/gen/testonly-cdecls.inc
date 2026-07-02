@@ -14,6 +14,9 @@ _ZX_SYSCALL_DECL(syscall_test_handle_create, zx_status_t, /* no attributes */, 2
                  (zx_status_t return_value,
                   _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* out))
 
+_ZX_SYSCALL_DECL(syscall_test_rust_handle, zx_status_t, _ZX_SYSCALL_EXTERN_C, 2, (handle, value),
+                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint32_t* value))
+
 _ZX_SYSCALL_DECL(syscall_test_rust_inoutptr, zx_status_t, _ZX_SYSCALL_EXTERN_C, 1, (ptr),
                  (int32_t* ptr))
 

@@ -140,6 +140,7 @@ kernel_rust_crate("syscalls-rs") {
     "macros:syscalls-macro",
     "//sdk/rust/zx-status",
     "//zircon/kernel/lib/user_copy:user-copy-rs",
+    "//zircon/kernel/object:object-rs",
     "//zircon/vdso:private",
     "//zircon/vdso:syscall-signatures",
   ]

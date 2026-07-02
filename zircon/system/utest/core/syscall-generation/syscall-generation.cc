@@ -85,6 +85,13 @@ TEST(SyscallGenerationTest, RustPointerSyscalls) {
   EXPECT_EQ(ZX_ERR_INVALID_ARGS, zx_syscall_test_rust_inoutptr(nullptr));
 }
 
+TEST(SyscallGenerationTest, RustHandleSyscall) {
+  zx_handle_t handle = 0x1234567b;
+  uint32_t out_value = 0;
+  ASSERT_OK(zx_syscall_test_rust_handle(handle, &out_value));
+  EXPECT_EQ(0x1234567b, out_value);
+}
+
 TEST(SyscallGenerationTest, HandleCreateSuccess) {
   zx_handle_t handle = ZX_HANDLE_INVALID;
   ASSERT_OK(zx_syscall_test_handle_create(ZX_OK, &handle));

@@ -789,6 +789,8 @@ unsafe extern "C" {
         out: *mut zx_handle_t,
     ) -> zx_status_t;
 
+    pub fn zx_syscall_test_rust_handle(handle: zx_handle_t, value: *mut u32) -> zx_status_t;
+
     pub fn zx_syscall_test_rust_inoutptr(ptr: *mut i32) -> zx_status_t;
 
     pub fn zx_syscall_test_rust_inptr(ptr: *const i32, value: *mut i32) -> zx_status_t;

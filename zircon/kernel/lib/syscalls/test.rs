@@ -4,6 +4,7 @@
 
 #![no_std]
 
+use object::HandleValue;
 use syscalls_macro::syscall;
 use user_copy::{UserInOutPtr, UserInPtr, UserOutPtr};
 use zx_status::Status;
@@ -123,6 +124,17 @@ pub fn sys_syscall_test_rust_inoutptr(ptr: UserInOutPtr<i32>) -> Status {
             Ok(()) => Status::OK,
             Err(err) => err,
         },
+        Err(err) => err,
+    }
+}
+
+#[syscall]
+pub fn sys_syscall_test_rust_handle(handle: HandleValue, value: UserOutPtr<u32>) -> Status {
+    if value.is_null() {
+        return Status::INVALID_ARGS;
+    }
+    match value.write(handle.raw_value()) {
+        Ok(()) => Status::OK,
         Err(err) => err,
     }
 }
