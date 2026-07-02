@@ -427,6 +427,8 @@ class FakeComposite final
   bool responsive() const { return responsive_; }
   // Once we mark a device unresponsive, it cannot correctly transition back to responsive state.
   void set_unresponsive() { responsive_ = false; }
+  void CompleteCreateRingBuffer(fuchsia_hardware_audio::DriverError error =
+                                    fuchsia_hardware_audio::DriverError::kNotSupported);
   std::optional<bool> health_state() const { return healthy_; }
   void set_health_state(std::optional<bool> healthy) { healthy_ = healthy; }
 

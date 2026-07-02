@@ -254,6 +254,7 @@ class Device : public std::enable_shared_from_this<Device> {
 
   bool dai_format_is_set() const { return codec_format_.has_value(); }
   const fuchsia_hardware_audio::CodecFormatInfo& codec_format_info(ElementId element_id) const {
+    FX_DCHECK(dai_format_is_set());
     return codec_format_->codec_format_info;
   }
   bool codec_is_started() const { return codec_start_state_.started; }

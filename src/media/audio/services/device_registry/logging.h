@@ -39,6 +39,8 @@ namespace media_audio {
 
 #define ADR_WARN_OBJECT() FX_LOGS(WARNING) << kClassName << "(" << this << "): "
 
+#define ADR_WARN_STATIC() FX_LOGS(WARNING) << kClassName << "::" << __func__ << ": "
+
 inline constexpr bool kLogMain = true;
 
 inline constexpr bool kLogRoleManager = false;

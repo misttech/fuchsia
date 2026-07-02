@@ -1099,6 +1099,55 @@ TEST_F(ControlServerCompositeTest, SetDaiFormat) {
   EXPECT_FALSE(control_fidl_error_status().has_value()) << *control_fidl_error_status();
 }
 
+// Verify that calling SetDaiFormat twice with identical format on a Composite device returns
+// nullopt state without dereferencing nullopt.
+TEST_F(ControlServerCompositeTest, SetDaiFormatTwiceSameFormat) {
+  auto fake_driver = CreateAndEnableDriverWithDefaults();
+  auto registry = CreateTestRegistryServer();
+  (void)WaitForAddedDeviceTokenId(registry->client());
+  auto device = *adr_service()->devices().begin();
+  auto control = CreateTestControlServer(device);
+
+  RunLoopUntilIdle();
+  ASSERT_EQ(RegistryServer::count(), 1u);
+  ASSERT_EQ(ControlServer::count(), 1u);
+
+  for (ElementId dai_id : device->dai_ids()) {
+    auto dai_format = SecondDaiFormatFromElementDaiFormatSets(dai_id, device->dai_format_sets());
+
+    auto received_callback = false;
+    control->client()
+        ->SetDaiFormat({{
+            .element_id = dai_id,
+            .dai_format = dai_format,
+        }})
+        .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
+          received_callback = true;
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          EXPECT_FALSE(result->state());
+        });
+
+    RunLoopUntilIdle();
+    EXPECT_TRUE(received_callback);
+
+    // Set the exact same DAI format a second time.
+    received_callback = false;
+    control->client()
+        ->SetDaiFormat({{
+            .element_id = dai_id,
+            .dai_format = dai_format,
+        }})
+        .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
+          received_callback = true;
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          EXPECT_FALSE(result->state());
+        });
+
+    RunLoopUntilIdle();
+    EXPECT_TRUE(received_callback);
+  }
+}
+
 // Reset - validate that the DaiFormat and the Start state are reset.
 TEST_F(ControlServerCompositeTest, Reset) {
   auto fake_driver = CreateAndEnableDriverWithDefaults();

@@ -1630,6 +1630,56 @@ TEST_F(ControlServerCompositeWarningTest, CreateRingBufferWhilePending) {
   EXPECT_FALSE(control_fidl_error_status().has_value()) << *control_fidl_error_status();
 }
 
+// Verify that closing the Control channel while CreateRingBuffer is pending does not cause
+// use-after-free when the driver later responds.
+TEST_F(ControlServerCompositeWarningTest, ClientCloseDuringCreateRingBuffer) {
+  auto fake_driver = CreateAndEnableDriverWithDefaults();
+  auto registry = CreateTestRegistryServer();
+  auto added_id = WaitForAddedDeviceTokenId(registry->client());
+  auto device = *adr_service()->devices().begin();
+  auto control_creator = CreateTestControlCreatorServer();
+  auto control_client = ConnectToControl(control_creator->client(), *added_id);
+
+  RunLoopUntilIdle();
+  ASSERT_EQ(RegistryServer::count(), 1u);
+  ASSERT_EQ(ControlServer::count(), 1u);
+
+  for (auto ring_buffer_id : device->ring_buffer_ids()) {
+    if (!control_client.is_valid()) {
+      control_client = ConnectToControl(control_creator->client(), *added_id);
+      RunLoopUntilIdle();
+    }
+    fake_driver->ReserveRingBufferSize(ring_buffer_id, 8192);
+    auto [ring_buffer_client_end, ring_buffer_server_end] =
+        CreateNaturalAsyncClientOrDie<fad::RingBuffer>();
+
+    fake_driver->set_unresponsive();
+
+    control_client
+        ->CreateRingBuffer({{
+            .element_id = ring_buffer_id,
+            .options = fad::RingBufferOptions{{
+                .format = SafeRingBufferFormatFromElementRingBufferFormatSets(
+                    ring_buffer_id, device->ring_buffer_format_sets()),
+                .ring_buffer_min_bytes = 2000,
+            }},
+            .ring_buffer_server = std::move(ring_buffer_server_end),
+        }})
+        .Then([](fidl::Result<fad::Control::CreateRingBuffer>& result) {});
+
+    RunLoopUntilIdle();
+
+    // Drop control client while request is pended on the unresponsive driver.
+    control_client = {};
+    RunLoopUntilIdle();
+    EXPECT_EQ(ControlServer::count(), 0u);
+
+    // Complete the pended request so the callback fires with ControlServer destroyed.
+    fake_driver->CompleteCreateRingBuffer();
+    RunLoopUntilIdle();
+  }
+}
+
 TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamWhilePending) {
   auto fake_driver = CreateAndEnableDriverWithDefaults();
   auto registry = CreateTestRegistryServer();

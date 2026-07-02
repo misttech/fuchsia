@@ -254,32 +254,47 @@ void ControlServer::CreateRingBuffer(CreateRingBufferRequest& request,
   // `Device::CreateRingBuffer` always invokes the callback irrespective of the return value.
   bool created = device_->CreateRingBuffer(
       element_id, *driver_format, *request.options()->ring_buffer_min_bytes(),
-      [this, element_id](auto result) mutable {
+      // Capture a weak_ptr, in case the ControlServer is destroyed while the callback is in flight.
+      // Since we do this, it is OK to also pass 'this'.
+      [this, self = std::weak_ptr<ControlServer>(shared_from_this()), device = device_,
+       element_id](auto result) mutable {
+        auto shared_self = self.lock();
+        if (!shared_self) {
+          ADR_WARN_STATIC() << "(element_id " << element_id
+                            << ") ControlServer destroyed before CreateRingBuffer callback ran";
+          if (result.is_ok()) {
+            device->DropRingBuffer(element_id);
+          }
+          return;
+        }
+
         // If we have no async completer, maybe we're shutting down and it was cleared. Just exit.
-        auto completer_it = create_ring_buffer_completers_.find(element_id);
-        if (completer_it == create_ring_buffer_completers_.end()) {
+        auto completer_it = shared_self->create_ring_buffer_completers_.find(element_id);
+        if (completer_it == shared_self->create_ring_buffer_completers_.end()) {
           ADR_WARN_OBJECT()
               << "(element_id " << element_id
               << ") create_ring_buffer_completer_ gone by the time the CreateRingBuffer callback ran";
           if (result.is_ok()) {
-            device_->DropRingBuffer(element_id);
+            shared_self->device_->DropRingBuffer(element_id);
           }
           return;
         }
 
         auto completer = std::move(completer_it->second);
-        create_ring_buffer_completers_.erase(element_id);
+        shared_self->create_ring_buffer_completers_.erase(element_id);
 
         if (result.is_error()) {
           completer.Reply(fit::error(result.take_error()));
-          DeviceDroppedRingBuffer(element_id);
+          shared_self->DeviceDroppedRingBuffer(element_id);
           return;
         }
 
-        completer.Reply(fit::success(fad::ControlCreateRingBufferResponse{{
-            .properties = result.value().properties,
-            .ring_buffer = std::move(result.value().ring_buffer),
-        }}));
+        completer.Reply(fit::success(fad::ControlCreateRingBufferResponse{
+            {
+                .properties = result.value().properties,
+                .ring_buffer = std::move(result.value().ring_buffer),
+            },
+        }));
       });
 
   if (!created) {
@@ -409,27 +424,39 @@ void ControlServer::CreatePacketStream(CreatePacketStreamRequest& request,
   // `Device::CreatePacketStream` always invokes the callback irrespective of the return value.
   bool created = device_->CreatePacketStream(
       element_id, *driver_format,
-      [this, element_id](fit::result<fad::ControlCreatePacketStreamError, Device::PacketStreamInfo>
-                             result) mutable {
-        // If we have no async completer, maybe we're
-        // shutting down and it was cleared. Just exit.
-        auto completer_it = create_packet_stream_completers_.find(element_id);
-        if (completer_it == create_packet_stream_completers_.end()) {
+      // Capture a weak_ptr, in case the ControlServer is destroyed while the callback is in flight.
+      // Since we do this, it is OK to also pass 'this'.
+      [this, self = std::weak_ptr<ControlServer>(shared_from_this()), device = device_,
+       element_id](fit::result<fad::ControlCreatePacketStreamError, Device::PacketStreamInfo>
+                       result) mutable {
+        auto shared_self = self.lock();
+        if (!shared_self) {
+          ADR_WARN_STATIC() << "(element_id " << element_id
+                            << ") ControlServer destroyed before CreatePacketStream callback ran";
+          if (result.is_ok()) {
+            device->DropPacketStream(element_id);
+          }
+          return;
+        }
+
+        // If we have no async completer, maybe we're shutting down and it was cleared. Just exit.
+        auto completer_it = shared_self->create_packet_stream_completers_.find(element_id);
+        if (completer_it == shared_self->create_packet_stream_completers_.end()) {
           ADR_WARN_OBJECT()
               << "(element_id " << element_id
               << ") create_packet_stream_completer_ gone by the time the CreatePacketStream callback ran";
           if (result.is_ok()) {
-            device_->DropPacketStream(element_id);
+            shared_self->device_->DropPacketStream(element_id);
           }
           return;
         }
 
         auto completer = std::move(completer_it->second);
-        create_packet_stream_completers_.erase(element_id);
+        shared_self->create_packet_stream_completers_.erase(element_id);
 
         if (result.is_error()) {
           completer.Reply(fit::error(result.take_error()));
-          DeviceDroppedPacketStream(element_id);
+          shared_self->DeviceDroppedPacketStream(element_id);
           return;
         }
 
@@ -566,9 +593,15 @@ void ControlServer::DaiFormatIsNotChanged(ElementId element_id, const fha::DaiFo
   set_dai_format_completers_.erase(element_id);
   // If `error` is 0, SetDaiFormat was not an error but resulted in no change, so succeed that call.
   if (error == fad::ControlSetDaiFormatError(0)) {
-    completer.Reply(fit::success(fad::ControlSetDaiFormatResponse{{
-        .state = device_->codec_format_info(element_id),
-    }}));
+    if (device_->dai_format_is_set()) {
+      completer.Reply(fit::success(fad::ControlSetDaiFormatResponse{{
+          .state = device_->codec_format_info(element_id),
+      }}));
+    } else {
+      completer.Reply(fit::success(fad::ControlSetDaiFormatResponse{{
+          .state = std::nullopt,
+      }}));
+    }
   } else {
     completer.Reply(fit::error(error));
   }
@@ -800,7 +833,7 @@ void ControlServer::GetTopologies(GetTopologiesCompleter::Sync& completer) {
 
   FX_CHECK(device_->info().has_value() &&
            device_->info()->signal_processing_topologies().has_value() &&
-           device_->info()->signal_processing_topologies()->size());
+           !device_->info()->signal_processing_topologies()->empty());
   completer.Reply(zx::ok(*device_->info()->signal_processing_topologies()));
 }
 
@@ -927,7 +960,7 @@ void ControlServer::GetElements(GetElementsCompleter::Sync& completer) {
 
   FX_CHECK(device_->info().has_value() &&
            device_->info()->signal_processing_elements().has_value() &&
-           device_->info()->signal_processing_elements()->size());
+           !device_->info()->signal_processing_elements()->empty());
   completer.Reply(zx::ok(*device_->info()->signal_processing_elements()));
 }
 

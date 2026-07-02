@@ -69,6 +69,9 @@ void RecordPcmFormat(inspect::Node& node, fuchsia_audio::SampleType sample_type,
 // Save a boolean to an inspect property _that might already exist_.
 void SaveNodeBoolean(inspect::Node& node, std::optional<inspect::BoolProperty>& prop,
                      const std::string& key, std::optional<bool> value) {
+  if (!value.has_value()) {
+    return;
+  }
   if (!prop) {
     prop = node.CreateBool(key, *value);
   } else {
@@ -79,6 +82,9 @@ void SaveNodeBoolean(inspect::Node& node, std::optional<inspect::BoolProperty>& 
 // Save a uint64 to an inspect property _that might already exist_.
 void SaveNodeUint(inspect::Node& node, std::optional<inspect::UintProperty>& prop,
                   const std::string& key, std::optional<uint64_t> value) {
+  if (!value.has_value()) {
+    return;
+  }
   if (!prop) {
     prop = node.CreateUint(key, *value);
   } else {
@@ -89,6 +95,9 @@ void SaveNodeUint(inspect::Node& node, std::optional<inspect::UintProperty>& pro
 // Save a int64 to an inspect property _that might already exist_.
 void SaveNodeInt(inspect::Node& node, std::optional<inspect::IntProperty>& prop,
                  const std::string& key, std::optional<int64_t> value) {
+  if (!value.has_value()) {
+    return;
+  }
   if (!prop) {
     prop = node.CreateInt(key, *value);
   } else {
@@ -99,6 +108,9 @@ void SaveNodeInt(inspect::Node& node, std::optional<inspect::IntProperty>& prop,
 // Save a double to an inspect property _that might already exist_.
 void SaveNodeDouble(inspect::Node& node, std::optional<inspect::DoubleProperty>& prop,
                     const std::string& key, std::optional<double> value) {
+  if (!value.has_value()) {
+    return;
+  }
   if (!prop) {
     prop = node.CreateDouble(key, *value);
   } else {

@@ -739,6 +739,13 @@ void FakeComposite::CreateRingBuffer(CreateRingBufferRequest& request,
   completer.Reply(fit::ok());
 }
 
+void FakeComposite::CompleteCreateRingBuffer(fuchsia_hardware_audio::DriverError error) {
+  for (auto& completer : create_ring_buffer_completers_) {
+    completer.Reply(fit::error(error));
+  }
+  create_ring_buffer_completers_.clear();
+}
+
 void FakeComposite::CreatePacketStream(CreatePacketStreamRequest& request,
                                        CreatePacketStreamCompleter::Sync& completer) {
   auto element_id = request.processing_element_id();

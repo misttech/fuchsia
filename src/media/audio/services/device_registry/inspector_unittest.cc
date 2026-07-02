@@ -1657,18 +1657,18 @@ TEST_F(InspectorTest, InitialElementStateDaiInterconnect) {
 //       type_specific:
 //         band_states:
 //           0:
-//             attack_ns = 40000000
+//             attack_ns = 40'000'000
 //             band_id = 42
 //             input_gain_db = 0.000000
 //             knee_width_db = 4.000000
 //             level_type = PEAK
 //             linked_channels = true
-//             lookahead_ns = 200000000
+//             lookahead_ns = 200'000'000
 //             max_frequency = 12000
 //             min_frequency = 12
 //             output_gain_db = 0.000000
 //             ratio = 0.333000
-//             release_ns = 160000000
+//             release_ns = 160'000'000
 //             threshold_db = -4.000000
 //             threshold_type = BELOW
 //           1:
@@ -1733,13 +1733,29 @@ TEST_F(InspectorTest, InitialElementStateDynamics) {
                   std::to_string(FakeComposite::kDynamicsMaxFrequency1));
 
         ASSERT_TRUE(band_0_node->node().get_property<inspect::StringPropertyValue>(
-            std::string(kThresholdType)));
-        std::ostringstream stream;
-        stream << FakeComposite::kDynamicsThresholdType1;
+            std::string(kThresholdDb)));
         EXPECT_EQ(band_0_node->node()
-                      .get_property<inspect::StringPropertyValue>(std::string(kThresholdType))
+                      .get_property<inspect::StringPropertyValue>(std::string(kThresholdDb))
                       ->value(),
-                  stream.str());
+                  std::to_string(FakeComposite::kDynamicsThresholdDb1));
+
+        ASSERT_TRUE(band_0_node->node().get_property<inspect::StringPropertyValue>(
+            std::string(kThresholdType)));
+        {
+          std::ostringstream stream;
+          stream << FakeComposite::kDynamicsThresholdType1;
+          EXPECT_EQ(band_0_node->node()
+                        .get_property<inspect::StringPropertyValue>(std::string(kThresholdType))
+                        ->value(),
+                    stream.str());
+        }
+
+        ASSERT_TRUE(
+            band_0_node->node().get_property<inspect::StringPropertyValue>(std::string(kRatio)));
+        EXPECT_EQ(band_0_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kRatio))
+                      ->value(),
+                  std::to_string(FakeComposite::kDynamicsRatio1));
       }
       {
         // Verify Band 1
@@ -1768,13 +1784,57 @@ TEST_F(InspectorTest, InitialElementStateDynamics) {
                   std::to_string(FakeComposite::kDynamicsMaxFrequency2));
 
         ASSERT_TRUE(band_1_node->node().get_property<inspect::StringPropertyValue>(
-            std::string(kThresholdType)));
-        std::ostringstream stream;
-        stream << FakeComposite::kDynamicsThresholdType2;
+            std::string(kThresholdDb)));
         EXPECT_EQ(band_1_node->node()
-                      .get_property<inspect::StringPropertyValue>(std::string(kThresholdType))
+                      .get_property<inspect::StringPropertyValue>(std::string(kThresholdDb))
                       ->value(),
-                  stream.str());
+                  std::to_string(FakeComposite::kDynamicsThresholdDb2));
+
+        ASSERT_TRUE(band_1_node->node().get_property<inspect::StringPropertyValue>(
+            std::string(kThresholdType)));
+        {
+          std::ostringstream stream;
+          stream << FakeComposite::kDynamicsThresholdType2;
+          EXPECT_EQ(band_1_node->node()
+                        .get_property<inspect::StringPropertyValue>(std::string(kThresholdType))
+                        ->value(),
+                    stream.str());
+        }
+
+        ASSERT_TRUE(
+            band_1_node->node().get_property<inspect::StringPropertyValue>(std::string(kRatio)));
+        EXPECT_EQ(band_1_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kRatio))
+                      ->value(),
+                  std::to_string(FakeComposite::kDynamicsRatio2));
+      }
+
+      for (const char* band_idx : {"0", "1"}) {
+        auto band_node = GetChild(band_states_node, band_idx);
+        ASSERT_NE(band_node, nullptr);
+        EXPECT_EQ(
+            band_node->node().get_property<inspect::DoublePropertyValue>(std::string(kKneeWidthDb)),
+            nullptr);
+        EXPECT_EQ(band_node->node().get_property<inspect::IntPropertyValue>(std::string(kAttackNs)),
+                  nullptr);
+        EXPECT_EQ(
+            band_node->node().get_property<inspect::IntPropertyValue>(std::string(kReleaseNs)),
+            nullptr);
+        EXPECT_EQ(band_node->node().get_property<inspect::DoublePropertyValue>(
+                      std::string(kOutputGainDb)),
+                  nullptr);
+        EXPECT_EQ(
+            band_node->node().get_property<inspect::DoublePropertyValue>(std::string(kInputGainDb)),
+            nullptr);
+        EXPECT_EQ(
+            band_node->node().get_property<inspect::StringPropertyValue>(std::string(kLevelType)),
+            nullptr);
+        EXPECT_EQ(
+            band_node->node().get_property<inspect::IntPropertyValue>(std::string(kLookaheadNs)),
+            nullptr);
+        EXPECT_EQ(band_node->node().get_property<inspect::BoolPropertyValue>(
+                      std::string(kLinkedChannels)),
+                  nullptr);
       }
     }
   }
@@ -2311,7 +2371,7 @@ TEST_F(InspectorTest, ChangedElementStateDynamics) {
     }
   }
 
-  // Inject state change.
+  // Inject state change with only required fields (all optional fields absent).
   uint32_t new_min_frequency = 100;
   fhasp::DynamicsBandState bs1;
   bs1.id(FakeComposite::kDynamicsBandId1);
@@ -2325,9 +2385,9 @@ TEST_F(InspectorTest, ChangedElementStateDynamics) {
   bs2.id(FakeComposite::kDynamicsBandId2);
   bs2.min_frequency(FakeComposite::kDynamicsMinFrequency2);
   bs2.max_frequency(FakeComposite::kDynamicsMaxFrequency2);
-  bs2.threshold_db(-12.0);
-  bs2.threshold_type(fhasp::ThresholdType::kBelow);
-  bs2.ratio(0.333);
+  bs2.threshold_db(-6.0);
+  bs2.threshold_type(fhasp::ThresholdType::kAbove);
+  bs2.ratio(0.5);
 
   std::vector<fhasp::DynamicsBandState> band_states;
   band_states.push_back(std::move(bs1));
@@ -2345,7 +2405,8 @@ TEST_F(InspectorTest, ChangedElementStateDynamics) {
   RunLoopUntilIdle();
 
   {
-    // Verify updated state.
+    // Verify updated state and verify that absent optional fields do not dereference
+    // nulled-out optionals or publish uninitialized stack values to Inspect.
     auto hierarchy = GetHierarchy();
     auto devices_node = GetChild(&hierarchy, kDevices);
     auto device_node = &devices_node->children().front();
@@ -2354,6 +2415,8 @@ TEST_F(InspectorTest, ChangedElementStateDynamics) {
     for (const auto& element_node : elements_node->children()) {
       auto element_id_prop =
           element_node.node().get_property<inspect::UintPropertyValue>(std::string(kElementId));
+      ASSERT_TRUE(element_id_prop);
+
       if (element_id_prop->value() == FakeComposite::kDynamicsElementId) {
         auto state_node = GetChild(&element_node, kState);
         auto type_specific_node = GetChild(state_node, kTypeSpecific);
@@ -2362,9 +2425,208 @@ TEST_F(InspectorTest, ChangedElementStateDynamics) {
         auto band_0_node = GetChild(band_states_node, "0");
         ASSERT_NE(band_0_node, nullptr);
         EXPECT_EQ(band_0_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kBandId))
+                      ->value(),
+                  std::to_string(FakeComposite::kDynamicsBandId1));
+        EXPECT_EQ(band_0_node->node()
                       .get_property<inspect::StringPropertyValue>(std::string(kMinFrequency))
                       ->value(),
                   std::to_string(new_min_frequency));
+        EXPECT_EQ(band_0_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kMaxFrequency))
+                      ->value(),
+                  std::to_string(FakeComposite::kDynamicsMaxFrequency1));
+        EXPECT_EQ(band_0_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kThresholdDb))
+                      ->value(),
+                  std::to_string(-12.0f));
+        {
+          std::ostringstream stream;
+          stream << fhasp::ThresholdType::kBelow;
+          EXPECT_EQ(band_0_node->node()
+                        .get_property<inspect::StringPropertyValue>(std::string(kThresholdType))
+                        ->value(),
+                    stream.str());
+        }
+        EXPECT_EQ(band_0_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kRatio))
+                      ->value(),
+                  std::to_string(0.333f));
+
+        auto band_1_node = GetChild(band_states_node, "1");
+        ASSERT_NE(band_1_node, nullptr);
+        EXPECT_EQ(band_1_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kBandId))
+                      ->value(),
+                  std::to_string(FakeComposite::kDynamicsBandId2));
+        EXPECT_EQ(band_1_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kMinFrequency))
+                      ->value(),
+                  std::to_string(FakeComposite::kDynamicsMinFrequency2));
+        EXPECT_EQ(band_1_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kMaxFrequency))
+                      ->value(),
+                  std::to_string(FakeComposite::kDynamicsMaxFrequency2));
+        EXPECT_EQ(band_1_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kThresholdDb))
+                      ->value(),
+                  std::to_string(-6.0f));
+        {
+          std::ostringstream stream;
+          stream << fhasp::ThresholdType::kAbove;
+          EXPECT_EQ(band_1_node->node()
+                        .get_property<inspect::StringPropertyValue>(std::string(kThresholdType))
+                        ->value(),
+                    stream.str());
+        }
+        EXPECT_EQ(band_1_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kRatio))
+                      ->value(),
+                  std::to_string(0.5f));
+
+        for (const char* band_idx : {"0", "1"}) {
+          auto band_node = GetChild(band_states_node, band_idx);
+          ASSERT_NE(band_node, nullptr);
+
+          // Optional fields must be absent (nullptr in Inspect).
+          EXPECT_EQ(band_node->node().get_property<inspect::DoublePropertyValue>(
+                        std::string(kKneeWidthDb)),
+                    nullptr);
+          EXPECT_EQ(
+              band_node->node().get_property<inspect::IntPropertyValue>(std::string(kAttackNs)),
+              nullptr);
+          EXPECT_EQ(
+              band_node->node().get_property<inspect::IntPropertyValue>(std::string(kReleaseNs)),
+              nullptr);
+          EXPECT_EQ(band_node->node().get_property<inspect::DoublePropertyValue>(
+                        std::string(kOutputGainDb)),
+                    nullptr);
+          EXPECT_EQ(band_node->node().get_property<inspect::DoublePropertyValue>(
+                        std::string(kInputGainDb)),
+                    nullptr);
+          EXPECT_EQ(
+              band_node->node().get_property<inspect::StringPropertyValue>(std::string(kLevelType)),
+              nullptr);
+          EXPECT_EQ(
+              band_node->node().get_property<inspect::IntPropertyValue>(std::string(kLookaheadNs)),
+              nullptr);
+          EXPECT_EQ(band_node->node().get_property<inspect::BoolPropertyValue>(
+                        std::string(kLinkedChannels)),
+                    nullptr);
+        }
+        break;
+      }
+    }
+  }
+
+  // Inject a second state change to populate optional fields in supported_controls (attack,
+  // release, output_gain_db) and verify they transition from nullptr to expected values.
+  bs1.attack(10'000'000);   // 10 ms
+  bs1.release(50'000'000);  // 50 ms
+  bs1.output_gain_db(3.5f);
+
+  bs2.attack(20'000'000);    // 20 ms
+  bs2.release(100'000'000);  // 100 ms
+  bs2.output_gain_db(-1.5f);
+
+  std::vector<fhasp::DynamicsBandState> band_states2;
+  band_states2.push_back(std::move(bs1));
+  band_states2.push_back(std::move(bs2));
+
+  fhasp::DynamicsElementState des2;
+  des2.band_states(std::move(band_states2));
+
+  fhasp::ElementState new_state2 = {{
+      .type_specific = fhasp::TypeSpecificElementState::WithDynamics(std::move(des2)),
+      .started = true,
+      .bypassed = false,
+  }};
+  fake_driver->InjectElementStateChange(FakeComposite::kDynamicsElementId, new_state2);
+  RunLoopUntilIdle();
+
+  {
+    // Verify optional fields transitioned from nullptr to expected values.
+    auto hierarchy = GetHierarchy();
+    auto devices_node = GetChild(&hierarchy, kDevices);
+    auto device_node = &devices_node->children().front();
+    auto elements_node = GetChild(device_node, kElements);
+
+    for (const auto& element_node : elements_node->children()) {
+      auto element_id_prop =
+          element_node.node().get_property<inspect::UintPropertyValue>(std::string(kElementId));
+
+      if (element_id_prop->value() == FakeComposite::kDynamicsElementId) {
+        auto state_node = GetChild(&element_node, kState);
+        auto type_specific_node = GetChild(state_node, kTypeSpecific);
+        auto band_states_node = GetChild(type_specific_node, kBandStates);
+
+        auto band_0_node = GetChild(band_states_node, "0");
+        ASSERT_NE(band_0_node, nullptr);
+        ASSERT_NE(
+            band_0_node->node().get_property<inspect::IntPropertyValue>(std::string(kAttackNs)),
+            nullptr);
+        EXPECT_EQ(band_0_node->node()
+                      .get_property<inspect::IntPropertyValue>(std::string(kAttackNs))
+                      ->value(),
+                  10'000'000);
+        ASSERT_NE(
+            band_0_node->node().get_property<inspect::IntPropertyValue>(std::string(kReleaseNs)),
+            nullptr);
+        EXPECT_EQ(band_0_node->node()
+                      .get_property<inspect::IntPropertyValue>(std::string(kReleaseNs))
+                      ->value(),
+                  50'000'000);
+        ASSERT_NE(band_0_node->node().get_property<inspect::DoublePropertyValue>(
+                      std::string(kOutputGainDb)),
+                  nullptr);
+        EXPECT_DOUBLE_EQ(band_0_node->node()
+                             .get_property<inspect::DoublePropertyValue>(std::string(kOutputGainDb))
+                             ->value(),
+                         3.5);
+
+        auto band_1_node = GetChild(band_states_node, "1");
+        ASSERT_NE(band_1_node, nullptr);
+        ASSERT_NE(
+            band_1_node->node().get_property<inspect::IntPropertyValue>(std::string(kAttackNs)),
+            nullptr);
+        EXPECT_EQ(band_1_node->node()
+                      .get_property<inspect::IntPropertyValue>(std::string(kAttackNs))
+                      ->value(),
+                  20'000'000);
+        ASSERT_NE(
+            band_1_node->node().get_property<inspect::IntPropertyValue>(std::string(kReleaseNs)),
+            nullptr);
+        EXPECT_EQ(band_1_node->node()
+                      .get_property<inspect::IntPropertyValue>(std::string(kReleaseNs))
+                      ->value(),
+                  100'000'000);
+        ASSERT_NE(band_1_node->node().get_property<inspect::DoublePropertyValue>(
+                      std::string(kOutputGainDb)),
+                  nullptr);
+        EXPECT_DOUBLE_EQ(band_1_node->node()
+                             .get_property<inspect::DoublePropertyValue>(std::string(kOutputGainDb))
+                             ->value(),
+                         -1.5);
+
+        // Verify unpopulated optionals remain absent.
+        for (const char* band_idx : {"0", "1"}) {
+          auto band_node = GetChild(band_states_node, band_idx);
+          EXPECT_EQ(band_node->node().get_property<inspect::DoublePropertyValue>(
+                        std::string(kKneeWidthDb)),
+                    nullptr);
+          EXPECT_EQ(band_node->node().get_property<inspect::DoublePropertyValue>(
+                        std::string(kInputGainDb)),
+                    nullptr);
+          EXPECT_EQ(
+              band_node->node().get_property<inspect::StringPropertyValue>(std::string(kLevelType)),
+              nullptr);
+          EXPECT_EQ(
+              band_node->node().get_property<inspect::IntPropertyValue>(std::string(kLookaheadNs)),
+              nullptr);
+          EXPECT_EQ(band_node->node().get_property<inspect::BoolPropertyValue>(
+                        std::string(kLinkedChannels)),
+                    nullptr);
+        }
         break;
       }
     }
