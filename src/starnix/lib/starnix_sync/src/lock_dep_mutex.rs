@@ -41,8 +41,9 @@ mod tracking {
     ///
     /// Panics if a self-deadlock or lock cycle is detected.
     #[inline(always)]
+    #[track_caller]
     fn check_and_push_lock(target_value: usize, name: &'static str) {
-        let _ = STATE.try_with(|state| {
+        let panic_message = STATE.try_with(|state| {
             let mut s = state.borrow_mut();
             if let Some(last) = s.held_locks.last() {
                 let last_value = last.encoded_value;
@@ -51,31 +52,31 @@ mod tracking {
 
                 if target_value == last_value {
                     if target_level == last_level && name != last.name {
-                        panic!(
+                        return Err(format!(
                             "LockDep: Invalid lock ordering detected: acquired lock '{}' while holding lock '{}' (both share the same lock level {})!",
                             name, last.name, target_value
-                        );
+                        ));
                     } else {
-                        panic!(
+                        return Err(format!(
                             "LockDep: Self-deadlock detected on lock '{name}' (level {target_value})!"
-                        );
+                        ));
                     }
                 }
                 if target_level < last_level {
-                    panic!(
+                    return Err(format!(
                         "LockDep: Invalid lock ordering cycle detected: \
                         attempted to acquire '{name}' after '{}' \
                         ({target_level} < {last_level})!",
                         last.name
-                    );
+                    ));
                 }
                 if target_level == last_level {
                     // We are acquiring a sublock!
                     if last.active_subclass_tokens == 0 {
-                        panic!(
+                        return Err(format!(
                             "LockDep: Subclassing not allowed or already consumed for lock '{}'",
                             last.name
-                        );
+                        ));
                     }
                 }
             }
@@ -84,20 +85,25 @@ mod tracking {
                 active_subclass_tokens: 0,
                 name,
             });
+            Ok(())
         });
+        if let Ok(Err(panic_message)) = panic_message {
+            panic!("{panic_message}");
+        }
     }
 
     /// Removes a lock from the thread-local stack when it is released.
     #[inline(always)]
+    #[track_caller]
     fn pop_lock(target_value: usize) {
-        let _ = STATE.try_with(|state| {
+        let panic_message = STATE.try_with(|state| {
             let mut s = state.borrow_mut();
             let Some(pos) = s.held_locks.iter().rposition(|v| v.encoded_value == target_value)
             else {
-                panic!(
+                return Err(format!(
                     "LockDep: Attempted to pop a tracked lock that was not tracked. \
                     Discrepancy detected. Target Lock : {target_value}"
-                );
+                ));
             };
             let lock = &s.held_locks[pos];
             if lock.active_subclass_tokens > 0 {
@@ -107,14 +113,18 @@ mod tracking {
                     .map(|v| format!("{:X}:{}", v.encoded_value, v.active_subclass_tokens))
                     .collect::<Vec<_>>()
                     .join(", ");
-                panic!(
+                return Err(format!(
                     "LockDep: Attempted to drop a lock with active subclass tokens! \
                         Target: {:X}, tokens: {}, Stack: [{}]",
                     target_value, lock.active_subclass_tokens, stack_str
-                );
+                ));
             }
             s.held_locks.remove(pos);
+            Ok(())
         });
+        if let Ok(Err(panic_message)) = panic_message {
+            panic!("{panic_message}");
+        }
     }
 
     #[cfg(test)]
@@ -163,30 +173,35 @@ mod tracking {
 
     /// Revokes the subclass authorization for the given lock ID when a `SubclassToken` is dropped.
     #[inline(always)]
+    #[track_caller]
     fn disable_subclass(encoded_value: usize) {
         if encoded_value == usize::MAX {
             return;
         }
-        let _ = STATE.try_with(|state| {
+        let panic_message = STATE.try_with(|state| {
             let mut s = state.borrow_mut();
             let Some(pos) = s.held_locks.iter().rposition(|v| v.encoded_value == encoded_value)
             else {
-                panic!(
+                return Err(format!(
                     "LockDep: Attempted to disable subclass for a lock that is not on the stack! \
                     Value: {:X}",
                     encoded_value
-                );
+                ));
             };
             let lock = &mut s.held_locks[pos];
             if lock.active_subclass_tokens == 0 {
-                panic!(
+                return Err(format!(
                     "LockDep: Attempted to disable subclass for a lock with no active tokens! \
                     Value: {:X}",
                     encoded_value
-                );
+                ));
             }
             lock.active_subclass_tokens -= 1;
+            Ok(())
         });
+        if let Ok(Err(panic_message)) = panic_message {
+            panic!("{panic_message}");
+        }
     }
 
     /// A token that represents a lock level being held for lockdep purposes.
@@ -201,6 +216,7 @@ mod tracking {
     }
 
     impl LockLevelToken {
+        #[track_caller]
         pub(super) fn new(lock_id: usize, name: &'static str) -> Self {
             let subclass = get_subclass(lock_id);
             assert!(subclass < 16, "subclass must be between 0 and 15");
@@ -213,15 +229,21 @@ mod tracking {
             self.inner.target_value
         }
 
+        #[track_caller]
         pub(super) fn check_maximal(&self) {
-            let _ = STATE.try_with(|state| {
+            let panic_message = STATE.try_with(|state| {
                 if let Some(last) = state.borrow().held_locks.last() {
-                    assert_eq!(
-                        last.encoded_value, self.inner.target_value,
-                        "Condvar wait requires the lock to be the latest acquired lock.",
-                    );
+                    if last.encoded_value != self.inner.target_value {
+                        return Err(format!(
+                            "Condvar wait requires the lock to be the latest acquired lock.",
+                        ));
+                    }
                 }
+                Ok(())
             });
+            if let Ok(Err(panic_message)) = panic_message {
+                panic!("{panic_message}");
+            }
         }
     }
 
@@ -275,6 +297,7 @@ mod tracking {
         token: Option<LockLevelToken>,
     }
 
+    #[track_caller]
     pub(super) fn lock_with_context<'a, T>(
         mutex: &'a crate::DynamicLockDepMutex<T>,
         context: &mut LockDepContext,
@@ -297,6 +320,7 @@ mod tracking {
         }
     }
 
+    #[track_caller]
     pub(super) fn read_with_context<'a, T>(
         rwlock: &'a crate::DynamicLockDepRwLock<T>,
         context: &mut LockDepContext,
@@ -319,6 +343,7 @@ mod tracking {
         }
     }
 
+    #[track_caller]
     pub(super) fn write_with_context<'a, T>(
         rwlock: &'a crate::DynamicLockDepRwLock<T>,
         context: &mut LockDepContext,
@@ -429,12 +454,14 @@ impl<T> DynamicLockDepMutex<T> {
     }
 
     #[inline(always)]
+    #[track_caller]
     pub fn lock(&self) -> LockDepGuard<'_, T> {
         let token = tracking::LockLevelToken::new(self.tracking.lock_id(), self.tracking.name());
         LockDepGuard { inner: self.inner.lock(), token }
     }
 
     #[inline(always)]
+    #[track_caller]
     pub fn try_lock(&self) -> Option<LockDepGuard<'_, T>> {
         let inner = self.inner.try_lock()?;
         let token = tracking::LockLevelToken::new(self.tracking.lock_id(), self.tracking.name());
@@ -522,11 +549,13 @@ impl<T, L: crate::LockLevel> LockDepMutex<T, L> {
     }
 
     #[inline(always)]
+    #[track_caller]
     pub fn lock(&self) -> LockDepGuard<'_, T> {
         self.inner.lock()
     }
 
     #[inline(always)]
+    #[track_caller]
     pub fn try_lock(&self) -> Option<LockDepGuard<'_, T>> {
         self.inner.try_lock()
     }
@@ -627,12 +656,14 @@ impl<T> DynamicLockDepRwLock<T> {
     }
 
     #[inline(always)]
+    #[track_caller]
     pub fn read(&self) -> LockDepReadGuard<'_, T> {
         let token = tracking::LockLevelToken::new(self.tracking.lock_id(), self.tracking.name());
         LockDepReadGuard { inner: self.inner.read(), token }
     }
 
     #[inline(always)]
+    #[track_caller]
     pub fn try_read(&self) -> Option<LockDepReadGuard<'_, T>> {
         let inner = self.inner.try_read()?;
         let token = tracking::LockLevelToken::new(self.tracking.lock_id(), self.tracking.name());
@@ -640,12 +671,14 @@ impl<T> DynamicLockDepRwLock<T> {
     }
 
     #[inline(always)]
+    #[track_caller]
     pub fn write(&self) -> LockDepWriteGuard<'_, T> {
         let token = tracking::LockLevelToken::new(self.tracking.lock_id(), self.tracking.name());
         LockDepWriteGuard { inner: self.inner.write(), token }
     }
 
     #[inline(always)]
+    #[track_caller]
     pub fn try_write(&self) -> Option<LockDepWriteGuard<'_, T>> {
         let inner = self.inner.try_write()?;
         let token = tracking::LockLevelToken::new(self.tracking.lock_id(), self.tracking.name());
@@ -762,21 +795,25 @@ impl<T, L: crate::LockLevel> LockDepRwLock<T, L> {
     }
 
     #[inline(always)]
+    #[track_caller]
     pub fn read(&self) -> LockDepReadGuard<'_, T> {
         self.inner.read()
     }
 
     #[inline(always)]
+    #[track_caller]
     pub fn try_read(&self) -> Option<LockDepReadGuard<'_, T>> {
         self.inner.try_read()
     }
 
     #[inline(always)]
+    #[track_caller]
     pub fn write(&self) -> LockDepWriteGuard<'_, T> {
         self.inner.write()
     }
 
     #[inline(always)]
+    #[track_caller]
     pub fn try_write(&self) -> Option<LockDepWriteGuard<'_, T>> {
         self.inner.try_write()
     }
@@ -880,12 +917,14 @@ impl<'a, T> LockDepWriteGuard<'a, T> {
 /// A token that allows the next lock acquisition of the same level as the currently maximal
 /// held lock to use an incremented subclass.
 /// Allows subclassing of the currently maximal held lock.
+#[track_caller]
 pub fn allow_subclass() -> tracking::SubclassToken {
     tracking::SubclassToken::new()
 }
 
 /// Asserts that the current thread can acquire locks at level `L`.
 /// Returns a token that, when held, forces subsequent locks to be after `L`.
+#[track_caller]
 pub fn assert_lock_level<L: crate::LockLevel>() -> tracking::LockLevelToken {
     tracking::LockLevelToken::new(L::LOCK_ID, L::NAME)
 }
