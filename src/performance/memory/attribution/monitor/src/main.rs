@@ -118,6 +118,7 @@ async fn main() -> Result<()> {
     let mut inspect_nodes_service = fuchsia_async::Task::spawn(inspect_nodes::serve(
         kernel_stats.clone(),
         stall_provider.clone(),
+        page_refault_tracker.clone(),
     )?)
     .fuse();
     let metric_event_logger = create_metric_event_logger(connect_to_protocol::<

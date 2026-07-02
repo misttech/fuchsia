@@ -112,17 +112,17 @@ impl<P: RefaultProvider> ThrashingDetector<P> {
 mod tests {
     use super::*;
     use diagnostics_assertions::{AnyProperty, assert_data_tree};
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     #[derive(Clone)]
     struct MockRefaultProvider {
-        count: Rc<RefCell<u64>>,
+        count: Arc<AtomicU64>,
     }
 
     impl RefaultProvider for MockRefaultProvider {
         fn get_count(&self) -> u64 {
-            *self.count.borrow()
+            self.count.load(Ordering::Relaxed)
         }
     }
 
@@ -140,7 +140,7 @@ mod tests {
         let inspector = fuchsia_inspect::Inspector::default();
         let config = ThrashingConfig { polling_interval_seconds: 60, page_refault_threshold: 100 };
 
-        let refaults = Rc::new(RefCell::new(0));
+        let refaults = Arc::new(AtomicU64::new(0));
         let provider = MockRefaultProvider { count: refaults.clone() };
 
         let (metric_event_logger, mut metric_event_request_stream) =
@@ -157,7 +157,7 @@ mod tests {
         detector.run_one_iteration().await.unwrap();
 
         // Second iteration - delta 200 > 100 threshold
-        *refaults.borrow_mut() = 200;
+        refaults.store(200, Ordering::Relaxed);
 
         let iteration_fut = detector.run_one_iteration();
 
@@ -202,7 +202,7 @@ mod tests {
         let inspector = fuchsia_inspect::Inspector::default();
         let config = ThrashingConfig { polling_interval_seconds: 60, page_refault_threshold: 100 };
 
-        let refaults = Rc::new(RefCell::new(0));
+        let refaults = Arc::new(AtomicU64::new(0));
         let provider = MockRefaultProvider { count: refaults.clone() };
 
         let (metric_event_logger, mut metric_event_request_stream) =
@@ -219,7 +219,7 @@ mod tests {
         detector.run_one_iteration().await.unwrap();
 
         // Second iteration - delta 200 > 100 threshold
-        *refaults.borrow_mut() = 200;
+        refaults.store(200, Ordering::Relaxed);
 
         let iteration_fut = detector.run_one_iteration();
 

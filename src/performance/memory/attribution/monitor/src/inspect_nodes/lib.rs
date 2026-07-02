@@ -9,6 +9,7 @@ use fuchsia_inspect::{ArrayProperty, Inspector};
 use futures::FutureExt;
 use log::debug;
 use stalls::StallProvider;
+use stalls::refaults::RefaultProvider;
 use std::future::Future;
 use std::u64;
 
@@ -16,6 +17,7 @@ use std::u64;
 pub fn serve(
     kernel_stats_proxy: fkernel::StatsProxy,
     stall_provider: impl StallProvider,
+    refault_provider: impl RefaultProvider,
 ) -> Result<impl Future<Output = ()>> {
     debug!("Start serving inspect tree.");
 
@@ -28,13 +30,14 @@ pub fn serve(
         inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default())
             .ok_or_else(|| anyhow!("Failed to serve server handling `fuchsia.inspect.Tree`"))?;
 
-    build_inspect_tree(kernel_stats_proxy, stall_provider, inspector);
+    build_inspect_tree(kernel_stats_proxy, stall_provider, refault_provider, inspector);
     Ok(inspect_controller)
 }
 
 fn build_inspect_tree(
     kernel_stats_proxy: fkernel::StatsProxy,
     stall_provider: impl StallProvider,
+    refault_provider: impl RefaultProvider,
     inspector: &Inspector,
 ) {
     // Lazy evaluation is unregistered when the `LazyNode` is dropped.
@@ -167,6 +170,19 @@ fn build_inspect_tree(
             .boxed()
         });
     }
+
+    {
+        inspector.root().record_lazy_child("refaults", move || {
+            let refault_provider = refault_provider.clone();
+            async move {
+                let refault_info = refault_provider.get_count();
+                let inspector = Inspector::default();
+                inspector.root().record_uint("count", refault_info);
+                Ok(inspector)
+            }
+            .boxed()
+        });
+    }
 }
 
 #[cfg(test)]
@@ -254,6 +270,14 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct FakeRefaultProvider {}
+    impl RefaultProvider for FakeRefaultProvider {
+        fn get_count(&self) -> u64 {
+            1000
+        }
+    }
+
     #[test]
     fn test_build_inspect_tree() {
         let mut exec = fasync::TestExecutor::new();
@@ -267,7 +291,12 @@ mod tests {
 
         let inspector = fuchsia_inspect::Inspector::default();
 
-        build_inspect_tree(stats_provider, FakeStallProvider {}, &inspector);
+        build_inspect_tree(
+            stats_provider,
+            FakeStallProvider {},
+            FakeRefaultProvider {},
+            &inspector,
+        );
 
         let output = exec
             .run_singlethreaded(fuchsia_inspect::reader::read(&inspector))
@@ -316,6 +345,9 @@ mod tests {
             stalls: {
                 some_ms: 10u64,
                 full_ms: 20u64,
+            },
+            refaults: {
+                count: 1000u64,
             },
         });
     }

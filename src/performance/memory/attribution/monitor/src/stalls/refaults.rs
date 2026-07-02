@@ -10,7 +10,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use zx::Status;
 
-pub trait RefaultProvider: Clone {
+pub trait RefaultProvider: Clone + Send + Sync + 'static {
     // Returns the current number of page refaults of the system, since its start.
     fn get_count(&self) -> u64;
 }
