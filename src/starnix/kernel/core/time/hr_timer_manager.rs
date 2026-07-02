@@ -459,7 +459,7 @@ impl HrTimerManager {
     pub fn new(parent_node: &fuchsia_inspect::Node) -> HrTimerManagerHandle {
         let inspect_node = parent_node.create_child("hr_timer_manager");
         let new_manager = Arc::new(Self {
-            state: LockDepMutex::new(HrTimerManagerState::new(&inspect_node)),
+            state: HrTimerManagerState::new(&inspect_node).into(),
             start_next_sender: Default::default(),
         });
         let manager_weak = Arc::downgrade(&new_manager);
@@ -1222,8 +1222,7 @@ impl HrTimer {
     pub fn new() -> HrTimerHandle {
         let event = zx::Event::create();
         let event_koid = event.koid().expect("infallible");
-        let ret =
-            Arc::new(Self { event, event_koid, is_interval: LockDepMutex::new(false) });
+        let ret = Arc::new(Self { event, event_koid, is_interval: false.into() });
         let wake_alarm_id = ret.wake_alarm_id();
         ftrace::duration!("alarms", "hrtimer::new", "timer_id" => ret.get_id(), "wake_alarm_id" => &wake_alarm_id[..]);
         ftrace::flow_begin!("alarms", "hrtimer_lifecycle", ret.trace_id(), "wake_alarm_id" => &wake_alarm_id[..]);
@@ -1393,7 +1392,7 @@ mod tests {
         response_type: Response,
     ) -> (HrTimerManagerHandle, zx::Counter) {
         let manager = Arc::new(HrTimerManager {
-            state: LockDepMutex::new(HrTimerManagerState::new_for_test()),
+            state: HrTimerManagerState::new_for_test().into(),
             start_next_sender: Default::default(),
         });
         let counter = zx::Counter::create();

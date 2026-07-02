@@ -101,10 +101,7 @@ pub struct TouchPowerPolicyFile {
 
 impl TouchPowerPolicyFile {
     pub fn new(touch_standby_sender: Sender<bool>) -> Arc<Self> {
-        Arc::new(TouchPowerPolicyFile {
-            touch_enabled: LockDepMutex::new(true),
-            touch_standby_sender,
-        })
+        Arc::new(TouchPowerPolicyFile { touch_enabled: true.into(), touch_standby_sender })
     }
 }
 

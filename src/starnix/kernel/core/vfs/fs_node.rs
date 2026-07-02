@@ -1258,7 +1258,7 @@ impl FsNode {
                 append_lock: Default::default(),
                 rare_data: Default::default(),
                 write_guard_state: Default::default(),
-                fsverity: LockDepMutex::new(FsVerityState::None),
+                fsverity: Default::default(),
                 security_state: Default::default(),
             };
             #[cfg(any(test, debug_assertions))]

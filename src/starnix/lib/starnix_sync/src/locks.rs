@@ -221,7 +221,7 @@ impl<T: Default, L: LockAfter<UninterruptibleLock> + crate::LockLevel> Default
     for OrderedMutex<T, L>
 {
     fn default() -> Self {
-        Self { mutex: LockDepMutex::new(T::default()) }
+        Self { mutex: T::default().into() }
     }
 }
 
@@ -292,7 +292,7 @@ impl<T: Default, L: LockAfter<UninterruptibleLock> + crate::LockLevel> Default
     for OrderedRwLock<T, L>
 {
     fn default() -> Self {
-        Self { rwlock: LockDepRwLock::new(T::default()) }
+        Self { rwlock: T::default().into() }
     }
 }
 
@@ -562,8 +562,8 @@ mod test {
 
     #[::fuchsia::test]
     fn test_ordered_rwlock_wrappers() {
-        let l1: LockDepRwLock<u8, A> = LockDepRwLock::new(1);
-        let l2: LockDepRwLock<u8, A> = LockDepRwLock::new(2);
+        let l1: LockDepRwLock<u8, A> = 1.into();
+        let l2: LockDepRwLock<u8, A> = 2.into();
 
         {
             let (g1, g2) = ordered_read_lock(&l1, &l2);
@@ -589,9 +589,9 @@ mod test {
 
     #[::fuchsia::test]
     fn test_ordered_rwlock_vec() {
-        let l1: LockDepRwLock<u8, A> = LockDepRwLock::new(1);
-        let l0: LockDepRwLock<u8, A> = LockDepRwLock::new(0);
-        let l2: LockDepRwLock<u8, A> = LockDepRwLock::new(2);
+        let l1: LockDepRwLock<u8, A> = 1.into();
+        let l0: LockDepRwLock<u8, A> = 0.into();
+        let l2: LockDepRwLock<u8, A> = 2.into();
 
         {
             let guards = ordered_read_lock_vec(&[&l0, &l1, &l2]);

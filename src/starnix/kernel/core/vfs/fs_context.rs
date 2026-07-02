@@ -74,12 +74,13 @@ impl FsContext {
     pub fn new(namespace: Arc<Namespace>) -> Arc<FsContext> {
         let root = namespace.root();
         Arc::new(FsContext {
-            state: LockDepRwLock::new(FsContextState {
+            state: FsContextState {
                 namespace,
                 root: root.clone().into_active(),
                 cwd: root.into_active(),
                 umask: FileMode::DEFAULT_UMASK,
-            }),
+            }
+            .into(),
         })
     }
 
@@ -89,7 +90,7 @@ impl FsContext {
         //
         // See <https://man7.org/linux/man-pages/man2/umask.2.html>
 
-        Arc::new(FsContext { state: LockDepRwLock::new(self.state.read().clone()) })
+        Arc::new(FsContext { state: self.state.read().clone().into() })
     }
 
     /// Returns a reference to the current working directory.

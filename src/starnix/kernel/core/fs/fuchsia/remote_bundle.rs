@@ -463,11 +463,7 @@ impl FsNodeOps for DirectoryObject {
                         server_end.into_channel(),
                     )
                     .map_err(|_| errno!(EIO))?;
-                Ok(fs.create_node(
-                    ino,
-                    File { inner: LockDepMutex::new(Inner::NeedsVmo(file)) },
-                    info,
-                ))
+                Ok(fs.create_node(ino, File { inner: Inner::NeedsVmo(file).into() }, info))
             }
         }
     }

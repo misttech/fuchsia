@@ -43,7 +43,7 @@ impl MapInfoCache {
             .map_err(|e| from_status_like_fdio!(e))?;
         buf.set_name(&ZIRCON_NAME);
 
-        Ok(Self { buf: LockDepMutex::new(buf) })
+        Ok(Self { buf: buf.into() })
     }
 
     pub fn with_map_infos<R>(

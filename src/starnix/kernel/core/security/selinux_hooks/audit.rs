@@ -32,7 +32,7 @@ struct AuditableInstance {
 /// Stores count of todo_deny logged per auditable instance.
 static TODO_DENY_COUNTS: LazyLock<
     LockDepMutex<HashMap<AuditableInstance, u32>, AuditDenyCountsLock>,
-> = LazyLock::new(|| LockDepMutex::new(HashMap::new()));
+> = LazyLock::new(|| Default::default());
 
 /// Checks whether an audit log entry should still be emitted for this audit instance.
 fn should_audit(

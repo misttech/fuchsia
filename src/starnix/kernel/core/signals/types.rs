@@ -68,7 +68,7 @@ impl SignalActions {
     /// Returns a collection of `sigaction_t`s that contains default values for each signal.
     pub fn default() -> Arc<SignalActions> {
         Arc::new(SignalActions {
-            actions: LockDepRwLock::new([sigaction_t::default(); Signal::NUM_SIGNALS as usize + 1]),
+            actions: [sigaction_t::default(); Signal::NUM_SIGNALS as usize + 1].into(),
         })
     }
 
@@ -87,7 +87,7 @@ impl SignalActions {
     }
 
     pub fn fork(&self) -> Arc<SignalActions> {
-        Arc::new(SignalActions { actions: LockDepRwLock::new(*self.actions.read()) })
+        Arc::new(SignalActions { actions: (*self.actions.read()).into() })
     }
 
     /// Resets all signal actions to the default, except that ignored

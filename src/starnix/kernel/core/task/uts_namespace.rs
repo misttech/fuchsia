@@ -23,7 +23,7 @@ pub struct UtsNamespace {
 
 impl UtsNamespace {
     pub fn fork(&self) -> UtsNamespaceHandle {
-        Arc::new(LockDepRwLock::new(self.clone()))
+        Arc::new(self.clone().into())
     }
 }
 

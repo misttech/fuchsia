@@ -58,10 +58,7 @@ impl TtyState {
 
 impl Default for TtyState {
     fn default() -> Self {
-        Self {
-            terminals: LockDepRwLock::new(HashMap::new()),
-            pts_ids_set: LockDepMutex::new(PtsIdsSet::new(DEVPTS_COUNT)),
-        }
+        Self { terminals: Default::default(), pts_ids_set: PtsIdsSet::new(DEVPTS_COUNT).into() }
     }
 }
 
@@ -119,7 +116,7 @@ impl Terminal {
             dev_pts_root,
             fscred,
             id,
-            mutable_state: starnix_sync::LockDepRwLock::new(Default::default()),
+            mutable_state: Default::default(),
         })
     }
 
