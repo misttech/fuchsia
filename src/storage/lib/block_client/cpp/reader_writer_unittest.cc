@@ -154,5 +154,43 @@ TEST(WriterTest, WriteVmo) {
   EXPECT_EQ(read_buf, buf);
 }
 
+TEST(ReaderWriterTest, InvalidBlockSizes) {
+  // Test with block size of 0
+  {
+    FakeBlockDevice device(1024, 0);
+    ReaderWriter reader_writer(device);
+    std::vector<uint8_t> buf(512);
+    EXPECT_EQ(reader_writer.Read(0, 512, buf.data()), ZX_ERR_INVALID_ARGS);
+  }
+
+  // Test with non-power-of-two block size
+  {
+    FakeBlockDevice device(1024, 513);
+    ReaderWriter reader_writer(device);
+    std::vector<uint8_t> buf(513);
+    EXPECT_EQ(reader_writer.Read(0, 513, buf.data()), ZX_ERR_INVALID_ARGS);
+  }
+}
+
+TEST(ReaderWriterTest, LargeValidBlockSize) {
+  // Test with block size 64 KB (valid and <= kMaxBlockSize = 64 KB)
+  {
+    const uint32_t kBlockSize = 64 * 1024;
+    FakeBlockDevice device(10, kBlockSize);
+    ReaderWriter reader_writer(device);
+    std::vector<uint8_t> buf(kBlockSize);
+    EXPECT_EQ(reader_writer.Write(0, kBlockSize, buf.data()), ZX_OK);
+  }
+
+  // Test with block size 128 KB (exceeds kMaxBlockSize = 64 KB)
+  {
+    const uint32_t kBlockSize = 128 * 1024;
+    FakeBlockDevice device(10, kBlockSize);
+    ReaderWriter reader_writer(device);
+    std::vector<uint8_t> buf(kBlockSize);
+    EXPECT_EQ(reader_writer.Write(0, kBlockSize, buf.data()), ZX_ERR_NOT_SUPPORTED);
+  }
+}
+
 }  // namespace
 }  // namespace block_client

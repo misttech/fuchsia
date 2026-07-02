@@ -38,6 +38,7 @@ class ReaderWriter {
 
  private:
   zx_status_t EnsureBufferInitialized();
+  zx_status_t QueryAndValidateBlockSize();
   // If `buf` is set, we copy data out to it and keep overwriting the same range in the VMO.
   // Otherwise, we stream into the VMO from `vmo_offset`.
   zx_status_t DoIo(uint64_t offset, size_t count, vmoid_t vmoid, uint64_t vmo_offset, bool write,

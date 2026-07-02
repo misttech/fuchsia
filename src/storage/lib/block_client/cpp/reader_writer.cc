@@ -51,8 +51,12 @@ zx_status_t ReaderWriter::Write(uint64_t offset, const size_t count, const zx::v
 
 zx_status_t ReaderWriter::EnsureBufferInitialized() {
   if (!buffer_.vmo()) {
-    if (zx_status_t status =
-            buffer_.CreateAndMap(kDefaultBufferSize, "block_client::ReaderWriteer");
+    if (zx_status_t status = QueryAndValidateBlockSize(); status != ZX_OK) {
+      return status;
+    }
+
+    const uint64_t buffer_size = std::max(kDefaultBufferSize, block_size_);
+    if (zx_status_t status = buffer_.CreateAndMap(buffer_size, "block_client::ReaderWriter");
         status != ZX_OK) {
       return status;
     }
@@ -65,18 +69,40 @@ zx_status_t ReaderWriter::EnsureBufferInitialized() {
   return ZX_OK;
 }
 
+zx_status_t ReaderWriter::QueryAndValidateBlockSize() {
+  if (block_size_ != 0) {
+    return ZX_OK;
+  }
+  fuchsia_storage_block::wire::BlockInfo info;
+  if (zx_status_t status = device_.BlockGetInfo(&info); status != ZX_OK) {
+    return status;
+  }
+  if (info.block_size == 0 || (info.block_size & (info.block_size - 1)) != 0) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  // Limit block size to prevent excessive allocation.
+  constexpr uint32_t kMaxBlockSize = 64 * 1024;
+  if (info.block_size > kMaxBlockSize) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+  block_size_ = info.block_size;
+  return ZX_OK;
+}
+
 zx_status_t ReaderWriter::DoIo(uint64_t offset, size_t count, vmoid_t vmoid, uint64_t vmo_offset,
                                bool write, std::optional<void*> buf) {
-  if (block_size_ == 0) {
-    fuchsia_storage_block::wire::BlockInfo info;
-    if (zx_status_t status = device_.BlockGetInfo(&info); status != ZX_OK)
-      return status;
-
-    block_size_ = info.block_size;
+  if (zx_status_t status = QueryAndValidateBlockSize(); status != ZX_OK) {
+    return status;
   }
   const uint64_t read_size = std::max(kDefaultBufferSize, block_size_);
   if (count % block_size_ != 0 || offset % block_size_ != 0) {
     return ZX_ERR_INVALID_ARGS;
+  }
+
+  if (buf) {
+    if (!buffer_.vmo() || buffer_.size() < read_size) {
+      return ZX_ERR_INTERNAL;
+    }
   }
 
   uint64_t remaining = count;
