@@ -107,28 +107,28 @@ struct UnixSocketInner {
     peer_closed_with_unread_data: bool,
 
     /// See SO_LINGER.
-    pub linger: uapi::linger,
+    linger: uapi::linger,
 
     /// See SO_PASSCRED.
-    pub passcred: bool,
+    passcred: bool,
 
     /// See SO_PASSSEC.
-    pub passsec: bool,
+    passsec: bool,
 
     /// See SO_BROADCAST.
-    pub broadcast: bool,
+    broadcast: bool,
 
     /// See SO_NO_CHECK.
-    pub no_check: bool,
+    no_check: bool,
 
     /// See SO_REUSEPORT.
-    pub reuseport: bool,
+    reuseport: bool,
 
     /// See SO_REUSEADDR.
-    pub reuseaddr: bool,
+    reuseaddr: bool,
 
     /// See SO_KEEPALIVE.
-    pub keepalive: bool,
+    keepalive: bool,
 
     /// See SO_ATTACH_BPF.
     bpf_program: Option<UnixSocketFilter>,
@@ -949,7 +949,7 @@ impl SocketOps for UnixSocket {
 }
 
 impl UnixSocketInner {
-    pub fn bind(&mut self, socket_address: SocketAddress) -> Result<(), Errno> {
+    fn bind(&mut self, socket_address: SocketAddress) -> Result<(), Errno> {
         if self.address.is_some() {
             return error!(EINVAL);
         }
