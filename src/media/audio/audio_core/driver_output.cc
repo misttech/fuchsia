@@ -220,8 +220,12 @@ std::optional<AudioOutput::FrameSpan> DriverOutput::StartMixJob(zx::time ref_tim
       FX_LOGS(WARNING) << log_output.str();
 #endif
 
-      ZX_DEBUG_ASSERT(reporter().has_value());
-      reporter().value()->DeviceUnderflow(mono_time, mono_time + output_underflow_duration);
+      {
+        std::scoped_lock lock(reporter_mutex());
+        if (reporter().has_value()) {
+          reporter().value()->DeviceUnderflow(mono_time, mono_time + output_underflow_duration);
+        }
+      }
 
       underflow_start_time_mono_ = mono_time;
       output_producer_->FillWithSilence(rb.virt(), rb.frames());
@@ -250,8 +254,9 @@ std::optional<AudioOutput::FrameSpan> DriverOutput::StartMixJob(zx::time ref_tim
       ScheduleNextLowWaterWakeup();
       return std::nullopt;
     }  // Looks like we recovered.  Log and go back to mixing.
-    FX_LOGS(WARNING) << "OUTPUT UNDERFLOW: Recovered after "
-                     << (mono_time - underflow_start_time_mono_).to_msecs() << " ms.";
+    auto duration_until_recovery = mono_time - underflow_start_time_mono_;
+    FX_LOGS(WARNING) << "OUTPUT UNDERFLOW: Recovered after " << duration_until_recovery.to_msecs()
+                     << " ms.";
     underflow_start_time_mono_ = zx::time(0);
     underflow_cooldown_deadline_mono_ = zx::time(0);
   }
@@ -365,7 +370,7 @@ void DriverOutput::ApplyGainLimits(fuchsia::media::AudioGainInfo* in_out_info,
   }
 
   // Audio outputs should never support AGC
-  in_out_info->flags &= ~(fuchsia::media::AudioGainInfoFlags::AGC_ENABLED);
+  in_out_info->flags &= ~fuchsia::media::AudioGainInfoFlags::AGC_ENABLED;
 }
 
 void DriverOutput::ScheduleNextLowWaterWakeup() {
@@ -486,7 +491,7 @@ void DriverOutput::OnDriverInfoFetched() {
       profile.eligible_for_loopback(), profile.supported_usages(), profile.volume_curve(),
       profile.independent_volume_control(), pipeline_config, profile.driver_gain_db(),
       profile.software_gain_db());
-  DeviceConfig updated_config = config();
+  DeviceConfig updated_config = *config();
   updated_config.SetOutputDeviceProfile(driver()->persistent_unique_id(), updated_profile);
   set_config(updated_config);
 
@@ -577,7 +582,7 @@ void DriverOutput::OnDriverConfigComplete() {
   }
 
   // Start monitoring plug state.
-  res = driver()->SetPlugDetectEnabled(true);
+  res = AudioDriver::SetPlugDetectEnabled(true);
   if (res != ZX_OK) {
     FX_PLOGS(ERROR, res) << "Failed to enable plug detection";
     return;
@@ -605,10 +610,13 @@ void DriverOutput::OnDriverStartComplete() {
     return;
   }
 
-  reporter()
-      .emplace(Reporter::Singleton().CreateOutputDevice(
-          DeviceUniqueIdToString(this->driver()->persistent_unique_id()), mix_domain().name()))
-      ->SetDriverInfo(driver()->info_for_reporter());
+  {
+    std::scoped_lock lock(reporter_mutex());
+    reporter()
+        .emplace(Reporter::Singleton().CreateOutputDevice(
+            DeviceUniqueIdToString(this->driver()->persistent_unique_id()), mix_domain().name()))
+        ->SetDriverInfo(driver()->info_for_reporter());
+  }
 
   // Set up the mix task in the AudioOutput.
   //
@@ -616,8 +624,11 @@ void DriverOutput::OnDriverStartComplete() {
   // entire ring buffer. Consider limiting this to be only slightly larger than a nominal mix job.
   auto format = driver()->GetFormat();
   FX_DCHECK(format);
-  SetupMixTask(config().output_device_profile(driver()->persistent_unique_id()),
-               driver_writable_ring_buffer()->frames(),
+  DeviceConfig::OutputDeviceProfile initial_profile;
+  {
+    initial_profile = config().output_device_profile(driver()->persistent_unique_id());
+  }
+  SetupMixTask(initial_profile, driver_writable_ring_buffer()->frames(),
                driver_ref_time_to_frac_presentation_frame());
 
   // Tell AudioDeviceManager we are ready to be an active audio device.
@@ -656,8 +667,12 @@ void DriverOutput::OnDriverStartComplete() {
                   << " mSec)";
   }
 
-  ZX_DEBUG_ASSERT(reporter().has_value());
-  reporter().value()->StartSession(zx::clock::get_monotonic());
+  {
+    std::scoped_lock lock(reporter_mutex());
+    if (reporter().has_value()) {
+      reporter().value()->StartSession(zx::clock::get_monotonic());
+    }
+  }
   state_ = State::Started;
 
   // Once we are Started, begin the device-startup idle countdown
@@ -677,16 +692,23 @@ void DriverOutput::OnDriverStartComplete() {
 // Enable/disable device channels that are in the audible range. Used for power conservation.
 // Called from FIDL thread, but must post to device Mix thread to cancel and UpdateActiveChannels
 zx_status_t DriverOutput::EnableAudible() {
+  if (is_shutting_down()) {
+    return ZX_ERR_BAD_STATE;
+  }
   zx_status_t status = ZX_OK;
   if (!supports_audible_) {
     status = ZX_ERR_INTERNAL;
   } else {
-    mix_domain().PostTask([this]() {
-      OBTAIN_EXECUTION_DOMAIN_TOKEN(token, &mix_domain());
+    mix_domain().PostTask([self = shared_from_this()]() {
+      auto* driver_output = static_cast<DriverOutput*>(self.get());
+      if (driver_output->is_shutting_down()) {
+        return;
+      }
+      OBTAIN_EXECUTION_DOMAIN_TOKEN(token, &driver_output->mix_domain());
 
-      CancelCountdownAudible();
-      audible_enabled_ = supports_audible_;
-      UpdateActiveChannels();
+      driver_output->CancelCountdownAudible();
+      driver_output->audible_enabled_ = driver_output->supports_audible_;
+      driver_output->UpdateActiveChannels();
 
       if constexpr (kLogIdleTimers) {
         FX_LOGS(INFO) << "mix_domain task from DriverOutput::EnableAudible completed";
@@ -707,16 +729,23 @@ zx_status_t DriverOutput::EnableAudible() {
 // Enable/disable device channels that are in the ultrasonic range. Used for power conservation.
 // Called from FIDL thread, but must post to device Mix thread to cancel and UpdateActiveChannels
 zx_status_t DriverOutput::EnableUltrasonic() {
+  if (is_shutting_down()) {
+    return ZX_ERR_BAD_STATE;
+  }
   zx_status_t status = ZX_OK;
   if (!supports_ultrasonic_) {
     status = ZX_ERR_INTERNAL;
   } else {
-    mix_domain().PostTask([this]() {
-      OBTAIN_EXECUTION_DOMAIN_TOKEN(token, &mix_domain());
+    mix_domain().PostTask([self = shared_from_this()]() {
+      auto* driver_output = static_cast<DriverOutput*>(self.get());
+      if (driver_output->is_shutting_down()) {
+        return;
+      }
+      OBTAIN_EXECUTION_DOMAIN_TOKEN(token, &driver_output->mix_domain());
 
-      CancelCountdownUltrasonic();
-      ultrasonic_enabled_ = supports_ultrasonic_;
-      UpdateActiveChannels();
+      driver_output->CancelCountdownUltrasonic();
+      driver_output->ultrasonic_enabled_ = driver_output->supports_ultrasonic_;
+      driver_output->UpdateActiveChannels();
 
       if constexpr (kLogIdleTimers) {
         FX_LOGS(INFO) << "mix_domain task from DriverOutput::EnableUltrasonic completed";
@@ -736,6 +765,9 @@ zx_status_t DriverOutput::EnableUltrasonic() {
 
 // Called from the FIDL thread, but posts the countdown task to the device's mix thread
 zx_status_t DriverOutput::StartCountdownToDisableAudible(zx::duration countdown) {
+  if (is_shutting_down()) {
+    return ZX_ERR_BAD_STATE;
+  }
   zx_status_t status = ZX_OK;
   if (countdown < zx::sec(0)) {
     status = ZX_ERR_INVALID_ARGS;
@@ -761,6 +793,9 @@ zx_status_t DriverOutput::StartCountdownToDisableAudible(zx::duration countdown)
 
 // Called from the FIDL thread, but posts the countdown task to the device's mix thread
 zx_status_t DriverOutput::StartCountdownToDisableUltrasonic(zx::duration countdown) {
+  if (is_shutting_down()) {
+    return ZX_ERR_BAD_STATE;
+  }
   zx_status_t status = ZX_OK;
   if (!supports_ultrasonic_) {
     status = ZX_ERR_INTERNAL;

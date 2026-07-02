@@ -633,5 +633,32 @@ TEST_F(AudioTunerTest, FailSetAudioEffectConfigInvalidInstanceName) {
   EXPECT_TRUE(completed_update);
 }
 
+// Verify synchronization of removing a device with a pending asynchronous pipeline update promise.
+TEST_F(AudioTunerTest, RemoveDeviceDuringUpdate) {
+  auto context = CreateContext();
+  AudioTunerImpl under_test(*context);
+
+  auto device = std::make_shared<TestDevice>(context);
+  context->device_manager().AddDevice(device);
+  RunLoopUntilIdle();
+  context->device_manager().ActivateDevice(device);
+
+  // RemoveDevice can be called while an asynchronous profile update promise is pending. The
+  // completion continuation would execute AddDeviceToRoutes on the already-removed device, leaving
+  // a dangling raw pointer in RouteGraph and use-after-free on subsequent route graph ops.
+  bool completed_update = false;
+  auto new_profile = ToAudioDeviceTuningProfile(kDefaultPipelineConfig, kDefaultVolumeCurve);
+  under_test.SetAudioDeviceProfile(kDeviceIdString, std::move(new_profile),
+                                   [&completed_update](zx_status_t result) {
+                                     completed_update = true;
+                                     EXPECT_EQ(ZX_OK, result);
+                                   });
+  context->device_manager().RemoveDevice(device);
+  device->CompleteUpdates();
+  RunLoopUntilIdle();
+  EXPECT_TRUE(completed_update);
+  EXPECT_FALSE(context->route_graph().ContainsDevice(device.get()));
+}
+
 }  // namespace
 }  // namespace media::audio

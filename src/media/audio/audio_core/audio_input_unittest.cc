@@ -15,10 +15,10 @@ namespace {
 
 constexpr int64_t kRingBufferSizePages = 8;
 
-class AudioInputTestDriver : public testing::ThreadingModelFixture,
-                             public ::testing::WithParamInterface<int32_t> {
+class AudioInputTest : public testing::ThreadingModelFixture,
+                       public ::testing::WithParamInterface<int32_t> {
  protected:
-  AudioInputTestDriver()
+  AudioInputTest()
       : ThreadingModelFixture(
             ProcessConfig::Builder()
                 .AddDeviceProfile(
@@ -50,12 +50,20 @@ class AudioInputTestDriver : public testing::ThreadingModelFixture,
     ASSERT_NE(ring_buffer_mapper_.start(), nullptr);
   }
 
+  void RunLoopUntilFormatConfigured() {
+    int run_loop_count = 0;
+    while (input_->driver()->GetFormat() == std::nullopt && run_loop_count < 100) {
+      RunLoopFor(zx::msec(5));
+      ++run_loop_count;
+    }
+  }
+
   std::unique_ptr<testing::FakeAudioDriver> remote_driver_;
   std::shared_ptr<AudioInput> input_;
   fzl::VmoMapper ring_buffer_mapper_;
 };
 
-TEST_P(AudioInputTestDriver, RequestHardwareRateInConfigIfSupported) {
+TEST_P(AudioInputTest, RequestHardwareRateInConfigIfSupported) {
   // Publish a format that has a matching sample rate, and also formats with double and half the
   // requested rate.
   fuchsia::hardware::audio::PcmSupportedFormats formats = {};
@@ -74,14 +82,14 @@ TEST_P(AudioInputTestDriver, RequestHardwareRateInConfigIfSupported) {
 
   remote_driver_->Start();
   threading_model().FidlDomain().ScheduleTask(input_->Startup());
-  RunLoopUntilIdle();
+  RunLoopUntilFormatConfigured();
 
   auto format = input_->driver()->GetFormat();
   ASSERT_TRUE(format);
   ASSERT_EQ(format->frames_per_second(), GetParam());
 }
 
-TEST_P(AudioInputTestDriver, FallBackToAlternativeRateIfPreferredRateIsNotSupported) {
+TEST_P(AudioInputTest, FallBackToAlternativeRateIfPreferredRateIsNotSupported) {
   ASSERT_NE(GetParam(), 0);  // Invalid frame rate passed as test parameter.
   const int32_t kSupportedRate = GetParam() * 2;
   fuchsia::hardware::audio::PcmSupportedFormats formats = {};
@@ -98,15 +106,44 @@ TEST_P(AudioInputTestDriver, FallBackToAlternativeRateIfPreferredRateIsNotSuppor
 
   remote_driver_->Start();
   threading_model().FidlDomain().ScheduleTask(input_->Startup());
-  RunLoopUntilIdle();
+  RunLoopUntilFormatConfigured();
 
   auto format = input_->driver()->GetFormat();
   ASSERT_TRUE(format);
   ASSERT_EQ(format->frames_per_second(), kSupportedRate);
 }
 
-INSTANTIATE_TEST_SUITE_P(AudioInputTestDriverInstance, AudioInputTestDriver,
-                         ::testing::Values(24000, 48000, 96000));
+// Verify calling SetGainInfo on an AudioInput after activation but before reporter initialization.
+TEST_P(AudioInputTest, SetGainInfoBeforeReporterInitialized) {
+  fuchsia::hardware::audio::PcmSupportedFormats formats = {};
+  fuchsia::hardware::audio::ChannelSet channel_set = {};
+  std::vector<fuchsia::hardware::audio::ChannelAttributes> attributes(1);
+  channel_set.set_attributes(std::move(attributes));
+  formats.mutable_channel_sets()->push_back(std::move(channel_set));
+  formats.mutable_sample_formats()->push_back(fuchsia::hardware::audio::SampleFormat::PCM_SIGNED);
+  formats.mutable_bytes_per_sample()->push_back(2);
+  formats.mutable_valid_bits_per_sample()->push_back(16);
+  formats.mutable_frame_rates()->push_back(GetParam());
+  remote_driver_->set_formats(std::move(formats));
+  remote_driver_->Start();
+
+  // Startup: OnDriverInfoFetched runs, ActivateSelf() initializes device_settings_. Driver ring
+  // buffer is never started so OnDriverStartComplete never runs: reporter_ remains uninitialized.
+  threading_model().FidlDomain().ScheduleTask(input_->Startup());
+  RunLoopUntilFormatConfigured();
+
+  fuchsia::media::AudioGainInfo gain_info;
+  gain_info.flags = fuchsia::media::AudioGainInfoFlags::MUTE;
+  static_cast<AudioDevice*>(input_.get())
+      ->SetGainInfo(gain_info, fuchsia::media::AudioGainValidFlags::MUTE_VALID);
+  RunLoopUntilIdle();
+}
+
+INSTANTIATE_TEST_SUITE_P(AudioInputTestInstance, AudioInputTest,
+                         ::testing::Values(24000, 48000, 96000),
+                         [](const ::testing::TestParamInfo<AudioInputTest::ParamType>& info) {
+                           return std::to_string(info.param);
+                         });
 
 }  // namespace
 }  // namespace media::audio

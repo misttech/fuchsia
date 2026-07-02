@@ -100,9 +100,12 @@ void AudioOutput::Process() {
       // Log at WARNING in debug builds so we can run tests that auto-fail on any ERROR logging.
       FX_LOGS(WARNING) << log_output.str();
 #endif
-
-      ZX_DEBUG_ASSERT(reporter_.has_value());
-      reporter_.value()->PipelineUnderflow(mono_now + MixDeadline(), mono_end);
+      {
+        std::scoped_lock lock(reporter_mutex_);
+        if (reporter_.has_value()) {
+          reporter_.value()->PipelineUnderflow(mono_now + MixDeadline(), mono_end);
+        }
+      }
     }
   }
 
@@ -218,7 +221,7 @@ std::shared_ptr<OutputPipeline> AudioOutput::CreateOutputPipeline(
 void AudioOutput::SetupMixTask(const DeviceConfig::OutputDeviceProfile& profile,
                                size_t max_block_size_frames,
                                TimelineFunction device_reference_clock_to_fractional_frame) {
-  DeviceConfig updated_config = config();
+  DeviceConfig updated_config = *config();
   updated_config.SetOutputDeviceProfile(driver()->persistent_unique_id(), profile);
   set_config(updated_config);
 
@@ -256,7 +259,7 @@ fpromise::promise<void, zx_status_t> AudioOutput::UpdateDeviceProfile(
   fpromise::bridge<void, zx_status_t> bridge;
   mix_domain().PostTask([this, params, completer = std::move(bridge.completer)]() mutable {
     OBTAIN_EXECUTION_DOMAIN_TOKEN(token, &mix_domain());
-    DeviceConfig device_config = config();
+    DeviceConfig device_config = *config();
     auto current_profile = config().output_device_profile(driver()->persistent_unique_id());
     auto updated_profile = DeviceConfig::OutputDeviceProfile(
         params.eligible_for_loopback.value_or(current_profile.eligible_for_loopback()),
@@ -281,8 +284,12 @@ fpromise::promise<void, zx_status_t> AudioOutput::UpdateDeviceProfile(
 
 void AudioOutput::SetGainInfo(const fuchsia::media::AudioGainInfo& info,
                               fuchsia::media::AudioGainValidFlags set_flags) {
-  ZX_DEBUG_ASSERT(reporter_.has_value());
-  reporter_.value()->SetGainInfo(info, set_flags);
+  {
+    std::scoped_lock lock(reporter_mutex_);
+    if (reporter_.has_value()) {
+      reporter_.value()->SetGainInfo(info, set_flags);
+    }
+  }
   AudioDevice::SetGainInfo(info, set_flags);
 }
 

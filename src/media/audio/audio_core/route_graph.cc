@@ -44,6 +44,7 @@ RouteGraph::~RouteGraph() {
 
 void RouteGraph::SetThrottleOutput(ThreadingModel* threading_model,
                                    const std::shared_ptr<AudioOutput>& throttle_output) {
+  std::scoped_lock lock(mutex_);
   fpromise::bridge<void, void> bridge;
   threading_model->FidlDomain().ScheduleTask(bridge.consumer.promise().then(
       [throttle_output](fpromise::result<void, void>& _) { return throttle_output->Shutdown(); }));
@@ -60,6 +61,7 @@ void RouteGraph::SetThrottleOutput(ThreadingModel* threading_model,
 }
 
 void RouteGraph::AddDeviceToRoutes(AudioDevice* device) {
+  std::scoped_lock lock(mutex_);
   TRACE_DURATION("audio", "RouteGraph::AddDeviceToRoutes");
 
   // Add device, sorted with most-recently-plugged devices first. Use a stable sort so that ties are
@@ -81,6 +83,7 @@ void RouteGraph::AddDeviceToRoutes(AudioDevice* device) {
 }
 
 void RouteGraph::RemoveDeviceFromRoutes(AudioDevice* device) {
+  std::scoped_lock lock(mutex_);
   TRACE_DURATION("audio", "RouteGraph::RemoveDeviceFromRoutes");
   if constexpr (kLogRoutingChanges) {
     FX_LOGS(INFO) << "Removing device " << device << " ("
@@ -104,10 +107,12 @@ void RouteGraph::RemoveDeviceFromRoutes(AudioDevice* device) {
 }
 
 bool RouteGraph::ContainsDevice(const AudioDevice* device) {
+  std::scoped_lock lock(mutex_);
   return (std::find(devices_.begin(), devices_.end(), device) != devices_.end());
 }
 
 void RouteGraph::AddRenderer(std::shared_ptr<AudioObject> renderer) {
+  std::scoped_lock lock(mutex_);
   TRACE_DURATION("audio", "RouteGraph::AddRenderer");
   FX_DCHECK(throttle_output_);
   FX_DCHECK(renderer->is_audio_renderer());
@@ -123,6 +128,7 @@ void RouteGraph::AddRenderer(std::shared_ptr<AudioObject> renderer) {
 }
 
 void RouteGraph::SetRendererRoutingProfile(const AudioObject& renderer, RoutingProfile profile) {
+  std::scoped_lock lock(mutex_);
   TRACE_DURATION("audio", "RouteGraph::SetRendererRoutingProfile");
   FX_DCHECK(renderer.is_audio_renderer());
   if constexpr (kLogRoutingChanges) {
@@ -164,6 +170,7 @@ void RouteGraph::SetRendererRoutingProfile(const AudioObject& renderer, RoutingP
 }
 
 void RouteGraph::RemoveRenderer(const AudioObject& renderer) {
+  std::scoped_lock lock(mutex_);
   TRACE_DURATION("audio", "RouteGraph::RemoveRenderer");
   FX_DCHECK(renderer.is_audio_renderer());
 
@@ -194,6 +201,7 @@ void RouteGraph::RemoveRenderer(const AudioObject& renderer) {
 }
 
 void RouteGraph::AddCapturer(std::shared_ptr<AudioObject> capturer) {
+  std::scoped_lock lock(mutex_);
   TRACE_DURATION("audio", "RouteGraph::AddCapturer");
   FX_DCHECK(capturer->is_audio_capturer());
 
@@ -210,6 +218,7 @@ void RouteGraph::AddCapturer(std::shared_ptr<AudioObject> capturer) {
 }
 
 void RouteGraph::SetCapturerRoutingProfile(const AudioObject& capturer, RoutingProfile profile) {
+  std::scoped_lock lock(mutex_);
   TRACE_DURATION("audio", "RouteGraph::SetCapturerRoutingProfile");
   FX_DCHECK(capturer.is_audio_capturer());
   if constexpr (kLogRoutingChanges) {
@@ -251,6 +260,7 @@ void RouteGraph::SetCapturerRoutingProfile(const AudioObject& capturer, RoutingP
 }
 
 void RouteGraph::RemoveCapturer(const AudioObject& capturer) {
+  std::scoped_lock lock(mutex_);
   TRACE_DURATION("audio", "RouteGraph::RemoveCapturer");
   FX_DCHECK(capturer.is_audio_capturer());
 
@@ -281,6 +291,7 @@ void RouteGraph::RemoveCapturer(const AudioObject& capturer) {
 }
 
 void RouteGraph::UpdateGraphForDeviceChange() {
+  std::scoped_lock lock(mutex_);
   TRACE_DURATION("audio", "RouteGraph::UpdateGraphForDeviceChange");
   auto [targets, unlink_command] = CalculateTargets();
   targets_ = targets;
@@ -328,6 +339,7 @@ void RouteGraph::UpdateGraphForDeviceChange() {
 }
 
 std::pair<RouteGraph::Targets, RouteGraph::UnlinkCommand> RouteGraph::CalculateTargets() const {
+  std::scoped_lock lock(mutex_);
   TRACE_DURATION("audio", "RouteGraph::CalculateTargets");
   // We generate a new set of targets.
   // We generate an unlink command to unlink anything linked to a target which has changed.
@@ -361,14 +373,15 @@ std::pair<RouteGraph::Targets, RouteGraph::UnlinkCommand> RouteGraph::CalculateT
 }
 
 void RouteGraph::Unlink(UnlinkCommand unlink_command) {
+  std::scoped_lock lock(mutex_);
   TRACE_DURATION("audio", "RouteGraph::Unlink");
-  std::for_each(renderers_.begin(), renderers_.end(), [this, &unlink_command](auto& renderer) {
+  std::ranges::for_each(renderers_, [this, &unlink_command](auto& renderer) {
     auto usage = renderer.second.profile.usage;
     if (!usage.is_empty() && unlink_command[HashStreamUsage(usage)]) {
       link_matrix_.Unlink(*renderer.second.ref);
     }
   });
-  std::for_each(capturers_.begin(), capturers_.end(), [this, &unlink_command](auto& capturer) {
+  std::ranges::for_each(capturers_, [this, &unlink_command](auto& capturer) {
     auto usage = capturer.second.profile.usage;
     if (!usage.is_empty() && unlink_command[HashStreamUsage(usage)]) {
       link_matrix_.Unlink(*capturer.second.ref);
@@ -377,6 +390,7 @@ void RouteGraph::Unlink(UnlinkCommand unlink_command) {
 }
 
 RouteGraph::Target RouteGraph::TargetForUsage(const StreamUsage& usage) const {
+  std::scoped_lock lock(mutex_);
   if (usage.is_empty()) {
     return Target();
   }
@@ -386,6 +400,7 @@ RouteGraph::Target RouteGraph::TargetForUsage(const StreamUsage& usage) const {
 // The API is formed to return more than one output as the target for a RenderUsage, but the current
 // audio_core implementation only routes to one output per usage.
 std::unordered_set<AudioDevice*> RouteGraph::TargetsForRenderUsage(const RenderUsage& usage) {
+  std::scoped_lock lock(mutex_);
   auto target = targets_[HashStreamUsage(StreamUsage::WithRenderUsage(usage))];
   if (!target.is_linkable()) {
     FX_LOGS(ERROR) << __FUNCTION__ << " (" << ToString(usage) << ") target is not linkable";
@@ -399,10 +414,12 @@ std::unordered_set<AudioDevice*> RouteGraph::TargetsForRenderUsage(const RenderU
 }
 
 std::shared_ptr<LoudnessTransform> RouteGraph::LoudnessTransformForUsage(const StreamUsage& usage) {
+  std::scoped_lock lock(mutex_);
   return TargetForUsage(usage).transform;
 }
 
 void RouteGraph::DisplayRenderers() {
+  std::scoped_lock lock(mutex_);
   std::stringstream stream;
   stream << "Renderers:";
   if (renderers_.empty()) {
@@ -416,6 +433,7 @@ void RouteGraph::DisplayRenderers() {
 }
 
 void RouteGraph::DisplayCapturers() {
+  std::scoped_lock lock(mutex_);
   std::stringstream stream;
   stream << "Capturers:";
   if (capturers_.empty()) {
@@ -440,6 +458,7 @@ void RouteGraph::DisplayCapturers() {
 }
 
 void RouteGraph::DisplayDevices() {
+  std::scoped_lock lock(mutex_);
   std::stringstream stream;
   stream << "Devices:";
   for (const auto& device : devices_) {

@@ -6,6 +6,10 @@
 
 #include <lib/syslog/cpp/macros.h>
 
+#include <algorithm>
+#include <atomic>
+#include <thread>
+
 #include <gmock/gmock.h>
 
 #include "src/media/audio/audio_core/audio_device_manager.h"
@@ -48,7 +52,7 @@ class FakeAudioObject : public AudioObject {
       });
       format_ = {format_result.take_value()};
     }
-    usage_ = std::move(usage);
+    usage_ = usage;
   }
 
   std::optional<Format> format() const override { return format_; }
@@ -110,7 +114,7 @@ class RouteGraphTest : public testing::ThreadingModelFixture {
  public:
   RouteGraphTest() : RouteGraphTest(kConfigNoPolicy) {}
 
-  RouteGraphTest(const DeviceConfig& device_config)
+  explicit RouteGraphTest(const DeviceConfig& device_config)
       : ThreadingModelFixture(ProcessConfig(
             VolumeCurve::DefaultForMinGain(VolumeCurve::kDefaultGainForMinVolume), device_config,
             MixProfileConfig{},  // MixProfileConfig{}, MixProfileConfig{},
@@ -136,7 +140,10 @@ class RouteGraphTest : public testing::ThreadingModelFixture {
     output->driver()->GetDriverInfo();
     RunLoopUntilIdle();
 
-    return {output, std::move(fake_driver)};
+    return {
+        .output = output,
+        .fake_driver = std::move(fake_driver),
+    };
   }
 
   std::vector<AudioObject*> SourceLinks(const AudioObject& object) {
@@ -144,8 +151,8 @@ class RouteGraphTest : public testing::ThreadingModelFixture {
     context().link_matrix().SourceLinks(object, &handles);
 
     std::vector<AudioObject*> links;
-    std::transform(handles.begin(), handles.end(), std::back_inserter(links),
-                   [](auto handle) { return handle.object.get(); });
+    std::ranges::transform(handles, std::back_inserter(links),
+                           [](const auto& handle) { return handle.object.get(); });
     return links;
   }
 
@@ -154,8 +161,8 @@ class RouteGraphTest : public testing::ThreadingModelFixture {
     context().link_matrix().DestLinks(object, &handles);
 
     std::vector<AudioObject*> links;
-    std::transform(handles.begin(), handles.end(), std::back_inserter(links),
-                   [](auto handle) { return handle.object.get(); });
+    std::ranges::transform(handles, std::back_inserter(links),
+                           [](const auto& handle) { return handle.object.get(); });
     return links;
   }
 
@@ -748,17 +755,23 @@ TEST_F(RouteGraphTest, UnroutesNewlyUnRoutableLoopbackCapturer) {
 const audio_stream_unique_id_t kSupportsAllDeviceId = audio_stream_unique_id_t{.data = {0x33}};
 const audio_stream_unique_id_t kUnconfiguredDeviceId = audio_stream_unique_id_t{.data = {0x45}};
 
-static const DeviceConfig kConfigWithMediaExternalRoutingPolicy = DeviceConfig(
-    /*profiles=*/{{{kSupportsAllDeviceId},
-                   DeviceConfig::OutputDeviceProfile(
-                       /*eligible_for_loopback=*/true,
-                       /*output_usage_support_set=*/
-                       StreamUsageSetFromRenderUsages(kFidlRenderUsages))}},
-    /*default=*/
+const DeviceConfig kConfigWithMediaExternalRoutingPolicy = DeviceConfig(
+    /*output_device_profiles=*/
+    {
+        {
+            {kSupportsAllDeviceId},
+            DeviceConfig::OutputDeviceProfile(
+                /*eligible_for_loopback=*/true,
+                /*supported_usages=*/
+                StreamUsageSetFromRenderUsages(kFidlRenderUsages)),
+        },
+    },
+    /*default_output_device_profile=*/
     {DeviceConfig::OutputDeviceProfile(
         /*eligible_for_loopback=*/true,
-        /*output_usage_support_set=*/{StreamUsage::WithRenderUsage(RenderUsage::MEDIA)})},
-    {}, {});
+        /*supported_usages=*/{StreamUsage::WithRenderUsage(RenderUsage::MEDIA)})},
+    /*input_device_profiles=*/{},
+    /*default_input_device_profile=*/{});
 
 class RouteGraphWithMediaExternalPolicyTest : public RouteGraphTest {
  public:
@@ -804,23 +817,33 @@ TEST_F(RouteGraphWithMediaExternalPolicyTest, InterruptionDoesNotRouteToUnsuppor
 
 const audio_stream_unique_id_t kSupportsLoopbackDeviceId = audio_stream_unique_id_t{.data = {0x7a}};
 
-static const DeviceConfig kConfigWithExternNonLoopbackDevicePolicy = DeviceConfig(
-    /*profiles=*/{{{kSupportsAllDeviceId},
-                   DeviceConfig::OutputDeviceProfile(
-                       /*eligible_for_loopback=*/true,
-                       /*output_usage_support_set=*/
-                       StreamUsageSetFromRenderUsages(kFidlRenderUsages))},
-                  {{kSupportsLoopbackDeviceId},
-                   DeviceConfig::OutputDeviceProfile(
-                       /*eligible_for_loopback=*/true,
-                       /*output_usage_support_set=*/
-                       {StreamUsage::WithRenderUsage(RenderUsage::BACKGROUND)})}},
-    /*default=*/
-    {DeviceConfig::OutputDeviceProfile(
-        /*eligible_for_loopback=*/false,
-        /*output_usage_support_set=*/
-        {StreamUsageSetFromRenderUsages(kFidlRenderUsages)})},
-    {}, {});
+const DeviceConfig kConfigWithExternNonLoopbackDevicePolicy = DeviceConfig(
+    /*output_device_profiles=*/
+    {
+        {
+            {kSupportsAllDeviceId},
+            DeviceConfig::OutputDeviceProfile(
+                /*eligible_for_loopback=*/true,
+                /*supported_usages=*/
+                StreamUsageSetFromRenderUsages(kFidlRenderUsages)),
+        },
+        {
+            {kSupportsLoopbackDeviceId},
+            DeviceConfig::OutputDeviceProfile(
+                /*eligible_for_loopback=*/true,
+                /*supported_usages=*/
+                {StreamUsage::WithRenderUsage(RenderUsage::BACKGROUND)}),
+        },
+    },
+    /*default_output_device_profile=*/
+    {
+        DeviceConfig::OutputDeviceProfile(
+            /*eligible_for_loopback=*/false,
+            /*supported_usages=*/
+            {StreamUsageSetFromRenderUsages(kFidlRenderUsages)}),
+    },
+    /*input_device_profiles=*/{},
+    /*default_input_device_profile=*/{});
 
 class RouteGraphWithExternalNonLoopbackDeviceTest : public RouteGraphTest {
  public:
@@ -1011,17 +1034,22 @@ TEST_F(RouteGraphTest, DoesNotRelinkRendererIfUnroutedDeviceIsAdded) {
   EXPECT_EQ(1u, renderer->total_links_formed());
 }
 
-static const DeviceConfig kConfigWithUltrasound = DeviceConfig(
-    /*profiles=*/{{{kSupportsAllDeviceId},
-                   DeviceConfig::OutputDeviceProfile(
-                       /*eligible_for_loopback=*/true,
-                       /*output_usage_support_set=*/
-                       StreamUsageSetFromRenderUsages(kRenderUsages))}},
-    /*default=*/
+const DeviceConfig kConfigWithUltrasound = DeviceConfig(
+    /*output_device_profiles=*/
+    {
+        {
+            {kSupportsAllDeviceId},
+            DeviceConfig::OutputDeviceProfile(
+                /*eligible_for_loopback=*/true,
+                /*supported_usages=*/
+                StreamUsageSetFromRenderUsages(kRenderUsages)),
+        },
+    },
+    /*default_output_device_profile=*/
     {DeviceConfig::OutputDeviceProfile(
         /*eligible_for_loopback=*/true,
-        /*output_usage_support_set=*/{StreamUsage::WithRenderUsage(RenderUsage::MEDIA)})},
-    {}, {});
+        /*supported_usages=*/{StreamUsage::WithRenderUsage(RenderUsage::MEDIA)})},
+    /*input_device_profiles=*/{}, /*default_input_device_profile=*/{});
 
 class RouteGraphUltrasoundTest : public RouteGraphTest {
  public:
@@ -1089,6 +1117,115 @@ TEST_F(RouteGraphTest, SetRendererRoutingProfileUnregisteredRendererIgnored) {
 
   under_test_.SetRendererRoutingProfile(*renderer, kProfile);
   EXPECT_THAT(DestLinks(*renderer), IsEmpty());
+}
+
+// Verify concurrent routing profile updates and device graph recalculations without data-races.
+TEST_F(RouteGraphTest, ConcurrentRoutingProfileAndGraphUpdate) {
+  auto renderer1 = FakeAudioObject::FakeRenderer();
+  auto renderer2 = FakeAudioObject::FakeRenderer();
+  under_test_.AddRenderer(renderer1);
+  under_test_.AddRenderer(renderer2);
+
+  const RoutingProfile kProfile{
+      .routable = true,
+      .usage = StreamUsage::WithRenderUsage(RenderUsage::MEDIA),
+  };
+
+  std::atomic<bool> stop = false;
+  std::atomic<bool> started = false;
+  std::thread profile_thread([&]() {
+    while (!stop.load()) {
+      under_test_.SetRendererRoutingProfile(*renderer1, kProfile);
+      started.store(true);
+    }
+  });
+
+  // Ensure `profile_thread` is scheduled and runs at least once before setting `stop` to true,
+  // preventing a race where the main thread finishes the loop before `profile_thread` starts.
+  for (int i = 0; i < 100 || !started.load(); ++i) {
+    under_test_.SetRendererRoutingProfile(*renderer2, kProfile);
+  }
+  stop.store(true);
+  profile_thread.join();
+
+  // Perform some routine checks to ensure no data inconsistencies.
+  EXPECT_THAT(DestLinks(*renderer1), UnorderedElementsAreArray({context().throttle_output()}));
+  EXPECT_THAT(DestLinks(*renderer2), UnorderedElementsAreArray({context().throttle_output()}));
+  under_test_.RemoveRenderer(*renderer1);
+  under_test_.RemoveRenderer(*renderer2);
+  EXPECT_THAT(DestLinks(*renderer1), IsEmpty());
+  EXPECT_THAT(DestLinks(*renderer2), IsEmpty());
+}
+
+// Verify multi-threaded concurrent routing profile updates across multiple renderers and capturers.
+TEST_F(RouteGraphTest, MultiThreadedConcurrentRoutingProfileUpdate) {
+  auto renderer1 = FakeAudioObject::FakeRenderer();
+  auto renderer2 = FakeAudioObject::FakeRenderer();
+  auto capturer1 = FakeAudioObject::FakeCapturer();
+  under_test_.AddRenderer(renderer1);
+  under_test_.AddRenderer(renderer2);
+  under_test_.AddCapturer(capturer1);
+
+  const RoutingProfile kRenderProfile{
+      .routable = true,
+      .usage = StreamUsage::WithRenderUsage(RenderUsage::MEDIA),
+  };
+  const RoutingProfile kCaptureProfile{
+      .routable = true,
+      .usage = StreamUsage::WithCaptureUsage(CaptureUsage::FOREGROUND),
+  };
+
+  std::atomic<bool> stop = false;
+  std::atomic<int> started = 0;
+
+  auto t1_func = [&]() {
+    started.fetch_add(1);
+    while (!stop.load()) {
+      under_test_.SetRendererRoutingProfile(*renderer1, kRenderProfile);
+    }
+  };
+  auto t2_func = [&]() {
+    started.fetch_add(1);
+    while (!stop.load()) {
+      under_test_.SetRendererRoutingProfile(*renderer2, kRenderProfile);
+    }
+  };
+  auto t3_func = [&]() {
+    started.fetch_add(1);
+    while (!stop.load()) {
+      under_test_.SetCapturerRoutingProfile(*capturer1, kCaptureProfile);
+    }
+  };
+
+  std::thread t1(t1_func);
+  std::thread t2(t2_func);
+  std::thread t3(t3_func);
+
+  while (started.load() < 3) {
+    zx::nanosleep(zx::deadline_after(zx::msec(1)));
+  }
+
+  for (int i = 0; i < 100; ++i) {
+    under_test_.SetRendererRoutingProfile(*renderer1, kRenderProfile);
+    under_test_.SetCapturerRoutingProfile(*capturer1, kCaptureProfile);
+  }
+
+  stop.store(true);
+  t1.join();
+  t2.join();
+  t3.join();
+
+  EXPECT_THAT(DestLinks(*renderer1), UnorderedElementsAreArray({context().throttle_output()}));
+  EXPECT_THAT(DestLinks(*renderer2), UnorderedElementsAreArray({context().throttle_output()}));
+  EXPECT_THAT(SourceLinks(*capturer1), IsEmpty());
+
+  under_test_.RemoveRenderer(*renderer1);
+  under_test_.RemoveRenderer(*renderer2);
+  under_test_.RemoveCapturer(*capturer1);
+
+  EXPECT_THAT(DestLinks(*renderer1), IsEmpty());
+  EXPECT_THAT(DestLinks(*renderer2), IsEmpty());
+  EXPECT_THAT(SourceLinks(*capturer1), IsEmpty());
 }
 
 }  // namespace

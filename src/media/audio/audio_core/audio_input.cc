@@ -158,10 +158,13 @@ void AudioInput::OnDriverStartComplete() {
   if (!driver()->plugged()) {
     driver()->Stop();
   }
-  reporter_
-      .emplace(Reporter::Singleton().CreateInputDevice(
-          DeviceUniqueIdToString(driver()->persistent_unique_id()), mix_domain().name()))
-      ->SetDriverInfo(driver()->info_for_reporter());
+  {
+    std::scoped_lock lock(reporter_mutex_);
+    reporter_
+        .emplace(Reporter::Singleton().CreateInputDevice(
+            DeviceUniqueIdToString(driver()->persistent_unique_id()), mix_domain().name()))
+        ->SetDriverInfo(driver()->info_for_reporter());
+  }
 }
 
 void AudioInput::OnDriverStopComplete() {
@@ -230,8 +233,12 @@ void AudioInput::ApplyGainLimits(fuchsia::media::AudioGainInfo* in_out_info,
 
 void AudioInput::SetGainInfo(const fuchsia::media::AudioGainInfo& info,
                              fuchsia::media::AudioGainValidFlags set_flags) {
-  ZX_DEBUG_ASSERT(reporter_.has_value());
-  reporter_.value()->SetGainInfo(info, set_flags);
+  {
+    std::scoped_lock lock(reporter_mutex_);
+    if (reporter_.has_value()) {
+      reporter_.value()->SetGainInfo(info, set_flags);
+    }
+  }
   AudioDevice::SetGainInfo(info, set_flags);
 }
 

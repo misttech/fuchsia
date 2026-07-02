@@ -168,6 +168,9 @@ fpromise::promise<void, zx_status_t> AudioDeviceManager::UpdatePipelineConfig(
       .volume_curve = volume_curve,
   };
   return device->UpdateDeviceProfile(profile_params).and_then([this, device]() {
+    if (!devices_.contains(device->token()) && !devices_pending_init_.contains(device->token())) {
+      return;
+    }
     device->UpdateRoutableState(true);
     if (device->plugged()) {
       device_router_.AddDeviceToRoutes(device.get());

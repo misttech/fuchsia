@@ -10,6 +10,7 @@
 #include <zircon/device/audio.h>
 
 #include <memory>
+#include <mutex>
 
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
@@ -72,14 +73,76 @@ class AudioDevice : public AudioObject, public std::enable_shared_from_this<Audi
   uint64_t token() const;
   bool activated() const { return activated_; }
 
-  const DeviceConfig::DeviceProfile& profile() const;
-  const DeviceConfig& config() const FXL_EXCLUSIVE_LOCKS_REQUIRED(mix_domain().token()) {
-    return config_;
+  class ProfileReadGuard {
+   public:
+    ProfileReadGuard(std::unique_lock<std::mutex> lock, const DeviceConfig::DeviceProfile* profile)
+        : lock_(std::move(lock)), profile_(profile) {}
+    ProfileReadGuard(const ProfileReadGuard&) = delete;
+    ProfileReadGuard& operator=(const ProfileReadGuard&) = delete;
+    ProfileReadGuard(ProfileReadGuard&&) = default;
+    ProfileReadGuard& operator=(ProfileReadGuard&&) = default;
+
+    const DeviceConfig::DeviceProfile* operator->() const { return profile_; }
+    const DeviceConfig::DeviceProfile& operator*() const { return *profile_; }
+    explicit operator const DeviceConfig::DeviceProfile&() const { return *profile_; }
+
+    bool supports_usage(StreamUsage usage) const { return profile_->supports_usage(usage); }
+    const VolumeCurve& volume_curve() const { return profile_->volume_curve(); }
+    const std::shared_ptr<LoudnessTransform>& loudness_transform() const {
+      return profile_->loudness_transform();
+    }
+    StreamUsageSet supported_usages() const { return profile_->supported_usages(); }
+    std::optional<float> driver_gain_db() const { return profile_->driver_gain_db(); }
+    float software_gain_db() const { return profile_->software_gain_db(); }
+
+   private:
+    std::unique_lock<std::mutex> lock_;
+    const DeviceConfig::DeviceProfile* profile_;
+  };
+
+  class ConfigReadGuard {
+   public:
+    ConfigReadGuard(std::unique_lock<std::mutex> lock, const DeviceConfig* config)
+        : lock_(std::move(lock)), config_(config) {}
+    ConfigReadGuard(const ConfigReadGuard&) = delete;
+    ConfigReadGuard& operator=(const ConfigReadGuard&) = delete;
+    ConfigReadGuard(ConfigReadGuard&&) = default;
+    ConfigReadGuard& operator=(ConfigReadGuard&&) = default;
+
+    const DeviceConfig* operator->() const { return config_; }
+    const DeviceConfig& operator*() const { return *config_; }
+    explicit operator const DeviceConfig&() const { return *config_; }
+
+    const DeviceConfig::OutputDeviceProfile& output_device_profile(
+        const audio_stream_unique_id_t& id) const {
+      return config_->output_device_profile(id);
+    }
+    const DeviceConfig::OutputDeviceProfile& default_output_device_profile() const {
+      return config_->default_output_device_profile();
+    }
+    const DeviceConfig::InputDeviceProfile& input_device_profile(
+        const audio_stream_unique_id_t& id) const {
+      return config_->input_device_profile(id);
+    }
+    const DeviceConfig::InputDeviceProfile& default_input_device_profile() const {
+      return config_->default_input_device_profile();
+    }
+
+   private:
+    std::unique_lock<std::mutex> lock_;
+    const DeviceConfig* config_;
+  };
+
+  ProfileReadGuard profile() const FXL_LOCKS_EXCLUDED(config_mutex_);
+  ConfigReadGuard config() const FXL_LOCKS_EXCLUDED(config_mutex_) FXL_NO_THREAD_SAFETY_ANALYSIS {
+    std::unique_lock<std::mutex> lock(config_mutex_);
+    return ConfigReadGuard(std::move(lock), &config_);
   }
   // `set_config()` strictly updates the |config_| variable returned from `config()`; it does not
   // rebuild the OutputPipeline. To restart the OutputPipeline with an updated configuration, see
   // `UpdateDeviceProfile()`.
-  void set_config(const DeviceConfig& config) FXL_EXCLUSIVE_LOCKS_REQUIRED(mix_domain().token()) {
+  void set_config(const DeviceConfig& config) FXL_LOCKS_EXCLUDED(config_mutex_) {
+    std::scoped_lock lock(config_mutex_);
     config_ = config;
   }
 
@@ -299,7 +362,8 @@ class AudioDevice : public AudioObject, public std::enable_shared_from_this<Audi
   ThreadingModel::OwnedDomainPtr mix_domain_;
   WakeupEvent mix_wakeup_;
 
-  DeviceConfig config_;
+  mutable std::mutex config_mutex_;
+  DeviceConfig config_ FXL_GUARDED_BY(config_mutex_);
 
   // This object manages most interactions with the low-level driver for us.
   std::unique_ptr<AudioDriver> driver_;

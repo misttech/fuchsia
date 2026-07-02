@@ -10,6 +10,7 @@
 
 #include <array>
 #include <deque>
+#include <mutex>
 #include <unordered_map>
 
 #include <fbl/ref_ptr.h>
@@ -128,6 +129,7 @@ class RouteGraph : public DeviceRouter {
 
   LinkMatrix& link_matrix_;
 
+  mutable std::recursive_mutex mutex_;
   Targets targets_ = {};
 
   // TODO(https://fxbug.dev/42115505): convert to weak_ptr when ownership is explicit.

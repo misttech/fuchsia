@@ -8,6 +8,8 @@
 #include <fuchsia/media/cpp/fidl.h>
 #include <lib/zx/channel.h>
 
+#include <mutex>
+
 #include "src/lib/fxl/synchronization/thread_annotations.h"
 #include "src/media/audio/audio_core/audio_device.h"
 #include "src/media/audio/audio_core/device_config.h"
@@ -71,8 +73,9 @@ class AudioInput : public AudioDevice {
 
   zx::channel initial_stream_channel_;
   State state_ = State::Uninitialized;
+  mutable std::mutex reporter_mutex_;
   std::optional<Reporter::Container<Reporter::InputDevice, Reporter::kObjectsToCache>::Ptr>
-      reporter_;
+      reporter_ FXL_GUARDED_BY(reporter_mutex_);
 };
 
 }  // namespace media::audio

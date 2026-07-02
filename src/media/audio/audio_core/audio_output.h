@@ -9,6 +9,7 @@
 #include <lib/async/cpp/time.h>
 #include <lib/zx/time.h>
 
+#include <mutex>
 #include <optional>
 
 #include "src/media/audio/audio_core/audio_device.h"
@@ -48,8 +49,9 @@ class AudioOutput : public AudioDevice {
               std::shared_ptr<AudioCoreClockFactory> clock_factory,
               EffectsLoaderV2* effects_loader_v2, std::unique_ptr<AudioDriver>);
 
+  std::mutex& reporter_mutex() const { return reporter_mutex_; }
   std::optional<Reporter::Container<Reporter::OutputDevice, Reporter::kObjectsToCache>::Ptr>&
-  reporter() {
+  reporter() FXL_EXCLUSIVE_LOCKS_REQUIRED(reporter_mutex()) {
     return reporter_;
   }
   EffectsLoaderV2* effects_loader_v2() const { return effects_loader_v2_; }
@@ -139,8 +141,9 @@ class AudioOutput : public AudioDevice {
   size_t max_block_size_frames_;
 
   std::shared_ptr<OutputPipeline> pipeline_;
+  mutable std::mutex reporter_mutex_;
   std::optional<Reporter::Container<Reporter::OutputDevice, Reporter::kObjectsToCache>::Ptr>
-      reporter_;
+      reporter_ FXL_GUARDED_BY(reporter_mutex_);
   EffectsLoaderV2* effects_loader_v2_;
 };
 

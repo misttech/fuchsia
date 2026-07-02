@@ -30,19 +30,25 @@ std::shared_ptr<Clock> AudioDevice::reference_clock() {
   return driver_->reference_clock();
 }
 
-const DeviceConfig::DeviceProfile& AudioDevice::profile() const {
+AudioDevice::ProfileReadGuard AudioDevice::profile() const FXL_NO_THREAD_SAFETY_ANALYSIS {
+  std::unique_lock<std::mutex> lock(config_mutex_);
+  const DeviceConfig::DeviceProfile* prof = nullptr;
   if (is_output()) {
     if (!driver_) {
-      return config_.default_output_device_profile();
+      prof = &config_.default_output_device_profile();
+    } else {
+      const auto& device_id = driver_->persistent_unique_id();
+      prof = &config_.output_device_profile(device_id);
     }
-    const auto& device_id = driver_->persistent_unique_id();
-    return config_.output_device_profile(device_id);
+  } else {
+    if (!driver_) {
+      prof = &config_.default_input_device_profile();
+    } else {
+      const auto& device_id = driver_->persistent_unique_id();
+      prof = &config_.input_device_profile(device_id);
+    }
   }
-  if (!driver_) {
-    return config_.default_input_device_profile();
-  }
-  const auto& device_id = driver_->persistent_unique_id();
-  return config_.input_device_profile(device_id);
+  return ProfileReadGuard(std::move(lock), prof);
 }
 
 AudioDevice::AudioDevice(AudioObject::Type type, std::string name, DeviceConfig config,
@@ -235,6 +241,11 @@ fpromise::promise<void> AudioDevice::Shutdown() {
     return fpromise::make_ok_promise();
   }
   shut_down_ = true;
+  shutting_down_.store(true);
+
+  if (!mix_domain_) {
+    return fpromise::make_ok_promise();
+  }
 
   // Give our derived class, and our driver, a chance to clean up resources.
   fpromise::bridge<void> bridge;
