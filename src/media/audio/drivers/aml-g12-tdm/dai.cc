@@ -164,7 +164,7 @@ void AmlG12TdmDai::GetVmo(uint32_t min_frames, uint32_t clock_recovery_notificat
                           GetVmoCallback callback) {
   if (rb_started_) {
     zxlogf(ERROR, "GetVmo failed, ring buffer started");
-    ringbuffer_binding_->Unbind();
+    UnbindRingBuffer();
     return;
   }
   frame_size_ = metadata_.ring_buffer.number_of_channels * metadata_.ring_buffer.bytes_per_sample;
@@ -174,13 +174,13 @@ void AmlG12TdmDai::GetVmo(uint32_t min_frames, uint32_t clock_recovery_notificat
   size_t out_frames = ring_buffer_size / frame_size_;
   if (out_frames > std::numeric_limits<uint32_t>::max()) {
     zxlogf(ERROR, "out frames too big %zu", out_frames);
-    ringbuffer_binding_->Unbind();
+    UnbindRingBuffer();
     return;
   }
   auto status = InitBuffer(ring_buffer_size);
   if (status != ZX_OK) {
     zxlogf(ERROR, "failed to init buffer %d", status);
-    ringbuffer_binding_->Unbind();
+    UnbindRingBuffer();
     return;
   }
 
@@ -189,14 +189,14 @@ void AmlG12TdmDai::GetVmo(uint32_t min_frames, uint32_t clock_recovery_notificat
   status = ring_buffer_vmo_.duplicate(rights, &buffer);
   if (status != ZX_OK) {
     zxlogf(ERROR, "GetVmo failed, could not duplicate VMO");
-    ringbuffer_binding_->Unbind();
+    UnbindRingBuffer();
     return;
   }
 
   status = aml_audio_->SetBuffer(pinned_ring_buffer_.region(0).phys_addr, ring_buffer_size);
   if (status != ZX_OK) {
     zxlogf(ERROR, "failed to set buffer %d", status);
-    ringbuffer_binding_->Unbind();
+    UnbindRingBuffer();
     return;
   }
 
@@ -262,6 +262,9 @@ zx_status_t AmlG12TdmDai::InitBuffer(size_t size) {
   if (status != ZX_OK) {
     zxlogf(ERROR, "could not release quarantine bti - %d", status);
     return status;
+  }
+  if (aml_audio_) {
+    aml_audio_->SetBuffer(0, 0);
   }
   pinned_ring_buffer_.Unpin();
   const size_t vmo_size = fbl::round_up<size_t>(size, zx_system_get_page_size());
@@ -376,10 +379,7 @@ void AmlG12TdmDai::CreateRingBuffer(
   }
 
   // Stop and terminate a previous ring buffer.
-  if (rb_started_) {
-    Stop([]() {});
-    ringbuffer_binding_->Unbind();
-  }
+  UnbindRingBuffer();
 
   ringbuffer_binding_.emplace(this, std::move(ring_buffer), loop_.dispatcher());
   // Clear delay info sent state such that a call to WatchDelayInfo after CreateRingBuffer will be
@@ -399,12 +399,26 @@ void AmlG12TdmDai::CreateRingBuffer(
 }
 
 void AmlG12TdmDai::ResetRingBuffer() {
-  Stop([]() {});
+  if (rb_started_ || rb_fetched_) {
+    Stop([]() {});
+  } else if (aml_audio_) {
+    aml_audio_->Stop();
+  }
+  if (aml_audio_) {
+    aml_audio_->SetBuffer(0, 0);
+  }
   rb_fetched_ = false;
   rb_started_ = false;
   expected_notifications_per_ring_ = 0;
   position_callback_.reset();
   dai_format_ = {};
+}
+
+void AmlG12TdmDai::UnbindRingBuffer() {
+  ResetRingBuffer();
+  if (ringbuffer_binding_.has_value() && ringbuffer_binding_->is_bound()) {
+    ringbuffer_binding_->Unbind();
+  }
 }
 
 void AmlG12TdmDai::GetProperties(

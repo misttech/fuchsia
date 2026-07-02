@@ -92,6 +92,7 @@ class AmlG12TdmDai : public AmlG12TdmDaiDeviceType,
   void ProcessRingNotification();
   void InitDaiFormats();
   void ResetRingBuffer();
+  void UnbindRingBuffer();
   virtual bool AllowNonContiguousRingBuffer() { return false; }  // For unit testing.
 
   std::unique_ptr<AmlTdmConfigDevice> aml_audio_;

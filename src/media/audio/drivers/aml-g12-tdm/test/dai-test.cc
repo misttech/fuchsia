@@ -103,6 +103,7 @@ class TestAmlG12TdmDai : public AmlG12TdmDai {
     sync_completion_wait(&stopped_, ZX_TIME_INFINITE);
     sync_completion_reset(&stopped_);
   }
+  void ResetStopped() { sync_completion_reset(&stopped_); }
   void handle_unknown_method(uint64_t ordinal, bool method_has_response) override {
     zxlogf(ERROR, "TestAmlG12TdmDai unknown method with ordinal %zd", ordinal);
   }
@@ -791,15 +792,57 @@ TEST_F(AmlG12TdmDaiRingBufferTest, RingBufferPeerCloseStopsDma) {
   ASSERT_OK(ring_buffer->Start(&start_time));
   EXPECT_NE(*frddr_ctrl0 & (1u << 31), 0u);
 
+  auto* child_dev = fake_parent_->GetLatestChild();
+  ASSERT_NOT_NULL(child_dev);
+  auto* test_dai = child_dev->GetDeviceContext<TestAmlG12TdmDai>();
+  test_dai->ResetStopped();
+
   // Close the ring buffer channel (triggering ResetRingBuffer).
   ring_buffer.reset();
 
-  auto* child_dev = fake_parent_->GetLatestChild();
-  ASSERT_NOT_NULL(child_dev);
-  child_dev->GetDeviceContext<TestAmlG12TdmDai>()->WaitUntilStopped();
+  test_dai->WaitUntilStopped();
 
   // DMA enable bit (bit 31) must be 0 after RingBuffer peer close cleanup.
   EXPECT_EQ(*frddr_ctrl0 & (1u << 31), 0u);
+}
+
+TEST_F(AmlG12TdmDaiRingBufferTest, StaleRingBufferResetOnRecreation) {
+  ::fidl::InterfaceHandle<fuchsia::hardware::audio::RingBuffer> ring_buffer_client;
+  ::fidl::InterfaceRequest<fuchsia::hardware::audio::RingBuffer> ring_buffer_server =
+      ring_buffer_client.NewRequest();
+
+  ::fuchsia::hardware::audio::DaiFormat dai_format;
+  dai_format_.Clone(&dai_format);
+  ::fuchsia::hardware::audio::Format ring_buffer_format;
+  ring_buffer_format_.Clone(&ring_buffer_format);
+  client_->dai_->CreateRingBuffer(std::move(dai_format), std::move(ring_buffer_format),
+                                  std::move(ring_buffer_server));
+
+  std::optional<::fuchsia::hardware::audio::RingBuffer_SyncProxy> ring_buffer;
+  ring_buffer.emplace(ring_buffer_client.TakeChannel());
+
+  ::fuchsia::hardware::audio::RingBuffer_GetVmo_Result vmo_result = {};
+  constexpr uint32_t kMinFrames = 8192;
+  ASSERT_OK(ring_buffer->GetVmo(kMinFrames, 0, &vmo_result));
+  ASSERT_TRUE(vmo_result.response().ring_buffer.is_valid());
+
+  // Now create a NEW ring buffer on the same DAI without starting the old one (b/520581613).
+  ::fidl::InterfaceHandle<fuchsia::hardware::audio::RingBuffer> ring_buffer_client2;
+  ::fidl::InterfaceRequest<fuchsia::hardware::audio::RingBuffer> ring_buffer_server2 =
+      ring_buffer_client2.NewRequest();
+
+  ::fuchsia::hardware::audio::DaiFormat dai_format2;
+  dai_format_.Clone(&dai_format2);
+  ::fuchsia::hardware::audio::Format ring_buffer_format2;
+  ring_buffer_format_.Clone(&ring_buffer_format2);
+  client_->dai_->CreateRingBuffer(std::move(dai_format2), std::move(ring_buffer_format2),
+                                  std::move(ring_buffer_server2));
+
+  ::fuchsia::hardware::audio::RingBuffer_SyncProxy ring_buffer2(ring_buffer_client2.TakeChannel());
+
+  // Calling Start on the new ring buffer without GetVmo should fail due to rb_fetched_ reset.
+  int64_t start_time = 0;
+  EXPECT_NE(ring_buffer2.Start(&start_time), ZX_OK);
 }
 
 }  // namespace audio::aml_g12
