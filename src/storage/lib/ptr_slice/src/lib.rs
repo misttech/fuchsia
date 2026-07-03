@@ -398,6 +398,15 @@ impl<'a> From<&'a [u8]> for PtrByteSlice<'a> {
     }
 }
 
+impl<'a> From<MutPtrByteSlice<'a>> for PtrByteSlice<'a> {
+    fn from(slice: MutPtrByteSlice<'a>) -> Self {
+        // SAFETY: MutPtrByteSlice guarantees the memory is valid for 'a.
+        // Since we consume the MutPtrByteSlice, we can safely return a PtrByteSlice with the same
+        // lifetime.
+        unsafe { Self::new(slice.slice as *const [u8]) }
+    }
+}
+
 impl<'a> From<&'a mut [u8]> for MutPtrByteSlice<'a> {
     fn from(slice: &'a mut [u8]) -> Self {
         // SAFETY: A standard Rust mutable reference is guaranteed to be valid and exclusive.

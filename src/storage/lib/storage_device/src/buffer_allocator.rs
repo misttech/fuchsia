@@ -16,6 +16,7 @@ mod buffer_source {
     use fuchsia_runtime::vmar_root_self;
     use std::ops::Range;
     use std::sync::Arc;
+    use storage_ptr_slice::MutPtrByteSlice;
 
     /// A buffer source backed by a VMO.
     #[derive(Debug)]
@@ -56,10 +57,21 @@ mod buffer_source {
         }
 
         #[allow(clippy::mut_from_ref)]
-        pub(super) unsafe fn sub_slice(&self, range: &Range<usize>) -> &mut [u8] {
+        /// Returns a mutable pointer slice for the given range.
+        ///
+        /// # Safety
+        ///
+        /// The caller must ensure that no other active references or pointer slices overlap with
+        /// this range.
+        pub(super) unsafe fn subslice_ptr(&self, range: &Range<usize>) -> MutPtrByteSlice<'_> {
             assert!(range.start < self.size && range.end <= self.size);
+            // SAFETY: The base pointer is valid for `size` bytes, and `range` is within bounds.
+            // The caller guarantees exclusivity.
             unsafe {
-                std::slice::from_raw_parts_mut(self.base.add(range.start), range.end - range.start)
+                MutPtrByteSlice::new(std::ptr::slice_from_raw_parts_mut(
+                    self.base.add(range.start),
+                    range.len(),
+                ))
             }
         }
 
@@ -93,6 +105,7 @@ mod buffer_source {
     use std::cell::UnsafeCell;
     use std::ops::Range;
     use std::pin::Pin;
+    use storage_ptr_slice::MutPtrByteSlice;
 
     /// A basic heap-backed buffer source.
     #[derive(Debug)]
@@ -119,9 +132,20 @@ mod buffer_source {
         }
 
         #[allow(clippy::mut_from_ref)]
-        pub(super) unsafe fn sub_slice(&self, range: &Range<usize>) -> &mut [u8] {
+        /// Returns a mutable pointer slice for the given range.
+        ///
+        /// # Safety
+        ///
+        /// The caller must ensure that no other active references or pointer slices overlap with
+        /// this range.
+        pub(super) unsafe fn subslice_ptr(&self, range: &Range<usize>) -> MutPtrByteSlice<'_> {
             assert!(range.start < self.size() && range.end <= self.size());
-            unsafe { &mut (&mut *self.data.get())[range.start..range.end] }
+            // SAFETY: The vector is valid, and `range` is within bounds.
+            // The caller guarantees exclusivity.
+            unsafe {
+                let ptr = (&mut *self.data.get()).as_mut_ptr().add(range.start);
+                MutPtrByteSlice::new(std::ptr::slice_from_raw_parts_mut(ptr, range.len()))
+            }
         }
 
         /// Zeroes out the range.
@@ -130,7 +154,8 @@ mod buffer_source {
         ///
         /// The range must not be allocated.
         pub(super) unsafe fn clean_range(&self, range: Range<usize>) {
-            unsafe { self.sub_slice(&range) }.fill(0);
+            // SAFETY: The caller guarantees the range is not allocated.
+            unsafe { self.subslice_ptr(&range) }.fill(0);
         }
     }
 }
@@ -304,8 +329,9 @@ impl BufferAllocator {
         let range = offset..offset + size;
         log::debug!(range:?, bytes_used = self.size_for_order(order); "Allocated");
 
-        // Safety is ensured by the allocator not double-allocating any regions.
-        Ok(Buffer::new(unsafe { self.source.sub_slice(&range) }, range, &self))
+        // SAFETY: The allocator guarantees that this range does not overlap with any other
+        // active allocations.
+        Ok(Buffer::new(unsafe { self.source.subslice_ptr(&range) }, range, self))
     }
 
     /// Deallocation is O(lg(N) + M), where N = size and M = number of allocations.
@@ -700,5 +726,61 @@ mod tests {
 
         let buf3 = allocator.allocate_buffer(2048).await;
         assert_eq!(buf3.as_slice(), vec![0; 2048]);
+    }
+
+    #[fuchsia::test]
+    async fn test_safe_buffer_apis() {
+        let source = BufferSource::new(4096);
+        let allocator = BufferAllocator::new(512, source);
+
+        let mut buf = allocator.allocate_buffer(4096).await;
+
+        // Test copy_from_slice and copy_to_slice
+        let input_data = vec![0x33_u8; 4096];
+        buf.copy_from_slice(&input_data);
+        let mut output_data = vec![0_u8; 4096];
+        buf.copy_to_slice(&mut output_data);
+        assert_eq!(input_data, output_data);
+
+        // Test fill
+        buf.fill(0x55);
+        buf.copy_to_slice(&mut output_data);
+        assert_eq!(output_data, vec![0x55; 4096]);
+
+        // Test subslice
+        {
+            let mut sub_mut = buf.as_mut().subslice_mut(1024..2048);
+            assert_eq!(sub_mut.len(), 1024);
+            sub_mut.fill(0xaa);
+        }
+
+        {
+            let bref = buf.as_ref();
+            let sub_ref = bref.subslice(1024..2048);
+            assert_eq!(sub_ref.len(), 1024);
+            let mut sub_output = vec![0_u8; 1024];
+            sub_ref.copy_to_slice(&mut sub_output);
+            assert_eq!(sub_output, vec![0xaa; 1024]);
+        }
+
+        // Test split_at and split_at_mut
+        {
+            let (mut left_mut, mut right_mut) = buf.as_mut().split_at_mut(2048);
+            assert_eq!(left_mut.len(), 2048);
+            assert_eq!(right_mut.len(), 2048);
+            left_mut.fill(0x11);
+            right_mut.fill(0x22);
+        }
+
+        {
+            let bref = buf.as_ref();
+            let (left_ref, right_ref) = bref.split_at(2048);
+            let mut left_out = vec![0_u8; 2048];
+            let mut right_out = vec![0_u8; 2048];
+            left_ref.copy_to_slice(&mut left_out);
+            right_ref.copy_to_slice(&mut right_out);
+            assert_eq!(left_out, vec![0x11; 2048]);
+            assert_eq!(right_out, vec![0x22; 2048]);
+        }
     }
 }

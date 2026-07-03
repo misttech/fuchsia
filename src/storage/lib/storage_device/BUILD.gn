@@ -17,6 +17,7 @@ lib_srcs = [
 lib_deps = [
   "//src/lib/fuchsia-sync",
   "//src/storage/lib/block_protocol",
+  "//src/storage/lib/ptr_slice",
   "//third_party/rust_crates:anyhow",
   "//third_party/rust_crates:async-trait",
   "//third_party/rust_crates:event-listener",
