@@ -148,7 +148,7 @@
 //! }
 //! ```
 
-use starnix_sync::{LockDepReadGuard, LockDepWriteGuard, MutexGuard};
+use starnix_sync::{LockDepGuard, LockDepReadGuard, LockDepWriteGuard, MutexGuard};
 use std::ops::{Deref, DerefMut};
 
 /// Create the read() and write() accessor to respectively access the read guard and write guard.
@@ -251,11 +251,28 @@ pub type StateRef<'a, B, S> = Guard<'a, B, &'a S>;
 pub type StateMutRef<'a, B, S> = Guard<'a, B, &'a mut S>;
 
 impl<'a, B, S> Guard<'a, B, MutexGuard<'a, S>> {
+    /// Executes the given closure while temporarily dropping the lock.
+    ///
+    /// The lock is dropped before the closure executes and re-acquired
+    /// after it finishes.
     pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
     where
         F: FnOnce() -> U,
     {
         MutexGuard::unlocked(&mut s.guard, f)
+    }
+}
+
+impl<'a, B, S> Guard<'a, B, LockDepGuard<'a, S>> {
+    /// Executes the given closure while temporarily dropping the lock.
+    ///
+    /// The lock is dropped before the closure executes and re-acquired
+    /// after it finishes.
+    pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
+    where
+        F: FnOnce() -> U,
+    {
+        LockDepGuard::unlocked(&mut s.guard, f)
     }
 }
 

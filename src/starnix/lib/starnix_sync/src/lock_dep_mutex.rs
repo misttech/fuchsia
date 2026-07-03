@@ -24,6 +24,12 @@ mod tracking {
         name: &'static str,
     }
 
+    impl HeldLock {
+        fn new(encoded_value: usize, name: &'static str) -> Self {
+            Self { encoded_value, active_subclass_tokens: 0, name }
+        }
+    }
+
     /// Centralized thread-local state for lockdep tracking.
     struct ThreadState {
         /// The stack of currently held locks on this thread.
@@ -42,13 +48,15 @@ mod tracking {
     /// Panics if a self-deadlock or lock cycle is detected.
     #[inline(always)]
     #[track_caller]
-    fn check_and_push_lock(target_value: usize, name: &'static str) {
+    fn check_and_push_lock(lock: HeldLock) {
         let panic_message = STATE.try_with(|state| {
             let mut s = state.borrow_mut();
             if let Some(last) = s.held_locks.last() {
                 let last_value = last.encoded_value;
                 let last_level = last_value & !0xF;
+                let target_value = lock.encoded_value;
                 let target_level = target_value & !0xF;
+                let name = lock.name;
 
                 if target_value == last_value {
                     if target_level == last_level && name != last.name {
@@ -80,11 +88,7 @@ mod tracking {
                     }
                 }
             }
-            s.held_locks.push(HeldLock {
-                encoded_value: target_value,
-                active_subclass_tokens: 0,
-                name,
-            });
+            s.held_locks.push(lock);
             Ok(())
         });
         if let Ok(Err(panic_message)) = panic_message {
@@ -95,8 +99,8 @@ mod tracking {
     /// Removes a lock from the thread-local stack when it is released.
     #[inline(always)]
     #[track_caller]
-    fn pop_lock(target_value: usize) {
-        let panic_message = STATE.try_with(|state| {
+    fn pop_lock(target_value: usize) -> Option<HeldLock> {
+        let held_lock = STATE.try_with(|state| {
             let mut s = state.borrow_mut();
             let Some(pos) = s.held_locks.iter().rposition(|v| v.encoded_value == target_value)
             else {
@@ -119,11 +123,13 @@ mod tracking {
                     target_value, lock.active_subclass_tokens, stack_str
                 ));
             }
-            s.held_locks.remove(pos);
-            Ok(())
+            Ok(s.held_locks.remove(pos))
         });
-        if let Ok(Err(panic_message)) = panic_message {
-            panic!("{panic_message}");
+        match held_lock.ok()? {
+            Err(panic_message) => {
+                panic!("{panic_message}");
+            }
+            Ok(held_lock) => Some(held_lock),
         }
     }
 
@@ -221,7 +227,7 @@ mod tracking {
             let subclass = get_subclass(lock_id);
             assert!(subclass < 16, "subclass must be between 0 and 15");
             let target_value = lock_id | (subclass as usize & 0xF);
-            check_and_push_lock(target_value, name);
+            check_and_push_lock(HeldLock::new(target_value, name));
             Self { inner: Rc::new(InternalLockLevelToken { target_value }) }
         }
 
@@ -243,6 +249,31 @@ mod tracking {
             });
             if let Ok(Err(panic_message)) = panic_message {
                 panic!("{panic_message}");
+            }
+        }
+
+        pub(super) fn unlock(&self) -> UnlockedGuard {
+            UnlockedGuard::new(self.target_value())
+        }
+    }
+
+    /// A guard that represents the temporary removal of a lock from the thread's
+    /// active lock state for lockdep tracking purposes.
+    pub struct UnlockedGuard {
+        lock: Option<HeldLock>,
+    }
+
+    impl UnlockedGuard {
+        fn new(target_value: usize) -> Self {
+            let lock = pop_lock(target_value);
+            Self { lock }
+        }
+    }
+
+    impl Drop for UnlockedGuard {
+        fn drop(&mut self) {
+            if let Some(lock) = self.lock.take() {
+                check_and_push_lock(lock);
             }
         }
     }
@@ -381,7 +412,17 @@ mod tracking {
         }
 
         pub(super) fn check_maximal(&self) {}
+
+        pub(super) fn unlock(&self) -> UnlockedGuard {
+            UnlockedGuard {}
+        }
     }
+
+    /// A guard that represents the temporary removal of a lock from the thread's
+    /// active lock state for lockdep tracking purposes.
+    ///
+    /// This is the no-op implementation used when `detect_lock_dep_cycles` is disabled.
+    pub struct UnlockedGuard {}
 
     /// Tracking information for dynamic locks.
     pub struct DynamicLockTracking {}
@@ -521,6 +562,15 @@ impl<'a, T> std::ops::DerefMut for LockDepGuard<'a, T> {
 impl<'a, T> LockDepGuard<'a, T> {
     pub(super) fn check_maximal(&self) {
         self.token.check_maximal();
+    }
+
+    /// Unlock this guard, run the closure, and then re-lock it.
+    pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
+    where
+        F: FnOnce() -> U,
+    {
+        let _guard = s.token.unlock();
+        MutexGuard::unlocked(&mut s.inner, f)
     }
 }
 
@@ -1276,6 +1326,33 @@ mod tests {
 
         let _g2 = l2.try_lock();
         let _g1 = l1.try_lock(); // This should panic since we hold B and request A.
+    }
+
+    #[test]
+    fn test_unlocked_guard_tracking() {
+        tracking::clear_state();
+        let lock_a: LockDepMutex<i32, LevelA> = 0.into();
+        let lock_b: LockDepMutex<i32, LevelB> = 0.into();
+
+        let mut guard_b = lock_b.lock();
+
+        LockDepGuard::unlocked(&mut guard_b, || {
+            // Because B is unlocked, we can now acquire A, which would normally panic
+            // if we were still holding B (since A is before B).
+            let _guard_a = lock_a.lock();
+        });
+    }
+
+    #[test]
+    fn test_unlocked_guard_reacquire() {
+        tracking::clear_state();
+        let lock_a: LockDepMutex<i32, LevelA> = 0.into();
+
+        let mut guard_a = lock_a.lock();
+        LockDepGuard::unlocked(&mut guard_a, || {
+            // Because A is unlocked and popped from tracking, we can acquire it again.
+            let _guard_a2 = lock_a.lock();
+        });
     }
 }
 
