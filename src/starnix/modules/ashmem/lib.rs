@@ -15,7 +15,7 @@ use starnix_core::mm::{
     DesiredAddress, MappingName, MappingOptions, MemoryAccessor, MemoryAccessorExt, PAGE_SIZE,
     ProtectionFlags,
 };
-use starnix_core::task::CurrentTask;
+use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{
     FileObject, FileOps, FsString, InputBuffer, NamespaceNode, OutputBuffer, SeekTarget,
     default_ioctl, default_seek, fileops_impl_noop_sync,
@@ -31,12 +31,11 @@ use starnix_uapi::{ASHMEM_NAME_LEN, ashmem_pin, device_id, errno, error, off_t, 
 use std::sync::Arc;
 
 /// Initializes the ashmem device.
-pub fn ashmem_device_init(locked: &mut Locked<Unlocked>, system_task: &CurrentTask) {
-    let kernel = system_task.kernel();
+pub fn ashmem_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) {
     let registry = &kernel.device_registry;
 
     registry
-        .register_misc_device(locked, system_task, "ashmem".into(), AshmemDevice::new())
+        .register_misc_device(locked, kernel, "ashmem".into(), AshmemDevice::new())
         .expect("can register ashmem");
 }
 

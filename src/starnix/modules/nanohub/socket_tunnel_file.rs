@@ -14,7 +14,7 @@ use starnix_core::device::DeviceOps;
 use starnix_core::device::kobject::Device;
 use starnix_core::fs::fuchsia::new_remote_file_ops;
 use starnix_core::fs_node_impl_not_dir;
-use starnix_core::task::CurrentTask;
+use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::{FileOps, FsNode, FsNodeOps, FsStr, FsString};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
@@ -123,7 +123,7 @@ impl FsNodeOps for SocketTunnelSysfsFile {
 /// Create and register a device node backed by a SocketTunnelFile
 pub fn register_socket_tunnel_device<L>(
     locked: &mut Locked<L>,
-    current_task: &CurrentTask,
+    kernel: &Kernel,
     socket_label: &FsStr,
     dev_node_name: &FsStr,
     dev_class_name: &FsStr,
@@ -131,7 +131,6 @@ pub fn register_socket_tunnel_device<L>(
 ) where
     L: LockEqualOrBefore<FileOpsCore>,
 {
-    let kernel = current_task.kernel();
     let registry = &kernel.device_registry;
 
     let device_class =
@@ -140,7 +139,7 @@ pub fn register_socket_tunnel_device<L>(
     registry
         .register_dyn_device_with_dir(
             locked,
-            current_task,
+            kernel,
             dev_node_name.into(),
             device_class,
             build_directory,

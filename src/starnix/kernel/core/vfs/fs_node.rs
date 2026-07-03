@@ -2870,7 +2870,7 @@ mod tests {
     #[::fuchsia::test]
     async fn open_device_file() {
         spawn_kernel_and_run(async |locked, current_task| {
-            mem_device_init(locked, &*current_task).expect("mem_device_init");
+            mem_device_init(locked, current_task.kernel()).expect("mem_device_init");
 
             // Create a device file that points to the `zero` device (which is automatically
             // registered in the kernel).

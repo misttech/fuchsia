@@ -89,7 +89,7 @@ impl Framebuffer {
         let graphics_class = registry.objects.graphics_class();
         registry.register_device(
             locked,
-            system_task,
+            system_task.kernel(),
             "fb0".into(),
             DeviceMetadata::new("fb0".into(), DeviceId::FB0, DeviceMode::Char),
             graphics_class,

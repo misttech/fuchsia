@@ -4,7 +4,7 @@
 
 use crate::KgslFile;
 use starnix_core::device::DeviceOps;
-use starnix_core::task::CurrentTask;
+use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{FileOps, NamespaceNode};
 use starnix_logging::log_info;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
@@ -29,18 +29,17 @@ impl DeviceOps for KgslDeviceBuilder {
     }
 }
 
-pub fn kgsl_device_init<L>(locked: &mut Locked<L>, current_task: &CurrentTask)
+pub fn kgsl_device_init<L>(locked: &mut Locked<L>, kernel: &Kernel)
 where
     L: LockEqualOrBefore<FileOpsCore>,
 {
     log_info!("kgsl: kgsl_device_init");
 
-    let kernel = current_task.kernel();
     let registry = &kernel.device_registry;
     let class = registry.objects.get_or_create_class("kgsl".into(), registry.objects.virtual_bus());
     let builder = KgslDeviceBuilder {};
 
     registry
-        .register_dyn_device(locked, current_task, "kgsl-3d0".into(), class, builder)
+        .register_dyn_device(locked, kernel, "kgsl-3d0".into(), class, builder)
         .expect("can register kgsl-3d0");
 }

@@ -12,14 +12,12 @@ use crate::vfs::{
     DirEntryHandle, FileSystemHandle, FileSystemOptions, FsStr, LookupContext, MountInfo,
     NamespaceNode, path,
 };
-use starnix_logging::log_warn;
-use starnix_sync::{FileOpsCore, InterruptibleEvent, LockEqualOrBefore, Locked, Unlocked};
+use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 pub fn dev_tmp_fs(
     locked: &mut Locked<Unlocked>,
@@ -83,27 +81,26 @@ impl DevTmpFs {
     }
 }
 
+/// Creates a device node in the devtmpfs filesystem.
+///
+/// This function executes the creation in a background thread and blocks the
+/// calling thread until the device node is fully created. This blocking behavior
+/// matches Linux.
 pub fn devtmpfs_create_device(
     kernel: &Kernel,
     device_metadata: DeviceMetadata,
-    event: Option<Arc<InterruptibleEvent>>,
-) {
+) -> Result<(), Errno> {
     let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
         current_task.override_creds(security::creds_start_internal_operation(current_task), || {
-            if let Err(e) = devtmpfs_create_device_internal(locked, current_task, &device_metadata)
-            {
-                log_warn!("Cannot add device {device_metadata:?} in devtmpfs ({e:?})");
-            }
-            if let Some(event) = event {
-                event.notify();
-            }
-        });
+            devtmpfs_create_device_internal(locked, current_task, &device_metadata)
+        })
     };
-    let req = SpawnRequestBuilder::new()
+    let (result_fn, req) = SpawnRequestBuilder::new()
         .with_debug_name("devtmpfs-create-device")
         .with_sync_closure(closure)
-        .build();
+        .build_with_sync_result();
     kernel.kthreads.spawner().spawn_from_request(req);
+    result_fn()?
 }
 
 fn devtmpfs_create_device_internal(

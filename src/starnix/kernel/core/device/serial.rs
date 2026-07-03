@@ -152,7 +152,7 @@ impl DeviceOps for Arc<SerialDevice> {
 /// to register /dev/ttyS<n>, then `index` should be `n`.
 pub fn register_serial_device(
     locked: &mut Locked<Unlocked>,
-    system_task: &CurrentTask,
+    kernel: &Kernel,
     index: u32,
     serial_device: Arc<SerialDevice>,
 ) -> Result<(), Errno> {
@@ -162,11 +162,10 @@ pub fn register_serial_device(
 
     let name = FsString::from(format!("ttyS{}", index));
 
-    let kernel = system_task.kernel();
     let registry = &kernel.device_registry;
     registry.register_device(
         locked,
-        system_task,
+        kernel,
         name.as_ref(),
         DeviceMetadata::new(
             name.clone(),

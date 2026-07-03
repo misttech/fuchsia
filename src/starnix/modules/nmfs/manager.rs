@@ -6,7 +6,7 @@ use crate::{NetworkMessage, fuchsia_network_monitor_fs};
 use bstr::BString;
 use fuchsia_component::client::connect_to_protocol_sync;
 use fuchsia_inspect_derive::{IValue, Inspect, Unit, WithInspect};
-use starnix_core::task::CurrentTask;
+use starnix_core::task::Kernel;
 use starnix_core::vfs::fs_registry::FsRegistry;
 use starnix_logging::{log_error, log_info};
 use starnix_sync::{Mutex, MutexGuard};
@@ -51,9 +51,7 @@ struct SeenSentData {
 }
 
 /// Initialize the connection to the socketproxy.
-pub fn nmfs_init(current_task: &CurrentTask) -> Result<(), anyhow::Error> {
-    let kernel = current_task.kernel();
-
+pub fn nmfs_init(kernel: &Kernel) -> Result<(), anyhow::Error> {
     // Register the fuchsia_network_monitor_fs in the FsRegistry.
     let registry = kernel.expando.get::<FsRegistry>();
     registry.register(b"fuchsia_network_monitor_fs".into(), fuchsia_network_monitor_fs);

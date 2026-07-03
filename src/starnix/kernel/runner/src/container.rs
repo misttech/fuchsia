@@ -1049,7 +1049,7 @@ fn init_remote_block_devices(
         system_task
             .kernel()
             .remote_block_device_registry
-            .create_remote_block_device(locked, system_task, &name_str, client_end)
+            .create_remote_block_device(locked, system_task.kernel(), &name_str, client_end)
             .with_source_context(|| format!("creating remote block device: {name_str}"))?;
     }
     Ok(())

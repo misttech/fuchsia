@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use rutabaga_gfx::{RutabagaBuilder, RutabagaComponentType, RutabagaFenceHandler};
-use starnix_core::task::CurrentTask;
+use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{FileOps, NamespaceNode};
 use starnix_logging::log_error;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
@@ -23,11 +23,10 @@ fn create_gpu_device(
     error!(ENOTSUP)
 }
 
-pub fn gpu_device_init<L>(locked: &mut Locked<L>, current_task: &CurrentTask)
+pub fn gpu_device_init<L>(locked: &mut Locked<L>, kernel: &Kernel)
 where
     L: LockEqualOrBefore<FileOpsCore>,
 {
-    let kernel = current_task.kernel();
     let registry = &kernel.device_registry;
 
     let _ = RutabagaBuilder::new(RutabagaComponentType::Gfxstream, 0)
@@ -36,7 +35,7 @@ where
     registry
         .register_dyn_device(
             locked,
-            current_task,
+            kernel,
             "virtio-gpu".into(),
             registry.objects.starnix_class(),
             create_gpu_device,

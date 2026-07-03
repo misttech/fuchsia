@@ -10,7 +10,7 @@ use fidl_fuchsia_hardware_qualcomm_fastrpc as frpc;
 use starnix_core::device::DeviceOps;
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt, ProtectionFlags};
-use starnix_core::task::{CurrentTask, ThreadGroupKey, ThreadLockupDetector};
+use starnix_core::task::{CurrentTask, Kernel, ThreadGroupKey, ThreadLockupDetector};
 use starnix_core::vfs::{
     Anon, FdFlags, FdNumber, FileObject, FileObjectState, FileOps, NamespaceNode,
     call_fidl_and_await_close, default_ioctl,
@@ -968,7 +968,7 @@ impl DeviceOps for FastRPCDevice {
     }
 }
 
-pub fn fastrpc_device_init(locked: &mut Locked<Unlocked>, system_task: &CurrentTask) {
+pub fn fastrpc_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) {
     let device = fuchsia_component::client::connect_to_protocol_sync::<frpc::SecureFastRpcMarker>()
         .expect("Failed to connect to fuchsia.hardware.qualcomm.fastrpc.SecureFastRpc");
 
@@ -977,14 +977,14 @@ pub fn fastrpc_device_init(locked: &mut Locked<Unlocked>, system_task: &CurrentT
     // This is called the "system" dma heap, but as of now the fastrpc client is its only client.
     // Because fastrpc needs to be aware of the fds from this, we are putting the implementation
     // in this module.
-    dma_heap_device_register(locked, system_task, "system", SystemHeap { device: device.clone() });
+    dma_heap_device_register(locked, kernel, "system", SystemHeap { device: device.clone() });
 
     let device = FastRPCDevice::new(device);
-    let registry = &system_task.kernel().device_registry;
+    let registry = &kernel.device_registry;
     registry
         .register_dyn_device(
             locked,
-            system_task,
+            kernel,
             "adsprpc-smd-secure".into(),
             registry.objects.get_or_create_class("fastrpc".into(), registry.objects.virtual_bus()),
             device,

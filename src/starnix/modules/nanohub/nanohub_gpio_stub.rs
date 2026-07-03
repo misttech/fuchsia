@@ -4,7 +4,7 @@
 
 use starnix_core::device::DeviceOps;
 use starnix_core::mm::MemoryAccessorExt;
-use starnix_core::task::{CurrentTask, EventHandler, WaitCanceler, Waiter};
+use starnix_core::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, Waiter};
 use starnix_core::vfs::{
     Anon, FdFlags, FileObject, FileOps, NamespaceNode, fileops_impl_dataless,
     fileops_impl_nonseekable, fileops_impl_noop_sync,
@@ -177,21 +177,11 @@ impl FileOps for GpioLineFile {
     }
 }
 
-pub fn register_gpio_chip_device(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    name: &str,
-) {
-    let registry = &current_task.kernel().device_registry;
+pub fn register_gpio_chip_device(locked: &mut Locked<Unlocked>, kernel: &Kernel, name: &str) {
+    let registry = &kernel.device_registry;
     let device_class =
         registry.objects.get_or_create_class("gpio".into(), registry.objects.virtual_bus());
     registry
-        .register_dyn_device(
-            locked,
-            current_task,
-            name.as_bytes().into(),
-            device_class,
-            GpioChipDevice,
-        )
+        .register_dyn_device(locked, kernel, name.as_bytes().into(), device_class, GpioChipDevice)
         .expect("Can register GPIO chip device");
 }

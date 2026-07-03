@@ -7,7 +7,7 @@ use crate::device::kobject::DeviceMetadata;
 use crate::device::terminal::{Terminal, TtyState};
 use crate::fs::sysfs::build_device_directory;
 use crate::mm::MemoryAccessorExt;
-use crate::task::{CurrentTask, EventHandler, Kernel, KernelOrTask, WaitCanceler, Waiter};
+use crate::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, Waiter};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use crate::vfs::{
@@ -126,15 +126,10 @@ pub fn create_main_and_replica(
     Ok((pty_file, pts_file))
 }
 
-pub fn tty_device_init<'a, L>(
-    locked: &mut Locked<L>,
-    kernel_or_task: impl KernelOrTask<'a>,
-) -> Result<(), Errno>
+pub fn tty_device_init<'a, L>(locked: &mut Locked<L>, kernel: &Kernel) -> Result<(), Errno>
 where
     L: LockEqualOrBefore<FileOpsCore>,
 {
-    let kernel = kernel_or_task.kernel();
-
     let registry = &kernel.device_registry;
 
     // Register /dev/pts/X device type.
@@ -165,7 +160,7 @@ where
     let tty_class = registry.objects.tty_class();
     registry.add_device(
         locked,
-        kernel_or_task,
+        kernel,
         "tty".into(),
         DeviceMetadata::new("tty".into(), DeviceId::TTY, DeviceMode::Char),
         tty_class.clone(),
@@ -173,7 +168,7 @@ where
     )?;
     registry.add_device(
         locked,
-        kernel_or_task,
+        kernel,
         "ptmx".into(),
         DeviceMetadata::new("ptmx".into(), DeviceId::PTMX, DeviceMode::Char),
         tty_class,
@@ -1061,7 +1056,7 @@ mod tests {
     async fn opening_ptmx_creates_pts() {
         spawn_kernel_and_run(async |locked, task| {
             let kernel = task.kernel();
-            tty_device_init(locked, &*task).expect("tty_device_init");
+            tty_device_init(locked, kernel).expect("tty_device_init");
             let fs = new_pts_fs(locked, kernel);
             lookup_node(locked, task, &fs, "0".into()).unwrap_err();
             let _ptmx = open_ptmx_and_unlock(locked, task, &fs).expect("ptmx");
@@ -1074,7 +1069,7 @@ mod tests {
     async fn closing_ptmx_closes_pts() {
         spawn_kernel_and_run(async |locked, task| {
             let kernel = task.kernel();
-            tty_device_init(locked, &*task).expect("tty_device_init");
+            tty_device_init(locked, kernel).expect("tty_device_init");
             let fs = new_pts_fs(locked, kernel);
             lookup_node(locked, task, &fs, "0".into()).unwrap_err();
             let ptmx = open_ptmx_and_unlock(locked, task, &fs).expect("ptmx");
@@ -1090,7 +1085,7 @@ mod tests {
     async fn pts_are_reused() {
         spawn_kernel_and_run(async |locked, task| {
             let kernel = task.kernel();
-            tty_device_init(locked, &*task).expect("tty_device_init");
+            tty_device_init(locked, kernel).expect("tty_device_init");
             let fs = new_pts_fs(locked, kernel);
 
             let _ptmx0 = open_ptmx_and_unlock(locked, task, &fs).expect("ptmx");
@@ -1116,7 +1111,7 @@ mod tests {
     async fn opening_inexistant_replica_fails() {
         spawn_kernel_and_run(async |locked, task| {
             let kernel = task.kernel();
-            tty_device_init(locked, &*task).expect("tty_device_init");
+            tty_device_init(locked, kernel).expect("tty_device_init");
             // Initialize pts devices
             new_pts_fs(locked, kernel);
             let fs = TmpFs::new_fs(locked, kernel);
@@ -1151,7 +1146,7 @@ mod tests {
     async fn test_open_tty() {
         spawn_kernel_and_run(async |locked, task| {
             let kernel = task.kernel();
-            tty_device_init(locked, &*task).expect("tty_device_init");
+            tty_device_init(locked, kernel).expect("tty_device_init");
             let fs = new_pts_fs(locked, kernel);
             let devfs = crate::fs::devtmpfs::DevTmpFs::from_kernel(locked, kernel);
 
@@ -1182,7 +1177,7 @@ mod tests {
     async fn test_unknown_ioctl() {
         spawn_kernel_and_run(async |locked, task| {
             let kernel = task.kernel();
-            tty_device_init(locked, &*task).expect("tty_device_init");
+            tty_device_init(locked, kernel).expect("tty_device_init");
             let fs = new_pts_fs(locked, kernel);
 
             let ptmx = open_ptmx_and_unlock(locked, task, &fs).expect("ptmx");
@@ -1198,7 +1193,7 @@ mod tests {
     async fn test_tiocgptn_ioctl() {
         spawn_kernel_and_run(async |locked, task| {
             let kernel = task.kernel();
-            tty_device_init(locked, &*task).expect("tty_device_init");
+            tty_device_init(locked, kernel).expect("tty_device_init");
             let fs = new_pts_fs(locked, kernel);
             let ptmx0 = open_ptmx_and_unlock(locked, task, &fs).expect("ptmx");
             let ptmx1 = open_ptmx_and_unlock(locked, task, &fs).expect("ptmx");
@@ -1216,7 +1211,7 @@ mod tests {
     async fn test_new_terminal_is_locked() {
         spawn_kernel_and_run(async |locked, task| {
             let kernel = task.kernel();
-            tty_device_init(locked, &*task).expect("tty_device_init");
+            tty_device_init(locked, kernel).expect("tty_device_init");
             let fs = new_pts_fs(locked, kernel);
             let _ptmx_file = open_file(locked, task, &fs, "ptmx".into()).expect("open file");
 
@@ -1233,7 +1228,7 @@ mod tests {
     async fn test_lock_ioctls() {
         spawn_kernel_and_run(async |locked, task| {
             let kernel = task.kernel();
-            tty_device_init(locked, &*task).expect("tty_device_init");
+            tty_device_init(locked, kernel).expect("tty_device_init");
             let fs = new_pts_fs(locked, kernel);
             let ptmx = open_ptmx_and_unlock(locked, task, &fs).expect("ptmx");
             let pts = lookup_node(locked, task, &fs, "0".into()).expect("component_lookup");
@@ -1260,7 +1255,7 @@ mod tests {
     async fn test_ptmx_stats() {
         spawn_kernel_and_run(async |locked, task| {
             let kernel = task.kernel();
-            tty_device_init(locked, &*task).expect("tty_device_init");
+            tty_device_init(locked, kernel).expect("tty_device_init");
             task.set_creds(Credentials::with_ids(22, 22));
             let fs = new_pts_fs(locked, kernel);
             let ptmx = open_ptmx_and_unlock(locked, task, &fs).expect("ptmx");
@@ -1279,7 +1274,7 @@ mod tests {
     async fn test_attach_terminal_when_open() {
         spawn_kernel_and_run(async |locked, task| {
             let kernel = task.kernel();
-            tty_device_init(locked, &*task).expect("tty_device_init");
+            tty_device_init(locked, kernel).expect("tty_device_init");
             let fs = new_pts_fs(locked, kernel);
             let _opened_main = open_ptmx_and_unlock(locked, task, &fs).expect("ptmx");
             // Opening the main terminal should not set the terminal of the session.
@@ -1332,7 +1327,7 @@ mod tests {
     async fn test_attach_terminal() {
         spawn_kernel_and_run(async |locked, task1| {
             let kernel = task1.kernel();
-            tty_device_init(locked, &*task1).expect("tty_device_init");
+            tty_device_init(locked, kernel).expect("tty_device_init");
             let task2 = task1.clone_task_for_test(locked, 0, Some(SIGCHLD));
             task2.thread_group().setsid(locked).expect("setsid");
 
@@ -1373,7 +1368,7 @@ mod tests {
     async fn test_steal_terminal() {
         spawn_kernel_and_run(async |locked, task1| {
             let kernel = task1.kernel();
-            tty_device_init(locked, &*task1).expect("tty_device_init");
+            tty_device_init(locked, kernel).expect("tty_device_init");
             task1.set_creds(Credentials::with_ids(1, 1));
 
             let task2 = task1.clone_task_for_test(locked, 0, Some(SIGCHLD));
@@ -1455,7 +1450,7 @@ mod tests {
     async fn test_set_foreground_process() {
         spawn_kernel_and_run(async |locked, init| {
             let kernel = init.kernel();
-            tty_device_init(locked, &*init).expect("tty_device_init");
+            tty_device_init(locked, kernel).expect("tty_device_init");
             let task1 = init.clone_task_for_test(locked, 0, Some(SIGCHLD));
             task1.thread_group().setsid(locked).expect("setsid");
             let task2 = task1.clone_task_for_test(locked, 0, Some(SIGCHLD));
@@ -1546,7 +1541,7 @@ mod tests {
     async fn test_detach_session() {
         spawn_kernel_and_run(async |locked, task1| {
             let kernel = task1.kernel();
-            tty_device_init(locked, &*task1).expect("tty_device_init");
+            tty_device_init(locked, kernel).expect("tty_device_init");
             let task2 = task1.clone_task_for_test(locked, 0, Some(SIGCHLD));
             task2.thread_group().setsid(locked).expect("setsid");
 
@@ -1583,7 +1578,7 @@ mod tests {
     async fn test_send_data_back_and_forth() {
         spawn_kernel_and_run(async |locked, task| {
             let kernel = task.kernel();
-            tty_device_init(locked, &*task).expect("tty_device_init");
+            tty_device_init(locked, kernel).expect("tty_device_init");
             let fs = new_pts_fs(locked, kernel);
             let ptmx = open_ptmx_and_unlock(locked, task, &fs).expect("ptmx");
             let pts = open_file(locked, task, &fs, "0".into()).expect("open file");

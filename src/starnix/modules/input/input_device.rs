@@ -295,7 +295,7 @@ impl InputDevice {
         let input_class = registry.objects.input_class();
         registry.register_device(
             locked,
-            system_task,
+            system_task.kernel(),
             FsString::from(format!("event{}", device_id)).as_ref(),
             DeviceMetadata::new(
                 format!("input/event{}", device_id).into(),

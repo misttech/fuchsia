@@ -220,7 +220,7 @@ impl DmDevice {
         let device_weak = Arc::<DmDevice>::downgrade(&device);
         let k_device = registry.add_device(
             locked,
-            current_task,
+            current_task.kernel(),
             dm_device_name.as_ref(),
             DeviceMetadata::new(
                 dm_device_name.clone(),

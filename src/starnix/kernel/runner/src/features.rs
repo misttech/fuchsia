@@ -598,13 +598,13 @@ pub fn run_container_features(
             Some(mouse_device.inspect_status),
         );
 
-        register_uinput_device(locked, &kernel.kthreads.system_task(), input_events_relay_handle)?;
+        register_uinput_device(locked, kernel, input_events_relay_handle)?;
 
         // Channel we use to inform the relay of changes to `touch_standby`
         let (touch_standby_sender, touch_standby_receiver) =
             ThreadLockupDetector::tracked_channel::<bool>();
         let touch_policy_device = TouchPowerPolicyDevice::new(touch_standby_sender);
-        touch_policy_device.clone().register(locked, &kernel.kthreads.system_task());
+        touch_policy_device.clone().register(locked, kernel);
         touch_policy_device.start_relay(&kernel, touch_standby_receiver);
 
         framebuffer.start_server(kernel, None);
@@ -619,37 +619,37 @@ pub fn run_container_features(
         // the magma feature is enabled or disabled. If a call to gralloc AIDL
         // IAllocator allocate2 occurs with this feature disabled, the call will
         // fail.
-        gralloc_device_init(locked, system_task);
+        gralloc_device_init(locked, kernel);
     }
     if features.kgsl {
-        kgsl_device_init(locked, system_task);
+        kgsl_device_init(locked, kernel);
     }
     if let Some(supported_vendors) = &features.magma_supported_vendors {
-        magma_device_init(locked, system_task, supported_vendors.clone());
+        magma_device_init(locked, kernel, supported_vendors.clone());
     }
     if features.gfxstream {
-        gpu_device_init(locked, system_task);
+        gpu_device_init(locked, kernel);
     }
     if let Some(socket_path) = features.perfetto.clone() {
         start_perfetto_consumer_thread(kernel, socket_path)
             .context("Failed to start perfetto consumer thread")?;
     }
     if features.ashmem {
-        ashmem_device_init(locked, system_task);
+        ashmem_device_init(locked, kernel);
     }
     if features.boot_notifier {
-        booted_device_init(locked, system_task, features.boot_notifier_cpu_boost);
+        booted_device_init(locked, kernel, features.boot_notifier_cpu_boost);
     }
     if features.data_collection_consent_sync {
-        consent_sync_init(locked, system_task);
+        consent_sync_init(locked, kernel);
     }
     if features.network_manager {
-        if let Err(e) = nmfs_init(system_task) {
+        if let Err(e) = nmfs_init(kernel) {
             log_error!("Network manager initialization failed: ({e:?})");
         }
     }
     if features.nanohub {
-        nanohub_device_init(locked, system_task);
+        nanohub_device_init(locked, kernel);
     }
     if features.thermal {
         thermal_device_init(locked, kernel)?;
@@ -658,20 +658,20 @@ pub fn run_container_features(
         cooling_device_init(locked, kernel, devices.clone())?;
     }
     if features.hvdcp_opti {
-        hvdcp_opti_init(locked, system_task)?;
+        hvdcp_opti_init(locked, kernel)?;
     }
     if features.fastrpc {
-        fastrpc_device_init(locked, system_task);
+        fastrpc_device_init(locked, kernel);
     }
     if features.wakeup_test {
         register_wakeup_test_device(locked, system_task)?;
     }
     if features.mmcblk_stub {
-        let _device = add_mmc_block_device(locked, system_task)
+        let _device = add_mmc_block_device(locked, system_task.kernel())
             .context("Failed to add stub mmcblk0 device")?;
     }
     if features.android_usb {
-        usb_device_init(locked, system_task).context("Failed to add android usb device nodes")?;
+        usb_device_init(locked, kernel).context("Failed to add android usb device nodes")?;
     }
     Ok(())
 }

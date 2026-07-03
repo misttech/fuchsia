@@ -14,8 +14,8 @@ use crate::mm::{MemoryAccessor, MemoryAccessorExt, MemoryManager, PAGE_SIZE};
 use crate::security;
 use crate::task::container_namespace::ContainerNamespace;
 use crate::task::{
-    CurrentTask, ExitStatus, Kernel, KernelFeatures, KernelOrTask, SchedulerManager, SystemLimits,
-    Task, TaskBuilder,
+    CurrentTask, ExitStatus, Kernel, KernelFeatures, SchedulerManager, SystemLimits, Task,
+    TaskBuilder,
 };
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
@@ -679,15 +679,6 @@ impl From<CurrentTask> for AutoReleasableTask {
 impl From<TaskBuilder> for AutoReleasableTask {
     fn from(builder: TaskBuilder) -> Self {
         CurrentTask::from(builder).into()
-    }
-}
-
-impl<'a> KernelOrTask<'a> for &'a AutoReleasableTask {
-    fn kernel(&self) -> &'a Kernel {
-        (self as &Task).kernel()
-    }
-    fn maybe_task(&self) -> Option<&'a CurrentTask> {
-        Some(&self)
     }
 }
 

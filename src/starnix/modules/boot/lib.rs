@@ -29,17 +29,15 @@ use zerocopy::IntoBytes;
 /// Initializes the boot notifier device.
 pub fn booted_device_init(
     locked: &mut Locked<Unlocked>,
-    system_task: &CurrentTask,
+    kernel: &Kernel,
     cpu_boost_duration: Option<zx::MonotonicDuration>,
 ) {
-    let kernel = system_task.kernel();
-
     let (booted_sender, booted_receiver) = ThreadLockupDetector::tracked_channel::<bool>();
     let node = fuchsia_inspect::component::inspector().root().create_child("boot");
-    let device = BootedDevice::new(system_task.kernel(), booted_sender, node, cpu_boost_duration)
+    let device = BootedDevice::new(kernel, booted_sender, node, cpu_boost_duration)
         .expect("must be able to initialize booted device");
-    device.clone().register(locked, &kernel.kthreads.system_task());
-    device.start_relay(&kernel, booted_receiver);
+    device.clone().register(locked, kernel);
+    device.start_relay(kernel, booted_receiver);
 }
 
 #[derive(Clone)]
@@ -94,16 +92,15 @@ impl BootedDevice {
         })
     }
 
-    pub fn register<L>(self, locked: &mut Locked<L>, system_task: &CurrentTask)
+    pub fn register<L>(self, locked: &mut Locked<L>, kernel: &Kernel)
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        let kernel = system_task.kernel();
         let registry = &kernel.device_registry;
         registry
             .register_dyn_device(
                 locked,
-                system_task,
+                kernel,
                 "booted".into(),
                 registry.objects.starnix_class(),
                 self,

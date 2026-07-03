@@ -90,9 +90,8 @@ impl BytesFileOps for UsbStateSysfsFile {
 
 pub fn usb_device_init(
     locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
+    kernel: &Arc<Kernel>,
 ) -> Result<Device, Errno> {
-    let kernel = current_task.kernel();
     let registry = &kernel.device_registry;
 
     let android_usb_class =
@@ -103,7 +102,7 @@ pub fn usb_device_init(
 
     let device = registry.register_dyn_device_with_dir(
         locked,
-        current_task,
+        kernel,
         "android0".into(),
         android_usb_class,
         |device, dir| {
@@ -280,7 +279,8 @@ mod tests {
     #[::fuchsia::test]
     async fn test_usb_device_init_sysfs() {
         spawn_kernel_and_run(async |locked, current_task| {
-            let device = usb_device_init(locked, current_task).expect("usb_device_init failed");
+            let device =
+                usb_device_init(locked, current_task.kernel()).expect("usb_device_init failed");
 
             assert_eq!(device.name.as_slice(), b"android0");
             let metadata = device.metadata.as_ref().expect("metadata not found");
@@ -292,7 +292,8 @@ mod tests {
     #[::fuchsia::test]
     async fn test_usb_device_metadata_property_injection() {
         spawn_kernel_and_run(async |locked, current_task| {
-            let device = usb_device_init(locked, current_task).expect("usb_device_init failed");
+            let device =
+                usb_device_init(locked, current_task.kernel()).expect("usb_device_init failed");
 
             let kernel = current_task.kernel();
 

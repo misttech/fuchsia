@@ -8,7 +8,7 @@ use crate::device::kobject::DeviceMetadata;
 use crate::fs::sysfs::{BlockDeviceInfo, build_block_device_directory};
 use crate::mm::MemoryAccessorExt;
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use crate::task::{CurrentTask, KernelThreads, LockedAndTask};
+use crate::task::{CurrentTask, Kernel, KernelThreads, LockedAndTask};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
     FileObject, FileOps, FsString, NamespaceNode, SeekTarget, default_ioctl, default_seek,
@@ -45,10 +45,35 @@ impl RemoteBlockDevice {
             .context("read_at failed")
     }
 
-    fn new(current_task: &CurrentTask, block: ClientEnd<BlockMarker>) -> Result<Arc<Self>, Errno> {
-        let kernel = current_task.kernel();
+    fn new<L>(
+        locked: &mut Locked<L>,
+        kernel: &Kernel,
+        minor: u32,
+        name: &str,
+        block: ClientEnd<BlockMarker>,
+    ) -> Result<Arc<Self>, Errno>
+    where
+        L: LockEqualOrBefore<FileOpsCore>,
+    {
+        let registry = &kernel.device_registry;
+        let device_name = FsString::from(name);
+        let virtual_block_class = registry.objects.virtual_block_class();
         let block_client = SyncBlockClient::new(&kernel.kthreads, block)?;
-        Ok(Arc::new(Self { block_client }))
+        let device = Arc::new(Self { block_client });
+        let device_weak = Arc::<RemoteBlockDevice>::downgrade(&device);
+        registry.add_device(
+            locked,
+            kernel,
+            device_name.as_ref(),
+            DeviceMetadata::new(
+                device_name.clone(),
+                DeviceId::new(BLOCK_EXTENDED_MAJOR, minor),
+                DeviceMode::Block,
+            ),
+            virtual_block_class,
+            |device, dir| build_block_device_directory(device, device_weak, dir),
+        )?;
+        Ok(device)
     }
 
     pub fn create_file_ops(&self) -> Box<dyn FileOps> {
@@ -384,41 +409,17 @@ impl RemoteBlockDeviceRegistry {
     pub fn create_remote_block_device<L>(
         &self,
         locked: &mut Locked<L>,
-        current_task: &CurrentTask,
+        kernel: &Kernel,
         name: &str,
         block: ClientEnd<BlockMarker>,
     ) -> Result<(), Error>
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        // Create the device and insert it in the map, ensuring that it is available when the
-        // `registry.add_device` is called.
-        let device = RemoteBlockDevice::new(current_task, block)?;
+        let mut devices = self.devices.lock();
         let minor = self.next_minor.fetch_add(1, Ordering::Relaxed);
-        self.devices.lock().insert(minor, device.clone());
-
-        let kernel = current_task.kernel();
-        let registry = &kernel.device_registry;
-        let virtual_block_class = registry.objects.virtual_block_class();
-        let device_weak = Arc::<RemoteBlockDevice>::downgrade(&device);
-        let device_name = FsString::from(name);
-        let registration_result = registry.add_device(
-            locked,
-            current_task,
-            device_name.as_ref(),
-            DeviceMetadata::new(
-                device_name.clone(),
-                DeviceId::new(BLOCK_EXTENDED_MAJOR, minor),
-                DeviceMode::Block,
-            ),
-            virtual_block_class,
-            |device, dir| build_block_device_directory(device, device_weak, dir),
-        );
-        // If the registration failed, remove the device.
-        if registration_result.is_err() {
-            self.devices.lock().remove(&minor);
-            registration_result?;
-        }
+        let device = RemoteBlockDevice::new(locked, kernel, minor, name, block)?;
+        devices.insert(minor, device);
         Ok(())
     }
 
@@ -455,7 +456,7 @@ mod tests {
             });
 
             registry
-                .create_remote_block_device(locked, &current_task, "test", client)
+                .create_remote_block_device(locked, kernel, "test", client)
                 .expect("create_remote_block_device failed.");
 
             let device = registry.open(0).expect("open failed.");
@@ -509,7 +510,7 @@ mod tests {
             });
 
             registry
-                .create_remote_block_device(locked, &current_task, "test", client)
+                .create_remote_block_device(locked, kernel, "test", client)
                 .expect("create_remote_block_device failed.");
 
             let device = registry.open(0).expect("open failed.");
@@ -545,7 +546,7 @@ mod tests {
             });
 
             registry
-                .create_remote_block_device(locked, &current_task, "test", client)
+                .create_remote_block_device(locked, kernel, "test", client)
                 .expect("create_remote_block_device failed.");
 
             let device = registry.open(0).expect("open failed.");
@@ -598,7 +599,7 @@ mod tests {
             });
 
             registry
-                .create_remote_block_device(locked, &current_task, "test", client)
+                .create_remote_block_device(locked, kernel, "test", client)
                 .expect("create_remote_block_device failed.");
 
             let device = registry.open(0).expect("open failed.");
@@ -646,7 +647,7 @@ mod tests {
             });
 
             registry
-                .create_remote_block_device(locked, &current_task, "test", client)
+                .create_remote_block_device(locked, kernel, "test", client)
                 .expect("create_remote_block_device failed.");
 
             let device = registry.open(0).expect("open failed.");

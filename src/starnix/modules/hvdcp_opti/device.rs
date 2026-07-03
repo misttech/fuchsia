@@ -13,7 +13,7 @@ use fidl_fuchsia_hardware_qcom_hvdcpopti as fhvdcpopti;
 use starnix_core::device::DeviceMode;
 use starnix_core::device::kobject::DeviceMetadata;
 use starnix_core::fs::sysfs::build_device_directory;
-use starnix_core::task::CurrentTask;
+use starnix_core::task::Kernel;
 use starnix_logging::log_warn;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::device_id::DeviceId;
@@ -21,7 +21,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use std::sync::Arc;
 
-pub fn hvdcp_opti_init<L>(locked: &mut Locked<L>, current_task: &CurrentTask) -> Result<(), Errno>
+pub fn hvdcp_opti_init<L>(locked: &mut Locked<L>, kernel: &Kernel) -> Result<(), Errno>
 where
     L: LockEqualOrBefore<FileOpsCore>,
 {
@@ -37,7 +37,6 @@ where
         }
     };
 
-    let kernel = current_task.kernel();
     let registry = &kernel.device_registry;
 
     let qdb_class =
@@ -48,7 +47,7 @@ where
     // /dev/qbg
     registry.register_device(
         locked,
-        current_task,
+        kernel,
         "qbg".into(),
         DeviceMetadata::new("qbg".into(), DeviceId::new(484, 0), DeviceMode::Char),
         qdb_class,
@@ -58,7 +57,7 @@ where
     // /dev/qbg_battery
     registry.register_device(
         locked,
-        current_task,
+        kernel,
         "qbg_battery".into(),
         DeviceMetadata::new("qbg_battery".into(), DeviceId::new(485, 0), DeviceMode::Char),
         registry.objects.get_or_create_class("qbg_battery".into(), registry.objects.virtual_bus()),

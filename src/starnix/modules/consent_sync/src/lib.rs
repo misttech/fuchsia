@@ -4,7 +4,7 @@
 
 use fidl_fuchsia_settings as fsettings;
 use starnix_core::device::DeviceOps;
-use starnix_core::task::CurrentTask;
+use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::FileOps;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use starnix_logging::log_error;
@@ -96,8 +96,7 @@ impl BytesFileOps for ConsentSyncFileBackend {
     }
 }
 
-pub fn init(locked: &mut Locked<starnix_sync::Unlocked>, system_task: &CurrentTask) {
-    let kernel = system_task.kernel();
+pub fn init(locked: &mut Locked<starnix_sync::Unlocked>, kernel: &Arc<Kernel>) {
     let registry = &kernel.device_registry;
 
     let privacy_proxy = fsettings::PrivacySynchronousProxy::new(
@@ -115,7 +114,7 @@ pub fn init(locked: &mut Locked<starnix_sync::Unlocked>, system_task: &CurrentTa
     registry
         .register_dyn_device(
             locked,
-            system_task,
+            kernel,
             "consent".into(),
             registry.objects.starnix_class(),
             device,

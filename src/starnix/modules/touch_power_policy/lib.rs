@@ -32,16 +32,15 @@ impl TouchPowerPolicyDevice {
         TouchPowerPolicyDevice { touch_power_file: TouchPowerPolicyFile::new(touch_standby_sender) }
     }
 
-    pub fn register<L>(self, locked: &mut Locked<L>, system_task: &CurrentTask)
+    pub fn register<L>(self, locked: &mut Locked<L>, kernel: &Kernel)
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        let kernel = system_task.kernel();
         let registry = &kernel.device_registry;
         registry
             .register_dyn_device(
                 locked,
-                system_task,
+                kernel,
                 "touch_standby".into(),
                 registry.objects.starnix_class(),
                 self,

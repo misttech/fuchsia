@@ -131,7 +131,6 @@ _starnix_core_sources = [
   "task/dynamic_thread_spawner.rs",
   "task/iptables.rs",
   "task/kernel.rs",
-  "task/kernel_or_task.rs",
   "task/kernel_stats.rs",
   "task/kernel_threads.rs",
   "task/limits.rs",

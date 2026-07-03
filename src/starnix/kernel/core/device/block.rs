@@ -5,7 +5,7 @@
 use crate::device::DeviceMode;
 use crate::device::kobject::DeviceMetadata;
 use crate::fs::sysfs::{BlockDeviceInfo, build_block_device_directory};
-use crate::task::CurrentTask;
+use crate::task::{CurrentTask, Kernel};
 use crate::vfs::{FileOps, FsString, NamespaceNode};
 use starnix_logging::track_stub;
 use starnix_sync::{FileOpsCore, Locked, Unlocked};
@@ -51,16 +51,15 @@ fn open_mmc_block_device(
 /// exports the typical sysfs layout for block devices, but cannot be read from or written to.
 pub fn add_mmc_block_device(
     locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
+    kernel: &Kernel,
 ) -> Result<Arc<MmcBlockDevice>, Errno> {
     let name = FsString::from("mmcblk0");
-    let kernel = current_task.kernel();
     let class = kernel.device_registry.objects.virtual_block_class();
     let device = Arc::new(MmcBlockDevice);
     let device_weak = Arc::downgrade(&device);
     kernel.device_registry.register_device_with_dir(
         locked,
-        current_task,
+        kernel,
         name.as_ref(),
         DeviceMetadata::new(name.clone(), DeviceId::MMCBLK0, DeviceMode::Block),
         class,
@@ -80,7 +79,7 @@ mod tests {
     #[::fuchsia::test]
     async fn test_mmc_block_device() {
         spawn_kernel_and_run(async |locked, current_task| {
-            let _device = add_mmc_block_device(locked, &current_task).unwrap();
+            let _device = add_mmc_block_device(locked, current_task.kernel()).unwrap();
             let class = current_task.kernel().device_registry.objects.virtual_block_class();
             // The device should have a typical sysfs layout for block devices.
             assert!(class.dir.lookup(b"mmcblk0/holders".into()).is_some());

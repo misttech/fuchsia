@@ -44,7 +44,7 @@ pub fn register_wakeup_test_device(
     let device = WakeupTestDevice::new(system_task);
     registry.register_device(
         locked,
-        system_task,
+        system_task.kernel(),
         "wakeup_test0".into(),
         DeviceMetadata::new("wakeup_test0".into(), DeviceId::new(0, 0), DeviceMode::Char),
         misc_class,

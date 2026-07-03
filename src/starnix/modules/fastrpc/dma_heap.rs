@@ -6,7 +6,7 @@ use linux_uapi::dma_heap_allocation_data;
 use starnix_core::device::DeviceOps;
 use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::mm::MemoryAccessorExt;
-use starnix_core::task::CurrentTask;
+use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{FdFlags, FdNumber, FileObject, FileOps, NamespaceNode, default_ioctl};
 use starnix_core::{fileops_impl_dataless, fileops_impl_noop_sync, fileops_impl_seekless};
 use starnix_logging::log_debug;
@@ -106,16 +106,16 @@ impl<A: Alloc> DeviceOps for DmaHeapDevice<A> {
 // For now it's only used by the fastrpc module so they are alongside each other.
 pub fn dma_heap_device_register<A: Alloc>(
     locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
+    kernel: &Kernel,
     name: &str,
     allocator: A,
 ) {
     let device = DmaHeapDevice::new(allocator);
-    let registry = &current_task.kernel().device_registry;
+    let registry = &kernel.device_registry;
     registry
         .register_dyn_device_with_devname(
             locked,
-            current_task,
+            kernel,
             name.into(),
             format!("dma_heap/{}", name).as_str().into(),
             registry.objects.dma_heap_class(),

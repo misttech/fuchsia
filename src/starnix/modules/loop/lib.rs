@@ -12,7 +12,7 @@ use starnix_core::fs::sysfs::{BlockDeviceInfo, build_block_device_directory};
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{MemoryAccessorExt, PAGE_SIZE, ProtectionFlags};
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use starnix_core::task::{CurrentTask, Kernel, KernelOrTask};
+use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use starnix_core::vfs::{
@@ -165,15 +165,10 @@ impl BytesFileOps for LoopDeviceBackingFile {
 }
 
 impl LoopDevice {
-    fn new<'a, L>(
-        locked: &mut Locked<L>,
-        kernel_or_task: impl KernelOrTask<'a>,
-        minor: u32,
-    ) -> Result<Arc<Self>, Errno>
+    fn new<'a, L>(locked: &mut Locked<L>, kernel: &Kernel, minor: u32) -> Result<Arc<Self>, Errno>
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        let kernel = kernel_or_task.kernel();
         let registry = &kernel.device_registry;
         let loop_device_name = FsString::from(format!("loop{minor}"));
         let virtual_block_class = registry.objects.virtual_block_class();
@@ -181,7 +176,7 @@ impl LoopDevice {
         let device_weak = Arc::<LoopDevice>::downgrade(&device);
         let k_device = registry.add_device(
             locked,
-            kernel_or_task,
+            kernel,
             loop_device_name.as_ref(),
             DeviceMetadata::new(
                 loop_device_name.clone(),
@@ -670,7 +665,7 @@ impl LoopDeviceRegistry {
     fn get_or_create<'a, L>(
         &self,
         locked: &mut Locked<L>,
-        kernel_or_task: impl KernelOrTask<'a>,
+        kernel: &Kernel,
         minor: u32,
     ) -> Result<Arc<LoopDevice>, Errno>
     where
@@ -679,7 +674,7 @@ impl LoopDeviceRegistry {
         self.devices
             .lock()
             .entry(minor)
-            .or_insert_with_fallible(|| LoopDevice::new(locked, kernel_or_task, minor))
+            .or_insert_with_fallible(|| LoopDevice::new(locked, kernel, minor))
             .cloned()
     }
 
@@ -691,7 +686,7 @@ impl LoopDeviceRegistry {
         for minor in 0..u32::MAX {
             match devices.entry(minor) {
                 Entry::Vacant(e) => {
-                    e.insert(LoopDevice::new(locked, current_task, minor)?);
+                    e.insert(LoopDevice::new(locked, current_task.kernel(), minor)?);
                     return Ok(minor);
                 }
                 Entry::Occupied(e) => {
@@ -715,7 +710,7 @@ impl LoopDeviceRegistry {
     {
         match self.devices.lock().entry(minor) {
             Entry::Vacant(e) => {
-                e.insert(LoopDevice::new(locked, current_task, minor)?);
+                e.insert(LoopDevice::new(locked, current_task.kernel(), minor)?);
                 Ok(())
             }
             Entry::Occupied(_) => {
@@ -832,7 +827,7 @@ fn get_or_create_loop_device(
         .kernel()
         .expando
         .get::<LoopDeviceRegistry>()
-        .get_or_create(locked, current_task, id.minor())?
+        .get_or_create(locked, current_task.kernel(), id.minor())?
         .create_file_ops())
 }
 

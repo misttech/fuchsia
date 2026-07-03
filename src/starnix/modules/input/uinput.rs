@@ -15,7 +15,7 @@ use starnix_core::device::kobject::{Device, DeviceMetadata};
 use starnix_core::device::{DeviceMode, DeviceOps};
 use starnix_core::fileops_impl_seekless;
 use starnix_core::mm::MemoryAccessorExt;
-use starnix_core::task::CurrentTask;
+use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{
     self, FileObject, FileOps, FsString, default_ioctl, fileops_impl_noop_sync,
 };
@@ -46,17 +46,16 @@ enum DeviceId {
 
 pub fn register_uinput_device(
     locked: &mut Locked<Unlocked>,
-    system_task: &CurrentTask,
+    kernel: &Kernel,
     input_event_relay_handle: Arc<InputEventsRelayHandle>,
 ) -> Result<(), Errno> {
-    let kernel = system_task.kernel();
     let registry = &kernel.device_registry;
     let misc_class = registry.objects.misc_class();
     let inspect_node = Arc::new(kernel.inspect_node.create_child("uinput"));
     let device = UinputDevice::new(input_event_relay_handle, inspect_node);
     registry.register_device(
         locked,
-        system_task,
+        kernel,
         "uinput".into(),
         DeviceMetadata::new("uinput".into(), device_id::DeviceId::UINPUT, DeviceMode::Char),
         misc_class,
@@ -81,7 +80,7 @@ where
 
     registry.register_device(
         locked,
-        system_task,
+        system_task.kernel(),
         FsString::from(format!("event{}", device_id)).as_ref(),
         DeviceMetadata::new(
             format!("input/event{}", device_id).into(),

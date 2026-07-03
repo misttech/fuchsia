@@ -40,7 +40,7 @@ where
     registry
         .register_dyn_device(
             locked,
-            current_task,
+            current_task.kernel(),
             "rtc0".into(),
             registry.objects.rtc_class(),
             RtcDevice,

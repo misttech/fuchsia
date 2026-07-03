@@ -14,7 +14,7 @@ use fuchsia_component::client::Service;
 use futures::TryStreamExt;
 use starnix_core::device::serial::SerialDevice;
 use starnix_core::fs::sysfs::build_device_directory;
-use starnix_core::task::{CurrentTask, Kernel};
+use starnix_core::task::Kernel;
 use starnix_logging::{log_error, log_info, log_warn};
 use starnix_sync::{Locked, Unlocked};
 use std::ops::DerefMut;
@@ -22,12 +22,12 @@ use std::sync::Arc;
 
 const SERIAL_DIRECTORY: &str = "/dev/class/serial";
 
-pub fn nanohub_device_init(locked: &mut Locked<Unlocked>, current_task: &CurrentTask) {
-    register_gpio_chip_device(locked, current_task, "gpiochipwake0");
+pub fn nanohub_device_init(locked: &mut Locked<Unlocked>, kernel: &Arc<Kernel>) {
+    register_gpio_chip_device(locked, kernel, "gpiochipwake0");
 
     register_socket_tunnel_device(
         locked,
-        current_task,
+        kernel,
         "/dev/display_comms".into(),
         "display_comms".into(),
         "display".into(),
@@ -38,7 +38,7 @@ pub fn nanohub_device_init(locked: &mut Locked<Unlocked>, current_task: &Current
     // with a specialized directory.
     register_socket_tunnel_device(
         locked,
-        current_task,
+        kernel,
         "/dev/nanohub_comms".into(),
         "nanohub_comms".into(),
         "nanohub".into(),
@@ -46,17 +46,17 @@ pub fn nanohub_device_init(locked: &mut Locked<Unlocked>, current_task: &Current
     );
 
     // Spawn future to bind and configure serial device
-    current_task.kernel().kthreads.spawn_future(
+    kernel.kthreads.spawn_future(
         {
-            let kernel = current_task.kernel().clone();
+            let kernel = kernel.clone();
             move || async move { register_serial_device(kernel).await }
         },
         "register_serial_device",
     );
 
-    current_task.kernel().kthreads.spawn_future(
+    kernel.kthreads.spawn_future(
         {
-            let kernel = current_task.kernel().clone();
+            let kernel = kernel.clone();
             move || async move { register_datachannel_devices(kernel).await }
         },
         "register_datachannel_devices",
@@ -104,7 +104,7 @@ async fn register_datachannel_devices(kernel: Arc<Kernel>) {
 
         if let Err(e) = registry.register_dyn_device_with_dir(
             current_task.kernel().kthreads.unlocked_for_async().deref_mut(),
-            current_task,
+            current_task.kernel(),
             name.as_bytes().into(),
             device_class,
             build_device_directory,
@@ -195,7 +195,7 @@ async fn register_serial_device(kernel: Arc<Kernel>) {
                         registry
                             .register_dyn_device(
                                 locked,
-                                current_task,
+                                current_task.kernel(),
                                 "ttyHS1".into(),
                                 registry.objects.tty_class(),
                                 serial_device,
