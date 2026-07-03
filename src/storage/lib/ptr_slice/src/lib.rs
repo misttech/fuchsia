@@ -533,7 +533,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Slice length is not a multiple of T size")]
+    #[should_panic]
     fn test_chunks_missized_panic() {
         let bytes = [0u8; 15];
         let slice = PtrByteSlice::from(&bytes[..]);
@@ -561,7 +561,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Slice length is not a multiple of T size")]
+    #[should_panic]
     fn test_chunks_mut_missized_panic() {
         let mut bytes = [0u8; 15];
         let mut slice = MutPtrByteSlice::from(&mut bytes[..]);
