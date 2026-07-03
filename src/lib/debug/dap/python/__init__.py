@@ -8,6 +8,7 @@ from .client import DapClient, DapError
 from .dap_types import DapBaseModel, Scope, StackFrame, Thread, Variable
 from .models import (
     ContinueArguments,
+    ContinueResponse,
     ContinueResponseBody,
     DisconnectArguments,
     Event,

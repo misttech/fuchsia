@@ -11,6 +11,7 @@ from .dap_types import DapBaseModel
 from .models import (
     AttachRequestArguments,
     ContinueArguments,
+    ContinueResponse,
     DisconnectArguments,
     EvaluateArguments,
     EvaluateResponse,
@@ -174,7 +175,7 @@ class DapClient:
 
     async def continue_thread(
         self, writer: asyncio.StreamWriter, args: ContinueArguments
-    ) -> Response:
+    ) -> ContinueResponse:
         """Sends a continue request.
 
         Args:
@@ -182,10 +183,10 @@ class DapClient:
             args: Arguments for the continue request.
 
         Returns:
-            The response model.
+            The continue response model.
         """
         resp = await self._send_request(writer, "continue", args)
-        return Response.model_validate(resp)
+        return ContinueResponse.model_validate(resp)
 
     async def pause_thread(
         self, writer: asyncio.StreamWriter, args: PauseArguments

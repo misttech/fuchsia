@@ -137,11 +137,26 @@ class StackTraceResponse(Response):
 class ContinueResponseBody(DapBaseModel):
     """Response to `continue` request.
 
+    According to the DAP specification semantics, `allThreadsContinued` is
+    optional and defaults to True when omitted by a server. This client-side
+    fallback value has no effect on the DAP server's choices or behavior when
+    generating responses.
+
     Attributes:
         all_threads_continued: Indicates whether all threads were continued.
     """
 
-    all_threads_continued: bool
+    all_threads_continued: bool = True
+
+
+class ContinueResponse(Response):
+    """Response to `continue` request.
+
+    Attributes:
+        body: The continue response body.
+    """
+
+    body: ContinueResponseBody = Field(default_factory=ContinueResponseBody)
 
 
 class ThreadsResponseBody(DapBaseModel):

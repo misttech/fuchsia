@@ -201,7 +201,37 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             client._pending_requests[seq].set_result(response)
 
         resp = await send_task
+        self.assertIsInstance(resp, ContinueResponse)
         self.assertTrue(resp.success)
+        self.assertIsNotNone(resp.body)
+        self.assertTrue(resp.body.all_threads_continued)
+
+    def test_continue_response_empty_body(self) -> None:
+        response = {
+            "seq": 10,
+            "type": "response",
+            "request_seq": 1,
+            "success": True,
+            "command": "continue",
+            "body": {},
+        }
+        resp = ContinueResponse.model_validate(response)
+        self.assertIsInstance(resp, ContinueResponse)
+        self.assertIsNotNone(resp.body)
+        self.assertTrue(resp.body.all_threads_continued)
+
+    def test_continue_response_missing_body(self) -> None:
+        response = {
+            "seq": 10,
+            "type": "response",
+            "request_seq": 1,
+            "success": True,
+            "command": "continue",
+        }
+        resp = ContinueResponse.model_validate(response)
+        self.assertIsInstance(resp, ContinueResponse)
+        self.assertIsNotNone(resp.body)
+        self.assertTrue(resp.body.all_threads_continued)
 
     async def test_pause_thread(self) -> None:
         client = DapClient()
