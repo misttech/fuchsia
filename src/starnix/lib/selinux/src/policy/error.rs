@@ -23,6 +23,8 @@ pub enum ParseError {
         "policy is of {observed} bytes, but this implementation only supports policies of up to {limit} bytes"
     )]
     UnsupportedlyLarge { observed: usize, limit: usize },
+    #[error("invalid identifier: {value}")]
+    InvalidId { value: u32 },
 }
 
 /// Structured errors that may be encountered validating a binary policy.

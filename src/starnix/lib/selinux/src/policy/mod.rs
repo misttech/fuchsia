@@ -19,8 +19,14 @@ pub use index::FsUseLabelAndType;
 pub use parser::PolicyCursor;
 pub use security_context::{SecurityContext, SecurityContextError};
 
-use crate::new_policy::traits::{PolicyId, Serialize};
-pub use crate::new_policy::{HandleUnknown, POLICYDB_VERSION_MAX, PermissionId, TypeId};
+pub use crate::new_policy::HandleUnknown;
+pub use crate::new_policy::traits::PolicyId;
+use crate::new_policy::traits::Serialize as _;
+
+pub use crate::new_policy::{
+    AccessVector, CategoryId, ClassId, POLICYDB_VERSION_MAX, PermissionId, RoleId, SensitivityId,
+    TypeId, UserId,
+};
 use crate::{ClassPermission, KernelClass, NullessByteStr, ObjectClass, PolicyCap};
 use index::PolicyIndex;
 use parsed_policy::ParsedPolicy;
@@ -28,49 +34,37 @@ use parser::PolicyData;
 use symbols::find_class_by_name;
 
 use anyhow::Context as _;
-use std::fmt::{Debug, LowerHex};
+use std::fmt::Debug;
 use std::num::{NonZeroU8, NonZeroU32};
 use std::ops::Deref;
-use std::str::FromStr;
+
 use std::sync::Arc;
 use zerocopy::{
     FromBytes, Immutable, KnownLayout, Ref, SplitByteSlice, Unaligned, little_endian as le,
 };
 
-/// Identifies a user within a policy.
-#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
-pub struct UserId(NonZeroU32);
+impl<T, Tag> Parse for crate::new_policy::IdType<T, Tag>
+where
+    crate::new_policy::IdType<T, Tag>: crate::new_policy::traits::PolicyId,
+{
+    type Error = error::ParseError;
 
-/// Identifies a role within a policy.
-#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
-pub struct RoleId(NonZeroU32);
-
-/// Identifies a type within a policy.
-// TypeId and ClassPermissionId are re-exported from new_policy.
-
-/// Identifies a sensitivity level within a policy.
-#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
-pub struct SensitivityId(NonZeroU32);
-
-/// Identifies a security category within a policy.
-#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
-pub struct CategoryId(NonZeroU32);
-
-/// Identifies a class within a policy. Note that `ClassId`s may be created for arbitrary Ids
-/// supplied by userspace, so implementation should never assume that a `ClassId` must be valid.
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub struct ClassId(NonZeroU32);
-
-impl ClassId {
-    /// Returns a `ClassId` with the specified `id`.
-    pub fn new(id: NonZeroU32) -> Self {
-        Self(id)
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
+        let (id_val, tail) = PolicyCursor::parse::<le::U32>(bytes)?;
+        let id = Self::try_from(id_val.get())
+            .map_err(|_| error::ParseError::InvalidId { value: id_val.get() })?;
+        Ok((id, tail))
     }
 }
 
-impl Into<u32> for ClassId {
-    fn into(self) -> u32 {
-        self.0.into()
+impl<T, Tag> Validate for crate::new_policy::IdType<T, Tag>
+where
+    crate::new_policy::IdType<T, Tag>: crate::new_policy::traits::PolicyId,
+{
+    type Error = anyhow::Error;
+
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
+        Ok(())
     }
 }
 
@@ -112,103 +106,6 @@ impl AccessDecision {
 
 /// [`AccessDecision::flags`] value indicating that the policy marks the source domain permissive.
 pub(super) const SELINUX_AVD_FLAGS_PERMISSIVE: u32 = 1;
-
-/// The set of permissions that may be granted to sources accessing targets of a particular class,
-/// as defined in an SELinux policy.
-#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AccessVector(u32);
-
-impl AccessVector {
-    pub const NONE: AccessVector = AccessVector(0);
-    pub const ALL: AccessVector = AccessVector(std::u32::MAX);
-
-    pub(super) fn from_class_permission_id(id: PermissionId) -> Self {
-        Self((1 as u32) << (id.as_u32() - 1))
-    }
-}
-
-impl From<u32> for AccessVector {
-    fn from(x: u32) -> Self {
-        Self(x)
-    }
-}
-
-impl Into<u32> for AccessVector {
-    fn into(self) -> u32 {
-        self.0
-    }
-}
-
-impl Debug for AccessVector {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "AccessVector({:0>8x})", self)
-    }
-}
-
-impl FromStr for AccessVector {
-    type Err = <u32 as FromStr>::Err;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        // Access Vector values are always serialized to/from hexadecimal.
-        Ok(AccessVector(u32::from_str_radix(value, 16)?))
-    }
-}
-
-impl LowerHex for AccessVector {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        LowerHex::fmt(&self.0, f)
-    }
-}
-
-impl std::ops::BitAnd for AccessVector {
-    type Output = Self;
-
-    fn bitand(self, rhs: Self) -> Self::Output {
-        AccessVector(self.0 & rhs.0)
-    }
-}
-
-impl std::ops::BitOr for AccessVector {
-    type Output = Self;
-
-    fn bitor(self, rhs: Self) -> Self::Output {
-        AccessVector(self.0 | rhs.0)
-    }
-}
-
-impl std::ops::BitAndAssign for AccessVector {
-    fn bitand_assign(&mut self, rhs: Self) {
-        self.0 &= rhs.0
-    }
-}
-
-impl std::ops::BitOrAssign for AccessVector {
-    fn bitor_assign(&mut self, rhs: Self) {
-        self.0 |= rhs.0
-    }
-}
-
-impl std::ops::SubAssign for AccessVector {
-    fn sub_assign(&mut self, rhs: Self) {
-        self.0 = self.0 ^ (self.0 & rhs.0);
-    }
-}
-
-impl std::ops::Sub for AccessVector {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        AccessVector(self.0 ^ (self.0 & rhs.0))
-    }
-}
-
-impl std::ops::Not for AccessVector {
-    type Output = Self;
-
-    fn not(self) -> Self {
-        AccessVector(!self.0)
-    }
-}
 
 /// A kind of extended permission, corresponding to the base permission that should trigger a check
 /// of an extended permission.
@@ -1129,7 +1026,7 @@ pub(super) mod tests {
         let class =
             classes.iter().find(|class| class.name_bytes() == b"class0").expect("class not found");
         let raw_access_vector =
-            policy.0.parsed_policy().compute_explicitly_allowed(a_t, a_t, class).allow.0;
+            policy.0.parsed_policy().compute_explicitly_allowed(a_t, a_t, class).allow.value();
 
         // Two separate attributes are each allowed one permission on `[attr] self:class0`. Both
         // attributes are associated with "a_t". No other `allow` statements appear in the policy
@@ -1158,7 +1055,7 @@ pub(super) mod tests {
         // The class `file` has 4 permissions, 3 of which are explicitly
         // allowed for this target context. All of those permissions satisfy all
         // matching constraints.
-        assert_eq!(decision_satisfied.allow, AccessVector(7));
+        assert_eq!(decision_satisfied.allow, AccessVector::from(7));
 
         let target_context_unsatisfied: SecurityContext = policy
             .parse_security_context(b"user1:object_r:type0:s0:c0-s0:c0".into())
@@ -1170,7 +1067,7 @@ pub(super) mod tests {
         );
         // Two of the explicitly-allowed permissions fail to satisfy a matching
         // constraint. Only 1 is allowed in the final access decision.
-        assert_eq!(decision_unsatisfied.allow, AccessVector(4));
+        assert_eq!(decision_unsatisfied.allow, AccessVector::from(4));
     }
 
     #[test]

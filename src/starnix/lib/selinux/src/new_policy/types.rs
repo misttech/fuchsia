@@ -16,3 +16,17 @@ pub type TypeId = IdType<NonZeroU16, TypeTag>;
 
 /// Set of types that are marked permissive.
 pub type PermissiveTypeSet = IdSet<TypeId, true>;
+
+/// Tag type for type safety of policy sensitivity identifiers.
+#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+pub struct SensitivityTag;
+
+/// Identifies a sensitivity level within a policy.
+pub type SensitivityId = IdType<NonZeroU16, SensitivityTag>;
+
+/// Tag type for type safety of policy category identifiers.
+#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+pub struct CategoryTag;
+
+/// Identifies a security category within a policy.
+pub type CategoryId = IdType<NonZeroU16, CategoryTag>;

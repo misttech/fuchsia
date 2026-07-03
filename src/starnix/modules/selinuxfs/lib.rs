@@ -9,7 +9,7 @@ use starnix_sync::LockEqualOrBefore;
 use seq_lock::{SeqLock, SeqLockable, WriteSize};
 
 use selinux::policy::parser::PolicyData;
-use selinux::policy::{AccessDecision, AccessVector, POLICYDB_VERSION_MAX};
+use selinux::policy::{AccessDecision, AccessVector, POLICYDB_VERSION_MAX, PolicyId};
 use selinux::{
     ClassId, InitialSid, PolicyCap, SeLinuxStatus, SeLinuxStatusPublisher, SecurityId,
     SecurityPermission, SecurityServer,
@@ -43,7 +43,7 @@ use starnix_uapi::file_mode::mode;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{AUDIT_AVC, SELINUX_MAGIC, errno, error, statfs};
 use std::borrow::Cow;
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU64;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock, Weak};
@@ -463,7 +463,7 @@ impl SeLinuxApiOps for CreateApi {
         // Class Ids are obtained via lookups in the SELinuxFS "class" directory.
         let tclass = parts.next().ok_or_else(|| errno!(EINVAL))?;
         let tclass = u32::from_str(tclass).map_err(|_| errno!(EINVAL))?;
-        let tclass = ClassId::new(NonZeroU32::new(tclass).ok_or_else(|| errno!(EINVAL))?);
+        let tclass = ClassId::from_u32(tclass).ok_or_else(|| errno!(EINVAL))?;
 
         // Optional <name>: the final element of the path of the newly-created object. This allows
         // filename-dependent transition rules to be applied to the computation.
@@ -757,7 +757,7 @@ impl SeLinuxApiOps for AccessApi {
         // Class Ids are obtained via lookups in the SELinuxFS "class" directory.
         let tclass = parts.next().ok_or_else(|| errno!(EINVAL))?;
         let tclass_id = u32::from_str(tclass).map_err(|_| errno!(EINVAL))?;
-        let tclass = ClassId::new(NonZeroU32::new(tclass_id).ok_or_else(|| errno!(EINVAL))?).into();
+        let tclass = ClassId::from_u32(tclass_id).ok_or_else(|| errno!(EINVAL))?.into();
 
         // <request>: the set of permissions that the caller requests.
         let requested = if let Some(requested) = parts.next() {

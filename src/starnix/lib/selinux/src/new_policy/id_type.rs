@@ -83,8 +83,28 @@ where
     }
 }
 
+impl<T, Tag> From<IdType<T, Tag>> for u32
+where
+    IdType<T, Tag>: PolicyId,
+{
+    fn from(id: IdType<T, Tag>) -> Self {
+        id.as_u32()
+    }
+}
+
+impl<T, Tag> TryFrom<u32> for IdType<T, Tag>
+where
+    IdType<T, Tag>: PolicyId,
+{
+    type Error = ();
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Self::from_u32(value).ok_or(())
+    }
+}
+
 impl<T: std::fmt::Display, Tag> std::fmt::Display for IdType<T, Tag> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        std::fmt::Display::fmt(&self.value, f)
     }
 }

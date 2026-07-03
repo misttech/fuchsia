@@ -22,7 +22,7 @@ use crate::new_policy::traits::PolicyId;
 
 use std::cmp::Ordering;
 use std::collections::HashSet;
-use std::num::NonZeroU32;
+
 use thiserror::Error;
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -372,17 +372,17 @@ impl<'a> ContextExpression<'a> {
         source: &'a SecurityContext,
         target: &'a SecurityContext,
     ) -> Result<(Operand<'a>, Operand<'a>), ConstraintError> {
-        let ids = names.indices_of_set_bits().map(|i| NonZeroU32::new(i + 1).unwrap());
+        let ids = names.indices_of_set_bits().map(|i| (i + 1) as u32);
 
         if operand_type & CONSTRAINT_EXPR_WITH_NAMES_OPERAND_TYPE_TARGET_MASK == 0 {
             match operand_type {
                 CONSTRAINT_EXPR_OPERAND_TYPE_USER => Ok((
                     Operand::UserId(source.user()),
-                    Operand::UserIds(ids.map(|id| UserId(id)).collect()),
+                    Operand::UserIds(ids.map(|id| UserId::from_u32(id).unwrap()).collect()),
                 )),
                 CONSTRAINT_EXPR_OPERAND_TYPE_ROLE => Ok((
                     Operand::RoleId(source.role()),
-                    Operand::RoleIds(ids.map(|id| RoleId(id)).collect()),
+                    Operand::RoleIds(ids.map(|id| RoleId::from_u32(id).unwrap()).collect()),
                 )),
                 CONSTRAINT_EXPR_OPERAND_TYPE_TYPE => Ok((
                     Operand::TypeId(source.type_()),
@@ -396,11 +396,11 @@ impl<'a> ContextExpression<'a> {
             match operand_type ^ CONSTRAINT_EXPR_WITH_NAMES_OPERAND_TYPE_TARGET_MASK {
                 CONSTRAINT_EXPR_OPERAND_TYPE_USER => Ok((
                     Operand::UserId(target.user()),
-                    Operand::UserIds(ids.map(|id| UserId(id)).collect()),
+                    Operand::UserIds(ids.map(|id| UserId::from_u32(id).unwrap()).collect()),
                 )),
                 CONSTRAINT_EXPR_OPERAND_TYPE_ROLE => Ok((
                     Operand::RoleId(target.role()),
-                    Operand::RoleIds(ids.map(|id| RoleId(id)).collect()),
+                    Operand::RoleIds(ids.map(|id| RoleId::from_u32(id).unwrap()).collect()),
                 )),
                 CONSTRAINT_EXPR_OPERAND_TYPE_TYPE => Ok((
                     Operand::TypeId(target.type_()),
@@ -516,25 +516,25 @@ mod tests {
         let expected = vec![
             // ( u2 == { user0 user1 } )
             ConstraintNode::Leaf(ContextExpression {
-                left: Operand::UserId(UserId(NonZeroU32::new(2).unwrap())),
+                left: Operand::UserId(UserId::from_u32(2).unwrap()),
                 right: Operand::UserIds(HashSet::from([
-                    UserId(NonZeroU32::new(1).unwrap()),
-                    UserId(NonZeroU32::new(2).unwrap()),
+                    UserId::from_u32(1).unwrap(),
+                    UserId::from_u32(2).unwrap(),
                 ])),
                 operator: ContextOperator::Equal,
             }),
             // ( r1 == r2 )
             ConstraintNode::Leaf(ContextExpression {
-                left: Operand::RoleId(RoleId(NonZeroU32::new(1).unwrap())),
-                right: Operand::RoleId(RoleId(NonZeroU32::new(1).unwrap())),
+                left: Operand::RoleId(RoleId::from_u32(1).unwrap()),
+                right: Operand::RoleId(RoleId::from_u32(1).unwrap()),
                 operator: ContextOperator::Equal,
             }),
             // ( (u2 == { user0 user1 }) and (r1 == r2) )
             ConstraintNode::Branch(BooleanOperator::And),
             // (u1 == u2)
             ConstraintNode::Leaf(ContextExpression {
-                left: Operand::UserId(UserId(NonZeroU32::new(1).unwrap())),
-                right: Operand::UserId(UserId(NonZeroU32::new(2).unwrap())),
+                left: Operand::UserId(UserId::from_u32(1).unwrap()),
+                right: Operand::UserId(UserId::from_u32(2).unwrap()),
                 operator: ContextOperator::Equal,
             }),
             // (t1 == t2)

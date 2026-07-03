@@ -251,7 +251,7 @@ impl AccessVectorRule {
     pub fn access_vector(&self) -> Option<AccessVector> {
         match &self.permission_data {
             PermissionData::AccessVector(access_vector_raw) => {
-                Some(AccessVector(access_vector_raw.get()))
+                Some(AccessVector::from(access_vector_raw.get()))
             }
             _ => None,
         }
@@ -358,7 +358,7 @@ impl AccessVectorRuleMetadata {
     pub fn for_query(source: TypeId, target: TypeId, class: ClassId, rule_type: u16) -> Self {
         let source_type = le::U16::new(source.as_u32() as u16);
         let target_type = le::U16::new(target.as_u32() as u16);
-        let class = le::U16::new(class.0.get() as u16);
+        let class = le::U16::new(class.as_u32() as u16);
         let access_vector_rule_type = le::U16::new(rule_type);
         Self { source_type, target_type, class, access_vector_rule_type }
     }
@@ -538,7 +538,7 @@ pub(super) struct RoleTransition {
 
 impl RoleTransition {
     pub(super) fn current_role(&self) -> RoleId {
-        RoleId(NonZeroU32::new(self.role.get()).unwrap())
+        RoleId::from_u32(self.role.get()).unwrap()
     }
 
     pub(super) fn type_(&self) -> TypeId {
@@ -546,11 +546,11 @@ impl RoleTransition {
     }
 
     pub(super) fn class(&self) -> ClassId {
-        ClassId(NonZeroU32::new(self.tclass.get()).unwrap())
+        ClassId::from_u32(self.tclass.get()).unwrap()
     }
 
     pub(super) fn new_role(&self) -> RoleId {
-        RoleId(NonZeroU32::new(self.new_role.get()).unwrap())
+        RoleId::from_u32(self.new_role.get()).unwrap()
     }
 }
 
@@ -592,11 +592,11 @@ pub(super) struct RoleAllow {
 
 impl RoleAllow {
     pub(super) fn source_role(&self) -> RoleId {
-        RoleId(NonZeroU32::new(self.role.get()).unwrap())
+        RoleId::from_u32(self.role.get()).unwrap()
     }
 
     pub(super) fn new_role(&self) -> RoleId {
-        RoleId(NonZeroU32::new(self.new_role.get()).unwrap())
+        RoleId::from_u32(self.new_role.get()).unwrap()
     }
 }
 
@@ -656,7 +656,7 @@ impl FilenameTransition {
     }
 
     pub(super) fn target_class(&self) -> ClassId {
-        ClassId(NonZeroU32::new(self.transition_class.get()).unwrap())
+        ClassId::from_u32(self.transition_class.get()).unwrap()
     }
 
     pub(super) fn outputs(&self) -> &[FilenameTransitionItem] {
@@ -752,7 +752,7 @@ impl DeprecatedFilenameTransition {
     }
 
     pub(super) fn target_class(&self) -> ClassId {
-        ClassId(NonZeroU32::new(self.metadata.transition_class.get()).unwrap())
+        ClassId::from_u32(self.metadata.transition_class.get()).unwrap()
     }
 
     pub(super) fn out_type(&self) -> TypeId {
@@ -848,10 +848,10 @@ pub(super) struct Context {
 
 impl Context {
     pub(super) fn user_id(&self) -> UserId {
-        UserId(NonZeroU32::new(self.metadata.user.get()).unwrap())
+        UserId::from_u32(self.metadata.user.get()).unwrap()
     }
     pub(super) fn role_id(&self) -> RoleId {
-        RoleId(NonZeroU32::new(self.metadata.role.get()).unwrap())
+        RoleId::from_u32(self.metadata.role.get()).unwrap()
     }
     pub(super) fn type_id(&self) -> TypeId {
         TypeId::from_u32(self.metadata.context_type.get()).unwrap()
@@ -1351,7 +1351,7 @@ impl FsContext {
     }
 
     pub(super) fn class(&self) -> Option<ClassId> {
-        NonZeroU32::new(self.class.into()).map(ClassId)
+        ClassId::from_u32(self.class.into())
     }
 }
 
@@ -1415,7 +1415,7 @@ impl RangeTransition {
     }
 
     pub fn target_class(&self) -> ClassId {
-        ClassId(NonZeroU32::new(self.metadata.target_class.get()).unwrap())
+        ClassId::from_u32(self.metadata.target_class.get()).unwrap()
     }
 
     pub fn mls_range(&self) -> &MlsRange {
@@ -1483,7 +1483,7 @@ mod tests {
         ACCESS_VECTOR_RULE_TYPE_DONTAUDITXPERM, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES,
         XPERMS_TYPE_IOCTL_PREFIXES, XPERMS_TYPE_NLMSG,
     };
-    use std::num::NonZeroU32;
+    use crate::new_policy::traits::PolicyId;
 
     impl super::AccessVectorRuleMetadata {
         /// Returns whether this access vector rule comes from an
@@ -1512,7 +1512,7 @@ mod tests {
         /// same policy. Although the index is returned as a 32-bit value, the field
         /// itself is 16-bit
         pub fn target_class(&self) -> ClassId {
-            ClassId(NonZeroU32::new(self.class.into()).unwrap())
+            ClassId::from_u32(self.class.into()).unwrap()
         }
     }
 

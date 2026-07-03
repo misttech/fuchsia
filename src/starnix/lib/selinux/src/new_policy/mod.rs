@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+pub(super) mod access_vector;
 pub(super) mod bitmap;
 pub(super) mod common_symbols;
 pub(super) mod error;
@@ -22,11 +23,34 @@ use traits::Validate;
 
 pub(super) mod types;
 
+pub use access_vector::AccessVector;
 pub use bitmap::ExtensibleBitmap;
 pub use common_symbols::CommonSymbol;
+pub use id_type::IdType;
 pub use parser::SymbolArray;
 pub use permissions::PermissionId;
 pub use types::*;
+
+/// Tag type for type safety of policy user identifiers.
+#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+pub struct UserTag;
+
+/// Identifies a user within a policy.
+pub type UserId = IdType<std::num::NonZeroU16, UserTag>;
+
+/// Tag type for type safety of policy role identifiers.
+#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+pub struct RoleTag;
+
+/// Identifies a role within a policy.
+pub type RoleId = IdType<std::num::NonZeroU16, RoleTag>;
+
+/// Tag type for type safety of policy class identifiers.
+#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ClassTag;
+
+/// Identifies a class within a policy.
+pub type ClassId = IdType<std::num::NonZeroU16, ClassTag>;
 
 /// Top-level [`NewPolicy`] structure that parses the first few fields
 /// and stores the rest in [`Self::rest`] to allow round-trip testing.

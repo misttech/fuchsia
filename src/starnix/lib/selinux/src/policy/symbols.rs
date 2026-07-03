@@ -296,7 +296,7 @@ pub(super) struct Constraint {
 
 impl Constraint {
     pub(super) fn access_vector(&self) -> AccessVector {
-        AccessVector(self.access_vector.get())
+        AccessVector::from(self.access_vector.get())
     }
 
     pub(super) fn constraint_expr(&self) -> &ConstraintExpr {
@@ -560,7 +560,7 @@ impl Class {
     /// bitmaps are 0-indexed, so clients of this API will usually use `id - 1`.
     pub fn id(&self) -> ClassId {
         let class_metadata: &ClassMetadata = &self.constraints.metadata.metadata.metadata.metadata;
-        ClassId(NonZeroU32::new(class_metadata.id.get()).unwrap())
+        ClassId::from_u32(class_metadata.id.get()).unwrap()
     }
 
     /// Returns the full listing of permissions used in this policy.
@@ -916,8 +916,9 @@ pub(super) struct ClassIndex {
 impl ClassIndex {
     /// Looks up a [`Class`] by its [`ClassId`].
     pub fn class(&self, policy_bytes: &PolicyData, class_id: ClassId) -> Option<Class> {
-        let offset =
-            PolicyOffset::from(*self.offsets_by_id_minus_one.get((class_id.0.get() - 1) as usize)?);
+        let offset = PolicyOffset::from(
+            *self.offsets_by_id_minus_one.get((class_id.as_u32() - 1) as usize)?,
+        );
         (offset != 0).then(|| {
             let (class, _) = Class::parse(PolicyCursor::new_at(policy_bytes, offset))
                 .expect("These bytes already successfully parsed");
@@ -956,7 +957,7 @@ impl Parse for ClassIndex {
         for _ in 0..class_count {
             let offset = U24::try_from(tail.offset()).unwrap();
             let (class, next_tail) = Class::parse(tail)?;
-            let class_id_as_usize = class.id().0.get() as usize;
+            let class_id_as_usize = class.id().as_u32() as usize;
 
             if offsets_by_id_minus_one.len() < class_id_as_usize {
                 offsets_by_id_minus_one.resize(class_id_as_usize, U24::try_from(0).unwrap());
@@ -1007,7 +1008,7 @@ pub(super) struct Role {
 
 impl Role {
     pub(super) fn id(&self) -> RoleId {
-        RoleId(NonZeroU32::new(self.metadata.metadata.id.get()).unwrap())
+        RoleId::from_u32(self.metadata.metadata.id.get()).unwrap()
     }
 
     pub(super) fn name_bytes(&self) -> &[u8] {
@@ -1337,7 +1338,7 @@ pub(super) struct User {
 
 impl User {
     pub(super) fn id(&self) -> UserId {
-        UserId(NonZeroU32::new(self.user_data.metadata.id.get()).unwrap())
+        UserId::from_u32(self.user_data.metadata.id.get()).unwrap()
     }
 
     pub(super) fn name_bytes(&self) -> &[u8] {
@@ -1424,7 +1425,7 @@ pub(super) struct MlsLevel {
 
 impl MlsLevel {
     pub fn category_ids(&self) -> impl Iterator<Item = CategoryId> + use<'_> {
-        self.categories.indices_of_set_bits().map(|i| CategoryId(NonZeroU32::new(i + 1).unwrap()))
+        self.categories.indices_of_set_bits().map(|i| CategoryId::from_u32(i + 1).unwrap())
     }
 }
 
@@ -1446,7 +1447,7 @@ impl Parse for MlsLevel {
 
 impl<'a> Level<'a, ExtensibleBitmapSpan, ExtensibleBitmapSpansIterator<'a>> for MlsLevel {
     fn sensitivity(&self) -> SensitivityId {
-        SensitivityId(NonZeroU32::new(self.sensitivity.get()).unwrap())
+        SensitivityId::from_u32(self.sensitivity.get()).unwrap()
     }
 
     fn category_spans(
@@ -1577,7 +1578,7 @@ pub(super) struct Sensitivity {
 
 impl Sensitivity {
     pub fn id(&self) -> SensitivityId {
-        SensitivityId(NonZeroU32::new(self.level.sensitivity.get()).unwrap())
+        SensitivityId::from_u32(self.level.sensitivity.get()).unwrap()
     }
 
     pub fn name_bytes(&self) -> &[u8] {
@@ -1660,7 +1661,7 @@ array_type_validate_deref_both!(Category);
 
 impl Category {
     pub fn id(&self) -> CategoryId {
-        CategoryId(NonZeroU32::new(self.metadata.id.get()).unwrap())
+        CategoryId::from_u32(self.metadata.id.get()).unwrap()
     }
 
     pub fn name_bytes(&self) -> &[u8] {
@@ -1733,7 +1734,7 @@ impl CategoryIndex {
 
     /// Looks up a [`Category`] by its [`CategoryId`].
     pub fn category(&self, policy_bytes: &PolicyData, category_id: CategoryId) -> Category {
-        let offset = self.offsets_by_id_minus_one[(category_id.0.get() - 1) as usize];
+        let offset = self.offsets_by_id_minus_one[(category_id.as_u32() - 1) as usize];
         Self::parse_category_at(policy_bytes, offset)
     }
 
@@ -1780,7 +1781,7 @@ impl Parse for CategoryIndex {
         for _ in 0..category_count {
             let offset = U24::try_from(tail.offset()).unwrap();
             let (category, next_tail) = Category::parse(tail)?;
-            let category_id_as_usize = category.id().0.get() as usize;
+            let category_id_as_usize = category.id().as_u32() as usize;
 
             if offsets_by_id_minus_one.len() < category_id_as_usize {
                 offsets_by_id_minus_one.resize(category_id_as_usize, U24::ZERO);
@@ -1840,8 +1841,6 @@ mod tests {
     use super::super::{CategoryId, SensitivityId, UserId, parse_policy_by_value};
     use super::*;
 
-    use std::num::NonZeroU32;
-
     #[test]
     fn mls_levels_for_user_context() {
         const TEST_POLICY: &[u8] =
@@ -1850,26 +1849,26 @@ mod tests {
         let policy = policy.validate().unwrap();
         let parsed_policy = policy.0.parsed_policy();
 
-        let user = parsed_policy.user(UserId(NonZeroU32::new(1).expect("user with id 1")));
+        let user = parsed_policy.user(UserId::from_u32(1).expect("user with id 1"));
         let mls_range = user.mls_range();
         let low_level = mls_range.low();
         let high_level = mls_range.high().as_ref().expect("user 1 has a high mls level");
 
-        assert_eq!(low_level.sensitivity(), SensitivityId(NonZeroU32::new(1).unwrap()));
+        assert_eq!(low_level.sensitivity(), SensitivityId::from_u32(1).unwrap());
         assert_eq!(
             low_level.category_ids().collect::<Vec<_>>(),
-            vec![CategoryId(NonZeroU32::new(1).unwrap())]
+            vec![CategoryId::from_u32(1).unwrap()]
         );
 
-        assert_eq!(high_level.sensitivity(), SensitivityId(NonZeroU32::new(2).unwrap()));
+        assert_eq!(high_level.sensitivity(), SensitivityId::from_u32(2).unwrap());
         assert_eq!(
             high_level.category_ids().collect::<Vec<_>>(),
             vec![
-                CategoryId(NonZeroU32::new(1).unwrap()),
-                CategoryId(NonZeroU32::new(2).unwrap()),
-                CategoryId(NonZeroU32::new(3).unwrap()),
-                CategoryId(NonZeroU32::new(4).unwrap()),
-                CategoryId(NonZeroU32::new(5).unwrap()),
+                CategoryId::from_u32(1).unwrap(),
+                CategoryId::from_u32(2).unwrap(),
+                CategoryId::from_u32(3).unwrap(),
+                CategoryId::from_u32(4).unwrap(),
+                CategoryId::from_u32(5).unwrap(),
             ]
         );
     }
@@ -1924,7 +1923,7 @@ mod tests {
             ),
         ];
         for (i, constraint) in constraints.iter().enumerate() {
-            assert_eq!(constraint.access_vector(), AccessVector(1), "constraint {}", i);
+            assert_eq!(constraint.access_vector(), AccessVector::from(1), "constraint {}", i);
             let terms = constraint.constraint_expr().constraint_terms();
             assert_eq!(terms.len(), 1, "constraint {}", i);
             let term = &terms[0];
@@ -1949,7 +1948,7 @@ mod tests {
         let constraints = class.constraints();
         assert_eq!(constraints.len(), 1);
         let constraint = &constraints[0];
-        assert_eq!(constraint.access_vector(), AccessVector(1));
+        assert_eq!(constraint.access_vector(), AccessVector::from(1));
         let terms = constraint.constraint_expr().constraint_terms();
         assert_eq!(terms.len(), 8);
 

@@ -14,14 +14,26 @@ use thiserror::Error;
 pub enum ParseError {
     #[error("expected MLS-enabled flag ({CONFIG_MLS_FLAG:#032b}), but found {found_config:#032b}")]
     ConfigMissingMlsFlag { found_config: u32 },
+    #[error("invalid class default: {value}")]
+    InvalidClassDefault { value: u32 },
+    #[error("invalid class default range: {value}")]
+    InvalidClassDefaultRange { value: u32 },
     #[error("invalid configuration flags: {flags:#032b}")]
     InvalidConfigFlags { flags: u32 },
+    #[error("invalid constraint operand type: {value:#x}")]
+    InvalidConstraintOperandType { value: u32 },
     #[error("invalid ID value: {value}")]
     InvalidId { value: u32 },
     #[error("expected data item of type {type_name} ({type_size} bytes), but found {num_bytes}")]
     MissingData { type_name: &'static str, type_size: usize, num_bytes: usize },
     #[error("expected end of policy, but found {num_bytes} additional bytes")]
     TrailingBytes { num_bytes: usize },
+    #[error("unexpected non-empty type set in constraint")]
+    UnexpectedConstraintTypeSet,
+    #[error("invalid constraint operator: {value}")]
+    InvalidConstraintOperator { value: u32 },
+    #[error("invalid constraint term type: {value}")]
+    InvalidConstraintTermType { value: u32 },
 }
 
 /// Errors that may be encountered validating a binary policy.
@@ -71,6 +83,8 @@ pub enum ValidateError {
     ExtensibleBitmapItemOverflow { found_items_end: u32, found_high_bit: u32 },
     #[error("invalid ID index {index} in IdSet")]
     InvalidIdSetIndex { index: u32 },
+    #[error("referenced common symbol {name:?} is not defined")]
+    UndefinedCommonSymbol { name: Vec<u8> },
 }
 
 /// Errors that may be encountered serializing a binary policy.

@@ -13,7 +13,6 @@ use crate::new_policy::traits::PolicyId;
 use bstr::BString;
 use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::num::NonZeroU32;
 use std::slice::Iter;
 use thiserror::Error;
 
@@ -204,7 +203,7 @@ impl SecurityContext {
             // Validate that the selected role is valid for this user.
             //
             // TODO(b/335399404): Identifiers are 1-based, while the roles bitmap is 0-based.
-            if !user.roles().is_set(self.role.0.get() - 1) {
+            if !user.roles().is_set(self.role.as_u32() - 1) {
                 return Err(SecurityContextError::InvalidRoleForUser {
                     role: policy_index.parsed_policy().role(self.role).name_bytes().into(),
                     user: user.name_bytes().into(),
@@ -329,8 +328,7 @@ impl SecurityLevel {
         let normalized =
             categories.fold(vec![], |mut normalized: Vec<CategorySpan>, current: CategorySpan| {
                 if let Some(last) = normalized.last_mut() {
-                    if current.low <= last.high
-                        || (u32::from(current.low.0) - u32::from(last.high.0) == 1)
+                    if current.low <= last.high || (current.low.as_u32() - last.high.as_u32() == 1)
                     {
                         *last = CategorySpan::new(last.low, current.high)
                     } else {
@@ -540,8 +538,8 @@ impl CategorySpan {
 impl From<ExtensibleBitmapSpan> for CategorySpan {
     fn from(value: ExtensibleBitmapSpan) -> CategorySpan {
         CategorySpan {
-            low: CategoryId(NonZeroU32::new(value.low + 1).unwrap()),
-            high: CategoryId(NonZeroU32::new(value.high + 1).unwrap()),
+            low: CategoryId::from_u32(value.low + 1).unwrap(),
+            high: CategoryId::from_u32(value.high + 1).unwrap(),
         }
     }
 }
@@ -581,8 +579,6 @@ pub enum SecurityContextError {
 mod tests {
     use super::super::{Policy, parse_policy_by_value};
     use super::*;
-
-    use std::num::NonZeroU32;
 
     type TestPolicy = Policy;
     fn test_policy() -> TestPolicy {
@@ -635,8 +631,8 @@ mod tests {
     // A test helper that creates a category span from a pair of positive integers.
     fn cat(low: u32, high: u32) -> CategorySpan {
         CategorySpan {
-            low: CategoryId(NonZeroU32::new(low).expect("category ids are nonzero")),
-            high: CategoryId(NonZeroU32::new(high).expect("category ids are nonzero")),
+            low: CategoryId::from_u32(low).expect("category ids are nonzero"),
+            high: CategoryId::from_u32(high).expect("category ids are nonzero"),
         }
     }
 
