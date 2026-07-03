@@ -125,16 +125,29 @@ mod tests {
         }
     }
 
+    #[repr(C)]
+    #[derive(FromBytes, IntoBytes, Immutable)]
+    struct Blocks<const N: usize>([u128; N]);
+
+    static_assertions::const_assert!(std::mem::align_of::<Blocks<1>>() == 16);
+    static_assertions::const_assert!(std::mem::align_of::<Blocks<2>>() == 16);
+
+    impl<const N: usize> Default for Blocks<N> {
+        fn default() -> Self {
+            Self([0u128; N])
+        }
+    }
+
     #[test]
     fn test_xts_out_of_place() {
-        let mut plaintext = [0u8; 32];
-        for (i, x) in plaintext.iter_mut().enumerate() {
+        let mut plaintext: Blocks<2> = Default::default();
+        for (i, x) in plaintext.as_mut_bytes().iter_mut().enumerate() {
             *x = i as u8;
         }
-        let mut ciphertext = [0u8; 32];
+        let mut ciphertext: Blocks<2> = Default::default();
 
-        let src = PtrByteSlice::from(&plaintext[..]);
-        let dst = MutPtrByteSlice::from(&mut ciphertext[..]);
+        let src = PtrByteSlice::from(plaintext.as_bytes());
+        let dst = MutPtrByteSlice::from(ciphertext.as_mut_bytes());
 
         let tweak_val = 0x123456789abcdef0123456789abcdef0u128;
         let tweak = Tweak::new(tweak_val);
@@ -148,11 +161,13 @@ mod tests {
         // Verify ciphertext.
         // Since our mock cipher is just XOR with key, the tweak should cancel out.
         // C = P ^ K.
-        let expected_c0 = u128::from_le_bytes(plaintext[0..16].try_into().unwrap()) ^ key;
-        let expected_c1 = u128::from_le_bytes(plaintext[16..32].try_into().unwrap()) ^ key;
+        let expected_c0 =
+            u128::from_le_bytes(plaintext.as_bytes()[0..16].try_into().unwrap()) ^ key;
+        let expected_c1 =
+            u128::from_le_bytes(plaintext.as_bytes()[16..32].try_into().unwrap()) ^ key;
 
-        let actual_c0 = u128::from_le_bytes(ciphertext[0..16].try_into().unwrap());
-        let actual_c1 = u128::from_le_bytes(ciphertext[16..32].try_into().unwrap());
+        let actual_c0 = u128::from_le_bytes(ciphertext.as_bytes()[0..16].try_into().unwrap());
+        let actual_c1 = u128::from_le_bytes(ciphertext.as_bytes()[16..32].try_into().unwrap());
 
         assert_eq!(actual_c0, expected_c0);
         assert_eq!(actual_c1, expected_c1);
@@ -160,8 +175,8 @@ mod tests {
         // Verify recorded blocks (should be P ^ T).
         assert_eq!(cipher.recorded_blocks.len(), 2);
 
-        let p0 = u128::from_le_bytes(plaintext[0..16].try_into().unwrap());
-        let p1 = u128::from_le_bytes(plaintext[16..32].try_into().unwrap());
+        let p0 = u128::from_le_bytes(plaintext.as_bytes()[0..16].try_into().unwrap());
+        let p1 = u128::from_le_bytes(plaintext.as_bytes()[16..32].try_into().unwrap());
 
         let mut t0 = tweak;
         assert_eq!(cipher.recorded_blocks[0], p0 ^ t0.0);
@@ -171,8 +186,8 @@ mod tests {
 
     #[test]
     fn test_xts_in_place() {
-        let mut buf = [0u8; 32];
-        for (i, x) in buf.iter_mut().enumerate() {
+        let mut buf: Blocks<2> = Default::default();
+        for (i, x) in buf.as_mut_bytes().iter_mut().enumerate() {
             *x = i as u8;
         }
 
@@ -181,10 +196,10 @@ mod tests {
         let key = 0xffeeddccbbaa99887766554433221100u128;
 
         // Save original plaintext for verification.
-        let p0 = u128::from_le_bytes(buf[0..16].try_into().unwrap());
-        let p1 = u128::from_le_bytes(buf[16..32].try_into().unwrap());
+        let p0 = u128::from_le_bytes(buf.as_bytes()[0..16].try_into().unwrap());
+        let p1 = u128::from_le_bytes(buf.as_bytes()[16..32].try_into().unwrap());
 
-        let slice = MutPtrByteSlice::from(&mut buf[..]);
+        let slice = MutPtrByteSlice::from(buf.as_mut_bytes());
         let processor = XtsProcessor::new_in_place(tweak, slice);
         let mut cipher = MockCipher::new(key);
 
@@ -194,8 +209,8 @@ mod tests {
         let expected_c0 = p0 ^ key;
         let expected_c1 = p1 ^ key;
 
-        let actual_c0 = u128::from_le_bytes(buf[0..16].try_into().unwrap());
-        let actual_c1 = u128::from_le_bytes(buf[16..32].try_into().unwrap());
+        let actual_c0 = u128::from_le_bytes(buf.as_bytes()[0..16].try_into().unwrap());
+        let actual_c1 = u128::from_le_bytes(buf.as_bytes()[16..32].try_into().unwrap());
 
         assert_eq!(actual_c0, expected_c0);
         assert_eq!(actual_c1, expected_c1);
