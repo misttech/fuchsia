@@ -40,10 +40,6 @@ pub struct StorageConfig {
     /// If set, use keymint for encrypting data.  Requires the `fuchsia::keymint` board capability.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub keymint_enabled: bool,
-
-    /// If set, enables SDMMC command queueing.  Requires the `fuchsia::sdmmc_cqe` board capability.
-    #[serde(skip_serializing_if = "crate::common::is_default")]
-    pub sdmmc_command_queueing_enabled: bool,
 }
 
 /// Platform configuration options for the component id index

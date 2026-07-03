@@ -142,13 +142,7 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         let no_zxcrypt = storage_config.filesystems.no_zxcrypt;
         let format_data_on_corruption = storage_config.filesystems.format_data_on_corruption.0;
         let provision_fxfs = storage_config.provision_fxfs;
-        let sdmmc_command_queueing = storage_config.sdmmc_command_queueing_enabled;
-        if sdmmc_command_queueing {
-            ensure!(
-                context.board_config.provides_feature(BoardFeature::SdmmcCqe),
-                "SDMMC command queueing requires fuchsia::sdmmc_cqe"
-            );
-        }
+        let sdmmc_command_queueing = context.board_config.provides_feature(BoardFeature::SdmmcCqe);
 
         // Apply limits.
         let (blob_max_bytes, data_max_bytes) = match &storage_config.filesystems.volume {
@@ -306,8 +300,7 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         }
 
         // Include CQHCI driver through a platform AIB.
-        // TODO(https://fxbug.dev/42176727): Enable on user builds.
-        if sdmmc_command_queueing && context.build_type != &BuildType::User {
+        if sdmmc_command_queueing {
             builder.platform_bundle("cqhci_driver")?;
         }
 
