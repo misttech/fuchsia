@@ -14,6 +14,7 @@ use super::{
     Validate, ValidateArray, array_type, array_type_validate_deref_both,
 };
 
+use crate::new_policy::traits::PolicyId;
 use anyhow::Context as _;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroU32;
@@ -264,7 +265,7 @@ impl AccessVectorRule {
     pub fn new_type(&self) -> Option<TypeId> {
         match &self.permission_data {
             PermissionData::NewType(new_type) => {
-                Some(TypeId(NonZeroU32::new(new_type.get().into()).unwrap()))
+                Some(TypeId::from_u32(new_type.get().into()).unwrap())
             }
             _ => None,
         }
@@ -355,8 +356,8 @@ pub(super) struct AccessVectorRuleMetadata {
 
 impl AccessVectorRuleMetadata {
     pub fn for_query(source: TypeId, target: TypeId, class: ClassId, rule_type: u16) -> Self {
-        let source_type = le::U16::new(source.0.get() as u16);
-        let target_type = le::U16::new(target.0.get() as u16);
+        let source_type = le::U16::new(source.as_u32() as u16);
+        let target_type = le::U16::new(target.as_u32() as u16);
         let class = le::U16::new(class.0.get() as u16);
         let access_vector_rule_type = le::U16::new(rule_type);
         Self { source_type, target_type, class, access_vector_rule_type }
@@ -541,7 +542,7 @@ impl RoleTransition {
     }
 
     pub(super) fn type_(&self) -> TypeId {
-        TypeId(NonZeroU32::new(self.role_type.get()).unwrap())
+        TypeId::from_u32(self.role_type.get()).unwrap()
     }
 
     pub(super) fn class(&self) -> ClassId {
@@ -651,7 +652,7 @@ impl FilenameTransition {
     }
 
     pub(super) fn target_type(&self) -> TypeId {
-        TypeId(NonZeroU32::new(self.transition_type.get()).unwrap())
+        TypeId::from_u32(self.transition_type.get()).unwrap()
     }
 
     pub(super) fn target_class(&self) -> ClassId {
@@ -697,11 +698,11 @@ pub(super) struct FilenameTransitionItem {
 
 impl FilenameTransitionItem {
     pub(super) fn has_source_type(&self, source_type: TypeId) -> bool {
-        self.stypes.is_set(source_type.0.get() - 1)
+        self.stypes.is_set(source_type.as_u32() - 1)
     }
 
     pub(super) fn out_type(&self) -> TypeId {
-        TypeId(NonZeroU32::new(self.out_type.get()).unwrap())
+        TypeId::from_u32(self.out_type.get()).unwrap()
     }
 }
 
@@ -743,11 +744,11 @@ impl DeprecatedFilenameTransition {
     }
 
     pub(super) fn source_type(&self) -> TypeId {
-        TypeId(NonZeroU32::new(self.metadata.source_type.get()).unwrap())
+        TypeId::from_u32(self.metadata.source_type.get()).unwrap()
     }
 
     pub(super) fn target_type(&self) -> TypeId {
-        TypeId(NonZeroU32::new(self.metadata.transition_type.get()).unwrap())
+        TypeId::from_u32(self.metadata.transition_type.get()).unwrap()
     }
 
     pub(super) fn target_class(&self) -> ClassId {
@@ -755,7 +756,7 @@ impl DeprecatedFilenameTransition {
     }
 
     pub(super) fn out_type(&self) -> TypeId {
-        TypeId(NonZeroU32::new(self.metadata.out_type.get()).unwrap())
+        TypeId::from_u32(self.metadata.out_type.get()).unwrap()
     }
 }
 
@@ -853,7 +854,7 @@ impl Context {
         RoleId(NonZeroU32::new(self.metadata.role.get()).unwrap())
     }
     pub(super) fn type_id(&self) -> TypeId {
-        TypeId(NonZeroU32::new(self.metadata.context_type.get()).unwrap())
+        TypeId::from_u32(self.metadata.context_type.get()).unwrap()
     }
     pub(super) fn low_level(&self) -> &MlsLevel {
         self.mls_range.low()
@@ -1406,11 +1407,11 @@ pub(super) struct RangeTransition {
 
 impl RangeTransition {
     pub fn source_type(&self) -> TypeId {
-        TypeId(NonZeroU32::new(self.metadata.source_type.get()).unwrap())
+        TypeId::from_u32(self.metadata.source_type.get()).unwrap()
     }
 
-    pub fn target_type(&self) -> TypeId {
-        TypeId(NonZeroU32::new(self.metadata.target_type.get()).unwrap())
+    pub(super) fn target_type(&self) -> TypeId {
+        TypeId::from_u32(self.metadata.target_type.get()).unwrap()
     }
 
     pub fn target_class(&self) -> ClassId {

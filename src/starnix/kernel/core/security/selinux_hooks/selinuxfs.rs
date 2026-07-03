@@ -46,10 +46,7 @@ pub(in crate::security) fn selinuxfs_policy_loaded<L>(
 {
     let kernel_state = current_task.kernel().security_state.state.as_ref().unwrap();
     let security_server = &kernel_state.server;
-    assert!(
-        security_server.get_binary_policy().is_some(),
-        "selinuxfs_policy_loaded() without policy"
-    );
+    assert!(security_server.has_policy(), "selinuxfs_policy_loaded() without policy");
 
     // Compare the policy capabilities against this kernel's support level, and emit warnings for
     // each mismatch.

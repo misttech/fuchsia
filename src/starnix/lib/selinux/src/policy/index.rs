@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 use super::arrays::{ACCESS_VECTOR_RULE_TYPE_TYPE_TRANSITION, FsContext, FsUseType};
-use super::metadata::HandleUnknown;
 use super::security_context::{SecurityContext, SecurityLevel};
-use super::symbols::{Class, ClassDefault, ClassDefaultRange, CommonSymbols, find_class_by_name};
-use super::{AccessVector, ClassId, ClassPermissionId, ParsedPolicy, RoleId, TypeId};
+use super::symbols::{Class, ClassDefault, ClassDefaultRange, find_class_by_name};
+use super::{AccessVector, ClassId, ParsedPolicy, PermissionId, RoleId, TypeId};
+use crate::new_policy::HandleUnknown;
 use crate::{ClassPermission as _, KernelClass, KernelPermission, NullessByteStr, PolicyCap};
 
 use std::collections::HashMap;
@@ -18,8 +18,8 @@ pub struct FsUseLabelAndType {
     pub use_type: FsUseType,
 }
 
-/// Array of `ClassPermissionId` values each of a kernel security class' permissions.
-type KernelPermissionIdsArray = [Option<ClassPermissionId>; 32];
+/// Array of `PermissionId` values each of a kernel security class' permissions.
+type KernelPermissionIdsArray = [Option<PermissionId>; 32];
 
 /// An index for facilitating fast lookup of common abstractions inside parsed binary policy data
 /// structures. Typically, data is indexed by an enum that describes a well-known value and the
@@ -495,10 +495,10 @@ impl PolicyIndex {
 /// Returns the bit index of the specified permission for the specified security `class`, looking
 /// up the permission in the class' common symbol, if any.
 fn get_permission_id_by_name(
-    common_symbols: &CommonSymbols,
+    common_symbols: &crate::new_policy::SymbolArray<crate::new_policy::CommonSymbol>,
     class: &Class,
     name: &str,
-) -> Option<ClassPermissionId> {
+) -> Option<PermissionId> {
     let name = name.as_bytes();
     if let Some(permission) = class.permissions().iter().find(|p| p.name_bytes() == name) {
         return Some(permission.id());

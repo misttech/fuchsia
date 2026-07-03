@@ -8,6 +8,7 @@ use super::index::PolicyIndex;
 use super::symbols::MlsLevel;
 use super::{CategoryId, ParsedPolicy, RoleId, SensitivityId, TypeId, UserId};
 use crate::NullessByteStr;
+use crate::new_policy::traits::PolicyId;
 
 use bstr::BString;
 use std::cell::RefCell;
@@ -213,7 +214,7 @@ impl SecurityContext {
             // Validate that the selected type is valid for this role.
             let role = policy_index.parsed_policy().role(self.role);
             // TODO(b/335399404): Identifiers are 1-based, while the roles bitmap is 0-based.
-            if !role.types().is_set(self.type_.0.get() - 1) {
+            if !role.types().is_set(self.type_.as_u32() - 1) {
                 return Err(SecurityContextError::InvalidTypeForRole {
                     type_: policy_index.parsed_policy().type_(self.type_).name_bytes().into(),
                     role: role.name_bytes().into(),

@@ -17,19 +17,6 @@ pub struct PermissionTag;
 /// Identifies a permission within an object class (class-relative, 1-indexed).
 pub type PermissionId = IdType<NonZeroU8, PermissionTag>;
 
-/// Identifier for a permission within a class, which is 1-indexed and fits in a `u8`
-/// (since a class can have at most 32 permissions in SELinux).
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub struct ClassPermissionId {
-    value: NonZeroU8,
-}
-
-impl std::fmt::Display for ClassPermissionId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
-    }
-}
-
 /// Parsed SELinux permission, containing a type-safe ID and a name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Permission {
@@ -52,8 +39,8 @@ impl HasPolicyId for Permission {
 
 impl Permission {
     /// Returns the class-relative permission ID.
-    pub fn id(&self) -> ClassPermissionId {
-        ClassPermissionId { value: NonZeroU8::new(self.id.as_u32() as u8).unwrap() }
+    pub fn id(&self) -> PermissionId {
+        self.id
     }
 
     /// Returns the 0-based index of this permission in the access vector (0..31).

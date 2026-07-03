@@ -5,7 +5,6 @@
 pub mod arrays;
 pub mod error;
 pub mod index;
-pub mod metadata;
 pub mod parsed_policy;
 pub mod parser;
 pub mod view;
@@ -20,15 +19,16 @@ pub use index::FsUseLabelAndType;
 pub use parser::PolicyCursor;
 pub use security_context::{SecurityContext, SecurityContextError};
 
+use crate::new_policy::traits::{PolicyId, Serialize};
+pub use crate::new_policy::{HandleUnknown, POLICYDB_VERSION_MAX, PermissionId, TypeId};
 use crate::{ClassPermission, KernelClass, NullessByteStr, ObjectClass, PolicyCap};
 use index::PolicyIndex;
-use metadata::HandleUnknown;
 use parsed_policy::ParsedPolicy;
 use parser::PolicyData;
-use symbols::{find_class_by_name, find_common_symbol_by_name_bytes};
+use symbols::find_class_by_name;
 
 use anyhow::Context as _;
-use std::fmt::{Debug, Display, LowerHex};
+use std::fmt::{Debug, LowerHex};
 use std::num::{NonZeroU8, NonZeroU32};
 use std::ops::Deref;
 use std::str::FromStr;
@@ -46,8 +46,7 @@ pub struct UserId(NonZeroU32);
 pub struct RoleId(NonZeroU32);
 
 /// Identifies a type within a policy.
-#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
-pub struct TypeId(NonZeroU32);
+// TypeId and ClassPermissionId are re-exported from new_policy.
 
 /// Identifies a sensitivity level within a policy.
 #[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
@@ -72,16 +71,6 @@ impl ClassId {
 impl Into<u32> for ClassId {
     fn into(self) -> u32 {
         self.0.into()
-    }
-}
-
-/// Identifies a permission within a class.
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub struct ClassPermissionId(NonZeroU8);
-
-impl Display for ClassPermissionId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
     }
 }
 
@@ -133,8 +122,8 @@ impl AccessVector {
     pub const NONE: AccessVector = AccessVector(0);
     pub const ALL: AccessVector = AccessVector(std::u32::MAX);
 
-    pub(super) fn from_class_permission_id(id: ClassPermissionId) -> Self {
-        Self((1 as u32) << (id.0.get() - 1))
+    pub(super) fn from_class_permission_id(id: PermissionId) -> Self {
+        Self((1 as u32) << (id.as_u32() - 1))
     }
 }
 
@@ -262,7 +251,7 @@ impl XpermsAccessDecision {
 /// `binary_policy` lifetime. Taken together, these requirements demand the "move-in + move-out"
 /// interface for `binary_policy`.
 pub fn parse_policy_by_value(binary_policy: Vec<u8>) -> Result<Unvalidated, anyhow::Error> {
-    let policy_data = Arc::new(binary_policy);
+    let policy_data = Arc::from(binary_policy);
     let policy = ParsedPolicy::parse(policy_data).context("parsing policy")?;
     Ok(Unvalidated(policy))
 }
@@ -284,8 +273,14 @@ impl Policy {
         self.0.parsed_policy().policy_version()
     }
 
-    pub fn binary(&self) -> &PolicyData {
-        &self.0.parsed_policy().data
+    /// Serializes the policy back into [`PolicyData`].
+    pub fn serialize(&self) -> PolicyData {
+        let mut bytes = Vec::new();
+        self.0
+            .parsed_policy()
+            .serialize(&mut bytes)
+            .expect("serialization of new_policy should succeed");
+        std::sync::Arc::from(bytes)
     }
 
     /// The way "unknown" policy decisions should be handed according to the underlying binary
@@ -328,7 +323,7 @@ impl Policy {
     pub fn find_class_permissions_by_name(
         &self,
         class_name: &str,
-    ) -> Result<Vec<(ClassPermissionId, Vec<u8>)>, ()> {
+    ) -> Result<Vec<(PermissionId, Vec<u8>)>, ()> {
         let classes = self.0.parsed_policy().classes();
         let class = find_class_by_name(&classes, class_name).ok_or(())?;
         let owned_permissions = class.permissions();
@@ -343,17 +338,22 @@ impl Policy {
             return Ok(result);
         }
 
-        let common_symbol_permissions = find_common_symbol_by_name_bytes(
-            self.0.parsed_policy().common_symbols(),
-            class.common_name_bytes(),
-        )
-        .ok_or(())?
-        .permissions();
+        let common_symbol = self
+            .0
+            .parsed_policy()
+            .common_symbols()
+            .iter()
+            .find(|cs| cs.name_bytes() == class.common_name_bytes())
+            .ok_or(())?;
+        let common_symbol_permissions = common_symbol.permissions();
 
         result.append(
             &mut common_symbol_permissions
                 .iter()
-                .map(|permission| (permission.id(), permission.name_bytes().to_vec()))
+                .map(|permission| {
+                    let nonzero = NonZeroU8::new(permission.index() + 1).unwrap();
+                    (PermissionId::new(nonzero), permission.name_bytes().to_vec())
+                })
                 .collect(),
         );
 
@@ -507,7 +507,7 @@ impl Policy {
 
     /// Returns true if the policy has the marked the type/domain for permissive checks.
     pub fn is_permissive(&self, type_: TypeId) -> bool {
-        self.0.parsed_policy().permissive_types().is_set(type_.0.get())
+        self.0.parsed_policy().permissive_map().contains(type_)
     }
 
     /// Returns true if the policy contains a `policycap` statement for the specified capability.
@@ -884,12 +884,12 @@ pub(super) mod testing {
 #[cfg(test)]
 pub(super) mod tests {
     use super::arrays::XpermsBitmap;
-    use super::metadata::HandleUnknown;
     use super::security_context::SecurityContext;
     use super::symbols::find_class_by_name;
     use super::{
         AccessVector, Policy, TypeId, XpermsAccessDecision, XpermsKind, parse_policy_by_value,
     };
+    use crate::new_policy::HandleUnknown;
     use crate::{FileClass, InitialSid, KernelClass};
 
     use anyhow::Context as _;
@@ -1006,7 +1006,7 @@ pub(super) mod tests {
             assert_eq!(expectations.expected_handle_unknown, policy.handle_unknown());
 
             // Returned policy bytes must be identical to input policy bytes.
-            let binary_policy = policy.binary().clone();
+            let binary_policy = policy.serialize();
             assert_eq!(&policy_bytes, binary_policy.deref());
         }
     }

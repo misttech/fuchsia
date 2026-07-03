@@ -8,7 +8,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned};
 
-pub type PolicyData = Arc<Vec<u8>>;
+pub type PolicyData = Arc<[u8]>;
 pub type PolicyOffset = u32;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -69,7 +69,7 @@ mod tests {
     #[test]
     fn entire_vector() {
         let bytes: Vec<u8> = (0..8).collect();
-        let data = Arc::new(bytes);
+        let data: PolicyData = Arc::from(bytes);
 
         let tail = PolicyCursor::new(&data);
         let (some_numbers, tail) = tail.parse::<SomeNumbers>().expect("some numbers");
@@ -85,7 +85,7 @@ mod tests {
     #[test]
     fn range_within_vector() {
         let bytes: Vec<u8> = (0..40).collect();
-        let data = Arc::new(bytes);
+        let data: PolicyData = Arc::from(bytes);
 
         let tail = PolicyCursor::new_at(&data, 8);
         let (first_some_numbers, tail) = tail.parse::<SomeNumbers>().expect("some numbers");

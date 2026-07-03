@@ -4,12 +4,12 @@
 
 use std::marker::PhantomData;
 
-use super::error::{ParseError, ValidateError};
-use super::parser::{Array, PolicyCursor};
-use super::traits::{Parse, PolicyId, Serialize, Validate};
-use super::{NewPolicy, TypeId};
+use super::NewPolicy;
+use super::error::ValidateError;
+use super::parser::Array;
+use super::traits::{PolicyId, Validate};
 
-pub use selinux_policy_derive::{Parse, Serialize, Validate};
+use selinux_policy_derive::{Parse, Serialize};
 
 type MapNode = u64;
 
@@ -213,6 +213,10 @@ impl<T: PolicyId, const WITH_ID_ZERO: bool> Validate for IdSet<T, WITH_ID_ZERO> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::new_policy::TypeId;
+    use crate::new_policy::error::ParseError;
+    use crate::new_policy::parser::PolicyCursor;
+    use crate::new_policy::traits::Parse;
 
     fn parse_bitmap(bytes: &[u8]) -> Result<ExtensibleBitmap, ParseError> {
         let mut cursor = PolicyCursor::new(bytes);

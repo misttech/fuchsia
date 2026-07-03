@@ -16,12 +16,12 @@ use super::arrays::{
 };
 use super::error::{ParseError, ValidateError};
 use super::extensible_bitmap::ExtensibleBitmap;
-use super::metadata::{Config, Counts, HandleUnknown, Magic, PolicyVersion, Signature};
+
 use super::parser::{PolicyCursor, PolicyData};
 use super::security_context::{Level, SecurityContext};
 use super::symbols::{
-    Category, CategoryIndex, Class, ClassIndex, Classes, CommonSymbol, CommonSymbols,
-    ConditionalBoolean, MlsLevel, Role, Sensitivity, SymbolList, Type, TypeIndex, User,
+    Category, CategoryIndex, Class, ClassIndex, Classes, ConditionalBoolean, MlsLevel, Role,
+    Sensitivity, SymbolList, Type, TypeIndex, User,
 };
 use super::view::{Hashable, HashedArrayView};
 use super::{
@@ -29,9 +29,12 @@ use super::{
     SELINUX_AVD_FLAGS_PERMISSIVE, SensitivityId, TypeId, UserId, Validate, XpermsAccessDecision,
     XpermsKind,
 };
+use crate::new_policy::NewPolicy;
+use crate::new_policy::traits::PolicyId;
 use crate::policy::arrays::FsContext;
 use crate::policy::view::CustomKeyHashedView;
 use crate::{NullessByteStr, PolicyCap};
+use std::ops::Deref;
 
 use anyhow::Context as _;
 use itertools::Itertools;
@@ -39,33 +42,20 @@ use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::iter::Iterator;
-use std::num::NonZeroU32;
 use zerocopy::little_endian as le;
 
 // As of 2026-01-30, more than five times larger than any policy seen in production or tests.
 const MAXIMUM_POLICY_SIZE: usize = 1 << 24;
 
-/// A parsed binary policy.
+/// Parsed binary policy.
 #[derive(Debug)]
 pub struct ParsedPolicy {
-    /// The raw policy data.
-    pub data: PolicyData,
+    /// Raw policy data (remaining).
+    data: PolicyData,
 
-    /// A distinctive number that acts as a binary format-specific header for SELinux binary policy
-    /// files.
-    magic: Magic,
-    /// A length-encoded string, "SE Linux", which identifies this policy as an SE Linux policy.
-    signature: Signature,
-    /// The policy format version number. Different version may support different policy features.
-    policy_version: PolicyVersion,
-    /// Whole-policy configuration, such as how to handle queries against unknown classes.
-    config: Config,
-    /// High-level counts of subsequent policy elements.
-    counts: Counts,
-    policy_capabilities: ExtensibleBitmap,
-    permissive_map: ExtensibleBitmap,
-    /// Common permissions that can be mixed in to classes.
-    common_symbols: SymbolList<CommonSymbol>,
+    /// [`NewPolicy`] that handles the header and base tables.
+    new_policy: NewPolicy,
+
     /// The set of classes referenced by this policy.
     classes: ClassIndex,
     /// The set of roles referenced by this policy.
@@ -105,21 +95,17 @@ pub struct ParsedPolicy {
     attribute_maps: Vec<ExtensibleBitmap>,
 }
 
+impl Deref for ParsedPolicy {
+    type Target = NewPolicy;
+    fn deref(&self) -> &Self::Target {
+        &self.new_policy
+    }
+}
+
 impl ParsedPolicy {
-    /// The policy version stored in the underlying binary policy.
-    pub fn policy_version(&self) -> u32 {
-        self.policy_version.policy_version()
-    }
-
-    /// The way "unknown" policy decisions should be handed according to the underlying binary
-    /// policy.
-    pub fn handle_unknown(&self) -> HandleUnknown {
-        self.config.handle_unknown()
-    }
-
     /// Returns true if the specified capability is in the policy's enabled capabilities set.
     pub fn has_policycap(&self, policy_cap: PolicyCap) -> bool {
-        self.policy_capabilities.is_set(policy_cap as u32)
+        self.new_policy.policy_capabilities().is_set(policy_cap as u32)
     }
 
     /// Computes the access granted to `source_type` on `target_type`, for the specified
@@ -166,16 +152,16 @@ impl ParsedPolicy {
         let mut computed_audit_deny = AccessVector::ALL;
 
         let source_attribute_bitmap: &ExtensibleBitmap =
-            &self.attribute_maps[(source_type.0.get() - 1) as usize];
+            &self.attribute_maps[(source_type.as_u32() - 1) as usize];
         let target_attribute_bitmap: &ExtensibleBitmap =
-            &self.attribute_maps[(target_type.0.get() - 1) as usize];
+            &self.attribute_maps[(target_type.as_u32() - 1) as usize];
 
         for (source_bit_index, target_bit_index) in Itertools::cartesian_product(
             source_attribute_bitmap.indices_of_set_bits(),
             target_attribute_bitmap.indices_of_set_bits(),
         ) {
-            let source_id = TypeId(NonZeroU32::new(source_bit_index + 1).unwrap());
-            let target_id = TypeId(NonZeroU32::new(target_bit_index + 1).unwrap());
+            let source_id = TypeId::from_u32((source_bit_index + 1) as u32).unwrap();
+            let target_id = TypeId::from_u32((target_bit_index + 1) as u32).unwrap();
 
             if let Some(allow_rule) = self.access_vector_rules_find(
                 source_id,
@@ -221,7 +207,7 @@ impl ParsedPolicy {
         }
 
         let mut flags = 0;
-        if self.permissive_types().is_set(source_type.0.get()) {
+        if self.permissive_map().contains(source_type) {
             flags |= SELINUX_AVD_FLAGS_PERMISSIVE;
         }
         AccessDecision {
@@ -294,16 +280,16 @@ impl ParsedPolicy {
             };
 
         let source_attribute_bitmap: &ExtensibleBitmap =
-            &self.attribute_maps[(source_context.type_().0.get() - 1) as usize];
+            &self.attribute_maps[(source_context.type_().as_u32() - 1) as usize];
         let target_attribute_bitmap: &ExtensibleBitmap =
-            &self.attribute_maps[(target_context.type_().0.get() - 1) as usize];
+            &self.attribute_maps[(target_context.type_().as_u32() - 1) as usize];
 
         for (source_bit_index, target_bit_index) in Itertools::cartesian_product(
             source_attribute_bitmap.indices_of_set_bits(),
             target_attribute_bitmap.indices_of_set_bits(),
         ) {
-            let source_id = TypeId(NonZeroU32::new(source_bit_index + 1).unwrap());
-            let target_id = TypeId(NonZeroU32::new(target_bit_index + 1).unwrap());
+            let source_id = TypeId::from_u32((source_bit_index + 1) as u32).unwrap();
+            let target_id = TypeId::from_u32((target_bit_index + 1) as u32).unwrap();
 
             for xperms_allow_rule in self.access_vector_rules_find_all(
                 source_id,
@@ -399,12 +385,6 @@ impl ParsedPolicy {
         self.types.type_id_by_name(name, &self.data)
     }
 
-    /// Returns the extensible bitmap describing the set of types/domains for which permission
-    /// checks are permissive.
-    pub(super) fn permissive_types(&self) -> &ExtensibleBitmap {
-        &self.permissive_map
-    }
-
     /// Returns the `Sensitivity` structure for the requested Id. Valid policies include definitions
     /// for all the Ids they refer to internally; supply some other Id will trigger a panic.
     pub(super) fn sensitivity(&self, id: SensitivityId) -> &Sensitivity {
@@ -433,10 +413,6 @@ impl ParsedPolicy {
 
     pub(super) fn classes(&self) -> Classes {
         self.classes.classes(&self.data)
-    }
-
-    pub(super) fn common_symbols(&self) -> &CommonSymbols {
-        &self.common_symbols.data
     }
 
     pub(super) fn conditional_booleans(&self) -> &Vec<ConditionalBoolean> {
@@ -598,7 +574,12 @@ impl ParsedPolicy {
                 limit: MAXIMUM_POLICY_SIZE,
             }));
         }
-        let (policy, excess_bytes) = parse_policy_internal(data)?;
+        let new_policy =
+            NewPolicy::parse(&data).map_err(|e| anyhow::anyhow!("new parser failed: {:?}", e))?;
+        new_policy.validate().context("validating new policy structure")?;
+
+        let rest_data = new_policy.rest_bytes();
+        let (policy, excess_bytes) = parse_policy_remaining(new_policy, rest_data)?;
         if excess_bytes > 0 {
             return Err(anyhow::Error::from(ParseError::TrailingBytes { num_bytes: excess_bytes }));
         }
@@ -606,37 +587,12 @@ impl ParsedPolicy {
     }
 }
 
-/// Parses an entire binary policy.
-fn parse_policy_internal<'a>(data: PolicyData) -> Result<(ParsedPolicy, usize), anyhow::Error> {
-    let tail = PolicyCursor::new(&data);
-
-    let (magic, tail) = PolicyCursor::parse::<Magic>(tail).context("parsing magic")?;
-
-    let (signature, tail) =
-        Signature::parse(tail).map_err(Into::<anyhow::Error>::into).context("parsing signature")?;
-
-    let (policy_version, tail) =
-        PolicyCursor::parse::<PolicyVersion>(tail).context("parsing policy version")?;
-    let policy_version_value = policy_version.policy_version();
-
-    let (config, tail) = Config::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing policy config")?;
-
-    let (counts, tail) =
-        PolicyCursor::parse::<Counts>(tail).context("parsing high-level policy object counts")?;
-
-    let (policy_capabilities, tail) = ExtensibleBitmap::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing policy capabilities")?;
-
-    let (permissive_map, tail) = ExtensibleBitmap::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing permissive map")?;
-
-    let (common_symbols, tail) = SymbolList::<CommonSymbol>::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing common symbols")?;
+/// Parses the remaining parts of the policy from `rest_data` to construct a [`ParsedPolicy`].
+fn parse_policy_remaining(
+    new_policy: NewPolicy,
+    rest_data: PolicyData,
+) -> Result<(ParsedPolicy, usize), anyhow::Error> {
+    let tail = PolicyCursor::new(&rest_data);
 
     let (classes, tail) =
         ClassIndex::parse(tail).map_err(anyhow::Error::from).context("parsing classes")?;
@@ -680,7 +636,7 @@ fn parse_policy_internal<'a>(data: PolicyData) -> Result<(ParsedPolicy, usize), 
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing role allow rules")?;
 
-    let (filename_transition_list, tail) = if policy_version_value >= 33 {
+    let (filename_transition_list, tail) = if new_policy.policy_version() >= 33 {
         let (filename_transition_list, tail) = SimpleArray::<FilenameTransition>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing standard filename transitions")?;
@@ -722,7 +678,7 @@ fn parse_policy_internal<'a>(data: PolicyData) -> Result<(ParsedPolicy, usize), 
         .context("parsing ipv6 nodes")?;
 
     let (infinitiband_partition_keys, infinitiband_end_ports, tail) =
-        if policy_version_value >= MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY {
+        if new_policy.policy_version() >= MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY {
             let (infinity_band_partition_keys, tail) =
                 SimpleArray::<InfinitiBandPartitionKey>::parse(tail)
                     .map_err(Into::<anyhow::Error>::into)
@@ -757,19 +713,12 @@ fn parse_policy_internal<'a>(data: PolicyData) -> Result<(ParsedPolicy, usize), 
     let tail = tail;
     let attribute_maps = attribute_maps;
 
-    let excess_bytes = data.len() - tail.offset() as usize;
+    let excess_bytes = rest_data.len() - tail.offset() as usize;
 
     Ok((
         ParsedPolicy {
-            data,
-            magic,
-            signature,
-            policy_version,
-            config,
-            counts,
-            policy_capabilities,
-            permissive_map,
-            common_symbols,
+            data: rest_data,
+            new_policy,
             classes,
             roles,
             types,
@@ -804,38 +753,6 @@ impl ParsedPolicy {
         let need_init_sid = self.has_policycap(PolicyCap::UserspaceInitialContext);
         let context = PolicyValidationContext { data: self.data.clone(), need_init_sid };
 
-        self.magic
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating magic")?;
-        self.signature
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating signature")?;
-        self.policy_version
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating policy_version")?;
-        self.config
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating config")?;
-        self.counts
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating counts")?;
-        self.policy_capabilities
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating policy_capabilities")?;
-        self.permissive_map
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating permissive_map")?;
-        self.common_symbols
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating common_symbols")?;
         self.classes
             .validate(&context)
             .map_err(Into::<anyhow::Error>::into)

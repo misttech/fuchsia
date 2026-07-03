@@ -8,8 +8,8 @@ use starnix_sync::LockEqualOrBefore;
 
 use seq_lock::{SeqLock, SeqLockable, WriteSize};
 
-use selinux::policy::metadata::POLICYDB_VERSION_MAX;
-use selinux::policy::{AccessDecision, AccessVector};
+use selinux::policy::parser::PolicyData;
+use selinux::policy::{AccessDecision, AccessVector, POLICYDB_VERSION_MAX};
 use selinux::{
     ClassId, InitialSid, PolicyCap, SeLinuxStatus, SeLinuxStatusPublisher, SecurityId,
     SecurityPermission, SecurityServer,
@@ -295,12 +295,14 @@ impl SeLinuxApiOps for LoadApi {
 /// "policy" file, which allows the currently-loaded binary policy, to be read as a normal file,
 /// including supporting seek-aware reads.
 struct PolicyFile {
-    security_server: Arc<SecurityServer>,
+    binary_policy: Option<PolicyData>,
 }
 
 impl PolicyFile {
     fn new_node(security_server: Arc<SecurityServer>) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| Ok(Self { security_server: security_server.clone() }))
+        SimpleFileNode::new(move |_, _| {
+            Ok(Self { binary_policy: security_server.get_binary_policy() })
+        })
     }
 }
 
@@ -326,7 +328,7 @@ impl FileOps for PolicyFile {
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        let policy = self.security_server.get_binary_policy().ok_or_else(|| errno!(EINVAL))?;
+        let policy = self.binary_policy.as_ref().ok_or_else(|| errno!(EINVAL))?;
         let policy_bytes: &[u8] = policy.deref();
 
         if offset >= policy_bytes.len() {

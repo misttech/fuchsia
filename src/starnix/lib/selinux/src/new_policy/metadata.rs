@@ -21,7 +21,7 @@ pub(super) const POLICYDB_SIGNATURE: &[u8] = b"SE Linux";
 pub(super) const POLICYDB_VERSION_MIN: u32 = 30;
 
 /// Maximum supported SELinux policy database version.
-pub(super) const POLICYDB_VERSION_MAX: u32 = 33;
+pub const POLICYDB_VERSION_MAX: u32 = 33;
 
 /// Config flag indicating that MLS is enabled.
 pub(super) const CONFIG_MLS_FLAG: u32 = 1;
@@ -35,9 +35,6 @@ pub(super) const CONFIG_HANDLE_UNKNOWN_ALLOW_FLAG: u32 = 1 << 2;
 /// Mask for the handle-unknown configuration bits.
 pub(super) const CONFIG_HANDLE_UNKNOWN_MASK: u32 =
     CONFIG_HANDLE_UNKNOWN_REJECT_FLAG | CONFIG_HANDLE_UNKNOWN_ALLOW_FLAG;
-
-/// Mask for all known configuration flags.
-pub(super) const CONFIG_KNOWN_FLAGS_MASK: u32 = CONFIG_MLS_FLAG | CONFIG_HANDLE_UNKNOWN_MASK;
 
 /// Controls how "unknown" policy decisions are handled.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -107,8 +104,8 @@ impl Validate for PolicyVersion {
 /// Configuration flags of the SELinux policy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Config {
-    mls_enabled: bool,
     handle_unknown: HandleUnknown,
+    raw_flags: u32,
 }
 
 impl Config {
@@ -121,12 +118,6 @@ impl Config {
 impl Parse for Config {
     fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
         let flags = u32::parse(cursor)?;
-
-        // Reject if any unknown flags are set.
-        let unknown_flags = flags & !CONFIG_KNOWN_FLAGS_MASK;
-        if unknown_flags != 0 {
-            return Err(ParseError::InvalidConfigFlags { flags });
-        }
 
         // Reject if MLS is not enabled.
         let mls_enabled = (flags & CONFIG_MLS_FLAG) != 0;
@@ -143,16 +134,16 @@ impl Parse for Config {
             _ => return Err(ParseError::InvalidConfigFlags { flags }),
         };
 
-        Ok(Self { mls_enabled, handle_unknown })
+        // Store the rest of the flags.
+        let raw_flags = flags & !CONFIG_HANDLE_UNKNOWN_MASK;
+
+        Ok(Self { handle_unknown, raw_flags })
     }
 }
 
 impl Serialize for Config {
     fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
-        let mut flags = 0u32;
-        if self.mls_enabled {
-            flags |= CONFIG_MLS_FLAG;
-        }
+        let mut flags = self.raw_flags;
         match self.handle_unknown {
             HandleUnknown::Reject => flags |= CONFIG_HANDLE_UNKNOWN_REJECT_FLAG,
             HandleUnknown::Allow => flags |= CONFIG_HANDLE_UNKNOWN_ALLOW_FLAG,

@@ -82,3 +82,9 @@ where
         Some(Self { value, _phantom: PhantomData })
     }
 }
+
+impl<T: std::fmt::Display, Tag> std::fmt::Display for IdType<T, Tag> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}

@@ -2,13 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::NewPolicy;
-use super::error::{ParseError, SerializeError, ValidateError};
+use super::error::{ParseError, SerializeError};
 use super::id_type::IdType;
 use super::indexed::IdAndNameIndexed;
 use super::parser::PolicyCursor;
 use super::permissions::Permission;
-use super::traits::{HasName, HasPolicyId, Parse, PolicyId, Serialize, Validate};
+use super::traits::{HasName, HasPolicyId, Parse, PolicyId, Serialize};
 use selinux_policy_derive::{Parse, Serialize, Validate};
 
 /// Tag type for type safety of policy common symbol identifiers.

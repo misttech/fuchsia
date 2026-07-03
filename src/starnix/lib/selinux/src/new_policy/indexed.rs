@@ -32,8 +32,11 @@ fn hash_name(hasher: &rapidhash::RapidBuildHasher, name: &[u8]) -> u64 {
 #[derive(Clone)]
 pub struct IdAndNameIndexed<C> {
     container: C,
+    #[cfg_attr(not(test), expect(dead_code))]
     id_to_index: Box<[Option<u32>]>,
+    #[cfg_attr(not(test), expect(dead_code))]
     name_to_index: HashTable<u32>,
+    #[cfg_attr(not(test), expect(dead_code))]
     hasher: rapidhash::RapidBuildHasher,
 }
 
@@ -69,12 +72,14 @@ where
     }
 
     /// Returns a reference to the item with the specified `id`, if it exists.
+    #[cfg_attr(not(test), expect(dead_code))]
     pub fn get_by_id(&self, id: T::Id) -> Option<&T> {
         let idx = *self.id_to_index.get(id.as_u32() as usize)?;
         idx.map(|i| &self.container[i as usize])
     }
 
     /// Returns a reference to the item with the specified `name`, if it exists.
+    #[cfg_attr(not(test), expect(dead_code))]
     pub fn get_by_name(&self, name: &[u8]) -> Option<&T> {
         let hash = hash_name(&self.hasher, name);
         let idx =

@@ -134,16 +134,19 @@ impl Validate for ByteArray {
     }
 }
 
-/// Remaining unparsed bytes of the policy, preserved to ensure
-/// 100% byte-for-byte round-trip fidelity in intermediate CLs.
+/// Remaining unparsed bytes of the policy. NewPolicy parses only the first few
+/// elements of the binary policy, retaining the trailing bytes both to allow
+/// byte-for-byte re-serialization of the whole policy, and for the old policy
+/// framework to use to parse the fields that have not yet been migrated. This
+/// field will be removed once the migration is complete.
 #[derive(Debug, Clone)]
 pub(super) struct RemainingBytes {
-    bytes: Box<[u8]>,
+    pub(super) bytes: std::sync::Arc<[u8]>,
 }
 
 impl Parse for RemainingBytes {
     fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
-        let rest = cursor.data[cursor.offset..].to_vec().into_boxed_slice();
+        let rest = std::sync::Arc::from(&cursor.data[cursor.offset..]);
         cursor.offset = cursor.data.len();
         Ok(Self { bytes: rest })
     }

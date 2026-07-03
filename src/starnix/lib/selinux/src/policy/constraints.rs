@@ -18,6 +18,7 @@ use super::symbols::{
     ConstraintTerm,
 };
 use super::{RoleId, TypeId, UserId};
+use crate::new_policy::traits::PolicyId;
 
 use std::cmp::Ordering;
 use std::collections::HashSet;
@@ -170,7 +171,7 @@ pub(super) struct TypeIds<'a> {
 
 impl<'a> TypeIds<'a> {
     fn contains(&self, id: &TypeId) -> bool {
-        self.underlying.is_set(id.0.get() - 1)
+        self.underlying.is_set(id.as_u32() - 1)
     }
 }
 
@@ -199,7 +200,7 @@ impl From<&Operand<'_>> for ContextOperand {
                 type_ids
                     .underlying
                     .indices_of_set_bits()
-                    .map(|i| TypeId(NonZeroU32::new(i + 1).unwrap()))
+                    .map(|i| TypeId::from_u32(i + 1).unwrap())
                     .collect(),
             ),
         }
@@ -538,8 +539,8 @@ mod tests {
             }),
             // (t1 == t2)
             ConstraintNode::Leaf(ContextExpression {
-                left: Operand::TypeId(TypeId(NonZeroU32::new(1).unwrap())),
-                right: Operand::TypeId(TypeId(NonZeroU32::new(2).unwrap())),
+                left: Operand::TypeId(TypeId::from_u32(1).unwrap()),
+                right: Operand::TypeId(TypeId::from_u32(2).unwrap()),
                 operator: ContextOperator::Equal,
             }),
             // not (t1 == t2)

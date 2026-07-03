@@ -11,12 +11,13 @@ use super::parser::{PolicyCursor, PolicyData, PolicyOffset};
 use super::security_context::{CategoryIterator, Level, SecurityContext};
 use super::view::U24;
 use super::{
-    AccessVector, Array, CategoryId, ClassId, ClassPermissionId, Counted, Parse,
+    AccessVector, Array, CategoryId, ClassId, Counted, Parse, PermissionId,
     PolicyValidationContext, RoleId, SensitivityId, TypeId, UserId, Validate, ValidateArray,
     array_type, array_type_validate_deref_both, array_type_validate_deref_data,
     array_type_validate_deref_metadata_data_vec, array_type_validate_deref_none_data_vec,
 };
 
+use crate::new_policy::traits::PolicyId;
 use anyhow::{Context as _, anyhow};
 use hashbrown::hash_table::HashTable;
 use rapidhash::RapidHasher;
@@ -221,104 +222,6 @@ impl Validate for Metadata {
     }
 }
 
-array_type!(CommonSymbol, CommonSymbolMetadata, Permission);
-
-array_type_validate_deref_none_data_vec!(CommonSymbol);
-
-impl CommonSymbol {
-    pub fn permissions(&self) -> &Permissions {
-        &self.data
-    }
-}
-
-pub(super) type CommonSymbols = Vec<CommonSymbol>;
-
-impl CommonSymbol {
-    /// Returns the name of this common symbol (a string), encoded a borrow of a byte slice. For
-    /// example, the policy statement `common file { common_file_perm }` induces a [`CommonSymbol`]
-    /// where `name_bytes() == "file".as_slice()`.
-    pub fn name_bytes(&self) -> &[u8] {
-        &self.metadata.data
-    }
-}
-
-impl Counted for CommonSymbol {
-    /// The count of items in the associated [`Permissions`] is exposed via
-    /// `CommonSymbolMetadata::count()`.
-    fn count(&self) -> u32 {
-        self.metadata.count()
-    }
-}
-
-impl ValidateArray<CommonSymbolMetadata, Permission> for CommonSymbol {
-    type Error = anyhow::Error;
-
-    /// [`CommonSymbol`] have no internal constraints beyond those imposed by [`Array`].
-    fn validate_array(
-        _context: &PolicyValidationContext,
-        _metadata: &CommonSymbolMetadata,
-        _items: &[Permission],
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-array_type!(CommonSymbolMetadata, CommonSymbolStaticMetadata, u8);
-
-array_type_validate_deref_both!(CommonSymbolMetadata);
-
-impl Counted for CommonSymbolMetadata {
-    /// The count of items in the associated [`Permissions`] is stored in the associated
-    /// `CommonSymbolStaticMetadata::count` field.
-    fn count(&self) -> u32 {
-        self.metadata.count.get()
-    }
-}
-
-impl ValidateArray<CommonSymbolStaticMetadata, u8> for CommonSymbolMetadata {
-    type Error = anyhow::Error;
-
-    /// Array of [`u8`] sized by [`CommonSymbolStaticMetadata`] requires no additional validation.
-    fn validate_array(
-        _context: &PolicyValidationContext,
-        _metadata: &CommonSymbolStaticMetadata,
-        _items: &[u8],
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-/// Static (that is, fixed-sized) metadata for a common symbol.
-#[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
-#[repr(C, packed)]
-pub(super) struct CommonSymbolStaticMetadata {
-    /// The length of the `[u8]` key stored in the associated [`CommonSymbolMetadata`].
-    length: le::U32,
-    /// An integer that identifies this this common symbol, unique to this common symbol relative
-    /// to all common symbols and classes in this policy.
-    id: le::U32,
-    /// The number of primary names referred to by the associated [`CommonSymbol`].
-    primary_names_count: le::U32,
-    /// The number of items stored in the [`Permissions`] in the associated [`CommonSymbol`].
-    count: le::U32,
-}
-
-impl Validate for CommonSymbolStaticMetadata {
-    type Error = anyhow::Error;
-
-    /// TODO: Should there be an upper bound on `length`?
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-impl Counted for CommonSymbolStaticMetadata {
-    /// The count of bytes in the `[u8]` in the associated [`CommonSymbolMetadata`].
-    fn count(&self) -> u32 {
-        self.length.get()
-    }
-}
-
 /// [`Permissions`] is a dynamically allocated slice (that is, [`Vec`]) of [`Permission`].
 pub(super) type Permissions = Vec<Permission>;
 
@@ -335,9 +238,9 @@ impl Permission {
     }
 
     /// Returns the ID of this permission in the scope of its associated class.
-    pub fn id(&self) -> ClassPermissionId {
+    pub fn id(&self) -> PermissionId {
         let id = self.metadata.id.get() as u8;
-        ClassPermissionId(NonZeroU8::new(id).unwrap())
+        PermissionId::new(NonZeroU8::new(id).unwrap())
     }
 }
 
@@ -616,16 +519,6 @@ impl Parse for TypeSet {
 pub(super) fn find_class_by_name<'a>(classes: &'a Classes, name: &str) -> Option<&'a Class> {
     let name_bytes = name.as_bytes();
     classes.iter().find(|class| class.name_bytes() == name_bytes)
-}
-
-/// Locates a symbol named `name_bytes` among `common_symbols`. Returns
-/// the first such symbol found, though policy validation should ensure
-/// that only one exists.
-pub(super) fn find_common_symbol_by_name_bytes<'a>(
-    common_symbols: &'a CommonSymbols,
-    name_bytes: &[u8],
-) -> Option<&'a CommonSymbol> {
-    common_symbols.iter().find(|common_symbol| common_symbol.name_bytes() == name_bytes)
 }
 
 #[derive(Debug, PartialEq)]
@@ -1203,12 +1096,14 @@ impl Type {
     /// bitmaps associated with this type. The id is 1-indexed, whereas most collections and
     /// bitmaps are 0-indexed, so clients of this API will usually use `id - 1`.
     pub fn id(&self) -> TypeId {
-        TypeId(NonZeroU32::new(self.metadata.id.get()).unwrap())
+        TypeId::from_u32(self.metadata.id.get()).unwrap()
     }
 
-    /// Returns the Id of the bounding type, if any.
+    /// Returns the [`TypeId`] of the boundary type for this type, or `None` if this type does not
+    /// have a boundary type.
     pub fn bounded_by(&self) -> Option<TypeId> {
-        NonZeroU32::new(self.metadata.bounds.get()).map(|id| TypeId(id))
+        // The `bounds` field in `TypeMetadata` is the type ID of the boundary type.
+        TypeId::from_u32(self.metadata.bounds.get())
     }
 }
 
@@ -1305,7 +1200,7 @@ impl TypeIndex {
     }
 
     pub(super) fn type_by_type_id(&self, id: TypeId, data: &PolicyData) -> Type {
-        Self::parse_type_at(data, self.offsets_by_id_minus_one[(id.0.get() - 1) as usize])
+        Self::parse_type_at(data, self.offsets_by_id_minus_one[(id.as_u32() - 1) as usize])
     }
 
     /// Returns an iterator over all the type-Ids, for use by the post-parse validation.
@@ -1313,7 +1208,7 @@ impl TypeIndex {
         self.offsets_by_id_minus_one.iter().enumerate().filter_map(
             |(index, offset)| match u32::from(*offset) {
                 0 => None,
-                _ => Some(TypeId(NonZeroU32::try_from((index + 1) as u32).unwrap())),
+                _ => Some(TypeId::from_u32((index + 1) as u32).unwrap()),
             },
         )
     }
@@ -1356,7 +1251,7 @@ impl Parse for TypeIndex {
             }
 
             if will_be_looked_up_by_id {
-                let type_id_as_usize = type_.id().0.get() as usize;
+                let type_id_as_usize = type_.id().as_u32() as usize;
                 if offsets_by_id_minus_one.len() < type_id_as_usize {
                     offsets_by_id_minus_one.resize(type_id_as_usize, U24::try_from(0).unwrap());
                 }

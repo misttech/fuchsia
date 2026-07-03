@@ -14,20 +14,18 @@ pub(super) mod traits;
 
 use selinux_policy_derive::{Parse, Serialize, Validate};
 
-use error::{ParseError, SerializeError, ValidateError};
-pub use metadata::HandleUnknown;
+use error::{ParseError, ValidateError};
 use metadata::{Config, Counts, Magic, PolicyVersion, Signature};
+pub use metadata::{HandleUnknown, POLICYDB_VERSION_MAX};
 use parser::{PolicyCursor, RemainingBytes};
-use traits::{Parse, Serialize, Validate};
+use traits::Validate;
 
 pub(super) mod types;
 
-pub use bitmap::{ExtensibleBitmap, IdSet};
-pub use common_symbols::{CommonSymbol, CommonSymbolId};
-pub use id_type::*;
-pub use indexed::IdAndNameIndexed;
-pub use parser::{Array, SymbolArray};
-pub use permissions::{ClassPermissionId, Permission, PermissionId};
+pub use bitmap::ExtensibleBitmap;
+pub use common_symbols::CommonSymbol;
+pub use parser::SymbolArray;
+pub use permissions::PermissionId;
 pub use types::*;
 
 /// Top-level [`NewPolicy`] structure that parses the first few fields
@@ -81,11 +79,17 @@ impl NewPolicy {
     pub fn common_symbols(&self) -> &SymbolArray<CommonSymbol> {
         &self.common_symbols
     }
+
+    /// Returns the remaining unparsed bytes.
+    pub fn rest_bytes(&self) -> std::sync::Arc<[u8]> {
+        self.rest.bytes.clone()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::new_policy::traits::Serialize;
 
     #[test]
     fn test_real_policy_roundtrip() {

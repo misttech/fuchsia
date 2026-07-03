@@ -287,7 +287,7 @@ mod tests {
 
     macro_rules! parse_test {
         ($parse_output:ident, $data:expr, $result:tt, $policy_data:tt, $check_impl:block) => {{
-            let data = Arc::new($data);
+            let data: PolicyData = Arc::from($data);
             fn check_by_value<'a>(
                 $result: Result<($parse_output, PolicyCursor<'a>), <$parse_output as Parse>::Error>,
                 $policy_data: &PolicyData,

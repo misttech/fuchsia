@@ -6,13 +6,13 @@ use crate::access_vector_cache::{
     AccessVectorCache, CacheStats, KernelXpermsAccessDecision, Query,
 };
 use crate::exceptions_config::ExceptionsConfig;
+use crate::new_policy::HandleUnknown;
 use crate::permission_check::{PerThreadCache, PermissionCheck};
-use crate::policy::metadata::HandleUnknown;
 use crate::policy::parser::PolicyData;
 use crate::policy::{
-    AccessDecision, AccessVector, AccessVectorComputer, ClassId, ClassPermissionId,
-    FsUseLabelAndType, FsUseType, KernelAccessDecision, Policy, SELINUX_AVD_FLAGS_PERMISSIVE,
-    SecurityContext, XpermsBitmap, XpermsKind, parse_policy_by_value,
+    AccessDecision, AccessVector, AccessVectorComputer, ClassId, FsUseLabelAndType, FsUseType,
+    KernelAccessDecision, PermissionId, Policy, SELINUX_AVD_FLAGS_PERMISSIVE, SecurityContext,
+    XpermsBitmap, XpermsKind, parse_policy_by_value,
 };
 use crate::sid_table::SidTable;
 use crate::sync::RwLock;
@@ -32,9 +32,6 @@ const ROOT_PATH: &'static str = "/";
 struct ActivePolicy {
     /// Parsed policy structure.
     parsed: Arc<Policy>,
-
-    /// The binary policy that was previously passed to `load_policy()`.
-    binary: PolicyData,
 
     /// Allocates and maintains the mapping between `SecurityId`s (SIDs) and Security Contexts.
     sid_table: SidTable,
@@ -244,7 +241,6 @@ impl SecurityServer {
         // malformed or invalid.
         let unvalidated_policy = parse_policy_by_value(binary_policy)?;
         let parsed = Arc::new(unvalidated_policy.validate()?);
-        let binary = parsed.binary().clone();
 
         let exceptions = self.exceptions.iter().map(String::as_str).collect::<Vec<&str>>();
         let exceptions = ExceptionsConfig::new(&parsed, &exceptions)?;
@@ -268,16 +264,23 @@ impl SecurityServer {
                     .collect(),
             );
 
-            state.active_policy = Some(ActivePolicy { parsed, binary, sid_table, exceptions });
+            state.active_policy = Some(ActivePolicy { parsed, sid_table, exceptions });
             self.backend.policy_change_count.fetch_add(1, Ordering::Relaxed);
         });
 
         Ok(())
     }
 
+    /// Returns true if a policy has been loaded.
+    pub fn has_policy(&self) -> bool {
+        self.backend.state.read().active_policy.is_some()
+    }
+
     /// Returns the active policy in binary form, or `None` if no policy has yet been loaded.
     pub fn get_binary_policy(&self) -> Option<PolicyData> {
-        self.backend.state.read().active_policy.as_ref().map(|p| p.binary.clone())
+        let state = self.backend.state.read();
+        let active_policy = state.active_policy.as_ref()?;
+        Some(active_policy.parsed.serialize())
     }
 
     /// Set to enforcing mode if `enforce` is true, permissive mode otherwise.
@@ -379,7 +382,7 @@ impl SecurityServer {
     pub fn class_permissions_by_name(
         &self,
         name: &str,
-    ) -> Result<Vec<(ClassPermissionId, Vec<u8>)>, ()> {
+    ) -> Result<Vec<(PermissionId, Vec<u8>)>, ()> {
         let locked_state = self.backend.state.read();
         locked_state.expect_active_policy().parsed.find_class_permissions_by_name(name)
     }
@@ -816,7 +819,7 @@ mod tests {
     #[test]
     fn loaded_policy_can_be_retrieved() {
         let security_server = security_server_with_tests_policy();
-        assert_eq!(TESTS_BINARY_POLICY, security_server.get_binary_policy().unwrap().as_slice());
+        assert_eq!(TESTS_BINARY_POLICY, security_server.get_binary_policy().unwrap().as_ref());
     }
 
     #[test]

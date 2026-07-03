@@ -74,8 +74,4 @@ pub enum ValidateError {
 }
 
 /// Errors that may be encountered serializing a binary policy.
-#[derive(Clone, Debug, Error, PartialEq)]
-pub enum SerializeError {
-    #[error("unknown serialization error")]
-    Unknown,
-}
+pub type SerializeError = std::convert::Infallible;
