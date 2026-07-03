@@ -45,9 +45,7 @@ pub fn find_executable_regions(
                     size: Some(phdr.memsz),
                     file_offset: Some(phdr.offset as u64),
                     build_id: Some(fheapdump_client::BuildId { value: build_id }),
-                    #[cfg(fuchsia_api_level_at_least = "27")]
                     vaddr: Some(phdr.vaddr as u64),
-                    #[cfg(fuchsia_api_level_at_least = "27")]
                     name: Some(info.name.to_string()),
                     ..Default::default()
                 });

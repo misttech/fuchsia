@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use ffx_config::EnvironmentContext;
 use flate2::Compression;
 use heapdump_snapshot_fdomain::{ExecutableRegion, Snapshot};
@@ -22,11 +22,6 @@ fn iter_sorted_by_key<K: Ord, V>(
 }
 
 // Tries to create a `Symbolizer` to resolve addresses in the given snapshot.
-//
-// Returns `Err` if any of the `ExecutableRegion`s in the snapshot necessary
-// for resolving the program addresses contained in the snapshot lack the
-// necessary information. This can happen with old heapdump collector builds
-// from before the `name` and `vaddr` fields were added to the FIDL table.
 fn instantiate_symbolizer(
     context: &EnvironmentContext,
     snapshot: &Snapshot,
@@ -73,7 +68,7 @@ fn instantiate_symbolizer(
             ffx_symbolize::MappingDetails {
                 start_addr: region_starting_address,
                 size: region.size,
-                vaddr: region.vaddr.context("missing vaddr")?,
+                vaddr: region.vaddr,
                 flags: ffx_symbolize::MappingFlags::EXECUTE,
             },
         )?;
@@ -169,20 +164,8 @@ impl<'c> PProfProfileBuilder<'c> {
         };
 
         // If symbolization was requested, populate its own view of the mappings too.
-        let symbolizer = if self.symbolize {
-            if let Ok(symbolizer) = instantiate_symbolizer(self.ctx, &snapshot) {
-                Some(symbolizer)
-            } else {
-                eprintln!(
-                    "WARNING: Automatic symbolization could not be performed, likely due to an \
-                    incompatible version of the Heapdump collector running on the device. Please \
-                    run \"fx pprof ...\" manually on the generated file."
-                );
-                None
-            }
-        } else {
-            None
-        };
+        let symbolizer =
+            if self.symbolize { Some(instantiate_symbolizer(self.ctx, &snapshot)?) } else { None };
 
         // Fill the Locations with all the program addresses referenced in the snapshot and store
         // their assigned IDs.
@@ -508,14 +491,14 @@ mod tests {
                     name: MAP_1_NAME.to_string(),
                     size: MAP_1_SIZE,
                     file_offset: MAP_1_FILE_OFFSET,
-                    vaddr: Some(MAP_1_VADDR),
+                    vaddr: MAP_1_VADDR,
                     build_id: hex::decode(MAP_1_BUILD_ID).unwrap(),
                 },
                 MAP_2_ADDRESS => ExecutableRegion {
                     name: MAP_2_NAME.to_string(),
                     size: MAP_2_SIZE,
                     file_offset: MAP_2_FILE_OFFSET,
-                    vaddr: Some(MAP_2_VADDR),
+                    vaddr: MAP_2_VADDR,
                     build_id: hex::decode(MAP_2_BUILD_ID).unwrap(),
                 },
             ],
@@ -771,14 +754,14 @@ mod tests {
                     name: MAP_1_NAME.to_string(),
                     size: MAP_1_SIZE,
                     file_offset: MAP_1_FILE_OFFSET,
-                    vaddr: Some(MAP_1_VADDR),
+                    vaddr: MAP_1_VADDR,
                     build_id: hex::decode(MAP_1_BUILD_ID).unwrap(),
                 },
                 MAP_2_ADDRESS => ExecutableRegion {
                     name: MAP_2_NAME.to_string(),
                     size: MAP_2_SIZE,
                     file_offset: MAP_2_FILE_OFFSET,
-                    vaddr: Some(MAP_2_VADDR),
+                    vaddr: MAP_2_VADDR,
                     build_id: hex::decode(MAP_2_BUILD_ID).unwrap(),
                 },
             ],
@@ -919,7 +902,7 @@ mod tests {
                     name: MAP_1_NAME.to_string(),
                     size: MAP_1_SIZE,
                     file_offset: MAP_1_FILE_OFFSET,
-                    vaddr: Some(MAP_1_VADDR),
+                    vaddr: MAP_1_VADDR,
                     build_id: hex::decode(MAP_1_BUILD_ID).unwrap(),
                 },
             ],
@@ -940,7 +923,7 @@ mod tests {
                     name: MAP_2_NAME.to_string(),
                     size: MAP_2_SIZE,
                     file_offset: MAP_2_FILE_OFFSET,
-                    vaddr: Some(MAP_2_VADDR),
+                    vaddr: MAP_2_VADDR,
                     build_id: hex::decode(MAP_2_BUILD_ID).unwrap(),
                 },
             ],

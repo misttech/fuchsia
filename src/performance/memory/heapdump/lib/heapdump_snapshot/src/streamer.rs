@@ -212,7 +212,7 @@ mod tests {
         assert_eq!(region.name, FAKE_REGION_NAME);
         assert_eq!(region.size, FAKE_REGION_SIZE);
         assert_eq!(region.file_offset, FAKE_REGION_FILE_OFFSET);
-        assert_eq!(region.vaddr.unwrap(), FAKE_REGION_VADDR);
+        assert_eq!(region.vaddr, FAKE_REGION_VADDR);
         assert_eq!(region.build_id, FAKE_REGION_BUILD_ID);
         assert!(received_snapshot.executable_regions.is_empty(), "all entries have been removed");
     }
