@@ -40,11 +40,6 @@ pub fn booted_device_init(
         .expect("must be able to initialize booted device");
     device.clone().register(locked, &kernel.kthreads.system_task());
     device.start_relay(&kernel, booted_receiver);
-
-    let registry = &kernel.device_registry;
-    registry
-        .register_misc_device(locked, system_task, "booted".into(), device)
-        .expect("can register boot module");
 }
 
 #[derive(Clone)]
