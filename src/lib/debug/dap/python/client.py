@@ -115,7 +115,12 @@ class DapClient:
 
         await self._write_message(writer, request)
         try:
-            return await asyncio.wait_for(fut, timeout=timeout)
+            resp = await asyncio.wait_for(fut, timeout=timeout)
+            if not resp.get("success", True):
+                msg = resp.get("message", "Unknown DAP error")
+                logger.error(f"DAP request {command} (seq={seq}) failed: {msg}")
+                raise DapError(f"DAP request {command} failed: {msg}")
+            return resp
         except asyncio.TimeoutError:
             self._pending_requests.pop(seq, None)
             raise DapError(
