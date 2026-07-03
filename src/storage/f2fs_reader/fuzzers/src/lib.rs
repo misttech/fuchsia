@@ -46,11 +46,12 @@ impl Device for VmoBackedDevice {
     async fn read_with_opts(
         &self,
         offset: u64,
-        buffer: MutableBufferRef<'_>,
+        mut buffer: MutableBufferRef<'_>,
         _read_opts: ReadOptions,
     ) -> Result<(), Error> {
-        let mut buffer = buffer;
-        self.vmo.read(buffer.as_mut_slice(), offset)?;
+        let mut vec = vec![0; buffer.len()];
+        self.vmo.read(&mut vec, offset)?;
+        buffer.copy_from_slice(&vec);
         Ok(())
     }
 
@@ -60,7 +61,7 @@ impl Device for VmoBackedDevice {
         buffer: BufferRef<'_>,
         _write_opts: WriteOptions,
     ) -> Result<(), Error> {
-        self.vmo.write(buffer.as_slice(), offset)?;
+        self.vmo.write(&buffer.to_vec(), offset)?;
         Ok(())
     }
 

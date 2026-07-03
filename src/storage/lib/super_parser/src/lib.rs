@@ -392,7 +392,7 @@ mod tests {
         let start_of_first_partition = used_regions[0].start;
         let random_buffer: Vec<u8> = (0..8192).map(|_| rand::random_range(0..100)).collect();
         let mut modified_buffer = parent_device.allocate_buffer(8192).await;
-        modified_buffer.as_mut_slice().copy_from_slice(&random_buffer);
+        modified_buffer.copy_from_slice(&random_buffer);
         parent_device
             .write(start_of_first_partition, modified_buffer.as_ref())
             .await
@@ -405,14 +405,14 @@ mod tests {
         // Verify the contents of this sub-partition
         let mut read_buffer = system_partition.allocate_buffer(8192).await;
         system_partition.read(0, read_buffer.as_mut()).await.expect("failed to read from device");
-        assert_eq!(read_buffer.as_slice(), modified_buffer.as_slice());
+        assert_eq!(read_buffer.to_vec(), random_buffer);
         // Check that we can read from a non-0 offset
         let mut read_buffer = system_partition.allocate_buffer(4096).await;
         system_partition
             .read(4096, read_buffer.as_mut())
             .await
             .expect("failed to read from device");
-        assert_eq!(read_buffer.as_slice(), &modified_buffer.as_slice()[4096..]);
+        assert_eq!(read_buffer.to_vec(), random_buffer[4096..]);
 
         // Read the contents of the next partition. The simple test super image is set up such that
         // this should just be zeroes.
@@ -427,7 +427,7 @@ mod tests {
             .read(0, read_buffer.as_mut())
             .await
             .expect("failed to read from device");
-        assert_eq!(read_buffer.as_slice(), [0; 4096]);
+        assert_eq!(read_buffer.to_vec(), [0; 4096]);
     }
 
     #[fuchsia::test]
