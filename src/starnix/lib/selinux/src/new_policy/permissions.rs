@@ -8,7 +8,8 @@ use super::NewPolicy;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::id_type::IdType;
 use super::parser::PolicyCursor;
-use super::traits::{HasName, HasPolicyId, Parse, PolicyId, Serialize, Validate};
+use super::traits::{Parse, PolicyId, Serialize, Validate};
+use selinux_policy_derive::{HasName, HasPolicyId};
 
 /// Tag type for type safety of policy permission identifiers.
 #[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
@@ -18,23 +19,10 @@ pub struct PermissionTag;
 pub type PermissionId = IdType<NonZeroU8, PermissionTag>;
 
 /// Parsed SELinux permission, containing a type-safe ID and a name.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, HasName, HasPolicyId)]
 pub struct Permission {
     id: PermissionId,
     name: Box<[u8]>,
-}
-
-impl HasName for Permission {
-    fn name(&self) -> &[u8] {
-        &self.name
-    }
-}
-
-impl HasPolicyId for Permission {
-    type Id = PermissionId;
-    fn id(&self) -> Self::Id {
-        self.id
-    }
 }
 
 impl Permission {

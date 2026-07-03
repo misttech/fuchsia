@@ -7,8 +7,8 @@ use super::id_type::IdType;
 use super::indexed::IdAndNameIndexed;
 use super::parser::PolicyCursor;
 use super::permissions::Permission;
-use super::traits::{HasName, HasPolicyId, Parse, PolicyId, Serialize};
-use selinux_policy_derive::{Parse, Serialize, Validate};
+use super::traits::{Parse, PolicyId, Serialize};
+use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
 
 /// Tag type for type safety of policy common symbol identifiers.
 #[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
@@ -18,25 +18,12 @@ pub struct CommonSymbolTag;
 pub type CommonSymbolId = IdType<std::num::NonZeroU16, CommonSymbolTag>;
 
 /// Parsed SELinux common symbol table entry (e.g. `common file { ... }`).
-#[derive(Debug, Clone, PartialEq, Eq, Validate)]
+#[derive(Debug, Clone, PartialEq, Eq, Validate, HasName, HasPolicyId)]
 pub struct CommonSymbol {
     id: CommonSymbolId,
     name: Box<[u8]>,
     primary_names_count: u32,
     permissions: IdAndNameIndexed<Box<[Permission]>>,
-}
-
-impl HasName for CommonSymbol {
-    fn name(&self) -> &[u8] {
-        &self.name
-    }
-}
-
-impl HasPolicyId for CommonSymbol {
-    type Id = CommonSymbolId;
-    fn id(&self) -> Self::Id {
-        self.id
-    }
 }
 
 impl CommonSymbol {

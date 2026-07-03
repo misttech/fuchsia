@@ -317,6 +317,84 @@ pub fn derive_validate(input: TokenStream) -> TokenStream {
     expanded.into()
 }
 
+/// This macro generates an implementation of `HasName` which provides access to a field named `name` via the `name()` method.
+///
+/// Requires the struct to have a field named `name`.
+#[proc_macro_derive(HasName)]
+pub fn derive_has_name(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    let fields = match &input.data {
+        Data::Struct(data) => &data.fields,
+        _ => {
+            return syn::Error::new_spanned(&name, "HasName can only be derived for structs")
+                .to_compile_error()
+                .into();
+        }
+    };
+
+    let has_name_field =
+        fields.iter().any(|f| f.ident.as_ref().map_or(false, |ident| ident == "name"));
+
+    if !has_name_field {
+        return syn::Error::new_spanned(&name, "HasName derive requires a field named 'name'")
+            .to_compile_error()
+            .into();
+    }
+
+    let expanded = quote! {
+        impl #impl_generics crate::new_policy::traits::HasName for #name #ty_generics #where_clause {
+            fn name(&self) -> &[u8] {
+                &self.name
+            }
+        }
+    };
+
+    expanded.into()
+}
+
+/// This macro generates an implementation of `HasPolicyId` which provides access to a field named `id` via the `id()` method.
+///
+/// Requires the struct to have a field named `id`, and uses its type as the associated `Id` type.
+#[proc_macro_derive(HasPolicyId)]
+pub fn derive_has_policy_id(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    let fields = match &input.data {
+        Data::Struct(data) => &data.fields,
+        _ => {
+            return syn::Error::new_spanned(&name, "HasPolicyId can only be derived for structs")
+                .to_compile_error()
+                .into();
+        }
+    };
+
+    let id_field_type = fields.iter().find_map(|f| {
+        if f.ident.as_ref().map_or(false, |ident| ident == "id") { Some(&f.ty) } else { None }
+    });
+
+    let Some(id_field_type) = id_field_type else {
+        return syn::Error::new_spanned(&name, "HasPolicyId derive requires a field named 'id'")
+            .to_compile_error()
+            .into();
+    };
+
+    let expanded = quote! {
+        impl #impl_generics crate::new_policy::traits::HasPolicyId for #name #ty_generics #where_clause {
+            type Id = #id_field_type;
+            fn id(&self) -> Self::Id {
+                self.id
+            }
+        }
+    };
+
+    expanded.into()
+}
+
 /// Target type name parsed from `#[policy(wire_type = ...)]` attribute, if present.
 fn get_wire_type(attrs: &[Attribute]) -> Result<Option<Ident>> {
     let mut wire_type = None;
