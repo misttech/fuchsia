@@ -25,6 +25,7 @@ group("tests") {
     "ftl:tests",
     "key-bag:tests",
     "pseudo_fs:tests",
+    "ptr_slice:tests",
     "ramdevice_client:tests",
     "sparse/c:tests",
     "sparse/rust:tests",
