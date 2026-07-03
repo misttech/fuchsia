@@ -382,8 +382,6 @@ impl FileOps for DevTun {
     ) -> Result<starnix_syscalls::SyscallResult, Errno> {
         match request {
             starnix_uapi::TUNSETIFF => {
-                let mut inner = self.0.lock();
-
                 security::check_tun_dev_create_access(current_task)?;
 
                 log_info!("handling TUNSETIFF for /dev/tun");
@@ -434,7 +432,7 @@ impl FileOps for DevTun {
                         },
                     )?;
 
-                *inner = Some(DevTunInner {
+                *self.0.lock() = Some(DevTunInner {
                     _tun_device: device.into_sync_proxy(),
                     tun_port: port.into_sync_proxy(),
                     _port_info: port_info,
