@@ -25,7 +25,6 @@ use fidl_fuchsia_ui_views as ui_views;
 use flatland_frame_scheduling_lib::*;
 use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_scenic as scenic;
-use fuchsia_sync::Mutex;
 use fuchsia_trace as trace;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use futures::channel::oneshot;
@@ -71,7 +70,7 @@ fn physical_cursor_size(value: u32) -> u32 {
     (CURSOR_SCALE_MULTIPLIER * value) / CURSOR_SCALE_DIVIDER
 }
 
-pub type FlatlandPtr = Arc<Mutex<ui_comp::FlatlandProxy>>;
+pub type FlatlandPtr = Arc<ui_comp::FlatlandProxy>;
 
 #[derive(Clone)]
 struct TransformContentIdPair {
@@ -84,7 +83,6 @@ struct TransformContentIdPair {
 /// For example, a view is created during initialization, and so FlatlandInstance stores the
 /// corresponding ViewRef and a ParentViewportWatcher FIDL connection.
 struct FlatlandInstance {
-    // TODO(https://fxbug.dev/42168246): Arc<Mutex<>>, yuck.
     flatland: FlatlandPtr,
     view_ref: ui_views::ViewRef,
     root_transform_id: TransformId,
@@ -123,7 +121,7 @@ impl FlatlandInstance {
         flatland.set_hit_regions(&root_transform_id, &[])?;
 
         Ok(FlatlandInstance {
-            flatland: Arc::new(Mutex::new(flatland)),
+            flatland: Arc::new(flatland),
             view_ref,
             root_transform_id,
             parent_viewport_watcher,
@@ -153,7 +151,7 @@ async fn setup_child_view(
         create_proxy::<ui_comp::ChildViewWatcherMarker>();
 
     {
-        let flatland = parent_flatland.flatland.lock();
+        let flatland = &parent_flatland.flatland;
         flatland.create_transform(&child_viewport_transform_id)?;
         flatland.add_child(&parent_flatland.root_transform_id, &child_viewport_transform_id)?;
 
@@ -436,8 +434,8 @@ impl SceneManagerTrait for SceneManager {
                 position_logical.x.round() as i32 - physical_cursor_size(CURSOR_HOTSPOT.0) as i32;
             let y =
                 position_logical.y.round() as i32 - physical_cursor_size(CURSOR_HOTSPOT.1) as i32;
-            let flatland = self.root_flatland.flatland.lock();
-            flatland
+            self.root_flatland
+                .flatland
                 .set_translation(&cursor_transform_id, &fmath::Vec_ { x, y })
                 .expect("fidl error");
             self.root_flatland_presentation_sender
@@ -454,7 +452,7 @@ impl SceneManagerTrait for SceneManager {
         if let Some(cursor_transform_id) = self.cursor_transform_id {
             if self.cursor_visibility.get() != visible {
                 self.cursor_visibility.set(visible);
-                let flatland = self.root_flatland.flatland.lock();
+                let flatland = &self.root_flatland.flatland;
                 if visible {
                     flatland
                         .add_child(&self.root_flatland.root_transform_id, &cursor_transform_id)
@@ -624,7 +622,7 @@ impl SceneManager {
 
         // Create the pointerinjector view and embed it as a child of the root view.
         {
-            let flatland = root_flatland.flatland.lock();
+            let flatland = &root_flatland.flatland;
             flatland.create_transform(&pointerinjector_viewport_transform_id)?;
             flatland.add_child(
                 &root_flatland.root_transform_id,
@@ -779,15 +777,15 @@ impl SceneManager {
         {
             let mut scene_root_viewport_ids = self.scene_root_viewport_ids.borrow_mut();
             if let Some(ids) = &*scene_root_viewport_ids {
-                let locked = self.scene_flatland.flatland.lock();
-                locked
+                let flatland = &self.scene_flatland.flatland;
+                flatland
                     .set_content(&ids.transform_id, &ContentId { value: 0 })
                     .context("could not set content")?;
-                locked.remove_child(&self.scene_flatland.root_transform_id, &ids.transform_id)?;
-                locked
+                flatland.remove_child(&self.scene_flatland.root_transform_id, &ids.transform_id)?;
+                flatland
                     .release_transform(&ids.transform_id)
                     .context("could not release transform")?;
-                let _ = locked.release_viewport(&ids.content_id);
+                let _ = flatland.release_viewport(&ids.content_id);
             }
             *scene_root_viewport_ids = None;
         }
@@ -803,20 +801,20 @@ impl SceneManager {
         let (child_view_watcher, child_view_watcher_request) =
             create_proxy::<ui_comp::ChildViewWatcherMarker>();
         {
-            let locked = self.scene_flatland.flatland.lock();
+            let flatland = &self.scene_flatland.flatland;
             let viewport_properties = ui_comp::ViewportProperties {
                 logical_size: Some(self.client_viewport_size),
                 ..Default::default()
             };
-            locked.create_viewport(
+            flatland.create_viewport(
                 &ids.content_id,
                 viewport_creation_token,
                 &viewport_properties,
                 child_view_watcher_request,
             )?;
-            locked.create_transform(&ids.transform_id).context("could not create transform")?;
-            locked.add_child(&self.scene_flatland.root_transform_id, &ids.transform_id)?;
-            locked
+            flatland.create_transform(&ids.transform_id).context("could not create transform")?;
+            flatland.add_child(&self.scene_flatland.root_transform_id, &ids.transform_id)?;
+            flatland
                 .set_content(&ids.transform_id, &ids.content_id)
                 .context("could not set content #2")?;
         }
@@ -908,7 +906,7 @@ pub fn start_exit_on_scenic_closed_task(flatland_proxy: ui_comp::FlatlandDisplay
 
 pub fn start_flatland_presentation_loop(
     mut receiver: PresentationReceiver,
-    weak_flatland: Weak<Mutex<ui_comp::FlatlandProxy>>,
+    weak_flatland: Weak<ui_comp::FlatlandProxy>,
     debug_name: String,
 ) {
     fasync::Task::local(async move {
@@ -916,7 +914,7 @@ pub fn start_flatland_presentation_loop(
         let scheduler = ThroughputScheduler::new();
         let mut flatland_event_stream = {
             if let Some(flatland) = weak_flatland.upgrade() {
-                flatland.lock().take_event_stream()
+                flatland.take_event_stream()
             } else {
                 warn!(
                     "Failed to upgrade Flatand weak ref; exiting presentation loop for {debug_name}"
@@ -1015,7 +1013,6 @@ pub fn start_flatland_presentation_loop(
                     channels_awaiting_pingback.push_front(Vec::new());
                     if let Some(flatland) = weak_flatland.upgrade() {
                         flatland
-                            .lock()
                             .present(present_parameters.into())
                             .expect("Present failed for {debug_name}");
                     } else {

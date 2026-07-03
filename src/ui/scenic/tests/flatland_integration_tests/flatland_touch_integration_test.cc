@@ -480,6 +480,7 @@ TEST_F(FlatlandTouchIntegrationTest, DisconnectTargetView_TriggersChannelClosure
   // (lazily).
   child_session->ReleaseView();
   BlockingPresent(this, child_session);
+  BlockingPresent(this, root_session_);
 
   // Inject an event to trigger the channel closure.
   Inject(0, 0, fupi_EventPhase::ADD);

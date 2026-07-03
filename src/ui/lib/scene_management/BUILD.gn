@@ -21,7 +21,6 @@ _scene_management = {
     "//src/lib/async-utils",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-sync",
     "//src/lib/trace/rust:trace",
     "//src/lib/ui/flatland-frame-scheduling:flatland-frame-scheduling-lib",
     "//src/lib/ui/fuchsia-scenic",
