@@ -329,7 +329,7 @@
                 "CloneTest.CloneParentOrThreadWithExitSignalFails",
                 "CloneTest.CloneParentInitProcessFails",
 
-                // futex_test - https://fxbug.dev/42159495 Needs atomic ops on restricted memory.
+                // futex_test - https://fxbug.dev/297464655 Needs atomic ops on restricted memory.
                 "PrivateFutexTest.WakeOp0Set",
                 "PrivateFutexTest.WakeOp0Add",
                 "PrivateFutexTest.WakeOp0Or",
@@ -691,6 +691,10 @@
                 "PtraceTest.ChangeRegSetInOptSyscall",
                 "PtraceTest.Sysemu_PokeUser",
 
+                // pty_test
+                // TODO(https://fxbug.dev/530576584): Fix and re-enable.
+                "JobControlTest.SetTTY",
+
                 // rlimits_test
                 "RlimitTest.RlimitNProc",
 
@@ -700,7 +704,7 @@
                 // sigaltstack_test - https://fxbug.dev/42159586
                 "SigaltstackTest.ResetByExecve",
 
-                // socket_abstract_test - https://fxbug.dev/42159594
+                // socket_abstract_test - https://fxbug.dev/297460498
                 "AbstractUnixSockets/AllSocketPairTest.SetSocketRecvBufForceAboveMax/*",
                 "AbstractUnixSockets/AllSocketPairTest.GetSocketOutOfBandInlineOption/*",
                 "AbstractUnixSockets/AllSocketPairTest.GetSetSocketRcvlowatOption/*",
@@ -808,7 +812,7 @@
                 "AllConnectedSockets/PersistentListenerConnectStressTest.ShutdownCloseFirst/*",
                 "AllConnectedSockets/PersistentListenerConnectStressTest.ShutdownCloseSecond/*",
 
-                // socket_unix_pair_test - https://fxbug.dev/42159641
+                // socket_unix_pair_test - https://fxbug.dev/297464436
                 "AllUnixDomainSockets/UnixSocketPairCmsgTest.SendNullCredsBeforeSoPassCredRecvEndAfterSendEnd/*",
                 "AllUnixDomainSockets/UnixSocketPairCmsgTest.WriteBeforeSoPassCredRecvEndAfterSendEnd/*",
                 "AllUnixDomainSockets/UnixSocketPairTest.InvalidGetSockOptLevel/*",
@@ -903,7 +907,7 @@
                 "FutimesatTest.OnNullPathWithOPath",
                 "UtimensatTest.AtEmptyPath",
 
-                // wait_test - https://fxbug.dev/42159689
+                // wait_test - https://fxbug.dev/297461294
                 "Waiters/WaitAnyChildTest.IgnoredChildRusage/*",
                 "Waiters/WaitSpecificChildTest.SiblingChildrenWNOTHREAD/0",
 
@@ -986,8 +990,7 @@
                 "SchedAttrTest.StructSizeE2BIG",
                 "SchedSetschedulerTest.BasicSetGet",
 
-                // TODO(https://fxbug.dev/42066087): This test clones with CLONE_VM without
-                // CLONE_THREAD which Starnix does not properly support.
+                // TODO(https://fxbug.dev/530576820): De-flake and re-enable.
                 "AIOTest.CloneVm",
 
                 // Passes on arm64, fails on x64.
@@ -1055,7 +1058,6 @@
                 // Times out.
                 "ItimerTest.DeliversSIGPROFToThreadsRoughlyFairlyIdle",
 
-
                 // Passes in debian image, remove.
                 "PingSocket.ICMPPortExhaustion",
                 "Pipes/PipeTest.ZeroSize/*",
@@ -1080,9 +1082,6 @@
                 "TimerTest.ProcessPingedRepeatedlyAfterCPUSoftLimit",
                 "FlockTest.TestSharedLockFailExclusiveHolderBlocking",
                 "FlockTest.TestExclusiveLockFailExclusiveHolderBlocking",
-
-
-
 
                 // These tests are flaky.
                 "ExceptionTest.IOAccessFault",
@@ -1146,7 +1145,6 @@
                 "JobControlTest.SetForegroundProcessGroupSIGTTOUBackground",
                 "JobControlTest.SetForegroundProcessGroupDifferentSession",
                 "JobControlTest.SetForegroundProcessGroupNegPgid",
-                "JobControlTest.SetTTY",
 
                 // TODO(https://fxbug.dev/503441321): Implement SIGHUP on main
                 // PTY closure.
@@ -1191,7 +1189,6 @@
                 // multithreaded exec doesn't work.
                 "TraceExec/PtraceExecveTest.Execve_GetRegs_PeekUser_SIGKILL_TraceClone_TraceExit/0",
                 "TraceExec/PtraceExecveTest.Execve_GetRegs_PeekUser_SIGKILL_TraceClone_TraceExit/1",
-
 
                 // TODO(b/3023404 Save XMM registers in signal handlers on x64.
                 "FPSigTest.NestedSignals",
