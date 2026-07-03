@@ -34,6 +34,8 @@ pub enum ParseError {
     InvalidConstraintOperator { value: u32 },
     #[error("invalid constraint term type: {value}")]
     InvalidConstraintTermType { value: u32 },
+    #[error("invalid enum value for {enum_name}: {value}")]
+    InvalidEnumValue { enum_name: &'static str, value: u64 },
 }
 
 /// Errors that may be encountered validating a binary policy.

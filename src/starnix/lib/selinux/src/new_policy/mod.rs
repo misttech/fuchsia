@@ -113,7 +113,41 @@ impl NewPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::new_policy::traits::Serialize;
+    use crate::new_policy::traits::{Parse, Serialize};
+
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Parse, Serialize, Validate)]
+    #[policy(wire_type = u32)]
+    enum TestEnum {
+        ValueOne = 1,
+        ValueTwo = 2,
+    }
+
+    #[test]
+    fn test_enum_derive() {
+        let mut cursor = PolicyCursor::new(&[1, 0, 0, 0]);
+        let parsed = TestEnum::parse(&mut cursor).unwrap();
+        assert_eq!(parsed, TestEnum::ValueOne);
+
+        let mut cursor = PolicyCursor::new(&[2, 0, 0, 0]);
+        let parsed = TestEnum::parse(&mut cursor).unwrap();
+        assert_eq!(parsed, TestEnum::ValueTwo);
+
+        let mut cursor = PolicyCursor::new(&[3, 0, 0, 0]);
+        let err = TestEnum::parse(&mut cursor).unwrap_err();
+        assert!(matches!(err, ParseError::InvalidEnumValue { enum_name: "TestEnum", value: 3 }));
+
+        let mut writer = Vec::new();
+        TestEnum::ValueOne.serialize(&mut writer).unwrap();
+        assert_eq!(writer, vec![1, 0, 0, 0]);
+
+        let mut writer = Vec::new();
+        TestEnum::ValueTwo.serialize(&mut writer).unwrap();
+        assert_eq!(writer, vec![2, 0, 0, 0]);
+
+        let policy_bytes = include_bytes!("../../testdata/policies/selinux_testsuite");
+        let policy = NewPolicy::parse(policy_bytes).unwrap();
+        TestEnum::ValueOne.validate(&policy).unwrap();
+    }
 
     #[test]
     fn test_real_policy_roundtrip() {
