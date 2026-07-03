@@ -75,7 +75,9 @@ impl block_server::async_interface::Interface for PartitionBackend {
 
     async fn on_attach_vmo(&self, vmo: &zx::Vmo) -> Result<(), zx::Status> {
         let key = std::ptr::from_ref(vmo) as usize;
-        let vmo_id = self.partition.attach_vmo(vmo).await?;
+        // SAFETY: GPT does not map VMOs in its own process, so it cannot violate Rust's aliasing
+        // guarantees.  Safety is delegated to the client process that mapped the VMO.
+        let vmo_id = unsafe { self.partition.attach_vmo(vmo) }.await?;
         self.vmo_keys_to_vmoids_map.lock().insert(
             key,
             Arc::new(VmoIdWrapper { partition: Arc::downgrade(&self.partition), vmo_id }),

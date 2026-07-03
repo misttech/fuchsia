@@ -4263,7 +4263,8 @@ mod tests {
 
         let client = RemoteBlockClient::new(target_block).await.unwrap();
         let vmo = zx::Vmo::create(33 * SLICE_SIZE as u64).unwrap();
-        let vmo_id = client.attach_vmo(&vmo).await.unwrap();
+        // SAFETY: Test code, only attach once, no other mappings.
+        let vmo_id = unsafe { client.attach_vmo(&vmo) }.await.unwrap();
 
         // Check both reads and writes.
         // Due to a logic bug, reads and writes returned ZX_ERR_INVALID_ARGS, which this is a

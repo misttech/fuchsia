@@ -36,7 +36,8 @@ impl<C: BlockClient> DeviceImpl<C> {
 
     /// Ataches `vmo`.  NOTE: This assumes that the pointer &zx::Vmo will remain stable.
     pub async fn attach_vmo(self: &Arc<Self>, vmo: &zx::Vmo) -> Result<(), zx::Status> {
-        let vmo_id = self.client.attach_vmo(vmo).await?;
+        // SAFETY: FVM ensures that we only attach this VMO once.
+        let vmo_id = unsafe { self.client.attach_vmo(vmo) }.await?;
         assert!(
             self.vmo_ids
                 .lock()
@@ -138,7 +139,8 @@ struct Buffers {
 impl Buffers {
     async fn new(client: &impl BlockClient) -> Result<Self, zx::Status> {
         let vmo = zx::Vmo::create(TOTAL_SIZE as u64)?;
-        let vmo_id = client.attach_vmo(&vmo).await?;
+        // SAFETY: This VMO is newly created and only attached once here.
+        let vmo_id = unsafe { client.attach_vmo(&vmo) }.await?;
         let addr = fuchsia_runtime::vmar_root_self().map(
             0,
             &vmo,

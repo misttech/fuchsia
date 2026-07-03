@@ -271,7 +271,9 @@ impl Partition {
             fuchsia_component::client::connect_to_protocol_at_path::<BlockMarker>(&self.src)
                 .with_context(|| format!("Connecting to block device {}", self.src))?;
         let block_device = RemoteBlockClient::new(proxy).await?;
-        let vmo_id = block_device.attach_vmo(&vmo).await?;
+        // SAFETY: We only attach this VMO once, and we do not hold any Rust references to its
+        // memory (in fact, we do not even map it).
+        let vmo_id = unsafe { block_device.attach_vmo(&vmo) }.await?;
 
         // Reading too much at a time causes the UMS driver to return an error.
         let max_read_length: u64 = self.block_size * 100;

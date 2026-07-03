@@ -27,7 +27,9 @@ impl<T: BlockClient> BlockDevice<T> {
     /// Creates a new BlockDevice over |remote|.
     pub async fn new(remote: T, read_only: bool) -> Result<Self, Error> {
         let buffer_source = BufferSource::new(TRANSFER_VMO_SIZE);
-        let vmoid = remote.attach_vmo(buffer_source.vmo()).await?;
+        // SAFETY: We only attach this VMO once here, and we ensure no references are held
+        // during I/O via the BufferAllocator and pointer-based BufferRef types.
+        let vmoid = unsafe { remote.attach_vmo(buffer_source.vmo()) }.await?;
         let allocator = BufferAllocator::new(remote.block_size() as usize, buffer_source);
         Ok(Self { allocator, remote, read_only, vmoid })
     }

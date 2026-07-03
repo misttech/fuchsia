@@ -44,7 +44,7 @@ impl FakeBlockClient {
 }
 
 impl BlockClient for FakeBlockClient {
-    async fn attach_vmo(&self, vmo: &zx::Vmo) -> Result<VmoId, zx::Status> {
+    async unsafe fn attach_vmo(&self, vmo: &zx::Vmo) -> Result<VmoId, zx::Status> {
         let len = vmo.get_size()?;
         let vmo = vmo.create_child(zx::VmoChildOptions::SLICE, 0, len)?;
         let mut inner = self.inner.lock();

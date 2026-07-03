@@ -556,7 +556,9 @@ mod tests {
                 let mut vmo_set = HashSet::default();
                 let vmo = zx::Vmo::create(1).unwrap();
                 for _ in 1..5 {
-                    match block_client.attach_vmo(&vmo).await {
+                    // SAFETY: Test code. We are testing attaching the same VMO multiple times.
+                    // No I/O is performed on this VMO in this test, so no UB is possible.
+                    match unsafe { block_client.attach_vmo(&vmo) }.await {
                         Ok(vmo_id) => {
                             // Make sure that vmo_id is unique.
                             // TODO(https://fxbug.dev/293970391): Need to detach vmoid. Calling
@@ -584,7 +586,9 @@ mod tests {
             async {
                 let block_client = RemoteBlockClient::new(volume).await.unwrap();
                 let vmo = zx::Vmo::create(1).unwrap();
-                let vmo_id = block_client.attach_vmo(&vmo).await.expect("attach_vmo failed");
+                // SAFETY: Test code. Only attach once, no other mappings.
+                let vmo_id =
+                    unsafe { block_client.attach_vmo(&vmo) }.await.expect("attach_vmo failed");
                 let vmo_id_copy = VmoId::new(vmo_id.id());
                 block_client.detach_vmo(vmo_id).await.expect("detach failed");
                 block_client.detach_vmo(vmo_id_copy).await.expect_err("detach succeeded");
@@ -605,7 +609,9 @@ mod tests {
             async {
                 let block_client = RemoteBlockClient::new(volume).await.unwrap();
                 let vmo = zx::Vmo::create(131072).unwrap();
-                let vmo_id = block_client.attach_vmo(&vmo).await.expect("attach_vmo failed");
+                // SAFETY: Test code. Only attach once, no other mappings.
+                let vmo_id =
+                    unsafe { block_client.attach_vmo(&vmo) }.await.expect("attach_vmo failed");
 
                 // Must write with length as a multiple of the block_size
                 let offset = block_client.block_size() as usize;

@@ -267,7 +267,24 @@ impl Hash for VmoId {
 /// Most users will use the RemoteBlockClient instantiation of this trait.
 pub trait BlockClient: Send + Sync {
     /// Wraps AttachVmo from fuchsia.hardware.block::Block.
-    fn attach_vmo(&self, vmo: &zx::Vmo) -> impl Future<Output = Result<VmoId, zx::Status>> + Send;
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that no references are held during I/O as this would be
+    /// undefined behavior.  The caller may hold pointers, which does not lead to undefined
+    /// behavior; Rust does not make the same assumptions as references for pointers.
+    ///
+    /// Whilst a connection failure or client-side cancellation does not immediately lead to
+    /// Rust undefined behavior, the caller must thereafter assume the VMO is poisoned.  No
+    /// assumptions can be made regarding what might be written to the VMO by the far end, or
+    /// anything the far end might have delegated access to.  The only safe thing to do is
+    /// discard the VMO and not attempt to use or re-attach it.
+    ///
+    /// Attaching the VMO once for its lifetime is safe, if strictly more than necessary.
+    unsafe fn attach_vmo(
+        &self,
+        vmo: &zx::Vmo,
+    ) -> impl Future<Output = Result<VmoId, zx::Status>> + Send;
 
     /// Detaches the given vmo-id from the device.
     fn detach_vmo(&self, vmo_id: VmoId) -> impl Future<Output = Result<(), zx::Status>> + Send;
@@ -730,7 +747,7 @@ impl RemoteBlockClient {
 }
 
 impl BlockClient for RemoteBlockClient {
-    async fn attach_vmo(&self, vmo: &zx::Vmo) -> Result<VmoId, zx::Status> {
+    async unsafe fn attach_vmo(&self, vmo: &zx::Vmo) -> Result<VmoId, zx::Status> {
         let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
         let vmo_id = self
             .session
@@ -850,7 +867,12 @@ impl RemoteBlockClientSync {
         block_on(receiver).map_err(|_| zx::Status::CANCELED)?
     }
 
-    pub fn attach_vmo(&self, vmo: &zx::Vmo) -> Result<VmoId, zx::Status> {
+    /// Wraps AttachVmo from fuchsia.hardware.block::Block.
+    ///
+    /// # Safety
+    ///
+    /// See `BlockClient::attach_vmo`.
+    pub unsafe fn attach_vmo(&self, vmo: &zx::Vmo) -> Result<VmoId, zx::Status> {
         let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
         let vmo_id = self
             .session
@@ -1016,7 +1038,8 @@ mod tests {
 
         let vmo = zx::Vmo::create(131072).expect("Vmo::create failed");
         vmo.write(b"hello", 5).expect("vmo.write failed");
-        let vmo_id = block_client.attach_vmo(&vmo).await.expect("attach_vmo failed");
+        // SAFETY: Test code, only attach once, no other mappings.
+        let vmo_id = unsafe { block_client.attach_vmo(&vmo) }.await.expect("attach_vmo failed");
         block_client
             .write_at(BufferSlice::new_with_vmo_id(&vmo_id, 0, 1024), 0)
             .await
@@ -1035,7 +1058,8 @@ mod tests {
     async fn test_alignment() {
         let (_ramdisk, _block_proxy, block_client) = make_ramdisk().await;
         let vmo = zx::Vmo::create(131072).expect("Vmo::create failed");
-        let vmo_id = block_client.attach_vmo(&vmo).await.expect("attach_vmo failed");
+        // SAFETY: Test code, only attach once, no other mappings.
+        let vmo_id = unsafe { block_client.attach_vmo(&vmo) }.await.expect("attach_vmo failed");
         block_client
             .write_at(BufferSlice::new_with_vmo_id(&vmo_id, 0, 1024), 1)
             .await
@@ -1047,7 +1071,8 @@ mod tests {
     async fn test_parallel_io() {
         let (_ramdisk, _block_proxy, block_client) = make_ramdisk().await;
         let vmo = zx::Vmo::create(131072).expect("Vmo::create failed");
-        let vmo_id = block_client.attach_vmo(&vmo).await.expect("attach_vmo failed");
+        // SAFETY: Test code, only attach once, no other mappings.
+        let vmo_id = unsafe { block_client.attach_vmo(&vmo) }.await.expect("attach_vmo failed");
         let mut reads = Vec::new();
         for _ in 0..1024 {
             reads.push(
@@ -1064,7 +1089,8 @@ mod tests {
     async fn test_closed_device() {
         let (ramdisk, _block_proxy, block_client) = make_ramdisk().await;
         let vmo = zx::Vmo::create(131072).expect("Vmo::create failed");
-        let vmo_id = block_client.attach_vmo(&vmo).await.expect("attach_vmo failed");
+        // SAFETY: Test code, only attach once, no other mappings.
+        let vmo_id = unsafe { block_client.attach_vmo(&vmo) }.await.expect("attach_vmo failed");
         let mut reads = Vec::new();
         for _ in 0..1024 {
             reads.push(
@@ -1101,7 +1127,8 @@ mod tests {
     async fn test_cancelled_reads() {
         let (_ramdisk, _block_proxy, block_client) = make_ramdisk().await;
         let vmo = zx::Vmo::create(131072).expect("Vmo::create failed");
-        let vmo_id = block_client.attach_vmo(&vmo).await.expect("attach_vmo failed");
+        // SAFETY: Test code, only attach once, no other mappings.
+        let vmo_id = unsafe { block_client.attach_vmo(&vmo) }.await.expect("attach_vmo failed");
         {
             let mut reads = FuturesUnordered::new();
             for _ in 0..1024 {

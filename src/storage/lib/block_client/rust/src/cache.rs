@@ -46,7 +46,10 @@ impl Cache {
             "underlying block size not supported"
         );
         let vmo = zx::Vmo::create(VMO_SIZE)?;
-        let vmo_id = device.attach_vmo(&vmo)?;
+        // SAFETY: The VMO is newly created and only attached once here. We do not map the VMO in
+        // this process (we only use vmo.read/write system calls), so no Rust references to the VMO
+        // memory are ever held.
+        let vmo_id = unsafe { device.attach_vmo(&vmo) }?;
         Ok(Self {
             device,
             vmo,

@@ -398,8 +398,10 @@ async fn test_gpt_on_ramdisk() {
         const BS: usize = BLOCK_SIZE as usize;
         const LEN: u64 = 50 * BS as u64;
         let vmo = zx::Vmo::create(LEN).unwrap();
-        let vmoid1 = client1.attach_vmo(&vmo).await.expect("attach_vmo failed");
-        let vmoid2 = client2.attach_vmo(&vmo).await.expect("attach_vmo failed");
+        // SAFETY: Test code. We attach the same VMO to two clients to test multi-partition I/O.
+        // We ensure no concurrent conflicting I/O is performed.
+        let vmoid1 = unsafe { client1.attach_vmo(&vmo) }.await.expect("attach_vmo failed");
+        let vmoid2 = unsafe { client2.attach_vmo(&vmo) }.await.expect("attach_vmo failed");
 
         vmo.write(&[0x11u8; LEN as usize], 0).unwrap();
         client1

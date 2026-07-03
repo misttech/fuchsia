@@ -84,8 +84,21 @@ impl GptPartition {
         self.info.lock().num_blocks
     }
 
-    pub async fn attach_vmo(&self, vmo: &zx::Vmo) -> Result<VmoId, zx::Status> {
-        self.block_client.attach_vmo(vmo).await
+    /// Attaches the VMO.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee that the VMO is only attached once.  The reason for this is that
+    /// if the far end suddenly disconnects, it is not safe to assume the VMO will not be written to
+    /// in any way: the VMO could be the target of an ongoing DMA transfer.
+    ///
+    /// The caller must also ensure that no references are held during I/O as this would be
+    /// undefined behavior.  The caller may hold pointers, which does not lead to undefined
+    /// behavior; Rust does not make the same assumptions as references for pointers.
+    pub async unsafe fn attach_vmo(&self, vmo: &zx::Vmo) -> Result<VmoId, zx::Status> {
+        // SAFETY: The caller must guarantee that the VMO is only attached once and no references
+        // are held during I/O.
+        unsafe { self.block_client.attach_vmo(vmo) }.await
     }
 
     pub async fn detach_vmo(&self, vmoid: VmoId) -> Result<(), zx::Status> {
