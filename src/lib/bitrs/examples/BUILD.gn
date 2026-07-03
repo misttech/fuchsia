@@ -11,7 +11,20 @@ rustc_binary("basic-example") {
   deps = [ "//src/lib/bitrs" ]
 }
 
+rustc_binary("bitfield-repr-example") {
+  edition = "2024"
+  source_root = "bitfield-repr.rs"
+  sources = [ source_root ]
+  deps = [
+    "//src/lib/bitrs",
+    "//third_party/rust_crates:zerocopy",
+  ]
+}
+
 group("examples") {
   testonly = true
-  deps = [ ":basic-example" ]
+  deps = [
+    ":basic-example",
+    ":bitfield-repr-example",
+  ]
 }

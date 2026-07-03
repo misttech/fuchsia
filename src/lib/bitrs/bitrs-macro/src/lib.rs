@@ -14,6 +14,25 @@ use syn::{
     RangeLimits, Stmt, Token, Type, braced, parse_macro_input,
 };
 
+#[proc_macro_attribute]
+pub fn bitfield_repr(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let attr: TokenStream2 = attr.into();
+    let item: TokenStream2 = item.into();
+    quote! {
+        #[repr(#attr)]
+        #[derive(
+            Debug,
+            Eq,
+            PartialEq,
+            ::bitrs::__zerocopy::Immutable,
+            ::bitrs::__zerocopy::IntoBytes,
+            ::bitrs::__zerocopy::TryFromBytes,
+        )]
+        #item
+    }
+    .into()
+}
+
 #[proc_macro]
 pub fn layout(item: TokenStream) -> TokenStream {
     parse_macro_input!(item as Layout).to_token_stream().into()
@@ -142,6 +161,7 @@ struct Bitfield {
     name: Option<Ident>,
     high_bit: usize,
     low_bit: usize,
+    repr: Option<Type>,
     doc_attrs: Vec<Attribute>,
     unshifted: bool,
     default: Option<Box<Expr>>,
@@ -188,6 +208,9 @@ impl Bitfield {
 
     fn getter_and_setter(&self, ty: &TypeDef) -> TokenStream2 {
         debug_assert!(!self.is_reserved());
+        if self.unshifted {
+            debug_assert!(self.repr.is_none());
+        }
 
         let doc_attrs = &self.doc_attrs;
         let name = self.name.as_ref().unwrap();
@@ -255,22 +278,81 @@ impl Bitfield {
             )
         };
 
-        let getter = quote! {
-            #(#doc_attrs)*
-            #[doc = #get_doc]
-            #[inline]
-            pub const fn #name(&self) -> #clamped_type {
-                #get_clamped
+        // TODO: Custom-repr getter/setter can't be `const fn` until
+        // `zerocopy::TryFromBytes` / `IntoBytes` have const methods.
+        // Tracking upstream: https://github.com/google/zerocopy/issues/115.
+        let getter = if let Some(repr) = &self.repr {
+            let try_name = format_ident!("try_{}", name);
+            let try_get_doc = format!("Fallible variant of [`Self::{name}`].");
+            let panic_doc = format!(
+                "# Panics\n\n\
+                 Panics if the field's bit pattern is not a valid value of \
+                 the custom representation. Use [`Self::{try_name}`] to \
+                 recover from invalid bit patterns."
+            );
+            quote! {
+                #(#doc_attrs)*
+                #[doc = #get_doc]
+                ///
+                #[doc = #panic_doc]
+                #[inline]
+                pub fn #name(&self) -> #repr
+                where
+                    #repr: ::bitrs::__zerocopy::TryFromBytes,
+                {
+                    self.#try_name().unwrap()
+                }
+
+                #[doc = #try_get_doc]
+                #[inline]
+                pub fn #try_name(&self)
+                    -> ::core::result::Result<#repr, ::bitrs::InvalidBits<#clamped_type>>
+                where
+                    #repr: ::bitrs::__zerocopy::TryFromBytes,
+                {
+                    use ::bitrs::__zerocopy::IntoBytes;
+                    use ::bitrs::__zerocopy::TryFromBytes;
+                    let value = #get_clamped ;
+                    #repr::try_read_from_bytes(value.as_bytes())
+                        .map_err(|_| ::bitrs::InvalidBits(value))
+                }
+            }
+        } else {
+            quote! {
+                #(#doc_attrs)*
+                #[doc = #get_doc]
+                #[inline]
+                pub const fn #name(&self) -> #clamped_type {
+                    #get_clamped
+                }
             }
         };
 
-        let setter = quote! {
-            #[doc = #set_doc]
-            #[inline]
-            pub const fn #setter_name(&mut self, value: #clamped_type) -> &mut Self {
-                let value = value as #base_type;
-                #set_clamped ;
-                self
+        let setter = if let Some(repr) = &self.repr {
+            quote! {
+                #[doc = #set_doc]
+                #[inline]
+                pub fn #setter_name(&mut self, value: #repr) -> &mut Self
+                where
+                    #repr: ::bitrs::__zerocopy::IntoBytes + ::bitrs::__zerocopy::Immutable
+                 {
+                    use ::bitrs::__zerocopy::IntoBytes;
+                    use ::bitrs::__zerocopy::FromBytes;
+                    const { assert!(::core::mem::size_of::<#repr>() == ::core::mem::size_of::<#clamped_type>()) }
+                    let value = #clamped_type::read_from_bytes(value.as_bytes()).unwrap() as #base_type;
+                    #set_clamped ;
+                    self
+                }
+            }
+        } else {
+            quote! {
+                #[doc = #set_doc]
+                #[inline]
+                pub const fn #setter_name(&mut self, value: #clamped_type) -> &mut Self {
+                    let value = value as #base_type;
+                    #set_clamped ;
+                    self
+                }
             }
         };
 
@@ -285,7 +367,7 @@ impl Parse for Bitfield {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         const INVALID_BITFIELD_DECL_FORM: &str = "bitfield declaration should take one of the following forms:\n\
             * `let $name @ $bit (= $default)?;`\n\
-            * `let $name @ $high..$low (= $default)?;`\n\
+            * `let $name @ $high..$low (: $repr)? (= $default)?;`\n\
             * `let __ @ $bit (= $value)?;`\n\
             * `let __ @ $high..$low (= $value)?;`";
         let err = |spanned: &dyn ToTokens| Error::new_spanned(spanned, INVALID_BITFIELD_DECL_FORM);
@@ -334,9 +416,19 @@ impl Parse for Bitfield {
             }
         }
 
-        let pat_ident: &PatIdent = match &local.pat {
+        // syn parks the `: Type` annotation in a `Pat::Type` wrapping the
+        // inner pattern, so a custom repr surfaces here rather than on the
+        // local itself.
+        let (pat_ident, repr): (&PatIdent, Option<Type>) = match &local.pat {
             // `let foo @ ...;`
-            Pat::Ident(binding) => binding,
+            Pat::Ident(binding) => (binding, None),
+            Pat::Type(typed) => match &*typed.pat {
+                // `let foo @ ...: Repr;`
+                Pat::Ident(binding) => (binding, Some((*typed.ty).clone())),
+                // `let _: T ...;`
+                Pat::Wild(_) => return Err(wildcard_err(&typed.pat)),
+                _ => return Err(err(&local.pat)),
+            },
             // `let _ = ...;` or `let _;`
             Pat::Wild(_) => return Err(wildcard_err(&local.pat)),
             _ => return Err(err(&local.pat)),
@@ -423,10 +515,31 @@ impl Parse for Bitfield {
             ));
         }
 
+        if let Some(repr) = &repr {
+            if name.is_none() {
+                return Err(Error::new_spanned(
+                    repr,
+                    "custom representations are not permitted for reserved fields",
+                ));
+            }
+            if high_bit == low_bit {
+                return Err(Error::new_spanned(
+                    repr,
+                    "custom representations are not permitted for bits",
+                ));
+            }
+        }
+
         if unshifted && name.is_none() {
             return Err(Error::new_spanned(
                 &local.pat,
                 "`#[unshifted]` is not permitted on reserved fields",
+            ));
+        }
+        if unshifted && repr.is_some() {
+            return Err(Error::new_spanned(
+                repr,
+                "`#[unshifted]` is not permitted on fields with custom representations",
             ));
         }
 
@@ -435,6 +548,7 @@ impl Parse for Bitfield {
             name,
             high_bit,
             low_bit,
+            repr,
             doc_attrs,
             unshifted,
             default: default_or_value,
@@ -648,16 +762,49 @@ impl Layout {
 
     fn fmt_fn(&self, integral_specifier: &str) -> TokenStream2 {
         let ty_str = &self.ty.def.ident.to_string();
-        let where_clause = quote! {};
+
+        let mut custom_repr_fields =
+            self.named.iter().filter(|field| field.repr.is_some()).peekable();
+
+        let where_clause = if custom_repr_fields.peek().is_some() {
+            let bounds = custom_repr_fields.map(|field| {
+                let repr = field.repr.as_ref().unwrap();
+                quote! {#repr: ::core::fmt::Debug,}
+            });
+            quote! {
+                where
+                    #(#bounds)*
+            }
+        } else {
+            quote! {}
+        };
 
         let fmt_fields = self.named.iter().map(|field| {
             let name = &field.name;
             let name_str = name.as_ref().unwrap().to_string();
             let default_specifier = if field.bit_width() == 1 { "" } else { integral_specifier };
-            let format_string = format!("{{indent}}{name_str}: {{{default_specifier}}},{{sep}}");
-            let format_string = Literal::string(&format_string);
-            quote! {
-                { write!(f, #format_string, self.#name())?; }
+            if field.repr.is_some() {
+                let try_name = format_ident!("try_{}", name.as_ref().unwrap());
+                let ok_format_string = format!("{{indent}}{name_str}: {{:#?}},{{sep}}");
+                let ok_format_string = Literal::string(&ok_format_string);
+                let err_format_string =
+                    format!("{{indent}}{name_str}: InvalidBits({{{default_specifier}}}),{{sep}}");
+                let err_format_string = Literal::string(&err_format_string);
+                quote! {
+                    {
+                        match self.#try_name() {
+                            Ok(value) => write!(f, #ok_format_string, value),
+                            Err(invalid) => write!(f, #err_format_string, invalid.0),
+                        }?;
+                    }
+                }
+            } else {
+                let format_string =
+                    format!("{{indent}}{name_str}: {{{default_specifier}}},{{sep}}");
+                let format_string = Literal::string(&format_string);
+                quote! {
+                    { write!(f, #format_string, self.#name())?; }
+                }
             }
         });
 
