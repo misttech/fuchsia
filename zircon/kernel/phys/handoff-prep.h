@@ -355,9 +355,10 @@ class HandoffPrep {
 
   // Constructs a PhysVmo from the provided information, enforcing that `data`
   // is page-aligned and that page-rounding `stream_size` up yields
-  // `data.size_bytes()`.
+  // `data.size_bytes()`.  If `known_zero` is true, then the tail of `data`
+  // past `stream_size` is already known to be all zeros; otherwise zeroes it.
   static PhysVmo MakePhysVmo(ktl::span<const ktl::byte> data, ktl::string_view name,
-                             size_t stream_size);
+                             size_t stream_size, bool known_zero = false);
 
   static void ApplyMapping(const PhysMapping& mapping);
 

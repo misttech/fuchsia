@@ -213,12 +213,23 @@ HandoffPrep::HandoffPrep(ElfImage kernel)
 }
 
 PhysVmo HandoffPrep::MakePhysVmo(ktl::span<const ktl::byte> data, ktl::string_view name,
-                                 size_t stream_size) {
+                                 size_t stream_size, bool known_zero) {
   uintptr_t addr = reinterpret_cast<uintptr_t>(data.data());
   ZX_ASSERT((addr % AddressSpace::kPageSize) == 0);
   ZX_ASSERT((data.size_bytes() % AddressSpace::kPageSize) == 0);
   ZX_ASSERT(((stream_size + AddressSpace::kPageSize - 1) & -AddressSpace::kPageSize) ==
             data.size_bytes());
+
+  // Any space past the stream_size could be uninitialized.
+  // Don't let garbage values leak into the VMO's last page.
+  if (ktl::span partial_page = data.subspan(stream_size); !partial_page.empty()) {
+    if (known_zero) {
+      ZX_DEBUG_ASSERT(
+          ktl::ranges::all_of(partial_page, [](ktl::byte byte) { return byte == ktl::byte{}; }));
+    } else {
+      memset(const_cast<ktl::byte*>(partial_page.data()), 0, partial_page.size_bytes());
+    }
+  }
 
   PhysVmo vmo{.addr = addr, .stream_size = stream_size};
   // The name is sometimes an arbitrary file name, which might be too long.
@@ -476,7 +487,7 @@ PhysElfImage HandoffPrep::MakePhysElfImage(KernelStorage::Bootfs::iterator file,
   }
 
   PhysElfImage handoff_elf = {
-      .vmo = MakePhysVmo(elf.aligned_memory_image(), name, file->data.size()),
+      .vmo = MakePhysVmo(elf.aligned_memory_image(), name, file->data.size(), true),
       .vmar = {.size = elf.vaddr_size()},
       .info = {
           .relative_entry_point = elf.entry(),
