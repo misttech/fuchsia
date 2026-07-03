@@ -189,6 +189,7 @@ declare_args() {
               ninja = "debroot"
             },
           ]
+          install_host_tool = true
         },
         {
           bazel_label = "//tools/whereiscl:whereiscl"

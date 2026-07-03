@@ -7,7 +7,7 @@ if (is_host) {
     testonly = true
 
     public_deps = [
-      "//build/bazel/host:bazel_root_host_tools.debroot",
+      "//build/bazel/host:bazel_root_host_tools.debroot.host_tool",
       "//build/bazel/host:bazel_root_host_tools.jq5.host_tool",
       "//build/bazel/host:bazel_root_host_tools.mdlint.host_tool",
       "//build/bazel/host:bazel_root_host_tools.pretty_serial.host_tool",
