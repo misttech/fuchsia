@@ -30,6 +30,7 @@ group("tests") {
     "sparse/c:tests",
     "sparse/rust:tests",
     "storage_device:tests",
+    "storage_xts:tests",
     "super_parser:tests",
     "sync_io_client:tests",
     "trace:tests",
