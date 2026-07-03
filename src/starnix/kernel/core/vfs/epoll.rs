@@ -38,6 +38,7 @@ struct WaitObject {
     events: FdEvents,
     data: u64,
     wait_canceler: Option<WaitCanceler>,
+    active_wakeup_source: Option<WakeupSourceOrigin>,
 }
 
 impl WaitObject {
@@ -47,6 +48,12 @@ impl WaitObject {
     /// epoll_waits end up timing out (importantly not returning EBADF).
     fn target(&self) -> Option<FileHandle> {
         self.target.upgrade()
+    }
+
+    fn deactivate_wakeup_source(&mut self, current_task: &CurrentTask) {
+        if let Some(origin) = self.active_wakeup_source.take() {
+            current_task.kernel().suspend_resume_manager.deactivate_wakeup_source(&origin);
+        }
     }
 }
 
@@ -241,6 +248,7 @@ impl EpollFileObject {
                     events: epoll_event.events() | FdEvents::POLLHUP | FdEvents::POLLERR,
                     data: epoll_event.data(),
                     wait_canceler: None,
+                    active_wakeup_source: None,
                 });
                 self.wait_on_file(locked, current_task, key, wait_object)
             }
@@ -275,10 +283,7 @@ impl EpollFileObject {
         if wait_object.events.contains(FdEvents::EPOLLWAKEUP)
             && !epoll_event.events().contains(FdEvents::EPOLLWAKEUP)
         {
-            current_task
-                .kernel()
-                .suspend_resume_manager
-                .deactivate_wakeup_source(&WakeupSourceOrigin::Epoll(current_task.command(), key));
+            wait_object.deactivate_wakeup_source(current_task);
         }
         self.wait_on_file(locked, current_task, key.into(), wait_object)
     }
@@ -288,19 +293,13 @@ impl EpollFileObject {
     pub fn delete(&self, current_task: &CurrentTask, file: &FileObject) -> Result<(), Errno> {
         let mut state = self.state.lock();
         let key = file.id.as_epoll_key().into();
-        let ReadyItemKey::Usize(key_usize) = key else {
-            // This should never happen as we only use Usize keys for files in epoll.
-            return error!(EINVAL);
-        };
         if let Some(mut wait_object) = state.wait_objects.remove(&key) {
             if let Some(wait_canceler) = wait_object.wait_canceler.take() {
                 wait_canceler.cancel();
             }
             state.recheck_list.retain(|x| *x != key);
             // Deactivate the wake lock if it was active.
-            current_task.kernel().suspend_resume_manager.deactivate_wakeup_source(
-                &WakeupSourceOrigin::Epoll(current_task.command(), key_usize),
-            );
+            wait_object.deactivate_wakeup_source(current_task);
             Ok(())
         } else {
             error!(ENOENT)
@@ -436,12 +435,10 @@ impl EpollFileObject {
             let mut state = self.state.lock();
             let recheck_list = std::mem::take(&mut state.recheck_list);
             for key in recheck_list {
-                if let ReadyItemKey::Usize(key) = key {
-                    current_task.kernel().suspend_resume_manager.deactivate_wakeup_source(
-                        &WakeupSourceOrigin::Epoll(current_task.command(), key),
-                    );
-                }
                 let wait_object = state.wait_objects.get_mut(&key).unwrap();
+                wait_object.deactivate_wakeup_source(current_task);
+                // TODO(https://fxbug.dev/530545712): If `do_recheck` fails, we exit the loop and do
+                // not deactivate the remaining wakeup sources.
                 self.do_recheck(locked, current_task, wait_object, key)?;
             }
         }
@@ -480,9 +477,12 @@ impl EpollFileObject {
                 // hold a wake lease until the next epoll_wait.
                 if wait.events.contains(FdEvents::EPOLLWAKEUP) {
                     if let ReadyItemKey::Usize(key) = pending_event.key {
-                        current_task.kernel().suspend_resume_manager.activate_wakeup_source(
-                            WakeupSourceOrigin::Epoll(current_task.command(), key),
-                        );
+                        let origin = WakeupSourceOrigin::Epoll(current_task.command(), key);
+                        current_task
+                            .kernel()
+                            .suspend_resume_manager
+                            .activate_wakeup_source(origin.clone());
+                        wait.active_wakeup_source = Some(origin);
                     }
                 }
             }
@@ -542,13 +542,9 @@ impl FileOps for EpollFileObject {
         _file: &FileObjectState,
         current_task: &CurrentTask,
     ) {
-        let guard = self.state.lock();
-        for (key, _wait_object) in guard.wait_objects.iter() {
-            if let ReadyItemKey::Usize(key) = key {
-                current_task.kernel().suspend_resume_manager.deactivate_wakeup_source(
-                    &WakeupSourceOrigin::Epoll(current_task.command(), *key),
-                );
-            }
+        let mut guard = self.state.lock();
+        for wait_object in guard.wait_objects.values_mut() {
+            wait_object.deactivate_wakeup_source(current_task);
         }
     }
 }
