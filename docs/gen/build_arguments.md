@@ -403,7 +403,7 @@ in args.gn.
 
 **Current value (from the default):** `[]`
 
-From //build/bazel/bazel_root_targets_list.gni:232
+From //build/bazel/bazel_root_targets_list.gni:233
 
 ### bazel_upload_build_events
 
@@ -1021,11 +1021,11 @@ This should never be set as a build argument.
 }
   lsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
@@ -2233,6 +2233,7 @@ From //build/config/compiler.gni:82
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/debroot_/debroot"
   ninja = "debroot"
 }]
+  install_host_tool = true
 }, {
   bazel_label = "//tools/whereiscl:whereiscl"
   copy_outputs = [{
