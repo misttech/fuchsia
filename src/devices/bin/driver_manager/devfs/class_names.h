@@ -59,8 +59,6 @@ const std::unordered_map<std::string_view, ServiceEntry> kClassNameToService = {
     {"audio-output",
      {ServiceEntry::kDevfsAndService, "fuchsia.hardware.audio.StreamConfigConnectorOutputService",
       "stream_config_connector"}},
-    {"backlight",
-     {ServiceEntry::kDevfsAndService, "fuchsia.hardware.backlight.Service", "backlight"}},
     {"battery", {ServiceEntry::kDevfsAndService, "fuchsia.power.battery.InfoService", "device"}},
     {"block-partition", {ServiceEntry::kDevfs, "", ""}},
     {"block", {ServiceEntry::kDevfs, "", ""}},
@@ -147,10 +145,6 @@ const std::unordered_map<std::string_view, ServiceEntry> kClassNameToService = {
 std::unordered_map<std::string_view, uint8_t> classes_that_assume_ordering({
     // TODO(https://fxbug.dev/42065012): Remove.
     {"adc", 0},
-
-    // TODO(https://fxbug.dev/42065014): Remove.
-    // TODO(https://fxbug.dev/42065080): Remove.
-    {"backlight", 0},
 
     // TODO(https://fxbug.dev/42068339): Remove.
     {"block", 0},
