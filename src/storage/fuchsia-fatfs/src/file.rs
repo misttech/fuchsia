@@ -3,19 +3,20 @@
 // found in the LICENSE file.
 
 use crate::directory::FatDirectory;
-use crate::filesystem::{FatFilesystem, FatFilesystemInner};
+use crate::filesystem::FatFilesystem;
 use crate::node::Node;
-use crate::refs::{FatfsFileRef, Guard, GuardMut, Wrapper};
+use crate::refs::FatfsFileRef;
 use crate::types::File;
 use crate::util::{
     dos_date_to_unix_time, dos_to_unix_time, fatfs_error_to_status, unix_to_dos_time,
 };
 use fidl_fuchsia_io as fio;
-use fuchsia_sync::RwLock;
-use std::cell::RefCell;
+use fragile::Fragile;
+use std::cell::{Ref, RefCell, RefMut};
 use std::fmt::Debug;
 use std::io::{Read, Seek, Write};
-use std::pin::Pin;
+use std::ops::Deref;
+use std::rc::Rc;
 use std::sync::Arc;
 use vfs::attributes;
 use vfs::directory::entry::EntryInfo;
@@ -60,53 +61,46 @@ struct FatFileData {
 }
 
 /// Represents a single file on the disk.
-pub struct FatFile {
-    file: RefCell<FatfsFileRef>,
-    filesystem: Pin<Arc<FatFilesystem>>,
-    data: RwLock<FatFileData>,
+pub struct FatFile(Fragile<FatFileInner>);
+
+pub struct FatFileInner {
+    file: FatfsFileRef,
+    data: RefCell<FatFileData>,
 }
 
-// The only member that isn't `Sync + Send` is the `file` member.
-// `file` is protected by the lock on `filesystem`, so we can safely
-// implement Sync + Send for FatFile.
-unsafe impl Sync for FatFile {}
-unsafe impl Send for FatFile {}
+impl FatFileInner {
+    pub(crate) fn fs(&self) -> &Rc<FatFilesystem> {
+        self.file.filesystem()
+    }
+}
+
+impl Deref for FatFile {
+    type Target = FatFileInner;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.get()
+    }
+}
 
 impl FatFile {
     /// Create a new FatFile.
-    pub(crate) fn new(
-        file: FatfsFileRef,
-        parent: Arc<FatDirectory>,
-        filesystem: Pin<Arc<FatFilesystem>>,
-        name: String,
-    ) -> Arc<Self> {
-        Arc::new(FatFile {
-            file: RefCell::new(file),
-            filesystem,
-            data: RwLock::new(FatFileData { parent: Some(parent), name }),
-        })
+    pub(crate) fn new(file: FatfsFileRef, parent: Arc<FatDirectory>, name: String) -> Arc<Self> {
+        Arc::new(FatFile(Fragile::new(FatFileInner {
+            file,
+            data: RefCell::new(FatFileData { parent: Some(parent), name }),
+        })))
     }
 
-    /// Borrow the underlying Fatfs File mutably.
-    pub(crate) fn borrow_file_mut<'a>(
-        &'a self,
-        fs: &'a FatFilesystemInner,
-    ) -> Option<GuardMut<'a, FatfsFileRef>> {
-        let mut file = self.file.borrow_mut();
-        if file.get_mut(fs).is_none() { None } else { Some(GuardMut::new(fs, file)) }
+    pub(crate) fn borrow_file_mut<'a>(&'a self) -> Option<RefMut<'a, File<'a>>> {
+        self.file.get_mut()
     }
 
-    pub fn borrow_file<'a>(
-        &'a self,
-        fs: &'a FatFilesystemInner,
-    ) -> Result<Guard<'a, FatfsFileRef>, Status> {
-        let file = self.file.borrow();
-        if file.get(fs).is_none() { Err(Status::BAD_HANDLE) } else { Ok(Guard::new(fs, file)) }
+    pub fn borrow_file<'a>(&'a self) -> Result<Ref<'a, File<'a>>, Status> {
+        self.file.get().ok_or(Status::BAD_HANDLE)
     }
 
     fn write_or_append(&self, offset: Option<u64>, content: &[u8]) -> Result<(u64, u64), Status> {
-        let fs_lock = self.filesystem.lock();
-        let mut file = self.borrow_file_mut(&fs_lock).ok_or(Status::BAD_HANDLE)?;
+        let mut file = self.borrow_file_mut().ok_or(Status::BAD_HANDLE)?;
         let mut file_offset = match offset {
             Some(offset) => {
                 seek_for_write(&mut *file, offset)?;
@@ -137,7 +131,7 @@ impl FatFile {
                 }
             }
         }
-        self.filesystem.mark_dirty();
+        self.fs().mark_dirty();
         Ok((total_written as u64, file_offset))
     }
 }
@@ -145,52 +139,44 @@ impl FatFile {
 impl Node for FatFile {
     /// Flush to disk and invalidate the reference that's contained within this FatFile.
     /// Any operations on the file will return Status::BAD_HANDLE until it is re-attached.
-    fn detach(&self, fs: &FatFilesystemInner) {
-        self.file.borrow_mut().take(fs);
+    fn detach(&self) {
+        self.file.clear();
     }
 
     /// Attach to the given parent and re-open the underlying `FatfsFileRef` this file represents.
-    fn attach(
-        &self,
-        new_parent: Arc<FatDirectory>,
-        name: &str,
-        fs: &FatFilesystemInner,
-    ) -> Result<(), Status> {
-        let mut data = self.data.write();
+    fn attach(&self, new_parent: Arc<FatDirectory>, name: &str) -> Result<(), Status> {
+        let mut data = self.data.borrow_mut();
         data.name = name.to_owned();
-        // Safe because we hold the fs lock.
-        let mut file = self.file.borrow_mut();
         // Safe because we have a reference to the FatFilesystem.
-        unsafe { file.maybe_reopen(fs, &new_parent, name)? };
+        self.file.maybe_reopen(&new_parent, name)?;
         data.parent.replace(new_parent);
         Ok(())
     }
 
     fn did_delete(&self) {
-        self.data.write().parent.take();
+        self.data.borrow_mut().parent.take();
     }
 
-    fn open_ref(&self, fs_lock: &FatFilesystemInner) -> Result<(), Status> {
-        let data = self.data.read();
-        let mut file_ref = self.file.borrow_mut();
-        unsafe { file_ref.open(&fs_lock, data.parent.as_deref(), &data.name) }
+    fn open_ref(&self) -> Result<(), Status> {
+        let data = self.data.borrow();
+        self.file.open(data.parent.as_deref(), &data.name)
     }
 
     /// Close the underlying FatfsFileRef, regardless of the number of open connections.
-    fn shut_down(&self, fs: &FatFilesystemInner) -> Result<(), Status> {
-        self.file.borrow_mut().take(fs);
+    fn shut_down(&self) -> Result<(), Status> {
+        self.file.clear();
         Ok(())
     }
 
-    fn flush_dir_entry(&self, fs: &FatFilesystemInner) -> Result<(), Status> {
-        if let Some(mut file) = self.borrow_file_mut(fs) {
+    fn flush_dir_entry(&self) -> Result<(), Status> {
+        if let Some(mut file) = self.borrow_file_mut() {
             file.flush_dir_entry().map_err(fatfs_error_to_status)?
         }
         Ok(())
     }
 
-    fn close_ref(&self, fs: &FatFilesystemInner) {
-        self.file.borrow_mut().close(fs);
+    fn close_ref(&self) {
+        self.file.close();
     }
 }
 
@@ -199,8 +185,7 @@ impl vfs::node::Node for FatFile {
         &self,
         requested_attributes: fio::NodeAttributesQuery,
     ) -> Result<fio::NodeAttributes2, Status> {
-        let fs_lock = self.filesystem.lock();
-        let file = self.borrow_file(&fs_lock)?;
+        let file = self.borrow_file()?;
         let content_size = file.len() as u64;
         let creation_time = dos_to_unix_time(file.created());
         let modification_time = dos_to_unix_time(file.modified());
@@ -208,7 +193,7 @@ impl vfs::node::Node for FatFile {
 
         // Figure out the storage size by rounding content_size up to the nearest
         // multiple of cluster_size.
-        let cluster_size = fs_lock.cluster_size() as u64;
+        let cluster_size = self.fs().cluster_size() as u64;
         let storage_size = ((content_size + cluster_size - 1) / cluster_size) * cluster_size;
 
         Ok(attributes!(
@@ -232,21 +217,21 @@ impl vfs::node::Node for FatFile {
     }
 
     fn close(self: Arc<Self>) {
-        self.close_ref(&self.filesystem.lock());
+        self.close_ref();
     }
 
     fn query_filesystem(&self) -> Result<fio::FilesystemInfo, Status> {
-        self.filesystem.query_filesystem()
+        self.fs().query_filesystem()
     }
 
     fn will_clone(&self) {
-        self.open_ref(&self.filesystem.lock()).unwrap();
+        self.open_ref().unwrap();
     }
 }
 
 impl Debug for FatFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FatFile").field("name", &self.data.read().name).finish()
+        f.debug_struct("FatFile").field("name", &self.data.borrow().name).finish_non_exhaustive()
     }
 }
 
@@ -260,11 +245,10 @@ impl VfsFile for FatFile {
     }
 
     async fn truncate(&self, length: u64) -> Result<(), Status> {
-        let fs_lock = self.filesystem.lock();
-        let mut file = self.borrow_file_mut(&fs_lock).ok_or(Status::BAD_HANDLE)?;
+        let mut file = self.borrow_file_mut().ok_or(Status::BAD_HANDLE)?;
         seek_for_write(&mut *file, length)?;
         file.truncate().map_err(fatfs_error_to_status)?;
-        self.filesystem.mark_dirty();
+        self.fs().mark_dirty();
         Ok(())
     }
 
@@ -287,8 +271,7 @@ impl VfsFile for FatFile {
             return Err(Status::NOT_SUPPORTED);
         }
 
-        let fs_lock = self.filesystem.lock();
-        let mut file = self.borrow_file_mut(&fs_lock).ok_or(Status::BAD_HANDLE)?;
+        let mut file = self.borrow_file_mut().ok_or(Status::BAD_HANDLE)?;
         let mut needs_flush = false;
         if let Some(creation_time) = attributes.creation_time {
             file.set_created(unix_to_dos_time(creation_time));
@@ -301,20 +284,18 @@ impl VfsFile for FatFile {
 
         if needs_flush {
             file.flush().map_err(fatfs_error_to_status)?;
-            self.filesystem.mark_dirty();
+            self.fs().mark_dirty();
         }
         Ok(())
     }
 
     async fn get_size(&self) -> Result<u64, Status> {
-        let fs_lock = self.filesystem.lock();
-        let file = self.borrow_file(&fs_lock)?;
+        let file = self.borrow_file()?;
         Ok(file.len() as u64)
     }
 
     async fn sync(&self, _mode: SyncMode) -> Result<(), Status> {
-        let fs_lock = self.filesystem.lock();
-        let mut file = self.borrow_file_mut(&fs_lock).ok_or(Status::BAD_HANDLE)?;
+        let mut file = self.borrow_file_mut().ok_or(Status::BAD_HANDLE)?;
 
         file.flush().map_err(fatfs_error_to_status)?;
         Ok(())
@@ -323,8 +304,7 @@ impl VfsFile for FatFile {
 
 impl VfsFileIo for FatFile {
     async fn read_at(&self, offset: u64, buffer: &mut [u8]) -> Result<u64, Status> {
-        let fs_lock = self.filesystem.lock();
-        let mut file = self.borrow_file_mut(&fs_lock).ok_or(Status::BAD_HANDLE)?;
+        let mut file = self.borrow_file_mut().ok_or(Status::BAD_HANDLE)?;
 
         let real_offset =
             file.seek(std::io::SeekFrom::Start(offset)).map_err(fatfs_error_to_status)?;
@@ -380,8 +360,8 @@ mod tests {
 
             let fs = disk.into_fatfs();
             let dir = fs.get_fatfs_root();
-            let mut closer = Closer::new(&fs.filesystem());
-            dir.open_ref(&fs.filesystem().lock()).expect("open_ref failed");
+            let mut closer = Closer::new();
+            dir.open_ref().expect("open_ref failed");
             closer.add(FatNode::Dir(dir.clone()));
             let file = match dir
                 .open_child("test_file", fio::OpenFlags::empty(), &mut closer)
@@ -390,14 +370,14 @@ mod tests {
                 FatNode::File(f) => f,
                 val => panic!("Unexpected value {:?}", val),
             };
-            file.open_ref(&fs.filesystem().lock()).expect("open_ref failed");
+            file.open_ref().expect("open_ref failed");
             TestFile(file)
         }
     }
 
     impl Drop for TestFile {
         fn drop(&mut self) {
-            self.0.close_ref(&self.0.filesystem.lock());
+            self.0.close_ref();
         }
     }
 

@@ -303,8 +303,8 @@ TEST_P(AttrTest, ChangeTimeIsNonZero) {
   ASSERT_EQ(ToNanoSeconds(stat_dir.st_ctim), ToNanoSeconds(stat_dir.st_mtim));
 
   const std::string child = GetPath("parent/child");
-  int fd = open(child.c_str(), O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
-  ASSERT_GT(fd, 0);
+  fbl::unique_fd fd(open(child.c_str(), O_CREAT | O_RDWR, S_IRUSR | S_IWUSR));
+  ASSERT_TRUE(fd);
   struct stat stat_file;
   ASSERT_EQ(stat(parent.c_str(), &stat_file), 0);
   // ctime should not be zero.
@@ -312,6 +312,7 @@ TEST_P(AttrTest, ChangeTimeIsNonZero) {
   ASSERT_EQ(ToNanoSeconds(stat_file.st_ctim), ToNanoSeconds(stat_file.st_mtim));
 
   // Clean up
+  fd.reset();
   ASSERT_EQ(unlink(child.c_str()), 0);
   ASSERT_EQ(rmdir(parent.c_str()), 0);
 }

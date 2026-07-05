@@ -9,99 +9,69 @@ use crate::{FATFS_INFO_NAME, MAX_FILENAME_LEN};
 use anyhow::Error;
 use fatfs::{DefaultTimeProvider, FsOptions, LossyOemCpConverter};
 use fidl_fuchsia_io as fio;
-use fuchsia_async::{MonotonicInstant, Task, Timer};
-use fuchsia_sync::{Mutex, MutexGuard};
-use std::marker::PhantomPinned;
-use std::pin::Pin;
+use fuchsia_async::{MonotonicInstant, Timer};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
+use vfs::execution_scope::ExecutionScope;
 use zx::{Event, MonotonicDuration, Status};
 
-pub struct FatFilesystemInner {
-    filesystem: Option<FileSystem>,
-    // We don't implement unpin: we want `filesystem` to be pinned so that we can be sure
-    // references to filesystem objects (see refs.rs) will remain valid across different locks.
-    _pinned: PhantomPinned,
+pub struct FatFilesystem {
+    filesystem: FileSystem,
+    dirty_task: RefCell<Option<MonotonicInstant>>,
+    fs_id: Event,
+    scope: ExecutionScope,
 }
 
-impl FatFilesystemInner {
+impl FatFilesystem {
     /// Get the root fatfs Dir.
-    pub fn root_dir(&self) -> Dir<'_> {
-        self.filesystem.as_ref().unwrap().root_dir()
+    pub fn fatfs_root_dir(&self) -> Dir<'_> {
+        self.filesystem.root_dir()
     }
 
     pub fn with_disk<F, T>(&self, func: F) -> T
     where
         F: FnOnce(&Box<dyn Disk>) -> T,
     {
-        self.filesystem.as_ref().unwrap().with_disk(func)
-    }
-
-    pub fn shut_down(&mut self) -> Result<(), Status> {
-        self.filesystem.take().ok_or(Status::BAD_STATE)?.unmount().map_err(fatfs_error_to_status)
+        self.filesystem.with_disk(func)
     }
 
     pub fn cluster_size(&self) -> u32 {
-        self.filesystem.as_ref().map_or(0, |f| f.cluster_size())
+        self.filesystem.cluster_size()
     }
 
     pub fn total_clusters(&self) -> Result<u32, Status> {
-        Ok(self
-            .filesystem
-            .as_ref()
-            .ok_or(Status::BAD_STATE)?
-            .stats()
-            .map_err(fatfs_error_to_status)?
-            .total_clusters())
+        Ok(self.filesystem.stats().map_err(fatfs_error_to_status)?.total_clusters())
     }
 
     pub fn free_clusters(&self) -> Result<u32, Status> {
-        Ok(self
-            .filesystem
-            .as_ref()
-            .ok_or(Status::BAD_STATE)?
-            .stats()
-            .map_err(fatfs_error_to_status)?
-            .free_clusters())
+        Ok(self.filesystem.stats().map_err(fatfs_error_to_status)?.free_clusters())
     }
 
-    pub fn sector_size(&self) -> Result<u16, Status> {
-        Ok(self
-            .filesystem
-            .as_ref()
-            .ok_or(Status::BAD_STATE)?
-            .stats()
-            .map_err(fatfs_error_to_status)?
-            .sector_size())
-    }
-}
-
-pub struct FatFilesystem {
-    inner: Mutex<FatFilesystemInner>,
-    dirty_task: Mutex<Option<(MonotonicInstant, Task<()>)>>,
-    fs_id: Event,
-}
-
-impl FatFilesystem {
     /// Create a new FatFilesystem.
     pub fn new(
         disk: Box<dyn Disk>,
         options: FsOptions<DefaultTimeProvider, LossyOemCpConverter>,
-    ) -> Result<(Pin<Arc<Self>>, Arc<FatDirectory>), Error> {
-        let inner = Mutex::new(FatFilesystemInner {
-            filesystem: Some(fatfs::FileSystem::new(disk, options)?),
-            _pinned: PhantomPinned,
+        scope: ExecutionScope,
+    ) -> Result<(Rc<Self>, Arc<FatDirectory>), Error> {
+        let filesystem = fatfs::FileSystem::new(disk, options)?;
+        let result = Rc::new(FatFilesystem {
+            filesystem,
+            dirty_task: RefCell::new(None),
+            fs_id: Event::create(),
+            scope,
         });
-        let result =
-            Arc::pin(FatFilesystem { inner, dirty_task: Mutex::new(None), fs_id: Event::create() });
         Ok((result.clone(), result.root_dir()))
     }
 
     #[cfg(test)]
-    pub fn from_filesystem(filesystem: FileSystem) -> (Pin<Arc<Self>>, Arc<FatDirectory>) {
-        let inner =
-            Mutex::new(FatFilesystemInner { filesystem: Some(filesystem), _pinned: PhantomPinned });
-        let result =
-            Arc::pin(FatFilesystem { inner, dirty_task: Mutex::new(None), fs_id: Event::create() });
+    pub fn from_filesystem(filesystem: FileSystem) -> (Rc<Self>, Arc<FatDirectory>) {
+        let result = Rc::new(FatFilesystem {
+            filesystem,
+            dirty_task: RefCell::new(None),
+            fs_id: Event::create(),
+            scope: ExecutionScope::new(),
+        });
         (result.clone(), result.root_dir())
     }
 
@@ -109,57 +79,66 @@ impl FatFilesystem {
         &self.fs_id
     }
 
+    pub fn scope(&self) -> &ExecutionScope {
+        &self.scope
+    }
+
     /// Get the FatDirectory that represents the root directory of this filesystem.
     /// Note this should only be called once per filesystem, otherwise multiple conflicting
     /// FatDirectories will exist.
     /// We only call it from new() and from_filesystem().
-    fn root_dir(self: Pin<Arc<Self>>) -> Arc<FatDirectory> {
+    fn root_dir(self: Rc<Self>) -> Arc<FatDirectory> {
         // We start with an empty FatfsDirRef and an open_count of zero.
-        let dir = FatfsDirRef::empty();
-        FatDirectory::new(dir, None, self, "/".to_owned())
+        let dir = FatfsDirRef::empty(self);
+        FatDirectory::new(dir, None, "/".to_owned())
     }
 
-    /// Lock the underlying filesystem.
-    pub fn lock(&self) -> MutexGuard<'_, FatFilesystemInner> {
-        self.inner.lock()
+    pub fn shut_down(self) -> Result<(), Status> {
+        self.filesystem.unmount().map_err(fatfs_error_to_status)
     }
 
     /// Mark the filesystem as dirty. This will cause the disk to automatically be flushed after
     /// one second, and cancel any previous pending flushes.
-    pub fn mark_dirty(self: &Pin<Arc<Self>>) {
+    pub fn mark_dirty(self: &Rc<Self>) {
         let deadline = MonotonicInstant::after(MonotonicDuration::from_seconds(1));
-        match &mut *self.dirty_task.lock() {
-            Some((time, _)) => *time = deadline,
+        match &mut *self.dirty_task.borrow_mut() {
+            Some(time) => *time = deadline,
             x @ None => {
-                let this = self.clone();
-                *x = Some((
-                    deadline,
-                    Task::spawn(async move {
-                        loop {
-                            let deadline;
-                            {
-                                let mut task = this.dirty_task.lock();
-                                deadline = task.as_ref().unwrap().0;
-                                if MonotonicInstant::now() >= deadline {
-                                    *task = None;
-                                    break;
-                                }
+                *x = Some(deadline);
+                let this = Rc::downgrade(self);
+                self.scope.spawn_local(async move {
+                    loop {
+                        let deadline;
+                        {
+                            let this_rc = match this.upgrade() {
+                                Some(a) => a,
+                                None => return,
+                            };
+                            let mut task = this_rc.dirty_task.borrow_mut();
+                            if let Some(t) = task.as_ref() {
+                                deadline = *t;
+                            } else {
+                                break;
                             }
-                            Timer::new(deadline).await;
+                            if MonotonicInstant::now() >= deadline {
+                                *task = None;
+                                break;
+                            }
                         }
-                        let _ = this.lock().filesystem.as_ref().map(|f| f.flush());
-                    }),
-                ));
+                        Timer::new(deadline).await;
+                    }
+                    if let Some(this_rc) = this.upgrade() {
+                        let _ = this_rc.filesystem.flush();
+                    }
+                });
             }
         }
     }
 
     pub fn query_filesystem(&self) -> Result<fio::FilesystemInfo, Status> {
-        let fs_lock = self.lock();
-
-        let cluster_size = fs_lock.cluster_size() as u64;
-        let total_clusters = fs_lock.total_clusters()? as u64;
-        let free_clusters = fs_lock.free_clusters()? as u64;
+        let cluster_size = self.cluster_size() as u64;
+        let total_clusters = self.total_clusters()? as u64;
+        let free_clusters = self.free_clusters()? as u64;
         let total_bytes = cluster_size * total_clusters;
         let used_bytes = cluster_size * (total_clusters - free_clusters);
 
@@ -198,8 +177,8 @@ mod tests {
 
         let fs = disk.into_fatfs();
         let dir = fs.get_fatfs_root();
-        dir.open_ref(&fs.filesystem().lock()).unwrap();
-        defer! { dir.close_ref(&fs.filesystem().lock()) };
+        dir.open_ref().unwrap();
+        defer! { dir.close_ref() };
 
         let proxy = vfs::serve_file(
             dir.clone(),
@@ -207,20 +186,19 @@ mod tests {
             vfs::execution_scope::ExecutionScope::new(),
             fio::PERM_READABLE | fio::PERM_WRITABLE,
         );
-        assert!(fs.filesystem().dirty_task.lock().is_none());
+        assert!(fs.filesystem().dirty_task.borrow().is_none());
         let file = fio::FileProxy::new(proxy.into_channel().unwrap());
         file.write("hello there".as_bytes()).await.unwrap().map_err(Status::from_raw).unwrap();
         {
-            let fs_lock = fs.filesystem().lock();
+            let fs_inner = fs.filesystem();
             // fs should be dirty until the timer expires.
-            assert!(fs_lock.filesystem.as_ref().unwrap().is_dirty());
+            assert!(fs_inner.filesystem.is_dirty());
         }
-        // Wait some time for the flush to happen. Don't hold the lock while waiting, otherwise
-        // the flush will get stuck waiting on the lock.
+        // Wait some time for the flush to happen.
         Timer::new(MonotonicInstant::after(MonotonicDuration::from_millis(1500))).await;
         {
-            let fs_lock = fs.filesystem().lock();
-            assert_eq!(fs_lock.filesystem.as_ref().unwrap().is_dirty(), false);
+            let fs_inner = fs.filesystem();
+            assert_eq!(fs_inner.filesystem.is_dirty(), false);
         }
     }
 }

@@ -6,13 +6,14 @@ use crate::node::Node;
 use anyhow::Error;
 use fatfs::FsOptions;
 use fidl_fuchsia_fs::{AdminRequest, AdminShutdownResponder};
-use std::pin::Pin;
+use std::rc::Rc;
 use std::sync::Arc;
 use vfs::directory::entry::DirectoryEntry;
 use vfs::directory::entry_container::Directory;
 use vfs::execution_scope::ExecutionScope;
 use zx::Status;
 
+pub mod component;
 mod directory;
 mod file;
 mod filesystem;
@@ -54,20 +55,19 @@ pub trait RootDirectory: DirectoryEntry + Directory {}
 impl<T: DirectoryEntry + Directory> RootDirectory for T {}
 
 pub struct FatFs {
-    inner: Pin<Arc<FatFilesystem>>,
     root: Arc<FatDirectory>,
 }
 
 impl FatFs {
     /// Create a new FatFs using the given ReadWriteSeek as the disk.
-    pub fn new(disk: Box<dyn Disk>) -> Result<Self, Error> {
-        let (inner, root) = FatFilesystem::new(disk, FsOptions::new())?;
-        Ok(FatFs { inner, root })
+    pub fn new(disk: Box<dyn Disk>, scope: ExecutionScope) -> Result<Self, Error> {
+        let (_inner, root) = FatFilesystem::new(disk, FsOptions::new(), scope)?;
+        Ok(FatFs { root })
     }
 
     #[cfg(test)]
-    pub fn from_filesystem(inner: Pin<Arc<FatFilesystem>>, root: Arc<FatDirectory>) -> Self {
-        FatFs { inner, root }
+    pub fn from_filesystem(root: Arc<FatDirectory>) -> Self {
+        FatFs { root }
     }
 
     #[cfg(any(test, fuzz))]
@@ -76,18 +76,18 @@ impl FatFs {
     }
 
     pub fn filesystem(&self) -> &FatFilesystem {
-        return &self.inner;
+        self.root.fs()
     }
 
     pub fn is_present(&self) -> bool {
-        self.inner.lock().with_disk(|disk| disk.is_present())
+        self.filesystem().with_disk(|disk| disk.is_present())
     }
 
     /// Get the root directory of this filesystem.
     /// The caller must call close() on the returned entry when it's finished with it.
     pub fn get_root(&self) -> Result<Arc<FatDirectory>, Status> {
         // Make sure it's open.
-        self.root.open_ref(&self.inner.lock())?;
+        self.root.open_ref()?;
         Ok(self.root.clone())
     }
 
@@ -105,9 +105,25 @@ impl FatFs {
     }
 
     /// Shut down the filesystem.
-    pub fn shut_down(&self) -> Result<(), Status> {
-        let mut fs = self.inner.lock();
-        self.root.shut_down(&fs)?;
+    ///
+    /// # Preconditions
+    ///
+    /// This method requires exclusive ownership of the underlying `FatFilesystem` (held via `Rc`).
+    /// The caller must ensure that all other references (e.g., outstanding VFS connections,
+    /// active file/directory handles) have been dropped before calling this.
+    ///
+    /// If there are outstanding references, `Rc::into_inner` will fail, and this method
+    /// will return `Err(Status::BAD_STATE)` without unmounting the filesystem, to prevent
+    /// potential Use-After-Free (UAF) bugs.
+    ///
+    /// Typically, one should shut down the VFS scope and wait for all connections to close
+    /// (e.g., via `scope.wait().await`) before invoking this.
+    pub fn shut_down(self) -> Result<(), Status> {
+        let FatFs { root } = self;
+        let inner = root.fs().clone();
+        root.shut_down()?;
+        drop(root);
+        let fs = Rc::into_inner(inner).ok_or(Status::BAD_STATE)?;
         fs.shut_down()
     }
 }
@@ -276,8 +292,8 @@ mod tests {
         /// Convert this TestFatDisk into a FatFs for testing against.
         pub fn into_fatfs(self) -> FatFs {
             self.fs.flush().unwrap();
-            let (filesystem, root_dir) = FatFilesystem::from_filesystem(self.fs);
-            FatFs::from_filesystem(filesystem, root_dir)
+            let (_filesystem, root_dir) = FatFilesystem::from_filesystem(self.fs);
+            FatFs::from_filesystem(root_dir)
         }
     }
 

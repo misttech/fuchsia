@@ -111,6 +111,16 @@ impl ExecutionScope {
         self.executor.scope().spawn(task)
     }
 
+    /// Sends a `task` to be executed in this execution scope on the current thread.
+    /// This is useful for spawning `!Send` tasks when running on a single-threaded executor.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this execution scope is run on a multi-threaded executor (`SendExecutor`).
+    pub fn spawn_local(&self, task: impl Future<Output = ()> + 'static) -> JoinHandle<()> {
+        self.executor.scope().spawn_local(task)
+    }
+
     /// Returns a task that can be spawned later.  The task can also be polled before spawning.
     pub fn new_task(self, task: impl Future<Output = ()> + Send + 'static) -> Task {
         Task(self.executor, SpawnableFuture::new(task))

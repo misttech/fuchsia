@@ -6,11 +6,9 @@ use anyhow::Error;
 use fuchsia_component::server::MissingStartupHandle;
 use fuchsia_runtime::HandleType;
 
-mod component;
-
 #[fuchsia::main]
 async fn main() -> Result<(), Error> {
-    component::Component::new()
+    fuchsia_fatfs::component::Component::new()
         .run(
             fuchsia_runtime::take_startup_handle(HandleType::DirectoryRequest.into())
                 .ok_or(MissingStartupHandle)?

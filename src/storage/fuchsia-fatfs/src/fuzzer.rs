@@ -68,7 +68,7 @@ impl FuzzSink {
 
     async fn walk(&self, fs: &FatFs) {
         for name in self.entries.iter() {
-            let mut closer = Closer::new(fs.filesystem());
+            let mut closer = Closer::new();
             let entry = match self.dir.open_child(
                 name,
                 fio::OpenFlags::RIGHT_READABLE | fio::OpenFlags::RIGHT_WRITABLE,
@@ -103,10 +103,10 @@ impl Sealed for FuzzSink {
 }
 
 async fn do_fuzz(disk: Cursor<Box<[u8]>>) -> Result<(), Error> {
-    let fs = FatFs::new(Box::new(disk))?;
+    let fs = FatFs::new(Box::new(disk), vfs::execution_scope::ExecutionScope::new())?;
     let root: Arc<FatDirectory> = fs.get_fatfs_root();
 
-    root.open_ref(&fs.filesystem().lock()).unwrap();
+    root.open_ref().unwrap();
     let _ = fuzz_node(&fs, FatNode::Dir(root.clone()), 0).await;
     defer! { root.close() };
 

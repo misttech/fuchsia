@@ -4,35 +4,29 @@
 
 use crate::directory::FatDirectory;
 use crate::file::FatFile;
-use crate::filesystem::{FatFilesystem, FatFilesystemInner};
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
 use zx::Status;
 
 pub trait Node {
     /// Attach this FatNode to the given FatDirectory, with the given name.
-    fn attach(
-        &self,
-        parent: Arc<FatDirectory>,
-        name: &str,
-        fs: &FatFilesystemInner,
-    ) -> Result<(), Status>;
+    fn attach(&self, parent: Arc<FatDirectory>, name: &str) -> Result<(), Status>;
 
     /// Detach this FatNode from its parent.
-    fn detach<'a>(&self, fs: &'a FatFilesystemInner);
+    fn detach(&self);
 
     /// Takes an open count and opens the underlying node if not already open.
-    fn open_ref<'a>(&'a self, fs: &'a FatFilesystemInner) -> Result<(), Status>;
+    fn open_ref(&self) -> Result<(), Status>;
 
     /// Releases an open count.
-    fn close_ref(&self, fs: &FatFilesystemInner);
+    fn close_ref(&self);
 
     /// Close the underlying node and all of its children, regardless of the number of open
     /// connections.
-    fn shut_down(&self, fs: &FatFilesystemInner) -> Result<(), Status>;
+    fn shut_down(&self) -> Result<(), Status>;
 
     /// Flushes the directory entry for this node.
-    fn flush_dir_entry(&self, fs: &FatFilesystemInner) -> Result<(), Status>;
+    fn flush_dir_entry(&self) -> Result<(), Status>;
 
     /// Called when the node has been successfully deleted.
     fn did_delete(&self);
@@ -89,17 +83,15 @@ impl WeakFatNode {
     }
 }
 
-/// RAII class that will close nodes when dropped.  This should be created whilst the filesystem
-/// lock is not held since when it drops, it takes the filesystem lock.  This class is useful
+/// RAII class that will close nodes when dropped.  This class is useful
 /// for instances where temporary open counts are required.
-pub struct Closer<'a> {
-    filesystem: &'a FatFilesystem,
+pub struct Closer {
     nodes: std::vec::Vec<FatNode>,
 }
 
-impl<'a> Closer<'a> {
-    pub fn new(filesystem: &'a FatFilesystem) -> Self {
-        Closer { filesystem, nodes: Vec::new() }
+impl Closer {
+    pub fn new() -> Self {
+        Closer { nodes: Vec::new() }
     }
 
     pub fn add(&mut self, node: FatNode) -> FatNode {
@@ -108,9 +100,8 @@ impl<'a> Closer<'a> {
     }
 }
 
-impl Drop for Closer<'_> {
+impl Drop for Closer {
     fn drop(&mut self) {
-        let lock = self.filesystem.lock();
-        self.nodes.drain(..).for_each(|n: FatNode| n.close_ref(&lock));
+        self.nodes.drain(..).for_each(|n: FatNode| n.close_ref());
     }
 }

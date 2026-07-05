@@ -12,20 +12,26 @@ import("//src/storage/fs_test/suite.gni")
 fatfs_deps = [
   "//sdk/fidl/fuchsia.fs:fuchsia.fs_rust",
   "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+  "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
+  "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
   "//sdk/rust/zx",
   "//src/lib/fidl/rust/fidl",
   "//src/lib/fuchsia-async",
-  "//src/lib/fuchsia-sync",
+  "//src/storage/block_adapter:block_adapter_lib",
+  "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_rust",
   "//src/storage/lib/block_client/rust",
   "//src/storage/lib/vfs/rust:vfs",
   "//third_party/rust_crates:anyhow",
   "//third_party/rust_crates:chrono",
   "//third_party/rust_crates:fatfs",
+  "//third_party/rust_crates:fragile",
   "//third_party/rust_crates:futures",
+  "//third_party/rust_crates:log",
   "//third_party/rust_crates:scopeguard",
 ]
 
 fatfs_sources = [
+  "src/component.rs",
   "src/directory.rs",
   "src/file.rs",
   "src/filesystem.rs",
@@ -88,29 +94,13 @@ rustc_binary("fatfs") {
 
   deps = [
     ":lib",
-    "//sdk/fidl/fuchsia.fs:fuchsia.fs_rust",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
-    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
-    "//sdk/rust/zx",
-    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-runtime",
-    "//src/storage/block_adapter:block_adapter_lib",
-    "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_rust",
-    "//src/storage/lib/block_client/rust",
-    "//src/storage/lib/vfs/rust:vfs",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:log",
   ]
 
-  sources = [
-    "src/component.rs",
-    "src/main.rs",
-  ]
+  sources = [ "src/main.rs" ]
 }
 
 fuchsia_package("fatfs-bin") {

@@ -3,261 +3,262 @@
 // found in the LICENSE file.
 
 //! This module provides abstractions over the fatfs Dir and File types,
-//! erasing their lifetimes and allowing them to be kept without holding the filesystem lock.
+//! erasing their lifetimes and allowing them to be kept.
 use crate::directory::FatDirectory;
-use crate::filesystem::FatFilesystemInner;
+use crate::filesystem::FatFilesystem;
 use crate::node::Node;
 use crate::types::{Dir, File};
 use scopeguard::defer;
-use std::cell::{Ref, RefMut};
-use std::ops::{Deref, DerefMut};
+use std::cell::{Cell, Ref, RefCell, RefMut};
+use std::rc::Rc;
 use std::sync::Arc;
 use zx::Status;
 
-pub trait Wrapper<'a> {
+mod opaque {
+    #[repr(transparent)]
+    pub struct Opaque<T>(T);
+}
+pub use opaque::Opaque;
+
+/// Trait for types that can have their lifetime faked to `'static` and restored.
+///
+/// # Safety
+///
+/// Implementer must ensure that `Self` and `Self::Target` have the same memory layout
+/// and size. Typically this is only implemented for `T<'static>` with `Target = T<'a>`.
+pub unsafe trait ErasedLifetime<'a>: Sized {
     type Target: 'a;
 
-    /// Extracts a reference to the wrapped value. The lifetime is restored to that of `fs`.
-    fn get(&self, fs: &'a FatFilesystemInner) -> Option<&Self::Target>;
-
-    /// Extracts a mutable reference to the wrapped value. The lifetime is restored to that of `fs`.
-    fn get_mut(&mut self, fs: &'a FatFilesystemInner) -> Option<&mut Self::Target>;
-}
-
-pub struct FatfsDirRef {
-    inner: Option<Dir<'static>>,
-    open_count: usize,
-}
-
-impl FatfsDirRef {
-    /// Wraps and erases the lifetime. The caller assumes responsibility for
-    /// ensuring the associated filesystem lives long enough and is pinned.
-    pub unsafe fn from(dir: Dir<'_>) -> Self {
-        FatfsDirRef { inner: Some(unsafe { std::mem::transmute(dir) }), open_count: 1 }
-    }
-
-    pub fn empty() -> Self {
-        FatfsDirRef { inner: None, open_count: 0 }
-    }
-
-    /// Reopen the FatfsDirRef if open count > 0.
-    pub unsafe fn maybe_reopen(
-        &mut self,
-        fs: &FatFilesystemInner,
-        parent: Option<&Arc<FatDirectory>>,
-        name: &str,
-    ) -> Result<(), Status> {
-        if self.open_count == 0 { Ok(()) } else { unsafe { self.reopen(fs, parent, name) } }
-    }
-
-    unsafe fn reopen(
-        &mut self,
-        fs: &FatFilesystemInner,
-        parent: Option<&Arc<FatDirectory>>,
-        name: &str,
-    ) -> Result<(), Status> {
-        let dir = if let Some(parent) = parent {
-            parent.open_ref(fs)?;
-            defer! { parent.close_ref(fs) }
-            parent.find_child(fs, name)?.ok_or(Status::NOT_FOUND)?.to_dir()
-        } else {
-            fs.root_dir()
-        };
-        self.inner.replace(unsafe { std::mem::transmute(dir) });
-        Ok(())
-    }
-
-    /// Open the FatfsDirRef, incrementing the open count.
-    pub unsafe fn open(
-        &mut self,
-        fs: &FatFilesystemInner,
-        parent: Option<&Arc<FatDirectory>>,
-        name: &str,
-    ) -> Result<(), Status> {
-        if self.open_count == std::usize::MAX {
-            Err(Status::UNAVAILABLE)
-        } else {
-            if self.open_count == 0 {
-                unsafe {
-                    self.reopen(fs, parent, name)?;
-                }
-            }
-            self.open_count += 1;
-            Ok(())
+    /// Erases the lifetime by transmute_copying the value.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the returned value is not used after the lifetime
+    /// of the original value has expired.
+    unsafe fn erase(val: Self::Target) -> Opaque<Self> {
+        // SAFETY: Transmute is safe because the trait guarantees that Self and Self::Target
+        // have the same memory layout.
+        unsafe {
+            let res = std::mem::transmute_copy(&val);
+            std::mem::forget(val);
+            res
         }
     }
 
-    /// Close the FatfsDirRef, dropping the underlying Dir if the open count reaches zero.
-    pub fn close(&mut self, fs: &FatFilesystemInner) {
-        assert!(self.open_count > 0);
-        self.open_count -= 1;
-        if self.open_count == 0 {
-            self.take(&fs);
+    /// Restores the lifetime by transmute_copying the value.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the returned value is bound to the correct lifetime.
+    unsafe fn restore(val: Opaque<Self>) -> Self::Target {
+        // SAFETY: Transmute is safe because the trait guarantees that Self and Self::Target
+        // have the same memory layout.
+        unsafe {
+            let res = std::mem::transmute_copy(&val);
+            std::mem::forget(val);
+            res
         }
     }
 
-    /// Extracts the wrapped value, restoring its lifetime to that of _fs, and invalidate
-    /// this FatfsDirRef. Any future calls to the borrow_*() functions will panic.
-    pub fn take<'a>(&mut self, _fs: &'a FatFilesystemInner) -> Option<Dir<'a>> {
-        unsafe { std::mem::transmute(self.inner.take()) }
+    /// Restores the reference lifetime by casting the pointer.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the returned reference is bound to the correct lifetime.
+    unsafe fn restore_ref(val: &Opaque<Self>) -> &Self::Target {
+        // SAFETY: Casting pointer is safe because the trait guarantees that Self and Self::Target
+        // have the same memory layout.
+        unsafe { &*(val as *const Opaque<Self> as *const Self::Target) }
+    }
+
+    /// Restores the mutable reference lifetime by casting the pointer.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the returned reference is bound to the correct lifetime.
+    unsafe fn restore_mut(val: &mut Opaque<Self>) -> &mut Self::Target {
+        // SAFETY: Casting pointer is safe because the trait guarantees that Self and Self::Target
+        // have the same memory layout.
+        unsafe { &mut *(val as *mut Opaque<Self> as *mut Self::Target) }
     }
 }
 
-impl<'a> Wrapper<'a> for FatfsDirRef {
+// SAFETY: Dir<'static> and Dir<'a> have the same memory layout and size.
+unsafe impl<'a> ErasedLifetime<'a> for Dir<'static> {
     type Target = Dir<'a>;
+}
 
-    fn get(&self, _fs: &'a FatFilesystemInner) -> Option<&Dir<'a>> {
-        unsafe { std::mem::transmute(self.inner.as_ref()) }
+// SAFETY: File<'static> and File<'a> have the same memory layout and size.
+unsafe impl<'a> ErasedLifetime<'a> for File<'static> {
+    type Target = File<'a>;
+}
+
+pub struct FsRef<T> {
+    inner: RefCell<Option<Opaque<T>>>,
+    open_count: Cell<usize>,
+    filesystem: Rc<FatFilesystem>,
+}
+
+impl<T> FsRef<T> {
+    /// Creates an `FsRef` from a value with erased lifetime.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `val` is a reference associated with the provided `filesystem`.
+    /// Mixing references from different filesystem instances will result in undefined behavior.
+    pub unsafe fn from<'a>(
+        val: <T as ErasedLifetime<'a>>::Target,
+        filesystem: Rc<FatFilesystem>,
+    ) -> Self
+    where
+        T: ErasedLifetime<'a>,
+    {
+        FsRef {
+            // SAFETY: Safe because T::Target (Dir<'a>/File<'a>) is bound to the lifetime of the
+            // filesystem, which is kept alive by `self.filesystem`.
+            inner: RefCell::new(Some(unsafe { T::erase(val) })),
+            open_count: Cell::new(1),
+            filesystem,
+        }
     }
 
-    fn get_mut(&mut self, _fs: &'a FatFilesystemInner) -> Option<&mut Dir<'a>> {
-        // We need to transmute() back to the right lifetime because otherwise rust forces us to
-        // return a &'static mut, because it thinks that any references within the file must be to
-        // objects with a static lifetime. This isn't the case (because the lifetime is determined
-        // by the lock on FatFilesystemInner, which we know is held), so this is safe.
-        unsafe { std::mem::transmute(self.inner.as_mut()) }
+    pub fn empty(filesystem: Rc<FatFilesystem>) -> Self {
+        FsRef { inner: RefCell::new(None), open_count: Cell::new(0), filesystem }
+    }
+
+    pub fn filesystem(&self) -> &Rc<FatFilesystem> {
+        &self.filesystem
+    }
+
+    pub fn close<'a>(&self)
+    where
+        T: ErasedLifetime<'a>,
+    {
+        let open_count = self.open_count.get();
+        assert!(open_count > 0);
+        self.open_count.set(open_count - 1);
+        if open_count == 1 {
+            self.clear();
+        }
+    }
+
+    pub fn clear<'a>(&self)
+    where
+        T: ErasedLifetime<'a>,
+    {
+        if let Some(f) = self.inner.borrow_mut().take() {
+            // SAFETY: Safe because the restored value is dropped immediately while `self`
+            // (and thus `self.filesystem`) is alive.
+            unsafe {
+                let restored = <T as ErasedLifetime<'a>>::restore(f);
+                drop(restored);
+            }
+        }
+    }
+
+    pub fn get<'a>(&'a self) -> Option<Ref<'a, <T as ErasedLifetime<'a>>::Target>>
+    where
+        T: ErasedLifetime<'a>,
+    {
+        let borrow = self.inner.borrow();
+        if borrow.is_none() {
+            None
+        } else {
+            Some(Ref::map(borrow, |val| {
+                // SAFETY: Safe because the returned reference is bound to the lifetime of
+                // self.inner borrow by Ref::map.
+                unsafe { T::restore_ref(val.as_ref().unwrap()) }
+            }))
+        }
+    }
+
+    pub fn get_mut<'a>(&'a self) -> Option<RefMut<'a, <T as ErasedLifetime<'a>>::Target>>
+    where
+        T: ErasedLifetime<'a>,
+    {
+        let borrow = self.inner.borrow_mut();
+        if borrow.is_none() {
+            None
+        } else {
+            Some(RefMut::map(borrow, |val| {
+                // SAFETY: Safe because the returned reference is bound to the lifetime of
+                // self.inner borrow by RefMut::map.
+                unsafe { T::restore_mut(val.as_mut().unwrap()) }
+            }))
+        }
     }
 }
 
-// Safe because whenever the `inner` is used, the filesystem lock is held.
-unsafe impl Sync for FatfsDirRef {}
-unsafe impl Send for FatfsDirRef {}
-
-impl Drop for FatfsDirRef {
+impl<T> Drop for FsRef<T> {
     fn drop(&mut self) {
-        assert_eq!(self.open_count, 0);
-        // Need to call take().
-        assert!(self.inner.is_none());
+        assert_eq!(self.open_count.get(), 0);
+        assert!(self.inner.borrow().is_none());
     }
 }
 
-pub struct FatfsFileRef {
-    inner: Option<File<'static>>,
-    open_count: usize,
-}
-
-impl FatfsFileRef {
-    /// Wraps and erases the lifetime. The caller assumes responsibility for
-    /// ensuring the associated filesystem lives long enough and is pinned.
-    pub unsafe fn from(file: File<'_>) -> Self {
-        FatfsFileRef { inner: Some(unsafe { std::mem::transmute(file) }), open_count: 1 }
-    }
-
-    /// Reopen the FatfsDirRef if open count > 0.
-    pub unsafe fn maybe_reopen(
-        &mut self,
-        fs: &FatFilesystemInner,
-        parent: &FatDirectory,
+impl FsRef<Dir<'static>> {
+    pub fn maybe_reopen(
+        &self,
+        parent: Option<&Arc<FatDirectory>>,
         name: &str,
     ) -> Result<(), Status> {
-        if self.open_count == 0 { Ok(()) } else { unsafe { self.reopen(fs, parent, name) } }
+        if self.open_count.get() == 0 { Ok(()) } else { self.reopen(parent, name) }
     }
 
-    unsafe fn reopen(
-        &mut self,
-        fs: &FatFilesystemInner,
-        parent: &FatDirectory,
-        name: &str,
-    ) -> Result<(), Status> {
-        let file = parent.find_child(fs, name)?.ok_or(Status::NOT_FOUND)?.to_file();
-        self.inner.replace(unsafe { std::mem::transmute(file) });
+    fn reopen(&self, parent: Option<&Arc<FatDirectory>>, name: &str) -> Result<(), Status> {
+        let dir = if let Some(parent) = parent {
+            parent.open_ref()?;
+            defer! { parent.close_ref() }
+            parent.find_child(name)?.ok_or(Status::NOT_FOUND)?.to_dir()
+        } else {
+            self.filesystem.fatfs_root_dir()
+        };
+        // SAFETY: We hold `self.filesystem` which is Rc<FatFilesystem>, ensuring the
+        // filesystem outlives this FsRef.
+        self.inner.replace(Some(unsafe { <Dir<'static> as ErasedLifetime>::erase(dir) }));
         Ok(())
     }
 
-    pub unsafe fn open(
-        &mut self,
-        fs: &FatFilesystemInner,
-        parent: Option<&FatDirectory>,
-        name: &str,
-    ) -> Result<(), Status> {
-        if self.open_count == std::usize::MAX {
+    pub fn open(&self, parent: Option<&Arc<FatDirectory>>, name: &str) -> Result<(), Status> {
+        let open_count = self.open_count.get();
+        if open_count == std::usize::MAX {
             Err(Status::UNAVAILABLE)
         } else {
-            if self.open_count == 0 {
-                unsafe {
-                    self.reopen(fs, parent.ok_or(Status::BAD_HANDLE)?, name)?;
-                }
+            if open_count == 0 {
+                self.reopen(parent, name)?;
             }
-            self.open_count += 1;
+            self.open_count.set(open_count + 1);
             Ok(())
         }
     }
+}
 
-    pub fn close(&mut self, fs: &FatFilesystemInner) {
-        assert!(self.open_count > 0);
-        self.open_count -= 1;
-        if self.open_count == 0 {
-            self.take(&fs);
+impl FsRef<File<'static>> {
+    pub fn maybe_reopen(&self, parent: &FatDirectory, name: &str) -> Result<(), Status> {
+        if self.open_count.get() == 0 { Ok(()) } else { self.reopen(parent, name) }
+    }
+
+    fn reopen(&self, parent: &FatDirectory, name: &str) -> Result<(), Status> {
+        let file = parent.find_child(name)?.ok_or(Status::NOT_FOUND)?.to_file();
+        // SAFETY: We hold `self.filesystem` which is Rc<FatFilesystem>, ensuring the
+        // filesystem outlives this FsRef.
+        self.inner.replace(Some(unsafe { <File<'static> as ErasedLifetime>::erase(file) }));
+        Ok(())
+    }
+
+    pub fn open(&self, parent: Option<&FatDirectory>, name: &str) -> Result<(), Status> {
+        let open_count = self.open_count.get();
+        if open_count == std::usize::MAX {
+            Err(Status::UNAVAILABLE)
+        } else {
+            if open_count == 0 {
+                self.reopen(parent.ok_or(Status::BAD_HANDLE)?, name)?;
+            }
+            self.open_count.set(open_count + 1);
+            Ok(())
         }
     }
-
-    /// Extracts the wrapped value, restoring its lifetime to that of _fs, and invalidate
-    /// this FatFsRef.
-    pub fn take<'a>(&mut self, _fs: &'a FatFilesystemInner) -> Option<File<'a>> {
-        self.inner.take()
-    }
 }
 
-impl<'a> Wrapper<'a> for FatfsFileRef {
-    type Target = File<'a>;
-
-    fn get(&self, _fs: &'a FatFilesystemInner) -> Option<&File<'a>> {
-        self.inner.as_ref()
-    }
-
-    fn get_mut(&mut self, _fs: &'a FatFilesystemInner) -> Option<&mut File<'a>> {
-        // We need to transmute() back to the right lifetime because otherwise rust forces us to
-        // return a &'static mut, because it thinks that any references within the file must be to
-        // objects with a static lifetime. This isn't the case (because the lifetime is determined
-        // by the lock on FatFilesystemInner, which we know is held), so this is safe.
-        unsafe { std::mem::transmute(self.inner.as_mut()) }
-    }
-}
-
-// Safe because whenever the `inner` is used, the filesystem lock is held.
-unsafe impl Sync for FatfsFileRef {}
-unsafe impl Send for FatfsFileRef {}
-
-impl Drop for FatfsFileRef {
-    fn drop(&mut self) {
-        // Need to call take().
-        assert_eq!(self.open_count, 0);
-        assert!(self.inner.is_none());
-    }
-}
-
-pub struct Guard<'a, T>(&'a FatFilesystemInner, Ref<'a, T>);
-
-impl<'a, T> Guard<'a, T> {
-    pub fn new(fs: &'a FatFilesystemInner, inner: Ref<'a, T>) -> Self {
-        Self(fs, inner)
-    }
-}
-
-impl<'a, T: Wrapper<'a>> Deref for Guard<'a, T> {
-    type Target = T::Target;
-    fn deref(&self) -> &T::Target {
-        self.1.get(self.0).unwrap()
-    }
-}
-
-pub(crate) struct GuardMut<'a, T>(&'a FatFilesystemInner, RefMut<'a, T>);
-
-impl<'a, T> GuardMut<'a, T> {
-    pub fn new(fs: &'a FatFilesystemInner, inner: RefMut<'a, T>) -> Self {
-        Self(fs, inner)
-    }
-}
-
-impl<'a, T: Wrapper<'a>> Deref for GuardMut<'a, T> {
-    type Target = T::Target;
-    fn deref(&self) -> &T::Target {
-        self.1.get(self.0).unwrap()
-    }
-}
-
-impl<'a, T: Wrapper<'a>> DerefMut for GuardMut<'a, T> {
-    fn deref_mut(&mut self) -> &mut T::Target {
-        self.1.get_mut(self.0).unwrap()
-    }
-}
+pub type FatfsDirRef = FsRef<Dir<'static>>;
+pub type FatfsFileRef = FsRef<File<'static>>;
