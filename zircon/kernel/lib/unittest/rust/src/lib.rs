@@ -15,7 +15,8 @@ use core::ffi::c_char;
 #[doc(hidden)]
 pub use zx_status::Status as __Status;
 
-/// Attribute macro defining suite of unit tests defined as module.
+/// Attribute macro defining suite of unit tests defined as module. The
+/// attribute may only be used in a cfg(ktest) context.
 ///
 /// Tests are idiomatically modeled as functions, and so modules of such
 /// functions make for a natural representation as a test suite.
@@ -39,6 +40,7 @@ pub use zx_status::Status as __Status;
 /// # Example
 /// ```rust
 /// /// Brief test suite description.
+/// #[cfg(ktest)]
 /// #[test_suite]
 /// mod my_suite {
 ///     /// Brief test case description.
@@ -459,6 +461,8 @@ macro_rules! assert_ok {
     };
 }
 
+// When building this crate with unit tests we also pass `--cfg ktest` to
+// enable the unconditional use of #[test_suite] below.
 #[cfg(test)]
 mod tests {
     use core::ffi::CStr;

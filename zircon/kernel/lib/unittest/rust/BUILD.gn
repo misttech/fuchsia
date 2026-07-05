@@ -18,16 +18,21 @@ rustc_library("unittest") {
   ]
 
   with_unit_tests = true
-  test_configs = [ ":unittest.test.ld" ]
+  test_configs = [ ":unittest.test" ]
 }
 
-config("unittest.test.ld") {
+config("unittest.test") {
   visibility = [ ":*" ]
 
-  script = rebase_path("test.ld", root_build_dir)
+  ld_script = rebase_path("test.ld", root_build_dir)
   rustflags = [
+    # Ensures the special test metadata section is retained.
     "-C",
-    "link-arg=-T${script}",
+    "link-arg=-T${ld_script}",
+
+    # Enables the unit tests themselves.
+    "--cfg",
+    "ktest",
   ]
 }
 

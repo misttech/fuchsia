@@ -173,9 +173,11 @@ impl ToTokens for TestSuite {
             pub mod #mod_ident {
                 use super::*;
 
+                #[cfg(not(ktest))]
+                compile_error!("#[test_suite] may only be used in a cfg(ktest) context");
+
                 #( #cases )*
 
-                #[cfg(test)]
                 const _: () = {
                     static TESTS: [::unittest::TestCaseRegistration; #test_count] = [
                         #( #reg_entries ),*
