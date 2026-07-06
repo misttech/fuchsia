@@ -31,6 +31,15 @@ impl DeprecatedConfigurator {
                         fidl_deprecated::DeprecatedConfiguratorRequest::SuggestAccessPointMacAddress{mac, responder} => {
                             info!("setting suggested AP MAC");
                             let mac = MacAddr::from(mac.octets);
+
+                            if !mac.is_unicast() || mac == ieee80211::NULL_ADDR {
+                                error!("rejecting invalid suggested AP MAC");
+                                if let Err(e) = responder.send(Err(fidl_deprecated::SuggestMacAddressError::InvalidArguments)) {
+                                    error!("could not send SuggestAccessPointMacAddress response: {:?}", e);
+                                }
+                                continue;
+                            }
+
                             let mut phy_manager = self.phy_manager.lock().await;
                             phy_manager.suggest_ap_mac(mac);
 
@@ -65,6 +74,7 @@ mod tests {
     use std::collections::HashMap;
     use std::pin::pin;
     use std::unimplemented;
+    use test_case::test_case;
 
     #[derive(Debug)]
     struct StubPhyManager(Option<MacAddr>);
@@ -171,7 +181,7 @@ mod tests {
         assert!(exec.run_until_stalled(&mut fut).is_pending());
 
         // Issue a request to set the MAC address.
-        let octets = [1, 2, 3, 4, 5, 6];
+        let octets = [0xde, 0xad, 0xbe, 0xef, 0x00, 0x01];
         let mac = fidl_fuchsia_net::MacAddress { octets };
         let mut suggest_fut = configurator_proxy.suggest_access_point_mac_address(&mac);
         assert!(exec.run_until_stalled(&mut fut).is_pending());
@@ -189,5 +199,47 @@ mod tests {
         assert_eq!(Some(expected_mac), phy_manager.0);
 
         assert_matches!(exec.run_until_stalled(&mut suggest_fut), Poll::Ready(Ok(Ok(()))));
+    }
+
+    #[test_case([0xff, 0xff, 0xff, 0xff, 0xff, 0xff] ; "broadcast")]
+    #[test_case([0x01, 0x00, 0x5e, 0x00, 0x00, 0x01] ; "multicast")]
+    #[fuchsia::test]
+    fn test_suggest_mac_fails(octets: [u8; 6]) {
+        let mut exec = fasync::TestExecutor::new();
+
+        // Set up the DeprecatedConfigurator.
+        let phy_manager = Arc::new(Mutex::new(StubPhyManager::new()));
+        let configurator = DeprecatedConfigurator::new(phy_manager.clone());
+
+        // Create the request stream and proxy.
+        let (configurator_proxy, remote) =
+            create_proxy::<fidl_deprecated::DeprecatedConfiguratorMarker>();
+        let stream = remote.into_stream();
+
+        // Kick off the serve loop and wait for it to stall out waiting for requests.
+        let fut = configurator.serve_deprecated_configuration(stream);
+        let mut fut = pin!(fut);
+        assert!(exec.run_until_stalled(&mut fut).is_pending());
+
+        // Issue a request to set the MAC address.
+        let mac = fidl_fuchsia_net::MacAddress { octets };
+        let mut suggest_fut = configurator_proxy.suggest_access_point_mac_address(&mac);
+        assert!(exec.run_until_stalled(&mut fut).is_pending());
+
+        // Verify that the MAC has been set on the PhyManager
+        let lock_fut = phy_manager.lock();
+        let mut lock_fut = pin!(lock_fut);
+        let phy_manager = assert_matches!(
+            exec.run_until_stalled(&mut lock_fut),
+            Poll::Ready(phy_manager) => {
+                phy_manager
+            }
+        );
+        assert_eq!(None, phy_manager.0);
+
+        assert_matches!(
+            exec.run_until_stalled(&mut suggest_fut),
+            Poll::Ready(Ok(Err(fidl_deprecated::SuggestMacAddressError::InvalidArguments)))
+        );
     }
 }
