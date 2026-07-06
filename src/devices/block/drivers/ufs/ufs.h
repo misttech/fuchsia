@@ -9,6 +9,9 @@
 #include <fidl/fuchsia.hardware.ufs/cpp/fidl.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
+#include <lib/async/cpp/irq.h>
+#include <lib/async/cpp/task.h>
+#include <lib/async/cpp/wait.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/fdf/cpp/dispatcher.h>
@@ -272,12 +275,16 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
 
  private:
   friend class UfsTest;
-  int IrqLoop();
-  // IoLoop() cannot process SCSI commands when the UFS device is suspended. The SCSI StartStopUnit
-  // admin command is required to resume UFS device, so AdminLoop() is required to handle the
-  // completion of the admin command even in a suspended state.
-  int AdminLoop();
-  int IoLoop();
+  void HandleIrq(async_dispatcher_t *dispatcher, async::IrqBase *irq, zx_status_t status,
+                 const zx_packet_interrupt_t *interrupt);
+  void HandleTimeout(async_dispatcher_t *dispatcher, async::TaskBase *task, zx_status_t status);
+  void TriggerAdminWork();
+  void TriggerIoWork();
+  // ProcessIo() cannot process SCSI commands when the UFS device is suspended. The SCSI
+  // StartStopUnit admin command is required to resume UFS device, so ProcessAdminCompletions() is
+  // required to handle the completion of the admin command even in a suspended state.
+  void ProcessIo();
+  void ScheduleTimeoutTask();
 
   // Interrupt service routine. Check that the request is complete.
   zx::result<> Isr();
@@ -360,12 +367,6 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
   // waiting for IO to start.
   list_node_t pending_commands_ TA_GUARDED(commands_lock_);
 
-  // Notifies AdminThread() that it has work to do. Signaled from QueueIoCommand() or the IRQ
-  // handler.
-  sync_completion_t admin_signal_;
-  // Notifies IoThread() that it has work to do. Signaled from QueueIoCommand() or the IRQ handler.
-  sync_completion_t io_signal_;
-
   // Dispatcher for processing queued block requests.
   fdf::Dispatcher irq_worker_dispatcher_;
   fdf::Dispatcher io_worker_dispatcher_;
@@ -376,8 +377,9 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
   libsync::Completion io_worker_shutdown_completion_;
   libsync::Completion admin_worker_shutdown_completion_;
   libsync::Completion exception_event_completion_;
-  // Signaled when power has been resumed.
-  libsync::Completion wait_for_power_resumed_;
+
+  async::IrqMethod<Ufs, &Ufs::HandleIrq> irq_handler_{this};
+  async::TaskMethod<Ufs, &Ufs::HandleTimeout> timeout_task_{this};
 
   std::unique_ptr<DeviceManager> device_manager_;
   std::unique_ptr<TransferRequestProcessor> transfer_request_processor_;
