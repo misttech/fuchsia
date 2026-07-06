@@ -44,7 +44,6 @@ mesa_source_set("util") {
   sources = [
     "$src_dir/vk_alloc.c",
     "$src_dir/vk_alloc.h",
-    "$src_dir/vk_enum_to_str.h",
     "$src_dir/vk_format.c",
     "$src_dir/vk_format.h",
     "$src_dir/vk_util.c",

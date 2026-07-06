@@ -56,7 +56,6 @@ group("gen") {
 
 mesa_source_set("compiler") {
   sources = [
-    "$src_dir/builtin_type_macros.h",
     "$src_dir/glsl_types.c",
     "$src_dir/glsl_types.h",
     "$src_dir/shader_enums.c",

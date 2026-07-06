@@ -249,7 +249,6 @@ mesa_source_set("nir") {
     "$src_dir/nir_trivialize_registers.c",
     "$src_dir/nir_validate.c",
     "$src_dir/nir_vla.h",
-    "$src_dir/nir_vulkan.h",
     "$src_dir/nir_worklist.c",
     "$src_dir/nir_worklist.h",
     "$src_dir/nir_xfb_info.h",

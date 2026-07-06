@@ -41,7 +41,6 @@ mesa_source_set("vulkan") {
   sources = [
     "$src_dir/vulkan/vk_platform.h",
     "$src_dir/vulkan/vulkan.h",
-    "$src_dir/vulkan/vulkan_intel.h",
   ]
 }
 

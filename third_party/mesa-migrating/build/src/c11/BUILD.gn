@@ -29,7 +29,6 @@ config("local") {
 mesa_source_set("c11") {
   sources = [
     "$src_dir/impl/threads_posix.c",
-    "$src_dir/impl/threads_posix.h",
     "$src_dir/impl/time.c",
     "$src_dir/threads.h",
   ]
