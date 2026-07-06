@@ -17,6 +17,7 @@ fidl_library(
     enable_hlcpp = True,
     enable_rust_next = True,
     stable = True,
+    visibility = ["//visibility:public"],
     deps = [
         "//zircon/vdso/zx",
     ],

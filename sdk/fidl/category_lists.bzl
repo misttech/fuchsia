@@ -259,6 +259,7 @@ PARTNER_IDK_UNSTABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_idk",
     "//sdk/fidl/fuchsia.power.observability:fuchsia.power.observability_idk",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_idk",
+    "//sdk/fidl/fuchsia.system.state:fuchsia.system.state_idk",
     "//sdk/fidl/fuchsia.usb.policy:fuchsia.usb.policy_idk",
     "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_idk",
     "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats_idk",

@@ -43,5 +43,6 @@ fidl("fuchsia.diagnostics.types") {
   enable_hlcpp = true
   enable_rust_next = true
   stable = true
+  visibility = [ "*" ]
   public_deps = [ "//zircon/vdso/zx" ]
 }

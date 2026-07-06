@@ -191,6 +191,15 @@ def _check_build_files(ctx, target_files):
             if attr == "name":
                 continue
 
+            # WORKAROUND: The `fidl_migration.star` regex parser does not support parsing
+            # dictionary values `{ ... }` from BUILD files. The `zither` attribute uses dictionaries
+            # (e.g. `zither = { c = ... }`). The regex parser incorrectly extracts the dictionary keys
+            # (`c`, `output_namespace`) as top-level attributes in GN, but fails to extract them in Bazel,
+            # leading to false positive mismatch errors.
+            # We explicitly ignore these attributes here since `zither` is a very rare and specialized case.
+            if attr in ["zither", "c", "output_namespace"]:
+                continue
+
             expected_gn_attr = bazel_to_gn_mapping.get(attr, attr)
 
             if bazel_val == None:
@@ -652,6 +661,9 @@ _BAZEL_BUILD_PATHS_TO_IGNORE = [
     "sdk/fidl/fuchsia.hardware.sockettunnel/BUILD.bazel",
     "sdk/fidl/fuchsia.power.battery/BUILD.bazel",
     "sdk/fidl/system.state/BUILD.bazel",
+
+    # TODO(https://fxbug.dev/454449781): Enable this check when bazel2gn supports zither libraries.
+    "sdk/fidl/zbi/BUILD.bazel",
 ]
 
 # The potential target file meets the criteria:
