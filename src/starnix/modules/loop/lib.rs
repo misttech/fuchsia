@@ -22,7 +22,10 @@ use starnix_core::vfs::{
 };
 use starnix_ext::map_ext::EntryExt;
 use starnix_logging::track_stub;
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
+use starnix_sync::{
+    FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, LoopDeviceStateLock, LoopDevicesLock,
+    Unlocked,
+};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::user_buffer::UserBuffer;
 use starnix_uapi::device_id::{DeviceId, LOOP_MAJOR};
@@ -136,7 +139,7 @@ impl LoopDeviceState {
 #[derive(Debug, Default)]
 struct LoopDevice {
     number: u32,
-    state: Mutex<LoopDeviceState>,
+    state: LockDepMutex<LoopDeviceState, LoopDeviceStateLock>,
 }
 
 struct LoopDeviceBackingFile(Weak<LoopDevice>);
@@ -639,7 +642,7 @@ pub fn loop_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Resul
 
 #[derive(Debug, Default)]
 pub struct LoopDeviceRegistry {
-    devices: Mutex<BTreeMap<u32, Arc<LoopDevice>>>,
+    devices: LockDepMutex<BTreeMap<u32, Arc<LoopDevice>>, LoopDevicesLock>,
 }
 
 impl LoopDeviceRegistry {

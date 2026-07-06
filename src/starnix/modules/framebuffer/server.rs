@@ -36,7 +36,7 @@ use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use starnix_core::task::{Kernel, LockedAndTask};
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::log_error;
-use starnix_sync::Mutex;
+use starnix_sync::{FramebufferPresentationReceiverLock, FramebufferSceneStateLock, LockDepMutex};
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use std::ops::{Deref, DerefMut};
@@ -81,7 +81,7 @@ pub struct FramebufferServer {
     image_height: u32,
 
     /// Keeps track if this class is serving FB or a Viewport.
-    scene_state: Arc<Mutex<SceneState>>,
+    scene_state: Arc<LockDepMutex<SceneState, FramebufferSceneStateLock>>,
 
     /// Keeps track of the Flatland viewport ID.
     viewport_id: AtomicCounter<u64>,
@@ -90,7 +90,8 @@ pub struct FramebufferServer {
     presentation_sender: PresentationSender,
 
     /// Channel to receive Present requests on.
-    presentation_receiver: Arc<Mutex<Option<PresentationReceiver>>>,
+    presentation_receiver:
+        Arc<LockDepMutex<Option<PresentationReceiver>, FramebufferPresentationReceiverLock>>,
 }
 
 impl FramebufferServer {
@@ -112,10 +113,10 @@ impl FramebufferServer {
                 flatland,
                 image_width: width,
                 image_height: height,
-                scene_state: Arc::new(Mutex::new(SceneState::Fb)),
+                scene_state: Arc::new(SceneState::Fb.into()),
                 viewport_id: (FB_IMAGE_ID.value + 1).into(),
                 presentation_sender: presentation_sender,
-                presentation_receiver: Arc::new(Mutex::new(Some(presentation_receiver))),
+                presentation_receiver: Arc::new(Some(presentation_receiver).into()),
             },
             memory.into(),
         ))

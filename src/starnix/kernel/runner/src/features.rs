@@ -555,10 +555,10 @@ pub fn run_container_features(
         *framebuffer.view_identity.lock() = Some(view_identity);
         *framebuffer.view_bound_protocols.lock() = Some(view_bound_protocols);
 
-        let framebuffer_info = framebuffer.info.read();
-
-        let display_width = framebuffer_info.xres as i32;
-        let display_height = framebuffer_info.yres as i32;
+        let (display_width, display_height) = {
+            let framebuffer_info = framebuffer.info.read();
+            (framebuffer_info.xres as i32, framebuffer_info.yres as i32)
+        };
 
         let touch_device =
             InputDevice::new_touch(display_width, display_height, &kernel.inspect_node);

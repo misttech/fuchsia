@@ -11,7 +11,9 @@ use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{FileOps, FsString, NamespaceNode};
 #[cfg(test)]
 use starnix_sync::Unlocked;
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
+use starnix_sync::{
+    FileOpsCore, InputDeviceFileNodesLock, LockDepMutex, LockEqualOrBefore, Locked,
+};
 use starnix_uapi::device_id::{DeviceId as StarnixDeviceId, INPUT_MAJOR};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -102,7 +104,7 @@ pub struct InputDeviceStatus {
 
     /// Hold onto inspect nodes for files opened on this device, so that when these files are
     /// closed, their inspect data is maintained.
-    pub file_nodes: Mutex<Vec<fuchsia_inspect::Node>>,
+    pub file_nodes: LockDepMutex<Vec<fuchsia_inspect::Node>, InputDeviceFileNodesLock>,
 
     /// The number of FIDL events received by this device from Fuchsia input system.
     ///
@@ -146,7 +148,7 @@ impl InputDeviceStatus {
     pub fn new(node: fuchsia_inspect::Node) -> Arc<Self> {
         let status = Arc::new(Self {
             node,
-            file_nodes: Mutex::new(vec![]),
+            file_nodes: Default::default(),
             total_fidl_events_received_count: AtomicU64::new(0),
             total_fidl_events_ignored_count: AtomicU64::new(0),
             total_fidl_events_unexpected_count: AtomicU64::new(0),

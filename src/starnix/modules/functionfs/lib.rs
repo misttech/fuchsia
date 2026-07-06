@@ -18,7 +18,10 @@ use starnix_core::vfs::{
     fs_node_impl_dir_readonly, fs_node_impl_not_dir,
 };
 use starnix_logging::{log_warn, track_stub};
-use starnix_sync::{FileOpsCore, InterruptibleEvent, Locked, Mutex, Unlocked};
+use starnix_sync::{
+    FileOpsCore, FunctionFsResultLock, FunctionFsStateLock, InterruptibleEvent, LockDepMutex,
+    Locked, Unlocked,
+};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::errors::Errno;
@@ -61,7 +64,7 @@ const ADB_INTERACTION_TIMEOUT: zx::Duration<zx::MonotonicTimeline> = zx::Duratio
 #[derive(Default)]
 struct PendingResult<T: Default> {
     event: Arc<InterruptibleEvent>,
-    result: Mutex<Option<Result<T, Errno>>>,
+    result: LockDepMutex<Option<Result<T, Errno>>, FunctionFsResultLock>,
 }
 
 impl<T: Default> PendingResult<T> {
@@ -96,7 +99,7 @@ async fn handle_adb(
     message_counter: Option<zx::Counter>,
     read_commands: async_channel::Receiver<ReadCommand>,
     write_commands: async_channel::Receiver<WriteCommand>,
-    state: Arc<Mutex<FunctionFsState>>,
+    state: Arc<LockDepMutex<FunctionFsState, FunctionFsStateLock>>,
 ) {
     /// Handle all of the events coming from the ADB device.
     ///
@@ -116,7 +119,7 @@ async fn handle_adb(
     async fn handle_events(
         mut stream: fadb::UsbAdbImpl_EventStream,
         message_counter: &Option<zx::Counter>,
-        state: Arc<Mutex<FunctionFsState>>,
+        state: Arc<LockDepMutex<FunctionFsState, FunctionFsStateLock>>,
     ) {
         let queue_event = |event| {
             let mut state_locked = state.lock();
@@ -398,7 +401,7 @@ fn connect_to_device(
 
 #[derive(Default)]
 struct FunctionFsRootDir {
-    state: Arc<Mutex<FunctionFsState>>,
+    state: Arc<LockDepMutex<FunctionFsState, FunctionFsStateLock>>,
 }
 
 impl FunctionFsRootDir {

@@ -14,7 +14,9 @@ use starnix_core::vfs::{
 };
 use starnix_core::{fileops_impl_nonseekable, fileops_impl_noop_sync};
 use starnix_logging::{CATEGORY_TRACE_META, track_stub};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
+use starnix_sync::{
+    FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, TraceFsDataLock, Unlocked,
+};
 use starnix_types::PAGE_SIZE;
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::errors::Errno;
@@ -139,7 +141,7 @@ impl TraceFs {
 
 #[derive(Default)]
 struct TraceBytesFile {
-    data: Mutex<Vec<u8>>,
+    data: LockDepMutex<Vec<u8>, TraceFsDataLock>,
 }
 
 impl TraceBytesFile {
