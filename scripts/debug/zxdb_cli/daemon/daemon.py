@@ -16,6 +16,7 @@ from async_utils.command import AsyncCommand
 from daemon.constants import UDS_PATH
 from daemon.handlers import (
     attach,
+    break_req,
     continue_req,
     detach,
     get_state,
@@ -129,6 +130,7 @@ class Daemon:
         self.event_queue: asyncio.Queue[Any] = asyncio.Queue()
         self.event_waiter = DapEventWaiter()
         self.stopped_threads: set[int] = set()
+        self.active_breakpoints: dict[str, set[int]] = {}
         self.stop_event = asyncio.Event()
         self.shutdown_complete_event = asyncio.Event()
         self.dap_ready_event = asyncio.Event()
@@ -155,6 +157,7 @@ class Daemon:
         # Statically register handlers.
         handlers = [
             attach,
+            break_req,
             continue_req,
             detach,
             get_state,

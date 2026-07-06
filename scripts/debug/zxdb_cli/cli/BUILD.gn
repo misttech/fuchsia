@@ -20,6 +20,7 @@ if (is_host) {
       "commands/__init__.py",
       "commands/attach.py",
       "commands/base.py",
+      "commands/break_cmd.py",
       "commands/continue_cmd.py",
       "commands/detach.py",
       "commands/get_state.py",

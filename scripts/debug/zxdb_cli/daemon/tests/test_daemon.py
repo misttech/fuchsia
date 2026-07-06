@@ -7,7 +7,12 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from daemon.daemon import CommandHandlerRegistry, Daemon
-from shared.protocol import BaseRequest, GetStateResponse, Response
+from shared.protocol import (
+    BaseRequest,
+    BreakRequest,
+    GetStateResponse,
+    Response,
+)
 from shared.protocol.attach import AttachRequest
 from shared.protocol.continue_request import ContinueRequest
 from shared.protocol.get_state import GetStateRequest
@@ -209,6 +214,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
         daemon.active_processes = {1234: "test_process"}
+        daemon.active_breakpoints = {"/path/to/file.rs": {24, 12}}
 
         resp = await daemon.registry.handle("get-state", GetStateRequest())
 
@@ -219,6 +225,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state_resp.threads[0].id, 1)
         self.assertEqual(state_resp.threads[0].name, "main")
         self.assertEqual(state_resp.processes, {1234: "test_process"})
+        self.assertEqual(state_resp.breakpoints, {"/path/to/file.rs": [12, 24]})
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_get_state_defensive(
@@ -399,6 +406,93 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
             self.assertFalse(resp.success)
             self.assertIn("Frame index 5 out of range", resp.message or "")
+
+    async def test_handle_break_success(self) -> None:
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+
+        with patch.object(
+            daemon.dap_client, "set_breakpoints", new_callable=AsyncMock
+        ) as mock_set_breakpoints:
+            mock_resp = Mock()
+            mock_resp.success = True
+            mock_resp.body.dump_dap.return_value = {
+                "breakpoints": [{"id": 1, "verified": True, "line": 12}]
+            }
+            mock_set_breakpoints.return_value = mock_resp
+
+            req = BreakRequest(file="/path/to/file.rs", line=12)
+            resp = await daemon.registry.handle("break", req)
+
+            self.assertTrue(resp.success)
+            self.assertEqual(
+                resp.body,
+                {"breakpoints": [{"id": 1, "verified": True, "line": 12}]},
+            )
+            self.assertEqual(
+                daemon.active_breakpoints["/path/to/file.rs"], {12}
+            )
+            mock_set_breakpoints.assert_called_once()
+
+    async def test_handle_break_additive(self) -> None:
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        daemon.active_breakpoints["/path/to/file.rs"] = {12}
+
+        with patch.object(
+            daemon.dap_client, "set_breakpoints", new_callable=AsyncMock
+        ) as mock_set_breakpoints:
+            mock_resp = Mock()
+            mock_resp.success = True
+            mock_resp.body.dump_dap.return_value = {
+                "breakpoints": [
+                    {"id": 1, "verified": True, "line": 12},
+                    {"id": 2, "verified": True, "line": 24},
+                ]
+            }
+            mock_set_breakpoints.return_value = mock_resp
+
+            req = BreakRequest(file="/path/to/file.rs", line=24)
+            resp = await daemon.registry.handle("break", req)
+
+            self.assertTrue(resp.success)
+            self.assertEqual(
+                daemon.active_breakpoints["/path/to/file.rs"], {12, 24}
+            )
+            mock_set_breakpoints.assert_called_once()
+            args, _ = mock_set_breakpoints.call_args
+            dap_args = args[1]
+            self.assertEqual(len(dap_args.breakpoints), 2)
+            self.assertEqual(dap_args.breakpoints[0].line, 12)
+            self.assertEqual(dap_args.breakpoints[1].line, 24)
+
+    async def test_handle_break_delete(self) -> None:
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        daemon.active_breakpoints["/path/to/file.rs"] = {12, 24}
+
+        with patch.object(
+            daemon.dap_client, "set_breakpoints", new_callable=AsyncMock
+        ) as mock_set_breakpoints:
+            mock_resp = Mock()
+            mock_resp.success = True
+            mock_resp.body.dump_dap.return_value = {
+                "breakpoints": [{"id": 1, "verified": True, "line": 24}]
+            }
+            mock_set_breakpoints.return_value = mock_resp
+
+            req = BreakRequest(file="/path/to/file.rs", line=12, delete=True)
+            resp = await daemon.registry.handle("break", req)
+
+            self.assertTrue(resp.success)
+            self.assertEqual(
+                daemon.active_breakpoints["/path/to/file.rs"], {24}
+            )
+            mock_set_breakpoints.assert_called_once()
+            args, _ = mock_set_breakpoints.call_args
+            dap_args = args[1]
+            self.assertEqual(len(dap_args.breakpoints), 1)
+            self.assertEqual(dap_args.breakpoints[0].line, 24)
 
 
 if __name__ == "__main__":

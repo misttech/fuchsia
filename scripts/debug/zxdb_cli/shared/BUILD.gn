@@ -24,6 +24,7 @@ if (is_host) {
       "protocol/__init__.py",
       "protocol/attach.py",
       "protocol/base.py",
+      "protocol/break_request.py",
       "protocol/continue_request.py",
       "protocol/detach.py",
       "protocol/get_state.py",

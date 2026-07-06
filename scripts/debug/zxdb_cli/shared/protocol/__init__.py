@@ -19,6 +19,7 @@ from shared.protocol.base import (
     make_request,
     serialize,
 )
+from shared.protocol.break_request import BreakRequest
 from shared.protocol.continue_request import ContinueRequest
 from shared.protocol.detach import DetachRequest
 from shared.protocol.get_state import GetStateRequest
@@ -33,6 +34,7 @@ from shared.protocol.wait_for_event import WaitForEventRequest
 
 RequestType = Annotated[
     AttachRequest
+    | BreakRequest
     | ContinueRequest
     | DetachRequest
     | GetStateRequest
@@ -59,6 +61,7 @@ __all__ = [
     "get_schema",
     "RequestType",
     "AttachRequest",
+    "BreakRequest",
     "ContinueRequest",
     "DetachRequest",
     "GetStateRequest",

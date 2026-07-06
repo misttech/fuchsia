@@ -5,7 +5,7 @@
 import unittest
 
 from pydantic import ValidationError
-from shared.protocol import make_request
+from shared.protocol import PROTOCOL_VERSION, make_request
 from shared.protocol.attach import AttachRequest
 from shared.protocol.detach import DetachRequest
 from shared.protocol.hello import HelloRequest
@@ -36,8 +36,8 @@ class TestDetachRequestSchema(unittest.TestCase):
 
 class TestHelloRequestSchema(unittest.TestCase):
     def test_valid(self) -> None:
-        req = HelloRequest(version=4)
-        self.assertEqual(req.version, 4)
+        req = HelloRequest(version=PROTOCOL_VERSION)
+        self.assertEqual(req.version, PROTOCOL_VERSION)
 
     def test_missing_version(self) -> None:
         with self.assertRaises(ValidationError):

@@ -8,6 +8,7 @@ from io import StringIO
 from unittest.mock import AsyncMock, Mock, patch
 
 from cli.cli import main
+from cli.commands.break_cmd import resolve_path
 from daemon_manager.manager import (
     DaemonAlreadyRunningError,
     DaemonConnectionError,
@@ -16,6 +17,7 @@ from daemon_manager.manager import (
     DaemonStartupTimeoutError,
 )
 from shared.protocol.attach import AttachRequest
+from shared.protocol.break_request import BreakRequest
 from shared.protocol.continue_request import ContinueRequest
 from shared.protocol.pause import PauseRequest
 from shared.protocol.stack_trace import StackTraceRequest
@@ -217,6 +219,122 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(exit_code, 0)
         mock_send.assert_called_once_with(
             VariablesRequest(thread_id=1, frame_index=2)
+        )
+
+    @patch("cli.commands.break_cmd.resolve_path")
+    @patch("cli.cli.send_command")
+    async def test_break_command(
+        self, mock_send: Mock, mock_resolve: Mock
+    ) -> None:
+        mock_send.return_value = 0
+        mock_resolve.return_value = "/path/to/fuchsia/src/main.rs"
+
+        exit_code = await main(["break", "src/main.rs:12"])
+        self.assertEqual(exit_code, 0)
+        mock_resolve.assert_called_once_with("src/main.rs")
+        mock_send.assert_called_once_with(
+            BreakRequest(file="/path/to/fuchsia/src/main.rs", line=12)
+        )
+
+    @patch("cli.commands.break_cmd.resolve_path")
+    @patch("cli.cli.send_command")
+    async def test_break_command_aliases(
+        self, mock_send: Mock, mock_resolve: Mock
+    ) -> None:
+        mock_send.return_value = 0
+        mock_resolve.return_value = "/path/to/fuchsia/src/main.rs"
+
+        for alias in [
+            "breakpoint",
+            "b",
+            "setBreakpoints",
+            "set-breakpoints",
+            "set_breakpoints",
+        ]:
+            mock_send.reset_mock()
+            mock_resolve.reset_mock()
+            exit_code = await main([alias, "src/main.rs:12"])
+            self.assertEqual(exit_code, 0, f"Failed for alias: {alias}")
+            mock_resolve.assert_called_once_with("src/main.rs")
+            mock_send.assert_called_once_with(
+                BreakRequest(file="/path/to/fuchsia/src/main.rs", line=12)
+            )
+
+    @patch("cli.cli.send_command")
+    async def test_json_option_break(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(
+            [
+                "--json",
+                '{"command": "break", "file": "/path/to/file.rs", "line": 12}',
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            BreakRequest(file="/path/to/file.rs", line=12)
+        )
+
+    @patch("cli.commands.break_cmd.resolve_path")
+    async def test_break_command_invalid_format(
+        self, mock_resolve: Mock
+    ) -> None:
+        # 1. No colon
+        exit_code = await main(["break", "src/main.rs"])
+        self.assertEqual(exit_code, 1)
+        mock_resolve.assert_not_called()
+
+        # 2. Non-integer line number
+        exit_code = await main(["break", "src/main.rs:abc"])
+        self.assertEqual(exit_code, 1)
+        mock_resolve.assert_not_called()
+
+        # 3. Negative line number
+        exit_code = await main(["break", "src/main.rs:-5"])
+        self.assertEqual(exit_code, 1)
+        mock_resolve.assert_not_called()
+
+        # 4. Could not resolve path
+        mock_resolve.return_value = None
+        exit_code = await main(["break", "src/missing.rs:10"])
+        self.assertEqual(exit_code, 1)
+        mock_resolve.assert_called_once_with("src/missing.rs")
+
+    @patch("os.path.isfile")
+    @patch.dict("os.environ", {"FUCHSIA_DIR": "/workspace/fuchsia"})
+    def test_resolve_path_fuchsia_dir(self, mock_isfile: Mock) -> None:
+        mock_isfile.side_effect = lambda p: p == "/workspace/fuchsia/src/foo.rs"
+        res = resolve_path("src/foo.rs")
+        self.assertEqual(res, "/workspace/fuchsia/src/foo.rs")
+
+    @patch("os.path.isfile")
+    @patch.dict("os.environ", {"FUCHSIA_DIR": "/workspace/fuchsia"})
+    def test_resolve_path_directory(self, mock_isfile: Mock) -> None:
+        mock_isfile.return_value = False
+        res = resolve_path("src")
+        self.assertIsNone(res)
+
+    @patch("os.path.isfile")
+    @patch.dict("os.environ", {"FUCHSIA_DIR": "/workspace/fuchsia"})
+    def test_resolve_path_unresolved(self, mock_isfile: Mock) -> None:
+        mock_isfile.return_value = False
+        res = resolve_path("missing/foo.rs")
+        self.assertIsNone(res)
+
+    @patch("cli.commands.break_cmd.resolve_path")
+    @patch("cli.cli.send_command")
+    async def test_break_command_delete(
+        self, mock_send: Mock, mock_resolve: Mock
+    ) -> None:
+        mock_send.return_value = 0
+        mock_resolve.return_value = "/path/to/fuchsia/src/main.rs"
+
+        exit_code = await main(["break", "-d", "src/main.rs:12"])
+        self.assertEqual(exit_code, 0)
+        mock_resolve.assert_called_once_with("src/main.rs")
+        mock_send.assert_called_once_with(
+            BreakRequest(
+                file="/path/to/fuchsia/src/main.rs", line=12, delete=True
+            )
         )
 
 

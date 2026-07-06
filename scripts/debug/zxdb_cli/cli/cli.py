@@ -9,6 +9,7 @@ from typing import Final
 
 from cli.commands import (
     attach,
+    break_cmd,
     continue_cmd,
     detach,
     get_state,
@@ -56,6 +57,7 @@ async def main(args: list[str]) -> int:
     commands: dict[str, type[BaseCommand]] = {}
     command_classes = [
         attach.Command,
+        break_cmd.Command,
         continue_cmd.Command,
         detach.Command,
         get_state.Command,

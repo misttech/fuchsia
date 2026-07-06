@@ -152,6 +152,22 @@ output.
   treat this as a successful clean pass, print a success message, and exit. **No
   manual `"stop"` command or teardown is required.**
 
+#### Scenario C: Proactive Breakpoint Installation (Non-Failing Paths)
+By default, the testing framework attaches to targets weakly (`attach --weak`).
+In this state, symbols are not loaded upfront, and dynamic `break` requests will
+remain pending and unresolved until a crash occurs.
+
+To debug a passing path or install breakpoints before test execution begins:
+
+1.  Start the test with the `--breakpoint` option to force a normal attach with
+    immediate symbol loading (paths must be fully qualified from the workspace
+    root):
+    ```bash
+    fx test <test_name> --agent-debugging-mode --breakpoint <source_file>:<line>
+    ```
+2.  Poll for the breakpoint hit stopped event via `wait-for-event`.
+3.  Once suspended, perform diagnostics and resume execution using `continue`.
+
 ---
 
 ## JSON Request Reference
@@ -162,8 +178,9 @@ All commands are sent as serialized JSON payloads to `fx debug cli --json
 | Action | Command Input Payload |
 |---|---|
 | **Wait for Event** | `{"command": "wait-for-event", "last_seen_seq": <seq>, "timeout": <secs>}` |
-| **Get State** | `{"command": "get-state"}` |
+| **Get State** | `{"command": "get-state"}` *(Returns active threads, processes, and breakpoints)* |
 | **List Threads** | `{"command": "threads"}` |
+| **Set/Delete Breakpoint** | `{"command": "break", "file": "<workspace_root_path>", "line": <line_num>, "delete": <optional_bool>}` *(To delete, specify matching file and line)* |
 | **Attach Process** | `{"command": "attach", "filter": "<name_or_pid>"}` |
 | **Detach Process** | `{"command": "detach", "pid": <pid>}` or `{"command": "detach", "all": true}` |
 | **Get Stack Trace** | `{"command": "stackTrace", "thread_id": <thread_id>}` |

@@ -24,6 +24,7 @@ if (is_host) {
       "daemon.py",
       "handlers/__init__.py",
       "handlers/attach.py",
+      "handlers/break_req.py",
       "handlers/continue_req.py",
       "handlers/detach.py",
       "handlers/get_state.py",

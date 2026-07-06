@@ -16,12 +16,12 @@ COMMAND_NAME = "get-state"
 
 
 async def handle(daemon: Daemon, _req: GetStateRequest) -> Response:
-    """Queries the debug adapter for the current threads and active
-    processes.
+    """Queries the debug adapter for the current threads, active
+    processes, and active breakpoints.
 
     Returns:
         A Response containing a GetStateResponse body mapping active
-        processes and threads.
+        processes, threads, and breakpoints.
     """
     if not daemon.zxdb_writer:
         return Response(
@@ -36,8 +36,15 @@ async def handle(daemon: Daemon, _req: GetStateRequest) -> Response:
             for t in threads_resp.body.threads:
                 threads.append(ThreadInfo(id=t.id, name=t.name))
 
+        breakpoints = {
+            file: sorted(list(lines))
+            for file, lines in daemon.active_breakpoints.items()
+            if lines
+        }
         state_resp = GetStateResponse(
-            threads=threads, processes=daemon.active_processes
+            threads=threads,
+            processes=daemon.active_processes,
+            breakpoints=breakpoints or None,
         )
         return Response(
             success=True,

@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-PROTOCOL_VERSION = 4
+PROTOCOL_VERSION = 5
 
 
 class BaseRequest(BaseModel):
@@ -27,12 +27,13 @@ class ThreadInfo(BaseModel):
 
 
 class GetStateResponse(BaseModel):
-    """Response for get-state command containing thread list and active
-    processes.
+    """Response for get-state command containing thread list, active
+    processes, and active breakpoints.
     """
 
     threads: list[ThreadInfo]
     processes: dict[int, str] | None = None
+    breakpoints: dict[str, list[int]] | None = None
 
 
 class Response(BaseModel):
