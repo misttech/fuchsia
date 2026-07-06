@@ -53,6 +53,7 @@ source_set("vm") {
   ]
   deps = [
     "//src/lib/zbitl",
+    "//third_party/lz4",
     "//zircon/kernel/lib/arch",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/btree",
@@ -76,7 +77,6 @@ source_set("vm") {
     "//zircon/system/ulib/ffl",
     "//zircon/system/ulib/lazy_init",
     "//zircon/system/ulib/pretty",
-    "//zircon/third_party/ulib/lz4",
   ]
 
   defines = [
@@ -173,9 +173,9 @@ source_set("tests") {
     "unittests/vmpl_unittest.cc",
   ]
   deps = [
+    "//third_party/lz4",
     "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/unittest",
-    "//zircon/third_party/ulib/lz4",
   ]
 }
 

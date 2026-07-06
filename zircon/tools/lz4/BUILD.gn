@@ -13,7 +13,7 @@ executable("lz4") {
     "$lz4_programs/lz4io.c",
   ]
 
-  deps = [ "//zircon/third_party/ulib/lz4" ]
+  deps = [ "//third_party/lz4" ]
 
   defines = [ "XXH_NAMESPACE=LZ4_" ]
   include_dirs = [ lz4_lib ]

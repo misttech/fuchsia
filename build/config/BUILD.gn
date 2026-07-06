@@ -870,7 +870,7 @@ config("Wmissing-declarations") {
 config("Wno-missing-declarations") {
   visibility = [
     "//sdk/lib/c/*",
-    "//zircon/third_party/ulib/lz4",
+    "//third_party/*",
   ]
 
   if (is_gcc) {
@@ -1202,11 +1202,11 @@ config("Wno-implicit-fallthrough") {
   cflags = [ "-Wno-implicit-fallthrough" ]
   visibility = [
     "//src/lib/fxl:third_party",
+    "//third_party/lz4",
     "//third_party/rust_crates/compat/brotli",
     "//zircon/third_party/dev/ethernet/e1000:e1000_third_party",
     "//zircon/third_party/uapp/dash",
     "//zircon/third_party/ulib/boringssl",
-    "//zircon/third_party/ulib/lz4",
     "//zircon/tools/lz4",
   ]
 }
@@ -1259,8 +1259,8 @@ config("Wno-defaulted-function-deleted") {
 
 config("Wno-missing-prototypes") {
   visibility = [
+    "//third_party/lz4",
     "//third_party/tpm2-tss:tss2-mu",
-    "//zircon/third_party/ulib/lz4",
   ]
 
   cflags_c = [ "-Wno-missing-prototypes" ]

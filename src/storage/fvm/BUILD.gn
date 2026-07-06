@@ -38,16 +38,16 @@ static_library("fvm") {
     "//sdk/lib/stdcompat",
     "//src/lib/digest",
     "//src/lib/uuid",
+    "//third_party/lz4",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/range",
-    "//zircon/third_party/ulib/lz4",
     "//zircon/third_party/ulib/safemath",
   ]
   public_deps = [
     "//src/lib/digest",
     "//src/storage/gpt",
+    "//third_party/lz4",
     "//zircon/system/ulib/zx",
-    "//zircon/third_party/ulib/lz4",
   ]
 
   if (is_fuchsia) {

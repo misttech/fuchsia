@@ -11,12 +11,12 @@ group("tests") {
 
 fuchsia_library_fuzzer("lz4-decompress-fuzzer") {
   sources = [ "lz4-decompress-fuzzer.cc" ]
-  deps = [ "//zircon/third_party/ulib/lz4" ]
+  deps = [ "//third_party/lz4" ]
 }
 
 fuchsia_library_fuzzer("lz4-roundtrip-fuzzer") {
   sources = [ "lz4-fuzzer.cc" ]
-  deps = [ "//zircon/third_party/ulib/lz4" ]
+  deps = [ "//third_party/lz4" ]
 }
 
 fuchsia_fuzzer_component("lz4-decompress-fuzzer-component") {

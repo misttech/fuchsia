@@ -106,7 +106,7 @@ source_set("fvm-test") {
     "//src/storage/volume_image/utils:lz4-compression",
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
-    "//zircon/third_party/ulib/lz4",
+    "//third_party/lz4",
   ]
 }
 

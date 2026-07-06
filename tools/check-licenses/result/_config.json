@@ -167,7 +167,7 @@
           "tools/debug/covargs/api/third_party/codecoverage": true,
           "zircon/third_party": true,
           "zircon/third_party/uapp/mkfs-msdosfs": true,
-          "zircon/third_party/ulib/lz4": true
+          "third_party/lz4": true
         }
       },
       {
@@ -228,9 +228,9 @@
           "prebuilt/third_party/llvm/linux-arm64/include/llvm/Support/LICENSE.TXT": true,
           "third_party/openthread/NOTICE": true,
           "third_party/network-conformance/orchestrator/dutscripts/tclfmt/LICENSE": true,
-          "third_party/lz4/tests/COPYING": true,
-          "third_party/lz4/programs/COPYING": true,
-          "third_party/lz4/examples/COPYING": true,
+          "third_party/lz4/src/tests/COPYING": true,
+          "third_party/lz4/src/programs/COPYING": true,
+          "third_party/lz4/src/examples/COPYING": true,
           "third_party/android/platform/external/aac/NOTICE": true,
           "third_party/android/device/generic/vulkan-cereal/third-party/stb/include/stb/LICENSE": true,
           "prebuilt/third_party/vulkansdk/linux/source/VulkanCapsViewer/LICENSE": true,

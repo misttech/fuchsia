@@ -10,7 +10,7 @@ rustc_library("lz4") {
   with_unit_tests = true
   sources = [ "src/lib.rs" ]
   deps = [ "//third_party/rust_crates:thiserror" ]
-  non_rust_deps = [ "//zircon/third_party/ulib/lz4" ]
+  non_rust_deps = [ "//third_party/lz4" ]
 }
 
 group("tests") {
