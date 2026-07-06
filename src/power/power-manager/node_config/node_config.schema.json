@@ -88,8 +88,7 @@
                         "properties": {
                             "cpu_temperature_poll_interval_s": {
                                 "type": "number",
-                                "minimum": 0,
-                                "exclusiveMinimum": true
+                                "exclusiveMinimum": 0
                             },
                             "throttle_debounce_timeout_s": {
                                 "type": "number",
@@ -216,23 +215,19 @@
                                         },
                                         "poll_interval_s": {
                                             "type": "number",
-                                            "minimum": 0,
-                                            "exclusiveMinimum": true
+                                            "exclusiveMinimum": 0
                                         },
                                         "polls_per_history_entry": {
                                             "type": "number",
-                                            "minimum": 0,
-                                            "exclusiveMinimum": false
+                                            "minimum": 0
                                         },
                                         "num_history_entries": {
                                             "type": "number",
-                                            "minimum": 0,
-                                            "exclusiveMinimum": false
+                                            "minimum": 0
                                         },
                                         "filter_time_constant_s": {
                                             "type": "number",
-                                            "minimum": 0,
-                                            "exclusiveMinimum": true
+                                            "exclusiveMinimum": 0
                                         }
                                     },
                                     "additionalProperties": false,
@@ -339,13 +334,11 @@
                                 "properties": {
                                     "sample_interval": {
                                         "type": "number",
-                                        "minimum": 0,
-                                        "exclusiveMinimum": true
+                                        "exclusiveMinimum": 0
                                     },
                                     "filter_time_constant": {
                                         "type": "number",
-                                        "minimum": 0,
-                                        "exclusiveMinimum": true
+                                        "exclusiveMinimum": 0
                                     },
                                     "target_temperature": {
                                         "type": "number",

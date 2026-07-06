@@ -66,6 +66,6 @@
         }
     },
     "description": "A host tool",
-    "id": "http://fuchsia.com/schemas/sdk/host_tool.json",
+    "$id": "http://fuchsia.com/schemas/sdk/host_tool.json",
     "type": "object"
 }

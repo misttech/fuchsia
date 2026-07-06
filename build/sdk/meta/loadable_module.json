@@ -73,6 +73,6 @@
         }
     },
     "description": "A collection of object files that can be loaded at runtime",
-    "id": "http://fuchsia.com/schemas/sdk/loadable_module.json",
+    "$id": "http://fuchsia.com/schemas/sdk/loadable_module.json",
     "type": "object"
 }

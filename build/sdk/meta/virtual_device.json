@@ -196,6 +196,6 @@
         }
     ],
     "description": "A virtual device specification.",
-    "id": "http://fuchsia.com/schemas/sdk/virtual_device.json",
+    "$id": "http://fuchsia.com/schemas/sdk/virtual_device.json",
     "type": "object"
 }

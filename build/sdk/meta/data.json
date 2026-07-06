@@ -42,6 +42,6 @@
         }
     ],
     "description": "A set of data files",
-    "id": "http://fuchsia.com/schemas/sdk/documentation.json",
+    "$id": "http://fuchsia.com/schemas/sdk/documentation.json",
     "type": "object"
 }

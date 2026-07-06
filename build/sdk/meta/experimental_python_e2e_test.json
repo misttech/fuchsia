@@ -51,6 +51,6 @@
         }
     },
     "description": "A Python end-to-end test",
-    "id": "http://fuchsia.com/schemas/sdk/experimental_python_e2e_test.json",
+    "$id": "http://fuchsia.com/schemas/sdk/experimental_python_e2e_test.json",
     "type": "object"
 }

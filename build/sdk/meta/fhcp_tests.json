@@ -1,7 +1,7 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "description": "The manifest describing the properties of driver conformance tests.",
-    "id": "http://fuchsia.com/schemas/sdk/fhcp_tests.json",
+    "$id": "http://fuchsia.com/schemas/sdk/fhcp_tests.json",
     "properties": {
         "certification_type": {
             "description": "The types of certifications under the FHCP program.",

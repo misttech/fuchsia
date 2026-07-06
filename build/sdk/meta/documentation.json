@@ -40,6 +40,6 @@
         }
     ],
     "description": "A set of documents",
-    "id": "http://fuchsia.com/schemas/sdk/documentation.json",
+    "$id": "http://fuchsia.com/schemas/sdk/documentation.json",
     "type": "object"
 }

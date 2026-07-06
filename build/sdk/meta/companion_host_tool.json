@@ -66,6 +66,6 @@
         }
     },
     "description": "A companion host tool",
-    "id": "http://fuchsia.com/schemas/sdk/companion_host_tool.json",
+    "$id": "http://fuchsia.com/schemas/sdk/companion_host_tool.json",
     "type": "object"
 }

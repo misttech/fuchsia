@@ -77,6 +77,6 @@
         }
     },
     "description": "An externally compiled ffx subtool",
-    "id": "http://fuchsia.com/schemas/sdk/ffx_tool.json",
+    "$id": "http://fuchsia.com/schemas/sdk/ffx_tool.json",
     "type": "object"
 }

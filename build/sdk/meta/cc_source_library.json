@@ -94,6 +94,6 @@
         }
     ],
     "description": "A set of C/C++ sources",
-    "id": "http://fuchsia.com/schemas/sdk/cc_source_library.json",
+    "$id": "http://fuchsia.com/schemas/sdk/cc_source_library.json",
     "type": "object"
 }

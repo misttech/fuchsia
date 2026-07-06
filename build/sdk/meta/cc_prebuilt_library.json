@@ -181,6 +181,6 @@
         }
     },
     "description": "A prebuilt C/C++ library",
-    "id": "http://fuchsia.com/schemas/sdk/cc_prebuilt_library.json",
+    "$id": "http://fuchsia.com/schemas/sdk/cc_prebuilt_library.json",
     "type": "object"
 }

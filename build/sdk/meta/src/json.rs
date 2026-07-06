@@ -137,7 +137,7 @@ mod tests {
         fn get_schema() -> &'static str {
             r#"{
                 "$schema": "http://json-schema.org/draft-04/schema#",
-                "id": "http://fuchsia.com/schemas/sdk/test_metadata.json",
+                "$id": "http://fuchsia.com/schemas/sdk/test_metadata.json",
                 "properties": {
                     "target": {
                         "$ref": "common.json#/definitions/target_arch"

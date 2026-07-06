@@ -83,7 +83,7 @@ rustc_library(
         "//third_party/rust_crates/vendor:serde",
         "//third_party/rust_crates/vendor:serde_json",
         "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:url",
         "//third_party/rust_crates/vendor:valico",
-        "//third_party/rust_crates/vendor/url-1.7.2:url",  # @bazel2gn:path_overwrite://third_party/rust_crates:url-v1_7_2
     ],
 )

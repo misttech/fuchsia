@@ -36,5 +36,5 @@
         }
     },
     "description": "Schema definitions widely share across many different schemata.",
-    "id": "https://fuchsia.dev/schema/common-00000000.json"
+    "$id": "https://fuchsia.dev/schema/common-00000000.json"
 }

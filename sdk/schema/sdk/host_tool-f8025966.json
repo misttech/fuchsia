@@ -39,6 +39,6 @@
         }
     ],
     "description": "A host tool.",
-    "id": "http://fuchsia.dev/schema/sdk/host_tool-f8025966.json",
+    "$id": "http://fuchsia.dev/schema/sdk/host_tool-f8025966.json",
     "type": "object"
 }

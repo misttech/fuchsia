@@ -98,6 +98,6 @@
         }
     },
     "description": "A Dart library",
-    "id": "http://fuchsia.com/schemas/sdk/dart_library.json",
+    "$id": "http://fuchsia.com/schemas/sdk/dart_library.json",
     "type": "object"
 }

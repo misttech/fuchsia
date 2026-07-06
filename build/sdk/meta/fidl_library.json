@@ -58,6 +58,6 @@
         }
     ],
     "description": "A FIDL library",
-    "id": "http://fuchsia.com/schemas/sdk/fidl_library.json",
+    "$id": "http://fuchsia.com/schemas/sdk/fidl_library.json",
     "type": "object"
 }

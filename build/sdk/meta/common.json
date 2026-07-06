@@ -151,5 +151,5 @@
             "type": "object"
         }
     },
-    "id": "http://fuchsia.com/schemas/sdk/common.json"
+    "$id": "http://fuchsia.com/schemas/sdk/common.json"
 }

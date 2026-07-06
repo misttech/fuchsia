@@ -53,6 +53,6 @@
         }
     ],
     "description": "A BIND library",
-    "id": "http://fuchsia.com/schemas/sdk/bind_library.json",
+    "$id": "http://fuchsia.com/schemas/sdk/bind_library.json",
     "type": "object"
 }

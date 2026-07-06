@@ -57,6 +57,6 @@
         }
     },
     "description": "FHO versioning and compatibility metadata for FFX tool discovery",
-    "id": "http://fuchsia.com/schemas/ffx/fho_metadata.json",
+    "$id": "http://fuchsia.com/schemas/ffx/fho_metadata.json",
     "type": "object"
 }

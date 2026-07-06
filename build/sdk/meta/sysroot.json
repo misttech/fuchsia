@@ -209,6 +209,6 @@
         }
     },
     "description": "The sysroot",
-    "id": "http://fuchsia.com/schemas/sdk/sysroot.json",
+    "$id": "http://fuchsia.com/schemas/sdk/sysroot.json",
     "type": "object"
 }
