@@ -8,6 +8,8 @@ source_set("flatland") {
     "flatland.h",
     "flatland1_state.cc",
     "flatland1_state.h",
+    "flatland2_state.cc",
+    "flatland2_state.h",
     "flatland_config.h",
     "flatland_display.cc",
     "flatland_display.h",

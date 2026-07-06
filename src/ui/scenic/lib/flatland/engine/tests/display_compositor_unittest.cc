@@ -1839,6 +1839,7 @@ TEST_F(DisplayCompositorTest, ImageContentTakesImageLayerPath) {
              MockDisplayCoordinator::SetBufferCollectionConstraintsCompleter::Sync& completer) {
             completer.Reply(fit::ok());
           }));
+
   // Save token to avoid early token failure.
   fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token_ref;
   EXPECT_CALL(*renderer_, ImportBufferCollection(kGlobalBufferCollectionId, _, _, _, _))

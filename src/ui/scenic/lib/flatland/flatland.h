@@ -28,6 +28,7 @@
 #include "src/ui/lib/escher/flib/fence_queue.h"
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
 #include "src/ui/scenic/lib/flatland/flatland1_state.h"
+#include "src/ui/scenic/lib/flatland/flatland2_state.h"
 #include "src/ui/scenic/lib/flatland/flatland_config.h"
 #include "src/ui/scenic/lib/flatland/flatland_presenter.h"
 #include "src/ui/scenic/lib/flatland/link_system.h"
@@ -432,6 +433,41 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // priority child of the Transform.
   std::pmr::unordered_map<ContentId, TransformHandle> content_handles_;
 
+  // Flatland2 session-internal state.
+  // TODO(https://fxbug.dev/523371761): document.  Currently these are completely separate from
+  // production code paths.
+  std::pmr::unordered_map<LayerHandle, LayerObject> layer_objects_;
+  std::pmr::unordered_map<TransformHandle, LayerStackData> layer_stacks_;
+  uint64_t next_layer_handle_ = 1;
+
+  // TODO(https://fxbug.dev/523371761): public for tests.  Later, revisit whether any can be
+  // made private (if so, they'll be reordered in the file).
+  // Consider using `friend class FlatlandTest`.
+ public:
+  LayerHandle CreateLayerObject();
+
+  // Releases a reference to the internal layer. If this is the last reference
+  // to the layer (ref_count reaches 0), the layer is destroyed.
+  // Returns the ID of the bound image if the layer was destroyed AND it had
+  // an image bound to it; otherwise returns kInvalidImageId.
+  // The returned ID is primarily used by CleanupFlatland2StateForTest() to
+  // verify correct image lifecycle behavior in unit tests.
+  allocation::GlobalImageId ReleaseLayerObject(LayerHandle handle);
+  TransformHandle CreateLayerStackData(std::vector<LayerHandle> layers);
+
+  // Test-only accessor/mutators
+  // TODO(https://fxbug.dev/523371761): once everything lands, verify whether these are necessary
+  // to keep, or whether they are well-covered by tests for production callers such as
+  // `CreateImage()` and `ProcessDeadTransforms()`.
+  std::vector<allocation::GlobalImageId> CleanupFlatland2StateForTest(
+      const std::vector<TransformHandle>& dead_handles);
+  void SetLayerImageForTest(LayerHandle handle, allocation::GlobalImageId image);
+  void SetLayerSolidColorForTest(LayerHandle handle);
+  const LayerObject* GetLayerObjectForTest(LayerHandle handle) const;
+  void ReleaseTransformForTest(TransformHandle handle);
+  void SetPriorityChildForTest(TransformId parent, TransformHandle child);
+
+ private:
   // The set of link operations that are pending a call to Present(). Unlike other operations,
   // whose effects are only visible when a new UberStruct is published, Link destruction operations
   // result in immediate changes in the LinkSystem. To avoid having these changes visible before

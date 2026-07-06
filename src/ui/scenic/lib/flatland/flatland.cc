@@ -39,11 +39,9 @@
 #include <glm/gtc/matrix_access.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-using fuchsia_math::RectF;
 using fuchsia_math::SizeU;
 using fuchsia_math::Vec;
 using fuchsia_math::VecF;
-using fuchsia_ui_composition::ChildViewStatus;
 using fuchsia_ui_composition::ChildViewWatcher;
 using fuchsia_ui_composition::FlatlandError;
 using fuchsia_ui_composition::HitRegion;
@@ -195,6 +193,8 @@ Flatland::Flatland(std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
       transform_graph_(session_id_),
       local_root_(transform_graph_.CreateTransform()),
       content_handles_(&pool_),
+      layer_objects_(&pool_),
+      layer_stacks_(&pool_),
       error_reporter_(scenic_impl::ErrorReporter::DefaultUnique()),
       images_to_release_(std::make_shared<std::unordered_set<allocation::GlobalImageId>>()),
       register_view_focuser_(std::move(register_view_focuser)),
@@ -1056,7 +1056,6 @@ std::vector<allocation::GlobalImageId> Flatland::ProcessDeadTransforms(
       // Typically this won't be necessary: we'll release them as soon as it is safe (roughly,
       // when the next present takes effect).
       images_to_release_->insert(image_id);
-
       images_to_release.push_back(image_id);
     }
   }
@@ -2338,5 +2337,134 @@ void Flatland::MatrixData::RecomputeMatrix() {
 }
 
 glm::mat3 Flatland::MatrixData::GetMatrix() const { return matrix_; }
+
+LayerHandle Flatland::CreateLayerObject() {
+  LayerHandle handle(session_id_, next_layer_handle_++);
+  LayerObject obj;
+  obj.ref_count = 1;  // Held by the caller (facade or direct test)
+  layer_objects_[handle] = std::move(obj);
+  return handle;
+}
+
+allocation::GlobalImageId Flatland::ReleaseLayerObject(LayerHandle handle) {
+  auto it = layer_objects_.find(handle);
+  FX_CHECK(it != layer_objects_.end()) << "Layer not found: " << handle;
+  if (it == layer_objects_.end()) {
+    return allocation::kInvalidImageId;
+  }
+  FX_DCHECK(it->second.ref_count > 0);
+  it->second.ref_count--;
+  if (it->second.ref_count > 0) {
+    return allocation::kInvalidImageId;
+  }
+
+  auto content = it->second.content;
+  layer_objects_.erase(it);
+
+  if (!std::holds_alternative<LayerObject::ImageContent>(content)) {
+    return allocation::kInvalidImageId;
+  }
+
+  allocation::GlobalImageId released_image =
+      std::get<LayerObject::ImageContent>(content).bound_image;
+
+  // TODO(https://fxbug.dev/523371761): this works for the Flatland1 facade, where the
+  // FIDL client "image" corresponds 1-1 to:
+  //   - a layer stack
+  //   - a layer in the layer stack
+  //   - an image assigned to the layer
+  // ... but it won't work later when e.g. the same image is assigned to multiple layers.
+  if (released_image != allocation::kInvalidImageId) {
+    images_to_release_->insert(released_image);
+    return released_image;
+  }
+
+  return allocation::kInvalidImageId;
+}
+
+TransformHandle Flatland::CreateLayerStackData(std::vector<LayerHandle> layers) {
+  TransformHandle content_handle = transform_graph_.CreateTransform();
+
+  for (const auto& layer_handle : layers) {
+    auto it = layer_objects_.find(layer_handle);
+    FX_CHECK(it != layer_objects_.end()) << "Layer not found: " << layer_handle;
+    it->second.ref_count++;
+  }
+
+  layer_stacks_[content_handle] = LayerStackData{
+      .layers = std::move(layers),
+  };
+
+  return content_handle;
+}
+
+std::vector<allocation::GlobalImageId> Flatland::CleanupFlatland2StateForTest(
+    const std::vector<TransformHandle>& dead_handles) {
+  std::vector<allocation::GlobalImageId> images_to_release;
+
+  // Drop stacks whose content_handle is dead.
+  for (const auto& dead_handle : dead_handles) {
+    auto it = layer_stacks_.find(dead_handle);
+    // Not all transform handles correspond to layer stacks, so it's OK to not find a layer stack.
+    // TODO(https://fxbug.dev/523371761): revisit this when finalizing Flatland1 facade, to see if
+    // this function's shape/signature/impl still make sense.
+    if (it != layer_stacks_.end()) {
+      // Decrement ref_count of all layers in the stack.
+      for (const auto& layer_handle : it->second.layers) {
+        auto released = ReleaseLayerObject(layer_handle);
+        if (released != allocation::kInvalidImageId) {
+          images_to_release.push_back(released);
+        }
+      }
+      layer_stacks_.erase(it);
+    }
+  }
+
+  return images_to_release;
+}
+
+void Flatland::SetLayerImageForTest(LayerHandle handle, allocation::GlobalImageId image) {
+  auto it = layer_objects_.find(handle);
+  FX_CHECK(it != layer_objects_.end()) << "Layer not found: " << handle;
+  if (it == layer_objects_.end()) {
+    return;
+  }
+  if (!std::holds_alternative<LayerObject::ImageContent>(it->second.content)) {
+    it->second.content = LayerObject::ImageContent();
+    it->second.epoch++;
+  }
+  std::get<LayerObject::ImageContent>(it->second.content).bound_image = image;
+}
+
+void Flatland::SetLayerSolidColorForTest(LayerHandle handle) {
+  auto it = layer_objects_.find(handle);
+  FX_CHECK(it != layer_objects_.end()) << "Layer not found: " << handle;
+  if (it == layer_objects_.end()) {
+    return;
+  }
+  if (!std::holds_alternative<LayerObject::SolidColorContent>(it->second.content)) {
+    it->second.content = LayerObject::SolidColorContent();
+    it->second.epoch++;
+  }
+}
+
+const LayerObject* Flatland::GetLayerObjectForTest(LayerHandle handle) const {
+  auto it = layer_objects_.find(handle);
+  if (it == layer_objects_.end()) {
+    return nullptr;
+  }
+  return &it->second;
+}
+
+void Flatland::ReleaseTransformForTest(TransformHandle handle) {
+  transform_graph_.ReleaseTransform(handle);
+}
+
+void Flatland::SetPriorityChildForTest(TransformId parent, TransformHandle child) {
+  auto it = transforms_.find(parent);
+  if (it != transforms_.end()) {
+    transform_graph_.SetPriorityChild(it->second, child);
+  }
+}
 
 }  // namespace flatland
