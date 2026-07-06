@@ -10,10 +10,10 @@ use fidl_fuchsia_buildinfo::{BuildInfo, ProviderMarker};
 use fidl_fuchsia_factory_lowpan::{FactoryRegisterMarker, FactoryRegisterProxyInterface};
 use fidl_fuchsia_lowpan_driver::{RegisterMarker, RegisterProxyInterface};
 use fidl_fuchsia_lowpan_spinel::{
-    DeviceMarker as SpinelDeviceMarker, DeviceProxy as SpinelDeviceProxy,
+    self as fspinel, DeviceMarker as SpinelDeviceMarker, DeviceProxy as SpinelDeviceProxy,
     DeviceSetupMarker as SpinelDeviceSetupMarker,
 };
-use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at};
+use fuchsia_component::client::{Service, connect_to_protocol, connect_to_protocol_at};
 
 use lowpan_driver_common::net::*;
 use lowpan_driver_common::spinel::SpinelDeviceSink;
@@ -44,6 +44,7 @@ mod prelude {
     pub use crate::convert_ext::{FromExt as _, IntoExt as _};
     pub use anyhow::{Context as _, bail, format_err};
     pub use fasync::TimeoutExt as _;
+    pub use fidl::endpoints::Proxy as _;
     pub use fidl_fuchsia_net_ext as fnet_ext;
     pub use fuchsia_async as fasync;
     pub use futures::future::BoxFuture;
@@ -70,40 +71,23 @@ const MAX_VENDOR_SW_VERSION_TLV_LENGTH: usize = 16;
 
 impl Config {
     async fn open_spinel_device_proxy(&self) -> Result<SpinelDeviceProxy, Error> {
-        use std::path::Path;
-
-        let path = self.ot_radio_path.as_deref().unwrap_or("/dev/class/ot-radio");
-
-        // If we are just given a directory, try to infer the full path.
-        let spinel_device_setup_proxy = if Path::new(path).is_dir() {
-            let directory_proxy =
-                fuchsia_fs::directory::open_in_namespace(path, fuchsia_fs::Flags::empty())?;
-
-            let entries = fuchsia_fs::directory::readdir(&directory_proxy).await?;
-
-            // Should have 1 device that implements OT_RADIO
-            match entries.as_slice() {
-                [entry] => {
-                    info!("Attempting to use Spinel RCP at {}/{}", path, entry.name.as_str());
-
-                    fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
-                        SpinelDeviceSetupMarker,
-                    >(&directory_proxy, entry.name.as_str())
-                }
-                ot_radio_devices => {
-                    return Err(format_err!(
-                        "There are {} devices in {}, expecting only one",
-                        ot_radio_devices.len(),
-                        path
-                    ));
-                }
-            }
-        } else {
+        let spinel_device_setup_proxy = if let Some(path) = self.ot_radio_path.as_deref() {
             info!("Attempting to use Spinel RCP at {}", path);
-
             fuchsia_component::client::connect_to_protocol_at_path::<SpinelDeviceSetupMarker>(path)
-        }
-        .context("Error opening Spinel RCP")?;
+                .context("Error opening Spinel RCP at path")?
+        } else {
+            let service = Service::open(fspinel::ServiceMarker).context("open service")?;
+            let mut watcher = service.watch().await.context("create watcher")?;
+            // We take the first discovered instance. In typical configurations, there is
+            // only one spinel service instance. If multiple exist, the first one is used.
+            let instance = watcher
+                .try_next()
+                .await
+                .context("watch service")?
+                .ok_or_else(|| format_err!("no spinel service instances"))?;
+            info!("Attempting to use Spinel RCP instance {}", instance.instance_name());
+            instance.connect_to_device_setup().context("connect to device setup")?
+        };
 
         let (client_side, server_side) = fidl::endpoints::create_endpoints::<SpinelDeviceMarker>();
 
@@ -112,8 +96,8 @@ impl Config {
             .await?
             .map_err(ZxStatus::from_raw)
             .context(
-            "Unable to set server-side FIDL channel via spinel_device_setup_proxy.set_channel()",
-        )?;
+                "Unable to set server-side FIDL channel via spinel_device_setup_proxy.set_channel()",
+            )?;
 
         Ok(client_side.into_proxy())
     }

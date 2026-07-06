@@ -74,7 +74,7 @@ pub(crate) struct DriverArgs {
     #[argh(
         option,
         long = "ot-radio-path",
-        description = "path of ot-radio protocol device to connect to (like /dev/class/ot-radio/000)"
+        description = "path of ot-radio protocol device to connect to. If not specified, the driver will use services to discover the radio."
     )]
     pub ot_radio_path: Option<String>,
 }
