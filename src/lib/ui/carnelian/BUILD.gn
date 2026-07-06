@@ -59,7 +59,6 @@ rustc_library("carnelian") {
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
-    "//src/lib/fuchsia-fs",
     "//src/lib/fuchsia-runtime",
     "//src/lib/mapped-vmo",
     "//src/lib/trace/rust:trace",
@@ -367,7 +366,7 @@ fuchsia_unittest_package("carnelian-layout-tests") {
   deps = [ ":layout_gallery_test" ]
 }
 
-rustc_binary("carnelian_integration_test_bin") {
+rustc_test("carnelian_integration_test_bin") {
   name = "carnelian_integration_test"
   edition = "2024"
   source_root = "tests/carnelian_integration_test.rs"
@@ -387,10 +386,8 @@ fuchsia_test_component("carnelian-integration-test-component") {
 
 fuchsia_test_package("carnelian-integration-test") {
   test_components = [ ":carnelian-integration-test-component" ]
-  deps = [
-    ":carnelian-integration-test-component",
-    "//src/ui/testing/test_ui_stack:test-ui-stack",
-  ]
+  subpackages = [ "//src/ui/testing/test_ui_stack:test-ui-stack" ]
+  deps = [ ":carnelian-integration-test-component" ]
   test_specs = {
     environments = [
       nuc7_env,
@@ -399,7 +396,7 @@ fuchsia_test_package("carnelian-integration-test") {
   }
 }
 
-rustc_binary("carnelian_fb_integration_test_bin") {
+rustc_test("carnelian_fb_integration_test_bin") {
   name = "carnelian_fb_integration_test"
   edition = "2024"
   source_root = "tests/carnelian_integration_test.rs"

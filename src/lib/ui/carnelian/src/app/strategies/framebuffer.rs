@@ -19,7 +19,7 @@ use fidl_fuchsia_hardware_display::{
     ClientPriorityValue, CoordinatorListenerMarker, CoordinatorListenerRequest, CoordinatorMarker,
     CoordinatorProxy, ProviderProxy, ServiceMarker as DisplayServiceMarker,
 };
-use fidl_fuchsia_input_report as hid_input_report;
+use fidl_fuchsia_input_report as fidl_input_report;
 use fuchsia_async::{self as fasync, DurationExt, TimeoutExt};
 use fuchsia_component::client::Service;
 use futures::channel::mpsc::UnboundedSender;
@@ -315,7 +315,7 @@ impl<'a> AppStrategy for DisplayDirectAppStrategy<'a> {
     fn handle_input_report(
         &mut self,
         device_id: &input::DeviceId,
-        input_report: &hid_input_report::InputReport,
+        input_report: &fidl_input_report::InputReport,
     ) -> Vec<input::Event> {
         let handler = self.input_report_handlers.get_mut(device_id).expect("input_report_handler");
         handler.handle_input_report(device_id, input_report, &mut self.context)
@@ -324,7 +324,7 @@ impl<'a> AppStrategy for DisplayDirectAppStrategy<'a> {
     fn handle_register_input_device(
         &mut self,
         device_id: &input::DeviceId,
-        device_descriptor: &hid_input_report::DeviceDescriptor,
+        device_descriptor: &fidl_input_report::DeviceDescriptor,
     ) {
         let frame_buffer_size =
             self.primary_display.as_ref().expect("primary_display").preferred_size;

@@ -13,7 +13,7 @@ use crate::view::strategies::base::{ViewStrategyParams, ViewStrategyPtr};
 use anyhow::Error;
 use async_trait::async_trait;
 use fidl_fuchsia_hardware_display::ProviderProxy;
-use fidl_fuchsia_input_report as hid_input_report;
+use fidl_fuchsia_input_report as fidl_input_report;
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use futures::channel::mpsc::UnboundedSender;
 use keymaps::US_QWERTY;
@@ -50,7 +50,7 @@ pub(crate) trait AppStrategy {
     fn handle_input_report(
         &mut self,
         _device_id: &input::DeviceId,
-        _input_report: &hid_input_report::InputReport,
+        _input_report: &fidl_input_report::InputReport,
     ) -> Vec<input::Event> {
         Vec::new()
     }
@@ -60,7 +60,7 @@ pub(crate) trait AppStrategy {
     fn handle_register_input_device(
         &mut self,
         _device_id: &input::DeviceId,
-        _device_descriptor: &hid_input_report::DeviceDescriptor,
+        _device_descriptor: &fidl_input_report::DeviceDescriptor,
     ) {
     }
     async fn handle_new_display_coordinator(&mut self, _provider: ProviderProxy) {}

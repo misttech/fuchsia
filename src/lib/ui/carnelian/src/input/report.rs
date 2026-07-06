@@ -2,30 +2,30 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::app::strategies::framebuffer::{AutoRepeatContext, AutoRepeatTimer};
 use crate::app::Config;
+use crate::app::strategies::framebuffer::{AutoRepeatContext, AutoRepeatTimer};
 use crate::drawing::DisplayRotation;
 use crate::geometry::{IntVector, LimitToBounds};
 use crate::input::{
-    consumer_control, input3_key_to_hid_usage, keyboard, mouse, touch, Button, ButtonSet, DeviceId,
-    Event, EventType, Modifiers,
+    Button, ButtonSet, DeviceId, Event, EventType, Modifiers, consumer_control,
+    input3_key_to_hid_usage, keyboard, mouse, touch,
 };
 use crate::{IntPoint, IntRect, IntSize};
 use euclid::{point2, size2, vec2};
-use fidl_fuchsia_input_report as hid_input_report;
+use fidl_fuchsia_input_report as fidl_input_report;
 use keymaps::Keymap;
 use std::collections::HashSet;
 
 #[derive(Debug)]
 pub struct TouchScale {
     pub target_size: IntSize,
-    pub x: hid_input_report::Range,
+    pub x: fidl_input_report::Range,
     pub x_span: f32,
-    pub y: hid_input_report::Range,
+    pub y: fidl_input_report::Range,
     pub y_span: f32,
 }
 
-fn restrict_to_range(value: i64, range: &hid_input_report::Range) -> i64 {
+fn restrict_to_range(value: i64, range: &fidl_input_report::Range) -> i64 {
     if value < range.min {
         range.min
     } else if value > range.max {
@@ -35,25 +35,21 @@ fn restrict_to_range(value: i64, range: &hid_input_report::Range) -> i64 {
     }
 }
 
-fn scale_value(value: i64, span: f32, range: &hid_input_report::Range, value_max: i32) -> i32 {
+fn scale_value(value: i64, span: f32, range: &fidl_input_report::Range, value_max: i32) -> i32 {
     let value = restrict_to_range(value, range) - range.min;
     let value_fraction = value as f32 / span;
     (value_fraction * value_max as f32) as i32
 }
 
 impl TouchScale {
-    fn calculate_span(range: &hid_input_report::Range) -> f32 {
-        if range.max <= range.min {
-            1.0
-        } else {
-            (range.max - range.min) as f32
-        }
+    fn calculate_span(range: &fidl_input_report::Range) -> f32 {
+        if range.max <= range.min { 1.0 } else { (range.max - range.min) as f32 }
     }
 
     pub fn new(
         target_size: &IntSize,
-        x: &hid_input_report::Range,
-        y: &hid_input_report::Range,
+        x: &fidl_input_report::Range,
+        y: &fidl_input_report::Range,
     ) -> Self {
         Self {
             target_size: *target_size,
@@ -101,7 +97,7 @@ pub(crate) struct InputReportHandler<'a> {
     pressed_mouse_buttons: HashSet<u8>,
     pressed_keys: HashSet<fidl_fuchsia_input::Key>,
     raw_contacts: HashSet<touch::RawContact>,
-    pressed_consumer_control_buttons: HashSet<hid_input_report::ConsumerControlButton>,
+    pressed_consumer_control_buttons: HashSet<fidl_input_report::ConsumerControlButton>,
 }
 
 impl<'a> InputReportHandler<'a> {
@@ -109,7 +105,7 @@ impl<'a> InputReportHandler<'a> {
         device_id: DeviceId,
         size: IntSize,
         display_rotation: DisplayRotation,
-        device_descriptor: &hid_input_report::DeviceDescriptor,
+        device_descriptor: &fidl_input_report::DeviceDescriptor,
         keymap: &'a Keymap<'a>,
     ) -> Self {
         let touch_scale = device_descriptor
@@ -160,7 +156,7 @@ impl<'a> InputReportHandler<'a> {
         &mut self,
         event_time: u64,
         device_id: &DeviceId,
-        mouse: &hid_input_report::MouseInputReport,
+        mouse: &fidl_input_report::MouseInputReport,
     ) -> Vec<Event> {
         let transform = self.display_rotation.inv_transform(&self.view_size.to_f32());
         let new_cursor_position = self.cursor_position
@@ -240,7 +236,7 @@ impl<'a> InputReportHandler<'a> {
         &mut self,
         event_time: u64,
         device_id: &DeviceId,
-        keyboard: &hid_input_report::KeyboardInputReport,
+        keyboard: &fidl_input_report::KeyboardInputReport,
         context: &mut dyn AutoRepeatTimer,
     ) -> Vec<Event> {
         let pressed_keys: HashSet<fidl_fuchsia_input::Key> =
@@ -322,13 +318,13 @@ impl<'a> InputReportHandler<'a> {
         &mut self,
         event_time: u64,
         device_id: &DeviceId,
-        touch: &hid_input_report::TouchInputReport,
+        touch: &fidl_input_report::TouchInputReport,
     ) -> Vec<Event> {
         if self.touch_scale.is_none() {
             return Vec::new();
         }
 
-        let pressed_buttons: HashSet<hid_input_report::TouchButton> =
+        let pressed_buttons: HashSet<fidl_input_report::TouchButton> =
             if let Some(ref pressed_buttons) = touch.pressed_buttons {
                 let pressed_buttons_set = pressed_buttons.iter().cloned().collect();
                 pressed_buttons_set
@@ -413,13 +409,13 @@ impl<'a> InputReportHandler<'a> {
         &mut self,
         event_time: u64,
         device_id: &DeviceId,
-        consumer_control: &hid_input_report::ConsumerControlInputReport,
+        consumer_control: &fidl_input_report::ConsumerControlInputReport,
     ) -> Vec<Event> {
         fn create_consumer_control_event(
             event_time: u64,
             device_id: &DeviceId,
             phase: consumer_control::Phase,
-            button: hid_input_report::ConsumerControlButton,
+            button: fidl_input_report::ConsumerControlButton,
         ) -> Event {
             let consumer_control_event = consumer_control::Event { phase, button };
             Event {
@@ -429,7 +425,7 @@ impl<'a> InputReportHandler<'a> {
             }
         }
 
-        let pressed_consumer_control_buttons: HashSet<hid_input_report::ConsumerControlButton> =
+        let pressed_consumer_control_buttons: HashSet<fidl_input_report::ConsumerControlButton> =
             if let Some(ref pressed_buttons) = consumer_control.pressed_buttons {
                 let pressed_buttons_set = pressed_buttons.iter().cloned().collect();
                 pressed_buttons_set
@@ -466,7 +462,7 @@ impl<'a> InputReportHandler<'a> {
     pub fn handle_input_report(
         &mut self,
         device_id: &DeviceId,
-        input_report: &hid_input_report::InputReport,
+        input_report: &fidl_input_report::InputReport,
         context: &mut dyn AutoRepeatTimer,
     ) -> Vec<Event> {
         let mut events = Vec::new();

@@ -7,14 +7,13 @@ use crate::geometry::{IntPoint, IntSize};
 use anyhow::{Error, format_err};
 use euclid::default::Transform2D;
 use fidl::endpoints::create_proxy;
-use fidl_fuchsia_input_report as hid_input_report;
+use fidl_fuchsia_input_report as fidl_input_report;
 use fuchsia_async::{self as fasync, MonotonicInstant, TimeoutExt};
-use futures::{TryFutureExt, TryStreamExt};
+use fuchsia_component::client::Service;
+use futures::{StreamExt, TryFutureExt};
 use keymaps::usages::input3_key_to_hid_usage;
 use std::collections::HashSet;
-use std::fs;
 use std::hash::{Hash, Hasher};
-use std::path::{Path, PathBuf};
 use zx::{self as zx, MonotonicDuration};
 
 #[derive(Debug)]
@@ -248,7 +247,7 @@ pub mod touch {
         pub contacts: Vec<Contact>,
         /// Buttons in this touch event, possible if the touch comes
         /// from a stylus with buttons.
-        pub buttons: HashSet<hid_input_report::TouchButton>,
+        pub buttons: HashSet<fidl_input_report::TouchButton>,
     }
 }
 
@@ -361,7 +360,7 @@ pub mod consumer_control {
         /// Phase of event.
         pub phase: Phase,
         /// USB HID for key being pressed or released.
-        pub button: hid_input_report::ConsumerControlButton,
+        pub button: fidl_input_report::ConsumerControlButton,
     }
 }
 
@@ -393,11 +392,11 @@ pub struct Event {
     pub event_type: EventType,
 }
 
-async fn listen_to_path(device_path: &Path, internal_sender: &InternalSender) -> Result<(), Error> {
-    let (client, server) = zx::Channel::create();
-    fdio::service_connect(device_path.to_str().expect("bad path"), server)?;
-    let client = fasync::Channel::from_channel(client);
-    let device = hid_input_report::InputDeviceProxy::new(client);
+async fn listen_to_instance(
+    instance: &fidl_input_report::ServiceProxy,
+    internal_sender: &InternalSender,
+) -> Result<(), Error> {
+    let device = instance.connect_to_input_device()?;
     let descriptor = device
         .get_descriptor()
         .map_err(|err| format_err!("FIDL error on get_descriptor: {:?}", err))
@@ -405,7 +404,8 @@ async fn listen_to_path(device_path: &Path, internal_sender: &InternalSender) ->
             Err(format_err!("FIDL timeout on get_descriptor"))
         })
         .await?;
-    let device_id = device_path.file_name().expect("file_name").to_string_lossy().to_string();
+
+    let device_id = instance.instance_name().to_string();
     internal_sender
         .unbounded_send(MessageInternal::RegisterDevice(
             DeviceId(device_id.clone()),
@@ -448,38 +448,30 @@ async fn listen_to_path(device_path: &Path, internal_sender: &InternalSender) ->
 }
 
 pub(crate) async fn listen_for_user_input(internal_sender: InternalSender) -> Result<(), Error> {
-    let input_devices_directory = "/dev/class/input-report";
     let watcher_sender = internal_sender.clone();
-    let path = std::path::Path::new(input_devices_directory);
-    let entries = fs::read_dir(path)?;
-    for entry in entries {
-        let entry = entry?;
-        match listen_to_path(&entry.path(), &internal_sender).await {
-            Err(err) => {
-                eprintln!("Error: {}: {}", entry.file_name().to_string_lossy(), err)
-            }
-            _ => (),
-        }
-    }
-    let dir_proxy = fuchsia_fs::directory::open_in_namespace(
-        input_devices_directory,
-        fuchsia_fs::PERM_READABLE,
-    )?;
-    let mut watcher = fuchsia_fs::directory::Watcher::new(&dir_proxy).await?;
+
+    let service = Service::open(fidl_input_report::ServiceMarker)
+        .map_err(|err| format_err!("failed to open fuchsia.input.report.Service: {:?}", err))?;
+    let mut watcher = service
+        .watch()
+        .await
+        .map_err(|err| format_err!("failed to watch fuchsia.input.report.Service: {:?}", err))?;
+
     fasync::Task::local(async move {
-        let input_devices_directory_path = PathBuf::from("/dev/class/input-report");
-        while let Some(msg) = (watcher.try_next()).await.expect("msg") {
-            match msg.event {
-                fuchsia_fs::directory::WatchEvent::ADD_FILE => {
-                    let device_path = input_devices_directory_path.join(msg.filename);
-                    match listen_to_path(&device_path, &watcher_sender).await {
+        while let Some(instance) = watcher.next().await {
+            match instance {
+                Ok(instance) => {
+                    match listen_to_instance(&instance, &watcher_sender).await {
                         Err(err) => {
-                            eprintln!("Error: {:?}: {}", device_path, err)
+                            eprintln!("Error: {}: {}", instance.instance_name(), err)
                         }
                         _ => (),
                     };
                 }
-                _ => (),
+                Err(err) => {
+                    eprintln!("Error watching input report service: {}", err);
+                    break;
+                }
             }
         }
     })

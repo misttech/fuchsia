@@ -5,11 +5,11 @@
 use crate::drawing::DisplayRotation;
 use crate::geometry::{IntPoint, IntSize};
 use euclid::size2;
-use fidl_fuchsia_input_report as hid_input_report;
+use fidl_fuchsia_input_report as fidl_input_report;
 
 mod mouse_tests {
     use super::*;
-    use crate::input::{mouse, Button, ButtonSet, Event, EventType};
+    use crate::input::{Button, ButtonSet, Event, EventType, mouse};
 
     pub fn create_test_mouse_event(button: u8) -> Event {
         let mouse_event = mouse::Event {
@@ -39,7 +39,7 @@ mod touch_tests {
 
 mod pointer_tests {
     use super::*;
-    use crate::input::{pointer, EventType};
+    use crate::input::{EventType, pointer};
 
     #[test]
     fn test_pointer_from_mouse() {
@@ -81,7 +81,7 @@ mod input_report_tests {
     use super::*;
     use crate::app::strategies::framebuffer::AutoRepeatTimer;
     use crate::input::report::{InputReportHandler, TouchScale};
-    use crate::input::{consumer_control, keyboard, DeviceId, EventType};
+    use crate::input::{DeviceId, EventType, consumer_control, keyboard};
     use itertools::assert_equal;
 
     struct TestAutoRepeatContext;
@@ -139,7 +139,7 @@ mod input_report_tests {
 
     #[test]
     fn test_consumer_control() {
-        use hid_input_report::ConsumerControlButton::{VolumeDown, VolumeUp};
+        use fidl_input_report::ConsumerControlButton::{VolumeDown, VolumeUp};
         let reports = test_data::consumer_control_input_reports();
 
         let device_id = DeviceId("cc-1".to_string());
@@ -147,7 +147,7 @@ mod input_report_tests {
         let mut context = TestAutoRepeatContext;
 
         let mut input_handler = make_input_handler();
-        let events: Vec<(consumer_control::Phase, hid_input_report::ConsumerControlButton)> =
+        let events: Vec<(consumer_control::Phase, fidl_input_report::ConsumerControlButton)> =
             reports
                 .iter()
                 .map(|input_report| {
@@ -175,7 +175,7 @@ mod input_report_tests {
 mod input_tests {
     use super::*;
     use crate::input::key3::KeyboardInputHandler;
-    use crate::input::{keyboard, EventType};
+    use crate::input::{EventType, keyboard};
     use itertools::assert_equal;
 
     #[test]

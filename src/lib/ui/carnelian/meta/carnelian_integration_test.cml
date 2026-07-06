@@ -13,7 +13,7 @@
     children: [
         {
             name: "ui",
-            url: "fuchsia-pkg://fuchsia.com/test-ui-stack#meta/test-ui-stack.cm",
+            url: "test-ui-stack#meta/test-ui-stack.cm",
         },
     ],
     use: [
@@ -25,6 +25,14 @@
                 "fuchsia.tracing.provider.Registry",
                 "fuchsia.vulkan.loader.Loader",
             ],
+        },
+        {
+            protocol: [
+                "fuchsia.ui.composition.Allocator",
+                "fuchsia.ui.composition.Flatland",
+                "fuchsia.ui.input3.Keyboard",
+            ],
+            from: "#ui",
         },
     ],
     offer: [

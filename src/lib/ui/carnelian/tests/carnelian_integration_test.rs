@@ -5,11 +5,8 @@
 use anyhow::Error;
 use carnelian::color::Color;
 use carnelian::render::{Composition, Context as RenderContext, PreClear, RenderExt};
-use carnelian::{
-    make_app_assistant, App, AppAssistant, ViewAssistant, ViewAssistantContext, ViewAssistantPtr,
-    ViewKey,
-};
-use zx::{AsHandleRef, Event, Signals};
+use carnelian::{AppAssistant, ViewAssistant, ViewAssistantContext, ViewAssistantPtr, ViewKey};
+use zx::{Event, Signals};
 
 #[derive(Default)]
 struct IntegrationTestAppAssistant;
@@ -52,16 +49,11 @@ impl ViewAssistant for IntegrationTestViewAssistant {
     }
 }
 
-fn main() -> Result<(), Error> {
-    println!("carnelian_integration_test");
-    App::run(make_app_assistant::<IntegrationTestAppAssistant>())
-}
-
 #[cfg(test)]
 mod test {
 
     use crate::IntegrationTestAppAssistant;
-    use carnelian::{make_app_assistant, App};
+    use carnelian::{App, make_app_assistant};
 
     #[test]
     fn carnelian_integration_test() -> std::result::Result<(), anyhow::Error> {

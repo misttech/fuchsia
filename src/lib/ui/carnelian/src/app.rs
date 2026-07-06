@@ -16,7 +16,7 @@ use anyhow::{Context as _, Error, bail, format_err};
 use fidl_fuchsia_hardware_display::{
     ClientPriorityValue, CoordinatorListenerRequest, ProviderProxy,
 };
-use fidl_fuchsia_input_report as hid_input_report;
+use fidl_fuchsia_input_report as fidl_input_report;
 use fuchsia_async::{self as fasync, DurationExt, Timer};
 use fuchsia_component::{self as component};
 use fuchsia_trace::duration;
@@ -394,8 +394,8 @@ pub(crate) enum MessageInternal {
     Render(ViewKey),
     ImageFreed(ViewKey, u64, u32),
     TargetedMessage(MessageTarget, Message),
-    RegisterDevice(DeviceId, Box<hid_input_report::DeviceDescriptor>),
-    InputReport(DeviceId, hid_input_report::InputReport),
+    RegisterDevice(DeviceId, Box<fidl_input_report::DeviceDescriptor>),
+    InputReport(DeviceId, fidl_input_report::InputReport),
     KeyboardAutoRepeat(DeviceId),
     OwnershipChanged(bool),
     DropDisplayResources,
