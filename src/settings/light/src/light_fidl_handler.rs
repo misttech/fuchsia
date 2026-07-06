@@ -10,19 +10,19 @@ use fidl_fuchsia_settings::{
     LightWatchLightGroupResponder, LightWatchLightGroupsResponder,
 };
 use fuchsia_async as fasync;
+use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
-use futures::StreamExt;
 
 use crate::light_controller::{
-    LightController, LightError as ControllerLightError, Request, ARG_NAME,
+    ARG_NAME, LightController, LightError as ControllerLightError, Request,
 };
 use crate::types::{LightGroup, LightInfo};
 use settings_common::inspect::event::{
-    RequestType, ResponseType, UsagePublisher, UsageResponsePublisher,
+    HangingGetObserver, RequestType, ResponseType, UsagePublisher,
 };
 
-pub(crate) type SubscriberObject<T> = (UsageResponsePublisher<LightInfo>, T);
+pub(crate) type SubscriberObject<T> = HangingGetObserver<LightInfo, T>;
 pub(crate) type InfoSubscriberObject = SubscriberObject<LightWatchLightGroupsResponder>;
 pub(crate) type GroupSubscriberObject = SubscriberObject<LightWatchLightGroupResponder>;
 
@@ -79,7 +79,8 @@ impl LightFidlHandler {
                     key,
                     GroupHangingGet::new(
                         group,
-                        Box::new(|group, (usage_responder, responder)| {
+                        Box::new(|group, observer| {
+                            let (usage_responder, responder) = observer.into_parts();
                             usage_responder.respond(format!("{group:?}"), ResponseType::OkSome);
                             if let Err(e) = responder.send(&FidlLightGroup::from(group.clone())) {
                                 log::warn!("Failed to respond to watch light group request: {e:?}");
@@ -93,7 +94,8 @@ impl LightFidlHandler {
             .collect();
         let info_hanging_get: InfoHangingGet = InfoHangingGet::new(
             info,
-            Box::new(|info, (usage_responder, responder)| {
+            Box::new(|info, observer| {
+                let (usage_responder, responder) = observer.into_parts();
                 usage_responder.respond(format!("{info:?}"), ResponseType::OkSome);
                 if let Err(e) = responder.send(&Vec::<FidlLightGroup>::from(info)) {
                     log::warn!("Failed to respond to watch light groups request: {e:?}");
@@ -148,11 +150,7 @@ impl From<HandlerError> for LightError {
     fn from(error: HandlerError) -> Self {
         if let HandlerError::Controller(ControllerLightError::InvalidArgument(argument, _)) = error
         {
-            if ARG_NAME == argument {
-                LightError::InvalidName
-            } else {
-                LightError::InvalidValue
-            }
+            if ARG_NAME == argument { LightError::InvalidName } else { LightError::InvalidValue }
         } else {
             LightError::Failed
         }
@@ -172,10 +170,10 @@ impl RequestHandler {
             LightRequest::WatchLightGroups { responder } => {
                 let usage_res =
                     self.usage_publisher.request("WatchLightGroups".to_string(), RequestType::Get);
-                if let Err((usage_res, responder)) =
-                    self.info_subscriber.register2((usage_res, responder))
-                {
+                let observer = HangingGetObserver::new(usage_res, responder);
+                if let Err(observer) = self.info_subscriber.register2(observer) {
                     let e = HandlerError::AlreadySubscribed;
+                    let (usage_res, responder) = observer.into_parts();
                     usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
                     drop(responder);
                 }
@@ -185,11 +183,11 @@ impl RequestHandler {
                     .usage_publisher
                     .request(format!("WatchLightGroup{{name:{name:?}}}"), RequestType::Get);
                 let res = if let Some(subscriber) = self.group_subscribers.get(&name) {
-                    subscriber.register2((usage_res, responder)).map_err(
-                        |(usage_res, responder)| {
-                            (HandlerError::AlreadySubscribed, usage_res, responder)
-                        },
-                    )
+                    let observer = HangingGetObserver::new(usage_res, responder);
+                    subscriber.register2(observer).map_err(|observer| {
+                        let (usage_res, responder) = observer.into_parts();
+                        (HandlerError::AlreadySubscribed, usage_res, responder)
+                    })
                 } else {
                     Err((HandlerError::NotFound, usage_res, responder))
                 };

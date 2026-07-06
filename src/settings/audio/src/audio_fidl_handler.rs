@@ -19,7 +19,7 @@ use futures::StreamExt;
 use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot;
 use settings_common::inspect::event::{
-    RequestType, ResponseType, UsagePublisher, UsageResponsePublisher,
+    HangingGetObserver, RequestType, ResponseType, UsagePublisher,
 };
 use settings_common::{trace, trace_guard};
 
@@ -241,13 +241,13 @@ fn to_request2(settings: AudioSettings2, id: ftrace::Id) -> Result<Vec<SetAudioS
         .unwrap_or(Err(Error::NoStreams))
 }
 
-pub(crate) type SubscriberObject = (UsageResponsePublisher<AudioInfo>, AudioWatchResponder);
+pub(crate) type SubscriberObject = HangingGetObserver<AudioInfo, AudioWatchResponder>;
 type HangingGetFn = fn(&AudioInfo, SubscriberObject) -> bool;
 pub(crate) type HangingGet = server::HangingGet<AudioInfo, SubscriberObject, HangingGetFn>;
 pub(crate) type Publisher = server::Publisher<AudioInfo, SubscriberObject, HangingGetFn>;
 pub(crate) type Subscriber = server::Subscriber<AudioInfo, SubscriberObject, HangingGetFn>;
 
-pub(crate) type SubscriberObject2 = (UsageResponsePublisher<AudioInfo>, AudioWatch2Responder);
+pub(crate) type SubscriberObject2 = HangingGetObserver<AudioInfo, AudioWatch2Responder>;
 type HangingGetFn2 = fn(&AudioInfo, SubscriberObject2) -> bool;
 pub(crate) type HangingGet2 = server::HangingGet<AudioInfo, SubscriberObject2, HangingGetFn2>;
 pub(crate) type Publisher2 = server::Publisher<AudioInfo, SubscriberObject2, HangingGetFn2>;
@@ -274,7 +274,8 @@ impl AudioFidlHandler {
         Self { hanging_get, hanging_get2, controller_tx, usage_publisher }
     }
 
-    fn hanging_get(info: &AudioInfo, (usage_responder, responder): SubscriberObject) -> bool {
+    fn hanging_get(info: &AudioInfo, observer: SubscriberObject) -> bool {
+        let (usage_responder, responder) = observer.into_parts();
         usage_responder.respond(format!("{info:?}"), ResponseType::OkSome);
         if let Err(e) = responder.send(&AudioSettings::from(info)) {
             log::warn!("Failed to respond to watch request: {e:?}");
@@ -283,7 +284,8 @@ impl AudioFidlHandler {
         true
     }
 
-    fn hanging_get2(info: &AudioInfo, (usage_responder, responder): SubscriberObject2) -> bool {
+    fn hanging_get2(info: &AudioInfo, observer: SubscriberObject2) -> bool {
+        let (usage_responder, responder) = observer.into_parts();
         usage_responder.respond(format!("{info:?}"), ResponseType::OkSome);
         if let Err(e) = responder.send(&AudioSettings2::from(info)) {
             log::warn!("Failed to respond to watch request: {e:?}");
@@ -346,10 +348,10 @@ impl RequestHandler {
         match request {
             AudioRequest::Watch { responder } => {
                 let usage_res = self.usage_publisher.request("Watch".to_string(), RequestType::Get);
-                if let Err((usage_res, responder)) =
-                    self.subscriber.register2((usage_res, responder))
-                {
+                let observer = HangingGetObserver::new(usage_res, responder);
+                if let Err(observer) = self.subscriber.register2(observer) {
                     let e = HandlerError::AlreadySubscribed;
+                    let (usage_res, responder) = observer.into_parts();
                     usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
                     drop(responder);
                 }
@@ -357,10 +359,10 @@ impl RequestHandler {
             AudioRequest::Watch2 { responder } => {
                 let usage_res =
                     self.usage_publisher.request("Watch2".to_string(), RequestType::Get);
-                if let Err((usage_res, responder)) =
-                    self.subscriber2.register2((usage_res, responder))
-                {
+                let observer = HangingGetObserver::new(usage_res, responder);
+                if let Err(observer) = self.subscriber2.register2(observer) {
                     let e = HandlerError::AlreadySubscribed;
+                    let (usage_res, responder) = observer.into_parts();
                     usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
                     drop(responder);
                 }

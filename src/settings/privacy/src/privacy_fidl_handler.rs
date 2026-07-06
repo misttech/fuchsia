@@ -14,7 +14,7 @@ use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
 use settings_common::inspect::event::{
-    RequestType, ResponseType, UsagePublisher, UsageResponsePublisher,
+    HangingGetObserver, RequestType, ResponseType, UsagePublisher,
 };
 
 impl From<PrivacyInfo> for PrivacySettings {
@@ -26,7 +26,7 @@ impl From<PrivacyInfo> for PrivacySettings {
     }
 }
 
-pub(super) type SubscriberObject = (UsageResponsePublisher<PrivacyInfo>, PrivacyWatchResponder);
+pub(super) type SubscriberObject = HangingGetObserver<PrivacyInfo, PrivacyWatchResponder>;
 type HangingFn = fn(&PrivacyInfo, SubscriberObject) -> bool;
 pub(super) type HangingGet = server::HangingGet<PrivacyInfo, SubscriberObject, HangingFn>;
 pub(super) type Publisher = server::Publisher<PrivacyInfo, SubscriberObject, HangingFn>;
@@ -50,7 +50,8 @@ impl PrivacyFidlHandler {
         (Self { hanging_get, controller_tx, usage_publisher }, request_rx)
     }
 
-    fn hanging_get(info: &PrivacyInfo, (usage_responder, responder): SubscriberObject) -> bool {
+    fn hanging_get(info: &PrivacyInfo, observer: SubscriberObject) -> bool {
+        let (usage_responder, responder) = observer.into_parts();
         usage_responder.respond(format!("{info:?}"), ResponseType::OkSome);
         if let Err(e) = responder.send(&PrivacySettings::from(*info)) {
             log::warn!("Failed to respond to watch request: {e:?}");
@@ -102,10 +103,10 @@ impl RequestHandler {
         match request {
             PrivacyRequest::Watch { responder } => {
                 let usage_res = self.usage_publisher.request("Watch".to_string(), RequestType::Get);
-                if let Err((usage_res, responder)) =
-                    self.subscriber.register2((usage_res, responder))
-                {
+                let observer = HangingGetObserver::new(usage_res, responder);
+                if let Err(observer) = self.subscriber.register2(observer) {
                     let e = HandlerError::AlreadySubscribed;
+                    let (usage_res, responder) = observer.into_parts();
                     usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
                     drop(responder);
                 }

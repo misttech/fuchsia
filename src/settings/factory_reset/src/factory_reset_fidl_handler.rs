@@ -14,7 +14,7 @@ use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
 use settings_common::inspect::event::{
-    RequestType, ResponseType, UsagePublisher, UsageResponsePublisher,
+    HangingGetObserver, RequestType, ResponseType, UsagePublisher,
 };
 
 impl From<FactoryResetInfo> for FactoryResetSettings {
@@ -26,8 +26,7 @@ impl From<FactoryResetInfo> for FactoryResetSettings {
     }
 }
 
-pub(crate) type SubscriberObject =
-    (UsageResponsePublisher<FactoryResetInfo>, FactoryResetWatchResponder);
+pub(crate) type SubscriberObject = HangingGetObserver<FactoryResetInfo, FactoryResetWatchResponder>;
 type HangingGetFn = fn(&FactoryResetInfo, SubscriberObject) -> bool;
 pub(crate) type HangingGet = server::HangingGet<FactoryResetInfo, SubscriberObject, HangingGetFn>;
 pub(crate) type Publisher = server::Publisher<FactoryResetInfo, SubscriberObject, HangingGetFn>;
@@ -51,10 +50,8 @@ impl FactoryResetFidlHandler {
         (Self { hanging_get, controller_tx, usage_publisher }, controller_rx)
     }
 
-    fn hanging_get(
-        info: &FactoryResetInfo,
-        (usage_responder, responder): SubscriberObject,
-    ) -> bool {
+    fn hanging_get(info: &FactoryResetInfo, observer: SubscriberObject) -> bool {
+        let (usage_responder, responder) = observer.into_parts();
         usage_responder.respond(format!("{info:?}"), ResponseType::OkSome);
         if let Err(e) = responder.send(&FactoryResetSettings::from(*info)) {
             log::warn!("Failed to respond to watch request: {e:?}");
@@ -108,10 +105,10 @@ impl RequestHandler {
         match request {
             FactoryResetRequest::Watch { responder } => {
                 let usage_res = self.usage_publisher.request("Watch".to_string(), RequestType::Get);
-                if let Err((usage_res, responder)) =
-                    self.subscriber.register2((usage_res, responder))
-                {
+                let observer = HangingGetObserver::new(usage_res, responder);
+                if let Err(observer) = self.subscriber.register2(observer) {
                     let e = HandlerError::AlreadySubscribed;
+                    let (usage_res, responder) = observer.into_parts();
                     usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
                     drop(responder);
                 }

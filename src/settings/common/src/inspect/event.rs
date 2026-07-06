@@ -109,6 +109,41 @@ impl<T> Drop for UsageResponsePublisher<T> {
     }
 }
 
+/// A wrapper for hanging get observers that ensures the `UsageResponsePublisher`
+/// is responded to even if the observer is dropped (e.g., due to client disconnect).
+pub struct HangingGetObserver<T, R>
+where
+    T: Nameable,
+{
+    inner: Option<(UsageResponsePublisher<T>, R)>,
+}
+
+impl<T, R> HangingGetObserver<T, R>
+where
+    T: Nameable,
+{
+    pub fn new(publisher: UsageResponsePublisher<T>, responder: R) -> Self {
+        Self { inner: Some((publisher, responder)) }
+    }
+
+    /// Deconstruct the observer to retrieve the publisher and responder.
+    /// This consumes the wrapper and prevents the automatic "Cancelled" response on drop.
+    pub fn into_parts(mut self) -> (UsageResponsePublisher<T>, R) {
+        self.inner.take().expect("inner components present")
+    }
+}
+
+impl<T, R> Drop for HangingGetObserver<T, R>
+where
+    T: Nameable,
+{
+    fn drop(&mut self) {
+        if let Some((publisher, _)) = self.inner.take() {
+            publisher.respond("Cancelled".to_string(), ResponseType::Cancelled);
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub enum RequestType {
     Get,
@@ -141,6 +176,7 @@ pub enum ResponseType {
     TimeoutError,
     AlreadySubscribed,
     MaximumInputDevicesReached,
+    Cancelled,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -186,5 +222,59 @@ impl ExternalEventPublisher {
         self.tx
             .unbounded_send(event)
             .map_err(|e| anyhow!("Unable to send external event update: {e:?}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::inspect::listener_logger::ListenerInspectLogger;
+    use futures::channel::mpsc;
+
+    struct TestSetting;
+    impl Nameable for TestSetting {
+        const NAME: &'static str = "TestSetting";
+    }
+
+    #[test]
+    fn test_observer_into_parts() {
+        let (tx, _rx) = mpsc::unbounded();
+        let logger = Rc::new(ListenerInspectLogger::new());
+        let publisher = UsagePublisher::<TestSetting>::new(tx, logger);
+        let response_publisher = publisher.request("Watch".to_string(), RequestType::Get);
+        let dummy_responder = 42;
+
+        let observer = HangingGetObserver::new(response_publisher, dummy_responder);
+        let (pub_out, resp_out) = observer.into_parts();
+        assert_eq!(resp_out, 42);
+
+        // Mark sent so drop doesn't log error
+        pub_out.respond("Ok".to_string(), ResponseType::OkSome);
+    }
+
+    #[test]
+    fn test_observer_drop_cancels() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let logger = Rc::new(ListenerInspectLogger::new());
+        let publisher = UsagePublisher::<TestSetting>::new(tx, logger);
+        let response_publisher = publisher.request("Watch".to_string(), RequestType::Get);
+
+        let observer = HangingGetObserver::new(response_publisher, ());
+        drop(observer);
+
+        // Verify request event was sent
+        let req_event = rx.try_next().unwrap().unwrap();
+        assert_eq!(req_event.setting, "TestSetting");
+        assert!(matches!(req_event.direction, Direction::Request(_)));
+
+        // Verify response event was sent on drop with Cancelled status
+        let resp_event = rx.try_next().unwrap().unwrap();
+        assert_eq!(resp_event.setting, "TestSetting");
+        if let Direction::Response(msg, status) = resp_event.direction {
+            assert_eq!(msg, "Cancelled");
+            assert!(matches!(status, ResponseType::Cancelled));
+        } else {
+            panic!("Expected Direction::Response");
+        }
     }
 }
