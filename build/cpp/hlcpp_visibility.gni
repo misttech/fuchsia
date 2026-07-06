@@ -323,7 +323,7 @@ hlcpp_visibility = [
   "//src/ui/tests/integration_input_tests/virtual-keyboard/*",
   "//src/ui/tests/integration_input_tests/web-touch-input/*",
   "//src/virtualization/bin/guest_manager:*",
-  "//src/virtualization/bin/termina_guest_manager:*",
+
   "//src/virtualization/bin/vmm:*",
   "//src/virtualization/bin/vmm/device:*",
   "//src/virtualization/bin/vmm/device/tests:*",
@@ -332,7 +332,7 @@ hlcpp_visibility = [
   "//src/virtualization/lib/grpc:*",
   "//src/virtualization/lib/guest_config:*",
   "//src/virtualization/lib/guest_interaction:*",
-  "//src/virtualization/lib/vsh:*",
+
   "//src/virtualization/tests/*",
   "//src/zircon/bin/hwstress:*",
   "//src/zircon/bin/ktrace:*",

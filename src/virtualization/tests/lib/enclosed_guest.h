@@ -17,7 +17,6 @@
 
 #include "lib/async/dispatcher.h"
 #include "src/ui/testing/ui_test_manager/ui_test_manager.h"
-#include "src/virtualization/lib/vsh/command_runner.h"
 #include "src/virtualization/tests/lib/fake_memory_pressure_provider.h"
 #include "src/virtualization/tests/lib/fake_netstack.h"
 #include "src/virtualization/tests/lib/guest_console.h"
@@ -250,55 +249,6 @@ class DebianGpuEnclosedGuest : public DebianEnclosedGuest {
       : DebianEnclosedGuest(dispatcher, std::move(run_loop_until), /* enable_gpu */ true) {}
 };
 
-class TerminaEnclosedGuest : public EnclosedGuest {
- public:
-  TerminaEnclosedGuest(async_dispatcher_t* dispatcher, RunLoopUntilFunc run_loop_until)
-      : TerminaEnclosedGuest(dispatcher, std::move(run_loop_until),
-                             fuchsia::virtualization::ContainerStatus::STARTING_VM) {}
-
-  GuestKernel GetGuestKernel() override { return GuestKernel::LINUX; }
-
-  std::vector<std::string> GetTestUtilCommand(const std::string& util,
-                                              const std::vector<std::string>& argv) override;
-  zx_status_t Execute(const std::vector<std::string>& command,
-                      const std::unordered_map<std::string, std::string>& env, zx::time deadline,
-                      std::string* result, int32_t* return_code) override;
-
-  zx_status_t BuildLaunchInfo(GuestLaunchInfo* launch_info) override;
-  void InstallInRealm(component_testing::Realm& realm, GuestLaunchInfo& guest_launch_info) override;
-
- protected:
-  TerminaEnclosedGuest(async_dispatcher_t* dispatcher, RunLoopUntilFunc run_loop_until,
-                       fuchsia::virtualization::ContainerStatus target_status)
-      : EnclosedGuest(dispatcher, std::move(run_loop_until)),
-        target_status_(target_status),
-        executor_(dispatcher) {}
-
-  zx_status_t WaitForSystemReady(zx::time deadline) override;
-  zx_status_t ShutdownAndWait(zx::time deadline) override;
-  std::string ShellPrompt() override { return "$ "; }
-
- private:
-  const fuchsia::virtualization::ContainerStatus target_status_;
-  std::unique_ptr<vsh::BlockingCommandRunner> command_runner_;
-  async::Executor executor_;
-  ::fuchsia::virtualization::LinuxManagerPtr linux_manager_;
-};
-
-class TerminaContainerEnclosedGuest : public TerminaEnclosedGuest {
- public:
-  TerminaContainerEnclosedGuest(async_dispatcher_t* dispatcher, RunLoopUntilFunc run_loop_until)
-      : TerminaEnclosedGuest(dispatcher, std::move(run_loop_until),
-                             fuchsia::virtualization::ContainerStatus::READY) {}
-
-  zx_status_t BuildLaunchInfo(GuestLaunchInfo* launch_info) override;
-  void InstallInRealm(component_testing::Realm& realm, GuestLaunchInfo& guest_launch_info) override;
-  zx_status_t WaitForSystemReady(zx::time deadline) override;
-  zx_status_t Execute(const std::vector<std::string>& argv,
-                      const std::unordered_map<std::string, std::string>& env, zx::time deadline,
-                      std::string* result, int32_t* return_code) override;
-};
-
 using AllGuestTypes = ::testing::Types<ZirconEnclosedGuest, DebianEnclosedGuest>;
 
 class GuestTestNameGenerator {
@@ -311,10 +261,6 @@ class GuestTestNameGenerator {
       return std::to_string(idx) + "_ZirconGuest";
     if (std::is_base_of<DebianEnclosedGuest, T>())
       return std::to_string(idx) + "_DebianGuest";
-    if (std::is_base_of<TerminaContainerEnclosedGuest, T>())
-      return std::to_string(idx) + "_TerminaContainerGuest";
-    if (std::is_base_of<TerminaEnclosedGuest, T>())
-      return std::to_string(idx) + "_TerminaGuest";
   }
 };
 

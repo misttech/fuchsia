@@ -4,8 +4,6 @@
 
 use guest_cli_args::*;
 
-mod vsh;
-
 #[fuchsia::main(logging_tags = ["guest"])]
 async fn main() -> Result<(), anyhow::Error> {
     let options: GuestOptions = argh::from_env();
@@ -37,11 +35,6 @@ async fn main() -> Result<(), anyhow::Error> {
             println!("{}", output);
             Ok(())
         }
-        SubCommands::Wipe(wipe_args) => {
-            let output = guest_cli::wipe::handle_wipe(&services, &wipe_args).await?;
-            println!("{}", output);
-            Ok(())
-        }
         SubCommands::VsockPerf(vsockperf_args) => {
             #[allow(clippy::large_futures)]
             let output = guest_cli::vsockperf::handle_vsockperf(&services, &vsockperf_args).await?;
@@ -53,11 +46,7 @@ async fn main() -> Result<(), anyhow::Error> {
             println!("{}", output);
             Ok(())
         }
-        SubCommands::Vsh(vsh_args) => {
-            vsh::handle_vsh(&services, vsh_args.port, vsh_args.container, vsh_args.args)
-                .await
-                .map(|exit_code| std::process::exit(exit_code))
-        }
+
         SubCommands::Mem(mem_args) => {
             let output = guest_cli::mem::handle_mem(&services, mem_args).await?;
             println!("{}", output);

@@ -5,13 +5,11 @@
 use crate::platform::PlatformServices;
 use anyhow::Result;
 use async_trait::async_trait;
-use fidl::endpoints::{create_proxy, DiscoverableProtocolMarker};
+use fidl::endpoints::{DiscoverableProtocolMarker, create_proxy};
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use fidl_fuchsia_io::OpenFlags;
 use fidl_fuchsia_sys2 as fsys;
-use fidl_fuchsia_virtualization::{
-    GuestManagerMarker, GuestManagerProxy, LinuxManagerMarker, LinuxManagerProxy,
-};
+use fidl_fuchsia_virtualization::{GuestManagerMarker, GuestManagerProxy};
 use guest_cli_args::GuestType;
 
 pub struct HostPlatformServices {
@@ -39,20 +37,5 @@ impl PlatformServices for HostPlatformServices {
             )
             .await?;
         Ok(guest_manager)
-    }
-
-    async fn connect_to_linux_manager(&self) -> Result<LinuxManagerProxy> {
-        let (linux_manager, server_end) = create_proxy::<LinuxManagerMarker>();
-        // This may fail, but we report the error when we later try to use the LinuxManagerProxy.
-        let _ = self
-            .remote_control
-            .connect_capability(
-                GuestType::Termina.moniker(),
-                fsys::OpenDirType::ExposedDir,
-                LinuxManagerMarker::PROTOCOL_NAME,
-                server_end.into_channel(),
-            )
-            .await?;
-        Ok(linux_manager)
     }
 }

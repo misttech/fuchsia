@@ -6,17 +6,7 @@ group("all_guests") {
   testonly = true
   deps = [
     ":debian",
-    ":termina",
     ":zircon",
-  ]
-}
-
-group("termina") {
-  testonly = true
-  deps = [
-    "//src/virtualization/bin/guest",
-    "//src/virtualization/bin/termina_guest_manager",
-    "//src/virtualization/packages/termina_guest",
   ]
 }
 

@@ -363,10 +363,10 @@ mod test {
 
         let actual = format!(
             "{}",
-            get_detailed_information(arguments::GuestType::Termina, manager).await.unwrap()
+            get_detailed_information(arguments::GuestType::Debian, manager).await.unwrap()
         );
         let expected = concat!(
-            " Guest package:  fuchsia-pkg://fuchsia.com/termina_guest#meta/termina_guest.cm \n",
+            " Guest package:  fuchsia-pkg://fuchsia.com/debian_guest#meta/debian_guest.cm \n",
             " Guest status:   Stopped \n",
             " Guest uptime:   00:00:05 HH:MM:SS \n",
             "                  \n",

@@ -5,7 +5,6 @@
 exports_files(
     [
         "meta/debian_guest_manager.core_shard.cml",
-        "meta/termina_guest_manager.core_shard.cml",
         "meta/zircon_guest_manager.core_shard.cml",
     ],
     visibility = ["//bundles/assembly:__subpackages__"],

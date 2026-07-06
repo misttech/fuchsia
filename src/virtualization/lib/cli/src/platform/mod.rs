@@ -5,7 +5,7 @@
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use blocking::Unblock;
-use fidl_fuchsia_virtualization::{GuestManagerProxy, GuestMarker, GuestProxy, LinuxManagerProxy};
+use fidl_fuchsia_virtualization::{GuestManagerProxy, GuestMarker, GuestProxy};
 use fuchsia_async as fasync;
 use guest_cli_args::GuestType;
 use std::io::{Read, Write};
@@ -134,8 +134,6 @@ impl GuestConsole {
 
 #[async_trait(?Send)]
 pub trait PlatformServices {
-    async fn connect_to_linux_manager(&self) -> Result<LinuxManagerProxy>;
-
     async fn connect_to_manager(&self, guest_type: GuestType) -> Result<GuestManagerProxy>;
 
     async fn connect_to_guest(&self, guest_type: GuestType) -> Result<GuestProxy> {

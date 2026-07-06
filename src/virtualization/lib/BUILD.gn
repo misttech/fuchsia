@@ -5,10 +5,7 @@
 group("lib") {
   testonly = true
 
-  deps = [
-    "grpc",
-    "vsh",
-  ]
+  deps = [ "grpc" ]
 }
 
 # To avoid creating excessive load on infra, we split out tests that pull in
@@ -34,6 +31,5 @@ group("tests") {
     "machina-virtio-device:tests",
     "qcow:tests",
     "virtio-device:tests",
-    "vsh:tests",
   ]
 }

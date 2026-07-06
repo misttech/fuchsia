@@ -5,10 +5,8 @@
 use crate::platform::PlatformServices;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use fidl_fuchsia_virtualization::{
-    GuestManagerMarker, GuestManagerProxy, LinuxManagerMarker, LinuxManagerProxy,
-};
-use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_path};
+use fidl_fuchsia_virtualization::{GuestManagerMarker, GuestManagerProxy};
+use fuchsia_component::client::connect_to_protocol_at_path;
 use guest_cli_args::GuestType;
 
 pub struct FuchsiaPlatformServices;
@@ -27,10 +25,5 @@ impl PlatformServices for FuchsiaPlatformServices {
         )
         .context("Failed to connect to manager service")?;
         Ok(manager)
-    }
-
-    async fn connect_to_linux_manager(&self) -> Result<LinuxManagerProxy> {
-        connect_to_protocol::<LinuxManagerMarker>()
-            .context("Failed to connect to linux manager service")
     }
 }

@@ -3635,7 +3635,6 @@ assembly_input_bundle(
             "//src/connectivity/network:meta/virtualization.core_shard.cml",
             "//src/virtualization/bin/vmm_launcher:meta/vmm_launcher.core_shard.cml",
             "//src/virtualization/bin/guest_manager:meta/debian_guest_manager.core_shard.cml",
-            "//src/virtualization/bin/guest_manager:meta/termina_guest_manager.core_shard.cml",
             "//src/virtualization/bin/guest_manager:meta/zircon_guest_manager.core_shard.cml",
         ],
     }),

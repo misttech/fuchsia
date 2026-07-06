@@ -13,12 +13,6 @@ import("//src/virtualization/buildtools/romfs_image.gni")
 guest_packages = [
   "//src/virtualization/bin/guest_manager:debian_guest_manager",
   "//src/virtualization/bin/guest_manager:zircon_guest_manager",
-
-  # TODO(https://fxbug.dev/42073215): when
-  # fuchsia.component.test/Realm.InitMutableConfigFromPackage works with
-  # subpackaged components, replace with:
-  # "//src/virtualization/bin/termina_guest_manager",
-  "//src/virtualization/packages/termina_guest",
 ]
 
 linux_tests_label = "//src/virtualization/packages/debian_guest:tests"
@@ -29,18 +23,9 @@ resource("debian_tests_img") {
   deps = [ linux_tests_label ]
 }
 
-termina_extras_label = "//src/virtualization/packages/termina_guest:extras"
-resource("termina_extras_img") {
-  sources =
-      [ get_label_info(termina_extras_label, "target_out_dir") + "/vm_extras" ]
-  outputs = [ "data/vm_extras.img" ]
-  deps = [ termina_extras_label ]
-}
-
 group("tests") {
   testonly = true
   deps = [
-    ":termina_container_tests_pkg",
     ":virtualization_balloon_tests_pkg",
     ":virtualization_block_tests_pkg",
     ":virtualization_core_tests_pkg",
@@ -80,14 +65,7 @@ group("test_images") {
   deps = [
     ":debian_tests_img",
     ":linux_extras_img",
-    ":termina_extras_img",
     linux_tests_label,
-    termina_extras_label,
-
-    # TODO(https://fxbug.dev/42073215): when
-    # fuchsia.component.test/Realm.InitMutableConfigFromPackage works with
-    # subpackaged components, remove this line.
-    "//src/virtualization/bin/termina_guest_manager:termina_guest_manager_cmp",
   ]
 }
 
@@ -541,18 +519,6 @@ romfs_image("extras") {
 
   inputs = [ "//src/virtualization/tests/testdata/stereo_ramp_48khz_16bit.wav" ]
 
-  # We don't run the container tests on arm64, so don't provide any container
-  # images to reduce the size of the tests.
-  #
-  # We also need internal_access because otherwise CIPD will not be able to
-  # resolve these files.
-  if (internal_access && target_cpu == "x64") {
-    inputs += [
-      "//prebuilt/virtualization/packages/termina_guest/container/${target_cpu}/lxd.tar.xz",
-      "//prebuilt/virtualization/packages/termina_guest/container/${target_cpu}/rootfs.tar.xz",
-    ]
-  }
-
   output = "$target_out_dir/linux/extras.img"
 }
 
@@ -561,47 +527,4 @@ resource("linux_extras_img") {
   sources = [ "$target_out_dir/linux/extras.img" ]
   outputs = [ "data/extras.img" ]
   deps = [ ":extras" ]
-}
-
-cc_test_executable("termina_container_tests") {
-  visibility = [ ":*" ]
-  testonly = true
-
-  sources = [ "termina_container_tests.cc" ]
-
-  deps = [
-    "lib",
-    "lib:test_main",
-    "//sdk/lib/sys/component/cpp/testing:cpp",
-    "//third_party/googletest:gtest",
-  ]
-}
-
-fuchsia_test_component("termina_container_tests_cmp") {
-  component_name = "termina_container_tests"
-  deps = [
-    ":termina_container_tests",
-    ":test_images",
-  ]
-  manifest = "meta/termina_container_tests.cml"
-  test_type = "system"
-}
-
-fuchsia_test_package("termina_container_tests_pkg") {
-  package_name = "termina_container_tests"
-  test_components = [ ":termina_container_tests_cmp" ]
-  subpackages = guest_packages
-  test_specs = {
-    if (is_debug) {
-      # See https://fxbug.dev/42062247 for test timeouts when starting the container.
-      timeout_secs = 420
-    }
-    environments = [
-      nuc7_env,
-      nuc11_env,
-    ]
-    log_settings = {
-      max_severity = "ERROR"
-    }
-  }
 }

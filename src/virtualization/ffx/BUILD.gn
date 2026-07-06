@@ -18,7 +18,6 @@ ffx_plugin("ffx_guest") {
     "socat:ffx_guest_socat",
     "stop:ffx_guest_stop",
     "vsockperf:ffx_guest_vsockperf",
-    "wipe:ffx_guest_wipe",
   ]
   args_sources = [ "src/args.rs" ]
 }

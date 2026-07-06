@@ -59,7 +59,6 @@ rustc_library("guest_cli") {
     "src/socat.rs",
     "src/stop.rs",
     "src/vsockperf.rs",
-    "src/wipe.rs",
   ]
 }
 

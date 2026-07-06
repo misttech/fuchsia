@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::platform::PlatformServices;
-use anyhow::{anyhow, Error};
-use fidl::endpoints::{create_proxy, Proxy};
+use anyhow::{Error, anyhow};
+use fidl::endpoints::{Proxy, create_proxy};
 use fidl_fuchsia_virtualization::{GuestManagerProxy, GuestMarker, GuestProxy, GuestStatus};
 use fuchsia_async::{self as fasync, TimeoutExt};
 use guest_cli_args as arguments;
@@ -68,7 +68,7 @@ pub async fn handle_stop<P: PlatformServices>(
     if args.force {
         force_stop_guest(args.guest_type, manager).await
     } else {
-        graceful_stop_guest(services, args.guest_type, manager).await
+        graceful_stop_guest(args.guest_type, manager).await
     }
 }
 
@@ -108,19 +108,7 @@ async fn send_stop_shell_command(
     Ok(())
 }
 
-async fn send_stop_rpc<P: PlatformServices>(
-    services: &P,
-    guest: arguments::GuestType,
-) -> Result<(), Error> {
-    assert!(guest == arguments::GuestType::Termina);
-    let linux_manager = services.connect_to_linux_manager().await?;
-    linux_manager
-        .graceful_shutdown()
-        .map_err(|err| anyhow!("failed to send shutdown to termina manager: {}", err))
-}
-
-async fn graceful_stop_guest<P: PlatformServices>(
-    services: &P,
+async fn graceful_stop_guest(
     guest: arguments::GuestType,
     manager: GuestManagerProxy,
 ) -> Result<StopResult, Error> {
@@ -140,7 +128,6 @@ async fn graceful_stop_guest<P: PlatformServices>(
             send_stop_shell_command(ShutdownCommand::DebianShutdownCommand, guest_endpoint.clone())
                 .await
         }
-        arguments::GuestType::Termina => send_stop_rpc(services, guest).await,
     }?;
 
     let start = fasync::MonotonicInstant::now();
@@ -190,10 +177,9 @@ fn get_time_nanos(duration: fasync::MonotonicDuration) -> i64 {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::platform::FuchsiaPlatformServices;
     use async_utils::PollExt;
-    use fidl::endpoints::create_proxy_and_stream;
     use fidl::Socket;
+    use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_virtualization::GuestManagerMarker;
     use futures::TryStreamExt;
 
@@ -204,8 +190,7 @@ mod test {
 
         let (manager_proxy, mut manager_stream) = create_proxy_and_stream::<GuestManagerMarker>();
 
-        let service = FuchsiaPlatformServices::new();
-        let fut = graceful_stop_guest(&service, arguments::GuestType::Debian, manager_proxy);
+        let fut = graceful_stop_guest(arguments::GuestType::Debian, manager_proxy);
         futures::pin_mut!(fut);
 
         assert!(executor.run_until_stalled(&mut fut).is_pending());

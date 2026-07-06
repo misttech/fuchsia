@@ -11,4 +11,3 @@ pub mod platform;
 pub mod socat;
 pub mod stop;
 pub mod vsockperf;
-pub mod wipe;
