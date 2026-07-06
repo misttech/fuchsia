@@ -28,6 +28,7 @@ KCOUNTER(pq_lru_spurious_wakeup, "pq.lru.spurious_wakeup")
 KCOUNTER(pq_lru_pages_evicted, "pq.lru.pages_evicted")
 KCOUNTER(pq_lru_pages_compressed, "pq.lru.pages_compressed")
 KCOUNTER(pq_lru_pages_discarded, "pq.lru.pages_discarded")
+KCOUNTER(pq_lru_sweeping_skipped_unloan, "pq.lru.sweeping_skipped_unloan")
 KCOUNTER(pq_accessed_normal, "pq.accessed.normal")
 KCOUNTER(pq_accessed_normal_same_queue, "pq.accessed.normal_same_queue")
 KCOUNTER(pq_accessed_isolate, "pq.accessed.isolate")
@@ -114,9 +115,17 @@ class LruIsolate {
       auto [backlink, action] = ktl::move(list_[i]);
       DEBUG_ASSERT(backlink.cow);
       if (action == ListAction::ReplaceWithLoaned) {
-        // We ignore the return value because the page may have moved, become pinned, we may not
-        // have any free loaned pages any more, or the VmCowPages may not be able to borrow.
-        backlink.cow->ReplacePageWithLoaned(backlink.page, backlink.offset);
+        // Only replace with a loaned page if background borrowing/sweeping is still active.
+        // We avoid calling ReplacePageWithLoaned if active unloans are in progress to prevent
+        // lock contention on paged_vmo_lock_ and redundant borrowing/reclaiming work.
+        // Note that checking is_borrowing_active() during the initial sweep logic in
+        // ProcessLruQueue is not sufficient because an unloan can start in the window after
+        // ProcessLruQueue evaluates the flag but before we flush the deferred list.
+        if (PhysicalPageBorrowingConfig::Get().is_borrowing_active()) {
+          // We ignore the return value because the page may have moved, become pinned, we may not
+          // have any free loaned pages any more, or the VmCowPages may not be able to borrow.
+          backlink.cow->ReplacePageWithLoaned(backlink.page, backlink.offset);
+        }
       } else if (action == ListAction::Reclaim) {
         // Attempt to acquire any compressor that might exist, unless only evicting. Note that if
         // LruAction::None we would not have enqueued any Reclaim pages, so we can just check for
@@ -760,9 +769,33 @@ void PageQueues::ProcessLruQueue(uint64_t target_gen, ktl::optional<size_t> isol
   LruIsolate<kMaxDeferredCount> deferred_list;
 
   // Only accumulate pages to try to replace with loaned pages if loaned pages are available and
-  // we're allowed to borrow at this code location.
-  const bool do_sweeping = (pmm_count_loaned_free_pages() != 0) &&
-                           PhysicalPageBorrowingConfig::Get().is_borrowing_on_mru_enabled();
+  // we're allowed to borrow at this code location. We check is_borrowing_active() instead of
+  // is_borrowing_on_mru_enabled() to temporarily suspend sweeping if an unloan is currently
+  // in progress, avoiding lock contention on the borrowing VMOs' paged_vmo_lock_ between the LRU
+  // thread and the unloaning thread.
+  const bool has_loaned_pages = (pmm_count_loaned_free_pages() != 0);
+  const bool do_sweeping =
+      has_loaned_pages && PhysicalPageBorrowingConfig::Get().is_borrowing_active();
+  if (do_sweeping) {
+    // Sweeping is active, reset the skipped sweeps counter.
+    consecutive_skipped_sweeps_ = 0;
+  } else if (unlikely(PhysicalPageBorrowingConfig::Get().is_borrowing_on_mru_enabled() &&
+                      has_loaned_pages)) {
+    // Sweeping is enabled and there are loaned free pages to sweep, but we skipped sweeping due to
+    // active unloans.
+    pq_lru_sweeping_skipped_unloan.Add(1);
+    const uint32_t count = consecutive_skipped_sweeps_.fetch_add(1) + 1;
+    // Log a diagnostic warning if sweeping is skipped for a large number of consecutive iterations.
+    if (unlikely(count >= 1000 && count % 1000 == 0)) {
+      printf(
+          "[pq]: WARNING: LRU page sweeping has been skipped for %u consecutive iterations "
+          "due to active unloans\n",
+          count);
+    }
+  } else {
+    // Sweeping is not applicable at all, reset the skipped sweeps counter.
+    consecutive_skipped_sweeps_ = 0;
+  }
 
   size_t isolate_remaining = isolate.value_or(SIZE_MAX);
 

@@ -44,6 +44,22 @@ class PhysicalPageBorrowingConfig {
   }
   bool is_replace_on_unloan_enabled() { return replace_on_unloan_.load(ktl::memory_order_relaxed); }
 
+  // Increment the active unloans counter when a contiguous VMO starts unloaning.
+  void NotifyUnloanStarted() { active_unloans_.fetch_add(1, ktl::memory_order_relaxed); }
+
+  // Decrement the active unloans counter when a contiguous VMO completes unloaning.
+  void NotifyUnloanFinished() {
+    uint32_t prev = active_unloans_.fetch_sub(1, ktl::memory_order_relaxed);
+    DEBUG_ASSERT(prev > 0);
+  }
+
+  // Returns true if borrowing is permitted at this time. To avoid lock contention on the borrowing
+  // VMOs' paged_vmo_lock_ between the LRU thread (sweeping) and the unloaning thread, borrowing is
+  // temporarily disabled if any unloans are currently in progress.
+  bool is_borrowing_active() {
+    return is_borrowing_on_mru_enabled() && (active_unloans_.load(ktl::memory_order_relaxed) == 0);
+  }
+
  private:
   // Singleton.
   static PhysicalPageBorrowingConfig instance_;
@@ -60,6 +76,10 @@ class PhysicalPageBorrowingConfig {
   // Enables copy of page contents, instead of eviction, when a loaned page is committed back to its
   // contiguous owner.
   ktl::atomic<bool> replace_on_unloan_ = false;
+
+  // Tracks the number of active unloaning operations in progress. See comment near
+  // is_borrowing_active() for how this is used.
+  ktl::atomic<uint32_t> active_unloans_ = 0;
 };
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_PHYSICAL_PAGE_BORROWING_CONFIG_H_

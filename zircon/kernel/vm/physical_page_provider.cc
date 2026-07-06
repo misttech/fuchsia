@@ -8,6 +8,7 @@
 
 #include <lib/counters.h>
 #include <lib/dump/depth_printer.h>
+#include <lib/fit/defer.h>
 #include <lib/fit/result.h>
 #include <lib/page/size.h>
 #include <trace.h>
@@ -220,6 +221,13 @@ bool PhysicalPageProvider::DequeueRequest(uint64_t* request_offset, uint64_t* re
 }
 
 void PhysicalPageProvider::UnloanRange(uint64_t range_offset, uint64_t length, list_node_t* pages) {
+  // Notify borrowing config that an unloan is starting. This temporarily disables background
+  // page borrowing/sweeping in ProcessLruQueue to avoid lock contention on the borrowing VMOs'
+  // paged_vmo_lock_ (which are part of the active working set) between the LRU thread and this
+  // unloaning thread.
+  PhysicalPageBorrowingConfig::Get().NotifyUnloanStarted();
+  auto cleanup = fit::defer([] { PhysicalPageBorrowingConfig::Get().NotifyUnloanFinished(); });
+
   Guard<Mutex> guard{&loaned_state_lock_};
   // Evict needed physical pages from other VMOs, so that needed physical pages become free.  This
   // is iterating over the destination offset in cow_pages_.  The needed pages can be scattered

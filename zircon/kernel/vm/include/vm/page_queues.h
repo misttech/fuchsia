@@ -705,6 +705,10 @@ class PageQueues {
   // the ratio actually needs to be recalculated.
   RelaxedAtomic<uint64_t> lazy_active_ratio_aging_skips_ = 0;
 
+  // Tracks the number of consecutive ProcessLruQueue iterations that skipped sweeping
+  // due to active unloans.
+  RelaxedAtomic<uint32_t> consecutive_skipped_sweeps_ = 0;
+
   // Track the mru and lru threads and have a signalling mechanism to shut them down.
   ktl::atomic<bool> shutdown_threads_ = false;
   Thread* mru_thread_ TA_GUARDED(lock_) = nullptr;
