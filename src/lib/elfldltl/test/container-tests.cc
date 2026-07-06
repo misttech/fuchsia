@@ -56,17 +56,37 @@ TEST(ElfldltlContainerTests, ForwardArgs) {
 }
 
 template <typename T>
-struct Allocator : std::allocator<T> {
+class Allocator {
+ public:
+  using size_type = std::allocator<T>::size_type;
+  using difference_type = std::allocator<T>::difference_type;
+  using value_type = std::allocator<T>::value_type;
+  using propagate_on_container_move_assignment =
+      std::allocator<T>::propagate_on_container_move_assignment;
+
   static inline bool called;
-  T* allocate(size_t size) {
+
+  auto allocate(size_type size) {
     called = true;
-    return std::allocator<T>::allocate(size);
+    return allocator_.allocate(size);
   }
 
-  template <typename U>
-  struct rebind {
-    using other = Allocator<U>;
-  };
+  auto allocate_at_least(size_type size)
+    requires requires(std::allocator<T>& al, size_type sz) {
+      { al.allocate_at_least(sz) };
+    }
+  {
+    called = true;
+    return allocator_.allocate_at_least(size);
+  }
+
+  void deallocate(T* ptr, size_type size) {
+    EXPECT_TRUE(called);
+    allocator_.deallocate(ptr, size);
+  }
+
+ private:
+  std::allocator<T> allocator_;
 };
 
 TEST(ElfldltlContainerTests, TemplateArgs) {
