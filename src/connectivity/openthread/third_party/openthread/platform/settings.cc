@@ -93,7 +93,8 @@ otError otPlatSettingsGet(otInstance *instance, uint16_t key, int index, uint8_t
   }
   error = config_manager->ReadConfigValueFromBinArray(key_str.c_str(), index, value, buffer_length,
                                                       &actual_value_length);
-  if (error == kThreadConfigMgrNoError && value_length != NULL) {
+  if ((error == kThreadConfigMgrNoError || error == kThreadConfigMgrErrorBufferTooSmall) &&
+      value_length != NULL) {
     if (actual_value_length > std::numeric_limits<uint16_t>::max()) {
       otPlatLog(OT_LOG_LEVEL_CRIT, OT_LOG_REGION_PLATFORM,
                 "otPlatSettingsGet: Key '%s' size (%zu) exceeds max uint16_t.", key_str.c_str(),

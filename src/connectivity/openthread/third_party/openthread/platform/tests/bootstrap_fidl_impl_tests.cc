@@ -2,8 +2,6 @@
 #include <lib/async-loop/default.h>
 #include <lib/fidl/cpp/wire/client.h>
 #include <lib/fidl/cpp/wire/server.h>
-#include <lib/svc/dir.h>
-#include <lib/svc/outgoing.h>
 
 #include <unordered_map>
 
@@ -179,7 +177,7 @@ TEST_F(BootstrapThreadImplTest, ImportSettingsFailUnreadable) {
               fidl::WireUnownedResult<fuchsia_lowpan_bootstrap::Thread::ImportSettings>& result) {
             // Confirm that the call failed:
             ASSERT_EQ(result.status(), ZX_ERR_IO);
-            ASSERT_EQ(result.reason(), fidl::Reason::kPeerClosed);
+            ASSERT_EQ(result.reason(), fidl::Reason::kPeerClosedWhileReading);
             errored = true;
           });
 
@@ -215,7 +213,7 @@ TEST_F(BootstrapThreadImplTest, ImportSettingsFailNonWritable) {
               fidl::WireUnownedResult<fuchsia_lowpan_bootstrap::Thread::ImportSettings>& result) {
             // Confirm that the call failed:
             ASSERT_EQ(result.status(), ZX_ERR_IO);
-            ASSERT_EQ(result.reason(), fidl::Reason::kPeerClosed);
+            ASSERT_EQ(result.reason(), fidl::Reason::kPeerClosedWhileReading);
             errored = true;
           });
 

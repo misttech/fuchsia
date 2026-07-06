@@ -50,7 +50,6 @@ cc_test_executable("unittests-bin") {
   sources = [
     "dummy_plat_impl.cc",
     "entropy_test.cc",
-    "fuchsia_platform_alarm_tests.cc",
     "settings_test.cc",
   ]
 

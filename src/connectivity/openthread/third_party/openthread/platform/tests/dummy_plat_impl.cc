@@ -5,10 +5,11 @@
 #include <lib/ot-stack/ot-stack-callback.h>
 #include <lib/syslog/cpp/macros.h>
 
+#include <openthread/platform/logging.h>
 #include <openthread/platform/trel.h>
 #include <openthread/platform/udp.h>
 
-extern "C" void platformCallbackSendOneFrameToRadio(otInstance* a_instance, uint8_t* buffer,
+extern "C" void platformCallbackSendOneFrameToRadio(otInstance* a_instance, const uint8_t* buffer,
                                                     size_t size) {}
 extern "C" size_t platformCallbackWaitForFrameFromRadio(otInstance* a_instance, uint8_t* buffer,
                                                         size_t buffer_len_max,
@@ -58,3 +59,4 @@ extern "C" void otPlatTrelRegisterService(otInstance* aInstance, uint16_t aPort,
 
 extern "C" void otPlatTrelSend(otInstance* aInstance, const uint8_t* aUdpPayload,
                                uint16_t aUdpPayloadLen, const otSockAddr* aDestSockAddr) {}
+extern "C" void otPlatLogLine(otLogLevel aLogLevel, otLogRegion aLogRegion, const char* aLine) {}
