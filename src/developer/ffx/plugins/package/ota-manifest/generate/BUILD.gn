@@ -1,0 +1,45 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//src/developer/ffx/build/ffx_plugin.gni")
+
+ffx_plugin("ffx_package_ota_manifest_generate") {
+  sdk_category = "not-yet-specified"
+  version = "0.1.0"
+  edition = "2024"
+  with_unit_tests = true
+
+  deps = [
+    "//src/developer/ffx/lib/fho:lib",
+    "//src/developer/ffx/lib/writer:lib",
+    "//src/lib/assembly/product_bundle",
+    "//src/lib/include_bytes_from_working_dir",
+    "//src/sys/pkg/lib/update-package",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:async-trait",
+    "//third_party/rust_crates:pem",
+    "//third_party/rust_crates:ring",
+  ]
+
+  test_deps = [
+    "//src/lib/assembly/partitions_config",
+    "//src/lib/fuchsia",
+    "//third_party/rust_crates:camino",
+    "//third_party/rust_crates:tempfile",
+  ]
+
+  args_sources = [ "src/args.rs" ]
+  args_deps = [
+    "//src/developer/ffx/core:lib",
+    "//third_party/rust_crates:argh",
+    "//third_party/rust_crates:camino",
+  ]
+
+  sources = [ "src/lib.rs" ]
+  inputs = [ "//src/sys/pkg/bin/system-updater/keys/manifest_dev_key.pem" ]
+  manifest_dev_key_path =
+      rebase_path("//src/sys/pkg/bin/system-updater/keys/manifest_dev_key.pem",
+                  root_build_dir)
+  rustenv = [ "MANIFEST_DEV_KEY_PATH=$manifest_dev_key_path" ]
+}

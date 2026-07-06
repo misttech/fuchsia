@@ -75,7 +75,7 @@ async fn packageless_update_fails_with_wrong_signature() {
     let manifest = make_manifest([]);
     let key_pair = ring::signature::Ed25519KeyPair::from_seed_unchecked(&[1; 32]).unwrap();
     let bad_signed_manifest =
-        ::update_package::signed_manifest::generate(manifest, &key_pair, &key_pair).unwrap();
+        ::update_package::signed_manifest::generate(manifest, &key_pair, None).unwrap();
 
     let env = TestEnv::builder().ota_manifest_raw(bad_signed_manifest).build().await;
 
@@ -117,7 +117,7 @@ async fn packageless_update_with_valid_range() {
     let key_bytes = hex::decode(super::MANIFEST_PRIVATE_KEY).unwrap();
     let key_pair = ring::signature::Ed25519KeyPair::from_seed_unchecked(&key_bytes).unwrap();
     let signed_manifest =
-        ::update_package::signed_manifest::generate(manifest, &key_pair, &key_pair).unwrap();
+        ::update_package::signed_manifest::generate(manifest, &key_pair, None).unwrap();
 
     let mut served_bytes = vec![0xAA; 123];
     let offset = served_bytes.len() as u64;

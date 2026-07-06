@@ -235,9 +235,8 @@ impl TestEnvBuilder {
     fn ota_manifest(mut self, manifest: OtaManifest) -> Self {
         let key_bytes = hex::decode(MANIFEST_PRIVATE_KEY).unwrap();
         let key_pair = ring::signature::Ed25519KeyPair::from_seed_unchecked(&key_bytes).unwrap();
-        self.ota_manifest = Some(
-            ::update_package::signed_manifest::generate(manifest, &key_pair, &key_pair).unwrap(),
-        );
+        self.ota_manifest =
+            Some(::update_package::signed_manifest::generate(manifest, &key_pair, None).unwrap());
         self
     }
 

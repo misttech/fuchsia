@@ -268,8 +268,7 @@ mod tests {
 
         let keypair = make_keypair();
         let manifest = make_ota_manifest();
-        let bytes =
-            update_package::signed_manifest::generate(manifest, &keypair, &keypair).unwrap();
+        let bytes = update_package::signed_manifest::generate(manifest, &keypair, None).unwrap();
 
         let raw_manifest = update_package::signed_manifest::parse_raw(&bytes).unwrap();
         let expected_sig = hex::encode(&raw_manifest.signatures.manifest_signature);
@@ -339,8 +338,7 @@ mod tests {
     async fn test_show_table() {
         let keypair = make_keypair();
         let manifest = make_ota_manifest();
-        let bytes =
-            update_package::signed_manifest::generate(manifest, &keypair, &keypair).unwrap();
+        let bytes = update_package::signed_manifest::generate(manifest, &keypair, None).unwrap();
 
         let raw_manifest = update_package::signed_manifest::parse_raw(&bytes).unwrap();
         let expected_sig = hex::encode(&raw_manifest.signatures.manifest_signature);

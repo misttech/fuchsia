@@ -19,4 +19,5 @@ ffx/package/far/extract.golden
 ffx/package/far/list.golden
 ffx/package/file-hash.golden
 ffx/package/ota-manifest.golden
+ffx/package/ota-manifest/generate.golden
 ffx/package/ota-manifest/show.golden

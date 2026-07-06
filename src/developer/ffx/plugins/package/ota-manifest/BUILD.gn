@@ -9,7 +9,10 @@ ffx_plugin("ffx_package_ota_manifest") {
   version = "0.1.0"
   edition = "2024"
 
-  plugin_deps = [ "show:ffx_package_ota_manifest_show" ]
+  plugin_deps = [
+    "generate:ffx_package_ota_manifest_generate",
+    "show:ffx_package_ota_manifest_show",
+  ]
 
   args_sources = [ "src/args.rs" ]
   args_deps = [
