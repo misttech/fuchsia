@@ -129,9 +129,9 @@ where
                             "negative RTC diff detected, but config allows applying past UTC. ",
                             "References:\n\tpersisted: {:?}\n\tnow:       {:?}\n\tutc:       {:?}"
                         ),
-                        &boot_reference,
-                        &boot_now,
-                        &utc_reference
+                        boot_reference,
+                        boot_now,
+                        utc_reference
                     );
                     Ok(utc_reference)
                 }
@@ -145,9 +145,9 @@ where
                             "negative RTC diff detected. References:",
                             "\n\tpersisted: {:?}\n\tnow:       {:?}\n\tutc:       {:?}"
                         ),
-                        &boot_reference,
-                        &boot_now,
-                        &utc_reference
+                        boot_reference,
+                        boot_now,
+                        utc_reference
                     );
                     Err(anyhow!(
                         "negative offset adjustment for RTC is not allowed: {}",

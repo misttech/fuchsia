@@ -230,7 +230,7 @@ impl<'a, T> RwMapLockState<'a, T> {
 
         let try_lock = |num_waits| {
             self.state_cell
-                .fetch_update(Ordering::Acquire, Ordering::Relaxed, |state| {
+                .try_update(Ordering::Acquire, Ordering::Relaxed, |state| {
                     update_state(state, num_waits)
                 })
                 .is_ok()

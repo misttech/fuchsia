@@ -684,7 +684,7 @@ impl ChunkedDecompressor {
                 self.finish_chunk(&full_chunk[..], chunk_callback)?;
                 self.buffer = full_chunk;
                 // Draining the buffer will set the length to 0 but keep the capacity the same.
-                self.buffer.drain(..);
+                self.buffer.clear();
             }
             data = &data[to_read..];
         }

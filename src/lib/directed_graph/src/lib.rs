@@ -309,9 +309,9 @@ impl<'a, T: Clone + Hash + Ord + Debug + Display> TarjanSCC<'a, T> {
         }
 
         if self.cycles.is_empty() {
-            Ok(self.node_order.drain(..).collect())
+            Ok(std::mem::take(&mut self.node_order))
         } else {
-            Err(Error::CyclesDetected(self.cycles.drain().collect()))
+            Err(Error::CyclesDetected(std::mem::take(&mut self.cycles)))
         }
     }
 

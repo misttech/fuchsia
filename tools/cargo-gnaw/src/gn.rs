@@ -126,13 +126,14 @@ pub fn write_alias_rule<W: io::Write>(
         )?;
     }
 
+    let group_name = format!("{}-{}", pkg.name, pkg.version);
     let optional_visibility =
         group_visibility.map(|v| format!("visibility = {}", v.variable)).unwrap_or_default();
 
     writeln!(
         output,
         include_str!("../templates/top_level_gn_rule.template"),
-        group_name = format!("{}-{}", pkg.name, pkg.version),
+        group_name = group_name,
         dep_name = pkg.gn_name(),
         group_rule_name = "group",
         optional_visibility = optional_visibility,

@@ -872,7 +872,7 @@ impl IfaceManagerService {
             self.connection_selection_manager.cancel_all();
         }
 
-        let client_ifaces: Vec<ClientIfaceContainer> = self.clients.drain(..).collect();
+        let client_ifaces: Vec<ClientIfaceContainer> = std::mem::take(&mut self.clients);
         let phy_manager = self.phy_manager.clone();
         let update_sender = self.client_update_sender.clone();
 
@@ -1014,7 +1014,7 @@ impl IfaceManagerService {
 
     // Stop all APs, exit all of the state machines, and destroy all AP ifaces.
     fn stop_all_aps(&mut self) -> LocalBoxFuture<'static, Result<(), Error>> {
-        let mut aps: Vec<ApIfaceContainer> = self.aps.drain(..).collect();
+        let mut aps: Vec<ApIfaceContainer> = std::mem::take(&mut self.aps);
         let phy_manager = self.phy_manager.clone();
 
         for ap_container in aps.iter_mut() {

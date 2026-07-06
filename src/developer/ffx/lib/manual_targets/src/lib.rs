@@ -113,7 +113,7 @@ impl ManualTargets for Mock {
     async fn storage_set(&self, targets: Value) -> Result<(), ManualTargetsError> {
         let _ = self
             .set_count
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |_| {
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |_| {
                 Some(targets.as_object().unwrap().len())
             })
             .expect("Couldn't update target count for Mock.");

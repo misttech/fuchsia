@@ -11,14 +11,15 @@ use fidl_fuchsia_bluetooth_gatt2::{
     SecurityRequirements, Server_Marker, Server_Proxy, ServiceHandle, ServiceInfo, ServiceKind,
     ValueChangedParameters,
 };
+use fuchsia_async as fasync;
 use fuchsia_bluetooth::types::{PeerId, Uuid};
+use fuchsia_component as app;
 use fuchsia_sync::RwLock;
 use futures::stream::TryStreamExt;
 use log::{error, info, warn};
 use serde_json::value::Value;
 use std::collections::HashMap;
 use std::str::FromStr;
-use {fuchsia_async as fasync, fuchsia_component as app};
 
 use crate::bluetooth::constants::{
     CHARACTERISTIC_EXTENDED_PROPERTIES_UUID, GATT_MAX_ATTRIBUTE_VALUE_LENGTH,
@@ -755,7 +756,7 @@ impl GattServerFacade {
 
     pub async fn close_server(&self) {
         self.inner.write().server_proxy = None;
-        let _ = self.inner.write().service_tasks.drain(..).collect::<Vec<fasync::Task<()>>>();
+        let _ = std::mem::take(&mut self.inner.write().service_tasks);
     }
 
     // GattServerFacade for cleaning up objects in use.
@@ -763,7 +764,7 @@ impl GattServerFacade {
         let tag = "GattServerFacade::cleanup:";
         info!(tag = &[tag, &line!().to_string()].join("").as_str(); "Cleanup GATT server objects");
         self.inner.write().server_proxy = None;
-        let _ = self.inner.write().service_tasks.drain(..).collect::<Vec<fasync::Task<()>>>();
+        let _ = std::mem::take(&mut self.inner.write().service_tasks);
     }
 
     // GattServerFacade for printing useful information pertaining to the facade for

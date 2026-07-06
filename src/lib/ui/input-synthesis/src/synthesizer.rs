@@ -3,15 +3,17 @@
 // found in the LICENSE file.
 
 use crate::derive_key_sequence;
-use anyhow::{ensure, Error};
+use anyhow::{Error, ensure};
 use async_trait::async_trait;
+use fidl_fuchsia_input as input;
 use fidl_fuchsia_input_report::MouseInputReport;
 use fidl_fuchsia_ui_input::{KeyboardReport, Touch};
+use fidl_fuchsia_ui_input3 as input3;
+use fuchsia_async as fasync;
 use log::debug;
 use serde::{Deserialize, Deserializer};
 use std::thread;
 use std::time::Duration;
-use {fidl_fuchsia_input as input, fidl_fuchsia_ui_input3 as input3, fuchsia_async as fasync};
 
 // Abstracts over input injection services (which are provided by input device registries).
 pub trait InputDeviceRegistry {
@@ -249,7 +251,7 @@ impl<'a> Replayer<'a> {
                         "TimedKeyEvent was requested out of sequence: ",
                         "TimedKeyEvent: {:?}, low watermark for duration_since_start: {:?}"
                     ),
-                    &key_event,
+                    key_event,
                     last_key_event_at
                 ));
             }
@@ -262,7 +264,7 @@ impl<'a> Replayer<'a> {
                         "This is not allowed, each key event must happen at a distinct timestamp: ",
                         "TimedKeyEvent: {:?}, low watermark for duration_since_start: {:?}"
                     ),
-                    &key_event,
+                    key_event,
                     last_key_event_at
                 ));
             }

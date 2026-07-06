@@ -74,7 +74,7 @@ macro_rules! atomic_bitflags {
                     set_order: std::sync::atomic::Ordering,
                     fetch_order: std::sync::atomic::Ordering,
                 ) -> $BitFlags {
-                    self.inner.fetch_update(set_order, fetch_order, |old| {
+                    self.inner.try_update(set_order, fetch_order, |old| {
                         Some((old & !mask.bits()) | (value.bits() & mask.bits()))
                     }).map($BitFlags::from_bits_truncate).unwrap()
                 }
