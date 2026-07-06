@@ -4,7 +4,9 @@
 
 #![allow(unused_imports)]
 
+pub mod arithmetic;
 pub mod execution_context;
+pub mod expand;
 pub mod glob;
 pub mod state;
 

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 pub mod args;
+pub mod arithmetic;
 pub mod ast;
 pub mod collections;
 pub mod errors;
