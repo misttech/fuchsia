@@ -2,9 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use cipher::generic_array::GenericArray;
-use cipher::generic_array::typenum::consts::U16;
-use cipher::{BlockBackend, BlockClosure, BlockSizeUser};
+use cipher::inout::InOut;
+use cipher::typenum::consts::U16;
+use cipher::{
+    Array, BlockCipherDecBackend, BlockCipherDecClosure, BlockCipherEncBackend,
+    BlockCipherEncClosure, BlockSizeUser,
+};
 use static_assertions::assert_cfg;
 use storage_ptr_slice::{MutPtrByteSlice, PtrByteSlice};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
@@ -61,8 +64,8 @@ impl BlockSizeUser for XtsProcessor<'_, '_> {
     type BlockSize = U16;
 }
 
-impl BlockClosure for XtsProcessor<'_, '_> {
-    fn call<B: BlockBackend<BlockSize = Self::BlockSize>>(self, backend: &mut B) {
+impl BlockCipherEncClosure for XtsProcessor<'_, '_> {
+    fn call<B: BlockCipherEncBackend<BlockSize = Self::BlockSize>>(self, backend: &B) {
         let Self { mut tweak, src, mut dst } = self;
         let src_chunks = src.chunks::<u128>();
         let dst_chunks = dst.chunks_mut::<u128>();
@@ -73,9 +76,35 @@ impl BlockClosure for XtsProcessor<'_, '_> {
             // XOR plaintext with tweak.
             val ^= tweak.0;
 
-            backend.proc_block(GenericArray::from_mut_slice(val.as_mut_bytes()).into());
+            let arr: &mut Array<u8, U16> = val.as_mut_bytes().try_into().unwrap();
+            backend.encrypt_block(InOut::from(arr));
 
             // XOR ciphertext with tweak.
+            val ^= tweak.0;
+
+            dst_chunk.write(val);
+
+            tweak.update();
+        }
+    }
+}
+
+impl BlockCipherDecClosure for XtsProcessor<'_, '_> {
+    fn call<B: BlockCipherDecBackend<BlockSize = Self::BlockSize>>(self, backend: &B) {
+        let Self { mut tweak, src, mut dst } = self;
+        let src_chunks = src.chunks::<u128>();
+        let dst_chunks = dst.chunks_mut::<u128>();
+
+        for (src_chunk, dst_chunk) in src_chunks.zip(dst_chunks) {
+            let mut val = src_chunk.read();
+
+            // XOR ciphertext with tweak.
+            val ^= tweak.0;
+
+            let arr: &mut Array<u8, U16> = val.as_mut_bytes().try_into().unwrap();
+            backend.decrypt_block(InOut::from(arr));
+
+            // XOR plaintext with tweak.
             val ^= tweak.0;
 
             dst_chunk.write(val);
@@ -88,18 +117,19 @@ impl BlockClosure for XtsProcessor<'_, '_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cipher::generic_array::typenum::consts::U1;
     use cipher::inout::InOut;
+    use cipher::typenum::consts::U1;
     use cipher::{Block, ParBlocksSizeUser};
+    use std::cell::RefCell;
 
     struct MockCipher {
-        recorded_blocks: Vec<u128>,
+        recorded_blocks: RefCell<Vec<u128>>,
         key: u128,
     }
 
     impl MockCipher {
         fn new(key: u128) -> Self {
-            Self { recorded_blocks: Vec::new(), key }
+            Self { recorded_blocks: RefCell::new(Vec::new()), key }
         }
     }
 
@@ -111,14 +141,14 @@ mod tests {
         type ParBlocksSize = U1;
     }
 
-    impl BlockBackend for MockCipher {
-        fn proc_block(&mut self, mut block: InOut<'_, '_, Block<Self>>) {
-            // SAFETY: GenericArray<u8, U16> is 16 bytes.
+    impl BlockCipherEncBackend for MockCipher {
+        fn encrypt_block(&self, mut block: InOut<'_, '_, Block<Self>>) {
+            // SAFETY: Block<Self> is Array<u8, U16>, which is 16 bytes.
             let mut val =
                 unsafe { std::ptr::read_unaligned(block.get_in().as_ptr() as *const u128) };
-            self.recorded_blocks.push(val);
+            self.recorded_blocks.borrow_mut().push(val);
             val ^= self.key;
-            // SAFETY: GenericArray<u8, U16> is 16 bytes.
+            // SAFETY: Block<Self> is Array<u8, U16>, which is 16 bytes.
             unsafe {
                 std::ptr::write_unaligned(block.get_out().as_mut_ptr() as *mut u128, val);
             }
@@ -154,9 +184,9 @@ mod tests {
         let key = 0xffeeddccbbaa99887766554433221100u128;
 
         let processor = XtsProcessor::new(tweak, src, dst);
-        let mut cipher = MockCipher::new(key);
+        let cipher = MockCipher::new(key);
 
-        processor.call(&mut cipher);
+        BlockCipherEncClosure::call(processor, &cipher);
 
         // Verify ciphertext.
         // Since our mock cipher is just XOR with key, the tweak should cancel out.
@@ -173,15 +203,15 @@ mod tests {
         assert_eq!(actual_c1, expected_c1);
 
         // Verify recorded blocks (should be P ^ T).
-        assert_eq!(cipher.recorded_blocks.len(), 2);
+        assert_eq!(cipher.recorded_blocks.borrow().len(), 2);
 
         let p0 = u128::from_le_bytes(plaintext.as_bytes()[0..16].try_into().unwrap());
         let p1 = u128::from_le_bytes(plaintext.as_bytes()[16..32].try_into().unwrap());
 
         let mut t0 = tweak;
-        assert_eq!(cipher.recorded_blocks[0], p0 ^ t0.0);
+        assert_eq!(cipher.recorded_blocks.borrow()[0], p0 ^ t0.0);
         t0.update();
-        assert_eq!(cipher.recorded_blocks[1], p1 ^ t0.0);
+        assert_eq!(cipher.recorded_blocks.borrow()[1], p1 ^ t0.0);
     }
 
     #[test]
@@ -201,9 +231,9 @@ mod tests {
 
         let slice = MutPtrByteSlice::from(buf.as_mut_bytes());
         let processor = XtsProcessor::new_in_place(tweak, slice);
-        let mut cipher = MockCipher::new(key);
+        let cipher = MockCipher::new(key);
 
-        processor.call(&mut cipher);
+        BlockCipherEncClosure::call(processor, &cipher);
 
         // Verify in-place ciphertext.
         let expected_c0 = p0 ^ key;
@@ -216,10 +246,10 @@ mod tests {
         assert_eq!(actual_c1, expected_c1);
 
         // Verify recorded blocks.
-        assert_eq!(cipher.recorded_blocks.len(), 2);
+        assert_eq!(cipher.recorded_blocks.borrow().len(), 2);
         let mut t0 = tweak;
-        assert_eq!(cipher.recorded_blocks[0], p0 ^ t0.0);
+        assert_eq!(cipher.recorded_blocks.borrow()[0], p0 ^ t0.0);
         t0.update();
-        assert_eq!(cipher.recorded_blocks[1], p1 ^ t0.0);
+        assert_eq!(cipher.recorded_blocks.borrow()[1], p1 ^ t0.0);
     }
 }

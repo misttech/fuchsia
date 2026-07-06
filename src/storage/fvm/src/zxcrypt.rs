@@ -7,10 +7,12 @@
 use super::{AlignedMem, Fvm, IoTrait, ReadToMem, WriteFromMem};
 use crate::device::{BUFFER_SIZE, BufferGuard, Device};
 use aes::Aes256;
-use aes::cipher::generic_array::GenericArray;
 use aes::cipher::inout::InOut;
 use aes::cipher::typenum::consts::U16;
-use aes::cipher::{BlockBackend, BlockClosure, BlockDecrypt, BlockEncrypt, BlockSizeUser, KeyInit};
+use aes::cipher::{
+    BlockCipherDecBackend, BlockCipherDecClosure, BlockCipherDecrypt, BlockCipherEncBackend,
+    BlockCipherEncClosure, BlockCipherEncrypt, BlockSizeUser, KeyInit,
+};
 use anyhow::{Error, ensure};
 use block_client::{
     BlockClient, BufferSlice, MutableBufferSlice, ReadOptions, RemoteBlockClient, WriteOptions,
@@ -68,8 +70,8 @@ impl Key {
         let unwrapped_key = crypt.unwrap_key(0, &key).await?.map_err(zx::Status::from_raw)?;
 
         Ok(Self {
-            data_cipher: Aes256::new(GenericArray::from_slice(&unwrapped_key[..32])),
-            iv_cipher: Aes256::new(GenericArray::from_slice(&unwrapped_key[32..64])),
+            data_cipher: Aes256::new(unwrapped_key[..32].try_into().unwrap()),
+            iv_cipher: Aes256::new(unwrapped_key[32..64].try_into().unwrap()),
             iv: little_endian::U128::from_bytes(unwrapped_key[64..80].try_into().unwrap()).get(),
         })
     }
@@ -101,8 +103,8 @@ impl Key {
         fvm.do_io(WriteFromMem::new(&fvm.device, &data), partition_index, 0, 1, 0).await?;
 
         Ok(Self {
-            data_cipher: Aes256::new(GenericArray::from_slice(&unwrapped_key[..32])),
-            iv_cipher: Aes256::new(GenericArray::from_slice(&unwrapped_key[32..64])),
+            data_cipher: Aes256::new(unwrapped_key[..32].try_into().unwrap()),
+            iv_cipher: Aes256::new(unwrapped_key[32..64].try_into().unwrap()),
             iv: little_endian::U128::from_bytes(unwrapped_key[64..80].try_into().unwrap()).get(),
         })
     }
@@ -217,7 +219,7 @@ impl IoTrait for EncryptedRead<'_> {
         let iv = &mut self.tweak;
         for chunk in buf.chunks_exact_mut(self.device.block_size() as usize) {
             let mut tweak = Tweak(*iv);
-            self.key.iv_cipher.encrypt_block(GenericArray::from_mut_slice(tweak.as_mut_bytes()));
+            self.key.iv_cipher.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
             self.key.data_cipher.decrypt_with_backend(XtsProcessor::new(tweak, chunk));
             *iv += 1;
         }
@@ -300,7 +302,7 @@ impl IoTrait for EncryptedWrite<'_> {
         let iv = &mut self.tweak;
         for chunk in buf.chunks_exact_mut(self.device.block_size() as usize) {
             let mut tweak = Tweak(*iv);
-            self.key.iv_cipher.encrypt_block(GenericArray::from_mut_slice(tweak.as_mut_bytes()));
+            self.key.iv_cipher.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
             self.key.data_cipher.encrypt_with_backend(XtsProcessor::new(tweak, chunk));
             *iv += 1;
         }
@@ -348,16 +350,34 @@ impl BlockSizeUser for XtsProcessor<'_> {
     type BlockSize = U16;
 }
 
-impl BlockClosure for XtsProcessor<'_> {
-    fn call<B: BlockBackend<BlockSize = Self::BlockSize>>(self, backend: &mut B) {
+impl BlockCipherEncClosure for XtsProcessor<'_> {
+    fn call<B: BlockCipherEncBackend<BlockSize = Self::BlockSize>>(self, backend: &B) {
         let Self { mut tweak, data } = self;
         let (chunks, _remainder) = data.as_chunks_mut::<16>();
         for chunk in chunks {
             let val: &mut zerocopy::Unalign<u128> = transmute_mut!(chunk);
             val.set(val.get() ^ tweak.0);
 
-            let chunk_ga: &mut GenericArray<u8, U16> = chunk.into();
-            backend.proc_block(InOut::from(chunk_ga));
+            let chunk_ga: &mut aes::cipher::Array<u8, U16> = chunk.into();
+            backend.encrypt_block(InOut::from(chunk_ga));
+
+            let val: &mut zerocopy::Unalign<u128> = transmute_mut!(chunk);
+            val.set(val.get() ^ tweak.0);
+            tweak.0 = (tweak.0 << 1) ^ ((tweak.0 as i128 >> 127) as u128 & 0x87);
+        }
+    }
+}
+
+impl BlockCipherDecClosure for XtsProcessor<'_> {
+    fn call<B: BlockCipherDecBackend<BlockSize = Self::BlockSize>>(self, backend: &B) {
+        let Self { mut tweak, data } = self;
+        let (chunks, _remainder) = data.as_chunks_mut::<16>();
+        for chunk in chunks {
+            let val: &mut zerocopy::Unalign<u128> = transmute_mut!(chunk);
+            val.set(val.get() ^ tweak.0);
+
+            let chunk_ga: &mut aes::cipher::Array<u8, U16> = chunk.into();
+            backend.decrypt_block(InOut::from(chunk_ga));
 
             let val: &mut zerocopy::Unalign<u128> = transmute_mut!(chunk);
             val.set(val.get() ^ tweak.0);

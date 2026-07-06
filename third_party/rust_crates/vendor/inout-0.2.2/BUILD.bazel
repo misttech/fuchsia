@@ -52,6 +52,9 @@ rust_library(
             "WORKSPACE.bazel",
         ],
     ),
+    crate_features = [
+        "block-padding",
+    ],
     crate_root = "src/lib.rs",
     edition = "2024",
     rustc_flags = [
@@ -73,6 +76,7 @@ rust_library(
     }),
     version = "0.2.2",
     deps = [
+        "//third_party/rust_crates/vendor/block-padding-0.4.2:block_padding",
         "//third_party/rust_crates/vendor/hybrid-array-0.4.12:hybrid_array",
     ],
 )

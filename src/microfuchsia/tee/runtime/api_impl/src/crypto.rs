@@ -9,7 +9,7 @@ use std::iter;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
-use aes::cipher::{KeyInit, KeyIvInit};
+use aes::cipher::{self, KeyInit, KeyIvInit};
 use aes::{Aes128, Aes192, Aes256};
 use cbc::{Decryptor as CbcDecryptor, Encryptor as CbcEncryptor};
 use cmac::Cmac;
@@ -127,33 +127,65 @@ trait Mac {
 }
 
 // Implementations for the hmac digest types.
-impl<M> Mac for M
-where
-    M: digest::FixedOutputReset + digest::MacMarker + digest::Update,
-{
-    fn output_size(&self) -> usize {
-        // OutputSizeUser is a subtrait of FixedOutputReset.
-        <Self as digest::OutputSizeUser>::output_size()
-    }
+macro_rules! impl_hmac_mac {
+    ($($t:ty),*) => {
+        $(
+            impl Mac for Hmac<$t> {
+                fn output_size(&self) -> usize {
+                    <Self as digest::OutputSizeUser>::output_size()
+                }
 
-    fn update(&mut self, data: &[u8]) {
-        <Self as digest::Update>::update(self, data)
-    }
+                fn update(&mut self, data: &[u8]) {
+                    <Self as digest::Update>::update(self, data)
+                }
 
-    fn reset(&mut self) {
-        // Reset is a subtrait of FixedOutputReset.
-        <Self as digest::Reset>::reset(self)
-    }
+                fn reset(&mut self) {
+                    <Self as digest::Reset>::reset(self)
+                }
 
-    fn finalize_into_reset(&mut self, out: &mut [u8]) {
-        <Self as digest::FixedOutputReset>::finalize_into_reset(self, out.into())
-    }
+                fn finalize_into_reset(&mut self, out: &mut [u8]) {
+                    <Self as digest::FixedOutputReset>::finalize_into_reset(self, out.into())
+                }
 
-    fn verify_reset(&mut self, expected: &[u8]) -> TeeResult {
-        let finalized = <Self as digest::FixedOutputReset>::finalize_fixed_reset(self);
-        if finalized.as_slice() == expected { Ok(()) } else { Err(Error::MacInvalid) }
-    }
+                fn verify_reset(&mut self, expected: &[u8]) -> TeeResult {
+                    let finalized = <Self as digest::FixedOutputReset>::finalize_fixed_reset(self);
+                    if finalized.as_slice() == expected { Ok(()) } else { Err(Error::MacInvalid) }
+                }
+            }
+        )*
+    };
 }
+impl_hmac_mac!(Sha1, Sha224, Sha256, Sha384, Sha512);
+
+macro_rules! impl_cmac_mac {
+    ($($t:ty),*) => {
+        $(
+            impl Mac for Cmac<$t> {
+                fn output_size(&self) -> usize {
+                    <Self as cmac::digest::OutputSizeUser>::output_size()
+                }
+
+                fn update(&mut self, data: &[u8]) {
+                    <Self as cmac::digest::Update>::update(self, data)
+                }
+
+                fn reset(&mut self) {
+                    <Self as cmac::digest::Reset>::reset(self)
+                }
+
+                fn finalize_into_reset(&mut self, out: &mut [u8]) {
+                    <Self as cmac::digest::FixedOutputReset>::finalize_into_reset(self, out.try_into().unwrap())
+                }
+
+                fn verify_reset(&mut self, expected: &[u8]) -> TeeResult {
+                    let finalized = <Self as cmac::digest::FixedOutputReset>::finalize_fixed_reset(self);
+                    if finalized.as_slice() == expected { Ok(()) } else { Err(Error::MacInvalid) }
+                }
+            }
+        )*
+    };
+}
+impl_cmac_mac!(Aes128, Aes192, Aes256);
 
 // Supported MAC algorithm types.
 enum MacType {
@@ -338,58 +370,66 @@ macro_rules! rustcrypto_encryptor_and_decryptor {
     ($encryptor:tt, $decryptor:tt) => {
         impl<C> Encryptor for $encryptor<C>
         where
-            C: cipher::BlockCipher + cipher::BlockEncryptMut,
+            C: cipher::BlockCipherEncrypt + cipher::BlockSizeUser,
+            $encryptor<C>: cipher::BlockModeEncrypt,
         {
             fn block_size() -> usize {
                 C::block_size()
             }
 
             fn encrypt(&mut self, input: &[u8], output: &mut [u8]) {
-                use cipher::BlockEncryptMut;
+                use cipher::BlockModeEncrypt;
 
                 assert!(output.len() >= input.len());
                 let block_size = C::block_size();
                 let chunks =
                     iter::zip(input.chunks_exact(block_size), output.chunks_exact_mut(block_size));
                 for (in_block, out_block) in chunks {
-                    self.encrypt_block_b2b_mut(in_block.into(), out_block.into());
+                    self.encrypt_block_b2b(
+                        in_block.try_into().unwrap(),
+                        out_block.try_into().unwrap(),
+                    );
                 }
             }
 
             fn encrypt_in_place(&mut self, inout: &mut [u8]) {
-                use cipher::BlockEncryptMut;
+                use cipher::BlockModeEncrypt;
 
                 for block in inout.chunks_exact_mut(C::block_size()) {
-                    self.encrypt_block_mut(block.into())
+                    self.encrypt_block(block.try_into().unwrap())
                 }
             }
         }
 
         impl<C> Decryptor for $decryptor<C>
         where
-            C: cipher::BlockCipher + cipher::BlockDecryptMut,
+            C: cipher::BlockCipherDecrypt + cipher::BlockSizeUser,
+            $decryptor<C>: cipher::BlockModeDecrypt,
         {
             fn block_size() -> usize {
                 C::block_size()
             }
 
             fn decrypt(&mut self, input: &[u8], output: &mut [u8]) {
-                use cipher::BlockDecryptMut;
+                use cipher::BlockModeDecrypt;
 
                 assert!(output.len() >= input.len());
                 let block_size = C::block_size();
                 let chunks =
                     iter::zip(input.chunks_exact(block_size), output.chunks_exact_mut(block_size));
                 for (in_block, out_block) in chunks {
-                    self.decrypt_block_b2b_mut(in_block.into(), out_block.into());
+                    self.decrypt_block_b2b(
+                        in_block.try_into().unwrap(),
+                        out_block.try_into().unwrap(),
+                    );
                 }
             }
 
             fn decrypt_in_place(&mut self, inout: &mut [u8]) {
-                use cipher::BlockDecryptMut;
+                use cipher::BlockModeDecrypt;
 
                 for block in inout.chunks_exact_mut(C::block_size()) {
-                    self.decrypt_block_mut(block.into())
+                    self.decrypt_block(block.try_into().unwrap())
                 }
             }
         }
@@ -652,31 +692,41 @@ impl Helper {
                     let Key::HmacSha1(HmacSha1Key { secret }) = key else {
                         panic!("Wrong key type ({:?}) - expected HMAC SHA1", key.get_type());
                     };
-                    *mac = Some(Box::new(HmacSha1::new_from_slice(&secret).unwrap()))
+                    *mac = Some(Box::new(
+                        <HmacSha1 as sha1::digest::KeyInit>::new_from_slice(&secret).unwrap(),
+                    ))
                 }
                 MacType::HmacSha224 => {
                     let Key::HmacSha224(HmacSha224Key { secret }) = key else {
                         panic!("Wrong key type ({:?}) - expected HMAC SHA224", key.get_type());
                     };
-                    *mac = Some(Box::new(HmacSha224::new_from_slice(&secret).unwrap()))
+                    *mac = Some(Box::new(
+                        <HmacSha224 as sha1::digest::KeyInit>::new_from_slice(&secret).unwrap(),
+                    ))
                 }
                 MacType::HmacSha256 => {
                     let Key::HmacSha256(HmacSha256Key { secret }) = key else {
                         panic!("Wrong key type ({:?}) - expected HMAC SHA256", key.get_type());
                     };
-                    *mac = Some(Box::new(HmacSha256::new_from_slice(&secret).unwrap()))
+                    *mac = Some(Box::new(
+                        <HmacSha256 as sha1::digest::KeyInit>::new_from_slice(&secret).unwrap(),
+                    ))
                 }
                 MacType::HmacSha384 => {
                     let Key::HmacSha384(HmacSha384Key { secret }) = key else {
                         panic!("Wrong key type ({:?}) - expected HMAC SHA384", key.get_type());
                     };
-                    *mac = Some(Box::new(HmacSha384::new_from_slice(&secret).unwrap()))
+                    *mac = Some(Box::new(
+                        <HmacSha384 as sha1::digest::KeyInit>::new_from_slice(&secret).unwrap(),
+                    ))
                 }
                 MacType::HmacSha512 => {
                     let Key::HmacSha512(HmacSha512Key { secret }) = key else {
                         panic!("Wrong key type ({:?}) - expected HMAC SHA512", key.get_type());
                     };
-                    *mac = Some(Box::new(HmacSha512::new_from_slice(&secret).unwrap()))
+                    *mac = Some(Box::new(
+                        <HmacSha512 as sha1::digest::KeyInit>::new_from_slice(&secret).unwrap(),
+                    ))
                 }
             },
             Helper::AsymmetricEncryptionKey(aenc, aenc_type) => match aenc_type {

@@ -3,8 +3,7 @@
 // found in the LICENSE file.
 
 use aes::Aes128;
-use aes::cipher::generic_array::GenericArray;
-use aes::cipher::{BlockDecrypt as _, BlockEncrypt as _, KeyInit as _};
+use aes::cipher::{BlockCipherDecrypt as _, BlockCipherEncrypt as _, KeyInit as _};
 use fuchsia_inspect::{self as inspect, Property};
 use fuchsia_inspect_derive::{AttachError, Inspect};
 use log::{debug, warn};
@@ -62,8 +61,8 @@ impl SharedSecret {
     /// Decrypts the provided `message` buffer with the AccountKey using AES-128.
     /// Returns the decrypted payload.
     pub fn decrypt(&self, message: &[u8; 16]) -> [u8; 16] {
-        let cipher = Aes128::new(GenericArray::from_slice(self.as_bytes()));
-        let mut block = GenericArray::clone_from_slice(message);
+        let cipher = Aes128::new(self.as_bytes().into());
+        let mut block = (*message).into();
         cipher.decrypt_block(&mut block);
         block.into()
     }
@@ -71,8 +70,8 @@ impl SharedSecret {
     /// Encrypts the provided `message` buffer with the AccountKey using AES-128.
     /// Returns the encrypted payload.
     pub fn encrypt(&self, message: &[u8; 16]) -> [u8; 16] {
-        let cipher = Aes128::new(GenericArray::from_slice(self.as_bytes()));
-        let mut block = GenericArray::clone_from_slice(message);
+        let cipher = Aes128::new(self.as_bytes().into());
+        let mut block = (*message).into();
         cipher.encrypt_block(&mut block);
         block.into()
     }

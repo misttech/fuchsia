@@ -58,7 +58,6 @@ rustc_library("api_impl") {
     "//src/microfuchsia/tee/tee_internal_api:tee_internal",
     "//third_party/rust_crates:aes",
     "//third_party/rust_crates:cbc",
-    "//third_party/rust_crates:cipher",
     "//third_party/rust_crates:cmac",
     "//third_party/rust_crates:ecb",
     "//third_party/rust_crates:hmac",

@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use crate::{EncryptionKey, UnwrappedKey, WrappedKey};
-use aes::cipher::generic_array::GenericArray;
 use aes::cipher::inout::InOut;
 use aes::cipher::typenum::consts::U16;
-use aes::cipher::{BlockBackend, BlockClosure, BlockSizeUser};
+use aes::cipher::{
+    BlockCipherDecBackend, BlockCipherDecClosure, BlockCipherEncBackend, BlockCipherEncClosure,
+    BlockSizeUser,
+};
 use anyhow::Error;
 use static_assertions::assert_cfg;
 use std::collections::BTreeMap;
@@ -222,16 +224,34 @@ impl BlockSizeUser for XtsProcessor<'_> {
     type BlockSize = U16;
 }
 
-impl BlockClosure for XtsProcessor<'_> {
-    fn call<B: BlockBackend<BlockSize = Self::BlockSize>>(self, backend: &mut B) {
+impl BlockCipherEncClosure for XtsProcessor<'_> {
+    fn call<B: BlockCipherEncBackend<BlockSize = Self::BlockSize>>(self, backend: &B) {
         let Self { mut tweak, data } = self;
         let (chunks, _remainder) = data.as_chunks_mut::<16>();
         for chunk in chunks {
             let val: &mut zerocopy::Unalign<u128> = transmute_mut!(chunk);
             val.set(val.get() ^ tweak.0);
 
-            let chunk_ga: &mut GenericArray<u8, U16> = chunk.into();
-            backend.proc_block(InOut::from(chunk_ga));
+            let chunk_ga: &mut aes::cipher::Array<u8, U16> = chunk.into();
+            backend.encrypt_block(InOut::from(chunk_ga));
+
+            let val: &mut zerocopy::Unalign<u128> = transmute_mut!(chunk);
+            val.set(val.get() ^ tweak.0);
+            tweak.0 = (tweak.0 << 1) ^ ((tweak.0 as i128 >> 127) as u128 & 0x87);
+        }
+    }
+}
+
+impl BlockCipherDecClosure for XtsProcessor<'_> {
+    fn call<B: BlockCipherDecBackend<BlockSize = Self::BlockSize>>(self, backend: &B) {
+        let Self { mut tweak, data } = self;
+        let (chunks, _remainder) = data.as_chunks_mut::<16>();
+        for chunk in chunks {
+            let val: &mut zerocopy::Unalign<u128> = transmute_mut!(chunk);
+            val.set(val.get() ^ tweak.0);
+
+            let chunk_ga: &mut aes::cipher::Array<u8, U16> = chunk.into();
+            backend.decrypt_block(InOut::from(chunk_ga));
 
             let val: &mut zerocopy::Unalign<u128> = transmute_mut!(chunk);
             val.set(val.get() ^ tweak.0);

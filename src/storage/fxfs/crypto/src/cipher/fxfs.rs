@@ -3,8 +3,7 @@
 // found in the LICENSE file.
 use super::{Cipher, SECTOR_SIZE, Tweak, UnwrappedKey, XtsProcessor};
 use aes::Aes256;
-use aes::cipher::generic_array::GenericArray;
-use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
+use aes::cipher::{BlockCipherDecrypt, BlockCipherEncrypt, KeyInit};
 use anyhow::Error;
 use log::warn;
 use zerocopy::IntoBytes;
@@ -15,7 +14,7 @@ pub struct FxfsCipher {
 }
 impl FxfsCipher {
     pub fn new(key: &UnwrappedKey) -> Self {
-        Self { key: Aes256::new(GenericArray::from_slice(key)) }
+        Self { key: Aes256::new(key.as_slice().try_into().unwrap()) }
     }
 }
 impl Cipher for FxfsCipher {
@@ -33,7 +32,7 @@ impl Cipher for FxfsCipher {
         for sector in buffer.chunks_exact_mut(SECTOR_SIZE as usize) {
             let mut tweak = Tweak(sector_offset as u128);
             // The same key is used for encrypting the data and computing the tweak.
-            self.key.encrypt_block(GenericArray::from_mut_slice(tweak.as_mut_bytes()));
+            self.key.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
             self.key.encrypt_with_backend(XtsProcessor::new(tweak, sector));
             sector_offset += 1;
         }
@@ -54,7 +53,7 @@ impl Cipher for FxfsCipher {
         for sector in buffer.chunks_exact_mut(SECTOR_SIZE as usize) {
             let mut tweak = Tweak(sector_offset as u128);
             // The same key is used for encrypting the data and computing the tweak.
-            self.key.encrypt_block(GenericArray::from_mut_slice(tweak.as_mut_bytes()));
+            self.key.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
             self.key.decrypt_with_backend(XtsProcessor::new(tweak, sector));
             sector_offset += 1;
         }

@@ -57,6 +57,7 @@ rust_library(
     ),
     crate_features = [
         "block-buffer",
+        "block-padding",
         "stream-wrapper",
     ],
     crate_root = "src/lib.rs",

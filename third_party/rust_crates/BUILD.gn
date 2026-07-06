@@ -12,11 +12,11 @@ gn_source_root = rebase_path("//", root_build_dir)
 not_needed([ "gn_source_root" ])
 
 group("aes") {
-  public_deps = [ ":aes-v0_8_4" ]
+  public_deps = [ ":aes-v0_9_1" ]
 }
 
-group("aes-0.8.4") {
-  public_deps = [ ":aes-v0_8_4" ]
+group("aes-0.9.1") {
+  public_deps = [ ":aes-v0_9_1" ]
 }
 
 group("aes-gcm") {
@@ -358,11 +358,11 @@ if (!(current_os == "fuchsia")) {
 }
 
 group("cbc") {
-  public_deps = [ ":cbc-v0_1_2" ]
+  public_deps = [ ":cbc-v0_2_1" ]
 }
 
-group("cbc-0.1.2") {
-  public_deps = [ ":cbc-v0_1_2" ]
+group("cbc-0.2.1") {
+  public_deps = [ ":cbc-v0_2_1" ]
 }
 
 group("cfg-if") {
@@ -406,11 +406,11 @@ group("ciborium-0.2.2") {
 }
 
 group("cipher") {
-  public_deps = [ ":cipher-v0_4_4" ]
+  public_deps = [ ":cipher-v0_5_2" ]
 }
 
-group("cipher-0.4.4") {
-  public_deps = [ ":cipher-v0_4_4" ]
+group("cipher-0.5.2") {
+  public_deps = [ ":cipher-v0_5_2" ]
 }
 
 group("clap") {
@@ -422,11 +422,11 @@ group("clap-4.6.1") {
 }
 
 group("cmac") {
-  public_deps = [ ":cmac-v0_7_2" ]
+  public_deps = [ ":cmac-v0_8_0" ]
 }
 
-group("cmac-0.7.2") {
-  public_deps = [ ":cmac-v0_7_2" ]
+group("cmac-0.8.0") {
+  public_deps = [ ":cmac-v0_8_0" ]
 }
 
 if (current_os == "fuchsia") {
@@ -594,11 +594,11 @@ group("dyn-clone-1.0.20") {
 }
 
 group("ecb") {
-  public_deps = [ ":ecb-v0_1_2" ]
+  public_deps = [ ":ecb-v0_2_0" ]
 }
 
-group("ecb-0.1.2") {
-  public_deps = [ ":ecb-v0_1_2" ]
+group("ecb-0.2.0") {
+  public_deps = [ ":ecb-v0_2_0" ]
 }
 
 group("ecdsa") {
@@ -2723,6 +2723,41 @@ rustc_library("aes-v0_8_4") {
   applicable_licenses = [ ":aes-v0_8_4.license" ]
 }
 
+license("aes-v0_9_1.license") {
+  public_package_name = "aes"
+  license_files =
+      [ "//third_party/rust_crates/vendor/aes-0.9.1/LICENSE-APACHE" ]
+}
+
+rustc_library("aes-v0_9_1") {
+  crate_name = "aes"
+  source_root = "//third_party/rust_crates/vendor/aes-0.9.1/src/lib.rs"
+  output_name = "aes-994e7717cce9cfe1"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":cipher-v0_5_2" ]
+  deps += [ ":cpubits-v0_1_1" ]
+  if (current_cpu == "arm64" || current_cpu == "x64" || false) {
+    deps += [ ":cpufeatures-v0_3_0" ]
+  }
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=994e7717cce9cfe1",
+    "-Cextra-filename=-994e7717cce9cfe1",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":aes-v0_9_1.license" ]
+}
+
 license("aes-gcm-v0_10_3.license") {
   public_package_name = "aes_gcm"
   license_files = [
@@ -4514,38 +4549,38 @@ rustc_library("block-buffer-v0_12_1") {
   applicable_licenses = [ ":block-buffer-v0_12_1.license" ]
 }
 
-license("block-padding-v0_3_3.license") {
+license("block-padding-v0_4_2.license") {
   public_package_name = "block_padding"
   license_files = [
-    "//third_party/rust_crates/vendor/block-padding-0.3.3/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/block-padding-0.3.3/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/block-padding-0.4.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/block-padding-0.4.2/LICENSE-MIT",
   ]
 }
 
-rustc_library("block-padding-v0_3_3") {
+rustc_library("block-padding-v0_4_2") {
   crate_name = "block_padding"
   source_root =
-      "//third_party/rust_crates/vendor/block-padding-0.3.3/src/lib.rs"
-  output_name = "block_padding-81adb5775e65e96a"
-  edition = "2021"
+      "//third_party/rust_crates/vendor/block-padding-0.4.2/src/lib.rs"
+  output_name = "block_padding-13bedcf07496214d"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":generic-array-v0_14_9" ]
+  deps += [ ":hybrid-array-v0_4_12" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=81adb5775e65e96a",
-    "-Cextra-filename=-81adb5775e65e96a",
+    "-Cmetadata=13bedcf07496214d",
+    "-Cextra-filename=-13bedcf07496214d",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":block-padding-v0_3_3.license" ]
+  applicable_licenses = [ ":block-padding-v0_4_2.license" ]
 }
 
 license("blocking-v1_6_2.license") {
@@ -5254,39 +5289,39 @@ rustc_library("cast-v0_2_7") {
   applicable_licenses = [ ":cast-v0_2_7.license" ]
 }
 
-license("cbc-v0_1_2.license") {
+license("cbc-v0_2_1.license") {
   public_package_name = "cbc"
   license_files = [
-    "//third_party/rust_crates/vendor/cbc-0.1.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/cbc-0.1.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/cbc-0.2.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/cbc-0.2.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("cbc-v0_1_2") {
+rustc_library("cbc-v0_2_1") {
   crate_name = "cbc"
-  source_root = "//third_party/rust_crates/vendor/cbc-0.1.2/src/lib.rs"
-  output_name = "cbc-1fa9605950a63804"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/vendor/cbc-0.2.1/src/lib.rs"
+  output_name = "cbc-dd6f17a4a3a86886"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cipher-v0_4_4" ]
+  deps += [ ":cipher-v0_5_2" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=1fa9605950a63804",
-    "-Cextra-filename=-1fa9605950a63804",
+    "-Cmetadata=dd6f17a4a3a86886",
+    "-Cextra-filename=-dd6f17a4a3a86886",
     "--cfg=feature=\"block-padding\"",
     "--cfg=feature=\"default\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":cbc-v0_1_2.license" ]
+  applicable_licenses = [ ":cbc-v0_2_1.license" ]
 }
 
 license("cfg-if-v1_0_4.license") {
@@ -5573,7 +5608,6 @@ rustc_library("cipher-v0_4_4") {
     "--cap-lints=allow",
     "-Cmetadata=df1e7a940dfb4a0",
     "-Cextra-filename=-df1e7a940dfb4a0",
-    "--cfg=feature=\"block-padding\"",
   ]
 
   visibility = [ ":*" ]
@@ -5610,6 +5644,7 @@ rustc_library("cipher-v0_5_2") {
     "-Cmetadata=897faed4894292ed",
     "-Cextra-filename=-897faed4894292ed",
     "--cfg=feature=\"block-buffer\"",
+    "--cfg=feature=\"block-padding\"",
     "--cfg=feature=\"stream-wrapper\"",
   ]
 
@@ -5826,39 +5861,39 @@ rustc_library("cloudabi-v0_0_3") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-license("cmac-v0_7_2.license") {
+license("cmac-v0_8_0.license") {
   public_package_name = "cmac"
   license_files = [
-    "//third_party/rust_crates/vendor/cmac-0.7.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/cmac-0.7.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/cmac-0.8.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/cmac-0.8.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("cmac-v0_7_2") {
+rustc_library("cmac-v0_8_0") {
   crate_name = "cmac"
-  source_root = "//third_party/rust_crates/vendor/cmac-0.7.2/src/lib.rs"
-  output_name = "cmac-d5b29128dff49930"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/vendor/cmac-0.8.0/src/lib.rs"
+  output_name = "cmac-1f69936ca60f0f42"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cipher-v0_4_4" ]
-  deps += [ ":dbl-v0_3_2" ]
-  deps += [ ":digest-v0_10_7" ]
+  deps += [ ":cipher-v0_5_2" ]
+  deps += [ ":dbl-v0_5_0" ]
+  deps += [ ":digest-v0_11_3" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d5b29128dff49930",
-    "-Cextra-filename=-d5b29128dff49930",
+    "-Cmetadata=1f69936ca60f0f42",
+    "-Cextra-filename=-1f69936ca60f0f42",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":cmac-v0_7_2.license" ]
+  applicable_licenses = [ ":cmac-v0_8_0.license" ]
 }
 
 license("cmov-v0_5_4.license") {
@@ -6097,6 +6132,38 @@ rustc_library("cpio-v0_4_1") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":cpio-v0_4_1.license" ]
+}
+
+license("cpubits-v0_1_1.license") {
+  public_package_name = "cpubits"
+  license_files = [
+    "//third_party/rust_crates/vendor/cpubits-0.1.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/cpubits-0.1.1/LICENSE-MIT",
+  ]
+}
+
+rustc_library("cpubits-v0_1_1") {
+  crate_name = "cpubits"
+  source_root = "//third_party/rust_crates/vendor/cpubits-0.1.1/src/lib.rs"
+  output_name = "cpubits-65ada65cce5e611"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=65ada65cce5e611",
+    "-Cextra-filename=-65ada65cce5e611",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":cpubits-v0_1_1.license" ]
 }
 
 license("cpufeatures-v0_2_17.license") {
@@ -7240,37 +7307,37 @@ rustc_library("data-encoding-v2_11_0") {
   applicable_licenses = [ ":data-encoding-v2_11_0.license" ]
 }
 
-license("dbl-v0_3_2.license") {
+license("dbl-v0_5_0.license") {
   public_package_name = "dbl"
   license_files = [
-    "//third_party/rust_crates/vendor/dbl-0.3.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/dbl-0.3.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/dbl-0.5.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/dbl-0.5.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("dbl-v0_3_2") {
+rustc_library("dbl-v0_5_0") {
   crate_name = "dbl"
-  source_root = "//third_party/rust_crates/vendor/dbl-0.3.2/src/lib.rs"
-  output_name = "dbl-b2dad617a1bdc7f"
-  edition = "2015"
+  source_root = "//third_party/rust_crates/vendor/dbl-0.5.0/src/lib.rs"
+  output_name = "dbl-fb00feefc11f788a"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":generic-array-v0_14_9" ]
+  deps += [ ":hybrid-array-v0_4_12" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=b2dad617a1bdc7f",
-    "-Cextra-filename=-b2dad617a1bdc7f",
+    "-Cmetadata=fb00feefc11f788a",
+    "-Cextra-filename=-fb00feefc11f788a",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":dbl-v0_3_2.license" ]
+  applicable_licenses = [ ":dbl-v0_5_0.license" ]
 }
 
 license("der-v0_6_1.license") {
@@ -7823,36 +7890,36 @@ rustc_library("dyn-clone-v1_0_20") {
   applicable_licenses = [ ":dyn-clone-v1_0_20.license" ]
 }
 
-license("ecb-v0_1_2.license") {
+license("ecb-v0_2_0.license") {
   public_package_name = "ecb"
-  license_files = [ "//third_party/rust_crates/vendor/ecb-0.1.2/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/ecb-0.2.0/LICENSE" ]
 }
 
-rustc_library("ecb-v0_1_2") {
+rustc_library("ecb-v0_2_0") {
   crate_name = "ecb"
-  source_root = "//third_party/rust_crates/vendor/ecb-0.1.2/src/lib.rs"
-  output_name = "ecb-f56ef70301e83d9e"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/vendor/ecb-0.2.0/src/lib.rs"
+  output_name = "ecb-6aeb2fb6045b846c"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cipher-v0_4_4" ]
+  deps += [ ":cipher-v0_5_2" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=f56ef70301e83d9e",
-    "-Cextra-filename=-f56ef70301e83d9e",
+    "-Cmetadata=6aeb2fb6045b846c",
+    "-Cextra-filename=-6aeb2fb6045b846c",
     "--cfg=feature=\"block-padding\"",
     "--cfg=feature=\"default\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":ecb-v0_1_2.license" ]
+  applicable_licenses = [ ":ecb-v0_2_0.license" ]
 }
 
 license("ecdsa-v0_14_8.license") {
@@ -11402,7 +11469,6 @@ rustc_library("inout-v0_1_4") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":block-padding-v0_3_3" ]
   deps += [ ":generic-array-v0_14_9" ]
 
   rustenv = []
@@ -11411,7 +11477,6 @@ rustc_library("inout-v0_1_4") {
     "--cap-lints=allow",
     "-Cmetadata=9e53ce384e144a67",
     "-Cextra-filename=-9e53ce384e144a67",
-    "--cfg=feature=\"block-padding\"",
   ]
 
   visibility = [ ":*" ]
@@ -11437,6 +11502,7 @@ rustc_library("inout-v0_2_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":block-padding-v0_4_2" ]
   deps += [ ":hybrid-array-v0_4_12" ]
 
   rustenv = []
@@ -11445,6 +11511,7 @@ rustc_library("inout-v0_2_2") {
     "--cap-lints=allow",
     "-Cmetadata=6221ec01de4cd261",
     "-Cextra-filename=-6221ec01de4cd261",
+    "--cfg=feature=\"block-padding\"",
   ]
 
   visibility = [ ":*" ]

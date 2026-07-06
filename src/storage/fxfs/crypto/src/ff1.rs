@@ -4,8 +4,7 @@
 
 use crate::UnwrappedKey;
 use aes::Aes256;
-use aes::cipher::generic_array::GenericArray;
-use aes::cipher::{BlockEncrypt, KeyInit};
+use aes::cipher::{BlockCipherEncrypt, KeyInit};
 use byteorder::{BigEndian, ByteOrder};
 
 // This is a heavily specialized version of ff1 encryption as described in:
@@ -19,10 +18,10 @@ pub struct Ff1 {
 
 impl Ff1 {
     pub fn new(key: &UnwrappedKey) -> Self {
-        let cipher = Aes256::new(GenericArray::from_slice(key));
+        let cipher = Aes256::new(key.as_slice().try_into().unwrap());
         // See step 5 from the specification. radix = 2, u = 16, n = 32.
         let mut initial_block = [1, 2, 1, 0, 0, 2, 10, 16, 0, 0, 0, 32, 0, 0, 0, 0];
-        cipher.encrypt_block(GenericArray::from_mut_slice(&mut initial_block));
+        cipher.encrypt_block((&mut initial_block).into());
         // initial_block is now PRF(P).
         Self { initial_block, cipher }
     }
@@ -40,7 +39,7 @@ impl Ff1 {
             block[13] ^= i;
             block[14] ^= (b >> 8) as u8;
             block[15] ^= b as u8;
-            self.cipher.encrypt_block(GenericArray::from_mut_slice(&mut block));
+            self.cipher.encrypt_block((&mut block).into());
             // block is now R.
 
             // b = 2, d = 8, so S is the first 8 bytes of block.
@@ -65,7 +64,7 @@ impl Ff1 {
             block[13] ^= i;
             block[14] ^= (a >> 8) as u8;
             block[15] ^= a as u8;
-            self.cipher.encrypt_block(GenericArray::from_mut_slice(&mut block));
+            self.cipher.encrypt_block((&mut block).into());
             // block is now R.
 
             // b = 2, d = 8, so S is the first 8 bytes of block.

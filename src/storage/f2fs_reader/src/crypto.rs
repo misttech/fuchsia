@@ -4,7 +4,7 @@
 use crate::xattr;
 use aes::Block;
 use aes::cipher::inout::InOutBuf;
-use aes::cipher::{BlockDecrypt, BlockDecryptMut, BlockEncrypt, KeyInit, KeyIvInit};
+use aes::cipher::{BlockCipherDecrypt, BlockCipherEncrypt, BlockModeDecrypt, KeyInit, KeyIvInit};
 use anyhow::Error;
 use fscrypt::{Context, hkdf};
 use siphasher::sip::SipHasher;
@@ -65,8 +65,8 @@ impl PerFileDecryptor {
             let ino_hash_key =
                 Some(hkdf::fscrypt_hkdf::<16>(main_key, &[], hkdf::HKDF_CONTEXT_INODE_HASH_KEY));
             Self {
-                xts_key1: aes::Aes256::new((&xts_key[..32]).into()),
-                xts_key2: aes::Aes256::new((&xts_key[32..]).into()),
+                xts_key1: aes::Aes256::new(xts_key[..32].try_into().unwrap()),
+                xts_key2: aes::Aes256::new(xts_key[32..].try_into().unwrap()),
                 cts_key,
                 dirhash_key,
                 ino_hash_key,
@@ -83,8 +83,8 @@ impl PerFileDecryptor {
                 hkdf::fscrypt_hkdf::<16>(main_key, &context.nonce, hkdf::HKDF_CONTEXT_DIRHASH_KEY);
             let cts_key: [u8; 32] = key[..32].try_into().unwrap();
             Self {
-                xts_key1: aes::Aes256::new((&key[..32]).into()),
-                xts_key2: aes::Aes256::new((&key[32..]).into()),
+                xts_key1: aes::Aes256::new(key[..32].try_into().unwrap()),
+                xts_key2: aes::Aes256::new(key[32..].try_into().unwrap()),
                 cts_key,
                 dirhash_key,
                 ino_hash_key: None,
@@ -106,10 +106,13 @@ impl PerFileDecryptor {
         } else {
             block_num
         } as u128;
-        key2.encrypt_block(tweak.as_mut_bytes().into());
+        let mut tweak_bytes = tweak.to_ne_bytes();
+        key2.encrypt_block((&mut tweak_bytes).into());
+        tweak = u128::from_ne_bytes(tweak_bytes);
         for chunk in buffer.chunks_exact_mut(16) {
             *u128::mut_from_bytes(chunk).unwrap() ^= tweak;
-            key1.decrypt_block(chunk.into());
+            let chunk_block: &mut Block = chunk.try_into().unwrap();
+            key1.decrypt_block(chunk_block);
             *u128::mut_from_bytes(chunk).unwrap() ^= tweak;
             tweak = (tweak << 1) ^ (if tweak >> 127 != 0 { 0x87 } else { 0 });
         }
@@ -134,7 +137,7 @@ impl PerFileDecryptor {
         if chunks.len() >= 2 {
             chunks.swap(chunks.len() - 1, chunks.len() - 2);
         }
-        cbc.decrypt_blocks_mut(&mut chunks);
+        cbc.decrypt_blocks(&mut chunks);
     }
 
     pub fn dirhash_key(&self) -> &[u8; 16] {

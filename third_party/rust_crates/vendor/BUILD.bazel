@@ -31,14 +31,14 @@ filegroup(
 
 # Workspace Member Dependencies
 alias(
-    name = "aes-0.8.4",
-    actual = "//third_party/rust_crates/vendor/aes-0.8.4:aes",
+    name = "aes-0.9.1",
+    actual = "//third_party/rust_crates/vendor/aes-0.9.1:aes",
     tags = ["manual"],
 )
 
 alias(
     name = "aes",
-    actual = "//third_party/rust_crates/vendor/aes-0.8.4:aes",
+    actual = "//third_party/rust_crates/vendor/aes-0.9.1:aes",
     tags = ["manual"],
 )
 
@@ -523,14 +523,14 @@ alias(
 )
 
 alias(
-    name = "cbc-0.1.2",
-    actual = "//third_party/rust_crates/vendor/cbc-0.1.2:cbc",
+    name = "cbc-0.2.1",
+    actual = "//third_party/rust_crates/vendor/cbc-0.2.1:cbc",
     tags = ["manual"],
 )
 
 alias(
     name = "cbc",
-    actual = "//third_party/rust_crates/vendor/cbc-0.1.2:cbc",
+    actual = "//third_party/rust_crates/vendor/cbc-0.2.1:cbc",
     tags = ["manual"],
 )
 
@@ -595,14 +595,14 @@ alias(
 )
 
 alias(
-    name = "cipher-0.4.4",
-    actual = "//third_party/rust_crates/vendor/cipher-0.4.4:cipher",
+    name = "cipher-0.5.2",
+    actual = "//third_party/rust_crates/vendor/cipher-0.5.2:cipher",
     tags = ["manual"],
 )
 
 alias(
     name = "cipher",
-    actual = "//third_party/rust_crates/vendor/cipher-0.4.4:cipher",
+    actual = "//third_party/rust_crates/vendor/cipher-0.5.2:cipher",
     tags = ["manual"],
 )
 
@@ -619,14 +619,14 @@ alias(
 )
 
 alias(
-    name = "cmac-0.7.2",
-    actual = "//third_party/rust_crates/vendor/cmac-0.7.2:cmac",
+    name = "cmac-0.8.0",
+    actual = "//third_party/rust_crates/vendor/cmac-0.8.0:cmac",
     tags = ["manual"],
 )
 
 alias(
     name = "cmac",
-    actual = "//third_party/rust_crates/vendor/cmac-0.7.2:cmac",
+    actual = "//third_party/rust_crates/vendor/cmac-0.8.0:cmac",
     tags = ["manual"],
 )
 
@@ -859,14 +859,14 @@ alias(
 )
 
 alias(
-    name = "ecb-0.1.2",
-    actual = "//third_party/rust_crates/vendor/ecb-0.1.2:ecb",
+    name = "ecb-0.2.0",
+    actual = "//third_party/rust_crates/vendor/ecb-0.2.0:ecb",
     tags = ["manual"],
 )
 
 alias(
     name = "ecb",
-    actual = "//third_party/rust_crates/vendor/ecb-0.1.2:ecb",
+    actual = "//third_party/rust_crates/vendor/ecb-0.2.0:ecb",
     tags = ["manual"],
 )
 

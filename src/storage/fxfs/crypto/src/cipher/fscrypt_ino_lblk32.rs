@@ -3,11 +3,10 @@
 // found in the LICENSE file.
 use super::{Cipher, Tweak, UnwrappedKey, XtsProcessor};
 use aes::Aes256;
-use aes::cipher::generic_array::GenericArray;
 use aes::cipher::inout::InOutBuf;
-use aes::cipher::typenum::consts::U16;
 use aes::cipher::{
-    Block, BlockDecrypt, BlockDecryptMut, BlockEncrypt, BlockEncryptMut, KeyInit, KeyIvInit,
+    Block, BlockCipherDecrypt, BlockCipherEncrypt, BlockModeDecrypt, BlockModeEncrypt, KeyInit,
+    KeyIvInit,
 };
 use anyhow::{Context, Error, ensure};
 use siphasher::sip::SipHasher;
@@ -103,12 +102,14 @@ impl FscryptInoLblk32DirCipher {
 
         buffer.resize(buffer.len().next_multiple_of(NAME_PADDING), 0);
 
-        let mut cbc =
-            cbc::Encryptor::<aes::Aes256>::new((&self.cts_key).into(), iv.as_bytes().into());
+        let mut cbc = cbc::Encryptor::<aes::Aes256>::new(
+            (&self.cts_key).try_into().unwrap(),
+            iv.as_bytes().try_into().unwrap(),
+        );
         let inout = InOutBuf::<'_, '_, u8>::from(&mut buffer[..]);
         let (mut blocks, _): (InOutBuf<'_, '_, Block<aes::Aes256>>, _) = inout.into_chunks();
         let mut chunks = blocks.get_out();
-        cbc.encrypt_blocks_mut(&mut chunks);
+        cbc.encrypt_blocks(&mut chunks);
         if chunks.len() >= 2 {
             // We are encrypting with CTS.  In most cases, the padding will mean it's a multiple of
             // NAME_PADDING bytes, so all we need to do is swap the last two chunks.  There is one
@@ -134,17 +135,10 @@ impl FscryptInoLblk32DirCipher {
             ensure!(buffer.len() == max_len, "Unexpected filename length");
 
             // Decrypt the second to last block.
-            let mut cipher = aes::Aes256::new(&self.cts_key.into());
-            let mut out = GenericArray::<u8, U16>::default();
-            cipher.decrypt_block_inout_mut(
-                (
-                    GenericArray::from_slice(
-                        &buffer[max_len - alignment - NAME_PADDING..max_len - alignment],
-                    ),
-                    &mut out,
-                )
-                    .into(),
-            );
+            let cipher = aes::Aes256::new((&self.cts_key).try_into().unwrap());
+            let mut out: Block<aes::Aes256> =
+                buffer[max_len - alignment - NAME_PADDING..max_len - alignment].try_into().unwrap();
+            cipher.decrypt_block(&mut out);
 
             // Copy the extra bytes we need.
             buffer.extend_from_slice(&out[alignment..]);
@@ -154,15 +148,17 @@ impl FscryptInoLblk32DirCipher {
         hasher.write(object_id.as_bytes());
         let iv = [hasher.finish() as u32, 0, 0, 0];
 
-        let mut cbc =
-            cbc::Decryptor::<aes::Aes256>::new((&self.cts_key).into(), iv.as_bytes().into());
+        let mut cbc = cbc::Decryptor::<aes::Aes256>::new(
+            (&self.cts_key).try_into().unwrap(),
+            iv.as_bytes().try_into().unwrap(),
+        );
         let inout = InOutBuf::<'_, '_, u8>::from(&mut buffer[..]);
         let (mut blocks, _): (InOutBuf<'_, '_, Block<aes::Aes256>>, _) = inout.into_chunks();
         let mut chunks = blocks.get_out();
         if chunks.len() >= 2 {
             chunks.swap(chunks.len() - 1, chunks.len() - 2);
         }
-        cbc.decrypt_blocks_mut(&mut chunks);
+        cbc.decrypt_blocks(&mut chunks);
 
         // Strip padding
         while let Some(0) = buffer.last() {
@@ -268,8 +264,8 @@ pub struct FscryptSoftwareInoLblk32FileCipher {
 impl FscryptSoftwareInoLblk32FileCipher {
     pub fn new(key: &UnwrappedKey) -> Self {
         Self {
-            xts_key1: Aes256::new(GenericArray::from_slice(&key[..32])),
-            xts_key2: Aes256::new(GenericArray::from_slice(&key[32..64])),
+            xts_key1: Aes256::new((&key[..32]).try_into().unwrap()),
+            xts_key2: Aes256::new((&key[32..64]).try_into().unwrap()),
         }
     }
 
@@ -279,7 +275,7 @@ impl FscryptSoftwareInoLblk32FileCipher {
         let mut tweak = tweak;
 
         for block in buffer.chunks_exact_mut(BLOCK_SIZE) {
-            self.xts_key2.encrypt_block(GenericArray::from_mut_slice(tweak.as_mut_bytes()));
+            self.xts_key2.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
             self.xts_key1.encrypt_with_backend(XtsProcessor::new(Tweak(tweak), block));
             tweak += 1;
         }
@@ -290,7 +286,7 @@ impl FscryptSoftwareInoLblk32FileCipher {
         fxfs_trace::duration!("decrypt", "len" => buffer.len());
         assert_eq!(buffer.len() % BLOCK_SIZE, 0);
         for block in buffer.chunks_exact_mut(BLOCK_SIZE) {
-            self.xts_key2.encrypt_block(GenericArray::from_mut_slice(tweak.as_mut_bytes()));
+            self.xts_key2.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
             self.xts_key1.decrypt_with_backend(XtsProcessor::new(Tweak(tweak), block));
             tweak += 1;
         }

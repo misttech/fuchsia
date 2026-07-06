@@ -52,9 +52,6 @@ rust_library(
             "WORKSPACE.bazel",
         ],
     ),
-    crate_features = [
-        "block-padding",
-    ],
     crate_root = "src/lib.rs",
     edition = "2021",
     rustc_flags = [
@@ -76,7 +73,6 @@ rust_library(
     }),
     version = "0.1.4",
     deps = [
-        "//third_party/rust_crates/vendor/block-padding-0.3.3:block_padding",
         "//third_party/rust_crates/vendor/generic-array-0.14.9:generic_array",
     ],
 )
