@@ -48,9 +48,7 @@ class MessageId {
   // Support explicit casting to uint8_t.
   explicit operator uint8_t() const { return bits_; }
 
-  // In C++20, equality comparison can be defaulted.
-  bool operator==(const MessageId& other) const { return bits_ == other.bits_; }
-  bool operator!=(const MessageId& other) const { return bits_ != other.bits_; }
+  constexpr bool operator==(const MessageId& other) const = default;
 
   MessageId Next() const {
     // Rolling 3-bit counter.

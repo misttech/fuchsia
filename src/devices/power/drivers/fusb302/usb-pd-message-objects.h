@@ -58,9 +58,7 @@ struct PowerData {
   // Support explicit casting to uint32_t.
   explicit operator uint32_t() const { return bits; }
 
-  // In C++20, equality comparison can be defaulted.
-  bool operator==(const PowerData& other) const { return bits == other.bits; }
-  bool operator!=(const PowerData& other) const { return bits != other.bits; }
+  constexpr bool operator==(const PowerData& other) const = default;
 };
 
 // A fixed power source's ability to briefly exceed the operating current.
@@ -200,9 +198,7 @@ class FixedPowerSupplyData {
   // Support explicit casting to uint32_t.
   explicit operator uint32_t() const { return bits_; }
 
-  // In C++20, equality comparison can be defaulted.
-  bool operator==(const FixedPowerSupplyData& other) const { return bits_ == other.bits_; }
-  bool operator!=(const FixedPowerSupplyData& other) const { return bits_ != other.bits_; }
+  constexpr bool operator==(const FixedPowerSupplyData& other) const = default;
 
  private:
   // Must be kFixedSupply.
@@ -283,9 +279,7 @@ class VariablePowerSupplyData {
   // Support explicit casting to uint32_t.
   explicit operator uint32_t() const { return bits_; }
 
-  // In C++20, equality comparison can be defaulted.
-  bool operator==(const VariablePowerSupplyData& other) const { return bits_ == other.bits_; }
-  bool operator!=(const VariablePowerSupplyData& other) const { return bits_ != other.bits_; }
+  constexpr bool operator==(const VariablePowerSupplyData& other) const = default;
 
  private:
   // Must be kVariableSupply.
@@ -366,9 +360,7 @@ class BatteryPowerSupplyData {
   // Support explicit casting to uint32_t.
   explicit operator uint32_t() const { return bits_; }
 
-  // In C++20, equality comparison can be defaulted.
-  bool operator==(const BatteryPowerSupplyData& other) const { return bits_ == other.bits_; }
-  bool operator!=(const BatteryPowerSupplyData& other) const { return bits_ != other.bits_; }
+  constexpr bool operator==(const BatteryPowerSupplyData& other) const = default;
 
  private:
   // Must be kBattery.
@@ -485,9 +477,7 @@ class SinkFixedPowerSupplyData {
   // Support explicit casting to uint32_t.
   explicit operator uint32_t() const { return bits_; }
 
-  // In C++20, equality comparison can be defaulted.
-  bool operator==(const SinkFixedPowerSupplyData& other) const { return bits_ == other.bits_; }
-  bool operator!=(const SinkFixedPowerSupplyData& other) const { return bits_ != other.bits_; }
+  constexpr bool operator==(const SinkFixedPowerSupplyData& other) const = default;
 
  private:
   // Must be kFixedSupply.
@@ -579,6 +569,8 @@ class PowerRequestData {
 
   // Support explicit casting to uint32_t.
   explicit operator uint32_t() const { return bits_; }
+
+  constexpr bool operator==(const PowerRequestData&) const = default;
 
  protected:
   // Distinguishes constructors that take a PDO position.
@@ -678,13 +670,7 @@ class FixedVariableSupplyPowerRequestData : public PowerRequestData {
   FixedVariableSupplyPowerRequestData& operator=(const FixedVariableSupplyPowerRequestData&) =
       default;
 
-  // In C++20, equality comparison can be defaulted.
-  bool operator==(const FixedVariableSupplyPowerRequestData& other) const {
-    return bits_ == other.bits_;
-  }
-  bool operator!=(const FixedVariableSupplyPowerRequestData& other) const {
-    return bits_ != other.bits_;
-  }
+  constexpr bool operator==(const FixedVariableSupplyPowerRequestData& other) const = default;
 };
 
 // RDO based on a battery power supply PDO.
@@ -766,9 +752,7 @@ class BatteryPowerRequestData : public PowerRequestData {
   BatteryPowerRequestData(const BatteryPowerRequestData&) = default;
   BatteryPowerRequestData& operator=(const BatteryPowerRequestData&) = default;
 
-  // In C++20, equality comparison can be defaulted.
-  bool operator==(const BatteryPowerRequestData& other) const { return bits_ == other.bits_; }
-  bool operator!=(const BatteryPowerRequestData& other) const { return bits_ != other.bits_; }
+  constexpr bool operator==(const BatteryPowerRequestData& other) const = default;
 };
 
 }  // namespace usb_pd
