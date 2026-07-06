@@ -269,6 +269,8 @@ impl<T: Validate> Validate for Array<T> {
 /// is prefixed by an `items_count` field).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SymbolArray<T> {
+    /// The number of primary names in this array (excluding aliases).
+    /// Included in the policy to allow allocation of index structures to be optimized.
     primary_names_count: u32,
     items: Array<T>,
 }
@@ -299,6 +301,12 @@ impl<T: Serialize> Serialize for SymbolArray<T> {
 impl<T: Validate> Validate for SymbolArray<T> {
     fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
         self.items.validate(policy)?;
+        if self.primary_names_count > self.items.len() as u32 {
+            return Err(ValidateError::InvalidPrimaryNamesCount {
+                expected_at_most: self.items.len() as u32,
+                found: self.primary_names_count,
+            });
+        }
         Ok(())
     }
 }

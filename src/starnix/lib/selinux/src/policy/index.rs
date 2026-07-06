@@ -7,6 +7,7 @@ use super::security_context::SecurityContext;
 use super::symbols::{Class, ClassDefault, ClassDefaultRange, find_class_by_name};
 use super::{AccessVector, ClassId, MlsLevel, ParsedPolicy, PermissionId, RoleId, TypeId};
 use crate::new_policy::HandleUnknown;
+use crate::new_policy::traits::HasName;
 use crate::{ClassPermission as _, KernelClass, KernelPermission, NullessByteStr, PolicyCap};
 
 use std::collections::HashMap;
@@ -502,7 +503,7 @@ fn get_permission_id_by_name(
     }
     let common_name = class.common_name_bytes();
     if !common_name.is_empty() {
-        let common_symbol = common_symbols.iter().find(|cs| cs.name_bytes() == common_name)?;
+        let common_symbol = common_symbols.iter().find(|cs| cs.name() == common_name)?;
         let permission = common_symbol.permissions().iter().find(|p| p.name_bytes() == name)?;
         return Some(permission.id());
     }

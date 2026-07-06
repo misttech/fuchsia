@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::error::{ParseError, SerializeError};
+use super::NewPolicy;
+use super::error::{ParseError, SerializeError, ValidateError};
 use super::id_type::IdType;
 use super::indexed::IdAndNameIndexed;
 use super::parser::PolicyCursor;
 use super::permissions::Permission;
-use super::traits::{Parse, PolicyId, Serialize};
-use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
+use super::traits::{Parse, PolicyId, Serialize, Validate};
+use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize};
 
 /// Tag type for type safety of policy common symbol identifiers.
 #[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
@@ -18,20 +19,16 @@ pub struct CommonSymbolTag;
 pub type CommonSymbolId = IdType<std::num::NonZeroU16, CommonSymbolTag>;
 
 /// Parsed SELinux common symbol table entry (e.g. `common file { ... }`).
-#[derive(Debug, Clone, PartialEq, Eq, Validate, HasName, HasPolicyId)]
+#[derive(Debug, Clone, PartialEq, Eq, HasName, HasPolicyId)]
 pub struct CommonSymbol {
     id: CommonSymbolId,
     name: Box<[u8]>,
+    /// Included in the policy to allow allocation of index structures to be optimized.
     primary_names_count: u32,
     permissions: IdAndNameIndexed<Box<[Permission]>>,
 }
 
 impl CommonSymbol {
-    /// Returns the name of this common symbol as a byte slice.
-    pub fn name_bytes(&self) -> &[u8] {
-        &self.name
-    }
-
     /// Returns the permissions associated with this common symbol.
     pub fn permissions(&self) -> &[Permission] {
         &self.permissions
@@ -42,6 +39,7 @@ impl CommonSymbol {
 struct BinaryCommonSymbolHeader {
     name_len: u32,
     id: u32,
+    /// Included in the policy to allow allocation of index structures to be optimized.
     primary_names_count: u32,
     permissions_count: u32,
 }
@@ -78,6 +76,19 @@ impl Serialize for CommonSymbol {
         writer.extend_from_slice(&self.name);
         for permission in self.permissions.iter() {
             permission.serialize(writer)?;
+        }
+        Ok(())
+    }
+}
+
+impl Validate for CommonSymbol {
+    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+        self.permissions.validate(policy)?;
+        if self.primary_names_count > self.permissions.len() as u32 {
+            return Err(ValidateError::InvalidPrimaryNamesCount {
+                expected_at_most: self.permissions.len() as u32,
+                found: self.primary_names_count,
+            });
         }
         Ok(())
     }

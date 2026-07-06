@@ -22,7 +22,7 @@ pub use security_context::{SecurityContext, SecurityContextError};
 use crate::new_policy as new;
 pub use crate::new_policy::HandleUnknown;
 pub use crate::new_policy::traits::PolicyId;
-use crate::new_policy::traits::Serialize as _;
+use crate::new_policy::traits::{HasName, Serialize as _};
 
 pub use crate::new_policy::{
     AccessVector, CategoryId, ClassId, MlsLevel, MlsRange, POLICYDB_VERSION_MAX, PermissionId,
@@ -241,7 +241,7 @@ impl Policy {
             .parsed_policy()
             .common_symbols()
             .iter()
-            .find(|cs| cs.name_bytes() == class.common_name_bytes())
+            .find(|cs| cs.name() == class.common_name_bytes())
             .ok_or(())?;
         let common_symbol_permissions = common_symbol.permissions();
 

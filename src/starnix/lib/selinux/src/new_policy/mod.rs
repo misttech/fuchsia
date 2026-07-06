@@ -4,7 +4,9 @@
 
 pub(super) mod access_vector;
 pub(super) mod bitmap;
+pub(super) mod classes;
 pub(super) mod common_symbols;
+pub(super) mod constraints;
 pub(super) mod context;
 pub(super) mod error;
 pub(super) mod id_type;
@@ -26,6 +28,7 @@ pub(super) mod types;
 
 pub use access_vector::AccessVector;
 pub use bitmap::{ExtensibleBitmap, IdSpan};
+pub use classes::ClassId;
 pub use common_symbols::CommonSymbol;
 pub use context::{Context, MlsLevel, MlsRange};
 pub use id_type::IdType;
@@ -46,13 +49,6 @@ pub struct RoleTag;
 
 /// Identifies a role within a policy.
 pub type RoleId = IdType<std::num::NonZeroU16, RoleTag>;
-
-/// Tag type for type safety of policy class identifiers.
-#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
-pub struct ClassTag;
-
-/// Identifies a class within a policy.
-pub type ClassId = IdType<std::num::NonZeroU16, ClassTag>;
 
 /// Top-level [`NewPolicy`] structure that parses the first few fields
 /// and stores the rest in [`Self::rest`] to allow round-trip testing.
@@ -106,7 +102,7 @@ impl NewPolicy {
         &self.common_symbols
     }
 
-    /// Returns the remaining unparsed bytes.
+    /// Returns a shared reference to the remaining unparsed bytes.
     pub fn rest_bytes(&self) -> std::sync::Arc<[u8]> {
         self.rest.bytes.clone()
     }
@@ -115,7 +111,7 @@ impl NewPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::new_policy::traits::{Parse, Serialize};
+    use crate::new_policy::traits::{HasName, Parse, Serialize};
 
     #[derive(Copy, Clone, Debug, Eq, PartialEq, Parse, Serialize, Validate)]
     #[policy(wire_type = u32)]
@@ -170,7 +166,7 @@ mod tests {
         // Verify common symbols are parsed
         assert!(!new_policy.common_symbols().is_empty());
         let common = &new_policy.common_symbols()[0];
-        assert!(!common.name_bytes().is_empty());
+        assert!(!common.name().is_empty());
         assert!(!common.permissions().is_empty());
 
         // Verify 100% byte-for-byte roundtrip fidelity

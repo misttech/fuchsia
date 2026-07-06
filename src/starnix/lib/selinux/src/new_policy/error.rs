@@ -14,10 +14,6 @@ use thiserror::Error;
 pub enum ParseError {
     #[error("expected MLS-enabled flag ({CONFIG_MLS_FLAG:#032b}), but found {found_config:#032b}")]
     ConfigMissingMlsFlag { found_config: u32 },
-    #[error("invalid class default: {value}")]
-    InvalidClassDefault { value: u32 },
-    #[error("invalid class default range: {value}")]
-    InvalidClassDefaultRange { value: u32 },
     #[error("invalid configuration flags: {flags:#032b}")]
     InvalidConfigFlags { flags: u32 },
     #[error("invalid constraint operand type: {value:#x}")]
@@ -30,8 +26,6 @@ pub enum ParseError {
     TrailingBytes { num_bytes: usize },
     #[error("unexpected non-empty type set in constraint")]
     UnexpectedConstraintTypeSet,
-    #[error("invalid constraint operator: {value}")]
-    InvalidConstraintOperator { value: u32 },
     #[error("invalid constraint term type: {value}")]
     InvalidConstraintTermType { value: u32 },
     #[error(
@@ -95,6 +89,8 @@ pub enum ValidateError {
     InvalidMlsRange,
     #[error("referenced common symbol {name:?} is not defined")]
     UndefinedCommonSymbol { name: Vec<u8> },
+    #[error("expected primary names count <= {expected_at_most}, but found {found}")]
+    InvalidPrimaryNamesCount { expected_at_most: u32, found: u32 },
 }
 
 /// Errors that may be encountered serializing a binary policy.

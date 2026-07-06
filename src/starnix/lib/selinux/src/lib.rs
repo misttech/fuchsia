@@ -193,11 +193,10 @@ impl PolicyCap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::new_policy::traits::PolicyId;
 
     #[test]
     fn object_class_permissions() {
-        let test_class_id = ClassId::from_u32(20).unwrap();
+        let test_class_id = ClassId::for_test(20);
         assert_eq!(ObjectClass::ClassId(test_class_id), test_class_id.into());
         for variant in ProcessPermission::PERMISSIONS {
             assert_eq!(KernelClass::Process, variant.class());
