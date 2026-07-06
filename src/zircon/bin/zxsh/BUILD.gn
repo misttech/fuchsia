@@ -10,8 +10,12 @@ rustc_binary("bin") {
   edition = "2024"
   with_unit_tests = true
   sources = [
+    "src/args.rs",
     "src/collections.rs",
     "src/errors.rs",
+    "src/eval/execution_context.rs",
+    "src/eval/mod.rs",
+    "src/eval/state.rs",
     "src/fd.rs",
     "src/main.rs",
     "src/parser/ast.rs",
@@ -24,6 +28,7 @@ rustc_binary("bin") {
     "src/serialization.rs",
     "src/sort.rs",
     "src/string.rs",
+    "src/tests/args.rs",
     "src/tests/ast.rs",
     "src/tests/collections.rs",
     "src/tests/errors.rs",
@@ -31,6 +36,7 @@ rustc_binary("bin") {
     "src/tests/parser.rs",
     "src/tests/serialization.rs",
     "src/tests/sort.rs",
+    "src/tests/state.rs",
     "src/tests/tokenizer.rs",
     "src/tty.rs",
   ]
@@ -38,6 +44,7 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_rust",
     "//sdk/rust/zx",
     "//src/lib/fdio/rust:fdio",
+    "//src/lib/fuchsia-runtime",
     "//third_party/rust_crates:bstr",
     "//third_party/rust_crates:libc",
     "//third_party/rust_crates:zerocopy",

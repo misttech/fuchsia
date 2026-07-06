@@ -113,6 +113,37 @@ System-level built-ins implemented in `src/builtins/fuchsia.rs`:
 
 ---
 
+## Limitations
+
+### File Descriptor Inheritance
+
+Unlike POSIX shells on Linux/macOS, `zxsh` on Fuchsia does not support implicit
+inheritance of non-standard file descriptors (FDs other than `0`, `1`, and `2`)
+for external commands.
+
+For example, if you run:
+```bash
+exec 3>file.txt
+my_external_command >&3
+```
+Or:
+```bash
+my_external_command 3>file.txt
+```
+The child process `my_external_command` will NOT inherit FD 3. It will start
+with FD 3 closed.
+
+This is a design limitation of the Fuchsia process creation model (`fdio_spawn`
+/ `fuchsia.process.Launcher`), which requires explicit transfer of handles and
+does not support cloning the entire file descriptor table to child processes by
+default. This behavior matches the Fuchsia port of `dash`
+(`zircon/third_party/uapp/dash`).
+
+Redirections of standard streams (`0`, `1`, `2`) are fully supported for all
+commands.
+
+---
+
 ## Testing
 
 `zxsh` comes with a comprehensive suite of integration and unit tests,
