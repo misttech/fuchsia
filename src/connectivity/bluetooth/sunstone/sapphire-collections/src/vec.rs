@@ -112,6 +112,90 @@ impl<T, A: StorageFamily> Vec<T, A> {
     pub fn len(&self) -> usize {
         self.len
     }
+
+    /// Shortens the vector, keeping the first `len` elements and dropping the rest.
+    ///
+    /// If `len` is greater than or equal to the vector's current length, this has no effect.
+    ///
+    /// # Time Complexity
+    /// - `O(1)` if `T` does not require dropping (e.g., `u8`).
+    /// - `O(N)` if `T` requires dropping (where `N` is the number of elements removed).
+    pub fn truncate(&mut self, new_len: usize) {
+        if new_len < self.len {
+            let old_len = self.len;
+            self.len = new_len;
+            if core::mem::needs_drop::<T>() {
+                // SAFETY: The elements in `new_len..old_len` are initialized.
+                // We update `self.len` to `new_len` before dropping to ensure that if a destructor
+                // panics, the vector is already in a consistent state (preventing double-drops).
+                unsafe {
+                    self.inner.buffer_mut()[new_len..old_len].assume_init_drop();
+                }
+            }
+        }
+    }
+
+    /// Clears the vector, removing all values.
+    pub fn clear(&mut self) {
+        self.truncate(0);
+    }
+
+    /// Clones and appends all elements in a slice to the vector.
+    ///
+    /// If the vector does not have enough capacity to hold all elements, it will attempt
+    /// to grow the underlying storage.
+    ///
+    /// # Errors
+    /// Returns `Err(AllocError)` if the buffer is full and cannot be grown.
+    pub fn try_extend(&mut self, other: &[T]) -> Result<(), crate::AllocError>
+    where
+        T: Clone,
+    {
+        let needed_capacity = self.len() + other.len();
+        self.inner.grow_at_least(needed_capacity).map_err(|_| crate::AllocError)?;
+        for item in other {
+            // SAFETY: We ensured that the capacity is at least needed_capacity, so the index
+            // `self.len` is within bounds.
+            // Panic Safety: If cloning panics, it occurs before writing the value and
+            // incrementing `self.len`, keeping `self.len` consistent.
+            unsafe {
+                self.inner.buffer_mut().get_unchecked_mut(self.len).write(item.clone());
+            }
+            self.len += 1;
+        }
+        Ok(())
+    }
+
+    /// Resizes the `Vec` in-place so that `len` is equal to `new_len`.
+    ///
+    /// If `new_len` is greater than `len`, the `Vec` is extended by the difference, with each
+    /// additional slot filled with a clone of `value`. If `new_len` is less than `len`, the `Vec`
+    /// is truncated.
+    ///
+    /// # Errors
+    /// Returns `Err(AllocError)` if the new length exceeds capacity and the buffer cannot be grown.
+    pub fn try_resize(&mut self, new_len: usize, value: T) -> Result<(), crate::AllocError>
+    where
+        T: Clone,
+    {
+        if new_len > self.len() {
+            let padding_len = new_len - self.len();
+            self.inner.grow_at_least(new_len).map_err(|_| crate::AllocError)?;
+            for _ in 0..padding_len {
+                // SAFETY: We ensured that the capacity is at least new_len, so the index
+                // `self.len` is within bounds.
+                // Panic Safety: If cloning panics, it occurs before writing the value and
+                // incrementing `self.len`, keeping `self.len` consistent.
+                unsafe {
+                    self.inner.buffer_mut().get_unchecked_mut(self.len).write(value.clone());
+                }
+                self.len += 1;
+            }
+        } else {
+            self.truncate(new_len);
+        }
+        Ok(())
+    }
 }
 
 impl<T, A: StorageFamily> Deref for Vec<T, A> {
@@ -229,6 +313,63 @@ mod tests {
             assert_eq!(counter.get(), 1); // popped one should be dropped
         }
         assert_eq!(counter.get(), 2); // remaining one should be dropped when vec goes out of scope
+    }
+
+    #[test]
+    fn test_vec_truncate_and_clear() {
+        let counter = Rc::new(Cell::new(0));
+        #[derive(Debug)]
+        struct DropItem(Rc<Cell<i32>>);
+        impl Drop for DropItem {
+            fn drop(&mut self) {
+                self.0.set(self.0.get() + 1);
+            }
+        }
+
+        let mut vec = StackVec::<DropItem, 4>::new();
+        vec.try_push(DropItem(counter.clone())).unwrap();
+        vec.try_push(DropItem(counter.clone())).unwrap();
+        vec.try_push(DropItem(counter.clone())).unwrap();
+
+        assert_eq!(vec.len(), 3);
+        assert_eq!(counter.get(), 0);
+
+        // Truncate keeping first 2
+        vec.truncate(2);
+        assert_eq!(vec.len(), 2);
+        assert_eq!(counter.get(), 1); // 1 item dropped
+
+        // Clear the remaining
+        vec.clear();
+        assert_eq!(vec.len(), 0);
+        assert_eq!(counter.get(), 3); // remaining 2 dropped
+    }
+
+    #[test]
+    fn test_vec_extend_and_resize() {
+        let mut vec = StackVec::<i32, 6>::new();
+        vec.try_extend(&[1, 2, 3]).unwrap();
+        assert_eq!(&vec[..], &[1, 2, 3]);
+
+        // Fail to extend past capacity (capacity is 6, len is 3, trying to add 4 elements)
+        assert!(vec.try_extend(&[4, 5, 6, 7]).is_err());
+        assert_eq!(&vec[..], &[1, 2, 3]); // Stays unmodified on failure
+
+        // Success extend up to capacity
+        vec.try_extend(&[4, 5, 6]).unwrap();
+        assert_eq!(&vec[..], &[1, 2, 3, 4, 5, 6]);
+
+        // Resize down (truncation)
+        vec.try_resize(3, 0).unwrap();
+        assert_eq!(&vec[..], &[1, 2, 3]);
+
+        // Resize up with padding
+        vec.try_resize(5, 9).unwrap();
+        assert_eq!(&vec[..], &[1, 2, 3, 9, 9]);
+
+        // Fail to resize past capacity
+        assert!(vec.try_resize(7, 0).is_err());
+        assert_eq!(&vec[..], &[1, 2, 3, 9, 9]);
     }
 
     mod proptests {

@@ -50,9 +50,24 @@ impl<A: StorageFamily, T> RawVec<T, A> {
     ///
     /// Returns `Err(AllocError)` if the allocation fails.
     pub fn grow(&mut self) -> Result<(), AllocError> {
+        let needed =
+            if self.capacity == 0 { 1 } else { self.capacity.checked_mul(2).ok_or(AllocError)? };
+        self.grow_at_least(needed)
+    }
+
+    /// Attempts to grow the buffer to at least `needed_capacity`.
+    ///
+    /// The new capacity will be the smallest power of 2 greater than or equal to `needed_capacity`.
+    ///
+    /// Returns `Err(AllocError)` if the allocation fails.
+    pub fn grow_at_least(&mut self, needed_capacity: usize) -> Result<(), AllocError> {
+        if needed_capacity <= self.capacity {
+            return Ok(());
+        }
+        let new_capacity = needed_capacity.checked_next_power_of_two().ok_or(AllocError)?;
+
         match self.get_handle() {
             Some(handle) => {
-                let new_capacity = self.capacity.checked_mul(2).ok_or(AllocError)?;
                 let (new_handle, new_size) = unsafe {
                     self.allocator.grow(
                         Layout::array::<T>(self.capacity).map_err(|_| AllocError)?,
@@ -68,10 +83,11 @@ impl<A: StorageFamily, T> RawVec<T, A> {
                 Ok(())
             }
             None => {
-                let (new_handle, new_size) =
-                    self.allocator.allocate(Layout::array::<T>(1).map_err(|_| AllocError)?)?;
+                let (new_handle, new_size) = self
+                    .allocator
+                    .allocate(Layout::array::<T>(new_capacity).map_err(|_| AllocError)?)?;
                 let element_size = size_of::<T>();
-                assert!(new_size >= element_size);
+                assert!(new_size >= element_size * new_capacity);
                 self.capacity =
                     if element_size == 0 { usize::MAX } else { new_size / element_size };
                 self.set_handle(new_handle);
