@@ -461,6 +461,34 @@ macro_rules! assert_ok {
     };
 }
 
+/// Asserts that the expression evaluates to Result::Ok and returns the resulting value, otherwise
+/// short-circuits.
+#[macro_export]
+macro_rules! unwrap_ok {
+    ($actual:expr) => {
+        $crate::unwrap_ok!($actual, "")
+    };
+    ($actual:expr, $msg:expr) => {
+        match ($actual) {
+            Ok(r) => r,
+            Err(err) => {
+                let err: ::unittest::__Status = err.into();
+                $crate::check_comparison!(
+                    err == ::unittest::__Status::OK,
+                    true,
+                    "==",
+                    ::unittest::__Status::OK,
+                    ::unittest::__Status::OK.into_raw(),
+                    err,
+                    err.into_raw(),
+                    $msg
+                );
+                return false;
+            }
+        }
+    };
+}
+
 // When building this crate with unit tests we also pass `--cfg ktest` to
 // enable the unconditional use of #[test_suite] below.
 #[cfg(test)]
@@ -556,6 +584,8 @@ mod tests {
 
             assert_ok!(zx_status::Status::OK);
 
+            let _ = unwrap_ok!(Ok::<(), zx_status::Status>(()));
+
             mark_end_as_reached();
         }
 
@@ -622,6 +652,12 @@ mod tests {
         /// Test that assert_ok fails when value is non-zero.
         fn fail_assert_ok() {
             assert_ok!(zx_status::Status::INTERNAL);
+            mark_end_as_reached();
+        }
+
+        /// Test that unwrap_ok fails when value is an error.
+        fn test_unwrap_ok() {
+            let _: () = unwrap_ok!(Err(zx_status::Status::INTERNAL));
             mark_end_as_reached();
         }
     }
@@ -740,7 +776,7 @@ mod tests {
         let suite = &suites[0];
 
         std::assert_eq!(unsafe { CStr::from_ptr(suite.name) }.to_bytes(), b"assertions");
-        std::assert_eq!(suite.test_cnt, 12);
+        std::assert_eq!(suite.test_cnt, 13);
 
         let cases_rodata = unsafe { slice::from_raw_parts(suite.tests, suite.test_cnt) };
         for case in cases_rodata {
