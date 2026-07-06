@@ -1021,7 +1021,7 @@ This should never be set as a build argument.
 }
   lsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
@@ -9480,58 +9480,6 @@ The absolute path of the sysroot that is used with the target toolchain.
 **Current value (from the default):** `""`
 
 From //build/config/sysroot.gni:7
-
-### termina_extras_tests
-
-If `true`, adds additional testonly content to extras.img, which will be
-built and mounted inside the container at /mnt/chromeos.
-
-**Current value (from the default):** `true`
-
-From //src/virtualization/bin/termina_guest_manager/BUILD.gn:12
-
-### termina_hermetic_bootstrap
-
-If 'true', bundle the container image with the termina_guest_manager package
-and use that to initialize the linux container.
-
-If this is 'false', no container image will be bundled and instead the
-container will be downloaded by the target at runtime. This makes the build
-smaller but requires the target device to have a functional internet
-connection at runtime.
-
-**Current value (from the default):** `false`
-
-From //src/virtualization/bin/termina_guest_manager/BUILD.gn:35
-
-### termina_stateful_partition_size_bytes
-
-Default stateful image size (40GiB).
-
-If you change this value you will need to rebuild the guest partition using
-'guest wipe termina' for the new size to take effect.
-
-**Current value (from the default):** `42949672960`
-
-From //src/virtualization/bin/termina_guest_manager/BUILD.gn:26
-
-### termina_user_extras
-
-Point this to the location of external files to be included as extras
-
-**Current value (from the default):** `[]`
-
-From //src/virtualization/bin/termina_guest_manager/BUILD.gn:20
-
-### termina_volatile_block
-
-If `true`, all block devices that would normally load as READ_WRITE will
-be loaded as VOLATILE_WRITE. This is useful when working on changes to
-the linux kernel as crashes and panics can sometimes corrupt the images.
-
-**Current value (from the default):** `false`
-
-From //src/virtualization/bin/termina_guest_manager/BUILD.gn:17
 
 ### terminal_bold_font_path
 
