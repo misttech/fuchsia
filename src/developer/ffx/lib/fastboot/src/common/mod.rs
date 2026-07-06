@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use crate::common::vars::{
-    IS_USERSPACE_VAR, LOCKED_VAR, MAX_DOWNLOAD_SIZE_VAR, PRODUCT_VAR, REVISION_VAR,
+    IS_USERSPACE_VAR, LOCKED_VAR, MAX_DOWNLOAD_SIZE_VAR, PARTITION_SIZE, PARTITION_START,
+    PRODUCT_VAR, REVISION_VAR, STREAM_SEGMENT_SIZE,
 };
 use crate::error::FfxFastbootError;
 use crate::file_resolver::FileResolver;
@@ -26,6 +27,7 @@ use sdk::SdkVersion;
 use sparse::reader::SparseReader;
 use sparse::{build_sparse_files, resparse_sparse_img};
 use std::fs::File;
+use std::num::ParseIntError;
 use std::path::PathBuf;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -203,7 +205,7 @@ pub async fn flash_partition<F: FileResolver + Sync, T: FastbootInterface>(
     .await
 }
 
-pub async fn flash_partition_impl<T: FastbootInterface>(
+async fn flash_basic_impl<T: FastbootInterface>(
     messenger: Sender<Event>,
     name: &str,
     file_to_upload: &str,
@@ -234,20 +236,15 @@ pub async fn flash_partition_impl<T: FastbootInterface>(
     let timeout = Duration::seconds(timeout as i64);
     log::debug!("Estimated timeout: {}s for {}MB", timeout, megabytes);
 
-    let max_download_size_var = fastboot_interface.get_var(MAX_DOWNLOAD_SIZE_VAR).await?;
-
-    log::trace!("Got max download size from device: {}", max_download_size_var);
-    let trimmed_max_download_size_var = max_download_size_var.trim_start_matches("0x");
-
-    let max_download_size: u64 = u64::from_str_radix(trimmed_max_download_size_var, 16)
-        .expect("Fastboot max download size var was not a valid u32");
-
+    // Get as a u32 because of fastboot protocol requirements.
+    let max_download_size: u64 =
+        get_hex_int::<u32>(MAX_DOWNLOAD_SIZE_VAR, fastboot_interface).await?.into();
     log::trace!("Device Max Download Size: {}", max_download_size);
     log::trace!("File size: {}", file_size);
 
     let start_time = Utc::now();
 
-    if u64::from(max_download_size) < file_size {
+    if max_download_size < file_size {
         // Next check if the file given is ALREADY in the sparse image format
         match SparseReader::is_sparse_file(&mut file_handle) {
             Ok(true) => {
@@ -302,6 +299,72 @@ pub async fn flash_partition_impl<T: FastbootInterface>(
         })
         .await?;
     Ok(())
+}
+
+trait FromHexStr: Sized {
+    fn from_hex_str(val: &str) -> std::result::Result<Self, ParseIntError>;
+}
+
+macro_rules! from_hex_str_impl {
+    ($int_type:ty) => {
+        impl FromHexStr for $int_type {
+            fn from_hex_str(val: &str) -> std::result::Result<Self, ParseIntError> {
+                Self::from_str_radix(val.trim_start_matches("0x"), 16)
+            }
+        }
+    };
+}
+
+from_hex_str_impl!(u32);
+from_hex_str_impl!(u64);
+
+async fn get_hex_int<T: FromHexStr>(
+    variable: &str,
+    interface: &mut impl FastbootInterface,
+) -> std::result::Result<T, FfxFastbootError> {
+    let value = interface.get_var(variable).await?;
+    T::from_hex_str(value.as_str())
+        .inspect_err(|_| {
+            log::error!(
+                "Fastboot {variable} var was not a valid {}: {value}",
+                std::any::type_name::<T>()
+            )
+        })
+        .map_err(|e| e.into())
+}
+
+pub async fn flash_partition_impl<T: FastbootInterface>(
+    messenger: Sender<Event>,
+    name: &str,
+    file_to_upload: &str,
+    fb_intf: &mut T,
+    min_timeout_secs: u64,
+    flash_timeout_rate_mb_per_second: f64,
+) -> Result<()> {
+    fn parameterized_var(base: &str, parameter: &str) -> String {
+        format!("{}:{}", base, parameter)
+    }
+
+    if let Ok(_segment_size) = get_hex_int::<u64>(STREAM_SEGMENT_SIZE, fb_intf).await
+        && let Ok(_partition_start) =
+            get_hex_int::<u64>(parameterized_var(PARTITION_START, name).as_str(), fb_intf).await
+        && let Ok(_partition_size) =
+            get_hex_int::<u64>(parameterized_var(PARTITION_SIZE, name).as_str(), fb_intf).await
+    {
+        // TODO(b/529455096): implement streaming flash support
+        log::debug!("Streaming flash is not yet supported: b/529455096");
+    }
+
+    // TODO(b/529455096): move behind streaming flash fallback logic
+    flash_basic_impl(
+        messenger,
+        name,
+        file_to_upload,
+        fb_intf,
+        min_timeout_secs,
+        flash_timeout_rate_mb_per_second,
+    )
+    .await
 }
 
 pub async fn verify_hardware(
@@ -736,7 +799,11 @@ mod test {
     use super::*;
     use crate::file_resolver::test::TestResolver;
     use ffx_fastboot_interface::test::setup;
+    use ffx_flash_manifest::v2::FlashManifest;
+    use ffx_flash_manifest::{BootParams, Command};
+    use serde_json::{from_str, json};
     use tempfile::NamedTempFile;
+    use tokio::sync::mpsc;
 
     /// Runs a fastboot sequence of uploading a file via inline upload.
     ///
@@ -880,5 +947,170 @@ mod test {
         .unwrap_err();
 
         assert!(matches!(err, FfxFastbootError::InlineUploadOverflow { .. }));
+    }
+
+    #[fuchsia::test(logging = true)]
+    async fn test_streaming_flash_fails_cleanly() -> std::result::Result<(), anyhow::Error> {
+        let tmp_file = NamedTempFile::new().expect("tmp access failed");
+        let tmp_file_name = tmp_file.path().to_string_lossy().to_string();
+
+        let tmp_img_files = [(); 4].map(|_| NamedTempFile::new().expect("tmp access failed"));
+        let partition_to_path = tmp_img_files
+            .iter()
+            .zip(["zircon_a", "zircon_b", "vbmeta_a", "vbmeta_b"].iter())
+            .map(|(tmpfile, partition_name)| {
+                [partition_name, tmpfile.path().to_str().expect("non-unicode tmp path")]
+            })
+            .collect::<Vec<[&str; 2]>>();
+
+        let manifest = json!({
+            "hw_revision": "fastboot",
+            "products": [
+                {
+                    "name": "nostream",
+                    "requires_unlock": false,
+                    "bootloader_partitions": [],
+                    "partitions": partition_to_path.as_slice(),
+                    "oem_files": []
+                }
+            ],
+        });
+
+        let v: FlashManifest = from_str(&manifest.to_string())?;
+        let (state, mut proxy) = setup();
+        {
+            let mut state = state.lock().unwrap();
+            state.set_multiple_vars([
+                (IS_USERSPACE_VAR, "no"),
+                (REVISION_VAR, "fastboot"),
+                (MAX_DOWNLOAD_SIZE_VAR, "8192"),
+            ]);
+        }
+        let (client, mut server) = mpsc::channel(100);
+        v.flash(
+            &client,
+            &mut TestResolver::new(),
+            &mut proxy,
+            ManifestParams {
+                manifest: Some(PathBuf::from(tmp_file_name)),
+                product: "nostream".to_string(),
+                op: Command::Boot(BootParams { zbi: None, vbmeta: None, slot: "a".to_string() }),
+                ..Default::default()
+            },
+            None,
+        )
+        .await?;
+        let s = state.lock().unwrap();
+
+        // There are four partitions, and it's easier to check for each one.
+        assert_eq!(s.get_var_call_count(STREAM_SEGMENT_SIZE), (false, 4));
+        server.close();
+        let mut messages = vec![];
+        while let Some(m) = server.recv().await {
+            // The duration uses a real clock, and refactoring to inject a
+            // test clock would be a large change.
+            if !matches!(&m, Event::FlashPartitionFinished { partition_name: _, duration: _ }) {
+                messages.push(m);
+            }
+        }
+
+        let expected = vec![
+            Event::FlashProduct { product_name: "nostream".to_string(), partition_count: 4 },
+            Event::Upload(UploadProgress::OnReady { partition: "zircon_a".to_string(), files: 1 }),
+            Event::Upload(UploadProgress::OnStarted { size: 1 }),
+            Event::Upload(UploadProgress::OnProgress { bytes_written: 1 }),
+            Event::Upload(UploadProgress::OnFinished),
+            Event::FlashPartition { partition_name: "zircon_a".to_string() },
+            Event::Upload(UploadProgress::OnReady { partition: "zircon_b".to_string(), files: 1 }),
+            Event::Upload(UploadProgress::OnStarted { size: 1 }),
+            Event::Upload(UploadProgress::OnProgress { bytes_written: 1 }),
+            Event::Upload(UploadProgress::OnFinished),
+            Event::FlashPartition { partition_name: "zircon_b".to_string() },
+            Event::Upload(UploadProgress::OnReady { partition: "vbmeta_a".to_string(), files: 1 }),
+            Event::Upload(UploadProgress::OnStarted { size: 1 }),
+            Event::Upload(UploadProgress::OnProgress { bytes_written: 1 }),
+            Event::Upload(UploadProgress::OnFinished),
+            Event::FlashPartition { partition_name: "vbmeta_a".to_string() },
+            Event::Upload(UploadProgress::OnReady { partition: "vbmeta_b".to_string(), files: 1 }),
+            Event::Upload(UploadProgress::OnStarted { size: 1 }),
+            Event::Upload(UploadProgress::OnProgress { bytes_written: 1 }),
+            Event::Upload(UploadProgress::OnFinished),
+            Event::FlashPartition { partition_name: "vbmeta_b".to_string() },
+        ];
+        assert_eq!(expected, messages);
+
+        Ok(())
+    }
+
+    #[fuchsia::test(logging = true)]
+    async fn test_streaming_flash_unsupported() {
+        let tmp_file = NamedTempFile::new().expect("tmp access failed");
+        let tmp_file_name = tmp_file.path().to_string_lossy().to_string();
+
+        let tmp_img_files = [(); 2].map(|_| NamedTempFile::new().expect("tmp access failed"));
+        let partition_to_path = tmp_img_files
+            .iter()
+            .zip(["zircon_a", "zircon_b"].iter())
+            .map(|(tmpfile, partition_name)| {
+                [partition_name, tmpfile.path().to_str().expect("non-unicode tmp path")]
+            })
+            .collect::<Vec<[&str; 2]>>();
+
+        let manifest = json!({
+            "hw_revision": "fastboot",
+            "products": [
+                {
+                    "name": "stream",
+                    "requires_unlock": false,
+                    "bootloader_partitions": [],
+                    "partitions": partition_to_path.as_slice(),
+                    "oem_files": []
+                }
+            ],
+        });
+
+        let v: FlashManifest = from_str(&manifest.to_string()).unwrap();
+        let (state, mut proxy) = setup();
+        {
+            let mut state = state.lock().unwrap();
+            state.set_multiple_vars([
+                (IS_USERSPACE_VAR, "no"),
+                (REVISION_VAR, "fastboot"),
+                (MAX_DOWNLOAD_SIZE_VAR, "8192"),
+                (STREAM_SEGMENT_SIZE, "0x1000"),
+                (format!("{}:{}", PARTITION_SIZE, "zircon_a").as_str(), "0x1000"),
+                (format!("{}:{}", PARTITION_START, "zircon_a").as_str(), "0x0"),
+                (format!("{}:{}", PARTITION_SIZE, "zircon_b").as_str(), "0x1000"),
+                (format!("{}:{}", PARTITION_START, "zircon_b").as_str(), "0x1000"),
+            ]);
+        }
+        let (client, _server) = mpsc::channel(100);
+        let res = v
+            .flash(
+                &client,
+                &mut TestResolver::new(),
+                &mut proxy,
+                ManifestParams {
+                    manifest: Some(PathBuf::from(tmp_file_name)),
+                    product: "stream".to_string(),
+                    op: Command::Boot(BootParams {
+                        zbi: None,
+                        vbmeta: None,
+                        slot: "a".to_string(),
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await;
+
+        assert!(res.is_ok());
+
+        let s = state.lock().unwrap();
+        assert_eq!(s.get_var_call_count("stream-segment-size"), (true, 2));
+        assert_eq!(s.get_var_call_count("partition-size:zircon_a"), (true, 1));
+        assert_eq!(s.get_var_call_count("partition-start:zircon_a"), (true, 1));
+        assert_eq!(s.get_var_call_count("partition-size:zircon_b"), (true, 1));
+        assert_eq!(s.get_var_call_count("partition-start:zircon_b"), (true, 1));
     }
 }

@@ -127,6 +127,9 @@ pub enum FfxFastbootError {
     #[error("Integer conversion error: {0}")]
     Conversion(#[from] std::num::TryFromIntError),
 
+    #[error("Integer parse error: {0}")]
+    IntegerParse(#[from] std::num::ParseIntError),
+
     #[error("manifest or product_bundle must be specified")]
     ManifestOrProductBundleRequired,
 

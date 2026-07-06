@@ -5,7 +5,7 @@
 use chrono::TimeDelta;
 use ffx_fastboot_interface::fastboot_interface::{UploadProgress, Variable};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Event {
     Unlock(UnlockEvent),
     Upload(UploadProgress),

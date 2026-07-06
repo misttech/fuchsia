@@ -63,6 +63,27 @@ pub enum UploadProgress {
     OnError { error: anyhow::Error },
 }
 
+impl PartialEq for UploadProgress {
+    // Can't derive because anyhow::Error isn't PartialEq
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::OnReady { partition: p1, files: f1 },
+                Self::OnReady { partition: p2, files: f2 },
+            ) => p1 == p2 && f1 == f2,
+            (Self::OnStarted { size: s1 }, Self::OnStarted { size: s2 }) => s1 == s2,
+            (Self::OnFinished, Self::OnFinished) => true,
+            (Self::OnProgress { bytes_written: b1 }, Self::OnProgress { bytes_written: b2 }) => {
+                b1 == b2
+            }
+            (Self::OnError { error: e1 }, Self::OnError { error: e2 }) => {
+                e1.to_string() == e2.to_string()
+            }
+            (_, _) => false,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Variable {
     pub name: String,

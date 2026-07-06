@@ -25,8 +25,8 @@ pub mod test {
         pub oem_commands: Vec<String>,
         pub bootloader_reboots: usize,
         pub boots: usize,
-        /// Variable => (Value, Call Count)
-        variables: HashMap<String, (String, u32)>,
+        /// Variable => (Option(Value), Call Count)
+        variables: HashMap<String, (Option<String>, u32)>,
     }
 
     impl FakeServiceCommands {
@@ -34,23 +34,27 @@ pub mod test {
         /// call count.
         pub fn set_var(&mut self, var: String, value: String) {
             match self.variables.get_mut(&var) {
-                Some(v) => {
-                    let last_call_count = v.1;
-                    self.variables.insert(var, (value, last_call_count));
-                }
+                Some((old_val, _)) => *old_val = Some(value),
                 None => {
-                    self.variables.insert(var, (value, 0));
+                    self.variables.insert(var, (Some(value), 0));
                 }
             }
         }
 
-        /// Returns the number of times a variable was retrieved from the
-        /// fake if the variable has been set, panics otherwise.
-        pub fn get_var_call_count(&self, var: String) -> u32 {
-            match self.variables.get(&var) {
-                Some(v) => v.1,
-                None => panic!("Requested variable: {} was not set", var),
-            }
+        /// Returns (variable_set, call_count)
+        pub fn get_var_call_count(&self, var: impl Into<String>) -> (bool, u32) {
+            self.variables
+                .get(&var.into())
+                .map(|(val, count)| (val.is_some(), *count))
+                .unwrap_or((false, 0))
+        }
+
+        /// Helper for setting multiple variables at once
+        pub fn set_multiple_vars(
+            &mut self,
+            vars: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>,
+        ) {
+            vars.into_iter().for_each(|(var, val)| self.set_var(var.into(), val.into()))
         }
     }
 
@@ -72,12 +76,23 @@ pub mod test {
         async fn get_var(&mut self, name: &str) -> Result<String, FastbootError> {
             let mut state = self.state.lock().unwrap();
             match state.variables.get_mut(name) {
-                Some(var) => {
-                    var.1 += 1;
-                    Ok(var.0.clone())
+                Some((Some(val), count)) => {
+                    *count += 1;
+                    Ok(val.clone())
+                }
+                Some((None, count)) => {
+                    *count += 1;
+                    Err(FastbootError::GetVariableError {
+                        variable: name.to_string(),
+                        message: "Variable not found".to_string(),
+                    })
                 }
                 None => {
-                    panic!("Warning: requested variable: {}, which was not set", name)
+                    state.variables.insert(name.to_string(), (None, 1));
+                    Err(FastbootError::GetVariableError {
+                        variable: name.to_string(),
+                        message: "Variable not found".to_string(),
+                    })
                 }
             }
         }
