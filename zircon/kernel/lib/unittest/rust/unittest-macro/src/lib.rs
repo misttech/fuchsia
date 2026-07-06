@@ -9,8 +9,8 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::{ToTokens, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::{
-    Attribute, Block, Error, Expr, Ident, Item, ItemFn, ItemMod, Lit, Meta, ReturnType, Type,
-    parse_macro_input,
+    Attribute, Block, Error, Expr, Ident, Item, ItemFn, ItemMod, ItemUse, Lit, Meta, ReturnType,
+    Type, parse_macro_input,
 };
 
 const SECTION_NAME: &str = ".data.rel.ro.unittest_testcases";
@@ -89,6 +89,7 @@ impl ToTokens for TestCase {
         // record_failure!() for use in the assert/expect macros.
         tokens.extend(quote! {
             #[doc = #doc_comment]
+            #[allow(unused_assignments)]
             pub extern "C" fn #ident() -> bool {
                 let mut all_ok = true;
                 #[allow(unused_macros)]
@@ -105,6 +106,7 @@ impl ToTokens for TestCase {
 struct TestSuite {
     ident: Ident,
     docstring: String,
+    uses: Vec<ItemUse>,
     cases: Vec<TestCase>,
 }
 
@@ -123,15 +125,19 @@ impl Parse for TestSuite {
             .1;
 
         let mut cases = Vec::new();
+        let mut uses = Vec::new();
         for item in content {
             match item {
                 Item::Fn(item_fn) => {
                     cases.push(TestCase::from_item_fn(item_fn)?);
                 }
+                Item::Use(item_use) => {
+                    uses.push(item_use);
+                }
                 _ => {
                     return Err(Error::new_spanned(
                         item,
-                        "a test suite module may only contain test functions",
+                        "a test suite module may only contain test functions and use statements",
                     ));
                 }
             }
@@ -144,7 +150,7 @@ impl Parse for TestSuite {
             ));
         }
 
-        Ok(Self { ident: mod_ident.clone(), docstring, cases })
+        Ok(Self { ident: mod_ident.clone(), docstring, uses, cases })
     }
 }
 
@@ -155,6 +161,7 @@ impl ToTokens for TestSuite {
         let suite_desc_c_str = format!("{}\0", self.docstring);
         let doc_comment = format!(" {}", self.docstring);
 
+        let uses = &self.uses;
         let cases = &self.cases;
         let reg_entries = cases.iter().map(|case| {
             let ident = &case.ident;
@@ -172,6 +179,8 @@ impl ToTokens for TestSuite {
             #[doc = #doc_comment]
             pub mod #mod_ident {
                 use super::*;
+
+                #( #uses )*
 
                 #[cfg(not(ktest))]
                 compile_error!("#[test_suite] may only be used in a cfg(ktest) context");

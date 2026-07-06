@@ -523,6 +523,17 @@ mod tests {
         fn empty() {}
     }
 
+    /// Suite testing use statements.
+    #[test_suite]
+    mod suite_with_use {
+        use std::vec;
+        /// Check use statement.
+        fn check_use() {
+            let v = vec![1, 2, 3];
+            expect_eq!(v.len(), 3);
+        }
+    }
+
     /// Assertion tests description.
     #[test_suite]
     mod assertions {
@@ -719,7 +730,7 @@ mod tests {
     #[test]
     fn check_suite_count() {
         let suites = get_test_suites();
-        std::assert_eq!(suites.len(), 3);
+        std::assert_eq!(suites.len(), 4);
     }
 
     #[test]
@@ -786,6 +797,23 @@ mod tests {
         std::assert_eq!(suite.test_cnt, 1);
         let case = unsafe { &*suite.tests };
         std::assert_eq!(unsafe { CStr::from_ptr(case.name) }.to_bytes(), b"empty");
+        assert!((case.fn_)());
+    }
+
+    #[test]
+    fn check_suite_with_use() {
+        let suites = get_test_suites();
+        std::assert!(suites.len() > 3);
+        let suite = &suites[3];
+
+        std::assert_eq!(unsafe { CStr::from_ptr(suite.name) }.to_bytes(), b"suite_with_use");
+        std::assert_eq!(
+            unsafe { CStr::from_ptr(suite.desc) }.to_str().unwrap(),
+            "Suite testing use statements."
+        );
+        std::assert_eq!(suite.test_cnt, 1);
+        let case = unsafe { &*suite.tests };
+        std::assert_eq!(unsafe { CStr::from_ptr(case.name) }.to_bytes(), b"check_use");
         assert!((case.fn_)());
     }
 }
