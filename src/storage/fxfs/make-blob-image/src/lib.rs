@@ -495,6 +495,13 @@ pub async fn extract_blobs(image: PathBuf, out_dir: PathBuf) -> anyhow::Result<(
             )
             .await?;
 
+            let mut components = std::path::Path::new(name).components();
+            if !matches!(components.next(), Some(std::path::Component::Normal(..))) {
+                return Err(anyhow!("Invalid blob name: {}", name));
+            }
+            if components.next().is_some() {
+                return Err(anyhow!("Invalid blob name: {}", name));
+            }
             let out_path = out_dir.join(name);
             let mut file = std::fs::File::create(&out_path)?;
             let mut read_buf = Vec::new();
@@ -911,5 +918,99 @@ mod tests {
         let sparse_image_size = std::fs::metadata(sparse_image_path).unwrap().len();
         assert_eq!(image_size, TARGET_SIZE);
         assert!(sparse_image_size < TARGET_SIZE, "Sparse image size: {sparse_image_size}");
+    }
+
+    #[fasync::run(10, test)]
+    async fn test_extract_blobs_path_traversal() {
+        use super::{
+            BLOB_VOLUME_NAME, BLOCK_SIZE, BlobFormat, BlobMetadata, DirectWriter,
+            FxFilesystemBuilder, HandleOptions, LockKey, NewChildStoreOptions, SuperBlockInstance,
+            create_sparse_image,
+        };
+        use fxfs::object_handle::WriteBytes;
+        use fxfs::object_store::transaction::lock_keys;
+
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+        let image_size = 10 * 1024 * 1024;
+
+        let image_path = dir.join("malicious.blk");
+
+        // Create a minimal Fxfs image with a malicious filename.
+        let output_image = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&image_path)
+            .unwrap();
+        output_image.set_len(image_size).unwrap();
+
+        let device = DeviceHolder::new(FileBackedDevice::new(output_image, BLOCK_SIZE));
+        let fs = FxFilesystemBuilder::new()
+            .format(true)
+            .trim_config(None)
+            .image_builder_mode(Some(SuperBlockInstance::A))
+            .open(device)
+            .await
+            .unwrap();
+        fs.enable_allocations();
+        let root_volume = root_volume(fs.clone()).await.unwrap();
+        let vol = root_volume
+            .new_volume(BLOB_VOLUME_NAME, NewChildStoreOptions::default())
+            .await
+            .unwrap();
+        let blob_directory = Directory::open(&vol, vol.root_directory_object_id()).await.unwrap();
+
+        // Create a file with a malicious name.
+        let malicious_name = "../prevent_escaped_write.txt";
+        let keys = lock_keys![LockKey::object(
+            blob_directory.store().store_object_id(),
+            blob_directory.object_id(),
+        )];
+        let mut transaction =
+            blob_directory.store().new_transaction(keys, Default::default()).await.unwrap();
+        let handle = blob_directory
+            .create_child_file_with_options(
+                &mut transaction,
+                malicious_name,
+                HandleOptions { skip_checksums: true, ..Default::default() },
+            )
+            .await
+            .unwrap();
+        transaction.commit().await.unwrap();
+
+        // Write some placeholder data.
+        {
+            let mut writer = DirectWriter::new(&handle, Default::default()).await;
+            writer.write_bytes(b"malicious data").await.unwrap();
+            writer.complete().await.unwrap();
+        }
+        // Write uncompressed metadata (simplest).
+        let metadata = BlobMetadata { merkle_leaves: vec![], format: BlobFormat::Uncompressed };
+        metadata.write_to(&handle).await.unwrap();
+
+        fs.close().await.unwrap();
+
+        let sparse_path = dir.join("malicious.sparse.blk");
+        create_sparse_image(
+            sparse_path.to_str().unwrap(),
+            image_path.to_str().unwrap(),
+            image_size,
+            image_size,
+            BLOCK_SIZE,
+        )
+        .unwrap();
+
+        // Now try to extract it. It should fail.
+        let extract_dir = dir.join("normal_out");
+        std::fs::create_dir(&extract_dir).unwrap();
+
+        let err = extract_blobs(sparse_path, extract_dir.clone()).await.unwrap_err();
+        assert_eq!(err.to_string(), "Invalid blob name: ../prevent_escaped_write.txt");
+
+        // Ensure the file was NOT created outside the output directory.
+        let escaped_path = dir.join("prevent_escaped_write.txt");
+        assert!(!escaped_path.exists());
     }
 }
