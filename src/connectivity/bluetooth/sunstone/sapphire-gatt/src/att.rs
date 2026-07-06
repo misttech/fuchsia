@@ -556,6 +556,70 @@ mod tests {
         });
     }
 
+    #[test]
+    fn test_client_server_integration_read_by_group_type() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            // Primary service declarations (grouping type 0x2800)
+            db.insert(h(1), MockAttribute::new_grouped(Uuid::from_u16(0x2800), b"\x01\x18", 5)); // Service 0x1801 (Generic Attribute), ends at handle 5
+            db.insert(h(6), MockAttribute::new_grouped(Uuid::from_u16(0x2800), b"\x00\x18", 10)); // Service 0x1800 (Generic Access), ends at handle 10
+            db.insert(h(11), MockAttribute::new(Uuid::from_u16(0x2A00), b"Device Name")); // Non-grouped attribute
+
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(server_tx),
+                BearerRx::new(server_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            // Server task
+            let server_handle = executor.spawn(async move {
+                // 1. MTU Exchange
+                server.handle_request().await.unwrap();
+                // 2. Read By Group Type Request
+                server.handle_request().await.unwrap();
+            });
+
+            // Client task
+            let client_handle = executor.spawn(async move {
+                // 1. MTU Exchange
+                client.exchange_mtu().await.unwrap();
+
+                // 2. Read By Group Type Request
+                let mut rx_buf = [MaybeUninit::uninit(); CLIENT_PREFERRED_MTU as usize];
+                let group_uuid = Uuid::from_u16(0x2800);
+                let results =
+                    client.read_by_group_type(h(1), h(20), &group_uuid, &mut rx_buf).await.unwrap();
+
+                let mut iter = results.iter();
+                let e1 = iter.next().unwrap().unwrap();
+                assert_eq!(e1.handle, h(1));
+                assert_eq!(e1.end_group_handle, h(5));
+                assert_eq!(e1.value, b"\x01\x18");
+
+                let e2 = iter.next().unwrap().unwrap();
+                assert_eq!(e2.handle, h(6));
+                assert_eq!(e2.end_group_handle, h(10));
+                assert_eq!(e2.value, b"\x00\x18");
+
+                assert!(iter.next().is_none());
+            });
+
+            executor.run_until_stalled();
+            assert!(server_handle.is_finished());
+            assert!(client_handle.is_finished());
+        });
+    }
+
     mod proptests {
         use super::*;
         use crate::att::attribute::Attribute;
@@ -589,6 +653,16 @@ mod tests {
                 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
             ]);
             db.insert(h(20), MockAttribute::new(custom_uuid2, b"Value20"));
+            db
+        }
+
+        fn setup_group_db() -> MockDb {
+            let mut db = MockDb::new();
+            // Primary service declarations (grouping type 0x2800)
+            db.insert(h(1), MockAttribute::new_grouped(Uuid::from_u16(0x2800), b"\x01\x18", 5));
+            db.insert(h(6), MockAttribute::new_grouped(Uuid::from_u16(0x2800), b"\x00\x18", 10));
+            // Non-grouped attribute
+            db.insert(h(11), MockAttribute::new(Uuid::from_u16(0x2A00), b"Device Name"));
             db
         }
 
@@ -1064,6 +1138,175 @@ mod tests {
                                         }
                                     }
                                 }
+                            }
+                            other => panic!("Unexpected result: {:?}", other),
+                        }
+                    });
+
+                    executor.run_until_stalled();
+                    assert!(client_handle.is_finished());
+                    assert!(server_handle.is_finished());
+                });
+            }
+
+            #[test]
+            fn test_read_by_group_type_invalid_ranges(
+                (start, end) in (2..=0xFFFFu16).prop_flat_map(|s| {
+                    (Just(AttributeHandle::new(s).unwrap()), (1..s).prop_map(|e| AttributeHandle::new(e).unwrap()))
+                }),
+                random_uuid_16 in 0..=0xFFFFu16,
+            ) {
+                BoundedExecutor::new(TestExecutor::new(), |executor| {
+                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+                    let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
+                    let mut server = Server::new(
+                        PeerId::new(1).unwrap(),
+                        BearerTx::new(server_tx),
+                        BearerRx::new(server_rx),
+                        SERVER_MTU,
+                        setup_group_db(),
+                    );
+                    let server_handle = executor.spawn(async move {
+                        let _ = server.run().await;
+                    });
+                    let client_handle = executor.spawn(async move {
+                        client.exchange_mtu().await.unwrap();
+                        let mut rx_buf = [MaybeUninit::uninit(); 512];
+                        let uuid = Uuid::from_u16(random_uuid_16);
+                        let result = client.read_by_group_type(start, end, &uuid, &mut rx_buf).await;
+                        assert_eq!(result.err(), Some(ClientError::ErrorResponse(ErrorCode::InvalidHandle)));
+                    });
+
+                    executor.run_until_stalled();
+                    assert!(client_handle.is_finished());
+                    assert!(server_handle.is_finished());
+                });
+            }
+
+            #[test]
+            fn test_read_by_group_type_response_consistency(
+                start in (1..=0xFFFFu16).prop_map(|v| AttributeHandle::new(v).unwrap()),
+                end in (1..=0xFFFFu16).prop_map(|v| AttributeHandle::new(v).unwrap()),
+                random_uuid_16 in 0..=0xFFFFu16,
+            ) {
+                BoundedExecutor::new(TestExecutor::new(), |executor| {
+                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+                    let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
+                    let mut server = Server::new(
+                        PeerId::new(1).unwrap(),
+                        BearerTx::new(server_tx),
+                        BearerRx::new(server_rx),
+                        SERVER_MTU,
+                        setup_group_db(),
+                    );
+                    let server_handle = executor.spawn(async move {
+                        let _ = server.run().await;
+                    });
+                    let client_handle = executor.spawn(async move {
+                        client.exchange_mtu().await.unwrap();
+                        let uuid = Uuid::from_u16(random_uuid_16);
+                        let mut rx_buf1 = [MaybeUninit::uninit(); 512];
+                        let result1 = client.read_by_group_type(start, end, &uuid, &mut rx_buf1).await;
+
+                        let mut rx_buf2 = [MaybeUninit::uninit(); 512];
+                        let result2 = client.read_by_group_type(start, end, &uuid, &mut rx_buf2).await;
+
+                        let r1 = result1.map(|res| res.iter().map(|e| {
+                            let e = e.unwrap();
+                            (e.handle.value(), e.end_group_handle.value(), e.value.to_vec())
+                        }).collect::<Vec<_>>());
+                        let r2 = result2.map(|res| res.iter().map(|e| {
+                            let e = e.unwrap();
+                            (e.handle.value(), e.end_group_handle.value(), e.value.to_vec())
+                        }).collect::<Vec<_>>());
+                        assert_eq!(r1, r2);
+                    });
+
+                    executor.run_until_stalled();
+                    assert!(client_handle.is_finished());
+                    assert!(server_handle.is_finished());
+                });
+            }
+
+            #[test]
+            fn test_read_by_group_type_valid_range(
+                (start, end) in (1..=0xFFFFu16).prop_flat_map(|s| {
+                    (Just(AttributeHandle::new(s).unwrap()), (s..=0xFFFFu16).prop_map(|e| AttributeHandle::new(e).unwrap()))
+                }),
+                use_existing in proptest::bool::weighted(0.5),
+                random_uuid_16 in 0..=0xFFFFu16,
+            ) {
+                BoundedExecutor::new(TestExecutor::new(), |executor| {
+                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+                    let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
+                    let mut server = Server::new(
+                        PeerId::new(1).unwrap(),
+                        BearerTx::new(server_tx),
+                        BearerRx::new(server_rx),
+                        SERVER_MTU,
+                        setup_group_db(),
+                    );
+                    let server_handle = executor.spawn(async move {
+                        let _ = server.run().await;
+                    });
+
+                    let target_uuid = if use_existing {
+                        Uuid::from_u16(0x2800) // Primary Service UUID
+                    } else {
+                        Uuid::from_u16(random_uuid_16)
+                    };
+
+                    let db = setup_group_db();
+                    let client_handle = executor.spawn(async move {
+                        client.exchange_mtu().await.unwrap();
+                        let mut rx_buf = [MaybeUninit::uninit(); 512];
+                        let result = client
+                            .read_by_group_type(start, end, &target_uuid, &mut rx_buf)
+                            .await;
+
+                        match result {
+                            Ok(results) => {
+                                let mut entries = results.iter();
+                                let mut count = 0;
+                                while let Some(entry) = entries.next() {
+                                    let entry = entry.unwrap();
+                                    count += 1;
+                                    let h = entry.handle.value();
+                                    assert!(h >= start.value() && h <= end.value());
+
+                                    let handle = AttributeHandle::try_from(h).unwrap();
+                                    let attr = db.find_attribute(handle).expect("attribute must exist in db");
+                                    assert_eq!(attr.uuid(), &target_uuid);
+                                    assert_eq!(entry.end_group_handle.value(), attr.group_end_handle().unwrap());
+
+                                    let mut db_val = [0u8; 64];
+                                    let db_val_len = attr.read_chunk(PeerId::new(1).unwrap(), 0, &mut db_val).await.unwrap();
+                                    assert_eq!(entry.value, &db_val[..db_val_len]);
+                                }
+                                assert!(count > 0);
+                            }
+                            Err(ClientError::ErrorResponse(ErrorCode::AttributeNotFound)) => {
+                                for h_val in start.value()..=end.value() {
+                                    if let Some(handle) = AttributeHandle::new(h_val) {
+                                        if let Some(attr) = db.find_attribute(handle) {
+                                            assert_ne!(attr.uuid(), &target_uuid);
+                                        }
+                                    }
+                                }
+                            }
+                            Err(ClientError::ErrorResponse(ErrorCode::UnsupportedGroupType)) => {
+                                let mut has_non_grouping = false;
+                                for h_val in start.value()..=end.value() {
+                                    if let Some(handle) = AttributeHandle::new(h_val) {
+                                        if let Some(attr) = db.find_attribute(handle) {
+                                            if attr.uuid() == &target_uuid && attr.group_end_handle().is_none() {
+                                                has_non_grouping = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                                assert!(has_non_grouping);
                             }
                             other => panic!("Unexpected result: {:?}", other),
                         }

@@ -11,6 +11,7 @@ use crate::att::pdu::{
     DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp,
     FindByTypeValueReqHeader, FindInformationReq, FindInformationRsp, HandlesInformation, Header,
     InformationData16, InformationData128, Opcode, Packet, PacketBuilder, ReadBlobReq,
+    ReadByGroupTypeReqHeader, ReadByGroupTypeRsp, ReadByGroupTypeRspEntryHeader,
     ReadByTypeReqHeader, ReadByTypeRsp, ReadReq, UuidFormat,
 };
 use core::cmp::{max, min};
@@ -87,7 +88,9 @@ impl<'a> ReadByTypeIter<'a> {
             self.data.split_at_checked(self.length).ok_or(ClientError::InvalidIncomingData)?;
         self.data = rest;
 
-        let (handle_bytes, value) = chunk.split_at(size_of::<AttributeHandle>());
+        let (handle_bytes, value) = chunk
+            .split_at_checked(size_of::<AttributeHandle>())
+            .ok_or(ClientError::InvalidIncomingData)?;
         let handle_u16 =
             U16::try_ref_from_bytes(handle_bytes).map_err(|_| ClientError::InvalidIncomingData)?;
         let handle = AttributeHandle::try_from(handle_u16.get())
@@ -101,6 +104,104 @@ impl<'a> Iterator for ReadByTypeIter<'a> {
     type Item = Result<AttributeData<'a>, ClientError>;
 
     /// Parses and returns the next attribute handle-value entry from the response buffer.
+    fn next(&mut self) -> Option<Self::Item> {
+        // Check if the end of the data list has been reached.
+        if self.data.is_empty() {
+            return None;
+        }
+        Some(self.next_chunk())
+    }
+}
+
+/// A single group handle-value entry returned by a Read By Group Type Response.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AttributeGroupData<'a> {
+    pub handle: AttributeHandle,
+    pub end_group_handle: AttributeHandle,
+    pub value: &'a [u8],
+}
+
+/// A structured view over a Read By Group Type Response's group handle-value entries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReadByGroupTypeResults<'a> {
+    length: usize,
+    data: &'a [u8],
+}
+
+impl<'a> TryFrom<&'a [u8]> for ReadByGroupTypeResults<'a> {
+    type Error = ClientError;
+
+    /// Parses and validates a raw ATT Read By Group Type Response PDU payload
+    /// into a structured results view.
+    fn try_from(pdu_data: &'a [u8]) -> Result<Self, Self::Error> {
+        let rsp = ReadByGroupTypeRsp::try_ref_from_bytes(pdu_data)
+            .map_err(|_| ClientError::InvalidIncomingData)?;
+        let length = usize::from(rsp.length);
+        if length < size_of::<ReadByGroupTypeRspEntryHeader>() {
+            return Err(ClientError::InvalidIncomingData);
+        }
+        if rsp.attribute_data_list.is_empty() || rsp.attribute_data_list.len() % length != 0 {
+            return Err(ClientError::InvalidIncomingData);
+        }
+        Ok(Self { length, data: &rsp.attribute_data_list })
+    }
+}
+
+impl<'a> IntoIterator for ReadByGroupTypeResults<'a> {
+    type Item = Result<AttributeGroupData<'a>, ClientError>;
+    type IntoIter = ReadByGroupTypeIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, 'b> IntoIterator for &'b ReadByGroupTypeResults<'a> {
+    type Item = Result<AttributeGroupData<'a>, ClientError>;
+    type IntoIter = ReadByGroupTypeIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a> ReadByGroupTypeResults<'a> {
+    pub fn iter(&self) -> ReadByGroupTypeIter<'a> {
+        ReadByGroupTypeIter { length: self.length, data: self.data }
+    }
+}
+
+pub struct ReadByGroupTypeIter<'a> {
+    length: usize,
+    data: &'a [u8],
+}
+
+impl<'a> ReadByGroupTypeIter<'a> {
+    fn next_chunk(&mut self) -> Result<AttributeGroupData<'a>, ClientError> {
+        let (chunk, rest) =
+            self.data.split_at_checked(self.length).ok_or(ClientError::InvalidIncomingData)?;
+        self.data = rest;
+
+        let (header_bytes, value) = chunk
+            .split_at_checked(size_of::<ReadByGroupTypeRspEntryHeader>())
+            .ok_or(ClientError::InvalidIncomingData)?;
+
+        let header = ReadByGroupTypeRspEntryHeader::try_ref_from_bytes(header_bytes)
+            .map_err(|_| ClientError::InvalidIncomingData)?;
+
+        let handle = AttributeHandle::try_from(header.attribute_handle.get())
+            .map_err(|_| ClientError::InvalidIncomingData)?;
+        let end_group_handle = AttributeHandle::try_from(header.end_group_handle.get())
+            .map_err(|_| ClientError::InvalidIncomingData)?;
+
+        Ok(AttributeGroupData { handle, end_group_handle, value })
+    }
+}
+
+impl<'a> Iterator for ReadByGroupTypeIter<'a> {
+    type Item = Result<AttributeGroupData<'a>, ClientError>;
+
+    /// Parses and returns the next attribute group handle-value entry from the response buffer.
     fn next(&mut self) -> Option<Self::Item> {
         // Check if the end of the data list has been reached.
         if self.data.is_empty() {
@@ -421,6 +522,43 @@ where
         }
 
         Ok(ReadByTypeResults { length, data: data_list })
+    }
+
+    /// Initiates a Read By Group Type procedure to obtain the values of attributes with a specific
+    /// attribute group type (UUID).
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.9 & 3.4.4.10).
+    pub async fn read_by_group_type<'a>(
+        &mut self,
+        starting_handle: AttributeHandle,
+        ending_handle: AttributeHandle,
+        attribute_group_type: &Uuid,
+        rx_buf: &'a mut [MaybeUninit<u8>],
+    ) -> Result<ReadByGroupTypeResults<'a>, ClientError> {
+        // Serialize the variable-length UUID parameter onto the end of the request header.
+        let type_bytes = attribute_group_type.as_bytes();
+        let header_builder = PacketBuilder {
+            header: Header { opcode: Opcode::ReadByGroupTypeReq },
+            payload: ReadByGroupTypeReqHeader {
+                starting_handle: U16::new(starting_handle.value()),
+                ending_handle: U16::new(ending_handle.value()),
+            },
+        };
+        let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
+        let mut builder =
+            DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header_builder, self.effective_mtu());
+        builder
+            .extend_from_slice(type_bytes)
+            .expect("Programming error: request packet size exceeds negotiated MTU.");
+        let tx_packet = builder.as_packet();
+
+        // Perform the transaction and await the response.
+        let rx_packet = self
+            .transaction(Opcode::ReadByGroupTypeReq, tx_packet, rx_buf, Opcode::ReadByGroupTypeRsp)
+            .await?;
+
+        // Parse and validate the response PDU.
+        ReadByGroupTypeResults::try_from(&rx_packet.data[..])
     }
 }
 
@@ -1096,6 +1234,128 @@ mod tests {
                 let uuid = Uuid::from_u16(0x2800);
                 let res = client.read_by_type(h(1), h(10), &uuid, &mut rx_buf).await;
                 assert_eq!(res, Err(ClientError::ErrorResponse(ErrorCode::AttributeNotFound)));
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_read_by_group_type_success() {
+        use crate::att::pdu::ReadByGroupTypeReq;
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            let uuid = Uuid::from_u16(0x2800); // Primary Service 16-bit UUID
+            const VALUE_SIZE: usize = 2; // service UUID (0x1800/0x1801 is 2 bytes)
+            let group_header_size = size_of::<ReadByGroupTypeRspEntryHeader>();
+            let entry_size = (group_header_size + VALUE_SIZE) as u8;
+
+            let server_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 32];
+                let mut server_rx_bearer = BearerRx::new(server_rx);
+                let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ReadByGroupTypeReq);
+
+                let req = ReadByGroupTypeReq::try_ref_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(req.header.starting_handle.get(), 1);
+                assert_eq!(req.header.ending_handle.get(), 10);
+                assert_eq!(&req.attribute_type, uuid.as_bytes());
+
+                let mut tx_buf = [0u8; 64];
+                let header = Header { opcode: Opcode::ReadByGroupTypeRsp };
+                let mut builder = DynamicPacketBuilder::<_, u8>::new(
+                    &mut tx_buf,
+                    header,
+                    CLIENT_PREFERRED_MTU as usize,
+                );
+                builder.push(entry_size).unwrap();
+                // Push entry 1: handle = 2, group end = 5, value = 0x1801 (\x01\x18)
+                builder.push(0x02).unwrap();
+                builder.push(0x00).unwrap();
+                builder.push(0x05).unwrap();
+                builder.push(0x00).unwrap();
+                builder.extend_from_slice(b"\x01\x18").unwrap();
+                // Push entry 2: handle = 6, group end = 10, value = 0x1800 (\x00\x18)
+                builder.push(0x06).unwrap();
+                builder.push(0x00).unwrap();
+                builder.push(0x0a).unwrap();
+                builder.push(0x00).unwrap();
+                builder.extend_from_slice(b"\x00\x18").unwrap();
+
+                let tx_packet = builder.as_packet();
+                let mut server_tx_bearer = BearerTx::new(server_tx);
+                server_tx_bearer.send(tx_packet).await.unwrap();
+            });
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let results =
+                    client.read_by_group_type(h(1), h(10), &uuid, &mut rx_buf).await.unwrap();
+
+                let mut iter = results.iter();
+                let e1 = iter.next().unwrap().unwrap();
+                assert_eq!(e1.handle, h(2));
+                assert_eq!(e1.end_group_handle, h(5));
+                assert_eq!(e1.value, b"\x01\x18");
+
+                let e2 = iter.next().unwrap().unwrap();
+                assert_eq!(e2.handle, h(6));
+                assert_eq!(e2.end_group_handle, h(10));
+                assert_eq!(e2.value, b"\x00\x18");
+
+                assert!(iter.next().is_none());
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_read_by_group_type_error() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            let server_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 32];
+                let mut server_rx_bearer = BearerRx::new(server_rx);
+                let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ReadByGroupTypeReq);
+
+                // Respond with ErrorRsp (UnsupportedGroupType)
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ErrorRsp },
+                    payload: ErrorRsp {
+                        request_opcode: Opcode::ReadByGroupTypeReq as u8,
+                        attribute_handle: U16::new(1),
+                        error_code: ErrorCode::UnsupportedGroupType,
+                    },
+                };
+                let mut server_tx_bearer = BearerTx::new(server_tx);
+                server_tx_bearer.send(builder.as_packet()).await.unwrap();
+            });
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let uuid = Uuid::from_u16(0x2800);
+                let res = client.read_by_group_type(h(1), h(10), &uuid, &mut rx_buf).await;
+                assert_eq!(res, Err(ClientError::ErrorResponse(ErrorCode::UnsupportedGroupType)));
             });
 
             executor.run_until_stalled();

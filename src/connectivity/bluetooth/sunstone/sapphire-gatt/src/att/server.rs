@@ -14,7 +14,7 @@ use crate::att::pdu::{
     DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp, FindByTypeValueReq,
     FindInformationReq, FindInformationRspHeader, HandlesInformation, Header, InformationData,
     InformationData16, InformationData128, Opcode, Packet, PacketBuilder, ReadBlobReq,
-    ReadByTypeReq, ReadReq, UuidFormat,
+    ReadByGroupTypeReq, ReadByGroupTypeRspEntryHeader, ReadByTypeReq, ReadReq, UuidFormat,
 };
 use core::cmp::{max, min};
 use core::convert::Infallible;
@@ -23,7 +23,7 @@ use sapphire_peer_cache::PeerId;
 use sapphire_uuid::Uuid;
 use thiserror::Error;
 use zerocopy::byteorder::little_endian::U16;
-use zerocopy::{FromBytes, Immutable, IntoBytes, TryFromBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 #[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServerError {
@@ -43,6 +43,37 @@ enum TransactionError {
         "Error response {error_code:?} for request {request_opcode:?} on handle {attribute_handle:#06X}"
     )]
     ErrorResponse { request_opcode: Opcode, attribute_handle: u16, error_code: ErrorCode },
+}
+
+/// A trait for common fields in ATT range request PDUs (Read By Type and Read By Group Type).
+trait RangeRequest: TryFromBytes + Immutable + KnownLayout {
+    fn starting_handle(&self) -> u16;
+    fn ending_handle(&self) -> u16;
+    fn attribute_type(&self) -> &[u8];
+}
+
+impl RangeRequest for ReadByTypeReq {
+    fn starting_handle(&self) -> u16 {
+        self.header.starting_handle.get()
+    }
+    fn ending_handle(&self) -> u16 {
+        self.header.ending_handle.get()
+    }
+    fn attribute_type(&self) -> &[u8] {
+        &self.attribute_type
+    }
+}
+
+impl RangeRequest for ReadByGroupTypeReq {
+    fn starting_handle(&self) -> u16 {
+        self.header.starting_handle.get()
+    }
+    fn ending_handle(&self) -> u16 {
+        self.header.ending_handle.get()
+    }
+    fn attribute_type(&self) -> &[u8] {
+        &self.attribute_type
+    }
 }
 
 /// The ATT Server protocol wrapper.
@@ -136,6 +167,7 @@ where
             Opcode::ReadReq => self.handle_read(&rx_packet.data).await,
             Opcode::ReadBlobReq => self.handle_read_blob(&rx_packet.data).await,
             Opcode::ReadByTypeReq => self.handle_read_by_type(&rx_packet.data).await,
+            Opcode::ReadByGroupTypeReq => self.handle_read_by_group_type(&rx_packet.data).await,
             other => Err(TransactionError::UnexpectedPdu { received_opcode: other }),
         };
 
@@ -426,45 +458,60 @@ where
         Ok(())
     }
 
-    /// Handles a Read By Type Request, querying the database for attributes
-    /// matching the given UUID type and handle range,
-    /// and returning a packed list of handles and values.
+    /// Shares range query execution logic for Read By Type and Read By Group Type requests.
     ///
-    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Sections 3.4.4.7 & 3.4.4.8).
-    async fn handle_read_by_type(&mut self, payload: &[u8]) -> Result<(), TransactionError> {
-        let req = ReadByTypeReq::try_ref_from_bytes(payload)
-            .map_err(|_| TransactionError::InvalidPdu { request_opcode: Opcode::ReadByTypeReq })?;
+    /// Senders format entry headers into a buffer using `write_entry_header` (returning Err on
+    /// failure), which determines the first entry's header size
+    /// before the output packet builder is initialized.
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Sections 3.4.4.7 to 3.4.4.10).
+    async fn handle_read_by_type_generic<Req>(
+        &mut self,
+        payload: &[u8],
+        req_opcode: Opcode,
+        rsp_opcode: Opcode,
+        mut write_entry_header: impl FnMut(
+            &mut [u8],
+            AttributeHandle,
+            &DB::Attr,
+        ) -> Result<usize, ErrorCode>,
+    ) -> Result<(), TransactionError>
+    where
+        Req: RangeRequest + ?Sized,
+    {
+        // Extract common request parameters (starting handle, ending handle, and search UUID).
+        let req = Req::try_ref_from_bytes(payload)
+            .map_err(|_| TransactionError::InvalidPdu { request_opcode: req_opcode })?;
 
-        let start_handle_val = req.header.starting_handle.get();
-        let end_handle_val = req.header.ending_handle.get();
+        let start_handle_val = req.starting_handle();
+        let end_handle_val = req.ending_handle();
 
-        let start_handle = to_handle(start_handle_val, Opcode::ReadByTypeReq)?;
-        let end_handle = to_handle(end_handle_val, Opcode::ReadByTypeReq)?;
+        let start_handle = to_handle(start_handle_val, req_opcode)?;
+        let end_handle = to_handle(end_handle_val, req_opcode)?;
 
-        // The starting handle must not be greater than the ending handle.
         if start_handle > end_handle {
             return Err(TransactionError::ErrorResponse {
-                request_opcode: Opcode::ReadByTypeReq,
+                request_opcode: req_opcode,
                 attribute_handle: start_handle_val,
                 error_code: ErrorCode::InvalidHandle,
             });
         }
 
-        // Parse the variable-length attribute type parameter.
-        let uuid = Uuid::try_from(&req.attribute_type)
-            .map_err(|_| TransactionError::InvalidPdu { request_opcode: Opcode::ReadByTypeReq })?;
+        let uuid = Uuid::try_from(req.attribute_type())
+            .map_err(|_| TransactionError::InvalidPdu { request_opcode: req_opcode })?;
 
-        // Query the database for attributes matching the range and UUID.
+        const MAX_ENTRY_HEADER_SIZE: usize = size_of::<ReadByGroupTypeRspEntryHeader>();
+
+        // Query range for matching attributes.
         let mut attributes = self
             .database
             .query_range(start_handle, end_handle)
             .filter(|(_, attr)| attr.uuid() == &uuid)
             .peekable();
 
-        // Return Error Response if no matching attributes are found.
         if attributes.peek().is_none() {
             return Err(TransactionError::ErrorResponse {
-                request_opcode: Opcode::ReadByTypeReq,
+                request_opcode: req_opcode,
                 attribute_handle: start_handle_val,
                 error_code: ErrorCode::AttributeNotFound,
             });
@@ -473,71 +520,144 @@ where
         // We must read the first attribute to establish the element length
         // before initializing the builder, so that the header is populated correctly.
         let (first_handle, first_attr) = attributes.next().unwrap();
-        const MIN_PAYLOAD_SIZE: u8 =
-            (size_of::<Header>() + size_of::<u8>() + size_of::<AttributeHandle>()) as u8;
+
+        // Pre-validate grouping type constraints on the first matched attribute.
+        let mut first_entry_header_buf = [0u8; MAX_ENTRY_HEADER_SIZE];
+        let first_entry_header_len =
+            match write_entry_header(&mut first_entry_header_buf, first_handle, first_attr) {
+                Ok(len) => len,
+                Err(error_code) => {
+                    return Err(TransactionError::ErrorResponse {
+                        request_opcode: req_opcode,
+                        attribute_handle: start_handle_val,
+                        error_code,
+                    });
+                }
+            };
 
         // The Length field is 1 byte, so the maximum size of an entry is u8::MAX (255).
-        // Since each entry must contain a handle, the maximum value length is
-        // u8::MAX - handle size = 253 bytes
-        const MAX_READ_BY_TYPE_VALUE_LEN: usize = u8::MAX as usize - size_of::<AttributeHandle>();
-
         let limit = self.effective_mtu();
 
-        // If the attribute value is longer than (ATT_MTU - 4) octets, only the first
-        // (ATT_MTU - 4) octets are read in this response
+        // Since each entry must contain the entry header,
+        // the maximum value length is u8::MAX - entry header size.
+        let max_value_len = u8::MAX as usize - first_entry_header_len;
+        let min_payload_size = size_of::<Header>() + size_of::<u8>() + first_entry_header_len;
+
+        // If the attribute value is longer than the remaining MTU space
+        // or the max possible entry size, only the first chunk is read in this response
         //
-        // (see Bluetooth Core Spec v6.0, Vol 3, Part F, Section 3.4.4.8).
-        let first_read_limit = min(limit - MIN_PAYLOAD_SIZE as usize, MAX_READ_BY_TYPE_VALUE_LEN);
+        // (see Bluetooth Core Spec v6.0, Vol 3, Part F, Section 3.4.4.8 for Read By Type,
+        // and Section 3.4.4.10 for Read By Group Type).
+        //
+        // Note: since the minimum ATT MTU is 23, `limit` is guaranteed to be larger than
+        // `min_payload_size` (at most 6), so `first_read_limit` is always > 0.
+        let first_read_limit = min(limit.saturating_sub(min_payload_size), max_value_len);
+        debug_assert_ne!(first_read_limit, 0);
 
         let mut first_val_buf = [0u8; MAX_ATTRIBUTE_SIZE];
-        let first_read_len = match first_attr
+        let first_read_len = first_attr
             .read_chunk(self.peer_id, 0, &mut first_val_buf[..first_read_limit])
             .await
-        {
-            Ok(len) => len,
-            Err(error_code) => {
-                return Err(TransactionError::ErrorResponse {
-                    request_opcode: Opcode::ReadByTypeReq,
-                    attribute_handle: first_handle.value(),
-                    error_code,
-                });
-            }
-        };
+            .map_err(|error_code| TransactionError::ErrorResponse {
+                request_opcode: req_opcode,
+                attribute_handle: first_handle.value(),
+                error_code,
+            })?;
 
         // Initialize the output packet builder with the correct header length.
         let header = PacketBuilder {
-            header: Header { opcode: Opcode::ReadByTypeRsp },
-            payload: u8::try_from(size_of::<AttributeHandle>() + first_read_len)
-                .expect("ReadByTypeRsp payload length fits in u8"),
+            header: Header { opcode: rsp_opcode },
+            payload: u8::try_from(first_entry_header_len + first_read_len)
+                .expect("Range response payload length fits in u8"),
         };
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
         let mut builder = DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header, limit);
 
-        // Pack the first attribute.
-        let first_handle_bytes = first_handle.value().to_le_bytes();
-        builder.extend_from_slice(&first_handle_bytes).unwrap();
-        builder.extend_from_slice(&first_val_buf[..first_read_len]).unwrap();
+        builder
+            .extend_from_slice(&first_entry_header_buf[..first_entry_header_len])
+            .expect("First entry header should fit within allocated buffer");
+        builder
+            .extend_from_slice(&first_val_buf[..first_read_len])
+            .expect("First entry value should fit within allocated buffer");
 
-        // Iterate and pack matching attributes into the response buffer.
+        // Pack matching attributes into response.
         for (handle, attr) in attributes {
-            if builder.len() + size_of::<AttributeHandle>() + first_read_len > limit {
+            let mut entry_header_buf = [0u8; MAX_ENTRY_HEADER_SIZE];
+            let entry_header_len = match write_entry_header(&mut entry_header_buf, handle, attr) {
+                // Formatting succeeded; return the formatted header length.
+                Ok(len) => len,
+                // Formatting failed (e.g., unsupported group type); stop packing and
+                // return the response accumulated so far.
+                Err(_) => break,
+            };
+
+            if builder.len() + entry_header_len + first_read_len > limit {
                 break;
             }
 
             let mut val_buf = [0u8; MAX_ATTRIBUTE_SIZE];
-            match attr.read_chunk(self.peer_id, 0, &mut val_buf[..first_read_len]).await {
-                Ok(read_len) if read_len != first_read_len => break,
-                Ok(read_len) => {
-                    let handle_bytes = handle.value().to_le_bytes();
-                    builder.extend_from_slice(&handle_bytes).unwrap();
-                    builder.extend_from_slice(&val_buf[..read_len]).unwrap();
-                }
-                Err(_) => break, // Gracefully stop packing if subsequent reads fail
+            // Read first_read_len + 1 to detect if the value is actually longer.
+            // Slicing to exactly first_read_len would hide length mismatches.
+            let Ok(read_len) =
+                attr.read_chunk(self.peer_id, 0, &mut val_buf[..first_read_len + 1]).await
+            else {
+                // If reading a subsequent attribute fails, gracefully stop packing and
+                // return the successful entries.
+                break;
+            };
+            if read_len != first_read_len {
+                // All entries in the response list must have the same length. If a subsequent
+                // value's size differs, stop packing.
+                break;
             }
+            builder
+                .extend_from_slice(&entry_header_buf[..entry_header_len])
+                .expect("Subsequent entry header should fit based on length check");
+            builder
+                .extend_from_slice(&val_buf[..read_len])
+                .expect("Subsequent entry value should fit based on length check");
         }
 
         self.send_packet(builder.as_packet()).await?;
         Ok(())
+    }
+
+    async fn handle_read_by_type(&mut self, payload: &[u8]) -> Result<(), TransactionError> {
+        self.handle_read_by_type_generic::<ReadByTypeReq>(
+            payload,
+            Opcode::ReadByTypeReq,
+            Opcode::ReadByTypeRsp,
+            |buf, handle, _attr| {
+                let handle_size = size_of::<AttributeHandle>();
+                buf[..handle_size].copy_from_slice(&handle.value().to_le_bytes());
+                Ok(handle_size)
+            },
+        )
+        .await
+    }
+
+    /// Handles a Read By Group Type Request, querying the database for grouped attributes
+    /// matching the given UUID group type and handle range, and returning a packed list
+    /// of handles, end group handles, and values.
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Sections 3.4.4.9 & 3.4.4.10).
+    async fn handle_read_by_group_type(&mut self, payload: &[u8]) -> Result<(), TransactionError> {
+        self.handle_read_by_type_generic::<ReadByGroupTypeReq>(
+            payload,
+            Opcode::ReadByGroupTypeReq,
+            Opcode::ReadByGroupTypeRsp,
+            |buf, handle, attr| {
+                let group_end = attr.group_end_handle().ok_or(ErrorCode::UnsupportedGroupType)?;
+                let header = ReadByGroupTypeRspEntryHeader {
+                    attribute_handle: U16::new(handle.value()),
+                    end_group_handle: U16::new(group_end),
+                };
+                let header_size = size_of::<ReadByGroupTypeRspEntryHeader>();
+                buf[..header_size].copy_from_slice(header.as_bytes());
+                Ok(header_size)
+            },
+        )
+        .await
     }
 
     /// Helper to read an attribute value at an offset and cap it to a maximum buffer size.
@@ -628,10 +748,12 @@ fn to_handle(val: u16, opcode: Opcode) -> Result<AttributeHandle, TransactionErr
 mod tests {
     use super::*;
     use crate::att::attribute::testing::MockAttribute;
+    use crate::att::client::ReadByGroupTypeResults;
     use crate::att::database::testing::MockDb;
     use crate::att::l2cap::mock::setup_mock_channel;
     use crate::att::pdu::{
-        FindByTypeValueReqHeader, FindInformationRsp, InformationData16, ReadByTypeReqHeader,
+        FindByTypeValueReqHeader, FindInformationRsp, InformationData16, ReadByGroupTypeReqHeader,
+        ReadByTypeReqHeader,
     };
 
     use sapphire_async::executor::BoundedExecutor;
@@ -1720,6 +1842,237 @@ mod tests {
                 let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
                 assert_eq!(err.request_opcode, Opcode::ReadByTypeReq as u8);
                 assert_eq!(err.error_code, ErrorCode::InvalidHandle);
+            });
+
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_read_by_group_type_success() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            db.insert(h(2), MockAttribute::new_grouped(Uuid::from_u16(0x2800), b"Service1", 5));
+            db.insert(h(6), MockAttribute::new_grouped(Uuid::from_u16(0x2800), b"Service2", 10));
+
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            let client_handle = executor.spawn(async move {
+                const NEGOTIATED_MTU: u16 = 64;
+                let mut rx_buf = [MaybeUninit::uninit(); NEGOTIATED_MTU as usize];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut client_tx_bearer = BearerTx::new(app_channel.sender);
+
+                // 1. MTU Exchange (negotiate NEGOTIATED_MTU bytes)
+                let header_builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ExchangeMtuReq },
+                    payload: ExchangeMtuReq { client_rx_mtu: U16::new(NEGOTIATED_MTU) },
+                };
+                let mut tx_buf = [0u8; NEGOTIATED_MTU as usize];
+                let builder = DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header_builder, 23);
+                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ExchangeMtuRsp);
+                client_rx_bearer.set_mtu(NEGOTIATED_MTU);
+                client_tx_bearer.set_mtu(NEGOTIATED_MTU);
+
+                // 2. Read By Group Type Request
+                let uuid = Uuid::from_u16(0x2800);
+                let header_builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ReadByGroupTypeReq },
+                    payload: ReadByGroupTypeReqHeader {
+                        starting_handle: U16::new(1),
+                        ending_handle: U16::new(10),
+                    },
+                };
+                let mut tx_buf = [0u8; NEGOTIATED_MTU as usize];
+                let mut builder = DynamicPacketBuilder::<_, u8>::new(
+                    &mut tx_buf,
+                    header_builder,
+                    NEGOTIATED_MTU as usize,
+                );
+                builder.extend_from_slice(uuid.as_bytes()).unwrap();
+                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ReadByGroupTypeRsp);
+
+                // Parse the response using the client results parser and verify the returned
+                // attribute group data list entries.
+                let results = ReadByGroupTypeResults::try_from(&packet.data[..])
+                    .expect("Server response should be a valid Read By Group Type response packet");
+                let mut iter = results.iter();
+
+                let e1 = iter.next().unwrap().unwrap();
+                assert_eq!(e1.handle, h(2));
+                assert_eq!(e1.end_group_handle, h(5));
+                assert_eq!(e1.value, b"Service1");
+
+                let e2 = iter.next().unwrap().unwrap();
+                assert_eq!(e2.handle, h(6));
+                assert_eq!(e2.end_group_handle, h(10));
+                assert_eq!(e2.value, b"Service2");
+
+                assert!(iter.next().is_none());
+            });
+
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_read_by_group_type_errors() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            // Match but non-grouping type! (returns None for group_end_handle)
+            db.insert(h(2), MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone"));
+
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 64];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut client_tx_bearer = BearerTx::new(app_channel.sender);
+
+                // 1. Query for grouping type 0x2A00 which contains a non-grouping attribute
+                let uuid = Uuid::from_u16(0x2A00);
+                let header_builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ReadByGroupTypeReq },
+                    payload: ReadByGroupTypeReqHeader {
+                        starting_handle: U16::new(1),
+                        ending_handle: U16::new(10),
+                    },
+                };
+                let mut tx_buf = [0u8; 64];
+                let mut builder = DynamicPacketBuilder::<_, u8>::new(
+                    &mut tx_buf,
+                    header_builder,
+                    SERVER_MTU as usize,
+                );
+                builder.extend_from_slice(uuid.as_bytes()).unwrap();
+                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(err.request_opcode, Opcode::ReadByGroupTypeReq as u8);
+                assert_eq!(err.error_code, ErrorCode::UnsupportedGroupType);
+            });
+
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_read_by_group_type_mixed_lengths() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            // Attribute 1 has value of length 8
+            db.insert(h(2), MockAttribute::new_grouped(Uuid::from_u16(0x2800), b"Service1", 5));
+            // Attribute 2 has value of length 11 (different!)
+            db.insert(h(6), MockAttribute::new_grouped(Uuid::from_u16(0x2800), b"ServiceLong", 10));
+
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            let client_handle = executor.spawn(async move {
+                const NEGOTIATED_MTU: u16 = 64;
+                let mut rx_buf = [MaybeUninit::uninit(); NEGOTIATED_MTU as usize];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut client_tx_bearer = BearerTx::new(app_channel.sender);
+
+                // 1. MTU Exchange
+                let header_builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ExchangeMtuReq },
+                    payload: ExchangeMtuReq { client_rx_mtu: U16::new(NEGOTIATED_MTU) },
+                };
+                let mut tx_buf = [0u8; NEGOTIATED_MTU as usize];
+                let builder = DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header_builder, 23);
+                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ExchangeMtuRsp);
+                client_rx_bearer.set_mtu(NEGOTIATED_MTU);
+                client_tx_bearer.set_mtu(NEGOTIATED_MTU);
+
+                // 2. Read By Group Type Request
+                let uuid = Uuid::from_u16(0x2800);
+                let header_builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ReadByGroupTypeReq },
+                    payload: ReadByGroupTypeReqHeader {
+                        starting_handle: U16::new(1),
+                        ending_handle: U16::new(10),
+                    },
+                };
+                let mut tx_buf = [0u8; NEGOTIATED_MTU as usize];
+                let mut builder = DynamicPacketBuilder::<_, u8>::new(
+                    &mut tx_buf,
+                    header_builder,
+                    NEGOTIATED_MTU as usize,
+                );
+                builder.extend_from_slice(uuid.as_bytes()).unwrap();
+                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ReadByGroupTypeRsp);
+
+                // Parse the response and verify that only the first entry was packed
+                // due to subsequent entries having different lengths.
+                let results = ReadByGroupTypeResults::try_from(&packet.data[..])
+                    .expect("Server response should be a valid Read By Group Type response packet");
+                let mut iter = results.iter();
+
+                let e1 = iter.next().unwrap().unwrap();
+                assert_eq!(e1.handle, h(2));
+                assert_eq!(e1.end_group_handle, h(5));
+                assert_eq!(e1.value, b"Service1");
+
+                assert!(iter.next().is_none());
             });
 
             let server_handle = executor.spawn(async move {

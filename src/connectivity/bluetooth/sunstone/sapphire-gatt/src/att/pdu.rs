@@ -32,6 +32,8 @@ pub enum Opcode {
     ReadRsp = 0x0B,
     ReadBlobReq = 0x0C,
     ReadBlobRsp = 0x0D,
+    ReadByGroupTypeReq = 0x10,
+    ReadByGroupTypeRsp = 0x11,
 }
 
 /// The UUID format types supported in Find Information Response.
@@ -431,6 +433,46 @@ pub struct ReadByTypeRsp {
     pub attribute_data_list: [u8],
 }
 
+/// Parameters for Read By Group Type Request PDU Header (OpCode = 0x10)
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.9).
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed)]
+pub struct ReadByGroupTypeReqHeader {
+    pub starting_handle: U16,
+    pub ending_handle: U16,
+}
+
+/// The complete Read By Group Type Request PDU (OpCode = 0x10).
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.9).
+#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug)]
+#[repr(C)]
+pub struct ReadByGroupTypeReq {
+    pub header: ReadByGroupTypeReqHeader,
+    pub attribute_type: [u8], // 2 bytes (16-bit UUID) or 16 bytes (128-bit UUID)
+}
+
+/// The header format for each entry inside the Read By Group Type Response's attribute data list.
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.10).
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed)]
+pub struct ReadByGroupTypeRspEntryHeader {
+    pub attribute_handle: U16,
+    pub end_group_handle: U16,
+}
+
+/// The complete Read By Group Type Response PDU (OpCode = 0x11).
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.10).
+#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug)]
+#[repr(C)]
+pub struct ReadByGroupTypeRsp {
+    pub length: u8,
+    pub attribute_data_list: [u8],
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,6 +526,23 @@ mod tests {
         let parsed = ReadByTypeRsp::try_ref_from_bytes(&rsp_bytes[..]).unwrap();
         assert_eq!(parsed.length, 10);
         assert_eq!(parsed.attribute_data_list, [0x01, 0x02, 0x03]);
+    }
+
+    #[test]
+    fn test_read_by_group_type_req() {
+        let req_bytes = [0x01, 0x00, 0x05, 0x00, 0x00, 0x28]; // start 0x0001, end 0x0005, type 0x2800 (Primary Service)
+        let parsed = ReadByGroupTypeReq::try_ref_from_bytes(&req_bytes[..]).unwrap();
+        assert_eq!(parsed.header.starting_handle.get(), 1);
+        assert_eq!(parsed.header.ending_handle.get(), 5);
+        assert_eq!(parsed.attribute_type, [0x00, 0x28]);
+    }
+
+    #[test]
+    fn test_read_by_group_type_rsp_layout() {
+        let rsp_bytes = [0x0A, 0x01, 0x02, 0x03, 0x04, 0x05]; // length = 10, data = [1, 2, 3, 4, 5]
+        let parsed = ReadByGroupTypeRsp::try_ref_from_bytes(&rsp_bytes[..]).unwrap();
+        assert_eq!(parsed.length, 10);
+        assert_eq!(parsed.attribute_data_list, [0x01, 0x02, 0x03, 0x04, 0x05]);
     }
 
     #[test]
