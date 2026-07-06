@@ -2,18 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::logs::common::{LogFormat, TestLogMessage};
 use crate::{test_topology, utils};
-use diagnostics_assertions::assert_data_tree;
-use diagnostics_reader::{ArchiveReader, Data, Logs, RetryConfig};
+use diagnostics_reader::RetryConfig;
+use fidl_fuchsia_archivist_test as ftest;
 use fidl_fuchsia_archivist_test::LogPuppetLogRequest;
+use fidl_fuchsia_diagnostics::Format;
 use fidl_fuchsia_diagnostics_types::Severity;
 use futures::StreamExt;
-use {fidl_fuchsia_archivist_test as ftest, fuchsia_async as fasync};
+use test_case::test_case;
 
 const HELLO_WORLD: &str = "Hello, world!";
 
+#[test_case(LogFormat::Rust(Format::Json))]
+#[cfg_attr(fuchsia_api_level_at_least = "HEAD", test_case(LogFormat::Rust(Format::Fxt)))]
+#[cfg_attr(fuchsia_api_level_at_least = "HEAD", test_case(LogFormat::Ffi))]
 #[fuchsia::test]
-async fn test_logs_lifecycle() {
+async fn test_logs_lifecycle(format: LogFormat) {
     let mut puppets = Vec::with_capacity(12);
     for i in 0..50 {
         puppets.push(test_topology::PuppetDeclBuilder::new(format!("puppet{i}")).into());
@@ -26,20 +31,12 @@ async fn test_logs_lifecycle() {
     .expect("create base topology");
 
     let accessor = utils::connect_accessor(&realm, utils::ALL_PIPELINE).await;
-    let mut reader = ArchiveReader::logs();
-    reader
-        .with_archive(accessor)
-        .with_minimum_schema_count(0) // we want this to return even when no log messages
-        .retry(RetryConfig::never());
+    let mut reader = format.build(accessor);
 
-    let (mut subscription, mut errors) = reader.snapshot_then_subscribe().unwrap().split_streams();
-    let _log_errors = fasync::Task::spawn(async move {
-        if let Some(error) = errors.next().await {
-            panic!("{error:#?}");
-        }
-    });
+    // The retry config defaults to never.
+    let mut subscription = reader.get_test_snapshot_then_subscribe().await;
 
-    reader.retry(RetryConfig::always());
+    reader.retry_config(RetryConfig::always());
     for i in 0..50 {
         let puppet_name = format!("puppet{i}");
         let puppet = test_topology::connect_to_puppet(&realm, &puppet_name).await.unwrap();
@@ -52,8 +49,9 @@ async fn test_logs_lifecycle() {
 
         check_message(&puppet_name, subscription.next().await.unwrap()).await;
 
-        reader.with_minimum_schema_count(i);
-        let all_messages = reader.snapshot().await.unwrap();
+        reader.retry_config(RetryConfig::MinSchemaCount(i));
+
+        let all_messages = reader.get_test_snapshot().await;
 
         for message in all_messages {
             check_message("puppet", message).await;
@@ -61,11 +59,7 @@ async fn test_logs_lifecycle() {
     }
 }
 
-async fn check_message(expected_moniker_prefix: &str, message: Data<Logs>) {
-    assert!(message.moniker.to_string().starts_with(expected_moniker_prefix));
-    assert_data_tree!(message.payload.unwrap(), root: {
-        message: {
-            value: HELLO_WORLD,
-        }
-    });
+async fn check_message(expected_moniker_prefix: &str, message: TestLogMessage) {
+    assert!(message.tags[0].starts_with(expected_moniker_prefix));
+    assert_eq!(message.message, HELLO_WORLD);
 }

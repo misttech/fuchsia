@@ -45,6 +45,8 @@ pub trait LogReader {
     async fn get_test_snapshot(&self) -> Vec<TestLogMessage>;
     /// Gets a snapshot of current logs and then subscribes to new log messages.
     async fn get_test_snapshot_then_subscribe(&self) -> BoxStream<'static, TestLogMessage>;
+    /// Changes the retry config for protocols that implement retries for snapshots
+    fn retry_config(&mut self, _config: RetryConfig) {}
 }
 
 // The FFI interface, which uses the FXT format, is currently only available at HEAD,
@@ -251,6 +253,10 @@ mod rust_format {
                 .await
                 .map(|value| value.into_iter().map(data_logs_to_test_logs).collect::<Vec<_>>())
                 .unwrap_or_default()
+        }
+
+        fn retry_config(&mut self, config: RetryConfig) {
+            self.retry(config);
         }
 
         async fn get_test_snapshot_then_subscribe(&self) -> BoxStream<'static, TestLogMessage> {
