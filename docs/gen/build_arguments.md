@@ -776,7 +776,7 @@ a local debugging feature and is not intended for production use.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:139
+From //zircon/kernel/params.gni:132
 
 ### check_output_dir_leaks
 
@@ -1033,7 +1033,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
@@ -3824,7 +3824,7 @@ disabled.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:147
+From //zircon/kernel/params.gni:140
 
 ### enable_mdns_trace
 
@@ -4142,18 +4142,6 @@ The RSEQ backend is not yet implemented.
 
 From //src/lib/fuchsia-rcu/BUILD.gn:10
 
-### enable_rust_in_zircon
-
-Whether to use Rust in the Zircon kernel.
-
-When this flag is enabled, we use the Rust implementation of various data
-structures and algorithms in the Zircon kernel. These implementations are
-in development and not yet ready for use in production.
-
-**Current value (from the default):** `false`
-
-From //zircon/kernel/params.gni:115
-
 ### enable_sestarnix_userspace_tests_on_linux
 
 Enable SEStarnix userspace tests on Linux. On CI/CQ this requires internal
@@ -4204,7 +4192,7 @@ channel calls.
 
 **Current value (from the default):** `true`
 
-From //zircon/kernel/params.gni:127
+From //zircon/kernel/params.gni:120
 
 ### experimental_continuous_per_vmo_attribution_enabled
 
@@ -4213,7 +4201,7 @@ mark.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:123
+From //zircon/kernel/params.gni:116
 
 ### experimental_cxx_version
 
@@ -4266,7 +4254,7 @@ when unblocking once we solve races higher in the stack.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:135
+From //zircon/kernel/params.gni:128
 
 ### experimental_mem_enabled
 
@@ -4294,7 +4282,7 @@ to a buffer
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:119
+From //zircon/kernel/params.gni:112
 
 ### export_bazel_host_tests
 
