@@ -20,4 +20,5 @@ readonly CONFIG_H="$REPO_DIR/config.h"
   LINUX_LIBRARY="third_party/libpcap" \
   REPO_ZIP_URL="https://github.com/the-tcpdump-group/tcpdump/archive/refs/tags/$TCPDUMP_TAG.zip" \
   REPO_EXTRACTED_FOLDER="tcpdump-$TCPDUMP_TAG" \
-  CONFIGURE_ARGS_FUCHSIA="--without-crypto ac_cv_func_fork=no ac_cv_func_getservent=no"
+  CONFIGURE_ARGS_FUCHSIA="--without-crypto ac_cv_func_fork=no ac_cv_func_getservent=no" \
+  CONFIGURE_ARGS_LINUX="--without-crypto"
