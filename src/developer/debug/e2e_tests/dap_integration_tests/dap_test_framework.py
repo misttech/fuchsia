@@ -23,7 +23,7 @@ from async_utils.command import (
 )
 from ffx_cmd.lib import FfxCmd
 from portpicker import portpicker
-from pydap.dap_types import DapBaseModel
+from pydap.dap_types import DapBaseModel, Source, SourceBreakpoint
 from pydap.models import (
     DisconnectArguments,
     EvaluateArguments,
@@ -555,10 +555,34 @@ class DapTestFramework:
             lambda: self.client.initialize(writer, args),
         )
 
-    def launch(self, args: LaunchArguments) -> RequestFuture:
+    async def launch(
+        self, args: LaunchArguments, avoid_racy_attach: bool = True
+    ) -> Any:
+        # TODO(https://fxbug.dev/476364291): Remove this workaround once process launch synchronization is fixed.
+        # Releasing the process starting exception too early causes the inferior to run in
+        # parallel with the debugger before attaching completes. Registering any pending
+        # breakpoint in advance (even on a placeholder filename) prevents early exception release,
+        # ensuring synchronous attach before execution begins.
+        if avoid_racy_attach:
+            avoid_racy_path = str(
+                (
+                    get_build_root() / "this_can_be_any_name_to_avoid_racy"
+                ).resolve()
+            )
+            bp_resp = await self.set_breakpoints(
+                SetBreakpointsArguments(
+                    source=Source(path=avoid_racy_path),
+                    breakpoints=[SourceBreakpoint(line=1)],
+                )
+            )
+            if not bp_resp.get("success"):
+                raise RuntimeError(
+                    f"Failed to set preset breakpoint for racy attach avoidance: {bp_resp}"
+                )
+
         assert self._writer is not None
         writer = self._writer
-        return self._send_wrapper(
+        return await self._send_wrapper(
             "launch", lambda: self.client.launch(writer, args)
         )
 
@@ -854,6 +878,8 @@ class DapTestFramework:
 class DapTestCase(unittest.IsolatedAsyncioTestCase):
     """Base class for DAP integration tests, handling server lifecycle fixtures."""
 
+    auto_initialize: bool = True
+
     async def asyncSetUp(self) -> None:
         print(f"\n[TEST START] {self.id()}", flush=True)
         self.framework = DapTestFramework()
@@ -862,6 +888,9 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
         # Start server and connect
         try:
             await self.framework.start_server(self.port)
+            if getattr(self, "auto_initialize", True):
+                await self.initialize(InitializeArguments(adapterID="zxdb"))
+                await self.on_event("initialized", 10.0)
         except Exception:
             await self.framework._drain_and_cleanup_server()
             self.framework.dump_server_logs(self.id())
@@ -930,8 +959,12 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
     def initialize(self, args: InitializeArguments) -> RequestFuture:
         return self.framework.initialize(args)
 
-    def launch(self, args: LaunchArguments) -> RequestFuture:
-        return self.framework.launch(args)
+    async def launch(
+        self, args: LaunchArguments, avoid_racy_attach: bool = True
+    ) -> Any:
+        return await self.framework.launch(
+            args, avoid_racy_attach=avoid_racy_attach
+        )
 
     def evaluate(self, args: EvaluateArguments) -> RequestFuture:
         return self.framework.evaluate(args)

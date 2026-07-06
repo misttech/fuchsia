@@ -301,6 +301,8 @@ class TestDapTestCaseTeardown(unittest.TestCase):
         self, mock_framework_cls: Mock
     ) -> None:
         class MockDapTestCaseBodyFail(DapTestCase):
+            auto_initialize = False
+
             async def test_body(self) -> None:
                 raise ValueError("Original body failure")
 
@@ -370,6 +372,8 @@ class TestDapTestCaseTeardown(unittest.TestCase):
         self, mock_framework_cls: Mock
     ) -> None:
         class MockDapTestCaseTeardownFail(DapTestCase):
+            auto_initialize = False
+
             async def test_body(self) -> None:
                 pass
 
@@ -413,6 +417,8 @@ class TestDapTestCaseTeardown(unittest.TestCase):
         self, mock_framework_cls: Mock
     ) -> None:
         class MockDapTestCaseSetupFail(DapTestCase):
+            auto_initialize = False
+
             async def test_body(self) -> None:
                 pass
 

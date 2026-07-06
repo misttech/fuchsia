@@ -10,7 +10,7 @@ import unittest
 from typing import Any, Dict
 
 from dap_test_framework import DapTestCase
-from pydap.models import InitializeArguments
+from pydap.models import InitializeArguments, LaunchArguments
 
 
 class TestDapSmoke(DapTestCase):
@@ -21,6 +21,8 @@ class TestDapSmoke(DapTestCase):
 
 # Any tests that send initialize will automatically send disconnect after teardown
 class TestDapInit(DapTestCase):
+    auto_initialize = False
+
     async def test_initialize(self) -> None:
         await self.initialize(InitializeArguments(adapterID="zxdb"))
 
@@ -31,11 +33,7 @@ class TestDapInit(DapTestCase):
 
 class TestDapDisconnect(DapTestCase):
     async def test_disconnect_on_close(self) -> None:
-        # 1. Initialize the session to get it into running state
-        await self.initialize(InitializeArguments(adapterID="zxdb"))
-        await self.on_event("initialized")
-
-        # 2. Pre-calculate the sequence number of the next request
+        # Pre-calculate the sequence number of the next request
         seq = self.framework.client._seq_counter
 
         # Create a future to explicitly synchronize when the callback runs
@@ -73,6 +71,22 @@ class TestDapDisconnect(DapTestCase):
             self.fail(
                 "DAP server failed to exit after socket close with pending disconnect (hung/leaked!)"
             )
+
+
+class TestLaunch(DapTestCase):
+    async def test_strong_attach(self) -> None:
+        await self.launch(
+            LaunchArguments(
+                process="fuchsia-pkg://fuchsia.com/crasher#meta/cpp_crasher.cm"
+            )
+        )
+        await self.on_event("stopped", 30.0).expect(
+            {
+                "body": {
+                    "reason": "exception",
+                }
+            }
+        )
 
 
 def main() -> None:
