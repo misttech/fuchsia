@@ -4,7 +4,7 @@
 
 use std::num::NonZeroU16;
 
-use super::bitmap::IdSet;
+use super::bitmap::{IdSet, IdSetBuilder};
 use super::id_type::IdType;
 
 /// Tag type for type safety of policy type identifiers.
@@ -30,3 +30,9 @@ pub struct CategoryTag;
 
 /// Identifies a security category within a policy.
 pub type CategoryId = IdType<NonZeroU16, CategoryTag>;
+
+/// Set of security categories.
+pub type CategorySet = IdSet<CategoryId>;
+
+/// Builder for constructing [`CategorySet`]s dynamically.
+pub type CategorySetBuilder = IdSetBuilder<CategoryId>;

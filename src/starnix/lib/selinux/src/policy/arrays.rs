@@ -7,11 +7,10 @@ use crate::policy::view::Hashable;
 use super::error::ValidateError;
 use super::extensible_bitmap::ExtensibleBitmap;
 use super::parser::{PolicyCursor, PolicyData, PolicyOffset};
-use super::symbols::{MlsLevel, MlsRange};
 use super::view::{ArrayView, HasMetadata, Walk};
 use super::{
-    AccessVector, Array, ClassId, Counted, Parse, PolicyValidationContext, RoleId, TypeId, UserId,
-    Validate, ValidateArray, array_type, array_type_validate_deref_both,
+    AccessVector, Array, ClassId, Counted, MlsLevel, MlsRange, Parse, PolicyValidationContext,
+    RoleId, TypeId, UserId, Validate, ValidateArray, array_type, array_type_validate_deref_both,
 };
 
 use crate::new_policy::traits::PolicyId;

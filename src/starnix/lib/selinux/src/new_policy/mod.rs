@@ -5,6 +5,7 @@
 pub(super) mod access_vector;
 pub(super) mod bitmap;
 pub(super) mod common_symbols;
+pub(super) mod context;
 pub(super) mod error;
 pub(super) mod id_type;
 pub(super) mod indexed;
@@ -24,8 +25,9 @@ use traits::Validate;
 pub(super) mod types;
 
 pub use access_vector::AccessVector;
-pub use bitmap::ExtensibleBitmap;
+pub use bitmap::{ExtensibleBitmap, IdSpan};
 pub use common_symbols::CommonSymbol;
+pub use context::{Context, MlsLevel, MlsRange};
 pub use id_type::IdType;
 pub use parser::SymbolArray;
 pub use permissions::PermissionId;

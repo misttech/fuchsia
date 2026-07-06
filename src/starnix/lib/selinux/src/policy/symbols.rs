@@ -4,14 +4,12 @@
 
 use super::constraints::{ConstraintError, evaluate_constraint};
 use super::error::ValidateError;
-use super::extensible_bitmap::{
-    ExtensibleBitmap, ExtensibleBitmapSpan, ExtensibleBitmapSpansIterator,
-};
+use super::extensible_bitmap::ExtensibleBitmap;
 use super::parser::{PolicyCursor, PolicyData, PolicyOffset};
-use super::security_context::{CategoryIterator, Level, SecurityContext};
+use super::security_context::SecurityContext;
 use super::view::U24;
 use super::{
-    AccessVector, Array, CategoryId, ClassId, Counted, Parse, PermissionId,
+    AccessVector, Array, CategoryId, ClassId, Counted, MlsLevel, MlsRange, Parse, PermissionId,
     PolicyValidationContext, RoleId, SensitivityId, TypeId, UserId, Validate, ValidateArray,
     array_type, array_type_validate_deref_both, array_type_validate_deref_data,
     array_type_validate_deref_metadata_data_vec, array_type_validate_deref_none_data_vec,
@@ -1417,106 +1415,49 @@ impl Validate for UserMetadata {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub(super) struct MlsLevel {
-    sensitivity: le::U32,
-    categories: ExtensibleBitmap,
-}
-
-impl MlsLevel {
-    pub fn category_ids(&self) -> impl Iterator<Item = CategoryId> + use<'_> {
-        self.categories.indices_of_set_bits().map(|i| CategoryId::from_u32(i + 1).unwrap())
-    }
-}
-
 impl Parse for MlsLevel {
     type Error = anyhow::Error;
 
-    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let tail = bytes;
-
-        let (sensitivity, tail) = PolicyCursor::parse::<le::U32>(tail)?;
-
-        let (categories, tail) = ExtensibleBitmap::parse(tail)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("parsing mls level categories")?;
-
-        Ok((Self { sensitivity, categories }, tail))
+    fn parse<'a>(cursor: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
+        let offset = cursor.offset() as usize;
+        let slice = &cursor.data().as_ref()[offset..];
+        let mut new_cursor = crate::new_policy::parser::PolicyCursor::new(slice);
+        let level = <Self as crate::new_policy::traits::Parse>::parse(&mut new_cursor)
+            .map_err(|e| anyhow::anyhow!("Parse error: {:?}", e))?;
+        let bytes_parsed = new_cursor.offset();
+        let new_offset = cursor.offset() + bytes_parsed as u32;
+        Ok((level, PolicyCursor::new_at(cursor.data(), new_offset)))
     }
 }
 
-impl<'a> Level<'a, ExtensibleBitmapSpan, ExtensibleBitmapSpansIterator<'a>> for MlsLevel {
-    fn sensitivity(&self) -> SensitivityId {
-        SensitivityId::from_u32(self.sensitivity.get()).unwrap()
-    }
+impl Validate for MlsLevel {
+    type Error = anyhow::Error;
 
-    fn category_spans(
-        &'a self,
-    ) -> CategoryIterator<ExtensibleBitmapSpan, ExtensibleBitmapSpansIterator<'a>> {
-        CategoryIterator::new(self.categories.spans())
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub(super) struct MlsRange {
-    count: le::U32,
-    low: MlsLevel,
-    high: Option<MlsLevel>,
-}
-
-impl MlsRange {
-    pub fn low(&self) -> &MlsLevel {
-        &self.low
-    }
-
-    pub fn high(&self) -> &Option<MlsLevel> {
-        &self.high
+    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
+        crate::new_policy::traits::Validate::validate(self, &context.new_policy).map_err(Into::into)
     }
 }
 
 impl Parse for MlsRange {
     type Error = anyhow::Error;
 
-    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let tail = bytes;
+    fn parse<'a>(cursor: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
+        let offset = cursor.offset() as usize;
+        let slice = &cursor.data().as_ref()[offset..];
+        let mut new_cursor = crate::new_policy::parser::PolicyCursor::new(slice);
+        let range = <Self as crate::new_policy::traits::Parse>::parse(&mut new_cursor)
+            .map_err(|e| anyhow::anyhow!("Parse error: {:?}", e))?;
+        let bytes_parsed = new_cursor.offset();
+        let new_offset = cursor.offset() + bytes_parsed as u32;
+        Ok((range, PolicyCursor::new_at(cursor.data(), new_offset)))
+    }
+}
 
-        let (count, tail) = PolicyCursor::parse::<le::U32>(tail)?;
+impl Validate for MlsRange {
+    type Error = anyhow::Error;
 
-        // `MlsRange::parse()` cannot be implemented in terms of `MlsLevel::parse()` for the
-        // low and optional high level, because of the order in which the sensitivity and
-        // category bitmap fields appear.
-        let (sensitivity_low, tail) = PolicyCursor::parse::<le::U32>(tail)?;
-
-        let (low_categories, high_level, tail) = if count.get() > 1 {
-            let (sensitivity_high, tail) = PolicyCursor::parse::<le::U32>(tail)?;
-            let (low_categories, tail) = ExtensibleBitmap::parse(tail)
-                .map_err(Into::<anyhow::Error>::into)
-                .context("parsing mls range low categories")?;
-            let (high_categories, tail) = ExtensibleBitmap::parse(tail)
-                .map_err(Into::<anyhow::Error>::into)
-                .context("parsing mls range high categories")?;
-
-            (
-                low_categories,
-                Some(MlsLevel { sensitivity: sensitivity_high, categories: high_categories }),
-                tail,
-            )
-        } else {
-            let (low_categories, tail) = ExtensibleBitmap::parse(tail)
-                .map_err(Into::<anyhow::Error>::into)
-                .context("parsing mls range low categories")?;
-
-            (low_categories, None, tail)
-        };
-
-        Ok((
-            Self {
-                count,
-                low: MlsLevel { sensitivity: sensitivity_low, categories: low_categories },
-                high: high_level,
-            },
-            tail,
-        ))
+    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
+        crate::new_policy::traits::Validate::validate(self, &context.new_policy).map_err(Into::into)
     }
 }
 
@@ -1578,7 +1519,7 @@ pub(super) struct Sensitivity {
 
 impl Sensitivity {
     pub fn id(&self) -> SensitivityId {
-        SensitivityId::from_u32(self.level.sensitivity.get()).unwrap()
+        self.level.sensitivity()
     }
 
     pub fn name_bytes(&self) -> &[u8] {
@@ -1609,7 +1550,6 @@ impl Validate for Sensitivity {
 
     /// TODO: Validate internal consistency of `self.metadata` and `self.level`.
     fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        NonZeroU32::new(self.level.sensitivity.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
         Ok(())
     }
 }
@@ -1837,7 +1777,6 @@ impl Validate for CategoryIndex {
 
 #[cfg(test)]
 mod tests {
-    use super::super::security_context::Level;
     use super::super::{CategoryId, SensitivityId, UserId, parse_policy_by_value};
     use super::*;
 

@@ -20,6 +20,7 @@ rustc_library("selinux") {
     "src/new_policy/access_vector.rs",
     "src/new_policy/bitmap.rs",
     "src/new_policy/common_symbols.rs",
+    "src/new_policy/context.rs",
     "src/new_policy/error.rs",
     "src/new_policy/id_type.rs",
     "src/new_policy/indexed.rs",

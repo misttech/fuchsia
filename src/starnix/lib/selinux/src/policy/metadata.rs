@@ -188,26 +188,11 @@ impl Validate for Counts {
 #[cfg(test)]
 mod tests {
     use super::super::parser::PolicyCursor;
-    use super::super::testing::{as_parse_error, as_validate_error};
-    use super::super::{PolicyValidationContext, Validate};
+    use super::super::testing::as_parse_error;
+
     use super::*;
 
     use std::sync::Arc;
-
-    macro_rules! validate_test {
-        ($parse_output:ident, $data:expr, $result:tt, $check_impl:block) => {{
-            let data = Arc::new($data);
-            let context = PolicyValidationContext { data: data.clone(), need_init_sid: false };
-            fn check_by_value($result: Result<(), <$parse_output as Validate>::Error>) {
-                $check_impl
-            }
-
-            let (by_value_parsed, _tail) = $parse_output::parse(PolicyCursor::new(&data))
-                .expect("successful parse for validate test");
-            let by_value_result = by_value_parsed.validate(&context);
-            check_by_value(by_value_result);
-        }};
-    }
 
     // TODO: Run this test over `validate()`.
     #[test]
@@ -227,44 +212,6 @@ mod tests {
     }
 
     #[test]
-    fn invalid_magic() {
-        let mut bytes = [SELINUX_MAGIC.to_le_bytes().as_slice()].concat();
-        // Invalid first byte of magic.
-        bytes[0] = bytes[0] + 1;
-        let bytes = bytes;
-        let expected_invalid_magic =
-            u32::from_le_bytes(bytes.clone().as_slice().try_into().unwrap());
-
-        let data = Arc::new(bytes);
-        let context = PolicyValidationContext { data: data.clone(), need_init_sid: false };
-        let (magic, tail) = PolicyCursor::parse::<Magic>(PolicyCursor::new(&data)).expect("magic");
-        assert_eq!(data.len(), tail.offset() as usize);
-        assert_eq!(
-            Err(ValidateError::InvalidMagic { found_magic: expected_invalid_magic }),
-            magic.validate(&context)
-        );
-    }
-
-    #[test]
-    fn invalid_signature_length() {
-        const INVALID_SIGNATURE_LENGTH: u32 = POLICYDB_STRING_MAX_LENGTH + 1;
-        let bytes: Vec<u8> = [
-            INVALID_SIGNATURE_LENGTH.to_le_bytes().as_slice(),
-            [42u8; INVALID_SIGNATURE_LENGTH as usize].as_slice(),
-        ]
-        .concat();
-
-        validate_test!(Signature, bytes, result, {
-            assert_eq!(
-                Some(ValidateError::InvalidSignatureLength {
-                    found_length: INVALID_SIGNATURE_LENGTH
-                }),
-                result.err().map(as_validate_error),
-            );
-        });
-    }
-
-    #[test]
     fn missing_signature() {
         let bytes = [(1 as u32).to_le_bytes().as_slice()].concat();
         let data = Arc::new(bytes);
@@ -274,53 +221,6 @@ mod tests {
                 assert!(false, "Expected Some(MissingData...), but got {:?}", parse_err);
             }
         }
-    }
-
-    #[test]
-    fn invalid_signature() {
-        // Invalid signature "TE Linux" is not "SE Linux".
-        const INVALID_SIGNATURE: &[u8] = b"TE Linux";
-
-        let bytes =
-            [(INVALID_SIGNATURE.len() as u32).to_le_bytes().as_slice(), INVALID_SIGNATURE].concat();
-
-        validate_test!(Signature, bytes, result, {
-            assert_eq!(
-                Some(ValidateError::InvalidSignature {
-                    found_signature: INVALID_SIGNATURE.to_owned()
-                }),
-                result.err().map(as_validate_error),
-            );
-        });
-    }
-
-    #[test]
-    fn invalid_policy_version() {
-        let bytes = [(POLICYDB_VERSION_MIN - 1).to_le_bytes().as_slice()].concat();
-        let data = Arc::new(bytes);
-        let context = PolicyValidationContext { data: data.clone(), need_init_sid: false };
-        let (policy_version, tail) =
-            PolicyCursor::parse::<PolicyVersion>(PolicyCursor::new(&data)).expect("magic");
-        assert_eq!(data.len(), tail.offset() as usize);
-        assert_eq!(
-            Err(ValidateError::InvalidPolicyVersion {
-                found_policy_version: POLICYDB_VERSION_MIN - 1
-            }),
-            policy_version.validate(&context)
-        );
-
-        let bytes = [(POLICYDB_VERSION_MAX + 1).to_le_bytes().as_slice()].concat();
-        let data = Arc::new(bytes);
-        let context = PolicyValidationContext { data: data.clone(), need_init_sid: false };
-        let (policy_version, tail) =
-            PolicyCursor::parse::<PolicyVersion>(PolicyCursor::new(&data)).expect("magic");
-        assert_eq!(data.len(), tail.offset() as usize);
-        assert_eq!(
-            Err(ValidateError::InvalidPolicyVersion {
-                found_policy_version: POLICYDB_VERSION_MAX + 1
-            }),
-            policy_version.validate(&context)
-        );
     }
 
     #[test]

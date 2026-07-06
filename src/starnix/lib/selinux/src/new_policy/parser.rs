@@ -24,6 +24,11 @@ impl<'a> PolicyCursor<'a> {
         Self { data, offset: 0 }
     }
 
+    /// Returns the current offset of the cursor.
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
+
     /// Parses a type `T` that implements [`Parse`] from the cursor.
     pub fn parse<T: Parse>(&mut self) -> Result<T, ParseError> {
         T::parse(self)
@@ -208,6 +213,12 @@ impl<T> Validate for std::marker::PhantomData<T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Array<T> {
     elements: Box<[T]>,
+}
+
+impl<T> From<Vec<T>> for Array<T> {
+    fn from(v: Vec<T>) -> Self {
+        Self { elements: v.into_boxed_slice() }
+    }
 }
 
 impl<T> Deref for Array<T> {

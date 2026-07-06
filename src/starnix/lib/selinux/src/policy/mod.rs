@@ -19,13 +19,14 @@ pub use index::FsUseLabelAndType;
 pub use parser::PolicyCursor;
 pub use security_context::{SecurityContext, SecurityContextError};
 
+use crate::new_policy as new;
 pub use crate::new_policy::HandleUnknown;
 pub use crate::new_policy::traits::PolicyId;
 use crate::new_policy::traits::Serialize as _;
 
 pub use crate::new_policy::{
-    AccessVector, CategoryId, ClassId, POLICYDB_VERSION_MAX, PermissionId, RoleId, SensitivityId,
-    TypeId, UserId,
+    AccessVector, CategoryId, ClassId, MlsLevel, MlsRange, POLICYDB_VERSION_MAX, PermissionId,
+    RoleId, SensitivityId, TypeId, UserId,
 };
 use crate::{ClassPermission, KernelClass, NullessByteStr, ObjectClass, PolicyCap};
 use index::PolicyIndex;
@@ -285,7 +286,7 @@ impl Policy {
         &self,
         security_context: NullessByteStr<'_>,
     ) -> Result<security_context::SecurityContext, security_context::SecurityContextError> {
-        security_context::SecurityContext::parse(&self.0, security_context)
+        security_context::SecurityContext::from_string(&self.0, security_context)
     }
 
     /// Validates a [`SecurityContext`] against this policy's constraints.
@@ -298,7 +299,7 @@ impl Policy {
 
     /// Returns a byte string describing the supplied [`SecurityContext`].
     pub fn serialize_security_context(&self, security_context: &SecurityContext) -> Vec<u8> {
-        security_context.serialize(&self.0)
+        security_context.to_string(&self.0)
     }
 
     /// Returns the security context that should be applied to a newly created SELinux
@@ -505,11 +506,14 @@ pub trait Parse: Sized {
 
 /// Context for validating a parsed policy.
 pub(super) struct PolicyValidationContext {
-    /// The policy data that is being validated.
+    /// Policy data that is being validated.
     pub(super) data: PolicyData,
 
     /// True if "userspace_initial_context" is enabled, which requires the "init" SID to be defined.
     pub(super) need_init_sid: bool,
+
+    /// New policy parser representation.
+    pub(super) new_policy: Arc<new::NewPolicy>,
 }
 
 /// Validate a parsed data structure.
@@ -762,21 +766,6 @@ macro_rules! array_type_validate_deref_none_data_vec {
 }
 
 pub(super) use array_type_validate_deref_none_data_vec;
-
-#[cfg(test)]
-pub(super) mod testing {
-    use super::error::{ParseError, ValidateError};
-
-    /// Downcasts an [`anyhow::Error`] to a [`ParseError`] for structured error comparison in tests.
-    pub(super) fn as_parse_error(error: anyhow::Error) -> ParseError {
-        error.downcast::<ParseError>().expect("parse error")
-    }
-
-    /// Downcasts an [`anyhow::Error`] to a [`ParseError`] for structured error comparison in tests.
-    pub(super) fn as_validate_error(error: anyhow::Error) -> ValidateError {
-        error.downcast::<ValidateError>().expect("validate error")
-    }
-}
 
 #[cfg(test)]
 pub(super) mod tests {

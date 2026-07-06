@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use super::extensible_bitmap::ExtensibleBitmap;
-use super::security_context::{Level, SecurityContext, SecurityLevel};
+use super::security_context::SecurityContext;
 use super::symbols::{
     CONSTRAINT_EXPR_OPERAND_TYPE_H1_H2, CONSTRAINT_EXPR_OPERAND_TYPE_H1_L2,
     CONSTRAINT_EXPR_OPERAND_TYPE_L1_H1, CONSTRAINT_EXPR_OPERAND_TYPE_L1_H2,
@@ -17,7 +17,7 @@ use super::symbols::{
     CONSTRAINT_TERM_TYPE_NOT_OPERATOR, CONSTRAINT_TERM_TYPE_OR_OPERATOR, ConstraintExpr,
     ConstraintTerm,
 };
-use super::{RoleId, TypeId, UserId};
+use super::{MlsLevel, RoleId, TypeId, UserId};
 use crate::new_policy::traits::PolicyId;
 
 use std::cmp::Ordering;
@@ -158,7 +158,7 @@ pub(super) enum ContextOperand {
     UserId(UserId),
     RoleId(RoleId),
     TypeId(TypeId),
-    Level(SecurityLevel),
+    Level(MlsLevel),
     UserIds(HashSet<UserId>),
     RoleIds(HashSet<RoleId>),
     TypeIds(HashSet<TypeId>),
@@ -181,7 +181,7 @@ enum Operand<'a> {
     UserId(UserId),
     RoleId(RoleId),
     TypeId(TypeId),
-    Level(&'a SecurityLevel),
+    Level(&'a MlsLevel),
     UserIds(HashSet<UserId>),
     RoleIds(HashSet<RoleId>),
     TypeIds(TypeIds<'a>),

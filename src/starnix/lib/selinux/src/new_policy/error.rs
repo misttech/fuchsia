@@ -34,6 +34,12 @@ pub enum ParseError {
     InvalidConstraintOperator { value: u32 },
     #[error("invalid constraint term type: {value}")]
     InvalidConstraintTermType { value: u32 },
+    #[error(
+        "expected extensible bitmap item size to be exactly {MAP_NODE_BITS}, but found {found_size}"
+    )]
+    InvalidExtensibleBitmapItemSize { found_size: u32 },
+    #[error("expected extensible bitmap high bit to be {expected}, but found {found}")]
+    InvalidExtensibleBitmapHighBit { expected: u32, found: u32 },
     #[error("invalid enum value for {enum_name}: {value}")]
     InvalidEnumValue { enum_name: &'static str, value: u64 },
 }
@@ -85,6 +91,8 @@ pub enum ValidateError {
     ExtensibleBitmapItemOverflow { found_items_end: u32, found_high_bit: u32 },
     #[error("invalid ID index {index} in IdSet")]
     InvalidIdSetIndex { index: u32 },
+    #[error("invalid MLS range: high level does not dominate low level")]
+    InvalidMlsRange,
     #[error("referenced common symbol {name:?} is not defined")]
     UndefinedCommonSymbol { name: Vec<u8> },
 }

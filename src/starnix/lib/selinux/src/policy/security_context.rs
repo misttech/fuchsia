@@ -2,38 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::arrays::Context;
-use super::extensible_bitmap::ExtensibleBitmapSpan;
 use super::index::PolicyIndex;
-use super::symbols::MlsLevel;
-use super::{CategoryId, ParsedPolicy, RoleId, SensitivityId, TypeId, UserId};
+use super::new::{CategorySetBuilder, Context, IdSpan, MlsLevel, MlsRange};
+use super::{CategoryId, ParsedPolicy, RoleId, TypeId, UserId};
 use crate::NullessByteStr;
 use crate::new_policy::traits::PolicyId;
 
 use bstr::BString;
-use std::cell::RefCell;
-use std::cmp::Ordering;
-use std::slice::Iter;
+
 use thiserror::Error;
 
-/// The security context, a variable-length string associated with each SELinux object in the
-/// system. The security context contains mandatory `user:role:type` components and an optional
+/// Security context, a variable-length string associated with each SELinux object in the
+/// system. Contains mandatory `user:role:type` components and an optional
 /// [:range] component.
 ///
 /// Security contexts are configured by userspace atop Starnix, and mapped to
 /// [`SecurityId`]s for internal use in Starnix.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SecurityContext {
-    /// The user component of the security context.
-    user: UserId,
-    /// The role component of the security context.
-    role: RoleId,
-    /// The type component of the security context.
-    type_: TypeId,
-    /// The [lowest] security level of the context.
-    low_level: SecurityLevel,
-    /// The highest security level, if it allows a range.
-    high_level: Option<SecurityLevel>,
+    inner: Context,
 }
 
 impl SecurityContext {
@@ -44,60 +31,55 @@ impl SecurityContext {
         user: UserId,
         role: RoleId,
         type_: TypeId,
-        low_level: SecurityLevel,
-        high_level: Option<SecurityLevel>,
+        low_level: MlsLevel,
+        high_level: Option<MlsLevel>,
     ) -> Self {
-        Self { user, role, type_, low_level, high_level }
+        let inner = Context::new(user, role, type_, MlsRange::new(low_level, high_level));
+        Self { inner }
     }
 
-    /// Returns a [`SecurityContext`] based on the supplied policy-defined `context`.
-    pub(super) fn new_from_policy_context(context: &Context) -> SecurityContext {
-        let low_level = SecurityLevel::new_from_mls_level(context.low_level());
-        let high_level =
-            context.high_level().as_ref().map(|x| SecurityLevel::new_from_mls_level(x));
-
-        SecurityContext::new(
-            context.user_id(),
-            context.role_id(),
-            context.type_id(),
-            low_level,
-            high_level,
-        )
+    pub(super) fn new_from_policy_context(context: &super::arrays::Context) -> SecurityContext {
+        let low = context.low_level().clone();
+        let high = context.high_level().clone();
+        let mls_range = MlsRange::new(low, high);
+        let inner =
+            Context::new(context.user_id(), context.role_id(), context.type_id(), mls_range);
+        SecurityContext { inner }
     }
 
     /// Returns the user component of the security context.
     pub fn user(&self) -> UserId {
-        self.user
+        self.inner.user_id()
     }
 
     /// Returns the role component of the security context.
     pub fn role(&self) -> RoleId {
-        self.role
+        self.inner.role_id()
     }
 
     /// Returns the type component of the security context.
     pub fn type_(&self) -> TypeId {
-        self.type_
+        self.inner.type_id()
     }
 
     /// Returns the [lowest] security level of the context.
-    pub fn low_level(&self) -> &SecurityLevel {
-        &self.low_level
+    pub fn low_level(&self) -> &MlsLevel {
+        self.inner.low_level()
     }
 
     /// Returns the highest security level, if it allows a range.
-    pub fn high_level(&self) -> Option<&SecurityLevel> {
-        self.high_level.as_ref()
+    pub fn high_level(&self) -> Option<&MlsLevel> {
+        self.inner.high_level().as_ref()
     }
 
     /// Returns the high level if distinct from the low level, or
     /// else returns the low level.
-    pub fn effective_high_level(&self) -> &SecurityLevel {
-        self.high_level().map_or(&self.low_level, |x| x)
+    pub fn effective_high_level(&self) -> &MlsLevel {
+        self.high_level().unwrap_or_else(|| self.low_level())
     }
 
-    /// Returns a `SecurityContext` parsed from `security_context`, against the supplied
-    /// `policy`.  The returned structure is guaranteed to be valid for this `policy`.
+    /// Returns [`SecurityContext`] parsed from `security_context`, against the supplied
+    /// `policy`. The returned structure is guaranteed to be valid for this `policy`.
     ///
     /// Security Contexts in Multi-Level Security (MLS) and Multi-Category Security (MCS)
     /// policies take the form:
@@ -124,7 +106,7 @@ impl SecurityContext {
     ///
     /// Returns an error if the [`security_context`] is not a syntactically valid
     /// Security Context string, or the fields are not valid under the current policy.
-    pub(super) fn parse(
+    pub(super) fn from_string(
         policy_index: &PolicyIndex,
         security_context: NullessByteStr<'_>,
     ) -> Result<Self, SecurityContextError> {
@@ -169,53 +151,50 @@ impl SecurityContext {
             .type_id_by_name(type_)
             .ok_or_else(|| SecurityContextError::UnknownType { name: type_.into() })?;
 
-        let low_level = SecurityLevel::parse(policy_index, low_level)?;
-        let high_level = high_level.map(|x| SecurityLevel::parse(policy_index, x)).transpose()?;
+        let low_level = MlsLevel::from_string(policy_index, low_level)?;
+        let high_level = high_level.map(|x| MlsLevel::from_string(policy_index, x)).transpose()?;
 
         Ok(Self::new(user, role, type_, low_level, high_level))
     }
 
-    /// Returns this Security Context serialized to a byte string.
-    pub(super) fn serialize(&self, policy_index: &PolicyIndex) -> Vec<u8> {
-        let mut levels = self.low_level.serialize(policy_index.parsed_policy());
-        if let Some(high_level) = &self.high_level {
+    /// Returns this [`SecurityContext`] serialized to a byte string.
+    pub(super) fn to_string(&self, policy_index: &PolicyIndex) -> Vec<u8> {
+        let mut levels = self.low_level().to_string(policy_index.parsed_policy());
+        if let Some(high_level) = self.high_level() {
             levels.push(b'-');
-            levels.extend(high_level.serialize(policy_index.parsed_policy()));
+            levels.extend(high_level.to_string(policy_index.parsed_policy()));
         }
-        let type_ = policy_index.parsed_policy().type_(self.type_);
+        let type_ = policy_index.parsed_policy().type_(self.type_());
         let parts: [&[u8]; 4] = [
-            policy_index.parsed_policy().user(self.user).name_bytes(),
-            policy_index.parsed_policy().role(self.role).name_bytes(),
+            policy_index.parsed_policy().user(self.user()).name_bytes(),
+            policy_index.parsed_policy().role(self.role()).name_bytes(),
             type_.name_bytes(),
             levels.as_slice(),
         ];
         parts.join(b":".as_ref())
     }
 
-    /// Validates that this `SecurityContext`'s fields are consistent with policy constraints
+    /// Validates that this [`SecurityContext`]'s fields are consistent with policy constraints
     /// (e.g. that the role is valid for the user).
     pub(super) fn validate(&self, policy_index: &PolicyIndex) -> Result<(), SecurityContextError> {
-        let user = policy_index.parsed_policy().user(self.user);
+        let user = policy_index.parsed_policy().user(self.user());
 
         // Validation of the user/role/type relationships is skipped for the special "object_r"
         // role, which is applied by default to non-process/socket-like resources.
-        if self.role != policy_index.object_role() {
+        if self.role() != policy_index.object_role() {
             // Validate that the selected role is valid for this user.
-            //
-            // TODO(b/335399404): Identifiers are 1-based, while the roles bitmap is 0-based.
-            if !user.roles().is_set(self.role.as_u32() - 1) {
+            if !user.roles().is_set(self.role().as_u32() - 1) {
                 return Err(SecurityContextError::InvalidRoleForUser {
-                    role: policy_index.parsed_policy().role(self.role).name_bytes().into(),
+                    role: policy_index.parsed_policy().role(self.role()).name_bytes().into(),
                     user: user.name_bytes().into(),
                 });
             }
 
             // Validate that the selected type is valid for this role.
-            let role = policy_index.parsed_policy().role(self.role);
-            // TODO(b/335399404): Identifiers are 1-based, while the roles bitmap is 0-based.
-            if !role.types().is_set(self.type_.as_u32() - 1) {
+            let role = policy_index.parsed_policy().role(self.role());
+            if !role.types().is_set(self.type_().as_u32() - 1) {
                 return Err(SecurityContextError::InvalidTypeForRole {
-                    type_: policy_index.parsed_policy().type_(self.type_).name_bytes().into(),
+                    type_: policy_index.parsed_policy().type_(self.type_()).name_bytes().into(),
                     role: role.name_bytes().into(),
                 });
             }
@@ -227,27 +206,27 @@ impl SecurityContext {
         let valid_high = user.mls_range().high().as_ref().unwrap_or(valid_low);
 
         // 1. Check that the security context's low level is in the valid range for the user.
-        if !(self.low_level.dominates(valid_low) && valid_high.dominates(&self.low_level)) {
+        if !(self.low_level().dominates(valid_low) && valid_high.dominates(self.low_level())) {
             return Err(SecurityContextError::InvalidLevelForUser {
-                level: self.low_level.serialize(policy_index.parsed_policy()).into(),
+                level: self.low_level().to_string(policy_index.parsed_policy()).into(),
                 user: user.name_bytes().into(),
             });
         }
-        if let Some(ref high_level) = self.high_level {
+        if let Some(high_level) = self.high_level() {
             // 2. Check that the security context's high level is in the valid range for the user.
             if !(valid_high.dominates(high_level) && high_level.dominates(valid_low)) {
                 return Err(SecurityContextError::InvalidLevelForUser {
-                    level: high_level.serialize(policy_index.parsed_policy()).into(),
+                    level: high_level.to_string(policy_index.parsed_policy()).into(),
                     user: user.name_bytes().into(),
                 });
             }
 
             // 3. Check that the security context's levels are internally consistent: i.e.,
             //    that the high level dominates the low level.
-            if !(high_level).dominates(&self.low_level) {
+            if !high_level.dominates(self.low_level()) {
                 return Err(SecurityContextError::InvalidSecurityRange {
-                    low: self.low_level.serialize(policy_index.parsed_policy()).into(),
-                    high: high_level.serialize(policy_index.parsed_policy()).into(),
+                    low: self.low_level().to_string(policy_index.parsed_policy()).into(),
+                    high: high_level.to_string(policy_index.parsed_policy()).into(),
                 });
             }
         }
@@ -255,30 +234,12 @@ impl SecurityContext {
     }
 }
 
-/// Describes a security level, consisting of a sensitivity, and an optional set
-/// of associated categories.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SecurityLevel {
-    sensitivity: SensitivityId,
-    categories: Vec<CategorySpan>,
-}
-
-impl SecurityLevel {
-    pub(super) fn new(sensitivity: SensitivityId, categories: Vec<CategorySpan>) -> Self {
-        Self { sensitivity, categories }
-    }
-
-    /// Helper used by `initial_context()` to create a
-    /// [`SecurityLevel`] instance from the policy fields.
-    pub(super) fn new_from_mls_level(level: &MlsLevel) -> SecurityLevel {
-        SecurityLevel::new(
-            level.sensitivity(),
-            level.category_spans().map(|span| span.into()).collect(),
-        )
-    }
-
-    /// Returns a new instance parsed from the supplied string slice.
-    fn parse(policy_index: &PolicyIndex, level: &str) -> Result<Self, SecurityContextError> {
+impl MlsLevel {
+    /// Parses [`MlsLevel`] from the supplied string slice.
+    pub(super) fn from_string(
+        policy_index: &PolicyIndex,
+        level: &str,
+    ) -> Result<Self, SecurityContextError> {
         if level.is_empty() {
             return Err(SecurityContextError::InvalidSyntax);
         }
@@ -297,50 +258,25 @@ impl SecurityLevel {
             .sensitivity_by_name(sensitivity)
             .ok_or_else(|| SecurityContextError::UnknownSensitivity { name: sensitivity.into() })?
             .id();
-        let mut categories = Vec::new();
+
+        let mut categories = CategorySetBuilder::new();
         if let Some(categories_str) = categories_item {
             for entry in categories_str.split(",") {
-                let category = if let Some((low, high)) = entry.split_once(".") {
-                    let low = Self::category_id_by_name(policy_index, low)?;
-                    let high = Self::category_id_by_name(policy_index, high)?;
+                if let Some((low_str, high_str)) = entry.split_once(".") {
+                    let low = Self::category_id_by_name(policy_index, low_str)?;
+                    let high = Self::category_id_by_name(policy_index, high_str)?;
                     if high <= low {
                         return Err(SecurityContextError::InvalidSyntax);
                     }
-                    CategorySpan::new(low, high)
+                    categories.insert_range(low, high);
                 } else {
                     let id = Self::category_id_by_name(policy_index, entry)?;
-                    CategorySpan::new(id, id)
+                    categories.insert(id);
                 };
-                categories.push(category);
             }
         }
-        if categories.is_empty() {
-            return Ok(Self { sensitivity, categories });
-        }
-        // Represent the set of category IDs in the following normalized form:
-        // - Consecutive IDs are coalesced into spans.
-        // - The list of spans is sorted by ID.
-        //
-        // 1. Sort by lower bound, then upper bound.
-        categories.sort_by(|x, y| (x.low, x.high).cmp(&(y.low, y.high)));
-        // 2. Merge overlapping and adjacent ranges.
-        let categories = categories.into_iter();
-        let normalized =
-            categories.fold(vec![], |mut normalized: Vec<CategorySpan>, current: CategorySpan| {
-                if let Some(last) = normalized.last_mut() {
-                    if current.low <= last.high || (current.low.as_u32() - last.high.as_u32() == 1)
-                    {
-                        *last = CategorySpan::new(last.low, current.high)
-                    } else {
-                        normalized.push(current);
-                    }
-                    return normalized;
-                }
-                normalized.push(current);
-                normalized
-            });
 
-        Ok(Self { sensitivity, categories: normalized })
+        Ok(Self::new(sensitivity, categories.build()))
     }
 
     fn category_id_by_name(
@@ -353,24 +289,16 @@ impl SecurityLevel {
             .ok_or_else(|| SecurityContextError::UnknownCategory { name: name.into() })?
             .id())
     }
-}
 
-/// Models a security level consisting of a single sensitivity ID and some number of
-/// category IDs.
-pub trait Level<'a, T: Into<CategorySpan> + Clone, IterT: 'a + Iterator<Item = T>> {
-    /// Returns the sensitivity of this security level.
-    fn sensitivity(&self) -> SensitivityId;
+    pub fn category_spans(&self) -> impl Iterator<Item = CategorySpan> + '_ {
+        self.categories().spans()
+    }
 
-    /// Returns an iterator over categories of this security level.
-    fn category_spans(&'a self) -> CategoryIterator<T, IterT>;
-
-    /// Returns a byte string describing the security level sensitivity and
-    /// categories.
-    fn serialize(&'a self, parsed_policy: &ParsedPolicy) -> Vec<u8> {
+    pub fn to_string(&self, parsed_policy: &ParsedPolicy) -> Vec<u8> {
         let sensitivity = parsed_policy.sensitivity(self.sensitivity()).name_bytes();
         let categories = self
             .category_spans()
-            .map(|x| x.serialize(parsed_policy))
+            .map(|x| x.to_string(parsed_policy))
             .collect::<Vec<Vec<u8>>>()
             .join(b",".as_ref());
 
@@ -380,173 +308,24 @@ pub trait Level<'a, T: Into<CategorySpan> + Clone, IterT: 'a + Iterator<Item = T
             [sensitivity, categories.as_slice()].join(b":".as_ref())
         }
     }
-
-    /// Implements the "dominance" partial ordering of security levels.
-    fn compare<U: Into<CategorySpan> + Clone, IterU: 'a + Iterator<Item = U>>(
-        &'a self,
-        other: &'a (impl Level<'a, U, IterU> + 'a),
-    ) -> Option<Ordering> {
-        let s_order = self.sensitivity().cmp(&other.sensitivity());
-        let c_order = self.category_spans().compare(&other.category_spans())?;
-        if s_order == c_order {
-            return Some(s_order);
-        } else if c_order == Ordering::Equal {
-            return Some(s_order);
-        } else if s_order == Ordering::Equal {
-            return Some(c_order);
-        }
-        // In the remaining cases `s_order` and `c_order` are strictly opposed,
-        // so the security levels are not comparable.
-        None
-    }
-
-    /// Returns `true` if `self` dominates `other`.
-    fn dominates<U: Into<CategorySpan> + Clone, IterU: 'a + Iterator<Item = U>>(
-        &'a self,
-        other: &'a (impl Level<'a, U, IterU> + 'a),
-    ) -> bool {
-        match self.compare(other) {
-            Some(Ordering::Equal) | Some(Ordering::Greater) => true,
-            _ => false,
-        }
-    }
-}
-
-impl<'a> Level<'a, &'a CategorySpan, Iter<'a, CategorySpan>> for SecurityLevel {
-    fn sensitivity(&self) -> SensitivityId {
-        self.sensitivity
-    }
-    fn category_spans(&'a self) -> CategoryIterator<&'a CategorySpan, Iter<'a, CategorySpan>> {
-        CategoryIterator::<&'a CategorySpan, Iter<'a, CategorySpan>>::new(self.categories.iter())
-    }
-}
-
-/// An iterator over a list of spans of category IDs.
-pub struct CategoryIterator<T: Into<CategorySpan>, IterT: Iterator<Item = T>>(RefCell<IterT>);
-
-impl<T: Into<CategorySpan> + Clone, IterT: Iterator<Item = T>> CategoryIterator<T, IterT> {
-    pub fn new(iter: IterT) -> Self {
-        Self(RefCell::new(iter))
-    }
-
-    fn next(&self) -> Option<CategorySpan> {
-        self.0.borrow_mut().next().map(|x| x.into())
-    }
-
-    fn compare<'a, U: Into<CategorySpan> + Clone, IterU: 'a + Iterator<Item = U>>(
-        &'a self,
-        other: &'a CategoryIterator<U, IterU>,
-    ) -> Option<Ordering> {
-        let mut self_contains_other = true;
-        let mut other_contains_self = true;
-
-        let mut self_now = self.next();
-        let mut other_now = other.next();
-
-        while let (Some(self_span), Some(other_span)) = (self_now.clone(), other_now.clone()) {
-            if self_span.high < other_span.low {
-                other_contains_self = false;
-            } else if other_span.high < self_span.low {
-                self_contains_other = false;
-            } else {
-                match self_span.compare(&other_span) {
-                    None => {
-                        return None;
-                    }
-                    Some(Ordering::Less) => {
-                        self_contains_other = false;
-                    }
-                    Some(Ordering::Greater) => {
-                        other_contains_self = false;
-                    }
-                    Some(Ordering::Equal) => {}
-                }
-                if !self_contains_other && !other_contains_self {
-                    return None;
-                }
-            }
-            if self_span.high <= other_span.high {
-                self_now = self.next();
-            }
-            if other_span.high <= self_span.high {
-                other_now = other.next();
-            }
-        }
-        if self_now.is_some() {
-            other_contains_self = false;
-        } else if other_now.is_some() {
-            self_contains_other = false;
-        }
-        match (self_contains_other, other_contains_self) {
-            (true, true) => Some(Ordering::Equal),
-            (true, false) => Some(Ordering::Greater),
-            (false, true) => Some(Ordering::Less),
-            (false, false) => None,
-        }
-    }
-}
-
-impl<T: Into<CategorySpan>, IterT: Iterator<Item = T>> Iterator for CategoryIterator<T, IterT> {
-    type Item = CategorySpan;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.borrow_mut().next().map(|x| x.into())
-    }
 }
 
 /// Describes an entry in a category specification, which may be a single category
 /// (in which case `low` = `high`) or a span of consecutive categories. The bounds
 /// are included in the span.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CategorySpan {
-    low: CategoryId,
-    high: CategoryId,
-}
+pub type CategorySpan = IdSpan<CategoryId>;
 
-impl CategorySpan {
-    pub(super) fn new(low: CategoryId, high: CategoryId) -> Self {
-        Self { low, high }
-    }
-
-    /// Returns a byte string describing the category, or category range.
-    fn serialize(&self, parsed_policy: &ParsedPolicy) -> Vec<u8> {
-        match self.low == self.high {
-            true => parsed_policy.category(self.low).name_bytes().into(),
+impl IdSpan<CategoryId> {
+    /// Returns `Vec<u8>` describing the category, or category range.
+    fn to_string(&self, parsed_policy: &ParsedPolicy) -> Vec<u8> {
+        match self.low() == self.high() {
+            true => parsed_policy.category(self.low()).name_bytes().into(),
             false => [
-                parsed_policy.category(self.low).name_bytes(),
-                parsed_policy.category(self.high).name_bytes(),
+                parsed_policy.category(self.low()).name_bytes(),
+                parsed_policy.category(self.high()).name_bytes(),
             ]
             .join(b".".as_ref()),
         }
-    }
-
-    // Implements the set-containment partial ordering.
-    fn compare(&self, other: &Self) -> Option<Ordering> {
-        match (self.low.cmp(&other.low), self.high.cmp(&other.high)) {
-            (Ordering::Equal, Ordering::Equal) => Some(Ordering::Equal),
-            (Ordering::Equal, Ordering::Greater)
-            | (Ordering::Less, Ordering::Equal)
-            | (Ordering::Less, Ordering::Greater) => Some(Ordering::Greater),
-            (Ordering::Equal, Ordering::Less)
-            | (Ordering::Greater, Ordering::Equal)
-            | (Ordering::Greater, Ordering::Less) => Some(Ordering::Less),
-            _ => None,
-        }
-    }
-}
-
-impl From<ExtensibleBitmapSpan> for CategorySpan {
-    fn from(value: ExtensibleBitmapSpan) -> CategorySpan {
-        CategorySpan {
-            low: CategoryId::from_u32(value.low + 1).unwrap(),
-            high: CategoryId::from_u32(value.high + 1).unwrap(),
-        }
-    }
-}
-
-impl From<&CategorySpan> for CategorySpan {
-    fn from(value: &CategorySpan) -> Self {
-        value.clone()
     }
 }
 
@@ -577,8 +356,10 @@ pub enum SecurityContextError {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{Policy, parse_policy_by_value};
+    use super::super::new::CategorySet;
+    use super::super::{Policy, PolicyId, SensitivityId, parse_policy_by_value};
     use super::*;
+    use std::cmp::Ordering;
 
     type TestPolicy = Policy;
     fn test_policy() -> TestPolicy {
@@ -587,7 +368,7 @@ mod tests {
         parse_policy_by_value(TEST_POLICY.to_vec()).unwrap().validate().unwrap()
     }
 
-    // Represents a `CategorySpan`.
+    // CategoryItem helper for tests.
     #[derive(Debug, Eq, PartialEq)]
     struct CategoryItem {
         low: String,
@@ -616,29 +397,35 @@ mod tests {
 
     fn category_span(policy: &TestPolicy, category: &CategorySpan) -> CategoryItem {
         CategoryItem {
-            low: category_name(policy, category.low),
-            high: category_name(policy, category.high),
+            low: category_name(policy, category.low()),
+            high: category_name(policy, category.high()),
         }
     }
 
     fn category_spans<'a>(
         policy: &'a TestPolicy,
-        categories: &Vec<CategorySpan>,
+        iter: impl Iterator<Item = CategorySpan>,
     ) -> Vec<CategoryItem> {
-        categories.iter().map(|x| category_span(policy, x)).collect()
+        iter.map(|x| category_span(policy, &x)).collect()
     }
 
-    // A test helper that creates a category span from a pair of positive integers.
+    // Creates a category range for testing.
     fn cat(low: u32, high: u32) -> CategorySpan {
-        CategorySpan {
-            low: CategoryId::from_u32(low).expect("category ids are nonzero"),
-            high: CategoryId::from_u32(high).expect("category ids are nonzero"),
-        }
+        CategorySpan::new(
+            CategoryId::from_u32(low).expect("category ids are nonzero"),
+            CategoryId::from_u32(high).expect("category ids are nonzero"),
+        )
     }
 
-    // A test helper that compares two sets of catetories.
+    // Compares two sets of categories for testing.
     fn compare(lhs: &[CategorySpan], rhs: &[CategorySpan]) -> Option<Ordering> {
-        CategoryIterator::new(lhs.iter()).compare(&CategoryIterator::new(rhs.iter()))
+        let lhs_set = CategorySet::from_ids(lhs.iter().flat_map(|span| {
+            (span.low().as_u32()..=span.high().as_u32()).map(|i| CategoryId::from_u32(i).unwrap())
+        }));
+        let rhs_set = CategorySet::from_ids(rhs.iter().flat_map(|span| {
+            (span.low().as_u32()..=span.high().as_u32()).map(|i| CategoryId::from_u32(i).unwrap())
+        }));
+        lhs_set.compare(&rhs_set)
     }
 
     #[test]
@@ -646,11 +433,11 @@ mod tests {
         let cat_1 = cat(1, 1);
         let cat_2 = cat(1, 3);
         let cat_3 = cat(2, 3);
-        assert_eq!(cat_1.compare(&cat_1), Some(Ordering::Equal));
-        assert_eq!(cat_1.compare(&cat_2), Some(Ordering::Less));
-        assert_eq!(cat_1.compare(&cat_3), None);
-        assert_eq!(cat_2.compare(&cat_1), Some(Ordering::Greater));
-        assert_eq!(cat_2.compare(&cat_3), Some(Ordering::Greater));
+        assert_eq!(compare(&[cat_1.clone()], &[cat_1.clone()]), Some(Ordering::Equal));
+        assert_eq!(compare(&[cat_1.clone()], &[cat_2.clone()]), Some(Ordering::Less));
+        assert_eq!(compare(&[cat_1.clone()], &[cat_3.clone()]), None);
+        assert_eq!(compare(&[cat_2.clone()], &[cat_1.clone()]), Some(Ordering::Greater));
+        assert_eq!(compare(&[cat_2.clone()], &[cat_3.clone()]), Some(Ordering::Greater));
     }
 
     #[test]
@@ -744,12 +531,12 @@ mod tests {
         let security_context = policy
             .parse_security_context(b"user0:object_r:type0:s0".into())
             .expect("creating security context should succeed");
-        assert_eq!(user_name(&policy, security_context.user), "user0");
-        assert_eq!(role_name(&policy, security_context.role), "object_r");
-        assert_eq!(type_name(&policy, security_context.type_), "type0");
-        assert_eq!(sensitivity_name(&policy, security_context.low_level.sensitivity), "s0");
-        assert_eq!(security_context.low_level.categories, Vec::new());
-        assert_eq!(security_context.high_level, None);
+        assert_eq!(user_name(&policy, security_context.user()), "user0");
+        assert_eq!(role_name(&policy, security_context.role()), "object_r");
+        assert_eq!(type_name(&policy, security_context.type_()), "type0");
+        assert_eq!(sensitivity_name(&policy, security_context.low_level().sensitivity()), "s0");
+        assert!(category_spans(&policy, security_context.low_level().category_spans()).is_empty());
+        assert_eq!(security_context.high_level(), None);
     }
 
     #[test]
@@ -758,14 +545,14 @@ mod tests {
         let security_context = policy
             .parse_security_context(b"user0:object_r:type0:s0-s1".into())
             .expect("creating security context should succeed");
-        assert_eq!(user_name(&policy, security_context.user), "user0");
-        assert_eq!(role_name(&policy, security_context.role), "object_r");
-        assert_eq!(type_name(&policy, security_context.type_), "type0");
-        assert_eq!(sensitivity_name(&policy, security_context.low_level.sensitivity), "s0");
-        assert_eq!(security_context.low_level.categories, Vec::new());
-        let high_level = security_context.high_level.as_ref().unwrap();
-        assert_eq!(sensitivity_name(&policy, high_level.sensitivity), "s1");
-        assert_eq!(high_level.categories, Vec::new());
+        assert_eq!(user_name(&policy, security_context.user()), "user0");
+        assert_eq!(role_name(&policy, security_context.role()), "object_r");
+        assert_eq!(type_name(&policy, security_context.type_()), "type0");
+        assert_eq!(sensitivity_name(&policy, security_context.low_level().sensitivity()), "s0");
+        assert!(category_spans(&policy, security_context.low_level().category_spans()).is_empty());
+        let high_level = security_context.high_level().unwrap();
+        assert_eq!(sensitivity_name(&policy, high_level.sensitivity()), "s1");
+        assert!(category_spans(&policy, high_level.category_spans()).is_empty());
     }
 
     #[test]
@@ -774,15 +561,15 @@ mod tests {
         let security_context = policy
             .parse_security_context(b"user0:object_r:type0:s1:c0.c4".into())
             .expect("creating security context should succeed");
-        assert_eq!(user_name(&policy, security_context.user), "user0");
-        assert_eq!(role_name(&policy, security_context.role), "object_r");
-        assert_eq!(type_name(&policy, security_context.type_), "type0");
-        assert_eq!(sensitivity_name(&policy, security_context.low_level.sensitivity), "s1");
+        assert_eq!(user_name(&policy, security_context.user()), "user0");
+        assert_eq!(role_name(&policy, security_context.role()), "object_r");
+        assert_eq!(type_name(&policy, security_context.type_()), "type0");
+        assert_eq!(sensitivity_name(&policy, security_context.low_level().sensitivity()), "s1");
         assert_eq!(
-            category_spans(&policy, &security_context.low_level.categories),
+            category_spans(&policy, security_context.low_level().category_spans()),
             [CategoryItem { low: "c0".to_string(), high: "c4".to_string() }]
         );
-        assert_eq!(security_context.high_level, None);
+        assert_eq!(security_context.high_level(), None);
     }
 
     #[test]
@@ -825,15 +612,15 @@ mod tests {
         let security_context = policy
             .parse_security_context(b"user0:object_r:type0:s0-s1:c0.c4".into())
             .expect("creating security context should succeed");
-        assert_eq!(user_name(&policy, security_context.user), "user0");
-        assert_eq!(role_name(&policy, security_context.role), "object_r");
-        assert_eq!(type_name(&policy, security_context.type_), "type0");
-        assert_eq!(sensitivity_name(&policy, security_context.low_level.sensitivity), "s0");
-        assert_eq!(security_context.low_level.categories, Vec::new());
-        let high_level = security_context.high_level.as_ref().unwrap();
-        assert_eq!(sensitivity_name(&policy, high_level.sensitivity), "s1");
+        assert_eq!(user_name(&policy, security_context.user()), "user0");
+        assert_eq!(role_name(&policy, security_context.role()), "object_r");
+        assert_eq!(type_name(&policy, security_context.type_()), "type0");
+        assert_eq!(sensitivity_name(&policy, security_context.low_level().sensitivity()), "s0");
+        assert!(category_spans(&policy, security_context.low_level().category_spans()).is_empty());
+        let high_level = security_context.high_level().unwrap();
+        assert_eq!(sensitivity_name(&policy, high_level.sensitivity()), "s1");
         assert_eq!(
-            category_spans(&policy, &high_level.categories),
+            category_spans(&policy, high_level.category_spans()),
             [CategoryItem { low: "c0".to_string(), high: "c4".to_string() }]
         );
     }
@@ -844,19 +631,19 @@ mod tests {
         let security_context = policy
             .parse_security_context(b"user0:object_r:type0:s0:c0-s1:c0.c4".into())
             .expect("creating security context should succeed");
-        assert_eq!(user_name(&policy, security_context.user), "user0");
-        assert_eq!(role_name(&policy, security_context.role), "object_r");
-        assert_eq!(type_name(&policy, security_context.type_), "type0");
-        assert_eq!(sensitivity_name(&policy, security_context.low_level.sensitivity), "s0");
+        assert_eq!(user_name(&policy, security_context.user()), "user0");
+        assert_eq!(role_name(&policy, security_context.role()), "object_r");
+        assert_eq!(type_name(&policy, security_context.type_()), "type0");
+        assert_eq!(sensitivity_name(&policy, security_context.low_level().sensitivity()), "s0");
         assert_eq!(
-            category_spans(&policy, &security_context.low_level.categories),
+            category_spans(&policy, security_context.low_level().category_spans()),
             [CategoryItem { low: "c0".to_string(), high: "c0".to_string() }]
         );
 
-        let high_level = security_context.high_level.as_ref().unwrap();
-        assert_eq!(sensitivity_name(&policy, high_level.sensitivity), "s1");
+        let high_level = security_context.high_level().unwrap();
+        assert_eq!(sensitivity_name(&policy, high_level.sensitivity()), "s1");
         assert_eq!(
-            category_spans(&policy, &high_level.categories),
+            category_spans(&policy, high_level.category_spans()),
             [CategoryItem { low: "c0".to_string(), high: "c4".to_string() }]
         );
     }
@@ -867,18 +654,18 @@ mod tests {
         let security_context = policy
             .parse_security_context(b"user0:object_r:type0:s1:c0,c4".into())
             .expect("creating security context should succeed");
-        assert_eq!(user_name(&policy, security_context.user), "user0");
-        assert_eq!(role_name(&policy, security_context.role), "object_r");
-        assert_eq!(type_name(&policy, security_context.type_), "type0");
-        assert_eq!(sensitivity_name(&policy, security_context.low_level.sensitivity), "s1");
+        assert_eq!(user_name(&policy, security_context.user()), "user0");
+        assert_eq!(role_name(&policy, security_context.role()), "object_r");
+        assert_eq!(type_name(&policy, security_context.type_()), "type0");
+        assert_eq!(sensitivity_name(&policy, security_context.low_level().sensitivity()), "s1");
         assert_eq!(
-            category_spans(&policy, &security_context.low_level.categories),
+            category_spans(&policy, security_context.low_level().category_spans()),
             [
                 CategoryItem { low: "c0".to_string(), high: "c0".to_string() },
                 CategoryItem { low: "c4".to_string(), high: "c4".to_string() }
             ]
         );
-        assert_eq!(security_context.high_level, None);
+        assert_eq!(security_context.high_level(), None);
     }
 
     #[test]
@@ -887,18 +674,18 @@ mod tests {
         let security_context = policy
             .parse_security_context(b"user0:object_r:type0:s1:c0,c3.c4".into())
             .expect("creating security context should succeed");
-        assert_eq!(user_name(&policy, security_context.user), "user0");
-        assert_eq!(role_name(&policy, security_context.role), "object_r");
-        assert_eq!(type_name(&policy, security_context.type_), "type0");
-        assert_eq!(sensitivity_name(&policy, security_context.low_level.sensitivity), "s1");
+        assert_eq!(user_name(&policy, security_context.user()), "user0");
+        assert_eq!(role_name(&policy, security_context.role()), "object_r");
+        assert_eq!(type_name(&policy, security_context.type_()), "type0");
+        assert_eq!(sensitivity_name(&policy, security_context.low_level().sensitivity()), "s1");
         assert_eq!(
-            category_spans(&policy, &security_context.low_level.categories),
+            category_spans(&policy, security_context.low_level().category_spans()),
             [
                 CategoryItem { low: "c0".to_string(), high: "c0".to_string() },
                 CategoryItem { low: "c3".to_string(), high: "c4".to_string() }
             ]
         );
-        assert_eq!(security_context.high_level, None);
+        assert_eq!(security_context.high_level(), None);
     }
 
     #[test]

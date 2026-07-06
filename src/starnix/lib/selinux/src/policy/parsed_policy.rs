@@ -18,16 +18,16 @@ use super::error::{ParseError, ValidateError};
 use super::extensible_bitmap::ExtensibleBitmap;
 
 use super::parser::{PolicyCursor, PolicyData};
-use super::security_context::{Level, SecurityContext};
+use super::security_context::SecurityContext;
 use super::symbols::{
-    Category, CategoryIndex, Class, ClassIndex, Classes, ConditionalBoolean, MlsLevel, Role,
-    Sensitivity, SymbolList, Type, TypeIndex, User,
+    Category, CategoryIndex, Class, ClassIndex, Classes, ConditionalBoolean, Role, Sensitivity,
+    SymbolList, Type, TypeIndex, User,
 };
 use super::view::{Hashable, HashedArrayView};
 use super::{
-    AccessDecision, AccessVector, CategoryId, ClassId, Parse, PolicyValidationContext, RoleId,
-    SELINUX_AVD_FLAGS_PERMISSIVE, SensitivityId, TypeId, UserId, Validate, XpermsAccessDecision,
-    XpermsKind,
+    AccessDecision, AccessVector, CategoryId, ClassId, MlsLevel, Parse, PolicyValidationContext,
+    RoleId, SELINUX_AVD_FLAGS_PERMISSIVE, SensitivityId, TypeId, UserId, Validate,
+    XpermsAccessDecision, XpermsKind,
 };
 use crate::new_policy::NewPolicy;
 use crate::new_policy::traits::PolicyId;
@@ -35,6 +35,7 @@ use crate::policy::arrays::FsContext;
 use crate::policy::view::CustomKeyHashedView;
 use crate::{NullessByteStr, PolicyCap};
 use std::ops::Deref;
+use std::sync::Arc;
 
 use anyhow::Context as _;
 use itertools::Itertools;
@@ -54,7 +55,7 @@ pub struct ParsedPolicy {
     data: PolicyData,
 
     /// [`NewPolicy`] that handles the header and base tables.
-    new_policy: NewPolicy,
+    new_policy: Arc<NewPolicy>,
 
     /// The set of classes referenced by this policy.
     classes: ClassIndex,
@@ -532,8 +533,8 @@ impl ParsedPolicy {
             }
             if !high.dominates(low_level) {
                 return Err(ValidateError::InvalidMlsRange {
-                    low: low_level.serialize(self).into(),
-                    high: high.serialize(self).into(),
+                    low: low_level.to_string(self).into(),
+                    high: high.to_string(self).into(),
                 }
                 .into());
             }
@@ -718,7 +719,7 @@ fn parse_policy_remaining(
     Ok((
         ParsedPolicy {
             data: rest_data,
-            new_policy,
+            new_policy: Arc::new(new_policy),
             classes,
             roles,
             types,
@@ -751,7 +752,11 @@ fn parse_policy_remaining(
 impl ParsedPolicy {
     pub fn validate(&self) -> Result<(), anyhow::Error> {
         let need_init_sid = self.has_policycap(PolicyCap::UserspaceInitialContext);
-        let context = PolicyValidationContext { data: self.data.clone(), need_init_sid };
+        let context = PolicyValidationContext {
+            data: self.data.clone(),
+            need_init_sid,
+            new_policy: self.new_policy.clone(),
+        };
 
         self.classes
             .validate(&context)

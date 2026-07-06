@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use super::arrays::{ACCESS_VECTOR_RULE_TYPE_TYPE_TRANSITION, FsContext, FsUseType};
-use super::security_context::{SecurityContext, SecurityLevel};
+use super::security_context::SecurityContext;
 use super::symbols::{Class, ClassDefault, ClassDefaultRange, find_class_by_name};
-use super::{AccessVector, ClassId, ParsedPolicy, PermissionId, RoleId, TypeId};
+use super::{AccessVector, ClassId, MlsLevel, ParsedPolicy, PermissionId, RoleId, TypeId};
 use crate::new_policy::HandleUnknown;
 use crate::{ClassPermission as _, KernelClass, KernelPermission, NullessByteStr, PolicyCap};
 
@@ -472,18 +472,15 @@ impl PolicyIndex {
         source_type: TypeId,
         target_type: TypeId,
         class: &Class,
-    ) -> Option<(SecurityLevel, Option<SecurityLevel>)> {
+    ) -> Option<(MlsLevel, Option<MlsLevel>)> {
         for range_transition in self.parsed_policy.range_transitions() {
             if range_transition.source_type() == source_type
                 && range_transition.target_type() == target_type
                 && range_transition.target_class() == class.id()
             {
                 let mls_range = range_transition.mls_range();
-                let low_level = SecurityLevel::new_from_mls_level(mls_range.low());
-                let high_level = mls_range
-                    .high()
-                    .as_ref()
-                    .map(|high_level| SecurityLevel::new_from_mls_level(high_level));
+                let low_level = mls_range.low().clone();
+                let high_level = mls_range.high().clone();
                 return Some((low_level, high_level));
             }
         }
