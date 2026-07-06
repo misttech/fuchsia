@@ -21,7 +21,7 @@ const VAR_SPECIAL: u8 = 1 << 7; // '#', '?', '@', '*', '$', '!', '-'
 
 const CHAR_CLASS_TABLE_SIZE: usize = 256;
 
-const fn make_char_class_table() -> [u8; CHAR_CLASS_TABLE_SIZE] {
+pub const fn make_char_class_table() -> [u8; CHAR_CLASS_TABLE_SIZE] {
     let mut table = [0u8; CHAR_CLASS_TABLE_SIZE];
     let mut i = 0;
     while i < CHAR_CLASS_TABLE_SIZE {
@@ -230,12 +230,12 @@ impl<'a> Tokenizer<'a> {
     fn process_heredocs(&mut self) -> Result<(), ParseError> {
         let indices: Vec<usize> = self.pending_indices.drain(..).collect();
         for idx in indices {
-            let (src_fd, delimiter, strip_tabs) = match &self.tokens[idx] {
-                Token::RedirectHereDocPlaceholder { src_fd, delimiter, strip_tabs } => {
-                    (*src_fd, delimiter.clone(), *strip_tabs)
-                }
-                _ => unreachable!(),
+            let Token::RedirectHereDocPlaceholder { src_fd, delimiter, strip_tabs } =
+                &self.tokens[idx]
+            else {
+                unreachable!();
             };
+            let (src_fd, delimiter, strip_tabs) = (*src_fd, delimiter.clone(), *strip_tabs);
 
             let mut delimiter_string = Vec::new();
             let mut expand = true;
@@ -248,26 +248,7 @@ impl<'a> Tokenizer<'a> {
                         delimiter_string.extend_from_slice(s.as_bytes());
                         expand = false;
                     }
-                    RawWordPart::Var(s) => {
-                        delimiter_string.extend_from_slice(s.as_bytes());
-                    }
-                    RawWordPart::QuotedVar(s) => {
-                        delimiter_string.extend_from_slice(s.as_bytes());
-                        expand = false;
-                    }
-                    RawWordPart::CommandSubstitution(_) => {
-                        expand = true;
-                    }
-                    RawWordPart::QuotedCommandSubstitution(_) => {
-                        expand = false;
-                    }
-                    RawWordPart::Arithmetic(s) => {
-                        delimiter_string.extend_from_slice(s.as_bytes());
-                    }
-                    RawWordPart::QuotedArithmetic(s) => {
-                        delimiter_string.extend_from_slice(s.as_bytes());
-                        expand = false;
-                    }
+                    _ => unreachable!(),
                 }
             }
 
@@ -468,7 +449,6 @@ impl<'a> Tokenizer<'a> {
                     let mut parts = Vec::new();
                     let mut current_bytes = Vec::new();
                     let mut state = TokenizeState::Unquoted;
-                    let mut has_chars = false;
 
                     #[derive(Clone, Copy, PartialEq, Eq)]
                     enum TokenizeState {
@@ -495,7 +475,6 @@ impl<'a> Tokenizer<'a> {
                                         current_bytes.clear();
                                     }
                                     state = TokenizeState::SingleQuoted;
-                                    has_chars = true;
                                 }
                                 b'"' => {
                                     self.next();
@@ -506,7 +485,6 @@ impl<'a> Tokenizer<'a> {
                                         current_bytes.clear();
                                     }
                                     state = TokenizeState::DoubleQuoted;
-                                    has_chars = true;
                                 }
                                 b'\\' => {
                                     self.next();
@@ -521,11 +499,9 @@ impl<'a> Tokenizer<'a> {
                                         } else {
                                             let next_ch = self.next().unwrap();
                                             current_bytes.push(next_ch);
-                                            has_chars = true;
                                         }
                                     } else {
                                         current_bytes.push(b'\\');
-                                        has_chars = true;
                                     }
                                 }
                                 b'`' => {
@@ -538,7 +514,6 @@ impl<'a> Tokenizer<'a> {
                                         current_bytes.clear();
                                     }
                                     parts.push(RawWordPart::CommandSubstitution(inner));
-                                    has_chars = true;
                                 }
                                 b'$' if !self.parsing_heredoc_delimiter => {
                                     self.next();
@@ -552,7 +527,6 @@ impl<'a> Tokenizer<'a> {
                                                 current_bytes.clear();
                                             }
                                             parts.push(RawWordPart::Arithmetic(expr));
-                                            has_chars = true;
                                         } else {
                                             let inner = self.scan_command_substitution()?;
                                             if !current_bytes.is_empty() {
@@ -562,7 +536,6 @@ impl<'a> Tokenizer<'a> {
                                                 current_bytes.clear();
                                             }
                                             parts.push(RawWordPart::CommandSubstitution(inner));
-                                            has_chars = true;
                                         }
                                     } else if self.peek() == Some(b'{') {
                                         if let Some(var_name) = self.parse_var_name() {
@@ -573,7 +546,6 @@ impl<'a> Tokenizer<'a> {
                                                 current_bytes.clear();
                                             }
                                             parts.push(RawWordPart::Var(var_name));
-                                            has_chars = true;
                                         } else {
                                             return Err(ParseError::Incomplete(
                                                 IncompleteReason::Brace,
@@ -587,16 +559,13 @@ impl<'a> Tokenizer<'a> {
                                             current_bytes.clear();
                                         }
                                         parts.push(RawWordPart::Var(var_name));
-                                        has_chars = true;
                                     } else {
                                         current_bytes.push(b'$');
-                                        has_chars = true;
                                     }
                                 }
                                 _ => {
                                     self.next();
                                     current_bytes.push(ch);
-                                    has_chars = true;
                                 }
                             },
                             TokenizeState::SingleQuoted => {
@@ -724,20 +693,18 @@ impl<'a> Tokenizer<'a> {
                         parts.push(RawWordPart::Literal(current_bytes.into()));
                     }
 
-                    if has_chars || !parts.is_empty() {
-                        if self.parsing_heredoc_delimiter {
-                            self.pending_indices.push(self.tokens.len());
-                            self.tokens.push(Token::RedirectHereDocPlaceholder {
-                                src_fd: self.pending_heredoc_src_fd,
-                                delimiter: parts,
-                                strip_tabs: self.pending_heredoc_strip_tabs,
-                            });
-                            self.parsing_heredoc_delimiter = false;
-                            self.pending_heredoc_src_fd = None;
-                            self.pending_heredoc_strip_tabs = false;
-                        } else {
-                            self.tokens.push(Token::Word(parts));
-                        }
+                    if self.parsing_heredoc_delimiter {
+                        self.pending_indices.push(self.tokens.len());
+                        self.tokens.push(Token::RedirectHereDocPlaceholder {
+                            src_fd: self.pending_heredoc_src_fd,
+                            delimiter: parts,
+                            strip_tabs: self.pending_heredoc_strip_tabs,
+                        });
+                        self.parsing_heredoc_delimiter = false;
+                        self.pending_heredoc_src_fd = None;
+                        self.pending_heredoc_strip_tabs = false;
+                    } else {
+                        self.tokens.push(Token::Word(parts));
                     }
                 }
             }
