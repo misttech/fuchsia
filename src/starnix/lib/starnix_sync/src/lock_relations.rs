@@ -52,16 +52,6 @@ pub trait LockEqualOrBefore<X> {}
 
 impl<B, A> LockEqualOrBefore<B> for A where A: LockBefore<B> {}
 
-// Define a lock level that corresponds to some state that can be locked.
-#[macro_export]
-macro_rules! lock_level {
-    ($A:ident) => {
-        pub enum $A {}
-        impl $crate::LockEqualOrBefore<$A> for $A {}
-        static_assertions::const_assert_eq!(std::mem::size_of::<$crate::Locked<$A>>(), 0);
-    };
-}
-
 #[cfg(test)]
 mod test {
     use crate::{LockBefore, LockEqualOrBefore, LockFor, Locked, Unlocked};
