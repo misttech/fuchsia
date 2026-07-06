@@ -145,10 +145,7 @@ use starnix_core::vfs::{
 };
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{impossible_error, log_error, log_warn, track_stub};
-use starnix_sync::{
-    FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, MagmaBuffersLock, MagmaConnectionsLock,
-    MagmaDevicesLock, MagmaSemaphoresLock, Unlocked,
-};
+use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::user_buffer::UserBuffer;
 use starnix_uapi::device_id::DeviceId;
@@ -256,11 +253,10 @@ pub type DeviceMap = HashMap<u64, Arc<MagmaDevice>>;
 
 pub struct MagmaFile {
     supported_vendors: Vec<u16>,
-    devices: Arc<LockDepMutex<DeviceMap, MagmaDevicesLock>>,
-    connections: Arc<LockDepMutex<ConnectionMap, MagmaConnectionsLock>>,
-    buffers: Arc<LockDepMutex<HashMap<magma_buffer_id_t, Arc<MagmaBuffer>>, MagmaBuffersLock>>,
-    semaphores:
-        Arc<LockDepMutex<HashMap<magma_semaphore_t, Arc<MagmaSemaphore>>, MagmaSemaphoresLock>>,
+    devices: Arc<Mutex<DeviceMap>>,
+    connections: Arc<Mutex<ConnectionMap>>,
+    buffers: Arc<Mutex<HashMap<magma_buffer_id_t, Arc<MagmaBuffer>>>>,
+    semaphores: Arc<Mutex<HashMap<magma_semaphore_t, Arc<MagmaSemaphore>>>>,
     semaphore_id_generator: AtomicCounter<u64>,
 }
 
@@ -295,10 +291,10 @@ impl MagmaFile {
 
         Ok(Box::new(Self {
             supported_vendors,
-            devices: Default::default(),
-            connections: Default::default(),
-            buffers: Default::default(),
-            semaphores: Default::default(),
+            devices: Arc::new(Mutex::new(HashMap::new())),
+            connections: Arc::new(Mutex::new(HashMap::new())),
+            buffers: Arc::new(Mutex::new(HashMap::new())),
+            semaphores: Arc::new(Mutex::new(HashMap::new())),
             semaphore_id_generator: AtomicCounter::new(1),
         }))
     }

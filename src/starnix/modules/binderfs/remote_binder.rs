@@ -28,8 +28,7 @@ use starnix_core::vfs::{
 use starnix_lifecycle::DropWaiter;
 use starnix_logging::{CATEGORY_STARNIX, log_error, log_warn};
 use starnix_sync::{
-    FileOpsCore, LockDepGuard, LockDepMutex, Locked, RemoteBinderHandleLevel,
-    RemoteBinderResponderLock, Unlocked,
+    FileOpsCore, LockDepGuard, LockDepMutex, Locked, Mutex, RemoteBinderHandleLevel, Unlocked,
 };
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_id::DeviceId;
@@ -537,8 +536,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
         C: FnOnce(R, Result<T, Errno>) -> Result<(), fidl::Error> + Send + 'static,
     {
         let (tx, rx) = futures::channel::oneshot::channel();
-        let responder =
-            Arc::new(LockDepMutex::<_, RemoteBinderResponderLock>::new(Some(responder)));
+        let responder = Arc::new(Mutex::new(Some(responder)));
         let closure = Box::new({
             let responder = Arc::downgrade(&responder);
             move |e| {

@@ -14,7 +14,7 @@ use starnix_core::vfs::{
 };
 use starnix_core::{fileops_impl_seekable, fs_node_impl_not_dir};
 use starnix_logging::log_error;
-use starnix_sync::{FileOpsCore, LockDepMutex, Locked, NanohubContentsLock, NanohubServiceLock};
+use starnix_sync::{FileOpsCore, Locked, Mutex};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{errno, error};
@@ -102,7 +102,7 @@ pub struct SysfsFile<P: ProtocolMarker, O: SysfsOps<P::SynchronousProxy>> {
     sysfs_ops: Box<O>,
 
     /// An active connection to the FIDL service.
-    service: LockDepMutex<P::SynchronousProxy, NanohubServiceLock>,
+    service: Mutex<P::SynchronousProxy>,
 
     /// The buffered contents of the return of the underlying FIDL method.
     ///
@@ -110,7 +110,7 @@ pub struct SysfsFile<P: ProtocolMarker, O: SysfsOps<P::SynchronousProxy>> {
     /// read from offset position 0, so at the moment the file is opened (i.e., at the moment this
     /// struct is instantiated), the contents are `Unarmed`. Once the the buffer is populated,
     /// the result contains either the data returned by the `show` method or a Linux error code.
-    contents: LockDepMutex<SysfsContentsState, NanohubContentsLock>,
+    contents: Mutex<SysfsContentsState>,
 
     _phantom: PhantomData<P>,
 }
@@ -124,8 +124,8 @@ impl<P: DiscoverableProtocolMarker, O: SysfsOps<P::SynchronousProxy>> SysfsFile<
 
         Ok(Box::new(SysfsFile {
             sysfs_ops,
-            service: service.into(),
-            contents: SysfsContentsState::Unarmed.into(),
+            service: Mutex::new(service),
+            contents: Mutex::new(SysfsContentsState::Unarmed),
             _phantom: PhantomData,
         }))
     }

@@ -19,7 +19,7 @@ use starnix_core::vfs::{
     FileObject, FileObjectState, FileOps, call_fidl_and_await_close, default_ioctl,
 };
 use starnix_logging::{log_info, log_warn};
-use starnix_sync::{FileOpsCore, LockDepMutex, Locked, TunDevTunLock, Unlocked};
+use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
 use starnix_uapi::errors::Errno;
 use std::num::NonZeroU64;
 use std::sync::Arc;
@@ -319,7 +319,7 @@ impl TunWorker {
 }
 
 #[derive(Default)]
-pub struct DevTun(LockDepMutex<Option<DevTunInner>, TunDevTunLock>);
+pub struct DevTun(Mutex<Option<DevTunInner>>);
 
 struct DevTunInner {
     _tun_device: fnet_tun::DeviceSynchronousProxy,

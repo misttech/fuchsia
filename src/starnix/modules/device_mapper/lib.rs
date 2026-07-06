@@ -25,10 +25,7 @@ use starnix_core::vfs::{
 };
 use starnix_ext::map_ext::EntryExt;
 use starnix_logging::{log_trace, track_stub};
-use starnix_sync::{
-    DeviceMapperRegistryDevicesLock, DmDeviceStateLock, FileOpsCore, LockDepMutex,
-    LockEqualOrBefore, Locked, Unlocked,
-};
+use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_id::{DEVICE_MAPPER_MAJOR, DeviceId, LOOP_MAJOR};
 use starnix_uapi::errors::Errno;
@@ -86,7 +83,7 @@ pub fn device_mapper_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Res
 
 #[derive(Debug, Default)]
 pub struct DeviceMapperRegistry {
-    devices: LockDepMutex<BTreeMap<u32, Arc<DmDevice>>, DeviceMapperRegistryDevicesLock>,
+    devices: Mutex<BTreeMap<u32, Arc<DmDevice>>>,
 }
 
 impl DeviceMapperRegistry {
@@ -200,7 +197,7 @@ impl DeviceMapperRegistry {
 #[derive(Debug, Default)]
 pub struct DmDevice {
     number: DeviceId,
-    state: LockDepMutex<DmDeviceState, DmDeviceStateLock>,
+    state: Mutex<DmDeviceState>,
 }
 
 impl DmDevice {

@@ -1387,19 +1387,3 @@ impl<T, L> fuchsia_sync::ResetDependencies for LockDepRwLock<T, L> {
         unsafe { fuchsia_sync::ResetDependencies::reset_dependencies(&self.inner) }
     }
 }
-
-impl<T, L: crate::LockLevel> fuchsia_inspect_derive::Inspect for &LockDepMutex<T, L>
-where
-    for<'a> &'a mut T: fuchsia_inspect_derive::Inspect,
-{
-    fn iattach(
-        self,
-        parent: &fuchsia_inspect::Node,
-        name: impl AsRef<str>,
-    ) -> Result<(), fuchsia_inspect_derive::AttachError> {
-        match self.try_lock() {
-            Some(mut inner) => inner.iattach(parent, name),
-            None => Err("could not get exclusive access to LockDepMutex".into()),
-        }
-    }
-}

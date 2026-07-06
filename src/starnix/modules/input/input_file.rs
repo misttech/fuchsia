@@ -11,7 +11,7 @@ use starnix_core::task::{CurrentTask, EventHandler, WaitCanceler, WaitQueue, Wai
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{FileObject, FileOps, fileops_impl_noop_sync};
 use starnix_logging::{log_info, track_stub};
-use starnix_sync::{FileOpsCore, InputFileInputFileLock, LockDepMutex, Locked, Unlocked};
+use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::time::duration_from_timeval;
 use starnix_uapi::errors::Errno;
@@ -89,7 +89,7 @@ pub struct InputFileStatus {
     pub close_timestamp_ns: AtomicI64,
 
     /// The weak pointer to the InputFile.
-    pub input_file: LockDepMutex<Weak<InputFile>, InputFileInputFileLock>,
+    pub input_file: Mutex<Weak<InputFile>>,
 }
 
 impl InputFileStatus {
@@ -109,7 +109,7 @@ impl InputFileStatus {
             open_timestamp_ns: AtomicI64::new(0),
             closed: AtomicBool::new(false),
             close_timestamp_ns: AtomicI64::new(0),
-            input_file: Default::default(),
+            input_file: Mutex::new(Weak::new()),
         });
 
         let cloned_status = status.clone();

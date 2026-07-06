@@ -7,7 +7,7 @@ use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps, SimpleFile
 use starnix_core::vfs::{
     FileOps, FsNodeOps, fileops_impl_dataless, fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
-use starnix_sync::{LockDepMutex, ReadWriteBytesFileLock};
+use starnix_sync::Mutex;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 use std::borrow::Cow;
@@ -35,7 +35,7 @@ pub fn connect_to_device_channel(name: &str) -> Result<zx::Channel, Errno> {
 const QBG_CONTEXT_LOCAL_BUF_SIZE: usize = 3072;
 #[derive(Default)]
 pub struct ReadWriteBytesFile {
-    data: LockDepMutex<Vec<u8>, ReadWriteBytesFileLock>,
+    data: Mutex<Vec<u8>>,
 }
 
 impl ReadWriteBytesFile {

@@ -30,9 +30,8 @@ use starnix_core::vfs::{
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{log_error, log_trace, log_warn, track_stub};
 use starnix_sync::{
-    AtomicMonotonicInstant, DynamicLockDepRwLock, FileOpsCore, FuseConnectionStateLock,
-    FuseConnectionsLock, FuseNodeStateLock, LockDepGuard, LockDepMutex, LockDepReadGuard,
-    LockDepWriteGuard, LockEqualOrBefore, Locked, Unlocked,
+    AtomicMonotonicInstant, DynamicLockDepRwLock, FileOpsCore, LockDepReadGuard, LockDepWriteGuard,
+    LockEqualOrBefore, Locked, Mutex, MutexGuard, Unlocked,
 };
 use starnix_syscalls::{SyscallArg, SyscallResult};
 use starnix_types::time::{NANOS_PER_SECOND, duration_from_timespec, time_from_timespec};
@@ -366,7 +365,7 @@ impl FileSystemOps for FuseFs {
 
 #[derive(Debug, Default)]
 struct FuseConnections {
-    connections: LockDepMutex<Vec<Weak<FuseConnection>>, FuseConnectionsLock>,
+    connections: Mutex<Vec<Weak<FuseConnection>>>,
     next_identifier: AtomicCounter<u64>,
 }
 
@@ -583,7 +582,7 @@ struct FuseNode {
 
     generation: u64,
     attributes_valid_until: AtomicMonotonicInstant,
-    state: LockDepMutex<FuseNodeMutableState, FuseNodeStateLock>,
+    state: Mutex<FuseNodeMutableState>,
 }
 
 impl FuseNode {
@@ -1771,13 +1770,13 @@ struct FuseConnection {
     creds: FsCred,
 
     /// Mutable state of the connection.
-    state: LockDepMutex<FuseMutableState, FuseConnectionStateLock>,
+    state: Mutex<FuseMutableState>,
 }
 
-struct FuseMutableStateGuard<'a>(Guard<'a, FuseConnection, LockDepGuard<'a, FuseMutableState>>);
+struct FuseMutableStateGuard<'a>(Guard<'a, FuseConnection, MutexGuard<'a, FuseMutableState>>);
 
 impl<'a> Deref for FuseMutableStateGuard<'a> {
-    type Target = Guard<'a, FuseConnection, LockDepGuard<'a, FuseMutableState>>;
+    type Target = Guard<'a, FuseConnection, MutexGuard<'a, FuseMutableState>>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -1791,7 +1790,7 @@ impl<'a> DerefMut for FuseMutableStateGuard<'a> {
 
 impl FuseConnection {
     fn lock<'a>(&'a self) -> FuseMutableStateGuard<'a> {
-        FuseMutableStateGuard(Guard::<'a, FuseConnection, LockDepGuard<'a, FuseMutableState>>::new(
+        FuseMutableStateGuard(Guard::<'a, FuseConnection, MutexGuard<'a, FuseMutableState>>::new(
             self,
             self.state.lock(),
         ))
@@ -1878,10 +1877,9 @@ impl<'a> FuseMutableStateGuard<'a> {
             if let Some(configuration) = self.configuration.as_ref() {
                 return Ok(f(configuration));
             }
-            Guard::<'a, FuseConnection, LockDepGuard<'a, FuseMutableState>>::unlocked(
-                self,
-                || waiter.wait(locked, current_task),
-            )?;
+            Guard::<'a, FuseConnection, MutexGuard<'a, FuseMutableState>>::unlocked(self, || {
+                waiter.wait(locked, current_task)
+            })?;
         }
     }
 
@@ -1952,7 +1950,7 @@ impl<'a> FuseMutableStateGuard<'a> {
             if let Some(response) = self.get_response(unique_id) {
                 return response;
             }
-            match Guard::<'a, FuseConnection, LockDepGuard<'a, FuseMutableState>>::unlocked(
+            match Guard::<'a, FuseConnection, MutexGuard<'a, FuseMutableState>>::unlocked(
                 self,
                 || waiter.wait(locked, current_task),
             ) {

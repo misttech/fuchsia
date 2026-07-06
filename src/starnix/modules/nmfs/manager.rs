@@ -9,7 +9,7 @@ use fuchsia_inspect_derive::{IValue, Inspect, Unit, WithInspect};
 use starnix_core::task::Kernel;
 use starnix_core::vfs::fs_registry::FsRegistry;
 use starnix_logging::{log_error, log_info};
-use starnix_sync::{LockDepGuard, LockDepMutex, NmfsNetworkManagerLock};
+use starnix_sync::{Mutex, MutexGuard};
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use std::collections::HashMap;
@@ -23,7 +23,7 @@ use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
 pub(crate) struct NetworkManager {
     starnix_networks: fnp_socketproxy::StarnixNetworksSynchronousProxy,
     #[inspect(forward)]
-    inner: LockDepMutex<IValue<NetworkManagerInner>, NmfsNetworkManagerLock>,
+    inner: Mutex<IValue<NetworkManagerInner>>,
 }
 
 #[derive(Unit, Default)]
@@ -79,7 +79,7 @@ impl NetworkManager {
     }
 
     // Locks and returns the inner state of the manager.
-    fn lock(&self) -> LockDepGuard<'_, IValue<NetworkManagerInner>> {
+    fn lock(&self) -> MutexGuard<'_, IValue<NetworkManagerInner>> {
         self.inner.lock()
     }
 

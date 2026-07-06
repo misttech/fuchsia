@@ -32,7 +32,7 @@ use starnix_modules_input_event_conversion::button_fuchsia_to_linux::{
 use starnix_modules_input_event_conversion::key_fuchsia_to_linux::parse_fidl_keyboard_event_to_linux_input_event;
 use starnix_modules_input_event_conversion::mouse_fuchsia_to_linux::parse_fidl_mouse_events;
 use starnix_modules_input_event_conversion::touch_fuchsia_to_linux::FuchsiaTouchEventToLinuxTouchEventConverter;
-use starnix_sync::{InputEventRelayOpenedFilesLock, LockDepMutex};
+use starnix_sync::Mutex;
 use starnix_uapi::uapi;
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -52,7 +52,7 @@ pub enum EventProxyMode {
     WakeContainer,
 }
 
-pub type OpenedFiles = Arc<LockDepMutex<Vec<Weak<InputFile>>, InputEventRelayOpenedFilesLock>>;
+pub type OpenedFiles = Arc<Mutex<Vec<Weak<InputFile>>>>;
 
 pub enum InputDeviceType {
     Touch(FuchsiaTouchEventToLinuxTouchEventConverter),
@@ -1263,7 +1263,7 @@ mod test {
         input_relay: Arc<InputEventsRelayHandle>,
         device_id: u32,
     ) -> FileHandle {
-        let open_files: OpenedFiles = Default::default();
+        let open_files: OpenedFiles = Arc::new(Mutex::new(vec![]));
         input_relay.add_touch_device(device_id, open_files.clone(), None);
         let inspector = fuchsia_inspect::Inspector::default();
         let device_file = Arc::new(InputFile::new_touch(
@@ -1523,7 +1523,7 @@ mod test {
         assert_ne!(events.len(), 0);
 
         // add a device, mock uinput.
-        let open_files: OpenedFiles = Default::default();
+        let open_files: OpenedFiles = Arc::new(Mutex::new(vec![]));
         input_relay.add_keyboard_device(DEVICE_ID, open_files.clone(), None);
         let inspector = fuchsia_inspect::Inspector::default();
         let device_id_10_file = Arc::new(InputFile::new_keyboard(
@@ -1596,7 +1596,7 @@ mod test {
         assert_ne!(events.len(), 0);
 
         // add a device, mock uinput.
-        let open_files: OpenedFiles = Default::default();
+        let open_files: OpenedFiles = Arc::new(Mutex::new(vec![]));
         input_relay.add_keyboard_device(DEVICE_ID, open_files.clone(), None);
         let inspector = fuchsia_inspect::Inspector::default();
         let device_id_10_file = Arc::new(InputFile::new_keyboard(
@@ -1675,7 +1675,7 @@ mod test {
         assert_ne!(events.len(), 0);
 
         // add a device, mock uinput.
-        let open_files: OpenedFiles = Default::default();
+        let open_files: OpenedFiles = Arc::new(Mutex::new(vec![]));
         input_relay.add_touch_device(DEVICE_ID, open_files.clone(), None);
         let device_id_10_file =
             create_test_touch_device(locked, &current_task, input_relay.clone(), DEVICE_ID);

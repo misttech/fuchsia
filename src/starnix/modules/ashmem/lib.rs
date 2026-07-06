@@ -21,7 +21,7 @@ use starnix_core::vfs::{
     default_ioctl, default_seek, fileops_impl_noop_sync,
 };
 use starnix_lifecycle::AtomicCounter;
-use starnix_sync::{AshmemStateLock, FileOpsCore, LockDepMutex, Locked, Unlocked};
+use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::math::round_up_to_increment;
@@ -46,7 +46,7 @@ pub struct AshmemDevice {
 
 pub struct Ashmem {
     memory: OnceCell<Arc<MemoryObject>>,
-    state: LockDepMutex<AshmemState, AshmemStateLock>,
+    state: Mutex<AshmemState>,
 }
 
 struct AshmemState {
@@ -87,7 +87,7 @@ impl Ashmem {
             id: id,
         };
 
-        Ashmem { memory: OnceCell::new(), state: state.into() }
+        Ashmem { memory: OnceCell::new(), state: Mutex::new(state) }
     }
 
     fn memory(&self) -> Result<&Arc<MemoryObject>, Errno> {

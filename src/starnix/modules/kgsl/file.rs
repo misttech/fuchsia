@@ -20,10 +20,7 @@ use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{FileObject, FileOps, FsNode};
 use starnix_core::{fileops_impl_dataless, fileops_impl_nonseekable, fileops_impl_noop_sync};
 use starnix_logging::{log_error, log_info, log_warn, track_stub};
-use starnix_sync::{
-    KgslAllocatorLock, KgslContextsLock, KgslGpuObjsLock, KgslSyncSourcesLock, LockDepMutex,
-    Locked, Unlocked,
-};
+use starnix_sync::{Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
@@ -87,15 +84,15 @@ pub struct KgslFile {
     connection: Connection,
     adreno_kgsl_params: AdrenoKgslParams,
     // TODO(b/481419355): transition to id-map container once available
-    syncsources: LockDepMutex<HashMap<u32, Semaphore>, KgslSyncSourcesLock>,
+    syncsources: Mutex<HashMap<u32, Semaphore>>,
     next_syncsource_id: AtomicU32,
     // TODO(b/481419355): transition to id-map container once available
-    gpuobjs: LockDepMutex<HashMap<u32, GpuObject>, KgslGpuObjsLock>,
+    gpuobjs: Mutex<HashMap<u32, GpuObject>>,
     next_gpuobj_id: AtomicU32,
-    allocator: LockDepMutex<RangeAllocator<u64>, KgslAllocatorLock>,
+    allocator: Mutex<RangeAllocator<u64>>,
     shadow_properties: uapi::kgsl_shadowprop,
     // TODO(b/481419355): transition to id-map container once available
-    contexts: LockDepMutex<HashMap<u32, Context>, KgslContextsLock>,
+    contexts: Mutex<HashMap<u32, Context>>,
     next_context_id: AtomicU32,
 }
 
@@ -220,13 +217,13 @@ impl KgslFile {
             device,
             connection,
             adreno_kgsl_params,
-            syncsources: Default::default(),
+            syncsources: Mutex::new(HashMap::new()),
             next_syncsource_id: AtomicU32::new(1),
-            gpuobjs: gpuobjs.into(),
+            gpuobjs: Mutex::new(gpuobjs),
             next_gpuobj_id: AtomicU32::new(shadow_id + 1),
-            allocator: allocator.into(),
+            allocator: Mutex::new(allocator),
             shadow_properties,
-            contexts: Default::default(),
+            contexts: Mutex::new(HashMap::new()),
             next_context_id: AtomicU32::new(1),
         }))
     }

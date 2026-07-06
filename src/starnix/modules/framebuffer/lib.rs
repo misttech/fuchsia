@@ -22,10 +22,7 @@ use starnix_core::vfs::{
     CloseFreeSafe, FileObject, FileOps, NamespaceNode, fileops_impl_memory, fileops_impl_noop_sync,
 };
 use starnix_logging::{log_info, log_warn, track_stub};
-use starnix_sync::{
-    FileOpsCore, FramebufferInfoLock, FramebufferMemoryLock, FramebufferViewBoundProtocolsLock,
-    FramebufferViewIdentityLock, LockDepMutex, LockDepRwLock, LockEqualOrBefore, Locked, Unlocked,
-};
+use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, RwLock, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
@@ -58,12 +55,10 @@ pub struct AspectRatio {
 
 pub struct Framebuffer {
     server: Option<Arc<FramebufferServer>>,
-    memory: LockDepMutex<Option<Arc<MemoryObject>>, FramebufferMemoryLock>,
-    pub info: LockDepRwLock<fb_var_screeninfo, FramebufferInfoLock>,
-    pub view_identity:
-        LockDepMutex<Option<fuiviews::ViewIdentityOnCreation>, FramebufferViewIdentityLock>,
-    pub view_bound_protocols:
-        LockDepMutex<Option<fuicomposition::ViewBoundProtocols>, FramebufferViewBoundProtocolsLock>,
+    memory: Mutex<Option<Arc<MemoryObject>>>,
+    pub info: RwLock<fb_var_screeninfo>,
+    pub view_identity: Mutex<Option<fuiviews::ViewIdentityOnCreation>>,
+    pub view_bound_protocols: Mutex<Option<fuicomposition::ViewBoundProtocols>>,
     pub initial_view_id_annotation: String,
 }
 
@@ -155,8 +150,8 @@ impl Framebuffer {
 
             Ok(Self {
                 server: Some(server),
-                memory: Some(memory).into(),
-                info: info.into(),
+                memory: Mutex::new(Some(memory)),
+                info: RwLock::new(info),
                 view_identity: Default::default(),
                 view_bound_protocols: Default::default(),
                 initial_view_id_annotation,
@@ -165,7 +160,7 @@ impl Framebuffer {
             Ok(Self {
                 server: None,
                 memory: Default::default(),
-                info: info.into(),
+                info: RwLock::new(info),
                 view_identity: Default::default(),
                 view_bound_protocols: Default::default(),
                 initial_view_id_annotation,

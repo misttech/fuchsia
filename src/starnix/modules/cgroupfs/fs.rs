@@ -9,9 +9,7 @@ use starnix_core::vfs::{
     FsNodeInfo, FsStr,
 };
 use starnix_logging::log_warn;
-use starnix_sync::{
-    CgroupDirectoryNodesLock, FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, Unlocked,
-};
+use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::errors::Errno;
@@ -228,7 +226,7 @@ pub struct DirectoryNodes {
 
     /// All non-root cgroup directories, keyed by cgroup's ID. Every non-root cgroup has a
     /// corresponding node.
-    nodes: LockDepMutex<HashMap<u64, FsNodeHandle>, CgroupDirectoryNodesLock>,
+    nodes: Mutex<HashMap<u64, FsNodeHandle>>,
 
     /// The version of cgroup for this hierarchy (v1 or v2).
     pub version: CgroupVersion,
@@ -238,7 +236,7 @@ impl DirectoryNodes {
     pub fn new(root_cgroup: Weak<CgroupRoot>, version: CgroupVersion) -> Arc<DirectoryNodes> {
         Arc::new_cyclic(|weak_self| Self {
             root: CgroupDirectory::new_root(root_cgroup, weak_self.clone()),
-            nodes: Default::default(),
+            nodes: Mutex::new(HashMap::new()),
             version,
         })
     }

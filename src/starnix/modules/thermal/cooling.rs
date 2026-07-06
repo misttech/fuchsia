@@ -4,8 +4,6 @@
 
 use anyhow::{Context, Error, anyhow, format_err};
 use fidl::endpoints::SynchronousProxy;
-use fidl_fuchsia_power_battery as fbattery;
-use fidl_fuchsia_power_cpu as fcpu;
 use starnix_core::device::kobject::Device;
 use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::task::{CurrentTask, Kernel};
@@ -13,12 +11,13 @@ use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use starnix_logging::{log_error, log_warn};
-use starnix_sync::{LockDepMutex, Locked, ThermalChargeLevelLock, Unlocked};
+use starnix_sync::{Locked, Mutex, Unlocked};
 use starnix_uapi::errors::{Errno, errno};
 use starnix_uapi::file_mode::mode;
 use std::borrow::Cow;
 use std::sync::Arc;
 use zx::MonotonicInstant;
+use {fidl_fuchsia_power_battery as fbattery, fidl_fuchsia_power_cpu as fcpu};
 
 const BATTERY_CHARGER_SERVICE_DIRECTORY: &str = "/svc/fuchsia.power.battery.ChargerService";
 
@@ -243,7 +242,7 @@ pub fn cooling_device_init(
 struct FccCoolingOps {
     proxy: fbattery::ChargerSynchronousProxy,
     max_charge_level: u32,
-    charge_level: LockDepMutex<u32, ThermalChargeLevelLock>,
+    charge_level: Mutex<u32>,
 }
 
 impl FccCoolingOps {
@@ -252,7 +251,7 @@ impl FccCoolingOps {
         max_charge_level: u32,
         charge_level: u32,
     ) -> Self {
-        Self { proxy, max_charge_level, charge_level: charge_level.into() }
+        Self { proxy, max_charge_level, charge_level: Mutex::new(charge_level) }
     }
 }
 

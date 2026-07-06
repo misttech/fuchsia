@@ -18,9 +18,7 @@ use starnix_core::vfs::{
     fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_logging::{log_error, log_warn, track_stub};
-use starnix_sync::{
-    FileOpsCore, LockDepMutex, Locked, QbgReadQueueLock, QbgShutdownLock, Unlocked,
-};
+use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
@@ -48,17 +46,16 @@ pub fn create_qbg_device(
 
 struct QbgDeviceState {
     waiters: WaitQueue,
-    read_queue:
-        LockDepMutex<VecDeque<(VecInputBuffer, Option<fpower::LeaseToken>)>, QbgReadQueueLock>,
-    shutdown: LockDepMutex<Option<oneshot::Sender<()>>, QbgShutdownLock>,
+    read_queue: Mutex<VecDeque<(VecInputBuffer, Option<fpower::LeaseToken>)>>,
+    shutdown: Mutex<Option<oneshot::Sender<()>>>,
 }
 
 impl QbgDeviceState {
     fn new() -> Self {
         Self {
             waiters: WaitQueue::default(),
-            read_queue: Default::default(),
-            shutdown: Default::default(),
+            read_queue: Mutex::new(VecDeque::new()),
+            shutdown: Mutex::new(None),
         }
     }
 
