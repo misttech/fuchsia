@@ -21,14 +21,12 @@ pub use parser::PolicyCursor;
 pub use security_context::{SecurityContext, SecurityContextError};
 
 pub use crate::new_policy::traits::PolicyId;
-use crate::new_policy::traits::{HasName, HasPolicyId, Serialize as _};
+use crate::new_policy::traits::Serialize as _;
 pub use crate::new_policy::{
     AccessVector, CategoryId, ClassId, HandleUnknown, MlsLevel, MlsRange, POLICYDB_VERSION_MAX,
     PermissionId, RoleId, SensitivityId, TypeId, UserId,
 };
-use crate::{
-    ClassPermission, KernelClass, NullessByteStr, ObjectClass, PolicyCap, new_policy as new,
-};
+use crate::{ClassPermission, KernelClass, NullessByteStr, ObjectClass, new_policy as new};
 use index::PolicyIndex;
 use parsed_policy::ParsedPolicy;
 use parser::PolicyData;
@@ -153,64 +151,31 @@ pub fn parse_policy_by_value(binary_policy: Vec<u8>) -> Result<Unvalidated, anyh
     Ok(Unvalidated(policy))
 }
 
-/// Information on a Class. This struct is used for sharing Class information outside this crate.
-pub struct ClassInfo {
-    /// The name of the class.
-    pub class_name: Box<[u8]>,
-    /// The class identifier.
-    pub class_id: ClassId,
-}
-
 #[derive(Debug)]
 pub struct Policy(PolicyIndex);
 
-impl Policy {
-    /// The policy version stored in the underlying binary policy.
-    pub fn policy_version(&self) -> u32 {
-        self.0.parsed_policy().policy_version()
-    }
+impl Deref for Policy {
+    type Target = PolicyIndex;
 
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Policy {
     /// Serializes the policy back into [`PolicyData`].
     pub fn serialize(&self) -> PolicyData {
         let mut bytes = Vec::new();
-        self.0
-            .parsed_policy()
-            .serialize(&mut bytes)
-            .expect("serialization of new_policy should succeed");
+        self.0.serialize(&mut bytes).expect("serialization of new_policy should succeed");
         std::sync::Arc::from(bytes)
-    }
-
-    /// The way "unknown" policy decisions should be handed according to the underlying binary
-    /// policy.
-    pub fn handle_unknown(&self) -> HandleUnknown {
-        self.0.parsed_policy().handle_unknown()
     }
 
     pub fn conditional_booleans<'a>(&'a self) -> Vec<(&'a [u8], bool)> {
         self.0
-            .parsed_policy()
             .conditional_booleans()
             .iter()
             .map(|boolean| (boolean.data.as_slice(), boolean.metadata.active()))
             .collect()
-    }
-
-    /// The set of class names and their respective class identifiers.
-    pub fn classes(&self) -> Vec<ClassInfo> {
-        self.0
-            .parsed_policy()
-            .classes()
-            .iter()
-            .map(|class| ClassInfo {
-                class_name: Box::<[u8]>::from(class.name()),
-                class_id: class.id().into(),
-            })
-            .collect()
-    }
-
-    /// Returns the parsed [`TypeId`] corresponding to the specified `name` (including aliases).
-    pub(super) fn type_id_by_name(&self, name: &str) -> Option<TypeId> {
-        self.0.parsed_policy().type_id_by_name(name)
     }
 
     /// Returns the set of permissions for the given class, including both the
@@ -221,7 +186,7 @@ impl Policy {
         &self,
         class_name: &str,
     ) -> Result<Vec<(PermissionId, Vec<u8>)>, ()> {
-        let classes = self.0.parsed_policy().classes();
+        let classes = self.classes();
         let class = classes.get_by_name(class_name.as_bytes()).ok_or(())?;
         let owned_permissions = class.permissions();
 
@@ -235,13 +200,8 @@ impl Policy {
             return Ok(result);
         }
 
-        let common_symbol_permissions = self
-            .0
-            .parsed_policy()
-            .common_symbols()
-            .get_by_name(class.common_name())
-            .ok_or(())?
-            .permissions();
+        let common_symbol_permissions =
+            self.common_symbols().get_by_name(class.common_name()).ok_or(())?.permissions();
 
         result.append(
             &mut common_symbol_permissions
@@ -356,11 +316,7 @@ impl Policy {
         object_class: impl Into<ObjectClass>,
     ) -> AccessDecision {
         if let Some(target_class) = self.0.class(object_class.into()) {
-            self.0.parsed_policy().compute_access_decision(
-                source_context,
-                target_context,
-                &target_class,
-            )
+            self.0.compute_access_decision(source_context, target_context, &target_class)
         } else {
             let mut decision = AccessDecision::allow(AccessVector::NONE);
             if self.is_permissive(source_context.type_()) {
@@ -382,7 +338,7 @@ impl Policy {
         xperms_prefix: u8,
     ) -> XpermsAccessDecision {
         if let Some(target_class) = self.0.class(object_class.into()) {
-            self.0.parsed_policy().compute_xperms_access_decision(
+            self.0.compute_xperms_access_decision(
                 xperms_kind,
                 source_context,
                 target_context,
@@ -395,17 +351,12 @@ impl Policy {
     }
 
     pub fn is_bounded_by(&self, bounded_type: TypeId, parent_type: TypeId) -> bool {
-        self.0.parsed_policy().type_(bounded_type).bounded_by() == Some(parent_type)
+        self.0.type_(bounded_type).bounded_by() == Some(parent_type)
     }
 
     /// Returns true if the policy has the marked the type/domain for permissive checks.
     pub fn is_permissive(&self, type_: TypeId) -> bool {
-        self.0.parsed_policy().permissive_map().contains(type_)
-    }
-
-    /// Returns true if the policy contains a `policycap` statement for the specified capability.
-    pub fn has_policycap(&self, policy_cap: PolicyCap) -> bool {
-        self.0.parsed_policy().has_policycap(policy_cap)
+        self.0.permissive_map().contains(type_)
     }
 }
 
@@ -419,7 +370,7 @@ impl AccessVectorComputer for Policy {
         let mut kernel_audit;
         // Set the default values of the bits as appropriate for the policy's handle_unknown value.
         // Bits corresponding to policy-known permissions will be overwritten.
-        if self.0.parsed_policy().handle_unknown() == HandleUnknown::Allow {
+        if self.0.handle_unknown() == HandleUnknown::Allow {
             // If we allow unknown permissions, a bit will be by default allowed and not audited.
             kernel_allow = 0xffffffffu32;
             kernel_audit = 0u32;
@@ -723,7 +674,7 @@ pub(super) mod tests {
         AccessVector, ClassId, HandleUnknown, Policy, TypeId, XpermsAccessDecision, XpermsKind,
         parse_policy_by_value,
     };
-    use crate::new_policy::traits::{HasName, HasPolicyId};
+    use crate::new_policy::traits::HasPolicyId;
     use crate::{FileClass, InitialSid, KernelClass};
 
     use anyhow::Context as _;
@@ -745,11 +696,8 @@ pub(super) mod tests {
         target_class: &str,
         permission: &str,
     ) -> bool {
-        let classes = policy.0.parsed_policy().classes();
-        let class = classes
-            .iter()
-            .find(|class| class.name() == target_class.as_bytes())
-            .expect("class not found");
+        let classes = policy.classes();
+        let class = classes.get_by_name(target_class.as_bytes()).expect("class not found");
         let class_permissions = policy
             .find_class_permissions_by_name(target_class)
             .expect("class permissions not found");
@@ -758,8 +706,7 @@ pub(super) mod tests {
             .find(|(_, name)| permission.as_bytes() == name)
             .expect("permission not found");
         let permission_bit = AccessVector::from(*permission_id);
-        let access_decision =
-            policy.0.parsed_policy().compute_explicitly_allowed(source_type, target_type, class);
+        let access_decision = policy.0.compute_explicitly_allowed(source_type, target_type, class);
         permission_bit == access_decision.allow & permission_bit
     }
 
@@ -959,11 +906,9 @@ pub(super) mod tests {
 
         let a_t = policy.type_id_by_name("a_t").expect("look up type id");
 
-        let classes = policy.0.parsed_policy().classes();
-        let class =
-            classes.iter().find(|class| class.name() == b"class0").expect("class not found");
-        let raw_access_vector =
-            policy.0.parsed_policy().compute_explicitly_allowed(a_t, a_t, class).allow.value();
+        let classes = policy.classes();
+        let class = classes.get_by_name(b"class0").expect("class not found");
+        let raw_access_vector = policy.0.compute_explicitly_allowed(a_t, a_t, class).allow.value();
 
         // Two separate attributes are each allowed one permission on `[attr] self:class0`. Both
         // attributes are associated with "a_t". No other `allow` statements appear in the policy

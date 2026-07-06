@@ -13,6 +13,7 @@ use crate::new_policy::{
 use crate::{ClassPermission as _, KernelClass, KernelPermission, NullessByteStr, PolicyCap};
 
 use std::collections::HashMap;
+use std::ops::Deref;
 
 use strum::VariantArray as _;
 
@@ -33,7 +34,7 @@ type KernelPermissionIdsArray = [Option<PermissionId>; 32];
 /// `policy_index.classes(KernelClass::Process).unwrap()` yields the offset in the policy's
 /// collection of classes where the "process" class resides.
 #[derive(Debug)]
-pub(super) struct PolicyIndex {
+pub struct PolicyIndex {
     /// Map from [`KernelClass`]es to their corresponding [`ClassId`]s in the associated policy's
     /// [`super::symbols::Classes`] collection.
     classes: HashMap<KernelClass, ClassId>,
@@ -127,9 +128,9 @@ impl PolicyIndex {
         match object_class {
             crate::ObjectClass::Kernel(kernel_class) => {
                 let &class_id = self.classes.get(&kernel_class)?;
-                self.parsed_policy.class(class_id)
+                self.classes().get_by_id(class_id)
             }
-            crate::ObjectClass::ClassId(class_id) => self.parsed_policy.class(class_id),
+            crate::ObjectClass::ClassId(class_id) => self.classes().get_by_id(class_id),
         }
     }
 
@@ -303,10 +304,6 @@ impl PolicyIndex {
         self.cached_object_r_role
     }
 
-    pub(super) fn parsed_policy(&self) -> &ParsedPolicy {
-        &self.parsed_policy
-    }
-
     /// Returns the [`SecurityContext`] defined by this policy for the specified
     /// well-known (or "initial") Id.
     pub(super) fn initial_context(&self, id: crate::InitialSid) -> SecurityContext {
@@ -434,7 +431,7 @@ impl PolicyIndex {
 
     /// Helper used to construct and validate well-known [`SecurityContext`] values.
     fn resolve_initial_context(&self, id: crate::InitialSid) -> SecurityContext {
-        SecurityContext::new_from_policy_context(self.parsed_policy().initial_context(id))
+        SecurityContext::new_from_policy_context(self.parsed_policy.initial_context(id))
     }
 
     fn role_transition_new_role(
@@ -522,4 +519,12 @@ fn get_permission_id_by_name(
         return Some(permission.id());
     }
     None
+}
+
+impl Deref for PolicyIndex {
+    type Target = ParsedPolicy;
+
+    fn deref(&self) -> &Self::Target {
+        &self.parsed_policy
+    }
 }

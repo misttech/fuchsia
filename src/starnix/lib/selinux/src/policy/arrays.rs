@@ -1518,16 +1518,12 @@ mod tests {
     fn parse_allowxperm_one_ioctl() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
+        let policy = policy.validate().expect("validate policy");
 
-        let class_id = parsed_policy
-            .classes()
-            .get_by_name(b"class_one_ioctl")
-            .expect("look up class_one_ioctl")
-            .id();
+        let class_id =
+            policy.classes().get_by_name(b"class_one_ioctl").expect("look up class_one_ioctl").id();
 
-        let rules: Vec<_> = parsed_policy
+        let rules: Vec<_> = policy
             .access_vector_rules_for_test()
             .filter(|rule| rule.metadata.target_class() == class_id)
             .collect();
@@ -1548,16 +1544,15 @@ mod tests {
     fn parse_allowxperm_two_ioctls_same_range() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
+        let policy = policy.validate().expect("validate policy");
 
-        let class_id = parsed_policy
+        let class_id = policy
             .classes()
             .get_by_name(b"class_two_ioctls_same_range")
             .expect("look up class_two_ioctls_same_range")
             .id();
 
-        let rules: Vec<_> = parsed_policy
+        let rules: Vec<_> = policy
             .access_vector_rules_for_test()
             .filter(|rule| rule.metadata.target_class() == class_id)
             .collect();
@@ -1581,16 +1576,15 @@ mod tests {
     fn parse_allowxperm_two_ioctls_same_range_diff_rules() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
+        let policy = policy.validate().expect("validate policy");
 
-        let class_id = parsed_policy
+        let class_id = policy
             .classes()
             .get_by_name(b"class_four_ioctls_same_range_diff_rules")
             .expect("look up class_four_ioctls_same_range_diff_rules")
             .id();
 
-        let rules: Vec<_> = parsed_policy
+        let rules: Vec<_> = policy
             .access_vector_rules_for_test()
             .filter(|rule| rule.metadata.target_class() == class_id)
             .collect();
@@ -1616,16 +1610,15 @@ mod tests {
     fn parse_allowxperm_two_ioctls_different_range() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
+        let policy = policy.validate().expect("validate policy");
 
-        let class_id = parsed_policy
+        let class_id = policy
             .classes()
             .get_by_name(b"class_two_ioctls_diff_range")
             .expect("look up class_two_ioctls_diff_range")
             .id();
 
-        let rules: Vec<_> = parsed_policy
+        let rules: Vec<_> = policy
             .access_vector_rules_for_test()
             .filter(|rule| rule.metadata.target_class() == class_id)
             .collect();
@@ -1657,16 +1650,15 @@ mod tests {
     fn parse_allowxperm_one_driver_range() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
+        let policy = policy.validate().expect("validate policy");
 
-        let class_id = parsed_policy
+        let class_id = policy
             .classes()
             .get_by_name(b"class_one_driver_range")
             .expect("look up class_one_driver_range")
             .id();
 
-        let rules: Vec<_> = parsed_policy
+        let rules: Vec<_> = policy
             .access_vector_rules_for_test()
             .filter(|rule| rule.metadata.target_class() == class_id)
             .collect();
@@ -1690,16 +1682,15 @@ mod tests {
     fn parse_allowxperm_most_ioctls() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
+        let policy = policy.validate().expect("validate policy");
 
-        let class_id = parsed_policy
+        let class_id = policy
             .classes()
             .get_by_name(b"class_most_ioctls")
             .expect("look up class_most_ioctls")
             .id();
 
-        let rules: Vec<_> = parsed_policy
+        let rules: Vec<_> = policy
             .access_vector_rules_for_test()
             .filter(|rule| rule.metadata.target_class() == class_id)
             .collect();
@@ -1744,16 +1735,15 @@ mod tests {
     fn parse_allowxperm_most_ioctls_with_hole() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
+        let policy = policy.validate().expect("validate policy");
 
-        let class_id = parsed_policy
+        let class_id = policy
             .classes()
             .get_by_name(b"class_most_ioctls_with_hole")
             .expect("look up class_most_ioctls_with_hole")
             .id();
 
-        let rules: Vec<_> = parsed_policy
+        let rules: Vec<_> = policy
             .access_vector_rules_for_test()
             .filter(|rule| rule.metadata.target_class() == class_id)
             .collect();
@@ -1823,16 +1813,15 @@ mod tests {
     fn parse_allowxperm_all_ioctls() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
+        let policy = policy.validate().expect("validate policy");
 
-        let class_id = parsed_policy
+        let class_id = policy
             .classes()
             .get_by_name(b"class_all_ioctls")
             .expect("look up class_all_ioctls")
             .id();
 
-        let rules: Vec<_> = parsed_policy
+        let rules: Vec<_> = policy
             .access_vector_rules_for_test()
             .filter(|rule| rule.metadata.target_class() == class_id)
             .collect();
@@ -1851,16 +1840,12 @@ mod tests {
     fn parse_allowxperm_one_nlmsg() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
+        let policy = policy.validate().expect("validate policy");
 
-        let class_id = parsed_policy
-            .classes()
-            .get_by_name(b"class_one_nlmsg")
-            .expect("look up class_one_nlmsg")
-            .id();
+        let class_id =
+            policy.classes().get_by_name(b"class_one_nlmsg").expect("look up class_one_nlmsg").id();
 
-        let rules: Vec<_> = parsed_policy
+        let rules: Vec<_> = policy
             .access_vector_rules_for_test()
             .filter(|rule| rule.metadata.target_class() == class_id)
             .collect();
@@ -1883,16 +1868,15 @@ mod tests {
     fn parse_allowxperm_two_nlmsg_same_range() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
+        let policy = policy.validate().expect("validate policy");
 
-        let class_id = parsed_policy
+        let class_id = policy
             .classes()
             .get_by_name(b"class_two_nlmsg_same_range")
             .expect("look up class_two_nlmsg_same_range")
             .id();
 
-        let rules: Vec<_> = parsed_policy
+        let rules: Vec<_> = policy
             .access_vector_rules_for_test()
             .filter(|rule| rule.metadata.target_class() == class_id)
             .collect();
@@ -1916,16 +1900,15 @@ mod tests {
     fn parse_allowxperm_two_nlmsg_different_range() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
+        let policy = policy.validate().expect("validate policy");
 
-        let class_id = parsed_policy
+        let class_id = policy
             .classes()
             .get_by_name(b"class_two_nlmsg_diff_range")
             .expect("look up class_two_nlmsg_diff_range")
             .id();
 
-        let rules: Vec<_> = parsed_policy
+        let rules: Vec<_> = policy
             .access_vector_rules_for_test()
             .filter(|rule| rule.metadata.target_class() == class_id)
             .collect();
@@ -1957,16 +1940,15 @@ mod tests {
     fn parse_allowxperm_one_nlmsg_range() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
+        let policy = policy.validate().expect("validate policy");
 
-        let class_id = parsed_policy
+        let class_id = policy
             .classes()
             .get_by_name(b"class_one_nlmsg_range")
             .expect("look up class_one_nlmsg_range")
             .id();
 
-        let rules: Vec<_> = parsed_policy
+        let rules: Vec<_> = policy
             .access_vector_rules_for_test()
             .filter(|rule| rule.metadata.target_class() == class_id)
             .collect();
@@ -1994,16 +1976,15 @@ mod tests {
     fn parse_allowxperm_two_nlmsg_ranges() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
+        let policy = policy.validate().expect("validate policy");
 
-        let class_id = parsed_policy
+        let class_id = policy
             .classes()
             .get_by_name(b"class_two_nlmsg_ranges")
             .expect("look up class_two_nlmsg_ranges")
             .id();
 
-        let rules: Vec<_> = parsed_policy
+        let rules: Vec<_> = policy
             .access_vector_rules_for_test()
             .filter(|rule| rule.metadata.target_class() == class_id)
             .collect();
@@ -2042,16 +2023,15 @@ mod tests {
     fn parse_allowxperm_three_separate_nlmsg_ranges() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
+        let policy = policy.validate().expect("validate policy");
 
-        let class_id = parsed_policy
+        let class_id = policy
             .classes()
             .get_by_name(b"class_three_separate_nlmsg_ranges")
             .expect("look up class_three_separate_nlmsg_ranges")
             .id();
 
-        let rules: Vec<_> = parsed_policy
+        let rules: Vec<_> = policy
             .access_vector_rules_for_test()
             .filter(|rule| rule.metadata.target_class() == class_id)
             .collect();
@@ -2100,16 +2080,15 @@ mod tests {
     fn parse_allowxperm_three_contiguous_nlmsg_ranges() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
+        let policy = policy.validate().expect("validate policy");
 
-        let class_id = parsed_policy
+        let class_id = policy
             .classes()
             .get_by_name(b"class_three_contiguous_nlmsg_ranges")
             .expect("look up class_three_contiguous_nlmsg_ranges")
             .id();
 
-        let rules: Vec<_> = parsed_policy
+        let rules: Vec<_> = policy
             .access_vector_rules_for_test()
             .filter(|rule| rule.metadata.target_class() == class_id)
             .collect();
@@ -2144,16 +2123,15 @@ mod tests {
     fn parse_auditallowxperm() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
+        let policy = policy.validate().expect("validate policy");
 
-        let class_id = parsed_policy
+        let class_id = policy
             .classes()
             .get_by_name(b"class_auditallowxperm")
             .expect("look up class_auditallowxperm")
             .id();
 
-        let rules: Vec<_> = parsed_policy
+        let rules: Vec<_> = policy
             .access_vector_rules_for_test()
             .filter(|rule| rule.metadata.target_class() == class_id)
             .collect();
@@ -2189,16 +2167,15 @@ mod tests {
     fn parse_dontauditxperm() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
+        let policy = policy.validate().expect("validate policy");
 
-        let class_id = parsed_policy
+        let class_id = policy
             .classes()
             .get_by_name(b"class_dontauditxperm")
             .expect("look up class_dontauditxperm")
             .id();
 
-        let rules: Vec<_> = parsed_policy
+        let rules: Vec<_> = policy
             .access_vector_rules_for_test()
             .filter(|rule| rule.metadata.target_class() == class_id)
             .collect();
@@ -2230,16 +2207,15 @@ mod tests {
     fn parse_auditallowxperm_not_coalesced() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
+        let policy = policy.validate().expect("validate policy");
 
-        let class_id = parsed_policy
+        let class_id = policy
             .classes()
             .get_by_name(b"class_auditallowxperm_not_coalesced")
             .expect("class_auditallowxperm_not_coalesced")
             .id();
 
-        let rules: Vec<_> = parsed_policy
+        let rules: Vec<_> = policy
             .access_vector_rules_for_test()
             .filter(|rule| rule.metadata.target_class() == class_id)
             .collect();

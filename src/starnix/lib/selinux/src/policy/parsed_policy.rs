@@ -385,7 +385,7 @@ impl ParsedPolicy {
     }
 
     /// Returns the [`TypeId`] of the [`Type`] with the given name, if present in the policy.
-    pub(super) fn type_id_by_name(&self, name: &str) -> Option<TypeId> {
+    pub(crate) fn type_id_by_name(&self, name: &str) -> Option<TypeId> {
         self.types.type_id_by_name(name, &self.data)
     }
 
@@ -409,10 +409,6 @@ impl ParsedPolicy {
     /// Returns the named category, if present in the policy.
     pub(super) fn category_by_name(&self, name: &str) -> Option<Category> {
         self.categories.category_by_name(&self.data, name)
-    }
-
-    pub(super) fn class(&self, class_id: ClassId) -> Option<&Class> {
-        self.classes().get_by_id(class_id)
     }
 
     pub(super) fn conditional_booleans(&self) -> &Vec<ConditionalBoolean> {

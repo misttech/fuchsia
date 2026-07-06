@@ -215,7 +215,6 @@ mod tests {
             .expect("parse policy")
             .validate()
             .expect("validate policy");
-        let parsed_policy = policy.0.parsed_policy();
 
         let source = policy
             .parse_security_context(b"user0:object_r:type0:s0-s0".into())
@@ -224,7 +223,7 @@ mod tests {
             .parse_security_context(b"user1:object_r:security_t:s0:c0-s0:c0".into())
             .expect("valid target security context");
 
-        let classes = parsed_policy.classes();
+        let classes = policy.classes();
         let class_constraint_eq =
             classes.get_by_name(b"class_constraint_eq").expect("look up class");
         let class_constraint_eq_constraints = class_constraint_eq.constraints();
@@ -291,7 +290,6 @@ mod tests {
             .expect("parse policy")
             .validate()
             .expect("validate policy");
-        let parsed_policy = policy.0.parsed_policy();
 
         let source = policy
             .parse_security_context(b"user0:object_r:type0:s0-s0".into())
@@ -300,7 +298,7 @@ mod tests {
             .parse_security_context(b"user1:object_r:security_t:s0:c0-s0:c0".into())
             .expect("valid target security context");
 
-        let classes = parsed_policy.classes();
+        let classes = policy.classes();
         let class = classes.get_by_name(b"class_mls_constraints").expect("look up class");
         let constraints = class.constraints();
         // Constraints appear in reverse order in parsed policy.

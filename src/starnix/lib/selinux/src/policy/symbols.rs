@@ -896,9 +896,8 @@ mod tests {
             include_bytes! {"../../testdata/micro_policies/multiple_levels_and_categories_policy"};
         let policy = parse_policy_by_value(TEST_POLICY.to_vec()).unwrap();
         let policy = policy.validate().unwrap();
-        let parsed_policy = policy.0.parsed_policy();
 
-        let user = parsed_policy.user(UserId::for_test(1));
+        let user = policy.user(UserId::for_test(1));
         let mls_range = user.mls_range();
         let low_level = mls_range.low();
         let high_level = mls_range.high().as_ref().expect("user 1 has a high mls level");
@@ -923,10 +922,9 @@ mod tests {
     fn parse_mls_constrain_statement() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
+        let policy = policy.validate().expect("validate policy");
 
-        let classes = parsed_policy.classes();
+        let classes = policy.classes();
         let class = classes.get_by_name(b"class_mls_constraints").expect("look up class");
         let constraints = class.constraints();
         assert_eq!(constraints.len(), 6);
@@ -969,10 +967,9 @@ mod tests {
     fn parse_constrain_statement() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
+        let policy = policy.validate().expect("validate policy");
 
-        let classes = parsed_policy.classes();
+        let classes = policy.classes();
         let class = classes.get_by_name(b"class_constraint_nested").expect("look up class");
         let constraints = class.constraints();
         assert_eq!(constraints.len(), 1);
@@ -1013,8 +1010,8 @@ mod tests {
 
         match &terms[0] {
             ConstraintTerm::ExpressionWithNames { operand, operator, names } => {
-                assert_eq!(*operand, ConstraintOperand::User(ConstraintSubject::Target));
-                assert_eq!(*operator, ConstraintOperator::Eq);
+                assert_eq!(operand, &ConstraintOperand::User(ConstraintSubject::Target));
+                assert_eq!(operator, &ConstraintOperator::Eq);
                 match &**names {
                     ConstraintNames::Users(ids, set) => {
                         assert!(!ids.is_empty());

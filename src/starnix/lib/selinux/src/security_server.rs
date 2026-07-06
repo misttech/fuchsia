@@ -7,6 +7,7 @@ use crate::access_vector_cache::{
 };
 use crate::exceptions_config::ExceptionsConfig;
 use crate::new_policy::HandleUnknown;
+use crate::new_policy::traits::{HasName, HasPolicyId};
 use crate::permission_check::{PerThreadCache, PermissionCheck};
 use crate::policy::parser::PolicyData;
 use crate::policy::{
@@ -358,7 +359,7 @@ impl SecurityServer {
             .parsed
             .classes()
             .iter()
-            .map(|class| class.class_name.to_vec())
+            .map(|class| class.name().to_vec())
             .collect();
         Ok(names)
     }
@@ -370,10 +371,9 @@ impl SecurityServer {
             .expect_active_policy()
             .parsed
             .classes()
-            .iter()
-            .find(|class| *(class.class_name) == *(name.as_bytes()))
+            .get_by_name(name.as_bytes())
             .ok_or(())?
-            .class_id)
+            .id())
     }
 
     /// Returns the set of permissions associated with a class. Each permission

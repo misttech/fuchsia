@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::new_policy::traits::HasPolicyId;
 use crate::policy::{Policy, TypeId};
 use crate::{KernelClass, ObjectClass};
 
@@ -74,11 +75,8 @@ impl ExceptionsConfig {
                     // Parse the object class name to the corresponding policy-specific Id.
                     // This allows non-kernel classes, and userspace queries against kernel classes,
                     // to have exceptions applied to them.
-                    let policy_class = policy
-                        .classes()
-                        .iter()
-                        .find(|x| *(x.class_name) == *(class_name.as_bytes()))
-                        .map(|x| x.class_id);
+                    let policy_class =
+                        policy.classes().get_by_name(class_name.as_bytes()).map(|x| x.id());
 
                     // Parse the kernel object class. This must correspond to a known kernel object
                     // class, regardless of whether the policy actually defines the class.
@@ -206,9 +204,8 @@ mod tests {
         fn expect_policy_class(&self, name: &str) -> ObjectClass {
             self.policy
                 .classes()
-                .iter()
-                .find(|x| *(x.class_name) == *(name.as_bytes()))
-                .map(|x| x.class_id)
+                .get_by_name(name.as_bytes())
+                .map(|x| x.id())
                 .expect("Unable to resolve policy class Id")
                 .into()
         }
