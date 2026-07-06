@@ -29,6 +29,7 @@
 #include <fbl/alloc_checker.h>
 #include <fbl/array.h>
 #include <fbl/auto_lock.h>
+#include <safemath/safe_math.h>
 
 namespace {
 
@@ -122,6 +123,34 @@ zx::result<std::string> NandDevice::Init(
     const std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
     const std::optional<std::string>& node_name) {
   ZX_DEBUG_ASSERT(!operation_performer_.has_value());
+
+  // Validate dimensions are non-zero to prevent division-by-zero or empty allocations.
+  if (params_.page_size == 0 || params_.pages_per_block == 0 || params_.num_blocks == 0) {
+    fdf::error("Invalid NAND parameters: page_size={}, pages_per_block={}, num_blocks={}",
+               params_.page_size, params_.pages_per_block, params_.num_blocks);
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  // Ensure total page count does not overflow 32-bit integer limits.
+  uint32_t max_pages;
+  if (!safemath::CheckMul(params_.pages_per_block, params_.num_blocks).AssignIfValid(&max_pages)) {
+    fdf::error("NAND pages_per_block * num_blocks overflows uint32_t");
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  // Ensure sum of page size and OOB size does not overflow 32-bit integer limits.
+  uint32_t page_and_oob;
+  if (!safemath::CheckAdd(params_.page_size, params_.oob_size).AssignIfValid(&page_and_oob)) {
+    fdf::error("NAND page_size + oob_size overflows uint32_t");
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  // Ensure total RAM-backed device size does not overflow 64-bit integer limits.
+  uint64_t total_size;
+  if (!safemath::CheckMul(page_and_oob, max_pages).AssignIfValid(&total_size)) {
+    fdf::error("NAND total size overflows uint64_t");
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
 
   zx_status_t status;
   const bool use_vmo = info.vmo.is_valid();
@@ -374,7 +403,7 @@ void NandDevice::PerformOperation(RamNandOp& operation) {
           status = ZX_ERR_IO;
           break;
         }
-        if (write_count_ + operation.op->rw_bytes.length > fail_after_) {
+        if (operation.op->rw_bytes.length > fail_after_ - write_count_) {
           const uint64_t old_length = operation.op->rw_bytes.length;
           operation.op->rw_bytes.length = fail_after_ - write_count_;
           status = ReadWriteData(operation.op, true);
@@ -382,7 +411,7 @@ void NandDevice::PerformOperation(RamNandOp& operation) {
             write_count_ = fail_after_;
             status = ZX_ERR_IO;
           }
-          operation.op->rw.length = old_length;
+          operation.op->rw_bytes.length = old_length;
           break;
         }
       }
@@ -400,10 +429,11 @@ void NandDevice::PerformOperation(RamNandOp& operation) {
           status = ZX_ERR_IO;
           break;
         }
-        if (write_count_ + (static_cast<uint64_t>(operation.op->rw.length) * params_.page_size) >
-            fail_after_) {
+        uint64_t op_bytes = static_cast<uint64_t>(operation.op->rw.length) * params_.page_size;
+        if (op_bytes > fail_after_ - write_count_) {
           const uint32_t old_length = operation.op->rw.length;
-          operation.op->rw.length = (fail_after_ - write_count_) / params_.page_size;
+          operation.op->rw.length =
+              static_cast<uint32_t>((fail_after_ - write_count_) / params_.page_size);
           status = ReadWriteData(operation.op, false);
 
           if (status == ZX_OK) {
@@ -444,17 +474,17 @@ zx_status_t NandDevice::ReadWriteData(nand_operation_t* operation, bool bytes) {
     return ZX_OK;
   }
 
-  uint32_t nand_addr;
+  uint64_t nand_addr;
   uint64_t vmo_addr;
-  uint32_t length;
+  uint64_t length;
   if (bytes) {
     nand_addr = operation->rw_bytes.offset_nand;
     vmo_addr = operation->rw_bytes.offset_data_vmo;
     length = operation->rw_bytes.length;
   } else {
-    nand_addr = operation->rw.offset_nand * params_.page_size;
-    vmo_addr = operation->rw.offset_data_vmo * params_.page_size;
-    length = operation->rw.length * params_.page_size;
+    nand_addr = static_cast<uint64_t>(operation->rw.offset_nand) * params_.page_size;
+    vmo_addr = static_cast<uint64_t>(operation->rw.offset_data_vmo) * params_.page_size;
+    length = static_cast<uint64_t>(operation->rw.length) * params_.page_size;
   }
   void* addr = reinterpret_cast<char*>(mapped_addr_) + nand_addr;
 
@@ -483,9 +513,10 @@ zx_status_t NandDevice::ReadWriteOob(nand_operation_t* operation) {
     return ZX_OK;
   }
 
-  uint32_t nand_addr = MainDataSize() + operation->rw.offset_nand * params_.oob_size;
-  uint64_t vmo_addr = operation->rw.offset_oob_vmo * params_.page_size;
-  uint32_t length = operation->rw.length * params_.oob_size;
+  uint64_t nand_addr =
+      MainDataSize() + static_cast<uint64_t>(operation->rw.offset_nand) * params_.oob_size;
+  uint64_t vmo_addr = static_cast<uint64_t>(operation->rw.offset_oob_vmo) * params_.page_size;
+  uint64_t length = static_cast<uint64_t>(operation->rw.length) * params_.oob_size;
   void* addr = reinterpret_cast<char*>(mapped_addr_) + nand_addr;
 
   if (operation->command == NAND_OP_READ) {
@@ -500,17 +531,17 @@ zx_status_t NandDevice::ReadWriteOob(nand_operation_t* operation) {
 zx_status_t NandDevice::Erase(nand_operation_t* operation) {
   ZX_DEBUG_ASSERT(operation->command == NAND_OP_ERASE);
 
-  uint32_t block_size = params_.page_size * params_.pages_per_block;
-  uint32_t nand_addr = operation->erase.first_block * block_size;
-  uint32_t length = operation->erase.num_blocks * block_size;
+  uint64_t block_size = static_cast<uint64_t>(params_.page_size) * params_.pages_per_block;
+  uint64_t nand_addr = static_cast<uint64_t>(operation->erase.first_block) * block_size;
+  uint64_t length = static_cast<uint64_t>(operation->erase.num_blocks) * block_size;
   void* addr = reinterpret_cast<char*>(mapped_addr_) + nand_addr;
 
   memset(addr, 0xff, length);
 
   // Clear the OOB area:
-  uint32_t oob_per_block = params_.oob_size * params_.pages_per_block;
-  length = operation->erase.num_blocks * oob_per_block;
-  nand_addr = MainDataSize() + operation->erase.first_block * oob_per_block;
+  uint64_t oob_per_block = static_cast<uint64_t>(params_.oob_size) * params_.pages_per_block;
+  length = static_cast<uint64_t>(operation->erase.num_blocks) * oob_per_block;
+  nand_addr = MainDataSize() + static_cast<uint64_t>(operation->erase.first_block) * oob_per_block;
   addr = reinterpret_cast<char*>(mapped_addr_) + nand_addr;
 
   memset(addr, 0xff, length);

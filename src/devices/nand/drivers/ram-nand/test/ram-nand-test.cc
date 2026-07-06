@@ -102,6 +102,9 @@ class RamNandTest : public ::testing::Test {
 
   fdf_testing::BackgroundDriverTest<FixtureConfig>& driver_test() { return driver_test_; }
 
+ protected:
+  fidl::WireSyncClient<fuchsia_hardware_nand::RamNandCtl>& ram_nand_ctl() { return ram_nand_ctl_; }
+
  private:
   fdf_testing::BackgroundDriverTest<FixtureConfig> driver_test_;
   fidl::WireSyncClient<fuchsia_hardware_nand::RamNandCtl> ram_nand_ctl_;
@@ -856,6 +859,38 @@ TEST_F(NandDeviceTest, WearVmo) {
     ASSERT_OK(vmo.read(&result, 0, sizeof(uint32_t)));
     ASSERT_EQ(result, 1u);
   });
+}
+
+TEST_F(RamNandTest, InvalidConfigOverflow) {
+  // page_size = 0
+  {
+    fuchsia_hardware_nand::wire::RamNandInfo config = BuildConfig();
+    config.nand_info.page_size = 0;
+    fidl::WireResult result = ram_nand_ctl()->CreateDevice(std::move(config));
+    ASSERT_OK(result.status());
+    EXPECT_EQ(result->status, ZX_ERR_INVALID_ARGS);
+  }
+
+  // pages_per_block * num_blocks overflows uint32_t
+  {
+    fuchsia_hardware_nand::wire::RamNandInfo config = BuildConfig();
+    config.nand_info.pages_per_block = 0x10000;
+    config.nand_info.num_blocks =
+        0x100000;  // 0x10000 * 0x100000 = 0x1'000'000'000 (overflows uint32_t)
+    fidl::WireResult result = ram_nand_ctl()->CreateDevice(std::move(config));
+    ASSERT_OK(result.status());
+    EXPECT_EQ(result->status, ZX_ERR_INVALID_ARGS);
+  }
+
+  // page_size + oob_size overflows uint32_t
+  {
+    fuchsia_hardware_nand::wire::RamNandInfo config = BuildConfig();
+    config.nand_info.page_size = 0xffffffff;
+    config.nand_info.oob_size = 0x10;
+    fidl::WireResult result = ram_nand_ctl()->CreateDevice(std::move(config));
+    ASSERT_OK(result.status());
+    EXPECT_EQ(result->status, ZX_ERR_INVALID_ARGS);
+  }
 }
 
 }  // namespace ram_nand::testing

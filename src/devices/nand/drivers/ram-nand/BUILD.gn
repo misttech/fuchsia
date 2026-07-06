@@ -49,6 +49,7 @@ source_set("common") {
     "//src/devices/bind/fuchsia.nand:fuchsia.nand_cpp",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zircon-internal",
+    "//zircon/third_party/ulib/safemath",
   ]
   public_deps = [
     "//sdk/banjo/fuchsia.hardware.nand:fuchsia.hardware.nand_banjo_cpp",
@@ -128,6 +129,11 @@ test("ram-nand-test-bin") {
 
 fuchsia_unittest_package("ram-nand-test") {
   deps = [ ":ram-nand-test-bin" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }
 
 group("tests") {

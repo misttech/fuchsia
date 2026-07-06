@@ -113,7 +113,9 @@ class NandDevice : public ddk::NandProtocol<NandDevice>,
   void PerformOperations();
   std::pair<bool, std::vector<RamNandOp>> TakePendingOperations();
   void PerformOperation(RamNandOp& operation);
-  uint32_t MainDataSize() const { return params_.NumPages() * params_.page_size; }
+  uint64_t MainDataSize() const {
+    return static_cast<uint64_t>(params_.NumPages()) * params_.page_size;
+  }
 
   // Implementation of the actual commands.
   zx_status_t ReadWriteData(nand_operation_t* operation, bool bytes);
