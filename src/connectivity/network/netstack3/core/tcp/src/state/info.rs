@@ -368,7 +368,7 @@ mod tests {
 
     use crate::internal::buffer::Assembler;
     use crate::internal::congestion::CongestionControl;
-    use crate::internal::rtt::{Estimator, RttSampler};
+    use crate::internal::rtt::{Estimator, SamplingStrategy};
     use crate::internal::state::{Established, Listen, Recv, RecvBufferState, Send, State};
     use crate::internal::timestamp::TimestampOptionState;
     use crate::testutil::RingBuffer;
@@ -459,8 +459,9 @@ mod tests {
             EffectiveMss::from_mss(mss, MssSizeLimiters { timestamp_enabled: false });
 
         let mut rtt_estimator = Estimator::default();
+        let rtt_sampler = SamplingStrategy::default();
         let rtt = Duration::from_millis(50);
-        rtt_estimator.sample(rtt);
+        rtt_estimator.sample(rtt, rtt_sampler.samples_per_round_trip());
 
         let mut congestion_control = CongestionControl::cubic_with_mss(effective_mss);
         congestion_control.inflate_cwnd(u32::from(mss));
@@ -475,7 +476,7 @@ mod tests {
             wl1: SeqNum::new(100),
             wl2: SeqNum::new(100),
             last_push: SeqNum::new(200),
-            rtt_sampler: RttSampler::default(),
+            rtt_sampler,
             rtt_estimator,
             timer: None,
             congestion_control,
@@ -551,7 +552,7 @@ mod tests {
             wl1: ack,
             wl2: ack,
             last_push: nxt,
-            rtt_sampler: RttSampler::default(),
+            rtt_sampler: SamplingStrategy::default(),
             rtt_estimator: Estimator::default(),
             timer: None,
             congestion_control,

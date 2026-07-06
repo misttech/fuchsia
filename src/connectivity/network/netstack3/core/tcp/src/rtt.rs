@@ -3,10 +3,13 @@
 // found in the LICENSE file.
 
 //! TCP RTT estimation per [RFC 6298](https://tools.ietf.org/html/rfc6298).
+use core::num::NonZeroU32;
 use core::ops::Range;
 use core::time::Duration;
 
 use netstack3_base::{Instant, SeqNum};
+
+const ONE: NonZeroU32 = NonZeroU32::new(1).unwrap();
 
 #[derive(Debug)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
@@ -34,7 +37,7 @@ impl Estimator {
     const G: Duration = Duration::from_millis(100);
 
     /// Updates the estimates with a newly sampled RTT.
-    pub(super) fn sample(&mut self, rtt: Duration) {
+    pub(super) fn sample(&mut self, rtt: Duration, samples_per_round_trip: NonZeroU32) {
         match self {
             Self::NoSample => {
                 // Per RFC 6298 section 2,
@@ -50,11 +53,19 @@ impl Estimator {
                 //     SRTT <- (1 - alpha) * SRTT + alpha * R'
                 //   ...
                 //   The above SHOULD be computed using alpha=1/8 and beta=1/4.
+                //
+                // Per RFC 7323 Appendix G, when taking N RTT samples per round trip,
+                // the weights alpha and beta should be scaled by 1/N to maintain
+                // roughly the same historical smoothing across one RTT. This
+                // scaling yields alpha' and beta'.
+                let alpha_prime_reciprocal = 8 * samples_per_round_trip.get();
+                let beta_prime_reciprocal = 4 * samples_per_round_trip.get();
                 let diff = srtt.checked_sub(rtt).unwrap_or_else(|| rtt - *srtt);
                 // Using fixed point integer division below rather than using
                 // floating points just to define the exact constants.
-                *rtt_var = ((*rtt_var * 3) + diff) / 4;
-                *srtt = ((*srtt * 7) + rtt) / 8;
+                *rtt_var =
+                    ((*rtt_var * (beta_prime_reciprocal - 1)) + diff) / beta_prime_reciprocal;
+                *srtt = ((*srtt * (alpha_prime_reciprocal - 1)) + rtt) / alpha_prime_reciprocal;
             }
         }
     }
@@ -163,11 +174,11 @@ impl Default for Rto {
     }
 }
 
-/// RTT sampler keeps track of the current segment that is keeping track of RTT
-/// calculations.
+/// A RTT sampler that collects samples by measuring the time between sending
+/// a segment and receiving the ACK for that segment.
 #[derive(Debug, Default)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
-pub(super) enum RttSampler<I> {
+pub(super) enum MeasuredSampler<I> {
     #[default]
     NotTracking,
     Tracking {
@@ -176,8 +187,16 @@ pub(super) enum RttSampler<I> {
     },
 }
 
-impl<I: Instant> RttSampler<I> {
-    /// Updates the `RttSampler` with a new segment that is about to be sent.
+impl<I> MeasuredSampler<I> {
+    /// Returns the number of samples per round trip collected by this sampler.
+    #[inline(always)]
+    fn samples_per_round_trip() -> NonZeroU32 {
+        ONE
+    }
+}
+
+impl<I: Instant> MeasuredSampler<I> {
+    /// Updates the `MeasuredSampler` with a new segment that is about to be sent.
     ///
     /// - `now` is the current timestamp.
     /// - `range` is the sequence number range in the newly produced segment.
@@ -207,7 +226,7 @@ impl<I: Instant> RttSampler<I> {
         }
     }
 
-    /// Updates the `RttSampler` with a new ack that arrived for the connection.
+    /// Updates the `MeasuredSampler` with a new ack that arrived for the connection.
     ///
     /// - `now` is the current timestamp.
     /// - `ack` is the acknowledgement number in the ACK segment.
@@ -217,7 +236,7 @@ impl<I: Instant> RttSampler<I> {
     /// This function assumes that `ack` is a valid ACK number and is within the
     /// window the sender is expecting to receive (i.e. it's not an ACK for data
     /// we did not send).
-    pub(super) fn on_ack(&mut self, now: I, ack: SeqNum) -> Option<Duration> {
+    fn on_ack(&mut self, now: I, ack: SeqNum) -> Option<Duration> {
         match self {
             Self::NotTracking => None,
             Self::Tracking { range, timestamp } => {
@@ -237,13 +256,59 @@ impl<I: Instant> RttSampler<I> {
     }
 }
 
+/// The strategy used for sampling RTT measurements on a connection.
+#[derive(Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq))]
+pub(super) enum SamplingStrategy<I> {
+    /// Sample the RTT once per round trip by tracking when an individual
+    /// segment is sent & ACKed.
+    Measured(MeasuredSampler<I>),
+}
+
+impl<I> Default for SamplingStrategy<I> {
+    fn default() -> Self {
+        Self::Measured(MeasuredSampler::default())
+    }
+}
+
+impl<I> SamplingStrategy<I> {
+    /// Returns the number of samples collected per round trip by this strategy.
+    pub(super) fn samples_per_round_trip(&self) -> NonZeroU32 {
+        match self {
+            Self::Measured(_) => MeasuredSampler::<I>::samples_per_round_trip(),
+        }
+    }
+}
+
+impl<I: Instant> SamplingStrategy<I> {
+    /// Updates the sampler with a new segment that is about to be sent.
+    pub(super) fn on_will_send_segment(&mut self, now: I, range: Range<SeqNum>, snd_max: SeqNum) {
+        match self {
+            Self::Measured(sampler) => sampler.on_will_send_segment(now, range, snd_max),
+        }
+    }
+
+    /// Updates the sampler with a new ack that arrived for the connection.
+    pub(super) fn on_ack(&mut self, now: I, ack: SeqNum) -> Option<Duration> {
+        match self {
+            Self::Measured(sampler) => sampler.on_ack(now, ack),
+        }
+    }
+}
+
+impl<I> From<MeasuredSampler<I>> for SamplingStrategy<I> {
+    fn from(sampler: MeasuredSampler<I>) -> Self {
+        Self::Measured(sampler)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
     use netstack3_base::testutil::FakeInstant;
     use test_case::test_case;
 
-    impl RttSampler<FakeInstant> {
+    impl MeasuredSampler<FakeInstant> {
         fn from_range(Range { start, end }: Range<u32>) -> Self {
             Self::Tracking {
                 range: SeqNum::new(start)..SeqNum::new(end),
@@ -252,26 +317,62 @@ mod test {
         }
     }
 
-    #[test_case(Estimator::NoSample, Duration::from_secs(2) => Estimator::Measured {
-        srtt: Duration::from_secs(2),
-        rtt_var: Duration::from_secs(1)
-    })]
-    #[test_case(Estimator::Measured {
-        srtt: Duration::from_secs(1),
-        rtt_var: Duration::from_secs(1)
-    }, Duration::from_secs(2) => Estimator::Measured {
-        srtt: Duration::from_millis(1125),
-        rtt_var: Duration::from_secs(1)
-    })]
-    #[test_case(Estimator::Measured {
-        srtt: Duration::from_secs(1),
-        rtt_var: Duration::from_secs(2)
-    }, Duration::from_secs(1) => Estimator::Measured {
-        srtt: Duration::from_secs(1),
-        rtt_var: Duration::from_millis(1500)
-    })]
-    fn sample_rtt(mut estimator: Estimator, rtt: Duration) -> Estimator {
-        estimator.sample(rtt);
+    #[test_case(
+        Estimator::NoSample,
+        Duration::from_secs(2),
+        NonZeroU32::new(1).unwrap()
+        => Estimator::Measured {
+            srtt: Duration::from_secs(2),
+            rtt_var: Duration::from_secs(1)
+        };
+        "first_sample"
+    )]
+    #[test_case(
+        Estimator::Measured {
+            srtt: Duration::from_secs(1),
+            rtt_var: Duration::from_secs(1)
+        },
+        Duration::from_secs(2),
+        NonZeroU32::new(1).unwrap()
+        => Estimator::Measured {
+            srtt: Duration::from_millis(1125),
+            rtt_var: Duration::from_secs(1)
+        };
+        "different_sample_changes_srtt"
+    )]
+    #[test_case(
+        Estimator::Measured {
+            srtt: Duration::from_secs(1),
+            rtt_var: Duration::from_secs(2)
+        },
+        Duration::from_secs(1),
+        NonZeroU32::new(1).unwrap()
+        => Estimator::Measured {
+            srtt: Duration::from_secs(1),
+            rtt_var: Duration::from_millis(1500)
+        };
+        "same_sample_changes_rtt_var"
+    )]
+    #[test_case(
+        Estimator::Measured {
+            srtt: Duration::from_secs(1),
+            rtt_var: Duration::from_secs(1)
+        },
+        Duration::from_secs(2),
+        NonZeroU32::new(2).unwrap()
+        => Estimator::Measured {
+            srtt: Duration::from_micros(1062500),
+            rtt_var: Duration::from_millis(1000)
+        };
+        "multiple_samples_per_round_trip_scales_decay"
+    )]
+
+    fn sample_rtt(
+        mut estimator: Estimator,
+        rtt: Duration,
+        samples_per_round_trip: NonZeroU32,
+    ) -> Estimator {
+        estimator.sample(rtt, samples_per_round_trip);
         estimator
     }
 
@@ -287,65 +388,65 @@ mod test {
     // Useful for representing wrapping-around TCP seqnum ranges.
     #[allow(clippy::reversed_empty_ranges)]
     #[test_case(
-        RttSampler::NotTracking, 1..10, 1 => RttSampler::from_range(1..10)
+        MeasuredSampler::NotTracking, 1..10, 1 => MeasuredSampler::from_range(1..10)
         ; "segment after SND.MAX"
     )]
     #[test_case(
-        RttSampler::NotTracking, 1..10, 10 => RttSampler::NotTracking
+        MeasuredSampler::NotTracking, 1..10, 10 => MeasuredSampler::NotTracking
         ; "segment before SND.MAX"
     )]
     #[test_case(
-        RttSampler::NotTracking, 1..10, 5 => RttSampler::from_range(5..10)
+        MeasuredSampler::NotTracking, 1..10, 5 => MeasuredSampler::from_range(5..10)
         ; "segment contains SND.MAX"
     )]
     #[test_case(
-        RttSampler::from_range(1..10), 10..20, 10 => RttSampler::from_range(1..10)
+        MeasuredSampler::from_range(1..10), 10..20, 10 => MeasuredSampler::from_range(1..10)
         ; "send further segments"
     )]
     #[test_case(
-        RttSampler::from_range(10..20), 1..10, 20 => RttSampler::NotTracking
+        MeasuredSampler::from_range(10..20), 1..10, 20 => MeasuredSampler::NotTracking
         ; "retransmit prior segments"
     )]
     #[test_case(
-        RttSampler::from_range(1..10), 1..10, 10 => RttSampler::NotTracking
+        MeasuredSampler::from_range(1..10), 1..10, 10 => MeasuredSampler::NotTracking
         ; "retransmit same segment"
     )]
     #[test_case(
-        RttSampler::from_range(1..10), 5..15, 15 => RttSampler::NotTracking
+        MeasuredSampler::from_range(1..10), 5..15, 15 => MeasuredSampler::NotTracking
         ; "retransmit same partial 1"
     )]
     #[test_case(
-        RttSampler::from_range(10..20), 5..15, 20 => RttSampler::NotTracking
+        MeasuredSampler::from_range(10..20), 5..15, 20 => MeasuredSampler::NotTracking
         ; "retransmit same partial 2"
     )]
     #[test_case(
-        RttSampler::NotTracking, (u32::MAX - 5)..5,
-        u32::MAX - 5 => RttSampler::from_range((u32::MAX - 5)..5)
+        MeasuredSampler::NotTracking, (u32::MAX - 5)..5,
+        u32::MAX - 5 => MeasuredSampler::from_range((u32::MAX - 5)..5)
         ; "SND.MAX wraparound good"
     )]
     #[test_case(
-        RttSampler::NotTracking, (u32::MAX - 5)..5,
-        5 => RttSampler::NotTracking
+        MeasuredSampler::NotTracking, (u32::MAX - 5)..5,
+        5 => MeasuredSampler::NotTracking
         ; "SND.MAX wraparound retransmit not tracking"
     )]
     #[test_case(
-        RttSampler::from_range(u32::MAX - 5..5), (u32::MAX - 5)..5,
-        5 => RttSampler::NotTracking
+        MeasuredSampler::from_range(u32::MAX - 5..5), (u32::MAX - 5)..5,
+        5 => MeasuredSampler::NotTracking
         ; "SND.MAX wraparound retransmit tracking"
     )]
     #[test_case(
-        RttSampler::NotTracking, (u32::MAX - 5)..5, u32::MAX => RttSampler::from_range(u32::MAX..5)
+        MeasuredSampler::NotTracking, (u32::MAX - 5)..5, u32::MAX => MeasuredSampler::from_range(u32::MAX..5)
         ; "SND.MAX wraparound partial 1"
     )]
     #[test_case(
-        RttSampler::NotTracking, (u32::MAX - 5)..5, 1 => RttSampler::from_range(1..5)
+        MeasuredSampler::NotTracking, (u32::MAX - 5)..5, 1 => MeasuredSampler::from_range(1..5)
         ; "SND.MAX wraparound partial 2"
     )]
-    fn rtt_sampler_on_segment(
-        mut sampler: RttSampler<FakeInstant>,
+    fn measured_sampler_on_segment(
+        mut sampler: MeasuredSampler<FakeInstant>,
         range: Range<u32>,
         snd_max: u32,
-    ) -> RttSampler<FakeInstant> {
+    ) -> MeasuredSampler<FakeInstant> {
         sampler.on_will_send_segment(
             FakeInstant::default(),
             SeqNum::new(range.start)..SeqNum::new(range.end),
@@ -357,37 +458,37 @@ mod test {
     const ACK_DELAY: Duration = Duration::from_millis(10);
 
     #[test_case(
-        RttSampler::NotTracking, 10 => (None, RttSampler::NotTracking)
+        MeasuredSampler::NotTracking, 10 => (None, MeasuredSampler::NotTracking)
         ; "not tracking"
     )]
     #[test_case(
-        RttSampler::from_range(1..10), 10 => (Some(ACK_DELAY), RttSampler::NotTracking)
+        MeasuredSampler::from_range(1..10), 10 => (Some(ACK_DELAY), MeasuredSampler::NotTracking)
         ; "ack segment"
     )]
     #[test_case(
-        RttSampler::from_range(1..10), 20 => (Some(ACK_DELAY), RttSampler::NotTracking)
+        MeasuredSampler::from_range(1..10), 20 => (Some(ACK_DELAY), MeasuredSampler::NotTracking)
         ; "ack after"
     )]
     #[test_case(
-        RttSampler::from_range(10..20), 9 => (None, RttSampler::from_range(10..20))
+        MeasuredSampler::from_range(10..20), 9 => (None, MeasuredSampler::from_range(10..20))
         ; "ack before 1"
     )]
     #[test_case(
-        RttSampler::from_range(10..20), 10 => (None, RttSampler::from_range(10..20))
+        MeasuredSampler::from_range(10..20), 10 => (None, MeasuredSampler::from_range(10..20))
         ; "ack before 2"
     )]
     #[test_case(
-        RttSampler::from_range(10..20), 11 => (Some(ACK_DELAY), RttSampler::NotTracking)
+        MeasuredSampler::from_range(10..20), 11 => (Some(ACK_DELAY), MeasuredSampler::NotTracking)
         ; "ack single"
     )]
     #[test_case(
-        RttSampler::from_range(10..20), 15 => (Some(ACK_DELAY), RttSampler::NotTracking)
+        MeasuredSampler::from_range(10..20), 15 => (Some(ACK_DELAY), MeasuredSampler::NotTracking)
         ; "ack partial"
     )]
-    fn rtt_sampler_on_ack(
-        mut sampler: RttSampler<FakeInstant>,
+    fn measured_sampler_on_ack(
+        mut sampler: MeasuredSampler<FakeInstant>,
         ack: u32,
-    ) -> (Option<Duration>, RttSampler<FakeInstant>) {
+    ) -> (Option<Duration>, MeasuredSampler<FakeInstant>) {
         let res = sampler.on_ack(FakeInstant::default() + ACK_DELAY, SeqNum::new(ack));
         (res, sampler)
     }

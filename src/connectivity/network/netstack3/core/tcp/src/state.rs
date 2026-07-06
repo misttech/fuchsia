@@ -38,7 +38,7 @@ use crate::internal::congestion::{
     CongestionControl, CongestionControlSendOutcome, LossRecoveryMode, LossRecoverySegment,
 };
 use crate::internal::counters::TcpCountersRefs;
-use crate::internal::rtt::{Estimator, Rto, RttSampler};
+use crate::internal::rtt::{Estimator, Rto, SamplingStrategy};
 use crate::internal::timestamp::{TimestampOptionNegotiationState, TimestampOptionState};
 
 /// Per RFC 793 (https://tools.ietf.org/html/rfc793#page-81):
@@ -516,8 +516,12 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
                         if seg_ack.after(*iss) {
                             let irs = seg_seq;
                             let mut rtt_estimator = Estimator::default();
+                            let rtt_sampler = SamplingStrategy::default();
                             if let Some(syn_sent_ts) = syn_sent_ts {
-                                rtt_estimator.sample(now.saturating_duration_since(*syn_sent_ts));
+                                rtt_estimator.sample(
+                                    now.saturating_duration_since(*syn_sent_ts),
+                                    rtt_sampler.samples_per_round_trip(),
+                                );
                             }
                             let (rcv_wnd_scale, snd_wnd_scale) = options
                                 .window_scale()
@@ -551,7 +555,7 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
                                     wl2: seg_ack,
                                     last_push: next,
                                     buffer: (),
-                                    rtt_sampler: RttSampler::default(),
+                                    rtt_sampler,
                                     rtt_estimator,
                                     timer: None,
                                     congestion_control: CongestionControl::cubic_with_mss(smss),
@@ -778,7 +782,7 @@ pub(crate) struct Send<I, S, const FIN_QUEUED: bool> {
     wl1: SeqNum,
     wl2: SeqNum,
     last_push: SeqNum,
-    rtt_sampler: RttSampler<I>,
+    rtt_sampler: SamplingStrategy<I>,
     rtt_estimator: Estimator,
     timer: Option<SendTimer<I>>,
     #[derivative(PartialEq = "ignore")]
@@ -2019,7 +2023,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
             // If the incoming segment acks the sequence number that we used
             // for RTT estimate, feed the sample to the estimator.
             if let Some(rtt) = rtt_sampler.on_ack(now, seg_ack) {
-                rtt_estimator.sample(rtt);
+                rtt_estimator.sample(rtt, rtt_sampler.samples_per_round_trip());
             }
 
             // Note that we may not have an RTT estimation yet, see
@@ -2895,8 +2899,12 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                             );
                         } else {
                             let mut rtt_estimator = Estimator::default();
+                            let rtt_sampler = SamplingStrategy::default();
                             if let Some(syn_rcvd_ts) = syn_rcvd_ts {
-                                rtt_estimator.sample(now.saturating_duration_since(*syn_rcvd_ts));
+                                rtt_estimator.sample(
+                                    now.saturating_duration_since(*syn_rcvd_ts),
+                                    rtt_sampler.samples_per_round_trip(),
+                                );
                             }
                             let (rcv_buffer, snd_buffer) = match simultaneous_open.take() {
                                 None => {
@@ -2920,7 +2928,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                                     wl2: seg_ack,
                                     last_push: snd_next,
                                     buffer: snd_buffer,
-                                    rtt_sampler: RttSampler::default(),
+                                    rtt_sampler,
                                     rtt_estimator,
                                     timer: None,
                                     congestion_control: CongestionControl::cubic_with_mss(*smss),
@@ -3633,7 +3641,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                         wl2: *irs,
                         last_push: next,
                         buffer: snd_buffer,
-                        rtt_sampler: RttSampler::default(),
+                        rtt_sampler: SamplingStrategy::default(),
                         rtt_estimator: Estimator::NoSample,
                         timer: None,
                         congestion_control: CongestionControl::cubic_with_mss(*smss),
@@ -3999,6 +4007,7 @@ mod test {
     use crate::internal::congestion::DUP_ACK_THRESHOLD;
     use crate::internal::counters::TcpCountersWithSocketInner;
     use crate::internal::counters::testutil::CounterExpectations;
+    use crate::internal::rtt::MeasuredSampler;
     use crate::internal::state::info::SendInfo;
     use crate::internal::timestamp::{TS_ECHO_REPLY_FOR_NON_ACKS, TimestampValueState};
 
@@ -4328,7 +4337,7 @@ mod test {
                 wl2: seq,
                 last_push: seq,
                 rtt_estimator: Estimator::default(),
-                rtt_sampler: RttSampler::default(),
+                rtt_sampler: SamplingStrategy::default(),
                 timer: None,
                 congestion_control: CongestionControl::cubic_with_mss(EffectiveMss::from_mss(
                     DEVICE_MAXIMUM_SEGMENT_SIZE,
@@ -9006,16 +9015,19 @@ mod test {
             );
         }
 
-        assert_eq!(state.assert_established().snd.rtt_sampler, RttSampler::NotTracking);
+        assert_eq!(
+            state.assert_established().snd.rtt_sampler,
+            SamplingStrategy::Measured(MeasuredSampler::NotTracking)
+        );
         let seg = state
             .poll_send_with_default_options(clock.now(), &counters.refs())
             .expect("generate segment");
         assert_eq!(seg.header().seq, TEST_ISS + 1);
         assert_eq!(seg.len(), u32::try_from(TEST_BYTES.len()).unwrap());
-        let expect_sampler = RttSampler::Tracking {
+        let expect_sampler = SamplingStrategy::Measured(MeasuredSampler::Tracking {
             range: (TEST_ISS + 1)..(TEST_ISS + 1 + seg.len()),
             timestamp: clock.now(),
-        };
+        });
         assert_eq!(state.assert_established().snd.rtt_sampler, expect_sampler);
         // Send more data that is present in the buffer.
         clock.sleep(CLOCK_STEP);
@@ -9048,7 +9060,10 @@ mod test {
             // First segment is retransmitted.
             assert_eq!(seg.header().seq, TEST_ISS + 1);
             // Retransmit should've cleared the mark.
-            assert_eq!(state.assert_established().snd.rtt_sampler, RttSampler::NotTracking);
+            assert_eq!(
+                state.assert_established().snd.rtt_sampler,
+                SamplingStrategy::Measured(MeasuredSampler::NotTracking)
+            );
         } else {
             clock.sleep(CLOCK_STEP);
         }
@@ -9068,7 +9083,10 @@ mod test {
         );
         let established = state.assert_established();
         // No outstanding RTT estimate remains.
-        assert_eq!(established.snd.rtt_sampler, RttSampler::NotTracking);
+        assert_eq!(
+            established.snd.rtt_sampler,
+            SamplingStrategy::Measured(MeasuredSampler::NotTracking)
+        );
         if retransmit {
             // No estimation was generated on retransmission.
             assert_eq!(established.snd.rtt_estimator.srtt(), None);
@@ -9084,8 +9102,10 @@ mod test {
             .expect("generate segment");
         let seq = seg.header().seq;
         assert_eq!(seq, TEST_ISS + 1 + TEST_BYTES.len() * 2);
-        let expect_sampler =
-            RttSampler::Tracking { range: seq..(seq + seg.len()), timestamp: clock.now() };
+        let expect_sampler = SamplingStrategy::Measured(MeasuredSampler::Tracking {
+            range: seq..(seq + seg.len()),
+            timestamp: clock.now(),
+        });
         assert_eq!(state.assert_established().snd.rtt_sampler, expect_sampler);
 
         // Ack the second segment again now (which may be a new ACK in the one
