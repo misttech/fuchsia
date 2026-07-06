@@ -5,6 +5,7 @@
 pub mod arrays;
 pub mod error;
 pub mod index;
+pub mod metadata;
 pub mod parsed_policy;
 pub mod parser;
 pub mod view;
@@ -19,24 +20,22 @@ pub use index::FsUseLabelAndType;
 pub use parser::PolicyCursor;
 pub use security_context::{SecurityContext, SecurityContextError};
 
-use crate::new_policy as new;
-pub use crate::new_policy::HandleUnknown;
 pub use crate::new_policy::traits::PolicyId;
-use crate::new_policy::traits::{HasName, Serialize as _};
-
+use crate::new_policy::traits::{HasName, HasPolicyId, Serialize as _};
 pub use crate::new_policy::{
-    AccessVector, CategoryId, ClassId, MlsLevel, MlsRange, POLICYDB_VERSION_MAX, PermissionId,
-    RoleId, SensitivityId, TypeId, UserId,
+    AccessVector, CategoryId, ClassId, HandleUnknown, MlsLevel, MlsRange, POLICYDB_VERSION_MAX,
+    PermissionId, RoleId, SensitivityId, TypeId, UserId,
 };
-use crate::{ClassPermission, KernelClass, NullessByteStr, ObjectClass, PolicyCap};
+use crate::{
+    ClassPermission, KernelClass, NullessByteStr, ObjectClass, PolicyCap, new_policy as new,
+};
 use index::PolicyIndex;
 use parsed_policy::ParsedPolicy;
 use parser::PolicyData;
-use symbols::find_class_by_name;
 
 use anyhow::Context as _;
 use std::fmt::Debug;
-use std::num::{NonZeroU8, NonZeroU32};
+use std::num::NonZeroU32;
 use std::ops::Deref;
 
 use std::sync::Arc;
@@ -149,7 +148,7 @@ impl XpermsAccessDecision {
 /// `binary_policy` lifetime. Taken together, these requirements demand the "move-in + move-out"
 /// interface for `binary_policy`.
 pub fn parse_policy_by_value(binary_policy: Vec<u8>) -> Result<Unvalidated, anyhow::Error> {
-    let policy_data = Arc::from(binary_policy);
+    let policy_data: PolicyData = Arc::from(binary_policy);
     let policy = ParsedPolicy::parse(policy_data).context("parsing policy")?;
     Ok(Unvalidated(policy))
 }
@@ -201,10 +200,10 @@ impl Policy {
         self.0
             .parsed_policy()
             .classes()
-            .into_iter()
+            .iter()
             .map(|class| ClassInfo {
-                class_name: Box::<[u8]>::from(class.name_bytes()),
-                class_id: class.id(),
+                class_name: Box::<[u8]>::from(class.name()),
+                class_id: class.id().into(),
             })
             .collect()
     }
@@ -223,7 +222,7 @@ impl Policy {
         class_name: &str,
     ) -> Result<Vec<(PermissionId, Vec<u8>)>, ()> {
         let classes = self.0.parsed_policy().classes();
-        let class = find_class_by_name(&classes, class_name).ok_or(())?;
+        let class = classes.get_by_name(class_name.as_bytes()).ok_or(())?;
         let owned_permissions = class.permissions();
 
         let mut result: Vec<_> = owned_permissions
@@ -231,27 +230,23 @@ impl Policy {
             .map(|permission| (permission.id(), permission.name_bytes().to_vec()))
             .collect();
 
-        // common_name_bytes() is empty when the class doesn't inherit from a CommonSymbol.
-        if class.common_name_bytes().is_empty() {
+        // common_name() is empty when the class doesn't inherit from a CommonSymbol.
+        if class.common_name().is_empty() {
             return Ok(result);
         }
 
-        let common_symbol = self
+        let common_symbol_permissions = self
             .0
             .parsed_policy()
             .common_symbols()
-            .iter()
-            .find(|cs| cs.name() == class.common_name_bytes())
-            .ok_or(())?;
-        let common_symbol_permissions = common_symbol.permissions();
+            .get_by_name(class.common_name())
+            .ok_or(())?
+            .permissions();
 
         result.append(
             &mut common_symbol_permissions
                 .iter()
-                .map(|permission| {
-                    let nonzero = NonZeroU8::new(permission.index() + 1).unwrap();
-                    (PermissionId::new(nonzero), permission.name_bytes().to_vec())
-                })
+                .map(|permission| (permission.id(), permission.name_bytes().to_vec()))
                 .collect(),
         );
 
@@ -710,72 +705,25 @@ macro_rules! array_type_validate_deref_both {
 
 pub(super) use array_type_validate_deref_both;
 
-macro_rules! array_type_validate_deref_data {
-    ($type_name:ident) => {
-        impl Validate for $type_name {
-            type Error = anyhow::Error;
+#[cfg(test)]
+pub(super) mod testing {
+    use super::error::ParseError;
 
-            fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
-                let metadata = &self.metadata;
-                metadata.validate(context)?;
-
-                self.data.validate(context).map_err(Into::<anyhow::Error>::into)?;
-
-                Self::validate_array(context, metadata, &self.data)
-            }
-        }
-    };
+    /// Downcasts an [`anyhow::Error`] to a [`ParseError`] for structured error comparison in tests.
+    pub(super) fn as_parse_error(error: anyhow::Error) -> ParseError {
+        error.downcast::<ParseError>().expect("parse error")
+    }
 }
-
-pub(super) use array_type_validate_deref_data;
-
-macro_rules! array_type_validate_deref_metadata_data_vec {
-    ($type_name:ident) => {
-        impl Validate for $type_name {
-            type Error = anyhow::Error;
-
-            fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
-                let metadata = &self.metadata;
-                metadata.validate(context)?;
-
-                self.data.validate(context).map_err(Into::<anyhow::Error>::into)?;
-
-                Self::validate_array(context, metadata, self.data.as_slice())
-            }
-        }
-    };
-}
-
-pub(super) use array_type_validate_deref_metadata_data_vec;
-
-macro_rules! array_type_validate_deref_none_data_vec {
-    ($type_name:ident) => {
-        impl Validate for $type_name {
-            type Error = anyhow::Error;
-
-            fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
-                let metadata = &self.metadata;
-                metadata.validate(context)?;
-
-                self.data.validate(context).map_err(Into::<anyhow::Error>::into)?;
-
-                Self::validate_array(context, metadata, self.data.as_slice())
-            }
-        }
-    };
-}
-
-pub(super) use array_type_validate_deref_none_data_vec;
 
 #[cfg(test)]
 pub(super) mod tests {
     use super::arrays::XpermsBitmap;
     use super::security_context::SecurityContext;
-    use super::symbols::find_class_by_name;
     use super::{
-        AccessVector, Policy, TypeId, XpermsAccessDecision, XpermsKind, parse_policy_by_value,
+        AccessVector, ClassId, HandleUnknown, Policy, TypeId, XpermsAccessDecision, XpermsKind,
+        parse_policy_by_value,
     };
-    use crate::new_policy::HandleUnknown;
+    use crate::new_policy::traits::{HasName, HasPolicyId};
     use crate::{FileClass, InitialSid, KernelClass};
 
     use anyhow::Context as _;
@@ -800,7 +748,7 @@ pub(super) mod tests {
         let classes = policy.0.parsed_policy().classes();
         let class = classes
             .iter()
-            .find(|class| class.name_bytes() == target_class.as_bytes())
+            .find(|class| class.name() == target_class.as_bytes())
             .expect("class not found");
         let class_permissions = policy
             .find_class_permissions_by_name(target_class)
@@ -809,7 +757,7 @@ pub(super) mod tests {
             .iter()
             .find(|(_, name)| permission.as_bytes() == name)
             .expect("permission not found");
-        let permission_bit = AccessVector::from_class_permission_id(*permission_id);
+        let permission_bit = AccessVector::from(*permission_id);
         let access_decision =
             policy.0.parsed_policy().compute_explicitly_allowed(source_type, target_type, class);
         permission_bit == access_decision.allow & permission_bit
@@ -1013,7 +961,7 @@ pub(super) mod tests {
 
         let classes = policy.0.parsed_policy().classes();
         let class =
-            classes.iter().find(|class| class.name_bytes() == b"class0").expect("class not found");
+            classes.iter().find(|class| class.name() == b"class0").expect("class not found");
         let raw_access_vector =
             policy.0.parsed_policy().compute_explicitly_allowed(a_t, a_t, class).allow.value();
 
@@ -1125,7 +1073,10 @@ pub(super) mod tests {
     fn compute_ioctl_access_decision_denied() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let class_id = find_class_by_name(&unvalidated.0.classes(), "class_one_ioctl")
+        let class_id = unvalidated
+            .0
+            .classes()
+            .get_by_name(b"class_one_ioctl")
             .expect("look up class_one_ioctl")
             .id();
         let policy = unvalidated.validate().expect("validate policy");
@@ -1184,12 +1135,12 @@ pub(super) mod tests {
     fn compute_ioctl_earlier_redundant_prefixful_not_coalesced_into_prefixless() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let class_id = find_class_by_name(
-            &unvalidated.0.classes(),
-            "class_earlier_redundant_prefixful_not_coalesced_into_prefixless",
-        )
-        .expect("look up class_earlier_redundant_prefixful_not_coalesced_into_prefixless")
-        .id();
+        let class_id = unvalidated
+            .0
+            .classes()
+            .get_by_name(b"class_earlier_redundant_prefixful_not_coalesced_into_prefixless")
+            .expect("look up class_earlier_redundant_prefixful_not_coalesced_into_prefixless")
+            .id();
         let policy = unvalidated.validate().expect("validate policy");
         let source_context: SecurityContext = policy
             .parse_security_context(b"user0:object_r:type0:s0-s0".into())
@@ -1230,12 +1181,12 @@ pub(super) mod tests {
     fn compute_ioctl_later_redundant_prefixful_not_coalesced_into_prefixless() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let class_id = find_class_by_name(
-            &unvalidated.0.classes(),
-            "class_later_redundant_prefixful_not_coalesced_into_prefixless",
-        )
-        .expect("look up class_later_redundant_prefixful_not_coalesced_into_prefixless")
-        .id();
+        let class_id = unvalidated
+            .0
+            .classes()
+            .get_by_name(b"class_later_redundant_prefixful_not_coalesced_into_prefixless")
+            .expect("look up class_later_redundant_prefixful_not_coalesced_into_prefixless")
+            .id();
         let policy = unvalidated.validate().expect("validate policy");
         let source_context: SecurityContext = policy
             .parse_security_context(b"user0:object_r:type0:s0-s0".into())
@@ -1276,12 +1227,16 @@ pub(super) mod tests {
     fn compute_ioctl_earlier_and_later_redundant_prefixful_not_coalesced_into_prefixless() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let class_id = find_class_by_name(
-            &unvalidated.0.classes(),
-            "class_earlier_and_later_redundant_prefixful_not_coalesced_into_prefixless",
-        )
-        .expect("look up class_earlier_and_later_redundant_prefixful_not_coalesced_into_prefixless")
-        .id();
+        let class_id = unvalidated
+            .0
+            .classes()
+            .get_by_name(
+                b"class_earlier_and_later_redundant_prefixful_not_coalesced_into_prefixless",
+            )
+            .expect(
+                "look up class_earlier_and_later_redundant_prefixful_not_coalesced_into_prefixless",
+            )
+            .id();
         let policy = unvalidated.validate().expect("validate policy");
         let source_context: SecurityContext = policy
             .parse_security_context(b"user0:object_r:type0:s0-s0".into())
@@ -1323,12 +1278,12 @@ pub(super) mod tests {
     fn compute_ioctl_prefixfuls_that_coalesce_to_prefixless() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let class_id = find_class_by_name(
-            &unvalidated.0.classes(),
-            "class_prefixfuls_that_coalesce_to_prefixless",
-        )
-        .expect("look up class_prefixfuls_that_coalesce_to_prefixless")
-        .id();
+        let class_id: ClassId = unvalidated
+            .0
+            .classes()
+            .get_by_name(b"class_prefixfuls_that_coalesce_to_prefixless")
+            .expect("look up class_prefixfuls_that_coalesce_to_prefixless")
+            .id();
         let policy = unvalidated.validate().expect("validate policy");
         let source_context: SecurityContext = policy
             .parse_security_context(b"user0:object_r:type0:s0-s0".into())
@@ -1370,12 +1325,12 @@ pub(super) mod tests {
     fn compute_ioctl_prefixfuls_that_coalesce_to_prefixless_just_before_prefixless() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let class_id = find_class_by_name(
-            &unvalidated.0.classes(),
-            "class_prefixfuls_that_coalesce_to_prefixless_just_before_prefixless",
-        )
-        .expect("look up class_prefixfuls_that_coalesce_to_prefixless_just_before_prefixless")
-        .id();
+        let class_id = unvalidated
+            .0
+            .classes()
+            .get_by_name(b"class_prefixfuls_that_coalesce_to_prefixless_just_before_prefixless")
+            .expect("look up class_prefixfuls_that_coalesce_to_prefixless_just_before_prefixless")
+            .id();
         let policy = unvalidated.validate().expect("validate policy");
         let source_context: SecurityContext = policy
             .parse_security_context(b"user0:object_r:type0:s0-s0".into())
@@ -1426,12 +1381,12 @@ pub(super) mod tests {
     fn compute_ioctl_prefixless_just_before_prefixfuls_that_coalesce_to_prefixless() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let class_id = find_class_by_name(
-            &unvalidated.0.classes(),
-            "class_prefixless_just_before_prefixfuls_that_coalesce_to_prefixless",
-        )
-        .expect("look up class_prefixless_just_before_prefixfuls_that_coalesce_to_prefixless")
-        .id();
+        let class_id = unvalidated
+            .0
+            .classes()
+            .get_by_name(b"class_prefixless_just_before_prefixfuls_that_coalesce_to_prefixless")
+            .expect("look up class_prefixless_just_before_prefixfuls_that_coalesce_to_prefixless")
+            .id();
         let policy = unvalidated.validate().expect("validate policy");
         let source_context: SecurityContext = policy
             .parse_security_context(b"user0:object_r:type0:s0-s0".into())
@@ -1492,10 +1447,12 @@ pub(super) mod tests {
     fn compute_ioctl_ridiculous_permission_ordering() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let class_id =
-            find_class_by_name(&unvalidated.0.classes(), "class_ridiculous_permission_ordering")
-                .expect("look up class_ridiculous_permission_ordering")
-                .id();
+        let class_id = unvalidated
+            .0
+            .classes()
+            .get_by_name(b"class_ridiculous_permission_ordering")
+            .expect("look up class_ridiculous_permission_ordering")
+            .id();
         let policy = unvalidated.validate().expect("validate policy");
         let source_context: SecurityContext = policy
             .parse_security_context(b"user0:object_r:type0:s0-s0".into())
@@ -1726,12 +1683,12 @@ pub(super) mod tests {
     fn compute_ioctl_grant_does_not_cause_nlmsg_deny() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let class_id = find_class_by_name(
-            &unvalidated.0.classes(),
-            "class_ioctl_grant_does_not_cause_nlmsg_deny",
-        )
-        .expect("look up class_ioctl_grant_does_not_cause_nlmsg_deny")
-        .id();
+        let class_id = unvalidated
+            .0
+            .classes()
+            .get_by_name(b"class_ioctl_grant_does_not_cause_nlmsg_deny")
+            .expect("look up class_ioctl_grant_does_not_cause_nlmsg_deny")
+            .id();
         let policy = unvalidated.validate().expect("validate policy");
         let source_context: SecurityContext = policy
             .parse_security_context(b"user0:object_r:type0:s0-s0".into())
@@ -1770,12 +1727,12 @@ pub(super) mod tests {
     fn compute_nlmsg_grant_does_not_cause_ioctl_deny() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let class_id = find_class_by_name(
-            &unvalidated.0.classes(),
-            "class_nlmsg_grant_does_not_cause_ioctl_deny",
-        )
-        .expect("look up class_nlmsg_grant_does_not_cause_ioctl_deny")
-        .id();
+        let class_id = unvalidated
+            .0
+            .classes()
+            .get_by_name(b"class_nlmsg_grant_does_not_cause_ioctl_deny")
+            .expect("look up class_nlmsg_grant_does_not_cause_ioctl_deny")
+            .id();
         let policy = unvalidated.validate().expect("validate policy");
         let source_context: SecurityContext = policy
             .parse_security_context(b"user0:object_r:type0:s0-s0".into())

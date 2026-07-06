@@ -2,17 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::constraints::{ConstraintError, evaluate_constraint};
 use super::error::ValidateError;
 use super::extensible_bitmap::ExtensibleBitmap;
 use super::parser::{PolicyCursor, PolicyData, PolicyOffset};
-use super::security_context::SecurityContext;
+
 use super::view::U24;
 use super::{
-    AccessVector, Array, CategoryId, ClassId, Counted, MlsLevel, MlsRange, Parse, PermissionId,
-    PolicyValidationContext, RoleId, SensitivityId, TypeId, UserId, Validate, ValidateArray,
-    array_type, array_type_validate_deref_both, array_type_validate_deref_data,
-    array_type_validate_deref_metadata_data_vec, array_type_validate_deref_none_data_vec,
+    Array, CategoryId, Counted, MlsLevel, MlsRange, Parse, PolicyValidationContext, RoleId,
+    SensitivityId, TypeId, UserId, Validate, ValidateArray, array_type,
+    array_type_validate_deref_both,
 };
 
 use crate::new_policy::traits::PolicyId;
@@ -21,129 +19,8 @@ use hashbrown::hash_table::HashTable;
 use rapidhash::RapidHasher;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
-use std::num::{NonZeroU8, NonZeroU32};
 use std::ops::Deref;
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le};
-
-/// ** Constraint term types ***
-///
-/// The `constraint_term_type` metadata field value for a [`ConstraintTerm`]
-/// that represents the "not" operator.
-pub(super) const CONSTRAINT_TERM_TYPE_NOT_OPERATOR: u32 = 1;
-/// The `constraint_term_type` metadata field value for a [`ConstraintTerm`]
-/// that represents the "and" operator.
-pub(super) const CONSTRAINT_TERM_TYPE_AND_OPERATOR: u32 = 2;
-/// The `constraint_term_type` metadata field value for a [`ConstraintTerm`]
-/// that represents the "or" operator.
-pub(super) const CONSTRAINT_TERM_TYPE_OR_OPERATOR: u32 = 3;
-/// The `constraint_term_type` metadata field value for a [`ConstraintTerm`]
-/// that represents a boolean expression where both arguments are fields of
-/// a source and/or target security context.
-pub(super) const CONSTRAINT_TERM_TYPE_EXPR: u32 = 4;
-/// The `constraint_term_type` metadata field value for a [`ConstraintTerm`]
-/// that represents a boolean expression where:
-///
-/// - the left-hand side is the user, role, or type of the source or target
-///   security context
-/// - the right-hand side is a set of users, roles, or types that are
-///   specified by name in the text policy, independent of the source
-///   or target security context.
-///
-/// In this case, the [`ConstraintTerm`] contains an [`ExtensibleBitmap`] that
-/// encodes the set of user, role, or type IDs corresponding to the names, and a
-/// [`TypeSet`] encoding the corresponding set of types.
-pub(super) const CONSTRAINT_TERM_TYPE_EXPR_WITH_NAMES: u32 = 5;
-
-/// ** Constraint expression operator types ***
-///
-/// Valid `expr_operator_type` metadata field values for a [`ConstraintTerm`]
-/// with `type` equal to `CONSTRAINT_TERM_TYPE_EXPR` or
-/// `CONSTRAINT_TERM_TYPE_EXPR_WITH_NAMES`.
-///
-/// NB. `EXPR_OPERATOR_TYPE_{DOM,DOMBY,INCOMP}` were previously valid for
-///      constraints on role IDs, but this was deprecated as of SELinux
-///      policy version 26.
-///
-/// The `expr_operator_type` value for an expression of form "A == B".
-/// Valid for constraints on user, role, and type IDs.
-pub(super) const CONSTRAINT_EXPR_OPERATOR_TYPE_EQ: u32 = 1;
-/// The `expr_operator_type` value for an expression of form "A != B".
-/// Valid for constraints on user, role, and type IDs.
-pub(super) const CONSTRAINT_EXPR_OPERATOR_TYPE_NE: u32 = 2;
-/// The `expr_operator_type` value for an expression of form "A dominates B".
-/// Valid for constraints on security levels.
-pub(super) const CONSTRAINT_EXPR_OPERATOR_TYPE_DOM: u32 = 3;
-/// The `expr_operator_type` value for an expression of form "A is dominated
-/// by B".
-/// Valid for constraints on security levels.
-pub(super) const CONSTRAINT_EXPR_OPERATOR_TYPE_DOMBY: u32 = 4;
-/// The `expr_operator_type` value for an expression of form "A is
-/// incomparable to B".
-/// Valid for constraints on security levels.
-pub(super) const CONSTRAINT_EXPR_OPERATOR_TYPE_INCOMP: u32 = 5;
-
-/// ** Constraint expression types ***
-///
-/// Although these values each have a single bit set, they appear to be
-/// used as enum values rather than as bit masks: i.e., the policy compiler
-/// does not produce access vector rule structures that have more than
-/// one of these types.
-///
-/// Valid `expr_operand_type` metadata field values for a [`ConstraintTerm`]
-/// with `constraint_term_type` equal to `CONSTRAINT_TERM_TYPE_EXPR` or
-/// `CONSTRAINT_TERM_TYPE_EXPR_WITH_NAMES`.
-///
-/// When the `constraint_term_type` is equal to `CONSTRAINT_TERM_TYPE_EXPR` and
-/// the `expr_operand_type` value is `EXPR_OPERAND_TYPE_{USER,ROLE,TYPE}`, the
-/// expression compares the source's {user,role,type} ID to the target's
-/// {user,role,type} ID.
-///
-/// When the `constraint_term_type` is equal to
-/// `CONSTRAINT_TERM_TYPE_EXPR_WITH_NAMES`, then the right-hand side of the
-/// expression is the set of IDs listed in the [`ConstraintTerm`]'s `names`
-/// field. The left-hand side of the expression is the user, role, or type ID of
-/// either the target security context, or the source security context,
-/// depending on whether the `EXPR_WITH_NAMES_OPERAND_TYPE_TARGET_MASK` bit of
-/// the `expr_operand_type` field is set (--> target) or not (--> source).
-///
-/// The `expr_operand_type` value for an expression comparing user IDs.
-pub(super) const CONSTRAINT_EXPR_OPERAND_TYPE_USER: u32 = 0x1;
-/// The `expr_operand_type` value for an expression comparing role IDs.
-pub(super) const CONSTRAINT_EXPR_OPERAND_TYPE_ROLE: u32 = 0x2;
-/// The `expr_operand_type` value for an expression comparing type IDs.
-pub(super) const CONSTRAINT_EXPR_OPERAND_TYPE_TYPE: u32 = 0x4;
-/// The `expr_operand_type` value for an expression comparing the source
-/// context's low security level to the target context's low security level.
-pub(super) const CONSTRAINT_EXPR_OPERAND_TYPE_L1_L2: u32 = 0x20;
-/// The `expr_operand_type` value for an expression comparing the source
-/// context's low security level to the target context's high security level.
-pub(super) const CONSTRAINT_EXPR_OPERAND_TYPE_L1_H2: u32 = 0x40;
-/// The `expr_operand_type` value for an expression comparing the source
-/// context's high security level to the target context's low security level.
-pub(super) const CONSTRAINT_EXPR_OPERAND_TYPE_H1_L2: u32 = 0x80;
-/// The `expr_operand_type` value for an expression comparing the source
-/// context's high security level to the target context's high security level.
-pub(super) const CONSTRAINT_EXPR_OPERAND_TYPE_H1_H2: u32 = 0x100;
-/// The `expr_operand_type` value for an expression comparing the source
-/// context's low security level to the source context's high security level.
-pub(super) const CONSTRAINT_EXPR_OPERAND_TYPE_L1_H1: u32 = 0x200;
-/// The `expr_operand_type` value for an expression comparing the target
-/// context's low security level to the target context's high security level.
-pub(super) const CONSTRAINT_EXPR_OPERAND_TYPE_L2_H2: u32 = 0x400;
-
-/// For a [`ConstraintTerm`] with `constraint_term_type` equal to
-/// `CONSTRAINT_TERM_TYPE_EXPR_WITH_NAMES` the `expr_operand_type` may have the
-/// `EXPR_WITH_NAMES_OPERAND_TYPE_TARGET_MASK` bit set in addition to one of the
-/// `EXPR_OPERAND_TYPE_{USER,ROLE,TYPE}` bits.
-///
-/// If the `EXPR_WITH_NAMES_OPERAND_TYPE_TARGET_MASK` bit is set, then the
-/// expression compares the target's {user,role,type} ID to the set of IDs
-/// listed in the [`ConstraintTerm`]'s `names` field.
-///
-/// If the bit is not set, then the expression compares the source's
-/// {user,role,type} ID to the set of IDs listed in the [`ConstraintTerm`]'s
-/// `names` field.
-pub(super) const CONSTRAINT_EXPR_WITH_NAMES_OPERAND_TYPE_TARGET_MASK: u32 = 0x8;
 
 /// Exact value of [`Type`] `properties` when the underlying data refers to an SELinux type.
 const TYPE_PROPERTIES_TYPE: u32 = 1;
@@ -216,774 +93,6 @@ impl Validate for Metadata {
 
     /// TODO: Should there be an upper bound on `primary_names_count` or `count`?
     fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-/// [`Permissions`] is a dynamically allocated slice (that is, [`Vec`]) of [`Permission`].
-pub(super) type Permissions = Vec<Permission>;
-
-array_type!(Permission, PermissionMetadata, u8);
-
-array_type_validate_deref_both!(Permission);
-
-impl Permission {
-    /// Returns the name of this permission (a string), encoded a borrow of a byte slice. For
-    /// example the class named `"file"` class has a permission named `"entrypoint"` and the
-    /// `"process"` class has a permission named `"fork"`.
-    pub fn name_bytes(&self) -> &[u8] {
-        &self.data
-    }
-
-    /// Returns the ID of this permission in the scope of its associated class.
-    pub fn id(&self) -> PermissionId {
-        let id = self.metadata.id.get() as u8;
-        PermissionId::new(NonZeroU8::new(id).unwrap())
-    }
-}
-
-impl ValidateArray<PermissionMetadata, u8> for Permission {
-    type Error = anyhow::Error;
-
-    /// [`Permission`] has no internal constraints beyond those imposed by [`Array`].
-    fn validate_array(
-        _context: &PolicyValidationContext,
-        _metadata: &PermissionMetadata,
-        _items: &[u8],
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
-#[repr(C, packed)]
-pub(super) struct PermissionMetadata {
-    /// The length of the `[u8]` in the associated [`Permission`].
-    length: le::U32,
-    id: le::U32,
-}
-
-impl Counted for PermissionMetadata {
-    /// The count of bytes in the `[u8]` in the associated [`Permission`].
-    fn count(&self) -> u32 {
-        self.length.get()
-    }
-}
-
-impl Validate for PermissionMetadata {
-    type Error = anyhow::Error;
-
-    /// TODO: Should there be an upper bound on `length`?
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        // `id` must be a valid `AccessVector` bit-index in the range 1..=32.
-        if self.id < 1 || self.id > 32 {
-            return Err(anyhow!("Permission Id is not valid AV index"));
-        }
-        Ok(())
-    }
-}
-
-/// A set of permissions and a boolean expression giving a constraint on those
-/// permissions, for a particular class. Corresponds to a single `constrain` or
-/// `mlsconstrain` statement in policy language.
-#[derive(Debug, PartialEq)]
-pub(super) struct Constraint {
-    access_vector: le::U32,
-    constraint_expr: ConstraintExpr,
-}
-
-impl Constraint {
-    pub(super) fn access_vector(&self) -> AccessVector {
-        AccessVector::from(self.access_vector.get())
-    }
-
-    pub(super) fn constraint_expr(&self) -> &ConstraintExpr {
-        &self.constraint_expr
-    }
-}
-
-impl Parse for Constraint {
-    type Error = anyhow::Error;
-
-    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let tail = bytes;
-
-        let (access_vector, tail) = PolicyCursor::parse::<le::U32>(tail)?;
-        let (constraint_expr, tail) = ConstraintExpr::parse(tail)
-            .map_err(|error| anyhow!(error))
-            .context("parsing constraint expression")?;
-
-        Ok((Self { access_vector, constraint_expr }, tail))
-    }
-}
-
-impl Validate for Constraint {
-    type Error = anyhow::Error;
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-// A [`ConstraintExpr`] describes a constraint expression, represented as a
-// postfix-ordered list of terms.
-array_type!(ConstraintExpr, ConstraintTermCount, ConstraintTerm);
-
-array_type_validate_deref_metadata_data_vec!(ConstraintExpr);
-
-impl ValidateArray<ConstraintTermCount, ConstraintTerm> for ConstraintExpr {
-    type Error = anyhow::Error;
-
-    /// [`ConstraintExpr`] has no internal constraints beyond those imposed by
-    /// [`Array`]. The `ParsedPolicy::validate()` function separately validates
-    /// that the constraint expression is well-formed.
-    fn validate_array(
-        _context: &PolicyValidationContext,
-        _metadata: &ConstraintTermCount,
-        _items: &[ConstraintTerm],
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-impl ConstraintExpr {
-    pub(super) fn evaluate(
-        &self,
-        source_context: &SecurityContext,
-        target_context: &SecurityContext,
-    ) -> Result<bool, ConstraintError> {
-        evaluate_constraint(&self, source_context, target_context)
-    }
-
-    pub(super) fn constraint_terms(&self) -> &[ConstraintTerm] {
-        &self.data
-    }
-}
-
-#[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
-#[repr(C, packed)]
-pub(super) struct ConstraintTermCount(le::U32);
-
-impl Counted for ConstraintTermCount {
-    fn count(&self) -> u32 {
-        self.0.get()
-    }
-}
-
-impl Validate for ConstraintTermCount {
-    type Error = anyhow::Error;
-
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub(super) struct ConstraintTerm {
-    metadata: ConstraintTermMetadata,
-    names: Option<ExtensibleBitmap>,
-    names_type_set: Option<TypeSet>,
-}
-
-impl Parse for ConstraintTerm {
-    type Error = anyhow::Error;
-
-    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let tail = bytes;
-
-        let (metadata, tail) = PolicyCursor::parse::<ConstraintTermMetadata>(tail)
-            .context("parsing constraint term metadata")?;
-
-        let (names, names_type_set, tail) = match metadata.constraint_term_type.get() {
-            CONSTRAINT_TERM_TYPE_EXPR_WITH_NAMES => {
-                let (names, tail) = ExtensibleBitmap::parse(tail)
-                    .map_err(Into::<anyhow::Error>::into)
-                    .context("parsing constraint term names")?;
-                let (names_type_set, tail) =
-                    TypeSet::parse(tail).context("parsing constraint term names type set")?;
-                (Some(names), Some(names_type_set), tail)
-            }
-            _ => (None, None, tail),
-        };
-
-        Ok((Self { metadata, names, names_type_set }, tail))
-    }
-}
-
-impl Validate for ConstraintTerm {
-    type Error = anyhow::Error;
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-impl ConstraintTerm {
-    pub(super) fn constraint_term_type(&self) -> u32 {
-        self.metadata.constraint_term_type.get()
-    }
-
-    pub(super) fn expr_operand_type(&self) -> u32 {
-        self.metadata.expr_operand_type.get()
-    }
-
-    pub(super) fn expr_operator_type(&self) -> u32 {
-        self.metadata.expr_operator_type.get()
-    }
-
-    pub(super) fn names(&self) -> Option<&ExtensibleBitmap> {
-        self.names.as_ref()
-    }
-
-    // TODO: https://fxbug.dev/372400976 - Unused, unsure if needed.
-    // Possibly becomes interesting when the policy contains type
-    // attributes.
-    #[allow(dead_code)]
-    pub(super) fn names_type_set(&self) -> &Option<TypeSet> {
-        &self.names_type_set
-    }
-}
-
-#[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
-#[repr(C, packed)]
-pub(super) struct ConstraintTermMetadata {
-    constraint_term_type: le::U32,
-    expr_operand_type: le::U32,
-    expr_operator_type: le::U32,
-}
-
-impl Validate for ConstraintTermMetadata {
-    type Error = anyhow::Error;
-
-    /// Further validation is done by the `ParsedPolicy::validate()` function,
-    /// which separately validates that constraint expressions are well-formed.
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        if !(self.constraint_term_type > 0
-            && self.constraint_term_type <= CONSTRAINT_TERM_TYPE_EXPR_WITH_NAMES)
-        {
-            return Err(anyhow!("invalid constraint term type"));
-        }
-        if !(self.constraint_term_type == CONSTRAINT_TERM_TYPE_EXPR
-            || self.constraint_term_type == CONSTRAINT_TERM_TYPE_EXPR_WITH_NAMES)
-        {
-            if self.expr_operand_type != 0 {
-                return Err(anyhow!(
-                    "invalid operand type {} for constraint term type {}",
-                    self.expr_operand_type,
-                    self.constraint_term_type
-                ));
-            }
-            if self.expr_operator_type != 0 {
-                return Err(anyhow!(
-                    "invalid operator type {} for constraint term type {}",
-                    self.expr_operator_type,
-                    self.constraint_term_type
-                ));
-            }
-        }
-        // TODO: https://fxbug.dev/372400976 - Consider validating operator
-        // and operand types for expr and expr-with-names terms.
-        Ok(())
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub(super) struct TypeSet {
-    types: ExtensibleBitmap,
-    negative_set: ExtensibleBitmap,
-    flags: le::U32,
-}
-
-impl Parse for TypeSet {
-    type Error = anyhow::Error;
-
-    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let tail = bytes;
-
-        let (types, tail) = ExtensibleBitmap::parse(tail)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("parsing type set types")?;
-
-        let (negative_set, tail) = ExtensibleBitmap::parse(tail)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("parsing type set negative set")?;
-
-        let (flags, tail) = PolicyCursor::parse::<le::U32>(tail)?;
-
-        Ok((Self { types, negative_set, flags }, tail))
-    }
-}
-
-/// Locates a class named `name` among `classes`. Returns the first such class found, though policy
-/// validation should ensure that only one such class exists.
-pub(super) fn find_class_by_name<'a>(classes: &'a Classes, name: &str) -> Option<&'a Class> {
-    let name_bytes = name.as_bytes();
-    classes.iter().find(|class| class.name_bytes() == name_bytes)
-}
-
-#[derive(Debug, PartialEq)]
-pub(super) struct Class {
-    constraints: ClassConstraints,
-    validate_transitions: ClassValidateTransitions,
-    defaults: ClassDefaults,
-}
-
-pub(super) type Classes = Vec<Class>;
-
-impl Class {
-    /// Returns the name of the `common` from which this `class` inherits as a borrow of a byte
-    /// slice. For example, `common file { common_file_perm }`,
-    /// `class file inherits file { file_perm }` yields two [`Class`] objects, one that refers to a
-    /// permission named `"common_file_perm"` permission and has `self.common_name_bytes() == ""`,
-    /// and another that refers to a permission named `"file_perm"` and has
-    /// `self.common_name_bytes() == "file"`.
-    pub fn common_name_bytes(&self) -> &[u8] {
-        // `ClassCommonKey` is an `Array` of `[u8]` with metadata `ClassKey`, and
-        // `ClassKey::count()` returns the `common_key_length` field. That is, the `[u8]` string
-        // on `ClassCommonKey` is the "common key" (name in the inherited `common` statement) for
-        // this class.
-        let class_common_key: &ClassCommonKey = &self.constraints.metadata.metadata;
-        &class_common_key.data
-    }
-
-    /// Returns the name of this class as a borrow of a byte slice.
-    pub fn name_bytes(&self) -> &[u8] {
-        // `ClassKey` is an `Array` of `[u8]` with metadata `ClassMetadata`, and
-        // `ClassMetadata::count()` returns the `key_length` field. That is, the `[u8]` string on
-        // `ClassKey` is the "class key" (name in the `class` or `common` statement) for this class.
-        let class_key: &ClassKey = &self.constraints.metadata.metadata.metadata;
-        &class_key.data
-    }
-
-    /// Returns the id associated with this class. The id is used to index into collections
-    /// and bitmaps associated with this class. The id is 1-indexed, whereas most collections and
-    /// bitmaps are 0-indexed, so clients of this API will usually use `id - 1`.
-    pub fn id(&self) -> ClassId {
-        let class_metadata: &ClassMetadata = &self.constraints.metadata.metadata.metadata.metadata;
-        ClassId::from_u32(class_metadata.id.get()).unwrap()
-    }
-
-    /// Returns the full listing of permissions used in this policy.
-    pub fn permissions(&self) -> &Permissions {
-        &self.constraints.metadata.data
-    }
-
-    /// Returns a list of permission masks and constraint expressions for this
-    /// class. The permissions in a given mask may be granted if the
-    /// corresponding constraint expression is satisfied.
-    ///
-    /// The same permission may appear in multiple entries in the returned list.
-    // TODO: https://fxbug.dev/372400976 - Is it accurate to change "may be
-    // granted to "are granted" above?
-    pub fn constraints(&self) -> &Vec<Constraint> {
-        &self.constraints.data
-    }
-
-    pub fn defaults(&self) -> &ClassDefaults {
-        &self.defaults
-    }
-}
-
-impl Parse for Class {
-    type Error = anyhow::Error;
-
-    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let tail = bytes;
-
-        let (constraints, tail) = ClassConstraints::parse(tail)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("parsing class constraints")?;
-
-        let (validate_transitions, tail) = ClassValidateTransitions::parse(tail)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("parsing class validate transitions")?;
-
-        let (defaults, tail) =
-            PolicyCursor::parse::<ClassDefaults>(tail).context("parsing class defaults")?;
-
-        Ok((Self { constraints, validate_transitions, defaults }, tail))
-    }
-}
-
-#[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
-#[repr(C, packed)]
-pub(super) struct ClassDefaults {
-    default_user: le::U32,
-    default_role: le::U32,
-    default_range: le::U32,
-    default_type: le::U32,
-}
-
-impl ClassDefaults {
-    pub fn user(&self) -> ClassDefault {
-        self.default_user.get().into()
-    }
-
-    pub fn role(&self) -> ClassDefault {
-        self.default_role.get().into()
-    }
-
-    pub fn range(&self) -> ClassDefaultRange {
-        self.default_range.get().into()
-    }
-
-    pub fn type_(&self) -> ClassDefault {
-        self.default_type.get().into()
-    }
-}
-
-impl Validate for ClassDefaults {
-    type Error = anyhow::Error;
-
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        ClassDefault::validate(self.default_user.get()).context("default user")?;
-        ClassDefault::validate(self.default_role.get()).context("default role")?;
-        ClassDefault::validate(self.default_type.get()).context("default type")?;
-        ClassDefaultRange::validate(self.default_range.get()).context("default range")?;
-        Ok(())
-    }
-}
-
-#[derive(PartialEq)]
-pub(super) enum ClassDefault {
-    Unspecified,
-    Source,
-    Target,
-}
-
-impl ClassDefault {
-    pub(super) const DEFAULT_UNSPECIFIED: u32 = 0;
-    pub(super) const DEFAULT_SOURCE: u32 = 1;
-    pub(super) const DEFAULT_TARGET: u32 = 2;
-
-    fn validate(value: u32) -> Result<(), ValidateError> {
-        match value {
-            Self::DEFAULT_UNSPECIFIED | Self::DEFAULT_SOURCE | Self::DEFAULT_TARGET => Ok(()),
-            value => Err(ValidateError::InvalidClassDefault { value }),
-        }
-    }
-}
-
-impl From<u32> for ClassDefault {
-    fn from(value: u32) -> Self {
-        match value {
-            Self::DEFAULT_UNSPECIFIED => Self::Unspecified,
-            Self::DEFAULT_SOURCE => Self::Source,
-            Self::DEFAULT_TARGET => Self::Target,
-            v => panic!(
-                "invalid SELinux class default; expected {}, {}, or {}, but got {}",
-                Self::DEFAULT_UNSPECIFIED,
-                Self::DEFAULT_SOURCE,
-                Self::DEFAULT_TARGET,
-                v
-            ),
-        }
-    }
-}
-
-#[derive(PartialEq)]
-pub(super) enum ClassDefaultRange {
-    Unspecified,
-    SourceLow,
-    SourceHigh,
-    SourceLowHigh,
-    TargetLow,
-    TargetHigh,
-    TargetLowHigh,
-}
-
-impl ClassDefaultRange {
-    pub(super) const DEFAULT_UNSPECIFIED: u32 = 0;
-    pub(super) const DEFAULT_SOURCE_LOW: u32 = 1;
-    pub(super) const DEFAULT_SOURCE_HIGH: u32 = 2;
-    pub(super) const DEFAULT_SOURCE_LOW_HIGH: u32 = 3;
-    pub(super) const DEFAULT_TARGET_LOW: u32 = 4;
-    pub(super) const DEFAULT_TARGET_HIGH: u32 = 5;
-    pub(super) const DEFAULT_TARGET_LOW_HIGH: u32 = 6;
-    // TODO: Determine what this value means.
-    pub(super) const DEFAULT_UNKNOWN_USED_VALUE: u32 = 7;
-
-    fn validate(value: u32) -> Result<(), ValidateError> {
-        match value {
-            Self::DEFAULT_UNSPECIFIED
-            | Self::DEFAULT_SOURCE_LOW
-            | Self::DEFAULT_SOURCE_HIGH
-            | Self::DEFAULT_SOURCE_LOW_HIGH
-            | Self::DEFAULT_TARGET_LOW
-            | Self::DEFAULT_TARGET_HIGH
-            | Self::DEFAULT_TARGET_LOW_HIGH
-            | Self::DEFAULT_UNKNOWN_USED_VALUE => Ok(()),
-            value => Err(ValidateError::InvalidClassDefaultRange { value }),
-        }
-    }
-}
-
-impl From<u32> for ClassDefaultRange {
-    fn from(value: u32) -> Self {
-        match value {
-            Self::DEFAULT_UNSPECIFIED => Self::Unspecified,
-            Self::DEFAULT_SOURCE_LOW => Self::SourceLow,
-            Self::DEFAULT_SOURCE_HIGH => Self::SourceHigh,
-            Self::DEFAULT_SOURCE_LOW_HIGH => Self::SourceLowHigh,
-            Self::DEFAULT_TARGET_LOW => Self::TargetLow,
-            Self::DEFAULT_TARGET_HIGH => Self::TargetHigh,
-            Self::DEFAULT_TARGET_LOW_HIGH => Self::TargetLowHigh,
-            v => panic!(
-                "invalid SELinux MLS range default; expected one of {:?}, but got {}",
-                [
-                    Self::DEFAULT_UNSPECIFIED,
-                    Self::DEFAULT_SOURCE_LOW,
-                    Self::DEFAULT_SOURCE_HIGH,
-                    Self::DEFAULT_SOURCE_LOW_HIGH,
-                    Self::DEFAULT_TARGET_LOW,
-                    Self::DEFAULT_TARGET_HIGH,
-                    Self::DEFAULT_TARGET_LOW_HIGH,
-                ],
-                v
-            ),
-        }
-    }
-}
-
-array_type!(ClassValidateTransitions, ClassValidateTransitionsCount, ConstraintTerm);
-
-array_type_validate_deref_metadata_data_vec!(ClassValidateTransitions);
-
-impl ValidateArray<ClassValidateTransitionsCount, ConstraintTerm> for ClassValidateTransitions {
-    type Error = anyhow::Error;
-
-    /// [`ClassValidateTransitions`] has no internal constraints beyond those imposed by [`Array`].
-    fn validate_array(
-        _context: &PolicyValidationContext,
-        _metadata: &ClassValidateTransitionsCount,
-        _items: &[ConstraintTerm],
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
-#[repr(C, packed)]
-pub(super) struct ClassValidateTransitionsCount(le::U32);
-
-impl Counted for ClassValidateTransitionsCount {
-    fn count(&self) -> u32 {
-        self.0.get()
-    }
-}
-
-impl Validate for ClassValidateTransitionsCount {
-    type Error = anyhow::Error;
-
-    /// TODO: Should there be an upper bound on class validate transitions count?
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-array_type!(ClassConstraints, ClassPermissions, Constraint);
-
-array_type_validate_deref_none_data_vec!(ClassConstraints);
-
-impl ValidateArray<ClassPermissions, Constraint> for ClassConstraints {
-    type Error = anyhow::Error;
-
-    fn validate_array(
-        _context: &PolicyValidationContext,
-        _metadata: &ClassPermissions,
-        _items: &[Constraint],
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-array_type!(ClassPermissions, ClassCommonKey, Permission);
-
-array_type_validate_deref_none_data_vec!(ClassPermissions);
-
-impl ValidateArray<ClassCommonKey, Permission> for ClassPermissions {
-    type Error = anyhow::Error;
-
-    /// [`ClassPermissions`] has no internal constraints beyond those imposed by [`Array`].
-    fn validate_array(
-        _context: &PolicyValidationContext,
-        _metadata: &ClassCommonKey,
-        _items: &[Permission],
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-impl Counted for ClassPermissions {
-    /// [`ClassPermissions`] acts as counted metadata for [`ClassConstraints`].
-    fn count(&self) -> u32 {
-        self.metadata.metadata.metadata.constraint_count.get()
-    }
-}
-
-array_type!(ClassCommonKey, ClassKey, u8);
-
-array_type_validate_deref_data!(ClassCommonKey);
-
-impl ValidateArray<ClassKey, u8> for ClassCommonKey {
-    type Error = anyhow::Error;
-
-    /// [`ClassCommonKey`] has no internal constraints beyond those imposed by [`Array`].
-    fn validate_array(
-        _context: &PolicyValidationContext,
-        _metadata: &ClassKey,
-        _items: &[u8],
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-impl Counted for ClassCommonKey {
-    /// [`ClassCommonKey`] acts as counted metadata for [`ClassPermissions`].
-    fn count(&self) -> u32 {
-        self.metadata.metadata.elements_count.get()
-    }
-}
-
-array_type!(ClassKey, ClassMetadata, u8);
-
-array_type_validate_deref_both!(ClassKey);
-
-impl ValidateArray<ClassMetadata, u8> for ClassKey {
-    type Error = anyhow::Error;
-
-    /// [`ClassKey`] has no internal constraints beyond those imposed by [`Array`].
-    fn validate_array(
-        _context: &PolicyValidationContext,
-        _metadata: &ClassMetadata,
-        _items: &[u8],
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-impl Counted for ClassKey {
-    /// [`ClassKey`] acts as counted metadata for [`ClassCommonKey`].
-    fn count(&self) -> u32 {
-        self.metadata.common_key_length.get()
-    }
-}
-
-#[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
-#[repr(C, packed)]
-pub(super) struct ClassMetadata {
-    key_length: le::U32,
-    common_key_length: le::U32,
-    id: le::U32,
-    primary_names_count: le::U32,
-    elements_count: le::U32,
-    constraint_count: le::U32,
-}
-
-impl Counted for ClassMetadata {
-    fn count(&self) -> u32 {
-        self.key_length.get()
-    }
-}
-
-impl Validate for ClassMetadata {
-    type Error = anyhow::Error;
-
-    /// TODO: Should there be an upper bound `u32` values in [`ClassMetadata`]?
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        if self.id.get() == 0 {
-            return Err(ValidateError::NonOptionalIdIsZero.into());
-        } else {
-            Ok(())
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(super) struct ClassIndex {
-    /// A mapping from [`ClassId`] (represented as position-in-the-array-plus-one) to
-    /// the corresponding [`Class`] (represented as an offset into the policy bytes).
-    /// If zero is the value at index `i` of this structure, that indicates that the
-    /// binary policy has no class with class ID `i + 1`.
-    //
-    // TODO: https://fxbug.dev/479180246 - we currently allow for "holes" (integer
-    // class IDs that do not correspond to any class) in this array, but do we need
-    // to? Will all the binary policies that we encounter be "packed" such that they
-    // use every integer between one and the largest integer that they use?
-    offsets_by_id_minus_one: Box<[U24]>,
-}
-
-impl ClassIndex {
-    /// Looks up a [`Class`] by its [`ClassId`].
-    pub fn class(&self, policy_bytes: &PolicyData, class_id: ClassId) -> Option<Class> {
-        let offset = PolicyOffset::from(
-            *self.offsets_by_id_minus_one.get((class_id.as_u32() - 1) as usize)?,
-        );
-        (offset != 0).then(|| {
-            let (class, _) = Class::parse(PolicyCursor::new_at(policy_bytes, offset))
-                .expect("These bytes already successfully parsed");
-            class
-        })
-    }
-
-    /// Looks up all [`Class`]es given in the policy. This is linear in time and space
-    /// and inappropriate to call in from a performance-sensitive context, but may be
-    /// called during policy parsing/validation and selinuxfs file operations.
-    pub fn classes(&self, policy_bytes: &PolicyData) -> Vec<Class> {
-        self.offsets_by_id_minus_one
-            .iter()
-            .filter_map(|&offset| match PolicyOffset::from(offset) {
-                0 => None,
-                offset => {
-                    let (class, _) = Class::parse(PolicyCursor::new_at(
-                        policy_bytes,
-                        PolicyOffset::from(offset),
-                    ))
-                    .expect("These bytes already successfully parsed");
-                    Some(class)
-                }
-            })
-            .collect()
-    }
-}
-
-impl Parse for ClassIndex {
-    type Error = anyhow::Error;
-
-    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let (metadata, mut tail) = Metadata::parse(bytes)?;
-        let class_count = usize::try_from(metadata.count()).unwrap();
-        let mut offsets_by_id_minus_one = Vec::with_capacity(class_count);
-        for _ in 0..class_count {
-            let offset = U24::try_from(tail.offset()).unwrap();
-            let (class, next_tail) = Class::parse(tail)?;
-            let class_id_as_usize = class.id().as_u32() as usize;
-
-            if offsets_by_id_minus_one.len() < class_id_as_usize {
-                offsets_by_id_minus_one.resize(class_id_as_usize, U24::try_from(0).unwrap());
-            }
-            offsets_by_id_minus_one[class_id_as_usize - 1] = offset;
-
-            tail = next_tail;
-        }
-        let offsets_by_id_minus_one = Box::<[U24]>::from(offsets_by_id_minus_one);
-
-        Ok((Self { offsets_by_id_minus_one }, tail))
-    }
-}
-
-impl Validate for ClassIndex {
-    type Error = anyhow::Error;
-
-    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        // TODO: Validate internal consistency between consecutive [`Class`] instances.
-        for offset in &self.offsets_by_id_minus_one {
-            let (class, _) =
-                Class::parse(PolicyCursor::new_at(&context.data, PolicyOffset::from(*offset)))
-                    .expect("These bytes already successfully parsed");
-
-            // TODO: Validate `self.constraints` and `self.validate_transitions`.
-            class.defaults().validate(context).context("class defaults")?;
-        }
-
         Ok(())
     }
 }
@@ -1098,10 +207,8 @@ impl Type {
         TypeId::from_u32(self.metadata.id.get()).unwrap()
     }
 
-    /// Returns the [`TypeId`] of the boundary type for this type, or `None` if this type does not
-    /// have a boundary type.
+    /// Returns the Id of the bounding type, if any.
     pub fn bounded_by(&self) -> Option<TypeId> {
-        // The `bounds` field in `TypeMetadata` is the type ID of the boundary type.
         TypeId::from_u32(self.metadata.bounds.get())
     }
 }
@@ -1643,7 +750,7 @@ impl Validate for CategoryMetadata {
 
     /// TODO: Validate internal consistency of [`CategoryMetadata`].
     fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        NonZeroU32::new(self.id.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
+        CategoryId::from_u32(self.id.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
         Ok(())
     }
 }
@@ -1777,8 +884,11 @@ impl Validate for CategoryIndex {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{CategoryId, SensitivityId, UserId, parse_policy_by_value};
-    use super::*;
+    use super::super::{AccessVector, CategoryId, SensitivityId, UserId, parse_policy_by_value};
+
+    use crate::new_policy::{
+        ConstraintNames, ConstraintOperand, ConstraintOperator, ConstraintSubject, ConstraintTerm,
+    };
 
     #[test]
     fn mls_levels_for_user_context() {
@@ -1788,26 +898,23 @@ mod tests {
         let policy = policy.validate().unwrap();
         let parsed_policy = policy.0.parsed_policy();
 
-        let user = parsed_policy.user(UserId::from_u32(1).expect("user with id 1"));
+        let user = parsed_policy.user(UserId::for_test(1));
         let mls_range = user.mls_range();
         let low_level = mls_range.low();
         let high_level = mls_range.high().as_ref().expect("user 1 has a high mls level");
 
-        assert_eq!(low_level.sensitivity(), SensitivityId::from_u32(1).unwrap());
-        assert_eq!(
-            low_level.category_ids().collect::<Vec<_>>(),
-            vec![CategoryId::from_u32(1).unwrap()]
-        );
+        assert_eq!(low_level.sensitivity(), SensitivityId::for_test(1));
+        assert_eq!(low_level.category_ids().collect::<Vec<_>>(), vec![CategoryId::for_test(1)]);
 
-        assert_eq!(high_level.sensitivity(), SensitivityId::from_u32(2).unwrap());
+        assert_eq!(high_level.sensitivity(), SensitivityId::for_test(2));
         assert_eq!(
             high_level.category_ids().collect::<Vec<_>>(),
             vec![
-                CategoryId::from_u32(1).unwrap(),
-                CategoryId::from_u32(2).unwrap(),
-                CategoryId::from_u32(3).unwrap(),
-                CategoryId::from_u32(4).unwrap(),
-                CategoryId::from_u32(5).unwrap(),
+                CategoryId::for_test(1),
+                CategoryId::for_test(2),
+                CategoryId::for_test(3),
+                CategoryId::for_test(4),
+                CategoryId::for_test(5),
             ]
         );
     }
@@ -1820,58 +927,41 @@ mod tests {
         parsed_policy.validate().expect("validate policy");
 
         let classes = parsed_policy.classes();
-        let class = find_class_by_name(&classes, "class_mls_constraints").expect("look up class");
+        let class = classes.get_by_name(b"class_mls_constraints").expect("look up class");
         let constraints = class.constraints();
         assert_eq!(constraints.len(), 6);
-        // Expected (`constraint_term_type`, `expr_operator_type`,
-        // `expr_operand_type`) values for the single term of the
-        // corresponding class constraint.
-        //
-        // NB. Constraint statements appear in reverse order in binary policy
-        // vs. text policy.
+
         let expected = [
-            (
-                CONSTRAINT_TERM_TYPE_EXPR,
-                CONSTRAINT_EXPR_OPERATOR_TYPE_INCOMP,
-                CONSTRAINT_EXPR_OPERAND_TYPE_L1_H1,
-            ),
-            (
-                CONSTRAINT_TERM_TYPE_EXPR,
-                CONSTRAINT_EXPR_OPERATOR_TYPE_INCOMP,
-                CONSTRAINT_EXPR_OPERAND_TYPE_H1_H2,
-            ),
-            (
-                CONSTRAINT_TERM_TYPE_EXPR,
-                CONSTRAINT_EXPR_OPERATOR_TYPE_DOMBY,
-                CONSTRAINT_EXPR_OPERAND_TYPE_L1_H2,
-            ),
-            (
-                CONSTRAINT_TERM_TYPE_EXPR,
-                CONSTRAINT_EXPR_OPERATOR_TYPE_DOM,
-                CONSTRAINT_EXPR_OPERAND_TYPE_H1_L2,
-            ),
-            (
-                CONSTRAINT_TERM_TYPE_EXPR,
-                CONSTRAINT_EXPR_OPERATOR_TYPE_NE,
-                CONSTRAINT_EXPR_OPERAND_TYPE_L2_H2,
-            ),
-            (
-                CONSTRAINT_TERM_TYPE_EXPR,
-                CONSTRAINT_EXPR_OPERATOR_TYPE_EQ,
-                CONSTRAINT_EXPR_OPERAND_TYPE_L1_L2,
-            ),
+            ConstraintTerm::Expression {
+                operand: ConstraintOperand::L1H1,
+                operator: ConstraintOperator::Incomp,
+            },
+            ConstraintTerm::Expression {
+                operand: ConstraintOperand::H1H2,
+                operator: ConstraintOperator::Incomp,
+            },
+            ConstraintTerm::Expression {
+                operand: ConstraintOperand::L1H2,
+                operator: ConstraintOperator::DomBy,
+            },
+            ConstraintTerm::Expression {
+                operand: ConstraintOperand::H1L2,
+                operator: ConstraintOperator::Dom,
+            },
+            ConstraintTerm::Expression {
+                operand: ConstraintOperand::L2H2,
+                operator: ConstraintOperator::Ne,
+            },
+            ConstraintTerm::Expression {
+                operand: ConstraintOperand::L1L2,
+                operator: ConstraintOperator::Eq,
+            },
         ];
         for (i, constraint) in constraints.iter().enumerate() {
             assert_eq!(constraint.access_vector(), AccessVector::from(1), "constraint {}", i);
-            let terms = constraint.constraint_expr().constraint_terms();
+            let terms = constraint.constraint_expr();
             assert_eq!(terms.len(), 1, "constraint {}", i);
-            let term = &terms[0];
-            assert_eq!(
-                (term.constraint_term_type(), term.expr_operator_type(), term.expr_operand_type()),
-                expected[i],
-                "constraint {}",
-                i
-            );
+            assert_eq!(terms[0], expected[i], "constraint {}", i);
         }
     }
 
@@ -1883,53 +973,57 @@ mod tests {
         parsed_policy.validate().expect("validate policy");
 
         let classes = parsed_policy.classes();
-        let class = find_class_by_name(&classes, "class_constraint_nested").expect("look up class");
+        let class = classes.get_by_name(b"class_constraint_nested").expect("look up class");
         let constraints = class.constraints();
         assert_eq!(constraints.len(), 1);
         let constraint = &constraints[0];
         assert_eq!(constraint.access_vector(), AccessVector::from(1));
-        let terms = constraint.constraint_expr().constraint_terms();
+        let terms = constraint.constraint_expr();
         assert_eq!(terms.len(), 8);
 
-        // Expected (`constraint_term_type`, `expr_operator_type`,
-        // `expr_operand_type`) values for the constraint terms.
-        //
-        // NB. Constraint statements appear in reverse order in binary policy
-        // vs. text policy.
-        let expected = [
-            (
-                CONSTRAINT_TERM_TYPE_EXPR_WITH_NAMES,
-                CONSTRAINT_EXPR_OPERATOR_TYPE_EQ,
-                CONSTRAINT_EXPR_OPERAND_TYPE_USER
-                    | CONSTRAINT_EXPR_WITH_NAMES_OPERAND_TYPE_TARGET_MASK,
-            ),
-            (
-                CONSTRAINT_TERM_TYPE_EXPR,
-                CONSTRAINT_EXPR_OPERATOR_TYPE_EQ,
-                CONSTRAINT_EXPR_OPERAND_TYPE_ROLE,
-            ),
-            (CONSTRAINT_TERM_TYPE_AND_OPERATOR, 0, 0),
-            (
-                CONSTRAINT_TERM_TYPE_EXPR,
-                CONSTRAINT_EXPR_OPERATOR_TYPE_EQ,
-                CONSTRAINT_EXPR_OPERAND_TYPE_USER,
-            ),
-            (
-                CONSTRAINT_TERM_TYPE_EXPR,
-                CONSTRAINT_EXPR_OPERATOR_TYPE_EQ,
-                CONSTRAINT_EXPR_OPERAND_TYPE_TYPE,
-            ),
-            (CONSTRAINT_TERM_TYPE_NOT_OPERATOR, 0, 0),
-            (CONSTRAINT_TERM_TYPE_AND_OPERATOR, 0, 0),
-            (CONSTRAINT_TERM_TYPE_OR_OPERATOR, 0, 0),
-        ];
-        for (i, term) in terms.iter().enumerate() {
-            assert_eq!(
-                (term.constraint_term_type(), term.expr_operator_type(), term.expr_operand_type()),
-                expected[i],
-                "term {}",
-                i
-            );
+        assert_eq!(terms[7], ConstraintTerm::Or);
+        assert_eq!(terms[6], ConstraintTerm::And);
+        assert_eq!(terms[5], ConstraintTerm::Not);
+
+        assert_eq!(
+            terms[4],
+            ConstraintTerm::Expression {
+                operand: ConstraintOperand::Type(ConstraintSubject::Source),
+                operator: ConstraintOperator::Eq,
+            }
+        );
+
+        assert_eq!(
+            terms[3],
+            ConstraintTerm::Expression {
+                operand: ConstraintOperand::User(ConstraintSubject::Source),
+                operator: ConstraintOperator::Eq,
+            }
+        );
+
+        assert_eq!(terms[2], ConstraintTerm::And);
+
+        assert_eq!(
+            terms[1],
+            ConstraintTerm::Expression {
+                operand: ConstraintOperand::Role(ConstraintSubject::Source),
+                operator: ConstraintOperator::Eq,
+            }
+        );
+
+        match &terms[0] {
+            ConstraintTerm::ExpressionWithNames { operand, operator, names } => {
+                assert_eq!(*operand, ConstraintOperand::User(ConstraintSubject::Target));
+                assert_eq!(*operator, ConstraintOperator::Eq);
+                match &**names {
+                    ConstraintNames::Users(ids, set) => {
+                        assert!(!ids.is_empty());
+                        assert!(set.is_empty());
+                    }
+                    _ => panic!("expected Users"),
+                }
+            }
+            _ => panic!("expected ExpressionWithNames"),
         }
     }
 }

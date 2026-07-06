@@ -2,14 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::error::{ParseError, ValidateError};
+#[cfg(test)]
+use super::Parse;
+#[cfg(test)]
+use super::error::ParseError;
+#[cfg(test)]
+use super::error::ValidateError;
+#[cfg(test)]
 use super::parser::PolicyCursor;
+#[cfg(test)]
 use super::{
-    Array, Counted, Parse, PolicyValidationContext, Validate, ValidateArray, array_type,
+    Array, Counted, PolicyValidationContext, Validate, ValidateArray, array_type,
     array_type_validate_deref_both,
 };
 
+#[cfg(test)]
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le};
+
+#[cfg(test)]
+use crate::new_policy::HandleUnknown;
 
 pub(super) const SELINUX_MAGIC: u32 = 0xf97cff8c;
 
@@ -25,10 +36,12 @@ pub(super) const CONFIG_HANDLE_UNKNOWN_ALLOW_FLAG: u32 = 1 << 2;
 pub(super) const CONFIG_HANDLE_UNKNOWN_MASK: u32 =
     CONFIG_HANDLE_UNKNOWN_REJECT_FLAG | CONFIG_HANDLE_UNKNOWN_ALLOW_FLAG;
 
+#[cfg(test)]
 #[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
 #[repr(C, packed)]
 pub(super) struct Magic(le::U32);
 
+#[cfg(test)]
 impl Validate for Magic {
     type Error = ValidateError;
 
@@ -42,10 +55,13 @@ impl Validate for Magic {
     }
 }
 
+#[cfg(test)]
 array_type!(Signature, SignatureMetadata, u8);
 
+#[cfg(test)]
 array_type_validate_deref_both!(Signature);
 
+#[cfg(test)]
 impl ValidateArray<SignatureMetadata, u8> for Signature {
     type Error = ValidateError;
 
@@ -62,10 +78,12 @@ impl ValidateArray<SignatureMetadata, u8> for Signature {
     }
 }
 
+#[cfg(test)]
 #[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
 #[repr(C, packed)]
 pub(super) struct SignatureMetadata(le::U32);
 
+#[cfg(test)]
 impl Validate for SignatureMetadata {
     type Error = ValidateError;
 
@@ -80,51 +98,21 @@ impl Validate for SignatureMetadata {
     }
 }
 
+#[cfg(test)]
 impl Counted for SignatureMetadata {
     fn count(&self) -> u32 {
         self.0.get()
     }
 }
 
-#[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
-#[repr(C, packed)]
-pub(super) struct PolicyVersion(le::U32);
-
-impl PolicyVersion {
-    pub fn policy_version(&self) -> u32 {
-        self.0.get()
-    }
-}
-
-impl Validate for PolicyVersion {
-    type Error = ValidateError;
-
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        let found_policy_version = self.0.get();
-        if found_policy_version < POLICYDB_VERSION_MIN
-            || found_policy_version > POLICYDB_VERSION_MAX
-        {
-            Err(ValidateError::InvalidPolicyVersion { found_policy_version })
-        } else {
-            Ok(())
-        }
-    }
-}
-
+#[cfg(test)]
 #[derive(Debug)]
 pub(super) struct Config {
-    handle_unknown: HandleUnknown,
-
     #[allow(dead_code)]
     config: le::U32,
 }
 
-impl Config {
-    pub fn handle_unknown(&self) -> HandleUnknown {
-        self.handle_unknown
-    }
-}
-
+#[cfg(test)]
 impl Parse for Config {
     type Error = ParseError;
 
@@ -135,12 +123,13 @@ impl Parse for Config {
         if found_config & CONFIG_MLS_FLAG == 0 {
             return Err(ParseError::ConfigMissingMlsFlag { found_config });
         }
-        let handle_unknown = try_handle_unknown_fom_config(found_config)?;
+        let _ = try_handle_unknown_fom_config(found_config)?;
 
-        Ok((Self { handle_unknown, config }, tail))
+        Ok((Self { config }, tail))
     }
 }
 
+#[cfg(test)]
 impl Validate for Config {
     type Error = anyhow::Error;
 
@@ -151,13 +140,7 @@ impl Validate for Config {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum HandleUnknown {
-    Deny,
-    Reject,
-    Allow,
-}
-
+#[cfg(test)]
 fn try_handle_unknown_fom_config(config: u32) -> Result<HandleUnknown, ParseError> {
     match config & CONFIG_HANDLE_UNKNOWN_MASK {
         CONFIG_HANDLE_UNKNOWN_ALLOW_FLAG => Ok(HandleUnknown::Allow),
@@ -169,30 +152,12 @@ fn try_handle_unknown_fom_config(config: u32) -> Result<HandleUnknown, ParseErro
     }
 }
 
-#[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
-#[repr(C, packed)]
-pub(super) struct Counts {
-    symbols_count: le::U32,
-    object_context_count: le::U32,
-}
-
-impl Validate for Counts {
-    type Error = anyhow::Error;
-
-    /// [`Counts`] have no internal consistency requirements.
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::super::parser::PolicyCursor;
+    use super::super::parser::{PolicyCursor, PolicyData};
     use super::super::testing::as_parse_error;
 
     use super::*;
-
-    use std::sync::Arc;
 
     // TODO: Run this test over `validate()`.
     #[test]
@@ -200,7 +165,7 @@ mod tests {
         let mut bytes = [SELINUX_MAGIC.to_le_bytes().as_slice()].concat();
         // One byte short of magic.
         bytes.pop();
-        let data = Arc::new(bytes);
+        let data = PolicyData::from(bytes);
         assert_eq!(
             Err(ParseError::MissingData {
                 type_name: "selinux_lib_test::policy::metadata::Magic",
@@ -214,7 +179,7 @@ mod tests {
     #[test]
     fn missing_signature() {
         let bytes = [(1 as u32).to_le_bytes().as_slice()].concat();
-        let data = Arc::new(bytes);
+        let data = PolicyData::from(bytes);
         match Signature::parse(PolicyCursor::new(&data)).err().map(as_parse_error) {
             Some(ParseError::MissingData { type_name: "u8", type_size: 1, num_bytes: 0 }) => {}
             parse_err => {
@@ -226,7 +191,7 @@ mod tests {
     #[test]
     fn config_missing_mls_flag() {
         let bytes = [(!CONFIG_MLS_FLAG).to_le_bytes().as_slice()].concat();
-        let data = Arc::new(bytes);
+        let data = PolicyData::from(bytes);
         match Config::parse(PolicyCursor::new(&data)).err() {
             Some(ParseError::ConfigMissingMlsFlag { .. }) => {}
             parse_err => {
@@ -243,7 +208,7 @@ mod tests {
             .to_le_bytes()
             .as_slice()]
         .concat();
-        let data = Arc::new(bytes);
+        let data = PolicyData::from(bytes);
         assert_eq!(
             Some(ParseError::InvalidHandleUnknownConfigurationBits {
                 masked_bits: CONFIG_HANDLE_UNKNOWN_ALLOW_FLAG | CONFIG_HANDLE_UNKNOWN_REJECT_FLAG

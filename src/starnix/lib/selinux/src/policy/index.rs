@@ -4,13 +4,16 @@
 
 use super::arrays::{ACCESS_VECTOR_RULE_TYPE_TYPE_TRANSITION, FsContext, FsUseType};
 use super::security_context::SecurityContext;
-use super::symbols::{Class, ClassDefault, ClassDefaultRange, find_class_by_name};
 use super::{AccessVector, ClassId, MlsLevel, ParsedPolicy, PermissionId, RoleId, TypeId};
-use crate::new_policy::HandleUnknown;
-use crate::new_policy::traits::HasName;
+use crate::new_policy::traits::{HasName, HasPolicyId};
+use crate::new_policy::{
+    Class, ClassDefault, ClassDefaultRange, CommonSymbol, HandleUnknown, IdAndNameIndexed,
+    SymbolArray,
+};
 use crate::{ClassPermission as _, KernelClass, KernelPermission, NullessByteStr, PolicyCap};
 
 use std::collections::HashMap;
+
 use strum::VariantArray as _;
 
 /// The [`SecurityContext`] and [`FsUseType`] derived from some `fs_use_*` line of the policy.
@@ -59,7 +62,7 @@ impl PolicyIndex {
         // kernel classes should cause rejection then return an error describing the missing
         // element.
         for known_class in crate::KernelClass::VARIANTS {
-            match find_class_by_name(&policy_classes, known_class.name()) {
+            match policy_classes.get_by_name(known_class.name().as_bytes()) {
                 Some(class) => {
                     classes.insert(*known_class, class.id());
                 }
@@ -80,9 +83,9 @@ impl PolicyIndex {
         let mut permissions = [KernelPermissionIdsArray::default(); _];
         for kernel_permission in crate::KernelPermission::all_variants() {
             let kernel_class_name = kernel_permission.class().name();
-            if let Some(class) = find_class_by_name(&policy_classes, kernel_class_name) {
+            if let Some(class) = policy_classes.get_by_name(kernel_class_name.as_bytes()) {
                 if let Some(permission_id) =
-                    get_permission_id_by_name(common_symbols, &class, kernel_permission.name())
+                    get_permission_id_by_name(common_symbols, class, kernel_permission.name())
                 {
                     let kernel_class_id = kernel_permission.class() as usize;
                     let kernel_permission_id = kernel_permission.id() as usize;
@@ -120,7 +123,7 @@ impl PolicyIndex {
 
     /// Returns the policy entry for a class identified either by its well-known kernel object class
     /// enum value, or its policy-defined Id.
-    pub(super) fn class(&self, object_class: crate::ObjectClass) -> Option<Class> {
+    pub(super) fn class(&self, object_class: crate::ObjectClass) -> Option<&Class> {
         match object_class {
             crate::ObjectClass::Kernel(kernel_class) => {
                 let &class_id = self.classes.get(&kernel_class)?;
@@ -139,7 +142,7 @@ impl PolicyIndex {
         let class_index = permission.class() as usize;
         let permission_index = permission.id() as usize;
         let permission_id = self.permissions[class_index][permission_index]?;
-        Some(AccessVector::from_class_permission_id(permission_id))
+        Some(permission_id.into())
     }
 
     /// Returns the security context that should be applied to a newly created SELinux
@@ -221,8 +224,8 @@ impl PolicyIndex {
             );
         };
 
-        let is_process_or_socket = policy_class.name_bytes() == b"process"
-            || policy_class.common_name_bytes() == b"socket";
+        let is_process_or_socket =
+            policy_class.name() == b"process" || policy_class.common_name() == b"socket";
         let (unspecified_role, unspecified_type, unspecified_low, unspecified_high) =
             if is_process_or_socket {
                 (source.role(), source.type_(), source.low_level(), source.high_level())
@@ -251,7 +254,7 @@ impl PolicyIndex {
             match self.parsed_policy.access_vector_rules_find(
                 source.type_(),
                 target.type_(),
-                policy_class.id(),
+                policy_class.id().into(),
                 ACCESS_VECTOR_RULE_TYPE_TYPE_TRANSITION,
             ) {
                 Some(new_type_rule) => new_type_rule.new_type().unwrap(),
@@ -283,6 +286,9 @@ impl PolicyIndex {
                     }
                     ClassDefaultRange::Unspecified => {
                         (unspecified_low.clone(), unspecified_high.cloned())
+                    }
+                    ClassDefaultRange::UnknownUsedValue => {
+                        unreachable!("Invalid ClassDefaultRange in validated policy")
                     }
                 },
             };
@@ -389,7 +395,10 @@ impl PolicyIndex {
 
             // Check if the class matches.
             let class_matches = class_id.is_none()
-                || fs_context.class().map(|other| other == class_id.unwrap()).unwrap_or(true);
+                || fs_context
+                    .class()
+                    .map(|other| other == class_id.unwrap().into())
+                    .unwrap_or(true);
             if !class_matches {
                 continue;
             }
@@ -440,7 +449,7 @@ impl PolicyIndex {
             .find(|role_transition| {
                 role_transition.current_role() == current_role
                     && role_transition.type_() == type_
-                    && role_transition.class() == class.id()
+                    && role_transition.class() == class.id().into()
             })
             .map(|x| x.new_role())
     }
@@ -465,7 +474,12 @@ impl PolicyIndex {
         class: &Class,
         name: NullessByteStr<'_>,
     ) -> Option<TypeId> {
-        self.parsed_policy.compute_filename_transition(source_type, target_type, class.id(), name)
+        self.parsed_policy.compute_filename_transition(
+            source_type,
+            target_type,
+            class.id().into(),
+            name,
+        )
     }
 
     fn range_transition_new_range(
@@ -477,7 +491,7 @@ impl PolicyIndex {
         for range_transition in self.parsed_policy.range_transitions() {
             if range_transition.source_type() == source_type
                 && range_transition.target_type() == target_type
-                && range_transition.target_class() == class.id()
+                && range_transition.target_class() == class.id().into()
             {
                 let mls_range = range_transition.mls_range();
                 let low_level = mls_range.low().clone();
@@ -493,7 +507,7 @@ impl PolicyIndex {
 /// Returns the bit index of the specified permission for the specified security `class`, looking
 /// up the permission in the class' common symbol, if any.
 fn get_permission_id_by_name(
-    common_symbols: &crate::new_policy::SymbolArray<crate::new_policy::CommonSymbol>,
+    common_symbols: &IdAndNameIndexed<SymbolArray<CommonSymbol>>,
     class: &Class,
     name: &str,
 ) -> Option<PermissionId> {
@@ -501,9 +515,9 @@ fn get_permission_id_by_name(
     if let Some(permission) = class.permissions().iter().find(|p| p.name_bytes() == name) {
         return Some(permission.id());
     }
-    let common_name = class.common_name_bytes();
+    let common_name = class.common_name();
     if !common_name.is_empty() {
-        let common_symbol = common_symbols.iter().find(|cs| cs.name() == common_name)?;
+        let common_symbol = common_symbols.get_by_name(common_name)?;
         let permission = common_symbol.permissions().iter().find(|p| p.name_bytes() == name)?;
         return Some(permission.id());
     }

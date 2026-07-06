@@ -16,7 +16,6 @@ use super::{
 use crate::new_policy::traits::PolicyId;
 use anyhow::Context as _;
 use std::hash::{Hash, Hasher};
-use std::num::NonZeroU32;
 use std::ops::Shl;
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le};
 
@@ -357,7 +356,7 @@ impl AccessVectorRuleMetadata {
     pub fn for_query(source: TypeId, target: TypeId, class: ClassId, rule_type: u16) -> Self {
         let source_type = le::U16::new(source.as_u32() as u16);
         let target_type = le::U16::new(target.as_u32() as u16);
-        let class = le::U16::new(class.as_u32() as u16);
+        let class = le::U16::new(u32::from(class) as u16);
         let access_vector_rule_type = le::U16::new(rule_type);
         Self { source_type, target_type, class, access_vector_rule_type }
     }
@@ -545,7 +544,7 @@ impl RoleTransition {
     }
 
     pub(super) fn class(&self) -> ClassId {
-        ClassId::from_u32(self.tclass.get()).unwrap()
+        ClassId::try_from(self.tclass.get()).unwrap()
     }
 
     pub(super) fn new_role(&self) -> RoleId {
@@ -557,10 +556,10 @@ impl Validate for RoleTransition {
     type Error = anyhow::Error;
 
     fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        NonZeroU32::new(self.role.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
-        NonZeroU32::new(self.role_type.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
-        NonZeroU32::new(self.tclass.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
-        NonZeroU32::new(self.new_role.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
+        RoleId::from_u32(self.role.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
+        TypeId::from_u32(self.role_type.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
+        ClassId::from_u32(self.tclass.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
+        RoleId::from_u32(self.new_role.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
         Ok(())
     }
 }
@@ -603,8 +602,8 @@ impl Validate for RoleAllow {
     type Error = anyhow::Error;
 
     fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        NonZeroU32::new(self.role.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
-        NonZeroU32::new(self.new_role.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
+        RoleId::from_u32(self.role.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
+        RoleId::from_u32(self.new_role.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
         Ok(())
     }
 }
@@ -655,7 +654,7 @@ impl FilenameTransition {
     }
 
     pub(super) fn target_class(&self) -> ClassId {
-        ClassId::from_u32(self.transition_class.get()).unwrap()
+        ClassId::try_from(self.transition_class.get()).unwrap()
     }
 
     pub(super) fn outputs(&self) -> &[FilenameTransitionItem] {
@@ -751,7 +750,7 @@ impl DeprecatedFilenameTransition {
     }
 
     pub(super) fn target_class(&self) -> ClassId {
-        ClassId::from_u32(self.metadata.transition_class.get()).unwrap()
+        ClassId::try_from(self.metadata.transition_class.get()).unwrap()
     }
 
     pub(super) fn out_type(&self) -> TypeId {
@@ -1350,7 +1349,7 @@ impl FsContext {
     }
 
     pub(super) fn class(&self) -> Option<ClassId> {
-        ClassId::from_u32(self.class.into())
+        ClassId::try_from(self.class.get()).ok()
     }
 }
 
@@ -1409,12 +1408,12 @@ impl RangeTransition {
         TypeId::from_u32(self.metadata.source_type.get()).unwrap()
     }
 
-    pub(super) fn target_type(&self) -> TypeId {
+    pub fn target_type(&self) -> TypeId {
         TypeId::from_u32(self.metadata.target_type.get()).unwrap()
     }
 
     pub fn target_class(&self) -> ClassId {
-        ClassId::from_u32(self.metadata.target_class.get()).unwrap()
+        ClassId::try_from(self.metadata.target_class.get()).unwrap()
     }
 
     pub fn mls_range(&self) -> &MlsRange {
@@ -1476,13 +1475,13 @@ pub(super) mod testing {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{ClassId, find_class_by_name, parse_policy_by_value};
+    use super::super::{ClassId, parse_policy_by_value};
     use super::{
         ACCESS_VECTOR_RULE_TYPE_ALLOWXPERM, ACCESS_VECTOR_RULE_TYPE_AUDITALLOWXPERM,
         ACCESS_VECTOR_RULE_TYPE_DONTAUDITXPERM, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES,
         XPERMS_TYPE_IOCTL_PREFIXES, XPERMS_TYPE_NLMSG,
     };
-    use crate::new_policy::traits::PolicyId;
+    use crate::new_policy::traits::HasPolicyId;
 
     impl super::AccessVectorRuleMetadata {
         /// Returns whether this access vector rule comes from an
@@ -1511,7 +1510,7 @@ mod tests {
         /// same policy. Although the index is returned as a 32-bit value, the field
         /// itself is 16-bit
         pub fn target_class(&self) -> ClassId {
-            ClassId::from_u32(self.class.into()).unwrap()
+            ClassId::try_from(self.class.get() as u32).unwrap()
         }
     }
 
@@ -1522,7 +1521,9 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(&parsed_policy.classes(), "class_one_ioctl")
+        let class_id = parsed_policy
+            .classes()
+            .get_by_name(b"class_one_ioctl")
             .expect("look up class_one_ioctl")
             .id();
 
@@ -1550,7 +1551,9 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(&parsed_policy.classes(), "class_two_ioctls_same_range")
+        let class_id = parsed_policy
+            .classes()
+            .get_by_name(b"class_two_ioctls_same_range")
             .expect("look up class_two_ioctls_same_range")
             .id();
 
@@ -1581,10 +1584,11 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id =
-            find_class_by_name(&parsed_policy.classes(), "class_four_ioctls_same_range_diff_rules")
-                .expect("look up class_four_ioctls_same_range_diff_rules")
-                .id();
+        let class_id = parsed_policy
+            .classes()
+            .get_by_name(b"class_four_ioctls_same_range_diff_rules")
+            .expect("look up class_four_ioctls_same_range_diff_rules")
+            .id();
 
         let rules: Vec<_> = parsed_policy
             .access_vector_rules_for_test()
@@ -1615,7 +1619,9 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(&parsed_policy.classes(), "class_two_ioctls_diff_range")
+        let class_id = parsed_policy
+            .classes()
+            .get_by_name(b"class_two_ioctls_diff_range")
             .expect("look up class_two_ioctls_diff_range")
             .id();
 
@@ -1654,7 +1660,9 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(&parsed_policy.classes(), "class_one_driver_range")
+        let class_id = parsed_policy
+            .classes()
+            .get_by_name(b"class_one_driver_range")
             .expect("look up class_one_driver_range")
             .id();
 
@@ -1685,7 +1693,9 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(&parsed_policy.classes(), "class_most_ioctls")
+        let class_id = parsed_policy
+            .classes()
+            .get_by_name(b"class_most_ioctls")
             .expect("look up class_most_ioctls")
             .id();
 
@@ -1737,7 +1747,9 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(&parsed_policy.classes(), "class_most_ioctls_with_hole")
+        let class_id = parsed_policy
+            .classes()
+            .get_by_name(b"class_most_ioctls_with_hole")
             .expect("look up class_most_ioctls_with_hole")
             .id();
 
@@ -1814,7 +1826,9 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(&parsed_policy.classes(), "class_all_ioctls")
+        let class_id = parsed_policy
+            .classes()
+            .get_by_name(b"class_all_ioctls")
             .expect("look up class_all_ioctls")
             .id();
 
@@ -1840,7 +1854,9 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(&parsed_policy.classes(), "class_one_nlmsg")
+        let class_id = parsed_policy
+            .classes()
+            .get_by_name(b"class_one_nlmsg")
             .expect("look up class_one_nlmsg")
             .id();
 
@@ -1870,7 +1886,9 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(&parsed_policy.classes(), "class_two_nlmsg_same_range")
+        let class_id = parsed_policy
+            .classes()
+            .get_by_name(b"class_two_nlmsg_same_range")
             .expect("look up class_two_nlmsg_same_range")
             .id();
 
@@ -1901,7 +1919,9 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(&parsed_policy.classes(), "class_two_nlmsg_diff_range")
+        let class_id = parsed_policy
+            .classes()
+            .get_by_name(b"class_two_nlmsg_diff_range")
             .expect("look up class_two_nlmsg_diff_range")
             .id();
 
@@ -1940,7 +1960,9 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(&parsed_policy.classes(), "class_one_nlmsg_range")
+        let class_id = parsed_policy
+            .classes()
+            .get_by_name(b"class_one_nlmsg_range")
             .expect("look up class_one_nlmsg_range")
             .id();
 
@@ -1975,7 +1997,9 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(&parsed_policy.classes(), "class_two_nlmsg_ranges")
+        let class_id = parsed_policy
+            .classes()
+            .get_by_name(b"class_two_nlmsg_ranges")
             .expect("look up class_two_nlmsg_ranges")
             .id();
 
@@ -2021,10 +2045,11 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id =
-            find_class_by_name(&parsed_policy.classes(), "class_three_separate_nlmsg_ranges")
-                .expect("look up class_three_separate_nlmsg_ranges")
-                .id();
+        let class_id = parsed_policy
+            .classes()
+            .get_by_name(b"class_three_separate_nlmsg_ranges")
+            .expect("look up class_three_separate_nlmsg_ranges")
+            .id();
 
         let rules: Vec<_> = parsed_policy
             .access_vector_rules_for_test()
@@ -2078,10 +2103,11 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id =
-            find_class_by_name(&parsed_policy.classes(), "class_three_contiguous_nlmsg_ranges")
-                .expect("look up class_three_contiguous_nlmsg_ranges")
-                .id();
+        let class_id = parsed_policy
+            .classes()
+            .get_by_name(b"class_three_contiguous_nlmsg_ranges")
+            .expect("look up class_three_contiguous_nlmsg_ranges")
+            .id();
 
         let rules: Vec<_> = parsed_policy
             .access_vector_rules_for_test()
@@ -2121,7 +2147,9 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(&parsed_policy.classes(), "class_auditallowxperm")
+        let class_id = parsed_policy
+            .classes()
+            .get_by_name(b"class_auditallowxperm")
             .expect("look up class_auditallowxperm")
             .id();
 
@@ -2164,7 +2192,9 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(&parsed_policy.classes(), "class_dontauditxperm")
+        let class_id = parsed_policy
+            .classes()
+            .get_by_name(b"class_dontauditxperm")
             .expect("look up class_dontauditxperm")
             .id();
 
@@ -2203,10 +2233,11 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id =
-            find_class_by_name(&parsed_policy.classes(), "class_auditallowxperm_not_coalesced")
-                .expect("class_auditallowxperm_not_coalesced")
-                .id();
+        let class_id = parsed_policy
+            .classes()
+            .get_by_name(b"class_auditallowxperm_not_coalesced")
+            .expect("class_auditallowxperm_not_coalesced")
+            .id();
 
         let rules: Vec<_> = parsed_policy
             .access_vector_rules_for_test()

@@ -24,17 +24,14 @@ impl<T: PolicyId> ConstraintSet<T> {
         self.types.is_empty() && self.negative_set.is_empty() && self.flags == 0
     }
 
-    #[expect(dead_code)]
     pub fn types(&self) -> &IdSet<T> {
         &self.types
     }
 
-    #[expect(dead_code)]
     pub fn negative_set(&self) -> &IdSet<T> {
         &self.negative_set
     }
 
-    #[expect(dead_code)]
     pub fn flags(&self) -> u32 {
         self.flags
     }
@@ -306,12 +303,10 @@ pub struct Constraint {
 }
 
 impl Constraint {
-    #[cfg_attr(not(test), expect(dead_code))]
     pub fn access_vector(&self) -> AccessVector {
         self.access_vector
     }
 
-    #[cfg_attr(not(test), expect(dead_code))]
     pub fn constraint_expr(&self) -> &[ConstraintTerm] {
         &self.constraint_expr
     }

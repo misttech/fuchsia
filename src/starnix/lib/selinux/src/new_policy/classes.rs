@@ -11,7 +11,7 @@ use super::id_type::IdType;
 use super::indexed::IdAndNameIndexed;
 use super::parser::{Array, PolicyCursor};
 use super::permissions::Permission;
-use super::traits::{HasName, Parse, PolicyId, Serialize, Validate};
+use super::traits::{Parse, PolicyId, Serialize, Validate};
 
 use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
 
@@ -66,22 +66,18 @@ pub struct ClassDefaults {
 }
 
 impl ClassDefaults {
-    #[cfg_attr(not(test), expect(dead_code))]
     pub fn user(&self) -> ClassDefault {
         self.default_user
     }
 
-    #[cfg_attr(not(test), expect(dead_code))]
     pub fn role(&self) -> ClassDefault {
         self.default_role
     }
 
-    #[cfg_attr(not(test), expect(dead_code))]
     pub fn range(&self) -> ClassDefaultRange {
         self.default_range
     }
 
-    #[cfg_attr(not(test), expect(dead_code))]
     pub fn type_(&self) -> ClassDefault {
         self.default_type
     }
@@ -107,27 +103,22 @@ impl Class {
     /// For example, `common file { common_file_perm }` and
     /// `class file inherits file { file_perm }` yields a `Class` object
     /// for `file` with `self.common_name() == b"file"`.
-    #[cfg_attr(not(test), expect(dead_code))]
     pub fn common_name(&self) -> &[u8] {
         &self.common_name
     }
 
-    #[cfg_attr(not(test), expect(dead_code))]
     pub fn permissions(&self) -> &IdAndNameIndexed<Box<[Permission]>> {
         &self.permissions
     }
 
-    #[cfg_attr(not(test), expect(dead_code))]
     pub fn constraints(&self) -> &[Constraint] {
         &self.constraints
     }
 
-    #[cfg_attr(not(test), expect(dead_code))]
     pub fn validate_transitions(&self) -> &[ConstraintTerm] {
         &self.validate_transitions
     }
 
-    #[expect(dead_code)]
     pub fn defaults(&self) -> &ClassDefaults {
         &self.defaults
     }
@@ -214,18 +205,21 @@ impl Validate for Class {
         self.validate_transitions.validate(policy)?;
         self.defaults.validate(policy)?;
 
-        if self.permission_primary_names_count > self.permissions.len() as u32 {
-            return Err(ValidateError::InvalidPrimaryNamesCount {
-                expected_at_most: self.permissions.len() as u32,
-                found: self.permission_primary_names_count,
-            });
+        let mut common_permissions_count = 0;
+        if !self.common_name.is_empty() {
+            let common_symbol =
+                policy.common_symbols().get_by_name(&self.common_name).ok_or_else(|| {
+                    ValidateError::UndefinedCommonSymbol { name: self.common_name.to_vec() }
+                })?;
+            common_permissions_count = common_symbol.permissions().len();
         }
 
-        // Validate that inherited common symbol exists in policy
-        if !self.common_name.is_empty() {
-            policy.common_symbols().iter().find(|cs| cs.name() == &*self.common_name).ok_or_else(
-                || ValidateError::UndefinedCommonSymbol { name: self.common_name.to_vec() },
-            )?;
+        let expected_at_most = self.permissions.len() + common_permissions_count;
+        if self.permission_primary_names_count > expected_at_most as u32 {
+            return Err(ValidateError::InvalidPrimaryNamesCount {
+                expected_at_most: expected_at_most as u32,
+                found: self.permission_primary_names_count,
+            });
         }
 
         Ok(())

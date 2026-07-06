@@ -28,10 +28,14 @@ pub(super) mod types;
 
 pub use access_vector::AccessVector;
 pub use bitmap::{ExtensibleBitmap, IdSpan};
-pub use classes::ClassId;
+pub use classes::{Class, ClassDefault, ClassDefaultRange, ClassId};
 pub use common_symbols::CommonSymbol;
+pub use constraints::{
+    ConstraintNames, ConstraintOperand, ConstraintOperator, ConstraintSubject, ConstraintTerm,
+};
 pub use context::{Context, MlsLevel, MlsRange};
-pub use id_type::IdType;
+pub use id_type::*;
+pub use indexed::IdAndNameIndexed;
 pub use parser::SymbolArray;
 pub use permissions::PermissionId;
 pub use types::*;
@@ -61,7 +65,8 @@ pub struct NewPolicy {
     counts: Counts,
     policy_capabilities: ExtensibleBitmap,
     permissive_map: PermissiveTypeSet,
-    common_symbols: SymbolArray<CommonSymbol>,
+    common_symbols: IdAndNameIndexed<SymbolArray<CommonSymbol>>,
+    classes: IdAndNameIndexed<SymbolArray<Class>>,
     rest: RemainingBytes,
 }
 
@@ -98,8 +103,13 @@ impl NewPolicy {
     }
 
     /// Returns the common symbols table.
-    pub fn common_symbols(&self) -> &SymbolArray<CommonSymbol> {
+    pub fn common_symbols(&self) -> &IdAndNameIndexed<SymbolArray<CommonSymbol>> {
         &self.common_symbols
+    }
+
+    /// Returns the object classes table.
+    pub fn classes(&self) -> &IdAndNameIndexed<SymbolArray<Class>> {
+        &self.classes
     }
 
     /// Returns a shared reference to the remaining unparsed bytes.
@@ -168,6 +178,11 @@ mod tests {
         let common = &new_policy.common_symbols()[0];
         assert!(!common.name().is_empty());
         assert!(!common.permissions().is_empty());
+
+        // Verify classes are parsed
+        assert!(!new_policy.classes().is_empty());
+        let class = &new_policy.classes()[0];
+        assert!(!class.name().is_empty());
 
         // Verify 100% byte-for-byte roundtrip fidelity
         let mut serialized = Vec::new();

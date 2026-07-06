@@ -20,8 +20,8 @@ use super::extensible_bitmap::ExtensibleBitmap;
 use super::parser::{PolicyCursor, PolicyData};
 use super::security_context::SecurityContext;
 use super::symbols::{
-    Category, CategoryIndex, Class, ClassIndex, Classes, ConditionalBoolean, Role, Sensitivity,
-    SymbolList, Type, TypeIndex, User,
+    Category, CategoryIndex, ConditionalBoolean, Role, Sensitivity, SymbolList, Type, TypeIndex,
+    User,
 };
 use super::view::{Hashable, HashedArrayView};
 use super::{
@@ -29,8 +29,9 @@ use super::{
     RoleId, SELINUX_AVD_FLAGS_PERMISSIVE, SensitivityId, TypeId, UserId, Validate,
     XpermsAccessDecision, XpermsKind,
 };
-use crate::new_policy::NewPolicy;
-use crate::new_policy::traits::PolicyId;
+
+use crate::new_policy::traits::{HasPolicyId, PolicyId};
+use crate::new_policy::{Class, NewPolicy};
 use crate::policy::arrays::FsContext;
 use crate::policy::view::CustomKeyHashedView;
 use crate::{NullessByteStr, PolicyCap};
@@ -57,8 +58,6 @@ pub struct ParsedPolicy {
     /// [`NewPolicy`] that handles the header and base tables.
     new_policy: Arc<NewPolicy>,
 
-    /// The set of classes referenced by this policy.
-    classes: ClassIndex,
     /// The set of roles referenced by this policy.
     roles: SymbolList<Role>,
     /// The set of types referenced by this policy.
@@ -229,7 +228,11 @@ impl ParsedPolicy {
     ) -> AccessVector {
         let mut denied = AccessVector::NONE;
         for constraint in target_class.constraints() {
-            match constraint.constraint_expr().evaluate(source_context, target_context) {
+            match crate::policy::constraints::evaluate_constraint(
+                constraint.constraint_expr(),
+                source_context,
+                target_context,
+            ) {
                 Err(err) => {
                     unreachable!("validated constraint expression failed to evaluate: {:?}", err)
                 }
@@ -408,12 +411,8 @@ impl ParsedPolicy {
         self.categories.category_by_name(&self.data, name)
     }
 
-    pub(super) fn class(&self, class_id: ClassId) -> Option<Class> {
-        self.classes.class(&self.data, class_id)
-    }
-
-    pub(super) fn classes(&self) -> Classes {
-        self.classes.classes(&self.data)
+    pub(super) fn class(&self, class_id: ClassId) -> Option<&Class> {
+        self.classes().get_by_id(class_id)
     }
 
     pub(super) fn conditional_booleans(&self) -> &Vec<ConditionalBoolean> {
@@ -595,9 +594,6 @@ fn parse_policy_remaining(
 ) -> Result<(ParsedPolicy, usize), anyhow::Error> {
     let tail = PolicyCursor::new(&rest_data);
 
-    let (classes, tail) =
-        ClassIndex::parse(tail).map_err(anyhow::Error::from).context("parsing classes")?;
-
     let (roles, tail) = SymbolList::<Role>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing roles")?;
@@ -720,7 +716,6 @@ fn parse_policy_remaining(
         ParsedPolicy {
             data: rest_data,
             new_policy: Arc::new(new_policy),
-            classes,
             roles,
             types,
             users,
@@ -758,10 +753,6 @@ impl ParsedPolicy {
             new_policy: self.new_policy.clone(),
         };
 
-        self.classes
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating classes")?;
         self.roles
             .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
@@ -858,8 +849,7 @@ impl ParsedPolicy {
         // Collate the sets of user, role, type, sensitivity and category Ids.
         let user_ids: HashSet<UserId> = self.users.data.iter().map(|x| x.id()).collect();
         let role_ids: HashSet<RoleId> = self.roles.data.iter().map(|x| x.id()).collect();
-        let class_ids: HashSet<ClassId> =
-            self.classes.classes(&self.data).iter().map(|x| x.id()).collect();
+        let class_ids: HashSet<ClassId> = self.classes().iter().map(|x| x.id()).collect();
         let type_ids: HashSet<TypeId> = self.types.all_type_ids().collect();
         let sensitivity_ids: HashSet<SensitivityId> =
             self.sensitivities.data.iter().map(|x| x.id()).collect();
@@ -949,13 +939,15 @@ impl ParsedPolicy {
         let initial_context = SecurityContext::new_from_policy_context(
             self.initial_context(crate::InitialSid::Kernel),
         );
-        for class in self.classes.classes(&self.data) {
+        for class in self.classes().iter() {
             for constraint in class.constraints() {
-                constraint
-                    .constraint_expr()
-                    .evaluate(&initial_context, &initial_context)
-                    .map_err(Into::<anyhow::Error>::into)
-                    .context("validating constraints")?;
+                crate::policy::constraints::evaluate_constraint(
+                    constraint.constraint_expr(),
+                    &initial_context,
+                    &initial_context,
+                )
+                .map_err(Into::<anyhow::Error>::into)
+                .context("validating constraints")?;
             }
         }
 
