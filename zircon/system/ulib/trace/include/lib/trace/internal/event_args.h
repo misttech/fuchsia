@@ -24,18 +24,30 @@
 #define TRACE_INTERNAL_ALLOCATE_ARGS(var_name, args...)  \
   trace_arg_t var_name[TRACE_INTERNAL_COUNT_ARGS(args)]; \
   static_assert(TRACE_INTERNAL_NUM_ARGS(var_name) <= TRACE_MAX_ARGS, "too many args")
-
 #ifdef __cplusplus
+
+#include <optional>
 
 #define TRACE_INTERNAL_SCOPE_ARG_LABEL(var_name, idx) __trace_arg_##var_name##idx
 
-#define TRACE_INTERNAL_HOLD_ARG(var_name, idx, name_literal, arg_value) \
-  const auto& TRACE_INTERNAL_SCOPE_ARG_LABEL(var_name, idx) = (arg_value);
-#define TRACE_INTERNAL_MAKE_ARG(var_name, idx, name_literal, arg_value)                          \
-  {                                                                                              \
-    .name_ref = {.encoded_value = 0, .inline_string = (name_literal)},                           \
-    .value = ::trace::internal::MakeArgumentValue(TRACE_INTERNAL_SCOPE_ARG_LABEL(var_name, idx)) \
-  }
+// Immediate evaluation holder (for instant events).
+// This evaluates the argument immediately because instant events are executed
+// synchronously inside the enabling check block.
+#define TRACE_INTERNAL_HOLD_ARG(var_name, idx, name_literal, arg_value)                    \
+  ::trace::internal::ArgumentHolder<decltype((arg_value))> TRACE_INTERNAL_SCOPE_ARG_LABEL( \
+      var_name, idx)(arg_value);
+
+// Deferred evaluation holder (for duration events).
+// This does NOT evaluate the argument here, as duration scope setup happens
+// outside the conditional tracing block. Evaluation is deferred to the assignment phase.
+#define TRACE_INTERNAL_HOLD_ARG_EMPTY(var_name, idx, name_literal, arg_value)              \
+  ::trace::internal::ArgumentHolder<decltype((arg_value))> TRACE_INTERNAL_SCOPE_ARG_LABEL( \
+      var_name, idx);
+
+#define TRACE_INTERNAL_MAKE_ARG(var_name, idx, name_literal, arg_value) \
+  {.name_ref = {.encoded_value = 0, .inline_string = (name_literal)},   \
+   .value =                                                             \
+       ::trace::internal::MakeArgumentValue(TRACE_INTERNAL_SCOPE_ARG_LABEL(var_name, idx).get())}
 
 #define TRACE_INTERNAL_DECLARE_ARGS(context, var_name, args...)                    \
   TRACE_INTERNAL_APPLY_PAIRWISE(TRACE_INTERNAL_HOLD_ARG, var_name, args)           \
@@ -44,18 +56,26 @@
   static_assert(TRACE_INTERNAL_NUM_ARGS(var_name) <= TRACE_MAX_ARGS, "too many args")
 
 #define TRACE_INTERNAL_ASSIGN_ARG(var_name, idx, name_literal, arg_value) \
+  TRACE_INTERNAL_SCOPE_ARG_LABEL(var_name, idx).assign(arg_value);        \
   var_name[idx - 1].name_ref.encoded_value = 0;                           \
   var_name[idx - 1].name_ref.inline_string = (name_literal);              \
   var_name[idx - 1].value =                                               \
-      ::trace::internal::MakeArgumentValue(TRACE_INTERNAL_SCOPE_ARG_LABEL(var_name, idx));
-#define TRACE_INTERNAL_INIT_ARGS(var_name, args...)                      \
-  TRACE_INTERNAL_APPLY_PAIRWISE(TRACE_INTERNAL_HOLD_ARG, var_name, args) \
+      ::trace::internal::MakeArgumentValue(TRACE_INTERNAL_SCOPE_ARG_LABEL(var_name, idx).get());
+
+#define TRACE_INTERNAL_HOLD_ARGS(var_name, args...) \
+  TRACE_INTERNAL_APPLY_PAIRWISE(TRACE_INTERNAL_HOLD_ARG_EMPTY, var_name, args)
+
+#define TRACE_INTERNAL_ASSIGN_ARGS(var_name, args...) \
   TRACE_INTERNAL_APPLY_PAIRWISE(TRACE_INTERNAL_ASSIGN_ARG, var_name, args)
+
+#define TRACE_INTERNAL_INIT_ARGS(var_name, args...) \
+  TRACE_INTERNAL_HOLD_ARGS(var_name, args)          \
+  TRACE_INTERNAL_ASSIGN_ARGS(var_name, args)
 
 #else
 
 #define TRACE_INTERNAL_MAKE_ARG(var_name, idx, name_literal, arg_value) \
-  { .name_ref = {.encoded_value = 0, .inline_string = (name_literal)}, .value = (arg_value) }
+  {.name_ref = {.encoded_value = 0, .inline_string = (name_literal)}, .value = (arg_value)}
 
 #define TRACE_INTERNAL_DECLARE_ARGS(context, var_name, args...)                    \
   trace_arg_t var_name[] = {                                                       \
@@ -66,8 +86,10 @@
   var_name[idx - 1].name_ref.encoded_value = 0;                           \
   var_name[idx - 1].name_ref.inline_string = (name_literal);              \
   var_name[idx - 1].value = (arg_value);
-#define TRACE_INTERNAL_INIT_ARGS(var_name, args...) \
+#define TRACE_INTERNAL_HOLD_ARGS(var_name, args...)
+#define TRACE_INTERNAL_ASSIGN_ARGS(var_name, args...) \
   TRACE_INTERNAL_APPLY_PAIRWISE(TRACE_INTERNAL_ASSIGN_ARG, var_name, args)
+#define TRACE_INTERNAL_INIT_ARGS(var_name, args...) TRACE_INTERNAL_ASSIGN_ARGS(var_name, args)
 #endif  // __cplusplus
 
 __BEGIN_CDECLS
@@ -87,6 +109,52 @@ __END_CDECLS
 
 namespace trace {
 namespace internal {
+
+// ArgumentHolder is a helper class to defer evaluation of trace arguments
+// and extend the lifetime of temporaries passed to trace macros.
+//
+// By using decltype((expr)), we can detect if an argument is an lvalue
+// or an rvalue (temporary):
+// - For lvalues, we store a pointer to the existing object to avoid copies.
+// - For rvalues, we move the temporary into a std::optional to extend its
+//   lifetime to the end of the duration scope.
+//
+// Evaluation is deferred until assign() is called, which happens only if
+// tracing is enabled for the category, preventing overhead when disabled.
+template <typename T, typename Enable = void>
+class ArgumentHolder;
+
+// Specialization for Rvalues (temporaries): T is NOT a reference
+template <typename T>
+class ArgumentHolder<T, std::enable_if_t<!std::is_reference_v<T>>> {
+ public:
+  ArgumentHolder() = default;
+  explicit ArgumentHolder(T&& value) : storage_(std::move(value)) {}
+  explicit ArgumentHolder(const T& value) : storage_(value) {}
+
+  void assign(T&& value) { storage_.emplace(std::move(value)); }
+  void assign(const T& value) { storage_.emplace(value); }
+
+  const T& get() const { return *storage_; }
+
+ private:
+  std::optional<T> storage_;
+};
+
+// Specialization for Lvalues (existing variables): T IS a reference
+template <typename T>
+class ArgumentHolder<T, std::enable_if_t<std::is_reference_v<T>>> {
+ public:
+  ArgumentHolder() : ptr_(nullptr) {}
+  explicit ArgumentHolder(T value) : ptr_(&value) {}
+
+  void assign(T value) { ptr_ = &value; }
+
+  T get() const { return *ptr_; }
+
+ private:
+  std::add_pointer_t<std::remove_reference_t<T>> ptr_;
+};
 
 template <typename T>
 struct is_bool : public std::is_same<std::remove_cv_t<T>, bool> {};

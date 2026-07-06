@@ -153,6 +153,7 @@ __BEGIN_CDECLS
 // TODO(fmeawad): The generated code for this macro is too big (https://fxbug.dev/42096981)
 #define TRACE_INTERNAL_DECLARE_DURATION_SCOPE(variable, args_variable, category_literal,         \
                                               name_literal, args...)                             \
+  TRACE_INTERNAL_HOLD_ARGS(args_variable, args);                                                 \
   TRACE_INTERNAL_ALLOCATE_ARGS(args_variable, args);                                             \
   __attribute__((                                                                                \
       cleanup(trace_internal_cleanup_duration_scope))) trace_internal_duration_scope_t variable; \
@@ -162,7 +163,7 @@ __BEGIN_CDECLS
     trace_context_t* TRACE_INTERNAL_CONTEXT = trace_acquire_context_for_category_cached(         \
         (category_literal), &TRACE_INTERNAL_SITE_STATE, &TRACE_INTERNAL_CATEGORY_REF);           \
     if (unlikely(TRACE_INTERNAL_CONTEXT)) {                                                      \
-      TRACE_INTERNAL_INIT_ARGS(args_variable, args);                                             \
+      TRACE_INTERNAL_ASSIGN_ARGS(args_variable, args);                                           \
       trace_release_context(TRACE_INTERNAL_CONTEXT);                                             \
       trace_internal_make_duration_scope(&variable, (category_literal), (name_literal),          \
                                          args_variable, TRACE_INTERNAL_NUM_ARGS(args_variable)); \

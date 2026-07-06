@@ -400,4 +400,39 @@ TEST(Records, multiple_categories_filtered) {
   END_TRACE_TEST;
 }
 
+TEST(Records, duration_macro_temporary_argument_safety_test) {
+  BEGIN_TRACE_TEST;
+
+  fixture_initialize_and_start_tracing();
+
+  {
+    // Pass a temporary std::string as an argument.
+    // If the fix is not in place, this could cause a UAF when the scope exits
+    // and the cleanup function runs, because the temporary string will have
+    // been destroyed at the end of the internal do-while block.
+    TRACE_DURATION("+enabled", "duration_name", "key", std::string("temporary_value"));
+  }
+
+  // Write another event to ensure we can still write.
+  TRACE_INSTANT("+enabled", "instant_name", TRACE_SCOPE_PROCESS);
+
+  fixture_stop_and_terminate_tracing();
+
+  // We don't strictly need to compare the records if we are just testing for crashes/ASan,
+  // but it's good to verify they were written correctly.
+  auto expected = fbl::StringPrintf(
+      "String(index: 1, \"+enabled\")\n"
+      "String(index: 2, \"process\")\n"
+      "KernelObject(koid: <>, type: thread, name: \"initial-thread\", {process: koid(<>)})\n"
+      "Thread(index: 1, <>)\n"
+      "String(index: 3, \"duration_name\")\n"
+      "String(index: 4, \"key\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"duration_name\", DurationComplete(end_ts: <>), {key: string(\"temporary_value\")})\n"
+      "String(index: 5, \"instant_name\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"instant_name\", Instant(scope: process), {})\n");
+  EXPECT_TRUE(fixture_compare_records(expected.c_str()), "record mismatch");
+
+  END_TRACE_TEST;
+}
+
 }  // namespace
