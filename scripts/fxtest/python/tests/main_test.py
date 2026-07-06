@@ -41,6 +41,11 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
     with mocked dependencies.
     """
 
+    ORIGINAL_HAS_ACTIVE_DEVICE = main.AsyncMain._has_active_device
+    ORIGINAL_WAIT_FOR_REPOSITORY_REGISTRATION = (
+        main.AsyncMain._wait_for_repository_registration
+    )
+
     DEVICE_TESTS_IN_INPUT = 1
     HOST_TESTS_IN_INPUT = 4
     E2E_TESTS_IN_INPUT = 1
@@ -560,6 +565,8 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         async def command_handler(
             *args: typing.Any, **kwargs: typing.Any
         ) -> None:
+            if "ffx" in args:
+                return
             event: asyncio.Event = kwargs.get("abort_signal")  # type: ignore
             assert event is not None
             ready_to_kill.set()
@@ -610,6 +617,8 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         async def command_handler(
             *args: typing.Any, **kwargs: typing.Any
         ) -> None:
+            if "ffx" in args:
+                return
             ready_to_kill.set()
             await asyncio.sleep(3600)
 
@@ -975,6 +984,132 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(ret, 0)
         self.assertFalse(emu_started)
+
+    async def test_no_active_device_spawns_emulator_and_sets_nodename(
+        self,
+    ) -> None:
+        """Test that if there is no active device initially, an emulator is spawned
+        and FUCHSIA_NODENAME is set to its name.
+        """
+        emu_started = False
+        emu_stopped = False
+
+        async def handler(
+            *args: typing.Any, **kwargs: typing.Any
+        ) -> typing.Any:
+            nonlocal emu_started, emu_stopped
+            if "target" in args and "default" in args and "get" in args:
+                return mock.MagicMock(
+                    return_code=1, stdout="", stderr="", was_timeout=False
+                )
+            if "target" in args and "list" in args:
+                if emu_started:
+                    return mock.MagicMock(
+                        return_code=0,
+                        stdout=json.dumps(
+                            [
+                                {
+                                    "nodename": "fuchsia-temp-emulator",
+                                    "rcs_state": "Y",
+                                }
+                            ]
+                        ),
+                        stderr="",
+                        was_timeout=False,
+                    )
+                return mock.MagicMock(
+                    return_code=0, stdout="[]", stderr="", was_timeout=False
+                )
+            if "emu" in args and "start" in args:
+                emu_started = True
+                return mock.MagicMock(
+                    return_code=0,
+                    stdout="Started emu",
+                    stderr="",
+                    was_timeout=False,
+                )
+            if "emu" in args and "stop" in args:
+                emu_stopped = True
+                return mock.MagicMock(
+                    return_code=0,
+                    stdout="Stopped emu",
+                    stderr="",
+                    was_timeout=False,
+                )
+            return mock.MagicMock(
+                return_code=0, stdout="", stderr="", was_timeout=False
+            )
+
+        self._mock_has_active_device(False)
+        self._mock_wait_for_repository_registration(True)
+        command_mock = self._mock_run_command(0)
+        command_mock.side_effect = handler
+        self._mock_has_package_server_connected_to_device(True)
+        self._mock_has_tests_in_base([])
+
+        with mock.patch.dict(os.environ, {}):
+            ret = await main.async_main_wrapper(
+                args.parse_args(["--simple", "--no-build"])
+            )
+            self.assertEqual(ret, 0)
+            self.assertTrue(emu_started)
+            self.assertTrue(emu_stopped)
+            self.assertEqual(
+                os.environ.get("FUCHSIA_NODENAME"), "fuchsia-temp-emulator"
+            )
+
+    async def test_one_active_device_sets_nodename(self) -> None:
+        """Test that if there is exactly one active device connected,
+        FUCHSIA_NODENAME is set to its name, and no emulator is started.
+        """
+        emu_started = False
+
+        async def handler(
+            *args: typing.Any, **kwargs: typing.Any
+        ) -> typing.Any:
+            nonlocal emu_started
+            if "target" in args and "list" in args:
+                return mock.MagicMock(
+                    return_code=0,
+                    stdout=json.dumps(
+                        [
+                            {
+                                "nodename": "fuchsia-active-device",
+                                "rcs_state": "Y",
+                            }
+                        ]
+                    ),
+                    stderr="",
+                    was_timeout=False,
+                )
+            if "emu" in args and "start" in args:
+                emu_started = True
+                return mock.MagicMock(
+                    return_code=0,
+                    stdout="Started emu",
+                    stderr="",
+                    was_timeout=False,
+                )
+            return mock.MagicMock(
+                return_code=0, stdout="", stderr="", was_timeout=False
+            )
+
+        self._mock_has_active_device(True)
+        self._mock_wait_for_repository_registration(True)
+        command_mock = self._mock_run_command(0)
+        command_mock.side_effect = handler
+        self._mock_has_package_server_connected_to_device(True)
+        self._mock_has_tests_in_base([])
+
+        with mock.patch.dict(os.environ, {}):
+            ret = await main.async_main_wrapper(
+                args.parse_args(["--simple", "--no-build"])
+            )
+            self.assertEqual(ret, 0)
+            self.assertFalse(emu_started)
+            self.assertEqual(
+                os.environ.get("FUCHSIA_NODENAME"), "fuchsia-active-device"
+            )
 
     async def test_list_command_starts_and_terminates_package_server(
         self,
@@ -1550,11 +1685,13 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             recorder=recorder,
         )
         self.assertEqual(ret, 0)
+        # We expect 1 extra call for the `ffx target list` command to verify/set
+        # FUCHSIA_NODENAME, as there is a device test and FUCHSIA_NODENAME is not set.
         if existing_package_server:
-            self.assertEqual(command_mock.call_count, 1)
+            self.assertEqual(command_mock.call_count, 2)
         else:
             # has to run an extra command: "fx serve"
-            self.assertEqual(command_mock.call_count, 2)
+            self.assertEqual(command_mock.call_count, 3)
 
         events = [
             e.payload.enumerate_test_cases
@@ -1620,7 +1757,9 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             recorder=recorder,
         )
         self.assertEqual(ret, 1)
-        self.assertEqual(command_mock.call_count, 1)
+        # We expect 1 extra call for the `ffx target list` command to verify/set
+        # FUCHSIA_NODENAME, as there is a device test and FUCHSIA_NODENAME is not set.
+        self.assertEqual(command_mock.call_count, 2)
 
         events = [
             e.payload.enumerate_test_cases
@@ -2433,3 +2572,111 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                     ["--simple", "--list-runtime-deps", "--no-build"]
                 )
             )
+
+    async def test_has_active_device(self) -> None:
+        """Tests that _has_active_device correctly detects active devices."""
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        app._has_active_device = (
+            TestMainIntegration.ORIGINAL_HAS_ACTIVE_DEVICE.__get__(
+                app, main.AsyncMain
+            )
+        )
+        app._recorder = mock.Mock()
+
+        exec_env = mock.Mock()
+        exec_env.fx_cmd_line.side_effect = lambda *args: list(args)
+        app._exec_env = exec_env
+
+        mock_run_command = mock.AsyncMock()
+        patch = mock.patch.object(execution, "run_command", mock_run_command)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+        # Case 1: Specific/default target is reachable.
+        mock_run_command.side_effect = [
+            mock.Mock(return_code=0, stdout="default-target\n"),
+            mock.Mock(return_code=0, stdout=""),
+        ]
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertTrue(await app._has_active_device())
+        self.assertEqual(mock_run_command.call_count, 2)
+        mock_run_command.assert_any_call(
+            "ffx",
+            "target",
+            "default",
+            "get",
+            recorder=app._recorder,
+            quiet_mode=True,
+        )
+        mock_run_command.assert_any_call(
+            "ffx",
+            "-t",
+            "default-target",
+            "target",
+            "echo",
+            recorder=app._recorder,
+            quiet_mode=True,
+        )
+
+        # Case 2: Specific target is unreachable, fallback succeeds with active device.
+        mock_run_command.reset_mock()
+        mock_run_command.side_effect = [
+            mock.Mock(return_code=0, stdout="default-target\n"),  # default get
+            mock.Mock(return_code=1, stdout=""),  # echo fails
+            mock.Mock(
+                return_code=0,
+                stdout=json.dumps(
+                    [
+                        {"nodename": "device1", "rcs_state": "N"},
+                        {"nodename": "device2", "rcs_state": "Y"},
+                    ]
+                ),
+            ),  # list
+        ]
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertTrue(await app._has_active_device())
+
+        # Case 3: Fallback has only inactive/unreachable devices.
+        mock_run_command.reset_mock()
+        mock_run_command.side_effect = [
+            mock.Mock(return_code=0, stdout="default-target\n"),  # default get
+            mock.Mock(return_code=1, stdout=""),  # echo fails
+            mock.Mock(
+                return_code=0,
+                stdout=json.dumps(
+                    [
+                        {"nodename": "device1", "rcs_state": "N"},
+                        {"nodename": "device2", "rcs_state": "N"},
+                    ]
+                ),
+            ),  # list
+        ]
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(await app._has_active_device())
+
+        # Case 4: Fallback returns empty list.
+        mock_run_command.reset_mock()
+        mock_run_command.side_effect = [
+            mock.Mock(return_code=0, stdout="default-target\n"),  # default get
+            mock.Mock(return_code=1, stdout=""),  # echo fails
+            mock.Mock(return_code=0, stdout="[]"),  # list empty
+        ]
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(await app._has_active_device())
+
+        # Case 5: FUCHSIA_NODENAME is set and echo succeeds.
+        mock_run_command.reset_mock()
+        mock_run_command.side_effect = [
+            mock.Mock(return_code=0, stdout=""),  # echo succeeds
+        ]
+        with mock.patch.dict(os.environ, {"FUCHSIA_NODENAME": "env-target"}):
+            self.assertTrue(await app._has_active_device())
+        mock_run_command.assert_called_once_with(
+            "ffx",
+            "-t",
+            "env-target",
+            "target",
+            "echo",
+            recorder=app._recorder,
+            quiet_mode=True,
+        )

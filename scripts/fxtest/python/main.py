@@ -761,6 +761,14 @@ class AsyncMain:
                 return 1
             emulator_started = True
 
+        # If there is exactly one active device and no target is explicitly specified,
+        # set it as the default target via FUCHSIA_NODENAME so that all child commands
+        # (like the package server and tests) target this device.
+        if selections.has_device_test() and not os.environ.get(
+            "FUCHSIA_NODENAME"
+        ):
+            await self._bind_to_active_device()
+
         if not flags.list_runtime_deps:
             package_server_behavior = (
                 await self._check_if_package_server_needed(selections, exec_env)
@@ -1995,6 +2003,54 @@ class AsyncMain:
             cancel_event,
         )
 
+    async def _get_active_devices(self) -> list[dict[str, typing.Any]]:
+        """Fetch the list of active devices from ffx.
+
+        Returns:
+            list[dict[str, Any]]: A list of active devices.
+        """
+        recorder = self._recorder
+        exec_env = self._exec_env
+        assert exec_env is not None
+
+        output = await execution.run_command(
+            *exec_env.fx_cmd_line("ffx", "--machine", "json", "target", "list"),
+            recorder=recorder,
+            quiet_mode=True,
+        )
+        if output is None or output.return_code != 0:
+            return []
+
+        try:
+            targets = json.loads(output.stdout)
+            if isinstance(targets, list):
+                return [
+                    t
+                    for t in targets
+                    if isinstance(t, dict) and t.get("rcs_state") == "Y"
+                ]
+        except (json.JSONDecodeError, TypeError) as e:
+            recorder.emit_warning_message(
+                f"Failed to parse target list JSON: {e}"
+            )
+
+        return []
+
+    async def _bind_to_active_device(self) -> None:
+        """If exactly one active device is found and FUCHSIA_NODENAME is not set,
+        set FUCHSIA_NODENAME to target this device.
+        """
+        recorder = self._recorder
+        active_devices = await self._get_active_devices()
+        if len(active_devices) == 1:
+            nodename = active_devices[0].get("nodename")
+            if nodename:
+                os.environ["FUCHSIA_NODENAME"] = nodename
+                recorder.emit_info_message(
+                    f"Found exactly one active device: {nodename}. "
+                    "Setting FUCHSIA_NODENAME to target this device."
+                )
+
     async def _has_active_device(self) -> bool:
         """Check if any active devices are reachable.
 
@@ -2029,19 +2085,8 @@ class AsyncMain:
                 return True
 
         # Fall back to checking all discovered devices.
-        output = await execution.run_command(
-            *exec_env.fx_cmd_line(
-                "ffx", "target", "list", "--format", "addresses"
-            ),
-            recorder=recorder,
-            quiet_mode=True,
-        )
-        return (
-            output is not None
-            and output.return_code == 0
-            and bool(output.stdout.strip())
-            and output.stdout.strip() != "No devices found."
-        )
+        active_devices = await self._get_active_devices()
+        return len(active_devices) > 0
 
     async def _wait_for_repository_registration(self) -> bool:
         """Wait for repository to be registered."""
