@@ -585,7 +585,6 @@ class KTraceTests {
     END_TEST;
   }
 
-#if ENABLE_RUST_IN_ZIRCON
   static bool TestRustInterop() {
     BEGIN_TEST;
 
@@ -856,7 +855,6 @@ class KTraceTests {
 
     END_TEST;
   }
-#endif
 };
 
 UNITTEST_START_TESTCASE(ktrace_tests)
@@ -867,7 +865,6 @@ UNITTEST("write", KTraceTests::TestWrite)
 UNITTEST("rewind", KTraceTests::TestRewind)
 UNITTEST("read_user", KTraceTests::TestReadUser)
 UNITTEST("dropped_records", KTraceTests::TestDroppedRecordTracking)
-#if ENABLE_RUST_IN_ZIRCON
 UNITTEST("rust_interop", KTraceTests::TestRustInterop)
 UNITTEST("rust_init_and_size", KTraceTests::TestRustInitAndSize)
 UNITTEST("rust_write", KTraceTests::TestRustWrite)
@@ -875,5 +872,4 @@ UNITTEST("rust_dropped_record_tracking", KTraceTests::TestRustDroppedRecordTrack
 UNITTEST("rust_emit_drop_stats", KTraceTests::TestRustEmitDropStats)
 UNITTEST("rust_global_lifecycle", KTraceTests::TestRustGlobalLifecycle)
 UNITTEST("rust_macros", KTraceTests::TestRustMacros)
-#endif
 UNITTEST_END_TESTCASE(ktrace_tests, "ktrace", "KTrace tests")

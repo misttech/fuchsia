@@ -37,6 +37,7 @@ source_set("top") {
     "//zircon/kernel/lib/init",
     "//zircon/kernel/lib/io",
     "//zircon/kernel/lib/jtrace:headers",
+    "//zircon/kernel/lib/ktrace:ktrace-rs",
     "//zircon/kernel/lib/lockup_detector",
     "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/thread-stack",
@@ -49,7 +50,4 @@ source_set("top") {
     "//zircon/kernel/platform:platform-rs",
     "//zircon/kernel/vm:vm-rs",
   ]
-  if (enable_rust_in_zircon) {
-    deps += [ "//zircon/kernel/lib/ktrace:ktrace-rs" ]
-  }
 }

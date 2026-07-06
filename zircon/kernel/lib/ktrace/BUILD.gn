@@ -23,30 +23,29 @@ source_set("ktrace") {
 }
 
 common_deps = [
-  "macro:ktrace-macro",
   "//sdk/rust/zx-status",
-  "//src/lib/kalloc",
   "//src/lib/kstring",
   "//zircon/kernel/arch:arch-rs",
   "//zircon/kernel/kernel:kernel-rs",
   "//zircon/kernel/lib/spsc_buffer:spsc-buffer-rs",
-  "//zircon/kernel/platform:platform-rs",
 ]
 
 kernel_rust_crate("ktrace-rs") {
   crate_name = "ktrace_rs"
   sources = [ "src/lib.rs" ]
-  check_cfgs = [ "test" ]
-  deps = common_deps
+  deps = common_deps + [
+           "macro:ktrace-macro",
+           "//src/lib/kalloc",
+           "//zircon/kernel/platform:platform-rs",
+         ]
 }
 
 kernel_rust_crate("ktrace-rs-tests") {
   testonly = true
   crate_name = "ktrace_rs_tests"
-  sources = [ "src/lib.rs" ]
-  check_cfgs = [ "test" ]
-  deps = common_deps
-  rustflags = [ "--cfg=test" ]
+  source_root = "src/tests.rs"
+  sources = [ "src/tests.rs" ]
+  deps = common_deps + [ ":ktrace-rs" ]
 }
 
 group("tests") {
@@ -55,7 +54,11 @@ group("tests") {
 
 group("kernel-tests") {
   testonly = true
-  deps = [ "tests" ]
+
+  # TODO(https://fxbug.dev/529516970): We fail to link the KTrace Rust tests when GCC is used.
+  if (!is_gcc) {
+    deps = [ "tests" ]
+  }
 }
 
 group("phys-tests") {
