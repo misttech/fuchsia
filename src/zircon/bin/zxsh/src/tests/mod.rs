@@ -6,6 +6,7 @@ pub mod args;
 pub mod ast;
 pub mod collections;
 pub mod errors;
+pub mod glob;
 pub mod parser;
 pub mod serialization;
 pub mod sort;
