@@ -249,11 +249,25 @@ class DapTestFramework:
             extra_args.append(device_addr)
 
         ffx_cmd = FfxCmd(FfxCmd.create_test_inner(get_ffx_bin(), *extra_args))
+        symbol_dir = os.environ.get("DAP_E2E_TESTS_SYMBOL_DIR", "")
+        zxdb_sym_args = []
+        if symbol_dir:
+            # Resolve relative to runtime execution CAS build_root.
+            resolved_sym_dir = (build_root / symbol_dir).resolve()
+            if not resolved_sym_dir.exists() or not any(
+                resolved_sym_dir.iterdir()
+            ):
+                raise RuntimeError(
+                    f"Inferior symbol directory missing or empty: {resolved_sym_dir}"
+                )
+            zxdb_sym_args.append(f"--build-id-dir={resolved_sym_dir}")
+
         args = [
             "debug",
             "connect",
             "--new-agent",
             "--",
+            *zxdb_sym_args,
             "--enable-debug-adapter",
             "--debug-mode",
             f"--debug-adapter-port={port}",

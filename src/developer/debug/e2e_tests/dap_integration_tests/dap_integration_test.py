@@ -80,7 +80,12 @@ def main() -> None:
 
     parser.add_argument(
         "--DAP_E2E_TESTS_FFX_TEST_DATA",  # The argument is capitalized to match the extra_args in BUILD.gn.
-        help="the relative path from host_x64 to the directory of ffx tools",
+        help="the relative path from root_build_dir to the directory of ffx tools",
+    )
+
+    parser.add_argument(
+        "--DAP_E2E_TESTS_SYMBOL_DIR",
+        help="the relative path from root_build_dir to the inferior build-id symbol directory",
     )
 
     parser.add_argument(
@@ -95,6 +100,9 @@ def main() -> None:
         os.environ[
             "DAP_E2E_TESTS_FFX_TEST_DATA"
         ] = args.DAP_E2E_TESTS_FFX_TEST_DATA
+
+    if args.DAP_E2E_TESTS_SYMBOL_DIR:
+        os.environ["DAP_E2E_TESTS_SYMBOL_DIR"] = args.DAP_E2E_TESTS_SYMBOL_DIR
 
     if args.dump_log:
         os.environ["DAP_DUMP_LOG_ALWAYS"] = "1"
