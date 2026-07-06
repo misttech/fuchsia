@@ -12,14 +12,18 @@ rustc_binary("bin") {
   sources = [
     "src/collections.rs",
     "src/errors.rs",
+    "src/fd.rs",
     "src/main.rs",
+    "src/parser/ast.rs",
     "src/parser/error.rs",
     "src/parser/mod.rs",
     "src/parser/token.rs",
     "src/parser/tokenizer.rs",
+    "src/relative.rs",
     "src/serialization.rs",
     "src/sort.rs",
     "src/string.rs",
+    "src/tests/ast.rs",
     "src/tests/collections.rs",
     "src/tests/errors.rs",
     "src/tests/mod.rs",
@@ -34,6 +38,7 @@ rustc_binary("bin") {
     "//src/lib/fdio/rust:fdio",
     "//third_party/rust_crates:bstr",
     "//third_party/rust_crates:libc",
+    "//third_party/rust_crates:zerocopy",
   ]
 }
 
