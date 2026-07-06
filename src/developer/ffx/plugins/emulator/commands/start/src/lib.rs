@@ -7,8 +7,9 @@ use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use emulator_instance::{EmulatorConfiguration, EmulatorInstances, EngineType, NetworkingMode};
 use ffx_config::EnvironmentContext;
+use ffx_emulator_common::config::EMU_SERIAL_ENABLED;
 use ffx_emulator_config::EmulatorEngine;
-use ffx_emulator_engines::{EngineBuilder, process_flag_template};
+use ffx_emulator_engines::{EngineBuilder, process_flag_template, update_serial_number};
 use ffx_emulator_start_args::StartCommand;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{
@@ -651,11 +652,14 @@ impl<T: EngineOperations> EmuStartTool<T> {
         if engine.emu_config().host.networking == NetworkingMode::User {
             engine.emu_config_mut().host.port_map = new_config.host.port_map.clone();
         }
+        let serial_enabled: bool = self.context.get(EMU_SERIAL_ENABLED).unwrap_or(true);
         {
             let config = engine.emu_config_mut();
             config.host.log = new_config.host.log.clone();
             config.runtime.startup_timeout = new_config.runtime.startup_timeout.clone();
             config.runtime.log_level = new_config.runtime.log_level.clone();
+
+            update_serial_number(config, serial_enabled);
         }
 
         // Before starting a reused instance, we must validate its configuration and verify that

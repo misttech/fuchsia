@@ -44,6 +44,7 @@ if (is_host) {
       "//third_party/rust_crates:log",
       "//third_party/rust_crates:nix",
       "//third_party/rust_crates:png",
+      "//third_party/rust_crates:rand",
       "//third_party/rust_crates:serde_json",
       "//third_party/rust_crates:shared_child",
       "//third_party/rust_crates:tempfile",

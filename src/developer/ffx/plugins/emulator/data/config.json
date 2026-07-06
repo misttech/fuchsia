@@ -3,6 +3,9 @@
         "console": {
             "enabled": false
         },
+        "serial": {
+            "enabled": true
+        },
         "device": "",
         "engine": "femu",
         "gpu": "swiftshader_indirect",

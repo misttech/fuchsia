@@ -1163,7 +1163,7 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use async_trait::async_trait;
     use emulator_instance::{

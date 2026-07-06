@@ -18,6 +18,7 @@ use emulator_instance::{
 };
 use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
+use ffx_emulator_common::config::EMU_SERIAL_ENABLED;
 use ffx_emulator_config::EmulatorEngine;
 use fho::{Result, bug, return_bug, return_user_error};
 use port_picker::{is_free_tcp_port, pick_unused_port};
@@ -129,10 +130,13 @@ impl EngineBuilder {
     /// and return the built engine.
     pub async fn build(mut self) -> Result<Box<dyn EmulatorEngine>> {
         // Set up the instance directory, now that we have enough information.
-        let name = &self.emulator_configuration.runtime.name;
+        let name = self.emulator_configuration.runtime.name.clone();
         self.emulator_configuration.runtime.engine_type = self.engine_type;
         self.emulator_configuration.runtime.instance_directory =
-            self.emu_instances.get_instance_dir(name, true).map_err(|e| anyhow::Error::from(e))?;
+            self.emu_instances.get_instance_dir(&name, true).map_err(anyhow::Error::from)?;
+
+        let serial_enabled: bool = self.context.get(EMU_SERIAL_ENABLED).unwrap_or(true);
+        update_serial_number(&mut self.emulator_configuration, serial_enabled);
 
         // Make sure we don't overwrite an existing instance.
         if let Ok(EngineOption::DoesExist(instance_data)) =
@@ -294,6 +298,14 @@ pub(crate) fn finalize_port_mapping(emu_config: &mut EmulatorConfiguration) -> R
     Ok(())
 }
 
+/// Updates the serial number configuration based on the `emu.serial.enabled` setting.
+pub fn update_serial_number(config: &mut EmulatorConfiguration, serial_enabled: bool) {
+    if serial_enabled && config.runtime.serial_number.is_none() {
+        let serial = format!("EM-{:09X}", rand::random::<u64>() & 0xFFFFFFFFF);
+        config.runtime.serial_number = Some(serial);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -315,5 +327,68 @@ mod tests {
         let host_port = mapping.host.unwrap();
         assert_ne!(host_port, 0, "Host port should not be 0 after finalization");
         assert_eq!(mapping.guest, 2222);
+    }
+
+    #[fuchsia::test]
+    async fn test_serial_number_generation() {
+        use tempfile::tempdir;
+
+        let builder = ffx_config::test_env();
+        let builder = crate::qemu_based::tests::make_fake_sdk(builder).await;
+        let env = builder.build().expect("test env");
+        let temp_dir = tempdir().expect("Couldn't get a temporary directory for testing.");
+        let emu_instances = EmulatorInstances::new(temp_dir.path().to_path_buf());
+
+        // 1. Default: Serial number generation is enabled.
+        let mut cfg = EmulatorConfiguration::default();
+        cfg.runtime.name = "test-emu-1".to_string();
+        cfg.runtime.config_override = true;
+        let builder = EngineBuilder::new(&env.context, emu_instances.clone())
+            .config(cfg)
+            .engine_type(EngineType::Qemu);
+
+        let engine = builder.build().await.expect("engine built");
+        let serial =
+            engine.emu_config().runtime.serial_number.as_ref().expect("serial number generated");
+        assert_eq!(serial.len(), 12);
+        assert!(serial.starts_with("EM-"));
+        assert!(
+            serial[3..]
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && (c.is_numeric() || c.is_uppercase()))
+        );
+
+        // 2. Disabled: Config is false.
+        let builder_disabled_env = ffx_config::test_env();
+        let builder_disabled_env =
+            crate::qemu_based::tests::make_fake_sdk(builder_disabled_env).await;
+        let env_disabled = builder_disabled_env
+            .user_config(EMU_SERIAL_ENABLED, "false")
+            .build()
+            .expect("test env disabled");
+        let mut cfg_disabled = EmulatorConfiguration::default();
+        cfg_disabled.runtime.name = "test-emu-2".to_string();
+        cfg_disabled.runtime.config_override = true;
+        let builder_disabled = EngineBuilder::new(&env_disabled.context, emu_instances.clone())
+            .config(cfg_disabled)
+            .engine_type(EngineType::Qemu);
+
+        let engine_disabled = builder_disabled.build().await.expect("engine built");
+        assert!(engine_disabled.emu_config().runtime.serial_number.is_none());
+
+        // 3. Pre-existing: Some("custom-serial") is not overwritten.
+        let mut cfg_custom = EmulatorConfiguration::default();
+        cfg_custom.runtime.name = "test-emu-3".to_string();
+        cfg_custom.runtime.serial_number = Some("custom-serial".to_string());
+        cfg_custom.runtime.config_override = true;
+        let builder_custom = EngineBuilder::new(&env.context, emu_instances.clone())
+            .config(cfg_custom)
+            .engine_type(EngineType::Qemu);
+
+        let engine_custom = builder_custom.build().await.expect("engine built");
+        assert_eq!(
+            engine_custom.emu_config().runtime.serial_number.as_deref(),
+            Some("custom-serial")
+        );
     }
 }

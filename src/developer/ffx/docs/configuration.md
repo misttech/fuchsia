@@ -108,6 +108,10 @@ ffx config env get
     |                                         | writable by the running process to |
     |                                         | utilize KVM for acceleration.      |
     |                                         | Defaults to `/dev/kvm`             |
+    | `emu.serial.enabled`                    | Whether to support automatic       |
+    |                                         | generation of stable, unique       |
+    |                                         | serial numbers for emulators.      |
+    |                                         | Defaults to `true`                 |
     | `emu.start.timeout`                     | The duration (in seconds) to       |
     |                                         | attempt to establish an RCS        |
     |                                         | connection with a new emulator     |

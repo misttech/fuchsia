@@ -437,6 +437,10 @@ pub struct RuntimeConfig {
     /// Optional path to a Tap upscript file, which is passed to the emulator when Tap networking
     /// is enabled.
     pub upscript: Option<PathBuf>,
+
+    /// Serial number of the emulator.
+    #[serde(default)]
+    pub serial_number: Option<String>,
 }
 
 /// Specifications of the virtual device to be emulated.

@@ -49,6 +49,9 @@ pub const EMU_DEFAULT_GPU: &'static str = "emu.gpu";
 /// should create a subdirectory in this directory to store data.
 pub const EMU_INSTANCE_ROOT_DIR: &'static str = "emu.instance_dir";
 
+/// Whether or not to generate and enable emulator serial numbers. Defaults to true.
+pub const EMU_SERIAL_ENABLED: &'static str = "emu.serial.enabled";
+
 /// The filesystem path to the system's KVM device. Must be writable by the
 /// running process to utilize KVM for acceleration.
 pub const KVM_PATH: &'static str = "emu.kvm_path";

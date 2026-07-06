@@ -291,6 +291,14 @@
         "kernel.entropy-mixin=42ac2452e99c1c979ebfca03bce0cbb14126e4021a6199ccfeca217999c0aaa0",
         "kernel.halt-on-panic=true",
         "zircon.nodename={{runtime.name}}"
+        {{#if runtime.serial_number}}
+            {{! For UEFI/EFI boots (where ZBI staging is bypassed), the guest is intended to
+                rely on this kernel command line argument to synthesize the ZBI_TYPE_SERIAL_NUMBER item.
+                Note: Due to a bug in the UEFI boot-shim (b/530298931), this command-line fallback is currently
+                not initialized in production. For standard ZBI boots, the emulator embeds the ZBI item
+                directly, and the boot-shim ignores this parameter. }}
+            ,"bootloader.zbi.serial-number={{runtime.serial_number}}"
+        {{/if}}
         {{#each runtime.addl_kernel_args}}
             ,"{{this}}"
         {{/each}}
