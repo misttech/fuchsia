@@ -47,6 +47,8 @@ pub trait LogReader {
     async fn get_test_snapshot_then_subscribe(&self) -> BoxStream<'static, TestLogMessage>;
     /// Changes the retry config for protocols that implement retries for snapshots
     fn retry_config(&mut self, _config: RetryConfig) {}
+    /// Selects all logs by component moniker for protocols that support selectors
+    fn select_all_by_component(&mut self, _selector: &str) {}
 }
 
 // The FFI interface, which uses the FXT format, is currently only available at HEAD,
@@ -57,6 +59,7 @@ mod ffi_format {
     use super::*;
     use diagnostics_data::Severity;
     use diagnostics_message::MessageParser;
+    use diagnostics_reader::{ToComponentSelectorArguments, ToSelectorArguments};
     use fidl_fuchsia_diagnostics::{
         BatchIteratorMarker, BatchIteratorProxy, ClientSelectorConfiguration, DataType,
         FormattedContent, StreamMode, StreamParameters,
@@ -65,6 +68,7 @@ mod ffi_format {
     /// Internal implementation of LogReader using the FFI interfaces.
     pub struct FfiReader {
         accessor: ArchiveAccessorProxy,
+        selector: Option<String>,
     }
 
     /// Streams log messages from a BatchIterator and parses them into `TestLogMessage`.
@@ -212,7 +216,7 @@ mod ffi_format {
     impl FfiReader {
         /// Creates a new FfiReader from the provided `ArchiveAccessorProxy`.
         pub fn new(accessor: ArchiveAccessorProxy) -> Self {
-            Self { accessor }
+            Self { accessor, selector: None }
         }
     }
 
@@ -220,6 +224,10 @@ mod ffi_format {
     impl LogReader for FfiReader {
         async fn get_test_snapshot(&self) -> Vec<TestLogMessage> {
             get_snapshot(&self.accessor).await
+        }
+
+        fn select_all_by_component(&mut self, selector: &str) {
+            self.selector = Some(selector.to_string());
         }
 
         async fn get_test_snapshot_then_subscribe(&self) -> BoxStream<'static, TestLogMessage> {
@@ -231,7 +239,17 @@ mod ffi_format {
                         stream_mode: Some(StreamMode::SnapshotThenSubscribe),
                         format: Some(Format::Fxt),
                         client_selector_configuration: Some(
-                            ClientSelectorConfiguration::SelectAll(true),
+                            if let Some(selector) = &self.selector {
+                                ClientSelectorConfiguration::Selectors(
+                                    selector
+                                        .clone()
+                                        .to_component_selector_arguments()
+                                        .to_selector_arguments()
+                                        .collect::<Vec<_>>(),
+                                )
+                            } else {
+                                ClientSelectorConfiguration::SelectAll(true)
+                            },
                         ),
                         ..Default::default()
                     },
@@ -253,6 +271,10 @@ mod rust_format {
                 .await
                 .map(|value| value.into_iter().map(data_logs_to_test_logs).collect::<Vec<_>>())
                 .unwrap_or_default()
+        }
+
+        fn select_all_by_component(&mut self, selector: &str) {
+            self.select_all_for_component(selector);
         }
 
         fn retry_config(&mut self, config: RetryConfig) {

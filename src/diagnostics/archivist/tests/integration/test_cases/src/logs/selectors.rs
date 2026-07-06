@@ -2,19 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::logs::common::LogFormat;
 use crate::{test_topology, utils};
-use diagnostics_assertions::assert_data_tree;
-use diagnostics_reader::ArchiveReader;
+use diagnostics_reader::RetryConfig;
+use fidl_fuchsia_archivist_test as ftest;
 use fidl_fuchsia_archivist_test::LogPuppetLogRequest;
+use fidl_fuchsia_diagnostics::Format;
 use fidl_fuchsia_diagnostics_types::Severity;
 use futures::{FutureExt, StreamExt};
 use realm_proxy_client::RealmProxyClient;
-use {fidl_fuchsia_archivist_test as ftest, fuchsia_async as fasync};
+use test_case::test_case;
 
 const HELLO_WORLD: &str = "Hello, world!!!";
 
+#[test_case(LogFormat::Rust(Format::Json))]
+#[cfg_attr(fuchsia_api_level_at_least = "HEAD", test_case(LogFormat::Rust(Format::Fxt)))]
+#[cfg_attr(fuchsia_api_level_at_least = "HEAD", test_case(LogFormat::Ffi))]
 #[fuchsia::test]
-async fn component_selectors_filter_logs() {
+async fn component_selectors_filter_logs(format: LogFormat) {
     let mut puppets = Vec::with_capacity(12);
     for i in 0..6 {
         puppets.push(test_topology::PuppetDeclBuilder::new(format!("puppet_a{i}")).into());
@@ -36,18 +41,13 @@ async fn component_selectors_filter_logs() {
     }
 
     // Start listening
-    let mut reader = ArchiveReader::logs();
-    reader
-        .select_all_for_component("puppet_a*")
-        .with_archive(accessor)
-        .with_minimum_schema_count(5);
+    //let mut reader = ArchiveReader::logs();
+    let mut reader = format.build(accessor);
 
-    let (mut stream, mut errors) = reader.snapshot_then_subscribe().unwrap().split_streams();
-    let _errors = fasync::Task::spawn(async move {
-        if let Some(e) = errors.next().await {
-            panic!("error in subscription: {e}");
-        }
-    });
+    reader.select_all_by_component("puppet_a*");
+    reader.retry_config(RetryConfig::MinSchemaCount(5));
+
+    let mut stream = reader.get_test_snapshot_then_subscribe().await;
 
     // Start a few more components
     for i in 3..6 {
@@ -58,12 +58,8 @@ async fn component_selectors_filter_logs() {
     // We should see logs from components started before and after we began to listen.
     for _ in 0..6 {
         let log = stream.next().await.unwrap();
-        assert!(log.moniker.to_string().starts_with("puppet_a"));
-        assert_data_tree!(log.payload.unwrap(), root: {
-            message: {
-                value: HELLO_WORLD,
-            }
-        });
+        assert!(log.tags[0].starts_with("puppet_a"));
+        assert_eq!(log.message, HELLO_WORLD);
     }
     // We only expect 6 logs.
     assert!(stream.next().now_or_never().is_none());
