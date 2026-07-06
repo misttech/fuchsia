@@ -82,11 +82,22 @@ def main() -> None:
         "--DAP_E2E_TESTS_FFX_TEST_DATA",  # The argument is capitalized to match the extra_args in BUILD.gn.
         help="the relative path from host_x64 to the directory of ffx tools",
     )
+
+    parser.add_argument(
+        "--dump-log",
+        action="store_true",
+        help="print DAP traffic history even if tests succeed",
+    )
+
     args, unknown = parser.parse_known_args()
+
     if args.DAP_E2E_TESTS_FFX_TEST_DATA:
         os.environ[
             "DAP_E2E_TESTS_FFX_TEST_DATA"
         ] = args.DAP_E2E_TESTS_FFX_TEST_DATA
+
+    if args.dump_log:
+        os.environ["DAP_DUMP_LOG_ALWAYS"] = "1"
 
     # Reconstruct sys.argv for unittest.main so that the unittest.main won't complain
     sys.argv = [sys.argv[0]] + unknown

@@ -175,6 +175,11 @@ class TestDapFramework(unittest.IsolatedAsyncioTestCase):
             _, event = await asyncio.gather(put_event(), fut)
             self.assertEqual(event["event"], "initialized")
 
+    async def test_on_event_timeout(self) -> None:
+        fut = self.framework.on_event("initialized", timeout=0.1)
+        with self.assertRaises(asyncio.TimeoutError):
+            await fut
+
     async def test_server_log_captured_on_exception(self) -> None:
         class FakeProc:
             def __init__(self) -> None:
@@ -307,6 +312,7 @@ class TestDapTestCaseTeardown(unittest.TestCase):
         mock_framework.initialized = True
         mock_framework.disconnected = False
         mock_framework.start_server = AsyncMock()
+        mock_framework.flush_and_dump_traffic_history = AsyncMock()
 
         # Make teardown methods raise errors when awaited
         mock_framework.verify_all_expectations = AsyncMock(
@@ -340,6 +346,9 @@ class TestDapTestCaseTeardown(unittest.TestCase):
         mock_framework.dump_server_logs.assert_called_once()
         called_test_id = mock_framework.dump_server_logs.call_args[0][0]
         self.assertIn("MockDapTestCaseBodyFail.test_body", called_test_id)
+        mock_framework.flush_and_dump_traffic_history.assert_called_once_with(
+            called_test_id
+        )
 
         # Verify the ignored errors were logged to stdout
         output = captured_stdout.getvalue()
@@ -370,6 +379,7 @@ class TestDapTestCaseTeardown(unittest.TestCase):
         mock_framework.initialized = True
         mock_framework.disconnected = False
         mock_framework.start_server = AsyncMock()
+        mock_framework.flush_and_dump_traffic_history = AsyncMock()
 
         # Raise error on verify, but let teardown succeed
         mock_framework.verify_all_expectations = AsyncMock(
@@ -394,6 +404,46 @@ class TestDapTestCaseTeardown(unittest.TestCase):
         mock_framework.dump_server_logs.assert_called_once()
         called_test_id = mock_framework.dump_server_logs.call_args[0][0]
         self.assertIn("MockDapTestCaseTeardownFail.test_body", called_test_id)
+        mock_framework.flush_and_dump_traffic_history.assert_called_once_with(
+            called_test_id
+        )
+
+    @patch("dap_test_framework.dap_test_framework.DapTestFramework")
+    def test_setup_failure_cleans_up_and_dumps_logs(
+        self, mock_framework_cls: Mock
+    ) -> None:
+        class MockDapTestCaseSetupFail(DapTestCase):
+            async def test_body(self) -> None:
+                pass
+
+        test = MockDapTestCaseSetupFail("test_body")
+
+        mock_framework = mock_framework_cls.return_value
+        mock_framework.start_server = AsyncMock(
+            side_effect=RuntimeError("start_server failed")
+        )
+        mock_framework._drain_and_cleanup_server = AsyncMock()
+        mock_framework.dump_server_logs = Mock()
+
+        suite = unittest.TestSuite()
+        suite.addTest(test)
+
+        captured_stdout = StringIO()
+        with patch("sys.stdout", captured_stdout):
+            result = unittest.TestResult()
+            suite.run(result)
+
+        self.assertEqual(len(result.errors), 1)
+        err_msg = result.errors[0][1]
+        self.assertIn("RuntimeError: start_server failed", err_msg)
+
+        mock_framework._drain_and_cleanup_server.assert_called_once()
+        mock_framework.dump_server_logs.assert_called_once()
+        called_test_id = mock_framework.dump_server_logs.call_args[0][0]
+        self.assertIn("MockDapTestCaseSetupFail.test_body", called_test_id)
+
+        output = captured_stdout.getvalue()
+        self.assertIn("[TEST END By Setup]", output)
 
 
 if __name__ == "__main__":

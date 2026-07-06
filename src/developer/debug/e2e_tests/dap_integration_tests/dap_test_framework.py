@@ -72,9 +72,15 @@ class RequestFuture:
 class EventFuture:
     """A future representing a pending DAP event and its expectations."""
 
-    def __init__(self, framework: DapTestFramework, event_name: str) -> None:
+    def __init__(
+        self,
+        framework: DapTestFramework,
+        event_name: str,
+        timeout: Optional[float] = None,
+    ) -> None:
         self.framework = framework
         self.event_name = event_name
+        self.timeout = timeout
         self.fut = asyncio.get_running_loop().create_future()
         self.checks: List[Dict[str, Any]] = []
 
@@ -99,8 +105,15 @@ class EventFuture:
                 tasks.append(self.framework._process_task)
 
             done, _pending = await asyncio.wait(
-                tasks, return_when=asyncio.FIRST_COMPLETED
+                tasks,
+                timeout=self.timeout,
+                return_when=asyncio.FIRST_COMPLETED,
             )
+
+            if not done:
+                raise asyncio.TimeoutError(
+                    f"Timed out waiting for DAP event '{self.event_name}' after {self.timeout}s"
+                )
 
             if self.fut in done:
                 return self.fut.result()
@@ -308,9 +321,11 @@ class DapTestFramework:
         self._request_tasks.append(task)
         return req_fut
 
-    def on_event(self, event_name: str) -> EventFuture:
+    def on_event(
+        self, event_name: str, timeout: Optional[float] = None
+    ) -> EventFuture:
         """Returns an EventFuture to track expectations on events."""
-        event_fut = EventFuture(self, event_name)
+        event_fut = EventFuture(self, event_name, timeout=timeout)
         self.event_expectations.append(event_fut)
         return event_fut
 
@@ -318,6 +333,7 @@ class DapTestFramework:
         self, writer: asyncio.StreamWriter, value: dict[str, Any]
     ) -> None:
         """Intercepts all outbound DAP messages to execute dynamic callbacks on matched sequence numbers."""
+        self.traffic_history.append(value)
         seq = value.get("seq")
         if seq is not None and seq in self._split_requests:
             delay = self._split_requests.pop(seq)
@@ -354,7 +370,6 @@ class DapTestFramework:
         while True:
             try:
                 event = await self.event_queue.get()
-                print(f"Framework read event from queue: {event}")
                 self.traffic_history.append(event)
 
                 matched = False
@@ -787,6 +802,32 @@ class DapTestFramework:
             print(line, end="", flush=True)
         print("---------------------------------\n", flush=True)
 
+    def dump_traffic_history(self, test_id: Optional[str] = None) -> None:
+        """Dumps all recorded DAP traffic (requests, responses, events) to host output."""
+        if not self.traffic_history:
+            return
+        if test_id:
+            print(
+                f"\n--- Captured DAP Traffic History for {test_id} ---",
+                flush=True,
+            )
+        else:
+            print("\n--- Captured DAP Traffic History ---", flush=True)
+        for item in self.traffic_history:
+            direction = "Send" if item.get("type") == "request" else "Recv"
+            print(f"[{direction}] {json.dumps(item, indent=2)}", flush=True)
+        print("-------------------------------------------\n", flush=True)
+
+    async def flush_and_dump_traffic_history(
+        self, test_id: Optional[str] = None, drain_timeout: float = 1.0
+    ) -> None:
+        """Briefly awaits pending background request coroutines before dumping traffic history."""
+        pending_tasks = [t for t in self._request_tasks if not t.done()]
+        if pending_tasks:
+            await asyncio.wait(pending_tasks, timeout=drain_timeout)
+        await asyncio.sleep(0.1)
+        self.dump_traffic_history(test_id)
+
 
 class DapTestCase(unittest.IsolatedAsyncioTestCase):
     """Base class for DAP integration tests, handling server lifecycle fixtures."""
@@ -797,7 +838,13 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
         self.port = portpicker.pick_unused_port()
 
         # Start server and connect
-        await self.framework.start_server(self.port)
+        try:
+            await self.framework.start_server(self.port)
+        except Exception:
+            await self.framework._drain_and_cleanup_server()
+            self.framework.dump_server_logs(self.id())
+            print(f"[TEST END By Setup] {self.id()}\n", flush=True)
+            raise
 
     # any exception that is not caught during the execution of unittest will update the outcome
     def _is_test_failed(self) -> bool:
@@ -846,15 +893,15 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
                     "VERIFY_DISCONNECT", self.disconnect()
                 )
         finally:
-            # non-test-logic related teardown, any failure happen here shouldn't be seen as a dap-logic failure.
-            # CLEAN_FRAMEWORK is placed in finally to guarantee cleanup of server processes and sockets.
+            # Whenever failure occurs mid-test, or traffic dump requested, drain telemetry.
+            is_failed = self._is_test_failed()
+            if is_failed or os.environ.get("DAP_DUMP_LOG_ALWAYS") == "1":
+                await self.framework.flush_and_dump_traffic_history(self.id())
+                self.framework.dump_server_logs(self.id())
+
             await self._run_keep_previous_fail(
                 "CLEAN_FRAMEWORK", self.framework.teardown()
             )
-
-            # dump the log whenever failure happens
-            if self._is_test_failed():
-                self.framework.dump_server_logs(self.id())
             print(f"[TEST END] {self.id()}\n", flush=True)
 
     # Delegation methods for cleaner test syntax
@@ -891,8 +938,10 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         self.framework.set_sent_callback(seq, callback)
 
-    def on_event(self, event_name: str) -> EventFuture:
-        return self.framework.on_event(event_name)
+    def on_event(
+        self, event_name: str, timeout: Optional[float] = None
+    ) -> EventFuture:
+        return self.framework.on_event(event_name, timeout=timeout)
 
     def evaluate_and_compare(
         self, golden_file: str, ignore_list: Optional[List[str]] = None
