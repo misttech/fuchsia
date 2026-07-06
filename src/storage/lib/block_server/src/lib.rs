@@ -319,6 +319,11 @@ pub trait SessionManager: 'static {
 
     type Session;
 
+    /// Returns true iff `a` and `b` identify the same session.  Used to scope
+    /// group-ID lookups in the shared `active_requests` slab to the originating
+    /// session.
+    fn session_eq(a: &Self::Session, b: &Self::Session) -> bool;
+
     fn on_attach_vmo(
         orchestrator: Arc<Self::Orchestrator>,
         vmo: &Arc<zx::Vmo>,
@@ -815,7 +820,9 @@ impl<SM: SessionManager> SessionHelper<SM> {
             // expensive way to find a group (it's iterating over all slots in the active-requests
             // slab).  This can be optimised easily should we need to.
             for (key, group) in &mut active_requests.requests {
-                if group.group_or_request == group_or_request {
+                if group.group_or_request == group_or_request
+                    && SM::session_eq(&group.session, &session)
+                {
                     if group.req_id.is_some() {
                         // We have already received a request tagged as last.
                         if group.status == zx::Status::OK {
@@ -3340,6 +3347,193 @@ mod tests {
                 let mut response = BlockFifoResponse::default();
                 reader.read_entries(&mut response).await.unwrap();
                 assert_eq!(response.status, zx::sys::ZX_ERR_IO);
+            }
+        );
+    }
+
+    /// Verifies that group IDs are isolated per session.
+    ///
+    /// Even if two independent sessions on the same BlockServer use the same group ID,
+    /// their in-flight transaction groups must remain isolated.
+    #[fuchsia::test]
+    async fn test_group_ids_isolated_per_session() {
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
+
+        futures::join!(
+            async {
+                let block_server = BlockServer::new(
+                    BLOCK_SIZE,
+                    // MockInterface::flush() is a no-op that returns Ok(()).
+                    Arc::new(MockInterface::default()),
+                );
+                block_server.handle_requests(stream).await.unwrap();
+            },
+            async move {
+                async fn settle() {
+                    // Let the single-threaded executor drain server work.
+                    for _ in 0..32 {
+                        fasync::yield_now().await;
+                    }
+                }
+
+                // --- Open session A. ---
+                let (session_a, server_a) = fidl::endpoints::create_proxy();
+                proxy.open_session(server_a).unwrap();
+                let mut fifo_a =
+                    fasync::Fifo::from_fifo(session_a.get_fifo().await.unwrap().unwrap());
+
+                // --- Open session B. ---
+                let (session_b, server_b) = fidl::endpoints::create_proxy();
+                proxy.open_session(server_b).unwrap();
+                let mut fifo_b =
+                    fasync::Fifo::from_fifo(session_b.get_fifo().await.unwrap().unwrap());
+
+                // ----------------------------------------------------------------
+                // Control: with no interference, A's two-part Flush group is OK.
+                // ----------------------------------------------------------------
+                {
+                    let (mut reader_a, mut writer_a) = fifo_a.async_io();
+                    writer_a
+                        .write_entries(&BlockFifoRequest {
+                            command: BlockFifoCommand {
+                                opcode: BlockOpcode::Flush.into_primitive(),
+                                flags: BlockIoFlag::GROUP_ITEM.bits(),
+                                ..Default::default()
+                            },
+                            group: 1,
+                            reqid: 0xAAAA,
+                            ..Default::default()
+                        })
+                        .await
+                        .unwrap();
+                    settle().await;
+                    writer_a
+                        .write_entries(&BlockFifoRequest {
+                            command: BlockFifoCommand {
+                                opcode: BlockOpcode::Flush.into_primitive(),
+                                flags: (BlockIoFlag::GROUP_ITEM | BlockIoFlag::GROUP_LAST).bits(),
+                                ..Default::default()
+                            },
+                            group: 1,
+                            reqid: 0xAAAA,
+                            ..Default::default()
+                        })
+                        .await
+                        .unwrap();
+                    let mut response = BlockFifoResponse::default();
+                    reader_a.read_entries(&mut response).await.unwrap();
+                    assert_eq!(response.reqid, 0xAAAA);
+                    assert_eq!(
+                        zx::Status::from_raw(response.status),
+                        zx::Status::OK,
+                        "control: A's valid Flush group must succeed"
+                    );
+                }
+
+                // ----------------------------------------------------------------
+                // Run concurrent group requests with the same group ID (7) on
+                // both sessions, and verify they both succeed independently.
+                // ----------------------------------------------------------------
+
+                // Step 1: Session A starts group 7.
+                {
+                    let (_reader_a, mut writer_a) = fifo_a.async_io();
+                    writer_a
+                        .write_entries(&BlockFifoRequest {
+                            command: BlockFifoCommand {
+                                opcode: BlockOpcode::Flush.into_primitive(),
+                                flags: BlockIoFlag::GROUP_ITEM.bits(),
+                                ..Default::default()
+                            },
+                            group: 7,
+                            reqid: 100,
+                            ..Default::default()
+                        })
+                        .await
+                        .unwrap();
+                }
+                settle().await;
+
+                // Step 2: Session B starts group 7.
+                {
+                    let (_reader_b, mut writer_b) = fifo_b.async_io();
+                    writer_b
+                        .write_entries(&BlockFifoRequest {
+                            command: BlockFifoCommand {
+                                opcode: BlockOpcode::Flush.into_primitive(),
+                                flags: BlockIoFlag::GROUP_ITEM.bits(),
+                                ..Default::default()
+                            },
+                            group: 7,
+                            reqid: 200,
+                            ..Default::default()
+                        })
+                        .await
+                        .unwrap();
+                }
+                settle().await;
+
+                // Step 3: Session A finishes group 7.
+                {
+                    let (_reader_a, mut writer_a) = fifo_a.async_io();
+                    writer_a
+                        .write_entries(&BlockFifoRequest {
+                            command: BlockFifoCommand {
+                                opcode: BlockOpcode::Flush.into_primitive(),
+                                flags: (BlockIoFlag::GROUP_ITEM | BlockIoFlag::GROUP_LAST).bits(),
+                                ..Default::default()
+                            },
+                            group: 7,
+                            reqid: 100,
+                            ..Default::default()
+                        })
+                        .await
+                        .unwrap();
+                }
+                settle().await;
+
+                // Step 4: Session B finishes group 7.
+                {
+                    let (_reader_b, mut writer_b) = fifo_b.async_io();
+                    writer_b
+                        .write_entries(&BlockFifoRequest {
+                            command: BlockFifoCommand {
+                                opcode: BlockOpcode::Flush.into_primitive(),
+                                flags: (BlockIoFlag::GROUP_ITEM | BlockIoFlag::GROUP_LAST).bits(),
+                                ..Default::default()
+                            },
+                            group: 7,
+                            reqid: 200,
+                            ..Default::default()
+                        })
+                        .await
+                        .unwrap();
+                }
+                settle().await;
+
+                // Verify Session A's response.
+                {
+                    let (mut reader_a, _writer_a) = fifo_a.async_io();
+                    let mut response_a = BlockFifoResponse::default();
+                    reader_a.read_entries(&mut response_a).await.unwrap();
+                    assert_eq!(response_a.reqid, 100);
+                    assert_eq!(response_a.group, 7);
+                    assert_eq!(zx::Status::from_raw(response_a.status), zx::Status::OK);
+                }
+
+                // Verify Session B's response.
+                {
+                    let (mut reader_b, _writer_b) = fifo_b.async_io();
+                    let mut response_b = BlockFifoResponse::default();
+                    reader_b.read_entries(&mut response_b).await.unwrap();
+                    assert_eq!(response_b.reqid, 200);
+                    assert_eq!(response_b.group, 7);
+                    assert_eq!(zx::Status::from_raw(response_b.status), zx::Status::OK);
+                }
+
+                std::mem::drop(session_a);
+                std::mem::drop(session_b);
+                std::mem::drop(proxy);
             }
         );
     }

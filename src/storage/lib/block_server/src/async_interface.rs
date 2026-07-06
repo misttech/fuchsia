@@ -715,6 +715,10 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
     // We don't need the session, we just need something unique to identify the session.
     type Session = usize;
 
+    fn session_eq(a: &usize, b: &usize) -> bool {
+        a == b
+    }
+
     async fn on_attach_vmo(orchestrator: Arc<Self>, vmo: &Arc<zx::Vmo>) -> Result<(), zx::Status> {
         I::on_attach_vmo(&orchestrator.interface, vmo).await
     }

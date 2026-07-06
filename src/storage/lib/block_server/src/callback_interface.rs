@@ -75,6 +75,10 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
     type Orchestrator = I::Orchestrator;
     type Session = Arc<Session<I>>;
 
+    fn session_eq(a: &Arc<Session<I>>, b: &Arc<Session<I>>) -> bool {
+        Arc::ptr_eq(a, b)
+    }
+
     async fn on_attach_vmo(
         _orchestrator: Arc<Self::Orchestrator>,
         _vmo: &Arc<zx::Vmo>,
