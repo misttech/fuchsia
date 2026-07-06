@@ -15,7 +15,7 @@ use crate::att::pdu::{
     FindInformationReq, FindInformationRspHeader, HandlesInformation, Header, InformationData,
     InformationData16, InformationData128, Opcode, Packet, PacketBuilder, ReadBlobReq,
     ReadByGroupTypeReq, ReadByGroupTypeRspEntryHeader, ReadByTypeReq, ReadReq, UuidFormat,
-    WriteReq, WriteRsp,
+    WriteCmd, WriteReq, WriteRsp,
 };
 use core::cmp::{max, min};
 use core::convert::Infallible;
@@ -170,6 +170,7 @@ where
             Opcode::ReadByTypeReq => self.handle_read_by_type(&rx_packet.data).await,
             Opcode::ReadByGroupTypeReq => self.handle_read_by_group_type(&rx_packet.data).await,
             Opcode::WriteReq => self.handle_write_req(&rx_packet.data).await,
+            Opcode::WriteCmd => self.handle_write_cmd(&rx_packet.data).await,
             other => Err(TransactionError::UnexpectedPdu { received_opcode: other }),
         };
 
@@ -695,6 +696,31 @@ where
         Ok(())
     }
 
+    /// Handles a Write Command, executing database mutation but ignoring any errors/responses.
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.5.3).
+    async fn handle_write_cmd(&mut self, payload: &[u8]) -> Result<(), TransactionError> {
+        let req = match WriteCmd::try_ref_from_bytes(payload) {
+            Ok(r) => r,
+            Err(_) => return Ok(()), // Silently discard malformed command payloads
+        };
+
+        let handle_val = req.header.attribute_handle.get();
+        let handle = match to_handle(handle_val, Opcode::WriteCmd) {
+            Ok(h) => h,
+            Err(_) => return Ok(()), // Silently discard invalid handles
+        };
+
+        let attr = match self.database.find_attribute(handle) {
+            Some(a) => a,
+            None => return Ok(()), // Silently discard non-existent attributes
+        };
+
+        // Silently execute write and ignore any error codes
+        let _ = attr.write_chunk(self.peer_id, 0, &req.attribute_value).await;
+        Ok(())
+    }
+
     /// Helper to read an attribute value at an offset and cap it to a maximum buffer size.
     async fn read_attribute_at(
         &self,
@@ -788,7 +814,7 @@ mod tests {
     use crate::att::l2cap::mock::setup_mock_channel;
     use crate::att::pdu::{
         FindByTypeValueReqHeader, FindInformationRsp, InformationData16, ReadByGroupTypeReqHeader,
-        ReadByTypeReqHeader, WriteReqHeader,
+        ReadByTypeReqHeader, WriteCmdHeader, WriteReqHeader,
     };
 
     use sapphire_async::executor::BoundedExecutor;
@@ -2231,6 +2257,139 @@ mod tests {
                 }
             });
 
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_write_cmd_success() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue"));
+
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(server_tx),
+                BearerRx::new(server_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            // Client driver task
+            let client_handle = executor.spawn(async move {
+                let mut app_tx_bearer = BearerTx::new(app_channel.sender);
+
+                // Send Write Command
+                let mut tx_buf = [0u8; 128];
+                let mut builder = DynamicPacketBuilder::new(
+                    &mut tx_buf,
+                    PacketBuilder {
+                        header: Header { opcode: Opcode::WriteCmd },
+                        payload: WriteCmdHeader { attribute_handle: U16::new(10) },
+                    },
+                    128,
+                );
+                builder.extend_from_slice(b"SunstoneCmd").unwrap();
+                app_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                drop(app_tx_bearer);
+            });
+
+            // Server task
+            let mut server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+                server
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+
+            // Verify value was written in database attribute
+            let server = server_handle.get().unwrap();
+            let db_attr = server.database.find_attribute(h(10)).unwrap();
+            let mut check_buf = [0u8; 32];
+            let read_len = executor.block_on(async {
+                db_attr.read_chunk(PeerId::new(1).unwrap(), 0, &mut check_buf).await.unwrap()
+            });
+            assert_eq!(&check_buf[..read_len], b"SunstoneCmd");
+        });
+    }
+
+    #[test]
+    fn test_server_handle_write_cmd_errors_ignored() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            let readonly_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue");
+            readonly_attr.set_write_error(ErrorCode::WriteNotPermitted);
+            db.insert(h(10), readonly_attr);
+
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(server_tx),
+                BearerRx::new(server_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            // Client driver task
+            let client_handle = executor.spawn(async move {
+                let mut app_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut app_tx_bearer = BearerTx::new(app_channel.sender);
+
+                // 1. Invalid handle (99)
+                let mut tx_buf = [0u8; 128];
+                let mut builder = DynamicPacketBuilder::new(
+                    &mut tx_buf,
+                    PacketBuilder {
+                        header: Header { opcode: Opcode::WriteCmd },
+                        payload: WriteCmdHeader { attribute_handle: U16::new(99) },
+                    },
+                    128,
+                );
+                builder.extend_from_slice(b"Value").unwrap();
+                app_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                // 2. Read-only handle (10)
+                let mut tx_buf = [0u8; 128];
+                let mut builder = DynamicPacketBuilder::new(
+                    &mut tx_buf,
+                    PacketBuilder {
+                        header: Header { opcode: Opcode::WriteCmd },
+                        payload: WriteCmdHeader { attribute_handle: U16::new(10) },
+                    },
+                    128,
+                );
+                builder.extend_from_slice(b"Value").unwrap();
+                app_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                // 3. Malformed payload
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::WriteCmd },
+                    payload: [0u8; 1],
+                };
+                app_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                drop(app_tx_bearer);
+
+                let mut rx_buf = [MaybeUninit::uninit(); 128];
+                let result = app_rx_bearer.next_packet(&mut rx_buf).await;
+                assert_eq!(result.err(), Some(BearerRecvError::LinkClosed));
+            });
+
+            // Server task
             let server_handle = executor.spawn(async move {
                 let res = server.run().await;
                 assert_eq!(res, Err(ServerError::LinkClosed));

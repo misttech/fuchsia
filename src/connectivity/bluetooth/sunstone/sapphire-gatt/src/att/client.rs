@@ -12,7 +12,7 @@ use crate::att::pdu::{
     FindByTypeValueReqHeader, FindInformationReq, FindInformationRsp, HandlesInformation, Header,
     InformationData16, InformationData128, Opcode, Packet, PacketBuilder, ReadBlobReq,
     ReadByGroupTypeReqHeader, ReadByGroupTypeRsp, ReadByGroupTypeRspEntryHeader,
-    ReadByTypeReqHeader, ReadByTypeRsp, ReadReq, UuidFormat, WriteReqHeader,
+    ReadByTypeReqHeader, ReadByTypeRsp, ReadReq, UuidFormat, WriteCmdHeader, WriteReqHeader,
 };
 use core::cmp::{max, min};
 use core::mem::{MaybeUninit, size_of};
@@ -587,6 +587,30 @@ where
 
         Ok(())
     }
+
+    /// Initiates a Write Command procedure to write the value of an attribute without response.
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.5.3).
+    pub async fn write_command(
+        &mut self,
+        attribute_handle: AttributeHandle,
+        attribute_value: &[u8],
+    ) -> Result<(), ClientError> {
+        let header_builder = PacketBuilder {
+            header: Header { opcode: Opcode::WriteCmd },
+            payload: WriteCmdHeader { attribute_handle: U16::new(attribute_handle.value()) },
+        };
+        let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
+        let mut builder =
+            DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header_builder, self.effective_mtu());
+        builder
+            .extend_from_slice(attribute_value)
+            .expect("Programming error: request packet size exceeds negotiated MTU.");
+        let tx_packet = builder.as_packet();
+
+        self.send_packet(tx_packet).await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -594,7 +618,8 @@ mod tests {
     use super::*;
     use crate::att::l2cap::mock::setup_mock_channel;
     use crate::att::pdu::{
-        DynamicPacketBuilder, FindByTypeValueReq, FindInformationRspHeader, WriteReq, WriteRsp,
+        DynamicPacketBuilder, FindByTypeValueReq, FindInformationRspHeader, WriteCmd, WriteReq,
+        WriteRsp,
     };
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
@@ -1484,6 +1509,64 @@ mod tests {
 
             executor.run_until_stalled();
             assert!(server_handle.is_finished());
+            assert!(client_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_write_command_success() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, _test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            // Server driver task
+            let server_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 128];
+                let mut server_rx_bearer = BearerRx::new(test_rx);
+                let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::WriteCmd);
+                let req = WriteCmd::try_ref_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(req.header.attribute_handle.get(), 12);
+                assert_eq!(&req.attribute_value, &b"SunstoneCmd"[..]);
+            });
+
+            // Client driver task
+            let client_handle = executor.spawn(async move {
+                client.write_command(h(12), b"SunstoneCmd").await.unwrap();
+            });
+
+            executor.run_until_stalled();
+            assert!(server_handle.is_finished());
+            assert!(client_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_write_command_link_closed() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, _test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            // Drop test_rx to simulate link closure
+            drop(test_rx);
+
+            // Client driver task
+            let client_handle = executor.spawn(async move {
+                let result = client.write_command(h(12), b"SunstoneCmd").await;
+                assert_eq!(result.err(), Some(ClientError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
             assert!(client_handle.is_finished());
         });
     }

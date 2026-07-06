@@ -36,6 +36,7 @@ pub enum Opcode {
     ReadByGroupTypeRsp = 0x11,
     WriteReq = 0x12,
     WriteRsp = 0x13,
+    WriteCmd = 0x52,
 }
 
 /// The UUID format types supported in Find Information Response.
@@ -505,6 +506,19 @@ pub struct WriteReq {
 #[repr(C, packed)]
 pub struct WriteRsp;
 
+/// Write Command Header (Opcode = 0x52).
+///
+/// Shares the same binary layout as WriteReqHeader.
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.5.3).
+pub type WriteCmdHeader = WriteReqHeader;
+
+/// Write Command PDU (Opcode = 0x52).
+///
+/// Shares the same binary layout as WriteReq.
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.5.3).
+pub type WriteCmd = WriteReq;
 #[cfg(test)]
 mod tests {
     use super::*;

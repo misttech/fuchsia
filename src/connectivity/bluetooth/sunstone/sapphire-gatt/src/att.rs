@@ -672,6 +672,58 @@ mod tests {
         });
     }
 
+    #[test]
+    fn test_client_server_integration_write_command() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue"));
+
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(server_tx),
+                BearerRx::new(server_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            // Server task
+            let server_handle = executor.spawn(async move {
+                // 1. MTU Exchange
+                server.handle_request().await.unwrap();
+                // 2. Write Command
+                server.handle_request().await.unwrap();
+                // 3. Read Request
+                server.handle_request().await.unwrap();
+            });
+
+            // Client task
+            let client_handle = executor.spawn(async move {
+                // 1. MTU Exchange
+                client.exchange_mtu().await.unwrap();
+
+                // 2. Write Command
+                client.write_command(h(10), b"SunstoneCmd").await.unwrap();
+
+                // 3. Read Request to verify the written value
+                let mut rx_buf = [MaybeUninit::uninit(); CLIENT_PREFERRED_MTU as usize];
+                let read_res = client.read(h(10), &mut rx_buf).await.unwrap();
+                assert_eq!(read_res, b"SunstoneCmd");
+            });
+
+            executor.run_until_stalled();
+            assert!(server_handle.is_finished());
+            assert!(client_handle.is_finished());
+        });
+    }
+
     mod proptests {
         use super::*;
         use crate::att::attribute::Attribute;
