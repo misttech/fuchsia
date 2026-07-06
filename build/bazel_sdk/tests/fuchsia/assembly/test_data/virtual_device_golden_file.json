@@ -1,5 +1,6 @@
 {
     "data": {
+        "avx2_enabled": true,
         "description": "",
         "hardware": {
             "audio": {

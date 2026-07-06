@@ -443,8 +443,12 @@ pub struct RuntimeConfig {
     pub serial_number: Option<String>,
 }
 
+fn default_avx2_enabled() -> bool {
+    true
+}
+
 /// Specifications of the virtual device to be emulated.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct DeviceConfig {
     /// The model of audio device being emulated, if any.
     pub audio: AudioDevice,
@@ -468,6 +472,25 @@ pub struct DeviceConfig {
 
     /// Whether vsock support is enabled for this device and what cid it has been allocated.
     pub vsock: Option<VsockDevice>,
+
+    /// Whether AVX2 (and AVX512) is enabled.
+    #[serde(default = "default_avx2_enabled")]
+    pub avx2_enabled: bool,
+}
+
+impl Default for DeviceConfig {
+    fn default() -> Self {
+        Self {
+            audio: Default::default(),
+            cpu: Default::default(),
+            memory: Default::default(),
+            pointing_device: Default::default(),
+            screen: Default::default(),
+            storage: Default::default(),
+            vsock: Default::default(),
+            avx2_enabled: default_avx2_enabled(),
+        }
+    }
 }
 
 /// Collects the specific configurations into a single struct for ease of passing around.

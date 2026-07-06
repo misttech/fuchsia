@@ -19,6 +19,10 @@
                                     ]
                                 }
                             ]
+                        },
+                        "avx2_enabled": {
+                            "type": "boolean",
+                            "default": true
                         }
                     }
                 },

@@ -868,6 +868,33 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn test_efi_template_avx2_disabled() {
+        let config = EmulatorConfiguration {
+            guest: GuestConfig {
+                disk_image: None,
+                kernel_image: Some(PathBuf::from("/path/to/some.efi")),
+                ovmf_code: "/some/ovmf_code.fd".into(),
+                ovmf_vars: "/some/ovmf_vars.fd".into(),
+                ..Default::default()
+            },
+            host: HostConfig { networking: NetworkingMode::None, ..Default::default() },
+            device: DeviceConfig {
+                cpu: VirtualCpu { architecture: sdk_metadata::CpuArchitecture::X64, count: 2 },
+                avx2_enabled: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let actual = process_flag_template(&config).expect("ok processing");
+        assert!(actual.args.contains(&"-cpu".to_string()));
+        let cpu_index = actual.args.iter().position(|r| r == "-cpu").unwrap();
+        let cpu_flags = &actual.args[cpu_index + 1];
+        assert!(cpu_flags.contains("-avx2"));
+        assert!(cpu_flags.contains("-avx512f"));
+    }
+
+    #[fuchsia::test]
     fn test_efi_template_bootloader() {
         let config = EmulatorConfiguration {
             guest: GuestConfig {

@@ -7,7 +7,7 @@
 use crate::common::{
     AudioModel, CpuArchitecture, DataUnits, ElementType, Envelope, PointingDevice, ScreenUnits,
 };
-use crate::json::{schema, JsonObject};
+use crate::json::{JsonObject, schema};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -23,6 +23,10 @@ pub struct Cpu {
 
 fn default_cpu_count() -> usize {
     4
+}
+
+fn default_avx2_enabled() -> bool {
+    true
 }
 
 /// Details of virtual input devices, such as mice.
@@ -119,6 +123,10 @@ pub struct VirtualDeviceV1 {
     /// Details about the properties of the device.
     pub hardware: Hardware,
 
+    /// Whether AVX2 (and AVX512) is enabled.
+    #[serde(default = "default_avx2_enabled")]
+    pub avx2_enabled: bool,
+
     /// A map of names to port numbers. These are the ports that need to be
     /// available to the virtual device, though a given use case may not require
     /// all of them. When emulating with user-mode networking, these must be
@@ -136,6 +144,7 @@ impl VirtualDeviceV1 {
             description: None,
             kind: ElementType::VirtualDevice,
             hardware,
+            avx2_enabled: true,
             ports: None,
         }
     }

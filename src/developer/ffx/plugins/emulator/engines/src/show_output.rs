@@ -76,6 +76,7 @@ pub(crate) fn device(emu_config: &EmulatorConfiguration) -> ShowDetail {
             vsock: emu_config.device.vsock.clone().unwrap_or_default(),
         },
         ports: None,
+        avx2_enabled: emu_config.device.avx2_enabled,
     };
 
     let mut ports = HashMap::new();

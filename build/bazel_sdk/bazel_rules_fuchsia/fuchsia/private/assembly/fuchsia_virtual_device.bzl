@@ -30,6 +30,7 @@ def _fuchsia_virtual_device_impl(ctx):
             "type": "virtual_device",
             "name": ctx.attr.device_name,
             "description": ctx.attr.description,
+            "avx2_enabled": ctx.attr.avx2_enabled,
             "hardware": {
                 "cpu": {
                     "arch": ctx.attr.arch,
@@ -78,6 +79,10 @@ fuchsia_virtual_device = rule(
         "device_name": attr.string(
             doc = "Name of the virtual device.",
             mandatory = True,
+        ),
+        "avx2_enabled": attr.bool(
+            doc = "Whether AVX2 (and AVX512) is enabled for the emulator.",
+            default = True,
         ),
         "description": attr.string(
             doc = "Description of the virtual device.",

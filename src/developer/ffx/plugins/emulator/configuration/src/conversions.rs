@@ -50,6 +50,7 @@ fn convert_v2_bundle_to_configs(
         screen: virtual_device.hardware.window_size.clone(),
         storage: virtual_device.hardware.storage.clone(),
         vsock: Some(virtual_device.hardware.vsock.clone()),
+        avx2_enabled: virtual_device.avx2_enabled,
     };
 
     emulator_configuration.runtime.template = None;
@@ -170,6 +171,7 @@ mod tests {
                 window_size: Screen { height: 480, width: 640, units: ScreenUnits::Pixels },
                 vsock: VsockDevice { enabled: false, cid: 0 },
             },
+            avx2_enabled: true,
             ports: None,
         };
 
@@ -183,6 +185,7 @@ mod tests {
         assert_eq!(config.device.screen, device.hardware.window_size);
         assert_eq!(config.device.storage, device.hardware.storage);
         assert_eq!(config.device.vsock, Some(device.hardware.vsock));
+        assert_eq!(config.device.avx2_enabled, device.avx2_enabled);
 
         assert!(config.guest.disk_image.is_some());
 
@@ -228,6 +231,7 @@ mod tests {
         ports.insert("ssh".to_string(), 22);
         ports.insert("debug".to_string(), 2345);
         device.ports = Some(ports);
+        device.avx2_enabled = false;
 
         let mut config = convert_v2_bundle_to_configs(&pb, &device, false)
             .expect("convert_bundle_v2_to_configs");
@@ -240,6 +244,7 @@ mod tests {
         assert_eq!(config.device.screen, device.hardware.window_size);
         assert_eq!(config.device.storage, device.hardware.storage);
         assert_eq!(config.device.vsock, Some(device.hardware.vsock));
+        assert_eq!(config.device.avx2_enabled, device.avx2_enabled);
 
         assert!(config.guest.disk_image.is_some());
 
@@ -316,6 +321,7 @@ mod tests {
                 window_size: Screen { height: 480, width: 640, units: ScreenUnits::Pixels },
                 vsock: VsockDevice { enabled: false, cid: 0 },
             },
+            avx2_enabled: true,
             ports: None,
         };
         let mut ports = HashMap::new();
@@ -399,6 +405,7 @@ mod tests {
                 window_size: Screen { height: 480, width: 640, units: ScreenUnits::Pixels },
                 vsock: VsockDevice { enabled: false, cid: 0 },
             },
+            avx2_enabled: true,
             ports: None,
         };
 
@@ -461,6 +468,7 @@ mod tests {
                 window_size: Screen { height: 480, width: 640, units: ScreenUnits::Pixels },
                 vsock: VsockDevice { enabled: false, cid: 0 },
             },
+            avx2_enabled: true,
             ports: None,
         };
 
@@ -529,6 +537,7 @@ mod tests {
                 window_size: Screen { height: 480, width: 640, units: ScreenUnits::Pixels },
                 vsock: VsockDevice { enabled: false, cid: 0 },
             },
+            avx2_enabled: true,
             ports: None,
         };
 
