@@ -62,6 +62,7 @@ sdk_collection("fidl_category_check_collection") {
 # `sdk_category = "partner"`.
 # When removing a library from all such lists, delete all of its history files:
 #   git rm sdk/history/*/<library_name>.api_summary.json
+# LINT.IfChange(partner_libraries)
 _partner_idk_fidl_libraries_targets_list = [
   # keep-sorted: begin
   "//sdk/fidl/fuchsia.accessibility.gesture:fuchsia.accessibility.gesture",
@@ -310,6 +311,8 @@ _partner_idk_fidl_libraries_targets_list = [
   # keep-sorted: end
 ]
 
+# LINT.ThenChange(category_lists.bzl:partner_libraries)
+
 # Fuchsia IDL (FIDL) files defining much of the API for the SDK.
 sdk_molecule("fidl") {
   visibility = [
@@ -347,6 +350,7 @@ group("sdk_partner_libs_allowlist") {
 # `sdk_category = "prebuilt"`.
 # When removing a library from all such lists, delete all of its history files:
 #   git rm sdk/history/*/<library_name>.api_summary.json
+# LINT.IfChange(prebuilt_libraries)
 _prebuilt_fidl_libraries_targets_list = [
   # keep-sorted: begin
   "//sdk/fidl/fuchsia.device:fuchsia.device",
@@ -364,6 +368,8 @@ _prebuilt_fidl_libraries_targets_list = [
 
   # keep-sorted: end
 ]
+
+# LINT.ThenChange(category_lists.bzl:prebuilt_libraries)
 
 # Do NOT depend on this molecule from another SDK atom's `deps`. It is only
 # to be used in `non_sdk_deps` of the "fidl" target to ensure a) there are no
@@ -389,6 +395,7 @@ group("sdk_prebuilt_libs_allowlist") {
 # `sdk_category = "host_tool"`.
 # When removing a library from all such lists, delete all of its history files:
 #   git rm sdk/history/*/<library_name>.api_summary.json
+# LINT.IfChange(host_tool_libraries)
 _host_tool_fidl_libraries_targets_list = [
   # keep-sorted: begin
   "//sdk/fidl/fuchsia.dash:fuchsia.dash",
@@ -410,6 +417,8 @@ _host_tool_fidl_libraries_targets_list = [
 
   # keep-sorted: end
 ]
+
+# LINT.ThenChange(category_lists.bzl:host_tool_libraries)
 
 # Do NOT depend on this molecule from another SDK atom's `deps`. It is only
 # to be used in `non_sdk_deps` of the "fidl" target to ensure a) there are no
@@ -435,6 +444,7 @@ group("sdk_host_tool_libs_allowlist") {
 # `sdk_category = "compat_test"`.
 # When removing a library from all such lists, delete all of its history files:
 #   git rm sdk/history/*/<library_name>.api_summary.json
+# LINT.IfChange(compat_test_libraries)
 _compat_test_fidl_libraries_targets_list = [
   # keep-sorted: begin
   "//examples/fidl/fuchsia.examples:fuchsia.examples",
@@ -453,6 +463,8 @@ _compat_test_fidl_libraries_targets_list = [
 
   # keep-sorted: end
 ]
+
+# LINT.ThenChange(category_lists.bzl:compat_test_libraries)
 
 # Do NOT depend on this molecule from another SDK atom's `deps`. It is only to
 # be used in `non_sdk_deps` of the "compatibility_tests" target to ensure

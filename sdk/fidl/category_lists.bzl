@@ -12,6 +12,7 @@ https://fuchsia.dev/fuchsia-src/contribute/sdk/categories.
 
 # Stable FIDL libraries in the partner category.
 # All are included in the IDK.
+# LINT.IfChange(partner_libraries)
 PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
     # buildifier: keep sorted
     "//sdk/fidl/fuchsia.accessibility.gesture:fuchsia.accessibility.gesture_idk",
@@ -262,9 +263,11 @@ PARTNER_IDK_UNSTABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_idk",
     "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats_idk",
 ]
+# LINT.ThenChange(BUILD.gn:partner_libraries)
 
 # FIDL libraries in the prebuilt category. All are stable.
 # None are included in the IDK, but they may be used by prebuilt libraries in the IDK.
+# LINT.IfChange(prebuilt_libraries)
 PREBUILT_FIDL_LIBRARY_ATOMS_LIST = [
     # buildifier: keep sorted
     "//sdk/fidl/fuchsia.device:fuchsia.device_idk",
@@ -280,9 +283,11 @@ PREBUILT_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.posix.socket.raw:fuchsia.posix.socket.raw_idk",
     "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_idk",
 ]
+# LINT.ThenChange(BUILD.gn:prebuilt_libraries)
 
 # FIDL libraries in the host tool category. All are stable.
 # None are included in the IDK, but they may be used by host tools in the IDK.
+# LINT.IfChange(host_tool_libraries)
 HOST_TOOL_FIDL_LIBRARY_ATOMS_LIST = [
     # buildifier: keep sorted
     "//sdk/fidl/fuchsia.dash:fuchsia.dash_idk",
@@ -302,9 +307,11 @@ HOST_TOOL_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_idk",
     "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_idk",
 ]
+# LINT.ThenChange(BUILD.gn:host_tool_libraries)
 
 # FIDL libraries in the compat test category. All are stable.
 # None are included in the IDK, and they may not be used by anything in the IDK.
+# LINT.IfChange(compat_test_libraries)
 COMPAT_TEST_FIDL_LIBRARY_ATOMS_LIST = [
     # buildifier: keep sorted
     "//examples/fidl/fuchsia.examples:fuchsia.examples_idk",
@@ -316,3 +323,4 @@ COMPAT_TEST_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.ui.test.conformance:fuchsia.ui.test.conformance_idk",
     "//sdk/fidl/fuchsia.ui.test.context:fuchsia.ui.test.context_idk",
 ]
+# LINT.ThenChange(BUILD.gn:compat_test_libraries)
