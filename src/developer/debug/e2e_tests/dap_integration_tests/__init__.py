@@ -2,6 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from .dap_test_framework import DapTestCase, DapTestFramework, RequestFuture
+from .dap_test_framework import (
+    DapTestCase,
+    DapTestFramework,
+    RequestFuture,
+    get_build_root,
+)
 
-__all__ = ["DapTestFramework", "RequestFuture", "DapTestCase"]
+__all__ = ["DapTestFramework", "RequestFuture", "DapTestCase", "get_build_root"]
