@@ -43,6 +43,7 @@ wlancfg_tests_for_wlan_cq = [
 # provide much of a safety net. Consider moving it to one of the CQ groups
 # above.
 wlancfg_tests_for_fyi = [
+  "//src/connectivity/wlan/tests/wlancfg:ping_test",
   "//src/connectivity/wlan/tests/wlancfg:policy_scan_test",
   "//src/connectivity/wlan/tests/wlancfg:saved_networks_test",
   "//src/connectivity/wlan/tests/wlancfg:vape_interop_test",

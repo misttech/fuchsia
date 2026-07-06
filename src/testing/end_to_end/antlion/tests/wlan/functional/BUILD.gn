@@ -30,11 +30,6 @@ antlion_host_test("channel_switch_test_with_soft_ap") {
   test_cases = [ "re:.*with_soft_ap.*" ]
 }
 
-antlion_host_test("ping_test") {
-  main_source = "PingTest.py"
-  environments = wlan_ap_envs
-}
-
 antlion_host_test("soft_ap_test") {
   main_source = "SoftApTest.py"
 
@@ -130,7 +125,6 @@ group("e2e_tests") {
     ":beacon_loss_test",
     ":channel_switch_test_with_soft_ap",
     ":channel_switch_test_without_soft_ap",
-    ":ping_test",
     ":wlan_reboot_ap_open_test",
     ":wlan_reboot_ap_test_quick",
     ":wlan_reboot_ap_wpa2_test",
@@ -145,7 +139,6 @@ group("e2e_tests") {
 group("e2e_tests_quick") {
   testonly = true
   public_deps = [
-    ":ping_test",
     ":wlan_driver_restart_test",
     ":wlan_reboot_ap_test_quick",
     ":wlan_reboot_dut_test_quick",

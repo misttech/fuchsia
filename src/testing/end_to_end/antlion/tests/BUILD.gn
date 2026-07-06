@@ -17,6 +17,7 @@ group("e2e_tests") {
     "//src/connectivity/wlan/tests/core:wlan_scan_test",
     "//src/connectivity/wlan/tests/wlancfg:connection_stress_test",
     "//src/connectivity/wlan/tests/wlancfg:hidden_networks_test",
+    "//src/connectivity/wlan/tests/wlancfg:ping_test",
     "//src/connectivity/wlan/tests/wlancfg:policy_scan_test",
     "//src/connectivity/wlan/tests/wlancfg:regulatory_recovery_test",
     "//src/connectivity/wlan/tests/wlancfg:saved_networks_test",
