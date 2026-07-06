@@ -29,7 +29,7 @@ mod emu;
 mod timers;
 
 use crate::emu::EmulationTimerOps;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use fidl::encoding::ProxyChannelBox;
 use fidl::endpoints::RequestStream;
@@ -37,14 +37,14 @@ use fidl_fuchsia_driver_token as fdt;
 use fidl_fuchsia_hardware_hrtimer as ffhh;
 use fidl_fuchsia_time_alarms as fta;
 use fuchsia_async as fasync;
-use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
+use fuchsia_component::client::Service;
 use fuchsia_inspect as finspect;
 use fuchsia_inspect::{IntProperty, NumericProperty, Property};
 use fuchsia_runtime as fxr;
 use fuchsia_trace as trace;
+use futures::StreamExt;
 use futures::channel::mpsc;
 use futures::sink::SinkExt;
-use futures::{StreamExt, TryStreamExt};
 use log::{debug, error, warn};
 use scopeguard::defer;
 use std::cell::RefCell;
@@ -1788,35 +1788,19 @@ fn notify_all(
     // A new timer is not scheduled yet here.
 }
 
-/// The hrtimer driver service directory.
-const HRTIMER_DIRECTORY: &str = "/svc/fuchsia.hardware.hrtimer.Service";
-
 /// Connects to the high resolution timer device driver.
 ///
-/// This function watches the hrtimer service directory and connects to the first
+/// This function watches the hrtimer service and connects to the first
 /// available hrtimer device.
 ///
 /// # Returns
 /// A `Result` containing a `ffhh::DeviceProxy` on success, or an error if
 /// the connection fails.
 pub async fn connect_to_hrtimer_async() -> Result<ffhh::DeviceProxy> {
-    debug!("connect_to_hrtimer: trying directory: {}", HRTIMER_DIRECTORY);
-    let dir =
-        fuchsia_fs::directory::open_in_namespace(HRTIMER_DIRECTORY, fidl_fuchsia_io::PERM_READABLE)
-            .with_context(|| format!("Opening {}", HRTIMER_DIRECTORY))?;
-    let path = device_watcher::watch_for_files(&dir)
-        .await
-        .with_context(|| format!("Watching for files in {}", HRTIMER_DIRECTORY))?
-        .try_next()
-        .await
-        .with_context(|| format!("Getting a file from {}", HRTIMER_DIRECTORY))?;
-    let path = path.ok_or_else(|| anyhow!("Could not find {}", HRTIMER_DIRECTORY))?;
-    let path_str = path
-        .to_str()
-        .ok_or_else(|| anyhow!("Could not find a valid str for {}", HRTIMER_DIRECTORY))?;
-    let service_path = format!("{}/device", path_str);
-    connect_to_named_protocol_at_dir_root::<ffhh::DeviceMarker>(&dir, &service_path)
-        .context("Failed to connect built-in service")
+    debug!("connect_to_hrtimer: trying service");
+    let service = Service::open(ffhh::ServiceMarker).context("failed to open hrtimer service")?;
+    let instance = service.watch_for_any().await.context("no hrtimer devices found")?;
+    instance.connect_to_device().context("failed to connect to hrtimer device")
 }
 
 #[cfg(test)]
