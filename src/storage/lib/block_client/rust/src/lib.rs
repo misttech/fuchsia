@@ -206,7 +206,16 @@ impl Future for ResponseFuture {
 impl Drop for ResponseFuture {
     fn drop(&mut self) {
         let mut state = self.fifo_state.lock();
-        state.map.remove(&self.request_id).unwrap();
+        if let Some(request_state) = state.map.remove(&self.request_id) {
+            if request_state.result.is_none() {
+                // Request was still pending!  This is a cancellation which we do not support.  We
+                // do not know the disposition of any VMO that the far end might still be writing
+                // to.  To avoid potential corruption (e.g. a client reuses a buffer that might
+                // still be being used by the driver), terminate the connection to prevent any
+                // future use.
+                state.terminate();
+            }
+        }
         update_outstanding_requests_counter(state.map.len());
     }
 }
@@ -1141,7 +1150,15 @@ mod tests {
                 reads.next().await;
             }
         }
-        block_client.detach_vmo(vmo_id).await.expect("detach_vmo failed");
+
+        // Since we dropped pending futures (cancellation), the client must forcibly
+        // terminate the connection to prevent any future unsafe I/O. Thus, further
+        // calls like `detach_vmo` must fail with CANCELED.
+        assert_eq!(
+            block_client.read_at(MutableBufferSlice::new_with_vmo_id(&vmo_id, 0, 1024), 0).await,
+            Err(zx::Status::CANCELED)
+        );
+        assert_eq!(block_client.detach_vmo(vmo_id).await, Err(zx::Status::CANCELED));
     }
 
     #[fuchsia::test]
