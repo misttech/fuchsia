@@ -4,9 +4,9 @@
 
 use crate::display_ownership::DisplayOwnership;
 use crate::focus_listener::FocusListener;
-use crate::input_device::InputPipelineFeatureFlags;
+use crate::input_device::{InputEventType, InputPipelineFeatureFlags};
 use crate::input_handler::Handler;
-use crate::{Dispatcher, Incoming, Transport, input_device, input_handler, metrics};
+use crate::{Dispatcher, Incoming, Transport, dispatcher, input_device, input_handler, metrics};
 use anyhow::{Context, Error, format_err};
 use fidl::endpoints;
 use fidl_fuchsia_io as fio;
@@ -256,6 +256,12 @@ pub struct InputPipeline {
 
     /// The feature flags for the input pipeline.
     pub feature_flags: input_device::InputPipelineFeatureFlags,
+
+    /// Tasks running in the background on the Dispatcher.
+    _tasks: Vec<dispatcher::TaskHandle<()>>,
+
+    /// Tasks running in the background on fuchsia_async dispatcher.
+    _fasync_tasks: Vec<fasync::Task<()>>,
 }
 
 impl InputPipeline {
@@ -274,19 +280,22 @@ impl InputPipeline {
             focus_listener_fut,
         ) = assembly.into_components();
 
+        let mut tasks = vec![];
+        let mut fasync_tasks = vec![];
+
         let mut handlers_count = handlers.len();
-        // TODO: b/469745447 - should use futures::select! instead of detach().
+        // TODO: b/469745447 - should use futures::select! instead of spawning tasks.
         if let Some(fut) = display_ownership_fut {
             // The displayer ownership handler, like all input handlers, runs on [`crate::Dispatcher`]
             // which is driver dispatcher in dso mode. The display ownership future must run on
             // the same dispatcher because the types do not support multithreaded access.
-            Dispatcher::spawn_local(fut).detach();
+            tasks.push(Dispatcher::spawn_local(fut));
             handlers_count += 1;
         }
 
-        // TODO: b/469745447 - should use futures::select! instead of detach().
+        // TODO: b/469745447 - should use futures::select! instead of spawning tasks.
         if let Some(fut) = focus_listener_fut {
-            fasync::Task::local(fut).detach();
+            fasync_tasks.push(fasync::Task::local(fut));
             handlers_count += 1;
         }
 
@@ -296,7 +305,8 @@ impl InputPipeline {
         inspect_node.record_uint("handlers_healthy", handlers_count as u64);
 
         // Initializes all handlers and starts the input pipeline loop.
-        InputPipeline::run(receiver, handlers, metrics_logger.clone());
+        let runner_task = InputPipeline::run(receiver, handlers, metrics_logger.clone());
+        tasks.push(runner_task);
 
         let (device_event_sender, device_event_receiver) = futures::channel::mpsc::unbounded();
         let input_device_bindings: InputDeviceBindingMap =
@@ -310,6 +320,8 @@ impl InputPipeline {
             inspect_node,
             metrics_logger,
             feature_flags,
+            _tasks: tasks,
+            _fasync_tasks: fasync_tasks,
         }
     }
 
@@ -349,7 +361,7 @@ impl InputPipeline {
         feature_flags: input_device::InputPipelineFeatureFlags,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<Self, Error> {
-        let input_pipeline =
+        let mut input_pipeline =
             Self::new_common(input_device_types, assembly, inspect_node, feature_flags);
         let input_device_types = input_pipeline.input_device_types.clone();
         let input_event_sender = input_pipeline.device_event_sender.clone();
@@ -361,17 +373,17 @@ impl InputPipeline {
         // [`crate::Dispatcher`] -- the directory watcher always uses the fuchsia-async dispatcher.
         // This is fine for performance because the actual event dispatch is still configured to
         // run on [`crate::Dispatcher`].
-        fasync::Task::local(async move {
+        let watcher_task = fasync::Task::local(async move {
             // Watches the input device directory for new input devices. Creates new InputDeviceBindings
             // that send InputEvents to `input_event_receiver`.
             match async {
                 let (dir_proxy, server) = endpoints::create_proxy::<fio::DirectoryMarker>();
-                incoming.as_ref_directory().open(
-                    input_device::INPUT_REPORT_PATH,
-                    fio::PERM_READABLE,
-                    server.into()
-                )
-                .with_context(|| format!("failed to open {}", input_device::INPUT_REPORT_PATH))?;
+                incoming
+                    .as_ref_directory()
+                    .open(input_device::INPUT_REPORT_PATH, fio::PERM_READABLE, server.into())
+                    .with_context(|| {
+                        format!("failed to open {}", input_device::INPUT_REPORT_PATH)
+                    })?;
                 let device_watcher =
                     Watcher::new(&dir_proxy).await.context("failed to create watcher")?;
                 Self::watch_for_devices(
@@ -403,7 +415,8 @@ impl InputPipeline {
                         ));
                 }
             }
-        }).detach();
+        });
+        input_pipeline._fasync_tasks.push(watcher_task);
 
         Ok(input_pipeline)
     }
@@ -611,15 +624,14 @@ impl InputPipeline {
         mut receiver: UnboundedReceiver<Vec<input_device::InputEvent>>,
         handlers: Vec<Rc<dyn input_handler::BatchInputHandler>>,
         metrics_logger: metrics::MetricsLogger,
-    ) {
+    ) -> dispatcher::TaskHandle<()> {
         Dispatcher::spawn_local(async move {
             for handler in &handlers {
                 handler.clone().set_handler_healthy();
             }
 
-            use input_device::InputEventType;
-
-            let mut handlers_by_type: [Vec<Rc<dyn input_handler::BatchInputHandler>>; InputEventType::COUNT] = Default::default();
+            let mut handlers_by_type: [Vec<Rc<dyn input_handler::BatchInputHandler>>;
+                InputEventType::COUNT] = Default::default();
 
             // TODO: b/478262850 - We can use supported_input_devices to populate this list.
             let event_types = vec![
@@ -648,9 +660,7 @@ impl InputPipeline {
                 }
 
                 let mut groups_seen = 0;
-                let events = events
-                    .into_iter()
-                    .chunk_by(|e| InputEventType::from(&e.device_event));
+                let events = events.into_iter().chunk_by(|e| InputEventType::from(&e.device_event));
                 let events = events.into_iter().map(|(k, v)| (k, v.collect::<Vec<_>>()));
                 for (event_type, event_group) in events {
                     groups_seen += 1;
@@ -688,7 +698,7 @@ impl InputPipeline {
                 handler.clone().set_handler_unhealthy("Pipeline loop terminated");
             }
             panic!("Runner task is not supposed to terminate.")
-        }).detach();
+        })
     }
 }
 
@@ -950,18 +960,20 @@ mod tests {
             inspect_node: test_node,
             metrics_logger: metrics::MetricsLogger::default(),
             feature_flags: input_device::InputPipelineFeatureFlags::default(),
+            _tasks: vec![],
+            _fasync_tasks: vec![],
         };
-        InputPipeline::run(receiver, handlers, metrics::MetricsLogger::default());
+        let _runner_task =
+            InputPipeline::run(receiver, handlers, metrics::MetricsLogger::default());
 
         // Send an input event from each device.
         let first_device_events = send_input_event(first_device_binding.input_event_sender());
         let second_device_events = send_input_event(second_device_binding.input_event_sender());
 
         // Run the pipeline.
-        fasync::Task::local(async {
+        let _pipeline_task = fasync::Task::local(async {
             input_pipeline.handle_input_events().await;
-        })
-        .detach();
+        });
 
         // Assert the handler receives the events.
         let first_handled_event = handler_event_receiver.next().await;
@@ -1010,17 +1022,19 @@ mod tests {
             inspect_node: test_node,
             metrics_logger: metrics::MetricsLogger::default(),
             feature_flags: input_device::InputPipelineFeatureFlags::default(),
+            _tasks: vec![],
+            _fasync_tasks: vec![],
         };
-        InputPipeline::run(receiver, handlers, metrics::MetricsLogger::default());
+        let _runner_task =
+            InputPipeline::run(receiver, handlers, metrics::MetricsLogger::default());
 
         // Send an input event.
         let input_events = send_input_event(input_device_binding.input_event_sender());
 
         // Run the pipeline.
-        fasync::Task::local(async {
+        let _pipeline_task = fasync::Task::local(async {
             input_pipeline.handle_input_events().await;
-        })
-        .detach();
+        });
 
         // Assert both handlers receive the event.
         let expected_event = input_events.into_iter().next();
@@ -1249,7 +1263,7 @@ mod tests {
 
         // Handle input device requests.
         let mut count: i8 = 0;
-        fasync::Task::local(async move {
+        let _task = fasync::Task::local(async move {
             // Register a device.
             let _ = input_device_registry_proxy.register(input_device_client_end);
 
@@ -1264,8 +1278,7 @@ mod tests {
 
             // End handle_input_device_registry_request_stream() by taking the event stream.
             input_device_registry_proxy.take_event_stream();
-        })
-        .detach();
+        });
 
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("input_pipeline");
@@ -1386,7 +1399,8 @@ mod tests {
                 .into_components();
 
         // Run the pipeline logic
-        InputPipeline::run(pipeline_receiver, handlers, metrics::MetricsLogger::default());
+        let _runner_task =
+            InputPipeline::run(pipeline_receiver, handlers, metrics::MetricsLogger::default());
 
         // Create a Fake event
         let fake_event = input_device::InputEvent {
@@ -1457,7 +1471,8 @@ mod tests {
                 .into_components();
 
         // Run the pipeline logic
-        InputPipeline::run(pipeline_receiver, handlers, metrics::MetricsLogger::default());
+        let _runner_task =
+            InputPipeline::run(pipeline_receiver, handlers, metrics::MetricsLogger::default());
 
         // Create events
         let mouse_event_1 = create_mouse_event(1.0, 1.0);

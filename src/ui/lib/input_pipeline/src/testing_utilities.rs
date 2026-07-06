@@ -991,15 +991,14 @@ macro_rules! assert_input_event_sequence_generates_media_buttons_events {
         // The media buttons listener request stream(s).
         media_buttons_listener_request_stream: $media_buttons_listener_request_stream:expr,
     ) => {
-        fasync::Task::local(async move {
+        let _macro_task = fasync::Task::local(async move {
             for input_event in $input_events {
                 assert_matches!(
                     $input_handler.clone().handle_input_event(input_event).await.as_slice(),
                     [input_device::InputEvent { handled: input_device::Handled::Yes, .. }]
                 );
             }
-        })
-        .detach();
+        });
 
         for mut stream in $media_buttons_listener_request_stream {
             let mut expected_command_iter = $expected_events.iter().peekable();
@@ -1067,7 +1066,10 @@ where
 /// Returns a [`fidl_next::Client`] to the stream.
 pub fn spawn_input_stream_handler<F, Fut>(
     mut f: F,
-) -> fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>
+) -> (
+    fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
+    fuchsia_async::Task<()>,
+)
 where
     F: FnMut(fidl_input_report::InputDeviceRequest) -> Fut + 'static + Send,
     Fut: Future<Output = ()> + 'static + Send,
@@ -1076,11 +1078,12 @@ where
         fidl_input_report::InputDeviceMarker,
         fidl_next_fuchsia_input_report::InputDevice,
     >();
-    fuchsia_async::Task::spawn(stream.try_for_each(move |r| f(r).map(Ok)).unwrap_or_else(|e| {
-        error!("FIDL stream handler failed: {}", e);
-    }))
-    .detach();
-    proxy
+    let task = fuchsia_async::Task::spawn(
+        stream.try_for_each(move |r| f(r).map(Ok)).unwrap_or_else(|e| {
+            error!("FIDL stream handler failed: {}", e);
+        }),
+    );
+    (proxy, task)
 }
 
 pub fn reports_to_wire(

@@ -206,9 +206,8 @@ mod tests {
             fidl::endpoints::create_proxy_and_stream::<focus::FocusChainProviderMarker>();
         let (focus_chain_provider_publisher, focus_chain_provider_stream_handler) =
             focus_chain_provider::make_publisher_and_stream_handler();
-        focus_chain_provider_stream_handler
-            .handle_request_stream(focus_chain_provider_stream)
-            .detach();
+        let _provider_task =
+            focus_chain_provider_stream_handler.handle_request_stream(focus_chain_provider_stream);
 
         let mut listener = FocusListener::new_listener(
             focus_proxy,
@@ -217,10 +216,9 @@ mod tests {
             metrics::MetricsLogger::default(),
         );
 
-        fuchsia_async::Task::local(async move {
+        let _listener_task = fuchsia_async::Task::local(async move {
             let _ = listener.dispatch_focus_changes().await;
-        })
-        .detach();
+        });
 
         // Flush the initial value from the hanging get server.
         // Note that if the focus chain watcher tried to retrieve the koid chain for the first time

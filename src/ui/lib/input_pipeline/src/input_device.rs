@@ -767,7 +767,7 @@ mod tests {
     // consumer controls device exists.
     #[fasync::run_singlethreaded(test)]
     async fn consumer_controls_input_device_exists() {
-        let input_device_proxy =
+        let (input_device_proxy, _task) =
             spawn_input_stream_handler(move |input_device_request| async move {
                 match input_device_request {
                     fidl_input_report::InputDeviceRequest::GetDescriptor { responder } => {
@@ -810,7 +810,7 @@ mod tests {
     // Tests that is_device_type() returns true for InputDeviceType::Mouse when a mouse exists.
     #[fasync::run_singlethreaded(test)]
     async fn mouse_input_device_exists() {
-        let input_device_proxy =
+        let (input_device_proxy, _task) =
             spawn_input_stream_handler(move |input_device_request| async move {
                 match input_device_request {
                     fidl_input_report::InputDeviceRequest::GetDescriptor { responder } => {
@@ -857,7 +857,7 @@ mod tests {
     // exist.
     #[fasync::run_singlethreaded(test)]
     async fn mouse_input_device_doesnt_exist() {
-        let input_device_proxy =
+        let (input_device_proxy, _task) =
             spawn_input_stream_handler(move |input_device_request| async move {
                 match input_device_request {
                     fidl_input_report::InputDeviceRequest::GetDescriptor { responder } => {
@@ -892,7 +892,7 @@ mod tests {
     // exists.
     #[fasync::run_singlethreaded(test)]
     async fn touch_input_device_exists() {
-        let input_device_proxy =
+        let (input_device_proxy, _task) =
             spawn_input_stream_handler(move |input_device_request| async move {
                 match input_device_request {
                     fidl_input_report::InputDeviceRequest::GetDescriptor { responder } => {
@@ -936,7 +936,7 @@ mod tests {
     // exists.
     #[fasync::run_singlethreaded(test)]
     async fn touch_input_device_doesnt_exist() {
-        let input_device_proxy =
+        let (input_device_proxy, _task) =
             spawn_input_stream_handler(move |input_device_request| async move {
                 match input_device_request {
                     fidl_input_report::InputDeviceRequest::GetDescriptor { responder } => {
@@ -971,7 +971,7 @@ mod tests {
     // exists.
     #[fasync::run_singlethreaded(test)]
     async fn keyboard_input_device_exists() {
-        let input_device_proxy =
+        let (input_device_proxy, _task) =
             spawn_input_stream_handler(move |input_device_request| async move {
                 match input_device_request {
                     fidl_input_report::InputDeviceRequest::GetDescriptor { responder } => {
@@ -1013,7 +1013,7 @@ mod tests {
     // exists.
     #[fasync::run_singlethreaded(test)]
     async fn keyboard_input_device_doesnt_exist() {
-        let input_device_proxy =
+        let (input_device_proxy, _task) =
             spawn_input_stream_handler(move |input_device_request| async move {
                 match input_device_request {
                     fidl_input_report::InputDeviceRequest::GetDescriptor { responder } => {
@@ -1047,7 +1047,7 @@ mod tests {
     // Tests that is_device_type() returns true for every input device type that exists.
     #[fasync::run_singlethreaded(test)]
     async fn no_input_device_match() {
-        let input_device_proxy =
+        let (input_device_proxy, _task) =
             spawn_input_stream_handler(move |input_device_request| async move {
                 match input_device_request {
                     fidl_input_report::InputDeviceRequest::GetDescriptor { responder } => {

@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use crate::input_device::{self, Handled, InputDeviceBinding, InputDeviceStatus, InputEvent};
-use crate::{Dispatcher, Transport, metrics, utils};
+use crate::{Transport, metrics, utils};
 use anyhow::{Error, Result, format_err};
 use async_trait::async_trait;
 use fidl_fuchsia_ui_input3 as fidl_ui_input3;
-use fidl_fuchsia_ui_input3::KeyEventType;
+use fidl_fuchsia_ui_input3::{KeyEventType, Modifiers};
 use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use metrics_registry::*;
@@ -118,8 +118,7 @@ impl KeyboardEvent {
     /// Returns the currently applicable modifiers, with the sided modifiers removed.
     ///
     /// For example, if LEFT_SHIFT is pressed, returns SHIFT, rather than SHIFT | LEFT_SHIFT
-    pub fn get_unsided_modifiers(&self) -> fidl_fuchsia_ui_input3::Modifiers {
-        use fidl_fuchsia_ui_input3::Modifiers;
+    pub fn get_unsided_modifiers(&self) -> Modifiers {
         let mut modifiers = self.modifiers.unwrap_or(Modifiers::empty());
         modifiers.set(
             Modifiers::LEFT_ALT
@@ -555,9 +554,8 @@ impl KeyboardBinding {
         metrics_logger: &metrics::MetricsLogger,
         tracing_id: fuchsia_trace::Id,
     ) {
-        // Dispatches all key events individually in a separate task.  This is done in a separate
-        // function so that the lifetime of `new_keys` above could be detached from that of the
-        // spawned task.
+        // Dispatches all key events individually. This is helper function to process
+        // the event sequence.
         fn dispatch_events(
             key_events: Vec<(fidl_fuchsia_input::Key, fidl_fuchsia_ui_input3::KeyEventType)>,
             device_descriptor: input_device::InputDeviceDescriptor,
@@ -567,46 +565,44 @@ impl KeyboardBinding {
             metrics_logger: metrics::MetricsLogger,
             tracing_id: fuchsia_trace::Id,
         ) {
-            Dispatcher::spawn_local(async move {
-                fuchsia_trace::duration!("input", "key_event_thread");
-                fuchsia_trace::flow_end!("input", "key_event_thread", tracing_id);
+            fuchsia_trace::duration!("input", "key_event_thread");
+            fuchsia_trace::flow_end!("input", "key_event_thread", tracing_id);
 
-                let mut event_time = event_time;
-                for (key, event_type) in key_events.into_iter() {
-                    let trace_id = fuchsia_trace::Id::new();
-                    fuchsia_trace::duration!("input", "keyboard_event_in_binding");
-                    fuchsia_trace::flow_begin!("input", "event_in_input_pipeline", trace_id);
+            let mut event_time = event_time;
+            for (key, event_type) in key_events.into_iter() {
+                let trace_id = fuchsia_trace::Id::new();
+                fuchsia_trace::duration!("input", "keyboard_event_in_binding");
+                fuchsia_trace::flow_begin!("input", "event_in_input_pipeline", trace_id);
 
-                    let event = input_device::InputEvent {
-                        device_event: input_device::InputDeviceEvent::Keyboard(KeyboardEvent::new(
-                            key, event_type,
-                        )),
-                        device_descriptor: device_descriptor.clone(),
-                        event_time,
-                        handled: Handled::No,
-                        trace_id: Some(trace_id),
-                    };
-                    match input_event_sender.unbounded_send(vec![event.clone()]) {
-                        Err(error) => {
-                            metrics_logger.log_error(
-                                InputPipelineErrorMetricDimensionEvent::KeyboardFailedToSendKeyboardEvent,
-                                std::format!(
-                                    "Failed to send KeyboardEvent for key: {:?}, event_type: {:?}: {:?}",
-                                    key,
-                                    event_type,
-                                    error));
-                        }
-                        _ => {
-                            let _ = inspect_sender.unbounded_send(event).expect("Failed to count generated KeyboardEvent in Input Pipeline Inspect tree.");
-                        }
+                let event = input_device::InputEvent {
+                    device_event: input_device::InputDeviceEvent::Keyboard(KeyboardEvent::new(
+                        key, event_type,
+                    )),
+                    device_descriptor: device_descriptor.clone(),
+                    event_time,
+                    handled: Handled::No,
+                    trace_id: Some(trace_id),
+                };
+                match input_event_sender.unbounded_send(vec![event.clone()]) {
+                    Err(error) => {
+                        metrics_logger.log_error(
+                            InputPipelineErrorMetricDimensionEvent::KeyboardFailedToSendKeyboardEvent,
+                            std::format!(
+                                "Failed to send KeyboardEvent for key: {:?}, event_type: {:?}: {:?}",
+                                key,
+                                event_type,
+                                error));
                     }
-                    // If key events happen to have been reported at the same time,
-                    // we pull them apart artificially. A 1ns increment will likely
-                    // be enough of a difference that it is recognizable but that it
-                    // does not introduce confusion.
-                    event_time = event_time + zx::MonotonicDuration::from_nanos(1);
+                    _ => {
+                        let _ = inspect_sender.unbounded_send(event).expect("Failed to count generated KeyboardEvent in Input Pipeline Inspect tree.");
+                    }
                 }
-            }).detach();
+                // If key events happen to have been reported at the same time,
+                // we pull them apart artificially. A 1ns increment will likely
+                // be enough of a difference that it is recognizable but that it
+                // does not introduce confusion.
+                event_time = event_time + zx::MonotonicDuration::from_nanos(1);
+            }
         }
 
         // Filter out the keys which were present in the previous keyboard report to avoid sending
@@ -627,8 +623,7 @@ impl KeyboardBinding {
 
         // It is important that key releases are dispatched before key presses,
         // so that modifier tracking would work correctly.  We collect the result
-        // into a vector since an iterator is not Send and can not be moved into
-        // a closure.
+        // into a vector.
         let all_keys = released_keys.chain(pressed_keys).collect::<Vec<_>>();
 
         dispatch_events(

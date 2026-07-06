@@ -844,16 +844,17 @@ mod tests {
         configuration_request_stream: pointerinjector_config::SetupRequestStream,
         inspector: fuchsia_inspect::Inspector,
         _test_node: fuchsia_inspect::Node,
+        _server_task: fasync::Task<()>,
     }
 
     fn spawn_device_listener_registry_server(
         handler: Rc<TouchInjectorHandler>,
-    ) -> fidl_ui_policy::DeviceListenerRegistryProxy {
+    ) -> (fidl_ui_policy::DeviceListenerRegistryProxy, fasync::Task<()>) {
         let (device_listener_proxy, mut device_listener_stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_ui_policy::DeviceListenerRegistryMarker>(
             );
 
-        fasync::Task::local(async move {
+        let task = fasync::Task::local(async move {
             loop {
                 match device_listener_stream.try_next().await {
                     Ok(Some(
@@ -876,10 +877,9 @@ mod tests {
                     }
                 }
             }
-        })
-        .detach();
+        });
 
-        device_listener_proxy
+        (device_listener_proxy, task)
     }
 
     impl TestFixtures {
@@ -924,7 +924,7 @@ mod tests {
                 futures::future::join(touch_handler_fut, handle_initial_request_fut).await;
 
             let touch_handler = touch_handler_res.expect("Failed to create touch handler.");
-            let device_listener_proxy =
+            let (device_listener_proxy, server_task) =
                 spawn_device_listener_registry_server(touch_handler.clone());
 
             TestFixtures {
@@ -934,6 +934,7 @@ mod tests {
                 configuration_request_stream,
                 inspector,
                 _test_node: test_node,
+                _server_task: server_task,
             }
         }
     }

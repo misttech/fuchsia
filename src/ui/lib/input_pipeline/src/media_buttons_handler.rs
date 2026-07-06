@@ -329,11 +329,11 @@ mod tests {
 
     fn spawn_device_listener_registry_server(
         handler: Rc<MediaButtonsHandler>,
-    ) -> fidl_ui_policy::DeviceListenerRegistryProxy {
+    ) -> (fidl_ui_policy::DeviceListenerRegistryProxy, fasync::Task<()>) {
         let (device_listener_proxy, mut device_listener_stream) =
             create_proxy_and_stream::<fidl_ui_policy::DeviceListenerRegistryMarker>();
 
-        fasync::Task::local(async move {
+        let task = fasync::Task::local(async move {
             loop {
                 match device_listener_stream.try_next().await {
                     Ok(Some(fidl_ui_policy::DeviceListenerRegistryRequest::RegisterListener {
@@ -354,10 +354,9 @@ mod tests {
                     }
                 }
             }
-        })
-        .detach();
+        });
 
-        device_listener_proxy
+        (device_listener_proxy, task)
     }
 
     fn create_ui_input_media_buttons_event(
@@ -423,7 +422,7 @@ mod tests {
             inspect_status,
             metrics_logger: metrics::MetricsLogger::default(),
         });
-        let device_listener_proxy =
+        let (device_listener_proxy, _server_task) =
             spawn_device_listener_registry_server(media_buttons_handler.clone());
 
         // Register a listener.
@@ -467,7 +466,7 @@ mod tests {
         );
         let media_buttons_handler =
             MediaButtonsHandler::new_internal(inspect_status, metrics::MetricsLogger::default());
-        let device_listener_proxy =
+        let (device_listener_proxy, _server_task) =
             spawn_device_listener_registry_server(media_buttons_handler.clone());
 
         // Register a listener.
@@ -522,7 +521,7 @@ mod tests {
         );
         let media_buttons_handler =
             MediaButtonsHandler::new_internal(inspect_status, metrics::MetricsLogger::default());
-        let device_listener_proxy =
+        let (device_listener_proxy, _server_task) =
             spawn_device_listener_registry_server(media_buttons_handler.clone());
 
         // Register two listeners.
@@ -578,7 +577,7 @@ mod tests {
         let media_buttons_handler_clone = media_buttons_handler.clone();
 
         let mut task = fasync::Task::local(async move {
-            let device_listener_proxy =
+            let (device_listener_proxy, _server_task) =
                 spawn_device_listener_registry_server(media_buttons_handler.clone());
 
             // Register three listeners.
@@ -675,7 +674,7 @@ mod tests {
         );
         let media_buttons_handler =
             MediaButtonsHandler::new_internal(inspect_status, metrics::MetricsLogger::default());
-        let device_listener_proxy =
+        let (device_listener_proxy, _server_task) =
             spawn_device_listener_registry_server(media_buttons_handler.clone());
 
         let (first_listener, mut first_listener_stream) =

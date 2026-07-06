@@ -243,7 +243,7 @@ mod tests {
     fn handle_events(
         ime_handler: Rc<ImeHandler>,
         input_events: Vec<input_device::UnhandledInputEvent>,
-    ) {
+    ) -> fasync::Task<()> {
         fasync::Task::local(async move {
             for input_event in input_events {
                 assert_matches!(
@@ -252,7 +252,6 @@ mod tests {
                 );
             }
         })
-        .detach();
     }
 
     async fn assert_ime_receives_events(
@@ -386,7 +385,7 @@ mod tests {
             ..Default::default()
         }];
 
-        handle_events(ime_handler, input_events);
+        let _task = handle_events(ime_handler, input_events);
         assert_ime_receives_events(expected_events, request_stream).await;
     }
 
@@ -427,7 +426,7 @@ mod tests {
             ..Default::default()
         }];
 
-        handle_events(ime_handler, input_events);
+        let _task = handle_events(ime_handler, input_events);
         assert_ime_receives_events(expected_events, request_stream).await;
     }
 
@@ -521,7 +520,7 @@ mod tests {
             },
         ];
 
-        handle_events(ime_handler, input_events);
+        let _task = handle_events(ime_handler, input_events);
         assert_ime_receives_events(expected_events, request_stream).await;
     }
 
@@ -616,7 +615,7 @@ mod tests {
             },
         ];
 
-        handle_events(ime_handler, input_events);
+        let _task = handle_events(ime_handler, input_events);
         assert_ime_receives_events(expected_events, request_stream).await;
     }
 
@@ -703,7 +702,7 @@ mod tests {
             },
         ];
 
-        handle_events(ime_handler, input_events);
+        let _task = handle_events(ime_handler, input_events);
         assert_ime_receives_events(expected_events, request_stream).await;
     }
 
@@ -749,7 +748,7 @@ mod tests {
             ..Default::default()
         }];
 
-        handle_events(ime_handler, input_events);
+        let _task = handle_events(ime_handler, input_events);
         assert_ime_receives_events(expected_events, request_stream).await;
     }
 
@@ -832,7 +831,7 @@ mod tests {
             },
         ];
 
-        handle_events(ime_handler, input_events);
+        let _task = handle_events(ime_handler, input_events);
         assert_ime_receives_events(expected_events, request_stream).await;
     }
 
@@ -896,7 +895,7 @@ mod tests {
             },
         ];
 
-        handle_events(ime_handler, input_events);
+        let _task = handle_events(ime_handler, input_events);
         assert_ime_receives_events(expected_events, request_stream).await;
     }
 

@@ -1266,7 +1266,7 @@ mod tests {
     async fn enables_touchpad_mode_automatically() {
         let (set_feature_report_sender, set_feature_report_receiver) =
             futures::channel::mpsc::unbounded();
-        let input_device_proxy = spawn_input_stream_handler(move |input_device_request| {
+        let (input_device_proxy, _task) = spawn_input_stream_handler(move |input_device_request| {
             let set_feature_report_sender = set_feature_report_sender.clone();
             async move {
                 match input_device_request {
@@ -1350,7 +1350,7 @@ mod tests {
         touch_input_mode: Option<fidl_input_report::TouchConfigurationInputMode>,
         expect_touch_device_type: TouchDeviceType,
     ) {
-        let input_device_proxy =
+        let (input_device_proxy, _task) =
             spawn_input_stream_handler(move |input_device_request| async move {
                 match input_device_request {
                     fidl_input_report::InputDeviceRequest::GetDescriptor { responder } => {

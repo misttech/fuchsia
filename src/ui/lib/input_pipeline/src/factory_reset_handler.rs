@@ -5,7 +5,7 @@
 use crate::consumer_controls_binding::ConsumerControlsEvent;
 use crate::dispatcher::TimeoutExt;
 use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
-use crate::{Dispatcher, Incoming, MonotonicInstant, input_device, metrics};
+use crate::{Dispatcher, Incoming, MonotonicInstant, dispatcher, input_device, metrics};
 use anyhow::{Context as _, Error, anyhow};
 use async_trait::async_trait;
 use async_utils::hanging_get::server::HangingGet;
@@ -24,7 +24,7 @@ use fuchsia_async::MonotonicDuration;
 use fuchsia_inspect::health::Reporter;
 use futures::StreamExt;
 use metrics_registry::*;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::fs::{self, File};
 use std::path::Path;
 use std::rc::Rc;
@@ -111,6 +111,9 @@ pub struct FactoryResetHandler {
     pub inspect_status: InputHandlerStatus,
 
     metrics_logger: metrics::MetricsLogger,
+
+    /// Tasks running in the background.
+    _tasks: RefCell<Vec<(dispatcher::TaskHandle<()>, Rc<Cell<bool>>)>>,
 }
 
 /// Uses the `ConsumerControlsEvent` to determine whether the device should
@@ -152,6 +155,7 @@ impl FactoryResetHandler {
             countdown_hanging_get: RefCell::new(countdown_hanging_get),
             inspect_status,
             metrics_logger,
+            _tasks: RefCell::new(vec![]),
         })
     }
 
@@ -449,10 +453,18 @@ impl UnhandledInputHandler for FactoryResetHandler {
                 match self.factory_reset_state() {
                     FactoryResetState::Idle => {
                         let event_clone = event.clone();
-                        Dispatcher::spawn_local(async move {
-                            self.handle_allowed_event(&event_clone).await
-                        })
-                        .detach();
+                        let self_weak = Rc::downgrade(&self);
+                        let completed = Rc::new(Cell::new(false));
+                        let completed_clone = completed.clone();
+                        let task = Dispatcher::spawn_local(async move {
+                            if let Some(self_tg) = self_weak.upgrade() {
+                                self_tg.handle_allowed_event(&event_clone).await;
+                            }
+                            completed_clone.set(true);
+                        });
+                        let mut tasks = self._tasks.borrow_mut();
+                        tasks.retain(|(_, completed)| !completed.get());
+                        tasks.push((task, completed));
                     }
                     FactoryResetState::Disallowed => self.handle_disallowed_event(event),
                     FactoryResetState::ButtonCountdown { deadline: _ } => {
@@ -491,7 +503,7 @@ mod tests {
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_recovery_policy::{DeviceMarker, DeviceProxy};
     use fidl_fuchsia_recovery_ui::{FactoryResetCountdownMarker, FactoryResetCountdownProxy};
-    use fuchsia_async::{Task, TestExecutor};
+    use fuchsia_async::TestExecutor;
     use pretty_assertions::assert_eq;
     use std::pin::pin;
     use std::task::Poll;
@@ -505,12 +517,15 @@ mod tests {
         let stream_fut =
             reset_handler.clone().handle_factory_reset_countdown_request_stream(countdown_stream);
 
-        Task::local(async move {
+        let completed = Rc::new(Cell::new(false));
+        let completed_clone = completed.clone();
+        let task = Dispatcher::spawn_local(async move {
             if stream_fut.await.is_err() {
                 log::warn!("Failed to handle factory reset countdown request stream");
             }
-        })
-        .detach();
+            completed_clone.set(true);
+        });
+        reset_handler._tasks.borrow_mut().push((task, completed));
 
         countdown_proxy
     }
@@ -518,16 +533,20 @@ mod tests {
     fn create_recovery_policy_proxy(reset_handler: Rc<FactoryResetHandler>) -> DeviceProxy {
         let (device_proxy, device_stream) = create_proxy_and_stream::<DeviceMarker>();
 
-        Task::local(async move {
-            if reset_handler
+        let reset_handler_clone = reset_handler.clone();
+        let completed = Rc::new(Cell::new(false));
+        let completed_clone = completed.clone();
+        let task = Dispatcher::spawn_local(async move {
+            if reset_handler_clone
                 .handle_recovery_policy_device_request_stream(device_stream)
                 .await
                 .is_err()
             {
                 log::warn!("Failed to handle recovery policy device request stream");
             }
-        })
-        .detach();
+            completed_clone.set(true);
+        });
+        reset_handler._tasks.borrow_mut().push((task, completed));
 
         device_proxy
     }

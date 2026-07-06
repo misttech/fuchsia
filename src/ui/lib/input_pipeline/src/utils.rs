@@ -13,6 +13,10 @@ pub fn duplicate_wake_lease(
     wake_lease: Option<&fidl_next::wire::fuchsia::EventPair>,
 ) -> Option<zx::EventPair> {
     wake_lease.map(|h| h.as_raw_handle()).map(|raw| {
+        // SAFETY: `raw` is a valid handle obtained from `wake_lease`, which is borrowed
+        // for the duration of this function. The `zx::Unowned` instance is created from
+        // this valid handle and does not outlive the borrow of `wake_lease`, ensuring
+        // that the handle remains valid while `Unowned` exists.
         let unowned = unsafe { zx::Unowned::<'_, zx::EventPair>::from_raw_handle(raw) };
         unowned.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("failed to duplicate wake lease")
     })
@@ -62,6 +66,10 @@ pub fn range_to_old(
 }
 
 pub fn unit_to_old(unit: &fidl_next_fuchsia_input_report::Unit) -> fidl_fuchsia_input_report::Unit {
+    // SAFETY: The `fidl_next` generated enum is representation-compatible with `u32`
+    // (typically `#[repr(u32)]`). Casting the pointer to `*const u32` and dereferencing
+    // it is safe because the memory is initialized, aligned correctly, and we only
+    // perform a read operation.
     let discriminant: u32 =
         unsafe { *(&unit.type_ as *const fidl_next_fuchsia_input_report::UnitType as *const u32) };
     fidl_fuchsia_input_report::Unit {
@@ -71,6 +79,10 @@ pub fn unit_to_old(unit: &fidl_next_fuchsia_input_report::Unit) -> fidl_fuchsia_
 }
 
 pub fn key_to_old(key: &fidl_next_fuchsia_input::Key) -> fidl_fuchsia_input::Key {
+    // SAFETY: The `fidl_next` generated enum is representation-compatible with `u32`
+    // (typically `#[repr(u32)]`). Casting the pointer to `*const u32` and dereferencing
+    // it is safe because the memory is initialized, aligned correctly, and we only
+    // perform a read operation.
     let discriminant: u32 = unsafe { *(key as *const fidl_next_fuchsia_input::Key as *const u32) };
     fidl_fuchsia_input::Key::from_primitive_allow_unknown(discriminant)
 }
@@ -92,6 +104,10 @@ pub fn touch_button_to_next(
 pub fn consumer_control_button_to_old(
     button: &fidl_next_fuchsia_input_report::ConsumerControlButton,
 ) -> fidl_fuchsia_input_report::ConsumerControlButton {
+    // SAFETY: The `fidl_next` generated enum is representation-compatible with `u32`
+    // (typically `#[repr(u32)]`). Casting the pointer to `*const u32` and dereferencing
+    // it is safe because the memory is initialized, aligned correctly, and we only
+    // perform a read operation.
     let discriminant: u32 = unsafe {
         *(button as *const fidl_next_fuchsia_input_report::ConsumerControlButton as *const u32)
     };
