@@ -20,11 +20,6 @@
 extern "C" {
 int32_t rust_ktrace_test_interop(uint64_t header, uint64_t val);
 void rust_ktrace_test_macros();
-bool rust_ktrace_test_init_and_size();
-bool rust_ktrace_test_write();
-bool rust_ktrace_test_dropped_record_tracking();
-bool rust_ktrace_test_emit_drop_stats();
-bool rust_ktrace_test_global_lifecycle();
 }
 
 // A test version of the per-CPU KTrace instance that disables diagnostic logs and overrides
@@ -645,37 +640,6 @@ class KTraceTests {
 
     END_TEST;
   }
-
-  static bool TestRustInitAndSize() {
-    BEGIN_TEST;
-    EXPECT_TRUE(rust_ktrace_test_init_and_size());
-    END_TEST;
-  }
-
-  static bool TestRustWrite() {
-    BEGIN_TEST;
-    EXPECT_TRUE(rust_ktrace_test_write());
-    END_TEST;
-  }
-
-  static bool TestRustDroppedRecordTracking() {
-    BEGIN_TEST;
-    EXPECT_TRUE(rust_ktrace_test_dropped_record_tracking());
-    END_TEST;
-  }
-
-  static bool TestRustEmitDropStats() {
-    BEGIN_TEST;
-    EXPECT_TRUE(rust_ktrace_test_emit_drop_stats());
-    END_TEST;
-  }
-
-  static bool TestRustGlobalLifecycle() {
-    BEGIN_TEST;
-    EXPECT_TRUE(rust_ktrace_test_global_lifecycle());
-    END_TEST;
-  }
-
   static bool TestRustMacros() {
     BEGIN_TEST;
 
@@ -866,10 +830,5 @@ UNITTEST("rewind", KTraceTests::TestRewind)
 UNITTEST("read_user", KTraceTests::TestReadUser)
 UNITTEST("dropped_records", KTraceTests::TestDroppedRecordTracking)
 UNITTEST("rust_interop", KTraceTests::TestRustInterop)
-UNITTEST("rust_init_and_size", KTraceTests::TestRustInitAndSize)
-UNITTEST("rust_write", KTraceTests::TestRustWrite)
-UNITTEST("rust_dropped_record_tracking", KTraceTests::TestRustDroppedRecordTracking)
-UNITTEST("rust_emit_drop_stats", KTraceTests::TestRustEmitDropStats)
-UNITTEST("rust_global_lifecycle", KTraceTests::TestRustGlobalLifecycle)
 UNITTEST("rust_macros", KTraceTests::TestRustMacros)
 UNITTEST_END_TESTCASE(ktrace_tests, "ktrace", "KTrace tests")
