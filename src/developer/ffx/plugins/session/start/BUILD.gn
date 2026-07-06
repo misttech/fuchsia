@@ -15,12 +15,14 @@ ffx_plugin("ffx_session_start") {
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
+    "//src/developer/ffx/plugins/session/common:ffx_session_common",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
   ]
   test_deps = [
     "//src/lib/fdomain/local",
     "//src/lib/fuchsia",
+    "//third_party/rust_crates:serde_json",
   ]
 
   args_sources = [ "src/args.rs" ]
@@ -30,4 +32,9 @@ ffx_plugin("ffx_session_start") {
   ]
 
   sources = [ "src/lib.rs" ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":ffx_session_start_tests($host_toolchain)" ]
 }
