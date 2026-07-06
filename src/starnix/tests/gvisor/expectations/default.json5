@@ -636,7 +636,6 @@
                 "ProcNetSymlinkTarget.FileMode",
                 "ProcNetSymlink.Contents",
                 "ProcSysNetIpv4Sack.Exists",
-                "ProcNetDev.Format",
                 "ProcNetSnmp.TcpReset",
                 "ProcNetSnmp.TcpEstab",
                 "ProcNetSnmp.UdpNoPorts",
@@ -954,9 +953,6 @@
                 // tracking file references and emitting inotify events, specifically with regards
                 // to how open file descriptors impact the DELETE_SELF inotify event.
                 "Inotify.RmdirWithOpenDirFdDefersDeleteSelfUntilClose",
-
-                // TODO(https://fxbug.dev/507799657): Fix and re-enable.
-                "NetlinkRouteTest.ProcNetDevStableAcrossCalls",
 
                 // TODO(https://fxbug.dev/507936011): Fix and re-enable.
                 // Truncation on getsockopt is supported, but this test uses TCP options that aren't supported yet.

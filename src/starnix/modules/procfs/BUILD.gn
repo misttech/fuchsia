@@ -25,6 +25,7 @@ rustc_library("procfs") {
     "meminfo.rs",
     "misc.rs",
     "mounts_symlink.rs",
+    "net_dev.rs",
     "pid_directory.rs",
     "pressure_directory.rs",
     "proc_directory.rs",

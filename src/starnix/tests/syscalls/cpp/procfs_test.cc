@@ -827,6 +827,53 @@ TEST_F(ProcfsTest, VmStatFile) {
   EXPECT_THAT(content, ContainsRegex("(\n|^)pgscan_kswapd [0-9]+\n"));
 }
 
+// Verify that /proc/net/dev format is correct.
+TEST_F(ProcfsTest, ProcNetDev) {
+  auto path = "/proc/net/dev";
+  EXPECT_EQ(0, access(path, R_OK));
+  std::string content;
+  ASSERT_TRUE(files::ReadFileToString(path, &content));
+
+  std::istringstream iss(content);
+  std::string line;
+
+  // Header 1
+  ASSERT_TRUE(std::getline(iss, line));
+  EXPECT_THAT(line, testing::HasSubstr("Inter-|"));
+
+  // Header 2
+  ASSERT_TRUE(std::getline(iss, line));
+  EXPECT_THAT(line, testing::HasSubstr(" face |"));
+
+  // Interfaces
+  bool found_lo = false;
+  while (std::getline(iss, line)) {
+    // Trim leading spaces
+    size_t start = line.find_first_not_of(" ");
+    if (start == std::string::npos) {
+      continue;  // empty line
+    }
+    std::string trimmed = line.substr(start);
+    size_t colon = trimmed.find(':');
+    ASSERT_NE(colon, std::string::npos) << "Line: " << line;
+    std::string iface = trimmed.substr(0, colon);
+    std::string stats_str = trimmed.substr(colon + 1);
+
+    if (iface == "lo") {
+      found_lo = true;
+    }
+
+    std::istringstream stats_iss(stats_str);
+    uint64_t val;
+    int count = 0;
+    while (stats_iss >> val) {
+      count++;
+    }
+    EXPECT_EQ(count, 16) << "Interface " << iface << " has " << count << " stats instead of 16";
+  }
+  EXPECT_TRUE(found_lo) << "lo interface not found in /proc/net/dev";
+}
+
 // Verify that writing invalid data to a numeric sysctl results in EINVAL.
 TEST_F(ProcfsTest, ProcSysNetInvalidWriteReturnsEinval) {
   if (!test_helper::HasSysAdmin()) {

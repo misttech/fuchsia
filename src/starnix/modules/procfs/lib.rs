@@ -16,6 +16,7 @@ mod loadavg;
 mod meminfo;
 mod misc;
 mod mounts_symlink;
+mod net_dev;
 pub mod pid_directory;
 mod pressure_directory;
 mod proc_directory;

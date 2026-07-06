@@ -399,6 +399,7 @@ impl BytesFileOps for VerityRequireSignaturesFile {
 pub fn net_directory(fs: &FileSystemHandle) -> FsNodeHandle {
     let dir = SimpleDirectory::new();
     dir.edit(fs, |dir| {
+        dir.entry("dev", crate::net_dev::ProcNetDev::new_node(), mode!(IFREG, 0o444));
         dir.entry(
             "fib_trie",
             StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322873635")),
