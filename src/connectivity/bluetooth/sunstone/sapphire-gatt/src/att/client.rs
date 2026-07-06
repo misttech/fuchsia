@@ -12,7 +12,7 @@ use crate::att::pdu::{
     FindByTypeValueReqHeader, FindInformationReq, FindInformationRsp, HandlesInformation, Header,
     InformationData16, InformationData128, Opcode, Packet, PacketBuilder, ReadBlobReq,
     ReadByGroupTypeReqHeader, ReadByGroupTypeRsp, ReadByGroupTypeRspEntryHeader,
-    ReadByTypeReqHeader, ReadByTypeRsp, ReadReq, UuidFormat,
+    ReadByTypeReqHeader, ReadByTypeRsp, ReadReq, UuidFormat, WriteReqHeader,
 };
 use core::cmp::{max, min};
 use core::mem::{MaybeUninit, size_of};
@@ -560,13 +560,42 @@ where
         // Parse and validate the response PDU.
         ReadByGroupTypeResults::try_from(&rx_packet.data[..])
     }
+
+    /// Initiates a Write Request procedure to write the value of an attribute.
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.5.1 & 3.4.5.2).
+    pub async fn write<'a>(
+        &mut self,
+        attribute_handle: AttributeHandle,
+        attribute_value: &[u8],
+        rx_buf: &'a mut [MaybeUninit<u8>],
+    ) -> Result<(), ClientError> {
+        let header_builder = PacketBuilder {
+            header: Header { opcode: Opcode::WriteReq },
+            payload: WriteReqHeader { attribute_handle: U16::new(attribute_handle.value()) },
+        };
+        let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
+        let mut builder =
+            DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header_builder, self.effective_mtu());
+        builder
+            .extend_from_slice(attribute_value)
+            .expect("Programming error: request packet size exceeds negotiated MTU.");
+        let tx_packet = builder.as_packet();
+
+        let _rx_packet =
+            self.transaction(Opcode::WriteReq, tx_packet, rx_buf, Opcode::WriteRsp).await?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::att::l2cap::mock::setup_mock_channel;
-    use crate::att::pdu::{DynamicPacketBuilder, FindByTypeValueReq, FindInformationRspHeader};
+    use crate::att::pdu::{
+        DynamicPacketBuilder, FindByTypeValueReq, FindInformationRspHeader, WriteReq, WriteRsp,
+    };
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
 
@@ -1361,6 +1390,101 @@ mod tests {
             executor.run_until_stalled();
             assert!(client_handle.is_finished());
             assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_write_success() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            // Server driver task
+            let server_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 128];
+                let mut server_rx_bearer = BearerRx::new(test_rx);
+                let mut server_tx_bearer = BearerTx::new(test_tx);
+
+                // 1. Await write request
+                let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::WriteReq);
+                let req = WriteReq::try_ref_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(req.header.attribute_handle.get(), 10);
+                assert_eq!(&req.attribute_value, &b"Sunstone"[..]);
+
+                // 2. Respond with empty WriteRsp
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::WriteRsp },
+                    payload: WriteRsp,
+                };
+                server_tx_bearer.send(builder.as_packet()).await.unwrap();
+            });
+
+            // Client driver task
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); CLIENT_PREFERRED_MTU as usize];
+                client.write(h(10), b"Sunstone", &mut rx_buf).await.unwrap();
+            });
+
+            executor.run_until_stalled();
+            assert!(server_handle.is_finished());
+            assert!(client_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_write_error() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            // Server driver task
+            let server_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 128];
+                let mut server_rx_bearer = BearerRx::new(test_rx);
+                let mut server_tx_bearer = BearerTx::new(test_tx);
+
+                // 1. Await write request
+                let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::WriteReq);
+                let req = WriteReq::try_ref_from_bytes(&packet.data[..]).unwrap();
+                assert_eq!(req.header.attribute_handle.get(), 10);
+
+                // 2. Respond with ErrorRsp (WriteNotPermitted)
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ErrorRsp },
+                    payload: ErrorRsp {
+                        request_opcode: Opcode::WriteReq.into(),
+                        attribute_handle: U16::new(10),
+                        error_code: ErrorCode::WriteNotPermitted,
+                    },
+                };
+                server_tx_bearer.send(builder.as_packet()).await.unwrap();
+            });
+
+            // Client driver task
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); CLIENT_PREFERRED_MTU as usize];
+                let result = client.write(h(10), b"Sunstone", &mut rx_buf).await;
+                assert_eq!(
+                    result.err(),
+                    Some(ClientError::ErrorResponse(ErrorCode::WriteNotPermitted))
+                );
+            });
+
+            executor.run_until_stalled();
+            assert!(server_handle.is_finished());
+            assert!(client_handle.is_finished());
         });
     }
 }

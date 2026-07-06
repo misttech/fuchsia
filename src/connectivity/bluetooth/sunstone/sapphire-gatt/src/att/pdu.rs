@@ -34,6 +34,8 @@ pub enum Opcode {
     ReadBlobRsp = 0x0D,
     ReadByGroupTypeReq = 0x10,
     ReadByGroupTypeRsp = 0x11,
+    WriteReq = 0x12,
+    WriteRsp = 0x13,
 }
 
 /// The UUID format types supported in Find Information Response.
@@ -473,9 +475,44 @@ pub struct ReadByGroupTypeRsp {
     pub attribute_data_list: [u8],
 }
 
+/// Write Request Header (Opcode = 0x12).
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.5.1).
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed)]
+pub struct WriteReqHeader {
+    pub attribute_handle: U16,
+}
+
+/// Write Request PDU (Opcode = 0x12).
+///
+/// Contains the fixed header and the variable-length attribute value to write.
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.5.1).
+#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug)]
+#[repr(C)]
+pub struct WriteReq {
+    pub header: WriteReqHeader,
+    pub attribute_value: [u8],
+}
+
+/// Write Response PDU (Opcode = 0x13).
+///
+/// Contains no payload parameters (represented as an empty struct).
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.5.2).
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed)]
+pub struct WriteRsp;
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_write_rsp() {
+        assert_eq!(size_of::<WriteRsp>(), 0);
+    }
 
     #[test]
     fn test_exchange_mtu_req() {
@@ -693,5 +730,13 @@ mod tests {
     fn test_header_invalid_opcode() {
         let invalid_hdr_bytes = [0xff];
         assert!(Header::try_read_from_bytes(&invalid_hdr_bytes[..]).is_err());
+    }
+
+    #[test]
+    fn test_write_req() {
+        let req_bytes = [0x01, 0x00, 0x0A, 0x0B, 0x0C]; // handle 0x0001, value [10, 11, 12]
+        let parsed = WriteReq::try_ref_from_bytes(&req_bytes[..]).unwrap();
+        assert_eq!(parsed.header.attribute_handle.get(), 1);
+        assert_eq!(parsed.attribute_value, [10, 11, 12]);
     }
 }

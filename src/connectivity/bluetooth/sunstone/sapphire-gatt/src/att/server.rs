@@ -15,6 +15,7 @@ use crate::att::pdu::{
     FindInformationReq, FindInformationRspHeader, HandlesInformation, Header, InformationData,
     InformationData16, InformationData128, Opcode, Packet, PacketBuilder, ReadBlobReq,
     ReadByGroupTypeReq, ReadByGroupTypeRspEntryHeader, ReadByTypeReq, ReadReq, UuidFormat,
+    WriteReq, WriteRsp,
 };
 use core::cmp::{max, min};
 use core::convert::Infallible;
@@ -168,6 +169,7 @@ where
             Opcode::ReadBlobReq => self.handle_read_blob(&rx_packet.data).await,
             Opcode::ReadByTypeReq => self.handle_read_by_type(&rx_packet.data).await,
             Opcode::ReadByGroupTypeReq => self.handle_read_by_group_type(&rx_packet.data).await,
+            Opcode::WriteReq => self.handle_write_req(&rx_packet.data).await,
             other => Err(TransactionError::UnexpectedPdu { received_opcode: other }),
         };
 
@@ -660,6 +662,39 @@ where
         .await
     }
 
+    /// Handles a Write Request, invoking a database write operation and returning an empty Write Response.
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Sections 3.4.5.1 & 3.4.5.2).
+    async fn handle_write_req(&mut self, payload: &[u8]) -> Result<(), TransactionError> {
+        let req = WriteReq::try_ref_from_bytes(payload)
+            .map_err(|_| TransactionError::InvalidPdu { request_opcode: Opcode::WriteReq })?;
+
+        let handle_val = req.header.attribute_handle.get();
+        let handle = to_handle(handle_val, Opcode::WriteReq)?;
+
+        let attr = self.database.find_attribute(handle).ok_or_else(|| {
+            TransactionError::ErrorResponse {
+                request_opcode: Opcode::WriteReq,
+                attribute_handle: handle_val,
+                error_code: ErrorCode::InvalidHandle,
+            }
+        })?;
+
+        attr.write_chunk(self.peer_id, 0, &req.attribute_value).await.map_err(|error_code| {
+            TransactionError::ErrorResponse {
+                request_opcode: Opcode::WriteReq,
+                attribute_handle: handle_val,
+                error_code,
+            }
+        })?;
+
+        let builder =
+            PacketBuilder { header: Header { opcode: Opcode::WriteRsp }, payload: WriteRsp };
+        self.send_packet(builder.as_packet()).await?;
+
+        Ok(())
+    }
+
     /// Helper to read an attribute value at an offset and cap it to a maximum buffer size.
     async fn read_attribute_at(
         &self,
@@ -753,7 +788,7 @@ mod tests {
     use crate::att::l2cap::mock::setup_mock_channel;
     use crate::att::pdu::{
         FindByTypeValueReqHeader, FindInformationRsp, InformationData16, ReadByGroupTypeReqHeader,
-        ReadByTypeReqHeader,
+        ReadByTypeReqHeader, WriteReqHeader,
     };
 
     use sapphire_async::executor::BoundedExecutor;
@@ -2073,6 +2108,127 @@ mod tests {
                 assert_eq!(e1.value, b"Service1");
 
                 assert!(iter.next().is_none());
+            });
+
+            let server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_write_success() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            let attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue");
+            db.insert(h(10), attr);
+
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); TEST_RX_BUF_SIZE];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut client_tx_bearer = BearerTx::new(app_channel.sender);
+
+                // Write Request for handle 10, value "Sunstone"
+                let header_builder = PacketBuilder {
+                    header: Header { opcode: Opcode::WriteReq },
+                    payload: WriteReqHeader { attribute_handle: U16::new(10) },
+                };
+                let mut tx_buf = [0u8; SERVER_MTU as usize];
+                let mut builder = DynamicPacketBuilder::<_, u8>::new(
+                    &mut tx_buf,
+                    header_builder,
+                    SERVER_MTU as usize,
+                );
+                builder.extend_from_slice(b"Sunstone").unwrap();
+                client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                // Expect WriteRsp
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::WriteRsp);
+                assert!(packet.data.is_empty());
+            });
+
+            let mut server_handle = executor.spawn(async move {
+                let res = server.run().await;
+                assert_eq!(res, Err(ServerError::LinkClosed));
+                server
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+
+            // Verify value was written in database attribute
+            let server = server_handle.get().unwrap();
+            let db_attr = server.database.find_attribute(h(10)).unwrap();
+            let mut check_buf = [0u8; 32];
+            let read_len = executor.block_on(async {
+                db_attr.read_chunk(PeerId::new(1).unwrap(), 0, &mut check_buf).await.unwrap()
+            });
+            assert_eq!(&check_buf[..read_len], b"Sunstone");
+        });
+    }
+
+    #[test]
+    fn test_server_handle_write_errors() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            let attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Val");
+            attr.set_write_error(ErrorCode::WriteNotPermitted);
+            db.insert(h(10), attr);
+
+            let mut server = Server::new(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); TEST_RX_BUF_SIZE];
+                let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                let mut client_tx_bearer = BearerTx::new(app_channel.sender);
+
+                // Write Request for non-existent handle 99
+                {
+                    let header_builder = PacketBuilder {
+                        header: Header { opcode: Opcode::WriteReq },
+                        payload: WriteReqHeader { attribute_handle: U16::new(99) },
+                    };
+                    let mut tx_buf = [0u8; SERVER_MTU as usize];
+                    let mut builder = DynamicPacketBuilder::<_, u8>::new(
+                        &mut tx_buf,
+                        header_builder,
+                        SERVER_MTU as usize,
+                    );
+                    builder.extend_from_slice(b"Value").unwrap();
+                    client_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                    let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                    assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                    let err = ErrorRsp::try_read_from_bytes(&packet.data[..]).unwrap();
+                    assert_eq!(err.request_opcode, Opcode::WriteReq as u8);
+                    assert_eq!(err.attribute_handle.get(), 99);
+                    assert_eq!(err.error_code, ErrorCode::InvalidHandle);
+                }
             });
 
             let server_handle = executor.spawn(async move {

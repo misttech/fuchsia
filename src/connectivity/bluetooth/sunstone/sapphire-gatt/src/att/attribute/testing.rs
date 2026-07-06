@@ -8,6 +8,8 @@ use crate::att::pdu::ErrorCode;
 use core::{cmp, fmt};
 use sapphire_collections::vec::StdVec;
 use sapphire_peer_cache::PeerId;
+use sapphire_sync::mutex::Mutex;
+use sapphire_sync::mutex::raw::SingleThreadMutex;
 use sapphire_uuid::Uuid;
 
 // TODO(https://fxbug.dev/524267879): Replace the temporary Vec with BufferModel defined in sapphire-buffer
@@ -27,16 +29,18 @@ pub struct MockAttribute {
     /// The Type UUID of the attribute.
     uuid: Uuid,
     /// The owned byte value of the attribute, capped at 512 bytes.
-    value: AttributeValueVec,
+    value: Mutex<SingleThreadMutex, AttributeValueVec>,
     /// The ending handle if this attribute is grouped.
     group_end_handle: Option<u16>,
+    /// Optional error code returned by write transactions.
+    write_error: Mutex<SingleThreadMutex, Option<ErrorCode>>,
 }
 
 impl fmt::Debug for MockAttribute {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MockAttribute")
             .field("uuid", &self.uuid)
-            .field("value", &&self.value[..])
+            .field("value", &&self.value.lock()[..])
             .field("group_end_handle", &self.group_end_handle)
             .finish()
     }
@@ -54,7 +58,12 @@ impl MockAttribute {
         for &byte in &initial_value[..len] {
             value.try_push(byte).unwrap();
         }
-        Self { uuid, value, group_end_handle: None }
+        Self {
+            uuid,
+            value: Mutex::new(value),
+            group_end_handle: None,
+            write_error: Mutex::new(None),
+        }
     }
 
     /// A constructor helper to create a grouped `MockAttribute` with the given UUID,
@@ -65,7 +74,17 @@ impl MockAttribute {
         for &byte in &initial_value[..len] {
             value.try_push(byte).unwrap();
         }
-        Self { uuid, value, group_end_handle: Some(group_end_handle) }
+        Self {
+            uuid,
+            value: Mutex::new(value),
+            group_end_handle: Some(group_end_handle),
+            write_error: Mutex::new(None),
+        }
+    }
+
+    /// Simulates a write failure by setting a specific error code.
+    pub fn set_write_error(&self, error: ErrorCode) {
+        *self.write_error.lock() = Some(error);
     }
 }
 
@@ -91,11 +110,12 @@ impl Attribute for MockAttribute {
         buf: &mut [u8],
     ) -> Result<usize, ErrorCode> {
         let offset = offset as usize;
-        if offset > self.value.len() {
+        let value = self.value.lock();
+        if offset > value.len() {
             return Err(ErrorCode::InvalidOffset);
         }
-        let len = cmp::min(buf.len(), self.value.len() - offset);
-        buf[..len].copy_from_slice(&self.value[offset..offset + len]);
+        let len = cmp::min(buf.len(), value.len() - offset);
+        buf[..len].copy_from_slice(&value[offset..offset + len]);
         Ok(len)
     }
 
@@ -103,9 +123,22 @@ impl Attribute for MockAttribute {
     async fn write_chunk(
         &self,
         _peer_id: PeerId,
-        _offset: u16,
-        _data: &[u8],
+        offset: u16,
+        data: &[u8],
     ) -> Result<(), ErrorCode> {
-        todo!()
+        if let Some(err) = *self.write_error.lock() {
+            return Err(err);
+        }
+        let offset = offset as usize;
+        let mut value = self.value.lock();
+        if offset + data.len() > MAX_ATTRIBUTE_SIZE {
+            return Err(ErrorCode::InvalidAttributeValueLength);
+        }
+        if offset == 0 {
+            value.clear();
+        }
+        value.truncate(offset);
+        value.try_extend(data).map_err(|_| ErrorCode::InsufficientResources)?;
+        Ok(())
     }
 }
