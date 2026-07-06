@@ -260,6 +260,7 @@ mod tests {
                 snapshot_private_key_path: Some(pb_path.join("keys/snapshot.json")),
                 timestamp_private_key_path: Some(pb_path.join("keys/timestamp.json")),
                 ota_manifest_signature_path: None,
+                ota_manifest_path: None,
             }],
             update_package_hash: None,
             virtual_devices_path: Some(vd_manifest_path),

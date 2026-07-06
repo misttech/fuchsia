@@ -457,6 +457,7 @@ mod test {
                     snapshot_private_key_path: Some(pb_dir.join("keys/snapshot.json")),
                     timestamp_private_key_path: Some(pb_dir.join("keys/timestamp.json")),
                     ota_manifest_signature_path: None,
+                    ota_manifest_path: None,
                 }],
                 update_package_hash: None,
                 virtual_devices_path: None,
@@ -561,6 +562,7 @@ mod test {
                 snapshot_private_key_path: Some(pb_dir.join("keys/snapshot.json")),
                 timestamp_private_key_path: Some(pb_dir.join("keys/timestamp.json")),
                 ota_manifest_signature_path: None,
+                ota_manifest_path: None,
             }]
         );
     }

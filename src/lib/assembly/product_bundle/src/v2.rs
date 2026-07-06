@@ -166,6 +166,10 @@ pub struct Repository {
     /// Deprecated: The path to the update package manifest signature file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ota_manifest_signature_path: Option<Utf8PathBuf>,
+
+    /// The path to the OTA manifest file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ota_manifest_path: Option<Utf8PathBuf>,
 }
 
 fn default_delivery_blob_type() -> u32 {
@@ -385,6 +389,9 @@ impl ProductBundleV2 {
             if let Some(path) = &repository.timestamp_private_key_path {
                 repository.timestamp_private_key_path = Some(canonicalizer.canonicalize_dir(path));
             }
+            if let Some(path) = &repository.ota_manifest_path {
+                repository.ota_manifest_path = Some(canonicalizer.canonicalize_dir(path));
+            }
         }
 
         // Canonicalize the virtual device specifications path.
@@ -498,6 +505,9 @@ impl ProductBundleV2 {
             }
             if let Some(path) = &repository.timestamp_private_key_path {
                 repository.timestamp_private_key_path = Some(relativize_dir(path)?);
+            }
+            if let Some(path) = &repository.ota_manifest_path {
+                repository.ota_manifest_path = Some(relativize_dir(path)?);
             }
         }
 
@@ -776,6 +786,7 @@ mod tests {
                 snapshot_private_key_path: None,
                 timestamp_private_key_path: None,
                 ota_manifest_signature_path: None,
+                ota_manifest_path: None,
             }],
             update_package_hash: None,
             virtual_devices_path: None,
@@ -818,6 +829,7 @@ mod tests {
                 snapshot_private_key_path: None,
                 timestamp_private_key_path: None,
                 ota_manifest_signature_path: None,
+                ota_manifest_path: None,
             }],
             update_package_hash: None,
             virtual_devices_path: None,

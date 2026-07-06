@@ -2047,6 +2047,7 @@ mod test {
                 snapshot_private_key_path: None,
                 timestamp_private_key_path: None,
                 ota_manifest_signature_path: None,
+                ota_manifest_path: None,
             });
         }
 

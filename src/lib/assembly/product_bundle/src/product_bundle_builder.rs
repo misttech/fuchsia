@@ -284,6 +284,7 @@ impl ProductBundleBuilder {
         let gen_dir_path = Utf8Path::from_path(gen_dir.path()).ok_or_else(|| {
             ProductBundleBuildError::Other("checking if temporary directory is UTF-8".to_string())
         })?;
+        let mut ota_manifest_path = None;
         let update_package = if let Some(update_details) = update_details {
             let version: String = if let Some(vf) = &update_details.version_file {
                 std::fs::read_to_string(vf).map_err(|e| {
@@ -295,6 +296,9 @@ impl ProductBundleBuilder {
             if let Some(repository_details) = &repository_details
                 && let Some(key_path) = &update_details.ota_manifest_key_path
             {
+                // The manifest is stored in the `repository` directory, because ffx
+                // `repository server` serves all files from that directory.
+                let path = out_dir.join("repository/ota_manifest");
                 write_ota_manifest(
                     &version,
                     &update_details.epoch,
@@ -304,11 +308,10 @@ impl ProductBundleBuilder {
                     &system_r,
                     &partitions,
                     &packages_a,
-                    // Put the manifest under /repository, ffx repository server will serve all
-                    // files in that directory.
-                    out_dir.join("repository/ota_manifest"),
+                    &path,
                 )
                 .map_err(ProductBundleBuildError::WriteOtaManifest)?;
+                ota_manifest_path = Some(path);
             }
             Some(write_update_package(
                 &version,
@@ -348,6 +351,7 @@ impl ProductBundleBuilder {
                 packages_r,
                 blobs_path,
                 out_dir,
+                ota_manifest_path,
             )
             .await?
         } else {
@@ -505,6 +509,7 @@ async fn write_repositories(
     packages_r: Vec<(Option<Utf8PathBuf>, PackageManifest)>,
     blobs_path: impl AsRef<Utf8Path>,
     out_dir: impl AsRef<Utf8Path>,
+    ota_manifest_path: Option<Utf8PathBuf>,
 ) -> std::result::Result<Vec<Repository>, ProductBundleBuildError> {
     let tuf_keys = repository_details.tuf_keys;
     let blobs_path = blobs_path.as_ref();
@@ -568,6 +573,7 @@ async fn write_repositories(
         snapshot_private_key_path: copy_file(tuf_keys.join("snapshot.json"), &keys_path).ok(),
         timestamp_private_key_path: copy_file(tuf_keys.join("timestamp.json"), &keys_path).ok(),
         ota_manifest_signature_path: None,
+        ota_manifest_path,
     }])
 }
 
@@ -951,6 +957,7 @@ mod test {
                 snapshot_private_key_path: Some(product_bundle_path.join("keys/snapshot.json")),
                 timestamp_private_key_path: Some(product_bundle_path.join("keys/timestamp.json")),
                 ota_manifest_signature_path: None,
+                ota_manifest_path: Some(product_bundle_path.join("repository/ota_manifest")),
             }],
             update_package_hash: Some(
                 "4198e7b88cc98aa87b16afa134e1f1ec8580fd9105f7db399adf6ff65426b49c".parse().unwrap(),
