@@ -9,7 +9,7 @@ import statistics
 from typing import MutableSequence
 
 from reporting import metrics
-from trace_processing import trace_metrics, trace_model, trace_utils
+from trace_processing import trace_metrics, trace_model, trace_time, trace_utils
 
 _LOGGER: logging.Logger = logging.getLogger("InputLatencyMetricsProcessor")
 _CATEGORY_INPUT: str = "input"
@@ -64,6 +64,9 @@ class InputLatencyMetricsProcessor(trace_metrics.MetricsProcessor):
 
         latencies: list[float] = []
 
+        max_latency: float = -1.0
+        max_latency_ts: trace_time.TimePoint | None = None
+
         for e in input_events:
             vsync = trace_utils.get_nearest_following_flow_event(
                 e, _CATEGORY_GFX, _DISPLAY_VSYNC_EVENT_NAME
@@ -73,7 +76,16 @@ class InputLatencyMetricsProcessor(trace_metrics.MetricsProcessor):
                 continue
 
             latency = vsync.start - e.start
-            latencies.append(latency.to_milliseconds_f())
+            latency_ms = latency.to_milliseconds_f()
+            latencies.append(latency_ms)
+            if latency_ms > max_latency:
+                max_latency = latency_ms
+                max_latency_ts = e.start
+
+        if max_latency_ts is not None:
+            _LOGGER.info(
+                f"InputLatencyMax: {max_latency} ms at timestamp {max_latency_ts}"
+            )
 
         latency_mean: float = statistics.mean(latencies)
         _LOGGER.info(f"Average Present Latency: {latency_mean}")
