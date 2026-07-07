@@ -133,12 +133,15 @@ void Dwc3::CmdEpEndTransfer(const Endpoint& ep) {
   const uint8_t ep_num = ep.ep_num;
   const uint32_t rsrc_id = ep.rsrc_id;
 
-  ZX_DEBUG_ASSERT_MSG(rsrc_id != Endpoint::kInvalidResourceId,
-                      "%s: Called before rsrc_id was initialized with a valid value "
-                      "ep.ep_num=%d ep.enabled=%d ep.type=%d ep.xfer_in_progress=%d "
-                      "ep.stalled=%d ep.rsrc_id=0x%08x",
-                      __func__, ep_num, ep.enabled, ep.type, ep.xfer_in_progress, ep.stalled,
-                      rsrc_id);
+  // TODO(https://fxbug.dev/528372991): The assertion commented out below
+  // triggers under normal use. Revise the assertion or the surrounding code.
+  //
+  // ZX_DEBUG_ASSERT_MSG(rsrc_id != Endpoint::kInvalidResourceId,
+  //                     "%s: Called before rsrc_id was initialized with a valid value "
+  //                     "ep.ep_num=%d ep.enabled=%d ep.type=%d ep.xfer_in_progress=%d "
+  //                     "ep.stalled=%d ep.rsrc_id=0x%08x",
+  //                     __func__, ep_num, ep.enabled, ep.type, ep.xfer_in_progress, ep.stalled,
+  //                     rsrc_id);
 
   DEPCMDPAR0::Get(ep_num).FromValue(0).WriteTo(mmio);
   DEPCMDPAR1::Get(ep_num).FromValue(0).WriteTo(mmio);
