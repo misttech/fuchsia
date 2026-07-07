@@ -1134,14 +1134,6 @@
                 // Requires alarms. Hangs without.
                 "SpliceTest.ToPipeWithSmallCapacityDoesNotSpin",
 
-                // pty_test
-                //TODO(https://fxbug.dev/42077394): Re-enable once flake is resolved.
-                "JobControlTest.ReleaseTTYSignals",
-                "JobControlTest.ReleaseUnsetTTY",
-                "JobControlTest.SetForegroundProcessGroupSIGTTOUBackground",
-                "JobControlTest.SetForegroundProcessGroupDifferentSession",
-                "JobControlTest.SetForegroundProcessGroupNegPgid",
-
                 // TODO(https://fxbug.dev/503441321): Implement SIGHUP on main
                 // PTY closure.
                 "JobControlTest.SIGHUPOnMasterClose",
