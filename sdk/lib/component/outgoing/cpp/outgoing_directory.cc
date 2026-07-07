@@ -147,7 +147,7 @@ zx::result<> OutgoingDirectory::RemoveUnmanagedProtocolAt(std::string_view path,
 
   std::string directory_entry(path);
   std::string protocol_entry(name);
-  if (inner().registered_handlers_.count(directory_entry) == 0 &&
+  if (inner().registered_handlers_.count(directory_entry) == 0 ||
       inner().registered_handlers_[directory_entry].count(protocol_entry) == 0) {
     return zx::error(ZX_ERR_NOT_FOUND);
   }
