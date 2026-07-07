@@ -713,15 +713,9 @@ def _build_fuchsia_product_bundle_impl(ctx):
         all_inputs.extend(ctx.files.recovery)
 
     # If update info is supplied, add it to the product bundle.
-    if ctx.file.update_version_file != None or ctx.attr.update_epoch != "":
+    if ctx.attr.update_epoch != "":
         if ctx.attr.repository_keys == None:
             fail("Repository keys must be supplied in order to build an update package")
-        if ctx.file.update_version_file != None:
-            ffx_pb_invocation += [
-                "--update-package-version-file",
-                ctx.file.update_version_file.path,
-            ]
-            all_inputs.append(ctx.file.update_version_file)
         ffx_pb_invocation += [
             "--update-package-epoch",
             ctx.attr.update_epoch or "1",
@@ -842,11 +836,6 @@ _build_fuchsia_product_bundle = rule(
         ),
         "ota_manifest_key_file": attr.label(
             doc = "Ed25519 private key in PEM format to sign the ota manifest.",
-            allow_single_file = True,
-            default = None,
-        ),
-        "update_version_file": attr.label(
-            doc = "Version file needed to create update package.",
             allow_single_file = True,
             default = None,
         ),

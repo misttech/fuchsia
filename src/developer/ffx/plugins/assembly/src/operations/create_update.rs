@@ -35,19 +35,8 @@ pub fn create_update(ctx: &EnvironmentContext, args: CreateUpdateArgs) -> Result
         None
     };
 
-    let update_package_version = args
-        .version_file
-        .map(|f| std::fs::read_to_string(f).context("Reading version file."))
-        .transpose()?;
-
     let board_name = partitions.hardware_revision.clone();
-    let mut builder = UpdatePackageBuilder::new(
-        partitions,
-        board_name,
-        update_package_version.as_deref(),
-        epoch,
-        &args.outdir,
-    );
+    let mut builder = UpdatePackageBuilder::new(partitions, board_name, None, epoch, &args.outdir);
 
     // Set the package name.
     // Typically used for OTA tests.

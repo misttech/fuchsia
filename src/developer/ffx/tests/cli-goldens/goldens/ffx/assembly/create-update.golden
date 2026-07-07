@@ -50,18 +50,6 @@
     {
       "kind": {
         "Option": {
-          "arg_name": "version-file"
-        }
-      },
-      "optionality": "optional",
-      "long": "--version-file",
-      "short": null,
-      "description": "file containing the version of the Fuchsia system.",
-      "hidden": false
-    },
-    {
-      "kind": {
-        "Option": {
           "arg_name": "epoch"
         }
       },

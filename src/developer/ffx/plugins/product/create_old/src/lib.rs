@@ -68,11 +68,10 @@ pub async fn pb_create_with_sdk_version(
             if cmd.tuf_keys.is_none() {
                 anyhow::bail!("TUF keys must be provided to build an update package");
             }
-            let version = cmd.update_package_version_file.as_ref();
             let epoch = cmd.update_package_epoch.ok_or_else(|| {
                 anyhow::anyhow!("A epoch must be provided to build an update package")
             })?;
-            Some((version, epoch, cmd.ota_manifest_key.clone()))
+            Some((epoch, cmd.ota_manifest_key.clone()))
         } else {
             None
         };
@@ -103,8 +102,8 @@ pub async fn pb_create_with_sdk_version(
     }
 
     // The version in the update package is separately-configured from that of the PB itself.
-    if let Some((version, epoch, ota_manifest_key)) = update_details {
-        pb_builder = pb_builder.update_package(version, epoch, ota_manifest_key);
+    if let Some((epoch, ota_manifest_key)) = update_details {
+        pb_builder = pb_builder.update_package(epoch, ota_manifest_key);
     }
     if let Some(tuf_keys) = &cmd.tuf_keys {
         let delivery_blob_type =

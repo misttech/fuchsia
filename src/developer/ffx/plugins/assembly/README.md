@@ -63,7 +63,6 @@ ffx assembly create-update                    \
   --system-a images.json                      \
   --system-r recovery_images.jso              \
   --board-name "board"                        \
-  --version-file version.txt                  \
   --epoch 0                                   \
   --outdir <output-directory>
 ```
@@ -76,7 +75,6 @@ input                   | format                                                
 `--partitions`          | [Partitions Config](#partitions-config)                    | Where in the partition table the images are put.
 `--system-[a,b,r]`      | [Images Manifest](#images-manifest)                        | The system to place in the slot.
 `--board-name`          | string                                                     | The name of the board. Fuchsia will reject an Update Package with a different board name.
-`--version-file`        | path of file containing `a.b.c.d`, where each digit is u32 | The file containing the version of the Fuchsia system.
 `--epoch`               | int                                                        | The backstop OTA version. Fuchsia will reject updates with a lower epoch.
 `--outdir`              | path                                                       | Directory to write outputs.
 `--gendir`              | path                                                       | (optional; default=outdir) Directory to write intermediate files.

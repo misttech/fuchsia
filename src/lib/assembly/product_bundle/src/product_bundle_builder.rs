@@ -110,7 +110,6 @@ pub struct ProductBundleBuilder {
 /// The details needed to build an update package.
 struct UpdateDetails {
     epoch: EpochFile,
-    version_file: Option<Utf8PathBuf>,
     ota_manifest_key_path: Option<Utf8PathBuf>,
 }
 
@@ -178,13 +177,11 @@ impl ProductBundleBuilder {
     /// Add an update package.
     pub fn update_package(
         mut self,
-        version_file: Option<impl AsRef<Utf8Path>>,
         epoch: u64,
         ota_manifest_key_path: Option<Utf8PathBuf>,
     ) -> Self {
         let epoch: EpochFile = EpochFile::Version1 { epoch };
-        let version_file = version_file.map(|v| v.as_ref().to_path_buf());
-        self.update_details = Some(UpdateDetails { epoch, version_file, ota_manifest_key_path });
+        self.update_details = Some(UpdateDetails { epoch, ota_manifest_key_path });
         self
     }
 
@@ -286,13 +283,6 @@ impl ProductBundleBuilder {
         })?;
         let mut ota_manifest_path = None;
         let update_package = if let Some(update_details) = update_details {
-            let version: String = if let Some(vf) = &update_details.version_file {
-                std::fs::read_to_string(vf).map_err(|e| {
-                    ProductBundleBuildError::Other(format!("reading version file: {}", e))
-                })?
-            } else {
-                product_bundle_version.clone()
-            };
             if let Some(repository_details) = &repository_details
                 && let Some(key_path) = &update_details.ota_manifest_key_path
             {
@@ -300,7 +290,7 @@ impl ProductBundleBuilder {
                 // `repository server` serves all files from that directory.
                 let path = out_dir.join("repository/ota_manifest");
                 write_ota_manifest(
-                    &version,
+                    &product_bundle_version,
                     &update_details.epoch,
                     &key_path,
                     repository_details.delivery_blob_type,
@@ -314,7 +304,7 @@ impl ProductBundleBuilder {
                 ota_manifest_path = Some(path);
             }
             Some(write_update_package(
-                &version,
+                &product_bundle_version,
                 update_details,
                 &packages_a,
                 &system_a,
@@ -471,20 +461,14 @@ fn write_update_package(
 ) -> std::result::Result<UpdatePackage, ProductBundleBuildError> {
     let out_dir = out_dir.as_ref();
 
-    let update_package_version = if let Some(version_file) = &update_details.version_file {
-        std::fs::read_to_string(version_file)
-            .map_err(|e| ProductBundleBuildError::Other(format!("reading version file: {}", e)))?
-    } else {
-        version.to_string()
-    };
-
     let mut builder = UpdatePackageBuilder::new(
         partitions.clone(),
         partitions.hardware_revision.clone(),
-        Some(&update_package_version),
+        Some(version),
         update_details.epoch,
         out_dir,
     );
+
     let mut all_packages = UpdatePackagesManifest::default();
     for (_path, package) in packages {
         all_packages
@@ -917,7 +901,7 @@ mod test {
                 VirtualDevice::V1(VirtualDeviceV1::new("my_virtual_device", Hardware::default())),
             )
             .recommended_virtual_device("my_virtual_device")
-            .update_package(None::<Utf8PathBuf>, 42, Some(ota_key_path))
+            .update_package(42, Some(ota_key_path))
             .repository(delivery_blob::DeliveryBlobType::Type1, tuf_keys)
             .gerrit_size_report(&size_report_path)
             .build(Box::new(tools), &product_bundle_path)

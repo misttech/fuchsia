@@ -305,9 +305,6 @@ async fn sanitized_product_bundle_create(
         cmd.output_version
             .unwrap_or_else(|| assembly.product_config_release_info.info.version.clone())
     };
-    let update_version_file = tmp_path.join("update_version.txt");
-    std::fs::write(&update_version_file, &version)
-        .map_err(|e| ArtifactError::new(anyhow::anyhow!("{}", e)))?;
 
     writer
         .line(format!("Assembling into {} ...", out))
@@ -348,7 +345,7 @@ async fn sanitized_product_bundle_create(
     let mut builder = ProductBundleBuilder::new(name.clone())
         .version(version)
         .system(system, Slot::A)
-        .update_package(Some(update_version_file), 1, cmd.ota_manifest_key);
+        .update_package(1, cmd.ota_manifest_key);
 
     if let Some(tuf_keys) = cmd.tuf_keys {
         builder = builder.repository(DeliveryBlobType::Type1, tuf_keys);

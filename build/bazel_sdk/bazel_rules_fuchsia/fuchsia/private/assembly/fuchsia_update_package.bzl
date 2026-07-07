@@ -23,7 +23,7 @@ def _fuchsia_update_package_impl(ctx):
     out_dir = ctx.actions.declare_directory(ctx.label.name + "_out")
     ffx_isolate_dir = ctx.actions.declare_directory(ctx.label.name + "_ffx_isolate_dir")
 
-    inputs = get_ffx_assembly_inputs(fuchsia_toolchain) + [partitions_configuration.files, ctx.file.update_version_file] + ctx.files.main
+    inputs = get_ffx_assembly_inputs(fuchsia_toolchain) + [partitions_configuration.files] + ctx.files.main
     outputs = [out_dir, ffx_isolate_dir]
 
     # Gather all the arguments to pass to ffx.
@@ -34,8 +34,6 @@ def _fuchsia_update_package_impl(ctx):
         "create-update",
         "--partitions",
         partitions_configuration.directory,
-        "--version-file",
-        ctx.file.update_version_file.path,
         "--epoch",
         ctx.attr.update_epoch,
         "--outdir",
@@ -95,11 +93,6 @@ fuchsia_update_package = rule(
         "partitions_config": attr.label(
             doc = "Partitions config to use.",
             mandatory = True,
-        ),
-        "update_version_file": attr.label(
-            doc = "Version file needed to create update package.",
-            allow_single_file = True,
-            mandatory = False,
         ),
         "update_epoch": attr.string(
             doc = "Epoch needed to create update package.",
