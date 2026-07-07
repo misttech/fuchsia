@@ -342,6 +342,11 @@ zx_status_t TouchSourceBase::ValidateUpdateResponse(
     return ZX_ERR_INVALID_ARGS;
   }
 
+  if (ConvertToGestureResponse(response.response_type()) == GestureResponse::kUndefined) {
+    FX_LOGS(ERROR) << "TouchSourceBase: Response had unknown response type.";
+    return ZX_ERR_INVALID_ARGS;
+  }
+
   if (IsHold(response.response_type())) {
     FX_LOGS(ERROR) << "TouchSourceBase: Can only UpdateResponse() with non-HOLD response.";
     return ZX_ERR_INVALID_ARGS;
@@ -404,8 +409,8 @@ void TouchSourceBase::SendPendingIfWaiting() {
   FX_DCHECK(events.size() == return_tickets_.size());
 
   inspector_.OnInjectedEvents(view_ref_koid_, events.size());
-  pending_callback_(std::move(events));
-  pending_callback_ = nullptr;
+  auto cb = std::move(pending_callback_);
+  cb(std::move(events));
 }
 
 }  // namespace scenic_impl::input
