@@ -12,7 +12,9 @@ pub mod glob;
 pub mod state;
 
 pub use execution_context::ExecutionContext;
-pub use state::{RLIM_INFINITY, RLIMIT_CORE, RLIMIT_FSIZE, RLIMIT_NOFILE, ShellPath, ShellState};
+pub use state::{
+    RLIM_INFINITY, RLIMIT_CORE, RLIMIT_FSIZE, RLIMIT_NOFILE, ShellEnv, ShellPath, ShellState,
+};
 
 /// Represents the outcome of evaluating a shell command or statement.
 #[derive(Debug, Clone, PartialEq, Eq)]

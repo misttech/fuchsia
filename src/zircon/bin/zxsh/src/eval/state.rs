@@ -8,6 +8,7 @@ use crate::collections::{FlatMap, FlatSet};
 use crate::serialization::{BStrExt, Deserialize, Serialize};
 use crate::string::parse_int;
 use bstr::{BStr, BString, ByteSlice};
+use std::ffi::{CString, NulError};
 use std::io::Write;
 use std::os::unix::ffi::OsStrExt;
 
@@ -249,6 +250,10 @@ impl Deserialize for ShellState {
     }
 }
 
+fn assert_valid_name(name: &BStr) {
+    assert!(!name.contains(&b'='), "name cannot contain '=': {:?}", name);
+}
+
 impl ShellState {
     /// Returns a map of environment variables inherited from the host process.
     pub fn inherited_vars() -> FlatMap<BString, BString> {
@@ -271,6 +276,7 @@ impl ShellState {
         let mut vars = initial_vars;
         let mut exported = FlatSet::new();
         for (k, _) in vars.iter() {
+            assert_valid_name(k.as_bstr());
             exported.insert(k.clone());
         }
         vars.insert(BString::from("?"), BString::from("0"));
@@ -448,11 +454,13 @@ impl ShellState {
 
     /// Marks the specified variable as read-only.
     pub fn make_readonly(&mut self, name: &BStr) {
+        assert_valid_name(name);
         self.readonly.insert(name.to_owned());
     }
 
     /// Sets the value of a variable in the innermost active local frame or global scope.
     pub fn set_var(&mut self, name: &BStr, val: &BStr) {
+        assert_valid_name(name);
         if self.is_readonly(name) {
             let _ = writeln!(std::io::stderr(), "zxsh: {}: readonly variable", name);
             return;
@@ -471,11 +479,13 @@ impl ShellState {
 
     /// Marks the specified variable for export to child environment processes.
     pub fn export_var(&mut self, name: &BStr) {
+        assert_valid_name(name);
         self.exported.insert(name.to_owned());
     }
 
     /// Removes a variable from the innermost active local frame or global scope.
     pub fn unset_var(&mut self, name: &BStr) {
+        assert_valid_name(name);
         if self.is_readonly(name) {
             let _ = writeln!(std::io::stderr(), "zxsh: {}: readonly variable", name);
             return;
@@ -492,6 +502,7 @@ impl ShellState {
 
     /// Registers a shell function definition with its serialized AST body bytes.
     pub fn add_function(&mut self, name: BString, body_bytes: Vec<u8>) {
+        assert_valid_name(name.as_bstr());
         self.functions.insert(name, body_bytes);
     }
 
@@ -591,6 +602,7 @@ impl ShellState {
 
     /// Declares or updates a local variable within the active function frame (`local VAR=val`).
     pub fn declare_local(&mut self, name: &BStr, val: Option<&BStr>) {
+        assert_valid_name(name);
         if let Some(frame) = self.frames.last_mut() {
             frame
                 .local_vars
@@ -598,15 +610,15 @@ impl ShellState {
         }
     }
 
-    /// Returns a list of all exported environment variable key-value pairs.
-    pub fn vars(&self) -> Vec<(BString, BString)> {
+    /// Returns the exported environment variables as a `ShellEnv`.
+    pub fn vars(&self) -> ShellEnv {
         let mut res = Vec::new();
         for k in self.exported.iter() {
             if let Some(v) = self.vars.get(k) {
                 res.push((k.clone(), v.clone()));
             }
         }
-        res
+        ShellEnv::new(res)
     }
 
     /// Returns a reference to the table of all global shell variables.
@@ -672,5 +684,103 @@ impl ShellPath {
 impl Default for ShellPath {
     fn default() -> Self {
         Self::new(BString::from(DEFAULT_PATH))
+    }
+}
+
+/// Represents a collection of exported shell environment variables.
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
+pub struct ShellEnv {
+    vars: Vec<(BString, BString)>,
+}
+
+impl ShellEnv {
+    /// Creates a new `ShellEnv` from a vector of key-value pairs.
+    pub fn new(vars: Vec<(BString, BString)>) -> Self {
+        for (k, _) in &vars {
+            assert_valid_name(k.as_bstr());
+        }
+        Self { vars }
+    }
+
+    /// Returns a slice of the key-value pairs in this environment.
+    pub fn as_slice(&self) -> &[(BString, BString)] {
+        &self.vars
+    }
+
+    /// Returns a mutable slice of the key-value pairs in this environment.
+    pub fn as_mut_slice(&mut self) -> &mut [(BString, BString)] {
+        &mut self.vars
+    }
+
+    /// Returns an iterator over the key-value pairs in this environment.
+    pub fn iter(&self) -> impl Iterator<Item = &(BString, BString)> {
+        self.vars.iter()
+    }
+
+    /// Returns the underlying vector of key-value pairs.
+    pub fn into_vec(self) -> Vec<(BString, BString)> {
+        self.vars
+    }
+
+    /// Returns the `ShellPath` representing the `PATH` environment variable in this environment.
+    pub fn path(&self) -> ShellPath {
+        self.vars
+            .iter()
+            .find(|(k, _)| k == "PATH")
+            .map(|(_, v)| ShellPath::new(v.clone()))
+            .unwrap_or_default()
+    }
+
+    /// Converts this environment into a vector of `CString`s formatted as `KEY=VAL`,
+    /// suitable for use with `fdio::spawn_etc`.
+    pub fn to_spawn_env(&self) -> Result<Vec<CString>, NulError> {
+        let mut env_cstrs = Vec::with_capacity(self.vars.len());
+        for (k, v) in &self.vars {
+            let mut env_bytes = Vec::with_capacity(k.len() + 1 + v.len());
+            env_bytes.extend_from_slice(k.as_bytes());
+            env_bytes.push(b'=');
+            env_bytes.extend_from_slice(v.as_bytes());
+            env_cstrs.push(crate::string::bstr_to_cstring(&env_bytes)?);
+        }
+        Ok(env_cstrs)
+    }
+}
+
+impl IntoIterator for ShellEnv {
+    type Item = (BString, BString);
+    type IntoIter = std::vec::IntoIter<(BString, BString)>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.vars.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a ShellEnv {
+    type Item = &'a (BString, BString);
+    type IntoIter = std::slice::Iter<'a, (BString, BString)>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.vars.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut ShellEnv {
+    type Item = &'a mut (BString, BString);
+    type IntoIter = std::slice::IterMut<'a, (BString, BString)>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.vars.iter_mut()
+    }
+}
+
+impl From<Vec<(BString, BString)>> for ShellEnv {
+    fn from(vars: Vec<(BString, BString)>) -> Self {
+        Self::new(vars)
+    }
+}
+
+impl FromIterator<(BString, BString)> for ShellEnv {
+    fn from_iter<T: IntoIterator<Item = (BString, BString)>>(iter: T) -> Self {
+        Self::new(iter.into_iter().collect())
     }
 }

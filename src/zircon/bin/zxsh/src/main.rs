@@ -10,6 +10,7 @@ mod errors;
 mod eval;
 mod fd;
 mod parser;
+mod process;
 mod relative;
 mod serialization;
 mod sort;

@@ -10,6 +10,7 @@ pub mod errors;
 pub mod format;
 pub mod glob;
 pub mod parser;
+pub mod process;
 pub mod serialization;
 pub mod sort;
 pub mod state;

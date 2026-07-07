@@ -105,3 +105,88 @@ fn test_state_non_utf8_handling() {
     state.declare_local(local_name, Some(local_val));
     assert_eq!(state.get_var(local_name), Some(BString::from(local_val)));
 }
+
+#[test]
+fn test_shell_env() {
+    let mut state = ShellState::new();
+    state.set_var(BStr::new("PATH"), BStr::new("/custom/bin:/another/bin"));
+    state.export_var(BStr::new("PATH"));
+    state.set_var(BStr::new("FOO"), BStr::new("bar"));
+    state.export_var(BStr::new("FOO"));
+
+    let env = state.vars();
+    assert_eq!(env.path().entries().count(), 2);
+
+    let cstrings = env.to_spawn_env().expect("to_spawn_env failed");
+    let cstr_strs: Vec<_> = cstrings.iter().map(|s| s.to_str().unwrap()).collect();
+    assert!(cstr_strs.contains(&"FOO=bar"));
+    assert!(cstr_strs.contains(&"PATH=/custom/bin:/another/bin"));
+}
+
+#[test]
+fn test_variable_values_with_equals() {
+    let mut state = ShellState::new();
+    state.set_var(BStr::new("FOO"), BStr::new("bar=baz=qux"));
+    assert_eq!(state.get_var(BStr::new("FOO")), Some(BString::from("bar=baz=qux")));
+
+    state.export_var(BStr::new("FOO"));
+    let env = state.vars();
+    let cstrings = env.to_spawn_env().expect("to_spawn_env failed");
+    let cstr_strs: Vec<_> = cstrings.iter().map(|s| s.to_str().unwrap()).collect();
+    assert!(cstr_strs.contains(&"FOO=bar=baz=qux"));
+
+    // Test local variable values with equals
+    state.frames.push(Frame { local_vars: FlatMap::new(), args: vec![] });
+    state.declare_local(BStr::new("LOCAL_VAR"), Some(BStr::new("a=b=c=d")));
+    assert_eq!(state.get_var(BStr::new("LOCAL_VAR")), Some(BString::from("a=b=c=d")));
+}
+
+#[test]
+#[should_panic(expected = "name cannot contain '='")]
+fn test_set_var_with_equals_panics() {
+    let mut state = ShellState::new();
+    state.set_var(BStr::new("A=B"), BStr::new("val"));
+}
+
+#[test]
+#[should_panic(expected = "name cannot contain '='")]
+fn test_export_var_with_equals_panics() {
+    let mut state = ShellState::new();
+    state.export_var(BStr::new("A=B"));
+}
+
+#[test]
+#[should_panic(expected = "name cannot contain '='")]
+fn test_unset_var_with_equals_panics() {
+    let mut state = ShellState::new();
+    state.unset_var(BStr::new("A=B"));
+}
+
+#[test]
+#[should_panic(expected = "name cannot contain '='")]
+fn test_readonly_var_with_equals_panics() {
+    let mut state = ShellState::new();
+    state.make_readonly(BStr::new("A=B"));
+}
+
+#[test]
+#[should_panic(expected = "name cannot contain '='")]
+fn test_declare_local_with_equals_panics() {
+    let mut state = ShellState::new();
+    state.frames.push(Frame { local_vars: FlatMap::new(), args: vec![] });
+    state.declare_local(BStr::new("A=B"), Some(BStr::new("val")));
+}
+
+#[test]
+#[should_panic(expected = "name cannot contain '='")]
+fn test_add_function_with_equals_panics() {
+    let mut state = ShellState::new();
+    state.add_function(BString::from("A=B"), vec![]);
+}
+
+#[test]
+#[should_panic(expected = "name cannot contain '='")]
+fn test_shell_env_new_with_equals_panics() {
+    use crate::eval::state::ShellEnv;
+    let _ = ShellEnv::new(vec![(BString::from("A=B"), BString::from("val"))]);
+}
