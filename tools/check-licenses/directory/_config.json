@@ -110,6 +110,14 @@
             },
             {
                 "notes": [
+                    "The rust crate rutabaga_gfx has a third_party directory which we do not use"
+                ],
+                "paths": [
+                    "third_party/rust_crates/vendor/rutabaga_gfx-0.1.75/third_party"
+                ]
+            },
+            {
+                "notes": [
                     "A 'vendor' subdirectory in the examples folder is causing issues.",
                     "Investigate ways to handle this better, though in this case there are",
                     "no new licenses under the folder."

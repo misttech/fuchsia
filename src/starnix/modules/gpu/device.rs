@@ -29,8 +29,9 @@ where
 {
     let registry = &kernel.device_registry;
 
-    let _ = RutabagaBuilder::new(RutabagaComponentType::Gfxstream, 0)
-        .build(RutabagaFenceHandler::new(move |_| {}), std::option::Option::None);
+    let _ = RutabagaBuilder::new(0, RutabagaFenceHandler::new(move |_| {}))
+        .set_default_component(RutabagaComponentType::Gfxstream)
+        .build();
 
     registry
         .register_dyn_device(
