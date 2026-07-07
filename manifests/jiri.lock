@@ -671,13 +671,13 @@
     },
     {
         "package": "fuchsia/third_party/rust_bindgen/linux-amd64",
-        "version": "git_revisions:4609f3fdd5d4c66ea67a6103a7850989c612273e,deb6854eec93529b2bd30178d400ad2ee7665cd4",
-        "instance_id": "1Ur2oBnTLJQZ5KBtFc3FztpWDoEj8aXQvp7GxEO1qc0C"
+        "version": "git_revisions:93726885850c20847ac445664bc7bb2b827d9642,deb6854eec93529b2bd30178d400ad2ee7665cd4",
+        "instance_id": "yGZrMEFDvDzbVWZavyzD8mz-BbkfaOeFuZk3-AFXIAoC"
     },
     {
         "package": "fuchsia/third_party/rust_bindgen/linux-arm64",
-        "version": "git_revisions:4609f3fdd5d4c66ea67a6103a7850989c612273e,deb6854eec93529b2bd30178d400ad2ee7665cd4",
-        "instance_id": "5-vYKvEIv6_C5zADDvfiRqHhLjrenAJ22DJUaUNM26MC"
+        "version": "git_revisions:93726885850c20847ac445664bc7bb2b827d9642,deb6854eec93529b2bd30178d400ad2ee7665cd4",
+        "instance_id": "s5NT-3Dye4hZaoIA2QTDC2PdjDn-v1KuD-eLL0lC7EQC"
     },
     {
         "package": "fuchsia/third_party/rust_cargo_outdated/linux-amd64",
