@@ -2541,6 +2541,24 @@ impl BpfVisitor for DataDependencies {
         let Some(helper) = context.calling_context.helpers.get(&index).cloned() else {
             return Err(format!("unknown external function {}", index));
         };
+        // A helper reads the stack region each `input` memory-parameter argument
+        // points at, so those stack slots are data dependencies, like load/store.
+        let comp = &context.computation_context;
+        for (arg_index, arg) in helper.signature.args.iter().enumerate() {
+            if let Type::MemoryParameter { size, input: true, .. } = arg {
+                if let Type::PtrToStack { offset } = comp.reg((arg_index + 1) as Register)? {
+                    let end = offset.add(size.size(comp)?);
+                    if offset.is_valid_offset() && end.is_within_stack() {
+                        for slot in offset.array_index()..end.array_index() {
+                            self.stack.insert(slot);
+                        }
+                        if end.sub_index() != 0 {
+                            self.stack.insert(end.array_index());
+                        }
+                    }
+                }
+            }
+        }
         // 0 is overwritten and 1 to 5 are scratch registers
         for register in 0..helper.signature.args.len() + 1 {
             self.registers.remove(&(register as Register));
