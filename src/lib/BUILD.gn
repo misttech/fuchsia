@@ -93,6 +93,7 @@ group("tests") {
     "process_builder:tests",
     "product_description:tests($host_toolchain)",
     "pty:tests",
+    "regio:tests",
     "replace-with:tests",
     "rust_url:tests",
     "sandbox:tests",
