@@ -127,10 +127,15 @@ fuchsia_driver_package("package") {
 }
 
 test("dwc3-test-bin") {
-  sources = [ "dwc3-test.cc" ]
+  sources = [
+    "dwc3-endpoints-test.cc",
+    "dwc3-test.cc",
+  ]
   output_name = "dwc3-test"
   deps = [
     ":common",
+    "//sdk/lib/async-loop:async-loop-cpp",
+    "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/driver/fake-clock/cpp",
     "//sdk/lib/driver/fake-platform-device/cpp",
@@ -139,6 +144,7 @@ test("dwc3-test-bin") {
     "//sdk/lib/driver/testing/cpp",
     "//src/devices/testing/fake-mmio-reg",
     "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/sync:sync-cpp",
   ]

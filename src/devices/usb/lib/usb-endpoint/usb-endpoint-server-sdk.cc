@@ -179,7 +179,8 @@ void EndpointServer::UnregisterVmos(UnregisterVmosRequest& request,
   completer.Reply({std::move(failed_vmo_ids), std::move(errors)});
 }
 
-void EndpointServer::RequestComplete(zx_status_t status, size_t actual, RequestVariant request) {
+void EndpointServer::RequestComplete(zx_status_t status, size_t actual, RequestVariant request,
+                                     bool send_now) {
   auto& req = std::get<usb::FidlRequest>(request);
 
   auto defer_completion = *req->defer_completion();
@@ -193,21 +194,35 @@ void EndpointServer::RequestComplete(zx_status_t status, size_t actual, RequestV
                                             .request(req.take_request())
                                             .status(status)
                                             .transfer_size(actual)));
-    if (defer_completion && status == ZX_OK) {
+    if ((defer_completion && status == ZX_OK) || !send_now || !binding_ref_) {
       return;
     }
 
-    if (binding_ref_) {
-      completions.swap(completions_);
-      binding = *binding_ref_;
-    }
+    completions.swap(completions_);
+    binding = *binding_ref_;
   }
 
-  if (binding) {
-    auto status = fidl::SendEvent(*binding)->OnCompletion(std::move(completions));
-    if (status.is_error()) {
-      fdf::error("Error sending event: {}", status.error_value().status_string());
+  auto fidl_status = fidl::SendEvent(*binding)->OnCompletion(std::move(completions));
+  if (fidl_status.is_error()) {
+    fdf::error("Error sending event: {}", fidl_status.error_value().status_string());
+  }
+}
+
+void EndpointServer::SendCompletions() {
+  std::vector<fuchsia_hardware_usb_endpoint::Completion> completions;
+  std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_endpoint::Endpoint>> binding;
+  {
+    std::lock_guard lock(lock_);
+    if (!binding_ref_ || completions_.empty()) {
+      return;
     }
+    completions.swap(completions_);
+    binding = *binding_ref_;
+  }
+
+  auto status = fidl::SendEvent(*binding)->OnCompletion(std::move(completions));
+  if (status.is_error()) {
+    fdf::error("Error sending event: {}", status.error_value().status_string());
   }
 }
 

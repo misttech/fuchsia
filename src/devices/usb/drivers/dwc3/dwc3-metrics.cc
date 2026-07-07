@@ -8,6 +8,8 @@
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/clock.h>
 
+#include <format>
+
 #include "src/devices/usb/drivers/dwc3/dwc3-regs.h"
 #include "src/devices/usb/drivers/dwc3/dwc3.h"
 
@@ -112,8 +114,9 @@ inspect::Inspector Dwc3Metrics::RecordMetrics(fdf::MmioBuffer* mmio, Dwc3* dwc3)
       ep_node.RecordUint("interval", ep.interval);
       ep_node.RecordUint("max_packet_size", ep.max_packet_size);
       ep_node.RecordBool("enabled", ep.enabled);
+      ep_node.RecordUint("rsrc_id", ep.rsrc_id);
       ep_node.RecordBool("stalled", ep.stalled);
-      ep_node.RecordBool("xfer_in_progress", ep.xfer_in_progress);
+      ep_node.RecordString("transfer_state", std::format("{}", ep.transfer_state));
       ep_node.RecordBool("got_not_ready", ep.got_not_ready);
       ep_node.RecordUint("total_transfers", ep.total_transfers);
       ep_node.RecordUint("total_bytes", ep.total_bytes);
