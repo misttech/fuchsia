@@ -257,7 +257,7 @@ impl<I: Instant> TcpSocketInfo<I> {
             }
             State::SynSent(SynSent {
                 iss: _,
-                timestamp: _,
+                rtt_sampler: _,
                 retrans_timer: _,
                 active_open: _,
                 buffer_sizes: _,
@@ -271,7 +271,7 @@ impl<I: Instant> TcpSocketInfo<I> {
             State::SynRcvd(SynRcvd {
                 iss: _,
                 irs: _,
-                timestamp: _,
+                rtt_sampler: _,
                 retrans_timer: _,
                 simultaneous_open: _,
                 buffer_sizes: _,

@@ -176,7 +176,7 @@ impl Default for Rto {
 
 /// A RTT sampler that collects samples by measuring the time between sending
 /// a segment and receiving the ACK for that segment.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub(super) enum MeasuredSampler<I> {
     #[default]

@@ -38,7 +38,7 @@ use crate::internal::congestion::{
     CongestionControl, CongestionControlSendOutcome, LossRecoveryMode, LossRecoverySegment,
 };
 use crate::internal::counters::TcpCountersRefs;
-use crate::internal::rtt::{Estimator, Rto, SamplingStrategy};
+use crate::internal::rtt::{Estimator, MeasuredSampler, Rto, SamplingStrategy};
 use crate::internal::timestamp::{TimestampOptionNegotiationState, TimestampOptionState};
 
 /// Per RFC 793 (https://tools.ietf.org/html/rfc793#page-81):
@@ -148,10 +148,12 @@ impl Closed<Initial> {
         //   containing a SYN bit and no ACK bit)
         let ts_opt = TimestampOptionNegotiationState::new(now, timestamp_offset);
         let timestamp = ts_opt.make_option_for_syn(now).map(TxTimestampOption::into);
+        let mut rtt_sampler = MeasuredSampler::default();
+        rtt_sampler.on_will_send_segment(now, iss..iss + 1, iss);
         (
             SynSent {
                 iss,
-                timestamp: Some(now),
+                rtt_sampler,
                 retrans_timer: RetransTimer::new(
                     now,
                     Rto::DEFAULT,
@@ -324,6 +326,8 @@ impl Listen {
                 options.timestamp().map(RxTimestampOption::from),
                 initial_ack_sent,
             );
+            let mut rtt_sampler = MeasuredSampler::default();
+            rtt_sampler.on_will_send_segment(now, iss..iss + 1, iss);
             return ListenOnSegmentDisposition::SendSynAckAndEnterSynRcvd(
                 Segment::syn_ack(
                     iss,
@@ -343,7 +347,7 @@ impl Listen {
                 SynRcvd {
                     iss,
                     irs: seq,
-                    timestamp: Some(now),
+                    rtt_sampler,
                     retrans_timer: RetransTimer::new(
                         now,
                         Rto::DEFAULT,
@@ -392,10 +396,7 @@ impl Listen {
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct SynSent<I, ActiveOpen> {
     iss: SeqNum,
-    // The timestamp when the SYN segment was sent. A `None` here means that
-    // the SYN segment was retransmitted so that it can't be used to estimate
-    // RTT.
-    timestamp: Option<I>,
+    rtt_sampler: MeasuredSampler<I>,
     retrans_timer: RetransTimer<I>,
     active_open: ActiveOpen,
     buffer_sizes: BufferSizes,
@@ -432,7 +433,7 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
             header;
         let SynSent {
             iss,
-            timestamp: syn_sent_ts,
+            rtt_sampler,
             retrans_timer: RetransTimer { user_timeout_until, remaining_retries: _, at: _, rto: _ },
             active_open: _,
             buffer_sizes,
@@ -516,12 +517,9 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
                         if seg_ack.after(*iss) {
                             let irs = seg_seq;
                             let mut rtt_estimator = Estimator::default();
-                            let rtt_sampler = SamplingStrategy::default();
-                            if let Some(syn_sent_ts) = syn_sent_ts {
-                                rtt_estimator.sample(
-                                    now.saturating_duration_since(*syn_sent_ts),
-                                    rtt_sampler.samples_per_round_trip(),
-                                );
+                            let mut rtt_sampler = SamplingStrategy::Measured(rtt_sampler.clone());
+                            if let Some(rtt) = rtt_sampler.on_ack(now, seg_ack) {
+                                rtt_estimator.sample(rtt, rtt_sampler.samples_per_round_trip());
                             }
                             let (rcv_wnd_scale, snd_wnd_scale) = options
                                 .window_scale()
@@ -638,8 +636,8 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
                                     iss: *iss,
                                     irs: seg_seq,
                                     // Simultaneous Open should keep the
-                                    // timestamp from the original SYN sent.
-                                    timestamp: *syn_sent_ts,
+                                    // rtt_sampler from the original SYN sent.
+                                    rtt_sampler: rtt_sampler.clone(),
                                     retrans_timer: RetransTimer::new_with_user_deadline(
                                         now,
                                         Rto::DEFAULT,
@@ -697,10 +695,7 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
 pub struct SynRcvd<I, ActiveOpen> {
     iss: SeqNum,
     irs: SeqNum,
-    /// The timestamp when the SYN segment was received, and consequently, our
-    /// SYN-ACK segment was sent. A `None` here means that the SYN-ACK segment
-    /// was retransmitted so that it can't be used to estimate RTT.
-    timestamp: Option<I>,
+    rtt_sampler: MeasuredSampler<I>,
     retrans_timer: RetransTimer<I>,
     /// Indicates that we arrive this state from [`SynSent`], i.e., this was an
     /// active open connection. Store this information so that we don't use the
@@ -732,7 +727,7 @@ impl<I: Instant, R: ReceiveBuffer, S: SendBuffer, ActiveOpen> From<SynRcvd<I, In
         SynRcvd {
             iss,
             irs,
-            timestamp,
+            rtt_sampler,
             retrans_timer,
             simultaneous_open,
             buffer_sizes,
@@ -747,7 +742,7 @@ impl<I: Instant, R: ReceiveBuffer, S: SendBuffer, ActiveOpen> From<SynRcvd<I, In
             None => State::SynRcvd(SynRcvd {
                 iss,
                 irs,
-                timestamp,
+                rtt_sampler,
                 retrans_timer,
                 simultaneous_open: None,
                 buffer_sizes,
@@ -2589,7 +2584,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                                 SynRcvd {
                                     iss,
                                     irs,
-                                    timestamp,
+                                    rtt_sampler,
                                     retrans_timer,
                                     simultaneous_open,
                                     buffer_sizes,
@@ -2608,7 +2603,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                                                 State::SynRcvd(SynRcvd {
                                                     iss,
                                                     irs,
-                                                    timestamp,
+                                                    rtt_sampler,
                                                     retrans_timer,
                                                     simultaneous_open: None,
                                                     buffer_sizes,
@@ -2686,7 +2681,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                 State::SynRcvd(SynRcvd {
                     iss,
                     irs: _,
-                    timestamp: _,
+                    rtt_sampler: _,
                     retrans_timer: _,
                     simultaneous_open: _,
                     buffer_sizes: _,
@@ -2865,7 +2860,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                     State::SynRcvd(SynRcvd {
                         iss,
                         irs,
-                        timestamp: syn_rcvd_ts,
+                        rtt_sampler,
                         retrans_timer: _,
                         simultaneous_open,
                         buffer_sizes,
@@ -2901,12 +2896,9 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                             );
                         } else {
                             let mut rtt_estimator = Estimator::default();
-                            let rtt_sampler = SamplingStrategy::default();
-                            if let Some(syn_rcvd_ts) = syn_rcvd_ts {
-                                rtt_estimator.sample(
-                                    now.saturating_duration_since(*syn_rcvd_ts),
-                                    rtt_sampler.samples_per_round_trip(),
-                                );
+                            let mut rtt_sampler = SamplingStrategy::Measured(rtt_sampler.clone());
+                            if let Some(rtt) = rtt_sampler.on_ack(now, seg_ack) {
+                                rtt_estimator.sample(rtt, rtt_sampler.samples_per_round_trip());
                             }
                             let (rcv_buffer, snd_buffer) = match simultaneous_open.take() {
                                 None => {
@@ -3400,7 +3392,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
         let seg = match self {
             State::SynSent(SynSent {
                 iss,
-                timestamp,
+                rtt_sampler,
                 retrans_timer,
                 active_open: _,
                 buffer_sizes: _,
@@ -3409,7 +3401,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                 rcv_wnd_scale,
                 ts_opt,
             }) => (retrans_timer.at <= now).then(|| {
-                *timestamp = None;
+                rtt_sampler.on_will_send_segment(now, *iss..*iss + 1, *iss);
                 retrans_timer.backoff(now);
                 Segment::syn(
                     *iss,
@@ -3425,7 +3417,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
             State::SynRcvd(SynRcvd {
                 iss,
                 irs,
-                timestamp,
+                rtt_sampler,
                 retrans_timer,
                 simultaneous_open: _,
                 buffer_sizes: _,
@@ -3435,7 +3427,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                 sack_permitted: _,
                 rcv,
             }) => (retrans_timer.at <= now).then(|| {
-                *timestamp = None;
+                rtt_sampler.on_will_send_segment(now, *iss..*iss + 1, *iss);
                 retrans_timer.backoff(now);
                 Segment::syn_ack(
                     *iss,
@@ -3590,7 +3582,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
             State::SynRcvd(SynRcvd {
                 iss,
                 irs,
-                timestamp: _,
+                rtt_sampler: _,
                 retrans_timer: _,
                 simultaneous_open,
                 buffer_sizes,
@@ -3768,7 +3760,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
             State::SynRcvd(SynRcvd {
                 iss,
                 irs,
-                timestamp: _,
+                rtt_sampler: _,
                 retrans_timer: _,
                 simultaneous_open: _,
                 buffer_sizes: _,
@@ -3893,7 +3885,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
             State::SynRcvd(SynRcvd {
                 iss,
                 irs: _,
-                timestamp: _,
+                rtt_sampler: _,
                 retrans_timer: _,
                 simultaneous_open: _,
                 buffer_sizes: _,
@@ -3905,7 +3897,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
             })
             | State::SynSent(SynSent {
                 iss,
-                timestamp: _,
+                rtt_sampler: _,
                 retrans_timer: _,
                 active_open: _,
                 buffer_sizes: _,
@@ -4304,7 +4296,10 @@ mod test {
             State::SynRcvd(SynRcvd {
                 iss: TEST_ISS,
                 irs: TEST_IRS,
-                timestamp: Some(instant),
+                rtt_sampler: MeasuredSampler::Tracking {
+                    range: TEST_ISS..TEST_ISS + 1,
+                    timestamp: instant,
+                },
                 retrans_timer: RetransTimer::new(instant, Rto::DEFAULT, None, DEFAULT_MAX_RETRIES),
                 simultaneous_open: Some(()),
                 buffer_sizes: Default::default(),
@@ -4471,7 +4466,10 @@ mod test {
         SynRcvd {
             iss: TEST_IRS,
             irs: TEST_ISS,
-            timestamp: Some(FakeInstant::default()),
+            rtt_sampler: MeasuredSampler::Tracking {
+                range: TEST_IRS..TEST_IRS + 1,
+                timestamp: FakeInstant::default(),
+            },
             retrans_timer: RetransTimer::new(
                 FakeInstant::from(RTT),
                 Rto::DEFAULT,
@@ -4525,7 +4523,10 @@ mod test {
     ) -> SynSentOnSegmentDisposition<FakeInstant, ()> {
         let syn_sent = SynSent {
             iss: TEST_IRS,
-            timestamp: Some(FakeInstant::default()),
+            rtt_sampler: MeasuredSampler::Tracking {
+                range: TEST_IRS..TEST_IRS + 1,
+                timestamp: FakeInstant::default(),
+            },
             retrans_timer: RetransTimer::new(
                 FakeInstant::default(),
                 Rto::DEFAULT,
@@ -4569,7 +4570,10 @@ mod test {
             SynRcvd {
                 iss: TEST_IRS,
                 irs: TEST_ISS,
-                timestamp: Some(FakeInstant::default()),
+                rtt_sampler: MeasuredSampler::Tracking {
+                    range: TEST_IRS..TEST_IRS + 1,
+                    timestamp: FakeInstant::default(),
+                },
                 retrans_timer: RetransTimer::new(
                     FakeInstant::default(),
                     Rto::DEFAULT,
@@ -5109,7 +5113,10 @@ mod test {
             syn_sent,
             SynSent {
                 iss: active_iss,
-                timestamp: Some(clock.now()),
+                rtt_sampler: MeasuredSampler::Tracking {
+                    range: active_iss..active_iss + 1,
+                    timestamp: clock.now(),
+                },
                 retrans_timer: RetransTimer::new(
                     clock.now(),
                     Rto::DEFAULT,
@@ -5171,7 +5178,10 @@ mod test {
         assert_matches!(passive, State::SynRcvd(ref syn_rcvd) if syn_rcvd == &SynRcvd {
             iss: passive_iss,
             irs: active_iss,
-            timestamp: Some(clock.now()),
+            rtt_sampler: MeasuredSampler::Tracking {
+                range: passive_iss..passive_iss + 1,
+                timestamp: clock.now(),
+            },
             retrans_timer: RetransTimer::new(
                 clock.now(),
                 Rto::DEFAULT,
@@ -5392,7 +5402,10 @@ mod test {
         assert_matches!(state1, State::SynRcvd(ref syn_rcvd) if syn_rcvd == &SynRcvd {
             iss: ISS_1,
             irs: ISS_2,
-            timestamp: Some(time1),
+            rtt_sampler: MeasuredSampler::Tracking {
+                range: ISS_1..ISS_1 + 1,
+                timestamp: time1
+            },
             retrans_timer: RetransTimer::new(
                 clock.now(),
                 Rto::DEFAULT,
@@ -5419,7 +5432,10 @@ mod test {
         assert_matches!(state2, State::SynRcvd(ref syn_rcvd) if syn_rcvd == &SynRcvd {
             iss: ISS_2,
             irs: ISS_1,
-            timestamp: Some(time1),
+            rtt_sampler: MeasuredSampler::Tracking {
+                range: ISS_2..ISS_2 + 1,
+                timestamp: time1
+            },
             retrans_timer: RetransTimer::new(
                 clock.now(),
                 Rto::DEFAULT,
@@ -5773,6 +5789,25 @@ mod test {
         assert_eq!(established.poll_send_with_default_options(clock.now(), &counters.refs()), None);
     }
 
+    // A helper to get the state machines estimation of the current RTO.
+    fn get_rto_estimate<I, R, S, A>(state: &State<I, R, S, A>) -> Duration {
+        let rto = match state {
+            State::Closed(_)
+            | State::Listen(_)
+            | State::SynRcvd(_)
+            | State::SynSent(_)
+            | State::FinWait2(_)
+            | State::TimeWait(_) => Rto::DEFAULT,
+            State::Established(Established { snd, .. })
+            | State::CloseWait(CloseWait { snd, .. }) => snd.rtt_estimator.rto(),
+            State::FinWait1(FinWait1 { snd, .. }) => snd.rtt_estimator.rto(),
+            State::LastAck(LastAck { snd, .. }) | State::Closing(Closing { snd, .. }) => {
+                snd.rtt_estimator.rto()
+            }
+        };
+        rto.get()
+    }
+
     #[test]
     fn self_connect_retransmission() {
         let mut clock = FakeInstantCtx::default();
@@ -5807,7 +5842,7 @@ mod test {
 
         // Retransmission timer should be installed.
         assert_eq!(state.poll_send_at(), Some(FakeInstant::from(Rto::DEFAULT.get())));
-        clock.sleep(Rto::DEFAULT.get());
+        clock.sleep(get_rto_estimate(&state));
         let time2 = timestamp_now(&clock);
         // The SYN segment should be retransmitted.
         assert_eq!(
@@ -5842,7 +5877,7 @@ mod test {
         assert_eq!(passive_open, None);
         // Retransmission timer should be installed.
         assert_eq!(state.poll_send_at(), Some(clock.now() + Rto::DEFAULT.get()));
-        clock.sleep(Rto::DEFAULT.get());
+        clock.sleep(get_rto_estimate(&state));
         let time3 = timestamp_now(&clock);
         // The SYN-ACK segment should be retransmitted.
         assert_eq!(
@@ -5902,8 +5937,9 @@ mod test {
                     FragmentedPayload::new_contiguous(TEST_BYTES),
                 ))
             );
-            assert_eq!(state.poll_send_at(), Some(clock.now() + (1 << i) * Rto::DEFAULT.get()));
-            clock.sleep((1 << i) * Rto::DEFAULT.get());
+            let rto = get_rto_estimate(&state);
+            assert_eq!(state.poll_send_at(), Some(clock.now() + (1 << i) * rto));
+            clock.sleep((1 << i) * rto);
             CounterExpectations {
                 retransmits: i,
                 slow_start_retransmits: i,
@@ -5913,6 +5949,7 @@ mod test {
             .assert_counters(&counters);
         }
         let time4 = timestamp_now(&clock);
+        let rto_before_ack = get_rto_estimate(&state);
         // The receiver acks the first byte of the payload.
         assert_eq!(
             state.on_segment_with_default_options::<(), ClientlessBufferProvider>(
@@ -5927,10 +5964,9 @@ mod test {
             ),
             (None, None),
         );
-        // The timer is rearmed with the the current RTO estimate, which still should
-        // be RTO_INIT.
-        assert_eq!(state.poll_send_at(), Some(clock.now() + Rto::DEFAULT.get()));
-        clock.sleep(Rto::DEFAULT.get());
+        // The timer is rearmed with the current RTO estimate.
+        assert_eq!(state.poll_send_at(), Some(clock.now() + rto_before_ack));
+        clock.sleep(rto_before_ack);
         let time5 = timestamp_now(&clock);
         assert_eq!(
             state.poll_send_with_default_options(clock.now(), &counters.refs(),),
@@ -5956,7 +5992,7 @@ mod test {
             Mss::MIN,
             MssSizeLimiters { timestamp_enabled: true },
         ));
-        clock.sleep(2 * Rto::DEFAULT.get());
+        clock.sleep(2 * get_rto_estimate(&state));
         let time6 = timestamp_now(&clock);
         assert_eq!(
             state.poll_send_with_default_options(clock.now(), &counters.refs(),),
@@ -5973,6 +6009,7 @@ mod test {
             ))
         );
 
+        let rto_before_ack = get_rto_estimate(&state);
         // The MTU update should have reduced `snd.nxt`. Currently,
         //   snd.nxt = ISS_1 + Mss::MIN + 1,
         //   snd.max = ISS_1 + TEST_BYTES.len() + 1.
@@ -6000,9 +6037,7 @@ mod test {
         }
         .assert_counters(&counters);
 
-        // Since we have received an ACK and we have no segments that can be used
-        // for RTT estimate, RTO is still the initial value.
-        assert_eq!(state.poll_send_at(), Some(clock.now() + Rto::DEFAULT.get()));
+        assert_eq!(state.poll_send_at(), Some(clock.now() + rto_before_ack));
         assert_eq!(
             state.poll_send_with_default_options(clock.now(), &counters.refs()),
             Some(Segment::new_assert_no_discard(
@@ -6186,7 +6221,7 @@ mod test {
         let mut state: State<_, RingBuffer, NullBuffer, ()> = State::SynRcvd(SynRcvd {
             iss: TEST_ISS,
             irs: TEST_IRS,
-            timestamp: None,
+            rtt_sampler: MeasuredSampler::default(),
             retrans_timer: RetransTimer {
                 at: FakeInstant::default(),
                 rto: Rto::MIN,
@@ -6648,7 +6683,7 @@ mod test {
         State::SynRcvd(SynRcvd {
             iss: TEST_ISS,
             irs: TEST_IRS,
-            timestamp: None,
+            rtt_sampler: MeasuredSampler::default(),
             retrans_timer: RetransTimer {
                 at: FakeInstant::default(),
                 rto: Rto::MIN,
@@ -7738,7 +7773,10 @@ mod test {
     #[test_case(
         State::SynSent(SynSent{
             iss: TEST_ISS,
-            timestamp: Some(FakeInstant::default()),
+            rtt_sampler: MeasuredSampler::Tracking {
+                range: TEST_ISS..TEST_ISS + 1,
+                timestamp: FakeInstant::default(),
+            },
             retrans_timer: RetransTimer::new(
                 FakeInstant::default(),
                 Rto::MIN,
@@ -7757,7 +7795,10 @@ mod test {
         State::SynRcvd(SynRcvd{
             iss: TEST_ISS,
             irs: TEST_IRS,
-            timestamp: Some(FakeInstant::default()),
+            rtt_sampler: MeasuredSampler::Tracking {
+                range: TEST_ISS..TEST_ISS + 1,
+                timestamp: FakeInstant::default(),
+            },
             retrans_timer: RetransTimer::new(
                 FakeInstant::default(),
                 Rto::MIN,
@@ -7919,7 +7960,7 @@ mod test {
         let mut syn_rcvd: State<_, RingBuffer, RingBuffer, ()> = State::SynRcvd(SynRcvd {
             iss: TEST_ISS,
             irs: TEST_IRS,
-            timestamp: None,
+            rtt_sampler: MeasuredSampler::default(),
             retrans_timer: RetransTimer::new(
                 FakeInstant::default(),
                 Rto::DEFAULT,
@@ -8540,7 +8581,10 @@ mod test {
     #[test_case(
         State::SynSent(SynSent {
             iss: TEST_ISS,
-            timestamp: Some(FakeInstant::default()),
+            rtt_sampler: MeasuredSampler::Tracking {
+                range: TEST_ISS..TEST_ISS + 1,
+                timestamp: FakeInstant::default(),
+            },
             retrans_timer: RetransTimer::new(
                 FakeInstant::default(),
                 Rto::DEFAULT,
@@ -8558,7 +8602,10 @@ mod test {
     #[test_case(
         State::SynSent(SynSent {
                 iss: TEST_ISS,
-                timestamp: Some(FakeInstant::default()),
+                rtt_sampler: MeasuredSampler::Tracking {
+                    range: TEST_ISS..TEST_ISS + 1,
+                    timestamp: FakeInstant::default(),
+                },
                 retrans_timer: RetransTimer::new(
                     FakeInstant::default(),
                     Rto::DEFAULT,
@@ -8576,7 +8623,7 @@ mod test {
         State::SynRcvd(SynRcvd {
             iss: TEST_ISS,
             irs: TEST_IRS,
-            timestamp: None,
+            rtt_sampler: MeasuredSampler::default(),
             retrans_timer: RetransTimer::new(
                 FakeInstant::default(),
                 Rto::DEFAULT,
