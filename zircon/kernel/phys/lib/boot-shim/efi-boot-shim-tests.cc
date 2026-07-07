@@ -1024,8 +1024,8 @@ constexpr zbi_mem_range_t kTestZbiMemRanges[] = {
 TEST(BootShimTests, EfiBootShimMemConfig) {
   alignas(ZBI_ALIGNMENT) std::byte buffer[sizeof(kTestEfiMemoryMap)];
   memcpy(buffer, kTestEfiMemoryMap, sizeof(kTestEfiMemoryMap));
-  cpp20::span<zbi_mem_range_t> mem_config = boot_shim::EfiBootShimLoader::ConvertMemoryMap(
-      cpp20::span(buffer), sizeof(efi_memory_descriptor));
+  std::span<zbi_mem_range_t> mem_config = boot_shim::EfiBootShimLoader::ConvertMemoryMap(
+      std::span(buffer), sizeof(efi_memory_descriptor));
   ASSERT_EQ(mem_config.size(), std::size(kTestZbiMemRanges));
   for (size_t i = 0; i < std::size(kTestZbiMemRanges); ++i) {
     EXPECT_EQ(mem_config[i].paddr, kTestZbiMemRanges[i].paddr, "%zu", i);

@@ -73,7 +73,7 @@ TEST(BootShimTests, PoolMemConfigItem) {
           .type = memalloc::Type::kPeripheral,
       },
   };
-  EXPECT_TRUE(pool.Init(std::array{cpp20::span<memalloc::Range>(test_pool_ranges)}).is_ok());
+  EXPECT_TRUE(pool.Init(std::array{std::span<memalloc::Range>(test_pool_ranges)}).is_ok());
   auto alloc_result = pool.Allocate(memalloc::Type::kPoolTestPayload, kChunkSize * 100);
   ASSERT_TRUE(alloc_result.is_ok());
   EXPECT_EQ(kChunkSize * 52, alloc_result.value());
@@ -111,9 +111,9 @@ TEST(BootShimTests, PoolMemConfigItem) {
   }
   EXPECT_TRUE(zbi.take_error().is_ok());
 
-  EXPECT_EQ(cpp20::span(kExpectedZbiRanges).size_bytes(), item_payload.size_bytes());
+  EXPECT_EQ(std::span(kExpectedZbiRanges).size_bytes(), item_payload.size_bytes());
 
-  const cpp20::span mem_config{
+  const std::span mem_config{
       reinterpret_cast<const zbi_mem_range_t*>(item_payload.data()),
       item_payload.size_bytes() / sizeof(zbi_mem_range_t),
   };

@@ -51,7 +51,7 @@ std::optional<LoadedDtb> ArmDevicetreeTimerItemTest::timer_no_frequency_override
 TEST_F(ArmDevicetreeTimerItemTest, TimerWithFrequencyOverride) {
   std::array<std::byte, 1024> image_buffer;
   std::vector<void*> allocs;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = timer();
@@ -79,7 +79,7 @@ TEST_F(ArmDevicetreeTimerItemTest, TimerWithFrequencyOverride) {
 TEST_F(ArmDevicetreeTimerItemTest, TimerWithoutFrequencyOverride) {
   std::array<std::byte, 1024> image_buffer;
   std::vector<void*> allocs;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = timer_no_frequency_override();
@@ -107,7 +107,7 @@ TEST_F(ArmDevicetreeTimerItemTest, TimerWithoutFrequencyOverride) {
 TEST_F(ArmDevicetreeTimerItemTest, Qemu) {
   std::array<std::byte, 1024> image_buffer;
   std::vector<void*> allocs;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = qemu_arm_gic3();
@@ -135,7 +135,7 @@ TEST_F(ArmDevicetreeTimerItemTest, Qemu) {
 TEST_F(ArmDevicetreeTimerItemTest, Crosvm) {
   std::array<std::byte, 1024> image_buffer;
   std::vector<void*> allocs;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = crosvm_arm();
@@ -163,7 +163,7 @@ TEST_F(ArmDevicetreeTimerItemTest, Crosvm) {
 TEST_F(ArmDevicetreeTimerItemTest, KhadasVim3) {
   std::array<std::byte, 1024> image_buffer;
   std::vector<void*> allocs;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = khadas_vim3();
@@ -192,7 +192,7 @@ TEST_F(ArmDevicetreeTimerItemTest, KhadasVim3) {
 TEST_F(ArmDevicetreeTimerItemTest, MissingNode) {
   std::array<std::byte, 1024> image_buffer;
   std::vector<void*> allocs;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = empty_fdt();

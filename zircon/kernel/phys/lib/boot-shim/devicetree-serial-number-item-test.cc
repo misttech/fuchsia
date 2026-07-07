@@ -45,7 +45,7 @@ std::optional<LoadedDtb> DevicetreeSerialNumberItemTest::serial_number_bootargs_
 
 TEST_F(DevicetreeSerialNumberItemTest, MissingNode) {
   std::array<std::byte, 512> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = empty_fdt();
@@ -61,7 +61,7 @@ TEST_F(DevicetreeSerialNumberItemTest, MissingNode) {
 
 TEST_F(DevicetreeSerialNumberItemTest, SerialNumberProperty) {
   std::array<std::byte, 512> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = serial_number();
@@ -84,7 +84,7 @@ TEST_F(DevicetreeSerialNumberItemTest, SerialNumberProperty) {
 TEST_F(DevicetreeSerialNumberItemTest, SerialNumberBootargs) {
   constexpr std::string_view kCmdline = "   androidboot.serialno=foo-bar-baz   ";
   std::array<std::byte, 512> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = serial_number_bootargs();
@@ -108,7 +108,7 @@ TEST_F(DevicetreeSerialNumberItemTest, SerialNumberBootargs) {
 TEST_F(DevicetreeSerialNumberItemTest, SerialNumberSmallCmdline) {
   constexpr std::string_view kCmdline = "small=1";
   std::array<std::byte, 512> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = empty_fdt();
@@ -129,7 +129,7 @@ TEST_F(DevicetreeSerialNumberItemTest, SerialNumberSmallCmdline) {
 
 TEST_F(DevicetreeSerialNumberItemTest, BananaPiF3) {
   std::array<std::byte, 512> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = banana_pi_f3();
@@ -151,7 +151,7 @@ TEST_F(DevicetreeSerialNumberItemTest, BananaPiF3) {
 
 TEST_F(DevicetreeSerialNumberItemTest, KhadasVim3) {
   std::array<std::byte, 512> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = khadas_vim3();
@@ -173,7 +173,7 @@ TEST_F(DevicetreeSerialNumberItemTest, KhadasVim3) {
 
 TEST_F(DevicetreeSerialNumberItemTest, SifiveHifiveUnmatched) {
   std::array<std::byte, 512> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = sifive_hifive_unmatched();
@@ -195,7 +195,7 @@ TEST_F(DevicetreeSerialNumberItemTest, SifiveHifiveUnmatched) {
 
 TEST_F(DevicetreeSerialNumberItemTest, VisionFive2) {
   std::array<std::byte, 512> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = vision_five_2();

@@ -16,7 +16,6 @@
 #include <cstdio>
 #include <optional>
 #include <span>
-#include <variant>
 
 #include <efi/boot-services.h>
 #include <efi/protocol/block-io.h>
@@ -130,7 +129,7 @@ class EfiBootShim : public EfiBootShimBase<Items...> {
   using LoadFunction = EfiBootShimLoader::LoadFunction;
   using LoadResult = EfiBootShimLoader::LoadResult;
   using typename BootShimBase::DataZbi;
-  using Error = typename DataZbi::Error;
+  using Error = DataZbi::Error;
 
   explicit EfiBootShim(const char* name, FILE* log = stdout) : Base(name, log) {}
 

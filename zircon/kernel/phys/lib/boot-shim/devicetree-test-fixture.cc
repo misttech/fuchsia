@@ -28,8 +28,8 @@ std::optional<LoadedDtb> RiscvDevicetreeTest::sifive_hifive_unmatched_ = std::nu
 std::optional<LoadedDtb> RiscvDevicetreeTest::vision_five_2_ = std::nullopt;
 std::optional<LoadedDtb> RiscvDevicetreeTest::banana_pi_f3_ = std::nullopt;
 
-void CheckCpuTopology(cpp20::span<const zbi_topology_node_t> actual_nodes,
-                      cpp20::span<const zbi_topology_node_t> expected_nodes) {
+void CheckCpuTopology(std::span<const zbi_topology_node_t> actual_nodes,
+                      std::span<const zbi_topology_node_t> expected_nodes) {
   ASSERT_EQ(actual_nodes.size(), expected_nodes.size());
   for (size_t i = 0; i < actual_nodes.size(); ++i) {
     const auto& actual_node = actual_nodes[i];
@@ -80,8 +80,8 @@ void CheckCpuTopology(cpp20::span<const zbi_topology_node_t> actual_nodes,
   }
 }
 
-void CheckMmioRanges(cpp20::span<const boot_shim::MmioRange> actual,
-                     cpp20::span<const boot_shim::MmioRange> expected) {
+void CheckMmioRanges(std::span<const boot_shim::MmioRange> actual,
+                     std::span<const boot_shim::MmioRange> expected) {
   size_t matched_count = 0;
 
   for (size_t i = 0; i < expected.size(); ++i) {

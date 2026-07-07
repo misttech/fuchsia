@@ -22,7 +22,7 @@ using boot_shim::UartItem;
 
 TEST(UartItemTest, SetItemWithNullDriverIsNoOp) {
   std::array<std::byte, 2 * zbitl::AlignedItemLength(sizeof(uart::null::Driver().config()))> data;
-  zbitl::Image<cpp20::span<std::byte>> image(data);
+  zbitl::Image<std::span<std::byte>> image(data);
   ASSERT_TRUE(image.clear().is_ok());
   size_t clear_image_size = image.size_bytes();
 
@@ -38,7 +38,7 @@ TEST(UartItemTest, SetItemWithNullDriverIsNoOp) {
 TEST(UartItemTest, SetItemWithMmioDriver) {
   std::array<std::byte, 2 * zbitl::AlignedItemLength(sizeof(uart::ns8250::Mmio32Driver().config()))>
       data;
-  zbitl::Image<cpp20::span<std::byte>> image(data);
+  zbitl::Image<std::span<std::byte>> image(data);
   ASSERT_TRUE(image.clear().is_ok());
 
   UartItem item;
@@ -66,7 +66,7 @@ TEST(UartItemTest, SetItemWithMmioDriver) {
 TEST(UartItemTest, SetItemWithPioDriver) {
   std::array<std::byte, 2 * zbitl::AlignedItemLength(sizeof(uart::ns8250::PioDriver().config()))>
       data;
-  zbitl::Image<cpp20::span<std::byte>> image(data);
+  zbitl::Image<std::span<std::byte>> image(data);
   ASSERT_TRUE(image.clear().is_ok());
 
   UartItem item;

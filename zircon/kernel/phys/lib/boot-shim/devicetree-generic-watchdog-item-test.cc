@@ -70,7 +70,7 @@ std::optional<LoadedDtb> DevicetreeGenericWatchdogItemTest::qcom_msm_watchdog_mu
 TEST_F(DevicetreeGenericWatchdogItemTest, NoWatchdog) {
   std::array<std::byte, 1024> image_buffer;
   std::vector<void*> allocs;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = empty();
@@ -92,7 +92,7 @@ TEST_F(DevicetreeGenericWatchdogItemTest, NoWatchdog) {
 TEST_F(DevicetreeGenericWatchdogItemTest, QcomMsmWatchdog) {
   std::array<std::byte, 1024> image_buffer;
   std::vector<void*> allocs;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = qcom_msm_watchdog();
@@ -139,7 +139,7 @@ TEST_F(DevicetreeGenericWatchdogItemTest, QcomMsmWatchdog) {
 TEST_F(DevicetreeGenericWatchdogItemTest, QcomMsmWatchdogEnabled) {
   std::array<std::byte, 1024> image_buffer;
   std::vector<void*> allocs;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = qcom_msm_watchdog();
@@ -187,7 +187,7 @@ TEST_F(DevicetreeGenericWatchdogItemTest, QcomMsmWatchdogEnabled) {
 TEST_F(DevicetreeGenericWatchdogItemTest, QcomMsmWatchdogMultipleRegs) {
   std::array<std::byte, 1024> image_buffer;
   std::vector<void*> allocs;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = qcom_msm_watchdog_multiuple_regs();

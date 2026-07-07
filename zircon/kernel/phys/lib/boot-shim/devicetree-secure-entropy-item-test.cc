@@ -96,7 +96,7 @@ void CheckPropertyValueCleansed(devicetree::Devicetree devicetree, Props&&... pr
 
 TEST_F(DevicetreeSecureEntropyItemTest, NoRng) {
   std::array<std::byte, 512> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto loaded_dtb = no_rng();
@@ -117,7 +117,7 @@ TEST_F(DevicetreeSecureEntropyItemTest, NoRng) {
 
 TEST_F(DevicetreeSecureEntropyItemTest, KaslrOnly) {
   std::array<std::byte, 512> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto loaded_dtb = kaslr_only();
@@ -149,7 +149,7 @@ TEST_F(DevicetreeSecureEntropyItemTest, KaslrOnly) {
 
 TEST_F(DevicetreeSecureEntropyItemTest, RngOnly) {
   std::array<std::byte, 512> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto loaded_dtb = rng_only();
@@ -181,7 +181,7 @@ TEST_F(DevicetreeSecureEntropyItemTest, RngOnly) {
 
 TEST_F(DevicetreeSecureEntropyItemTest, KaslrAndRng) {
   std::array<std::byte, 512> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto loaded_dtb = kaslr_and_rng();

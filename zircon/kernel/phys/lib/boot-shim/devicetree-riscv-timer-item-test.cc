@@ -39,7 +39,7 @@ std::optional<LoadedDtb> RiscvDevicetreeTimerItemTest::cpus_ = std::nullopt;
 
 TEST_F(RiscvDevicetreeTimerItemTest, MissingNode) {
   std::array<std::byte, 512> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = empty_fdt();
@@ -56,7 +56,7 @@ TEST_F(RiscvDevicetreeTimerItemTest, MissingNode) {
 
 TEST_F(RiscvDevicetreeTimerItemTest, TimerFromCpus) {
   std::array<std::byte, 512> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = cpus();
@@ -80,7 +80,7 @@ TEST_F(RiscvDevicetreeTimerItemTest, TimerFromCpus) {
 
 TEST_F(RiscvDevicetreeTimerItemTest, Qemu) {
   std::array<std::byte, 512> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = qemu_riscv();
@@ -104,7 +104,7 @@ TEST_F(RiscvDevicetreeTimerItemTest, Qemu) {
 
 TEST_F(RiscvDevicetreeTimerItemTest, VisionFive2) {
   std::array<std::byte, 512> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = vision_five_2();
@@ -128,7 +128,7 @@ TEST_F(RiscvDevicetreeTimerItemTest, VisionFive2) {
 
 TEST_F(RiscvDevicetreeTimerItemTest, SifiveHifiveUnmatched) {
   std::array<std::byte, 512> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = sifive_hifive_unmatched();
@@ -152,7 +152,7 @@ TEST_F(RiscvDevicetreeTimerItemTest, SifiveHifiveUnmatched) {
 
 TEST_F(RiscvDevicetreeTimerItemTest, BananaPiF3) {
   std::array<std::byte, 512> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = banana_pi_f3();

@@ -143,7 +143,7 @@ class MockAcpiTables {
  private:
   acpi_lite::AcpiRsdpV2 rsdp_;
 
-  static uint8_t Checksum(cpp20::span<const uint8_t> bytes) {
+  static uint8_t Checksum(std::span<const uint8_t> bytes) {
     uint8_t sum = 0;
     for (uint8_t byte : bytes) {
       sum = static_cast<uint8_t>(sum + byte);

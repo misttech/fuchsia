@@ -241,7 +241,7 @@ TEST_F(ArmCpuTopologyItemTest, CpusMultipleCells) {
   };
 
   std::array<std::byte, 1024> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = cpus();
@@ -255,8 +255,8 @@ TEST_F(ArmCpuTopologyItemTest, CpusMultipleCells) {
   for (auto [header, payload] : image) {
     if (header->type == ZBI_TYPE_CPU_TOPOLOGY) {
       present = true;
-      cpp20::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
-                                             payload.size() / sizeof(zbi_topology_node_t));
+      std::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
+                                           payload.size() / sizeof(zbi_topology_node_t));
       boot_shim::testing::CheckCpuTopology(nodes, kExpectedTopology);
     }
   }
@@ -408,7 +408,7 @@ TEST_F(ArmCpuTopologyItemTest, CpusSingleCell) {
   };
 
   std::array<std::byte, 1024> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = cpus_single_cell();
@@ -421,8 +421,8 @@ TEST_F(ArmCpuTopologyItemTest, CpusSingleCell) {
   for (auto [header, payload] : image) {
     if (header->type == ZBI_TYPE_CPU_TOPOLOGY) {
       present = true;
-      cpp20::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
-                                             payload.size() / sizeof(zbi_topology_node_t));
+      std::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
+                                           payload.size() / sizeof(zbi_topology_node_t));
       boot_shim::testing::CheckCpuTopology(nodes, kExpectedTopology);
     }
   }
@@ -542,7 +542,7 @@ TEST_F(ArmCpuTopologyItemTest, CpusNoCpuMap) {
   };
 
   std::array<std::byte, 1024> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = cpus_no_cpu_map();
@@ -556,8 +556,8 @@ TEST_F(ArmCpuTopologyItemTest, CpusNoCpuMap) {
   for (auto [header, payload] : image) {
     if (header->type == ZBI_TYPE_CPU_TOPOLOGY) {
       present = true;
-      cpp20::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
-                                             payload.size() / sizeof(zbi_topology_node_t));
+      std::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
+                                           payload.size() / sizeof(zbi_topology_node_t));
       boot_shim::testing::CheckCpuTopology(nodes, kExpectedTopology);
     }
   }
@@ -710,7 +710,7 @@ TEST_F(ArmCpuTopologyItemTest, CpusBootCpuWithNonZeroMpidr) {
   };
 
   std::array<std::byte, 1024> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = cpus();
@@ -724,8 +724,8 @@ TEST_F(ArmCpuTopologyItemTest, CpusBootCpuWithNonZeroMpidr) {
   for (auto [header, payload] : image) {
     if (header->type == ZBI_TYPE_CPU_TOPOLOGY) {
       present = true;
-      cpp20::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
-                                             payload.size() / sizeof(zbi_topology_node_t));
+      std::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
+                                           payload.size() / sizeof(zbi_topology_node_t));
       boot_shim::testing::CheckCpuTopology(nodes, kExpectedTopology);
     }
   }
@@ -845,7 +845,7 @@ TEST_F(ArmCpuTopologyItemTest, Qemu) {
   };
 
   std::array<std::byte, 1024> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = qemu_arm_gic3();
@@ -859,8 +859,8 @@ TEST_F(ArmCpuTopologyItemTest, Qemu) {
   for (auto [header, payload] : image) {
     if (header->type == ZBI_TYPE_CPU_TOPOLOGY) {
       present = true;
-      cpp20::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
-                                             payload.size() / sizeof(zbi_topology_node_t));
+      std::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
+                                           payload.size() / sizeof(zbi_topology_node_t));
       boot_shim::testing::CheckCpuTopology(nodes, kExpectedTopology);
     }
   }
@@ -898,7 +898,7 @@ TEST_F(ArmCpuTopologyItemTest, Crosvm) {
       }};
 
   std::array<std::byte, 1024> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = crosvm_arm();
@@ -911,8 +911,8 @@ TEST_F(ArmCpuTopologyItemTest, Crosvm) {
   for (auto [header, payload] : image) {
     if (header->type == ZBI_TYPE_CPU_TOPOLOGY) {
       present = true;
-      cpp20::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
-                                             payload.size() / sizeof(zbi_topology_node_t));
+      std::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
+                                           payload.size() / sizeof(zbi_topology_node_t));
       boot_shim::testing::CheckCpuTopology(nodes, kExpectedTopology);
     }
   }
@@ -1114,7 +1114,7 @@ TEST_F(ArmCpuTopologyItemTest, KhadasVim3) {
           };
 
   std::array<std::byte, 1024> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = khadas_vim3();
@@ -1128,8 +1128,8 @@ TEST_F(ArmCpuTopologyItemTest, KhadasVim3) {
   for (auto [header, payload] : image) {
     if (header->type == ZBI_TYPE_CPU_TOPOLOGY) {
       present = true;
-      cpp20::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
-                                             payload.size() / sizeof(zbi_topology_node_t));
+      std::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
+                                           payload.size() / sizeof(zbi_topology_node_t));
       boot_shim::testing::CheckCpuTopology(nodes, kExpectedTopology);
     }
   }

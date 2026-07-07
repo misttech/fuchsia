@@ -76,7 +76,7 @@ std::string BuildStringTable(std::initializer_list<std::string_view> strings) {
 // Initial NUL entry among the expected strings is automatically assumed and
 // should not be provided.
 void ExpectStringTable(std::initializer_list<std::string_view> expected_strs,
-                       cpp20::span<const std::byte> actual) {
+                       std::span<const std::byte> actual) {
   std::string expected = BuildStringTable(expected_strs);
   ASSERT_EQ(expected.size(), actual.size());
   EXPECT_BYTES_EQ(expected.data(), actual.data(), actual.size());
@@ -127,7 +127,7 @@ std::optional<LoadedDtb> RiscvDevicetreeCpuTopologyItemTest::riscv_cpus_no_cpu_m
 
 TEST_F(RiscvDevicetreeCpuTopologyItemTest, MissingNode) {
   std::array<std::byte, 1024> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = empty_fdt();
@@ -275,7 +275,7 @@ TEST_F(RiscvDevicetreeCpuTopologyItemTest, CpusWithCpuMap) {
   };
 
   std::array<std::byte, 1024> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = riscv_cpus();
@@ -290,8 +290,8 @@ TEST_F(RiscvDevicetreeCpuTopologyItemTest, CpusWithCpuMap) {
   for (auto [header, payload] : image) {
     if (header->type == ZBI_TYPE_CPU_TOPOLOGY) {
       topology_present = true;
-      cpp20::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
-                                             payload.size() / sizeof(zbi_topology_node_t));
+      std::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
+                                           payload.size() / sizeof(zbi_topology_node_t));
       boot_shim::testing::CheckCpuTopology(nodes, kExpectedTopology);
     } else if (header->type == ZBI_TYPE_RISCV64_ISA_STRTAB) {
       string_table_present = true;
@@ -487,7 +487,7 @@ TEST_F(RiscvDevicetreeCpuTopologyItemTest, CpuNodesWithNestedClusters) {
   };
 
   std::array<std::byte, 1024> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = riscv_cpus_nested_clusters();
@@ -502,8 +502,8 @@ TEST_F(RiscvDevicetreeCpuTopologyItemTest, CpuNodesWithNestedClusters) {
   for (auto [header, payload] : image) {
     if (header->type == ZBI_TYPE_CPU_TOPOLOGY) {
       topology_present = true;
-      cpp20::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
-                                             payload.size() / sizeof(zbi_topology_node_t));
+      std::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
+                                           payload.size() / sizeof(zbi_topology_node_t));
       boot_shim::testing::CheckCpuTopology(nodes, kExpectedTopology);
     } else if (header->type == ZBI_TYPE_RISCV64_ISA_STRTAB) {
       string_table_present = true;
@@ -614,7 +614,7 @@ TEST_F(RiscvDevicetreeCpuTopologyItemTest, CpuNodesWithoutCpuMap) {
   };
 
   std::array<std::byte, 1024> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = riscv_cpus_no_cpu_map();
@@ -629,8 +629,8 @@ TEST_F(RiscvDevicetreeCpuTopologyItemTest, CpuNodesWithoutCpuMap) {
   for (auto [header, payload] : image) {
     if (header->type == ZBI_TYPE_CPU_TOPOLOGY) {
       topology_present = true;
-      cpp20::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
-                                             payload.size() / sizeof(zbi_topology_node_t));
+      std::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
+                                           payload.size() / sizeof(zbi_topology_node_t));
       boot_shim::testing::CheckCpuTopology(nodes, kExpectedTopology);
     } else if (header->type == ZBI_TYPE_RISCV64_ISA_STRTAB) {
       string_table_present = true;
@@ -754,7 +754,7 @@ TEST_F(RiscvDevicetreeCpuTopologyItemTest, Qemu) {
   };
 
   std::array<std::byte, 1024> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = qemu_riscv();
@@ -769,8 +769,8 @@ TEST_F(RiscvDevicetreeCpuTopologyItemTest, Qemu) {
   for (auto [header, payload] : image) {
     if (header->type == ZBI_TYPE_CPU_TOPOLOGY) {
       topology_present = true;
-      cpp20::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
-                                             payload.size() / sizeof(zbi_topology_node_t));
+      std::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
+                                           payload.size() / sizeof(zbi_topology_node_t));
       boot_shim::testing::CheckCpuTopology(nodes, kExpectedTopology);
     } else if (header->type == ZBI_TYPE_RISCV64_ISA_STRTAB) {
       string_table_present = true;
@@ -906,7 +906,7 @@ TEST_F(RiscvDevicetreeCpuTopologyItemTest, VisionFive2) {
   };
 
   std::array<std::byte, 1024> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = vision_five_2();
@@ -921,8 +921,8 @@ TEST_F(RiscvDevicetreeCpuTopologyItemTest, VisionFive2) {
   for (auto [header, payload] : image) {
     if (header->type == ZBI_TYPE_CPU_TOPOLOGY) {
       topology_present = true;
-      cpp20::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
-                                             payload.size() / sizeof(zbi_topology_node_t));
+      std::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
+                                           payload.size() / sizeof(zbi_topology_node_t));
       boot_shim::testing::CheckCpuTopology(nodes, kExpectedTopology);
     } else if (header->type == ZBI_TYPE_RISCV64_ISA_STRTAB) {
       string_table_present = true;
@@ -1073,7 +1073,7 @@ TEST_F(RiscvDevicetreeCpuTopologyItemTest, HifiveSifiveUnmatched) {
   };
 
   std::array<std::byte, 1024> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = sifive_hifive_unmatched();
@@ -1088,8 +1088,8 @@ TEST_F(RiscvDevicetreeCpuTopologyItemTest, HifiveSifiveUnmatched) {
   for (auto [header, payload] : image) {
     if (header->type == ZBI_TYPE_CPU_TOPOLOGY) {
       topology_present = true;
-      cpp20::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
-                                             payload.size() / sizeof(zbi_topology_node_t));
+      std::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
+                                           payload.size() / sizeof(zbi_topology_node_t));
       boot_shim::testing::CheckCpuTopology(nodes, kExpectedTopology);
     } else if (header->type == ZBI_TYPE_RISCV64_ISA_STRTAB) {
       string_table_present = true;
@@ -1323,10 +1323,10 @@ TEST_F(RiscvDevicetreeCpuTopologyItemTest, BananaPiF3) {
                       },
                   .parent_index = 5,
               },
-  };
+          };
 
   std::array<std::byte, 1024> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = banana_pi_f3();
@@ -1341,8 +1341,8 @@ TEST_F(RiscvDevicetreeCpuTopologyItemTest, BananaPiF3) {
   for (auto [header, payload] : image) {
     if (header->type == ZBI_TYPE_CPU_TOPOLOGY) {
       topology_present = true;
-      cpp20::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
-                                             payload.size() / sizeof(zbi_topology_node_t));
+      std::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
+                                           payload.size() / sizeof(zbi_topology_node_t));
       boot_shim::testing::CheckCpuTopology(nodes, kExpectedTopology);
     } else if (header->type == ZBI_TYPE_RISCV64_ISA_STRTAB) {
       string_table_present = true;

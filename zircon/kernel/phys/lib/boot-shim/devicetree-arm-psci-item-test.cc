@@ -47,7 +47,7 @@ std::optional<LoadedDtb> ArmDevicetreePsciItemTest::psci_smc_dtb_ = std::nullopt
 
 TEST_F(ArmDevicetreePsciItemTest, ParseSmc) {
   std::array<std::byte, 256> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = psci_smc();
@@ -73,7 +73,7 @@ TEST_F(ArmDevicetreePsciItemTest, ParseSmc) {
 
 TEST_F(ArmDevicetreePsciItemTest, ParseHvc) {
   std::array<std::byte, 256> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = psci_hvc();
@@ -99,7 +99,7 @@ TEST_F(ArmDevicetreePsciItemTest, ParseHvc) {
 
 TEST_F(ArmDevicetreePsciItemTest, ParseQemu) {
   std::array<std::byte, 256> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = qemu_arm_gic3();
@@ -124,7 +124,7 @@ TEST_F(ArmDevicetreePsciItemTest, ParseQemu) {
 
 TEST_F(ArmDevicetreePsciItemTest, ParseCrosvm) {
   std::array<std::byte, 256> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = crosvm_arm();
@@ -149,7 +149,7 @@ TEST_F(ArmDevicetreePsciItemTest, ParseCrosvm) {
 
 TEST_F(ArmDevicetreePsciItemTest, KhadasVim3) {
   std::array<std::byte, 256> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = khadas_vim3();
@@ -174,7 +174,7 @@ TEST_F(ArmDevicetreePsciItemTest, KhadasVim3) {
 
 TEST_F(ArmDevicetreePsciItemTest, MissingNode) {
   std::array<std::byte, 256> image_buffer;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = empty_fdt();
