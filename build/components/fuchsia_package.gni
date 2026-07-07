@@ -5,6 +5,7 @@
 import("//build/config/clang/clang.gni")
 import("//build/config/fuchsia/target_api_level.gni")
 import("//build/dist/distribution_manifest_generated_file.gni")
+import("//build/host.gni")
 import("//build/packages/package_metadata.gni")
 import("//build/python/python_action.gni")
 import("//build/rust/config.gni")

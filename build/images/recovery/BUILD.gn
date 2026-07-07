@@ -5,6 +5,7 @@
 import("//build/assembly/assembled_system.gni")
 import("//build/assembly/product_assembly_configuration.gni")
 import("//build/images/args.gni")
+import("//build/images/vbmeta.gni")
 import("//build/testing/host_test_data.gni")
 import("//src/storage/fshost/generated_fshost_config.gni")
 

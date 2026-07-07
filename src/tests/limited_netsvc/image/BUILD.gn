@@ -4,6 +4,7 @@
 
 import("//build/assembly/assembled_system.gni")
 import("//build/assembly/product_assembly_configuration.gni")
+import("//build/images/vbmeta.gni")
 import("//build/testing/host_test_data.gni")
 
 if (is_fuchsia) {
