@@ -38,7 +38,7 @@
                     https://ci.chromium.org/p/fuchsia/builders/ci/qemu-linux-x64
     -->
     <package name="fuchsia/third_party/qemu/${platform}"
-             version="git_revision:ae35f033b874c627d81d51070187fbf55f0bf1a7"
+             version="git_revision:e545d8bb9d63e9dd61542b88463183314cff9482"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/qemu/{{.OS}}-{{.Arch}}"/>
 

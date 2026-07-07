@@ -591,13 +591,13 @@
     },
     {
         "package": "fuchsia/third_party/qemu/linux-amd64",
-        "version": "git_revision:ae35f033b874c627d81d51070187fbf55f0bf1a7",
-        "instance_id": "BQMJW6vmMgA_KYEdk7AsZccfZbcpImV3sswiLttdrR8C"
+        "version": "git_revision:e545d8bb9d63e9dd61542b88463183314cff9482",
+        "instance_id": "TDWhWdNilJMXsvMLvdrLeqjo8KHaGUEQUB82NHMFPXEC"
     },
     {
         "package": "fuchsia/third_party/qemu/linux-arm64",
-        "version": "git_revision:ae35f033b874c627d81d51070187fbf55f0bf1a7",
-        "instance_id": "MDf3sCxn9kct3Tg1oVRHch1hkzO6-9qZZFBRPT6jDuoC"
+        "version": "git_revision:e545d8bb9d63e9dd61542b88463183314cff9482",
+        "instance_id": "go4qfwROMthoOfAh-G1240ysyEx07kIuWBqqkXENA7AC"
     },
     {
         "package": "fuchsia/third_party/rust-analyzer/linux-amd64",
