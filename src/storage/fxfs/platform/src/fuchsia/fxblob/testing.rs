@@ -10,7 +10,7 @@ use crate::fuchsia::volume::FxVolume;
 use anyhow::Error;
 use async_trait::async_trait;
 use blob_writer::BlobWriter;
-use delivery_blob::{CompressionMode, Type1Blob};
+use delivery_blob::{CompressionMode, DeliveryBlobType, Type1Blob, Type2Blob};
 use fidl_fuchsia_fxfs::{BlobCreatorMarker, BlobReaderMarker, BlobWriterProxy, CreateBlobError};
 use fuchsia_component_client::connect_to_protocol_at_dir_svc;
 use fuchsia_merkle::Hash;
@@ -40,6 +40,12 @@ pub async fn open_blob_fixture(device_holder: DeviceHolder) -> TestFixture {
 #[async_trait]
 pub trait BlobFixture {
     async fn write_blob(&self, data: &[u8], mode: CompressionMode) -> Hash;
+    async fn write_blob_with_type(
+        &self,
+        data: &[u8],
+        delivery_type: DeliveryBlobType,
+        mode: CompressionMode,
+    ) -> Hash;
     async fn read_blob(&self, hash: Hash) -> Vec<u8>;
     async fn get_blob_handle(&self, name: &str) -> DataObjectHandle<FxVolume>;
     async fn get_blob_vmo(&self, hash: Hash) -> zx::Vmo;
@@ -58,8 +64,21 @@ pub trait BlobFixture {
 #[async_trait]
 impl BlobFixture for TestFixture {
     async fn write_blob(&self, data: &[u8], mode: CompressionMode) -> Hash {
+        self.write_blob_with_type(data, DeliveryBlobType::Type1, mode).await
+    }
+
+    async fn write_blob_with_type(
+        &self,
+        data: &[u8],
+        delivery_type: DeliveryBlobType,
+        mode: CompressionMode,
+    ) -> Hash {
         let hash = fuchsia_merkle::root_from_slice(data);
-        let delivery_data: Vec<u8> = Type1Blob::generate(&data, mode);
+        let delivery_data = match delivery_type {
+            DeliveryBlobType::Type1 => Type1Blob::generate(data, mode),
+            DeliveryBlobType::Type2 => Type2Blob::generate(data, mode),
+            _ => panic!("Unsupported delivery blob type"),
+        };
         let writer = self.create_blob(&hash.into(), false).await.expect("failed to create blob");
         let mut blob_writer = BlobWriter::create(writer, delivery_data.len() as u64)
             .await

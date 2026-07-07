@@ -35,13 +35,25 @@ bitflags! {
     }
 }
 
-impl From<&Type1Blob> for SerializedType1Flags {
-    fn from(value: &Type1Blob) -> Self {
+impl From<&crate::DeliveryBlob> for SerializedType1Flags {
+    fn from(value: &crate::DeliveryBlob) -> Self {
         if value.is_compressed {
             SerializedType1Flags::IS_COMPRESSED
         } else {
             SerializedType1Flags::empty()
         }
+    }
+}
+
+impl From<&Type1Blob> for SerializedType1Flags {
+    fn from(value: &Type1Blob) -> Self {
+        SerializedType1Flags::from(&crate::DeliveryBlob::from(*value))
+    }
+}
+
+impl From<&crate::Type2Blob> for SerializedType1Flags {
+    fn from(value: &crate::Type2Blob) -> Self {
+        SerializedType1Flags::from(&crate::DeliveryBlob::from(*value))
     }
 }
 
@@ -76,8 +88,9 @@ impl From<&DeliveryBlobHeader> for SerializedHeader {
     }
 }
 
-/// Serialized header + metadata of a Type 1 delivery blob. Use [`Type1Blob::parse`] to deserialize
-/// and validate a Type 1 delivery blob as opposed to deserializing this struct directly.
+/// Serialized header + metadata of a Type 1 or Type 2 delivery blob. Use [`Type1Blob::parse`] or
+/// [`Type2Blob::parse`] or [`DeliveryBlob::parse`] to deserialize and validate a delivery blob as
+/// opposed to deserializing this struct directly.
 ///
 /// **WARNING**: Changes to this format must be done in a backwards compatible manner, or a new
 /// delivery blob type should be created. This format should be considered an implementation detail,
@@ -93,8 +106,8 @@ pub(crate) struct SerializedType1Blob {
     flags: U32<LE>,
 }
 
-impl From<Type1Blob> for SerializedType1Blob {
-    fn from(value: Type1Blob) -> Self {
+impl From<crate::DeliveryBlob> for SerializedType1Blob {
+    fn from(value: crate::DeliveryBlob) -> Self {
         let serialized = Self {
             header: (&value.header).into(),
             payload_length: (value.payload_length as u64).into(),
@@ -103,6 +116,18 @@ impl From<Type1Blob> for SerializedType1Blob {
         };
 
         Self { checksum: serialized.checksum().into(), ..serialized }
+    }
+}
+
+impl From<Type1Blob> for SerializedType1Blob {
+    fn from(value: Type1Blob) -> Self {
+        crate::DeliveryBlob::from(value).into()
+    }
+}
+
+impl From<crate::Type2Blob> for SerializedType1Blob {
+    fn from(value: crate::Type2Blob) -> Self {
+        crate::DeliveryBlob::from(value).into()
     }
 }
 
@@ -116,15 +141,17 @@ impl SerializedType1Blob {
         digest.finalize()
     }
 
-    /// Decode and verify this serialized Type 1 delivery blob.
-    pub fn decode(&self) -> Result<Type1Blob, DeliveryBlobError> {
+    /// Decode and verify this serialized delivery blob.
+    pub fn decode(&self) -> Result<crate::DeliveryBlob, DeliveryBlobError> {
         // Validate checksum before other integrity checks.
         if self.checksum.get() != self.checksum() {
             return Err(DeliveryBlobError::IntegrityError);
         }
         // Validate header.
         let header: DeliveryBlobHeader = self.header.decode()?;
-        if header.delivery_type != DeliveryBlobType::Type1 {
+        if header.delivery_type != DeliveryBlobType::Type1
+            && header.delivery_type != DeliveryBlobType::Type2
+        {
             return Err(DeliveryBlobError::InvalidType);
         }
         if header.header_length != Type1Blob::HEADER.header_length {
@@ -135,7 +162,7 @@ impl SerializedType1Blob {
         let flags = SerializedType1Flags::from_bits(self.flags.get())
             .ok_or(DeliveryBlobError::IntegrityError)?;
 
-        Ok(Type1Blob {
+        Ok(crate::DeliveryBlob {
             header,
             payload_length,
             is_compressed: flags.contains(SerializedType1Flags::IS_COMPRESSED),

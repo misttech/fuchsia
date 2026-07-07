@@ -305,6 +305,10 @@ impl DecodedArchive {
     pub fn decompressed_size(&self) -> usize {
         self.seek_table.last().map_or(0, |entry| entry.decompressed_range.end)
     }
+
+    pub fn seek_table(&self) -> &[ChunkInfo] {
+        &self.seek_table
+    }
 }
 
 /// Decodes a chunked archive header. Returns a `DecodedArchive` and any remaining bytes that are

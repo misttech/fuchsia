@@ -12,10 +12,10 @@ use crate::fuchsia::node::{FxNode, GetResult};
 use crate::fuchsia::volume::FxVolume;
 use anyhow::{Context as _, Error};
 use base64::prelude::{BASE64_STANDARD, Engine as _};
-use delivery_blob::Type1Blob;
 use delivery_blob::compression::{
     ChunkInfo, ChunkedDecompressor, CompressionAlgorithm, decode_archive,
 };
+use delivery_blob::{DeliveryBlob, MINIMUM_HEADER_SIZE};
 use fidl::endpoints::{ControlHandle as _, RequestStream as _};
 use fidl_fuchsia_fxfs::{BlobWriterRequest, BlobWriterRequestStream};
 use fuchsia_merkle::{BufferedMerkleRootBuilder, Hash};
@@ -112,7 +112,7 @@ pub struct DeliveryBlobWriter {
     /// Temporary buffer used to copy data from [`Self::vmo`].
     buffer: Vec<u8>,
     /// The header for this delivery blob. Decoded once we have enough data.
-    header: Option<Type1Blob>,
+    header: Option<DeliveryBlob>,
     /// The Merkle tree builder for this blob. Once the Merkle tree is complete, the root hash of
     /// the blob is verified, before storing the Merkle tree as part of the blob's metadata.
     tree_builder: BufferedMerkleRootBuilder<BlobMetadataLeafHashCollector>,
@@ -183,7 +183,7 @@ impl Drop for DeliveryBlobWriter {
 }
 
 impl DeliveryBlobWriter {
-    fn header(&self) -> &Type1Blob {
+    fn header(&self) -> &DeliveryBlob {
         self.header.as_ref().unwrap()
     }
 
@@ -433,7 +433,7 @@ impl DeliveryBlobWriter {
         if self.expected_size.is_some() {
             return Err(Status::BAD_STATE).context("Blob was already truncated.");
         }
-        if length < Type1Blob::HEADER.header_length as u64 {
+        if length < MINIMUM_HEADER_SIZE as u64 {
             return Err(Status::INVALID_ARGS).context("Invalid size (too small).");
         }
         self.expected_size = Some(length);
@@ -445,8 +445,8 @@ impl DeliveryBlobWriter {
     async fn process_buffer(&mut self) -> Result<(), Error> {
         // Decode delivery blob header.
         if self.header.is_none() {
-            let Some((header, payload)) =
-                Type1Blob::parse(&self.buffer).context("Failed to decode delivery blob header.")?
+            let Some((header, payload)) = DeliveryBlob::parse(&self.buffer)
+                .context("Failed to decode delivery blob header.")?
             else {
                 return Ok(()); // Not enough data to decode header yet.
             };
@@ -668,7 +668,7 @@ mod tests {
     use super::*;
     use crate::fuchsia::fxblob::testing::{BlobFixture, new_blob_fixture, open_blob_fixture};
     use core::ops::Range;
-    use delivery_blob::CompressionMode;
+    use delivery_blob::{CompressionMode, Type1Blob};
     use fidl_fuchsia_fxfs::{BlobCreatorMarker, CreateBlobError};
     use fidl_fuchsia_io::UnlinkOptions;
     use fuchsia_async::epoch::Epoch;
@@ -1614,6 +1614,25 @@ mod tests {
 
         assert_eq!(fixture.read_blob(blob_hash).await, blob_data);
         std::mem::drop(old_blob_vmo);
+        fixture.close().await;
+    }
+
+    #[fuchsia::test(threads = 10)]
+    async fn test_write_type2_delivery_blob() {
+        let fixture = new_blob_fixture().await;
+
+        let mut data = vec![0xAB; 300_000];
+        rand::fill(&mut data[..]);
+
+        let hash = fixture
+            .write_blob_with_type(
+                &data,
+                delivery_blob::DeliveryBlobType::Type2,
+                CompressionMode::Always,
+            )
+            .await;
+
+        assert_eq!(fixture.read_blob(hash).await, data);
         fixture.close().await;
     }
 }
