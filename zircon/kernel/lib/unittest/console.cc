@@ -107,7 +107,14 @@ bool run_unittest(const unittest_testcase_registration_t* testcase) {
       const cpu_mask_t active_mask_before = Scheduler::PeekActiveMask();
 
       const zx_instant_mono_t test_start = current_mono_time();
-      bool good = (test->fn ? test->fn() : false);
+      // TODO(https://fxbug.dev/528405969): If the target test function is implemented in rust then
+      // CFI checks fail. While this is investigated the checks are disabled.
+#if defined(__clang__)
+      bool(__attribute__((cfi_unchecked_callee)) * test_fn)(void) = test->fn;
+#else
+      bool (*test_fn)(void) = test->fn;
+#endif
+      bool good = (test_fn ? test_fn() : false);
       const zx_duration_mono_t test_runtime = current_mono_time() - test_start;
 
       // Make sure that this test didn't change the online or active state of any CPUs.
