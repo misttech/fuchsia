@@ -203,47 +203,29 @@ class EfiBootShim : public EfiBootShimBase<Items...> {
   }
 
  private:
-  // This overload will be rejected by SFINAE if item.Init(systab, name, log)
-  // isn't well-formed.
-  template <class Item>
-  auto DoInitItem(Item& item, efi_system_table* systab)
-      -> decltype(item.Init(systab, this->shim_name(), this->log())) {
-    return item.Init(systab, this->shim_name(), this->log());
-  }
-
-  // This overload will be rejected by SFINAE if item.Init(acpi, name, log)
-  // isn't well-formed.
-  template <class Item>
-  auto DoInitItem(Item& item, efi_system_table* systab)
-      -> decltype(item.Init(this->acpi(), this->shim_name(), this->log())) {
-    return item.Init(this->acpi(), this->shim_name(), this->log());
-  }
-
-  // This will be the overload of last resort if SFINAE rejects the others.
-  template <class Item>
-  void DoInitItem(Item&, ...) {}
-
-  // This calls one of those methods and handles its return value, if any.
-  template <typename Item>
-  fit::result<Error> TryInitItem(Item& item, efi_system_table* systab) {
-    using Result = decltype(DoInitItem(item, systab));
-    if constexpr (std::is_void_v<Result>) {
-      DoInitItem(item, systab);
-    } else if constexpr (std::is_convertible_v<Result, fit::result<efi_status>>) {
-      fit::result<efi_status> result = DoInitItem(item, systab);
-      if (result.is_error()) {
-        // TODO(mcgrathr): EFI error strings
-        fprintf(this->log(), "%s: EFI error %#zx\n", this->shim_name, result.error_value());
-        return fit::error{Error{.zbi_error = "EFI error"}};
-      }
+  fit::result<Error> TryInitItem(auto& item, efi_system_table* systab) {
+    if constexpr (requires {
+                    { item.Init(systab, this->shim_name(), this->log()) };
+                  }) {
+      return InitItemResult(item.Init(systab, this->shim_name(), this->log()));
+    } else if constexpr (requires {
+                           { item.Init(this->acpi(), this->shim_name(), this->log()) };
+                         }) {
+      return InitItemResult(item.Init(this->acpi(), this->shim_name(), this->log()));
     } else {
-      static_assert(std::is_convertible_v<Result, fit::result<Error>>,
-                    "Init(efi_system_table*, name, log) or "
-                    "Init(AcpiParserInterface&, name, log) must return "
-                    "void, fit::result<DataZbi::Error>, or fit::result<efi_error>");
-      return DoInitItem(item, systab);
+      return fit::ok();
     }
-    return fit::ok();
+  }
+
+  fit::result<Error> InitItemResult(fit::result<Error> result) { return result; }
+
+  fit::result<Error> InitItemResult(fit::result<efi_status> result) {
+    if (result.is_ok()) {
+      return fit::ok();
+    }
+    // TODO(mcgrathr): EFI error strings
+    fprintf(this->log(), "%s: EFI error %#zx\n", this->shim_name, result.error_value());
+    return fit::error{Error{.zbi_error = "EFI error"}};
   }
 
   std::optional<acpi_lite::AcpiParser> acpi_;
