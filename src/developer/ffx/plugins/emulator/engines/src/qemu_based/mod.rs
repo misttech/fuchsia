@@ -215,9 +215,15 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                         } else {
                             None
                         };
-                        Self::embed_boot_data(&env, input_path, &output_path, kernel_cmdline)
-                            .await
-                            .map_err(|e| bug!("cannot embed boot data: {e}"))?;
+                        Self::embed_boot_data(
+                            &env,
+                            input_path,
+                            &output_path,
+                            kernel_cmdline,
+                            emu_config.runtime.serial_number.clone(),
+                        )
+                        .await
+                        .map_err(|e| bug!("cannot embed boot data: {e}"))?;
                         log::debug!(
                             "Staging {input_path:?} into {output_path:?} and embedding SSH keys",
                         );
@@ -447,6 +453,7 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
         src: &PathBuf,
         dest: &PathBuf,
         cmdline: Option<String>,
+        serial_number: Option<String>,
     ) -> Result<()> {
         let zbi_tool = get_host_tool(ctx, config::ZBI_HOST_TOOL)
             .map_err(|e| bug!("ZBI tool is missing: {e}"))?;
@@ -474,20 +481,37 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
         // Embed the authorized_keys as bootloader file. This ensures that the key file will be
         // persisted in /data/ssh, and after an `fx ota` of a GPT image the ssh connection
         // continues to work in subsequent boots.
-        let btfl = NamedTempFile::new().expect("temp file for the ssh key for the bootloader");
+        let btfl = NamedTempFile::new().map_err(|e| bug!("{e}"))?;
         Self::authorized_keys_to_boot_loader_file(
             &ssh_keys.authorized_keys,
             &btfl.path().to_path_buf(),
         )?;
-        zbi_command
-            .arg("--type=bootloader_file")
-            .arg(&btfl.path().to_str().expect("converting bootloader file to str"));
+        zbi_command.arg("--type=bootloader_file").arg(btfl.path());
 
-        let cmdline_file = NamedTempFile::new().map_err(|e| bug! {"{e}"})?;
-        if let Some(c) = cmdline {
-            fs::write(&cmdline_file, c).map_err(|e| bug!("{e}"))?;
-            zbi_command.arg("--type=cmdline").arg(&cmdline_file.path());
-        }
+        // Lazy tempfile creation to avoid unnecessary disk I/O when features are disabled/unused.
+        // We bind the NamedTempFiles to variables prefixed with "_" in the outer scope to indicate
+        // they are used solely for their RAII side-effects (file deletion upon dropping), while
+        // extending their lifetimes to persist until the end of the function.
+        let _cmdline_file = if let Some(c) = cmdline {
+            let file = NamedTempFile::new().map_err(|e| bug!("{e}"))?;
+            fs::write(&file, c).map_err(|e| bug!("{e}"))?;
+            zbi_command.arg("--type=cmdline").arg(file.path());
+            Some(file)
+        } else {
+            None
+        };
+
+        // Note: For ZBI boots, the emulator injects the serial number here as a ZBI boot item.
+        // For UEFI/EFI boots (where ZBI staging is skipped), the guest relies on the kernel command line
+        // fallback (bootloader.zbi.serial-number=...) defined in the flags templates.
+        let _serial_file = if let Some(serial) = serial_number.as_ref().filter(|&s| s != "none") {
+            let file = NamedTempFile::new().map_err(|e| bug!("{e}"))?;
+            fs::write(&file, serial).map_err(|e| bug!("{e}"))?;
+            zbi_command.arg("--type=SERIAL_NUMBER").arg(file.path());
+            Some(file)
+        } else {
+            None
+        };
 
         // added last.
         zbi_command.arg("--type=entropy:64").arg("/dev/urandom");
@@ -500,6 +524,7 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                 str::from_utf8(&zbi_command_output.stderr).map_err(|e| bug!("{e}"))?
             );
         }
+
         Ok(())
     }
 
@@ -1808,7 +1833,8 @@ pub(crate) mod tests {
         };
         let dest = root_dir.join("dest.zbi");
 
-        <TestEngine as QemuBasedEngine>::embed_boot_data(&env.context, &src, &dest, None).await?;
+        <TestEngine as QemuBasedEngine>::embed_boot_data(&env.context, &src, &dest, None, None)
+            .await?;
 
         Ok(())
     }
@@ -1838,6 +1864,39 @@ pub(crate) mod tests {
             &src,
             &dest,
             Some("kernel.boot=yes".into()),
+            None,
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_embed_boot_data_with_serial_number() -> Result<()> {
+        let temp = tempdir().expect("cannot get tempdir");
+        let root = temp.path();
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder
+            .user_config("ssh.pub", json!([root.join("test_authorized_keys")]))
+            .user_config("ssh.priv", json!([root.join("test_ed25519_key")]))
+            .build()
+            .unwrap();
+        let mut emu_config = EmulatorConfiguration::default();
+
+        let root_dir = setup_files(&mut emu_config.guest, &temp, DiskImageFormat::Fvm).await?;
+
+        let Some(Ramdisk { path: src, kind: RamdiskKind::Zbi }) = emu_config.guest.ramdisk else {
+            panic!("No ZBI path");
+        };
+        let dest = root_dir.join("dest.zbi");
+
+        <TestEngine as QemuBasedEngine>::embed_boot_data(
+            &env.context,
+            &src,
+            &dest,
+            None,
+            Some("TESTSERIAL".into()),
         )
         .await?;
 
