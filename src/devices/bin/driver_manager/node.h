@@ -58,6 +58,7 @@ class Node;
 struct NodeInfo;
 class NodeRemovalTracker;
 class BootupTracker;
+class Resource;
 struct PowerElementStartArgs;
 
 class DriverHostConnection : public fidl::WireAsyncEventHandler<fuchsia_driver_host::Driver> {
@@ -234,15 +235,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   bool HasDriverComponentController() const override { return component_controller_.is_valid(); }
 
-  bool is_bound() const {
-    if (is_bound_override_.has_value()) {
-      return *is_bound_override_;
-    }
-    return std::holds_alternative<DriverComponent>(state_);
-  }
-
-  // Exposed for testing.
-  void set_bound_for_testing(bool bound) { is_bound_override_ = bound; }
+  void RemoveResource(Resource* resource);
 
   // Begin the removal process for a Node. This function ensures that a Node is
   // only removed after all of its children are removed. It also ensures that
@@ -516,6 +509,21 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   ShutdownIntent shutdown_intent() { return GetNodeShutdownCoordinator().shutdown_intent(); }
 
+  bool is_bound() const {
+    if (is_bound_override_.has_value()) {
+      return *is_bound_override_;
+    }
+    return std::holds_alternative<DriverComponent>(state_);
+  }
+
+  // Exposed for testing.
+  const std::vector<std::unique_ptr<Resource>>& provided_resources() const {
+    return provided_resources_;
+  }
+
+  // Exposed for testing.
+  void set_bound_for_testing(bool bound) { is_bound_override_ = bound; }
+
  private:
   struct DriverComponent {
     DriverComponent(
@@ -585,6 +593,10 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   // fidl::WireServer<fuchsia_driver_framework::Node>
   void AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) override;
+  void ProvideResource(
+      fidl::WireServer<fuchsia_driver_framework::Node>::ProvideResourceRequestView request,
+      fidl::WireServer<fuchsia_driver_framework::Node>::ProvideResourceCompleter::Sync& completer)
+      override;
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_driver_framework::Node> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override;
 
@@ -713,6 +725,8 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   std::vector<PropertiesEntry> properties_;
 
   std::optional<fuchsia_driver_framework::BusInfo> bus_info_;
+
+  std::vector<std::unique_ptr<Resource>> provided_resources_;
 
   // A component framework dictionary that should be provided to the driver
   // that binds to this node.

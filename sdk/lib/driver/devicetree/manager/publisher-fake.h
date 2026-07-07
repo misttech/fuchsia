@@ -58,6 +58,8 @@ class FakeCompositeNodeManager final
 class FakeNode final : public fidl::Server<fuchsia_driver_framework::Node> {
  public:
   void AddChild(AddChildRequest& request, AddChildCompleter::Sync& completer) override;
+  void ProvideResource(ProvideResourceRequest& request,
+                       ProvideResourceCompleter::Sync& completer) override;
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_driver_framework::Node> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override;
 

@@ -82,6 +82,8 @@ source_set("driver_runner") {
     "offer_injection.cc",
     "offer_injection.h",
     "pkg_utils.h",
+    "resource.cc",
+    "resource.h",
     "runner.cc",
     "runner.h",
     "shutdown/node_removal_tracker.cc",

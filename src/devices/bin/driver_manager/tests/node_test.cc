@@ -18,6 +18,7 @@
 #include <bind/fuchsia/platform/cpp/bind.h>
 
 #include "src/devices/bin/driver_manager/driver_host.h"
+#include "src/devices/bin/driver_manager/resource.h"
 #include "src/devices/bin/driver_manager/tests/driver_manager_test_base.h"
 #include "src/devices/bin/driver_manager/tests/driver_runner_test_fixture.h"
 
@@ -766,9 +767,7 @@ TEST_F(Dfv2NodeTest, TestCompositeNodeProperties) {
   const std::vector<fuchsia_driver_framework::NodeProperty2> kParent2NodeProperties{
       fdf::MakeProperty2("test-key-2", "test=value")};
   auto parent_1 = CreateNode(kParent1Name);
-  parent_1->SetNonCompositeProperties(kParent1NodeProperties);
   auto parent_2 = CreateNode(kParent2Name);
-  parent_2->SetNonCompositeProperties(kParent2NodeProperties);
 
   std::vector<fuchsia_driver_framework::NodePropertyEntry2> parent_properties;
   parent_properties.emplace_back(kParent1Name, kParent1NodeProperties);
@@ -1137,5 +1136,85 @@ TEST_F(Dfv2NodeTest, AddChildOffersDictionaryParentFreedBeforeImportReply) {
   // Invoke the deferred continuation.
   auto cb = std::move(fake_util.pending_import_);
   cb(zx::error(ZX_ERR_INTERNAL));
+  RunLoopUntilIdle();
+}
+
+TEST_F(Dfv2NodeTest, ProvideAndRemoveResource) {
+  auto node = CreateNode("test-node");
+
+  auto [node_client_end, node_server_end] =
+      fidl::Endpoints<fuchsia_driver_framework::Node>::Create();
+  auto binding = fidl::BindServer(dispatcher(), std::move(node_server_end), node);
+
+  fidl::WireClient<fuchsia_driver_framework::Node> node_client(std::move(node_client_end),
+                                                               dispatcher());
+
+  auto endpoints = fidl::Endpoints<fuchsia_driver_framework::ResourceController>::Create();
+
+  fidl::Arena arena;
+  auto resource_args =
+      fuchsia_driver_framework::wire::ResourceArgs::Builder(arena)
+          .name("test-resource")
+          .properties(fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2>())
+          .offers(fidl::VectorView<fuchsia_driver_framework::wire::Offer>())
+          .Build();
+
+  bool called = false;
+  node_client->ProvideResource(resource_args, std::move(endpoints.server))
+      .Then([&called](auto& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_FALSE(result->is_error());
+        called = true;
+      });
+  RunLoopUntilIdle();
+  ASSERT_TRUE(called);
+
+  ASSERT_EQ(node->provided_resources().size(), 1u);
+  EXPECT_EQ(node->provided_resources()[0]->name(), "test-resource");
+
+  auto owner = node->provided_resources()[0]->owner().lock();
+  ASSERT_NE(owner, nullptr);
+  EXPECT_EQ(owner, node);
+
+  endpoints.client.reset();
+  RunLoopUntilIdle();
+
+  ASSERT_EQ(node->provided_resources().size(), 0u);
+
+  binding.Unbind();
+  RunLoopUntilIdle();
+}
+
+TEST_F(Dfv2NodeTest, ProvideResourceInvalidArgs) {
+  auto node = CreateNode("test-node");
+
+  auto [node_client_end, node_server_end] =
+      fidl::Endpoints<fuchsia_driver_framework::Node>::Create();
+  auto binding = fidl::BindServer(dispatcher(), std::move(node_server_end), node);
+
+  fidl::WireClient<fuchsia_driver_framework::Node> node_client(std::move(node_client_end),
+                                                               dispatcher());
+
+  auto endpoints = fidl::Endpoints<fuchsia_driver_framework::ResourceController>::Create();
+
+  fidl::Arena arena;
+  // Missing properties and offers.
+  auto resource_args =
+      fuchsia_driver_framework::wire::ResourceArgs::Builder(arena).name("test-resource").Build();
+
+  bool called = false;
+  node_client->ProvideResource(resource_args, std::move(endpoints.server))
+      .Then([&called](auto& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_TRUE(result->is_error());
+        EXPECT_EQ(result->error_value(), fuchsia_driver_framework::NodeError::kUnsupportedArgs);
+        called = true;
+      });
+  RunLoopUntilIdle();
+  ASSERT_TRUE(called);
+
+  ASSERT_EQ(node->provided_resources().size(), 0u);
+
+  binding.Unbind();
   RunLoopUntilIdle();
 }

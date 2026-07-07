@@ -70,6 +70,11 @@ void FakeNode::AddChild(AddChildRequest& request, AddChildCompleter::Sync& compl
   completer.Reply(zx::ok());
 }
 
+void FakeNode::ProvideResource(ProvideResourceRequest& request,
+                               ProvideResourceCompleter::Sync& completer) {
+  completer.Reply(zx::ok());
+}
+
 void FakeNode::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_driver_framework::Node> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {}

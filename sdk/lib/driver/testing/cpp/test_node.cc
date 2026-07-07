@@ -169,6 +169,14 @@ void TestNode::AddChild(AddChildRequestView request, AddChildCompleter::Sync& co
   completer.ReplySuccess();
 }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+void TestNode::ProvideResource(
+    fidl::WireServer<fuchsia_driver_framework::Node>::ProvideResourceRequestView request,
+    fidl::WireServer<fuchsia_driver_framework::Node>::ProvideResourceCompleter::Sync& completer) {
+  completer.ReplyError(fuchsia_driver_framework::NodeError::kUnsupportedArgs);
+}
+#endif
+
 void TestNode::RequestBind(RequestBindRequestView request, RequestBindCompleter::Sync& completer) {
   std::lock_guard guard(checker_);
   bool force_rebind = false;

@@ -31,6 +31,7 @@
 #include "src/devices/bin/driver_manager/bootup_tracker.h"
 #include "src/devices/bin/driver_manager/controller_allowlist_passthrough.h"
 #include "src/devices/bin/driver_manager/node_property_conversion.h"
+#include "src/devices/bin/driver_manager/resource.h"
 #include "src/devices/bin/driver_manager/shutdown/node_removal_tracker.h"
 #include "src/devices/lib/log/log.h"
 #include "src/lib/fxl/strings/join_strings.h"
@@ -1398,6 +1399,27 @@ void Node::AddChild(fuchsia_driver_framework::NodeAddArgs args,
         self->AddChildHelper(std::move(args), std::move(controller), std::move(node),
                              std::move(callback));
       });
+}
+
+void Node::ProvideResource(
+    fidl::WireServer<fuchsia_driver_framework::Node>::ProvideResourceRequestView request,
+    fidl::WireServer<fuchsia_driver_framework::Node>::ProvideResourceCompleter::Sync& completer) {
+  if (!request->resource.has_name() || !request->resource.has_properties() ||
+      !request->resource.has_offers()) {
+    fdf_log::error("Failed to provide resource: Missing name, properties, or offers fields");
+    completer.ReplyError(fdf::NodeError::kUnsupportedArgs);
+    return;
+  }
+
+  // TODO(https://fxbug.dev/526670090): Bind the resource.
+  auto resource = std::make_unique<Resource>(weak_from_this(), fidl::ToNatural(request->resource),
+                                             std::move(request->controller), dispatcher_);
+  provided_resources_.push_back(std::move(resource));
+  completer.ReplySuccess();
+}
+
+void Node::RemoveResource(Resource* resource) {
+  std::erase_if(provided_resources_, [resource](const auto& r) { return r.get() == resource; });
 }
 
 void Node::OnNodeServerUnbound(fidl::UnbindInfo info) {

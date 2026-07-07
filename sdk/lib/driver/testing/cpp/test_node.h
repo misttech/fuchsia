@@ -119,6 +119,13 @@ class TestNode final : public fidl::WireServer<fuchsia_driver_framework::NodeCon
  private:
   void AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) override;
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+  void ProvideResource(
+      fidl::WireServer<fuchsia_driver_framework::Node>::ProvideResourceRequestView request,
+      fidl::WireServer<fuchsia_driver_framework::Node>::ProvideResourceCompleter::Sync& completer)
+      override;
+#endif
+
   void Remove(RemoveCompleter::Sync& completer) override { RemoveFromParent(); }
   void RequestBind(RequestBindRequestView request, RequestBindCompleter::Sync& completer) override;
 #if FUCHSIA_API_LEVEL_AT_LEAST(29)

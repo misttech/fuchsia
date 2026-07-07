@@ -205,6 +205,19 @@ type BusInfo = table {
     3: address_stability DeviceAddressStability;
 };
 
+@available(added=HEAD)
+alias ResourceName = NodeName;
+@available(added=HEAD)
+alias ResourceProperties = vector<NodeProperty2>:MAX_PROPERTY_COUNT;
+@available(added=HEAD)
+alias ResourcePropertyValueUint = NodePropertyValueUint;
+@available(added=HEAD)
+alias ResourcePropertyValueString = NodePropertyValueString;
+@available(added=HEAD)
+alias ResourcePropertyValueBool = NodePropertyValueBool;
+@available(added=HEAD)
+alias ResourcePropertyValue = NodePropertyValue;
+
 /// Arguments for adding a node.
 type NodeAddArgs = resource table {
     /// Name of the node.
@@ -254,6 +267,23 @@ type NodeAddArgs = resource table {
     /// instead.
     @available(added=30)
     10: driver_host string:MAX_DRIVER_HOST_LENGTH;
+};
+
+/// Arguments for providing a resource.
+@available(added=HEAD)
+type ResourceArgs = resource table {
+    /// Name of the resource. Required.
+    1: name ResourceName;
+
+    /// Properties of the resource. Required.
+    2: properties ResourceProperties;
+
+    /// Capabilities the resource offers to the node that depends on it. Required.
+    3: offers NodeOffersVector;
+
+    /// Information that feeds into a structured bus topology for the device. It should
+    /// only be specified by bus drivers, ideally those which are included by default. Optional.
+    4: bus_info BusInfo;
 };
 
 @available(added=29)
@@ -370,4 +400,62 @@ open protocol Node {
         controller server_end:NodeController;
         node server_end:<Node, optional>;
     }) -> () error NodeError;
+
+    /// Provides a resource that other nodes can depend on. The lifetime of the
+    /// provided resource is tied to the `controller` client connection. Dropping
+    /// the client connection will cause the resource to be removed.
+    @available(added=HEAD)
+    flexible ProvideResource(resource struct {
+        resource ResourceArgs;
+        controller server_end:ResourceController;
+    }) -> () error NodeError;
+};
+
+/// Protocol through which the resource's provider can use to control it.
+@available(added=HEAD)
+open protocol ResourceController {
+    /// Removes the resource.
+    flexible Remove();
+};
+
+@available(added=HEAD)
+type ResourceProperty = struct {
+    /// Key for the property.
+    key string:MAX;
+
+    /// Value for the property.
+    value ResourcePropertyValue;
+};
+
+/// Selector used to match resources as a dependency for nodes.
+@available(added=HEAD)
+type Selector = table {
+    /// The resource must contain these offers.
+    1: offers vector<Offer>:MAX_OFFER_COUNT;
+
+    /// The resource must contain these properties. The property keys must be unique for
+    /// the Selector to be considered valid.
+    2: include_properties vector<ResourceProperty>:MAX_PROPERTY_COUNT;
+
+    /// The resource must not contain these properties.
+    3: exclude_properties vector<ResourceProperty>:MAX_PROPERTY_COUNT;
+};
+
+/// Represents a dependency that a node has on a resource.
+/// The dependency is resolved by matching a resource against the `selector`'s constraints.
+@available(added=HEAD)
+type Dependency = table {
+    /// The resources must match the selector's constraints to be depended on.
+    1: selector Selector;
+
+    /// Additional properties tagged to the resource for driver binding
+    2: tags vector<ResourceProperty>:MAX_PROPERTY_COUNT;
+};
+
+/// Represents a node added to the driver topology. The node is created after all of its dependencies
+/// are matched to a resource.
+@available(added=HEAD)
+type Node2 = table {
+    1: name string:MAX;
+    2: dependencies vector<Dependency>:MAX;
 };
