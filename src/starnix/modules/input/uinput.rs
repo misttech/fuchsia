@@ -20,7 +20,9 @@ use starnix_core::vfs::{self, FileObject, FileOps, FsString, fileops_impl_noop_s
 use starnix_logging::log_warn;
 use starnix_modules_input_event_conversion::key_linux_to_fuchsia::LinuxKeyboardEventParser;
 use starnix_modules_input_event_conversion::touch_linux_to_fuchsia::LinuxTouchEventParser;
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
+use starnix_sync::{
+    FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, UinputDeviceStateLock, Unlocked,
+};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_id::INPUT_MAJOR;
 use starnix_uapi::errors::Errno;
@@ -174,7 +176,7 @@ impl UinputDeviceMutableState {
 
 struct UinputDeviceFile {
     input_event_relay: Arc<InputEventsRelayHandle>,
-    inner: Mutex<UinputDeviceMutableState>,
+    inner: LockDepMutex<UinputDeviceMutableState, UinputDeviceStateLock>,
     inspect_node: Arc<fuchsia_inspect::Node>,
 }
 
@@ -185,7 +187,7 @@ impl UinputDeviceFile {
     ) -> Self {
         Self {
             input_event_relay,
-            inner: Mutex::new(UinputDeviceMutableState {
+            inner: UinputDeviceMutableState {
                 enabled_evbits: BitVec::from_elem(uapi::EV_CNT as usize, false),
                 input_id: None,
                 created_device: CreatedDevice::None,
@@ -193,7 +195,8 @@ impl UinputDeviceFile {
                 device_id: None,
                 x_range: None,
                 y_range: None,
-            }),
+            }
+            .into(),
             inspect_node,
         }
     }

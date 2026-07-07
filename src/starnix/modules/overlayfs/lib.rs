@@ -25,7 +25,8 @@ use starnix_core::vfs::{
 use starnix_logging::{log_error, log_warn, track_stub};
 use starnix_sync::{
     BeforeFsNodeAppend, DynamicLockDepRwLock, FileOpsCore, FsNodeAppend, LockDepReadGuard,
-    LockDepWriteGuard, LockEqualOrBefore, Locked, RwLock, Unlocked,
+    LockDepRwLock, LockDepWriteGuard, LockEqualOrBefore, Locked, OverlayFsDirEntriesLock,
+    OverlayFsStateLock, Unlocked,
 };
 use starnix_uapi::auth::{Credentials, FsCred};
 use starnix_uapi::device_id::DeviceId;
@@ -643,27 +644,26 @@ impl FsNodeOps for OverlayNodeOps {
                 self.node.ensure_upper_maybe_copy(locked, current_task, copy_mode, &node.fs())?;
             }
 
-            let ops: Box<dyn FileOps> = if node.is_dir() {
-                Box::new(OverlayDirectory {
-                    node: self.node.clone(),
-                    dir_entries: Default::default(),
-                })
-            } else {
-                let state =
-                    match (self.node.upper.get(), &self.node.lower) {
-                        (Some(upper), _) => OverlayFileState::Upper(upper.entry().open_anonymous(
-                            locked,
-                            current_task,
-                            flags,
-                        )?),
-                        (None, Some(lower)) => OverlayFileState::Lower(
-                            lower.entry().open_anonymous(locked, current_task, flags)?,
-                        ),
-                        _ => panic!("Expected either upper or lower node"),
-                    };
+            let ops: Box<dyn FileOps> =
+                if node.is_dir() {
+                    Box::new(OverlayDirectory {
+                        node: self.node.clone(),
+                        dir_entries: Default::default(),
+                    })
+                } else {
+                    let state =
+                        match (self.node.upper.get(), &self.node.lower) {
+                            (Some(upper), _) => OverlayFileState::Upper(
+                                upper.entry().open_anonymous(locked, current_task, flags)?,
+                            ),
+                            (None, Some(lower)) => OverlayFileState::Lower(
+                                lower.entry().open_anonymous(locked, current_task, flags)?,
+                            ),
+                            _ => panic!("Expected either upper or lower node"),
+                        };
 
-                Box::new(OverlayFile { node: self.node.clone(), flags, state: RwLock::new(state) })
-            };
+                    Box::new(OverlayFile { node: self.node.clone(), flags, state: state.into() })
+                };
 
             Ok(ops)
         })
@@ -1131,7 +1131,7 @@ impl FsNodeOps for OverlayNodeOps {
 }
 struct OverlayDirectory {
     node: Arc<OverlayNode>,
-    dir_entries: RwLock<DirEntries>,
+    dir_entries: LockDepRwLock<DirEntries, OverlayFsDirEntriesLock>,
 }
 
 impl OverlayDirectory {
@@ -1236,7 +1236,7 @@ impl OverlayFileState {
 struct OverlayFile {
     node: Arc<OverlayNode>,
     flags: OpenFlags,
-    state: RwLock<OverlayFileState>,
+    state: LockDepRwLock<OverlayFileState, OverlayFsStateLock>,
 }
 
 impl FileOps for OverlayFile {

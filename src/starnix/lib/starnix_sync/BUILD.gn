@@ -29,6 +29,8 @@ rustc_library("starnix_sync") {
 
   deps = [
     "//sdk/rust/zx",
+    "//src/lib/diagnostics/inspect/derive",
+    "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fuchsia-sync",
     "//src/starnix/lib/starnix_sync/lock_ordering_macro",
     "//third_party/rust_crates:async-trait",

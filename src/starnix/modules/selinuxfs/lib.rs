@@ -34,7 +34,7 @@ use starnix_core::vfs::{
 use starnix_logging::{
     __track_stub_inner, BugRef, impossible_error, log_error, log_info, track_stub,
 };
-use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
+use starnix_sync::{FileOpsCore, LockDepMutex, Locked, SeLinuxFsContextSidLock, Unlocked};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
@@ -595,13 +595,13 @@ impl SeLinuxApiOps for CheckReqProtApi {
 struct ContextApi {
     security_server: Arc<SecurityServer>,
     // Holds the SID representing the Security Context that the caller wrote to the file.
-    context_sid: Mutex<Option<SecurityId>>,
+    context_sid: LockDepMutex<Option<SecurityId>, SeLinuxFsContextSidLock>,
 }
 
 impl ContextApi {
     fn new_node(security_server: Arc<SecurityServer>) -> impl FsNodeOps {
         SeLinuxApi::new_node(move || {
-            Ok(Self { security_server: security_server.clone(), context_sid: Mutex::default() })
+            Ok(Self { security_server: security_server.clone(), context_sid: Default::default() })
         })
     }
 }

@@ -22,7 +22,7 @@ use starnix_core::vfs::{
     FsStr, FsString,
 };
 use starnix_logging::bug_ref;
-use starnix_sync::{FileOpsCore, Locked, Mutex};
+use starnix_sync::{CgroupDirectoryInterfaceFilesLock, FileOpsCore, LockDepMutex, Locked};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
@@ -56,7 +56,8 @@ pub struct CgroupDirectory {
 
     /// Interface files of the current cgroup directory. Files can be added or removed when resource
     /// controllers are enabled and disabled on the cgroup, respectively.
-    interface_files: Mutex<BTreeMap<FsString, FsNodeHandle>>,
+    interface_files:
+        LockDepMutex<BTreeMap<FsString, FsNodeHandle>, CgroupDirectoryInterfaceFilesLock>,
 }
 
 impl CgroupDirectory {
@@ -69,7 +70,7 @@ impl CgroupDirectory {
     ) -> CgroupDirectoryHandle {
         CgroupDirectoryHandle(Arc::new(Self {
             cgroup: cgroup as Weak<dyn CgroupOps>,
-            interface_files: Mutex::new(BTreeMap::new()),
+            interface_files: Default::default(),
             dir_nodes,
         }))
     }
@@ -217,7 +218,7 @@ impl CgroupDirectory {
         }
         CgroupDirectoryHandle(Arc::new(Self {
             cgroup,
-            interface_files: Mutex::new(interface_files),
+            interface_files: interface_files.into(),
             dir_nodes: Arc::downgrade(dir_nodes),
         }))
     }
