@@ -956,7 +956,7 @@ TEST_P(DriverRunnerTest, SecondNodeWithDisabledSecondDriver) {
   auto child = root_driver->driver->AddChild(fidl::ToNatural(args), false, false);
   EXPECT_TRUE(RunLoopUntilIdle());
 
-  EXPECT_EQ(1u, driver_runner().bind_manager().NumOrphanedNodes());
+  EXPECT_EQ(1u, driver_runner().bind_manager().NumOrphanedResources());
 
   bool bind_failed = false;
   child->node_controller.value()->WaitForDriver().Then(
@@ -996,7 +996,7 @@ TEST_P(DriverRunnerTest, StartSecondDriver_DisableAndRematch_UndisableAndRestart
   auto [driver, controller] = StartSecondDriver("dev.second");
   StopListener& stop_listener = ServeStopListener(std::move(controller));
 
-  EXPECT_EQ(0u, driver_runner().bind_manager().NumOrphanedNodes());
+  EXPECT_EQ(0u, driver_runner().bind_manager().NumOrphanedResources());
 
   // Disable the second-driver url, and restart with rematching of the requested.
   driver_index().disable_driver_url(second_driver_url);
@@ -1011,7 +1011,7 @@ TEST_P(DriverRunnerTest, StartSecondDriver_DisableAndRematch_UndisableAndRestart
 
   // Since we disabled the driver url, the rematch should have not gotten a match, and therefore
   // the node should haver become orphaned.
-  EXPECT_EQ(1u, driver_runner().bind_manager().NumOrphanedNodes());
+  EXPECT_EQ(1u, driver_runner().bind_manager().NumOrphanedResources());
 
   // Undisable the driver, and try binding all available nodes. This should cause it to get
   // started again.
@@ -1025,7 +1025,7 @@ TEST_P(DriverRunnerTest, StartSecondDriver_DisableAndRematch_UndisableAndRestart
   ServeStopListener(std::move(controller_2));
 
   // This list should be empty now that it got bound again.
-  EXPECT_EQ(0u, driver_runner().bind_manager().NumOrphanedNodes());
+  EXPECT_EQ(0u, driver_runner().bind_manager().NumOrphanedResources());
 
   StopDriverComponent(std::move(root_driver->controller));
   // The node was destroyed twice.
@@ -1050,7 +1050,7 @@ TEST_P(DriverRunnerTest, StartSecondDriverHostRestartOnCrash) {
   auto [driver_1, controller_1] = StartSecondDriver("dev.second", false, true);
   StopListener& stop_listener_1 = ServeStopListener(std::move(controller_1));
 
-  EXPECT_EQ(0u, driver_runner().bind_manager().NumOrphanedNodes());
+  EXPECT_EQ(0u, driver_runner().bind_manager().NumOrphanedResources());
 
   // Stop the driver host binding.
   PrepareRealmForSecondDriverComponentStart();
@@ -1131,7 +1131,7 @@ TEST_P(DriverRunnerTest, StartSecondDriver_UseNextVdso) {
   auto [driver_1, controller_1] = StartSecondDriver("dev.second", true, false, true);
   ServeStopListener(std::move(controller_1));
 
-  EXPECT_EQ(0u, driver_runner().bind_manager().NumOrphanedNodes());
+  EXPECT_EQ(0u, driver_runner().bind_manager().NumOrphanedResources());
 
   StopDriverComponent(std::move(root_driver->controller));
   realm().AssertDestroyedChildren(
@@ -1148,7 +1148,7 @@ TEST_P(DriverRunnerTest, BindThroughRequest) {
   std::shared_ptr<CreatedChild> child = root_driver->driver->AddChild("child", false, false);
   EXPECT_TRUE(RunLoopUntilIdle());
 
-  ASSERT_EQ(1u, driver_runner().bind_manager().NumOrphanedNodes());
+  ASSERT_EQ(1u, driver_runner().bind_manager().NumOrphanedResources());
 
   driver_index().set_match_callback([](auto args) -> zx::result<FakeDriverIndex::MatchResult> {
     return zx::ok(FakeDriverIndex::MatchResult{
@@ -1167,7 +1167,7 @@ TEST_P(DriverRunnerTest, BindThroughRequest) {
         EXPECT_TRUE(result.is_ok());
       });
   EXPECT_TRUE(RunLoopUntilIdle());
-  ASSERT_EQ(0u, driver_runner().bind_manager().NumOrphanedNodes());
+  ASSERT_EQ(0u, driver_runner().bind_manager().NumOrphanedResources());
 
   auto [driver, controller] = StartSecondDriver("dev.child");
   ServeStopListener(std::move(controller));
@@ -1190,7 +1190,7 @@ TEST_P(DriverRunnerTest, BindAndRestartThroughRequest) {
   std::shared_ptr<CreatedChild> child = root_driver->driver->AddChild("child", false, false);
   EXPECT_TRUE(RunLoopUntilIdle());
 
-  ASSERT_EQ(1u, driver_runner().bind_manager().NumOrphanedNodes());
+  ASSERT_EQ(1u, driver_runner().bind_manager().NumOrphanedResources());
 
   driver_index().set_match_callback([](auto args) -> zx::result<FakeDriverIndex::MatchResult> {
     if (args.has_driver_url_suffix()) {
@@ -1217,7 +1217,7 @@ TEST_P(DriverRunnerTest, BindAndRestartThroughRequest) {
         EXPECT_TRUE(result.is_ok());
       });
   EXPECT_TRUE(RunLoopUntilIdle());
-  ASSERT_EQ(0u, driver_runner().bind_manager().NumOrphanedNodes());
+  ASSERT_EQ(0u, driver_runner().bind_manager().NumOrphanedResources());
 
   // Get the second-driver running.
   auto [driver_1, controller_1] = StartSecondDriver("dev.child");
@@ -1300,7 +1300,7 @@ TEST_P(DriverRunnerTest, StartSecondDriver_UnknownNode) {
   EXPECT_TRUE(RunLoopUntilIdle());
 
   StartDriver("root", {.close = true, .use_dynamic_linker = use_dynamic_linker()});
-  ASSERT_EQ(1u, driver_runner().bind_manager().NumOrphanedNodes());
+  ASSERT_EQ(1u, driver_runner().bind_manager().NumOrphanedResources());
 
   StopDriverComponent(std::move(root_driver->controller));
   realm().AssertDestroyedChildren({CreateChildRef("root", "boot-drivers")});
@@ -1342,7 +1342,7 @@ TEST_P(DriverRunnerTest, StartSecondDriver_BindOrphanToBaseDriver) {
   EXPECT_TRUE(RunLoopUntilIdle());
 
   // Make sure the node we added was orphaned.
-  ASSERT_EQ(1u, driver_runner().bind_manager().NumOrphanedNodes());
+  ASSERT_EQ(1u, driver_runner().bind_manager().NumOrphanedResources());
 
   // Set the handlers for the new driver.
   PrepareRealmForSecondDriverComponentStart();
@@ -1356,7 +1356,7 @@ TEST_P(DriverRunnerTest, StartSecondDriver_BindOrphanToBaseDriver) {
   ASSERT_TRUE(RunLoopUntilIdle());
 
   // See that we don't have an orphan anymore.
-  ASSERT_EQ(0u, driver_runner().bind_manager().NumOrphanedNodes());
+  ASSERT_EQ(0u, driver_runner().bind_manager().NumOrphanedResources());
 
   StopDriverComponent(std::move(root_driver->controller));
   realm().AssertDestroyedChildren(
@@ -1980,7 +1980,7 @@ TEST_P(DriverRunnerTest, DeviceControllerBind) {
   std::shared_ptr<CreatedChild> child = root_driver->driver->AddChild("child", false, false);
   EXPECT_TRUE(RunLoopUntilIdle());
 
-  ASSERT_EQ(1u, driver_runner().bind_manager().NumOrphanedNodes());
+  ASSERT_EQ(1u, driver_runner().bind_manager().NumOrphanedResources());
 
   driver_index().set_match_callback([](auto args) -> zx::result<FakeDriverIndex::MatchResult> {
     EXPECT_EQ(args.driver_url_suffix().get(), second_driver_url);
@@ -1993,7 +1993,7 @@ TEST_P(DriverRunnerTest, DeviceControllerBind) {
   AssertNodeControllerBound(child);
 
   // Bind the driver.
-  ASSERT_EQ(1u, driver_runner().bind_manager().NumOrphanedNodes());
+  ASSERT_EQ(1u, driver_runner().bind_manager().NumOrphanedResources());
   auto device_controller = ConnectToDeviceController("child");
   device_controller->Bind(fidl::StringView::FromExternal(second_driver_url))
       .Then([](fidl::WireUnownedResult<fuchsia_device::Controller::Bind>& reply) {
@@ -2002,7 +2002,7 @@ TEST_P(DriverRunnerTest, DeviceControllerBind) {
   ASSERT_TRUE(RunLoopUntilIdle());
 
   // Verify the driver was bound.
-  ASSERT_EQ(0u, driver_runner().bind_manager().NumOrphanedNodes());
+  ASSERT_EQ(0u, driver_runner().bind_manager().NumOrphanedResources());
   auto [driver, controller] = StartSecondDriver("dev.child");
   ServeStopListener(std::move(controller));
 

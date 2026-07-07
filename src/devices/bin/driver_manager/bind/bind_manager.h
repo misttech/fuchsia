@@ -9,7 +9,7 @@
 #include <lib/fit/function.h>
 #include <lib/inspect/cpp/inspector.h>
 
-#include "src/devices/bin/driver_manager/bind/bind_node_set.h"
+#include "src/devices/bin/driver_manager/bind/bind_resource_set.h"
 #include "src/devices/bin/driver_manager/bind/bind_result_tracker.h"
 #include "src/devices/bin/driver_manager/composite/composite_node_spec_manager.h"
 #include "src/devices/bin/driver_manager/node.h"
@@ -21,9 +21,11 @@ using OwnedCompositeParents = std::vector<fuchsia_driver_framework::CompositePar
 
 class DriverRunner;
 
+class Resource;
+
 struct BindRequest {
   std::string node_moniker;
-  std::weak_ptr<Node> node;
+  std::weak_ptr<Resource> resource;
   std::string driver_url_suffix;
   std::shared_ptr<BindResultTracker> tracker;
   bool composite_only;
@@ -83,7 +85,7 @@ class BindManager {
   explicit BindManager(BindManagerBridge* bridge, NodeManager* node_manager,
                        async_dispatcher_t* dispatcher);
 
-  void Bind(Node& node, std::string_view driver_url_suffix,
+  void Bind(Resource& resource, std::string_view driver_url_suffix,
             std::shared_ptr<BindResultTracker> result_tracker);
 
   void TryBindAllAvailable(
@@ -96,13 +98,13 @@ class BindManager {
       fidl::AnyArena& arena) const;
 
   // Exposed for testing.
-  size_t NumOrphanedNodes() const { return bind_node_set_.NumOfOrphanedNodes(); }
+  size_t NumOrphanedResources() const { return bind_resource_set_.NumOfOrphanedResources(); }
 
-  bool HasOngoingBind() const { return bind_node_set_.is_bind_ongoing(); }
+  bool HasOngoingBind() const { return bind_resource_set_.is_bind_ongoing(); }
 
  protected:
   // Exposed for testing.
-  const BindNodeSet& bind_node_set() const { return bind_node_set_; }
+  const BindResourceSet& bind_resource_set() const { return bind_resource_set_; }
 
   // Exposed for testing.
   std::vector<BindRequest> pending_bind_requests() const { return pending_bind_requests_; }
@@ -115,16 +117,16 @@ class BindManager {
  private:
   using BindMatchCompleteCallback = fit::callback<void()>;
 
-  // Should only be called when |bind_node_set_.is_bind_ongoing()| is true.
+  // Should only be called when |bind_resource_set_.is_bind_ongoing()| is true.
   void BindInternal(
       BindRequest request, BindMatchCompleteCallback match_complete_callback = []() {});
 
-  // Should only be called when |bind_node_set_.is_bind_ongoing()| is true and |orphaned_nodes_| is
-  // not empty.
+  // Should only be called when |bind_resource_set_.is_bind_ongoing()| is true and there are
+  // orphaned resources.
   void TryBindAllAvailableInternal(std::shared_ptr<BindResultTracker> tracker);
 
   // Process any pending bind requests that were queued during an ongoing bind process.
-  // Should only be called when |bind_node_set_.is_bind_ongoing()| is true.
+  // Should only be called when |bind_resource_set_.is_bind_ongoing()| is true.
   void ProcessPendingBindRequests();
 
   // Callback function for a Driver Index match request.
@@ -133,9 +135,10 @@ class BindManager {
       fidl::WireUnownedResult<fuchsia_driver_index::DriverIndex::MatchDriver>& result,
       BindMatchCompleteCallback match_complete_callback);
 
-  // Binds |node| to |result|.
-  // Result contains a vector of composite spec info that the node binded to if it matched composite
-  // spec parents, or it will have a string with the driver URL if it matched directly to a driver.
+  // Binds |node|'s self-resource to |result|.
+  // Result contains a vector of composite spec info that the resource bound to if it matched
+  // composite spec parents, or it will have a string with the driver URL if it matched directly to
+  // a driver.
   BindResult BindNodeToResult(
       Node& node, bool composite_only,
       fidl::WireUnownedResult<fuchsia_driver_index::DriverIndex::MatchDriver>& result,
@@ -151,7 +154,7 @@ class BindManager {
   // is complete, ProcessPendingBindRequests() goes through the queue.
   std::vector<BindRequest> pending_bind_requests_;
 
-  BindNodeSet bind_node_set_;
+  BindResourceSet bind_resource_set_;
 
   // Must outlive BindManager.
   BindManagerBridge* bridge_;

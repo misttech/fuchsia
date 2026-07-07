@@ -167,8 +167,8 @@ class FakeNodeManager : public TestNodeManagerBase {
 class NodeShutdownTest : public DriverManagerTestBase {
  public:
   void SetUp() override {
-    DriverManagerTestBase::SetUp();
     node_manager = std::make_unique<FakeNodeManager>(dispatcher());
+    DriverManagerTestBase::SetUp();
 
     removal_tracker_ = std::make_unique<NodeRemovalTracker>(dispatcher());
     removal_tracker_->set_all_callback([this]() { remove_all_callback_invoked_ = true; });

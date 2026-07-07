@@ -11,9 +11,16 @@ void DriverManagerTestBase::SetUp() {
   root_->AddToDevfsForTesting(root_devnode_.value());
 }
 
+void DriverManagerTestBase::TearDown() {
+  root_.reset();
+  devfs_.reset();
+  TestLoopFixture::TearDown();
+}
+
 std::shared_ptr<driver_manager::Node> DriverManagerTestBase::CreateNode(std::string_view name) {
   auto node = std::make_shared<driver_manager::Node>(name, std::weak_ptr<driver_manager::Node>{},
                                                      GetNodeManager(), dispatcher());
+  node->InitializeSelfResource();
   node->AddToDevfsForTesting(root_devnode_.value());
   node->devfs_device().publish();
   return node;
@@ -23,6 +30,7 @@ std::shared_ptr<driver_manager::Node> DriverManagerTestBase::CreateNode(
     std::string_view name, std::weak_ptr<driver_manager::Node> parent) {
   auto node = std::make_shared<driver_manager::Node>(name, std::move(parent), GetNodeManager(),
                                                      dispatcher());
+  node->InitializeSelfResource();
   node->AddToDevfsForTesting(root_devnode_.value());
   node->devfs_device().publish();
   node->AddToParents();

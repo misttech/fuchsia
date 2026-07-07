@@ -40,13 +40,17 @@ class TestNodeManagerBase : public driver_manager::NodeManager {
 
   driver_manager::MemoryAttributor& memory_attributor() override { return attributor_; }
 
+  driver_manager::ResourceId GetNextResourceId() override { return next_resource_id_++; }
+
  private:
   driver_manager::MemoryAttributor attributor_{async_get_default_dispatcher()};
+  driver_manager::ResourceId next_resource_id_ = 0;
 };
 
 class DriverManagerTestBase : public gtest::TestLoopFixture {
  public:
   void SetUp() override;
+  void TearDown() override;
 
   virtual driver_manager::NodeManager* GetNodeManager() = 0;
 

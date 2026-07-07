@@ -319,6 +319,7 @@ DriverRunner::DriverRunner(
                     std::move(cpu_element_mgr.value()), dispatcher))
               : std::nullopt),
       wait_for_storage_token_from_driver_(wait_for_storage_token_from_driver_) {
+  root_node_->InitializeSelfResource();
   if (enable_test_shutdown_delays_) {
     // TODO(https://fxbug.dev/42084497): Allow the seed to be set from the configuration.
     auto seed = std::chrono::system_clock::now().time_since_epoch().count();
@@ -1078,13 +1079,17 @@ void DriverRunner::Bind(Node& node, std::shared_ptr<BindResultTracker> result_tr
 
 void DriverRunner::BindToUrl(Node& node, std::string_view driver_url_suffix,
                              std::shared_ptr<BindResultTracker> result_tracker) {
-  bind_manager_.Bind(node, driver_url_suffix, std::move(result_tracker));
+  auto self_resource = node.GetSelfResource();
+  ZX_ASSERT(self_resource.has_value());
+  bind_manager_.Bind(*self_resource.value(), driver_url_suffix, std::move(result_tracker));
 }
 
 void DriverRunner::RebindComposite(std::string spec, std::optional<std::string> driver_url,
                                    fit::callback<void(zx::result<>)> callback) {
   composite_node_spec_manager_.Rebind(spec, driver_url, std::move(callback));
 }
+
+ResourceId DriverRunner::GetNextResourceId() { return next_resource_id_++; }
 
 void DriverRunner::RebindCompositesWithDriver(const std::string& url,
                                               fit::callback<void(size_t)> complete_callback) {

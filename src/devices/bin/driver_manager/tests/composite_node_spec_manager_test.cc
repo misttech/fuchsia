@@ -180,9 +180,11 @@ class CompositeNodeSpecManagerTest : public gtest::TestLoopFixture {
     return add_spec_result.value();
   }
 
-  std::shared_ptr<driver_manager::Node> CreateNode(const char* name) const {
-    return std::make_shared<driver_manager::Node>("node", std::weak_ptr<driver_manager::Node>{},
-                                                  nullptr, loop_.dispatcher());
+  std::shared_ptr<driver_manager::Node> CreateNode(const char* name) {
+    auto node = std::make_shared<driver_manager::Node>(name, std::weak_ptr<driver_manager::Node>{},
+                                                       &node_manager_, loop_.dispatcher());
+    node->InitializeSelfResource({}, {}, {});
+    return node;
   }
 
   void VerifyRemoveInvokedForSpec(bool expected, const std::string& name) {

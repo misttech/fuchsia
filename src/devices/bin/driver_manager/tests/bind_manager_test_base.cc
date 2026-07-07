@@ -10,6 +10,8 @@
 
 #include <bind/fuchsia/cpp/bind.h>
 
+#include "src/devices/bin/driver_manager/resource.h"
+
 namespace fdi = fuchsia_driver_index;
 
 namespace fdf {
@@ -113,7 +115,7 @@ void BindManagerTestBase::SetUp() {
   node_manager_.set_bind_manager(bind_manager_.get());
   bridge_->set_bind_manager(bind_manager_.get());
 
-  ASSERT_EQ(0u, bind_manager_->NumOrphanedNodes());
+  ASSERT_EQ(0u, bind_manager_->NumOrphanedResources());
   VerifyNoOngoingBind();
 }
 
@@ -125,7 +127,7 @@ void BindManagerTestBase::TearDown() {
 BindManagerTestBase::BindManagerData BindManagerTestBase::CurrentBindManagerData() const {
   return BindManagerTestBase::BindManagerData{
       .driver_index_request_count = driver_index_->NumOfMatchRequests(),
-      .orphan_nodes_count = bind_manager_->NumOrphanedNodes(),
+      .orphan_nodes_count = bind_manager_->NumOrphanedResources(),
       .pending_bind_count = bind_manager_->GetPendingRequests().size(),
       .pending_orphan_rebind_count = bind_manager_->GetPendingOrphanRebindCallbacks().size(),
   };
@@ -133,7 +135,7 @@ BindManagerTestBase::BindManagerData BindManagerTestBase::CurrentBindManagerData
 
 void BindManagerTestBase::VerifyBindManagerData(BindManagerTestBase::BindManagerData expected) {
   ASSERT_EQ(expected.driver_index_request_count, driver_index_->NumOfMatchRequests());
-  ASSERT_EQ(expected.orphan_nodes_count, bind_manager_->NumOrphanedNodes());
+  ASSERT_EQ(expected.orphan_nodes_count, bind_manager_->NumOrphanedResources());
   ASSERT_EQ(expected.pending_bind_count, bind_manager_->GetPendingRequests().size());
   ASSERT_EQ(expected.pending_orphan_rebind_count,
             bind_manager_->GetPendingOrphanRebindCallbacks().size());
@@ -156,7 +158,7 @@ void BindManagerTestBase::AddAndBindNode(
   auto instance_id = GetOrAddInstanceId(name);
   std::vector<fuchsia_driver_framework::NodeProperty2> node_properties = {
       fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, instance_id)};
-  node->SetNonCompositeProperties(node_properties);
+  node->InitializeSelfResource(node_properties);
   nodes_.emplace(name, node);
   InvokeBind(name, std::move(tracker));
 }
@@ -170,18 +172,18 @@ void BindManagerTestBase::AddAndOrphanNode(
     std::shared_ptr<driver_manager::BindResultTracker> tracker) {
   VerifyNoOngoingBind();
 
-  size_t current_orphan_count = bind_manager_->NumOrphanedNodes();
+  size_t current_orphan_count = bind_manager_->NumOrphanedResources();
 
   // Invoke bind for a new node in the bind manager.
   AddAndBindNode(name, enable_multibind, std::move(tracker));
   ASSERT_TRUE(bind_manager_->IsBindOngoing());
-  ASSERT_EQ(current_orphan_count, bind_manager_->NumOrphanedNodes());
+  ASSERT_EQ(current_orphan_count, bind_manager_->NumOrphanedResources());
 
   // Driver index completes the request with no matches for the node. The ongoing
   // bind flag should reset to false and the node should be added in the orphaned nodes.
   DriverIndexReplyWithNoMatch(name);
   VerifyNoOngoingBind();
-  ASSERT_EQ(current_orphan_count + 1, bind_manager_->NumOrphanedNodes());
+  ASSERT_EQ(current_orphan_count + 1, bind_manager_->NumOrphanedResources());
 }
 
 void BindManagerTestBase::InvokeBind(std::string name,
@@ -191,7 +193,9 @@ void BindManagerTestBase::InvokeBind(std::string name,
     tracker = std::make_shared<driver_manager::BindResultTracker>(
         1, [](fidl::VectorView<fuchsia_driver_development::wire::NodeBindingInfo> info) {});
   }
-  bind_manager_->Bind(*nodes_[name], "", tracker);
+  auto self_resource = nodes_[name]->GetSelfResource();
+  ASSERT_TRUE(self_resource.has_value());
+  bind_manager_->Bind(*self_resource.value(), "", tracker);
   RunLoopUntilIdle();
 }
 
@@ -339,18 +343,40 @@ void BindManagerTestBase::VerifyNoQueuedBind() {
 }
 
 void BindManagerTestBase::VerifyOrphanedNodes(std::vector<std::string> expected_nodes) {
-  ASSERT_EQ(expected_nodes.size(), bind_manager_->NumOrphanedNodes());
-  for (const auto& node : expected_nodes) {
-    ASSERT_NE(bind_manager_->GetOrphanedNodes().find(node),
-              bind_manager_->GetOrphanedNodes().end());
+  ASSERT_EQ(expected_nodes.size(), bind_manager_->NumOrphanedResources());
+  auto orphaned = bind_manager_->GetOrphanedResources();
+  for (const auto& expected : expected_nodes) {
+    bool found = false;
+    for (auto& [id, resource_weak] : orphaned) {
+      if (auto resource = resource_weak.lock()) {
+        if (auto owner = resource->owner().lock()) {
+          if (owner->MakeComponentMoniker() == expected) {
+            found = true;
+            break;
+          }
+        }
+      }
+    }
+    ASSERT_TRUE(found) << "Could not find expected orphaned node: " << expected;
   }
 }
 
 void BindManagerTestBase::VerifyMultibindNodes(std::vector<std::string> expected_nodes) {
-  auto multibind_nodes = bind_manager_->GetMultibindNodes();
+  auto multibind_nodes = bind_manager_->GetMultibindResources();
   ASSERT_EQ(expected_nodes.size(), multibind_nodes.size());
-  for (const auto& node : expected_nodes) {
-    ASSERT_NE(multibind_nodes.find(node), multibind_nodes.end());
+  for (const auto& expected : expected_nodes) {
+    bool found = false;
+    for (auto& [id, resource_weak] : multibind_nodes) {
+      if (auto resource = resource_weak.lock()) {
+        if (auto owner = resource->owner().lock()) {
+          if (owner->MakeComponentMoniker() == expected) {
+            found = true;
+            break;
+          }
+        }
+      }
+    }
+    ASSERT_TRUE(found) << "Could not find expected multibind node: " << expected;
   }
 }
 

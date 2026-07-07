@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 
 #include "src/devices/bin/driver_manager/node_property_conversion.h"
+#include "src/devices/bin/driver_manager/resource.h"
 #include "src/devices/lib/log/log.h"
 
 namespace fdd = fuchsia_driver_development;
@@ -17,24 +18,24 @@ namespace driver_manager {
 BindManager::BindManager(BindManagerBridge* bridge, NodeManager* node_manager,
                          async_dispatcher_t* dispatcher)
     : bridge_(bridge) {
-  bind_node_set_.set_on_bind_state_changed([bridge]() { bridge->OnBindingStateChanged(); });
+  bind_resource_set_.set_on_bind_state_changed([bridge]() { bridge->OnBindingStateChanged(); });
 }
 
 void BindManager::TryBindAllAvailable(NodeBindingInfoResultCallback result_callback) {
   // If there's an ongoing process to bind all orphans, queue up this callback. Once
   // the process is complete, it'll make another attempt to bind all orphans and invoke
   // all callbacks in the list.
-  if (bind_node_set_.is_bind_ongoing()) {
+  if (bind_resource_set_.is_bind_ongoing()) {
     pending_orphan_rebind_callbacks_.push_back(std::move(result_callback));
     return;
   }
 
-  if (bind_node_set_.NumOfAvailableNodes() == 0) {
+  if (bind_resource_set_.NumOfAvailableResources() == 0) {
     result_callback(fidl::VectorView<fuchsia_driver_development::wire::NodeBindingInfo>());
     return;
   }
 
-  bind_node_set_.StartNextBindProcess();
+  bind_resource_set_.StartNextBindProcess();
 
   // In case there is a pending call to TryBindAllAvailable() after this one, we automatically
   // restart the process and call all queued up callbacks upon completion.
@@ -45,60 +46,73 @@ void BindManager::TryBindAllAvailable(NodeBindingInfoResultCallback result_callb
         ProcessPendingBindRequests();
       };
   std::shared_ptr<BindResultTracker> tracker = std::make_shared<BindResultTracker>(
-      bind_node_set_.NumOfAvailableNodes(), std::move(next_attempt));
+      bind_resource_set_.NumOfAvailableResources(), std::move(next_attempt));
   TryBindAllAvailableInternal(tracker);
 }
 
-void BindManager::Bind(Node& node, std::string_view driver_url_suffix,
+void BindManager::Bind(Resource& resource, std::string_view driver_url_suffix,
                        std::shared_ptr<BindResultTracker> result_tracker) {
+  std::shared_ptr node = resource.owner().lock();
+  ZX_ASSERT_MSG(node, "Resource must have an owner to bind");
   BindRequest request = {
-      .node_moniker = node.MakeComponentMoniker(),
-      .node = node.weak_from_this(),
+      .node_moniker = node->MakeComponentMoniker(),
+      .resource = resource.weak_from_this(),
       .driver_url_suffix = std::string(driver_url_suffix),
       .tracker = result_tracker,
       .composite_only = false,
   };
-  if (bind_node_set_.is_bind_ongoing()) {
+  if (bind_resource_set_.is_bind_ongoing()) {
     pending_bind_requests_.push_back(std::move(request));
     return;
   }
 
-  // Remove the node from the orphaned nodes to avoid collision.
-  bind_node_set_.RemoveOrphanedNode(node.MakeComponentMoniker());
-  bind_node_set_.StartNextBindProcess();
+  // Remove the resource from the orphaned resources to avoid collision.
+  bind_resource_set_.RemoveOrphanedResource(resource.id());
+  bind_resource_set_.StartNextBindProcess();
 
   auto next_attempt = [this]() mutable { ProcessPendingBindRequests(); };
   BindInternal(std::move(request), next_attempt);
 }
 
 void BindManager::TryBindAllAvailableInternal(std::shared_ptr<BindResultTracker> tracker) {
-  ZX_ASSERT(bind_node_set_.is_bind_ongoing());
-  if (bind_node_set_.NumOfAvailableNodes() == 0) {
+  ZX_ASSERT(bind_resource_set_.is_bind_ongoing());
+  if (bind_resource_set_.NumOfAvailableResources() == 0) {
     return;
   }
 
-  auto multibind_nodes = bind_node_set_.CurrentMultibindNodes();
-  for (auto& [path, node_weak] : multibind_nodes) {
-    std::shared_ptr node = node_weak.lock();
-    if (!node) {
+  auto multibind_nodes = bind_resource_set_.CurrentMultibindResources();
+  for (auto& [id, resource_weak] : multibind_nodes) {
+    std::shared_ptr resource = resource_weak.lock();
+    if (!resource) {
       tracker->ReportNoBind();
       continue;
     }
+    std::shared_ptr node = resource->owner().lock();
+    ZX_ASSERT(node);
+    std::string moniker = node->MakeComponentMoniker();
 
     BindInternal(BindRequest{
-        .node_moniker = path,
-        .node = node_weak,
+        .node_moniker = std::move(moniker),
+        .resource = resource_weak,
         .tracker = tracker,
         .composite_only = true,
     });
   }
 
-  std::unordered_map<std::string, std::weak_ptr<Node>> orphaned_nodes =
-      bind_node_set_.CurrentOrphanedNodes();
-  for (auto& [path, node] : orphaned_nodes) {
+  auto orphaned_nodes = bind_resource_set_.CurrentOrphanedResources();
+  for (auto& [id, resource_weak] : orphaned_nodes) {
+    std::shared_ptr resource = resource_weak.lock();
+    if (!resource) {
+      tracker->ReportNoBind();
+      continue;
+    }
+    std::shared_ptr node = resource->owner().lock();
+    ZX_ASSERT(node);
+    std::string moniker = node->MakeComponentMoniker();
+
     BindInternal(BindRequest{
-        .node_moniker = path,
-        .node = node,
+        .node_moniker = std::move(moniker),
+        .resource = resource_weak,
         .tracker = tracker,
         .composite_only = false,
     });
@@ -107,8 +121,18 @@ void BindManager::TryBindAllAvailableInternal(std::shared_ptr<BindResultTracker>
 
 void BindManager::BindInternal(BindRequest request,
                                BindMatchCompleteCallback match_complete_callback) {
-  ZX_ASSERT(bind_node_set_.is_bind_ongoing());
-  std::shared_ptr node = request.node.lock();
+  ZX_ASSERT(bind_resource_set_.is_bind_ongoing());
+  std::shared_ptr resource = request.resource.lock();
+  if (!resource) {
+    fdf_log::warn("Resource from node '{}' was freed before bind request is processed.",
+                  request.node_moniker);
+    if (request.tracker) {
+      request.tracker->ReportNoBind();
+    }
+    match_complete_callback();
+    return;
+  }
+  std::shared_ptr node = resource->owner().lock();
   if (!node) {
     fdf_log::warn("Node was freed before bind request is processed. {}", request.node_moniker);
     if (request.tracker) {
@@ -151,7 +175,13 @@ void BindManager::OnMatchDriverCallback(
     match_complete_callback();
   });
 
-  std::shared_ptr node = request.node.lock();
+  std::shared_ptr resource = request.resource.lock();
+  if (!resource) {
+    fdf_log::warn("Resource was freed before it could be bound for node '{}'",
+                  request.node_moniker);
+    return;
+  }
+  std::shared_ptr node = resource->owner().lock();
 
   // TODO(https://fxbug.dev/42075939): Add an additional guard to ensure that the node is still
   // available for binding when the match callback is fired. Currently, there are no issues from it,
@@ -166,15 +196,15 @@ void BindManager::OnMatchDriverCallback(
 
   auto node_moniker = node->MakeComponentMoniker();
 
-  // If the node fails to bind to anything, add it to the orphaned nodes.
+  // If the resource fails to bind to anything, add it to the orphaned resources.
   if (!bind_result.bound() && !request.composite_only &&
-      !bind_node_set_.MultibindContains(node_moniker)) {
-    bind_node_set_.AddOrphanedNode(*node);
+      !bind_resource_set_.MultibindContains(resource->id())) {
+    bind_resource_set_.AddOrphanedResource(resource);
     return;
   }
 
-  // Remove bound nodes from the orphaned nodes.
-  bind_node_set_.RemoveOrphanedNode(node_moniker);
+  // Remove bound resources from the orphaned resources.
+  bind_resource_set_.RemoveOrphanedResource(resource->id());
 
   if (bind_result.bound()) {
     report_no_bind.cancel();
@@ -203,7 +233,7 @@ BindResult BindManager::BindNodeToResult(
   if (result->is_error()) {
     // Log the failed MatchDriver only if we are not tracking the results with a tracker
     // or if the error is not a ZX_ERR_NOT_FOUND error (meaning it could not find a driver).
-    // When we have a tracker, the bind is happening for all the orphan nodes and the
+    // When we have a tracker, the bind is happening for all the orphan resources and the
     // not found errors get very noisy.
     zx_status_t match_error = result->error_value();
     if (match_error != ZX_ERR_NOT_FOUND && !has_tracker) {
@@ -242,7 +272,9 @@ BindResult BindManager::BindNodeToResult(
   ZX_ASSERT(matched_driver->is_driver());
 
   // If the node is already part of a composite, it should not bind to a driver.
-  if (bind_node_set_.MultibindContains(node.MakeComponentMoniker())) {
+  auto self_resource = node.GetSelfResource();
+  if (self_resource.has_value() &&
+      bind_resource_set_.MultibindContains(self_resource.value()->id())) {
     return BindResult();
   }
 
@@ -259,7 +291,9 @@ BindResult BindManager::BindNodeToResult(
 zx::result<CompositeParents> BindManager::BindNodeToSpec(fidl::AnyArena& arena, Node& node,
                                                          CompositeParents parents) {
   if (node.can_multibind_composites()) {
-    bind_node_set_.AddOrMoveMultibindNode(node);
+    auto self_resource = node.GetSelfResource();
+    ZX_ASSERT(self_resource.has_value());
+    bind_resource_set_.AddOrMoveMultibindResource(self_resource.value());
   }
 
   auto result = bridge_->BindToParentSpec(arena, parents, node.weak_from_this(),
@@ -287,26 +321,26 @@ zx::result<CompositeParents> BindManager::BindNodeToSpec(fidl::AnyArena& arena, 
 }
 
 void BindManager::ProcessPendingBindRequests() {
-  ZX_ASSERT(bind_node_set_.is_bind_ongoing());
+  ZX_ASSERT(bind_resource_set_.is_bind_ongoing());
   if (pending_bind_requests_.empty() && pending_orphan_rebind_callbacks_.empty()) {
-    bind_node_set_.EndBindProcess();
+    bind_resource_set_.EndBindProcess();
     return;
   }
 
-  // Consolidate the pending bind requests and orphaned nodes to prevent collisions.
+  // Consolidate the pending bind requests and orphaned resources to prevent collisions.
   for (auto& request : pending_bind_requests_) {
-    if (auto node = request.node.lock(); node) {
-      bind_node_set_.RemoveOrphanedNode(node->MakeComponentMoniker());
+    if (auto resource = request.resource.lock(); resource) {
+      bind_resource_set_.RemoveOrphanedResource(resource->id());
     }
   }
 
   // Begin the next bind process.
-  bind_node_set_.StartNextBindProcess();
+  bind_resource_set_.StartNextBindProcess();
 
   bool have_bind_all_orphans_request = !pending_orphan_rebind_callbacks_.empty();
   size_t bind_tracker_size =
       have_bind_all_orphans_request
-          ? pending_bind_requests_.size() + bind_node_set_.NumOfAvailableNodes()
+          ? pending_bind_requests_.size() + bind_resource_set_.NumOfAvailableResources()
           : pending_bind_requests_.size();
 
   // If there are no nodes to bind, then we'll run through all the callbacks and end the bind
@@ -317,7 +351,7 @@ void BindManager::ProcessPendingBindRequests() {
       callback(fidl::VectorView<fuchsia_driver_development::wire::NodeBindingInfo>(arena, 0));
     }
     pending_orphan_rebind_callbacks_.clear();
-    bind_node_set_.EndBindProcess();
+    bind_resource_set_.EndBindProcess();
     return;
   }
 
@@ -353,15 +387,19 @@ void BindManager::ProcessPendingBindRequests() {
 
 void BindManager::RecordInspect(inspect::Inspector& inspector) const {
   auto orphans = inspector.GetRoot().CreateChild("orphan_nodes");
-  for (auto& [moniker, node] : bind_node_set_.CurrentOrphanedNodes()) {
-    if (std::shared_ptr locked_node = node.lock()) {
+  for (auto& [id, resource_weak] : bind_resource_set_.CurrentOrphanedResources()) {
+    if (std::shared_ptr resource = resource_weak.lock()) {
       auto orphan = orphans.CreateChild(orphans.UniqueName("orphan-"));
+      std::string moniker = "";
+      if (auto owner = resource->owner().lock()) {
+        moniker = owner->MakeComponentMoniker();
+      }
       orphan.RecordString("moniker", moniker);
       orphans.Record(std::move(orphan));
     }
   }
 
-  orphans.RecordBool("bind_all_ongoing", bind_node_set_.is_bind_ongoing());
+  orphans.RecordBool("bind_all_ongoing", bind_resource_set_.is_bind_ongoing());
   orphans.RecordUint("pending_bind_requests", pending_bind_requests_.size());
   orphans.RecordUint("pending_orphan_rebind_callbacks", pending_orphan_rebind_callbacks_.size());
   inspector.GetRoot().Record(std::move(orphans));

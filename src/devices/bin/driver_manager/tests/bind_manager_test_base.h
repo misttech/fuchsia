@@ -20,15 +20,17 @@ class TestBindManager : public driver_manager::BindManager {
                   driver_manager::NodeManager* node_manager, async_dispatcher_t* dispatcher)
       : BindManager(bridge, node_manager, dispatcher) {}
 
-  std::unordered_map<std::string, std::weak_ptr<driver_manager::Node>> GetOrphanedNodes() const {
-    return bind_node_set().CurrentOrphanedNodes();
+  std::unordered_map<driver_manager::ResourceId, std::weak_ptr<driver_manager::Resource>>
+  GetOrphanedResources() const {
+    return bind_resource_set().CurrentOrphanedResources();
   }
 
-  std::unordered_map<std::string, std::weak_ptr<driver_manager::Node>> GetMultibindNodes() const {
-    return bind_node_set().CurrentMultibindNodes();
+  std::unordered_map<driver_manager::ResourceId, std::weak_ptr<driver_manager::Resource>>
+  GetMultibindResources() const {
+    return bind_resource_set().CurrentMultibindResources();
   }
 
-  bool IsBindOngoing() const { return bind_node_set().is_bind_ongoing(); }
+  bool IsBindOngoing() const { return bind_resource_set().is_bind_ongoing(); }
 
   std::vector<driver_manager::BindRequest> GetPendingRequests() const {
     return pending_bind_requests();
@@ -128,7 +130,9 @@ class TestNodeManager : public TestNodeManagerBase {
  public:
   void Bind(driver_manager::Node& node,
             std::shared_ptr<driver_manager::BindResultTracker> result_tracker) override {
-    bind_manager_->Bind(node, {}, std::move(result_tracker));
+    auto self_resource = node.GetSelfResource();
+    ZX_ASSERT(self_resource.has_value());
+    bind_manager_->Bind(*self_resource.value(), {}, std::move(result_tracker));
   }
 
   void set_bind_manager(TestBindManager* bind_manager) { bind_manager_ = bind_manager; }

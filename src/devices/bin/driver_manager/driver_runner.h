@@ -274,6 +274,8 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   DictionaryUtil& dictionary_util() override { return dictionary_util_; }
   MemoryAttributor& memory_attributor() override { return memory_attributor_; }
 
+  ResourceId GetNextResourceId() override;
+
   // BindManagerBridge interface.
   zx::result<std::string> StartDriver(
       Node& node, fuchsia_driver_framework::wire::DriverInfo driver_info) override;
@@ -315,6 +317,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   void OnBootupComplete();
 
   uint64_t next_driver_host_id_ = 0;
+  ResourceId next_resource_id_ = 0;
   fidl::WireClient<fuchsia_driver_index::DriverIndex> driver_index_;
   LoaderServiceFactory loader_service_factory_;
   DictionaryUtil dictionary_util_;

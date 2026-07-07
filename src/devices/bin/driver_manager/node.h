@@ -33,26 +33,8 @@
 
 namespace driver_manager {
 
-enum class OfferTransport : std::uint8_t {
-  DriverTransport,
-  ZirconTransport,
-  Dictionary,
-};
-
-struct NodeOffer {
-  std::string source_name;
-  Collection source_collection;
-  OfferTransport transport;
-  std::string service_name;
-  std::vector<std::string> source_instance_filter;
-  std::vector<fuchsia_component_decl::NameMapping> renamed_instances;
-};
-
-fuchsia_driver_framework::Offer ToFidl(const NodeOffer& offer);
-
-// This function creates a composite offer based on a service offer.
-NodeOffer CreateCompositeOffer(const NodeOffer& offer, std::string_view parents_name,
-                               bool primary_parent);
+// Definitions for OfferTransport, NodeOffer, ToFidl, and CreateCompositeOffer are now in
+// node_types.h
 
 class Node;
 struct NodeInfo;
@@ -187,6 +169,8 @@ class NodeManager {
   }
 
   virtual MemoryAttributor& memory_attributor() { ZX_PANIC("Unimplemented memory_attributor"); }
+
+  virtual ResourceId GetNextResourceId() { return 0; }
 };
 
 class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
@@ -235,7 +219,12 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   bool HasDriverComponentController() const override { return component_controller_.is_valid(); }
 
-  void RemoveResource(Resource* resource);
+  void RemoveResource(const std::shared_ptr<Resource>& resource);
+
+  void InitializeSelfResource(
+      std::vector<fuchsia_driver_framework::NodeProperty2> properties = {},
+      std::vector<NodeOffer> offers = {},
+      std::optional<fuchsia_driver_framework::BusInfo> bus_info = std::nullopt);
 
   // Begin the removal process for a Node. This function ensures that a Node is
   // only removed after all of its children are removed. It also ensures that
@@ -295,11 +284,6 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
                              const std::weak_ptr<BootupTracker>& bootup_tracker) override;
 
   bool IsComposite() const { return std::holds_alternative<Composite>(type_); }
-
-  // Exposed for testing.
-  // Set properties to non-composite node properties containing a clone of `properties`.
-  void SetNonCompositeProperties(
-      std::span<const fuchsia_driver_framework::NodeProperty2> properties);
 
   // Evaluates the given rematch_flags against the node. Returns true if rematch should take place,
   // false otherwise. Rematching is done based on the node type and url both matching:
@@ -410,13 +394,18 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   const std::list<std::shared_ptr<Node>>& children() const { return children_; }
 
-  const std::vector<NodeOffer>& offers() const { return offers_; }
+  const std::vector<NodeOffer>& offers() const;
 
   const std::vector<fuchsia_driver_framework::NodeSymbol>& symbols() const { return symbols_; }
 
   // Returns the node properties of the node and its parents if the node is a composite node.
-  // See `properties_` property for more info.
-  size_t properties_size() const { return properties_.size(); }
+  // See properties of the Composite struct for more info.
+  size_t properties_size() const {
+    if (IsComposite()) {
+      return std::get<Composite>(type_).properties_.size();
+    }
+    return GetNodeProperties().has_value() ? 1 : 0;
+  }
 
   // Returns the node properties of the node or the node's parent if the node is a composite node.
   // Returns std::nullopt if the node is a non-composite and `parent_name` is not "default".
@@ -517,9 +506,11 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   }
 
   // Exposed for testing.
-  const std::vector<std::unique_ptr<Resource>>& provided_resources() const {
+  const std::vector<std::shared_ptr<Resource>>& provided_resources() const {
     return provided_resources_;
   }
+
+  std::optional<std::shared_ptr<Resource>> GetSelfResource() const;
 
   // Exposed for testing.
   void set_bound_for_testing(bool bound) { is_bound_override_ = bound; }
@@ -698,10 +689,12 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   struct Normal {
     std::weak_ptr<Node> parent_;
   };
+
   struct Composite {
     std::vector<std::weak_ptr<Node>> parents_;
     std::vector<std::string> parents_names_;
     uint32_t primary_index_;
+    std::vector<PropertiesEntry> properties_;
   };
 
   std::variant<Normal, Composite> type_;
@@ -715,18 +708,10 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   bool host_restart_on_crash_ = false;
 
-  std::vector<NodeOffer> offers_;
   std::vector<fuchsia_driver_framework::NodeSymbol> symbols_;
 
-  // Contains the properties of the node or its parents if the node is a composite.
-  // "default" entry refers to the node's properties if the node is a non-composite.
-  // "default" entry refers to the primary parent node's properties if the node is a
-  // composite.
-  std::vector<PropertiesEntry> properties_;
-
-  std::optional<fuchsia_driver_framework::BusInfo> bus_info_;
-
-  std::vector<std::unique_ptr<Resource>> provided_resources_;
+  std::vector<std::shared_ptr<Resource>> provided_resources_;
+  std::shared_ptr<Resource> self_resource_;
 
   // A component framework dictionary that should be provided to the driver
   // that binds to this node.

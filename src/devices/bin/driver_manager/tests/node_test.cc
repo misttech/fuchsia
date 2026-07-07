@@ -357,12 +357,12 @@ class Dfv2NodeTest : public DriverManagerTestBase {
   };
 
   void SetUp() override {
-    DriverManagerTestBase::SetUp();
     realm_ = std::make_unique<TestRealm>(dispatcher());
 
     auto client = realm_->Connect();
     node_manager = std::make_unique<FakeNodeManager>(
         dispatcher(), fidl::WireClient<fuchsia_component::Realm>(std::move(client), dispatcher()));
+    DriverManagerTestBase::SetUp();
   }
 
   void StartTestDriver(std::shared_ptr<driver_manager::Node> node,
@@ -767,7 +767,9 @@ TEST_F(Dfv2NodeTest, TestCompositeNodeProperties) {
   const std::vector<fuchsia_driver_framework::NodeProperty2> kParent2NodeProperties{
       fdf::MakeProperty2("test-key-2", "test=value")};
   auto parent_1 = CreateNode(kParent1Name);
+  parent_1->InitializeSelfResource(kParent1NodeProperties);
   auto parent_2 = CreateNode(kParent2Name);
+  parent_2->InitializeSelfResource(kParent2NodeProperties);
 
   std::vector<fuchsia_driver_framework::NodePropertyEntry2> parent_properties;
   parent_properties.emplace_back(kParent1Name, kParent1NodeProperties);

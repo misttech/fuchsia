@@ -424,7 +424,7 @@ zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
                   std::string(node_name).c_str());
   }
 
-  composite->offers_ = std::move(node_offers);
+  composite->InitializeSelfResource({}, std::move(node_offers));
   composite->AddToParents();
   ZX_ASSERT_MSG(primary->devfs_device_.topological_node().has_value(), "%s",
                 composite->MakeTopologicalPath().c_str());
@@ -1006,15 +1006,6 @@ std::vector<fdf::NodeProperty2> Node::PropertyToFidl(std::span<const Property> p
   return node_properties;
 }
 
-void Node::SetNonCompositeProperties(std::span<const fdf::NodeProperty2> properties) {
-  properties_ = std::vector<PropertiesEntry>{
-      PropertiesEntry{
-          .name = "default",
-          .properties = ToProperty(properties),
-      },
-  };
-}
-
 void Node::SetCompositeParentProperties(const fdf::NodePropertyDictionary2& parent_properties) {
   std::vector<PropertiesEntry> properties;
   properties.reserve(parent_properties.size() + 1);
@@ -1033,14 +1024,14 @@ void Node::SetCompositeParentProperties(const fdf::NodePropertyDictionary2& pare
       .properties = ToProperty(default_node_properties),
   });
 
-  properties_ = std::move(properties);
+  composite.properties_ = std::move(properties);
 }
 
 std::vector<fdf::BusInfo> Node::GetBusTopology() const {
   std::vector<fdf::BusInfo> segments;
   for (auto node = this; node != nullptr; node = node->GetPrimaryParent()) {
-    if (node->bus_info_.has_value()) {
-      segments.push_back(node->bus_info_.value());
+    if (node->self_resource_ && node->self_resource_->bus_info().has_value()) {
+      segments.push_back(node->self_resource_->bus_info().value());
     }
   }
   std::ranges::reverse(segments);
@@ -1125,9 +1116,10 @@ void Node::AddChildHelper(fuchsia_driver_framework::NodeAddArgs args,
     child->driver_host_name_for_colocation_ = args.driver_host().value();
   }
 
+  std::vector<NodeOffer> child_offers;
   bool has_dictionary_offer = false;
   if (fdf_offers.has_value()) {
-    child->offers_.reserve(fdf_offers.value().size());
+    child_offers.reserve(fdf_offers.value().size());
 
     // Find a parent node with a collection. This indicates that a driver has
     // been bound to the node, and the driver is running within the collection.
@@ -1155,12 +1147,12 @@ void Node::AddChildHelper(fuchsia_driver_framework::NodeAddArgs args,
         return;
       }
       auto [processed_offer, property] = std::move(new_offer.value());
-      child->offers_.emplace_back(processed_offer);
+      child_offers.emplace_back(processed_offer);
       properties.emplace_back(property);
     }
   }
 
-  child->bus_info_ = std::move(args.bus_info());
+  std::optional<fdf::BusInfo> bus_info = std::move(args.bus_info());
 
   // Copy the subtree dictionary of a parent node down to the child.
   if (subtree_dictionary_ref_.has_value()) {
@@ -1169,7 +1161,8 @@ void Node::AddChildHelper(fuchsia_driver_framework::NodeAddArgs args,
                   std::string(name).c_str());
   }
 
-  child->SetNonCompositeProperties(properties);
+  child->InitializeSelfResource(std::move(properties), std::move(child_offers),
+                                std::move(bus_info));
 
   if (auto& symbols = args.symbols(); symbols.has_value()) {
     auto is_valid = ValidateSymbols(symbols.value());
@@ -1410,16 +1403,30 @@ void Node::ProvideResource(
     completer.ReplyError(fdf::NodeError::kUnsupportedArgs);
     return;
   }
-
-  // TODO(https://fxbug.dev/526670090): Bind the resource.
-  auto resource = std::make_unique<Resource>(weak_from_this(), fidl::ToNatural(request->resource),
-                                             std::move(request->controller), dispatcher_);
+  auto properties = fidl::ToNatural(request->resource.properties());
+  ResourceId id = (*node_manager_)->GetNextResourceId();
+  auto resource =
+      std::make_shared<Resource>(id, weak_from_this(), std::string(request->resource.name().get()),
+                                 std::move(properties.value()), std::vector<NodeOffer>{},
+                                 request->resource.has_bus_info()
+                                     ? std::optional(fidl::ToNatural(request->resource.bus_info()))
+                                     : std::nullopt,
+                                 dispatcher_);
+  resource->Bind(std::move(request->controller));
   provided_resources_.push_back(std::move(resource));
   completer.ReplySuccess();
 }
 
-void Node::RemoveResource(Resource* resource) {
-  std::erase_if(provided_resources_, [resource](const auto& r) { return r.get() == resource; });
+void Node::RemoveResource(const std::shared_ptr<Resource>& resource) {
+  std::erase_if(provided_resources_, [&resource](const auto& r) { return r == resource; });
+}
+
+void Node::InitializeSelfResource(std::vector<fuchsia_driver_framework::NodeProperty2> properties,
+                                  std::vector<NodeOffer> offers,
+                                  std::optional<fuchsia_driver_framework::BusInfo> bus_info) {
+  ResourceId id = (*node_manager_)->GetNextResourceId();
+  self_resource_ = std::make_shared<Resource>(id, weak_from_this(), name_, std::move(properties),
+                                              std::move(offers), std::move(bus_info), dispatcher_);
 }
 
 void Node::OnNodeServerUnbound(fidl::UnbindInfo info) {
@@ -1812,8 +1819,8 @@ void Node::StartDriver(
   }
 
   std::vector<fdf::Offer> natural_offers;
-  natural_offers.reserve(offers_.size());
-  std::ranges::transform(offers_, std::back_inserter(natural_offers), ToFidl);
+  natural_offers.reserve(offers().size());
+  std::ranges::transform(offers(), std::back_inserter(natural_offers), ToFidl);
   auto offers = fidl::ToWire(arena, natural_offers);
   auto properties = fidl::ToWire(arena, GetNodePropertyDict());
 
@@ -2769,23 +2776,50 @@ void Node::OnComponentControllerFidlError(fidl::UnbindInfo info) {
 
 std::optional<std::vector<fdf::NodeProperty2>> Node::GetNodeProperties(
     std::string_view parent_name) const {
-  for (const auto& entry : properties_) {
-    if (entry.name == parent_name) {
-      return PropertyToFidl(entry.properties);
+  if (IsComposite()) {
+    const auto& composite = std::get<Composite>(type_);
+    for (const auto& entry : composite.properties_) {
+      if (entry.name == parent_name) {
+        return PropertyToFidl(entry.properties);
+      }
     }
+    return std::nullopt;
   }
-  return std::nullopt;
+  if (parent_name != "default") {
+    return std::nullopt;
+  }
+  ZX_ASSERT(self_resource_);
+  return self_resource_->properties();
+}
+
+std::optional<std::shared_ptr<Resource>> Node::GetSelfResource() const { return self_resource_; }
+
+const std::vector<NodeOffer>& Node::offers() const {
+  ZX_ASSERT(self_resource_);
+  return self_resource_->offers();
 }
 
 fdf::NodePropertyDictionary2 Node::GetNodePropertyDict() const {
   fdf::NodePropertyDictionary2 dict;
-  dict.reserve(properties_.size());
-  std::ranges::transform(properties_, std::back_inserter(dict), [this](const auto& entry) {
-    return fdf::NodePropertyEntry2{{
-        .name = entry.name,
-        .properties = std::move(GetNodeProperties(entry.name).value()),
-    }};
-  });
+  if (IsComposite()) {
+    const auto& composite = std::get<Composite>(type_);
+    dict.reserve(composite.properties_.size());
+    std::ranges::transform(composite.properties_, std::back_inserter(dict),
+                           [this](const auto& entry) {
+                             return fdf::NodePropertyEntry2{{
+                                 .name = entry.name,
+                                 .properties = std::move(GetNodeProperties(entry.name).value()),
+                             }};
+                           });
+  } else {
+    auto props = GetNodeProperties();
+    if (props.has_value()) {
+      dict.emplace_back(fdf::NodePropertyEntry2{{
+          .name = "default",
+          .properties = std::move(*props),
+      }});
+    }
+  }
   return dict;
 }
 

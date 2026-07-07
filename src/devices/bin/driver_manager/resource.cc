@@ -4,6 +4,7 @@
 
 #include "src/devices/bin/driver_manager/resource.h"
 
+#include <lib/async/cpp/task.h>
 #include <zircon/assert.h>
 
 #include "src/devices/bin/driver_manager/node.h"
@@ -11,27 +12,37 @@
 
 namespace driver_manager {
 
-Resource::Resource(std::weak_ptr<Node> owner, fuchsia_driver_framework::ResourceArgs args,
-                   fidl::ServerEnd<fuchsia_driver_framework::ResourceController> server_end,
+Resource::Resource(ResourceId id, std::weak_ptr<Node> owner, std::string name,
+                   std::vector<fuchsia_driver_framework::NodeProperty2> properties,
+                   std::vector<NodeOffer> node_offers,
+                   std::optional<fuchsia_driver_framework::BusInfo> bus_info,
                    async_dispatcher_t* dispatcher)
-    : binding_(dispatcher, std::move(server_end), this,
-               [](Resource* resource, fidl::UnbindInfo info) {
-                 if (auto owner = resource->owner_.lock()) {
-                   owner->RemoveResource(resource);
-                 }
-               }),
-      owner_(std::move(owner)) {
-  ZX_ASSERT_MSG(
-      args.name().has_value() && args.properties().has_value() && args.offers().has_value(),
-      "ResourceArgs must contain name, properties, and offers");
+    : id_(id),
+      name_(std::move(name)),
+      properties_(std::move(properties)),
+      offers_(std::move(node_offers)),
+      bus_info_(std::move(bus_info)),
+      owner_(std::move(owner)),
+      dispatcher_(dispatcher) {}
 
-  name_ = std::move(args.name().value());
-  properties_ = std::move(args.properties().value());
-  offers_ = std::move(args.offers().value());
-  bus_info_ = std::move(args.bus_info());
+void Resource::Bind(fidl::ServerEnd<fuchsia_driver_framework::ResourceController> server_end) {
+  if (server_end.is_valid()) {
+    binding_.emplace(dispatcher_, std::move(server_end), this,
+                     [self = weak_from_this()](Resource* resource, fidl::UnbindInfo info) {
+                       if (auto shared_self = self.lock()) {
+                         if (auto owner = shared_self->owner_.lock()) {
+                           owner->RemoveResource(shared_self);
+                         }
+                       }
+                     });
+  }
 }
 
-void Resource::Remove(RemoveCompleter::Sync& completer) { binding_.Close(ZX_OK); }
+void Resource::Remove(RemoveCompleter::Sync& completer) {
+  if (auto owner = owner_.lock()) {
+    owner->RemoveResource(shared_from_this());
+  }
+}
 
 void Resource::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_driver_framework::ResourceController> metadata,
