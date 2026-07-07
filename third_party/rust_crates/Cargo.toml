@@ -414,10 +414,8 @@ r-efi = { path = "empty/r-efi" }
 r-efi-6 = { package = "r-efi", path = "empty/r-efi-6" }
 rustversion = { path = "empty/rustversion" }
 vcpkg = { path = "empty/vcpkg" }
-wasi = { path = "empty/wasi" }
 wasi-0_11_0_preview1 = { path = "empty/wasi-0.11.0-wasi-snapshot-preview1", package = "wasi" }
 wasip2 = { path = "empty/wasip2" }
-wasip3 = { path = "empty/wasip3" }
 wasm-bindgen-125 = { package = "wasm-bindgen", path = "empty/wasm-bindgen-125" }
 winapi = { path = "empty/winapi" }
 winapi-util = { path = "empty/winapi-util" }
