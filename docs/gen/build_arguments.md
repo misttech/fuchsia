@@ -403,7 +403,7 @@ in args.gn.
 
 **Current value (from the default):** `[]`
 
-From //build/bazel/bazel_root_targets_list.gni:233
+From //build/bazel/bazel_root_targets_list.gni:110
 
 ### bazel_upload_build_events
 
@@ -946,7 +946,7 @@ This should never be set as a build argument.
 }
   aarch64_unknown_linux_gnu = {
   libclang_rt_profile_a = "lib/clang/23/lib/aarch64-unknown-linux-gnu/libclang_rt.profile.a"
-  libunwind_so = ""
+  libunwind_so = "../../../../out/not-default/libunwind.so"
   resource_dir = "lib/clang/23"
   variants = {
   asan = {
@@ -1021,7 +1021,7 @@ This should never be set as a build argument.
 }
   lsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
@@ -1030,7 +1030,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -2139,13 +2139,6 @@ From //build/config/compiler.gni:82
 }]
   install_host_tool = true
 }, {
-  bazel_label = "//src/lib/testing/expectation/tool:list_test_expectations"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/list_test_expectations"
-  ninja = "list_test_expectations"
-}]
-  install_host_tool = true
-}, {
   bazel_label = "//tools/rust_test_parser:rust_test_parser"
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/rust_test_parser_/rust_test_parser"
@@ -2185,31 +2178,12 @@ From //build/config/compiler.gni:82
   ninja = "symbolize"
 }]
 }, {
-  bazel_label = "//build/bazel/toolchains/tests:build"
-  bazel_name = "build.stamp"
-  ninja_name = "bazel_toolchains_tests_build.stamp"
-}, {
-  bazel_label = "//src/developer/ffx/tools/efi:ffx-efi"
+  bazel_label = "//tools/fidl/clang-format-wrapper:clang-format-wrapper"
   copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/ffx-efi"
-  ninja = "ffx-efi_bazel_unversioned"
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/clang-format-wrapper_/clang-format-wrapper"
+  ninja = "clang-format-wrapper"
 }]
-  ninja_name = "ffx-efi_bazel_unversioned"
-}, {
-  bazel_label = "//build/tools/json_validator:json_validator_valico"
   install_host_tool = true
-}, {
-  bazel_label = "//build/tools/json_merge"
-  install_host_tool = true
-}, {
-  bazel_label = "//build/tools/formatjson5"
-  install_host_tool = true
-}, {
-  bazel_label = "//build/tools/bazel2gn"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/bazel2gn_/bazel2gn"
-  ninja = "bazel2gn"
-}]
 }, {
   bazel_label = "//tools/pretty_serial"
   install_host_tool = true
@@ -2258,10 +2232,43 @@ From //build/config/compiler.gni:82
   bazel_label = "//tools/whereiscl:tests"
   bazel_name = "build.stamp"
   ninja_name = "tools_whereiscl_stamp_tests.stamp"
+}, {
+  bazel_label = "//src/lib/testing/expectation/tool:list_test_expectations"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/list_test_expectations"
+  ninja = "list_test_expectations"
+}]
+  install_host_tool = true
+}, {
+  bazel_label = "//build/bazel/toolchains/tests:build"
+  bazel_name = "build.stamp"
+  ninja_name = "bazel_toolchains_tests_build.stamp"
+}, {
+  bazel_label = "//src/developer/ffx/tools/efi:ffx-efi"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/ffx-efi"
+  ninja = "ffx-efi_bazel_unversioned"
+}]
+  ninja_name = "ffx-efi_bazel_unversioned"
+}, {
+  bazel_label = "//build/tools/json_validator:json_validator_valico"
+  install_host_tool = true
+}, {
+  bazel_label = "//build/tools/json_merge"
+  install_host_tool = true
+}, {
+  bazel_label = "//build/tools/formatjson5"
+  install_host_tool = true
+}, {
+  bazel_label = "//build/tools/bazel2gn"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/bazel2gn_/bazel2gn"
+  ninja = "bazel2gn"
+}]
 }]
 ```
 
-From //build/bazel/bazel_root_targets_list.gni:51
+From //build/bazel/bazel_root_targets_list.gni:53
 
 ### default_configs
 
@@ -9022,7 +9029,7 @@ This is a separate because they can be cross-compiled on SDK builders.
 }]
 ```
 
-From //build/bazel/bazel_root_targets_list.gni:26
+From //build/bazel/bazel_root_targets_list.gni:28
 
 ### sdk_id
 
