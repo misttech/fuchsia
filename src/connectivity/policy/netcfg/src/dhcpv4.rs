@@ -29,9 +29,9 @@ use crate::{InterfaceId, dns, errors, network};
 
 #[derive(Debug)]
 pub(super) struct ClientState {
-    routers: HashSet<SpecifiedAddr<Ipv4Addr>>,
-    route_set: fnet_routes_admin::RouteSetV4Proxy,
-    shutdown_sender: oneshot::Sender<()>,
+    pub(super) routers: HashSet<SpecifiedAddr<Ipv4Addr>>,
+    pub(super) route_set: fnet_routes_admin::RouteSetV4Proxy,
+    pub(super) shutdown_sender: oneshot::Sender<()>,
 }
 
 pub(super) fn new_client_params() -> fnet_dhcp::NewClientParams {
@@ -68,6 +68,19 @@ pub(super) async fn update_configuration(
         routers: new_routers,
         ..
     } = configuration;
+    // Verify that the address parameters request performing DAD and adding a
+    // subnet route, as expected of a DHCPv4 client.
+    if let Some(address) = &address {
+        if address.address_parameters.perform_dad != Some(true)
+            || address.address_parameters.add_subnet_route != Some(true)
+        {
+            warn!(
+                "invalid address parameters for DHCPv4: perform_dad={:?}, add_subnet_route={:?}",
+                address.address_parameters.perform_dad, address.address_parameters.add_subnet_route
+            );
+            return;
+        }
+    }
     if let Some(address) = address {
         match address.add_to(control) {
             Ok(()) => {}

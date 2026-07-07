@@ -4461,7 +4461,8 @@ mod tests {
                 ..Default::default()
             }),
             temporary: Some(true),
-            add_subnet_route: Some(false),
+            add_subnet_route: Some(true),
+            perform_dad: Some(true),
             ..Default::default()
         }
     }
@@ -4868,6 +4869,102 @@ mod tests {
         } else {
             assert_matches!(control_next, None);
         }
+    }
+
+    #[test_case(fnet_interfaces_admin::AddressParameters {
+            perform_dad: Some(false),
+            ..dhcp_address_parameters()
+        }; "perform_dad is false")]
+    #[test_case(fnet_interfaces_admin::AddressParameters {
+            add_subnet_route: Some(false),
+            ..dhcp_address_parameters()
+        }; "add_subnet_route is false")]
+    #[test_case(fnet_interfaces_admin::AddressParameters {
+            perform_dad: None,
+            ..dhcp_address_parameters()
+        }; "perform_dad is None")]
+    #[test_case(fnet_interfaces_admin::AddressParameters {
+            add_subnet_route: None,
+            ..dhcp_address_parameters()
+        }; "add_subnet_route is None")]
+    #[fuchsia::test]
+    async fn assert_address_parameters_ignored(
+        parameters: fnet_interfaces_admin::AddressParameters,
+    ) {
+        let (
+            mut netcfg,
+            ServerEnds {
+                mut lookup_admin,
+                dhcpv4_client_provider: _,
+                dhcpv6_client_provider: _,
+                route_set_v4_provider: _,
+                dhcpv4_server: _,
+                fuchsia_networks: _,
+            },
+        ) = test_netcfg(NetcfgTestArgs {
+            with_dhcpv4_client_provider: false,
+            with_fuchsia_networks: false,
+        })
+        .expect("error creating test netcfg");
+
+        let (control, control_server_end) =
+            fidl_fuchsia_net_interfaces_ext::admin::Control::create_endpoints().unwrap();
+        let mut control_stream = control_server_end.into_stream();
+
+        let (route_set_proxy, route_set_server_end) =
+            fidl::endpoints::create_proxy::<fnet_routes_admin::RouteSetV4Marker>();
+        let mut route_set_request_stream = route_set_server_end.into_stream();
+
+        let (shutdown_sender, _shutdown_receiver) = futures::channel::oneshot::channel();
+        let auth_grant = fnet_resources::GrantForInterfaceAuthorization {
+            interface_id: INTERFACE_ID.get(),
+            token: zx::Event::create(),
+        };
+
+        assert_matches!(
+            netcfg.interface_states.insert(
+                INTERFACE_ID,
+                InterfaceState {
+                    control,
+                    device_class: DeviceClass::Virtual,
+                    config: InterfaceConfigState::Host(HostInterfaceState {
+                        dhcpv4_client: Dhcpv4ClientState::Running(dhcpv4::ClientState {
+                            routers: HashSet::new(),
+                            route_set: route_set_proxy,
+                            shutdown_sender,
+                        }),
+                        dhcpv6_client_state: None,
+                        dhcpv6_pd_config: None,
+                        interface_admin_auth: auth_grant,
+                        interface_naming_id: test_interface_naming_id(),
+                    }),
+                    provisioning: interface::ProvisioningType::Local,
+                },
+            ),
+            None
+        );
+
+        let (_asp_client, asp_server) = fidl::endpoints::create_proxy();
+        let configuration = fnet_dhcp_ext::Configuration {
+            address: Some(fnet_dhcp_ext::Address {
+                address: DHCP_ADDRESS,
+                address_parameters: parameters,
+                address_state_provider: asp_server,
+            }),
+            dns_servers: Vec::new(),
+            routers: Vec::new(),
+        };
+
+        let res = netcfg
+            .handle_dhcpv4_configuration(INTERFACE_ID, Ok(configuration))
+            .now_or_never()
+            .expect("configuration should be ignored immediately");
+        assert_eq!(res, Dhcpv4ConfigurationHandlerResult::ContinueOperation);
+
+        // Assert no requests were sent.
+        assert_matches!(lookup_admin.next().now_or_never(), None);
+        assert_matches!(control_stream.next().now_or_never(), None);
+        assert_matches!(route_set_request_stream.next().now_or_never(), None);
     }
 
     #[fuchsia::test]
