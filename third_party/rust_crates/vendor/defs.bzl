@@ -537,7 +537,7 @@ _NORMAL_DEPENDENCIES = {
             "serial_test": Label("//third_party/rust_crates/vendor/serial_test-0.8.0:serial_test"),
             "shared_child": Label("//third_party/rust_crates/vendor/shared_child-1.1.1:shared_child"),
             "signal-hook": Label("//third_party/rust_crates/vendor/signal-hook-0.4.4:signal_hook"),
-            "syn": Label("//third_party/rust_crates/vendor/syn-2.0.117:syn"),
+            "syn": Label("//third_party/rust_crates/vendor/syn-2.0.118:syn"),
             "synstructure": Label("//third_party/rust_crates/vendor/synstructure-0.13.2:synstructure"),
             "tar": Label("//third_party/rust_crates/vendor/tar-0.4.46:tar"),
             "term_grid": Label("//third_party/rust_crates/vendor/term_grid-0.2.0:term_grid"),

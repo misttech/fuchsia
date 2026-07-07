@@ -348,7 +348,7 @@ serde_yaml = "0.9.14" # To use on Fuchsia, serde_yaml and unsafe-libyaml will ne
 serial_test = "0.8.0" # Not for use on Fuchsia, only for a single process.
 shared_child = { version = "1.1.1", default-features = false }
 signal-hook = "0.4.4"
-syn = { version = "2.0.117", features = ["full", "visit", "visit-mut", "extra-traits"] }
+syn = { version = "2.0.118", features = ["full", "visit", "visit-mut", "extra-traits"] }
 synstructure = "0.13.2"
 tar = "0.4.46"
 term_grid = "0.2.0"

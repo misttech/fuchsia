@@ -76,7 +76,7 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/prettyplease-0.2.37:build_script_build",
         "//third_party/rust_crates/vendor/proc-macro2-1.0.106:proc_macro2",
-        "//third_party/rust_crates/vendor/syn-2.0.117:syn",
+        "//third_party/rust_crates/vendor/syn-2.0.118:syn",
     ],
 )
 
