@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-PROTOCOL_VERSION = 5
+PROTOCOL_VERSION = 6
 
 
 class BaseRequest(BaseModel):
@@ -36,12 +36,17 @@ class GetStateResponse(BaseModel):
     breakpoints: dict[str, list[int]] | None = None
 
 
+from shared.protocol.evaluate import EvaluateResponse
+
+
 class Response(BaseModel):
     """Standard response wrapper."""
 
     success: bool
     message: str | None = None
-    body: GetStateResponse | dict[str, Any] | None = None
+    # TODO(https://fxbug.dev/531840329): Decouple command response models from base.py
+    # using dynamic registration in ProtocolRegistry.
+    body: GetStateResponse | EvaluateResponse | dict[str, Any] | None = None
     events: list[dict[str, Any]] | None = None
 
 

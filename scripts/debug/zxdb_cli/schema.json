@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "zxdb-cli Protocol Schema",
     "description": "JSON schema for requests and responses in the zxdb-cli UDS protocol",
-    "version": 5,
+    "version": 6,
     "requests": {
         "$defs": {
             "AttachRequest": {
@@ -218,6 +218,60 @@
                     }
                 },
                 "title": "DetachRequest",
+                "type": "object"
+            },
+            "EvaluateRequest": {
+                "description": "Request evaluation of an expression in a given stack frame.",
+                "properties": {
+                    "command": {
+                        "const": "evaluate",
+                        "default": "evaluate",
+                        "title": "Command",
+                        "type": "string"
+                    },
+                    "last_seen_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Last Seen Seq"
+                    },
+                    "ack_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Ack Seq"
+                    },
+                    "thread_id": {
+                        "title": "Thread Id",
+                        "type": "integer"
+                    },
+                    "frame_index": {
+                        "default": 0,
+                        "title": "Frame Index",
+                        "type": "integer"
+                    },
+                    "expression": {
+                        "title": "Expression",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "thread_id",
+                    "expression"
+                ],
+                "title": "EvaluateRequest",
                 "type": "object"
             },
             "GetStateRequest": {
@@ -617,6 +671,7 @@
                 "break": "#/$defs/BreakRequest",
                 "continue": "#/$defs/ContinueRequest",
                 "detach": "#/$defs/DetachRequest",
+                "evaluate": "#/$defs/EvaluateRequest",
                 "get-state": "#/$defs/GetStateRequest",
                 "hello": "#/$defs/HelloRequest",
                 "pause": "#/$defs/PauseRequest",
@@ -641,6 +696,9 @@
             },
             {
                 "$ref": "#/$defs/DetachRequest"
+            },
+            {
+                "$ref": "#/$defs/EvaluateRequest"
             },
             {
                 "$ref": "#/$defs/GetStateRequest"
@@ -673,6 +731,38 @@
     },
     "responses": {
         "$defs": {
+            "EvaluateResponse": {
+                "additionalProperties": false,
+                "description": "Unified response containing the evaluation result and optional children.",
+                "properties": {
+                    "result": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Result"
+                    },
+                    "type": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Type"
+                    }
+                },
+                "title": "EvaluateResponse",
+                "type": "object"
+            },
             "GetStateResponse": {
                 "description": "Response for get-state command containing thread list, active\nprocesses, and active breakpoints.",
                 "properties": {
@@ -765,6 +855,9 @@
                 "anyOf": [
                     {
                         "$ref": "#/$defs/GetStateResponse"
+                    },
+                    {
+                        "$ref": "#/$defs/EvaluateResponse"
                     },
                     {
                         "additionalProperties": true,

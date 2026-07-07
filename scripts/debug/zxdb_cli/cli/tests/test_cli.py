@@ -19,6 +19,7 @@ from daemon_manager.manager import (
 from shared.protocol.attach import AttachRequest
 from shared.protocol.break_request import BreakRequest
 from shared.protocol.continue_request import ContinueRequest
+from shared.protocol.evaluate import EvaluateRequest
 from shared.protocol.pause import PauseRequest
 from shared.protocol.stack_trace import StackTraceRequest
 from shared.protocol.stop import StopRequest
@@ -334,6 +335,76 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
         mock_send.assert_called_once_with(
             BreakRequest(
                 file="/path/to/fuchsia/src/main.rs", line=12, delete=True
+            )
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_evaluate_command(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["evaluate", "--thread-id", "1", "x", "+", "y"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            EvaluateRequest(
+                thread_id=1,
+                frame_index=0,
+                expression="x + y",
+                start=0,
+                count=50,
+            )
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_print_alias_command(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["print", "--thread-id", "1", "x", "+", "y"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            EvaluateRequest(
+                thread_id=1,
+                frame_index=0,
+                expression="x + y",
+                start=0,
+                count=50,
+            )
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_evaluate_command_options(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(
+            [
+                "evaluate",
+                "--thread-id",
+                "1",
+                "x",
+                "--frame-index",
+                "2",
+                "--start",
+                "5",
+                "--count",
+                "10",
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            EvaluateRequest(
+                thread_id=1, frame_index=2, expression="x", start=5, count=10
+            )
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_json_option_evaluate(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(
+            [
+                "--json",
+                '{"command": "evaluate", "thread_id": 1, "frame_index": 2, "expression": "x", "start": 5, "count": 10}',
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            EvaluateRequest(
+                thread_id=1, frame_index=2, expression="x", start=5, count=10
             )
         )
 

@@ -12,6 +12,7 @@ from cli.commands import (
     break_cmd,
     continue_cmd,
     detach,
+    evaluate,
     get_state,
     pause,
     schema,
@@ -69,6 +70,7 @@ async def main(args: list[str]) -> int:
         threads.Command,
         variables.Command,
         wait_for_event.Command,
+        evaluate.Command,
     ]
     for cmd_class in command_classes:
         existing_choices = set(subparsers.choices.keys())

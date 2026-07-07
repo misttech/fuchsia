@@ -27,6 +27,7 @@ if (is_host) {
       "protocol/break_request.py",
       "protocol/continue_request.py",
       "protocol/detach.py",
+      "protocol/evaluate.py",
       "protocol/get_state.py",
       "protocol/hello.py",
       "protocol/pause.py",
@@ -37,7 +38,10 @@ if (is_host) {
       "protocol/variables.py",
       "protocol/wait_for_event.py",
     ]
-    library_deps = [ "//third_party/pylibs/pydantic" ]
+    library_deps = [
+      "//src/lib/debug/dap/python:lib",
+      "//third_party/pylibs/pydantic",
+    ]
   }
 
   python_host_test("protocol_test") {

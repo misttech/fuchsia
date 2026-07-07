@@ -19,6 +19,7 @@ from daemon.handlers import (
     break_req,
     continue_req,
     detach,
+    evaluate,
     get_state,
     hello,
     pause,
@@ -169,6 +170,7 @@ class Daemon:
             threads,
             variables,
             wait_for_event,
+            evaluate,
         ]
         for mod in handlers:
             handler_fn = functools.partial(mod.handle, self)

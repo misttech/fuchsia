@@ -23,6 +23,7 @@ if (is_host) {
       "commands/break_cmd.py",
       "commands/continue_cmd.py",
       "commands/detach.py",
+      "commands/evaluate.py",
       "commands/get_state.py",
       "commands/pause.py",
       "commands/schema.py",

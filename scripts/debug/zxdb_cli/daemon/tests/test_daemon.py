@@ -15,6 +15,7 @@ from shared.protocol import (
 )
 from shared.protocol.attach import AttachRequest
 from shared.protocol.continue_request import ContinueRequest
+from shared.protocol.evaluate import EvaluateRequest, EvaluateResponse
 from shared.protocol.get_state import GetStateRequest
 from shared.protocol.pause import PauseRequest
 from shared.protocol.threads import ThreadsRequest
@@ -493,6 +494,83 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             dap_args = args[1]
             self.assertEqual(len(dap_args.breakpoints), 1)
             self.assertEqual(dap_args.breakpoints[0].line, 24)
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_evaluate_success_no_children(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+
+        # Mock stack trace
+        mock_stack_resp = Mock()
+        mock_frame = Mock()
+        mock_frame.id = 42
+        mock_stack_resp.body.stack_frames = [mock_frame]
+        mock_dap_client.stack_trace = AsyncMock(return_value=mock_stack_resp)
+
+        # Mock evaluate
+        mock_eval_resp = Mock()
+        mock_eval_resp.success = True
+        mock_eval_resp.body.result = "10"
+        mock_eval_resp.body.type = "int"
+        mock_eval_resp.body.variables_reference = 0
+        mock_dap_client.evaluate = AsyncMock(return_value=mock_eval_resp)
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        daemon.stopped_threads = {1}
+
+        resp = await daemon.registry.handle(
+            "evaluate",
+            EvaluateRequest(thread_id=1, frame_index=0, expression="10"),
+        )
+
+        self.assertTrue(resp.success)
+        self.assertIsNotNone(resp.body)
+        assert isinstance(resp.body, EvaluateResponse)
+        self.assertEqual(resp.body.result, "10")
+        self.assertEqual(resp.body.type, "int")
+        mock_dap_client.stack_trace.assert_called_once()
+        mock_dap_client.evaluate.assert_called_once()
+
+    # TODO(https://fxbug.dev/529329366): Add test_handle_evaluate_success_with_children
+    # once variablesReference expansion is supported in EvaluateResponse.
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_evaluate_failure(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+
+        # Mock stack trace
+        mock_stack_resp = Mock()
+        mock_stack_resp.body.stack_frames = []
+        mock_dap_client.stack_trace = AsyncMock(return_value=mock_stack_resp)
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        daemon.stopped_threads = {1}
+
+        resp = await daemon.registry.handle(
+            "evaluate",
+            EvaluateRequest(thread_id=1, frame_index=0, expression="10"),
+        )
+
+        self.assertFalse(resp.success)
+        self.assertIn("No stack frames found", resp.message or "")
+
+    async def test_handle_evaluate_thread_not_stopped(self) -> None:
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        daemon.stopped_threads = set()
+
+        resp = await daemon.registry.handle(
+            "evaluate",
+            EvaluateRequest(thread_id=1, frame_index=0, expression="10"),
+        )
+
+        self.assertFalse(resp.success)
+        self.assertIn("Thread not stopped", resp.message or "")
 
 
 if __name__ == "__main__":

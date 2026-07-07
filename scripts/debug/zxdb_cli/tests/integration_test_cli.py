@@ -263,6 +263,27 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
                         )
                         writer.write(resp_header + resp_body)
                         await writer.drain()
+                    elif req.get("command") == "evaluate":
+                        resp = {
+                            "seq": req["seq"],
+                            "type": "response",
+                            "request_seq": req["seq"],
+                            "success": True,
+                            "command": "evaluate",
+                            "body": {
+                                "result": "42",
+                                "type": "int",
+                                "variablesReference": 0,
+                            },
+                        }
+                        resp_body = json.dumps(resp).encode("utf-8")
+                        resp_header = (
+                            f"Content-Length: {len(resp_body)}\r\n\r\n".encode(
+                                "utf-8"
+                            )
+                        )
+                        writer.write(resp_header + resp_body)
+                        await writer.drain()
             except (asyncio.IncompleteReadError, ConnectionResetError):
                 pass
             finally:
@@ -901,6 +922,49 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
                 detach_request["arguments"].get("all"),
                 "zxdb.Detach did not specify 'all'",
             )
+
+        finally:
+            await _cleanup_process_group(proc)
+
+    async def test_evaluate_command(self) -> None:
+        proc, port = await self._setup_daemon_and_server()
+
+        try:
+            exit_code = await main(["pause", "1"])
+            self.assertEqual(exit_code, 0)
+
+            f = StringIO()
+            with contextlib.redirect_stdout(f):
+                exit_code = await main(
+                    ["evaluate", "--thread-id", "1", "1", "+", "1"]
+                )
+            self.assertEqual(exit_code, 0)
+
+            output = f.getvalue()
+            output_json = json.loads(output)
+            self.assertTrue(output_json.get("success"))
+            body = output_json.get("body")
+            self.assertIsNotNone(body)
+            self.assertEqual(body.get("result"), "42")
+            self.assertEqual(body.get("type"), "int")
+
+            # Verify that the fake DAP server received the evaluate command
+            eval_req = next(
+                (
+                    r
+                    for r in self.received_dap_requests
+                    if r.get("command") == "evaluate"
+                ),
+                None,
+            )
+            self.assertIsNotNone(eval_req)
+            assert eval_req is not None
+            self.assertEqual(eval_req["arguments"]["expression"], "1 + 1")
+            self.assertEqual(eval_req["arguments"]["frameId"], 1)
+
+            # Stop via CLI
+            exit_code = await main(["stop"])
+            self.assertEqual(exit_code, 0)
 
         finally:
             await _cleanup_process_group(proc)
