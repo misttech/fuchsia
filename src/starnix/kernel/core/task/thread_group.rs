@@ -832,23 +832,7 @@ impl ThreadGroup {
         let tasks = state.tasks();
         drop(state);
 
-        // Detach from any ptraced tasks, killing the ones that set PTRACE_O_EXITKILL.
-        let tracees = self.ptracees.lock().keys().cloned().collect::<Vec<_>>();
-        for tracee in tracees {
-            if let Ok(task_ref) = pids.get_task(tracee) {
-                let mut should_send_sigkill = false;
-                if let Some(ptrace) = &task_ref.read().ptrace {
-                    should_send_sigkill = ptrace.has_option(PtraceOptions::EXITKILL);
-                }
-                if should_send_sigkill {
-                    send_standard_signal(locked, task_ref.as_ref(), SignalInfo::kernel(SIGKILL));
-                    continue;
-                }
-
-                let _ =
-                    ptrace_detach(locked, &mut pids, self, task_ref.as_ref(), &UserAddress::NULL);
-            }
-        }
+        self.detach_ptracees(locked, &mut pids);
 
         for task in tasks {
             task.write().set_exit_status(exit_status.clone());
@@ -887,7 +871,7 @@ impl ThreadGroup {
         mut pids: RwLockWriteGuard<'_, PidTable>,
         task: &Arc<Task>,
     ) where
-        L: LockBefore<ProcessGroupState>,
+        L: LockBefore<ProcessGroupState> + LockBefore<ThreadGroupLimits>,
     {
         task.set_ptrace_zombie(&mut pids);
         pids.remove_task(task.tid);
@@ -944,6 +928,8 @@ impl ThreadGroup {
             // This function will hold the CgroupState lock which should be before the TG lock. See
             // more in lock_cgroup2_pid_table comments.
             self.kernel.cgroups.lock_cgroup2_pid_table().remove_process(self.into());
+
+            self.detach_ptracees(locked, &mut pids);
 
             // We will need the immediate parent and the reaper. Once we have them, we can make
             // sure to take the locks in the right order: parent before child.
@@ -1033,6 +1019,29 @@ impl ThreadGroup {
             }
 
             self.write().set_exited();
+        }
+    }
+
+    /// Detach from any ptraced tasks, killing the ones that set `PTRACE_O_EXITKILL`.
+    fn detach_ptracees<L>(&self, locked: &mut Locked<L>, pids: &mut PidTable)
+    where
+        L: LockBefore<ThreadGroupLimits>,
+    {
+        let tracee_tids = self.ptracees.lock().keys().cloned().collect_vec();
+        for tracee_tid in tracee_tids {
+            let Ok(tracee) = pids.get_task(tracee_tid) else {
+                continue;
+            };
+
+            let mut should_send_sigkill = false;
+            if let Some(ptrace) = &tracee.read().ptrace {
+                should_send_sigkill = ptrace.has_option(PtraceOptions::EXITKILL);
+            }
+            if should_send_sigkill {
+                send_standard_signal(locked, tracee.as_ref(), SignalInfo::kernel(SIGKILL));
+            }
+
+            let _ = ptrace_detach(locked, pids, self, tracee.as_ref(), &UserAddress::NULL);
         }
     }
 

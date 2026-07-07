@@ -1176,6 +1176,69 @@ TEST(PtraceTest, ExitKillFromThread) {
   EXPECT_TRUE(helper.WaitForChildren());
 }
 
+// Tests that a tracer thread group detaches from its running tracees upon normal exit (i.e. when
+// the last thread in the tracer thread group exits).
+TEST(PtraceTest, RunningTraceeDetachedOnNormalTracerExit) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([]() {
+    test_helper::ForkHelper trace_fork_helper;
+    trace_fork_helper.OnlyWaitForForkedChildren();
+
+    test_helper::Rendezvous tracee_ready = test_helper::MakeRendezvous();
+
+    // Create the tracee as its own process. The tracer thread group must only have one thread.
+    pid_t tracee_pid = trace_fork_helper.RunInForkedProcess(
+        [tracee_ready = std::move(tracee_ready.poker)]() mutable {
+          // Allow a non-parent tracer.
+          SAFE_SYSCALL(prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0));
+          tracee_ready.poke();
+          // Wait for the parent to kill the tracee.
+          while (true) {
+            pause();
+          }
+        });
+
+    pid_t tracer_pid = trace_fork_helper.RunInForkedProcess(
+        [tracee_ready = std::move(tracee_ready.holder), tracee_pid]() mutable {
+          // Attach to the tracee once it's ready.
+          tracee_ready.hold();
+          ASSERT_THAT(ptrace(PTRACE_ATTACH, tracee_pid, nullptr, nullptr), SyscallSucceeds());
+
+          // Wait for the tracee to start and stop, then resume it so it is running when the tracer
+          // exits.
+          int status;
+          SAFE_SYSCALL(waitpid(tracee_pid, &status, 0));
+          ASSERT_TRUE(WIFSTOPPED(status));
+          ASSERT_THAT(ptrace(PTRACE_CONT, tracee_pid, nullptr, 0), SyscallSucceeds());
+
+          // Cause the tracer thread group to exit normally by exiting its last thread directly with
+          // SYS_exit.
+          SAFE_SYSCALL(syscall(SYS_exit, EXIT_SUCCESS));
+        });
+
+    // Wait for tracer to exit.
+    int status;
+    SAFE_SYSCALL(waitpid(tracer_pid, &status, 0));
+    EXPECT_TRUE(WIFEXITED(status));
+    EXPECT_EQ(WEXITSTATUS(status), EXIT_SUCCESS);
+
+    // Verify that we (the parent) can attach to the tracee.
+    // If the tracer did not detach, this will fail.
+    ASSERT_THAT(ptrace(PTRACE_ATTACH, tracee_pid, nullptr, nullptr), SyscallSucceeds());
+
+    // Detach and kill the tracee.
+    SAFE_SYSCALL(waitpid(tracee_pid, &status, 0));
+    EXPECT_TRUE(WIFSTOPPED(status));
+    ASSERT_THAT(ptrace(PTRACE_DETACH, tracee_pid, nullptr, 0), SyscallSucceeds());
+    SAFE_SYSCALL(kill(tracee_pid, SIGKILL));
+    trace_fork_helper.ExpectSignal(SIGKILL);
+    ASSERT_TRUE(trace_fork_helper.WaitForChild(tracee_pid).determined_result);
+  });
+
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
 TEST(PtraceTest, PtraceAttachesToParentThread) {
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([]() {
