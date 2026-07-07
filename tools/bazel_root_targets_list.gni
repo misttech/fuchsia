@@ -1,0 +1,144 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# A list of Bazel root targets for host tools under //tools directory.
+tools_bazel_root_targets = [
+  {
+    bazel_label = "//tools/rust_test_parser:rust_test_parser"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/rust_test_parser_/rust_test_parser"
+        ninja = "rust_test_parser"
+      },
+    ]
+  },
+  {
+    bazel_label = "//tools/fidl/fidl_api_diff:fidl_api_diff"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidl_api_diff_/fidl_api_diff"
+        ninja = "fidl_api_diff"
+      },
+    ]
+    install_host_tool = true
+  },
+  {
+    bazel_label = "//tools/go_test_parser:go_test_parser"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/go_test_parser_/go_test_parser"
+        ninja = "go_test_parser"
+      },
+    ]
+  },
+  {
+    bazel_label = "//tools/staticanalysis/rfcmeta:rfcmeta"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/rfcmeta_/rfcmeta"
+        ninja = "rfcmeta"
+      },
+    ]
+    install_host_tool = true
+  },
+  {
+    bazel_label = "//tools/debug/covargs:covargs"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/covargs_/covargs"
+        ninja = "covargs"
+      },
+    ]
+    install_host_tool = true  # Required by CI recipe
+  },
+  {
+    bazel_label = "//tools/debug/symbolize:symbolize"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/symbolize_/symbolize"
+        ninja = "symbolize"
+      },
+    ]
+  },
+  {
+    bazel_label = "//tools/fidl/clang-format-wrapper:clang-format-wrapper"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/clang-format-wrapper_/clang-format-wrapper"
+        ninja = "clang-format-wrapper"
+      },
+    ]
+    install_host_tool = true
+  },
+  {
+    bazel_label = "//tools/pretty_serial"
+    install_host_tool = true
+  },
+  {
+    bazel_label = "//tools/mdlint"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/mdlint_/mdlint"
+        ninja = "mdlint"
+      },
+    ]
+    install_host_tool = true
+  },
+  {
+    bazel_label = "//tools/pkgstats/debugdump:debugdump"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/debugdump_/debugdump"
+        ninja = "debugdump"
+      },
+    ]
+    install_host_tool = true
+  },
+  {
+    bazel_label = "//tools/debroot:debroot"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/debroot_/debroot"
+        ninja = "debroot"
+      },
+    ]
+    install_host_tool = true
+  },
+  {
+    bazel_label = "//tools/whereiscl:whereiscl"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/whereiscl_/whereiscl"
+        ninja = "whereiscl"
+      },
+    ]
+    install_host_tool = true
+  },
+  {
+    bazel_label = "//tools/jq5:jq5"
+    install_host_tool = true
+  },
+  {
+    bazel_label = "//tools/rust_extract"
+    install_host_tool = true
+  },
+  {
+    bazel_label = "//tools/fidl/fidldoc:fidldoc"
+    install_host_tool = true
+  },
+
+  # Various tests that we want to ensure can
+  # build correctly.
+  # TODO(https://fxbug.dev/514526401): Run these Bazel tests in CQ.
+  {
+    bazel_label = "//tools/check-licenses:tests"
+    bazel_name = "build.stamp"
+    ninja_name = "tools_check-licenses_stamp_tests.stamp"
+  },
+  {
+    bazel_label = "//tools/whereiscl:tests"
+    bazel_name = "build.stamp"
+    ninja_name = "tools_whereiscl_stamp_tests.stamp"
+  },
+]
