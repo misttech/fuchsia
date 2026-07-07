@@ -65,7 +65,7 @@ class BindManagerBridge {
  public:
   virtual zx::result<BindSpecResult> BindToParentSpec(fidl::AnyArena& arena,
                                                       CompositeParents composite_parents,
-                                                      std::weak_ptr<Node> node,
+                                                      std::weak_ptr<Resource> resource,
                                                       bool enable_multibind) = 0;
 
   virtual zx::result<std::string> StartDriver(

@@ -22,7 +22,8 @@ CompositeNodeSpec::CompositeNodeSpec(CompositeNodeSpecCreateInfo create_info,
 }
 
 zx::result<std::optional<NodeWkPtr>> CompositeNodeSpec::BindParent(
-    fuchsia_driver_framework::wire::CompositeParent composite_parent, const NodeWkPtr& node_ptr) {
+    fuchsia_driver_framework::wire::CompositeParent composite_parent,
+    const ResourceWkPtr& resource) {
   ZX_ASSERT(composite_parent.has_index());
   auto node_index = composite_parent.index();
   if (node_index >= parent_set_collector_.size()) {
@@ -59,7 +60,7 @@ zx::result<std::optional<NodeWkPtr>> CompositeNodeSpec::BindParent(
       parent_specs()[composite_parent.index()].properties();
 
   zx::result<> add_result =
-      parent_set_collector_.AddNode(composite_parent.index(), properties, node_ptr);
+      parent_set_collector_.AddNode(composite_parent.index(), properties, resource);
   if (add_result.is_error()) {
     return add_result.take_error();
   }

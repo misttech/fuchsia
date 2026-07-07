@@ -69,28 +69,27 @@ class FakeCompositeNodeSpec : public driver_manager::CompositeNodeSpec {
                                  async_dispatcher_t* dispatcher,
                                  driver_manager::NodeManager* manager)
       : driver_manager::CompositeNodeSpec(create_info, dispatcher, manager),
-        parent_nodes_(create_info.parents.size(), std::nullopt) {}
+        parent_resources_(create_info.parents.size(), std::nullopt) {}
 
   zx::result<std::optional<driver_manager::NodeWkPtr>> BindParent(
       fuchsia_driver_framework::wire::CompositeParent composite_parent,
-      const driver_manager::NodeWkPtr& node_ptr) override {
+      const std::weak_ptr<driver_manager::Resource>& resource) override {
     ZX_ASSERT(composite_parent.has_index());
     auto node_index = composite_parent.index();
-    if (node_index >= parent_nodes_.size()) {
+    if (node_index >= parent_resources_.size()) {
       return zx::error(ZX_ERR_OUT_OF_RANGE);
     }
 
-    const std::optional<driver_manager::NodeWkPtr>& current_at_index = parent_nodes_[node_index];
+    const std::optional<std::weak_ptr<driver_manager::Resource>>& current_at_index =
+        parent_resources_[node_index];
     if (current_at_index.has_value()) {
-      const driver_manager::NodeWkPtr& existing_node = current_at_index.value();
-      // If the driver_manager::Node no longer exists (for example because of a reload) then we
-      // don't want to return an ALREADY_BOUND error.
-      if (!existing_node.expired()) {
+      const std::weak_ptr<driver_manager::Resource>& existing_resource = current_at_index.value();
+      if (!existing_resource.expired()) {
         return zx::error(ZX_ERR_ALREADY_BOUND);
       }
     }
 
-    parent_nodes_[composite_parent.index()] = node_ptr;
+    parent_resources_[composite_parent.index()] = resource;
     return zx::ok(std::weak_ptr<driver_manager::Node>());
   }
 
@@ -104,16 +103,16 @@ class FakeCompositeNodeSpec : public driver_manager::CompositeNodeSpec {
     callback(zx::ok());
   }
 
-  const std::vector<std::optional<std::weak_ptr<driver_manager::Node>>>& GetParentNodes()
+  const std::vector<std::optional<std::weak_ptr<driver_manager::Resource>>>& GetParentResources()
       const override {
-    return parent_nodes_;
+    return parent_resources_;
   }
 
   bool remove_invoked() const { return remove_invoked_; }
 
  private:
   bool remove_invoked_ = false;
-  std::vector<std::optional<std::weak_ptr<driver_manager::Node>>> parent_nodes_;
+  std::vector<std::optional<std::weak_ptr<driver_manager::Resource>>> parent_resources_;
 };
 
 class FakeDeviceManagerBridge : public driver_manager::CompositeManagerBridge {
@@ -214,19 +213,19 @@ TEST_F(CompositeNodeSpecManagerTest, TestAddMatchCompositeNodeSpec) {
   fdf::CompositeParent match = MakeCompositeNodeSpecInfo(spec_name, 0, {"node-0", "node-1"});
 
   ASSERT_TRUE(AddSpec(allocator, spec_name, std::move(parents)).is_ok());
-  ASSERT_EQ(2u, composite_node_spec_manager_->specs().at(spec_name)->GetParentNodes().size());
-  ASSERT_FALSE(composite_node_spec_manager_->specs().at(spec_name)->GetParentNodes()[0]);
-  ASSERT_FALSE(composite_node_spec_manager_->specs().at(spec_name)->GetParentNodes()[1]);
+  ASSERT_EQ(2u, composite_node_spec_manager_->specs().at(spec_name)->GetParentResources().size());
+  ASSERT_FALSE(composite_node_spec_manager_->specs().at(spec_name)->GetParentResources()[0]);
+  ASSERT_FALSE(composite_node_spec_manager_->specs().at(spec_name)->GetParentResources()[1]);
 
   //  Bind parent spec 2.
   zx::result result = composite_node_spec_manager_->BindParentSpec(
       allocator,
       fidl::ToWire(allocator,
                    std::vector{MakeCompositeNodeSpecInfo(spec_name, 1, {"node-0", "node-1"})}),
-      std::weak_ptr<driver_manager::Node>());
+      std::weak_ptr<driver_manager::Resource>());
   ASSERT_TRUE(result.is_ok());
   ASSERT_EQ(1u, result.value().completed_node_and_drivers.size());
-  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name)->GetParentNodes()[1]);
+  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name)->GetParentResources()[1]);
 
   //  Bind parent spec 1.
   ASSERT_TRUE(
@@ -234,9 +233,9 @@ TEST_F(CompositeNodeSpecManagerTest, TestAddMatchCompositeNodeSpec) {
           ->BindParentSpec(allocator,
                            fidl::ToWire(allocator, std::vector{MakeCompositeNodeSpecInfo(
                                                        spec_name, 0, {"node-0", "node-1"})}),
-                           std::weak_ptr<driver_manager::Node>())
+                           std::weak_ptr<driver_manager::Resource>())
           .is_ok());
-  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name)->GetParentNodes()[0]);
+  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name)->GetParentResources()[0]);
 }
 
 TEST_F(CompositeNodeSpecManagerTest, TestBindSameNodeTwice) {
@@ -249,10 +248,10 @@ TEST_F(CompositeNodeSpecManagerTest, TestBindSameNodeTwice) {
 
   auto spec_name = "test_name";
   ASSERT_TRUE(AddSpec(allocator, spec_name, std::move(parents)).is_ok());
-  ASSERT_EQ(2u, composite_node_spec_manager_->specs().at(spec_name)->GetParentNodes().size());
+  ASSERT_EQ(2u, composite_node_spec_manager_->specs().at(spec_name)->GetParentResources().size());
 
-  ASSERT_FALSE(composite_node_spec_manager_->specs().at(spec_name)->GetParentNodes()[0]);
-  ASSERT_FALSE(composite_node_spec_manager_->specs().at(spec_name)->GetParentNodes()[1]);
+  ASSERT_FALSE(composite_node_spec_manager_->specs().at(spec_name)->GetParentResources()[0]);
+  ASSERT_FALSE(composite_node_spec_manager_->specs().at(spec_name)->GetParentResources()[1]);
 
   //  Bind parent spec 1.
   std::shared_ptr<driver_manager::Node> node = CreateNode("node");
@@ -261,9 +260,9 @@ TEST_F(CompositeNodeSpecManagerTest, TestBindSameNodeTwice) {
           ->BindParentSpec(allocator,
                            fidl::ToWire(allocator, std::vector{MakeCompositeNodeSpecInfo(
                                                        spec_name, 0, {"node-0", "node-1"})}),
-                           std::weak_ptr<driver_manager::Node>(node))
+                           node->GetSelfResource().value())
           .is_ok());
-  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name)->GetParentNodes()[0]);
+  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name)->GetParentResources()[0]);
 
   // Bind the same node.
   ASSERT_EQ(ZX_ERR_NOT_FOUND,
@@ -271,7 +270,7 @@ TEST_F(CompositeNodeSpecManagerTest, TestBindSameNodeTwice) {
                 ->BindParentSpec(allocator,
                                  fidl::ToWire(allocator, std::vector{MakeCompositeNodeSpecInfo(
                                                              spec_name, 0, {"node-0", "node-1"})}),
-                                 std::weak_ptr<driver_manager::Node>(node))
+                                 node->GetSelfResource().value())
                 .status_value());
 }
 
@@ -311,7 +310,7 @@ TEST_F(CompositeNodeSpecManagerTest, TestMultibindDisabled) {
 
   auto spec_name_1 = "test_name";
   ASSERT_TRUE(AddSpec(allocator, spec_name_1, parent_specs_1).is_ok());
-  ASSERT_EQ(2u, composite_node_spec_manager_->specs().at(spec_name_1)->GetParentNodes().size());
+  ASSERT_EQ(2u, composite_node_spec_manager_->specs().at(spec_name_1)->GetParentResources().size());
 
   // Add a second composite node spec with a node that's the same as one in the first composite node
   // spec.
@@ -320,7 +319,7 @@ TEST_F(CompositeNodeSpecManagerTest, TestMultibindDisabled) {
   };
   auto spec_name_2 = "test_name2";
   ASSERT_TRUE(AddSpec(allocator, spec_name_2, parent_specs_2).is_ok());
-  ASSERT_EQ(1u, composite_node_spec_manager_->specs().at(spec_name_2)->GetParentNodes().size());
+  ASSERT_EQ(1u, composite_node_spec_manager_->specs().at(spec_name_2)->GetParentResources().size());
 
   // Bind the node that's in both specs. The node should only bind to one
   // composite node spec.
@@ -332,21 +331,20 @@ TEST_F(CompositeNodeSpecManagerTest, TestMultibindDisabled) {
   std::shared_ptr<driver_manager::Node> node_1 = CreateNode("node_1");
   std::shared_ptr<driver_manager::Node> node_2 = CreateNode("node_2");
   zx::result result = composite_node_spec_manager_->BindParentSpec(
-      allocator, fidl::ToWire(allocator, matched_node), std::weak_ptr<driver_manager::Node>(node_1),
-      false);
+      allocator, fidl::ToWire(allocator, matched_node), node_1->GetSelfResource().value(), false);
   ASSERT_TRUE(result.is_ok());
   ASSERT_EQ(1u, result.value().completed_node_and_drivers.size());
 
-  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name_1)->GetParentNodes()[1]);
-  ASSERT_FALSE(composite_node_spec_manager_->specs().at(spec_name_2)->GetParentNodes()[0]);
+  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name_1)->GetParentResources()[1]);
+  ASSERT_FALSE(composite_node_spec_manager_->specs().at(spec_name_2)->GetParentResources()[0]);
 
   // Bind the node again. Both composite node specs should now have the bound node.
   ASSERT_TRUE(composite_node_spec_manager_
                   ->BindParentSpec(allocator, fidl::ToWire(allocator, matched_node),
-                                   std::weak_ptr<driver_manager::Node>(node_2), false)
+                                   node_2->GetSelfResource().value(), false)
                   .is_ok());
-  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name_1)->GetParentNodes()[1]);
-  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name_2)->GetParentNodes()[0]);
+  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name_1)->GetParentResources()[1]);
+  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name_2)->GetParentResources()[0]);
 }
 
 TEST_F(CompositeNodeSpecManagerTest, TestMultibindEnabled) {
@@ -367,7 +365,7 @@ TEST_F(CompositeNodeSpecManagerTest, TestMultibindEnabled) {
 
   auto spec_name_1 = "test_name";
   ASSERT_TRUE(AddSpec(allocator, spec_name_1, parent_specs_1).is_ok());
-  ASSERT_EQ(2u, composite_node_spec_manager_->specs().at(spec_name_1)->GetParentNodes().size());
+  ASSERT_EQ(2u, composite_node_spec_manager_->specs().at(spec_name_1)->GetParentResources().size());
 
   // Add a second composite node spec with a node that's the same as one in the first composite node
   // spec.
@@ -376,7 +374,7 @@ TEST_F(CompositeNodeSpecManagerTest, TestMultibindEnabled) {
   };
   auto spec_name_2 = "test_name2";
   ASSERT_TRUE(AddSpec(allocator, spec_name_2, parent_specs_2).is_ok());
-  ASSERT_EQ(1u, composite_node_spec_manager_->specs().at(spec_name_2)->GetParentNodes().size());
+  ASSERT_EQ(1u, composite_node_spec_manager_->specs().at(spec_name_2)->GetParentResources().size());
 
   // Bind the node that's in both specs. The node should bind to both.
   auto matched_node = std::vector{
@@ -386,12 +384,12 @@ TEST_F(CompositeNodeSpecManagerTest, TestMultibindEnabled) {
 
   zx::result result =
       composite_node_spec_manager_->BindParentSpec(allocator, fidl::ToWire(allocator, matched_node),
-                                                   std::weak_ptr<driver_manager::Node>(), true);
+                                                   std::weak_ptr<driver_manager::Resource>(), true);
   ASSERT_TRUE(result.is_ok());
   ASSERT_EQ(2u, result.value().completed_node_and_drivers.size());
 
-  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name_1)->GetParentNodes()[1]);
-  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name_2)->GetParentNodes()[0]);
+  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name_1)->GetParentResources()[1]);
+  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name_2)->GetParentResources()[0]);
 }
 
 TEST_F(CompositeNodeSpecManagerTest, TestBindWithNoCompositeMatch) {
@@ -420,7 +418,7 @@ TEST_F(CompositeNodeSpecManagerTest, TestBindWithNoCompositeMatch) {
 
   ASSERT_EQ(ZX_ERR_NOT_FOUND, composite_node_spec_manager_
                                   ->BindParentSpec(allocator, fidl::ToWire(allocator, matched_node),
-                                                   std::weak_ptr<driver_manager::Node>())
+                                                   std::weak_ptr<driver_manager::Resource>())
                                   .status_value());
 
   // Add a composite match into the matched node info.
@@ -431,10 +429,10 @@ TEST_F(CompositeNodeSpecManagerTest, TestBindWithNoCompositeMatch) {
   };
   ASSERT_TRUE(composite_node_spec_manager_
                   ->BindParentSpec(allocator, fidl::ToWire(allocator, matched_node_with_composite),
-                                   std::weak_ptr<driver_manager::Node>())
+                                   std::weak_ptr<driver_manager::Resource>())
                   .is_ok());
-  ASSERT_EQ(2u, composite_node_spec_manager_->specs().at(spec_name)->GetParentNodes().size());
-  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name)->GetParentNodes()[0]);
+  ASSERT_EQ(2u, composite_node_spec_manager_->specs().at(spec_name)->GetParentResources().size());
+  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name)->GetParentResources()[0]);
 }
 
 TEST_F(CompositeNodeSpecManagerTest, TestAddDuplicate) {
@@ -458,7 +456,7 @@ TEST_F(CompositeNodeSpecManagerTest, TestDuplicateSpecsWithMatch) {
 
   auto spec_name = "test_name";
   ASSERT_TRUE(AddSpec(allocator, spec_name, parent_specs).is_ok());
-  ASSERT_EQ(2u, composite_node_spec_manager_->specs().at(spec_name)->GetParentNodes().size());
+  ASSERT_EQ(2u, composite_node_spec_manager_->specs().at(spec_name)->GetParentResources().size());
   ASSERT_EQ(fuchsia_driver_framework::CompositeNodeSpecError::kAlreadyExists,
             AddSpec(allocator, spec_name, std::move(parent_specs)).error_value());
 }
@@ -498,20 +496,21 @@ TEST_F(CompositeNodeSpecManagerTest, TestRebindRequestWithMatch) {
       MakeCompositeNodeSpecInfo(spec_name, 0, {"node-0", "node-1"}),
   };
   zx::result result = composite_node_spec_manager_->BindParentSpec(
-      allocator, fidl::ToWire(allocator, matched_parent_1), std::weak_ptr<driver_manager::Node>());
+      allocator, fidl::ToWire(allocator, matched_parent_1),
+      std::weak_ptr<driver_manager::Resource>());
   ASSERT_TRUE(result.is_ok());
   ASSERT_EQ(1u, result.value().completed_node_and_drivers.size());
-  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name)->GetParentNodes()[0]);
+  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name)->GetParentResources()[0]);
 
   auto matched_parent_2 = std::vector{
       MakeCompositeNodeSpecInfo(spec_name, 1, {"node-0", "node-1"}),
   };
   ASSERT_EQ(1u, composite_node_spec_manager_
                     ->BindParentSpec(allocator, fidl::ToWire(allocator, matched_parent_2),
-                                     std::weak_ptr<driver_manager::Node>())
+                                     std::weak_ptr<driver_manager::Resource>())
                     .value()
                     .completed_node_and_drivers.size());
-  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name)->GetParentNodes()[1]);
+  ASSERT_TRUE(composite_node_spec_manager_->specs().at(spec_name)->GetParentResources()[1]);
 
   bool is_callback_success = false;
   composite_node_spec_manager_->Rebind(spec_name, std::nullopt,

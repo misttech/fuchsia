@@ -1258,9 +1258,9 @@ zx::result<std::string> DriverRunner::StartDriver(
 
 zx::result<BindSpecResult> DriverRunner::BindToParentSpec(fidl::AnyArena& arena,
                                                           CompositeParents composite_parents,
-                                                          std::weak_ptr<Node> node,
+                                                          std::weak_ptr<Resource> resource,
                                                           bool enable_multibind) {
-  return this->composite_node_spec_manager_.BindParentSpec(arena, composite_parents, node,
+  return this->composite_node_spec_manager_.BindParentSpec(arena, composite_parents, resource,
                                                            enable_multibind);
 }
 

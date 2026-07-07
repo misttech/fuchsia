@@ -87,8 +87,8 @@ class TestBindManagerBridge final : public driver_manager::BindManagerBridge,
   // BindManagerBridge implementation:
   zx::result<driver_manager::BindSpecResult> BindToParentSpec(
       fidl::AnyArena& arena, driver_manager::CompositeParents composite_parents,
-      std::weak_ptr<driver_manager::Node> node, bool enable_multibind) override {
-    return composite_manager_.BindParentSpec(arena, composite_parents, node, enable_multibind);
+      std::weak_ptr<driver_manager::Resource> resource, bool enable_multibind) override {
+    return composite_manager_.BindParentSpec(arena, composite_parents, resource, enable_multibind);
   }
 
   zx::result<std::string> StartDriver(

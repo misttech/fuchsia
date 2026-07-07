@@ -13,6 +13,7 @@
 #include "src/devices/bin/driver_manager/composite/composite_manager_bridge.h"
 
 namespace driver_manager {
+class Resource;
 struct CompositeNodeAndDriver {
   fuchsia_driver_framework::wire::CompositeDriverInfo driver;
   NodeWkPtr node;
@@ -47,7 +48,7 @@ class CompositeNodeSpecManager {
   zx::result<BindSpecResult> BindParentSpec(
       fidl::AnyArena& arena,
       fidl::VectorView<fuchsia_driver_framework::wire::CompositeParent> composite_parents,
-      const NodeWkPtr& node_ptr, bool enable_multibind = false);
+      const ResourceWkPtr& resource, bool enable_multibind = false);
 
   void Rebind(std::string spec_name, std::optional<std::string> restart_driver_url_suffix,
               fit::callback<void(zx::result<>)> rebind_spec_completer);

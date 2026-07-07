@@ -12,6 +12,7 @@
 
 namespace driver_manager {
 class Node;
+class Resource;
 
 using NodeWkPtr = std::weak_ptr<Node>;
 using RemoveCompositeNodeCallback = fit::callback<void(zx::result<>)>;
@@ -37,7 +38,8 @@ class CompositeNodeSpec {
   // a pointer to the new node. Otherwise, return a std::nullopt. The lifetime of this
   // node object is managed by the parent nodes. Virtual for testing.
   virtual zx::result<std::optional<NodeWkPtr>> BindParent(
-      fuchsia_driver_framework::wire::CompositeParent composite_parent, const NodeWkPtr& node_ptr);
+      fuchsia_driver_framework::wire::CompositeParent composite_parent,
+      const ResourceWkPtr& resource);
 
   virtual fuchsia_driver_development::wire::CompositeNodeInfo GetCompositeInfo(
       fidl::AnyArena& arena) const;
@@ -60,7 +62,7 @@ class CompositeNodeSpec {
   }
 
   // Exposed for testing.
-  virtual const std::vector<std::optional<NodeWkPtr>>& GetParentNodes() const {
+  virtual const std::vector<std::optional<ResourceWkPtr>>& GetParentResources() const {
     return parent_set_collector_.parents();
   }
 

@@ -48,7 +48,9 @@ class CompositeNodeSpecTest : public DriverManagerTestBase {
         .index = node_index,
     });
 
-    return spec.BindParent(fidl::ToWire(*arena_, matched_parent), parent_node);
+    auto self_resource = parent_node.lock()->GetSelfResource();
+    ZX_ASSERT(self_resource.has_value());
+    return spec.BindParent(fidl::ToWire(*arena_, matched_parent), self_resource.value());
   }
 
   void VerifyCompositeNode(std::weak_ptr<driver_manager::Node> composite_node,

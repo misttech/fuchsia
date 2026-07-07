@@ -290,13 +290,13 @@ BindResult BindManager::BindNodeToResult(
 
 zx::result<CompositeParents> BindManager::BindNodeToSpec(fidl::AnyArena& arena, Node& node,
                                                          CompositeParents parents) {
+  auto self_resource = node.GetSelfResource();
+  ZX_ASSERT(self_resource.has_value());
   if (node.can_multibind_composites()) {
-    auto self_resource = node.GetSelfResource();
-    ZX_ASSERT(self_resource.has_value());
     bind_resource_set_.AddOrMoveMultibindResource(self_resource.value());
   }
 
-  auto result = bridge_->BindToParentSpec(arena, parents, node.weak_from_this(),
+  auto result = bridge_->BindToParentSpec(arena, parents, self_resource.value(),
                                           node.can_multibind_composites());
   if (result.is_error()) {
     if (result.error_value() != ZX_ERR_NOT_FOUND) {

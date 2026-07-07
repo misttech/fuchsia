@@ -14,8 +14,10 @@
 #include "src/devices/bin/driver_manager/node.h"
 
 namespace driver_manager {
+class Resource;
 
 using NodeWkPtr = std::weak_ptr<Node>;
+using ResourceWkPtr = std::weak_ptr<Resource>;
 
 // |ParentSetCollector| wraps functionality for collecting multiple parent nodes for composites.
 // The parent set starts out empty and gets nodes added to it until it is complete. Once complete
@@ -41,7 +43,7 @@ class ParentSetCollector {
   // Only a weak_ptr of the node is stored by this class (until collection in GetIfComplete).
   zx::result<> AddNode(uint32_t index,
                        const std::vector<fuchsia_driver_framework::NodeProperty2>& node_properties,
-                       std::weak_ptr<Node> node);
+                       ResourceWkPtr resource);
 
   void ReleaseNodes();
 
@@ -58,7 +60,7 @@ class ParentSetCollector {
 
   fidl::VectorView<fidl::StringView> GetParentMonikers(fidl::AnyArena& arena) const;
 
-  const std::optional<std::weak_ptr<Node>>& get(uint32_t index) const { return parents_[index]; }
+  const std::optional<ResourceWkPtr>& get(uint32_t index) const { return parents_[index]; }
 
   std::optional<std::weak_ptr<Node>> completed_composite_node() const {
     return completed_composite_node_;
@@ -67,12 +69,12 @@ class ParentSetCollector {
   size_t size() const { return parents_.size(); }
 
   // Exposed for testing.
-  const std::vector<std::optional<NodeWkPtr>>& parents() const { return parents_; }
+  const std::vector<std::optional<ResourceWkPtr>>& parents() const { return parents_; }
 
  private:
   // Nodes are stored as weak_ptrs. Only when trying to collect the completed set are they
   // locked into shared_ptrs and validated to not be null.
-  std::vector<std::optional<NodeWkPtr>> parents_;
+  std::vector<std::optional<ResourceWkPtr>> parents_;
 
   std::vector<fuchsia_driver_framework::NodePropertyEntry2> parent_properties_;
 

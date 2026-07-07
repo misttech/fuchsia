@@ -1641,13 +1641,14 @@ TEST_P(DriverRunnerTest, CreateAndBindCompositeNodeSpec) {
   EXPECT_TRUE(RunLoopUntilIdle());
 
   ASSERT_EQ(
-      2u, driver_runner().composite_node_spec_manager().specs().at(name)->GetParentNodes().size());
+      2u,
+      driver_runner().composite_node_spec_manager().specs().at(name)->GetParentResources().size());
 
   ASSERT_FALSE(
-      driver_runner().composite_node_spec_manager().specs().at(name)->GetParentNodes().at(0));
+      driver_runner().composite_node_spec_manager().specs().at(name)->GetParentResources().at(0));
 
   ASSERT_FALSE(
-      driver_runner().composite_node_spec_manager().specs().at(name)->GetParentNodes().at(1));
+      driver_runner().composite_node_spec_manager().specs().at(name)->GetParentResources().at(1));
 
   auto root_driver = StartRootDriver();
   ASSERT_EQ(ZX_OK, root_driver.status_value());
@@ -1662,10 +1663,10 @@ TEST_P(DriverRunnerTest, CreateAndBindCompositeNodeSpec) {
   EXPECT_TRUE(RunLoopUntilIdle());
 
   ASSERT_TRUE(
-      driver_runner().composite_node_spec_manager().specs().at(name)->GetParentNodes().at(0));
+      driver_runner().composite_node_spec_manager().specs().at(name)->GetParentResources().at(0));
 
   ASSERT_TRUE(
-      driver_runner().composite_node_spec_manager().specs().at(name)->GetParentNodes().at(1));
+      driver_runner().composite_node_spec_manager().specs().at(name)->GetParentResources().at(1));
 
   auto composite_driver_config = kDefaultCompositeDriverPkgConfig;
   std::string binary = std::string(composite_driver_config.main_module.open_path);
