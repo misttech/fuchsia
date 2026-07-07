@@ -23,7 +23,7 @@ use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
 use metrics_registry::*;
 use sorted_vec_map::SortedVecMap;
-use std::path::PathBuf;
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, LazyLock};
@@ -327,7 +327,7 @@ impl InputPipeline {
 
     /// Creates a new [`InputPipeline`] for integration testing.
     /// Unlike a production input pipeline, this pipeline will not monitor
-    /// `/dev/class/input-report` for devices.
+    /// `/svc/fuchsia.input.report.Service` for devices.
     ///
     /// # Parameters
     /// - `input_device_types`: The types of devices the new [`InputPipeline`] will support.
@@ -389,7 +389,7 @@ impl InputPipeline {
                 Self::watch_for_devices(
                     device_watcher,
                     dir_proxy,
-                    input_device_types,
+                    &input_device_types,
                     input_event_sender,
                     input_device_bindings,
                     &devices_node,
@@ -433,7 +433,7 @@ impl InputPipeline {
     }
 
     /// Gets a list of input device types supported by this input pipeline.
-    pub fn input_device_types(&self) -> &Vec<input_device::InputDeviceType> {
+    pub fn input_device_types(&self) -> &[input_device::InputDeviceType] {
         &self.input_device_types
     }
 
@@ -454,11 +454,11 @@ impl InputPipeline {
         );
     }
 
-    /// Watches the input report directory for new input devices. Creates InputDeviceBindings
+    /// Watches the input report service directory for new input devices. Creates InputDeviceBindings
     /// if new devices match a type in `device_types`.
     ///
     /// # Parameters
-    /// - `device_watcher`: Watches the input report directory for new devices.
+    /// - `device_watcher`: Watches the input report service directory for new devices.
     /// - `dir_proxy`: The directory containing InputDevice connections.
     /// - `device_types`: The types of devices to watch for.
     /// - `input_event_sender`: The channel new InputDeviceBindings will send InputEvents to.
@@ -468,11 +468,11 @@ impl InputPipeline {
     /// - `metrics_logger`: The metrics logger.
     ///
     /// # Errors
-    /// If the input report directory or a file within it cannot be read.
+    /// If the input report service directory or a file within it cannot be read.
     async fn watch_for_devices(
         mut device_watcher: Watcher,
         dir_proxy: fio::DirectoryProxy,
-        device_types: Vec<input_device::InputDeviceType>,
+        device_types: &[input_device::InputDeviceType],
         input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
         bindings: InputDeviceBindingMap,
         input_devices_node: &fuchsia_inspect::Node,
@@ -484,21 +484,33 @@ impl InputPipeline {
         let devices_discovered = input_devices_node.create_uint("devices_discovered", 0);
         let devices_connected = input_devices_node.create_uint("devices_connected", 0);
         while let Some(msg) = device_watcher.try_next().await? {
-            if let Ok(filename) = msg.filename.into_os_string().into_string() {
-                if filename == "." {
+            if let Ok(instance_name) = msg.filename.into_os_string().into_string() {
+                if instance_name == "." {
                     continue;
                 }
 
-                let pathbuf = PathBuf::from(filename.clone());
                 match msg.event {
                     WatchEvent::EXISTING | WatchEvent::ADD_FILE => {
-                        log::info!("found input device {}", filename);
+                        log::info!("found input device {}", instance_name);
                         devices_discovered.add(1);
-                        let device_proxy =
-                            input_device::get_device_from_dir_entry_path(&dir_proxy, &pathbuf)?;
+                        let device_path = Path::new(&instance_name).join("input_device");
+                        let device_proxy = match input_device::get_device_from_dir_entry_path(
+                            &dir_proxy,
+                            &device_path,
+                        ) {
+                            Ok(proxy) => proxy,
+                            Err(e) => {
+                                log::error!(
+                                    "Failed to connect to input device {}: {:?}",
+                                    instance_name,
+                                    e
+                                );
+                                continue;
+                            }
+                        };
                         add_device_bindings(
-                            &device_types,
-                            &filename,
+                            device_types,
+                            &instance_name,
                             device_proxy,
                             &input_event_sender,
                             &bindings,
@@ -541,7 +553,7 @@ impl InputPipeline {
     /// - `metrics_logger`: The metrics logger.
     pub async fn handle_input_device_registry_request_stream(
         mut stream: fidl_fuchsia_input_injection::InputDeviceRegistryRequestStream,
-        device_types: &Vec<input_device::InputDeviceType>,
+        device_types: &[input_device::InputDeviceType],
         input_event_sender: &UnboundedSender<Vec<input_device::InputEvent>>,
         bindings: &InputDeviceBindingMap,
         input_devices_node: &fuchsia_inspect::Node,
@@ -719,11 +731,11 @@ impl InputPipeline {
 /// * multiple populated table fields correspond to device types present in `device_types`
 ///
 /// This is used, for example, to support the Atlas touchpad. In that case, a single
-/// node in `/dev/class/input-report` provides both a `fuchsia.input.report.MouseDescriptor` and
+/// instance of `fuchsia.input.report.Service` provides both a `fuchsia.input.report.MouseDescriptor` and
 /// a `fuchsia.input.report.TouchDescriptor`.
 async fn add_device_bindings(
-    device_types: &Vec<input_device::InputDeviceType>,
-    filename: &String,
+    device_types: &[input_device::InputDeviceType],
+    instance_name: &str,
     device_proxy: fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
     input_event_sender: &UnboundedSender<Vec<input_device::InputEvent>>,
     bindings: &InputDeviceBindingMap,
@@ -749,10 +761,11 @@ async fn add_device_bindings(
         if matched_device_types.is_empty() {
             log::info!(
                 "device {} did not match any supported device types: {:?}",
-                filename,
+                instance_name,
                 device_types
             );
-            let device_node = input_devices_node.create_child(format!("{}_Unsupported", filename));
+            let device_node =
+                input_devices_node.create_child(format!("{}_Unsupported", instance_name));
             let mut health = fuchsia_inspect::health::Node::new(&device_node);
             health.set_unhealthy("Unsupported device type.");
             device_node.record(health);
@@ -762,14 +775,14 @@ async fn add_device_bindings(
     } else {
         metrics_logger.clone().log_error(
             InputPipelineErrorMetricDimensionEvent::InputPipelineNoDeviceDescriptor,
-            std::format!("cannot bind device {} without a device descriptor", filename),
+            std::format!("cannot bind device {} without a device descriptor", instance_name),
         );
         return;
     }
 
     log::info!(
         "binding {} to device types: {}",
-        filename,
+        instance_name,
         matched_device_types
             .iter()
             .fold(String::new(), |device_types_string, device_type| device_types_string
@@ -779,7 +792,7 @@ async fn add_device_bindings(
     let mut new_bindings: Vec<BoxedInputDeviceBinding> = vec![];
     for device_type in matched_device_types {
         // Clone `device_proxy`, so that multiple bindings (e.g. a `MouseBinding` and a
-        // `TouchBinding`) can read data from the same `/dev/class/input-report` node.
+        // `TouchBinding`) can read data from the same `fuchsia.input.report.Service` instance.
         //
         // There's no conflict in having multiple bindings read from the same node,
         // since:
@@ -796,10 +809,11 @@ async fn add_device_bindings(
         // * Performance wise: things are fine, because the data rate of the touchpad is low
         //   (125 HZ).
         //
-        // If we add additional cases where bindings share an underlying `input-report` node,
+        // If we add additional cases where bindings share an underlying service instance,
         // we might consider adding a multiplexing binding, to avoid reading duplicate reports.
         let proxy = device_proxy.clone();
-        let device_node = input_devices_node.create_child(format!("{}_{}", filename, device_type));
+        let device_node =
+            input_devices_node.create_child(format!("{}_{}", instance_name, device_type));
         match input_device::get_device_binding(
             *device_type,
             proxy,
@@ -815,7 +829,7 @@ async fn add_device_bindings(
             Err(e) => {
                 metrics_logger.log_error(
                     InputPipelineErrorMetricDimensionEvent::InputPipelineFailedToBind,
-                    std::format!("failed to bind {} as {:?}: {}", filename, device_type, e),
+                    std::format!("failed to bind {} as {:?}: {}", instance_name, device_type, e),
                 );
             }
         }
@@ -1045,27 +1059,29 @@ mod tests {
     }
 
     /// Tests that a single mouse device binding is created for the one input device in the
-    /// input report directory.
+    /// input report service directory.
     #[fasync::run_singlethreaded(test)]
     async fn watch_devices_one_match_exists() {
-        // Create a file in a pseudo directory that represents an input device.
+        // Create a pseudo directory representing a service instance for an input device.
         let mut count: i8 = 0;
         let dir = pseudo_directory! {
-            "file_name" => pseudo_fs_service::host(
-                move |mut request_stream: fidl_fuchsia_input_report::InputDeviceRequestStream| {
-                    async move {
-                        while count < 3 {
-                            if let Some(input_device_request) =
-                                request_stream.try_next().await.unwrap()
-                            {
-                                handle_input_device_request(input_device_request);
-                                count += 1;
+            "instance_0" => pseudo_directory! {
+                "input_device" => pseudo_fs_service::host(
+                    move |mut request_stream: fidl_fuchsia_input_report::InputDeviceRequestStream| {
+                        async move {
+                            while count < 3 {
+                                if let Some(input_device_request) =
+                                    request_stream.try_next().await.unwrap()
+                                {
+                                    handle_input_device_request(input_device_request);
+                                    count += 1;
+                                }
                             }
-                        }
 
-                    }.boxed()
-                },
-            )
+                        }.boxed()
+                    },
+                )
+            }
         };
 
         // Create a Watcher on the pseudo directory.
@@ -1101,7 +1117,7 @@ mod tests {
         let _ = InputPipeline::watch_for_devices(
             device_watcher,
             dir_proxy_for_pipeline,
-            supported_device_types,
+            &supported_device_types,
             input_event_sender,
             bindings.clone(),
             &input_devices,
@@ -1138,7 +1154,7 @@ mod tests {
                 input_devices: {
                     devices_discovered: 1u64,
                     devices_connected: 1u64,
-                    "file_name_Mouse": contains {
+                    "instance_0_Mouse": contains {
                         reports_received_count: 0u64,
                         reports_filtered_count: 0u64,
                         events_generated: 0u64,
@@ -1160,24 +1176,26 @@ mod tests {
     /// but only a mouse exists.
     #[fasync::run_singlethreaded(test)]
     async fn watch_devices_no_matches_exist() {
-        // Create a file in a pseudo directory that represents an input device.
+        // Create a pseudo directory representing a service instance for an input device.
         let mut count: i8 = 0;
         let dir = pseudo_directory! {
-            "file_name" => pseudo_fs_service::host(
-                move |mut request_stream: fidl_fuchsia_input_report::InputDeviceRequestStream| {
-                    async move {
-                        while count < 1 {
-                            if let Some(input_device_request) =
-                                request_stream.try_next().await.unwrap()
-                            {
-                                handle_input_device_request(input_device_request);
-                                count += 1;
+            "instance_0" => pseudo_directory! {
+                "input_device" => pseudo_fs_service::host(
+                    move |mut request_stream: fidl_fuchsia_input_report::InputDeviceRequestStream| {
+                        async move {
+                            while count < 1 {
+                                if let Some(input_device_request) =
+                                    request_stream.try_next().await.unwrap()
+                                {
+                                    handle_input_device_request(input_device_request);
+                                    count += 1;
+                                }
                             }
-                        }
 
-                    }.boxed()
-                },
-            )
+                        }.boxed()
+                    },
+                )
+            }
         };
 
         // Create a Watcher on the pseudo directory.
@@ -1213,7 +1231,7 @@ mod tests {
         let _ = InputPipeline::watch_for_devices(
             device_watcher,
             dir_proxy_for_pipeline,
-            supported_device_types,
+            &supported_device_types,
             input_event_sender,
             bindings.clone(),
             &input_devices,
@@ -1234,7 +1252,7 @@ mod tests {
                 input_devices: {
                     devices_discovered: 1u64,
                     devices_connected: 0u64,
-                    "file_name_Unsupported": {
+                    "instance_0_Unsupported": {
                         "fuchsia.inspect.Health": {
                             status: "UNHEALTHY",
                             message: "Unsupported device type.",

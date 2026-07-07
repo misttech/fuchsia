@@ -184,7 +184,7 @@ pub async fn handle_input(
 
     let input_device_registry_fut = handle_input_device_registry_request_streams(
         input_device_registry_request_stream_receiver,
-        input_pipeline.input_device_types().clone(),
+        input_pipeline.input_device_types().to_vec(),
         input_pipeline.input_event_sender().clone(),
         input_pipeline.input_device_bindings().clone(),
         injected_devices_node,

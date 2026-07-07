@@ -19,7 +19,7 @@ use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::stream::StreamExt;
 use metrics_registry::*;
 use sorted_vec_map::SortedVecSet;
-use std::path::PathBuf;
+use std::path::Path;
 use strum_macros::{Display, EnumCount};
 
 pub use input_device_constants::InputDeviceType;
@@ -30,8 +30,8 @@ pub struct InputPipelineFeatureFlags {
     pub enable_merge_touch_events: bool,
 }
 
-/// The path to the input-report directory.
-pub static INPUT_REPORT_PATH: &str = "/dev/class/input-report";
+/// The path to the input-report service directory.
+pub static INPUT_REPORT_PATH: &str = "/svc/fuchsia.input.report.Service";
 
 const LATENCY_HISTOGRAM_PROPERTIES: ExponentialHistogramParams<i64> = ExponentialHistogramParams {
     floor: 0,
@@ -563,15 +563,13 @@ pub async fn get_device_binding(
 /// If there is an error connecting to the InputDevice in `entry_path`.
 pub fn get_device_from_dir_entry_path(
     dir_proxy: &fio::DirectoryProxy,
-    entry_path: &PathBuf,
+    entry_path: &Path,
 ) -> Result<fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>, Error> {
-    let input_device_path = entry_path.to_str();
-    if input_device_path.is_none() {
-        return Err(format_err!("Failed to get entry path as a string."));
-    }
+    let input_device_path =
+        entry_path.to_str().ok_or_else(|| format_err!("Failed to get entry path as a string."))?;
 
-    let input_device = Incoming::connect_protocol_next_at(dir_proxy, input_device_path.unwrap())
-        .expect("Failed to connect to InputDevice.");
+    let input_device = Incoming::connect_protocol_next_at(dir_proxy, input_device_path)
+        .map_err(|e| format_err!("Failed to connect to InputDevice: {:?}", e))?;
     Ok(input_device.spawn())
 }
 
