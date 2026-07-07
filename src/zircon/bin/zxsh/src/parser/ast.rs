@@ -119,6 +119,12 @@ impl CommandTag {
     pub const BACKGROUND: Self = Self(12);
     /// A sequence of commands (e.g. `a; b; c`).
     pub const SEQUENCE: Self = Self(13);
+
+    /// Returns `true` if this command type should be formatted and traced during execution
+    /// (`set -x` / `set -v`).
+    pub const fn is_traceable(&self) -> bool {
+        matches!(*self, Self::SIMPLE | Self::PIPELINE | Self::REDIRECT)
+    }
 }
 
 impl std::fmt::Display for WordPartTag {

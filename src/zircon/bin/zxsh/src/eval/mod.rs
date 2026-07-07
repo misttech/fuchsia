@@ -7,6 +7,7 @@
 pub mod arithmetic;
 pub mod execution_context;
 pub mod expand;
+pub mod format;
 pub mod glob;
 pub mod state;
 

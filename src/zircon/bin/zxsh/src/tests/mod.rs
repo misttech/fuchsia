@@ -7,6 +7,7 @@ pub mod arithmetic;
 pub mod ast;
 pub mod collections;
 pub mod errors;
+pub mod format;
 pub mod glob;
 pub mod parser;
 pub mod serialization;
