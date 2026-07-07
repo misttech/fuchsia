@@ -257,7 +257,11 @@ impl LogSubscription {
                 waiters_clone.notify_fd_events(FdEvents::POLLHUP);
             };
             for log in iterator {
-                if snd.send(log).is_err() {
+                let send_result = {
+                    let _waiting_guard = ThreadLockupDetector::pause_tracking();
+                    snd.send(log)
+                };
+                if send_result.is_err() {
                     break;
                 };
                 waiters_clone.notify_fd_events(FdEvents::POLLIN);
