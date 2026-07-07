@@ -80,7 +80,7 @@
 
      <!-- QEMU-specific firmware for resident EL3 support for arm64 TCG -->
      <package name="fuchsia/firmware/arm-trusted-firmware-qemu-bios"
-             version="version:arm-trusted-firmware=c17351450c8a513ca3f30f936e26a71db693a145;u-boot=127a42c7257a6ffbbd1575ed1cbaa8f5408a44b3,1"
+             version="version:arm-trusted-firmware=da738d5eae93af342fdc4995dd3c05acb4c9d757;u-boot=127a42c7257a6ffbbd1575ed1cbaa8f5408a44b3,1"
              path="prebuilt/firmware/arm-trusted-firmware-qemu-bios"
              platforms="linux-amd64,linux-arm64"/>
 

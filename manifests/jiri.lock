@@ -91,8 +91,8 @@
     },
     {
         "package": "fuchsia/firmware/arm-trusted-firmware-qemu-bios",
-        "version": "version:arm-trusted-firmware=c17351450c8a513ca3f30f936e26a71db693a145;u-boot=127a42c7257a6ffbbd1575ed1cbaa8f5408a44b3,1",
-        "instance_id": "2LlbOxGJ05FfVtA3ZemoXT-NRu1E81d3QiAECYS8hxIC"
+        "version": "version:arm-trusted-firmware=da738d5eae93af342fdc4995dd3c05acb4c9d757;u-boot=127a42c7257a6ffbbd1575ed1cbaa8f5408a44b3,1",
+        "instance_id": "8kHGDbyUEhVbpAIFfkWqoAi1s-GWWxEBuwyej_WwozUC"
     },
     {
         "package": "fuchsia/firmware/wlan/intel/iwlwifi",
