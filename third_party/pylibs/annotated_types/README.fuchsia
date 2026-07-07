@@ -1,6 +1,7 @@
 Name: annotated_types
 URL: https://github.com/annotated-types/annotated-types
 Revision: 0735cd3d4c272b88405b6b04009716b691115210
+Version: v0.7.0
 License: MIT
 License File: src/LICENSE
 Description: This package provides metadata objects which can be used to represent common

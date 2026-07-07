@@ -153,6 +153,7 @@ echo "Writing README.fuchsia file"
 cat > "${DEST_DIR}/README.fuchsia" <<EOF
 Name: pydantic_core
 URL: https://chrome-infra-packages.appspot.com/p/infra/python/wheels/pydantic_core/linux-amd64_cp311_cp311
+Version: 2.33.1
 
 License File: pydantic_core-${SRC_VERSION}.dist-info/licenses/LICENSE
  -> License File Format: Single License
