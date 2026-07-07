@@ -5,7 +5,6 @@ archivist
 ?asix-88772b
 ?blobfs
 block-core
-?block-relay
 ?boot-shell-commands
 ?bootstrap
 ?bt-transport-usb

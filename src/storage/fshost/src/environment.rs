@@ -461,7 +461,10 @@ impl Environment for FshostEnvironment {
             }
             Err(err) => {
                 log::warn!(
-                    err:?; "Failed to get service instance directory; block-relay will not start");
+                    err:?;
+                    "Failed to get service instance directory; system_gpt service instance will \
+                     not be available"
+                );
                 self.gpt_device_service_instance = BufferedDirectory::Closed;
             }
         }

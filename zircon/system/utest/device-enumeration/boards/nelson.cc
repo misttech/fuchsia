@@ -34,7 +34,6 @@ TEST_F(DeviceEnumerationTest, NelsonTest) {
       "nelson-emmc.nelson_emmc.aml-sd-emmc.sdmmc.sdmmc-mmc.boot2",
       "nelson-emmc.nelson_emmc.aml-sd-emmc.sdmmc.sdmmc-mmc.rpmb",
       "nelson-emmc.nelson_emmc.aml-sd-emmc.sdmmc.sdmmc-mmc.user",
-      "nelson-emmc.nelson_emmc.aml-sd-emmc.sdmmc.sdmmc-mmc.user.fts",
       "i2c-0.aml-i2c.i2c.i2c-0-57.tcs3400_light.tcs-3400",
       "aml-nna.aml_nna",
       "nelson-clk.amlogic_clock",

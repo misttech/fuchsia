@@ -283,7 +283,6 @@ class BlockDevice : public virtio::Device, public block_server::DriverInterface 
 
 class BlockDriver : public fdf::DriverBase2,
                     public ddk::BlockImplProtocol<BlockDriver>,
-                    public fidl::WireServer<fuchsia_hardware_block_volume::Node>,
                     public fidl::Server<fuchsia_driver_token::NodeToken> {
  public:
   static constexpr char kDriverName[] = "virtio-block";
@@ -297,9 +296,6 @@ class BlockDriver : public fdf::DriverBase2,
   // ddk::BlockImplProtocol functions passed through to BlockDevice.
   void BlockImplQuery(block_info_t* info, size_t* bopsz);
   void BlockImplQueue(block_op_t* bop, block_impl_queue_callback completion_cb, void* cookie);
-
-  // fuchsia.driver.framework.Node
-  void AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) override;
 
   // fuchsia_driver_token::NodeToken implementation.
   void Get(GetCompleter::Sync& completer) override;
@@ -323,9 +319,7 @@ class BlockDriver : public fdf::DriverBase2,
   std::unique_ptr<BlockDevice> block_device_;
   zx::event node_token_;
 
-  fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> node_controller_;
-  fidl::ServerBindingGroup<fuchsia_hardware_block_volume::Node> node_bindings_;
 
   // Legacy DFv1-based protocols.
   // TODO(https://fxbug.dev/394968352): Remove once all clients use Volume service provided by

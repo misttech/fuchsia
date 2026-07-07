@@ -7,7 +7,7 @@ pub mod config;
 use config::new_builder;
 use fidl_fuchsia_hardware_inlineencryption as finline;
 use fuchsia_async as _;
-use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
+use fuchsia_component::client::connect_to_protocol_at_dir_root;
 use std::sync::Arc;
 use test_vmo_backed_block_server::VmoBackedServer;
 
@@ -25,11 +25,8 @@ async fn test_inline_encryption_routing() {
     // Wait for fshost to expose the service.
     let exposed_dir = fixture.realm.root.get_exposed_dir();
 
-    // The service is renamed to VolumeService when routed to parent.
-    let service_path = "VolumeService/system_gpt/inline_encryption";
-
     let inline_encrypt_proxy =
-        connect_to_named_protocol_at_dir_root::<finline::DeviceMarker>(exposed_dir, service_path)
+        connect_to_protocol_at_dir_root::<finline::DeviceMarker>(exposed_dir)
             .expect("failed to connect to inline encryption device");
 
     // Call a method to verify forwarding.

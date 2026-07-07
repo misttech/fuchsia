@@ -12,10 +12,7 @@ use block_server::{BlockServer, RequestId};
 use cqhci_config::Config;
 use fdf_component::{Driver, DriverContext, DriverError, Node, ServiceInstance, driver_register};
 use fdf_power::{Suspendable, SuspendableDriver};
-use fidl::endpoints::ServerEnd;
-use fidl_fuchsia_driver_framework::{
-    NodeAddArgs, NodeControllerMarker, NodeError, PowerElementArgs,
-};
+use fidl_fuchsia_driver_framework::PowerElementArgs;
 use fidl_fuchsia_driver_token as ftoken;
 use fidl_fuchsia_hardware_block_volume as fvolume;
 use fidl_fuchsia_hardware_inlineencryption as finlineencryption;
@@ -46,34 +43,6 @@ pub fn partition_name(id: EmmcPartitionId) -> &'static str {
         EmmcPartitionId::BootPartition1 => "boot1",
         EmmcPartitionId::BootPartition2 => "boot2",
     }
-}
-
-async fn add_child(
-    node: &Node,
-    args: NodeAddArgs,
-    controller: ServerEnd<NodeControllerMarker>,
-) -> Result<(), NodeError> {
-    node.proxy().add_child(args, controller, None).await.map_err(|error| {
-        warn!(error:?; "FIDL error from add_child");
-        NodeError::Internal
-    })?
-}
-
-async fn handle_node_requests(
-    node: Arc<Node>,
-    mut requests: fvolume::NodeRequestStream,
-) -> Result<(), anyhow::Error> {
-    while let Some(request) = requests.next().await {
-        match request? {
-            fvolume::NodeRequest::AddChild { args, controller, responder } => {
-                let res = add_child(node.as_ref(), args, controller).await.inspect_err(|error| {
-                    error!(error:?; "Failed to add child node");
-                });
-                responder.send(res)?;
-            }
-        }
-    }
-    Ok(())
 }
 
 async fn handle_token_requests(
@@ -338,7 +307,6 @@ impl Driver for CqhciDriver {
         let partitions_clone = partitions.clone();
         let node = Arc::new(context.take_node()?);
         let node_token = context.start_args.node_token.take().map(Arc::new);
-        let node_clone = node.clone();
         let inline_crypto_clone = inline_crypto.clone();
         let driver = CqhciDriver {
             _node: node,
@@ -352,7 +320,6 @@ impl Driver for CqhciDriver {
             scope.spawn(async move {
                 fs.for_each_concurrent(None, move |(request, partition_name)| {
                     let partitions_clone = partitions_clone.clone();
-                    let node_clone = node_clone.clone();
                     let node_token = node_token.clone();
                     let inline_crypto_clone = inline_crypto_clone.clone();
                     async move {
@@ -372,16 +339,6 @@ impl Driver for CqhciDriver {
                                     }
                                 } else {
                                     error!("Invalid partition {partition_name}");
-                                }
-                            }
-                            fvolume::ServiceRequest::Node(requests) => {
-                                let node_clone = node_clone.clone();
-                                if let Err(error) = handle_node_requests(node_clone, requests).await
-                                {
-                                    error!(
-                                        error:?;
-                                        "Failed to handle node requests for part {partition_name}"
-                                    );
                                 }
                             }
                             fvolume::ServiceRequest::InlineEncryption(requests) => {

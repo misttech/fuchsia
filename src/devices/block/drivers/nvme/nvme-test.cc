@@ -151,42 +151,6 @@ TEST_F(NvmeTest, BasicTest) {
   CheckBooleanProperty(controller->node(), "volatile_write_cache_enabled", true);
 }
 
-TEST_F(NvmeTest, AddChildTest) {
-  fake_nvme::FakeNamespace fake_ns;
-  TestNvme::controller_.AddNamespace(1, fake_ns);
-  driver_test().runtime().StartBackgroundDispatcher();
-
-  ASSERT_NO_FATAL_FAILURE(StartDriver());
-
-  zx::result node_client =
-      driver_test().Connect<fuchsia_hardware_block_volume::Service::Node>("namespace-1");
-  ASSERT_OK(node_client);
-
-  fidl::Arena arena;
-  auto [controller_client, controller_server] =
-      fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
-  auto args =
-      fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena).name(arena, "test-child").Build();
-
-  fidl::WireResult result =
-      fidl::WireCall(node_client.value())->AddChild(args, std::move(controller_server));
-  ASSERT_TRUE(result.ok());
-  ASSERT_FALSE(result->is_error());
-
-  bool has_child = driver_test().RunInNodeContext<bool>([](fdf_testing::TestNode& node) {
-    auto nvme_iter = node.children().find("nvme");
-    if (nvme_iter == node.children().end()) {
-      return false;
-    }
-    auto ns_iter = nvme_iter->second.children().find("namespace-1");
-    if (ns_iter == nvme_iter->second.children().end()) {
-      return false;
-    }
-    return ns_iter->second.children().find("test-child") != ns_iter->second.children().end();
-  });
-  ASSERT_TRUE(has_child);
-}
-
 TEST_F(NvmeTest, NamespaceBlockInfo) {
   fake_nvme::FakeNamespace fake_ns;
   TestNvme::controller_.AddNamespace(1, fake_ns);

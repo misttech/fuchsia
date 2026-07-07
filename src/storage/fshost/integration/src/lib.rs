@@ -15,6 +15,7 @@ use fidl_fuchsia_feedback as ffeedback;
 use fidl_fuchsia_fshost_fxfsprovisioner as ffxfsprovisioner;
 use fidl_fuchsia_fxfs::{BlobReaderMarker, CryptManagementProxy, CryptProxy, KeyPurpose};
 use fidl_fuchsia_hardware_block_volume as fvolume;
+use fidl_fuchsia_hardware_inlineencryption as finline;
 use fidl_fuchsia_hardware_ramdisk as framdisk;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_security_keymint as fkeymint;
@@ -54,11 +55,6 @@ async fn with_timeout<F: std::future::Future>(fut: F, name: impl Into<String>) -
     fut.on_timeout(DEFAULT_TIMEOUT, move || panic!("{name} timed out after {DEFAULT_TIMEOUT:?}"))
         .await
 }
-
-/// fshost will expose an alias of its fuchsia.hardware.block.volume.Service directory at this path.
-/// This allows tests to disambiguate service instances from the driver test realm, which are
-/// automatically aggregated.
-pub const FSHOST_VOLUME_SERVICE_DIR_NAME: &str = "VolumeService";
 
 pub fn round_down<
     T: Into<U>,
@@ -193,14 +189,11 @@ impl TestFixtureBuilder {
     pub async fn build(self) -> TestFixture {
         let builder = RealmBuilder::new().await.unwrap();
         let fshost = self.fshost.build(&builder).await;
-        // Create a second alias which routes fshost's volume Service capability to the parent.
+        // Route fshost's inline encryption Device capability to the parent.
         builder
             .add_route(
                 Route::new()
-                    .capability(
-                        Capability::service::<fvolume::ServiceMarker>()
-                            .as_(FSHOST_VOLUME_SERVICE_DIR_NAME),
-                    )
+                    .capability(Capability::protocol::<finline::DeviceMarker>())
                     .from(&fshost)
                     .to(Ref::parent()),
             )

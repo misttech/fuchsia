@@ -963,32 +963,6 @@ async fn device_config() {
     let metadata = volume.get_metadata().await.unwrap().unwrap();
     assert_eq!(metadata.num_blocks, Some(1));
 
-    // Once partitions have been enumerated, the volume service instance for their containing
-    // device should also be registered.
-    let service_dir = fixture.dir(
-        fshost_test_fixture::FSHOST_VOLUME_SERVICE_DIR_NAME,
-        fio::PERM_READABLE | fio::Flags::PROTOCOL_DIRECTORY,
-    );
-    let instances = fuchsia_fs::directory::readdir(&service_dir)
-        .await
-        .expect("readdir service dir failed")
-        .into_iter()
-        .map(|entry| entry.name)
-        .collect::<Vec<_>>();
-    assert_eq!(instances.len(), 1);
-    let service_instance_dir =
-        fuchsia_fs::directory::open_directory(&service_dir, &instances[0], fio::PERM_READABLE)
-            .await
-            .expect("open instance failed");
-    let service_instance_dir_entries = fuchsia_fs::directory::readdir(&service_instance_dir)
-        .await
-        .expect("readdir instance dir failed")
-        .into_iter()
-        .map(|entry| entry.name)
-        .collect::<std::collections::HashSet<_>>();
-    assert!(service_instance_dir_entries.contains("volume"));
-    assert!(service_instance_dir_entries.contains("node"));
-
     fixture.tear_down().await;
 }
 
@@ -1066,62 +1040,6 @@ async fn expose_system_gpt() {
         volume.get_info().await.unwrap().map_err(zx::Status::from_raw).unwrap().block_size,
         512,
     );
-
-    fixture.tear_down().await;
-}
-
-#[fuchsia::test]
-async fn block_relay() {
-    let builder = new_builder().with_device_config(vec![BlockDeviceConfig {
-        device: String::from("my-partition"),
-        from: BlockDeviceIdentifiers {
-            label: String::from("my-partition"),
-            parent: BlockDeviceParent::Gpt,
-        },
-    }]);
-    let mut fixture = builder.build().await;
-
-    let mut disk = DiskBuilder::new();
-    disk.with_gpt().format_volumes(volumes_spec()).with_extra_gpt_partition("my-partition", 1);
-    fixture.add_main_disk(Disk::Builder(disk)).await;
-    // Add a second disk, to make sure that fshost only enumerates the right one.  Fshost
-    // disambiguates by the presence of the system partition.
-    let mut secondary_disk = DiskBuilder::new();
-    secondary_disk.with_gpt().with_extra_gpt_partition("my-partition", 5);
-    fixture.add_disk(Disk::Builder(secondary_disk)).await;
-
-    fixture.check_fs_type("blob", blob_fs_type()).await;
-    fixture.check_fs_type("data", data_fs_type()).await;
-
-    use fidl_fuchsia_driver_development as fdd;
-    use fuchsia_component::client::connect::connect_to_protocol_at_dir_root;
-    let driver_manager =
-        connect_to_protocol_at_dir_root::<fdd::ManagerProxy>(fixture.exposed_dir()).unwrap();
-
-    let wait_for_node = || async move {
-        loop {
-            let (iterator, iterator_server) =
-                fidl::endpoints::create_proxy::<fdd::NodeInfoIteratorMarker>();
-
-            driver_manager
-                .get_node_info(&["my-partition".to_string()], iterator_server, false)
-                .expect("get_node_info failed");
-            let mut infos = iterator.get_next().await.expect("get_next failed");
-            if !infos.is_empty() {
-                assert!(infos.len() == 1, "Got multiple nodes");
-                return infos.pop().unwrap();
-            }
-            fasync::Timer::new(std::time::Duration::from_secs(1)).await;
-        }
-    };
-    // Unfortunately, we have to poll, because there is no synchronous signal for the node being
-    // added to the driver framework, and no asynchronous API to use.
-    let _node_info = futures::select! {
-        () = fasync::Timer::new(std::time::Duration::from_secs(60)).fuse() => {
-            panic!("my-partition node never appeared");
-        },
-        node_info = wait_for_node().fuse() => node_info,
-    };
 
     fixture.tear_down().await;
 }

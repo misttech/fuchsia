@@ -28,7 +28,6 @@ namespace nvme {
 class Nvme;
 
 class Namespace : public block_server::DriverInterface,
-                  public fidl::WireServer<fuchsia_hardware_block_volume::Node>,
                   public fidl::Server<fuchsia_driver_token::NodeToken> {
  public:
   explicit Namespace(Nvme* controller, uint32_t namespace_id)
@@ -41,9 +40,6 @@ class Namespace : public block_server::DriverInterface,
 
   void OnRequests(std::span<block_server::Request> requests) override;
   fdf::Logger& logger() const override;
-
-  // fidl::WireServer<fuchsia_hardware_block_volume::Node> implementations.
-  void AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) override;
 
   // fuchsia_driver_token::NodeToken implementation.
   void Get(GetCompleter::Sync& completer) override;
@@ -76,10 +72,8 @@ class Namespace : public block_server::DriverInterface,
   uint32_t max_transfer_blocks_;
 
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> node_controller_;
-  fidl::WireSyncClient<fuchsia_driver_framework::Node> driver_node_;
 
   std::optional<block_server::BlockServer> block_server_ TA_GUARDED(lock_);
-  fidl::ServerBindingGroup<fuchsia_hardware_block_volume::Node> node_bindings_;
 
   static constexpr size_t kMaxRequests = 64;
   std::array<IoCommand, kMaxRequests> io_command_pool_;

@@ -93,7 +93,6 @@ impl RamdiskControllerInner {
 
         let (node_controller, node_controller_server) =
             fidl::endpoints::create_proxy::<fdf::NodeControllerMarker>();
-        let (node_proxy, node_server) = fidl::endpoints::create_proxy::<fdf::NodeMarker>();
 
         let (ramdisk_client, ramdisk_server) =
             fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
@@ -104,8 +103,7 @@ impl RamdiskControllerInner {
             .map(|t| t.duplicate_handle(zx::Rights::SAME_RIGHTS))
             .transpose()
             .map_err(|_| Status::INTERNAL)?;
-        let instance =
-            Ramdisk::new(scope.clone(), vmo, partition_info, block_size, node_proxy, node_token)?;
+        let instance = Ramdisk::new(scope.clone(), vmo, partition_info, block_size, node_token)?;
         instance.serve(&scope, ramdisk_server);
 
         let publish = options.publish.unwrap_or(false);
@@ -116,13 +114,6 @@ impl RamdiskControllerInner {
             instance_dir.add_entry("volume", endpoint(instance.block_request_handler())).map_err(
                 |error| {
                     warn!(error:?; "Failed to add volume entry");
-                    Status::INTERNAL
-                },
-            )?;
-
-            instance_dir.add_entry("node", endpoint(instance.node_request_handler())).map_err(
-                |error| {
-                    warn!(error:?; "Failed to add node entry");
                     Status::INTERNAL
                 },
             )?;
@@ -148,7 +139,7 @@ impl RamdiskControllerInner {
             .add_child(
                 fdf::NodeAddArgs { name: Some(node_name), ..Default::default() },
                 node_controller_server,
-                Some(node_server),
+                None,
             )
             .await
         {

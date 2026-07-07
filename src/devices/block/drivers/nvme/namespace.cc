@@ -25,8 +25,6 @@ zx_status_t Namespace::AddNamespace() {
           [this](fidl::ServerEnd<fuchsia_storage_block::Block> server_end) {
             ServeRequests(std::move(server_end));
           },
-      .node = node_bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                                           fidl::kIgnoreBindingClosure),
       .token =
           [this](fidl::ServerEnd<fuchsia_driver_token::NodeToken> server_end) {
             fidl::BindServer(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
@@ -43,11 +41,8 @@ zx_status_t Namespace::AddNamespace() {
 
   auto [controller_client_end, controller_server_end] =
       fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
-  auto [node_client_end, node_server_end] =
-      fidl::Endpoints<fuchsia_driver_framework::Node>::Create();
 
   node_controller_.Bind(std::move(controller_client_end));
-  driver_node_.Bind(std::move(node_client_end));
 
   fidl::Arena arena;
 
@@ -55,8 +50,8 @@ zx_status_t Namespace::AddNamespace() {
                         .name(arena, NamespaceName())
                         .Build();
 
-  auto add_child_result = controller_->root_node()->AddChild(args, std::move(controller_server_end),
-                                                             std::move(node_server_end));
+  auto add_child_result =
+      controller_->root_node()->AddChild(args, std::move(controller_server_end), {});
   if (!add_child_result.ok()) {
     fdf::error("Failed to add child Namespace: {}", add_child_result.status_string());
     return add_child_result.status();
@@ -335,21 +330,6 @@ void Namespace::ServeRequests(fidl::ServerEnd<fuchsia_storage_block::Block> serv
     return;
   }
   block_server_->Serve(std::move(server_end));
-}
-
-void Namespace::AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) {
-  auto result = driver_node_->AddChild(request->args, std::move(request->controller), {});
-  if (!result.ok()) {
-    fdf::error("Failed to add child node: {}", result.status_string());
-    completer.ReplyError(fuchsia_driver_framework::wire::NodeError::kInternal);
-    return;
-  }
-  if (result->is_error()) {
-    fdf::error("Failed to add child node: {}", result.status_string());
-    completer.ReplyError(result->error_value());
-    return;
-  }
-  completer.ReplySuccess();
 }
 
 void Namespace::Get(GetCompleter::Sync& completer) {

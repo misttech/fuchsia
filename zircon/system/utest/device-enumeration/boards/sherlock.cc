@@ -30,7 +30,6 @@ TEST_F(DeviceEnumerationTest, SherlockTest) {
       "sherlock-emmc.sherlock_emmc.aml-sd-emmc.sdmmc.sdmmc-mmc.boot2",
       "sherlock-emmc.sherlock_emmc.aml-sd-emmc.sdmmc.sdmmc-mmc.rpmb",
       "sherlock-emmc.sherlock_emmc.aml-sd-emmc.sdmmc.sdmmc-mmc.user",
-      "sherlock-emmc.sherlock_emmc.aml-sd-emmc.sdmmc.sdmmc-mmc.user.fts",
       "sherlock-sd-emmc.sherlock_sd_emmc.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1",
       "sherlock-sd-emmc.sherlock_sd_emmc.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-2",
 

@@ -6,9 +6,7 @@ use block_protocol;
 use block_server::async_interface::{Interface, SessionManager};
 use block_server::{BlockServer, DeviceInfo};
 use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream};
-use fidl_fuchsia_driver_framework as fdf;
 use fidl_fuchsia_driver_token as ftoken;
-use fidl_fuchsia_hardware_block_volume as fvolume;
 use fidl_fuchsia_hardware_ramdisk as framdisk;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_storage_block::BlockRequestStream;
@@ -44,7 +42,6 @@ struct RamdiskInner {
     block_count: u64,
     vmo: zx::Vmo,
     state: Condition<RamdiskState>,
-    node: fdf::NodeProxy,
     partition_info: block_server::PartitionInfo,
     node_token: Option<zx::Event>,
 }
@@ -55,7 +52,6 @@ impl Ramdisk {
         vmo: zx::Vmo,
         partition_info: block_server::PartitionInfo,
         block_size: u32,
-        node: fdf::NodeProxy,
         node_token: Option<zx::Event>,
     ) -> Result<Ramdisk, Status> {
         let block_count = partition_info.block_range.as_ref().map(|r| r.end - r.start).unwrap_or(0);
@@ -73,7 +69,6 @@ impl Ramdisk {
             block_count,
             vmo,
             state,
-            node,
             partition_info,
             node_token,
         });
@@ -81,33 +76,6 @@ impl Ramdisk {
         let block_server = Arc::new(BlockServer::new(block_size, ramdisk.clone()));
 
         Ok(Self { ramdisk, block_server })
-    }
-
-    pub fn node_request_handler(
-        &self,
-    ) -> impl Fn(ExecutionScope, fasync::Channel) + Send + Sync + 'static {
-        let ramdisk = self.ramdisk.clone();
-        move |_scope, channel| {
-            let requests = fvolume::NodeRequestStream::from_channel(channel);
-            let ramdisk_clone = ramdisk.clone();
-            ramdisk.scope.spawn(async move {
-                let _ = requests
-                    .try_for_each(|request| {
-                        let ramdisk = ramdisk_clone.clone();
-                        async move {
-                            match request {
-                                fvolume::NodeRequest::AddChild { args, controller, responder } => {
-                                    let result =
-                                        ramdisk.node.add_child(args, controller, None).await?;
-                                    let _ = responder.send(result);
-                                    Ok(())
-                                }
-                            }
-                        }
-                    })
-                    .await;
-            });
-        }
     }
 
     pub fn token_request_handler(

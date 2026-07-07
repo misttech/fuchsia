@@ -65,11 +65,8 @@ zx_status_t PartitionDevice::AddDevice() {
 
   auto [controller_client_end, controller_server_end] =
       fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
-  auto [node_client_end, node_server_end] =
-      fidl::Endpoints<fuchsia_driver_framework::Node>::Create();
 
   controller_.Bind(std::move(controller_client_end));
-  node_.Bind(std::move(node_client_end));
 
   fidl::Arena arena;
 
@@ -77,8 +74,7 @@ zx_status_t PartitionDevice::AddDevice() {
                         .name(arena, partition_name_)
                         .Build();
 
-  auto result = sdmmc_parent_->block_node()->AddChild(args, std::move(controller_server_end),
-                                                      std::move(node_server_end));
+  auto result = sdmmc_parent_->block_node()->AddChild(args, std::move(controller_server_end), {});
   if (!result.ok()) {
     fdf::error("Failed to add child partition device: {}", result.status_string());
     return result.status();
@@ -91,8 +87,6 @@ zx_status_t PartitionDevice::AddDevice() {
             if (block_server_)
               block_server_->Serve(std::move(server_end));
           },
-      .node = node_bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                                           fidl::kIgnoreBindingClosure),
       .token =
           [this](fidl::ServerEnd<fuchsia_driver_token::NodeToken> server_end) {
             fidl::BindServer(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
@@ -117,19 +111,6 @@ zx_status_t PartitionDevice::AddDevice() {
   }
 
   return ZX_OK;
-}
-
-void PartitionDevice::AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) {
-  fidl::WireResult result = node_->AddChild(request->args, std::move(request->controller), {});
-  if (!result.ok()) {
-    completer.ReplyError(fuchsia_driver_framework::NodeError::kInternal);
-    return;
-  }
-  if (result->is_error()) {
-    completer.ReplyError(result->error_value());
-    return;
-  }
-  completer.ReplySuccess();
 }
 
 fdf::Logger& PartitionDevice::logger() const { return sdmmc_parent_->logger(); }

@@ -18,7 +18,6 @@ exports_files(
         "meta/recovery_fshost.cml",
         "meta/non_recovery_fshost.cml",
         "meta/core_fshost.cml",
-        "meta/block_relay_child.shard.cml",
         "meta/fxblob_fshost.cml",
         "meta/provision_fxfs_fshost.shard.cml",
     ],

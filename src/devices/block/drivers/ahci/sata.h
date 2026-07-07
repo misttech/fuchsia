@@ -189,7 +189,6 @@ inline void SataStringFix(uint16_t* buf, size_t size) {
 class Controller;
 
 class SataDevice : public block_server::DriverInterface,
-                   public fidl::WireServer<fuchsia_hardware_block_volume::Node>,
                    public fidl::Server<fuchsia_driver_token::NodeToken> {
  public:
   SataDevice(Controller* controller, uint32_t port, bool use_command_queue)
@@ -197,9 +196,6 @@ class SataDevice : public block_server::DriverInterface,
 
   // block_server::DriverInterface overrides
   void OnRequests(std::span<block_server::Request> requests) override;
-
-  // fidl::WireServer<fuchsia_hardware_block_volume::Node> implementations.
-  void AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) override;
 
   // fuchsia_driver_token::NodeToken implementation.
   void Get(GetCompleter::Sync& completer) override;
@@ -230,10 +226,8 @@ class SataDevice : public block_server::DriverInterface,
   block_server::PartitionInfo partition_info_{};
 
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> node_controller_;
-  fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;
 
   std::optional<block_server::BlockServer> block_server_ __TA_GUARDED(lock_);
-  fidl::ServerBindingGroup<fuchsia_hardware_block_volume::Node> node_bindings_;
   libsync::Completion all_transactions_completed_;
   fbl::Mutex lock_;
   fbl::ConditionVariable pool_cond_ __TA_GUARDED(lock_);

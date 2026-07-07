@@ -45,7 +45,6 @@ template("fshost_cml") {
       # `fxfs_blob` defaults to true unless set
       _fxblob = !defined(options.fxfs_blob) || options.fxfs_blob
       sources += [
-        "//src/storage/fshost/meta/block_relay_child_test.shard.cml",
         "//src/storage/fshost/meta/core_fshost.cml",
         "//src/storage/fshost/meta/gpt_fshost.shard.cml",
         "//src/storage/fshost/meta/provision_fxfs_fshost.shard.cml",
@@ -66,7 +65,6 @@ template("fshost_cml") {
       # These are components that must be included in the package depending on
       # the data filesystem format and other configuration knobs.
       deps = [
-        "//src/storage/block-relay:component",
         "//src/storage/gpt/component",
         "//src/storage/memfs:memfs_component",
       ]

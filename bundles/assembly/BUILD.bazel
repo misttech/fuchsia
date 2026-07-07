@@ -3278,14 +3278,12 @@ assembly_input_bundle(
                     "component_name": "fshost",
                     "shards": [
                         "//src/storage/fshost:meta/core_fshost.cml",
-                        "//src/storage/fshost:meta/block_relay_child.shard.cml",
                     ],
                 },
             ],
         },
     ],
     bootfs_packages = [
-        "//bundles/assembly/bazel_inputs/src/storage/block-relay:block-relay",
         "//bundles/assembly/bazel_inputs/src/storage/memfs:package",
     ],
 )

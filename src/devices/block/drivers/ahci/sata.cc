@@ -238,8 +238,6 @@ zx_status_t SataDevice::AddDevice() {
             [this](fidl::ServerEnd<fuchsia_storage_block::Block> server_end) {
               ServeRequests(std::move(server_end));
             },
-        .node = node_bindings_.CreateHandler(
-            this, fdf::Dispatcher::GetCurrent()->async_dispatcher(), fidl::kIgnoreBindingClosure),
         .token =
             [this](fidl::ServerEnd<fuchsia_driver_token::NodeToken> server_end) {
               fidl::BindServer(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
@@ -258,19 +256,15 @@ zx_status_t SataDevice::AddDevice() {
 
   auto [controller_client_end, controller_server_end] =
       fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
-  auto [node_client_end, node_server_end] =
-      fidl::Endpoints<fuchsia_driver_framework::Node>::Create();
 
   node_controller_.Bind(std::move(controller_client_end));
-  node_.Bind(std::move(node_client_end));
 
   fidl::Arena arena;
 
   const auto args =
       fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena).name(arena, DriverName()).Build();
 
-  auto result = controller_->root_node()->AddChild(args, std::move(controller_server_end),
-                                                   std::move(node_server_end));
+  auto result = controller_->root_node()->AddChild(args, std::move(controller_server_end), {});
   if (!result.ok()) {
     fdf::error("Failed to add child SATA device: {}", result.status_string());
     return result.status();
@@ -291,21 +285,6 @@ void SataDevice::ServeRequests(fidl::ServerEnd<fuchsia_storage_block::Block> ser
     return;
   }
   block_server_->Serve(std::move(server_end));
-}
-
-void SataDevice::AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) {
-  fidl::WireResult result = node_->AddChild(request->args, std::move(request->controller), {});
-  if (!result.ok()) {
-    fdf::error("Failed to add child node: {}", result.status_string());
-    completer.ReplyError(fuchsia_driver_framework::wire::NodeError::kInternal);
-    return;
-  }
-  if (result->is_error()) {
-    fdf::error("Failed to add child node error: {}", static_cast<uint32_t>(result->error_value()));
-    completer.ReplyError(result->error_value());
-    return;
-  }
-  completer.ReplySuccess();
 }
 
 void SataDevice::OnRequests(std::span<block_server::Request> requests) {

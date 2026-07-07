@@ -977,9 +977,6 @@ zx::result<> BlockDriver::Start(fdf::DriverContext context) {
                   [this](fidl::ServerEnd<fuchsia_storage_block::Block> server_end) {
                     block_device_->ServeRequests(std::move(server_end));
                   },
-              .node = node_bindings_.CreateHandler(
-                  this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                  fidl::kIgnoreBindingClosure),
               .token =
                   [this](fidl::ServerEnd<fuchsia_driver_token::NodeToken> server_end) {
                     fidl::BindServer(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
@@ -1039,19 +1036,6 @@ void BlockDriver::BlockImplQueue(block_op_t* bop, block_impl_queue_callback comp
     fdf::error("BlockImplQueue called for driver that has not been started.");
     completion_cb(cookie, ZX_ERR_BAD_STATE, bop);
   }
-}
-
-void BlockDriver::AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) {
-  fidl::WireResult result = node_->AddChild(request->args, std::move(request->controller), {});
-  if (!result.ok()) {
-    completer.ReplyError(fuchsia_driver_framework::NodeError::kInternal);
-    return;
-  }
-  if (result->is_error()) {
-    completer.ReplyError(result->error_value());
-    return;
-  }
-  completer.ReplySuccess();
 }
 
 void BlockDriver::Get(GetCompleter::Sync& completer) {

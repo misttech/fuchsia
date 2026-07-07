@@ -706,36 +706,6 @@ TEST_P(AhciTest, SataDeviceWriteWithFua) {
   EXPECT_EQ(response.status, ZX_OK);
 }
 
-TEST_P(AhciTest, AddChildTest) {
-  zx::result node_client =
-      driver_test().Connect<fuchsia_hardware_block_volume::Service::Node>("sata0");
-  ASSERT_OK(node_client);
-
-  fidl::Arena arena;
-  auto [controller_client, controller_server] =
-      fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
-  auto args =
-      fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena).name(arena, "test-child").Build();
-
-  fidl::WireResult result =
-      fidl::WireCall(node_client.value())->AddChild(args, std::move(controller_server));
-  ASSERT_TRUE(result.ok());
-  ASSERT_FALSE(result->is_error());
-
-  bool has_child = driver_test().RunInNodeContext<bool>([](fdf_testing::TestNode& node) {
-    auto ahci_iter = node.children().find("ahci");
-    if (ahci_iter == node.children().end()) {
-      return false;
-    }
-    auto sata_iter = ahci_iter->second.children().find("sata0");
-    if (sata_iter == ahci_iter->second.children().end()) {
-      return false;
-    }
-    return sata_iter->second.children().contains("test-child");
-  });
-  ASSERT_TRUE(has_child);
-}
-
 TEST_P(AhciTest, ShutdownWaitsForTransactionsInFlight) {
   auto [volume_client, volume_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
   driver_test().RunInDriverContext([&volume_server, this](TestController& driver) mutable {

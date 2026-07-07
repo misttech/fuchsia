@@ -364,7 +364,6 @@
 //src/power/testing/fake-trippoint:driver
 //src/power/testing/system-integration/dispatcher-power/test-driver:driver
 //src/power/testing/system-integration/example/test-driver:driver
-//src/storage/block-relay/testing/toy-driver:driver
 //src/sys/component_manager/tests/structured_config/client_integration/cpp_driver:receiver_driver
 //src/ui/backlight/drivers/ti-lp8556:ti-lp8556-driver
 //src/ui/input/drivers/adc-buttons:bazel_package.bazel_build

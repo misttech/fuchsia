@@ -26,7 +26,6 @@ group("drivers-not-templates") {
     "//src/lib/diagnostics/log/rust/tests:logger_driver",
     "//src/media/bundles:drivers",
     "//src/power:drivers",
-    "//src/storage/block-relay/testing/toy-driver",
     "//src/sys/component_manager/tests/structured_config/client_integration/cpp_driver:receiver_component",
     "//src/ui/bundles:drivers",
     "//zircon/third_party/dev/ethernet/e1000",

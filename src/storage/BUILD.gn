@@ -16,7 +16,6 @@ group("tests") {
     "bin:tests",
     "blackout:tests",
     "blobfs:tests",
-    "block-relay:tests",
     "conformance:tests",
     "crypt:tests",
     "erofs:tests",

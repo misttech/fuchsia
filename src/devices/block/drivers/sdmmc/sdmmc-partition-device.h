@@ -22,7 +22,6 @@ namespace sdmmc {
 class SdmmcBlockDevice;
 
 class PartitionDevice : public block_server::DriverInterface,
-                        public fidl::WireServer<fuchsia_hardware_block_volume::Node>,
                         public fidl::Server<fuchsia_driver_token::NodeToken> {
  public:
   PartitionDevice(SdmmcBlockDevice* sdmmc_parent,
@@ -33,9 +32,6 @@ class PartitionDevice : public block_server::DriverInterface,
 
   EmmcPartition partition() const { return partition_; }
   fuchsia_storage_block::wire::BlockInfo block_info() const { return block_info_; }
-
-  // fuchsia.driver.framework.Node
-  void AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) override;
 
   // fuchsia_driver_token::NodeToken implementation.
   void Get(GetCompleter::Sync& completer) override;
@@ -58,8 +54,6 @@ class PartitionDevice : public block_server::DriverInterface,
 
   const char* partition_name_ = nullptr;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
-  fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;
-  fidl::ServerBindingGroup<fuchsia_hardware_block_volume::Node> node_bindings_;
   fidl::ServerBindingGroup<fuchsia_hardware_inlineencryption::Device> ice_bindings_;
 
   fbl::Mutex lock_;

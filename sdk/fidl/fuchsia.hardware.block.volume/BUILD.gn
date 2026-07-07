@@ -41,7 +41,6 @@ fidl("fuchsia.hardware.block.volume") {
   stable = false
   visibility = [ "*" ]
   public_deps = [
-    "//sdk/fidl/fuchsia.driver.framework",
     "//sdk/fidl/fuchsia.driver.token",
     "//sdk/fidl/fuchsia.hardware.inlineencryption",
     "//sdk/fidl/fuchsia.storage.block",
