@@ -4,7 +4,7 @@
 
 #![no_std]
 
-mod bindings;
+use counters_bindings as bindings;
 
 /// The maximum number of CPUs that this counter descriptor supports.
 /// This value is read from the `SMP_MAX_CPUS` environment variable at build time.

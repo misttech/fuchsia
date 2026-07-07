@@ -30,13 +30,10 @@ source_set("counters") {
 
 rustc_library("counters-rs") {
   edition = "2024"
-  validations = [ ":counters_bindgen_golden" ]
-  sources = [
-    "src/bindings.rs",
-    "src/lib.rs",
-  ]
+  sources = [ "src/lib.rs" ]
   deps = [
     ":counters",
+    ":counters-bindings",
     "//src/lib/zr",
   ]
   rustenv = [ "SMP_MAX_CPUS=${smp_max_cpus}" ]
@@ -57,8 +54,8 @@ library_headers("headers") {
 group("tests") {
   testonly = true
   deps = [
+    ":counters-bindings",
     ":counters-rs",
-    ":counters_bindgen_golden",
   ]
 }
 
@@ -74,9 +71,11 @@ group("boot_tests") {
   testonly = true
 }
 
-rustc_bindgen_golden("counters_bindgen_golden") {
+rustc_bindgen("counters-bindings.bindgen") {
+  visibility = [ ":*" ]
   headers = [ "bindgen.h" ]
-  checked_in_source = "src/bindings.rs"
+  deps = [ ":headers" ]
+  output = "counters_bindings.rs"
 
   type_allowlist = [ "counters::.*" ]
 
@@ -102,9 +101,18 @@ rustc_bindgen_golden("counters_bindgen_golden") {
   notice_year = 2026
   use_core = true
 
+  raw_lines = [ "#![no_std]" ]
+
   expect_lints = [
-    "dead_code",
+    "clippy::missing_safety_doc",
     "non_camel_case_types",
     "non_upper_case_globals",
   ]
+}
+
+rustc_library("counters-bindings") {
+  edition = "2024"
+  source_root = "$target_gen_dir/counters_bindings.rs"
+  sources = [ "$target_gen_dir/counters_bindings.rs" ]
+  deps = [ ":counters-bindings.bindgen" ]
 }
