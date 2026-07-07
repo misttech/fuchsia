@@ -1140,7 +1140,12 @@ impl Packet for &mut SkBuf {
 }
 
 impl<'a> PacketWithLoadBytes for &'a mut SkBuf {
-    fn load_bytes_relative(&self, _base: LoadBytesBase, _offset: usize, _buf: &mut [u8]) -> i64 {
+    fn load_bytes_relative(
+        &self,
+        _base: LoadBytesBase,
+        _offset: usize,
+        _buf: ebpf::EbpfBufferPtr<'_>,
+    ) -> i64 {
         track_stub!(TODO("https://fxbug.dev/385015056"), "bpf_load_bytes_relative");
         -1
     }

@@ -4,7 +4,7 @@
 
 use clap::Parser;
 use criterion::{Benchmark, Criterion};
-use ebpf::{EbpfProgramContext, FieldMapping, ProgramArgument};
+use ebpf::{EbpfBufferPtr, EbpfProgramContext, FieldMapping, ProgramArgument};
 use ebpf_api::{
     __sk_buff, AttachType, CGROUP_SKB_SK_BUF_TYPE, LoadBytesBase, Map, MapValueRef,
     PacketWithLoadBytes, PinnedMap, ProgramType, SocketFilterProgramContext, SocketRef, uid_t,
@@ -94,7 +94,12 @@ impl<'a> ebpf_api::MapsContext<'a> for TestEbpfRunContext<'a> {
 }
 
 impl<'a> PacketWithLoadBytes for &'a SkBuff<'a> {
-    fn load_bytes_relative(&self, base: LoadBytesBase, offset: usize, buf: &mut [u8]) -> i64 {
+    fn load_bytes_relative(
+        &self,
+        base: LoadBytesBase,
+        offset: usize,
+        buf: EbpfBufferPtr<'_>,
+    ) -> i64 {
         if base != LoadBytesBase::NetworkHeader {
             return -1;
         }
@@ -103,7 +108,7 @@ impl<'a> PacketWithLoadBytes for &'a SkBuff<'a> {
             return -1;
         };
 
-        buf.copy_from_slice(data);
+        buf.store(data);
         0
     }
 }

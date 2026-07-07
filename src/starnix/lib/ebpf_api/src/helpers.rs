@@ -25,7 +25,6 @@ use linux_uapi::{
     bpf_map_type_BPF_MAP_TYPE_SK_STORAGE, gid_t, pid_t, uid_t,
 };
 use smallvec::SmallVec;
-use std::slice;
 use zerocopy::IntoBytes as _;
 
 pub trait MapsContext<'a> {
@@ -416,7 +415,12 @@ fn bpf_get_socket_uid<'a, C: SocketUidProgramContext>(
 
 // Trait for packets that support `bpf_load_bytes_relative`.
 pub trait PacketWithLoadBytes {
-    fn load_bytes_relative(&self, base: LoadBytesBase, offset: usize, buf: &mut [u8]) -> i64;
+    fn load_bytes_relative(
+        &self,
+        base: LoadBytesBase,
+        offset: usize,
+        buf: EbpfBufferPtr<'_>,
+    ) -> i64;
 }
 
 // Trait for `EbpfProgramContext` that supports `bpf_load_bytes_relative`.
@@ -426,7 +430,7 @@ pub trait SkbLoadBytesProgramContext: EbpfProgramContext {
         sk_buf: BpfValue,
         base: LoadBytesBase,
         offset: usize,
-        buf: &mut [u8],
+        buf: EbpfBufferPtr<'_>,
     ) -> i64;
 }
 
@@ -440,7 +444,7 @@ where
         sk_buf: BpfValue,
         base: LoadBytesBase,
         offset: usize,
-        buf: &mut [u8],
+        buf: EbpfBufferPtr<'_>,
     ) -> i64 {
         // SAFETY: Verifier checks that the argument points at the same value
         // that was passed to the program as the first argument.
@@ -465,7 +469,7 @@ fn bpf_skb_load_bytes<'a, C: SkbLoadBytesProgramContext>(
 
     // SAFETY: The verifier ensures that `to` points to a valid buffer of at
     // least `len` bytes that the eBPF program has permission to access.
-    let buf = unsafe { slice::from_raw_parts_mut(to.as_ptr::<u8>(), len.as_u64() as usize) };
+    let buf = unsafe { EbpfBufferPtr::new(to.as_ptr::<u8>(), len.as_u64() as usize) };
 
     C::skb_load_bytes_relative(context, sk_buf, base, offset, buf).into()
 }
@@ -490,7 +494,7 @@ fn bpf_skb_load_bytes_relative<'a, C: SkbLoadBytesProgramContext>(
 
     // SAFETY: The verifier ensures that `to` points to a valid buffer of at
     // least `len` bytes that the eBPF program has permission to access.
-    let buf = unsafe { slice::from_raw_parts_mut(to.as_ptr::<u8>(), len.as_u64() as usize) };
+    let buf = unsafe { EbpfBufferPtr::new(to.as_ptr::<u8>(), len.as_u64() as usize) };
 
     C::skb_load_bytes_relative(context, sk_buf, base, offset, buf).into()
 }

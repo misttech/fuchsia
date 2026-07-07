@@ -5,8 +5,8 @@
 use crate::bindings::BindingsCtx;
 use crate::bindings::util::IntoCore;
 use ebpf::{
-    BpfProgramContext, BpfValue, CbpfConfig, DataWidth, EbpfInstruction, EbpfProgram,
-    EbpfProgramContext, FieldMapping, FromBpfValue, MapReference, MapSchema, Packet,
+    BpfProgramContext, BpfValue, CbpfConfig, DataWidth, EbpfBufferPtr, EbpfInstruction,
+    EbpfProgram, EbpfProgramContext, FieldMapping, FromBpfValue, MapReference, MapSchema, Packet,
     ProgramArgument, Type, VerifiedEbpfProgram,
 };
 use ebpf_api::{
@@ -258,7 +258,7 @@ impl<'a, C> PacketWithLoadBytes for &'a SkBuff<'a, C> {
         &self,
         base: ebpf_api::LoadBytesBase,
         offset: usize,
-        buf: &mut [u8],
+        buf: EbpfBufferPtr<'_>,
     ) -> i64 {
         let base_offset = match base {
             ebpf_api::LoadBytesBase::MacHeader => {
@@ -283,7 +283,7 @@ impl<'a, C> PacketWithLoadBytes for &'a SkBuff<'a, C> {
             return -1;
         };
 
-        buf.copy_from_slice(data);
+        buf.store(data);
         0
     }
 }
