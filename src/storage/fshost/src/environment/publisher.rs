@@ -252,11 +252,11 @@ impl BlockDirectoryInfo {
 impl ToPseudoDirectoryAsync for BlockDirectoryInfo {
     fn to_pseudo_directory(self) -> impl std::future::Future<Output = Arc<PseudoDirectory>> + Send {
         async move {
-            let bus_path = self
-                .get_bus_path()
-                .await
-                .map(|b| b.to_string())
-                .unwrap_or_else(|_| "<unknown>".to_string());
+            let bus_path =
+                self.get_bus_path().await.map(|b| b.to_string()).unwrap_or_else(|error| {
+                    log::warn!(error:%; "failed to get bus path");
+                    "<unknown>".to_string()
+                });
             vfs::pseudo_directory! {
                 BlockMarker::PROTOCOL_NAME => endpoint(move |_scope, channel| {
                     self.connector.connect_channel_to_block(channel.into_zx_channel().into())

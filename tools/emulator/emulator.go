@@ -508,10 +508,8 @@ func (d *Distribution) runNonInteractive(
 ) (string, string, error) {
 	// Write runcmds that mounts the results disk, runs the requested command, and
 	// shuts down.
-	script := `DEV=$(waitfor class=block topo=/00:06.0/00_06_0/virtio-block/block timeout=60000 print)
-run-with-logs "$DEV" ` + toRun + `
-power off
-`
+	// If run-with-logs fails, do a short sleep so its logs have time to get flushed out.
+	script := `run-with-logs --block-bus-path pci00:06.0 ` + toRun + ` || msleep 5000; power off`
 	runcmds := filepath.Join(root, "runcmds.txt")
 	if err := os.WriteFile(runcmds, []byte(script), 0666); err != nil {
 		return "", "", err
