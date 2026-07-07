@@ -854,6 +854,7 @@ VmAspace* cpp_vm_aspace_create_with_opts(vaddr_t base, size_t size, VmAspace::Ty
                                          const char* name, VmAspace::ShareOpt share_opt);
 VmAspace* cpp_vm_aspace_create_unified(VmAspace* shared, VmAspace* restricted, const char* name);
 VmAspace* cpp_vm_aspace_kernel_aspace();
+VmAddressRegion* cpp_vm_aspace_root_vmar(VmAspace* aspace);
 vaddr_t cpp_vm_aspace_base(VmAspace* aspace);
 size_t cpp_vm_aspace_size(VmAspace* aspace);
 const char* cpp_vm_aspace_name(VmAspace* aspace);
@@ -904,6 +905,10 @@ VmAspace* cpp_vm_aspace_create_unified(VmAspace* shared, VmAspace* restricted, c
 VmAspace* cpp_vm_aspace_kernel_aspace() {
   fbl::RefPtr<VmAspace> aspace(VmAspace::kernel_aspace());
   return fbl::ExportToRawPtr(&aspace);
+}
+VmAddressRegion* cpp_vm_aspace_root_vmar(VmAspace* aspace) {
+  fbl::RefPtr<VmAddressRegion> vmar = aspace->RootVmar();
+  return fbl::ExportToRawPtr(&vmar);
 }
 vaddr_t cpp_vm_aspace_base(VmAspace* aspace) { return aspace->base(); }
 size_t cpp_vm_aspace_size(VmAspace* aspace) { return aspace->size(); }

@@ -821,6 +821,8 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   const char name_[ZX_MAX_NAME_LEN] = {};
 };
 
+extern "C" void cpp_vm_mapping_free(VmMapping* mapping);
+
 // A representation of the mapping of a VMO into the address space
 class VmMapping final : public VmAddressRegionOrMapping {
  public:
@@ -1052,6 +1054,7 @@ class VmMapping final : public VmAddressRegionOrMapping {
  protected:
   ~VmMapping() override;
   friend fbl::RefPtr<VmMapping>;
+  friend void ::cpp_vm_mapping_free(VmMapping*);
 
  private:
   DISALLOW_COPY_ASSIGN_AND_MOVE(VmMapping);

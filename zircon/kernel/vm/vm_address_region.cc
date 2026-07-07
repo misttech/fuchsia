@@ -1292,3 +1292,87 @@ void VmAddressRegion::CommitHighMemoryPriority() {
     enumerator.resume();
   }
 }
+
+extern "C" {
+fbl::RefCounted<VmAddressRegionOrMapping>* cpp_vm_address_region_get_ref_counted(
+    VmAddressRegion* vmar);
+void cpp_vm_address_region_free(VmAddressRegion* vmar);
+zx_status_t cpp_vm_address_region_destroy(VmAddressRegion* vmar);
+vaddr_t cpp_vm_address_region_base(VmAddressRegion* vmar);
+size_t cpp_vm_address_region_size(VmAddressRegion* vmar);
+uint32_t cpp_vm_address_region_flags(VmAddressRegion* vmar);
+const char* cpp_vm_address_region_name(VmAddressRegion* vmar);
+bool cpp_vm_address_region_has_parent(VmAddressRegion* vmar);
+zx_status_t cpp_vm_address_region_set_memory_priority(VmAddressRegion* vmar,
+                                                      VmAddressRegion::MemoryPriority priority);
+zx_status_t cpp_vm_address_region_unmap(VmAddressRegion* vmar, vaddr_t base, size_t size,
+                                        VmAddressRegionOpChildren op_children);
+zx_status_t cpp_vm_address_region_protect(VmAddressRegion* vmar, vaddr_t base, size_t size,
+                                          arch_mmu_flags_t new_arch_mmu_flags,
+                                          VmAddressRegionOpChildren op_children);
+zx_status_t cpp_vm_address_region_reserve_space(VmAddressRegion* vmar, const char* name,
+                                                size_t base, size_t size,
+                                                arch_mmu_flags_t arch_mmu_flags);
+VmAddressRegion* cpp_vm_address_region_create_sub_vmar(VmAddressRegion* vmar, size_t offset,
+                                                       size_t size, uint8_t align_pow2,
+                                                       uint32_t vmar_flags, const char* name,
+                                                       zx_status_t* out_status);
+VmMapping* cpp_vm_address_region_create_vm_mapping(
+    VmAddressRegion* vmar, size_t mapping_offset, size_t size, uint8_t align_pow2,
+    uint32_t vmar_flags, const VmObject* vmo, uint64_t vmo_offset, arch_mmu_flags_t arch_mmu_flags,
+    const char* name, vaddr_t* out_base, zx_status_t* out_status);
+
+fbl::RefCounted<VmAddressRegionOrMapping>* cpp_vm_address_region_get_ref_counted(
+    VmAddressRegion* vmar) {
+  return vmar;
+}
+void cpp_vm_address_region_free(VmAddressRegion* vmar) { delete vmar; }
+zx_status_t cpp_vm_address_region_destroy(VmAddressRegion* vmar) { return vmar->Destroy(); }
+vaddr_t cpp_vm_address_region_base(VmAddressRegion* vmar) { return vmar->base(); }
+size_t cpp_vm_address_region_size(VmAddressRegion* vmar) { return vmar->size(); }
+uint32_t cpp_vm_address_region_flags(VmAddressRegion* vmar) { return vmar->flags(); }
+const char* cpp_vm_address_region_name(VmAddressRegion* vmar) { return vmar->name(); }
+bool cpp_vm_address_region_has_parent(VmAddressRegion* vmar) { return vmar->has_parent(); }
+zx_status_t cpp_vm_address_region_set_memory_priority(VmAddressRegion* vmar,
+                                                      VmAddressRegion::MemoryPriority priority) {
+  return vmar->SetMemoryPriority(priority);
+}
+zx_status_t cpp_vm_address_region_unmap(VmAddressRegion* vmar, vaddr_t base, size_t size,
+                                        VmAddressRegionOpChildren op_children) {
+  return vmar->Unmap(base, size, op_children);
+}
+zx_status_t cpp_vm_address_region_protect(VmAddressRegion* vmar, vaddr_t base, size_t size,
+                                          arch_mmu_flags_t new_arch_mmu_flags,
+                                          VmAddressRegionOpChildren op_children) {
+  return vmar->Protect(base, size, new_arch_mmu_flags, op_children);
+}
+zx_status_t cpp_vm_address_region_reserve_space(VmAddressRegion* vmar, const char* name,
+                                                size_t base, size_t size,
+                                                arch_mmu_flags_t arch_mmu_flags) {
+  return vmar->ReserveSpace(name, base, size, arch_mmu_flags);
+}
+VmAddressRegion* cpp_vm_address_region_create_sub_vmar(VmAddressRegion* vmar, size_t offset,
+                                                       size_t size, uint8_t align_pow2,
+                                                       uint32_t vmar_flags, const char* name,
+                                                       zx_status_t* out_status) {
+  fbl::RefPtr<VmAddressRegion> sub_vmar;
+  *out_status = vmar->CreateSubVmar(offset, size, align_pow2, vmar_flags, name, &sub_vmar);
+  return fbl::ExportToRawPtr(&sub_vmar);
+}
+VmMapping* cpp_vm_address_region_create_vm_mapping(
+    VmAddressRegion* vmar, size_t mapping_offset, size_t size, uint8_t align_pow2,
+    uint32_t vmar_flags, const VmObject* vmo, uint64_t vmo_offset, arch_mmu_flags_t arch_mmu_flags,
+    const char* name, vaddr_t* out_base, zx_status_t* out_status) {
+  fbl::RefPtr<VmObject> vmo_ref = fbl::ImportFromRawPtr(const_cast<VmObject*>(vmo));
+  auto result = vmar->CreateVmMapping(mapping_offset, size, align_pow2, vmar_flags,
+                                      ktl::move(vmo_ref), vmo_offset, arch_mmu_flags, name);
+  if (result.is_error()) {
+    *out_status = result.status_value();
+    return nullptr;
+  }
+  *out_status = ZX_OK;
+  *out_base = result->base;
+  fbl::RefPtr<VmMapping> mapping = ktl::move(result->mapping);
+  return fbl::ExportToRawPtr(&mapping);
+}
+}

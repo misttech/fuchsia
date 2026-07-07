@@ -269,3 +269,27 @@ zx_status_t VmObjectPhysical::SetMappingCachePolicy(const arch_mmu_flags_t cache
       TA_NO_THREAD_SAFETY_ANALYSIS { cache_policy_ = cache_policy; }();
   return ZX_OK;
 }
+
+extern "C" {
+void* cpp_vm_object_physical_get_ref_counted(const VmObjectPhysical* vmo);
+void cpp_vm_object_physical_free(VmObjectPhysical* vmo);
+VmObjectPhysical* cpp_vm_object_physical_create(paddr_t base, size_t size, zx_status_t* out_status);
+VmObject* cpp_vm_object_physical_as_vm_object(VmObjectPhysical* vmo);
+
+void* cpp_vm_object_physical_get_ref_counted(const VmObjectPhysical* vmo) {
+  return const_cast<VmObjectPhysical*>(vmo);
+}
+
+void cpp_vm_object_physical_free(VmObjectPhysical* vmo) { delete vmo; }
+
+VmObjectPhysical* cpp_vm_object_physical_create(paddr_t base, size_t size,
+                                                zx_status_t* out_status) {
+  fbl::RefPtr<VmObjectPhysical> vmo;
+  *out_status = VmObjectPhysical::Create(base, size, &vmo);
+  return fbl::ExportToRawPtr(&vmo);
+}
+
+VmObject* cpp_vm_object_physical_as_vm_object(VmObjectPhysical* vmo) {
+  return static_cast<VmObject*>(vmo);
+}
+}

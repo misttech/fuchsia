@@ -243,6 +243,8 @@ enum class VmObjectReadWriteOptions : uint8_t {
 };
 FBL_ENABLE_ENUM_BITS(VmObjectReadWriteOptions)
 
+extern "C" void cpp_vm_object_free(VmObject* vmo);
+
 // The base vm object that holds a range of bytes of data
 //
 // Can be created without mapping and used as a container of data, or mappable
@@ -732,6 +734,7 @@ class VmObject : public fbl::ContainableBaseClasses<
   // private destructor, only called from refptr
   virtual ~VmObject();
   friend fbl::RefPtr<VmObject>;
+  friend void ::cpp_vm_object_free(VmObject*);
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(VmObject);
 

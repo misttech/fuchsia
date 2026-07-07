@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::arch_vm_aspace::{ArchMmuFlags, ArchVmAspace, NonTerminalAction, TerminalAction};
+use crate::vm_address_region::VmAddressRegion;
 use core::ffi::{CStr, c_char, c_void};
 use core::marker::{PhantomData, PhantomPinned};
 use core::ptr::NonNull;
@@ -54,6 +55,7 @@ unsafe extern "C" {
     ) -> *mut VmAspace;
     fn cpp_vm_aspace_arch_aspace(aspace: *mut VmAspace) -> *mut ArchVmAspace;
     fn cpp_vm_aspace_kernel_aspace() -> *mut VmAspace;
+    fn cpp_vm_aspace_root_vmar(aspace: *mut VmAspace) -> *mut VmAddressRegion;
     fn cpp_vm_aspace_base(aspace: *mut VmAspace) -> usize;
     fn cpp_vm_aspace_size(aspace: *mut VmAspace) -> usize;
     fn cpp_vm_aspace_name(aspace: *mut VmAspace) -> *const c_char;
@@ -245,6 +247,11 @@ impl VmAspace {
     /// Returns the singleton kernel address space.
     pub fn kernel_aspace() -> Option<RefPtr<VmAspace>> {
         unsafe { RefPtr::try_from_raw(cpp_vm_aspace_kernel_aspace()) }
+    }
+
+    /// Returns the root address region (`RootVmar`) for this address space.
+    pub fn root_vmar(&self) -> Option<RefPtr<VmAddressRegion>> {
+        unsafe { RefPtr::try_from_raw(cpp_vm_aspace_root_vmar(self.as_mut_ptr())) }
     }
 
     /// Sets the per-thread address space pointer to this address space.

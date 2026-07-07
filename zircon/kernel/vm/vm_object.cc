@@ -399,3 +399,11 @@ static int cmd_vm_object(int argc, const cmd_args* argv, uint32_t flags) {
 STATIC_COMMAND_START
 STATIC_COMMAND("vm_object", "vm object debug commands", &cmd_vm_object)
 STATIC_COMMAND_END(vm_object)
+
+extern "C" {
+void* cpp_vm_object_get_ref_counted(const VmObject* vmo);
+void cpp_vm_object_free(VmObject* vmo);
+
+void* cpp_vm_object_get_ref_counted(const VmObject* vmo) { return const_cast<VmObject*>(vmo); }
+void cpp_vm_object_free(VmObject* vmo) { delete vmo; }
+}
