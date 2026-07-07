@@ -203,6 +203,8 @@ enum InspectHrTimerEvent {
     Add(#[allow(dead_code)] zx::Koid),
     Update(#[allow(dead_code)] zx::Koid),
     Remove(#[allow(dead_code)] zx::Koid),
+    // The timer was signaled!
+    Alarm(#[allow(dead_code)] zx::Koid),
     Error(#[allow(dead_code)] String),
 }
 
@@ -730,6 +732,15 @@ impl HrTimerManager {
         }
     }
 
+    fn record_inspect_on_alarm(
+        self: &HrTimerManagerHandle,
+        guard: &mut LockDepGuard<'_, HrTimerManagerState>,
+        timer_id: zx::Koid,
+        deadline: TargetTime,
+    ) {
+        self.record_event(guard, InspectHrTimerEvent::Alarm(timer_id), Some(deadline));
+    }
+
     fn record_inspect_on_start(
         self: &HrTimerManagerHandle,
         guard: &mut LockDepGuard<'_, HrTimerManagerState>,
@@ -1010,6 +1021,7 @@ impl HrTimerManager {
                     self.lock().debug_start_stage_counter = 10;
                     let timer = &new_timer_node.hr_timer;
                     let timer_id = timer.get_id();
+                    let deadline = new_timer_node.deadline;
                     ftrace::duration!("alarms", "starnix:hrtimer:alarm", "timer_id" => timer_id);
                     ftrace::flow_step!("alarms", "hrtimer_lifecycle", timer.trace_id());
                     match self.notify_timer(system_task, &new_timer_node, lease) {
@@ -1036,7 +1048,11 @@ impl HrTimerManager {
                     // ID) before it has a chance to reschedule, the reschedule lock will get
                     // dropped then.
                     log_debug!("Cmd::Alarm done: timer_id: {timer_id:?}");
-                    self.lock().debug_start_stage_counter = 19;
+                    {
+                        let mut guard = self.lock();
+                        guard.debug_start_stage_counter = 19;
+                        self.record_inspect_on_alarm(&mut guard, timer_id, deadline);
+                    }
                 }
                 Cmd::Stop { timer, done, message_counter } => {
                     self.lock().debug_start_stage_counter = 20;
