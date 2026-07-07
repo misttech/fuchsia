@@ -1051,7 +1051,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
                 ),
                 timeout=timeout,
             )
-        except TimeoutError as e:
+        except wlan_errors.HoneydewWlanError as e:
             raise wlan_errors.HoneydewWlanError(
                 "Networks still connected."
             ) from e
