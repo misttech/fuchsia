@@ -10,7 +10,7 @@ use starnix_core::device::DeviceOps;
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::perf::TraceEventQueueList;
 use starnix_core::task::{CurrentTask, Kernel};
-use starnix_core::vfs::{CloseFreeSafe, FileObject, FileOps, NamespaceNode, default_ioctl};
+use starnix_core::vfs::{CloseFreeSafe, FileObject, FileOps, NamespaceNode};
 use starnix_core::{fileops_impl_dataless, fileops_impl_noop_sync, fileops_impl_seekless};
 use starnix_logging::{log_error, log_info};
 use starnix_sync::{FileOpsCore, Locked, Unlocked};
@@ -149,8 +149,8 @@ impl FileOps for WakeupTestDevice {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
-        file: &FileObject,
+        _locked: &mut Locked<Unlocked>,
+        _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: starnix_syscalls::SyscallArg,
@@ -176,7 +176,7 @@ impl FileOps for WakeupTestDevice {
             CommandCode::WakeupTest => error!(ENOSYS),
             CommandCode::WakeupHowManyTimers => error!(ENOSYS),
             CommandCode::WakeupCancelTimers => error!(ENOSYS),
-            _ => default_ioctl(file, locked, current_task, request, arg),
+            _ => error!(ENOTTY),
         }
     }
 }

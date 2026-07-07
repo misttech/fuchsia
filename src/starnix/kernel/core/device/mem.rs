@@ -220,8 +220,8 @@ impl FileOps for DevRandom {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
-        file: &FileObject,
+        _locked: &mut Locked<Unlocked>,
+        _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: starnix_syscalls::SyscallArg,
@@ -233,7 +233,7 @@ impl FileOps for DevRandom {
                 let result = 256;
                 current_task.write_object(addr, &result).map(|_| starnix_syscalls::SUCCESS)
             }
-            _ => crate::vfs::default_ioctl(file, locked, current_task, request, arg),
+            _ => error!(ENOTTY),
         }
     }
 }

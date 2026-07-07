@@ -15,7 +15,7 @@ use crate::vfs::buffers::{
 use crate::vfs::fs_registry::FsRegistry;
 use crate::vfs::{
     CacheMode, FileHandle, FileObject, FileObjectState, FileOps, FileSystem, FileSystemHandle,
-    FileSystemOps, FileSystemOptions, FsNodeInfo, FsStr, SpecialNode, default_fcntl, default_ioctl,
+    FileSystemOps, FileSystemOptions, FsNodeInfo, FsStr, SpecialNode, default_fcntl,
     fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, MutexGuard, Unlocked};
@@ -303,8 +303,8 @@ impl Pipe {
 
     fn ioctl(
         &self,
-        file: &FileObject,
-        locked: &mut Locked<Unlocked>,
+        _file: &FileObject,
+        _locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
@@ -317,7 +317,7 @@ impl Pipe {
                 current_task.write_object(addr, &value)?;
                 Ok(SUCCESS)
             }
-            _ => default_ioctl(file, locked, current_task, request, arg),
+            _ => error!(ENOTTY),
         }
     }
 

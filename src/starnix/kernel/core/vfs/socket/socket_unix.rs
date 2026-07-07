@@ -17,7 +17,7 @@ use crate::vfs::socket::{
 };
 use crate::vfs::{
     CheckAccessReason, FdNumber, FileHandle, FileObject, FsNodeHandle, FsStr, LookupContext,
-    Message, UcredPtr, default_ioctl,
+    Message, UcredPtr,
 };
 use ebpf::{
     BpfProgramContext, BpfValue, CbpfConfig, DataWidth, EbpfProgram, Packet, ProgramArgument, Type,
@@ -939,9 +939,9 @@ impl SocketOps for UnixSocket {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
+        _locked: &mut Locked<Unlocked>,
         socket: &Socket,
-        file: &FileObject,
+        _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
@@ -954,7 +954,7 @@ impl SocketOps for UnixSocket {
                 current_task.write_object(UserRef::<i32>::new(user_addr), &length)?;
                 Ok(SUCCESS)
             }
-            _ => default_ioctl(file, locked, current_task, request, arg),
+            _ => error!(ENOTTY),
         }
     }
 }

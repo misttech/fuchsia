@@ -18,7 +18,7 @@ use starnix_core::mm::{
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{
     FileObject, FileOps, FsString, InputBuffer, NamespaceNode, OutputBuffer, SeekTarget,
-    default_ioctl, default_seek, fileops_impl_noop_sync,
+    default_seek, fileops_impl_noop_sync,
 };
 use starnix_lifecycle::AtomicCounter;
 use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
@@ -211,8 +211,8 @@ impl FileOps for Ashmem {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
-        file: &FileObject,
+        _locked: &mut Locked<Unlocked>,
+        _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
@@ -338,7 +338,7 @@ impl FileOps for Ashmem {
                 current_task.write_object(arg.into(), &(state.id))?;
                 Ok(SUCCESS)
             }
-            _ => default_ioctl(file, locked, current_task, request, arg),
+            _ => error!(ENOTTY),
         }
     }
 }

@@ -13,7 +13,7 @@ use crate::vfs::{
     AppendLockWriteGuard, DirEntry, FallocMode, FileHandle, FileObject, FileOps, FileSystemHandle,
     FsNode, FsNodeInfo, FsNodeLinkBehavior, FsNodeOps, FsString, MAX_LFS_FILESIZE,
     MemoryXattrStorage, Mount, MountInfo, NamespaceNode, WhatToMount, XattrStorage as _,
-    default_ioctl, fileops_impl_noop_sync, fs_node_impl_not_dir, fs_node_impl_xattr_delegate,
+    fileops_impl_noop_sync, fs_node_impl_not_dir, fs_node_impl_xattr_delegate,
 };
 use linux_uapi::{ASHMEM_GET_SIZE, ASHMEM_SET_SIZE};
 use starnix_logging::{impossible_error, track_stub};
@@ -413,9 +413,9 @@ impl FileOps for MemoryRegularFile {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
-        file: &FileObject,
-        current_task: &CurrentTask,
+        _locked: &mut Locked<Unlocked>,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
     ) -> Result<SyscallResult, Errno> {
@@ -429,7 +429,7 @@ impl FileOps for MemoryRegularFile {
                 self.memory.set_size(arg.into()).map_err(|_| errno!(EINVAL))?;
                 Ok(SUCCESS)
             }
-            _ => default_ioctl(file, locked, current_task, request, arg),
+            _ => error!(ENOTTY),
         }
     }
 }

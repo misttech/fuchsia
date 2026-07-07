@@ -24,7 +24,7 @@ use starnix_core::vfs::{
     FileSystemHandle, FileSystemOps, FileSystemOptions, FsLockDepType, FsNode, FsNodeFlags,
     FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, NamespaceNode,
     PeekBufferSegmentsCallback, RenameContext, SeekTarget, SymlinkTarget, ValueOrSize,
-    WeakFileHandle, XattrOp, default_eof_offset, default_fcntl, default_ioctl, default_seek,
+    WeakFileHandle, XattrOp, default_eof_offset, default_fcntl, default_seek,
     fileops_impl_nonseekable, fileops_impl_noop_sync, fs_args, fs_node_impl_dir_readonly,
 };
 use starnix_lifecycle::AtomicCounter;
@@ -182,8 +182,8 @@ impl FileOps for DevFuse {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
-        file: &FileObject,
+        _locked: &mut Locked<Unlocked>,
+        _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
@@ -207,7 +207,7 @@ impl FileOps for DevFuse {
                 };
                 Ok(id.into())
             }
-            _ => default_ioctl(file, locked, current_task, request, arg),
+            _ => error!(ENOTTY),
         }
     }
 }
@@ -1076,14 +1076,14 @@ impl FileOps for FuseFileObject {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
-        file: &FileObject,
-        current_task: &CurrentTask,
-        request: u32,
-        arg: SyscallArg,
+        _locked: &mut Locked<Unlocked>,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+        _request: u32,
+        _arg: SyscallArg,
     ) -> Result<SyscallResult, Errno> {
         track_stub!(TODO("https://fxbug.dev/322875259"), "fuse ioctl");
-        default_ioctl(file, locked, current_task, request, arg)
+        error!(ENOTTY)
     }
 
     fn fcntl(

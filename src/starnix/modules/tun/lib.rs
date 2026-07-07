@@ -15,11 +15,10 @@ use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::security;
 use starnix_core::task::{CurrentTask, RunState, WaiterRef};
 use starnix_core::vfs::socket::IfReqPtr;
-use starnix_core::vfs::{
-    FileObject, FileObjectState, FileOps, call_fidl_and_await_close, default_ioctl,
-};
+use starnix_core::vfs::{FileObject, FileObjectState, FileOps, call_fidl_and_await_close};
 use starnix_logging::{log_info, log_warn};
 use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
+use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use std::num::NonZeroU64;
 use std::sync::Arc;
@@ -374,8 +373,8 @@ impl FileOps for DevTun {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
-        file: &FileObject,
+        _locked: &mut Locked<Unlocked>,
+        _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: starnix_syscalls::SyscallArg,
@@ -383,7 +382,6 @@ impl FileOps for DevTun {
         match request {
             starnix_uapi::TUNSETIFF => {
                 security::check_tun_dev_create_access(current_task)?;
-
                 log_info!("handling TUNSETIFF for /dev/tun");
                 let user_addr = IfReqPtr::new(current_task, arg);
                 let in_ifreq = current_task.read_multi_arch_object(user_addr)?;
@@ -441,7 +439,7 @@ impl FileOps for DevTun {
 
                 Ok(starnix_syscalls::SUCCESS)
             }
-            _ => default_ioctl(file, locked, current_task, request, arg),
+            _ => error!(ENOTTY),
         }
     }
 }

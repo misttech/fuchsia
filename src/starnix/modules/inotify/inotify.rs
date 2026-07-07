@@ -7,7 +7,7 @@ use starnix_core::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, WaitQu
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
     Anon, DirEntryHandle, FileHandle, FileObject, FileObjectState, FileOps, FsStr, FsString,
-    WdNumber, default_ioctl, fileops_impl_nonseekable, fileops_impl_noop_sync,
+    WdNumber, fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_sync::{
     FileOpsCore, InotifyStateLock, LockDepMutex, LockEqualOrBefore, Locked, Unlocked,
@@ -237,8 +237,8 @@ impl FileOps for InotifyFileObject {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
-        file: &FileObject,
+        _locked: &mut Locked<Unlocked>,
+        _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
@@ -250,7 +250,7 @@ impl FileOps for InotifyFileObject {
                 let size = i32::try_from(self.available()).unwrap_or(i32::MAX);
                 current_task.write_object(addr, &size).map(|_| SUCCESS)
             }
-            _ => default_ioctl(file, locked, current_task, request, arg),
+            _ => error!(ENOTTY),
         }
     }
 

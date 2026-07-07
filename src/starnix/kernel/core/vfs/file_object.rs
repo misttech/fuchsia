@@ -53,8 +53,8 @@ use starnix_uapi::{
     FS_IOC_ENABLE_VERITY, FS_IOC_FSGETXATTR, FS_IOC_FSSETXATTR, FS_IOC_MEASURE_VERITY,
     FS_IOC_READ_VERITY_METADATA, FS_IOC_REMOVE_ENCRYPTION_KEY, FS_IOC_SET_ENCRYPTION_POLICY,
     FS_VERITY_FL, FSCRYPT_KEY_SPEC_TYPE_IDENTIFIER, FSCRYPT_POLICY_V2, SEEK_CUR, SEEK_DATA,
-    SEEK_END, SEEK_HOLE, SEEK_SET, TCGETS, errno, error, fscrypt_add_key_arg, fscrypt_identifier,
-    fsxattr, off_t, pid_t, uapi,
+    SEEK_END, SEEK_HOLE, SEEK_SET, errno, error, fscrypt_add_key_arg, fscrypt_identifier, fsxattr,
+    off_t, pid_t, uapi,
 };
 use std::collections::HashMap;
 use std::fmt;
@@ -312,13 +312,13 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
-        file: &FileObject,
-        current_task: &CurrentTask,
-        request: u32,
-        arg: SyscallArg,
+        _locked: &mut Locked<Unlocked>,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+        _request: u32,
+        _arg: SyscallArg,
     ) -> Result<SyscallResult, Errno> {
-        default_ioctl(file, locked, current_task, request, arg)
+        error!(ENOTTY)
     }
 
     fn fcntl(
@@ -893,25 +893,25 @@ pub fn canonicalize_ioctl_request(current_task: &CurrentTask, request: u32) -> u
     }
 }
 
-pub fn default_ioctl(
+/// Universal VFS ioctl dispatcher for [`FileObject`].
+///
+/// Handles generic file system ioctls (such as non-blocking mode toggles, block size queries,
+/// and file cloning) at the VFS layer without delegating to underlying device drivers.
+///
+/// Returns `Some(result)` if the ioctl command is handled by the VFS layer, or `None` if the
+/// command is unhandled and should be dispatched to [`FileOps::ioctl`].
+pub fn default_vfs_ioctl(
     file: &FileObject,
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     request: u32,
     arg: SyscallArg,
-) -> Result<SyscallResult, Errno> {
+) -> Result<Option<SyscallResult>, Errno> {
     match canonicalize_ioctl_request(current_task, request) {
-        TCGETS => error!(ENOTTY),
-        FIGETBSZ => {
-            let node = file.node();
-            let supported_file = node.is_reg() || node.is_dir();
-            if !supported_file {
-                return error!(ENOTTY);
-            }
-
+        FIGETBSZ if file.node().is_reg() || file.node().is_dir() => {
             let blocksize = file.node().stat(locked, current_task)?.st_blksize;
             current_task.write_object(arg.into(), &blocksize)?;
-            Ok(SUCCESS)
+            Ok(Some(SUCCESS))
         }
         FIONBIO => {
             let arg_ref = UserAddress::from(arg).into();
@@ -924,29 +924,17 @@ pub fn default_ioctl(
                 OpenFlags::NONBLOCK
             };
             file.update_file_flags(val, OpenFlags::NONBLOCK);
-            Ok(SUCCESS)
+            Ok(Some(SUCCESS))
         }
-        FIOQSIZE => {
-            let node = file.node();
-            let supported_file = node.is_reg() || node.is_dir();
-            if !supported_file {
-                return error!(ENOTTY);
-            }
-
+        FIOQSIZE if file.node().is_reg() || file.node().is_dir() => {
             let size = file.node().stat(locked, current_task)?.st_size;
             current_task.write_object(arg.into(), &size)?;
-            Ok(SUCCESS)
+            Ok(Some(SUCCESS))
         }
-        FIONREAD => {
+        FIONREAD if file.node().is_reg() => {
             track_stub!(TODO("https://fxbug.dev/322874897"), "FIONREAD");
-            if !file.name.entry.node.is_reg() {
-                return error!(ENOTTY);
-            }
-
             let size = file
-                .name
-                .entry
-                .node
+                .node()
                 .fetch_and_refresh_info(locked, current_task)
                 .map_err(|_| errno!(EINVAL))?
                 .size;
@@ -954,19 +942,19 @@ pub fn default_ioctl(
             let remaining =
                 if size < offset { 0 } else { i32::try_from(size - offset).unwrap_or(i32::MAX) };
             current_task.write_object(arg.into(), &remaining)?;
-            Ok(SUCCESS)
+            Ok(Some(SUCCESS))
         }
         FS_IOC_FSGETXATTR => {
             track_stub!(TODO("https://fxbug.dev/322875209"), "FS_IOC_FSGETXATTR");
             let arg = UserAddress::from(arg).into();
             current_task.write_object(arg, &fsxattr::default())?;
-            Ok(SUCCESS)
+            Ok(Some(SUCCESS))
         }
         FS_IOC_FSSETXATTR => {
             track_stub!(TODO("https://fxbug.dev/322875271"), "FS_IOC_FSSETXATTR");
             let arg = UserAddress::from(arg).into();
             let _: fsxattr = current_task.read_object(arg)?;
-            Ok(SUCCESS)
+            Ok(Some(SUCCESS))
         }
         uapi::FS_IOC_GETFLAGS => {
             track_stub!(TODO("https://fxbug.dev/322874935"), "FS_IOC_GETFLAGS");
@@ -979,7 +967,7 @@ pub fn default_ioctl(
                 flags |= FS_CASEFOLD_FL;
             }
             current_task.write_object(arg, &flags)?;
-            Ok(SUCCESS)
+            Ok(Some(SUCCESS))
         }
         uapi::FS_IOC_SETFLAGS => {
             track_stub!(TODO("https://fxbug.dev/322875367"), "FS_IOC_SETFLAGS");
@@ -989,16 +977,19 @@ pub fn default_ioctl(
                 info.casefold = flags & FS_CASEFOLD_FL != 0;
                 Ok(())
             })?;
-            Ok(SUCCESS)
+            Ok(Some(SUCCESS))
         }
         FS_IOC_ENABLE_VERITY => {
-            Ok(fsverity::ioctl::enable(locked, current_task, UserAddress::from(arg).into(), file)?)
+            fsverity::ioctl::enable(locked, current_task, UserAddress::from(arg).into(), file)
+                .map(Some)
         }
         FS_IOC_MEASURE_VERITY => {
-            Ok(fsverity::ioctl::measure(locked, current_task, UserAddress::from(arg).into(), file)?)
+            fsverity::ioctl::measure(locked, current_task, UserAddress::from(arg).into(), file)
+                .map(Some)
         }
         FS_IOC_READ_VERITY_METADATA => {
-            Ok(fsverity::ioctl::read_metadata(current_task, UserAddress::from(arg).into(), file)?)
+            fsverity::ioctl::read_metadata(current_task, UserAddress::from(arg).into(), file)
+                .map(Some)
         }
         FS_IOC_ADD_ENCRYPTION_KEY => {
             let fscrypt_add_key_ref = UserRef::<fscrypt_add_key_arg>::from(arg);
@@ -1021,7 +1012,7 @@ pub fn default_ioctl(
             fscrypt_add_key_arg.key_spec.u.identifier =
                 fscrypt_identifier { value: key_identifier, ..Default::default() };
             current_task.write_object(fscrypt_add_key_ref, &fscrypt_add_key_arg)?;
-            Ok(SUCCESS)
+            Ok(Some(SUCCESS))
         }
         FS_IOC_SET_ENCRYPTION_POLICY => {
             let fscrypt_policy_ref = UserRef::<uapi::fscrypt_policy_v2>::from(arg);
@@ -1085,7 +1076,7 @@ pub fn default_ioctl(
                     Ok(())
                 })?;
             }
-            Ok(SUCCESS)
+            Ok(Some(SUCCESS))
         }
         FS_IOC_REMOVE_ENCRYPTION_KEY => {
             let fscrypt_remove_key_arg_ref = UserRef::<uapi::fscrypt_remove_key_arg>::from(arg);
@@ -1102,15 +1093,12 @@ pub fn default_ioctl(
             )]
             let identifier = unsafe { fscrypt_remove_key_arg.key_spec.u.identifier.value };
             crypt_service.forget_wrapping_key(identifier, user_id)?;
-            Ok(SUCCESS)
+            Ok(Some(SUCCESS))
         }
         linux_uapi::FICLONE | linux_uapi::FICLONERANGE | linux_uapi::FIDEDUPERANGE => {
             error!(EOPNOTSUPP)
         }
-        _ => {
-            track_stub!(TODO("https://fxbug.dev/322874917"), "ioctl fallthrough", request);
-            error!(ENOTTY)
-        }
+        _ => Ok(None),
     }
 }
 
@@ -2078,6 +2066,10 @@ impl FileObject {
                 current_task.write_object(arg.into(), &phoney_block)?;
                 return Ok(SUCCESS);
             }
+        }
+
+        if let Some(result) = default_vfs_ioctl(self, locked, current_task, request, arg)? {
+            return Ok(result);
         }
 
         self.ops().ioctl(locked, self, current_task, request, arg)

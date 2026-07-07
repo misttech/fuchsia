@@ -13,7 +13,7 @@ use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt, ProtectionFlags};
 use starnix_core::task::{CurrentTask, Kernel, ThreadGroupKey, ThreadLockupDetector};
 use starnix_core::vfs::{
     Anon, FdFlags, FdNumber, FileObject, FileObjectState, FileOps, NamespaceNode,
-    call_fidl_and_await_close, default_ioctl,
+    call_fidl_and_await_close,
 };
 use starnix_core::{
     fileops_impl_dataless, fileops_impl_memory, fileops_impl_noop_sync, fileops_impl_seekless,
@@ -171,8 +171,8 @@ impl FileOps for DmaBufFile {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
-        file: &FileObject,
+        _locked: &mut Locked<Unlocked>,
+        _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
@@ -191,7 +191,7 @@ impl FileOps for DmaBufFile {
                 self.memory.set_zx_name(&name);
                 Ok(SUCCESS)
             }
-            _ => default_ioctl(file, locked, current_task, request, arg),
+            _ => error!(ENOTTY),
         }
     }
 }
@@ -795,7 +795,7 @@ impl FileOps for FastRPCFile {
     fn ioctl(
         &self,
         locked: &mut Locked<Unlocked>,
-        file: &FileObject,
+        _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
@@ -934,7 +934,7 @@ impl FileOps for FastRPCFile {
                     }
                 }
             }
-            _ => default_ioctl(file, locked, current_task, request, arg),
+            _ => error!(ENOTTY),
         }
     }
 }

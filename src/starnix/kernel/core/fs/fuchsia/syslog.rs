@@ -5,12 +5,10 @@
 use crate::task::CurrentTask;
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
-    Anon, FileHandle, FileObject, FileOps, default_ioctl, fileops_impl_nonseekable,
-    fileops_impl_noop_sync,
+    Anon, FileHandle, FileObject, FileOps, fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_logging::log_info;
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult};
+use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 
@@ -61,16 +59,5 @@ impl FileOps for SyslogFile {
     ) -> Result<usize, Errno> {
         debug_assert!(offset == 0);
         Ok(0)
-    }
-
-    fn ioctl(
-        &self,
-        locked: &mut Locked<Unlocked>,
-        file: &FileObject,
-        current_task: &CurrentTask,
-        request: u32,
-        arg: SyscallArg,
-    ) -> Result<SyscallResult, Errno> {
-        default_ioctl(file, locked, current_task, request, arg)
     }
 }

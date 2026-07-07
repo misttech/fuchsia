@@ -7,12 +7,13 @@ use starnix_core::device::DeviceOps;
 use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::task::{CurrentTask, Kernel};
-use starnix_core::vfs::{FdFlags, FdNumber, FileObject, FileOps, NamespaceNode, default_ioctl};
+use starnix_core::vfs::{FdFlags, FdNumber, FileObject, FileOps, NamespaceNode};
 use starnix_core::{fileops_impl_dataless, fileops_impl_noop_sync, fileops_impl_seekless};
 use starnix_logging::log_debug;
 use starnix_sync::{FileOpsCore, Locked, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_id::DeviceId;
+use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserRef;
@@ -23,8 +24,8 @@ pub trait Alloc: Send + Sync + 'static {
         &self,
         locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
-        size: u64,
-        fd_flags: FdFlags,
+        len: u64,
+        flags: FdFlags,
     ) -> Result<FdNumber, Errno>;
 }
 
@@ -39,14 +40,14 @@ impl<A: Alloc> DmaHeapFile<A> {
 }
 
 impl<A: Alloc> FileOps for DmaHeapFile<A> {
-    fileops_impl_noop_sync!();
-    fileops_impl_dataless!();
     fileops_impl_seekless!();
+    fileops_impl_dataless!();
+    fileops_impl_noop_sync!();
 
     fn ioctl(
         &self,
         locked: &mut Locked<Unlocked>,
-        file: &FileObject,
+        _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
@@ -68,7 +69,7 @@ impl<A: Alloc> FileOps for DmaHeapFile<A> {
                 current_task.write_object(user_info, &to_user)?;
                 Ok(SUCCESS)
             }
-            _ => default_ioctl(file, locked, current_task, request, arg),
+            _ => error!(ENOTTY),
         }
     }
 }

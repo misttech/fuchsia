@@ -12,7 +12,7 @@ use crate::security;
 use crate::syscalls::time::TimeValPtr;
 use crate::task::{CurrentTask, EventHandler, WaitCanceler, Waiter};
 use crate::vfs::buffers::{AncillaryData, InputBuffer, MessageReadInfo, OutputBuffer};
-use crate::vfs::{DowncastedFile, FileHandle, FileObject, FsNodeHandle, default_ioctl};
+use crate::vfs::{DowncastedFile, FileHandle, FileObject, FsNodeHandle};
 use starnix_logging::track_stub;
 use starnix_sync::{
     FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, SocketStateLock, Unlocked,
@@ -222,14 +222,14 @@ pub trait SocketOps: Send + Sync + AsAny {
     /// Implements ioctl.
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
+        _locked: &mut Locked<Unlocked>,
         _socket: &Socket,
-        file: &FileObject,
-        current_task: &CurrentTask,
-        request: u32,
-        arg: SyscallArg,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+        _request: u32,
+        _arg: SyscallArg,
     ) -> Result<SyscallResult, Errno> {
-        default_ioctl(file, locked, current_task, request, arg)
+        error!(ENOTTY)
     }
 
     /// Return a handle that allows access to this file descritor through the zxio protocols.

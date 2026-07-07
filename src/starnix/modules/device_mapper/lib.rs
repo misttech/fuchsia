@@ -20,8 +20,7 @@ use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::buffers::{InputBuffer, VecOutputBuffer};
 use starnix_core::vfs::{
     FileHandle, FileObject, FileObjectState, FileOps, FsString, NamespaceNode, OutputBuffer,
-    default_ioctl, fileops_impl_dataless, fileops_impl_noop_sync, fileops_impl_seekable,
-    fileops_impl_seekless,
+    fileops_impl_dataless, fileops_impl_noop_sync, fileops_impl_seekable, fileops_impl_seekless,
 };
 use starnix_ext::map_ext::EntryExt;
 use starnix_logging::{log_trace, track_stub};
@@ -386,7 +385,7 @@ impl FileOps for DmDeviceFile {
     fn ioctl(
         &self,
         locked: &mut Locked<Unlocked>,
-        file: &FileObject,
+        _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
@@ -410,7 +409,7 @@ impl FileOps for DmDeviceFile {
             }
         }
 
-        default_ioctl(file, locked, current_task, request, arg)
+        error!(ENOTTY)
     }
 
     fn close(
@@ -789,7 +788,7 @@ impl FileOps for DeviceMapper {
     fn ioctl(
         &self,
         locked: &mut Locked<Unlocked>,
-        file: &FileObject,
+        _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
@@ -1210,7 +1209,7 @@ impl FileOps for DeviceMapper {
             | DM_DEV_SET_GEOMETRY
             | DM_DEV_ARM_POLL
             | DM_GET_TARGET_VERSION => return error!(ENOTSUP),
-            _ => default_ioctl(file, locked, current_task, request, arg),
+            _ => error!(ENOTTY),
         }
     }
 }

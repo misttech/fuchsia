@@ -17,8 +17,8 @@ use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use starnix_core::vfs::{
     Buffer, FdNumber, FileHandle, FileObject, FileOps, FsNodeOps, FsString, InputBufferCallback,
-    NamespaceNode, PeekBufferSegmentsCallback, default_ioctl, fileops_impl_dataless,
-    fileops_impl_noop_sync, fileops_impl_seekable, fileops_impl_seekless,
+    NamespaceNode, PeekBufferSegmentsCallback, fileops_impl_dataless, fileops_impl_noop_sync,
+    fileops_impl_seekable, fileops_impl_seekless,
 };
 use starnix_ext::map_ext::EntryExt;
 use starnix_logging::track_stub;
@@ -615,7 +615,7 @@ impl FileOps for LoopDeviceFile {
                 current_task.write_object(user_info, &info)?;
                 Ok(SUCCESS)
             }
-            _ => default_ioctl(file, locked, current_task, request, arg),
+            _ => error!(ENOTTY),
         }
     }
 }
@@ -777,7 +777,7 @@ impl FileOps for LoopControlDevice {
     fn ioctl(
         &self,
         locked: &mut Locked<Unlocked>,
-        file: &FileObject,
+        _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
@@ -811,7 +811,7 @@ impl FileOps for LoopControlDevice {
                 self.registry.remove(locked, current_task, k_device, minor)?;
                 Ok(minor.into())
             }
-            _ => default_ioctl(file, locked, current_task, request, arg),
+            _ => error!(ENOTTY),
         }
     }
 }

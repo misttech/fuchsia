@@ -13,9 +13,7 @@ use crate::vfs::socket::{
     SockOptValue, Socket, SocketAddress, SocketDomain, SocketHandle, SocketMessageFlags, SocketOps,
     SocketPeer, SocketProtocol, SocketShutdownFlags, SocketType,
 };
-use crate::vfs::{
-    AncillaryData, FileObject, InputBuffer, MessageReadInfo, OutputBuffer, default_ioctl,
-};
+use crate::vfs::{AncillaryData, FileObject, InputBuffer, MessageReadInfo, OutputBuffer};
 use byteorder::ByteOrder;
 use ebpf::convert_and_verify_cbpf;
 use ebpf_api::SOCKET_FILTER_CBPF_CONFIG;
@@ -851,9 +849,9 @@ impl SocketOps for ZxioBackedSocket {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
+        _locked: &mut Locked<Unlocked>,
         socket: &Socket,
-        file: &FileObject,
+        _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
@@ -869,7 +867,7 @@ impl SocketOps for ZxioBackedSocket {
                 current_task.write_object(UserRef::<i32>::new(user_addr), &available)?;
                 Ok(SUCCESS)
             }
-            _ => default_ioctl(file, locked, current_task, request, arg),
+            _ => error!(ENOTTY),
         }
     }
 }

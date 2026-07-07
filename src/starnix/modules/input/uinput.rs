@@ -16,9 +16,7 @@ use starnix_core::device::{DeviceMode, DeviceOps};
 use starnix_core::fileops_impl_seekless;
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::task::{CurrentTask, Kernel};
-use starnix_core::vfs::{
-    self, FileObject, FileOps, FsString, default_ioctl, fileops_impl_noop_sync,
-};
+use starnix_core::vfs::{self, FileObject, FileOps, FsString, fileops_impl_noop_sync};
 use starnix_logging::log_warn;
 use starnix_modules_input_event_conversion::key_linux_to_fuchsia::LinuxKeyboardEventParser;
 use starnix_modules_input_event_conversion::touch_linux_to_fuchsia::LinuxTouchEventParser;
@@ -502,7 +500,7 @@ impl FileOps for UinputDeviceFile {
     fn ioctl(
         &self,
         locked: &mut Locked<Unlocked>,
-        file: &FileObject,
+        _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
@@ -525,7 +523,7 @@ impl FileOps for UinputDeviceFile {
             // others.
             _ => {
                 log_warn!("receive unknown ioctl request: {:?}", request);
-                default_ioctl(file, locked, current_task, request, arg)
+                error!(ENOTTY)
             }
         }
     }

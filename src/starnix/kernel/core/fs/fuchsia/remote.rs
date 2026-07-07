@@ -17,8 +17,8 @@ use crate::vfs::{
     Anon, AppendLockWriteGuard, CacheMode, DEFAULT_BYTES_PER_BLOCK, DirectoryEntryType, DirentSink,
     FallocMode, FileHandle, FileObject, FileOps, FileSystem, FileSystemHandle, FileSystemOps,
     FileSystemOptions, FsNode, FsNodeFlags, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString,
-    LookupVec, RenameContext, SeekTarget, SymlinkTarget, XattrOp, XattrStorage, default_ioctl,
-    default_seek, fileops_impl_directory, fileops_impl_nonseekable, fileops_impl_noop_sync,
+    LookupVec, RenameContext, SeekTarget, SymlinkTarget, XattrOp, XattrStorage, default_seek,
+    fileops_impl_directory, fileops_impl_nonseekable, fileops_impl_noop_sync,
     fileops_impl_seekable, fs_node_impl_not_dir, fs_node_impl_symlink, fs_node_impl_xattr_delegate,
 };
 use bstr::ByteSlice;
@@ -1838,17 +1838,6 @@ impl FileOps for RemoteFileObject {
         serve_file_tagged(current_task, file, current_task.current_creds().clone(), "remote_files")
             .map(|c| Some(c.0.into_channel().into()))
     }
-
-    fn ioctl(
-        &self,
-        locked: &mut Locked<Unlocked>,
-        file: &FileObject,
-        current_task: &CurrentTask,
-        request: u32,
-        arg: SyscallArg,
-    ) -> Result<SyscallResult, Errno> {
-        default_ioctl(file, locked, current_task, request, arg)
-    }
 }
 
 /// A file object that is not attached to a `RemoteFs`, which means it stores its own `RemoteIo`.
@@ -1932,17 +1921,6 @@ impl FileOps for AnonymousRemoteFileObject {
 
     fn sync(&self, _file: &FileObject, _current_task: &CurrentTask) -> Result<(), Errno> {
         self.io.sync().map_err(map_sync_io_client_error)
-    }
-
-    fn ioctl(
-        &self,
-        locked: &mut Locked<Unlocked>,
-        file: &FileObject,
-        current_task: &CurrentTask,
-        request: u32,
-        arg: SyscallArg,
-    ) -> Result<SyscallResult, Errno> {
-        default_ioctl(file, locked, current_task, request, arg)
     }
 }
 
@@ -2084,17 +2062,6 @@ impl FileOps for RemoteZxioFileObject {
 
     fn sync(&self, _file: &FileObject, _current_task: &CurrentTask) -> Result<(), Errno> {
         self.zxio.sync().map_err(map_sync_error)
-    }
-
-    fn ioctl(
-        &self,
-        locked: &mut Locked<Unlocked>,
-        file: &FileObject,
-        current_task: &CurrentTask,
-        request: u32,
-        arg: SyscallArg,
-    ) -> Result<SyscallResult, Errno> {
-        default_ioctl(file, locked, current_task, request, arg)
     }
 }
 

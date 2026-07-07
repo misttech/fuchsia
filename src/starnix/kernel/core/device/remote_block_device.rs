@@ -10,9 +10,7 @@ use crate::mm::MemoryAccessorExt;
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use crate::task::{CurrentTask, Kernel, KernelThreads, LockedAndTask};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
-use crate::vfs::{
-    FileObject, FileOps, FsString, NamespaceNode, SeekTarget, default_ioctl, default_seek,
-};
+use crate::vfs::{FileObject, FileOps, FsString, NamespaceNode, SeekTarget, default_seek};
 use anyhow::{Context as _, Error};
 use block_client::{BlockClient, BufferSlice, MutableBufferSlice, RemoteBlockClient};
 use fidl::endpoints::ClientEnd;
@@ -28,7 +26,7 @@ use starnix_uapi::device_id::{BLOCK_EXTENDED_MAJOR, DeviceId};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{MultiArchUserRef, UserRef};
-use starnix_uapi::{BLKGETSIZE, BLKGETSIZE64, errno, from_status_like_fdio, off_t};
+use starnix_uapi::{BLKGETSIZE, BLKGETSIZE64, errno, error, from_status_like_fdio, off_t};
 use std::collections::btree_map::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -350,8 +348,8 @@ impl FileOps for RemoteBlockDeviceFile {
 
     fn ioctl(
         &self,
-        locked: &mut Locked<Unlocked>,
-        file: &FileObject,
+        _locked: &mut Locked<Unlocked>,
+        _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
@@ -369,7 +367,7 @@ impl FileOps for RemoteBlockDeviceFile {
                 current_task.write_object(user_size, &size)?;
                 Ok(SUCCESS)
             }
-            _ => default_ioctl(file, locked, current_task, request, arg),
+            _ => error!(ENOTTY),
         }
     }
 }
