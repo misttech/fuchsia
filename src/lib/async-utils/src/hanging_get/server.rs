@@ -128,6 +128,15 @@ where
     }
 }
 
+impl<S, O, F> Drop for Subscriber<S, O, F>
+where
+    F: Fn(&S, O) -> bool,
+{
+    fn drop(&mut self) {
+        self.inner.lock().unsubscribe(self.key);
+    }
+}
+
 /// A `Publisher` is used to make changes to the state contained within a `HangingGet`.
 /// It is designed to be cheaply cloned and `Send`.
 ///
@@ -748,5 +757,21 @@ mod tests {
         let obs2 =
             ex.run_until_stalled(&mut recv2).expect("receiver 2 received subsequent observation");
         assert_eq!(obs2, Ok(1));
+    }
+
+    #[test]
+    fn subscriber_drop_unsubscribes() {
+        let mut broker = HangingGet::new(0i32, |s, o: oneshot::Sender<_>| {
+            o.send(s.clone()).map(|()| true).unwrap()
+        });
+        let subscriber = broker.new_subscriber();
+        assert_eq!(broker.inner.lock().observers.len(), 0);
+
+        let (sender, _receiver) = oneshot::channel();
+        subscriber.register(sender).unwrap();
+        assert_eq!(broker.inner.lock().observers.len(), 1);
+
+        drop(subscriber);
+        assert_eq!(broker.inner.lock().observers.len(), 0);
     }
 }
