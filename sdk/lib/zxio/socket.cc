@@ -24,6 +24,7 @@
 #include <zircon/types.h>
 
 #include <algorithm>
+#include <bitset>
 #include <cstring>
 #include <type_traits>
 
