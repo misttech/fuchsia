@@ -117,7 +117,7 @@
             "cortex-a53",
         {{/if}}
         {{#if (eq device.cpu.architecture "x64")}}
-            "Haswell,+smap,-check,-fsgsbase{{~#unless device.avx2_enabled~}},-avx2,-avx512f,-avx512pf,-avx512er,-avx512cd,-avx512vl,-avx512bw,-avx512dq,-avx512ifma,-avx512vbmi,-avx512-vpopcntdq,-avx512-vnni,-avx512-vbmi2,-avx512-gfni,-avx512-vaes,-avx512-vpclmulqdq,-avx512-bf16,-avx512-fp16,-avx512-bitalg,-avx512-vp2intersect{{~/unless~}}",
+            "Haswell,+smap,-check,-fsgsbase{{~#unless device.avx2_enabled~}},-avx2,-avx512f,-avx512pf,-avx512er,-avx512cd,-avx512vl,-avx512bw,-avx512dq,-avx512ifma,-avx512vbmi,-avx512-vpopcntdq,-avx512vnni,-avx512vbmi2,-gfni,-vaes,-vpclmulqdq,-avx512bitalg{{~/unless~}}",
         {{/if}}
         {{#if (eq device.cpu.architecture "riscv64")}}
             "rv64,svpbmt=true,v=true,vext_spec=v1.0",
@@ -129,7 +129,7 @@
             {{#if (eq host.architecture "arm64")}}
                 "host",
             {{else}}
-                "host,migratable=no,+invtsc{{~#unless device.avx2_enabled~}},-avx2,-avx512f,-avx512pf,-avx512er,-avx512cd,-avx512vl,-avx512bw,-avx512dq,-avx512ifma,-avx512vbmi,-avx512-vpopcntdq,-avx512-vnni,-avx512-vbmi2,-avx512-gfni,-avx512-vaes,-avx512-vpclmulqdq,-avx512-bf16,-avx512-fp16,-avx512-bitalg,-avx512-vp2intersect{{~/unless~}}",
+                "host,migratable=no,+invtsc{{~#unless device.avx2_enabled~}},-avx2,-avx512f,-avx512pf,-avx512er,-avx512cd,-avx512vl,-avx512bw,-avx512dq,-avx512ifma,-avx512vbmi,-avx512-vpopcntdq,-avx512vnni,-avx512vbmi2,-gfni,-vaes,-vpclmulqdq,-avx512bitalg{{~/unless~}}",
             {{/if}}
         {{else}}
             {{#if (eq host.os "macos")}}
