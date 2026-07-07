@@ -36,7 +36,6 @@ group("e2e_tests_netstack_quick") {
     "tests/dhcp:dhcpv4_duplicate_address_test",
     "tests/dhcp:dhcpv4_interop_basic_test",
     "tests/dhcp:dhcpv4_interop_combinatorial_options_test",
-    "tests/wlan/functional:beacon_loss_test",
     "tests/wlan/performance:channel_sweep_test_quick",
 
     # TODO(http://b/372467106): Uncomment once ToggleWlanInterfaceStressTest is

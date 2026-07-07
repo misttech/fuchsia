@@ -41,6 +41,7 @@ group("per_test_timeout_allowlist") {
     "//src/connectivity/network/tests/integration:netstack-multicast-forwarding-integration-test-no-err-logs_test_netstack-multicast-forwarding-integration-test",
     "//src/connectivity/network/tests/integration:netstack-multicast-forwarding-integration-test-with-err-logs_test_netstack-multicast-forwarding-integration-test",
     "//src/connectivity/wlan/tests/core:roam_request_test_should_succeed",
+    "//src/connectivity/wlan/tests/wlancfg:beacon_loss_test",
     "//src/connectivity/wlan/tests/wlancfg:vape_interop_test",
     "//src/firmware/paver/test:*",
     "//src/starnix/tests/gvisor:*",
@@ -49,7 +50,6 @@ group("per_test_timeout_allowlist") {
     "//src/testing/end_to_end/antlion/tests/wlan/compliance:wlan_security_compliance_11a_test",
     "//src/testing/end_to_end/antlion/tests/wlan/compliance:wlan_security_compliance_11bg_test",
     "//src/testing/end_to_end/antlion/tests/wlan/compliance:wlan_security_type_test",
-    "//src/testing/end_to_end/antlion/tests/wlan/functional:beacon_loss_test",
     "//src/testing/end_to_end/honeydew/honeydew/transports/fastboot/tests/functional_tests:fastboot_test",
     "//src/testing/end_to_end/honeydew/honeydew/transports/fastboot/tests/functional_tests:fastboot_using_serial_test",
 

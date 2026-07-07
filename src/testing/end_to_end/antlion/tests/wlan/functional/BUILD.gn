@@ -7,12 +7,6 @@ import("//src/testing/end_to_end/antlion/antlion_host_test.gni")
 
 assert(is_host, "antlion tests only supported for host testing")
 
-antlion_host_test("beacon_loss_test") {
-  main_source = "BeaconLossTest.py"
-  environments = wlan_ap_envs
-  timeout_secs = 900
-}
-
 antlion_host_test("channel_switch_test_without_soft_ap") {
   main_source = "ChannelSwitchTest.py"
   environments = wlan_ap_envs
@@ -122,7 +116,6 @@ antlion_host_test("wlan_wireless_network_management_test") {
 group("e2e_tests") {
   testonly = true
   public_deps = [
-    ":beacon_loss_test",
     ":channel_switch_test_with_soft_ap",
     ":channel_switch_test_without_soft_ap",
     ":wlan_reboot_ap_open_test",
