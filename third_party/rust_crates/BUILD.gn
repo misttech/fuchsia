@@ -1410,11 +1410,11 @@ if (!(current_os == "fuchsia")) {
 }
 
 group("phf") {
-  public_deps = [ ":phf-v0_13_1" ]
+  public_deps = [ ":phf-v0_14_0" ]
 }
 
-group("phf-0.13.1") {
-  public_deps = [ ":phf-v0_13_1" ]
+group("phf-0.14.0") {
+  public_deps = [ ":phf-v0_14_0" ]
 }
 
 group("pin-init") {
@@ -15013,90 +15013,90 @@ rustc_library("phf-v0_11_3") {
   applicable_licenses = [ ":phf-v0_11_3.license" ]
 }
 
-license("phf-v0_13_1.license") {
+license("phf-v0_14_0.license") {
   public_package_name = "phf"
-  license_files = [ "//third_party/rust_crates/vendor/phf-0.13.1/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/phf-0.14.0/LICENSE" ]
 }
 
-rustc_library("phf-v0_13_1") {
+rustc_library("phf-v0_14_0") {
   crate_name = "phf"
-  source_root = "//third_party/rust_crates/vendor/phf-0.13.1/src/lib.rs"
-  output_name = "phf-9bf32a0147262b62"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/vendor/phf-0.14.0/src/lib.rs"
+  output_name = "phf-54769849c2d71b1c"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":phf_macros-v0_13_1($host_toolchain)" ]
-  deps += [ ":phf_shared-v0_13_1" ]
+  deps += [ ":phf_macros-v0_14_0($host_toolchain)" ]
+  deps += [ ":phf_shared-v0_14_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=9bf32a0147262b62",
-    "-Cextra-filename=-9bf32a0147262b62",
+    "-Cmetadata=54769849c2d71b1c",
+    "-Cextra-filename=-54769849c2d71b1c",
     "--cfg=feature=\"macros\"",
     "--cfg=feature=\"phf_macros\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":phf-v0_13_1.license" ]
+  applicable_licenses = [ ":phf-v0_14_0.license" ]
 }
 
-license("phf_generator-v0_13_1.license") {
+license("phf_generator-v0_14_0.license") {
   public_package_name = "phf_generator"
   license_files =
-      [ "//third_party/rust_crates/vendor/phf_generator-0.13.1/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/phf_generator-0.14.0/LICENSE" ]
 }
 
-rustc_library("phf_generator-v0_13_1") {
+rustc_library("phf_generator-v0_14_0") {
   crate_name = "phf_generator"
   source_root =
-      "//third_party/rust_crates/vendor/phf_generator-0.13.1/src/lib.rs"
-  output_name = "phf_generator-a934a2cb14453966"
-  edition = "2021"
+      "//third_party/rust_crates/vendor/phf_generator-0.14.0/src/lib.rs"
+  output_name = "phf_generator-a9ac122eee25918c"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
   deps += [ ":fastrand-v2_3_0" ]
-  deps += [ ":phf_shared-v0_13_1" ]
+  deps += [ ":phf_shared-v0_14_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=a934a2cb14453966",
-    "-Cextra-filename=-a934a2cb14453966",
+    "-Cmetadata=a9ac122eee25918c",
+    "-Cextra-filename=-a9ac122eee25918c",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":phf_generator-v0_13_1.license" ]
+  applicable_licenses = [ ":phf_generator-v0_14_0.license" ]
 }
 
-license("phf_macros-v0_13_1.license") {
+license("phf_macros-v0_14_0.license") {
   public_package_name = "phf_macros"
   license_files =
-      [ "//third_party/rust_crates/vendor/phf_macros-0.13.1/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/phf_macros-0.14.0/LICENSE" ]
 }
 
-rustc_macro("phf_macros-v0_13_1") {
+rustc_macro("phf_macros-v0_14_0") {
   crate_name = "phf_macros"
-  source_root = "//third_party/rust_crates/vendor/phf_macros-0.13.1/src/lib.rs"
-  output_name = "phf_macros-9412e6610c420bc9"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/vendor/phf_macros-0.14.0/src/lib.rs"
+  output_name = "phf_macros-6ce504406dd8b6c6"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":phf_generator-v0_13_1" ]
-  deps += [ ":phf_shared-v0_13_1" ]
+  deps += [ ":phf_generator-v0_14_0" ]
+  deps += [ ":phf_shared-v0_14_0" ]
   deps += [ ":proc-macro2-v1_0_106" ]
   deps += [ ":quote-v1_0_45" ]
   deps += [ ":syn-v2_0_117" ]
@@ -15105,13 +15105,13 @@ rustc_macro("phf_macros-v0_13_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=9412e6610c420bc9",
-    "-Cextra-filename=-9412e6610c420bc9",
+    "-Cmetadata=6ce504406dd8b6c6",
+    "-Cextra-filename=-6ce504406dd8b6c6",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":phf_macros-v0_13_1.license" ]
+  applicable_licenses = [ ":phf_macros-v0_14_0.license" ]
 }
 
 license("phf_shared-v0_11_3.license") {
@@ -15147,17 +15147,17 @@ rustc_library("phf_shared-v0_11_3") {
   applicable_licenses = [ ":phf_shared-v0_11_3.license" ]
 }
 
-license("phf_shared-v0_13_1.license") {
+license("phf_shared-v0_14_0.license") {
   public_package_name = "phf_shared"
   license_files =
-      [ "//third_party/rust_crates/vendor/phf_shared-0.13.1/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/phf_shared-0.14.0/LICENSE" ]
 }
 
-rustc_library("phf_shared-v0_13_1") {
+rustc_library("phf_shared-v0_14_0") {
   crate_name = "phf_shared"
-  source_root = "//third_party/rust_crates/vendor/phf_shared-0.13.1/src/lib.rs"
-  output_name = "phf_shared-f2ba728d426e6624"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/vendor/phf_shared-0.14.0/src/lib.rs"
+  output_name = "phf_shared-866e4622657108ad"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -15169,13 +15169,13 @@ rustc_library("phf_shared-v0_13_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=f2ba728d426e6624",
-    "-Cextra-filename=-f2ba728d426e6624",
+    "-Cmetadata=866e4622657108ad",
+    "-Cextra-filename=-866e4622657108ad",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":phf_shared-v0_13_1.license" ]
+  applicable_licenses = [ ":phf_shared-v0_14_0.license" ]
 }
 
 license("pin-init-v0_3_0.license") {
@@ -21171,7 +21171,7 @@ rustc_library("tempfile-v3_27_0") {
     deps += [ ":rustix-v1_1_4" ]
   }
   if (true || false || false) {
-    deps += [ ":getrandom-v0_3_4" ]
+    deps += [ ":getrandom-v0_4_3" ]
   }
   if (false) {
     deps += [ ":windows-sys-v0_61_2" ]

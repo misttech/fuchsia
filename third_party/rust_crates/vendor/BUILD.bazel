@@ -1933,14 +1933,14 @@ alias(
 )
 
 alias(
-    name = "phf-0.13.1",
-    actual = "//third_party/rust_crates/vendor/phf-0.13.1:phf",
+    name = "phf-0.14.0",
+    actual = "//third_party/rust_crates/vendor/phf-0.14.0:phf",
     tags = ["manual"],
 )
 
 alias(
     name = "phf",
-    actual = "//third_party/rust_crates/vendor/phf-0.13.1:phf",
+    actual = "//third_party/rust_crates/vendor/phf-0.14.0:phf",
     tags = ["manual"],
 )
 
