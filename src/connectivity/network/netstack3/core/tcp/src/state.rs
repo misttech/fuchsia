@@ -637,7 +637,9 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
                                 SynRcvd {
                                     iss: *iss,
                                     irs: seg_seq,
-                                    timestamp: Some(now),
+                                    // Simultaneous Open should keep the
+                                    // timestamp from the original SYN sent.
+                                    timestamp: *syn_sent_ts,
                                     retrans_timer: RetransTimer::new_with_user_deadline(
                                         now,
                                         Rto::DEFAULT,
@@ -4469,7 +4471,7 @@ mod test {
         SynRcvd {
             iss: TEST_IRS,
             irs: TEST_ISS,
-            timestamp: Some(FakeInstant::from(RTT)),
+            timestamp: Some(FakeInstant::default()),
             retrans_timer: RetransTimer::new(
                 FakeInstant::from(RTT),
                 Rto::DEFAULT,
@@ -5284,10 +5286,12 @@ mod test {
     fn simultaneous_open() {
         let mut clock = FakeInstantCtx::default();
         let counters = FakeTcpCounters::default();
+        let time1 = clock.now();
+        let timestamp1 = timestamp_now(&clock);
         let (syn_sent1, syn1) = Closed::<Initial>::connect(
             ISS_1,
             TIMESTAMP_OFFSET,
-            clock.now(),
+            time1,
             (),
             Default::default(),
             DEVICE_MAXIMUM_SEGMENT_SIZE,
@@ -5297,7 +5301,7 @@ mod test {
         let (syn_sent2, syn2) = Closed::<Initial>::connect(
             ISS_2,
             TIMESTAMP_OFFSET,
-            clock.now(),
+            time1,
             (),
             Default::default(),
             DEVICE_MAXIMUM_SEGMENT_SIZE,
@@ -5305,7 +5309,6 @@ mod test {
             &SocketOptions::default_for_state_tests(),
         );
 
-        let time1 = timestamp_now(&clock);
         assert_eq!(
             syn1,
             Segment::syn(
@@ -5315,7 +5318,7 @@ mod test {
                     mss: Some(DEVICE_MAXIMUM_SEGMENT_SIZE),
                     window_scale: Some(WindowScale::default()),
                     sack_permitted: SACK_PERMITTED,
-                    timestamp: Some(TimestampOption::new(time1, TS_ECHO_REPLY_FOR_NON_ACKS)),
+                    timestamp: Some(TimestampOption::new(timestamp1, TS_ECHO_REPLY_FOR_NON_ACKS)),
                 },
             )
         );
@@ -5328,7 +5331,7 @@ mod test {
                     mss: Some(DEVICE_MAXIMUM_SEGMENT_SIZE),
                     window_scale: Some(WindowScale::default()),
                     sack_permitted: SACK_PERMITTED,
-                    timestamp: Some(TimestampOption::new(time1, TS_ECHO_REPLY_FOR_NON_ACKS)),
+                    timestamp: Some(TimestampOption::new(timestamp1, TS_ECHO_REPLY_FOR_NON_ACKS)),
                 },
             )
         );
@@ -5336,8 +5339,10 @@ mod test {
         let mut state1 = State::SynSent(syn_sent1);
         let mut state2 = State::SynSent(syn_sent2);
 
-        clock.sleep(RTT);
-        let time2 = timestamp_now(&clock);
+        // NB: Because we've only sent a one-way message thus far, progress the
+        // clock by a half of an RTT.
+        clock.sleep(RTT / 2);
+        let timestamp2 = timestamp_now(&clock);
         let (seg, passive_open) = state1
             .on_segment_with_default_options::<_, ClientlessBufferProvider>(
                 syn2,
@@ -5365,7 +5370,7 @@ mod test {
                     mss: Some(DEVICE_MAXIMUM_SEGMENT_SIZE),
                     window_scale: Some(WindowScale::default()),
                     sack_permitted: SACK_PERMITTED,
-                    timestamp: Some(TimestampOption::new(time2, time1)),
+                    timestamp: Some(TimestampOption::new(timestamp2, timestamp1)),
                 },
             )
         );
@@ -5379,7 +5384,7 @@ mod test {
                     mss: Some(DEVICE_MAXIMUM_SEGMENT_SIZE),
                     window_scale: Some(WindowScale::default()),
                     sack_permitted: SACK_PERMITTED,
-                    timestamp: Some(TimestampOption::new(time2, time1)),
+                    timestamp: Some(TimestampOption::new(timestamp2, timestamp1)),
                 },
             )
         );
@@ -5387,7 +5392,7 @@ mod test {
         assert_matches!(state1, State::SynRcvd(ref syn_rcvd) if syn_rcvd == &SynRcvd {
             iss: ISS_1,
             irs: ISS_2,
-            timestamp: Some(clock.now()),
+            timestamp: Some(time1),
             retrans_timer: RetransTimer::new(
                 clock.now(),
                 Rto::DEFAULT,
@@ -5414,7 +5419,7 @@ mod test {
         assert_matches!(state2, State::SynRcvd(ref syn_rcvd) if syn_rcvd == &SynRcvd {
             iss: ISS_2,
             irs: ISS_1,
-            timestamp: Some(clock.now()),
+            timestamp: Some(time1),
             retrans_timer: RetransTimer::new(
                 clock.now(),
                 Rto::DEFAULT,
@@ -5439,8 +5444,10 @@ mod test {
             },
         });
 
-        clock.sleep(RTT);
-        let time3 = timestamp_now(&clock);
+        // NB: Now that we've done SYN + SYN_ACK, a full round trip has occurred.
+        // Progress the clock by another half of an RTT.
+        clock.sleep(RTT / 2);
+        let timestamp3 = timestamp_now(&clock);
         assert_eq!(
             state1.on_segment_with_default_options::<_, ClientlessBufferProvider>(
                 syn_ack2,
@@ -5452,7 +5459,7 @@ mod test {
                     ISS_1 + 1,
                     ISS_2 + 1,
                     UnscaledWindowSize::from(u16::MAX),
-                    default_segment_options(time3, time2),
+                    default_segment_options(timestamp3, timestamp2),
                 )),
                 None
             )
@@ -5468,7 +5475,7 @@ mod test {
                     ISS_2 + 1,
                     ISS_1 + 1,
                     UnscaledWindowSize::from(u16::MAX),
-                    default_segment_options(time3, time2),
+                    default_segment_options(timestamp3, timestamp2),
                 )),
                 None
             )
@@ -5492,7 +5499,7 @@ mod test {
                     remaining_quickacks: default_quickack_counter() - 1,
                     last_segment_at: Some(clock.now()),
                     ts_opt: TimestampOptionState::Enabled {
-                        ts_recent: time2,
+                        ts_recent: timestamp2,
                         last_ack_sent: ISS_2 + 1,
                         ts_val: TimestampValueState {
                             offset: TIMESTAMP_OFFSET,
@@ -5523,7 +5530,7 @@ mod test {
                     remaining_quickacks: default_quickack_counter() - 1,
                     last_segment_at: Some(clock.now()),
                     ts_opt: TimestampOptionState::Enabled {
-                        ts_recent: time2,
+                        ts_recent: timestamp2,
                         last_ack_sent: ISS_1 + 1,
                         ts_val: TimestampValueState {
                             offset: TIMESTAMP_OFFSET,
