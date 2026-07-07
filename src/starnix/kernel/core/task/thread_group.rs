@@ -626,6 +626,51 @@ impl Releasable for ZombieProcess {
     }
 }
 
+/// A zombie process that is pending notification.
+///
+/// # Thread Safety
+///
+/// Notifications are generally produced in contexts in which a [`ThreadGroup`] state lock is held.
+/// Any such lock must be released before notifications are delivered. The notification's
+/// recipient thread group may be:
+/// - The originating thread group, in which case delivery while locked would self-deadlock.
+/// - One of this thread group's ancestors, in which case delivery while locked would invert the
+///   parent-child ordering of [`ThreadGroup`] locks.
+///
+/// The [`PidTable`] lock must be held continuously between [`ZombieNotification`] production and
+/// delivery to protect against concurrent exit races. Delivery requires releasing [`ThreadGroup`]
+/// state locks. If the recipient thread group exits before the notification is delivered, subreaper
+/// identification becomes impossible and the zombie must be reaped without notifying observers.
+/// Holding the [`PidTable`] lock throughout notification ensures the recipient cannot concurrently
+/// exit.
+pub struct ZombieNotification {
+    /// The recipient [`ThreadGroup`], which is generally the zombie's parent.
+    pub recipient: Weak<ThreadGroup>,
+
+    /// The zombie process to notify the parent of.
+    pub zombie: OwnedRef<ZombieProcess>,
+}
+
+impl ZombieNotification {
+    pub fn new(recipient: Weak<ThreadGroup>, zombie: OwnedRef<ZombieProcess>) -> Self {
+        Self { recipient, zombie }
+    }
+
+    /// Delivers the zombie notification to the parent.
+    ///
+    /// # Thread Safety
+    ///
+    /// Acquires [`ThreadGroup`] state locks.
+    pub fn deliver(self, pids: &mut PidTable) {
+        if let Some(parent) = self.recipient.upgrade() {
+            parent.do_zombie_notifications(self.zombie);
+        } else {
+            log_warn!("Zombie {} reaped silently", self.zombie.pid());
+            self.zombie.release(pids);
+        }
+    }
+}
+
 impl ThreadGroup {
     /// Creates a ThreadGroup for a regular userspace process.
     pub fn new<L>(
@@ -824,14 +869,17 @@ impl ThreadGroup {
 
         state.run_state = ThreadGroupRunState::Exiting(exit_status.clone());
 
-        // Drop ptrace zombies
-        state.zombie_ptracees.release(&mut pids);
+        // Detach from any ptraced zombie tasks.
+        let zombie_notifications = state.zombie_ptracees.detach_all(&mut pids);
 
         // Interrupt each task. Unlock the group because send_signal will lock the group in order
         // to call set_stopped.
         let tasks = state.tasks();
         drop(state);
 
+        for notification in zombie_notifications {
+            notification.deliver(&mut pids);
+        }
         self.detach_ptracees(locked, &mut pids);
 
         for task in tasks {
@@ -900,6 +948,9 @@ impl ThreadGroup {
                 exit_status
             };
 
+            // Detach from any ptraced zombie tasks.
+            let zombie_notifications = state.zombie_ptracees.detach_all(&mut pids);
+
             // Replace PID table entry with a zombie.
             let exit_info =
                 ProcessExitInfo { status: exit_status, exit_signal: state.exit_signal.clone() };
@@ -923,6 +974,10 @@ impl ThreadGroup {
             // `disassociate_controlling_terminal` can not be called while holding the
             // ThreadGroup state lock.
             session.disassociate_controlling_terminal(locked);
+
+            for notification in zombie_notifications {
+                notification.deliver(&mut pids);
+            }
 
             // Remove the process from the cgroup2 pid table after TG lock is dropped.
             // This function will hold the CgroupState lock which should be before the TG lock. See
@@ -971,7 +1026,6 @@ impl ThreadGroup {
                     for zombie in state.zombie_children.drain(..) {
                         zombie.release(&mut pids);
                     }
-                    state.zombie_ptracees.release(&mut pids);
                 }
             }
 
@@ -1076,16 +1130,29 @@ impl ThreadGroup {
         parent: &ThreadGroup,
         zombie: OwnedRef<ZombieProcess>,
     ) -> Option<OwnedRef<ZombieProcess>> {
-        if self.read().zombie_ptracees.has_tracee(tracee.tid) {
+        let mut state = self.write();
+        if state.zombie_ptracees.has_tracee(tracee.tid) {
             if self == parent {
                 // The tracer is the parent and has not consumed the
                 // notification.  Don't bother with the ptracee stuff, and just
                 // notify the parent.
-                self.write().zombie_ptracees.remove(pids, tracee.tid);
+                let zombie_notification = state.zombie_ptracees.detach(pids, tracee.tid);
+                drop(state);
+                if let Some(zombie_notification) = zombie_notification {
+                    zombie_notification.deliver(pids);
+                }
                 return Some(zombie);
             } else {
                 // The tracer is not the parent and the tracer has not consumed
                 // the notification.
+                if !state.is_running() {
+                    // The tracer exited concurrently. Notify the parent.
+                    return Some(zombie);
+                }
+
+                // THREAD SAFETY: Release the tracer state lock before acquiring the parent state
+                // lock to respect parent => child lock ordering.
+                drop(state);
                 {
                     // Tell the parent to expect a notification later.
                     let tracee_pgid = tracee.thread_group().read().process_group.leader;
@@ -1097,7 +1164,12 @@ impl ThreadGroup {
                     ));
                     parent_state.children.remove(&tracee.get_pid());
                 }
+
                 // Tell the tracer that there is a notification pending.
+                // THREAD SAFETY: Checking for concurrent exit with is_running(), releasing the
+                // tracer state lock, then reacquiring the lock introduces a TOCTOU race. This
+                // hazard is safe because exit synchronizes on the PidTable lock, which is held
+                // continuously.
                 let mut state = self.write();
                 state.zombie_ptracees.set_parent_of(tracee.tid, Some(zombie), parent);
                 tracee.write().notify_ptracers();

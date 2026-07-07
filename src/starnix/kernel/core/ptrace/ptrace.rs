@@ -12,7 +12,7 @@ use crate::signals::{
 };
 use crate::task::{
     CurrentTask, PidTable, ProcessSelector, Task, TaskMutableState, ThreadGroup, ThreadState,
-    WaitQueue, ZombieProcess,
+    WaitQueue, ZombieNotification, ZombieProcess,
 };
 use bitflags::bitflags;
 use starnix_logging::track_stub;
@@ -20,7 +20,7 @@ use starnix_registers::HeapRegs;
 use starnix_sync::{LockBefore, Locked, MmDumpable, ThreadGroupLimits, Unlocked};
 use starnix_syscalls::SyscallResult;
 use starnix_syscalls::decls::SyscallDecl;
-use starnix_types::ownership::{OwnedRef, Releasable, ReleaseGuard};
+use starnix_types::ownership::{OwnedRef, Releasable};
 use starnix_uapi::auth::PTRACE_MODE_ATTACH_REALCREDS;
 use starnix_uapi::elf::ElfNoteType;
 use starnix_uapi::errors::Errno;
@@ -463,32 +463,21 @@ struct TracedZombie {
     /// An artificial zombie that must be delivered to the tracer program.
     artificial_zombie: ZombieProcess,
 
-    /// An optional real zombie to be sent to the given ThreadGroup after the zomboe has been
-    /// delivered to the tracer.
-    delegate: Option<(Weak<ThreadGroup>, OwnedRef<ZombieProcess>)>,
-}
-
-impl Releasable for TracedZombie {
-    type Context<'a> = &'a mut PidTable;
-
-    fn release<'a>(self, pids: &'a mut PidTable) {
-        self.artificial_zombie.release(pids);
-        if let Some((_, z)) = self.delegate {
-            z.release(pids);
-        }
-    }
+    /// The real zombie notification to be sent after the artificial zombie has been delivered to
+    /// the tracer.
+    notification: Option<ZombieNotification>,
 }
 
 impl TracedZombie {
-    fn new(artificial_zombie: ZombieProcess) -> ReleaseGuard<Self> {
-        ReleaseGuard::from(Self { artificial_zombie, delegate: None })
+    fn new(artificial_zombie: ZombieProcess) -> Self {
+        Self { artificial_zombie, notification: None }
     }
 
-    fn new_with_delegate(
+    fn new_with_notification(
         artificial_zombie: ZombieProcess,
-        delegate: (Weak<ThreadGroup>, OwnedRef<ZombieProcess>),
-    ) -> ReleaseGuard<Self> {
-        ReleaseGuard::from(Self { artificial_zombie, delegate: Some(delegate) })
+        notification: ZombieNotification,
+    ) -> Self {
+        Self { artificial_zombie, notification: Some(notification) }
     }
 
     fn set_parent(
@@ -497,10 +486,18 @@ impl TracedZombie {
         new_parent: &ThreadGroup,
     ) {
         if let Some(new_zombie) = new_zombie {
-            self.delegate = Some((new_parent.weak_self.clone(), new_zombie));
-        } else {
-            self.delegate = self.delegate.take().map(|(_, z)| (new_parent.weak_self.clone(), z));
+            self.notification = Some(ZombieNotification {
+                recipient: new_parent.weak_self.clone(),
+                zombie: new_zombie,
+            });
+        } else if let Some(ref mut notification) = self.notification {
+            notification.recipient = new_parent.weak_self.clone();
         }
+    }
+
+    fn detach(self, pids: &mut PidTable) -> Option<ZombieNotification> {
+        self.artificial_zombie.release(pids);
+        self.notification
     }
 }
 
@@ -511,7 +508,13 @@ impl TracedZombie {
 pub struct ZombiePtracees {
     /// A list of zombies that have to be delivered to the ptracer.  The key is
     /// the tid of the traced process.
-    zombies: BTreeMap<tid_t, ReleaseGuard<TracedZombie>>,
+    zombies: BTreeMap<tid_t, TracedZombie>,
+}
+
+impl Drop for ZombiePtracees {
+    fn drop(&mut self) {
+        assert_eq!(self.zombies.len(), 0);
+    }
 }
 
 impl ZombiePtracees {
@@ -529,9 +532,22 @@ impl ZombiePtracees {
         }
     }
 
-    /// Delete any zombie ptracees for the given tid.
-    pub fn remove(&mut self, pids: &mut PidTable, tid: tid_t) {
-        self.zombies.remove(&tid).release(pids);
+    /// Detaches from the zombie tracee with the given TID.
+    ///
+    /// Returns the notification to deliver to the tracee's real parent.
+    pub fn detach(&mut self, pids: &mut PidTable, tid: tid_t) -> Option<ZombieNotification> {
+        self.zombies.remove(&tid).and_then(|traced_zombie| traced_zombie.detach(pids))
+    }
+
+    /// Detaches from every zombie tracee.
+    ///
+    /// Returns the notifications to deliver to the tracees' real parents.
+    pub fn detach_all(&mut self, pids: &mut PidTable) -> Vec<ZombieNotification> {
+        let traced_zombies = std::mem::replace(&mut self.zombies, Default::default());
+        traced_zombies
+            .into_iter()
+            .filter_map(|(_, traced_zombie)| traced_zombie.detach(pids))
+            .collect()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -549,9 +565,9 @@ impl ZombiePtracees {
         match self.zombies.entry(tracee) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 if let Some(new_zombie) = new_zombie {
-                    entry.insert(TracedZombie::new_with_delegate(
+                    entry.insert(TracedZombie::new_with_notification(
                         new_zombie.as_artificial(),
-                        (new_parent.weak_self.clone(), new_zombie),
+                        ZombieNotification::new(new_parent.weak_self.clone(), new_zombie),
                     ));
                 }
             }
@@ -577,22 +593,6 @@ impl ZombiePtracees {
         }
         let mut new_state = new_parent.write();
         new_state.deferred_zombie_ptracers.append(&mut lockless_list);
-    }
-
-    /// Empty the table and notify all of the remaining parents.  Used if the
-    /// tracer terminates or detaches without acknowledging all pending tracees.
-    pub fn release(&mut self, pids: &mut PidTable) {
-        let mut entry = self.zombies.pop_first();
-        while let Some((_, mut zombie)) = entry {
-            if let Some((tg, z)) = zombie.delegate.take() {
-                if let Some(tg) = tg.upgrade() {
-                    tg.do_zombie_notifications(z);
-                }
-            }
-            zombie.release(pids);
-
-            entry = self.zombies.pop_first();
-        }
     }
 
     /// Returns true iff there is a zombie waiting to be delivered to the tracers matching the
@@ -630,8 +630,10 @@ impl ZombiePtracees {
         if !options.keep_waitable_state {
             // Maybe notify child waiters.
             result = self.zombies.remove(&t).map(|traced_zombie| {
-                let traced_zombie = ReleaseGuard::take(traced_zombie);
-                (traced_zombie.artificial_zombie, traced_zombie.delegate)
+                (
+                    traced_zombie.artificial_zombie,
+                    traced_zombie.notification.map(|n| (n.recipient, n.zombie)),
+                )
             });
         } else {
             result = Some((found_zombie.as_artificial(), None));
@@ -788,7 +790,10 @@ where
     }
     let tid = tracee.get_tid();
     thread_group.ptracees.lock().remove(&tid);
-    thread_group.write().zombie_ptracees.remove(pids, tid);
+    let zombie_notification = thread_group.write().zombie_ptracees.detach(pids, tid);
+    if let Some(zombie_notification) = zombie_notification {
+        zombie_notification.deliver(pids);
+    }
     Ok(())
 }
 

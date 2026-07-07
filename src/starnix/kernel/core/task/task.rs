@@ -1008,6 +1008,10 @@ impl Task {
             if let Some(tracer_tg) = tracer_tg {
                 drop(state);
                 let mut tracer_state = tracer_tg.write();
+                if !tracer_state.is_running() {
+                    // An exiting or exited tracer cannot accept new zombies.
+                    return;
+                }
 
                 let exit_status = self.exit_status().unwrap_or_else(|| {
                     starnix_logging::log_error!("Exiting without an exit code.");

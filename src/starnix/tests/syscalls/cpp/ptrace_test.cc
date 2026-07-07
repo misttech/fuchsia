@@ -1239,6 +1239,69 @@ TEST(PtraceTest, RunningTraceeDetachedOnNormalTracerExit) {
   EXPECT_TRUE(helper.WaitForChildren());
 }
 
+// Tests that a tracer thread group detaches from its zombie tracees upon normal exit (i.e. when the
+// last thread in the tracer thread group exits).
+TEST(PtraceTest, ZombieTraceeDetachedOnNormalTracerExit) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([]() {
+    test_helper::ForkHelper trace_fork_helper;
+    trace_fork_helper.OnlyWaitForForkedChildren();
+
+    test_helper::Rendezvous tracee_ready = test_helper::MakeRendezvous();
+
+    // Create the tracee as its own process. The tracer thread group must only have one thread.
+    pid_t tracee_pid = trace_fork_helper.RunInForkedProcess(
+        [tracee_ready = std::move(tracee_ready.poker)]() mutable {
+          // Allow a non-parent tracer.
+          SAFE_SYSCALL(prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0));
+          tracee_ready.poke();
+          // Stop to wait for SIGKILL to make a zombie of this tracee.
+          SAFE_SYSCALL(raise(SIGSTOP));
+          _exit(EXIT_SUCCESS);
+        });
+
+    pid_t tracer_pid = trace_fork_helper.RunInForkedProcess(
+        [tracee_ready = std::move(tracee_ready.holder), tracee_pid]() mutable {
+          // Attach to the tracee once it's ready.
+          tracee_ready.hold();
+          ASSERT_THAT(ptrace(PTRACE_ATTACH, tracee_pid, nullptr, nullptr), SyscallSucceeds());
+
+          // Wait for the tracee to start and stop, then kill it and wait for it to become a zombie.
+          int status;
+          SAFE_SYSCALL(waitpid(tracee_pid, &status, 0));
+          ASSERT_TRUE(WIFSTOPPED(status));
+          siginfo_t siginfo;
+          SAFE_SYSCALL(kill(tracee_pid, SIGKILL));
+          SAFE_SYSCALL(waitid(P_PID, tracee_pid, &siginfo, WEXITED | WNOWAIT));
+          ASSERT_EQ(siginfo.si_code, CLD_KILLED);
+          ASSERT_EQ(siginfo.si_status, SIGKILL);
+
+          // Once the tracee is a zombie, cause the tracer thread group to exit normally by exiting
+          // its last thread directly with SYS_exit.
+          SAFE_SYSCALL(syscall(SYS_exit, EXIT_SUCCESS));
+        });
+
+    // Wait for the tracer to become a zombie.
+    siginfo_t siginfo;
+    SAFE_SYSCALL(waitid(P_PID, tracer_pid, &siginfo, WEXITED | WNOWAIT));
+    ASSERT_EQ(siginfo.si_code, CLD_EXITED);
+    ASSERT_EQ(siginfo.si_status, EXIT_SUCCESS);
+
+    // Wait for the tracee to be waitable by us again because its tracer exited and detached.
+    SAFE_SYSCALL(waitid(P_PID, tracee_pid, &siginfo, WEXITED | WNOWAIT));
+    ASSERT_EQ(siginfo.si_code, CLD_KILLED);
+    ASSERT_EQ(siginfo.si_status, SIGKILL);
+
+    // Reap the tracer before the tracee to ensure they are fully disconnected.
+    ASSERT_TRUE(trace_fork_helper.WaitForChild(tracer_pid).determined_result);
+    trace_fork_helper.ExpectSignal(SIGKILL);
+    ASSERT_TRUE(trace_fork_helper.WaitForChild(tracee_pid).determined_result);
+  });
+
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
 TEST(PtraceTest, PtraceAttachesToParentThread) {
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([]() {
