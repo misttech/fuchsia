@@ -9,8 +9,8 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::{ToTokens, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::{
-    Attribute, Block, Error, Expr, Ident, Item, ItemFn, ItemMod, ItemUse, Lit, LitStr, Meta,
-    ReturnType, Type, parse_macro_input,
+    Attribute, Block, Error, Expr, Ident, Item, ItemFn, ItemMod, Lit, LitStr, Meta, ReturnType,
+    Type, parse_macro_input,
 };
 
 const SECTION_NAME: &str = ".data.rel.ro.unittest_testcases";
@@ -122,41 +122,32 @@ struct TestSuite {
     ident: Ident,
     docstring: String,
     custom_name: Option<String>,
-    uses: Vec<ItemUse>,
+    non_test_items: Vec<Item>,
     cases: Vec<TestCase>,
 }
 
 impl Parse for TestSuite {
     fn parse(input: ParseStream<'_>) -> Result<Self, Error> {
-        let mut input_mod: ItemMod = input.parse()?;
+        let input_mod: ItemMod = input.parse()?;
         let mod_ident = &input_mod.ident;
 
         let docstring =
             get_single_line_docstring(mod_ident, &input_mod.attrs, "test suite module")?;
 
-        let content = input_mod
-            .content
-            .take()
-            .ok_or_else(|| Error::new_spanned(mod_ident, "a test suite module must by non-empty)"))?
-            .1;
-
+        let content = input_mod.content.map(|(_, items)| items).unwrap_or(Vec::new());
         let mut cases = Vec::new();
-        let mut uses = Vec::new();
-        for item in content {
-            match item {
-                Item::Fn(item_fn) => {
-                    cases.push(TestCase::from_item_fn(item_fn)?);
-                }
-                Item::Use(item_use) => {
-                    uses.push(item_use);
-                }
-                _ => {
-                    return Err(Error::new_spanned(
-                        item,
-                        "a test suite module may only contain test functions and use statements",
-                    ));
+        let mut non_test_items = Vec::new();
+        for mut item in content {
+            if let Item::Fn(item_fn) = &mut item {
+                let test_attr_idx =
+                    item_fn.attrs.iter().position(|attr| attr.path().is_ident("test"));
+                if let Some(idx) = test_attr_idx {
+                    item_fn.attrs.remove(idx);
+                    cases.push(TestCase::from_item_fn(item_fn.clone())?);
+                    continue;
                 }
             }
+            non_test_items.push(item);
         }
 
         if cases.is_empty() {
@@ -166,7 +157,7 @@ impl Parse for TestSuite {
             ));
         }
 
-        Ok(Self { ident: mod_ident.clone(), docstring, custom_name: None, uses, cases })
+        Ok(Self { ident: mod_ident.clone(), docstring, custom_name: None, non_test_items, cases })
     }
 }
 
@@ -181,7 +172,7 @@ impl ToTokens for TestSuite {
         let suite_desc_c_str = format!("{}\0", self.docstring);
         let doc_comment = format!(" {}", self.docstring);
 
-        let uses = &self.uses;
+        let non_test_items = &self.non_test_items;
         let cases = &self.cases;
         let reg_entries = cases.iter().map(|case| {
             let ident = &case.ident;
@@ -198,12 +189,12 @@ impl ToTokens for TestSuite {
         tokens.extend(quote! {
             #[doc = #doc_comment]
             pub mod #mod_ident {
-                use super::*;
-
-                #( #uses )*
-
                 #[cfg(not(ktest))]
                 compile_error!("#[test_suite] may only be used in a cfg(ktest) context");
+
+                use super::*;
+
+                #( #non_test_items )*
 
                 #( #cases )*
 

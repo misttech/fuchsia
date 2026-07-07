@@ -26,8 +26,7 @@ pub use zx_status::Status as __Status;
 /// A test suite module must meet the following criteria:
 /// * It must have a one-line docstring. This line becomes the description of
 ///   the suite on the kernel command-line.
-/// * It must consist only of 'test functions' (see below).
-/// * It must contain at least one test function.
+/// * It must contain at least one test function; it may contain any other items.
 ///
 /// A test function must meet the following criteria:
 /// * It too must have a one-line docstring. This line becomes the description
@@ -43,7 +42,10 @@ pub use zx_status::Status as __Status;
 /// #[cfg(ktest)]
 /// #[test_suite(name = "optional_name")]
 /// mod my_suite {
+///     /* non-test items... */
+///
 ///     /// Brief test case description.
+///     #[test]
 ///     fn my_case() {
 ///         assert_false!(false);
 ///         expect_true!(1 == 1, "expectation with a message");
@@ -548,17 +550,34 @@ mod tests {
     #[test_suite(name = "one_function")]
     mod suite_with_one_function {
         /// Empty function description.
+        #[test]
         fn empty() {}
     }
 
-    /// Suite testing use statements.
+    /// Suite with non-test items.
     #[test_suite]
-    mod suite_with_use {
+    mod suite_with_other_items {
         use std::vec;
+
+        trait Countable {
+            fn count(&self) -> usize;
+        }
+
+        impl<T> Countable for Vec<T> {
+            fn count(&self) -> usize {
+                self.len()
+            }
+        }
+
+        fn get_count<T: Countable>(countable: T) -> usize {
+            countable.count()
+        }
+
         /// Check use statement.
-        fn check_use() {
+        #[test]
+        fn check_other_items() {
             let v = vec![1, 2, 3];
-            expect_eq!(v.len(), 3);
+            expect_eq!(get_count(v), 3);
         }
     }
 
@@ -566,6 +585,7 @@ mod tests {
     #[test_suite]
     mod assertions {
         /// Success cases.
+        #[test]
         fn test_success() {
             assert_eq!(1, 1);
             assert_ne!(1, 2);
@@ -590,72 +610,84 @@ mod tests {
         }
 
         /// Test that assert_eq fails on inequality.
+        #[test]
         fn fail_assert_eq() {
             assert_eq!(1, 2);
             mark_end_as_reached();
         }
 
         /// Test that assert_ne fails on equality.
+        #[test]
         fn fail_assert_ne() {
             assert_ne!(1, 1);
             mark_end_as_reached();
         }
 
         /// Test that assert_lt fails when not less-than.
+        #[test]
         fn fail_assert_lt() {
             assert_lt!(2, 1);
             mark_end_as_reached();
         }
 
         /// Test that assert_le fails when greater.
+        #[test]
         fn fail_assert_le() {
             assert_le!(2, 1);
             mark_end_as_reached();
         }
 
         /// Test that assert_gt fails when not greater-than.
+        #[test]
         fn fail_assert_gt() {
             assert_gt!(1, 2);
             mark_end_as_reached();
         }
 
         /// Test that assert_ge fails when less.
+        #[test]
         fn fail_assert_ge() {
             assert_ge!(1, 2);
             mark_end_as_reached();
         }
 
         /// Test that assert_true fails when value is false.
+        #[test]
         fn fail_assert_true() {
             assert_true!(false);
             mark_end_as_reached();
         }
 
         /// Test that assert_false fails when value is true.
+        #[test]
         fn fail_assert_false() {
             assert_false!(true);
             mark_end_as_reached();
         }
 
         /// Test that assert_null fails when pointer is non-null.
+        #[test]
         fn fail_assert_null() {
             assert_null!(&42 as *const i32);
             mark_end_as_reached();
         }
 
         /// Test that assert_nonnull fails when pointer is null.
+        #[test]
         fn fail_assert_nonnull() {
             assert_nonnull!(ptr::null::<i32>());
             mark_end_as_reached();
         }
 
         /// Test that assert_ok fails when value is non-zero.
+        #[test]
         fn fail_assert_ok() {
             assert_ok!(zx_status::Status::INTERNAL);
             mark_end_as_reached();
         }
 
         /// Test that unwrap_ok fails when value is an error.
+        #[test]
         fn test_unwrap_ok() {
             let _: () = unwrap_ok!(Err(zx_status::Status::INTERNAL));
             mark_end_as_reached();
@@ -666,6 +698,7 @@ mod tests {
     #[test_suite]
     mod expectations {
         /// Success cases.
+        #[test]
         fn test_success() {
             expect_eq!(1, 1);
             expect_eq!(1, 1, "one should be one");
@@ -697,66 +730,77 @@ mod tests {
         }
 
         /// Test that expect_eq fails on inequality.
+        #[test]
         fn fail_expect_eq() {
             expect_eq!(1, 2);
             mark_end_as_reached();
         }
 
         /// Test that expect_ne fails on equality.
+        #[test]
         fn fail_expect_ne() {
             expect_ne!(1, 1);
             mark_end_as_reached();
         }
 
         /// Test that expect_lt fails when not less-than.
+        #[test]
         fn fail_expect_lt() {
             expect_lt!(2, 1);
             mark_end_as_reached();
         }
 
         /// Test that expect_le fails when greater.
+        #[test]
         fn fail_expect_le() {
             expect_le!(2, 1);
             mark_end_as_reached();
         }
 
         /// Test that expect_gt fails when not greater-than.
+        #[test]
         fn fail_expect_gt() {
             expect_gt!(1, 2);
             mark_end_as_reached();
         }
 
         /// Test that expect_ge fails when less.
+        #[test]
         fn fail_expect_ge() {
             expect_ge!(1, 2);
             mark_end_as_reached();
         }
 
         /// Test that expect_true fails when value is false.
+        #[test]
         fn fail_expect_true() {
             expect_true!(false);
             mark_end_as_reached();
         }
 
         /// Test that expect_false fails when value is true.
+        #[test]
         fn fail_expect_false() {
             expect_false!(true);
             mark_end_as_reached();
         }
 
         /// Test that expect_null fails when pointer is non-null.
+        #[test]
         fn fail_expect_null() {
             expect_null!(&42 as *const i32);
             mark_end_as_reached();
         }
 
         /// Test that expect_nonnull fails when pointer is null.
+        #[test]
         fn fail_expect_nonnull() {
             expect_nonnull!(ptr::null::<i32>());
             mark_end_as_reached();
         }
 
         /// Test that expect_ok fails when value is non-zero.
+        #[test]
         fn fail_expect_ok() {
             expect_ok!(zx_status::Status::INTERNAL);
             mark_end_as_reached();
@@ -834,19 +878,22 @@ mod tests {
     }
 
     #[test]
-    fn check_suite_with_use() {
+    fn check_suite_with_other_items() {
         let suites = get_test_suites();
         std::assert!(suites.len() > 3);
         let suite = &suites[3];
 
-        std::assert_eq!(unsafe { CStr::from_ptr(suite.name) }.to_bytes(), b"suite_with_use");
+        std::assert_eq!(
+            unsafe { CStr::from_ptr(suite.name) }.to_bytes(),
+            b"suite_with_other_items"
+        );
         std::assert_eq!(
             unsafe { CStr::from_ptr(suite.desc) }.to_str().unwrap(),
-            "Suite testing use statements."
+            "Suite with non-test items."
         );
         std::assert_eq!(suite.test_cnt, 1);
         let case = unsafe { &*suite.tests };
-        std::assert_eq!(unsafe { CStr::from_ptr(case.name) }.to_bytes(), b"check_use");
+        std::assert_eq!(unsafe { CStr::from_ptr(case.name) }.to_bytes(), b"check_other_items");
         assert!((case.fn_)());
     }
 }
