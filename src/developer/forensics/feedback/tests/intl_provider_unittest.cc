@@ -147,7 +147,7 @@ TEST_F(IntlProviderTest, Reconnects) {
                                Pair(kSystemTimezonePrimaryKey, ErrorOrString("timezone-one")),
                            }));
 
-  server.CloseConnection();
+  server.CloseConnection(ZX_ERR_PEER_CLOSED);
   ASSERT_FALSE(server.IsBound());
 
   server.SetTimezone("timezone-two");

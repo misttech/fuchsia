@@ -7,6 +7,7 @@
 
 #include <lib/async/dispatcher.h>
 #include <lib/fidl/cpp/interface_request.h>
+#include <lib/fidl/cpp/wire/connect_service.h>
 #include <lib/inspect/cpp/hierarchy.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/inspect/cpp/reader.h>
@@ -22,6 +23,7 @@
 #include <gtest/gtest.h>
 
 #include "src/developer/forensics/testing/stubs/cobalt_logger_factory.h"
+#include "src/developer/forensics/testing/stubs/fidl_server.h"
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 
 namespace forensics {
@@ -45,8 +47,15 @@ class UnitTestFixture : public gtest::TestLoopFixture {
   }
 
   template <typename ServiceProvider>
+    requires(requires(ServiceProvider* s) { s->GetHandler(); })
   void InjectServiceProvider(ServiceProvider* service_provider, const char* name = nullptr) {
     AddHandler(service_provider->GetHandler(), name);
+  }
+
+  template <typename Protocol>
+  void InjectServiceProvider(stubs::FidlServer<Protocol>* server) {
+    InjectServiceProvider(server->GetService(dispatcher()),
+                          fidl::DiscoverableProtocolName<Protocol>);
   }
 
   void InjectServiceProvider(std::unique_ptr<vfs::Service> service, std::string name) {

@@ -5,19 +5,19 @@
 #ifndef SRC_DEVELOPER_FORENSICS_TESTING_STUBS_INTL_PROVIDER_H_
 #define SRC_DEVELOPER_FORENSICS_TESTING_STUBS_INTL_PROVIDER_H_
 
-#include <fuchsia/intl/cpp/fidl.h>
-#include <fuchsia/intl/cpp/fidl_test_base.h>
+#include <fidl/fuchsia.intl/cpp/fidl.h>
+#include <fidl/fuchsia.intl/cpp/test_base.h>
 
 #include <optional>
 #include <string>
 #include <string_view>
 
 #include "lib/zx/time.h"
-#include "src/developer/forensics/testing/stubs/fidl_server_hlcpp.h"
+#include "src/developer/forensics/testing/stubs/fidl_server.h"
 
 namespace forensics::stubs {
 
-using IntlProviderBase = SINGLE_BINDING_STUB_FIDL_SERVER(fuchsia::intl, PropertyProvider);
+using IntlProviderBase = SingleBindingFidlServer<fuchsia_intl::PropertyProvider>;
 
 class IntlProvider : public IntlProviderBase {
  public:
@@ -27,8 +27,8 @@ class IntlProvider : public IntlProviderBase {
   void SetLocale(std::string_view locale);
   void SetTimezone(std::string_view timezone);
 
-  // |fuchsia::intl::PropertyProvider|
-  void GetProfile(GetProfileCallback callback) override;
+  // |fuchsia_intl::PropertyProvider|
+  void GetProfile(GetProfileCompleter::Sync& completer) override;
 
  private:
   std::optional<std::string> locale_;
@@ -41,8 +41,8 @@ class IntlProviderDelaysResponse : public IntlProviderBase {
                              std::optional<std::string> default_locale,
                              std::optional<std::string> default_timezone);
 
-  // |fuchsia::intl::PropertyProvider|
-  void GetProfile(GetProfileCallback callback) override;
+  // |fuchsia_intl::PropertyProvider|
+  void GetProfile(GetProfileCompleter::Sync& completer) override;
 
  private:
   async_dispatcher_t* dispatcher_;

@@ -4,35 +4,36 @@
 
 #include "src/developer/forensics/testing/stubs/intl_provider.h"
 
-#include <fuchsia/intl/cpp/fidl.h>
+#include <fidl/fuchsia.intl/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
 #include <lib/zx/time.h>
 
 #include <utility>
+#include <vector>
 
 namespace forensics::stubs {
 namespace {
 
-using fuchsia::intl::LocaleId;
-using fuchsia::intl::Profile;
-using fuchsia::intl::TimeZoneId;
+using fuchsia_intl::LocaleId;
+using fuchsia_intl::Profile;
+using fuchsia_intl::TimeZoneId;
 
 Profile MakeProfile(const std::optional<std::string>& locale,
                     const std::optional<std::string>& timezone) {
   Profile profile;
   if (locale.has_value()) {
-    profile.set_locales({
-        LocaleId{
+    profile.locales(std::vector{
+        LocaleId{{
             .id = *locale,
-        },
+        }},
     });
   }
 
   if (timezone.has_value()) {
-    profile.set_time_zones({
-        TimeZoneId{
+    profile.time_zones(std::vector{
+        TimeZoneId{{
             .id = *timezone,
-        },
+        }},
     });
   }
 
@@ -45,26 +46,26 @@ IntlProvider::IntlProvider(std::optional<std::string> default_locale,
                            std::optional<std::string> default_timezone)
     : locale_(std::move(default_locale)), timezone_(std::move(default_timezone)) {}
 
-void IntlProvider::GetProfile(GetProfileCallback callback) {
-  callback(MakeProfile(locale_, timezone_));
+void IntlProvider::GetProfile(GetProfileCompleter::Sync& completer) {
+  completer.Reply(MakeProfile(locale_, timezone_));
 }
 
 void IntlProvider::SetLocale(std::string_view locale) {
   locale_ = std::string(locale);
-  if (!binding() || !binding()->is_bound()) {
+  if (!binding().has_value() || !IsBound()) {
     return;
   }
 
-  binding()->events().OnChange();
+  std::ignore = fidl::SendEvent(binding().value())->OnChange();
 }
 
 void IntlProvider::SetTimezone(std::string_view timezone) {
   timezone_ = std::string(timezone);
-  if (!binding() || !binding()->is_bound()) {
+  if (!binding().has_value() || !IsBound()) {
     return;
   }
 
-  binding()->events().OnChange();
+  std::ignore = fidl::SendEvent(binding().value())->OnChange();
 }
 
 IntlProviderDelaysResponse::IntlProviderDelaysResponse(async_dispatcher_t* dispatcher,
@@ -76,11 +77,11 @@ IntlProviderDelaysResponse::IntlProviderDelaysResponse(async_dispatcher_t* dispa
       locale_(std::move(default_locale)),
       timezone_(std::move(default_timezone)) {}
 
-void IntlProviderDelaysResponse::GetProfile(GetProfileCallback callback) {
+void IntlProviderDelaysResponse::GetProfile(GetProfileCompleter::Sync& completer) {
   async::PostDelayedTask(
       dispatcher_,
-      [locale = locale_, timezone = timezone_, callback = std::move(callback)] {
-        callback(MakeProfile(locale, timezone));
+      [locale = locale_, timezone = timezone_, completer = completer.ToAsync()]() mutable {
+        completer.Reply(MakeProfile(locale, timezone));
       },
       delay_);
 }

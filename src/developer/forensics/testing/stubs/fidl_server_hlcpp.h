@@ -20,10 +20,10 @@ namespace stubs {
 
 // A stub FidlServer that allows a single connection to bind.
 template <typename Interface, typename TestBase>
-class SingleBindingFidlServer : public TestBase {
+class SingleBindingHlcppFidlServer : public TestBase {
  public:
-  SingleBindingFidlServer() = default;
-  explicit SingleBindingFidlServer(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
+  SingleBindingHlcppFidlServer() = default;
+  explicit SingleBindingHlcppFidlServer(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
 
   virtual ::fidl::InterfaceRequestHandler<Interface> GetHandler() {
     return [this](::fidl::InterfaceRequest<Interface> request) {
@@ -59,7 +59,7 @@ class SingleBindingFidlServer : public TestBase {
 
 // A stub FidlServer that allows multiple connections to bind.
 template <typename Interface, typename TestBase>
-class MultiBindingFidlServer : public TestBase {
+class MultiBindingHlcppFidlServer : public TestBase {
  public:
   virtual ::fidl::InterfaceRequestHandler<Interface> GetHandler() {
     return [this](::fidl::InterfaceRequest<Interface> request) {
@@ -89,10 +89,10 @@ class MultiBindingFidlServer : public TestBase {
 }  // namespace forensics
 
 #define SINGLE_BINDING_STUB_FIDL_SERVER(_1, _2) \
-  forensics::stubs::SingleBindingFidlServer<_1::_2, _1::testing::_2##_TestBase>
+  forensics::stubs::SingleBindingHlcppFidlServer<_1::_2, _1::testing::_2##_TestBase>
 
 #define MULTI_BINDING_STUB_FIDL_SERVER(_1, _2) \
-  forensics::stubs::MultiBindingFidlServer<_1::_2, _1::testing::_2##_TestBase>
+  forensics::stubs::MultiBindingHlcppFidlServer<_1::_2, _1::testing::_2##_TestBase>
 
 #define STUB_METHOD_DOES_NOT_RETURN(METHOD, PARAM_TYPES...) \
   void METHOD(PARAM_TYPES) override {}

@@ -154,6 +154,7 @@ source_set("fidl_server") {
   public_deps = [
     "//sdk/lib/fidl/cpp/wire",
     "//sdk/lib/syslog/cpp",
+    "//sdk/lib/vfs/cpp",
   ]
 }
 
@@ -177,8 +178,8 @@ source_set("intl_provider") {
   ]
 
   public_deps = [
-    ":fidl_server_hlcpp",
-    "//sdk/fidl/fuchsia.intl:fuchsia.intl_hlcpp",
+    ":fidl_server",
+    "//sdk/fidl/fuchsia.intl:fuchsia.intl_cpp",
   ]
 
   deps = [
