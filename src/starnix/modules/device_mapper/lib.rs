@@ -16,6 +16,7 @@ use starnix_core::device::kobject::{Device, DeviceMetadata};
 use starnix_core::fs::sysfs::{BlockDeviceInfo, build_block_device_directory};
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt, ProtectionFlags};
+use starnix_core::security;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::buffers::{InputBuffer, VecOutputBuffer};
 use starnix_core::vfs::{
@@ -26,6 +27,7 @@ use starnix_ext::map_ext::EntryExt;
 use starnix_logging::{log_trace, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
+use starnix_uapi::auth::CAP_SYS_ADMIN;
 use starnix_uapi::device_id::{DEVICE_MAPPER_MAJOR, DeviceId, LOOP_MAJOR};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -793,6 +795,7 @@ impl FileOps for DeviceMapper {
         request: u32,
         arg: SyscallArg,
     ) -> Result<SyscallResult, Errno> {
+        security::check_task_capable(current_task, CAP_SYS_ADMIN).map_err(|_| errno!(EACCES))?;
         let user_info = UserRef::<uapi::dm_ioctl>::from(arg);
         let info_addr: starnix_uapi::user_address::UserAddress = user_info.addr();
         let info = current_task.read_object(user_info)?;
