@@ -378,7 +378,7 @@ zx_status_t SdmmcBlockDevice::ProbeMmcLocked() {
 
   if (raw_ext_csd_[MMC_EXT_CSD_SEC_FEATURE_SUPPORT] &
       (0x1 << MMC_EXT_CSD_SEC_FEATURE_SUPPORT_SEC_GB_CL_EN)) {
-    block_info_.flags |= DEVICE_FLAG_TRIM_SUPPORT;
+    block_info_.flags |= fuchsia_storage_block::wire::DeviceFlag::kTrimSupport;
   }
 
   if (GetCacheSizeBits(raw_ext_csd_) && metadata_.enable_cache().value()) {
@@ -421,7 +421,7 @@ zx_status_t SdmmcBlockDevice::ProbeMmcLocked() {
       fdf::error("Barriers are unexpectedly disabled.");
       return ZX_ERR_BAD_STATE;
     }
-    block_info_.flags |= DEVICE_FLAG_BARRIER_SUPPORT;
+    block_info_.flags |= fuchsia_storage_block::wire::DeviceFlag::kBarrierSupport;
   }
 
   if (raw_ext_csd_[MMC_EXT_CSD_CACHE_FLUSH_POLICY] & MMC_EXT_CSD_CACHE_FLUSH_POLICY_FIFO) {
@@ -429,7 +429,7 @@ zx_status_t SdmmcBlockDevice::ProbeMmcLocked() {
   }
 
   if (removable) {
-    block_info_.flags |= DEVICE_FLAG_REMOVABLE;
+    block_info_.flags |= fuchsia_storage_block::wire::DeviceFlag::kRemovable;
   }
 
   if (parent_->config().storage_power_management_enabled()) {
@@ -684,10 +684,14 @@ void SdmmcBlockDevice::MmcSetInspectProperties() {
       root_.CreateUint("cache_size_bits", GetCacheSizeBits(raw_ext_csd_));
   properties_.cache_enabled_ = root_.CreateBool("cache_enabled", cache_enabled_);
   properties_.cache_flush_fifo_ = root_.CreateBool("cache_flush_fifo", cache_flush_fifo_);
-  properties_.barrier_supported_ =
-      root_.CreateBool("barrier_supported", block_info_.flags & DEVICE_FLAG_BARRIER_SUPPORT);
-  properties_.trim_enabled_ =
-      root_.CreateBool("trim_enabled", block_info_.flags & DEVICE_FLAG_TRIM_SUPPORT);
+  properties_.barrier_supported_ = root_.CreateBool(
+      "barrier_supported",
+      ((block_info_.flags & fuchsia_storage_block::wire::DeviceFlag::kBarrierSupport) !=
+       fuchsia_storage_block::wire::DeviceFlag{0}));
+  properties_.trim_enabled_ = root_.CreateBool(
+      "trim_enabled",
+      ((block_info_.flags & fuchsia_storage_block::wire::DeviceFlag::kTrimSupport) !=
+       fuchsia_storage_block::wire::DeviceFlag{0}));
   properties_.max_packed_reads_ =
       root_.CreateUint("max_packed_reads", raw_ext_csd_[MMC_EXT_CSD_MAX_PACKED_READS]);
   properties_.max_packed_writes_ =

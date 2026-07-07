@@ -6,7 +6,6 @@
 #define SRC_DEVICES_BLOCK_DRIVERS_SDMMC_SDMMC_TYPES_H_
 
 #include <fidl/fuchsia.hardware.rpmb/cpp/wire.h>
-#include <lib/operation/block.h>
 
 #include <cinttypes>
 
@@ -34,8 +33,6 @@ struct RpmbRequestInfo {
   fuchsia_mem::wire::Range rx_frames = {};
   fit::callback<void(zx_status_t)> callback;
 };
-
-using BlockOperation = block::BorrowedOperation<PartitionInfo>;
 
 }  // namespace sdmmc
 

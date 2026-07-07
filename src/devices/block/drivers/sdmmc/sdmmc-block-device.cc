@@ -64,14 +64,6 @@ zx::result<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion> GetBufferRegion(zx_h
 
 }  // namespace
 
-void SdmmcBlockDevice::BlockComplete(sdmmc::BlockOperation& txn, zx_status_t status) {
-  if (txn.node()->complete_cb()) {
-    txn.Complete(status);
-  } else {
-    fdf::debug("block op {} completion_cb unset!", static_cast<const void*>(txn.operation()));
-  }
-}
-
 zx_status_t SdmmcBlockDevice::Create(SdmmcRootDevice* parent, std::unique_ptr<SdmmcDevice> sdmmc,
                                      std::unique_ptr<SdmmcBlockDevice>* out_dev) {
   fbl::AllocChecker ac;
@@ -189,8 +181,6 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
 
       driver_rpmb_device_ = std::move(rpmb_device);
     }
-
-    fdf::info("Adding rpmb device done");
   }
 
   auto inline_crypto_client =
@@ -201,12 +191,11 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
 
   if (cq_enabled) {
     // With command queueing, the child CQHCI driver handles fuchsia.storage.block.*.
-    fdf::info("Initializing cqhci driver");
+
     remove_device_on_error.cancel();
     return AddCqhciDevice();
   }
   // Otherwise, bind PartitionDevices for each partition to handle fuchsia.storage.block.*.
-  fdf::info("Initializing local block server");
 
   std::unique_ptr<PartitionDevice> user_partition(
       new (&ac) PartitionDevice(this, block_info_, USER_DATA_PARTITION));
@@ -228,11 +217,11 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
         raw_ext_csd_[MMC_EXT_CSD_PARTITION_CONFIG] & MMC_EXT_CSD_BOOT_PARTITION_ENABLE_MASK;
     if (boot_size > 0 && boot_enabled) {
       const uint64_t boot_partition_block_count = boot_size / block_info_.block_size;
-      const block_info_t boot_info = {
+      const fuchsia_storage_block::wire::BlockInfo boot_info = {
           .block_count = boot_partition_block_count,
           .block_size = block_info_.block_size,
           .max_transfer_size = block_info_.max_transfer_size,
-          .flags = block_info_.flags,
+          .flags = static_cast<fuchsia_storage_block::wire::DeviceFlag>(block_info_.flags),
       };
 
       std::unique_ptr<PartitionDevice> boot_partition_1(
@@ -288,16 +277,10 @@ zx_status_t SdmmcBlockDevice::AddCqhciDevice() {
       raw_ext_csd_[MMC_EXT_CSD_PARTITION_CONFIG] & MMC_EXT_CSD_BOOT_PARTITION_ENABLE_MASK;
   if (boot_size > 0 && boot_enabled) {
     const uint64_t boot_partition_block_count = boot_size / block_info_.block_size;
-    const block_info_t boot_info = {
-        .block_count = boot_partition_block_count,
-        .block_size = block_info_.block_size,
-        .max_transfer_size = block_info_.max_transfer_size,
-        .flags = block_info_.flags,
-    };
     info.partitions().emplace_back(fuchsia_hardware_cqhci::EmmcPartitionId::kBootPartition1,
-                                   boot_info.block_count, boot_info.block_size);
+                                   boot_partition_block_count, block_info_.block_size);
     info.partitions().emplace_back(fuchsia_hardware_cqhci::EmmcPartitionId::kBootPartition2,
-                                   boot_info.block_count, boot_info.block_size);
+                                   boot_partition_block_count, block_info_.block_size);
   }
   fuchsia_hardware_cqhci::Service::InstanceHandler handler({
       .cqhci = cqhci_bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->get(),
@@ -525,7 +508,6 @@ void SdmmcBlockDevice::StopWorkerDispatcher(std::optional<fdf::StopCompleter> co
 
   // error out all pending requests
   fbl::AutoLock lock(&queue_lock_);
-  txn_list_.CompleteAll(ZX_ERR_CANCELED);
 
   for (auto& request : rpmb_list_) {
     request.callback(ZX_ERR_CANCELED);
@@ -582,9 +564,8 @@ void SdmmcBlockDevice::SendPowerOffNotification() {
   }
 }
 
-template <typename Request>
-zx_status_t SdmmcBlockDevice::ReadWriteWithRetries(std::vector<Request>& requests,
-                                                   const EmmcPartition partition) {
+zx_status_t SdmmcBlockDevice::ReadWriteWithRetries(std::vector<block_server::Request>& requests,
+                                                   EmmcPartition partition) {
   zx_status_t st = SetPartition(partition);
   if (st != ZX_OK) {
     return st;
@@ -612,73 +593,29 @@ zx_status_t SdmmcBlockDevice::ReadWriteWithRetries(std::vector<Request>& request
   return st;
 }
 
-template <typename Request>
-struct RequestAccessor {};
-
-// This must not outlive the operation this references.
-template <>
-struct RequestAccessor<BlockOperation> {
-  RequestAccessor(const BlockOperation* op) : rw(op->operation()->rw) {}
-
-  bool is_read() const { return rw.command.opcode == BLOCK_OPCODE_READ; }
-  uint64_t vmo_offset(uint32_t block_size) const { return rw.offset_vmo * block_size; }
-  uint64_t device_block_offset() const { return rw.offset_dev; }
-  uint32_t block_count() const { return rw.length; }
-  zx_handle_t vmo() const { return rw.vmo; }
-  bool use_inline_crypto() const {
-    return rw.command.flags & BLOCK_IO_FLAG_INLINE_ENCRYPTION_ENABLED;
-  }
-  uint8_t slot() const { return rw.slot; }
-  uint32_t dun() const { return rw.dun; }
-
-  const block_read_write_t& rw;
-};
-
-// This must not outlive the request this references.
-template <>
-struct RequestAccessor<block_server::Request> {
-  RequestAccessor(const block_server::Request* request) : request(*request) {}
-
-  bool is_read() const { return request.operation.tag == block_server::Operation::Tag::Read; }
-
-  // These work for writes as well as reads; the fields are guaranteed to be in the same place.
-  uint64_t vmo_offset(uint32_t block_size) const { return request.operation.read.vmo_offset; }
-  uint64_t device_block_offset() const { return request.operation.read.device_block_offset; }
-  uint32_t block_count() const { return request.operation.read.block_count; }
-  bool use_inline_crypto() const { return request.operation.read.options.inline_crypto.is_enabled; }
-  uint8_t slot() const { return request.operation.read.options.inline_crypto.slot; }
-  uint32_t dun() const { return request.operation.read.options.inline_crypto.dun; }
-
-  zx_handle_t vmo() const { return request.vmo->get(); }
-
-  const block_server::Request& request;
-};
-
-template <typename Request>
-zx_status_t SdmmcBlockDevice::ReadWriteAttempt(std::vector<Request>& requests,
+zx_status_t SdmmcBlockDevice::ReadWriteAttempt(std::vector<block_server::Request>& requests,
                                                bool suppress_error_messages) {
   // For single-block transfers, we could get higher performance by using SDMMC_READ_BLOCK/
   // SDMMC_WRITE_BLOCK without the need to SDMMC_SET_BLOCK_COUNT or SDMMC_STOP_TRANSMISSION.
   // However, we always do multiple-block transfers for simplicity.
   ZX_DEBUG_ASSERT(requests.size() >= 1);
-  const RequestAccessor<Request> first_request(&requests[0]);
-  const bool is_read = first_request.is_read();
+  const block_server::Request& first_request = requests[0];
+  const bool is_read = first_request.operation.tag == block_server::Operation::Tag::Read;
   const bool command_packing = requests.size() > 1;
   const uint32_t cmd_idx = is_read ? SDMMC_READ_MULTIPLE_BLOCK : SDMMC_WRITE_MULTIPLE_BLOCK;
   const uint32_t cmd_flags =
       is_read ? SDMMC_READ_MULTIPLE_BLOCK_FLAGS : SDMMC_WRITE_MULTIPLE_BLOCK_FLAGS;
   uint32_t total_data_transfer_blocks = 0;
   for (const auto& request : requests) {
-    total_data_transfer_blocks += RequestAccessor<Request>(&request).block_count();
+    total_data_transfer_blocks += request.operation.read.block_count;
   }
 
   fdf::debug(
       "sdmmc: do_txn blockop {} offset_vmo 0x{:x}"
       " length 0x{:x} packing_count {} blocksize 0x{:x}"
       " max_transfer_size 0x{:x}",
-      first_request.is_read() ? 'R' : 'W', first_request.vmo_offset(block_info_.block_size),
-      total_data_transfer_blocks, requests.size(), block_info_.block_size,
-      block_info_.max_transfer_size);
+      is_read ? 'R' : 'W', first_request.operation.read.vmo_offset, total_data_transfer_blocks,
+      requests.size(), block_info_.block_size, block_info_.max_transfer_size);
 
   fdf::Arena arena('SDMC');
   fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq> reqs;
@@ -695,16 +632,17 @@ zx_status_t SdmmcBlockDevice::ReadWriteAttempt(std::vector<Request>& requests,
     auto& rw_multiple_block = reqs[1];
     rw_multiple_block.cmd_idx = cmd_idx;
     rw_multiple_block.cmd_flags = cmd_flags;
-    rw_multiple_block.arg = static_cast<uint32_t>(first_request.device_block_offset());
+    rw_multiple_block.arg = static_cast<uint32_t>(first_request.operation.read.device_block_offset);
     rw_multiple_block.blocksize = block_info_.block_size;
-    rw_multiple_block.use_inline_crypto = first_request.use_inline_crypto();
-    rw_multiple_block.slot = first_request.slot();
-    rw_multiple_block.dun = first_request.dun();
+    rw_multiple_block.use_inline_crypto =
+        first_request.operation.read.options.inline_crypto.is_enabled;
+    rw_multiple_block.slot = first_request.operation.read.options.inline_crypto.slot;
+    rw_multiple_block.dun = first_request.operation.read.options.inline_crypto.dun;
 
     rw_multiple_block.buffers.Allocate(arena, 1);
     auto buffer_region =
-        GetBufferRegion(first_request.vmo(), first_request.vmo_offset(block_info_.block_size),
-                        first_request.block_count() * block_info_.block_size);
+        GetBufferRegion(first_request.vmo->get(), first_request.operation.read.vmo_offset,
+                        first_request.operation.read.block_count * block_info_.block_size);
     if (buffer_region.is_error()) {
       return buffer_region.status_value();
     }
@@ -744,7 +682,8 @@ zx_status_t SdmmcBlockDevice::ReadWriteAttempt(std::vector<Request>& requests,
       auto& write_multiple_block = reqs[1];
       write_multiple_block.cmd_idx = SDMMC_WRITE_MULTIPLE_BLOCK;
       write_multiple_block.cmd_flags = SDMMC_WRITE_MULTIPLE_BLOCK_FLAGS;
-      write_multiple_block.arg = static_cast<uint32_t>(first_request.device_block_offset());
+      write_multiple_block.arg =
+          static_cast<uint32_t>(first_request.operation.read.device_block_offset);
       write_multiple_block.blocksize = block_info_.block_size;
       write_multiple_block.buffers.Allocate(arena, 1);  // 1 header block.
       write_multiple_block.buffers[0] = {
@@ -762,7 +701,8 @@ zx_status_t SdmmcBlockDevice::ReadWriteAttempt(std::vector<Request>& requests,
 
     rw_multiple_block->cmd_idx = cmd_idx;
     rw_multiple_block->cmd_flags = cmd_flags;
-    rw_multiple_block->arg = static_cast<uint32_t>(first_request.device_block_offset());
+    rw_multiple_block->arg =
+        static_cast<uint32_t>(first_request.operation.read.device_block_offset);
     rw_multiple_block->blocksize = block_info_.block_size;
 
     int buffer_index_offset;
@@ -781,16 +721,17 @@ zx_status_t SdmmcBlockDevice::ReadWriteAttempt(std::vector<Request>& requests,
 
     // The following buffer regions point to the data.
     for (size_t i = 0; i < requests.size(); i++) {
-      const RequestAccessor<Request> request(&requests[i]);
+      const block_server::Request& request = requests[i];
       // TODO(https://fxbug.dev/436663316): Support multiple packed commands with inline crypto.
-      ZX_ASSERT(!request.use_inline_crypto());
-      readwrite_metadata_.packed_command_header_data->arg[i].cmd23_arg = request.block_count();
+      ZX_ASSERT(!request.operation.read.options.inline_crypto.is_enabled);
+      readwrite_metadata_.packed_command_header_data->arg[i].cmd23_arg =
+          request.operation.read.block_count;
       readwrite_metadata_.packed_command_header_data->arg[i].cmdXX_arg =
-          static_cast<uint32_t>(request.device_block_offset());
+          static_cast<uint32_t>(request.operation.read.device_block_offset);
 
       auto buffer_region =
-          GetBufferRegion(request.vmo(), request.vmo_offset(block_info_.block_size),
-                          request.block_count() * block_info_.block_size);
+          GetBufferRegion(request.vmo->get(), request.operation.read.vmo_offset,
+                          request.operation.read.block_count * block_info_.block_size);
       if (buffer_region.is_error()) {
         return buffer_region.status_value();
       }
@@ -855,7 +796,8 @@ zx_status_t SdmmcBlockDevice::Flush() {
 
 zx_status_t SdmmcBlockDevice::Barrier() {
   // If BARRIER_SUPPORT is unset, the block server library should never send PRE_BARRIER requests.
-  ZX_ASSERT(block_info_.flags & DEVICE_FLAG_BARRIER_SUPPORT);
+  ZX_ASSERT((block_info_.flags & fuchsia_storage_block::wire::DeviceFlag::kBarrierSupport) !=
+            fuchsia_storage_block::wire::DeviceFlag{0});
 
   if (!cache_enabled_) {
     return ZX_OK;
@@ -876,13 +818,15 @@ zx_status_t SdmmcBlockDevice::Barrier() {
   return st;
 }
 
-zx_status_t SdmmcBlockDevice::Trim(const block_trim_t& txn, const EmmcPartition partition) {
+zx_status_t SdmmcBlockDevice::Trim(uint64_t offset_dev, uint64_t length,
+                                   const EmmcPartition partition) {
   // TODO(b/312236221): Add trim support for SD.
   if (is_sd_) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  if (!(block_info_.flags & DEVICE_FLAG_TRIM_SUPPORT)) {
+  if ((block_info_.flags & fuchsia_storage_block::wire::DeviceFlag::kTrimSupport) ==
+      fuchsia_storage_block::wire::DeviceFlag{0}) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -897,7 +841,7 @@ zx_status_t SdmmcBlockDevice::Trim(const block_trim_t& txn, const EmmcPartition 
   const sdmmc_req_t trim_start = {
       .cmd_idx = MMC_ERASE_GROUP_START,
       .cmd_flags = MMC_ERASE_GROUP_START_FLAGS,
-      .arg = static_cast<uint32_t>(txn.offset_dev),
+      .arg = static_cast<uint32_t>(offset_dev),
   };
   uint32_t response[4] = {};
   if ((status = sdmmc_->Request(&trim_start, response)) != ZX_OK) {
@@ -914,7 +858,7 @@ zx_status_t SdmmcBlockDevice::Trim(const block_trim_t& txn, const EmmcPartition 
   const sdmmc_req_t trim_end = {
       .cmd_idx = MMC_ERASE_GROUP_END,
       .cmd_flags = MMC_ERASE_GROUP_END_FLAGS,
-      .arg = static_cast<uint32_t>(txn.offset_dev + txn.length - 1),
+      .arg = static_cast<uint32_t>(offset_dev + length - 1),
   };
   if ((status = sdmmc_->Request(&trim_end, response)) != ZX_OK) {
     fdf::error("failed to set trim group end: {}", zx_status_get_string(status));
@@ -1108,56 +1052,6 @@ zx_status_t SdmmcBlockDevice::SetPartition(const EmmcPartition partition) {
   return ZX_OK;
 }
 
-void SdmmcBlockDevice::Queue(BlockOperation txn) {
-  block_op_t* btxn = txn.operation();
-
-  const uint64_t max = txn.private_storage()->block_count;
-  switch (btxn->command.opcode) {
-    case BLOCK_OPCODE_READ:
-    case BLOCK_OPCODE_WRITE:
-      if (zx_status_t status =
-              block::CheckIoRange(btxn->rw.offset_dev, btxn->rw.length, max, logger());
-          status != ZX_OK) {
-        BlockComplete(txn, status);
-        return;
-      }
-      // MMC supports FUA writes, but not FUA reads. SD does not support FUA.
-      if (btxn->command.flags & BLOCK_IO_FLAG_FORCE_ACCESS) {
-        BlockComplete(txn, ZX_ERR_NOT_SUPPORTED);
-        return;
-      }
-      // The legacy driver does not support barriers.
-      if (btxn->command.flags & BLOCK_IO_FLAG_PRE_BARRIER) {
-        BlockComplete(txn, ZX_ERR_NOT_SUPPORTED);
-        return;
-      }
-      break;
-    case BLOCK_OPCODE_TRIM:
-      if (zx_status_t status =
-              block::CheckIoRange(btxn->trim.offset_dev, btxn->trim.length, max, logger());
-          status != ZX_OK) {
-        BlockComplete(txn, status);
-        return;
-      }
-      break;
-    case BLOCK_OPCODE_FLUSH:
-      // queue the flush op. because there is no out of order execution in this
-      // driver, when this op gets processed all previous ops are complete.
-      break;
-    default:
-      BlockComplete(txn, ZX_ERR_NOT_SUPPORTED);
-      return;
-  }
-
-  {
-    fbl::AutoLock lock(&queue_lock_);
-    txn_list_.push(std::move(txn));
-  }
-
-  // Wake up the worker thread.
-  worker_event_.Signal();
-}
-
 void SdmmcBlockDevice::RpmbQueue(RpmbRequestInfo info) {
   using fuchsia_hardware_rpmb::wire::kFrameSize;
 
@@ -1209,93 +1103,6 @@ void SdmmcBlockDevice::RpmbQueue(RpmbRequestInfo info) {
   }
 }
 
-void SdmmcBlockDevice::HandleBlockOps(block::BorrowedOperationQueue<PartitionInfo>& txn_list) {
-  for (size_t i = 0; i < kRoundRobinRequestCount; i++) {
-    std::optional<BlockOperation> txn = txn_list.pop();
-    if (!txn) {
-      break;
-    }
-
-    std::vector<BlockOperation> btxns;
-    btxns.push_back(*std::move(txn));
-
-    const block_op_t& bop = *btxns[0].operation();
-    const uint8_t op = bop.command.opcode;
-    const EmmcPartition partition = btxns[0].private_storage()->partition;
-
-    zx_status_t status = ZX_ERR_INVALID_ARGS;
-    if (op == BLOCK_OPCODE_READ || op == BLOCK_OPCODE_WRITE) {
-      const char* const trace_name = op == BLOCK_OPCODE_READ ? "read" : "write";
-      TRACE_DURATION_BEGIN("sdmmc", trace_name);
-
-      // Consider trailing txns for eMMC Command Packing (batching)
-      if (partition == USER_DATA_PARTITION) {
-        const uint32_t max_command_packing =
-            (op == BLOCK_OPCODE_READ) ? max_packed_reads_effective_ : max_packed_writes_effective_;
-        // The system page size is used below, because the header block requires its own
-        // scatter-gather transfer descriptor in the lower-level SDMMC driver.
-        uint64_t cum_transfer_bytes = (bop.rw.length * block_info_.block_size) +
-                                      zx_system_get_page_size();  // +1 page for header block.
-        while (btxns.size() < max_command_packing) {
-          // TODO(https://fxbug.dev/42083080): It's inefficient to pop() here only to push() later
-          // in the case of packing ineligibility. Later on, we'll likely move away from using
-          // block::BorrowedOperationQueue once we start using the FIDL driver transport arena (at
-          // which point, use something like peek() instead).
-          std::optional<BlockOperation> pack_candidate_txn = txn_list.pop();
-          if (!pack_candidate_txn) {
-            // No more candidate txns to consider for packing.
-            break;
-          }
-
-          cum_transfer_bytes += pack_candidate_txn->operation()->rw.length * block_info_.block_size;
-          // TODO(https://fxbug.dev/42083080): Explore reordering commands for more command packing.
-          if (pack_candidate_txn->operation()->command.opcode != bop.command.opcode ||
-              pack_candidate_txn->private_storage()->partition != partition ||
-              cum_transfer_bytes > block_info_.max_transfer_size) {
-            // Candidate txn is ineligible for packing.
-            txn_list.push(std::move(*pack_candidate_txn));
-            break;
-          }
-
-          btxns.push_back(std::move(*pack_candidate_txn));
-        }
-      }
-
-      status = ReadWriteWithRetries(btxns, partition);
-
-      TRACE_DURATION_END("sdmmc", trace_name, "opcode", TA_INT32(bop.rw.command.opcode), "extra",
-                         TA_INT32(bop.rw.extra), "length", TA_INT32(bop.rw.length), "offset_vmo",
-                         TA_INT64(bop.rw.offset_vmo), "offset_dev", TA_INT64(bop.rw.offset_dev),
-                         "txn_status", TA_INT32(status));
-    } else if (op == BLOCK_OPCODE_TRIM) {
-      TRACE_DURATION_BEGIN("sdmmc", "trim");
-
-      status = Trim(bop.trim, partition);
-
-      TRACE_DURATION_END("sdmmc", "trim", "opcode", TA_INT32(bop.trim.command.opcode), "length",
-                         TA_INT32(bop.trim.length), "offset_dev", TA_INT64(bop.trim.offset_dev),
-                         "txn_status", TA_INT32(status));
-    } else if (op == BLOCK_OPCODE_FLUSH) {
-      TRACE_DURATION_BEGIN("sdmmc", "flush");
-
-      status = Flush();
-
-      TRACE_DURATION_END("sdmmc", "flush", "opcode", TA_INT32(bop.command.opcode), "txn_status",
-                         TA_INT32(status));
-    } else {
-      // should not get here
-      fdf::error("invalid block op {}", op);
-      TRACE_INSTANT("sdmmc", "unknown", TRACE_SCOPE_PROCESS, "opcode",
-                    TA_INT32(bop.rw.command.opcode), "txn_status", TA_INT32(status));
-      __UNREACHABLE;
-    }
-
-    for (auto& btxn : btxns) {
-      BlockComplete(btxn, status);
-    }
-  }
-}
-
 void SdmmcBlockDevice::HandleRpmbRequests(std::deque<RpmbRequestInfo>& rpmb_list) {
   for (size_t i = 0; i < kRoundRobinRequestCount && !rpmb_list.empty(); i++) {
     RpmbRequestInfo& request = *rpmb_list.begin();
@@ -1311,7 +1118,6 @@ void SdmmcBlockDevice::HandleRpmbRequests(std::deque<RpmbRequestInfo>& rpmb_list
 }
 
 void SdmmcBlockDevice::WorkerLoop() {
-  block::BorrowedOperationQueue<PartitionInfo> txn_list;
   std::deque<RpmbRequestInfo> rpmb_list;
 
   for (;;) {
@@ -1323,7 +1129,7 @@ void SdmmcBlockDevice::WorkerLoop() {
 
     {
       fbl::AutoLock lock(&queue_lock_);
-      if (txn_list_.is_empty() && rpmb_list_.empty()) {
+      if (rpmb_list_.empty()) {
         worker_event_.Reset();
         lock.release();
         worker_lock.release();
@@ -1331,14 +1137,12 @@ void SdmmcBlockDevice::WorkerLoop() {
         continue;
       }
 
-      txn_list = std::move(txn_list_);
       rpmb_list.swap(rpmb_list_);
     }
 
     TRACE_DURATION("sdmmc", "work loop");
 
-    while (!txn_list.is_empty() || !rpmb_list.empty()) {
-      HandleBlockOps(txn_list);
+    while (!rpmb_list.empty()) {
       HandleRpmbRequests(rpmb_list);
     }
   }
@@ -1645,12 +1449,8 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
       case block_server::Operation::Tag::Trim:
         TRACE_DURATION_BEGIN("sdmmc", "trim");
 
-        status = Trim(
-            block_trim_t{
-                .length = request.operation.trim.block_count,
-                .offset_dev = request.operation.trim.device_block_offset,
-            },
-            partition.partition());
+        status = Trim(request.operation.trim.device_block_offset,
+                      request.operation.trim.block_count, partition.partition());
         partition.SendReply(request.request_id, zx::make_result(status));
 
         TRACE_DURATION_END(

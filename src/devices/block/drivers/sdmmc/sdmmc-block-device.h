@@ -10,7 +10,7 @@
 #include <fidl/fuchsia.hardware.inlineencryption/cpp/wire.h>
 #include <fidl/fuchsia.hardware.sdmmc/cpp/wire.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
-#include <fuchsia/hardware/block/driver/cpp/banjo.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/power/cpp/power-support.h>
@@ -18,7 +18,6 @@
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
-#include <lib/operation/block.h>
 #include <lib/sdmmc/hw.h>
 #include <lib/sync/cpp/completion.h>
 #include <lib/trace/event.h>
@@ -159,11 +158,16 @@ class SdmmcBlockDevice : public fdf::WireServer<fuchsia_hardware_cqhci::Cqhci>,
       TA_EXCL(queue_lock_);
   void SendPowerOffNotification();
 
+  void SetPowerSuspendedForTest(bool suspended) TA_EXCL(worker_lock_) {
+    fbl::AutoLock lock(&worker_lock_);
+    power_suspended_ = suspended;
+    worker_condition_.Broadcast();
+  }
+
   zx_status_t SuspendPower() TA_REQ(worker_lock_);
   zx_status_t ResumePower() TA_REQ(worker_lock_);
 
   // Called by children of this device.
-  void Queue(BlockOperation txn) TA_EXCL(queue_lock_);
   void RpmbQueue(RpmbRequestInfo info) TA_EXCL(queue_lock_);
   fidl::WireSyncClient<fuchsia_driver_framework::Node>& block_node() { return block_node_; }
   const char* block_name() const { return is_sd_ ? "sdmmc-sd" : "sdmmc-mmc"; }
@@ -213,20 +217,18 @@ class SdmmcBlockDevice : public fdf::WireServer<fuchsia_hardware_cqhci::Cqhci>,
 
   zx_status_t AddCqhciDevice() TA_REQ(worker_lock_, queue_lock_);
 
-  template <typename Request>
-  zx_status_t ReadWriteWithRetries(std::vector<Request>& requests, EmmcPartition partition)
-      TA_REQ(worker_lock_);
-  template <typename Request>
-  zx_status_t ReadWriteAttempt(std::vector<Request>& requests, bool suppress_error_messages)
-      TA_REQ(worker_lock_);
+  zx_status_t ReadWriteWithRetries(std::vector<block_server::Request>& requests,
+                                   EmmcPartition partition) TA_REQ(worker_lock_);
+  zx_status_t ReadWriteAttempt(std::vector<block_server::Request>& requests,
+                               bool suppress_error_messages) TA_REQ(worker_lock_);
   zx_status_t Flush() TA_REQ(worker_lock_);
   zx_status_t Barrier() TA_REQ(worker_lock_);
-  zx_status_t Trim(const block_trim_t& txn, const EmmcPartition partition) TA_REQ(worker_lock_);
+  zx_status_t Trim(uint64_t offset_dev, uint64_t length, const EmmcPartition partition)
+      TA_REQ(worker_lock_);
   zx_status_t SetPartition(const EmmcPartition partition) TA_REQ(worker_lock_);
   zx::result<uint16_t> GetRpmbRequestType(const RpmbRequestInfo& request) const;
   zx_status_t RpmbRequest(const RpmbRequestInfo& request) TA_REQ(worker_lock_);
 
-  void HandleBlockOps(block::BorrowedOperationQueue<PartitionInfo>& txn_list) TA_REQ(worker_lock_);
   void HandleRpmbRequests(std::deque<RpmbRequestInfo>& rpmb_list) TA_REQ(worker_lock_);
 
   void WorkerLoop();
@@ -253,8 +255,6 @@ class SdmmcBlockDevice : public fdf::WireServer<fuchsia_hardware_cqhci::Cqhci>,
   bool MmcSupportsHs400() TA_REQ(worker_lock_);
   bool MmcSupportsHs400EnhancedStrobe() TA_REQ(worker_lock_);
   void MmcSetInspectProperties() TA_REQ(worker_lock_) TA_REQ(queue_lock_);
-
-  void BlockComplete(sdmmc::BlockOperation& txn, zx_status_t status);
 
   // TODO(b/309152899): Once fuchsia.power.SuspendEnabled config cap is available, have this method
   // return failure if power management could not be configured. Use fuchsia.power.SuspendEnabled to
@@ -297,7 +297,6 @@ class SdmmcBlockDevice : public fdf::WireServer<fuchsia_hardware_cqhci::Cqhci>,
   libsync::Completion worker_event_;
 
   // blockio requests
-  block::BorrowedOperationQueue<PartitionInfo> txn_list_ TA_GUARDED(queue_lock_);
   std::deque<RpmbRequestInfo> rpmb_list_ TA_GUARDED(queue_lock_);
 
   // Dispatcher for processing queued block requests.
@@ -316,7 +315,7 @@ class SdmmcBlockDevice : public fdf::WireServer<fuchsia_hardware_cqhci::Cqhci>,
   // NB: This must not outlive `driver_rpmb_device_`.
   fdf::ServerBindingGroup<fuchsia_hardware_rpmb::DriverRpmb> driver_rpmb_bindings_;
 
-  block_info_t block_info_{};
+  fuchsia_storage_block::wire::BlockInfo block_info_{};
   std::optional<fuchsia_hardware_cqhci::CqhciHostInfo> cqhci_host_info_;
 
   bool is_sd_ = false;

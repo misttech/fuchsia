@@ -20,11 +20,12 @@
 
 namespace sdmmc {
 
-PartitionDevice::PartitionDevice(SdmmcBlockDevice* sdmmc_parent, const block_info_t& block_info,
+PartitionDevice::PartitionDevice(SdmmcBlockDevice* sdmmc_parent,
+                                 const fuchsia_storage_block::wire::BlockInfo& block_info,
                                  EmmcPartition partition)
     : sdmmc_parent_(sdmmc_parent), block_info_(block_info), partition_(partition) {
   block_server::PartitionInfo info{
-      .device_flags = block_info.flags,
+      .device_flags = static_cast<uint32_t>(block_info.flags),
       .block_count = block_info.block_count,
       .block_size = block_info.block_size,
       .max_transfer_size = block_info.max_transfer_size,
@@ -58,26 +59,6 @@ PartitionDevice::PartitionDevice(SdmmcBlockDevice* sdmmc_parent, const block_inf
 }
 
 zx_status_t PartitionDevice::AddDevice() {
-  {
-    const std::string path_from_parent = std::string(sdmmc_parent_->parent()->driver_name()) + "/" +
-                                         std::string(sdmmc_parent_->block_name()) + "/";
-    compat::DeviceServer::BanjoConfig banjo_config;
-    banjo_config.callbacks[ZX_PROTOCOL_BLOCK_IMPL] = block_impl_server_.callback();
-    if (partition_ != USER_DATA_PARTITION) {
-      block_partition_server_.emplace(ZX_PROTOCOL_BLOCK_PARTITION, this,
-                                      &block_partition_protocol_ops_);
-      banjo_config.callbacks[ZX_PROTOCOL_BLOCK_PARTITION] = block_partition_server_->callback();
-    }
-
-    auto result = compat_server_.Initialize(
-        sdmmc_parent_->parent()->driver_incoming(), sdmmc_parent_->parent()->driver_outgoing(),
-        sdmmc_parent_->parent()->driver_node_name(), partition_name_,
-        compat::ForwardMetadata::None(), std::move(banjo_config), path_from_parent);
-    if (result.is_error()) {
-      return result.status_value();
-    }
-  }
-
   if (!partition_name_) {
     return ZX_ERR_NOT_SUPPORTED;
   }
@@ -92,16 +73,8 @@ zx_status_t PartitionDevice::AddDevice() {
 
   fidl::Arena arena;
 
-  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2> properties(arena, 1);
-  properties[0] = fdf::MakeProperty2(arena, bind_fuchsia::PROTOCOL,
-                                     static_cast<uint32_t>(ZX_PROTOCOL_BLOCK_IMPL));
-
-  std::vector<fuchsia_driver_framework::wire::Offer> offers = compat_server_.CreateOffers2(arena);
-
   const auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                         .name(arena, partition_name_)
-                        .offers2(arena, std::move(offers))
-                        .properties2(properties)
                         .Build();
 
   auto result = sdmmc_parent_->block_node()->AddChild(args, std::move(controller_server_end),
@@ -143,64 +116,6 @@ zx_status_t PartitionDevice::AddDevice() {
     return result.status_value();
   }
 
-  return ZX_OK;
-}
-
-void PartitionDevice::BlockImplQuery(block_info_t* info_out, size_t* block_op_size_out) {
-  memcpy(info_out, &block_info_, sizeof(*info_out));
-  *block_op_size_out = BlockOperation::OperationSize(sizeof(block_op_t));
-}
-
-void PartitionDevice::BlockImplQueue(block_op_t* btxn, block_impl_queue_callback completion_cb,
-                                     void* cookie) {
-  BlockOperation txn(btxn, completion_cb, cookie, sizeof(block_op_t));
-  txn.private_storage()->partition = partition_;
-  txn.private_storage()->block_count = block_info_.block_count;
-  sdmmc_parent_->Queue(std::move(txn));
-}
-
-zx_status_t PartitionDevice::BlockPartitionGetGuid(guidtype_t guid_type, guid_t* out_guid) {
-  ZX_DEBUG_ASSERT(partition_ != USER_DATA_PARTITION);
-
-  constexpr uint8_t kGuidEmmcBoot1Value[] = GUID_EMMC_BOOT1_VALUE;
-  constexpr uint8_t kGuidEmmcBoot2Value[] = GUID_EMMC_BOOT2_VALUE;
-
-  switch (guid_type) {
-    case GUIDTYPE_TYPE:
-      if (partition_ == BOOT_PARTITION_1) {
-        memcpy(&out_guid->data1, kGuidEmmcBoot1Value, GUID_LENGTH);
-      } else {
-        memcpy(&out_guid->data1, kGuidEmmcBoot2Value, GUID_LENGTH);
-      }
-      return ZX_OK;
-    case GUIDTYPE_INSTANCE:
-      return ZX_ERR_NOT_SUPPORTED;
-    default:
-      return ZX_ERR_INVALID_ARGS;
-  }
-}
-
-zx_status_t PartitionDevice::BlockPartitionGetName(char* out_name, size_t capacity) {
-  ZX_DEBUG_ASSERT(partition_ != USER_DATA_PARTITION);
-  if (capacity <= strlen(partition_name_)) {
-    return ZX_ERR_BUFFER_TOO_SMALL;
-  }
-
-  strlcpy(out_name, partition_name_, capacity);
-
-  return ZX_OK;
-}
-
-zx_status_t PartitionDevice::BlockPartitionGetMetadata(partition_metadata_t* out_metadata) {
-  strlcpy(out_metadata->name, partition_name_, sizeof(out_metadata->name));
-  if (zx_status_t status = BlockPartitionGetGuid(GUIDTYPE_TYPE, &out_metadata->type_guid);
-      status != ZX_OK) {
-    return status;
-  }
-  memset(&out_metadata->instance_guid, 0, sizeof(out_metadata->instance_guid));
-  out_metadata->start_block_offset = 0;
-  out_metadata->num_blocks = block_info_.block_count;
-  out_metadata->flags = 0;
   return ZX_OK;
 }
 

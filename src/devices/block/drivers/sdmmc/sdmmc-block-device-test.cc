@@ -35,6 +35,7 @@
 #include <zircon/errors.h>
 
 #include <memory>
+#include <optional>
 
 #include <fbl/algorithm.h>
 #include <fbl/unique_fd.h>
@@ -58,6 +59,7 @@ class TestSdmmcRootDevice : public SdmmcRootDevice {
   static bool use_fidl_;
   static bool is_sd_;
   static FakeSdmmcDevice sdmmc_;
+  static std::optional<fdf::ClientEnd<fuchsia_hardware_sdmmc::Sdmmc>> fidl_client_end_;
 
   explicit TestSdmmcRootDevice() : SdmmcRootDevice() {}
 
@@ -65,11 +67,9 @@ class TestSdmmcRootDevice : public SdmmcRootDevice {
   zx_status_t Init(const fuchsia_hardware_sdmmc::SdmmcMetadata& metadata) override {
     std::unique_ptr<SdmmcDevice> sdmmc;
     if (use_fidl_) {
-      zx::result client_end = sdmmc_.GetFidlClientEnd();
-      if (client_end.is_error()) {
-        return client_end.error_value();
-      }
-      sdmmc = std::make_unique<SdmmcDevice>(this, std::move(*client_end));
+      ZX_ASSERT(fidl_client_end_.has_value());
+      sdmmc = std::make_unique<SdmmcDevice>(this, std::move(*fidl_client_end_));
+      fidl_client_end_.reset();
     } else {
       sdmmc = std::make_unique<SdmmcDevice>(this, sdmmc_.GetClient());
     }
@@ -102,6 +102,7 @@ class TestSdmmcRootDevice : public SdmmcRootDevice {
 bool TestSdmmcRootDevice::use_fidl_;
 bool TestSdmmcRootDevice::is_sd_;
 FakeSdmmcDevice TestSdmmcRootDevice::sdmmc_;
+std::optional<fdf::ClientEnd<fuchsia_hardware_sdmmc::Sdmmc>> TestSdmmcRootDevice::fidl_client_end_;
 
 class FakeCpuElementManager
     : public fidl::testing::TestBase<fuchsia_power_system::CpuElementManager> {
@@ -244,13 +245,14 @@ class TestEnvironment : public fdf_testing::Environment {
     return zx::ok();
   }
 
-  void SetMetadata(bool removable, fuchsia_hardware_sdmmc::SdmmcHostPrefs speed_capabilities) {
+  void SetMetadata(bool removable, fuchsia_hardware_sdmmc::SdmmcHostPrefs speed_capabilities,
+                   bool use_fidl) {
     std::ignore = metadata_server.SetMetadata(fuchsia_hardware_sdmmc::SdmmcMetadata{{
         .speed_capabilities = speed_capabilities,
         .enable_cache = true,
         .removable = removable,
         .max_command_packing = 16,
-        .use_fidl = false,
+        .use_fidl = use_fidl,
     }});
   }
 
@@ -271,6 +273,23 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
  public:
   SdmmcBlockDeviceTest() {}
 
+  static void SetDefaultMmcExtCsd(cpp20::span<uint8_t> out_data) {
+    *reinterpret_cast<uint32_t*>(&out_data[212]) = htole32(FakeSdmmcDevice::kBlockCount);
+    out_data[MMC_EXT_CSD_CACHE_CTRL] = 1;
+    out_data[MMC_EXT_CSD_CACHE_SIZE_LSB] = 0x78;
+    out_data[MMC_EXT_CSD_CACHE_SIZE_250] = 0x56;
+    out_data[MMC_EXT_CSD_CACHE_SIZE_251] = 0x34;
+    out_data[MMC_EXT_CSD_CACHE_SIZE_MSB] = 0x12;
+    out_data[MMC_EXT_CSD_PARTITION_CONFIG] = 0xa8;
+    out_data[MMC_EXT_CSD_SEC_FEATURE_SUPPORT] = 0x1 << MMC_EXT_CSD_SEC_FEATURE_SUPPORT_SEC_GB_CL_EN;
+    out_data[MMC_EXT_CSD_PARTITION_SWITCH_TIME] = 0;
+    out_data[MMC_EXT_CSD_BOOT_SIZE_MULT] = 0x10;
+    out_data[MMC_EXT_CSD_GENERIC_CMD6_TIME] = 0;
+    out_data[MMC_EXT_CSD_BARRIER_SUPPORT] = 1;
+    out_data[MMC_EXT_CSD_CACHE_FLUSH_POLICY] = 1;
+    out_data[MMC_EXT_CSD_BARRIER_CTRL] = 1;
+  }
+
   void SetUp() override {
     sdmmc_.Reset();
 
@@ -290,24 +309,7 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
     });
 
     sdmmc_.set_command_callback(MMC_SEND_EXT_CSD, [](cpp20::span<uint8_t> out_data) -> void {
-      *reinterpret_cast<uint32_t*>(&out_data[212]) = htole32(FakeSdmmcDevice::kBlockCount);
-      out_data[MMC_EXT_CSD_CACHE_CTRL] = 1;
-      out_data[MMC_EXT_CSD_CACHE_SIZE_LSB] = 0x78;
-      out_data[MMC_EXT_CSD_CACHE_SIZE_250] = 0x56;
-      out_data[MMC_EXT_CSD_CACHE_SIZE_251] = 0x34;
-      out_data[MMC_EXT_CSD_CACHE_SIZE_MSB] = 0x12;
-      out_data[MMC_EXT_CSD_PARTITION_CONFIG] = 0xa8;
-      out_data[MMC_EXT_CSD_SEC_FEATURE_SUPPORT] = 0x1
-                                                  << MMC_EXT_CSD_SEC_FEATURE_SUPPORT_SEC_GB_CL_EN;
-      out_data[MMC_EXT_CSD_PARTITION_SWITCH_TIME] = 0;
-      out_data[MMC_EXT_CSD_BOOT_SIZE_MULT] = 0x10;
-      out_data[MMC_EXT_CSD_GENERIC_CMD6_TIME] = 0;
-
-// TODO(https://fxbug.dev/376147833): The fake driver doesn't support packed transfers
-#if 0
-      out_data[MMC_EXT_CSD_MAX_PACKED_READS] = 16;
-      out_data[MMC_EXT_CSD_MAX_PACKED_WRITES] = 16;
-#endif
+      SetDefaultMmcExtCsd(out_data);
     });
   }
 
@@ -331,6 +333,11 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
                           bool supply_power_framework) {
     TestSdmmcRootDevice::use_fidl_ = GetParam();
     TestSdmmcRootDevice::is_sd_ = is_sd;
+    if (TestSdmmcRootDevice::use_fidl_) {
+      zx::result client_end = sdmmc_.GetFidlClientEnd();
+      ZX_ASSERT(client_end.is_ok());
+      TestSdmmcRootDevice::fidl_client_end_ = std::move(*client_end);
+    }
     if (is_sd) {
       sdmmc_.set_command_callback(SD_SEND_IF_COND,
                                   [](const sdmmc_req_t& req, uint32_t out_response[4]) {
@@ -353,8 +360,9 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
     }
 
     // Initialize driver test environment.
-    driver_test_.RunInEnvironmentTypeContext(
-        [&](TestEnvironment& env) mutable { env.SetMetadata(is_sd, speed_capabilities); });
+    driver_test_.RunInEnvironmentTypeContext([&](TestEnvironment& env) mutable {
+      env.SetMetadata(is_sd, speed_capabilities, TestSdmmcRootDevice::use_fidl_);
+    });
 
     std::optional<fuchsia_driver_framework::PowerElementArgs> power_args;
 
@@ -398,6 +406,10 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
     // Start driver
     zx::result result =
         driver_test_.StartDriverWithCustomStartArgs([&](fdf::DriverStartArgs& args) {
+          zx::event token;
+          ZX_ASSERT(zx::event::create(0, &token) == ZX_OK);
+          args.node_token(std::move(token));
+
           sdmmc_config::Config fake_config;
           fake_config.enable_suspend() = supply_power_framework;
           fake_config.storage_power_management_enabled() = supply_power_framework;
@@ -410,7 +422,8 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
     if (result.is_error()) {
       return result.status_value();
     }
-    dut_ = driver_test_.driver();
+
+    driver_test_.RunInDriverContext([&](TestSdmmcRootDevice& driver) { dut_ = &driver; });
 
     auto* block_device = std::get_if<std::unique_ptr<SdmmcBlockDevice>>(&dut_->child_device());
     if (block_device == nullptr) {
@@ -424,14 +437,6 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
       test_block_.insert(test_block_.end(), kTestData, kTestData + sizeof(kTestData));
     }
 
-    user_ = GetBlockClient(USER_DATA_PARTITION);
-    if (!user_.is_valid()) {
-      return ZX_ERR_BAD_STATE;
-    }
-    if (!is_sd) {
-      boot1_ = GetBlockClient(BOOT_PARTITION_1);
-      boot2_ = GetBlockClient(BOOT_PARTITION_2);
-    }
     return ZX_OK;
   }
 
@@ -440,7 +445,6 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
   fidl::WireSharedClient<fuchsia_hardware_rpmb::Rpmb>& rpmb_client() { return rpmb_client_; }
   std::atomic<bool>& run_threads() { return run_threads_; }
 
-  // Returns a RemoteBlockDevice for the BlockServer interface.
   zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> GetRemoteBlockDeviceForBlockServer(
       const char* instance_name) {
     zx::result client =
@@ -453,34 +457,7 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
   }
 
  protected:
-  static constexpr size_t kBlockOpSize = BlockOperation::OperationSize(sizeof(block_op_t));
   static constexpr uint32_t kMaxOutstandingOps = 16;
-
-  struct OperationContext {
-    zx::vmo vmo;
-    fzl::VmoMapper mapper;
-    zx_status_t status;
-    bool completed;
-  };
-
-  struct CallbackContext {
-    CallbackContext(uint32_t exp_op) { expected_operations.store(exp_op); }
-
-    std::atomic<uint32_t> expected_operations;
-    sync_completion_t completion;
-  };
-
-  static void OperationCallback(void* ctx, zx_status_t status, block_op_t* op) {
-    auto* const cb_ctx = reinterpret_cast<CallbackContext*>(ctx);
-
-    block::Operation<OperationContext> block_op(op, kBlockOpSize, false);
-    block_op.private_storage()->completed = true;
-    block_op.private_storage()->status = status;
-
-    if (cb_ctx->expected_operations.fetch_sub(1) == 1) {
-      sync_completion_signal(&cb_ctx->completion);
-    }
-  }
 
   void BindRpmbClient() {
     auto [client_end, server_end] = fidl::Endpoints<fuchsia_hardware_rpmb::Rpmb>::Create();
@@ -489,42 +466,6 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
     binding_ = fidl::BindServer(dispatcher, std::move(server_end),
                                 block_device_->child_rpmb_device().get());
     rpmb_client_.Bind(std::move(client_end), dispatcher);
-  }
-
-  void MakeBlockOp(uint8_t opcode, uint32_t length, uint64_t offset,
-                   std::optional<block::Operation<OperationContext>>* out_op) {
-    *out_op = block::Operation<OperationContext>::Alloc(kBlockOpSize);
-    ASSERT_TRUE(*out_op);
-
-    if (opcode == BLOCK_OPCODE_READ || opcode == BLOCK_OPCODE_WRITE) {
-      (*out_op)->operation()->rw = {
-          .command = {.opcode = opcode, .flags = 0},
-          .extra = 0,
-          .vmo = ZX_HANDLE_INVALID,
-          .length = length,
-          .offset_dev = offset,
-          .offset_vmo = 0,
-      };
-
-      if (length > 0) {
-        OperationContext* const ctx = (*out_op)->private_storage();
-        const size_t vmo_size = fbl::round_up<size_t, size_t>(length * FakeSdmmcDevice::kBlockSize,
-                                                              zx_system_get_page_size());
-        ASSERT_OK(ctx->mapper.CreateAndMap(vmo_size, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, nullptr,
-                                           &ctx->vmo));
-        ctx->completed = false;
-        ctx->status = ZX_OK;
-        (*out_op)->operation()->rw.vmo = ctx->vmo.get();
-      }
-    } else if (opcode == BLOCK_OPCODE_TRIM) {
-      (*out_op)->operation()->trim = {
-          .command = {.opcode = opcode, .flags = 0},
-          .length = length,
-          .offset_dev = offset,
-      };
-    } else {
-      (*out_op)->operation()->command = {.opcode = opcode, .flags = 0};
-    }
   }
 
   void FillSdmmc(uint32_t length, uint64_t offset) {
@@ -564,28 +505,10 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
     }
   }
 
-  ddk::BlockImplProtocolClient GetBlockClient(SdmmcBlockDevice* device, EmmcPartition partition) {
-    for (const auto& partition_device : device->child_partition_devices()) {
-      if (partition_device->partition() == partition) {
-        block_impl_protocol_t proto = {.ops = &partition_device->block_impl_protocol_ops(),
-                                       .ctx = partition_device.get()};
-        return ddk::BlockImplProtocolClient(&proto);
-      }
-    }
-    return ddk::BlockImplProtocolClient();
-  }
-
-  ddk::BlockImplProtocolClient GetBlockClient(EmmcPartition partition) {
-    return GetBlockClient(block_device_, partition);
-  }
-
   FakeSdmmcDevice& sdmmc_ = TestSdmmcRootDevice::sdmmc_;
-  fdf_testing::ForegroundDriverTest<TestConfig> driver_test_;
+  fdf_testing::BackgroundDriverTest<TestConfig> driver_test_;
   TestSdmmcRootDevice* dut_ = nullptr;
   SdmmcBlockDevice* block_device_ = nullptr;
-  ddk::BlockImplProtocolClient user_;
-  ddk::BlockImplProtocolClient boot1_;
-  ddk::BlockImplProtocolClient boot2_;
   fidl::WireSharedClient<fuchsia_hardware_rpmb::Rpmb> rpmb_client_;
   std::atomic<bool> run_threads_ = true;
   zx::event node_token_;
@@ -609,153 +532,206 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
 TEST_P(SdmmcBlockDeviceTest, BlockImplQuery) {
   ASSERT_OK(StartDriverForMmc());
 
-  size_t block_op_size;
-  block_info_t info;
-  user_.Query(&info, &block_op_size);
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> client_result =
+      GetRemoteBlockDeviceForBlockServer("user");
+  ASSERT_OK(client_result);
+  auto client = std::move(client_result.value());
+
+  fuchsia_storage_block::wire::BlockInfo info;
+  EXPECT_OK(client->BlockGetInfo(&info));
 
   EXPECT_EQ(info.block_count, FakeSdmmcDevice::kBlockCount);
   EXPECT_EQ(info.block_size, FakeSdmmcDevice::kBlockSize);
-  EXPECT_EQ(block_op_size, kBlockOpSize);
-  EXPECT_FALSE(info.flags & DEVICE_FLAG_REMOVABLE);
+  EXPECT_FALSE(info.flags & fuchsia_storage_block::wire::DeviceFlag::kRemovable);
 }
 
 TEST_P(SdmmcBlockDeviceTest, BlockImplQuerySdRemovable) {
   ASSERT_OK(StartDriverForSd());
 
-  size_t block_op_size;
-  block_info_t info;
-  user_.Query(&info, &block_op_size);
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> client_result =
+      GetRemoteBlockDeviceForBlockServer("user");
+  ASSERT_OK(client_result);
+  auto client = std::move(client_result.value());
+
+  fuchsia_storage_block::wire::BlockInfo info;
+  EXPECT_OK(client->BlockGetInfo(&info));
 
   EXPECT_EQ(info.block_size, FakeSdmmcDevice::kBlockSize);
-  EXPECT_EQ(block_op_size, kBlockOpSize);
-  EXPECT_TRUE(info.flags & DEVICE_FLAG_REMOVABLE);
+  EXPECT_TRUE(info.flags & fuchsia_storage_block::wire::DeviceFlag::kRemovable);
 }
 
 TEST_P(SdmmcBlockDeviceTest, BlockImplQueue) {
   ASSERT_OK(StartDriverForMmc());
 
-  std::optional<block::Operation<OperationContext>> op1;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 1, 0, &op1));
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> client_result =
+      GetRemoteBlockDeviceForBlockServer("user");
+  ASSERT_OK(client_result);
+  auto client = std::move(client_result.value());
 
-  std::optional<block::Operation<OperationContext>> op2;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 5, 0x8000, &op2));
+  fuchsia_storage_block::wire::BlockInfo info;
+  EXPECT_OK(client->BlockGetInfo(&info));
 
-  std::optional<block::Operation<OperationContext>> op3;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_FLUSH, 0, 0, &op3));
+  zx::vmo vmo;
+  const size_t vmo_size =
+      fbl::round_up<size_t, size_t>(20 * FakeSdmmcDevice::kBlockSize, zx_system_get_page_size());
+  fzl::VmoMapper mapper;
+  ASSERT_OK(mapper.CreateAndMap(vmo_size, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, nullptr, &vmo));
 
-  std::optional<block::Operation<OperationContext>> op4;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_READ, 1, 0x400, &op4));
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
+  vmoid_t vmoid = owned_vmoid.TakeId();
 
-  std::optional<block::Operation<OperationContext>> op5;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_READ, 10, 0x2000, &op5));
-
-  CallbackContext ctx(5);
-
-  FillVmo(op1->private_storage()->mapper, 1);
-  FillVmo(op2->private_storage()->mapper, 5);
+  // Fill VMO with test data.
+  FillVmo(mapper, 1, 0);
+  FillVmo(mapper, 5, 1);
   FillSdmmc(1, 0x400);
   FillSdmmc(10, 0x2000);
 
-  user_.Queue(op1->operation(), OperationCallback, &ctx);
-  user_.Queue(op2->operation(), OperationCallback, &ctx);
-  user_.Queue(op3->operation(), OperationCallback, &ctx);
-  user_.Queue(op4->operation(), OperationCallback, &ctx);
-  user_.Queue(op5->operation(), OperationCallback, &ctx);
+  BlockFifoRequest requests[] = {
+      {
+          .command = {.opcode = BLOCK_OPCODE_WRITE},
+          .vmoid = vmoid,
+          .length = 1,
+          .vmo_offset = 0,
+          .dev_offset = 0,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_WRITE},
+          .vmoid = vmoid,
+          .length = 5,
+          .vmo_offset = 1,
+          .dev_offset = 0x8000,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_FLUSH},
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_READ},
+          .vmoid = vmoid,
+          .length = 1,
+          .vmo_offset = 6,
+          .dev_offset = 0x400,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_READ},
+          .vmoid = vmoid,
+          .length = 10,
+          .vmo_offset = 7,
+          .dev_offset = 0x2000,
+      },
+  };
 
-  driver_test_.runtime().PerformBlockingWork(
-      [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
+  EXPECT_OK(client->FifoTransaction(requests, 5));
 
-  EXPECT_TRUE(op1->private_storage()->completed);
-  EXPECT_TRUE(op2->private_storage()->completed);
-  EXPECT_TRUE(op3->private_storage()->completed);
-  EXPECT_TRUE(op4->private_storage()->completed);
-  EXPECT_TRUE(op5->private_storage()->completed);
-
-  EXPECT_OK(op1->private_storage()->status);
-  EXPECT_OK(op2->private_storage()->status);
-  EXPECT_OK(op3->private_storage()->status);
-  EXPECT_OK(op4->private_storage()->status);
-  EXPECT_OK(op5->private_storage()->status);
-
+  // Verify results.
   ASSERT_NO_FATAL_FAILURE(CheckSdmmc(1, 0));
   ASSERT_NO_FATAL_FAILURE(CheckSdmmc(5, 0x8000));
-  ASSERT_NO_FATAL_FAILURE(CheckVmo(op4->private_storage()->mapper, 1));
-  ASSERT_NO_FATAL_FAILURE(CheckVmo(op5->private_storage()->mapper, 10));
+  ASSERT_NO_FATAL_FAILURE(CheckVmo(mapper, 1, 6));
+  ASSERT_NO_FATAL_FAILURE(CheckVmo(mapper, 10, 7));
 }
 
 TEST_P(SdmmcBlockDeviceTest, BlockImplQueueOutOfRange) {
   ASSERT_OK(StartDriverForMmc());
 
-  std::optional<block::Operation<OperationContext>> op1;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 1, 0x100000, &op1));
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> client_result =
+      GetRemoteBlockDeviceForBlockServer("user");
+  ASSERT_OK(client_result);
+  auto client = std::move(client_result.value());
 
-  std::optional<block::Operation<OperationContext>> op2;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_READ, 10, 0x200000, &op2));
+  fuchsia_storage_block::wire::BlockInfo info;
+  EXPECT_OK(client->BlockGetInfo(&info));
 
-  std::optional<block::Operation<OperationContext>> op3;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 8, 0xffff8, &op3));
+  zx::vmo vmo;
+  const size_t vmo_size =
+      fbl::round_up<size_t, size_t>(16 * FakeSdmmcDevice::kBlockSize, zx_system_get_page_size());
+  fzl::VmoMapper mapper;
+  ASSERT_OK(mapper.CreateAndMap(vmo_size, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, nullptr, &vmo));
 
-  std::optional<block::Operation<OperationContext>> op4;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_READ, 9, 0xffff8, &op4));
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
+  vmoid_t vmoid = owned_vmoid.TakeId();
 
-  std::optional<block::Operation<OperationContext>> op5;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 16, 0xffff8, &op5));
+  BlockFifoRequest requests[] = {
+      {
+          .command = {.opcode = BLOCK_OPCODE_WRITE},
+          .vmoid = vmoid,
+          .length = 1,
+          .vmo_offset = 0,
+          .dev_offset = 0x100000,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_READ},
+          .vmoid = vmoid,
+          .length = 10,
+          .vmo_offset = 0,
+          .dev_offset = 0x200000,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_WRITE},
+          .vmoid = vmoid,
+          .length = 8,
+          .vmo_offset = 0,
+          .dev_offset = 0xffff8,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_READ},
+          .vmoid = vmoid,
+          .length = 9,
+          .vmo_offset = 0,
+          .dev_offset = 0xffff8,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_WRITE},
+          .vmoid = vmoid,
+          .length = 16,
+          .vmo_offset = 0,
+          .dev_offset = 0xffff8,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_READ},
+          .vmoid = vmoid,
+          .length = 0,
+          .vmo_offset = 0,
+          .dev_offset = 0x80000,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_WRITE},
+          .vmoid = vmoid,
+          .length = 1,
+          .vmo_offset = 0,
+          .dev_offset = 0xfffff,
+      },
+  };
 
-  std::optional<block::Operation<OperationContext>> op6;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_READ, 0, 0x80000, &op6));
-
-  std::optional<block::Operation<OperationContext>> op7;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 1, 0xfffff, &op7));
-
-  CallbackContext ctx(7);
-
-  user_.Queue(op1->operation(), OperationCallback, &ctx);
-  user_.Queue(op2->operation(), OperationCallback, &ctx);
-  user_.Queue(op3->operation(), OperationCallback, &ctx);
-  user_.Queue(op4->operation(), OperationCallback, &ctx);
-  user_.Queue(op5->operation(), OperationCallback, &ctx);
-  user_.Queue(op6->operation(), OperationCallback, &ctx);
-  user_.Queue(op7->operation(), OperationCallback, &ctx);
-
-  driver_test_.runtime().PerformBlockingWork(
-      [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
-
-  EXPECT_TRUE(op1->private_storage()->completed);
-  EXPECT_TRUE(op2->private_storage()->completed);
-  EXPECT_TRUE(op3->private_storage()->completed);
-  EXPECT_TRUE(op4->private_storage()->completed);
-  EXPECT_TRUE(op5->private_storage()->completed);
-  EXPECT_TRUE(op6->private_storage()->completed);
-  EXPECT_TRUE(op7->private_storage()->completed);
-
-  EXPECT_NOT_OK(op1->private_storage()->status);
-  EXPECT_NOT_OK(op2->private_storage()->status);
-  EXPECT_OK(op3->private_storage()->status);
-  EXPECT_NOT_OK(op4->private_storage()->status);
-  EXPECT_NOT_OK(op5->private_storage()->status);
-  EXPECT_NOT_OK(op6->private_storage()->status);
-  EXPECT_OK(op7->private_storage()->status);
+  EXPECT_STATUS(client->FifoTransaction(&requests[0], 1), ZX_ERR_OUT_OF_RANGE);
+  EXPECT_STATUS(client->FifoTransaction(&requests[1], 1), ZX_ERR_OUT_OF_RANGE);
+  EXPECT_OK(client->FifoTransaction(&requests[2], 1));
+  EXPECT_STATUS(client->FifoTransaction(&requests[3], 1), ZX_ERR_OUT_OF_RANGE);
+  EXPECT_STATUS(client->FifoTransaction(&requests[4], 1), ZX_ERR_OUT_OF_RANGE);
+  EXPECT_STATUS(client->FifoTransaction(&requests[5], 1), ZX_ERR_INVALID_ARGS);
+  EXPECT_OK(client->FifoTransaction(&requests[6], 1));
 }
 
 TEST_P(SdmmcBlockDeviceTest, NoCmd12ForSdBlockTransfer) {
   ASSERT_OK(StartDriverForSd());
 
-  std::optional<block::Operation<OperationContext>> op1;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 1, 0, &op1));
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> client_result =
+      GetRemoteBlockDeviceForBlockServer("user");
+  ASSERT_OK(client_result);
+  auto client = std::move(client_result.value());
 
-  std::optional<block::Operation<OperationContext>> op2;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 5, 0x8000, &op2));
+  fuchsia_storage_block::wire::BlockInfo info;
+  EXPECT_OK(client->BlockGetInfo(&info));
 
-  std::optional<block::Operation<OperationContext>> op3;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_FLUSH, 0, 0, &op3));
+  zx::vmo vmo;
+  const size_t vmo_size =
+      fbl::round_up<size_t, size_t>(20 * FakeSdmmcDevice::kBlockSize, zx_system_get_page_size());
+  fzl::VmoMapper mapper;
+  ASSERT_OK(mapper.CreateAndMap(vmo_size, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, nullptr, &vmo));
 
-  std::optional<block::Operation<OperationContext>> op4;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_READ, 1, 0x400, &op4));
-
-  std::optional<block::Operation<OperationContext>> op5;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_READ, 10, 0x2000, &op5));
-
-  CallbackContext ctx(5);
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
+  vmoid_t vmoid = owned_vmoid.TakeId();
 
   sdmmc_.set_command_callback(SDMMC_READ_MULTIPLE_BLOCK, [](const sdmmc_req_t& req) -> void {
     EXPECT_FALSE(req.cmd_flags & SDMMC_CMD_AUTO12);
@@ -764,14 +740,41 @@ TEST_P(SdmmcBlockDeviceTest, NoCmd12ForSdBlockTransfer) {
     EXPECT_FALSE(req.cmd_flags & SDMMC_CMD_AUTO12);
   });
 
-  user_.Queue(op1->operation(), OperationCallback, &ctx);
-  user_.Queue(op2->operation(), OperationCallback, &ctx);
-  user_.Queue(op3->operation(), OperationCallback, &ctx);
-  user_.Queue(op4->operation(), OperationCallback, &ctx);
-  user_.Queue(op5->operation(), OperationCallback, &ctx);
+  BlockFifoRequest requests[] = {
+      {
+          .command = {.opcode = BLOCK_OPCODE_WRITE},
+          .vmoid = vmoid,
+          .length = 1,
+          .vmo_offset = 0,
+          .dev_offset = 0,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_WRITE},
+          .vmoid = vmoid,
+          .length = 5,
+          .vmo_offset = 1,
+          .dev_offset = 0x8000,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_FLUSH},
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_READ},
+          .vmoid = vmoid,
+          .length = 1,
+          .vmo_offset = 6,
+          .dev_offset = 0x400,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_READ},
+          .vmoid = vmoid,
+          .length = 10,
+          .vmo_offset = 7,
+          .dev_offset = 0x2000,
+      },
+  };
 
-  driver_test_.runtime().PerformBlockingWork(
-      [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
+  EXPECT_OK(client->FifoTransaction(requests, 5));
 
   const std::map<uint32_t, uint32_t> command_counts = sdmmc_.command_counts();
   EXPECT_EQ(command_counts.find(SDMMC_STOP_TRANSMISSION), command_counts.end());
@@ -780,22 +783,22 @@ TEST_P(SdmmcBlockDeviceTest, NoCmd12ForSdBlockTransfer) {
 TEST_P(SdmmcBlockDeviceTest, NoCmd12ForMmcBlockTransfer) {
   ASSERT_OK(StartDriverForMmc());
 
-  std::optional<block::Operation<OperationContext>> op1;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 1, 0, &op1));
+  auto client_result = GetRemoteBlockDeviceForBlockServer("user");
+  ASSERT_OK(client_result);
+  auto client = std::move(client_result.value());
 
-  std::optional<block::Operation<OperationContext>> op2;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 5, 0x8000, &op2));
+  fuchsia_storage_block::wire::BlockInfo info;
+  EXPECT_OK(client->BlockGetInfo(&info));
 
-  std::optional<block::Operation<OperationContext>> op3;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_FLUSH, 0, 0, &op3));
+  zx::vmo vmo;
+  const size_t vmo_size =
+      fbl::round_up<size_t, size_t>(20 * FakeSdmmcDevice::kBlockSize, zx_system_get_page_size());
+  fzl::VmoMapper mapper;
+  ASSERT_OK(mapper.CreateAndMap(vmo_size, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, nullptr, &vmo));
 
-  std::optional<block::Operation<OperationContext>> op4;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_READ, 1, 0x400, &op4));
-
-  std::optional<block::Operation<OperationContext>> op5;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_READ, 10, 0x2000, &op5));
-
-  CallbackContext ctx(5);
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
+  vmoid_t vmoid = owned_vmoid.TakeId();
 
   sdmmc_.set_command_callback(SDMMC_READ_MULTIPLE_BLOCK, [](const sdmmc_req_t& req) -> void {
     EXPECT_FALSE(req.cmd_flags & SDMMC_CMD_AUTO12);
@@ -804,14 +807,41 @@ TEST_P(SdmmcBlockDeviceTest, NoCmd12ForMmcBlockTransfer) {
     EXPECT_FALSE(req.cmd_flags & SDMMC_CMD_AUTO12);
   });
 
-  user_.Queue(op1->operation(), OperationCallback, &ctx);
-  user_.Queue(op2->operation(), OperationCallback, &ctx);
-  user_.Queue(op3->operation(), OperationCallback, &ctx);
-  user_.Queue(op4->operation(), OperationCallback, &ctx);
-  user_.Queue(op5->operation(), OperationCallback, &ctx);
+  BlockFifoRequest requests[] = {
+      {
+          .command = {.opcode = BLOCK_OPCODE_WRITE},
+          .vmoid = vmoid,
+          .length = 1,
+          .vmo_offset = 0,
+          .dev_offset = 0,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_WRITE},
+          .vmoid = vmoid,
+          .length = 5,
+          .vmo_offset = 1,
+          .dev_offset = 0x8000,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_FLUSH},
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_READ},
+          .vmoid = vmoid,
+          .length = 1,
+          .vmo_offset = 6,
+          .dev_offset = 0x400,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_READ},
+          .vmoid = vmoid,
+          .length = 10,
+          .vmo_offset = 7,
+          .dev_offset = 0x2000,
+      },
+  };
 
-  driver_test_.runtime().PerformBlockingWork(
-      [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
+  EXPECT_OK(client->FifoTransaction(requests, 5));
 
   const std::map<uint32_t, uint32_t> command_counts = sdmmc_.command_counts();
   EXPECT_EQ(command_counts.find(SDMMC_STOP_TRANSMISSION), command_counts.end());
@@ -820,47 +850,63 @@ TEST_P(SdmmcBlockDeviceTest, NoCmd12ForMmcBlockTransfer) {
 TEST_P(SdmmcBlockDeviceTest, ErrorsPropagate) {
   ASSERT_OK(StartDriverForMmc());
 
-  std::optional<block::Operation<OperationContext>> op1;
-  ASSERT_NO_FATAL_FAILURE(
-      MakeBlockOp(BLOCK_OPCODE_WRITE, 1, FakeSdmmcDevice::kBadRegionStart, &op1));
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> client_result =
+      GetRemoteBlockDeviceForBlockServer("user");
+  ASSERT_OK(client_result);
+  auto client = std::move(client_result.value());
 
-  std::optional<block::Operation<OperationContext>> op2;
-  ASSERT_NO_FATAL_FAILURE(
-      MakeBlockOp(BLOCK_OPCODE_WRITE, 5, FakeSdmmcDevice::kBadRegionStart | 0x80, &op2));
+  fuchsia_storage_block::wire::BlockInfo info;
+  EXPECT_OK(client->BlockGetInfo(&info));
 
-  std::optional<block::Operation<OperationContext>> op3;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_FLUSH, 0, 0, &op3));
+  zx::vmo vmo;
+  const size_t vmo_size =
+      fbl::round_up<size_t, size_t>(16 * FakeSdmmcDevice::kBlockSize, zx_system_get_page_size());
+  fzl::VmoMapper mapper;
+  ASSERT_OK(mapper.CreateAndMap(vmo_size, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, nullptr, &vmo));
 
-  std::optional<block::Operation<OperationContext>> op4;
-  ASSERT_NO_FATAL_FAILURE(
-      MakeBlockOp(BLOCK_OPCODE_READ, 1, FakeSdmmcDevice::kBadRegionStart | 0x40, &op4));
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
+  vmoid_t vmoid = owned_vmoid.TakeId();
 
-  std::optional<block::Operation<OperationContext>> op5;
-  ASSERT_NO_FATAL_FAILURE(
-      MakeBlockOp(BLOCK_OPCODE_READ, 10, FakeSdmmcDevice::kBadRegionStart | 0x20, &op5));
+  BlockFifoRequest requests[] = {
+      {
+          .command = {.opcode = BLOCK_OPCODE_WRITE},
+          .vmoid = vmoid,
+          .length = 1,
+          .vmo_offset = 0,
+          .dev_offset = FakeSdmmcDevice::kBadRegionStart,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_WRITE},
+          .vmoid = vmoid,
+          .length = 5,
+          .vmo_offset = 0,
+          .dev_offset = FakeSdmmcDevice::kBadRegionStart | 0x80,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_FLUSH},
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_READ},
+          .vmoid = vmoid,
+          .length = 1,
+          .vmo_offset = 0,
+          .dev_offset = FakeSdmmcDevice::kBadRegionStart | 0x40,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_READ},
+          .vmoid = vmoid,
+          .length = 10,
+          .vmo_offset = 0,
+          .dev_offset = FakeSdmmcDevice::kBadRegionStart | 0x20,
+      },
+  };
 
-  CallbackContext ctx(5);
-
-  user_.Queue(op1->operation(), OperationCallback, &ctx);
-  user_.Queue(op2->operation(), OperationCallback, &ctx);
-  user_.Queue(op3->operation(), OperationCallback, &ctx);
-  user_.Queue(op4->operation(), OperationCallback, &ctx);
-  user_.Queue(op5->operation(), OperationCallback, &ctx);
-
-  driver_test_.runtime().PerformBlockingWork(
-      [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
-
-  EXPECT_TRUE(op1->private_storage()->completed);
-  EXPECT_TRUE(op2->private_storage()->completed);
-  EXPECT_TRUE(op3->private_storage()->completed);
-  EXPECT_TRUE(op4->private_storage()->completed);
-  EXPECT_TRUE(op5->private_storage()->completed);
-
-  EXPECT_NOT_OK(op1->private_storage()->status);
-  EXPECT_NOT_OK(op2->private_storage()->status);
-  EXPECT_OK(op3->private_storage()->status);
-  EXPECT_NOT_OK(op4->private_storage()->status);
-  EXPECT_NOT_OK(op5->private_storage()->status);
+  EXPECT_STATUS(client->FifoTransaction(&requests[0], 1), ZX_ERR_IO);
+  EXPECT_STATUS(client->FifoTransaction(&requests[1], 1), ZX_ERR_IO);
+  EXPECT_OK(client->FifoTransaction(&requests[2], 1));
+  EXPECT_STATUS(client->FifoTransaction(&requests[3], 1), ZX_ERR_IO);
+  EXPECT_STATUS(client->FifoTransaction(&requests[4], 1), ZX_ERR_IO);
 }
 
 TEST_P(SdmmcBlockDeviceTest, SendCmd12OnCommandFailure) {
@@ -871,16 +917,30 @@ TEST_P(SdmmcBlockDeviceTest, SendCmd12OnCommandFailure) {
 
   ASSERT_OK(StartDriverForMmc());
 
-  std::optional<block::Operation<OperationContext>> op1;
-  ASSERT_NO_FATAL_FAILURE(
-      MakeBlockOp(BLOCK_OPCODE_WRITE, 1, FakeSdmmcDevice::kBadRegionStart, &op1));
-  CallbackContext ctx1(1);
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> client_result =
+      GetRemoteBlockDeviceForBlockServer("user");
+  ASSERT_OK(client_result);
+  auto client = std::move(client_result.value());
 
-  user_.Queue(op1->operation(), OperationCallback, &ctx1);
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(FakeSdmmcDevice::kBlockSize * 16, 0, &vmo));
 
-  driver_test_.runtime().PerformBlockingWork(
-      [&] { EXPECT_OK(sync_completion_wait(&ctx1.completion, zx::duration::infinite().get())); });
-  EXPECT_TRUE(op1->private_storage()->completed);
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
+  vmoid_t vmoid = owned_vmoid.TakeId();
+
+  BlockFifoRequest requests[] = {
+      {
+          .command = {.opcode = BLOCK_OPCODE_WRITE},
+          .vmoid = vmoid,
+          .length = 1,
+          .vmo_offset = 0,
+          .dev_offset = FakeSdmmcDevice::kBadRegionStart,
+      },
+  };
+
+  EXPECT_STATUS(client->FifoTransaction(&requests[0], 1), ZX_ERR_IO);
+
   EXPECT_EQ(sdmmc_.command_counts().at(SDMMC_STOP_TRANSMISSION), 10);
 }
 
@@ -892,98 +952,119 @@ TEST_P(SdmmcBlockDeviceTest, SendCmd12OnCommandFailureWhenAutoCmd12) {
 
   ASSERT_OK(StartDriverForMmc());
 
-  std::optional<block::Operation<OperationContext>> op2;
-  ASSERT_NO_FATAL_FAILURE(
-      MakeBlockOp(BLOCK_OPCODE_WRITE, 1, FakeSdmmcDevice::kBadRegionStart, &op2));
-  CallbackContext ctx2(1);
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> client_result =
+      GetRemoteBlockDeviceForBlockServer("user");
+  ASSERT_OK(client_result);
+  auto client = std::move(client_result.value());
 
-  user_.Queue(op2->operation(), OperationCallback, &ctx2);
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(FakeSdmmcDevice::kBlockSize * 16, 0, &vmo));
 
-  driver_test_.runtime().PerformBlockingWork(
-      [&] { EXPECT_OK(sync_completion_wait(&ctx2.completion, zx::duration::infinite().get())); });
-  EXPECT_TRUE(op2->private_storage()->completed);
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
+  vmoid_t vmoid = owned_vmoid.TakeId();
+
+  BlockFifoRequest requests[] = {
+      {
+          .command = {.opcode = BLOCK_OPCODE_WRITE},
+          .vmoid = vmoid,
+          .length = 1,
+          .vmo_offset = 0,
+          .dev_offset = FakeSdmmcDevice::kBadRegionStart,
+      },
+  };
+
+  EXPECT_STATUS(client->FifoTransaction(&requests[0], 1), ZX_ERR_IO);
+
   EXPECT_EQ(sdmmc_.command_counts().at(SDMMC_STOP_TRANSMISSION), 10);
 }
 
 TEST_P(SdmmcBlockDeviceTest, Trim) {
   ASSERT_OK(StartDriverForMmc());
 
-  std::optional<block::Operation<OperationContext>> op1;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 10, 100, &op1));
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> client_result =
+      GetRemoteBlockDeviceForBlockServer("user");
+  ASSERT_OK(client_result);
+  auto client = std::move(client_result.value());
 
-  std::optional<block::Operation<OperationContext>> op2;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_FLUSH, 0, 0, &op2));
+  zx::vmo vmo;
+  const size_t vmo_size =
+      fbl::round_up<size_t, size_t>(40 * FakeSdmmcDevice::kBlockSize, zx_system_get_page_size());
+  fzl::VmoMapper mapper;
+  ASSERT_OK(mapper.CreateAndMap(vmo_size, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, nullptr, &vmo));
 
-  std::optional<block::Operation<OperationContext>> op3;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_READ, 10, 100, &op3));
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
+  vmoid_t vmoid = owned_vmoid.TakeId();
 
-  std::optional<block::Operation<OperationContext>> op4;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_TRIM, 1, 103, &op4));
+  FillVmo(mapper, 10, 0);
 
-  std::optional<block::Operation<OperationContext>> op5;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_READ, 10, 100, &op5));
+  BlockFifoRequest requests[] = {
+      {
+          .command = {.opcode = BLOCK_OPCODE_WRITE},
+          .vmoid = vmoid,
+          .length = 10,
+          .vmo_offset = 0,
+          .dev_offset = 100,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_FLUSH},
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_READ},
+          .vmoid = vmoid,
+          .length = 10,
+          .vmo_offset = 10,
+          .dev_offset = 100,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_TRIM},
+          .length = 1,
+          .dev_offset = 103,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_READ},
+          .vmoid = vmoid,
+          .length = 10,
+          .vmo_offset = 20,
+          .dev_offset = 100,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_TRIM},
+          .length = 3,
+          .dev_offset = 106,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_READ},
+          .vmoid = vmoid,
+          .length = 10,
+          .vmo_offset = 30,
+          .dev_offset = 100,
+      },
+  };
 
-  std::optional<block::Operation<OperationContext>> op6;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_TRIM, 3, 106, &op6));
+  EXPECT_OK(client->FifoTransaction(requests, 7));
 
-  std::optional<block::Operation<OperationContext>> op7;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_READ, 10, 100, &op7));
+  ASSERT_NO_FATAL_FAILURE(CheckVmo(mapper, 10, 10));
 
-  FillVmo(op1->private_storage()->mapper, 10);
+  ASSERT_NO_FATAL_FAILURE(CheckVmo(mapper, 3, 20));
+  ASSERT_NO_FATAL_FAILURE(CheckVmoErased(mapper, 1, 23));
+  ASSERT_NO_FATAL_FAILURE(CheckVmo(mapper, 6, 24));
 
-  CallbackContext ctx(7);
-
-  user_.Queue(op1->operation(), OperationCallback, &ctx);
-  user_.Queue(op2->operation(), OperationCallback, &ctx);
-  user_.Queue(op3->operation(), OperationCallback, &ctx);
-  user_.Queue(op4->operation(), OperationCallback, &ctx);
-  user_.Queue(op5->operation(), OperationCallback, &ctx);
-  user_.Queue(op6->operation(), OperationCallback, &ctx);
-  user_.Queue(op7->operation(), OperationCallback, &ctx);
-
-  driver_test_.runtime().PerformBlockingWork(
-      [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
-
-  ASSERT_NO_FATAL_FAILURE(CheckVmo(op3->private_storage()->mapper, 10, 0));
-
-  ASSERT_NO_FATAL_FAILURE(CheckVmo(op5->private_storage()->mapper, 3, 0));
-  ASSERT_NO_FATAL_FAILURE(CheckVmoErased(op5->private_storage()->mapper, 1, 3));
-  ASSERT_NO_FATAL_FAILURE(CheckVmo(op5->private_storage()->mapper, 6, 4));
-
-  ASSERT_NO_FATAL_FAILURE(CheckVmo(op7->private_storage()->mapper, 3, 0));
-  ASSERT_NO_FATAL_FAILURE(CheckVmoErased(op7->private_storage()->mapper, 1, 3));
-  ASSERT_NO_FATAL_FAILURE(CheckVmo(op7->private_storage()->mapper, 2, 4));
-  ASSERT_NO_FATAL_FAILURE(CheckVmoErased(op7->private_storage()->mapper, 3, 6));
-  ASSERT_NO_FATAL_FAILURE(CheckVmo(op7->private_storage()->mapper, 1, 9));
-
-  EXPECT_OK(op1->private_storage()->status);
-  EXPECT_OK(op2->private_storage()->status);
-  EXPECT_OK(op3->private_storage()->status);
-  EXPECT_OK(op4->private_storage()->status);
-  EXPECT_OK(op5->private_storage()->status);
-  EXPECT_OK(op6->private_storage()->status);
-  EXPECT_OK(op7->private_storage()->status);
+  ASSERT_NO_FATAL_FAILURE(CheckVmo(mapper, 3, 30));
+  ASSERT_NO_FATAL_FAILURE(CheckVmoErased(mapper, 1, 33));
+  ASSERT_NO_FATAL_FAILURE(CheckVmo(mapper, 2, 34));
+  ASSERT_NO_FATAL_FAILURE(CheckVmoErased(mapper, 3, 36));
+  ASSERT_NO_FATAL_FAILURE(CheckVmo(mapper, 1, 39));
 }
 
 TEST_P(SdmmcBlockDeviceTest, TrimErrors) {
   ASSERT_OK(StartDriverForMmc());
 
-  std::optional<block::Operation<OperationContext>> op1;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_TRIM, 10, 10, &op1));
-
-  std::optional<block::Operation<OperationContext>> op2;
-  ASSERT_NO_FATAL_FAILURE(
-      MakeBlockOp(BLOCK_OPCODE_TRIM, 10, FakeSdmmcDevice::kBadRegionStart | 0x40, &op2));
-
-  std::optional<block::Operation<OperationContext>> op3;
-  ASSERT_NO_FATAL_FAILURE(
-      MakeBlockOp(BLOCK_OPCODE_TRIM, 10, FakeSdmmcDevice::kBadRegionStart - 5, &op3));
-
-  std::optional<block::Operation<OperationContext>> op4;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_TRIM, 10, 100, &op4));
-
-  std::optional<block::Operation<OperationContext>> op5;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_TRIM, 10, 110, &op5));
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> client_result =
+      GetRemoteBlockDeviceForBlockServer("user");
+  ASSERT_OK(client_result);
+  auto client = std::move(client_result.value());
 
   sdmmc_.set_command_callback(MMC_ERASE_GROUP_START,
                               [](const sdmmc_req_t& req, uint32_t out_response[4]) {
@@ -999,34 +1080,46 @@ TEST_P(SdmmcBlockDeviceTest, TrimErrors) {
                                 }
                               });
 
-  CallbackContext ctx(5);
+  BlockFifoRequest req1 = {
+      .command = {.opcode = BLOCK_OPCODE_TRIM},
+      .length = 10,
+      .dev_offset = 10,
+  };
+  EXPECT_OK(client->FifoTransaction(&req1, 1));
 
-  user_.Queue(op1->operation(), OperationCallback, &ctx);
-  user_.Queue(op2->operation(), OperationCallback, &ctx);
-  user_.Queue(op3->operation(), OperationCallback, &ctx);
-  user_.Queue(op4->operation(), OperationCallback, &ctx);
-  user_.Queue(op5->operation(), OperationCallback, &ctx);
+  BlockFifoRequest req2 = {
+      .command = {.opcode = BLOCK_OPCODE_TRIM},
+      .length = 10,
+      .dev_offset = FakeSdmmcDevice::kBadRegionStart | 0x40,
+  };
+  EXPECT_STATUS(client->FifoTransaction(&req2, 1), ZX_ERR_IO);
 
-  driver_test_.runtime().PerformBlockingWork(
-      [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
+  BlockFifoRequest req3 = {
+      .command = {.opcode = BLOCK_OPCODE_TRIM},
+      .length = 10,
+      .dev_offset = FakeSdmmcDevice::kBadRegionStart - 5,
+  };
+  EXPECT_STATUS(client->FifoTransaction(&req3, 1), ZX_ERR_IO);
 
-  EXPECT_OK(op1->private_storage()->status);
-  EXPECT_NOT_OK(op2->private_storage()->status);
-  EXPECT_NOT_OK(op3->private_storage()->status);
-  EXPECT_NOT_OK(op4->private_storage()->status);
-  EXPECT_NOT_OK(op5->private_storage()->status);
+  BlockFifoRequest req4 = {
+      .command = {.opcode = BLOCK_OPCODE_TRIM},
+      .length = 10,
+      .dev_offset = 100,
+  };
+  EXPECT_STATUS(client->FifoTransaction(&req4, 1), ZX_ERR_IO);
+
+  BlockFifoRequest req5 = {
+      .command = {.opcode = BLOCK_OPCODE_TRIM},
+      .length = 10,
+      .dev_offset = 110,
+  };
+  EXPECT_STATUS(client->FifoTransaction(&req5, 1), ZX_ERR_IO);
 }
 
 TEST_P(SdmmcBlockDeviceTest, OnlyUserDataPartitionExists) {
   sdmmc_.set_command_callback(MMC_SEND_EXT_CSD, [](cpp20::span<uint8_t> out_data) {
-    out_data[MMC_EXT_CSD_CACHE_CTRL] = 1;
-    out_data[MMC_EXT_CSD_CACHE_SIZE_LSB] = 0x78;
-    out_data[MMC_EXT_CSD_CACHE_SIZE_250] = 0x56;
-    out_data[MMC_EXT_CSD_CACHE_SIZE_251] = 0x34;
-    out_data[MMC_EXT_CSD_CACHE_SIZE_MSB] = 0x12;
-    out_data[MMC_EXT_CSD_PARTITION_SWITCH_TIME] = 0;
+    SetDefaultMmcExtCsd(out_data);
     out_data[MMC_EXT_CSD_BOOT_SIZE_MULT] = 0;
-    out_data[MMC_EXT_CSD_GENERIC_CMD6_TIME] = 0;
   });
 
   ASSERT_OK(StartDriverForMmc());
@@ -1038,15 +1131,9 @@ TEST_P(SdmmcBlockDeviceTest, OnlyUserDataPartitionExists) {
 
 TEST_P(SdmmcBlockDeviceTest, BootPartitionsExistButNotUsed) {
   sdmmc_.set_command_callback(MMC_SEND_EXT_CSD, [](cpp20::span<uint8_t> out_data) {
-    out_data[MMC_EXT_CSD_CACHE_CTRL] = 1;
-    out_data[MMC_EXT_CSD_CACHE_SIZE_LSB] = 0x78;
-    out_data[MMC_EXT_CSD_CACHE_SIZE_250] = 0x56;
-    out_data[MMC_EXT_CSD_CACHE_SIZE_251] = 0x34;
-    out_data[MMC_EXT_CSD_CACHE_SIZE_MSB] = 0x12;
+    SetDefaultMmcExtCsd(out_data);
     out_data[MMC_EXT_CSD_PARTITION_CONFIG] = 2;
-    out_data[MMC_EXT_CSD_PARTITION_SWITCH_TIME] = 0;
     out_data[MMC_EXT_CSD_BOOT_SIZE_MULT] = 1;
-    out_data[MMC_EXT_CSD_GENERIC_CMD6_TIME] = 0;
   });
 
   ASSERT_OK(StartDriverForMmc());
@@ -1102,87 +1189,74 @@ TEST_P(SdmmcBlockDeviceTest, WithBootAndRpmbPartitions) {
   EXPECT_NE(block_device_->child_rpmb_device(), nullptr);
 }
 
-TEST_P(SdmmcBlockDeviceTest, CompleteTransactions) {
-  ASSERT_OK(StartDriverForMmc());
-
-  std::optional<block::Operation<OperationContext>> op1;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 1, 0, &op1));
-
-  std::optional<block::Operation<OperationContext>> op2;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 5, 0x8000, &op2));
-
-  std::optional<block::Operation<OperationContext>> op3;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_FLUSH, 0, 0, &op3));
-
-  std::optional<block::Operation<OperationContext>> op4;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_READ, 1, 0x400, &op4));
-
-  std::optional<block::Operation<OperationContext>> op5;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_READ, 10, 0x2000, &op5));
-
-  CallbackContext ctx(5);
-
-  user_.Queue(op1->operation(), OperationCallback, &ctx);
-  user_.Queue(op2->operation(), OperationCallback, &ctx);
-  user_.Queue(op3->operation(), OperationCallback, &ctx);
-  user_.Queue(op4->operation(), OperationCallback, &ctx);
-  user_.Queue(op5->operation(), OperationCallback, &ctx);
-
-  driver_test_.runtime().PerformBlockingWork(
-      [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
-
-  EXPECT_TRUE(op1->private_storage()->completed);
-  EXPECT_TRUE(op2->private_storage()->completed);
-  EXPECT_TRUE(op3->private_storage()->completed);
-  EXPECT_TRUE(op4->private_storage()->completed);
-  EXPECT_TRUE(op5->private_storage()->completed);
-}
-
 TEST_P(SdmmcBlockDeviceTest, CompleteTransactionsOnStop) {
   ASSERT_OK(StartDriverForMmc());
-  // Stop the worker dispatcher so queued requests don't get completed.
-  sync_completion_t completion;
-  block_device_->StopWorkerDispatcher(fdf::StopCompleter([&](zx::result<> result) {
-    EXPECT_OK(result);
-    sync_completion_signal(&completion);
-  }));
-  EXPECT_OK(sync_completion_wait(&completion, zx::duration::infinite().get()));
 
-  std::optional<block::Operation<OperationContext>> op1;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 1, 0, &op1));
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> client_result =
+      GetRemoteBlockDeviceForBlockServer("user");
+  ASSERT_OK(client_result);
+  auto client = std::move(client_result.value());
 
-  std::optional<block::Operation<OperationContext>> op2;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 5, 0x8000, &op2));
+  // Suspend power so queued requests don't get completed.
+  block_device_->SetPowerSuspendedForTest(true);
 
-  std::optional<block::Operation<OperationContext>> op3;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_FLUSH, 0, 0, &op3));
+  zx::vmo vmo;
+  const size_t vmo_size =
+      fbl::round_up<size_t, size_t>(20 * FakeSdmmcDevice::kBlockSize, zx_system_get_page_size());
+  fzl::VmoMapper mapper;
+  ASSERT_OK(mapper.CreateAndMap(vmo_size, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, nullptr, &vmo));
 
-  std::optional<block::Operation<OperationContext>> op4;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_READ, 1, 0x400, &op4));
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
+  vmoid_t vmoid = owned_vmoid.TakeId();
 
-  std::optional<block::Operation<OperationContext>> op5;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_READ, 10, 0x2000, &op5));
+  BlockFifoRequest requests[] = {
+      {
+          .command = {.opcode = BLOCK_OPCODE_WRITE},
+          .vmoid = vmoid,
+          .length = 1,
+          .vmo_offset = 0,
+          .dev_offset = 0,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_WRITE},
+          .vmoid = vmoid,
+          .length = 5,
+          .vmo_offset = 1,
+          .dev_offset = 0x8000,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_FLUSH},
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_READ},
+          .vmoid = vmoid,
+          .length = 1,
+          .vmo_offset = 6,
+          .dev_offset = 0x400,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_READ},
+          .vmoid = vmoid,
+          .length = 10,
+          .vmo_offset = 7,
+          .dev_offset = 0x2000,
+      },
+  };
 
-  CallbackContext ctx(5);
+  std::thread t([&] {
+    zx_status_t status = client->FifoTransaction(requests, 5);
+    EXPECT_TRUE(status == ZX_ERR_PEER_CLOSED || status == ZX_ERR_CANCELED, "status is %d", status);
+  });
 
-  user_.Queue(op1->operation(), OperationCallback, &ctx);
-  user_.Queue(op2->operation(), OperationCallback, &ctx);
-  user_.Queue(op3->operation(), OperationCallback, &ctx);
-  user_.Queue(op4->operation(), OperationCallback, &ctx);
-  user_.Queue(op5->operation(), OperationCallback, &ctx);
+  // Give the thread a chance to start and block.
+  zx::nanosleep(zx::deadline_after(zx::msec(100)));
 
   EXPECT_OK(driver_test_.StopDriver());
-  dut_ = nullptr;
   block_device_ = nullptr;
+  dut_ = nullptr;
 
-  driver_test_.runtime().PerformBlockingWork(
-      [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
-
-  EXPECT_TRUE(op1->private_storage()->completed);
-  EXPECT_TRUE(op2->private_storage()->completed);
-  EXPECT_TRUE(op3->private_storage()->completed);
-  EXPECT_TRUE(op4->private_storage()->completed);
-  EXPECT_TRUE(op5->private_storage()->completed);
+  t.join();
 }
 
 TEST_P(SdmmcBlockDeviceTest, ProbeMmcSendStatusRetry) {
@@ -1228,44 +1302,63 @@ TEST_P(SdmmcBlockDeviceTest, ProbeMmcSendStatusFail) {
 TEST_P(SdmmcBlockDeviceTest, QueryBootPartitions) {
   ASSERT_OK(StartDriverForMmc());
 
-  ASSERT_TRUE(boot1_.is_valid());
-  ASSERT_TRUE(boot2_.is_valid());
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> boot1_result =
+      GetRemoteBlockDeviceForBlockServer("boot1");
+  ASSERT_OK(boot1_result);
+  auto boot1_client = std::move(boot1_result.value());
 
-  size_t boot1_op_size, boot2_op_size;
-  block_info_t boot1_info, boot2_info;
-  boot1_.Query(&boot1_info, &boot1_op_size);
-  boot2_.Query(&boot2_info, &boot2_op_size);
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> boot2_result =
+      GetRemoteBlockDeviceForBlockServer("boot2");
+  ASSERT_OK(boot2_result);
+  auto boot2_client = std::move(boot2_result.value());
+
+  fuchsia_storage_block::wire::BlockInfo boot1_info, boot2_info;
+  EXPECT_OK(boot1_client->BlockGetInfo(&boot1_info));
+  EXPECT_OK(boot2_client->BlockGetInfo(&boot2_info));
 
   EXPECT_EQ(boot1_info.block_count, (0x10 * 128 * 1024) / FakeSdmmcDevice::kBlockSize);
   EXPECT_EQ(boot2_info.block_count, (0x10 * 128 * 1024) / FakeSdmmcDevice::kBlockSize);
 
   EXPECT_EQ(boot1_info.block_size, FakeSdmmcDevice::kBlockSize);
   EXPECT_EQ(boot2_info.block_size, FakeSdmmcDevice::kBlockSize);
-
-  EXPECT_EQ(boot1_op_size, kBlockOpSize);
-  EXPECT_EQ(boot2_op_size, kBlockOpSize);
 }
 
 TEST_P(SdmmcBlockDeviceTest, AccessBootPartitions) {
   ASSERT_OK(StartDriverForMmc());
 
-  ASSERT_TRUE(boot1_.is_valid());
-  ASSERT_TRUE(boot2_.is_valid());
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> user_result =
+      GetRemoteBlockDeviceForBlockServer("user");
+  ASSERT_OK(user_result);
+  auto user_client = std::move(user_result.value());
 
-  std::optional<block::Operation<OperationContext>> op1;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 1, 0, &op1));
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> boot1_result =
+      GetRemoteBlockDeviceForBlockServer("boot1");
+  ASSERT_OK(boot1_result);
+  auto boot1_client = std::move(boot1_result.value());
 
-  std::optional<block::Operation<OperationContext>> op2;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_READ, 5, 10, &op2));
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> boot2_result =
+      GetRemoteBlockDeviceForBlockServer("boot2");
+  ASSERT_OK(boot2_result);
+  auto boot2_client = std::move(boot2_result.value());
 
-  std::optional<block::Operation<OperationContext>> op3;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 10, 500, &op3));
+  zx::vmo vmo;
+  const size_t vmo_size =
+      fbl::round_up<size_t, size_t>(16 * FakeSdmmcDevice::kBlockSize, zx_system_get_page_size());
+  fzl::VmoMapper mapper;
+  ASSERT_OK(mapper.CreateAndMap(vmo_size, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, nullptr, &vmo));
 
-  FillVmo(op1->private_storage()->mapper, 1);
+  storage::Vmoid owned_vmoid1, owned_vmoid2, owned_vmoid3;
+  EXPECT_OK(boot1_client->BlockAttachVmo(vmo, &owned_vmoid1));
+  EXPECT_OK(boot2_client->BlockAttachVmo(vmo, &owned_vmoid2));
+  EXPECT_OK(user_client->BlockAttachVmo(vmo, &owned_vmoid3));
+
+  vmoid_t vmoid1 = owned_vmoid1.TakeId();
+  vmoid_t vmoid2 = owned_vmoid2.TakeId();
+  vmoid_t vmoid3 = owned_vmoid3.TakeId();
+
+  FillVmo(mapper, 1, 0);
   FillSdmmc(5, 10);
-  FillVmo(op3->private_storage()->mapper, 10);
-
-  CallbackContext ctx(1);
+  FillVmo(mapper, 10, 6);
 
   sdmmc_.set_command_callback(MMC_SWITCH, [](const sdmmc_req_t& req) {
     const uint32_t index = (req.arg >> 16) & 0xff;
@@ -1274,12 +1367,14 @@ TEST_P(SdmmcBlockDeviceTest, AccessBootPartitions) {
     EXPECT_EQ(value, 0xa8 | BOOT_PARTITION_1);
   });
 
-  boot1_.Queue(op1->operation(), OperationCallback, &ctx);
-  driver_test_.runtime().PerformBlockingWork(
-      [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
-
-  ctx.expected_operations.store(1);
-  sync_completion_reset(&ctx.completion);
+  BlockFifoRequest req1 = {
+      .command = {.opcode = BLOCK_OPCODE_WRITE},
+      .vmoid = vmoid1,
+      .length = 1,
+      .vmo_offset = 0,
+      .dev_offset = 0,
+  };
+  EXPECT_OK(boot1_client->FifoTransaction(&req1, 1));
 
   sdmmc_.set_command_callback(MMC_SWITCH, [](const sdmmc_req_t& req) {
     const uint32_t index = (req.arg >> 16) & 0xff;
@@ -1288,12 +1383,14 @@ TEST_P(SdmmcBlockDeviceTest, AccessBootPartitions) {
     EXPECT_EQ(value, 0xa8 | BOOT_PARTITION_2);
   });
 
-  boot2_.Queue(op2->operation(), OperationCallback, &ctx);
-  driver_test_.runtime().PerformBlockingWork(
-      [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
-
-  ctx.expected_operations.store(1);
-  sync_completion_reset(&ctx.completion);
+  BlockFifoRequest req2 = {
+      .command = {.opcode = BLOCK_OPCODE_READ},
+      .vmoid = vmoid2,
+      .length = 5,
+      .vmo_offset = 1,
+      .dev_offset = 10,
+  };
+  EXPECT_OK(boot2_client->FifoTransaction(&req2, 1));
 
   sdmmc_.set_command_callback(MMC_SWITCH, [](const sdmmc_req_t& req) {
     const uint32_t index = (req.arg >> 16) & 0xff;
@@ -1302,42 +1399,41 @@ TEST_P(SdmmcBlockDeviceTest, AccessBootPartitions) {
     EXPECT_EQ(value, 0xa8 | USER_DATA_PARTITION);
   });
 
-  user_.Queue(op3->operation(), OperationCallback, &ctx);
-  driver_test_.runtime().PerformBlockingWork(
-      [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
-
-  EXPECT_TRUE(op1->private_storage()->completed);
-  EXPECT_TRUE(op2->private_storage()->completed);
-  EXPECT_TRUE(op3->private_storage()->completed);
-
-  EXPECT_OK(op1->private_storage()->status);
-  EXPECT_OK(op2->private_storage()->status);
-  EXPECT_OK(op3->private_storage()->status);
+  BlockFifoRequest req3 = {
+      .command = {.opcode = BLOCK_OPCODE_WRITE},
+      .vmoid = vmoid3,
+      .length = 10,
+      .vmo_offset = 6,
+      .dev_offset = 500,
+  };
+  EXPECT_OK(user_client->FifoTransaction(&req3, 1));
 
   ASSERT_NO_FATAL_FAILURE(CheckSdmmc(1, 0));
-  ASSERT_NO_FATAL_FAILURE(CheckVmo(op2->private_storage()->mapper, 5));
+  ASSERT_NO_FATAL_FAILURE(CheckVmo(mapper, 5, 1));
   ASSERT_NO_FATAL_FAILURE(CheckSdmmc(10, 500));
 }
 
 TEST_P(SdmmcBlockDeviceTest, BootPartitionRepeatedAccess) {
   ASSERT_OK(StartDriverForMmc());
 
-  ASSERT_TRUE(boot2_.is_valid());
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> client_result =
+      GetRemoteBlockDeviceForBlockServer("boot2");
+  ASSERT_OK(client_result);
+  auto client = std::move(client_result.value());
 
-  std::optional<block::Operation<OperationContext>> op1;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_READ, 1, 0, &op1));
+  zx::vmo vmo;
+  const size_t vmo_size =
+      fbl::round_up<size_t, size_t>(10 * FakeSdmmcDevice::kBlockSize, zx_system_get_page_size());
+  fzl::VmoMapper mapper;
+  ASSERT_OK(mapper.CreateAndMap(vmo_size, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, nullptr, &vmo));
 
-  std::optional<block::Operation<OperationContext>> op2;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 5, 10, &op2));
-
-  std::optional<block::Operation<OperationContext>> op3;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 2, 5, &op3));
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
+  vmoid_t vmoid = owned_vmoid.TakeId();
 
   FillSdmmc(1, 0);
-  FillVmo(op2->private_storage()->mapper, 5);
-  FillVmo(op3->private_storage()->mapper, 2);
-
-  CallbackContext ctx(1);
+  FillVmo(mapper, 5, 0);
+  FillVmo(mapper, 2, 5);
 
   sdmmc_.set_command_callback(MMC_SWITCH, [](const sdmmc_req_t& req) {
     const uint32_t index = (req.arg >> 16) & 0xff;
@@ -1346,31 +1442,37 @@ TEST_P(SdmmcBlockDeviceTest, BootPartitionRepeatedAccess) {
     EXPECT_EQ(value, 0xa8 | BOOT_PARTITION_2);
   });
 
-  boot2_.Queue(op1->operation(), OperationCallback, &ctx);
-  driver_test_.runtime().PerformBlockingWork(
-      [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
-
-  ctx.expected_operations.store(2);
-  sync_completion_reset(&ctx.completion);
+  BlockFifoRequest req1 = {
+      .command = {.opcode = BLOCK_OPCODE_READ},
+      .vmoid = vmoid,
+      .length = 1,
+      .vmo_offset = 0,
+      .dev_offset = 0,
+  };
+  EXPECT_OK(client->FifoTransaction(&req1, 1));
 
   // Repeated accesses to one partition should not generate more than one MMC_SWITCH command.
   sdmmc_.set_command_callback(MMC_SWITCH, [](const sdmmc_req_t& req) { FAIL(); });
 
-  boot2_.Queue(op2->operation(), OperationCallback, &ctx);
-  boot2_.Queue(op3->operation(), OperationCallback, &ctx);
+  BlockFifoRequest reqs[] = {
+      {
+          .command = {.opcode = BLOCK_OPCODE_WRITE},
+          .vmoid = vmoid,
+          .length = 5,
+          .vmo_offset = 0,
+          .dev_offset = 10,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_WRITE},
+          .vmoid = vmoid,
+          .length = 2,
+          .vmo_offset = 5,
+          .dev_offset = 5,
+      },
+  };
+  EXPECT_OK(client->FifoTransaction(reqs, 2));
 
-  driver_test_.runtime().PerformBlockingWork(
-      [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
-
-  EXPECT_TRUE(op1->private_storage()->completed);
-  EXPECT_TRUE(op2->private_storage()->completed);
-  EXPECT_TRUE(op3->private_storage()->completed);
-
-  EXPECT_OK(op1->private_storage()->status);
-  EXPECT_OK(op2->private_storage()->status);
-  EXPECT_OK(op3->private_storage()->status);
-
-  ASSERT_NO_FATAL_FAILURE(CheckVmo(op1->private_storage()->mapper, 1));
+  ASSERT_NO_FATAL_FAILURE(CheckVmo(mapper, 1, 0));
   ASSERT_NO_FATAL_FAILURE(CheckSdmmc(5, 10));
   ASSERT_NO_FATAL_FAILURE(CheckSdmmc(2, 5));
 }
@@ -1378,51 +1480,68 @@ TEST_P(SdmmcBlockDeviceTest, BootPartitionRepeatedAccess) {
 TEST_P(SdmmcBlockDeviceTest, AccessBootPartitionOutOfRange) {
   ASSERT_OK(StartDriverForMmc());
 
-  ASSERT_TRUE(boot1_.is_valid());
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> client_result =
+      GetRemoteBlockDeviceForBlockServer("boot1");
+  ASSERT_OK(client_result);
+  auto client = std::move(client_result.value());
 
-  std::optional<block::Operation<OperationContext>> op1;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 1, 4096, &op1));
+  zx::vmo vmo;
+  const size_t vmo_size =
+      fbl::round_up<size_t, size_t>(16 * FakeSdmmcDevice::kBlockSize, zx_system_get_page_size());
+  fzl::VmoMapper mapper;
+  ASSERT_OK(mapper.CreateAndMap(vmo_size, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, nullptr, &vmo));
 
-  std::optional<block::Operation<OperationContext>> op2;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 8, 4088, &op2));
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
+  vmoid_t vmoid = owned_vmoid.TakeId();
 
-  std::optional<block::Operation<OperationContext>> op3;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_READ, 9, 4088, &op3));
+  BlockFifoRequest req1 = {
+      .command = {.opcode = BLOCK_OPCODE_WRITE},
+      .vmoid = vmoid,
+      .length = 1,
+      .dev_offset = 4096,
+  };
+  EXPECT_STATUS(client->FifoTransaction(&req1, 1), ZX_ERR_OUT_OF_RANGE);
 
-  std::optional<block::Operation<OperationContext>> op4;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 16, 4088, &op4));
+  BlockFifoRequest req2 = {
+      .command = {.opcode = BLOCK_OPCODE_WRITE},
+      .vmoid = vmoid,
+      .length = 8,
+      .dev_offset = 4088,
+  };
+  EXPECT_OK(client->FifoTransaction(&req2, 1));
 
-  std::optional<block::Operation<OperationContext>> op5;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_READ, 0, 2048, &op5));
+  BlockFifoRequest req3 = {
+      .command = {.opcode = BLOCK_OPCODE_READ},
+      .vmoid = vmoid,
+      .length = 9,
+      .dev_offset = 4088,
+  };
+  EXPECT_STATUS(client->FifoTransaction(&req3, 1), ZX_ERR_OUT_OF_RANGE);
 
-  std::optional<block::Operation<OperationContext>> op6;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 1, 4095, &op6));
+  BlockFifoRequest req4 = {
+      .command = {.opcode = BLOCK_OPCODE_WRITE},
+      .vmoid = vmoid,
+      .length = 16,
+      .dev_offset = 4088,
+  };
+  EXPECT_STATUS(client->FifoTransaction(&req4, 1), ZX_ERR_OUT_OF_RANGE);
 
-  CallbackContext ctx(6);
+  BlockFifoRequest req5 = {
+      .command = {.opcode = BLOCK_OPCODE_READ},
+      .vmoid = vmoid,
+      .length = 0,
+      .dev_offset = 2048,
+  };
+  EXPECT_STATUS(client->FifoTransaction(&req5, 1), ZX_ERR_INVALID_ARGS);
 
-  boot1_.Queue(op1->operation(), OperationCallback, &ctx);
-  boot1_.Queue(op2->operation(), OperationCallback, &ctx);
-  boot1_.Queue(op3->operation(), OperationCallback, &ctx);
-  boot1_.Queue(op4->operation(), OperationCallback, &ctx);
-  boot1_.Queue(op5->operation(), OperationCallback, &ctx);
-  boot1_.Queue(op6->operation(), OperationCallback, &ctx);
-
-  driver_test_.runtime().PerformBlockingWork(
-      [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
-
-  EXPECT_TRUE(op1->private_storage()->completed);
-  EXPECT_TRUE(op2->private_storage()->completed);
-  EXPECT_TRUE(op3->private_storage()->completed);
-  EXPECT_TRUE(op4->private_storage()->completed);
-  EXPECT_TRUE(op5->private_storage()->completed);
-  EXPECT_TRUE(op6->private_storage()->completed);
-
-  EXPECT_NOT_OK(op1->private_storage()->status);
-  EXPECT_OK(op2->private_storage()->status);
-  EXPECT_NOT_OK(op3->private_storage()->status);
-  EXPECT_NOT_OK(op4->private_storage()->status);
-  EXPECT_NOT_OK(op5->private_storage()->status);
-  EXPECT_OK(op6->private_storage()->status);
+  BlockFifoRequest req6 = {
+      .command = {.opcode = BLOCK_OPCODE_WRITE},
+      .vmoid = vmoid,
+      .length = 1,
+      .dev_offset = 4095,
+  };
+  EXPECT_OK(client->FifoTransaction(&req6, 1));
 }
 
 TEST_P(SdmmcBlockDeviceTest, ProbeUsesPrefsHs) {
@@ -1566,9 +1685,13 @@ TEST_P(SdmmcBlockDeviceTest, FallBackToHsIfTuningFails) {
 TEST_P(SdmmcBlockDeviceTest, ProbeSd) {
   ASSERT_OK(StartDriverForSd());
 
-  size_t block_op_size;
-  block_info_t info;
-  user_.Query(&info, &block_op_size);
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> client_result =
+      GetRemoteBlockDeviceForBlockServer("user");
+  ASSERT_OK(client_result);
+  auto client = std::move(client_result.value());
+
+  fuchsia_storage_block::wire::BlockInfo info;
+  EXPECT_OK(client->BlockGetInfo(&info));
 
   EXPECT_EQ(info.block_size, 512);
   EXPECT_EQ(info.block_count, 0x38'1235 * 1024ul);
@@ -1958,58 +2081,27 @@ TEST_P(SdmmcBlockDeviceTest, RpmbMultipleRequests32FramesSupported) {
 }
 
 void SdmmcBlockDeviceTest::QueueBlockOps() {
-  struct BlockContext {
-    sync_completion_t completion = {};
-    block::OperationPool<> free_ops;
-    block::OperationQueue<> outstanding_ops;
-    std::atomic<uint32_t> outstanding_op_count = 0;
-  } context;
-
-  const auto op_callback = [](void* ctx, zx_status_t status, block_op_t* bop) {
-    EXPECT_OK(status);
-
-    auto& op_ctx = *reinterpret_cast<BlockContext*>(ctx);
-    block::Operation<> op(bop, kBlockOpSize);
-    EXPECT_TRUE(op_ctx.outstanding_ops.erase(&op));
-    op_ctx.free_ops.push(std::move(op));
-
-    // Wake up the block op thread when half the outstanding operations have been completed.
-    if (op_ctx.outstanding_op_count.fetch_sub(1) == kMaxOutstandingOps / 2) {
-      sync_completion_signal(&op_ctx.completion);
-    }
-  };
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> client_result =
+      GetRemoteBlockDeviceForBlockServer("user");
+  ASSERT_OK(client_result);
+  auto client = std::move(client_result.value());
 
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(1024, 0, &vmo));
+  ASSERT_OK(zx::vmo::create(FakeSdmmcDevice::kBlockSize, 0, &vmo));
 
-  // Populate the free op list.
-  for (uint32_t i = 0; i < kMaxOutstandingOps; i++) {
-    std::optional<block::Operation<>> op = block::Operation<>::Alloc(kBlockOpSize);
-    ASSERT_TRUE(op);
-    context.free_ops.push(*std::move(op));
-  }
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
+  vmoid_t vmoid = owned_vmoid.TakeId();
 
   while (run_threads_.load()) {
-    for (uint32_t i = context.outstanding_op_count.load(); i < kMaxOutstandingOps;
-         i = context.outstanding_op_count.fetch_add(1) + 1) {
-      // Move an op from the free list to the outstanding list. The callback will erase the op from
-      // the outstanding list and move it back to the free list.
-      std::optional<block::Operation<>> op = context.free_ops.pop();
-      ASSERT_TRUE(op);
-
-      op->operation()->rw = {
-          .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0}, .vmo = vmo.get(), .length = 1};
-
-      block_op_t* const bop = op->operation();
-      context.outstanding_ops.push(*std::move(op));
-      user_.Queue(bop, op_callback, &context);
-    }
-
-    sync_completion_wait(&context.completion, zx::duration::infinite().get());
-    sync_completion_reset(&context.completion);
-  }
-
-  while (context.outstanding_op_count.load() > 0) {
+    BlockFifoRequest request = {
+        .command = {.opcode = BLOCK_OPCODE_READ},
+        .vmoid = vmoid,
+        .length = 1,
+        .vmo_offset = 0,
+        .dev_offset = 0,
+    };
+    EXPECT_OK(client->FifoTransaction(&request, 1));
   }
 }
 
@@ -2069,8 +2161,13 @@ TEST_P(SdmmcBlockDeviceTest, RpmbRequestsGetToRun) {
   ASSERT_OK(StartDriverForMmc());
   BindRpmbClient();
 
-  ASSERT_TRUE(boot1_.is_valid());
-  ASSERT_TRUE(boot2_.is_valid());
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> boot1_result =
+      GetRemoteBlockDeviceForBlockServer("boot1");
+  ASSERT_OK(boot1_result);
+
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> boot2_result =
+      GetRemoteBlockDeviceForBlockServer("boot2");
+  ASSERT_OK(boot2_result);
 
   thrd_t rpmb_thread;
   EXPECT_EQ(
@@ -2142,8 +2239,13 @@ TEST_P(SdmmcBlockDeviceTest, BlockOpsGetToRun) {
   ASSERT_OK(StartDriverForMmc());
   BindRpmbClient();
 
-  ASSERT_TRUE(boot1_.is_valid());
-  ASSERT_TRUE(boot2_.is_valid());
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> boot1_result =
+      GetRemoteBlockDeviceForBlockServer("boot1");
+  ASSERT_OK(boot1_result);
+
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> boot2_result =
+      GetRemoteBlockDeviceForBlockServer("boot2");
+  ASSERT_OK(boot2_result);
 
   thrd_t rpmb_thread;
   EXPECT_EQ(thrd_create_with_name(
@@ -2155,39 +2257,30 @@ TEST_P(SdmmcBlockDeviceTest, BlockOpsGetToRun) {
                 this, "rpmb-queue-thread"),
             thrd_success);
 
-  block::OperationPool<> outstanding_ops;
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> user_result =
+      GetRemoteBlockDeviceForBlockServer("user");
+  ASSERT_OK(user_result);
+  auto client = std::move(user_result.value());
 
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(1024, 0, &vmo));
+  ASSERT_OK(zx::vmo::create(kMaxOutstandingOps * FakeSdmmcDevice::kBlockSize, 0, &vmo));
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
+  vmoid_t vmoid = owned_vmoid.TakeId();
 
-  struct BlockContext {
-    std::atomic<uint32_t> ops_completed = 0;
-    sync_completion_t completion = {};
-  } context;
-
-  const auto op_callback = [](void* ctx, zx_status_t status, [[maybe_unused]] block_op_t* bop) {
-    EXPECT_OK(status);
-
-    auto& op_ctx = *reinterpret_cast<BlockContext*>(ctx);
-    if ((op_ctx.ops_completed.fetch_add(1) + 1) == kMaxOutstandingOps) {
-      sync_completion_signal(&op_ctx.completion);
-    }
-  };
-
+  std::vector<BlockFifoRequest> requests;
   for (uint32_t i = 0; i < kMaxOutstandingOps; i++) {
-    std::optional<block::Operation<>> op = block::Operation<>::Alloc(kBlockOpSize);
-    ASSERT_TRUE(op);
-
-    op->operation()->rw = {
-        .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0}, .vmo = vmo.get(), .length = 1};
-
-    block_op_t* const bop = op->operation();
-    outstanding_ops.push(*std::move(op));
-    user_.Queue(bop, op_callback, &context);
+    requests.push_back({
+        .command = {.opcode = BLOCK_OPCODE_READ},
+        .vmoid = vmoid,
+        .length = 1,
+        .vmo_offset = i,
+        .dev_offset = i,
+    });
   }
 
   driver_test_.runtime().PerformBlockingWork(
-      [&] { sync_completion_wait(&context.completion, zx::duration::infinite().get()); });
+      [&] { EXPECT_OK(client->FifoTransaction(requests.data(), requests.size())); });
 
   run_threads_.store(false);
   EXPECT_EQ(thrd_join(rpmb_thread, nullptr), thrd_success);
@@ -2232,14 +2325,9 @@ TEST_P(SdmmcBlockDeviceTest, GetRpmbClient) {
 
 TEST_P(SdmmcBlockDeviceTest, Inspect) {
   sdmmc_.set_command_callback(MMC_SEND_EXT_CSD, [](cpp20::span<uint8_t> out_data) {
-    *reinterpret_cast<uint32_t*>(&out_data[212]) = htole32(FakeSdmmcDevice::kBlockCount);
-    out_data[MMC_EXT_CSD_CACHE_CTRL] = 1;
+    SetDefaultMmcExtCsd(out_data);
     out_data[MMC_EXT_CSD_BARRIER_CTRL] = 1;
     out_data[MMC_EXT_CSD_CACHE_FLUSH_POLICY] = 1;
-    out_data[MMC_EXT_CSD_CACHE_SIZE_LSB] = 0x78;
-    out_data[MMC_EXT_CSD_CACHE_SIZE_250] = 0x56;
-    out_data[MMC_EXT_CSD_CACHE_SIZE_251] = 0x34;
-    out_data[MMC_EXT_CSD_CACHE_SIZE_MSB] = 0x12;
     out_data[MMC_EXT_CSD_DEVICE_LIFE_TIME_EST_TYP_A] = 3;
     out_data[MMC_EXT_CSD_DEVICE_LIFE_TIME_EST_TYP_B] = 7;
     out_data[MMC_EXT_CSD_BARRIER_SUPPORT] = 1;
@@ -2248,6 +2336,11 @@ TEST_P(SdmmcBlockDeviceTest, Inspect) {
   });
 
   ASSERT_OK(StartDriverForMmc());
+
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> client_result =
+      GetRemoteBlockDeviceForBlockServer("user");
+  ASSERT_OK(client_result);
+  auto client = std::move(client_result.value());
 
   // IO error count should be zero after initialization.
   inspect::InspectTestHelper inspector;
@@ -2332,18 +2425,19 @@ TEST_P(SdmmcBlockDeviceTest, Inspect) {
   EXPECT_EQ(max_packed_writes_effective->value(), 16);
 
   // IO error count should be a successful block op.
-  std::optional<block::Operation<OperationContext>> op1;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 5, 0x8000, &op1));
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(5 * FakeSdmmcDevice::kBlockSize, 0, &vmo));
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
+  vmoid_t vmoid = owned_vmoid.TakeId();
 
-  CallbackContext ctx1(1);
-
-  user_.Queue(op1->operation(), OperationCallback, &ctx1);
-
-  driver_test_.runtime().PerformBlockingWork(
-      [&] { EXPECT_OK(sync_completion_wait(&ctx1.completion, zx::duration::infinite().get())); });
-
-  EXPECT_TRUE(op1->private_storage()->completed);
-  EXPECT_OK(op1->private_storage()->status);
+  BlockFifoRequest req1 = {
+      .command = {.opcode = BLOCK_OPCODE_WRITE},
+      .vmoid = vmoid,
+      .length = 5,
+      .dev_offset = 0x8000,
+  };
+  EXPECT_OK(client->FifoTransaction(&req1, 1));
 
   inspector.ReadInspect(block_device_->inspect());
 
@@ -2362,18 +2456,13 @@ TEST_P(SdmmcBlockDeviceTest, Inspect) {
   sdmmc_.set_command_callback(SDMMC_WRITE_MULTIPLE_BLOCK,
                               [](const sdmmc_req_t& req) -> zx_status_t { return ZX_ERR_IO; });
 
-  std::optional<block::Operation<OperationContext>> op2;
-  ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 5, 0x8000, &op2));
-
-  CallbackContext ctx2(1);
-
-  user_.Queue(op2->operation(), OperationCallback, &ctx2);
-
-  driver_test_.runtime().PerformBlockingWork(
-      [&] { EXPECT_OK(sync_completion_wait(&ctx2.completion, zx::duration::infinite().get())); });
-
-  EXPECT_TRUE(op2->private_storage()->completed);
-  EXPECT_NOT_OK(op2->private_storage()->status);
+  BlockFifoRequest req2 = {
+      .command = {.opcode = BLOCK_OPCODE_WRITE},
+      .vmoid = vmoid,
+      .length = 5,
+      .dev_offset = 0x8000,
+  };
+  EXPECT_STATUS(client->FifoTransaction(&req2, 1), ZX_ERR_IO);
 
   inspector.ReadInspect(block_device_->inspect());
 
@@ -2629,13 +2718,13 @@ TEST_P(SdmmcBlockDeviceTest, PowerOffNotification) {
   EXPECT_TRUE(in_sleep_state);
 
   EXPECT_OK(driver_test_.StopDriver());
+  dut_ = nullptr;
 
   // The device should have been moved back to TRAN, and a power off notification should have been
   // sent.
   EXPECT_FALSE(in_sleep_state);
   EXPECT_EQ(power_off_notification, MMC_EXT_CSD_POWER_OFF_LONG);
 
-  dut_ = nullptr;
   block_device_ = nullptr;
 }
 
@@ -2784,6 +2873,16 @@ TEST_P(SdmmcBlockDeviceTest, BlockServerMaxTransferSize) {
 
   sdmmc_.set_command_callback(MMC_SEND_EXT_CSD, [](cpp20::span<uint8_t> out_data) {
     *reinterpret_cast<uint32_t*>(&out_data[212]) = htole32(FakeSdmmcDevice::kBlockCount);
+    out_data[MMC_EXT_CSD_CACHE_CTRL] = 1;
+    out_data[MMC_EXT_CSD_CACHE_SIZE_LSB] = 0x78;
+    out_data[MMC_EXT_CSD_CACHE_SIZE_250] = 0x56;
+    out_data[MMC_EXT_CSD_CACHE_SIZE_251] = 0x34;
+    out_data[MMC_EXT_CSD_CACHE_SIZE_MSB] = 0x12;
+    out_data[MMC_EXT_CSD_PARTITION_CONFIG] = 0xa8;
+    out_data[MMC_EXT_CSD_SEC_FEATURE_SUPPORT] = 0x1 << MMC_EXT_CSD_SEC_FEATURE_SUPPORT_SEC_GB_CL_EN;
+    out_data[MMC_EXT_CSD_PARTITION_SWITCH_TIME] = 0;
+    out_data[MMC_EXT_CSD_BOOT_SIZE_MULT] = 0x10;
+    out_data[MMC_EXT_CSD_GENERIC_CMD6_TIME] = 0;
     // Enabled packed commands, even though they aren't used in this test case.
     out_data[MMC_EXT_CSD_MAX_PACKED_WRITES] = 63;
     out_data[MMC_EXT_CSD_MAX_PACKED_READS] = 63;
@@ -2876,6 +2975,16 @@ TEST_P(SdmmcBlockDeviceTest, BlockServerSplitTransfer) {
 
   sdmmc_.set_command_callback(MMC_SEND_EXT_CSD, [](cpp20::span<uint8_t> out_data) {
     *reinterpret_cast<uint32_t*>(&out_data[212]) = htole32(FakeSdmmcDevice::kBlockCount);
+    out_data[MMC_EXT_CSD_CACHE_CTRL] = 1;
+    out_data[MMC_EXT_CSD_CACHE_SIZE_LSB] = 0x78;
+    out_data[MMC_EXT_CSD_CACHE_SIZE_250] = 0x56;
+    out_data[MMC_EXT_CSD_CACHE_SIZE_251] = 0x34;
+    out_data[MMC_EXT_CSD_CACHE_SIZE_MSB] = 0x12;
+    out_data[MMC_EXT_CSD_PARTITION_CONFIG] = 0xa8;
+    out_data[MMC_EXT_CSD_SEC_FEATURE_SUPPORT] = 0x1 << MMC_EXT_CSD_SEC_FEATURE_SUPPORT_SEC_GB_CL_EN;
+    out_data[MMC_EXT_CSD_PARTITION_SWITCH_TIME] = 0;
+    out_data[MMC_EXT_CSD_BOOT_SIZE_MULT] = 0x10;
+    out_data[MMC_EXT_CSD_GENERIC_CMD6_TIME] = 0;
     out_data[MMC_EXT_CSD_MAX_PACKED_WRITES] = 63;
     out_data[MMC_EXT_CSD_MAX_PACKED_READS] = 63;
   });
@@ -2981,7 +3090,7 @@ TEST_P(SdmmcBlockDeviceTest, BlockServerSplitTransfer) {
 
 TEST_P(SdmmcBlockDeviceTest, PackedCommandWriteError) {
   sdmmc_.set_command_callback(MMC_SEND_EXT_CSD, [](cpp20::span<uint8_t> out_data) {
-    *reinterpret_cast<uint32_t*>(&out_data[212]) = htole32(FakeSdmmcDevice::kBlockCount);
+    SetDefaultMmcExtCsd(out_data);
     out_data[MMC_EXT_CSD_MAX_PACKED_WRITES] = 63;
     out_data[MMC_EXT_CSD_MAX_PACKED_READS] = 63;
   });
@@ -3059,7 +3168,7 @@ TEST_P(SdmmcBlockDeviceTest, PackedCommandWriteError) {
 
 TEST_P(SdmmcBlockDeviceTest, PackedCommandReadError) {
   sdmmc_.set_command_callback(MMC_SEND_EXT_CSD, [](cpp20::span<uint8_t> out_data) {
-    *reinterpret_cast<uint32_t*>(&out_data[212]) = htole32(FakeSdmmcDevice::kBlockCount);
+    SetDefaultMmcExtCsd(out_data);
     out_data[MMC_EXT_CSD_MAX_PACKED_WRITES] = 63;
     out_data[MMC_EXT_CSD_MAX_PACKED_READS] = 63;
   });
@@ -3098,7 +3207,7 @@ TEST_P(SdmmcBlockDeviceTest, PackedCommandReadError) {
   });
 
   sdmmc_.set_command_callback(MMC_SEND_EXT_CSD, [](cpp20::span<uint8_t> out_data) {
-    *reinterpret_cast<uint32_t*>(&out_data[212]) = htole32(FakeSdmmcDevice::kBlockCount);
+    SetDefaultMmcExtCsd(out_data);
     out_data[MMC_EXT_CSD_MAX_PACKED_WRITES] = 63;
     out_data[MMC_EXT_CSD_MAX_PACKED_READS] = 63;
     // Return an error for packed commands.
@@ -3143,19 +3252,15 @@ TEST_P(SdmmcBlockDeviceTest, NodeToken) {
   ASSERT_OK(connect_result);
 
   fidl::SyncClient<fuchsia_driver_token::NodeToken> client(std::move(connect_result.value()));
-  auto get_result =
-      driver_test_
-          .RunOnBackgroundDispatcherSync<fidl::Result<fuchsia_driver_token::NodeToken::Get>>(
-              [&]() { return client->Get(); });
-  ASSERT_OK(get_result);
-  ASSERT_TRUE(get_result.value().is_ok());
+  auto get_result = client->Get();
+  ASSERT_TRUE(get_result.is_ok());
 
   zx_info_handle_basic_t info1, info2;
   ASSERT_EQ(node_token_.get_info(ZX_INFO_HANDLE_BASIC, &info1, sizeof(info1), nullptr, nullptr),
             ZX_OK);
-  ASSERT_EQ(get_result.value()->token().get_info(ZX_INFO_HANDLE_BASIC, &info2, sizeof(info2),
-                                                 nullptr, nullptr),
-            ZX_OK);
+  ASSERT_EQ(
+      get_result->token().get_info(ZX_INFO_HANDLE_BASIC, &info2, sizeof(info2), nullptr, nullptr),
+      ZX_OK);
   ASSERT_EQ(info1.koid, info2.koid);
 }
 

@@ -174,7 +174,7 @@ zx_status_t SdmmcBlockDevice::ProbeSdLocked() {
   }
 
   if (metadata_.removable().value()) {
-    block_info_.flags |= DEVICE_FLAG_REMOVABLE;
+    block_info_.flags |= fuchsia_storage_block::wire::DeviceFlag::kRemovable;
   }
 
   is_sd_ = true;
