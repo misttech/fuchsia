@@ -12,9 +12,20 @@
 #include <rapidjson/pointer.h>
 
 #include "log_decoder.h"
+#include "log_decoder_api.h"
 
 namespace log_decoder {
 namespace {
+
+fuchsia::logger::LogMessage DecodeBuffer(fuchsia_logging::LogBuffer& buffer) {
+  std::span<const uint8_t> span = buffer.EndRecord();
+  auto messages = fuchsia_decode_log_messages_to_struct(span.data(), span.size(), true, nullptr);
+  EXPECT_EQ(messages.messages.len, 1u);
+  auto fidl_res = ToFidlLogMessage(*messages.messages.ptr[0]);
+  EXPECT_TRUE(fidl_res.is_ok());
+  fuchsia_free_log_messages(messages);
+  return fidl_res.take_value();
+}
 
 TEST(LogDecoder, DecodesCorrectly) {
   fuchsia_logging::LogBufferBuilder builder(fuchsia_logging::LogSeverity::Info);
@@ -36,15 +47,6 @@ TEST(LogDecoder, DecodesCorrectly) {
   ASSERT_EQ(keys["user property"].GetDouble(), 5.2);
   ASSERT_EQ(payload["message"]["value"].GetString(), std::string("test message"));
   fuchsia_free_decoded_log_message(const_cast<char*>(json));
-}
-
-int RustStrcmp(CppString rust_string, const char* c_str) {
-  size_t c_len = strlen(c_str);
-  if (rust_string.inner.len != c_len) {
-    return rust_string.inner.len < c_len ? -1 : 1;
-  }
-  return strncmp(reinterpret_cast<const char*>(rust_string.inner.ptr), c_str,
-                 rust_string.inner.len);
 }
 
 TEST(LogDecoder, DecodesArchivistArguments) {
@@ -74,9 +76,53 @@ TEST(LogDecoder, DecodesArchivistArguments) {
   auto messages =
       fuchsia_decode_log_messages_to_struct(new_buffer.data(), current_offset, true, nullptr);
   ASSERT_EQ(messages.messages.len, static_cast<size_t>(1));
-  ASSERT_EQ(messages.messages.ptr[0]->tags.len, static_cast<size_t>(1));
-  EXPECT_EQ(RustStrcmp(messages.messages.ptr[0]->tags.ptr[0], kTestMoniker), 0);
-  EXPECT_EQ(RustStrcmp(messages.messages.ptr[0]->message, "[test_file(42)] test message"), 0);
+  ASSERT_EQ(messages.messages.ptr[0]->tags.len, static_cast<size_t>(0));
+  auto fidl_res = ToFidlLogMessage(*messages.messages.ptr[0]);
+  ASSERT_TRUE(fidl_res.is_ok());
+  auto fidl_msg = fidl_res.take_value();
+  ASSERT_EQ(fidl_msg.tags.size(), 1u);
+  EXPECT_EQ(fidl_msg.tags[0], kTestMoniker);
+  EXPECT_EQ(fidl_msg.msg, "[test_file(42)] test message");
+  fuchsia_free_log_messages(messages);
+}
+
+TEST(LogDecoderApi, ToFidlLogMessageMonikerTag) {
+  constexpr char kTestMoniker[] = "core/network/netstack";
+  constexpr char kTestUrl[] = "fuchsia-pkg://fuchsia.com/netstack#meta/netstack.cm";
+  fuchsia_logging::LogBufferBuilder builder(fuchsia_logging::LogSeverity::Info);
+  auto buffer = builder.WithMsg("hello network").WithFile("net.cc", 100).Build();
+  buffer.WriteKeyValue("tag", "custom_tag");
+  std::span<const uint8_t> span = buffer.EndRecord();
+  std::vector<uint8_t> new_buffer(span.size() + 4 + 4 + 8 + ((sizeof(kTestMoniker) - 1 + 7) & ~7) +
+                                  ((sizeof(kTestUrl) - 1 + 7) & ~7));
+  memcpy(new_buffer.data(), span.data(), span.size());
+  size_t current_offset = span.size();
+  uint32_t moniker_len = sizeof(kTestMoniker) - 1;
+  uint32_t url_len = sizeof(kTestUrl) - 1;
+  uint64_t rolled_out_logs = 0;
+  memcpy(new_buffer.data() + current_offset, &moniker_len, 4);
+  current_offset += 4;
+  memcpy(new_buffer.data() + current_offset, &url_len, 4);
+  current_offset += 4;
+  memcpy(new_buffer.data() + current_offset, &rolled_out_logs, 8);
+  current_offset += 8;
+  memcpy(new_buffer.data() + current_offset, kTestMoniker, moniker_len);
+  current_offset += (moniker_len + 7) & ~7;
+  memcpy(new_buffer.data() + current_offset, kTestUrl, url_len);
+  current_offset += (url_len + 7) & ~7;
+
+  auto messages =
+      fuchsia_decode_log_messages_to_struct(new_buffer.data(), current_offset, true, nullptr);
+  ASSERT_EQ(messages.messages.len, 1u);
+  const LogMessage* raw_msg = messages.messages.ptr[0];
+  EXPECT_EQ(raw_msg->tags.len, 1u);
+  auto fidl_res = ToFidlLogMessage(*raw_msg);
+  ASSERT_TRUE(fidl_res.is_ok());
+  auto fidl_msg = fidl_res.take_value();
+  ASSERT_EQ(fidl_msg.tags.size(), 2u);
+  EXPECT_EQ(fidl_msg.tags[0], "netstack");
+  EXPECT_EQ(fidl_msg.tags[1], "custom_tag");
+  EXPECT_EQ(fidl_msg.msg, "[net.cc(100)] hello network");
   fuchsia_free_log_messages(messages);
 }
 
@@ -87,6 +133,88 @@ TEST(LogDecoder, HandlesInvalidInput) {
       fuchsia_decode_log_messages_to_struct(invalid_data, sizeof(invalid_data), true, nullptr);
   ASSERT_EQ(std::string(messages.error_str), std::string("couldn't parse message: InvalidHeader"));
   fuchsia_free_log_messages(messages);
+}
+
+TEST(LogDecoderApi, ToFidlLogMessageMultipleArguments) {
+  fuchsia_logging::LogBufferBuilder builder(fuchsia_logging::LogSeverity::Info);
+  auto buffer = builder.WithMsg("test message").WithFile("test_file", 42).Build();
+  buffer.WriteKeyValue("tag", "my_tag");
+  buffer.WriteKeyValue("int_key", int64_t{-123});
+  buffer.WriteKeyValue("uint_key", uint64_t{456});
+  buffer.WriteKeyValue("double_key", 3.14);
+  buffer.WriteKeyValue("neg_double", -2.5);
+  buffer.WriteKeyValue("zero_double", 0.0);
+  buffer.WriteKeyValue("bool_key", true);
+  buffer.WriteKeyValue("bool_false", false);
+  buffer.WriteKeyValue("text_key", "hello \"world\" \\ test");
+  buffer.WriteKeyValue("empty_text", "");
+
+  auto fidl_msg = DecodeBuffer(buffer);
+  EXPECT_EQ(fidl_msg.severity, static_cast<int32_t>(fuchsia_logging::LogSeverity::Info));
+  ASSERT_EQ(fidl_msg.tags.size(), 1u);
+  EXPECT_EQ(fidl_msg.tags[0], "my_tag");
+  EXPECT_EQ(fidl_msg.msg,
+            "[test_file(42)] test message int_key=-123 uint_key=456 double_key=3.140000 "
+            "neg_double=-2.500000 zero_double=0.000000 bool_key=true bool_false=false "
+            "text_key=\"hello \\\"world\\\" \\\\ test\" empty_text=\"\"");
+}
+
+TEST(LogDecoderApi, ToFidlLogMessageMessageNoFile) {
+  fuchsia_logging::LogBufferBuilder builder(fuchsia_logging::LogSeverity::Info);
+  auto buffer = builder.WithMsg("test message").Build();
+  buffer.WriteKeyValue("foo", "bar");
+  buffer.WriteKeyValue("num", int64_t{10});
+  auto fidl_msg = DecodeBuffer(buffer);
+  EXPECT_EQ(fidl_msg.msg, "test message foo=\"bar\" num=10");
+}
+
+TEST(LogDecoderApi, ToFidlLogMessageNoArguments) {
+  fuchsia_logging::LogBufferBuilder builder(fuchsia_logging::LogSeverity::Info);
+  auto buffer = builder.WithMsg("test message").WithFile("test_file", 42).Build();
+  auto fidl_msg = DecodeBuffer(buffer);
+  EXPECT_EQ(fidl_msg.msg, "[test_file(42)] test message");
+}
+
+TEST(LogDecoderApi, ToFidlLogMessageOneArgument) {
+  fuchsia_logging::LogBufferBuilder builder(fuchsia_logging::LogSeverity::Info);
+  auto buffer = builder.WithMsg("test message").WithFile("test_file", 42).Build();
+  buffer.WriteKeyValue("foo", "bar");
+  auto fidl_msg = DecodeBuffer(buffer);
+  EXPECT_EQ(fidl_msg.msg, "[test_file(42)] test message foo=\"bar\"");
+}
+
+TEST(LogDecoderApi, ToFidlLogMessageNoMessage) {
+  fuchsia_logging::LogBufferBuilder builder0(fuchsia_logging::LogSeverity::Info);
+  auto buffer0 = builder0.WithMsg("").WithFile("test_file", 42).Build();
+  EXPECT_EQ(DecodeBuffer(buffer0).msg, "[test_file(42)]");
+
+  fuchsia_logging::LogBufferBuilder builder1(fuchsia_logging::LogSeverity::Info);
+  auto buffer1 = builder1.WithMsg("").WithFile("test_file", 42).Build();
+  buffer1.WriteKeyValue("key", int64_t{100});
+  EXPECT_EQ(DecodeBuffer(buffer1).msg, "[test_file(42)] key=100");
+
+  fuchsia_logging::LogBufferBuilder builder2(fuchsia_logging::LogSeverity::Info);
+  auto buffer2 = builder2.WithMsg("").WithFile("test_file", 42).Build();
+  buffer2.WriteKeyValue("k1", int64_t{1});
+  buffer2.WriteKeyValue("k2", int64_t{2});
+  EXPECT_EQ(DecodeBuffer(buffer2).msg, "[test_file(42)] k1=1 k2=2");
+}
+
+TEST(LogDecoderApi, ToFidlLogMessageNoMessageNoFile) {
+  fuchsia_logging::LogBufferBuilder builder0(fuchsia_logging::LogSeverity::Info);
+  auto buffer0 = builder0.WithMsg("").Build();
+  EXPECT_EQ(DecodeBuffer(buffer0).msg, "");
+
+  fuchsia_logging::LogBufferBuilder builder1(fuchsia_logging::LogSeverity::Info);
+  auto buffer1 = builder1.WithMsg("").Build();
+  buffer1.WriteKeyValue("only_key", "val");
+  EXPECT_EQ(DecodeBuffer(buffer1).msg, "only_key=\"val\"");
+
+  fuchsia_logging::LogBufferBuilder builder2(fuchsia_logging::LogSeverity::Info);
+  auto buffer2 = builder2.WithMsg("").Build();
+  buffer2.WriteKeyValue("a", int64_t{10});
+  buffer2.WriteKeyValue("b", int64_t{20});
+  EXPECT_EQ(DecodeBuffer(buffer2).msg, "a=10 b=20");
 }
 
 }  // namespace

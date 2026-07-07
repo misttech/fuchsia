@@ -44,7 +44,8 @@ async fn log_attribution(format: LogFormat) {
 
     for log_str in &messages {
         let log_record = result.next().await.expect("received log");
-        assert_eq!(log_record.tags[0], REALM_NAME);
+        assert_eq!(log_record.moniker_tag, REALM_NAME);
+        assert!(log_record.tags.is_empty());
         assert_eq!(log_record.severity, Severity::Info);
         assert!(log_record.message.contains(log_str));
     }

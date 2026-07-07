@@ -58,7 +58,7 @@ async fn component_selectors_filter_logs(format: LogFormat) {
     // We should see logs from components started before and after we began to listen.
     for _ in 0..6 {
         let log = stream.next().await.unwrap();
-        assert!(log.tags[0].starts_with("puppet_a"));
+        assert!(log.moniker_tag.starts_with("puppet_a"));
         assert_eq!(log.message, HELLO_WORLD);
     }
     // We only expect 6 logs.

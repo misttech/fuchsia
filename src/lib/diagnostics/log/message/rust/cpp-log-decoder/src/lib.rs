@@ -114,17 +114,9 @@ pub unsafe extern "C" fn fuchsia_decode_log_messages_to_struct<'a>(
     // to it.
     let maybe_parser = unsafe { parser.as_mut() };
 
-    // By using a struct and `Deref` we limit the lifetime to this function.
-    struct Buf(*const u8, usize);
-    impl Deref for Buf {
-        type Target = [u8];
-        fn deref(&self) -> &Self::Target {
-            // SAFETY: Safe because the caller guarantees that `msg` is valid, initialized and
-            // properly aligned.
-            unsafe { std::slice::from_raw_parts(self.0, self.1) }
-        }
-    }
-    let buf = &Buf(msg, size);
+    // SAFETY: The caller guarantees that `msg` is valid for reads for `size` bytes.
+    // The returned `LogMessages<'a>` borrows from `msg` for lifetime `'a`.
+    let buf: &'a [u8] = unsafe { std::slice::from_raw_parts(msg, size) };
 
     let messages = if let Some(parser) = maybe_parser {
         fuchsia_decode_log_messages_to_struct_internal(buf, parser, allocator_ref)
@@ -154,7 +146,7 @@ pub unsafe extern "C" fn fuchsia_decode_log_messages_to_struct<'a>(
 
 /// Decodes log messages from a FXT stream.
 fn fuchsia_decode_log_messages_to_struct_internal<'a>(
-    buf: &[u8],
+    buf: &'a [u8],
     parser: &mut MessageParser,
     allocator: &'a Bump,
 ) -> Result<Vec<&'a mut LogMessage<'a>>, DecodeError> {
@@ -178,7 +170,7 @@ fn fuchsia_decode_log_messages_to_struct_internal<'a>(
 
 /// Decodes log messages from a legacy FXT stream.
 fn fuchsia_decode_log_messages_to_struct_internal_legacy<'a>(
-    buf: &[u8],
+    buf: &'a [u8],
     expect_extended_attribution: bool,
     allocator: &'a Bump,
 ) -> Result<Vec<&'a mut LogMessage<'a>>, DecodeError> {

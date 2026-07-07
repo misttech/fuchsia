@@ -215,12 +215,12 @@ pub struct MessageParser {
     tag_map: HashMap<u32, ExtendedMetadata>,
 }
 
-pub trait MessageFormatter {
+pub trait MessageFormatter<'a> {
     type Result;
 
     fn format(
         &mut self,
-        record: &Record<'_>,
+        record: &Record<'a>,
         metadata: Option<ExtendedMetadata>,
     ) -> Result<Self::Result, MessageError>;
 }
@@ -228,12 +228,12 @@ pub trait MessageFormatter {
 #[derive(Default)]
 pub struct RustMessageFormatter;
 
-impl MessageFormatter for RustMessageFormatter {
+impl<'a> MessageFormatter<'a> for RustMessageFormatter {
     type Result = Data<Logs>;
 
     fn format(
         &mut self,
-        record: &Record<'_>,
+        record: &Record<'a>,
         metadata: Option<ExtendedMetadata>,
     ) -> Result<Self::Result, MessageError> {
         let rolled_out = metadata.as_ref().map(|value| value.rolled_out_logs).unwrap_or(0);
@@ -258,7 +258,7 @@ impl MessageParser {
     ///   if a log message was parsed, or `None` if it was an Archivist manifest record. The
     ///   second element is the remaining slice of bytes after parsing the record.
     /// * `Err(MessageError)`: An error if parsing failed.
-    pub fn parse_next<'a, F: MessageFormatter>(
+    pub fn parse_next<'a, F: MessageFormatter<'a>>(
         &mut self,
         bytes: &'a [u8],
         mut formatter: F,

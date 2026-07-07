@@ -282,7 +282,7 @@ fpromise::result<void, std::string> ConvertFormattedFxtToLogMessagesInternal(
   output.reserve(log_messages.messages.len + output.size());
   for (size_t i = 0; i < log_messages.messages.len; i++) {
     auto msg = log_messages.messages.ptr[i];
-    output.emplace_back(log_tester::ToFidlLogMessage(msg));
+    output.emplace_back(log_decoder::ToFidlLogMessage(*msg));
   }
   fuchsia_free_log_messages(log_messages);
   return fpromise::ok();

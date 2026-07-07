@@ -10,7 +10,6 @@ use diagnostics_data::{ExtendedMoniker, Severity};
 use diagnostics_log_encoding::{Argument, Record, Value};
 use flyweights::FlyStr;
 use static_assertions::const_assert;
-use std::fmt::Write;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::str;
@@ -89,6 +88,12 @@ impl Deref for CppString<'_> {
     }
 }
 
+impl std::fmt::Display for CppString<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&**self, f)
+    }
+}
+
 impl<'a> From<Option<&'a str>> for CppString<'a> {
     fn from(value: Option<&'a str>) -> Self {
         value.map(|v| v.into()).unwrap_or_default()
@@ -107,7 +112,31 @@ impl<'a> From<BumpaloString<'a>> for CppString<'a> {
     }
 }
 
-/// Log message representation for FFI with C++
+/// Represents a value in a key-value pair for FFI purposes between C++ and Rust.
+#[repr(C, u8)]
+pub enum CppValue<'a> {
+    SignedInt(i64),
+    UnsignedInt(u64),
+    Floating(f64),
+    Boolean(bool),
+    Text(CppString<'a>),
+}
+
+/// Represents a key-value pair for FFI purposes between C++ and Rust.
+#[repr(C)]
+pub struct CppKeyValue<'a> {
+    pub key: CppString<'a>,
+    pub value: CppValue<'a>,
+}
+
+/// Log message representation for FFI with C++.
+///
+/// # Lifetime and Borrowing
+/// Strings within `LogMessage` (`tags`, `message`, and string keys/values in `kvps`)
+/// borrow directly from the incoming encoded message buffer (`bytes`) when possible,
+/// or from the provided arena allocator (`Bump`).
+/// Consequently, the incoming message buffer MUST remain valid and unmodified
+/// for at least as long as the `LogMessage` is in use.
 #[repr(C)]
 pub struct LogMessage<'a> {
     /// Severity of a log message.
@@ -122,6 +151,14 @@ pub struct LogMessage<'a> {
     pub dropped: u64,
     /// The UTF-encoded log message, guaranteed to be valid UTF-8.
     pub message: CppString<'a>,
+    /// Source file where the log was emitted, if any.
+    pub file: CppString<'a>,
+    /// Source line where the log was emitted, if any.
+    pub line: u64,
+    /// Last segment of the moniker, used as a default log tag if needed.
+    pub moniker_tag: CppString<'a>,
+    /// Key-value pairs in a log message.
+    pub kvps: CppArray<'a, CppKeyValue<'a>>,
     /// Timestamp on the boot timeline of the log message,
     /// in nanoseconds.
     pub timestamp: i64,
@@ -132,27 +169,17 @@ const_assert!(!std::mem::needs_drop::<LogMessage<'_>>());
 
 pub struct CPPLogMessageBuilder<'a> {
     severity: u8,
-    tags: BumpaloVec<'a, BumpaloString<'a>>,
+    tags: BumpaloVec<'a, CppString<'a>>,
     pid: Option<u64>,
     tid: Option<u64>,
     dropped: u64,
-    file: Option<String>,
+    file: Option<CppString<'a>>,
     line: Option<u64>,
     moniker: Option<BumpaloString<'a>>,
-    message: Option<String>,
+    message: Option<CppString<'a>>,
     timestamp: i64,
-    kvps: String,
+    kvps: BumpaloVec<'a, CppKeyValue<'a>>,
     allocator: &'a Bump,
-}
-
-// Escape quotes in a string per the Feedback format
-fn escape_quotes(input: &str, output: &mut String) {
-    for ch in input.chars() {
-        if ch == '"' || ch == '\\' {
-            output.push('\\');
-        }
-        output.push(ch);
-    }
 }
 
 impl<'a> CPPLogMessageBuilder<'a> {
@@ -161,8 +188,18 @@ impl<'a> CPPLogMessageBuilder<'a> {
         self
     }
 
-    fn add_tag(mut self, tag: impl Into<String>) -> Self {
-        self.tags.push(BumpaloString::from_str_in(&tag.into(), self.allocator));
+    fn cow_to_cpp_string(&self, cow: &std::borrow::Cow<'a, str>) -> CppString<'a> {
+        match cow {
+            std::borrow::Cow::Borrowed(s) => (*s).into(),
+            std::borrow::Cow::Owned(s) => {
+                BumpaloString::from_str_in(s, self.allocator).into_bump_str().into()
+            }
+        }
+    }
+
+    fn add_tag(mut self, tag: &std::borrow::Cow<'a, str>) -> Self {
+        let s = self.cow_to_cpp_string(tag);
+        self.tags.push(s);
         self
     }
 
@@ -181,8 +218,8 @@ impl<'a> CPPLogMessageBuilder<'a> {
         self
     }
 
-    fn set_file(mut self, file: impl Into<String>) -> Self {
-        self.file = Some(file.into());
+    fn set_file(mut self, file: &std::borrow::Cow<'a, str>) -> Self {
+        self.file = Some(self.cow_to_cpp_string(file));
         self
     }
 
@@ -191,41 +228,35 @@ impl<'a> CPPLogMessageBuilder<'a> {
         self
     }
 
-    fn set_message(mut self, msg: impl Into<String>) -> Self {
-        self.message = Some(msg.into());
+    fn set_message(mut self, msg: &std::borrow::Cow<'a, str>) -> Self {
+        self.message = Some(self.cow_to_cpp_string(msg));
         self
     }
 
-    fn add_kvp(mut self, kvp: &Argument<'_>) -> Self {
-        if !self.kvps.is_empty() {
-            self.kvps.push(' ');
-        }
-
-        self.kvps.push_str(kvp.name());
-        self.kvps.push('=');
-        match kvp.value() {
-            Value::Text(value) => {
-                self.kvps.push('"');
-                escape_quotes(&value, &mut self.kvps);
-                self.kvps.push('"');
+    fn add_kvp(mut self, kvp: &Argument<'a>) -> Self {
+        let key: CppString<'a> = match kvp {
+            Argument::Other { name, .. } => self.cow_to_cpp_string(name),
+            other => {
+                BumpaloString::from_str_in(other.name(), self.allocator).into_bump_str().into()
             }
-            Value::SignedInt(value) => {
-                write!(self.kvps, "{value}").unwrap();
-            }
-            Value::UnsignedInt(value) => {
-                write!(self.kvps, "{value}").unwrap();
-            }
-            Value::Floating(value) => {
-                write!(self.kvps, "{value}").unwrap();
-            }
-            Value::Boolean(value) => {
-                if value {
-                    write!(self.kvps, "true").unwrap();
-                } else {
-                    write!(self.kvps, "false").unwrap();
-                }
-            }
-        }
+        };
+        let value = match kvp {
+            Argument::Pid(pid) => CppValue::UnsignedInt(pid.raw_koid()),
+            Argument::Tid(tid) => CppValue::UnsignedInt(tid.raw_koid()),
+            Argument::Tag(tag) => CppValue::Text(self.cow_to_cpp_string(tag)),
+            Argument::Dropped(dropped) => CppValue::UnsignedInt(*dropped),
+            Argument::File(file) => CppValue::Text(self.cow_to_cpp_string(file)),
+            Argument::Line(line) => CppValue::UnsignedInt(*line),
+            Argument::Message(msg) => CppValue::Text(self.cow_to_cpp_string(msg)),
+            Argument::Other { value, .. } => match value {
+                Value::Text(t) => CppValue::Text(self.cow_to_cpp_string(t)),
+                Value::SignedInt(v) => CppValue::SignedInt(*v),
+                Value::UnsignedInt(v) => CppValue::UnsignedInt(*v),
+                Value::Floating(v) => CppValue::Floating(*v),
+                Value::Boolean(v) => CppValue::Boolean(*v),
+            },
+        };
+        self.kvps.push(CppKeyValue { key, value });
         self
     }
 
@@ -237,42 +268,20 @@ impl<'a> CPPLogMessageBuilder<'a> {
     pub fn build(mut self) -> &'a mut LogMessage<'a> {
         let allocator = self.allocator;
 
-        // Format the message in accordance with the Feedback format
-        let msg_str = self
-            .message
-            .as_ref()
-            .map(|value| bumpalo::format!(in &allocator,"{value}",))
-            .unwrap_or_else(|| BumpaloString::new_in(allocator));
+        let file: CppString<'a> = self.file.unwrap_or_default();
+        let line: u64 = self.line.unwrap_or(0);
+        let message: CppString<'a> = self.message.unwrap_or_default();
 
-        let mut output = match (&self.file, &self.line) {
-            (Some(file), Some(line)) => {
-                let mut value = bumpalo::format!(in &allocator, "[{file}({line})]",);
-                if !msg_str.is_empty() {
-                    value.push(' ');
-                }
-                value
-            }
-            _ => BumpaloString::new_in(allocator),
+        let moniker_tag: CppString<'a> = match &self.moniker {
+            Some(moniker) => match moniker.split('/').next_back() {
+                Some(name) => BumpaloString::from_str_in(name, allocator).into_bump_str().into(),
+                None => CppString::default(),
+            },
+            None => CppString::default(),
         };
 
-        output.push_str(&msg_str);
-        if !msg_str.is_empty() && !self.kvps.is_empty() {
-            output.push(' ');
-        }
-        output.push_str(&self.kvps);
-
-        if let Some(moniker) = &self.moniker {
-            let component_name = moniker.split("/").last();
-            if let Some(component_name) = component_name
-                && !self.tags.iter().any(|value| value.as_str() == component_name)
-            {
-                self.tags.insert(0, bumpalo::format!(in &allocator, "{}", component_name));
-            }
-        }
-
-        let tags: &[_] = self
-            .allocator
-            .alloc_slice_fill_iter(self.tags.drain(..).map(|s| s.into_bump_str().into()));
+        let tags: &[_] = allocator.alloc_slice_fill_iter(self.tags.drain(..));
+        let kvps: &[_] = allocator.alloc_slice_fill_iter(self.kvps.drain(..));
 
         allocator.alloc(LogMessage {
             severity: self.severity,
@@ -280,7 +289,11 @@ impl<'a> CPPLogMessageBuilder<'a> {
             tags: tags.into(),
             pid: self.pid.unwrap_or(0),
             tid: self.tid.unwrap_or(0),
-            message: output.into_bump_str().into(),
+            message,
+            file,
+            line,
+            moniker_tag,
+            kvps: kvps.into(),
             timestamp: self.timestamp,
         })
     }
@@ -306,7 +319,7 @@ impl<'a> CPPLogMessageBuilderBuilder<'a> {
             timestamp: timestamp.into_nanos(),
             line: None,
             allocator: self.0,
-            kvps: String::new(),
+            kvps: BumpaloVec::new_in(self.0),
             moniker: moniker.map(|value| bumpalo::format!(in self.0,"{}", value)),
             message: None,
         })
@@ -314,7 +327,7 @@ impl<'a> CPPLogMessageBuilderBuilder<'a> {
 }
 
 pub fn build_logs_data<'a>(
-    input: &Record<'_>,
+    input: &Record<'a>,
     source: Option<ExtendedMetadata>,
     allocator: &'a Bump,
 ) -> Result<&'a mut LogMessage<'a>, MessageError> {
@@ -335,7 +348,7 @@ pub fn build_logs_data<'a>(
     for argument in input.arguments.iter() {
         match argument {
             Argument::Tag(tag) => {
-                builder = builder.add_tag(tag.as_ref());
+                builder = builder.add_tag(tag);
             }
             Argument::Pid(pid) => {
                 builder = builder.set_pid(pid.raw_koid());
@@ -347,15 +360,15 @@ pub fn build_logs_data<'a>(
                 builder = builder.set_dropped(*dropped);
             }
             Argument::File(file) => {
-                builder = builder.set_file(file.as_ref());
+                builder = builder.set_file(file);
             }
             Argument::Line(line) => {
                 builder = builder.set_line(*line);
             }
             Argument::Message(msg) => {
-                builder = builder.set_message(msg.as_ref());
+                builder = builder.set_message(msg);
             }
-            Argument::Other { value: _, name: _ } => builder = builder.add_kvp(argument),
+            Argument::Other { .. } => builder = builder.add_kvp(argument),
         }
     }
 
@@ -364,13 +377,17 @@ pub fn build_logs_data<'a>(
 
 /// Constructs a `CPPLogsMessage` from the provided bytes, assuming the bytes
 /// are in the format specified as in the [log encoding], and come from
-///
 /// an Archivist LogStream with moniker, URL, and dropped logs output enabled.
 /// [log encoding] https://fuchsia.dev/fuchsia-src/development/logs/encodings
-pub fn ffi_from_extended_record<'a, 'b>(
+///
+/// # Lifetime and Borrowing
+/// Strings within the returned `LogMessage` borrow directly from `bytes`.
+/// Therefore, `bytes` must remain valid and unmodified for the lifetime `'a`
+/// of the returned `LogMessage`.
+pub fn ffi_from_extended_record<'a>(
     bytes: &'a [u8],
-    allocator: &'b Bump,
-) -> Result<(&'b mut LogMessage<'b>, &'a [u8]), MessageError> {
+    allocator: &'a Bump,
+) -> Result<(&'a mut LogMessage<'a>, &'a [u8]), MessageError> {
     let (input, remaining) = diagnostics_log_encoding::parse::parse_record(bytes)?;
     let (source, new_remaining) = if remaining.len() >= 16 {
         let moniker_len = u32::from_le_bytes(remaining[0..4].try_into().unwrap()) as usize;
@@ -408,12 +425,12 @@ pub fn ffi_from_extended_record<'a, 'b>(
 }
 
 pub struct CPPMessageFormatter<'a>(pub &'a Bump);
-impl<'a> MessageFormatter for &CPPMessageFormatter<'a> {
+impl<'a> MessageFormatter<'a> for &CPPMessageFormatter<'a> {
     type Result = &'a mut LogMessage<'a>;
 
     fn format(
         &mut self,
-        record: &Record<'_>,
+        record: &Record<'a>,
         metadata: Option<ExtendedMetadata>,
     ) -> Result<Self::Result, MessageError> {
         build_logs_data(record, metadata, self.0)
@@ -500,7 +517,13 @@ mod test {
         let res = parser.parse_next(&bytes, &formatter).unwrap();
         assert!(res.0.is_some());
         let log_message = &res.0.unwrap();
-        assert_eq!(&*log_message.message, r#"hello world key="val\"with\\escapes""#);
+        assert_eq!(&*log_message.message, "hello world");
+        assert_eq!(log_message.kvps.len, 1);
+        assert_eq!(&*log_message.kvps[0].key, "key");
+        assert!(matches!(
+            &log_message.kvps[0].value,
+            CppValue::Text(val) if &**val == r#"val"with\escapes"#
+        ));
     }
 
     #[fuchsia::test]
@@ -584,8 +607,12 @@ mod test {
         let (log2, _) = parser.parse_next(&bytes2, &formatter).unwrap();
         assert!(log2.is_some());
 
+        let log2_msg = log2.unwrap();
+        assert_eq!(&*log2_msg.message, "");
+        assert_eq!(log2_msg.kvps.len, 1);
+        assert_eq!(&*log2_msg.kvps[0].key, "rolled_out");
+        assert!(matches!(log2_msg.kvps[0].value, CppValue::UnsignedInt(5)));
         let tag_data2 = parser.tag_map.get(&tag_id).unwrap();
-        assert_eq!(&*log2.unwrap().message, "rolled_out=5");
         assert_eq!(tag_data2.moniker, ExtendedMoniker::parse_str("test/moniker").unwrap());
 
         let normal_record = Record {
@@ -608,9 +635,8 @@ mod test {
 
         let log_msg3 = &log3.unwrap();
         assert_eq!(&*log_msg3.message, "some log with tag");
-        let tags = &*log_msg3.tags;
-        assert_eq!(tags.len(), 1);
-        assert_eq!(&*tags[0], "moniker");
+        assert_eq!(log_msg3.tags.len(), 0);
+        assert_eq!(&*log_msg3.moniker_tag, "moniker");
     }
 
     #[fuchsia::test]
@@ -639,7 +665,15 @@ mod test {
         let res = parser.parse_next(&bytes, &formatter).unwrap();
         assert!(res.0.is_some());
         let log_message = res.0.unwrap();
-        assert_eq!(&*log_message.message, "A message key1=\"value1\" key2=123");
+        assert_eq!(&*log_message.message, "A message");
+        assert_eq!(log_message.kvps.len, 2);
+        assert_eq!(&*log_message.kvps[0].key, "key1");
+        assert!(matches!(
+            &log_message.kvps[0].value,
+            CppValue::Text(val) if &**val == "value1"
+        ));
+        assert_eq!(&*log_message.kvps[1].key, "key2");
+        assert!(matches!(&log_message.kvps[1].value, CppValue::UnsignedInt(123)));
     }
 
     #[fuchsia::test]
@@ -670,7 +704,17 @@ mod test {
         let res = parser.parse_next(&bytes, &formatter).unwrap();
         assert!(res.0.is_some());
         let log_message = res.0.unwrap();
-        assert_eq!(&*log_message.message, "[src/file.rs(42)] Another message temp=30.5 valid=true");
+        assert_eq!(&*log_message.file, "src/file.rs");
+        assert_eq!(log_message.line, 42);
+        assert_eq!(&*log_message.message, "Another message");
+        assert_eq!(log_message.kvps.len, 2);
+        assert_eq!(&*log_message.kvps[0].key, "temp");
+        assert!(matches!(
+            &log_message.kvps[0].value,
+            CppValue::Floating(val) if *val == 30.5
+        ));
+        assert_eq!(&*log_message.kvps[1].key, "valid");
+        assert!(matches!(&log_message.kvps[1].value, CppValue::Boolean(true)));
     }
 
     #[fuchsia::test]
@@ -695,7 +739,78 @@ mod test {
         let res = parser.parse_next(&bytes, &formatter).unwrap();
         assert!(res.0.is_some());
         let log_message = res.0.unwrap();
-        assert_eq!(&*log_message.message, "status=\"ok\" code=200");
+        assert_eq!(&*log_message.message, "");
+        assert_eq!(log_message.kvps.len, 2);
+        assert_eq!(&*log_message.kvps[0].key, "status");
+        assert!(matches!(
+            &log_message.kvps[0].value,
+            CppValue::Text(val) if &**val == "ok"
+        ));
+        assert_eq!(&*log_message.kvps[1].key, "code");
+        assert!(matches!(&log_message.kvps[1].value, CppValue::SignedInt(200)));
+    }
+
+    #[fuchsia::test]
+    fn test_zero_copy_string_borrowing() {
+        let mut parser = MessageParser::default();
+        let allocator = Bump::new();
+        let formatter = CPPMessageFormatter(&allocator);
+
+        let record = Record {
+            timestamp: BootInstant::from_nanos(100),
+            severity: 0x30,
+            arguments: vec![
+                Argument::File("src/lib.rs".into()),
+                Argument::Line(10),
+                Argument::Message("hello zero-copy".into()),
+            ],
+        };
+        let mut buffer = Cursor::new(vec![0u8; 1024]);
+        let mut encoder = Encoder::new(&mut buffer, EncoderOpts::default());
+        encoder.write_record(record).unwrap();
+
+        let len = buffer.position() as usize;
+        let mut bytes = buffer.into_inner();
+        bytes.truncate(len);
+
+        let (log_message, _) = parser.parse_next(&bytes, &formatter).unwrap();
+        let log_message = log_message.unwrap();
+
+        let bytes_start = bytes.as_ptr() as usize;
+        let bytes_end = bytes_start + bytes.len();
+
+        let msg_ptr = log_message.message.inner.ptr as usize;
+        assert!(
+            bytes_start <= msg_ptr && msg_ptr < bytes_end,
+            "message pointer must borrow directly from incoming record buffer"
+        );
+
+        let file_ptr = log_message.file.inner.ptr as usize;
+        assert!(
+            bytes_start <= file_ptr && file_ptr < bytes_end,
+            "file pointer must borrow directly from incoming record buffer"
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_moniker_tag() {
+        let allocator = Bump::new();
+        let builder = CPPLogMessageBuilder {
+            severity: 0x30,
+            tags: BumpaloVec::new_in(&allocator),
+            pid: None,
+            tid: None,
+            dropped: 0,
+            file: None,
+            line: None,
+            moniker: Some(BumpaloString::from_str_in("core/foo", &allocator)),
+            message: None,
+            timestamp: 0,
+            kvps: BumpaloVec::new_in(&allocator),
+            allocator: &allocator,
+        };
+        let msg = builder.build();
+        assert_eq!(&*msg.moniker_tag, "foo");
     }
 
     #[fuchsia::test]

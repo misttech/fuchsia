@@ -115,10 +115,11 @@ async fn test_budget(reader_format: LogFormat) {
 
     let mut observed_logs = reader.get_test_snapshot().await.into_iter();
     let msg_b = observed_logs.next().unwrap();
-    assert!(msg_b.tags[0] != "puppet-victim");
+    assert_ne!(msg_b.moniker_tag, "puppet-victim");
 
     // Victim logs should have been rolled out.
-    let messages = observed_logs.filter(|log| log.tags[0] == "puppet-victim").collect::<Vec<_>>();
+    let messages =
+        observed_logs.filter(|log| log.moniker_tag == "puppet-victim").collect::<Vec<_>>();
     assert!(messages.is_empty());
     assert_ne!(msg_a.message, msg_b.message);
 }

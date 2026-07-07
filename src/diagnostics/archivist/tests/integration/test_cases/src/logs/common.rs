@@ -28,6 +28,8 @@ pub enum LogFormat {
 /// A common format for representing log messages across different interfaces during tests.
 #[derive(Debug, Clone)]
 pub struct TestLogMessage {
+    /// The component moniker tag associated with the log message.
+    pub moniker_tag: String,
     /// The actual log message content.
     pub message: String,
     /// Tags associated with the log message.
@@ -105,11 +107,20 @@ mod ffi_format {
                                 match parser.parse_next(current_slice, &formatter) {
                                     Ok((maybe_msg, remaining)) => {
                                         if let Some(msg) = maybe_msg {
-                                            let message = msg.message.to_string();
+                                            let moniker_tag = msg.moniker_tag.to_string();
+                                            let mut message = msg.message.to_string();
+                                            for kvp in msg.kvps.iter() {
+                                                if &*kvp.key == "rolled_out"
+                                                    && let diagnostics_message::ffi::CppValue::UnsignedInt(count) = kvp.value
+                                                {
+                                                    message = format!("rolled_out={count}");
+                                                }
+                                            }
                                             let (_, severity) = Severity::parse_exact(msg.severity);
                                             let tags =
                                                 msg.tags.iter().map(|s| s.to_string()).collect();
                                             pending.push(TestLogMessage {
+                                                moniker_tag,
                                                 message,
                                                 tags,
                                                 severity,
@@ -317,20 +328,9 @@ mod rust_format {
             log.msg().unwrap_or("").to_string()
         };
 
-        // The FFI/FXT log format includes the component name as a tag. To ensure
-        // consistency across different log reading interfaces in tests, we
-        // add the component name (derived from the moniker) to the tags
-        // for formats like JSON, which do not include it in the tags by default.
-        let mut tags = log.tags().cloned().unwrap_or_default();
-        let moniker_str = log.moniker.to_string();
-        if let Some(component_name) = moniker_str.split('/').next_back() {
-            let component_name = component_name.to_string();
-            if !tags.contains(&component_name) {
-                tags.insert(0, component_name);
-            }
-        }
-
-        TestLogMessage { message, tags, severity: log.severity() }
+        let moniker_tag = log.moniker.as_ref().split('/').next_back().unwrap_or("").to_string();
+        let tags = log.tags().cloned().unwrap_or_default();
+        TestLogMessage { moniker_tag, message, tags, severity: log.severity() }
     }
 }
 

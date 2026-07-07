@@ -66,11 +66,62 @@ struct CppArray {
 /// #[repr(transparent)], but with the additional
 /// constraint that the contents of the array
 /// is a valid UTF-8 string.
-struct CppString {
-  CppArray<uint8_t> inner;
+using CppString = CppArray<uint8_t>;
+
+/// Represents a value in a key-value pair for FFI purposes between C++ and Rust.
+struct CppValue {
+  enum class Tag : uint8_t {
+    CPP_VALUE_SIGNED_INT,
+    CPP_VALUE_UNSIGNED_INT,
+    CPP_VALUE_FLOATING,
+    CPP_VALUE_BOOLEAN,
+    CPP_VALUE_TEXT,
+  };
+
+  struct CppValue_SignedInt_Body {
+    int64_t _0;
+  };
+
+  struct CppValue_UnsignedInt_Body {
+    uint64_t _0;
+  };
+
+  struct CppValue_Floating_Body {
+    double _0;
+  };
+
+  struct CppValue_Boolean_Body {
+    bool _0;
+  };
+
+  struct CppValue_Text_Body {
+    CppString _0;
+  };
+
+  Tag tag;
+  union {
+    CppValue_SignedInt_Body SIGNED_INT;
+    CppValue_UnsignedInt_Body UNSIGNED_INT;
+    CppValue_Floating_Body FLOATING;
+    CppValue_Boolean_Body BOOLEAN;
+    CppValue_Text_Body TEXT;
+  };
 };
 
-/// Log message representation for FFI with C++
+/// Represents a key-value pair for FFI purposes between C++ and Rust.
+struct CppKeyValue {
+  CppString key;
+  CppValue value;
+};
+
+/// Log message representation for FFI with C++.
+///
+/// # Lifetime and Borrowing
+/// Strings within `LogMessage` (`tags`, `message`, and string keys/values in `kvps`)
+/// borrow directly from the incoming encoded message buffer (`bytes`) when possible,
+/// or from the provided arena allocator (`Bump`).
+/// Consequently, the incoming message buffer MUST remain valid and unmodified
+/// for at least as long as the `LogMessage` is in use.
 struct LogMessage {
   /// Severity of a log message.
   uint8_t severity;
@@ -84,6 +135,14 @@ struct LogMessage {
   uint64_t dropped;
   /// The UTF-encoded log message, guaranteed to be valid UTF-8.
   CppString message;
+  /// Source file where the log was emitted, if any.
+  CppString file;
+  /// Source line where the log was emitted, if any.
+  uint64_t line;
+  /// Last segment of the moniker, used as a default log tag if needed.
+  CppString moniker_tag;
+  /// Key-value pairs in a log message.
+  CppArray<CppKeyValue> kvps;
   /// Timestamp on the boot timeline of the log message,
   /// in nanoseconds.
   int64_t timestamp;

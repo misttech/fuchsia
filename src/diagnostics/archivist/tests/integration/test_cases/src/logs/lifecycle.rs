@@ -60,6 +60,6 @@ async fn test_logs_lifecycle(format: LogFormat) {
 }
 
 async fn check_message(expected_moniker_prefix: &str, message: TestLogMessage) {
-    assert!(message.tags[0].starts_with(expected_moniker_prefix));
+    assert!(message.moniker_tag.starts_with(expected_moniker_prefix));
     assert_eq!(message.message, HELLO_WORLD);
 }

@@ -4,36 +4,24 @@
 
 #ifndef SRC_LIB_DIAGNOSTICS_LOG_MESSAGE_RUST_CPP_LOG_DECODER_LOG_DECODER_API_H_
 #define SRC_LIB_DIAGNOSTICS_LOG_MESSAGE_RUST_CPP_LOG_DECODER_LOG_DECODER_API_H_
+#include <fuchsia/logger/cpp/fidl.h>
+#include <lib/fpromise/result.h>
+
+#include <string>
+#include <string_view>
+#include <vector>
+
 #include "log_decoder.h"
 
-namespace log_tester {
+namespace log_decoder {
 
-// Creates a C++ string from a Rust string
-std::string StringFromRustString(CppString rust_string) {
-  std::string ret;
-  if (rust_string.inner.ptr) {
-    ret = std::string(reinterpret_cast<const char*>(rust_string.inner.ptr), rust_string.inner.len);
-  }
-  return ret;
-}
+/// Converts a decoded FFI `LogMessage` into a FIDL `fuchsia::logger::LogMessage`.
+///
+/// Converts timestamps, tags, severity, dropped log counts, and formats the message
+/// along with any key-value pairs (`"[file(line)] message key=value ..."`).
+fpromise::result<fuchsia::logger::LogMessage, std::string> ToFidlLogMessage(
+    const LogMessage& message);
 
-inline fpromise::result<fuchsia::logger::LogMessage, std::string> ToFidlLogMessage(
-    const LogMessage* message) {
-  std::vector<std::string> tags;
-  for (size_t i = 0; i < message->tags.len; i++) {
-    tags.push_back(StringFromRustString(message->tags.ptr[i]));
-  }
-  fuchsia::logger::LogMessage ret = {
-      .pid = message->pid,
-      .tid = message->tid,
-      .time = zx::time_boot(message->timestamp),
-      .severity = message->severity,
-      .dropped_logs = static_cast<uint32_t>(message->dropped),
-      .tags = std::move(tags),
-      .msg = StringFromRustString(message->message),
-  };
-  return fpromise::ok(std::move(ret));
-}
-}  // namespace log_tester
+}  // namespace log_decoder
 
 #endif  // SRC_LIB_DIAGNOSTICS_LOG_MESSAGE_RUST_CPP_LOG_DECODER_LOG_DECODER_API_H_

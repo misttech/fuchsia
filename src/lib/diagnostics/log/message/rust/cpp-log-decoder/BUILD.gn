@@ -11,6 +11,7 @@ cc_test_executable("cpp-log-decoder-unittest") {
   testonly = true
   sources = [ "test.cc" ]
   deps = [
+    ":log_decoder_api",
     ":staticlib",
     "//sdk/lib/syslog/cpp",
     "//src/lib/fxl/test:gtest_main",
@@ -60,6 +61,18 @@ rustc_staticlib("staticlib") {
   test_deps = [
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
     "//third_party/rust_crates:serde",
+  ]
+}
+
+source_set("log_decoder_api") {
+  sources = [
+    "log_decoder_api.cc",
+    "log_decoder_api.h",
+  ]
+  public_deps = [
+    ":staticlib",
+    "//sdk/fidl/fuchsia.logger:fuchsia.logger_hlcpp",
+    "//sdk/lib/fit-promise",
   ]
 }
 
