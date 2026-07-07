@@ -57,6 +57,21 @@ impl<U> Timestamp<U> {
     }
 }
 
+impl Timestamp<Milliseconds> {
+    /// Computes `self` - `other`, returning `None` if `self` is before `other`.
+    pub fn duration_since(&self, other: &Timestamp<Milliseconds>) -> Option<Duration> {
+        if self < other {
+            return None;
+        }
+        // Per RFC 7323 Section 5.2:
+        //   the "timestamps" are 32-bit unsigned integers in a modular 32-bit
+        //   space.
+        // As such, the diff is computed with wrapping subtraction.
+        let diff = self.timestamp.wrapping_sub(other.timestamp);
+        Some(Duration::from_millis(diff.into()))
+    }
+}
+
 impl<U> Ord for Timestamp<U> {
     fn cmp(&self, rhs: &Timestamp<U>) -> Ordering {
         let Timestamp { timestamp: lhs, unit: _ } = self;
@@ -213,5 +228,17 @@ mod tests {
         let rhs = Duration::from_millis(rhs);
         let result = lhs + rhs;
         result.get()
+    }
+
+    #[test_case(1, 1, Some(0); "same_time")]
+    #[test_case(1, 2, None; "after")]
+    #[test_case(2, 1, Some(1); "before")]
+    #[test_case(0, 1 << 31, Some(1 << 31); "before_boundary")]
+    #[test_case(0, (1 << 31) - 1, None; "after_boundary")]
+    fn timestamp_duration_since_millis(lhs: u32, rhs: u32, expected_duration: Option<u32>) {
+        let lhs = Timestamp::<Milliseconds>::new(lhs);
+        let rhs = Timestamp::<Milliseconds>::new(rhs);
+        let expected_duration = expected_duration.map(|d| Duration::from_millis(d.into()));
+        assert_eq!(lhs.duration_since(&rhs), expected_duration)
     }
 }

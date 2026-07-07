@@ -516,16 +516,6 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
                         //   the URG bit is checked, otherwise return.
                         if seg_ack.after(*iss) {
                             let irs = seg_seq;
-                            let mut rtt_estimator = Estimator::default();
-                            let mut rtt_sampler = SamplingStrategy::Measured(rtt_sampler.clone());
-                            if let Some(rtt) = rtt_sampler.on_ack(now, seg_ack) {
-                                rtt_estimator.sample(rtt, rtt_sampler.samples_per_round_trip());
-                            }
-                            let (rcv_wnd_scale, snd_wnd_scale) = options
-                                .window_scale()
-                                .map(|snd_wnd_scale| (*rcv_wnd_scale, snd_wnd_scale))
-                                .unwrap_or_default();
-                            let next = *iss + 1;
                             // We received a SYN-ACK, check if TSopt has been
                             // negotiated.
                             //
@@ -533,15 +523,33 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
                             //   TSopt has been successfully negotiated, that is
                             //   both <SYN> and <SYN,ACK> contain TSopt.
                             let initial_ack_sent = irs + 1;
+                            let rx_timestamp_opt = options.timestamp().map(RxTimestampOption::from);
                             let ts_opt = TimestampOptionState::negotiate(
                                 ts_opt.clone(),
-                                options.timestamp().map(RxTimestampOption::from),
+                                rx_timestamp_opt.clone(),
                                 initial_ack_sent,
                             );
                             let smss = EffectiveMss::from_mss(
                                 smss,
                                 MssSizeLimiters { timestamp_enabled: ts_opt.is_enabled() },
                             );
+                            let congestion_control = CongestionControl::cubic_with_mss(smss);
+                            let mut rtt_estimator = Estimator::default();
+                            let mut rtt_sampler = SamplingStrategy::new(&ts_opt, &rtt_sampler);
+                            if let Some(rtt) = rtt_sampler.on_ack(now, seg_ack, rx_timestamp_opt) {
+                                rtt_estimator.sample(
+                                    rtt,
+                                    rtt_sampler.samples_per_round_trip(
+                                        &congestion_control.mss(),
+                                        congestion_control.flight_size(),
+                                    ),
+                                );
+                            }
+                            let (rcv_wnd_scale, snd_wnd_scale) = options
+                                .window_scale()
+                                .map(|snd_wnd_scale| (*rcv_wnd_scale, snd_wnd_scale))
+                                .unwrap_or_default();
+                            let next = *iss + 1;
                             let established = Established {
                                 snd: Send {
                                     nxt: next,
@@ -556,7 +564,7 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
                                     rtt_sampler,
                                     rtt_estimator,
                                     timer: None,
-                                    congestion_control: CongestionControl::cubic_with_mss(smss),
+                                    congestion_control,
                                     wnd_scale: snd_wnd_scale,
                                     wnd_max: seg_wnd << WindowScale::default(),
                                     last_data_sent: None,
@@ -1904,6 +1912,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
         seg_ack: SeqNum,
         seg_wnd: UnscaledWindowSize,
         seg_sack_blocks: &SackBlocks,
+        rx_ts_opt: Option<RxTimestampOption>,
         pure_ack: bool,
         rcv: R,
         now: I,
@@ -2017,10 +2026,16 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
             if seg_ack.after(*snd_nxt) {
                 *snd_nxt = seg_ack;
             }
-            // If the incoming segment acks the sequence number that we used
-            // for RTT estimate, feed the sample to the estimator.
-            if let Some(rtt) = rtt_sampler.on_ack(now, seg_ack) {
-                rtt_estimator.sample(rtt, rtt_sampler.samples_per_round_trip());
+            // If the incoming ACK can be used as an RTT sample, feed the sample
+            // to the estimator.
+            if let Some(rtt) = rtt_sampler.on_ack(now, seg_ack, rx_ts_opt) {
+                rtt_estimator.sample(
+                    rtt,
+                    rtt_sampler.samples_per_round_trip(
+                        &congestion_control.mss(),
+                        congestion_control.flight_size(),
+                    ),
+                );
             }
 
             // Note that we may not have an RTT estimation yet, see
@@ -2895,10 +2910,19 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                                 NewlyClosed::No,
                             );
                         } else {
+                            let congestion_control = CongestionControl::cubic_with_mss(*smss);
                             let mut rtt_estimator = Estimator::default();
-                            let mut rtt_sampler = SamplingStrategy::Measured(rtt_sampler.clone());
-                            if let Some(rtt) = rtt_sampler.on_ack(now, seg_ack) {
-                                rtt_estimator.sample(rtt, rtt_sampler.samples_per_round_trip());
+                            let mut rtt_sampler = SamplingStrategy::new(&rcv.ts_opt, &rtt_sampler);
+                            let rx_timestamp_opt =
+                                seg_options.timestamp().map(RxTimestampOption::from);
+                            if let Some(rtt) = rtt_sampler.on_ack(now, seg_ack, rx_timestamp_opt) {
+                                rtt_estimator.sample(
+                                    rtt,
+                                    rtt_sampler.samples_per_round_trip(
+                                        &congestion_control.mss(),
+                                        congestion_control.flight_size(),
+                                    ),
+                                );
                             }
                             let (rcv_buffer, snd_buffer) = match simultaneous_open.take() {
                                 None => {
@@ -2925,7 +2949,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                                     rtt_sampler,
                                     rtt_estimator,
                                     timer: None,
-                                    congestion_control: CongestionControl::cubic_with_mss(*smss),
+                                    congestion_control,
                                     wnd_scale: snd_wnd_scale,
                                     wnd_max: seg_wnd << snd_wnd_scale,
                                     last_data_sent: None,
@@ -2967,6 +2991,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                             seg_ack,
                             seg_wnd,
                             seg_options.sack_blocks(),
+                            seg_options.timestamp().map(RxTimestampOption::from),
                             pure_ack,
                             rcv.get_mut(),
                             now,
@@ -2985,6 +3010,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                             seg_ack,
                             seg_wnd,
                             seg_options.sack_blocks(),
+                            seg_options.timestamp().map(RxTimestampOption::from),
                             pure_ack,
                             closed_rcv,
                             now,
@@ -3005,6 +3031,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                             seg_ack,
                             seg_wnd,
                             seg_options.sack_blocks(),
+                            seg_options.timestamp().map(RxTimestampOption::from),
                             pure_ack,
                             closed_rcv,
                             now,
@@ -3033,6 +3060,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                             seg_ack,
                             seg_wnd,
                             seg_options.sack_blocks(),
+                            seg_options.timestamp().map(RxTimestampOption::from),
                             pure_ack,
                             rcv.get_mut(),
                             now,
@@ -3080,6 +3108,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                                 seg_ack,
                                 seg_wnd,
                                 seg_options.sack_blocks(),
+                                seg_options.timestamp().map(RxTimestampOption::from),
                                 pure_ack,
                                 closed_rcv,
                                 now,
@@ -3635,7 +3664,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                         wl2: *irs,
                         last_push: next,
                         buffer: snd_buffer,
-                        rtt_sampler: SamplingStrategy::default(),
+                        rtt_sampler: SamplingStrategy::new(&ts_opt, &MeasuredSampler::default()),
                         rtt_estimator: Estimator::NoSample,
                         timer: None,
                         congestion_control: CongestionControl::cubic_with_mss(*smss),
@@ -4001,7 +4030,7 @@ mod test {
     use crate::internal::congestion::DUP_ACK_THRESHOLD;
     use crate::internal::counters::TcpCountersWithSocketInner;
     use crate::internal::counters::testutil::CounterExpectations;
-    use crate::internal::rtt::MeasuredSampler;
+    use crate::internal::rtt::{MeasuredSampler, TimestampSampler};
     use crate::internal::state::info::SendInfo;
     use crate::internal::timestamp::{TS_ECHO_REPLY_FOR_NON_ACKS, TimestampValueState};
 
@@ -4658,6 +4687,12 @@ mod test {
                         srtt: RTT,
                         rtt_var: RTT / 2,
                     },
+                    rtt_sampler: SamplingStrategy::Timestamp(TimestampSampler{
+                        ts_state: TimestampValueState {
+                            offset: TIMESTAMP_OFFSET,
+                            initialized_at: FakeInstant::default(),
+                        },
+                    }),
                     ..Send::default_for_test(NullBuffer)
                 }.into(),
                 rcv: Recv {
@@ -4709,6 +4744,12 @@ mod test {
                     srtt: RTT,
                     rtt_var: RTT / 2,
                 },
+                rtt_sampler: SamplingStrategy::Timestamp(TimestampSampler{
+                    ts_state: TimestampValueState {
+                        offset: TIMESTAMP_OFFSET,
+                        initialized_at: FakeInstant::default(),
+                    },
+                }),
                 ..Send::default_for_test(NullBuffer)
             }.into(),
             closed_rcv: RecvParams {
@@ -5247,6 +5288,12 @@ mod test {
                 snd: Send {
                     wl1: passive_iss,
                     rtt_estimator: Estimator::Measured { srtt: RTT, rtt_var: RTT / 2 },
+                    rtt_sampler: SamplingStrategy::Timestamp(TimestampSampler {
+                        ts_state: TimestampValueState {
+                            offset: TIMESTAMP_OFFSET,
+                            initialized_at: FakeInstant::default(),
+                        }
+                    }),
                     ..Send::default_for_test_at(active_iss + 1, RingBuffer::default())
                 }
                 .into(),
@@ -5274,6 +5321,9 @@ mod test {
                 snd: Send {
                     wl1: active_iss + 1,
                     rtt_estimator: Estimator::Measured { srtt: RTT, rtt_var: RTT / 2 },
+                    rtt_sampler: SamplingStrategy::Timestamp(TimestampSampler {
+                        ts_state: TimestampValueState { offset: TIMESTAMP_OFFSET, initialized_at }
+                    }),
                     ..Send::default_for_test_at(passive_iss + 1, RingBuffer::default())
                 }
                 .into(),
@@ -5508,6 +5558,12 @@ mod test {
                         Mss::DEFAULT_IPV4,
                         MssSizeLimiters { timestamp_enabled: true },
                     )),
+                    rtt_sampler: SamplingStrategy::Timestamp(TimestampSampler {
+                        ts_state: TimestampValueState {
+                            offset: TIMESTAMP_OFFSET,
+                            initialized_at: FakeInstant::default(),
+                        }
+                    }),
                     ..Send::default_for_test_at(ISS_1 + 1, RingBuffer::default())
                 }
                 .into(),
@@ -5539,6 +5595,12 @@ mod test {
                         Mss::DEFAULT_IPV4,
                         MssSizeLimiters { timestamp_enabled: true },
                     )),
+                    rtt_sampler: SamplingStrategy::Timestamp(TimestampSampler {
+                        ts_state: TimestampValueState {
+                            offset: TIMESTAMP_OFFSET,
+                            initialized_at: FakeInstant::default(),
+                        }
+                    }),
                     ..Send::default_for_test_at(ISS_2 + 1, RingBuffer::default())
                 }
                 .into(),
@@ -8197,6 +8259,7 @@ mod test {
                 TEST_ISS + 1 + TEST_BYTES.len(),
                 UnscaledWindowSize::from(0),
                 &SackBlocks::EMPTY,
+                None,
                 true,
                 &mut RecvParams {
                     ack: TEST_IRS + 1,
@@ -8276,6 +8339,7 @@ mod test {
                     TEST_ISS + 1 + TEST_BYTES.len() + 1,
                     UnscaledWindowSize::from(3),
                     &SackBlocks::EMPTY,
+                    None,
                     true,
                     &mut RecvParams {
                         ack: TEST_IRS + 1,
@@ -8299,6 +8363,7 @@ mod test {
                     TEST_ISS + 1 + TEST_BYTES.len(),
                     UnscaledWindowSize::from(0),
                     &SackBlocks::EMPTY,
+                    None,
                     true,
                     &mut RecvParams {
                         ack: TEST_IRS + 1,
@@ -8323,6 +8388,7 @@ mod test {
                     TEST_ISS + 1 + TEST_BYTES.len(),
                     UnscaledWindowSize::from(3),
                     &SackBlocks::EMPTY,
+                    None,
                     true,
                     &mut RecvParams {
                         ack: TEST_IRS + 1,
@@ -8449,6 +8515,7 @@ mod test {
                 TEST_ISS + 1 + TEST_BYTES.len(),
                 UnscaledWindowSize::from(0),
                 &SackBlocks::EMPTY,
+                None,
                 true,
                 &mut RecvParams {
                     ack: TEST_IRS + 1,
@@ -10135,5 +10202,115 @@ mod test {
 
         let second_send_time = get_last_data_sent(&connection);
         assert_eq!(second_send_time, Some(time_after_sleep));
+    }
+
+    // Verify that a connection using the RTT `TimestampSampler` adheres to the
+    // RTM rule. Per RFC 7323, section 4.2:
+    //     RTTM Rule: A TSecr value received in a segment MAY be used to update
+    //     the averaged RTT measurement only if the segment advances the left
+    //     edge of the send window, i.e., SND.UNA is increased.
+    #[test]
+    fn rttm_rule() {
+        let mut clock = FakeInstantCtx::default();
+        let counters = FakeTcpCounters::default();
+
+        // Complete the Handshake.
+        let (syn_sent, syn_seg) = Closed::<Initial>::connect(
+            ISS_1,
+            TIMESTAMP_OFFSET,
+            clock.now(),
+            (),
+            Default::default(),
+            DEVICE_MAXIMUM_SEGMENT_SIZE,
+            Mss::DEFAULT_IPV4,
+            &SocketOptions::default_for_state_tests(),
+        );
+        let mut alice = State::<_, RingBuffer, RingBuffer, _>::SynSent(syn_sent);
+        let mut bob = State::<_, RingBuffer, RingBuffer, _>::Listen(Closed::<Initial>::listen(
+            ISS_2,
+            TIMESTAMP_OFFSET,
+            Default::default(),
+            DEVICE_MAXIMUM_SEGMENT_SIZE,
+            Mss::DEFAULT_IPV4,
+            None,
+        ));
+        clock.sleep(RTT / 2);
+        let (seg, _) = bob.on_segment_with_default_options::<_, ClientlessBufferProvider>(
+            syn_seg,
+            clock.now(),
+            &counters.refs(),
+        );
+        let syn_ack = seg.expect("failed to generate a syn-ack segment");
+        clock.sleep(RTT / 2);
+        let (seg, _) = alice.on_segment_with_default_options::<_, ClientlessBufferProvider>(
+            syn_ack,
+            clock.now(),
+            &counters.refs(),
+        );
+        let ack_seg = seg.expect("failed to generate a ack segment");
+        clock.sleep(RTT / 2);
+        assert_eq!(
+            bob.on_segment_with_default_options::<_, ClientlessBufferProvider>(
+                ack_seg,
+                clock.now(),
+                &counters.refs(),
+            ),
+            (None, Some(())),
+        );
+
+        // Verify both are established and have RTT estimates.
+        let get_rtt_estimate = |state: &State<_, _, _, _>| {
+            let est = assert_matches!(state, State::Established(e) => e);
+            assert_matches!(est.snd.rtt_estimator, Estimator::Measured { srtt, .. } => srtt)
+        };
+        let alice_first_estimate = get_rtt_estimate(&alice);
+        let bob_first_estimate = get_rtt_estimate(&bob);
+        assert_eq!(alice_first_estimate, RTT);
+        assert_eq!(bob_first_estimate, RTT);
+
+        // Change the RTT of the network, then send data from Alice to Bob.
+        let new_rtt = RTT * 10;
+        let data_to_send = &[1, 2, 3, 4];
+        assert_eq!(
+            alice.assert_established().snd.buffer.enqueue_data(data_to_send),
+            data_to_send.len()
+        );
+        let data_seg = alice
+            .poll_send_with_default_options(clock.now(), &counters.refs())
+            .expect("expected segment to send");
+        clock.sleep(new_rtt / 2);
+        let (seg, _) = bob.on_segment_with_default_options::<_, ClientlessBufferProvider>(
+            data_seg,
+            clock.now(),
+            &counters.refs(),
+        );
+        let ack = seg.expect("expected ACK from bob");
+        clock.sleep(new_rtt / 2);
+        let (seg, _) = alice.on_segment_with_default_options::<_, ClientlessBufferProvider>(
+            ack.clone(),
+            clock.now(),
+            &counters.refs(),
+        );
+        assert_eq!(seg, None);
+
+        // Verify Alices's RTT estimate is updated, while Bob's is unchanged.
+        let alice_second_estimate = get_rtt_estimate(&alice);
+        let bob_second_estimate = get_rtt_estimate(&bob);
+        assert_ne!(alice_first_estimate, alice_second_estimate);
+        assert_eq!(bob_first_estimate, bob_second_estimate);
+
+        // Change the RTT again, and send the same ACK from Bob to Alice.
+        // Alice's estimate should not be updated, since this ACK doesn't
+        // advance SND.UNA.
+        let new_rtt = new_rtt * 10;
+        clock.sleep(new_rtt / 2);
+        let (seg, _) = alice.on_segment_with_default_options::<_, ClientlessBufferProvider>(
+            ack,
+            clock.now(),
+            &counters.refs(),
+        );
+        assert_eq!(seg, None);
+        let alice_third_estimate = get_rtt_estimate(&alice);
+        assert_eq!(alice_second_estimate, alice_third_estimate);
     }
 }

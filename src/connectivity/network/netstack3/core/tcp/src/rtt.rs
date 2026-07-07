@@ -2,12 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//! TCP RTT estimation per [RFC 6298](https://tools.ietf.org/html/rfc6298).
+//! TCP RTT estimation per
+//!   * [RFC 6298](https://tools.ietf.org/html/rfc6298), and
+//!   * [RFC 7323, Section 4](https://tools.ietf.org/html/rfc7323#section-4).
 use core::num::NonZeroU32;
 use core::ops::Range;
 use core::time::Duration;
 
-use netstack3_base::{Instant, SeqNum};
+use netstack3_base::{EffectiveMss, Instant, RxTimestampOption, SeqNum};
+
+use crate::internal::timestamp::{TimestampOptionState, TimestampValueState};
 
 const ONE: NonZeroU32 = NonZeroU32::new(1).unwrap();
 
@@ -256,6 +260,36 @@ impl<I: Instant> MeasuredSampler<I> {
     }
 }
 
+/// An RTT Sampler that uses the TCP Timestamp option. Samples once per ACK.
+///
+/// As defined in
+/// [RFC 7323, Section 4](https://tools.ietf.org/html/rfc7323#section-4).
+#[derive(Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq))]
+pub(super) struct TimestampSampler<I> {
+    /// State used to convert between wall clock time and Timestamp option
+    /// values.
+    pub(super) ts_state: TimestampValueState<I>,
+}
+
+impl<I> TimestampSampler<I> {
+    fn samples_per_round_trip(mss: &EffectiveMss, flight_size: u32) -> NonZeroU32 {
+        // Per [RFC 7323, Appendix G](https://datatracker.ietf.org/doc/html/rfc7323#appendix-G):
+        //     ExpectedSamples = ceiling(FlightSize / (SMSS * 2))
+        let expected_samples = flight_size.div_ceil(u32::from(mss.get()) * 2);
+        NonZeroU32::new(expected_samples).unwrap_or(ONE)
+    }
+}
+
+impl<I: Instant> TimestampSampler<I> {
+    fn on_ack(&self, now: I, rx_ts_opt: Option<RxTimestampOption>) -> Option<Duration> {
+        let Self { ts_state } = self;
+        let RxTimestampOption { ts_val: _, ts_echo_reply } = rx_ts_opt?;
+        let now_ts = ts_state.ts_val(now);
+        now_ts.duration_since(&ts_echo_reply)
+    }
+}
+
 /// The strategy used for sampling RTT measurements on a connection.
 #[derive(Debug)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
@@ -263,6 +297,9 @@ pub(super) enum SamplingStrategy<I> {
     /// Sample the RTT once per round trip by tracking when an individual
     /// segment is sent & ACKed.
     Measured(MeasuredSampler<I>),
+    /// Sample the RTT on the reception of every ACK by using the TCP Timestamp
+    /// option.
+    Timestamp(TimestampSampler<I>),
 }
 
 impl<I> Default for SamplingStrategy<I> {
@@ -271,11 +308,34 @@ impl<I> Default for SamplingStrategy<I> {
     }
 }
 
+impl<I: Clone> SamplingStrategy<I> {
+    /// Constructs a [`SamplingStrategy`] for a TCP Connection.
+    ///
+    /// If the connection is using the Timestamp option, use a
+    /// [`TimestampSampler`]. Otherwise, use the provided [`MeasuredSampler`].
+    pub(super) fn new(
+        ts_opt: &TimestampOptionState<I>,
+        measured_sampler: &MeasuredSampler<I>,
+    ) -> Self {
+        match ts_opt {
+            TimestampOptionState::Disabled => Self::Measured(measured_sampler.clone()),
+            TimestampOptionState::Enabled { ts_recent: _, last_ack_sent: _, ts_val } => {
+                Self::Timestamp(TimestampSampler { ts_state: ts_val.clone() })
+            }
+        }
+    }
+}
+
 impl<I> SamplingStrategy<I> {
     /// Returns the number of samples collected per round trip by this strategy.
-    pub(super) fn samples_per_round_trip(&self) -> NonZeroU32 {
+    pub(super) fn samples_per_round_trip(
+        &self,
+        mss: &EffectiveMss,
+        flight_size: u32,
+    ) -> NonZeroU32 {
         match self {
             Self::Measured(_) => MeasuredSampler::<I>::samples_per_round_trip(),
+            Self::Timestamp(_) => TimestampSampler::<I>::samples_per_round_trip(mss, flight_size),
         }
     }
 }
@@ -285,13 +345,20 @@ impl<I: Instant> SamplingStrategy<I> {
     pub(super) fn on_will_send_segment(&mut self, now: I, range: Range<SeqNum>, snd_max: SeqNum) {
         match self {
             Self::Measured(sampler) => sampler.on_will_send_segment(now, range, snd_max),
+            Self::Timestamp(_) => {}
         }
     }
 
     /// Updates the sampler with a new ack that arrived for the connection.
-    pub(super) fn on_ack(&mut self, now: I, ack: SeqNum) -> Option<Duration> {
+    pub(super) fn on_ack(
+        &mut self,
+        now: I,
+        ack: SeqNum,
+        rx_ts_opt: Option<RxTimestampOption>,
+    ) -> Option<Duration> {
         match self {
             Self::Measured(sampler) => sampler.on_ack(now, ack),
+            Self::Timestamp(sampler) => sampler.on_ack(now, rx_ts_opt),
         }
     }
 }
@@ -306,6 +373,7 @@ impl<I> From<MeasuredSampler<I>> for SamplingStrategy<I> {
 mod test {
     use super::*;
     use netstack3_base::testutil::FakeInstant;
+    use netstack3_base::{EffectiveMss, Milliseconds, Mss, MssSizeLimiters, Timestamp};
     use test_case::test_case;
 
     impl MeasuredSampler<FakeInstant> {
@@ -491,5 +559,63 @@ mod test {
     ) -> (Option<Duration>, MeasuredSampler<FakeInstant>) {
         let res = sampler.on_ack(FakeInstant::default() + ACK_DELAY, SeqNum::new(ack));
         (res, sampler)
+    }
+
+    #[test]
+    fn timestamp_sampler_on_ack() {
+        const OFFSET: u32 = 100;
+        const RTT: u32 = 50;
+
+        let now = FakeInstant::default();
+        let sampler = TimestampSampler {
+            ts_state: crate::internal::timestamp::TimestampValueState {
+                offset: Timestamp::<Milliseconds>::new(OFFSET),
+                initialized_at: now,
+            },
+        };
+
+        let now = now + Duration::from_millis(RTT.into());
+
+        // A TSecr *after* now should be ignored. In practice this will never
+        // happen unless our peer is manipulating the TSecr in ways they
+        // shouldn't, or the network delays our packet by multiple days.
+        assert_eq!(
+            sampler.on_ack(
+                now,
+                Some(RxTimestampOption {
+                    ts_val: Timestamp::new(1234),
+                    ts_echo_reply: Timestamp::new(RTT + OFFSET + 1),
+                })
+            ),
+            None
+        );
+
+        // Valid TSecr should yield RTT.
+        assert_eq!(
+            sampler.on_ack(
+                now,
+                Some(RxTimestampOption {
+                    ts_val: Timestamp::new(1234),
+                    ts_echo_reply: Timestamp::new(OFFSET),
+                })
+            ),
+            Some(Duration::from_millis(RTT.into()))
+        );
+    }
+
+    #[test]
+    fn timestamp_sampler_samples_per_round_trip() {
+        let mss = EffectiveMss::from_mss(
+            Mss::new(1012).unwrap(),
+            MssSizeLimiters { timestamp_enabled: true },
+        );
+        assert_eq!(mss.get(), 1000);
+
+        // The number of samples should round up to the nearest whole MSS,
+        // divided by 2 (because of TCP Delayed Acknowledgements).
+        assert_eq!(TimestampSampler::<FakeInstant>::samples_per_round_trip(&mss, 10001).get(), 6);
+
+        // The number of expected samples should always be at least one.
+        assert_eq!(TimestampSampler::<FakeInstant>::samples_per_round_trip(&mss, 0).get(), 1);
     }
 }

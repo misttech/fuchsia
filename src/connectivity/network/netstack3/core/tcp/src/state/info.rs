@@ -458,13 +458,16 @@ mod tests {
         let effective_mss =
             EffectiveMss::from_mss(mss, MssSizeLimiters { timestamp_enabled: false });
 
+        let mut congestion_control = CongestionControl::cubic_with_mss(effective_mss);
+        congestion_control.inflate_cwnd(u32::from(mss));
+
         let mut rtt_estimator = Estimator::default();
         let rtt_sampler = SamplingStrategy::default();
         let rtt = Duration::from_millis(50);
-        rtt_estimator.sample(rtt, rtt_sampler.samples_per_round_trip());
-
-        let mut congestion_control = CongestionControl::cubic_with_mss(effective_mss);
-        congestion_control.inflate_cwnd(u32::from(mss));
+        rtt_estimator.sample(
+            rtt,
+            rtt_sampler.samples_per_round_trip(&effective_mss, congestion_control.flight_size()),
+        );
 
         let send = Send {
             nxt: SeqNum::new(200),

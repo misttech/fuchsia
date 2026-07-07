@@ -747,10 +747,10 @@ async fn diagnostics_tcp_info<I: Ip>(name: &str) {
         };
 
         // We can't verify exact values for RTT/variances, but we can at least
-        // verify that they're reasonable.
+        // verify that they're present.
         assert_matches!(rto_usec, Some(rto_usec) => assert_gt!(rto_usec, 0));
-        assert_matches!(rtt_usec, Some(rtt_usec) => assert_gt!(rtt_usec, 0));
-        assert_matches!(rtt_var_usec, Some(rtt_var_usec) => assert_gt!(rtt_var_usec, 0));
+        assert_matches!(rtt_usec, Some(_));
+        assert_matches!(rtt_var_usec, Some(_));
         assert_gt!(snd_ssthresh, 0);
         assert_gt!(snd_cwnd, 0);
         assert_gt!(tcpi_segs_out, 0);

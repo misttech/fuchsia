@@ -36,7 +36,7 @@ pub(super) struct TimestampValueState<I> {
 }
 
 impl<I: Instant> TimestampValueState<I> {
-    fn ts_val(&self, now: I) -> Timestamp<Milliseconds> {
+    pub(super) fn ts_val(&self, now: I) -> Timestamp<Milliseconds> {
         let Self { offset, initialized_at } = self;
         *offset + now.checked_duration_since(*initialized_at).unwrap_or(Duration::ZERO)
     }

@@ -297,7 +297,7 @@ impl<I: Instant> CongestionControl<I> {
         self.params.ssthresh
     }
 
-    fn flight_size(&self) -> u32 {
+    pub(super) fn flight_size(&self) -> u32 {
         // Per RFC 5681 (https://www.rfc-editor.org/rfc/rfc5681#section-2):
         //    FLIGHT SIZE: The amount of data that has been sent but not yet
         //    cumulatively acknowledged.
