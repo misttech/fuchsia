@@ -14,18 +14,27 @@ rustc_binary("bin") {
   with_unit_tests = true
 
   deps = [
+    "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
     "//sdk/fidl/fuchsia.hardware.usb.policy:fuchsia.hardware.usb.policy_rust",
     "//sdk/fidl/fuchsia.usb.policy:fuchsia.usb.policy_rust",
+    "//sdk/rust/zx",
+    "//src/lib/diagnostics/reader/rust:lib",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:argh",
+    "//third_party/rust_crates:chrono",
   ]
 
   test_deps = [
     "//sdk/fidl/fuchsia.hardware.usb.policy:fuchsia.hardware.usb.policy_rust",
   ]
 
-  sources = [ "src/main.rs" ]
+  sources = [
+    "src/health.rs",
+    "src/inspect.rs",
+    "src/main.rs",
+  ]
 }
 
 fuchsia_package("usb-cli") {

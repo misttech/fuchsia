@@ -3,48 +3,38 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
-use fidl_fuchsia_hardware_usb_policy as fpolicy;
+use argh::FromArgs;
+use fidl_fuchsia_diagnostics as _;
 use fidl_fuchsia_usb_policy as usb_policy;
-use std::fmt;
 
-struct DisplayableDeviceState(fpolicy::DeviceState);
+mod health;
+mod inspect;
 
-impl fmt::Display for DisplayableDeviceState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            fpolicy::DeviceState::NotAttached => write!(f, "Not Attached"),
-            fpolicy::DeviceState::Attached => write!(f, "Attached"),
-            fpolicy::DeviceState::Powered => write!(f, "Powered"),
-            fpolicy::DeviceState::Default => write!(f, "Default"),
-            fpolicy::DeviceState::Address => write!(f, "Address"),
-            fpolicy::DeviceState::Configured => write!(f, "Configured"),
-            fpolicy::DeviceState::Suspended => write!(f, "Suspended"),
-            _ => write!(f, "Unknown"),
-        }
-    }
-}
+#[derive(FromArgs)]
+/// USB diagnostics tool.
+struct UsbCliArgs {
+    /// prints the usb policy health report
+    #[argh(switch, short = 'H')]
+    health: bool,
 
-fn format_report(report: &usb_policy::HealthReport) -> String {
-    let mut out = String::from("USB Health Report\n");
-    if let Some(state) = report.state {
-        out.push_str(&format!("  Controller: {}\n", DisplayableDeviceState(state)));
-    } else {
-        out.push_str("  Controller: Unknown\n");
-    }
-    if let Some(address) = report.address {
-        out.push_str(&format!("  Address: {}", address));
-    } else {
-        out.push_str("  Address: Unknown");
-    }
-    out
+    /// prints the device-side usb inspect diagnostics
+    #[argh(switch, short = 'i')]
+    inspect: bool,
+
+    /// prints both health report and inspect diagnostics
+    #[argh(switch, short = 'a')]
+    all: bool,
 }
 
 #[fuchsia::main(logging_tags = ["usb-cli"])]
-async fn main() -> Result<(), Error> {
-    run_cli().await
+async fn main() {
+    if let Err(e) = run_cli().await {
+        eprintln!("usb-cli error: {:?}", e);
+        std::process::exit(1);
+    }
 }
 
-async fn run_cli() -> Result<(), Error> {
+async fn get_health_report() -> Result<usb_policy::HealthReport, Error> {
     let health =
         fuchsia_component::client::connect_to_protocol_at_path::<usb_policy::HealthMarker>(
             "/exposed/fuchsia.usb.policy.Health",
@@ -53,52 +43,49 @@ async fn run_cli() -> Result<(), Error> {
             anyhow::format_err!("Failed to connect to Health protocol at /exposed: {:?}", e)
         })?;
 
-    let report = health
+    health
         .get_report()
         .await
         .map_err(|e| anyhow::format_err!("Failed to communicate (get_report): {:?}", e))?
-        .map_err(|e| anyhow::format_err!("Failed to get report (zx status): {}", e))?;
-
-    println!("{}", format_report(&report));
-    Ok(())
+        .map_err(|e| {
+            anyhow::format_err!("Failed to get report (zx status): {:?}", zx::Status::from_raw(e))
+        })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use fidl_fuchsia_hardware_usb_policy as fpolicy;
+async fn run_cli() -> Result<(), Error> {
+    let args: UsbCliArgs = argh::from_env();
 
-    #[test]
-    fn test_format_report_known() {
-        let report = usb_policy::HealthReport {
-            state: Some(fpolicy::DeviceState::Configured),
-            address: Some(42),
-            ..Default::default()
-        };
-        assert_eq!(
-            format_report(&report),
-            "USB Health Report\n  Controller: Configured\n  Address: 42"
-        );
+    // Default mode (no flags) runs health.
+    let default_mode = !args.inspect && !args.health && !args.all;
+    let run_health = args.health || args.all || default_mode;
+    let run_inspect = args.inspect || args.all;
+
+    let mut report_res = Ok(None);
+
+    if run_health {
+        report_res = get_health_report().await.map(Some);
     }
 
-    #[test]
-    fn test_format_report_unknown() {
-        let report = usb_policy::HealthReport { state: None, address: None, ..Default::default() };
-        assert_eq!(
-            format_report(&report),
-            "USB Health Report\n  Controller: Unknown\n  Address: Unknown"
-        );
+    match report_res {
+        Ok(Some(report)) => println!("{}", health::format_report(&report)),
+        Ok(None) => {}
+        Err(e) => {
+            if args.health {
+                println!(
+                    "USB Policy Health service not available: fuchsia.usb.policy.Health not found."
+                );
+                return Err(e);
+            } else {
+                println!("USB Policy Health service not available (skipping).");
+            }
+        }
     }
 
-    #[rustfmt::skip]
-    #[test]
-    fn test_displayable_device_state() {
-        assert_eq!(format!("{}", DisplayableDeviceState(fpolicy::DeviceState::NotAttached)), "Not Attached");
-        assert_eq!(format!("{}", DisplayableDeviceState(fpolicy::DeviceState::Attached)), "Attached");
-        assert_eq!(format!("{}", DisplayableDeviceState(fpolicy::DeviceState::Powered)), "Powered");
-        assert_eq!(format!("{}", DisplayableDeviceState(fpolicy::DeviceState::Default)), "Default");
-        assert_eq!(format!("{}", DisplayableDeviceState(fpolicy::DeviceState::Address)), "Address");
-        assert_eq!(format!("{}", DisplayableDeviceState(fpolicy::DeviceState::Configured)), "Configured");
-        assert_eq!(format!("{}", DisplayableDeviceState(fpolicy::DeviceState::Suspended)), "Suspended");
+    if run_inspect {
+        if let Err(e) = inspect::print_usb_inspect_diagnostics().await {
+            println!("Failed to print USB inspect diagnostics: {:?}", e);
+        }
     }
+
+    Ok(())
 }
