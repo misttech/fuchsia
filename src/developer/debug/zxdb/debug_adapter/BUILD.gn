@@ -65,6 +65,7 @@ source_set("tests") {
     "handlers/request_attach_unittest.cc",
     "handlers/request_breakpoint_unittest.cc",
     "handlers/request_continue_unittest.cc",
+    "handlers/request_evaluate_unittest.cc",
     "handlers/request_launch_unittest.cc",
     "handlers/request_next_unittest.cc",
     "handlers/request_pause_unittest.cc",

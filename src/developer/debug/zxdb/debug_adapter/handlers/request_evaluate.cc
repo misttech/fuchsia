@@ -5,7 +5,11 @@
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_evaluate.h"
 
 #include "dap/session.h"
+#include "src/developer/debug/zxdb/client/frame.h"
+#include "src/developer/debug/zxdb/client/process.h"
+#include "src/developer/debug/zxdb/client/thread.h"
 #include "src/developer/debug/zxdb/console/command_context.h"
+#include "src/developer/debug/zxdb/debug_adapter/context.h"
 #include "src/lib/fxl/memory/ref_ptr.h"
 
 namespace zxdb {
@@ -19,8 +23,20 @@ void OnRequestEvaluate(
     return;
   }
 
-  // Utilize the console for REPL context.
+  // TODO(https://fxbug.dev/527992704): Restrict evaluate handler to expression evaluation
+  // only rather than generic console command execution, and verify stopped thread state
+  // (CheckStoppedThread). Utilize the console for REPL context.
   if (req.context.value() == "repl") {
+    if (req.frameId.has_value()) {
+      auto* frame = ctx->FrameforId(req.frameId.value());
+      if (!frame) {
+        callback(dap::Error("Invalid frame ID"));
+        return;
+      }
+      ctx->console()->context().SetActiveTarget(frame->GetThread()->GetProcess()->GetTarget());
+      ctx->console()->context().SetActiveThreadForTarget(frame->GetThread());
+      ctx->console()->context().SetActiveFrameForThread(frame);
+    }
     ctx->console()->ProcessInputLine(
         req.expression,
         fxl::MakeRefCounted<OfflineCommandContext>(
