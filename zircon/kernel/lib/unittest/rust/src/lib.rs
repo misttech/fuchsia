@@ -41,7 +41,7 @@ pub use zx_status::Status as __Status;
 /// ```rust
 /// /// Brief test suite description.
 /// #[cfg(ktest)]
-/// #[test_suite]
+/// #[test_suite(name = "optional_name")]
 /// mod my_suite {
 ///     /// Brief test case description.
 ///     fn my_case() {
@@ -545,7 +545,7 @@ mod tests {
     }
 
     /// Suite with one function description.
-    #[test_suite]
+    #[test_suite(name = "one_function")]
     mod suite_with_one_function {
         /// Empty function description.
         fn empty() {}
@@ -822,10 +822,7 @@ mod tests {
         std::assert!(suites.len() > 2);
         let suite = &suites[2];
 
-        std::assert_eq!(
-            unsafe { CStr::from_ptr(suite.name) }.to_bytes(),
-            b"suite_with_one_function"
-        );
+        std::assert_eq!(unsafe { CStr::from_ptr(suite.name) }.to_bytes(), b"one_function");
         std::assert_eq!(
             unsafe { CStr::from_ptr(suite.desc) }.to_str().unwrap(),
             "Suite with one function description."

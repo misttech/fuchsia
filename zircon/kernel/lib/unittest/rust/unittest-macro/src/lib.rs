@@ -9,24 +9,39 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::{ToTokens, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::{
-    Attribute, Block, Error, Expr, Ident, Item, ItemFn, ItemMod, ItemUse, Lit, Meta, ReturnType,
-    Type, parse_macro_input,
+    Attribute, Block, Error, Expr, Ident, Item, ItemFn, ItemMod, ItemUse, Lit, LitStr, Meta,
+    ReturnType, Type, parse_macro_input,
 };
 
 const SECTION_NAME: &str = ".data.rel.ro.unittest_testcases";
 
+struct TestSuiteArgs {
+    name: Option<String>,
+}
+
+impl Parse for TestSuiteArgs {
+    fn parse(input: ParseStream<'_>) -> Result<Self, Error> {
+        if input.is_empty() {
+            return Ok(TestSuiteArgs { name: None });
+        }
+
+        let ident: Ident = input.parse()?;
+        if ident != "name" {
+            return Err(Error::new(ident.span(), "expected 'name'"));
+        }
+
+        input.parse::<syn::Token![=]>()?;
+        let lit: LitStr = input.parse()?;
+
+        Ok(TestSuiteArgs { name: Some(lit.value()) })
+    }
+}
+
 #[proc_macro_attribute]
 pub fn test_suite(attr: TokenStream, item: TokenStream) -> TokenStream {
-    if !attr.is_empty() {
-        return Error::new_spanned(
-            TokenStream2::from(attr),
-            "test_suite attribute does not take arguments",
-        )
-        .to_compile_error()
-        .into();
-    }
-
-    let suite = parse_macro_input!(item as TestSuite);
+    let args = parse_macro_input!(attr as TestSuiteArgs);
+    let mut suite = parse_macro_input!(item as TestSuite);
+    suite.custom_name = args.name;
     quote!(#suite).into()
 }
 
@@ -106,6 +121,7 @@ impl ToTokens for TestCase {
 struct TestSuite {
     ident: Ident,
     docstring: String,
+    custom_name: Option<String>,
     uses: Vec<ItemUse>,
     cases: Vec<TestCase>,
 }
@@ -150,14 +166,18 @@ impl Parse for TestSuite {
             ));
         }
 
-        Ok(Self { ident: mod_ident.clone(), docstring, uses, cases })
+        Ok(Self { ident: mod_ident.clone(), docstring, custom_name: None, uses, cases })
     }
 }
 
 impl ToTokens for TestSuite {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         let mod_ident = &self.ident;
-        let suite_name_c_str = format!("{mod_ident}\0");
+        let suite_name = match &self.custom_name {
+            Some(name) => name.clone(),
+            None => mod_ident.to_string(),
+        };
+        let suite_name_c_str = format!("{suite_name}\0");
         let suite_desc_c_str = format!("{}\0", self.docstring);
         let doc_comment = format!(" {}", self.docstring);
 
