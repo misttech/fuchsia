@@ -1,77 +1,82 @@
 #[allow(clippy::unreadable_literal)]
 static PROPERTY_KEYS: phf::Set<&'static str> = ::phf::Set { map: ::phf::Map {
-    key: 15467950696543387533,
+    key: 16263683158343804936,
     disps: &[
-        (1, 0),
+        (0, 0),
     ],
     entries: &[
-        ("patternProperties", ()),
         ("properties", ()),
+        ("patternProperties", ()),
     ],
 } };
 #[allow(clippy::unreadable_literal)]
 static NON_SCHEMA_KEYS: phf::Set<&'static str> = ::phf::Set { map: ::phf::Map {
-    key: 12913932095322966823,
+    key: 16287231350648472473,
     disps: &[
-        (0, 4),
-        (7, 0),
-        (2, 9),
+        (0, 0),
+        (0, 1),
+        (0, 1),
+        (0, 7),
     ],
     entries: &[
         ("dependencies", ()),
-        ("dependentSchemas", ()),
-        ("properties", ()),
-        ("oneOf", ()),
         ("anyOf", ()),
-        ("enum", ()),
-        ("dependentRequired", ()),
-        ("$defs", ()),
-        ("allOf", ()),
-        ("definitions", ()),
-        ("patternProperties", ()),
         ("const", ()),
+        ("allOf", ()),
+        ("properties", ()),
+        ("dependentSchemas", ()),
+        ("definitions", ()),
+        ("dependentRequired", ()),
+        ("patternProperties", ()),
+        ("enum", ()),
+        ("$defs", ()),
+        ("oneOf", ()),
     ],
 } };#[allow(clippy::unreadable_literal)]
 static BOOLEAN_SCHEMA_ARRAY_KEYS: phf::Set<&'static str> = ::phf::Set { map: ::phf::Map {
-    key: 15467950696543387533,
+    key: 4203492208743950414,
     disps: &[
-        (3, 0),
+        (0, 0),
+        (0, 1),
     ],
     entries: &[
-        ("anyOf", ()),
-        ("allOf", ()),
         ("items", ()),
+        ("allOf", ()),
+        ("anyOf", ()),
         ("oneOf", ()),
     ],
 } };#[allow(clippy::unreadable_literal)]
 static FINAL_KEYS: phf::Set<&'static str> = ::phf::Set { map: ::phf::Map {
-    key: 10121458955350035957,
+    key: 16263683158343804936,
     disps: &[
-        (1, 0),
+        (0, 0),
+        (0, 2),
     ],
     entries: &[
-        ("required", ()),
-        ("default", ()),
         ("enum", ()),
+        ("required", ()),
         ("type", ()),
+        ("default", ()),
     ],
 } };#[allow(clippy::unreadable_literal)]
 const ALLOW_NON_CONSUMED_KEYS: phf::Set<&'static str> = ::phf::Set { map: ::phf::Map {
-    key: 10121458955350035957,
+    key: 16287231350648472473,
     disps: &[
+        (0, 3),
         (1, 0),
-        (9, 5),
+        (0, 3),
+        (2, 6),
     ],
     entries: &[
-        ("$id", ()),
-        ("definitions", ()),
-        ("title", ()),
-        ("$anchor", ()),
-        ("default", ()),
-        ("examples", ()),
-        ("format", ()),
         ("$schema", ()),
-        ("$defs", ()),
+        ("format", ()),
         ("description", ()),
+        ("title", ()),
+        ("examples", ()),
+        ("$anchor", ()),
+        ("$defs", ()),
+        ("definitions", ()),
+        ("default", ()),
+        ("$id", ()),
     ],
 } };

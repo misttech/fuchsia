@@ -71,6 +71,7 @@ rust_library(
     }),
     version = "4.0.0",
     deps = [
+        "//third_party/rust_crates/forks/valico-4.0.0:build_script_build",
         "//third_party/rust_crates/vendor/addr-0.15.6:addr",
         "//third_party/rust_crates/vendor/base64-0.21.7:base64",
         "//third_party/rust_crates/vendor/chrono-0.4.45:chrono",
@@ -80,13 +81,12 @@ rust_library(
         "//third_party/rust_crates/vendor/json-pointer-0.3.4:json_pointer",
         "//third_party/rust_crates/vendor/jsonway-2.0.0:jsonway",
         "//third_party/rust_crates/vendor/percent-encoding-2.3.1:percent_encoding",
-        "//third_party/rust_crates/vendor/phf-0.11.3:phf",
+        "//third_party/rust_crates/vendor/phf-0.14.0:phf",
         "//third_party/rust_crates/vendor/serde-1.0.228:serde",
         "//third_party/rust_crates/vendor/serde_json-1.0.149:serde_json",
         "//third_party/rust_crates/vendor/uritemplate-next-0.2.0:uritemplate",
         "//third_party/rust_crates/vendor/url-2.3.1:url",
         "//third_party/rust_crates/vendor/uuid-1.23.3:uuid",
-        "//third_party/rust_crates/vendor/valico-4.0.0:build_script_build",
     ],
 )
 
@@ -138,7 +138,7 @@ cargo_build_script(
     version = "4.0.0",
     visibility = ["//visibility:private"],
     deps = [
-        "//third_party/rust_crates/vendor/phf_codegen-0.11.3:phf_codegen",
+        "//third_party/rust_crates/vendor/phf_codegen-0.14.0:phf_codegen",
     ],
 )
 

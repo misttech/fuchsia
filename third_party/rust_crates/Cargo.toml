@@ -465,6 +465,7 @@ tracing-core = { path = "forks/tracing-core" }
 tracing-mutex = { path = "forks/tracing-mutex-0.3.2" }
 trust-dns-proto = { path = "forks/trust-dns-proto-0.22.0" }
 trust-dns-resolver = { path = "forks/trust-dns-resolver-0.22.0" }
+valico = { path = "forks/valico-4.0.0" }
 vt100 = { path = "forks/vt100-0.16.2" }
 zeroize = { path = "forks/zeroize" }
 zstd-sys = { path = "forks/zstd-sys" }

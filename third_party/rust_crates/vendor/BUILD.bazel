@@ -3290,13 +3290,13 @@ alias(
 
 alias(
     name = "valico-4.0.0",
-    actual = "//third_party/rust_crates/vendor/valico-4.0.0:valico",
+    actual = "//third_party/rust_crates/forks/valico-4.0.0:valico",
     tags = ["manual"],
 )
 
 alias(
     name = "valico",
-    actual = "//third_party/rust_crates/vendor/valico-4.0.0:valico",
+    actual = "//third_party/rust_crates/forks/valico-4.0.0:valico",
     tags = ["manual"],
 )
 

@@ -14983,38 +14983,6 @@ rustc_library("petgraph-v0_6_2") {
   applicable_licenses = [ ":petgraph-v0_6_2.license" ]
 }
 
-license("phf-v0_11_3.license") {
-  public_package_name = "phf"
-  license_files = [ "//third_party/rust_crates/vendor/phf-0.11.3/LICENSE" ]
-}
-
-rustc_library("phf-v0_11_3") {
-  crate_name = "phf"
-  source_root = "//third_party/rust_crates/vendor/phf-0.11.3/src/lib.rs"
-  output_name = "phf-c9c4eb954e248f0"
-  edition = "2021"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":phf_shared-v0_11_3" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=c9c4eb954e248f0",
-    "-Cextra-filename=-c9c4eb954e248f0",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"std\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":phf-v0_11_3.license" ]
-}
-
 license("phf-v0_14_0.license") {
   public_package_name = "phf"
   license_files = [ "//third_party/rust_crates/vendor/phf-0.14.0/LICENSE" ]
@@ -15032,6 +15000,7 @@ rustc_library("phf-v0_14_0") {
   deps = []
   deps += [ ":phf_macros-v0_14_0($host_toolchain)" ]
   deps += [ ":phf_shared-v0_14_0" ]
+  deps += [ ":serde-v1_0_228" ]
 
   rustenv = []
 
@@ -15039,8 +15008,10 @@ rustc_library("phf-v0_14_0") {
     "--cap-lints=allow",
     "-Cmetadata=54769849c2d71b1c",
     "-Cextra-filename=-54769849c2d71b1c",
+    "--cfg=feature=\"default\"",
     "--cfg=feature=\"macros\"",
     "--cfg=feature=\"phf_macros\"",
+    "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
@@ -15116,39 +15087,6 @@ rustc_macro("phf_macros-v0_14_0") {
   applicable_licenses = [ ":phf_macros-v0_14_0.license" ]
 }
 
-license("phf_shared-v0_11_3.license") {
-  public_package_name = "phf_shared"
-  license_files =
-      [ "//third_party/rust_crates/vendor/phf_shared-0.11.3/LICENSE" ]
-}
-
-rustc_library("phf_shared-v0_11_3") {
-  crate_name = "phf_shared"
-  source_root = "//third_party/rust_crates/vendor/phf_shared-0.11.3/src/lib.rs"
-  output_name = "phf_shared-e06eeff40b9aaeb2"
-  edition = "2021"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":siphasher-v1_0_2" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=e06eeff40b9aaeb2",
-    "-Cextra-filename=-e06eeff40b9aaeb2",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"std\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":phf_shared-v0_11_3.license" ]
-}
-
 license("phf_shared-v0_14_0.license") {
   public_package_name = "phf_shared"
   license_files =
@@ -15173,6 +15111,8 @@ rustc_library("phf_shared-v0_14_0") {
     "--cap-lints=allow",
     "-Cmetadata=866e4622657108ad",
     "-Cextra-filename=-866e4622657108ad",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
@@ -16678,7 +16618,6 @@ rustc_library("rand-v0_8_4") {
     "--cfg=feature=\"libc\"",
     "--cfg=feature=\"rand_chacha\"",
     "--cfg=feature=\"rand_hc\"",
-    "--cfg=feature=\"small_rng\"",
     "--cfg=feature=\"std\"",
     "--cfg=feature=\"std_rng\"",
   ]
@@ -23652,14 +23591,14 @@ rustc_library("uuid-v1_23_3") {
 license("valico-v4_0_0.license") {
   public_package_name = "valico"
   license_files = [
-    "//third_party/rust_crates/vendor/valico-4.0.0/LICENSE",
-    "//third_party/rust_crates/vendor/valico-4.0.0/tests/schema/JSON-Schema-Test-Suite/LICENSE",
+    "//third_party/rust_crates/forks/valico-4.0.0/LICENSE",
+    "//third_party/rust_crates/forks/valico-4.0.0/tests/schema/JSON-Schema-Test-Suite/LICENSE",
   ]
 }
 
 rustc_library("valico-v4_0_0") {
   crate_name = "valico"
-  source_root = "//third_party/rust_crates/vendor/valico-4.0.0/src/lib.rs"
+  source_root = "//third_party/rust_crates/forks/valico-4.0.0/src/lib.rs"
   output_name = "valico-db594cced1466dbd"
   edition = "2018"
   disable_clippy = true
@@ -23676,7 +23615,7 @@ rustc_library("valico-v4_0_0") {
   deps += [ ":json-pointer-v0_3_4" ]
   deps += [ ":jsonway-v2_0_0" ]
   deps += [ ":percent-encoding-v2_3_1" ]
-  deps += [ ":phf-v0_11_3" ]
+  deps += [ ":phf-v0_14_0" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_149" ]
   deps += [ ":uritemplate-next-v0_2_0" ]

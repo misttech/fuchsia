@@ -15,9 +15,13 @@
 //!
 //! ```toml
 //! [build-dependencies]
-//! phf = { version = "0.11.1", default-features = false }
-//! phf_codegen = "0.11.1"
+//! phf = { version = "0.14.0", default-features = false }
+//! phf_codegen = "0.14.0"
 //! ```
+//!
+//! When using the experimental `ptrhash` feature, enable it on both
+//! `phf_codegen` and the runtime `phf` dependency so the generated constants
+//! and runtime layout stay in sync.
 //!
 //! Then put code on build.rs:
 //!
@@ -78,22 +82,20 @@
 //! use std::io::{BufWriter, Write};
 //! use std::path::Path;
 //!
-//! fn main() {
-//!     let path = Path::new(&env::var("OUT_DIR").unwrap()).join("codegen.rs");
-//!     let mut file = BufWriter::new(File::create(&path).unwrap());
+//! let path = Path::new(&env::var("OUT_DIR").unwrap()).join("codegen.rs");
+//! let mut file = BufWriter::new(File::create(&path).unwrap());
 //!
-//!     writeln!(
-//!         &mut file,
-//!          "static KEYWORDS: phf::Map<&'static [u8], Keyword> = \n{};\n",
-//!          phf_codegen::Map::<&[u8]>::new()
-//!              .entry(b"loop", "Keyword::Loop")
-//!              .entry(b"continue", "Keyword::Continue")
-//!              .entry(b"break", "Keyword::Break")
-//!              .entry(b"fn", "Keyword::Fn")
-//!              .entry(b"extern", "Keyword::Extern")
-//!              .build()
-//!     ).unwrap();
-//! }
+//! writeln!(
+//!     &mut file,
+//!      "static KEYWORDS: phf::Map<&'static [u8], Keyword> = \n{};\n",
+//!      phf_codegen::Map::<&[u8]>::new()
+//!          .entry(b"loop", "Keyword::Loop")
+//!          .entry(b"continue", "Keyword::Continue")
+//!          .entry(b"break", "Keyword::Break")
+//!          .entry(b"fn", "Keyword::Fn")
+//!          .entry(b"extern", "Keyword::Extern")
+//!          .build()
+//! ).unwrap();
 //! ```
 //!
 //! lib.rs:
@@ -138,15 +140,19 @@
 //! // ...
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/phf_codegen/0.11")]
+#![doc(html_root_url = "https://docs.rs/phf_codegen/0.14.0")]
 #![allow(clippy::new_without_default)]
 
 use phf_shared::{FmtConst, PhfHash};
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt;
 use std::hash::Hash;
 
+#[cfg(not(feature = "ptrhash"))]
 use phf_generator::HashState;
+#[cfg(feature = "ptrhash")]
+use phf_generator::ptrhash::HashState;
 
 struct Delegate<T>(T);
 
@@ -156,16 +162,38 @@ impl<T: FmtConst> fmt::Display for Delegate<T> {
     }
 }
 
-/// A builder for the `phf::Map` type.
-pub struct Map<K> {
-    keys: Vec<K>,
-    values: Vec<String>,
-    path: String,
+#[cfg(feature = "quote")]
+fn write_tokens(tokens: &mut proc_macro2::TokenStream, value: impl fmt::Display) {
+    tokens.extend(
+        value
+            .to_string()
+            .parse::<proc_macro2::TokenStream>()
+            .expect("phf_codegen generated invalid Rust tokens"),
+    );
 }
 
-impl<K: Hash + PhfHash + Eq + FmtConst> Map<K> {
+fn generate_hash_state<H: PhfHash>(keys: &[H]) -> HashState {
+    #[cfg(not(feature = "ptrhash"))]
+    {
+        phf_generator::generate_hash(keys)
+    }
+
+    #[cfg(feature = "ptrhash")]
+    {
+        phf_generator::ptrhash::generate_hash(keys)
+    }
+}
+
+/// A builder for the `phf::Map` type.
+pub struct Map<'a, K> {
+    keys: Vec<K>,
+    values: Vec<Cow<'a, str>>,
+    path: Cow<'a, str>,
+}
+
+impl<'a, K: Hash + PhfHash + Eq + FmtConst> Map<'a, K> {
     /// Creates a new `phf::Map` builder.
-    pub fn new() -> Map<K> {
+    pub fn new() -> Self {
         // FIXME rust#27438
         //
         // On Windows/MSVC there are major problems with the handling of dllimport.
@@ -179,27 +207,30 @@ impl<K: Hash + PhfHash + Eq + FmtConst> Map<K> {
         Map {
             keys: vec![],
             values: vec![],
-            path: String::from("::phf"),
+            path: Cow::Borrowed("::phf"),
         }
     }
 
     /// Set the path to the `phf` crate from the global namespace
-    pub fn phf_path(&mut self, path: &str) -> &mut Map<K> {
-        self.path = path.to_owned();
+    pub fn phf_path(&mut self, path: impl Into<Cow<'a, str>>) -> &mut Self {
+        self.path = path.into();
         self
     }
 
     /// Adds an entry to the builder.
     ///
     /// `value` will be written exactly as provided in the constructed source.
-    pub fn entry(&mut self, key: K, value: &str) -> &mut Map<K> {
+    pub fn entry(&mut self, key: K, value: impl Into<Cow<'a, str>>) -> &mut Self {
         self.keys.push(key);
-        self.values.push(value.to_owned());
+        self.values.push(value.into());
         self
     }
 
     /// Calculate the hash parameters and return a struct implementing
-    /// [`Display`](::std::fmt::Display) which will print the constructed `phf::Map`.
+    /// [`Display`](::std::fmt::Display) for the constructed `phf::Map`.
+    ///
+    /// With the `quote` feature enabled, the returned value also implements
+    /// `quote::ToTokens`.
     ///
     /// # Panics
     ///
@@ -212,13 +243,13 @@ impl<K: Hash + PhfHash + Eq + FmtConst> Map<K> {
             }
         }
 
-        let state = phf_generator::generate_hash(&self.keys);
+        let state = generate_hash_state(&self.keys);
 
         DisplayMap {
+            state,
             path: &self.path,
             keys: &self.keys,
             values: &self.values,
-            state,
         }
     }
 }
@@ -228,10 +259,11 @@ pub struct DisplayMap<'a, K> {
     path: &'a str,
     state: HashState,
     keys: &'a [K],
-    values: &'a [String],
+    values: &'a [Cow<'a, str>],
 }
 
 impl<'a, K: FmtConst + 'a> fmt::Display for DisplayMap<'a, K> {
+    #[cfg(not(feature = "ptrhash"))]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // funky formatting here for nice output
         write!(
@@ -277,33 +309,117 @@ impl<'a, K: FmtConst + 'a> fmt::Display for DisplayMap<'a, K> {
 }}"
         )
     }
+
+    #[cfg(feature = "ptrhash")]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}::Map {{
+    key: {:?},
+    pilots: &[",
+            self.path, self.state.seed
+        )?;
+
+        for &pilot in &self.state.pilots {
+            write!(
+                f,
+                "
+        {},",
+                pilot
+            )?;
+        }
+
+        write!(
+            f,
+            "
+    ],
+    remap: &[",
+        )?;
+
+        for &index in &self.state.remap {
+            write!(
+                f,
+                "
+        {},",
+                index
+            )?;
+        }
+
+        write!(
+            f,
+            "
+    ],
+    entries: &[",
+        )?;
+
+        for &idx in &self.state.map {
+            write!(
+                f,
+                "
+        ({}, {}),",
+                Delegate(&self.keys[idx]),
+                &self.values[idx]
+            )?;
+        }
+
+        write!(
+            f,
+            "
+    ],
+}}"
+        )
+    }
+}
+
+#[cfg(feature = "quote")]
+impl<'a, K: FmtConst + 'a> quote::ToTokens for DisplayMap<'a, K> {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        write_tokens(tokens, self);
+    }
+}
+
+impl<'a, K, V> FromIterator<(K, V)> for Map<'a, K>
+where
+    K: Hash + PhfHash + Eq + FmtConst,
+    V: Into<Cow<'a, str>>,
+{
+    fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
+        let mut map = Map::new();
+        for (key, value) in iter {
+            map.entry(key, value);
+        }
+        map
+    }
 }
 
 /// A builder for the `phf::Set` type.
-pub struct Set<T> {
-    map: Map<T>,
+pub struct Set<'a, T> {
+    map: Map<'a, T>,
 }
 
-impl<T: Hash + PhfHash + Eq + FmtConst> Set<T> {
+impl<'a, T: Hash + PhfHash + Eq + FmtConst> Set<'a, T> {
     /// Constructs a new `phf::Set` builder.
-    pub fn new() -> Set<T> {
+    pub fn new() -> Self {
         Set { map: Map::new() }
     }
 
     /// Set the path to the `phf` crate from the global namespace
-    pub fn phf_path(&mut self, path: &str) -> &mut Set<T> {
+    pub fn phf_path(&mut self, path: impl Into<Cow<'a, str>>) -> &mut Self {
         self.map.phf_path(path);
         self
     }
 
     /// Adds an entry to the builder.
-    pub fn entry(&mut self, entry: T) -> &mut Set<T> {
+    pub fn entry(&mut self, entry: T) -> &mut Self {
         self.map.entry(entry, "()");
         self
     }
 
     /// Calculate the hash parameters and return a struct implementing
-    /// [`Display`](::std::fmt::Display) which will print the constructed `phf::Set`.
+    /// [`Display`](::std::fmt::Display) for the constructed `phf::Set`.
+    ///
+    /// With the `quote` feature enabled, the returned value also implements
+    /// `quote::ToTokens`.
     ///
     /// # Panics
     ///
@@ -326,41 +442,50 @@ impl<'a, T: FmtConst + 'a> fmt::Display for DisplaySet<'a, T> {
     }
 }
 
-/// A builder for the `phf::OrderedMap` type.
-pub struct OrderedMap<K> {
-    keys: Vec<K>,
-    values: Vec<String>,
-    path: String,
+#[cfg(feature = "quote")]
+impl<'a, T: FmtConst + 'a> quote::ToTokens for DisplaySet<'a, T> {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        write_tokens(tokens, self);
+    }
 }
 
-impl<K: Hash + PhfHash + Eq + FmtConst> OrderedMap<K> {
+/// A builder for the `phf::OrderedMap` type.
+pub struct OrderedMap<'a, K> {
+    keys: Vec<K>,
+    values: Vec<Cow<'a, str>>,
+    path: Cow<'a, str>,
+}
+
+impl<'a, K: Hash + PhfHash + Eq + FmtConst> OrderedMap<'a, K> {
     /// Constructs a enw `phf::OrderedMap` builder.
-    pub fn new() -> OrderedMap<K> {
+    pub fn new() -> Self {
         OrderedMap {
             keys: vec![],
             values: vec![],
-            path: String::from("::phf"),
+            path: Cow::Borrowed("::phf"),
         }
     }
 
     /// Set the path to the `phf` crate from the global namespace
-    pub fn phf_path(&mut self, path: &str) -> &mut OrderedMap<K> {
-        self.path = path.to_owned();
+    pub fn phf_path(&mut self, path: impl Into<Cow<'a, str>>) -> &mut Self {
+        self.path = path.into();
         self
     }
 
     /// Adds an entry to the builder.
     ///
     /// `value` will be written exactly as provided in the constructed source.
-    pub fn entry(&mut self, key: K, value: &str) -> &mut OrderedMap<K> {
+    pub fn entry(&mut self, key: K, value: impl Into<Cow<'a, str>>) -> &mut Self {
         self.keys.push(key);
-        self.values.push(value.to_owned());
+        self.values.push(value.into());
         self
     }
 
     /// Calculate the hash parameters and return a struct implementing
-    /// [`Display`](::std::fmt::Display) which will print the constructed
-    /// `phf::OrderedMap`.
+    /// [`Display`](::std::fmt::Display) for the constructed `phf::OrderedMap`.
+    ///
+    /// With the `quote` feature enabled, the returned value also implements
+    /// `quote::ToTokens`.
     ///
     /// # Panics
     ///
@@ -373,11 +498,11 @@ impl<K: Hash + PhfHash + Eq + FmtConst> OrderedMap<K> {
             }
         }
 
-        let state = phf_generator::generate_hash(&self.keys);
+        let state = generate_hash_state(&self.keys);
 
         DisplayOrderedMap {
-            path: &self.path,
             state,
+            path: &self.path,
             keys: &self.keys,
             values: &self.values,
         }
@@ -389,10 +514,11 @@ pub struct DisplayOrderedMap<'a, K> {
     path: &'a str,
     state: HashState,
     keys: &'a [K],
-    values: &'a [String],
+    values: &'a [Cow<'a, str>],
 }
 
 impl<'a, K: FmtConst + 'a> fmt::Display for DisplayOrderedMap<'a, K> {
+    #[cfg(not(feature = "ptrhash"))]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -445,36 +571,121 @@ impl<'a, K: FmtConst + 'a> fmt::Display for DisplayOrderedMap<'a, K> {
 }}"
         )
     }
+
+    #[cfg(feature = "ptrhash")]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}::OrderedMap {{
+    key: {:?},
+    pilots: &[",
+            self.path, self.state.seed
+        )?;
+
+        for &pilot in &self.state.pilots {
+            write!(
+                f,
+                "
+        {},",
+                pilot
+            )?;
+        }
+
+        write!(
+            f,
+            "
+    ],
+    remap: &[",
+        )?;
+
+        for &index in &self.state.remap {
+            write!(
+                f,
+                "
+        {},",
+                index
+            )?;
+        }
+
+        write!(
+            f,
+            "
+    ],
+    idxs: &[",
+        )?;
+
+        for &idx in &self.state.map {
+            write!(
+                f,
+                "
+        {},",
+                idx
+            )?;
+        }
+
+        write!(
+            f,
+            "
+    ],
+    entries: &[",
+        )?;
+
+        for (key, value) in self.keys.iter().zip(self.values.iter()) {
+            write!(
+                f,
+                "
+        ({}, {}),",
+                Delegate(key),
+                value
+            )?;
+        }
+
+        write!(
+            f,
+            "
+    ],
+}}"
+        )
+    }
+}
+
+#[cfg(feature = "quote")]
+impl<'a, K: FmtConst + 'a> quote::ToTokens for DisplayOrderedMap<'a, K> {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        write_tokens(tokens, self);
+    }
 }
 
 /// A builder for the `phf::OrderedSet` type.
-pub struct OrderedSet<T> {
-    map: OrderedMap<T>,
+pub struct OrderedSet<'a, T> {
+    map: OrderedMap<'a, T>,
 }
 
-impl<T: Hash + PhfHash + Eq + FmtConst> OrderedSet<T> {
+impl<'a, T: Hash + PhfHash + Eq + FmtConst> OrderedSet<'a, T> {
     /// Constructs a new `phf::OrderedSet` builder.
-    pub fn new() -> OrderedSet<T> {
+    pub fn new() -> Self {
         OrderedSet {
             map: OrderedMap::new(),
         }
     }
 
     /// Set the path to the `phf` crate from the global namespace
-    pub fn phf_path(&mut self, path: &str) -> &mut OrderedSet<T> {
+    pub fn phf_path(&mut self, path: impl Into<Cow<'a, str>>) -> &mut Self {
         self.map.phf_path(path);
         self
     }
 
     /// Adds an entry to the builder.
-    pub fn entry(&mut self, entry: T) -> &mut OrderedSet<T> {
+    pub fn entry(&mut self, entry: T) -> &mut Self {
         self.map.entry(entry, "()");
         self
     }
 
     /// Calculate the hash parameters and return a struct implementing
-    /// [`Display`](::std::fmt::Display) which will print the constructed
-    /// `phf::OrderedSet`.
+    /// [`Display`](::std::fmt::Display) for the constructed `phf::OrderedSet`.
+    ///
+    /// With the `quote` feature enabled, the returned value also implements
+    /// `quote::ToTokens`.
     ///
     /// # Panics
     ///
@@ -498,5 +709,12 @@ impl<'a, T: FmtConst + 'a> fmt::Display for DisplayOrderedSet<'a, T> {
             "{}::OrderedSet {{ map: {} }}",
             self.inner.path, self.inner
         )
+    }
+}
+
+#[cfg(feature = "quote")]
+impl<'a, T: FmtConst + 'a> quote::ToTokens for DisplayOrderedSet<'a, T> {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        write_tokens(tokens, self);
     }
 }
