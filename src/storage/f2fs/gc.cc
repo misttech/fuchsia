@@ -201,6 +201,7 @@ zx::result<uint32_t> SegmentManager::GetGcVictim(GcType gc_type, CursegType type
 
 bool SegmentManager::IsValidBlock(uint32_t segno, uint64_t offset) {
   fs::SharedLock sentry_lock(sentry_lock_);
+  ZX_ASSERT(IsValidSegmentNumber(segno));
   return sit_info_->sentries[segno].cur_valid_map.GetOne(ToMsbFirst(offset));
 }
 

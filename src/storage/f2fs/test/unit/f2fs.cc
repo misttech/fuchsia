@@ -30,24 +30,47 @@ TEST(SuperblockTest, SanityCheckRawSuper) {
   // Check exception cases
   BlockBuffer<Superblock> corrupted;
   std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
-  corrupted->log_sectors_per_block = kDefaultSectorsPerBlock;
-  corrupted->log_sectorsize = kMaxLogSectorSize;
+  corrupted->log_sectors_per_block = CpuToLe(kDefaultSectorsPerBlock);
+  corrupted->log_sectorsize = CpuToLe(kMaxLogSectorSize);
   WriteSuperblock(*corrupted, *bc);
   ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
 
   std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
-  corrupted->log_sectorsize = kMaxLogSectorSize + 1;
+  corrupted->log_sectorsize = CpuToLe(kMaxLogSectorSize + 1);
   WriteSuperblock(*corrupted, *bc);
   ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
 
   std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
-  corrupted->log_blocksize = kMaxLogSectorSize + 1;
+  corrupted->log_blocksize = CpuToLe(kMaxLogSectorSize + 1);
   WriteSuperblock(*corrupted, *bc);
   ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
 
   std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
-  corrupted->magic = 0xF2F5FFFF;
-  corrupted->log_blocksize = kMaxLogSectorSize + 1;
+  corrupted->magic = CpuToLe(0xF2F5FFFF);
+  corrupted->log_blocksize = CpuToLe(kMaxLogSectorSize + 1);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->segs_per_sec = CpuToLe(0u);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->secs_per_zone = CpuToLe(0u);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->segs_per_sec = CpuToLe(2u);
+  corrupted->segment_count_main = CpuToLe(5u);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->segs_per_sec = CpuToLe(1u);
+  corrupted->segment_count_main = CpuToLe(5u);
+  corrupted->section_count = CpuToLe(4u);
   WriteSuperblock(*corrupted, *bc);
   ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
 }

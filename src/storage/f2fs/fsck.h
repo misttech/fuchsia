@@ -230,7 +230,6 @@ class FsckWorker {
   void CheckBlockCount(uint32_t segno, const SitEntry &raw_sit);
   zx::result<RawNatEntry> LookupNatInJournal(nid_t nid);
   zx::result<RawNatEntry> GetNatEntry(nid_t nid);
-  inline void CheckSegmentRange(uint32_t segno);
   SegmentEntry &GetSegmentEntry(uint32_t segno);
   uint32_t GetSegmentNumber(uint32_t block_address);
   zx::result<NodeInfo> GetNodeInfo(nid_t nid);

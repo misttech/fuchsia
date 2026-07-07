@@ -169,7 +169,9 @@ class SegmentManager {
   uint32_t CursegSegno(int type);
   uint8_t CursegAllocType(int type);
   uint16_t CursegBlkoff(int type);
-  void CheckSegRange(uint32_t segno) const;
+  bool IsValidSegmentNumber(uint32_t segment_number) const {
+    return segment_number < main_segments_;
+  }
   void CheckBlockCount(uint32_t segno, SitEntry &raw_sit);
   pgoff_t CurrentSitAddr(uint32_t start) __TA_REQUIRES_SHARED(sentry_lock_);
   pgoff_t NextSitAddr(pgoff_t block_addr) __TA_REQUIRES_SHARED(sentry_lock_);
@@ -336,7 +338,8 @@ class SegmentManager {
   void SetDirtySegmentInfo(std::unique_ptr<DirtySeglistInfo> &&info) TA_NO_THREAD_SAFETY_ANALYSIS {
     dirty_info_ = std::move(info);
   }
-  void SetSegmentEntryType(size_t target_segno, CursegType type) TA_NO_THREAD_SAFETY_ANALYSIS {
+  void SetSegmentEntryType(uint32_t target_segno, CursegType type) TA_NO_THREAD_SAFETY_ANALYSIS {
+    ZX_ASSERT(IsValidSegmentNumber(target_segno));
     sit_info_->sentries[target_segno].type = static_cast<uint8_t>(type);
   }
   uint32_t GetLastVictim(int mode) TA_NO_THREAD_SAFETY_ANALYSIS { return last_victim_[mode]; }

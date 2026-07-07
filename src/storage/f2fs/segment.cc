@@ -131,6 +131,7 @@ SegmentManager::SegmentManager(SuperblockInfo &info) : superblock_info_(info) {}
 
 const SegmentEntry &SegmentManager::GetSegmentEntry(uint32_t segno) {
   fs::SharedLock sentry_lock(sentry_lock_);
+  ZX_ASSERT(IsValidSegmentNumber(segno));
   return sit_info_->sentries[segno];
 }
 
@@ -140,6 +141,7 @@ bool SegmentManager::CompareValidBlocks(uint32_t blocks, uint32_t segno, bool se
 }
 
 uint32_t SegmentManager::GetValidBlocks(uint32_t segno, bool section) const {
+  ZX_ASSERT(IsValidSegmentNumber(segno));
   // In order to get # of valid blocks in a section instantly from many
   // segments, f2fs manages two counting structures separately.
   if (section && superblock_info_.GetSegsPerSec() > 1) {
@@ -158,6 +160,7 @@ uint32_t SegmentManager::FindNextInuse(uint32_t max, uint32_t start) {
 }
 
 void SegmentManager::SetFree(uint32_t segno) {
+  ZX_ASSERT(IsValidSegmentNumber(segno));
   uint32_t secno = segno / superblock_info_.GetSegsPerSec();
   uint32_t start_segno = secno * superblock_info_.GetSegsPerSec();
 
@@ -175,6 +178,7 @@ void SegmentManager::SetFree(uint32_t segno) {
 }
 
 void SegmentManager::SetInuse(uint32_t segno) {
+  ZX_ASSERT(IsValidSegmentNumber(segno));
   uint32_t secno = segno / superblock_info_.GetSegsPerSec();
   free_info_->free_segmap.SetOne(segno);
   --free_info_->free_segments;
@@ -185,6 +189,7 @@ void SegmentManager::SetInuse(uint32_t segno) {
 }
 
 void SegmentManager::SetTestAndFree(uint32_t segno) {
+  ZX_ASSERT(IsValidSegmentNumber(segno));
   uint32_t secno = segno / superblock_info_.GetSegsPerSec();
   uint32_t start_segno = secno * superblock_info_.GetSegsPerSec();
   std::lock_guard segmap_lock(segmap_lock_);
@@ -205,6 +210,7 @@ void SegmentManager::SetTestAndFree(uint32_t segno) {
 }
 
 void SegmentManager::SetTestAndInuse(uint32_t segno) {
+  ZX_ASSERT(IsValidSegmentNumber(segno));
   uint32_t secno = segno / superblock_info_.GetSegsPerSec();
   std::lock_guard segmap_lock(segmap_lock_);
   if (!free_info_->free_segmap.GetOne(segno)) {
@@ -342,8 +348,6 @@ uint16_t SegmentManager::CursegBlkoff(int type) {
   return curseg->next_blkoff;
 }
 
-void SegmentManager::CheckSegRange(uint32_t segno) const { ZX_ASSERT(segno < segment_count_); }
-
 #if 0  // porting needed
 // This function is used for only debugging.
 // NOTE: In future, we have to remove this function.
@@ -360,14 +364,13 @@ void SegmentManager::VerifyBlockAddr(block_t blk_addr) {
 
 // Summary block is always treated as invalid block
 void SegmentManager::CheckBlockCount(uint32_t segno, SitEntry &raw_sit) {
-  uint32_t end_segno = segment_count_ - 1;
   int valid_blocks = 0;
 
   // check segment usage
   ZX_ASSERT(!(GetSitVblocks(raw_sit) > superblock_info_.GetBlocksPerSeg()));
 
   // check boundary of a given segment number
-  ZX_ASSERT(!(segno > end_segno));
+  ZX_ASSERT(IsValidSegmentNumber(segno));
 
   // check bitmap with valid block count
   PageBitmap bits(raw_sit.valid_map, kSitVBlockMapSizeInBit);
@@ -382,7 +385,7 @@ pgoff_t SegmentManager::CurrentSitAddr(uint32_t start) {
   uint32_t offset = SitBlockOffset(start);
   block_t blk_addr = sit_info_->sit_base_addr + offset;
 
-  CheckSegRange(start);
+  ZX_ASSERT(IsValidSegmentNumber(start));
 
   // calculate sit block address
   if (sit_info_->sit_bitmap.GetOne(ToMsbFirst(offset)))
@@ -500,6 +503,7 @@ bool SegmentManager::HasNotEnoughFreeSecs(size_t freed_sections, size_t needed_b
 }
 
 void SegmentManager::LocateDirtySegment(uint32_t segno, DirtyType dirty_type) {
+  ZX_ASSERT(IsValidSegmentNumber(segno));
   // The current segments should not belong to dirty_segmap.
   if (IsCurSeg(segno)) {
     return;
@@ -525,6 +529,7 @@ void SegmentManager::LocateDirtySegment(uint32_t segno, DirtyType dirty_type) {
 }
 
 void SegmentManager::RemoveDirtySegment(uint32_t segno, DirtyType dirty_type) {
+  ZX_ASSERT(IsValidSegmentNumber(segno));
   if (dirty_info_->dirty_segmap[static_cast<int>(dirty_type)].GetOne(segno)) {
     dirty_info_->dirty_segmap[static_cast<int>(dirty_type)].ClearOne(segno);
     --dirty_info_->nr_dirty[static_cast<int>(dirty_type)];
@@ -553,6 +558,8 @@ void SegmentManager::RemoveDirtySegment(uint32_t segno, DirtyType dirty_type) {
 void SegmentManager::LocateDirtySegment(uint32_t segno) {
   if (segno == kNullSegNo || IsCurSeg(segno))
     return;
+
+  ZX_ASSERT(IsValidSegmentNumber(segno));
 
   std::lock_guard seglist_lock(seglist_lock_);
 
@@ -639,6 +646,7 @@ void SegmentManager::ClearPrefreeSegments() {
 }
 
 void SegmentManager::MarkSitEntryDirty(uint32_t segno) {
+  ZX_ASSERT(IsValidSegmentNumber(segno));
   if (!sit_info_->dirty_sentries_bitmap.GetOne(segno)) {
     sit_info_->dirty_sentries_bitmap.SetOne(segno);
     ++sit_info_->dirty_sentries;
@@ -646,6 +654,7 @@ void SegmentManager::MarkSitEntryDirty(uint32_t segno) {
 }
 
 void SegmentManager::SetSitEntryType(CursegType type, uint32_t segno, bool modified) {
+  ZX_ASSERT(IsValidSegmentNumber(segno));
   SegmentEntry &segment_entry = sit_info_->sentries[segno];
   segment_entry.type = static_cast<uint8_t>(type);
   if (modified)
@@ -656,6 +665,7 @@ void SegmentManager::UpdateSitEntry(block_t blkaddr, int del) {
   uint32_t offset;
   uint64_t new_vblocks;
   uint32_t segno = GetSegmentNumber(blkaddr);
+  ZX_ASSERT(IsValidSegmentNumber(segno));
   SegmentEntry &segment_entry = sit_info_->sentries[segno];
 
   new_vblocks = segment_entry.valid_blocks + del;
@@ -998,6 +1008,7 @@ void SegmentManager::RecoverDataPage(Summary &sum, block_t old_blkaddr, block_t 
   uint32_t old_cursegno;
   CursegType type;
   uint32_t segno = GetSegmentNumber(new_blkaddr);
+  ZX_ASSERT(IsValidSegmentNumber(segno));
   SegmentEntry &segment_entry = sit_info_->sentries[segno];
 
   type = static_cast<CursegType>(segment_entry.type);
@@ -1260,7 +1271,7 @@ zx::result<LockedPage> SegmentManager::GetCurrentSitPage(uint32_t segno) {
   uint32_t offset = SitBlockOffset(segno);
   block_t blk_addr = sit_info_->sit_base_addr + offset;
 
-  CheckSegRange(segno);
+  ZX_ASSERT(IsValidSegmentNumber(segno));
 
   // calculate sit block address
   if (sit_info_->sit_bitmap.GetOne(ToMsbFirst(offset)))

@@ -1621,10 +1621,6 @@ zx_status_t FsckWorker::BuildCurseg() {
   return RestoreCursegSummaries();
 }
 
-inline void FsckWorker::CheckSegmentRange(uint32_t segno) {
-  uint32_t end_segno = segment_manager_->GetSegmentsCount() - 1;
-  ZX_ASSERT(segno <= end_segno);
-}
 
 std::unique_ptr<BlockBuffer<SitBlock>> FsckWorker::GetCurrentSitPage(uint32_t segno) {
   SitInfo &sit_i = segment_manager_->GetSitInfo();
@@ -1632,7 +1628,7 @@ std::unique_ptr<BlockBuffer<SitBlock>> FsckWorker::GetCurrentSitPage(uint32_t se
   block_t block_address = sit_i.sit_base_addr + offset;
   auto sit_block_ptr = std::make_unique<BlockBuffer<SitBlock>>();
 
-  CheckSegmentRange(segno);
+  ZX_ASSERT(segment_manager_->IsValidSegmentNumber(segno));
 
   // calculate sit block address
   if (sit_i.sit_bitmap.GetOne(ToMsbFirst(offset))) {
@@ -1645,14 +1641,13 @@ std::unique_ptr<BlockBuffer<SitBlock>> FsckWorker::GetCurrentSitPage(uint32_t se
 }
 
 void FsckWorker::CheckBlockCount(uint32_t segno, const SitEntry &raw_sit) {
-  uint32_t end_segno = segment_manager_->GetSegmentsCount() - 1;
   int valid_blocks = 0;
 
   // check segment usage
   ZX_ASSERT(GetSitVblocks(raw_sit) <= superblock_info_->GetBlocksPerSeg());
 
   // check boundary of a given segment number
-  ZX_ASSERT(segno <= end_segno);
+  ZX_ASSERT(segment_manager_->IsValidSegmentNumber(segno));
 
   // check bitmap with valid block count
   for (uint64_t i = 0; i < superblock_info_->GetBlocksPerSeg(); ++i) {
