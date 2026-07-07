@@ -13,11 +13,17 @@ namespace radar {
 std::unique_ptr<RadarProxy> RadarProxy::Create(async_dispatcher_t* dispatcher,
                                                RadarDeviceConnector* connector) {
   FX_LOGS(INFO) << "Burst reader proxying disabled";
-  return std::make_unique<radar::RadarProviderProxy>(dispatcher, connector);
+  auto proxy = std::make_unique<radar::RadarProviderProxy>(dispatcher, connector);
+  zx::result<> status = proxy->Init(dispatcher);
+  if (status.is_error()) {
+    FX_LOGS(ERROR) << "Failed to initialize RadarProxy: " << status.status_string();
+    return nullptr;
+  }
+  return proxy;
 }
 
 RadarProviderProxy::~RadarProviderProxy() {
-  // Close out any outstanding requests before destruction to avoid triggerig an assert.
+  // Close out any outstanding requests before destruction to avoid triggering an assert.
   for (auto& [server, completer] : connect_requests_) {
     completer.Close(ZX_ERR_PEER_CLOSED);
   }
@@ -48,15 +54,14 @@ zx::result<> RadarProviderProxy::AddProtocols(component::OutgoingDirectory* cons
   return zx::ok();
 }
 
-void RadarProviderProxy::DeviceAdded(fidl::UnownedClientEnd<fuchsia_io::Directory> dir,
-                                     const std::string& filename) {
-  if (!radar_client_) {
-    connector_->ConnectToRadarDevice(dir, filename, [&](auto client_end) {
-      return ConnectToRadarDevice(std::move(client_end));
-    });
+void RadarProviderProxy::OnDeviceFound(
+    fidl::ClientEnd<fuchsia_hardware_radar::RadarBurstReaderProvider> client_end) {
+  if (radar_client_) {
+    return;
   }
-}
 
+  ConnectToRadarDevice(std::move(client_end));
+}
 void RadarProviderProxy::on_fidl_error(fidl::UnbindInfo info) {
   FX_PLOGS(ERROR, info.status()) << "Connection to radar device closed, attempting to reconnect";
 
@@ -64,7 +69,7 @@ void RadarProviderProxy::on_fidl_error(fidl::UnbindInfo info) {
   radar_client_ = {};
 
   // Check for available devices now, just in case one was added before the connection closed. If
-  // not, the DeviceWatcher will signal to connect when a new device becomes available.
+  // not, the ServiceMemberWatcher will signal to connect when a new device becomes available.
   connector_->ConnectToFirstRadarDevice(
       [&](auto client_end) { return ConnectToRadarDevice(std::move(client_end)); });
 }

@@ -1,6 +1,9 @@
-// Copyright 2023 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+#ifndef SRC_DEVICES_RADAR_BIN_RADAR_PROXY_TEST_RADAR_PROXY_TEST_H_
+#define SRC_DEVICES_RADAR_BIN_RADAR_PROXY_TEST_RADAR_PROXY_TEST_H_
 
 #include <fidl/fuchsia.hardware.radar/cpp/fidl.h>
 #include <fidl/fuchsia.io/cpp/fidl.h>
@@ -198,12 +201,6 @@ class RadarProxyTest : public zxtest::Test, public RadarDeviceConnector {
     driver_loop_.Shutdown();
   }
 
-  void ConnectToRadarDevice(fidl::UnownedClientEnd<fuchsia_io::Directory> dir,
-                            const std::string& path,
-                            ConnectDeviceCallback connect_device) override {
-    ConnectToFirstRadarDevice(std::move(connect_device));
-  }
-
   void ConnectToFirstRadarDevice(ConnectDeviceCallback connect_device) override {
     if (!provider_connect_fail_) {
       auto endpoints = fidl::Endpoints<fuchsia_hardware_radar::RadarBurstReaderProvider>::Create();
@@ -248,7 +245,9 @@ class RadarProxyTest : public zxtest::Test, public RadarDeviceConnector {
 
   void AddRadarDevice() {
     provider_connect_fail_ = false;
-    dut_.DeviceAdded(kInvalidDir, "000");
+    auto endpoints = fidl::Endpoints<fuchsia_hardware_radar::RadarBurstReaderProvider>::Create();
+    fake_driver_.Bind(std::move(endpoints.server));
+    dut_.OnDeviceFound(std::move(endpoints.client));
   }
 
   void BindInjector(fidl::ServerEnd<fuchsia_hardware_radar::RadarBurstInjector> server_end) {
@@ -265,8 +264,6 @@ class RadarProxyTest : public zxtest::Test, public RadarDeviceConnector {
   async::Loop& loop() { return proxy_loop_; }
 
  private:
-  static constexpr fidl::UnownedClientEnd<fuchsia_io::Directory> kInvalidDir{FIDL_HANDLE_INVALID};
-
   T dut_;
 
   bool provider_connect_fail_ = false;
@@ -276,3 +273,5 @@ class RadarProxyTest : public zxtest::Test, public RadarDeviceConnector {
 };
 
 }  // namespace radar
+
+#endif  // SRC_DEVICES_RADAR_BIN_RADAR_PROXY_TEST_RADAR_PROXY_TEST_H_

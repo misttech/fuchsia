@@ -7,14 +7,13 @@
 
 #include <fidl/fuchsia.hardware.radar/cpp/fidl.h>
 #include <lib/async/dispatcher.h>
+#include <lib/component/incoming/cpp/service_member_watcher.h>
+#include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/fit/function.h>
 #include <lib/zx/result.h>
 
 #include <memory>
 #include <string>
-
-#include "sdk/lib/component/outgoing/cpp/outgoing_directory.h"
-#include "src/lib/fsl/io/device_watcher.h"
 
 namespace radar {
 
@@ -26,40 +25,33 @@ class RadarDeviceConnector {
   using ConnectDeviceCallback =
       fit::function<bool(fidl::ClientEnd<fuchsia_hardware_radar::RadarBurstReaderProvider>)>;
 
-  // Synchronously connects to the given radar device and passes the client end to the callback. The
-  // callback is not called if the connection could not be made. The callback return value is
-  // ignored.
-  virtual void ConnectToRadarDevice(fidl::UnownedClientEnd<fuchsia_io::Directory> dir,
-                                    const std::string& path,
-                                    ConnectDeviceCallback connect_device) = 0;
-
-  // Calls ConnectToRadarDevice() on available devices until the callback returns true.
+  // Calls the connect_device callback on available devices until it returns true.
   virtual void ConnectToFirstRadarDevice(ConnectDeviceCallback connect_device) = 0;
 };
 
 class RadarProxy : public fidl::Server<fuchsia_hardware_radar::RadarBurstReaderProvider> {
  public:
-  static constexpr char kRadarDeviceDirectory[] = "/dev/class/radar";
-
   static std::unique_ptr<RadarProxy> Create(async_dispatcher_t* dispatcher,
                                             RadarDeviceConnector* connector);
 
-  RadarProxy()
-      : device_watcher_(fsl::DeviceWatcher::Create(
-            kRadarDeviceDirectory,
-            [&](const fidl::ClientEnd<fuchsia_io::Directory>& dir, const std::string& filename) {
-              DeviceAdded(dir, filename);
-            })) {}
+  RadarProxy() = default;
 
-  // Called by a DeviceWatcher when /dev/class/radar has a new device, and for each existing device
-  // during construction.
-  virtual void DeviceAdded(fidl::UnownedClientEnd<fuchsia_io::Directory> dir,
-                           const std::string& filename) = 0;
+  zx::result<> Init(async_dispatcher_t* dispatcher) {
+    return service_watcher_.Begin(
+        dispatcher,
+        [this](fidl::ClientEnd<fuchsia_hardware_radar::RadarBurstReaderProvider> client_end) {
+          OnDeviceFound(std::move(client_end));
+        });
+  }
+
+  // Called by a ServiceMemberWatcher when fuchsia.hardware.radar.Service has a new instance.
+  virtual void OnDeviceFound(
+      fidl::ClientEnd<fuchsia_hardware_radar::RadarBurstReaderProvider> client_end) = 0;
 
   virtual zx::result<> AddProtocols(component::OutgoingDirectory* outgoing) = 0;
 
  private:
-  std::unique_ptr<fsl::DeviceWatcher> device_watcher_;
+  component::ServiceMemberWatcher<fuchsia_hardware_radar::Service::Device> service_watcher_;
 };
 
 }  // namespace radar

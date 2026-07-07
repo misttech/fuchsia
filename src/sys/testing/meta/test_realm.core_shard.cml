@@ -405,12 +405,15 @@
             to: "#testing",
         },
         {
-            service: "fuchsia.hardware.serial.Service",
+            service: "fuchsia.hardware.cpu.ctrl.Service",
             from: "parent",
             to: "#testing",
         },
         {
-            service: "fuchsia.hardware.cpu.ctrl.Service",
+            service: [
+                "fuchsia.hardware.google.nanohub.DataChannelService",
+                "fuchsia.hardware.google.nanohub.Service",
+            ],
             from: "parent",
             to: "#testing",
         },
@@ -420,10 +423,12 @@
             to: "#testing",
         },
         {
-            service: [
-                "fuchsia.hardware.google.nanohub.DataChannelService",
-                "fuchsia.hardware.google.nanohub.Service",
-            ],
+            service: "fuchsia.hardware.radar.Service",
+            from: "parent",
+            to: "#testing",
+        },
+        {
+            service: "fuchsia.hardware.serial.Service",
             from: "parent",
             to: "#testing",
         },

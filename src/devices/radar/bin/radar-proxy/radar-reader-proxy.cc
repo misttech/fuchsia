@@ -13,7 +13,13 @@ namespace radar {
 std::unique_ptr<RadarProxy> RadarProxy::Create(async_dispatcher_t* dispatcher,
                                                RadarDeviceConnector* connector) {
   FX_LOGS(INFO) << "Burst reader proxying enabled";
-  return std::make_unique<radar::RadarReaderProxy>(dispatcher, connector);
+  auto proxy = std::make_unique<radar::RadarReaderProxy>(dispatcher, connector);
+  zx::result<> status = proxy->Init(dispatcher);
+  if (status.is_error()) {
+    FX_LOGS(ERROR) << "Failed to initialize RadarProxy: " << status.status_string();
+    return nullptr;
+  }
+  return proxy;
 }
 
 RadarReaderProxy::~RadarReaderProxy() {
@@ -36,12 +42,12 @@ void RadarReaderProxy::Connect(ConnectRequest& request, ConnectCompleter::Sync& 
   }
 }
 
-void RadarReaderProxy::DeviceAdded(fidl::UnownedClientEnd<fuchsia_io::Directory> dir,
-                                   const std::string& filename) {
-  if (!radar_client_) {
-    connector_->ConnectToRadarDevice(
-        dir, filename, [&](auto client_end) { return ValidateDevice(std::move(client_end)); });
+void RadarReaderProxy::OnDeviceFound(
+    fidl::ClientEnd<fuchsia_hardware_radar::RadarBurstReaderProvider> client_end) {
+  if (radar_client_) {
+    return;
   }
+  ValidateDevice(std::move(client_end));
 }
 
 zx::result<> RadarReaderProxy::AddProtocols(component::OutgoingDirectory* const outgoing) {
@@ -314,7 +320,7 @@ void RadarReaderProxy::HandleFatalError(const zx_status_t status) {
   }
 
   // Check for available devices now, just in case one was added before the connection closed. If
-  // not, the DeviceWatcher will signal to connect when a new device becomes available.
+  // not, the ServiceMemberWatcher will signal to connect when a new device becomes available.
   connector_->ConnectToFirstRadarDevice(
       [&](auto client_end) { return ValidateDevice(std::move(client_end)); });
 }

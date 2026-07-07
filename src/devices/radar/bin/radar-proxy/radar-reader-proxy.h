@@ -31,8 +31,8 @@ class RadarReaderProxy : public RadarProxy,
 
   // RadarProxy
   void Connect(ConnectRequest& request, ConnectCompleter::Sync& completer) override;
-  void DeviceAdded(fidl::UnownedClientEnd<fuchsia_io::Directory> dir,
-                   const std::string& filename) override;
+  void OnDeviceFound(
+      fidl::ClientEnd<fuchsia_hardware_radar::RadarBurstReaderProvider> client_end) override;
   zx::result<> AddProtocols(component::OutgoingDirectory* outgoing) override;
 
   // ReaderInstanceManager

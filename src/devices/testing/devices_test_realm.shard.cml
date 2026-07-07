@@ -101,6 +101,7 @@
                 "fuchsia.hardware.audio.StreamConfigConnectorInputService",
                 "fuchsia.hardware.audio.StreamConfigConnectorOutputService",
                 "fuchsia.hardware.gpu.mali.UtilsService",
+                "fuchsia.hardware.radar.Service",
                 "fuchsia.hardware.rpmb.Service",
             ],
             from: "parent",

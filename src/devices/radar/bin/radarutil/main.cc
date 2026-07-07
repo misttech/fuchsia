@@ -1,20 +1,22 @@
-// Copyright 2021 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.hardware.radar/cpp/wire.h>
-#include <lib/component/incoming/cpp/protocol.h>
-#include <lib/fidl/cpp/wire/connect_service.h>
-#include <stdio.h>
+#include <lib/component/incoming/cpp/service_member_watcher.h>
+
+#include <cstdio>
 
 #include "radarutil.h"
 
 int main(int argc, char** argv) {
-  zx::result client = component::Connect<fuchsia_hardware_radar::RadarBurstReaderProvider>();
+  // radarutil is a diagnostic tool designed to talk directly to the hardware
+  // driver service, bypassing the radar proxy. We use a watcher to dynamically
+  // find the first available device instance.
+  component::SyncServiceMemberWatcher<fuchsia_hardware_radar::Service::Device> watcher;
+  zx::result client = watcher.GetNextInstance(/*stop_at_idle=*/true);
   if (client.is_error()) {
-    fprintf(stderr, "Failed to open %s: %s\n",
-            fidl::DiscoverableProtocolName<fuchsia_hardware_radar::RadarBurstReaderProvider>,
-            client.status_string());
+    fprintf(stderr, "Failed to connect to device: %s\n", client.status_string());
     return 1;
   }
 
