@@ -11,10 +11,10 @@ The `fx gh` tool provides a command-line interface for managing Gerrit code
 reviews that matches the GitHub CLI (`gh`). Coding agents can leverage their
 parametric knowledge of the `gh` tool to use `fx gh`.
 
-`fx gh` provides Fuchsia specific logic for interacting with Gerrit code reviews,
-and it is highly preferred to raw REST API calls. However, if `fx gh` is NOT
-available in your environment (e.g., for external contributors), you may safely
-fall back to using the Gerrit REST API via `curl`.
+`fx gh` provides Fuchsia specific logic for interacting with Gerrit code
+reviews, and it is highly preferred to raw REST API calls. However, if `fx gh`
+is NOT available in your environment (e.g., for external contributors), you may
+safely fall back to using the Gerrit REST API via `curl`.
 
 ## Key Concepts and Differences
 
@@ -48,8 +48,8 @@ key mappings and differences you need to know:
   advanced search functionality.
   - **Search Operators**: Common and useful Gerrit operators include:
     - `message:` / `subject:`: Match keywords or patterns (e.g.,
-      `message:"fixing a bug"` or `message:^.*regex.*`) in the commit message
-      or subject.
+      `message:"fixing a bug"` or `message:^.*regex.*`) in the commit message or
+      subject.
     - `file:` / `path:`: Match affected files by exact path or regex (e.g.,
       `file:src/main.rs` or `file:^.*\.rs`).
     - `owner:`, `reviewer:`, `cc:`: Match based on users involved in the CL.
@@ -59,8 +59,7 @@ key mappings and differences you need to know:
     - `is:`: Filter by state or properties like `is:open`, `is:wip`,
       `is:mergeable`.
     - `label:`: Match by label votes (e.g., `label:Code-Review+2`).
-    - See
-      https://gerrit-review.googlesource.com/Documentation/user-search.html
+    - See https://gerrit-review.googlesource.com/Documentation/user-search.html
       for complete documentation.
   - **Direct Query Pass-Through**: The search string is appended directly to the
     Gerrit REST API query, fully supporting explicit boolean operations (`AND`,
@@ -83,8 +82,15 @@ key mappings and differences you need to know:
   to the one with the most recent activity.
 - **Example**: To reply to a review comment on line 42 of `src/foo.cc`:
   ```bash
-  fx gh pr comment 1569017 --path src/foo.cc --line 42 -m "Done. Fixed as suggested."
+  fx gh pr comment 1569017 --path src/foo.cc --line 42 -m "Done. Fixed as suggested." --resolved
   ```
+- **Draft Comments**: You can use the `--draft` flag to save a comment as a
+  draft on Gerrit without immediately publishing it:
+  ```bash
+  fx gh pr comment 1569017 --path src/foo.cc --line 42 -m "WIP fix coming" --draft
+  ```
+  If you need to post multiple comments, you must use the `--draft` flag for
+  each comment, and then publish them all at once.
 - **CRITICAL**: When responding to comments on a Gerrit code review, you MUST
   reply within the specific comment thread using the `--path` and `--line` flags
   of `fx gh pr comment`. Do NOT leave a top-level unthreaded comment unless
@@ -94,15 +100,13 @@ key mappings and differences you need to know:
 - **Approving a Change**: To add a `Code-Review+2` vote, use `fx gh pr review
   <id> --approve`.
 - **Triggering AI Review Agents**: To trigger an AI review agent or list
-  available ones, use `fx gh pr review` with `--agent` or `--list-agents`
-  flags.
+  available ones, use `fx gh pr review` with `--agent` or `--list-agents` flags.
   - **List Agents**: `fx gh pr review <id> --list-agents`
-  - **Trigger Agent (Default)**: `fx gh pr review <id> --agent <agent_id>`
-    (This posts drafts by default. You do not need to take any additional
-    action to post them).
-  - **Trigger Agent (Dry Run)**:
-    `fx gh pr review <id> --agent <agent_id> --dry-run`
-    (This prints suggestions to terminal without posting drafts).
+  - **Trigger Agent (Default)**: `fx gh pr review <id> --agent <agent_id>` (This
+    posts drafts by default. You do not need to take any additional action to
+    post them).
+  - **Trigger Agent (Dry Run)**: `fx gh pr review <id> --agent <agent_id>
+    --dry-run` (This prints suggestions to terminal without posting drafts).
 - **Triggering CQ (Commit Queue)**: To set Gerrit labels like `Commit-Queue+1`
   or `Commit-Queue+2`, you must use the `edit` subcommand with the `--add-label`
   flag.
