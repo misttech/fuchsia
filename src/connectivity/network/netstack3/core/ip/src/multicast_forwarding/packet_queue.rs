@@ -4,11 +4,11 @@
 
 //! Declares types and functionality related to queued multicast packets.
 
-use alloc::collections::{BTreeMap, btree_map};
 use alloc::vec::Vec;
 use arrayvec::ArrayVec;
 use core::time::Duration;
 use derivative::Derivative;
+use lru_cache::LruCache;
 use net_types::ip::{Ip, IpVersionMarker};
 use netstack3_base::{
     CoreTimerContext, Inspectable, Inspector, Instant as _, LocalFrameDestination,
@@ -30,6 +30,13 @@ use crate::multicast_forwarding::MulticastRouteKey;
 ///
 /// This value is consistent with the defaults on both Netstack2 and Linux.
 pub(crate) const PACKET_QUEUE_LEN: usize = 3;
+
+/// The maximum number of pending multicast routes that can be queued.
+///
+/// The size of each entry is dominated by the packet queue (up to
+/// PACKET_QUEUE_LEN). With 1000 entries, each with 3 standard MTU packets, this
+/// limit is approximately 4.5MB.
+const MAX_PENDING_ROUTES: usize = 1000;
 
 /// The amount of time the stack is willing to queue a packet while waiting
 /// for an applicable route to be installed.
@@ -56,7 +63,7 @@ pub struct MulticastForwardingPendingPackets<
     D: WeakDeviceIdentifier,
     BT: MulticastForwardingBindingsTypes,
 > {
-    table: BTreeMap<MulticastRouteKey<I>, PacketQueue<I, D, BT>>,
+    table: LruCache<MulticastRouteKey<I>, PacketQueue<I, D, BT>>,
     /// Periodically triggers invocations of [`Self::run_garbage_collection`].
     ///
     /// All interactions with the `gc_timer` must uphold the invariant that the
@@ -77,7 +84,7 @@ impl<I: IpLayerIpExt, D: WeakDeviceIdentifier, BC: MulticastForwardingBindingsCo
         CC: CoreTimerContext<MulticastForwardingTimerId<I>, BC>,
     {
         Self {
-            table: Default::default(),
+            table: LruCache::new(MAX_PENDING_ROUTES),
             gc_timer: CC::new_timer(
                 bindings_ctx,
                 MulticastForwardingTimerId::PendingPacketsGc(IpVersionMarker::<I>::new()),
@@ -100,28 +107,27 @@ impl<I: IpLayerIpExt, D: WeakDeviceIdentifier, BC: MulticastForwardingBindingsCo
         B: SplitByteSlice,
     {
         let was_empty = self.table.is_empty();
-        let outcome = match self.table.entry(key) {
-            btree_map::Entry::Vacant(entry) => {
-                let queue = entry.insert(PacketQueue::new(bindings_ctx));
-                queue
-                    .try_push(|| QueuedPacket::new(dev, packet, frame_dst))
-                    .expect("newly instantiated queue must have capacity");
-                QueuePacketOutcome::QueuedInNewQueue
+        let outcome = if let Some(queue) = self.table.get_mut(&key) {
+            match queue.try_push(|| QueuedPacket::new(dev, packet, frame_dst)) {
+                Ok(()) => QueuePacketOutcome::QueuedInExistingQueue,
+                Err(PacketQueueFullError) => QueuePacketOutcome::ExistingQueueFull,
             }
-            btree_map::Entry::Occupied(mut entry) => {
-                match entry.get_mut().try_push(|| QueuedPacket::new(dev, packet, frame_dst)) {
-                    Ok(()) => QueuePacketOutcome::QueuedInExistingQueue,
-                    Err(PacketQueueFullError) => QueuePacketOutcome::ExistingQueueFull,
-                }
-            }
+        } else {
+            let mut queue = PacketQueue::new(bindings_ctx);
+            queue
+                .try_push(|| QueuedPacket::new(dev, packet, frame_dst))
+                .expect("newly instantiated queue must have capacity");
+
+            let prev = self.table.insert(key, queue);
+            debug_assert!(prev.is_none());
+            QueuePacketOutcome::QueuedInNewQueue
         };
 
         // If the table is newly non-empty, schedule the GC. The timer must not
         // already be scheduled (given the invariants on `gc_timer`).
         if was_empty && !self.table.is_empty() {
-            assert!(
-                bindings_ctx.schedule_timer(PENDING_ROUTE_GC_PERIOD, &mut self.gc_timer).is_none()
-            );
+            let prev = bindings_ctx.schedule_timer(PENDING_ROUTE_GC_PERIOD, &mut self.gc_timer);
+            debug_assert!(prev.is_none());
         }
 
         outcome
@@ -129,7 +135,7 @@ impl<I: IpLayerIpExt, D: WeakDeviceIdentifier, BC: MulticastForwardingBindingsCo
 
     #[cfg(any(debug_assertions, test))]
     pub(crate) fn contains(&self, key: &MulticastRouteKey<I>) -> bool {
-        self.table.contains_key(key)
+        self.table.iter().any(|(k, _)| k == key)
     }
 
     /// Remove the key from the pending table, returning its queue of packets.
@@ -159,16 +165,20 @@ impl<I: IpLayerIpExt, D: WeakDeviceIdentifier, BC: MulticastForwardingBindingsCo
     pub(crate) fn run_garbage_collection(&mut self, bindings_ctx: &mut BC) -> u64 {
         let now = bindings_ctx.now();
         let mut removed_count = 0u64;
-        self.table.retain(|_key, packet_queue| {
-            if packet_queue.expires_at > now {
-                true
-            } else {
-                // NB: "as" conversion is safe because queue_len has a maximum
-                // value of `PACKET_QUEUE_LEN`, which fits in a u64.
-                removed_count += packet_queue.queue.len() as u64;
-                false
-            }
-        });
+        let expired_keys: Vec<_> = self
+            .table
+            .iter()
+            .filter_map(
+                |(key, queue)| if queue.expires_at <= now { Some(key.clone()) } else { None },
+            )
+            .collect();
+
+        for key in expired_keys {
+            let queue = self.table.remove(&key).expect("expired key must be present");
+            // NB: "as" conversion is safe because queue_len has a maximum
+            // value of `PACKET_QUEUE_LEN`, which fits in a u64.
+            removed_count += queue.queue.len() as u64;
+        }
 
         // If the table is still not empty, reschedule the GC. Note that we
         // don't assert on the previous state of the timer, because it's
