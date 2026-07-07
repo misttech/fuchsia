@@ -872,8 +872,16 @@ impl HrTimerManager {
                     ftrace::duration!("alarms", "starnix:hrtimer:start", "timer_id" => timer_id);
                     ftrace::flow_begin!("alarms", "hrtimer_lifecycle", trace_id);
 
-                    self.lock().debug_start_stage_counter = 2;
-                    let maybe_cancel = self.lock().pending_timers.remove(&timer_id);
+                    let (prev_len, maybe_cancel) = {
+                        let mut guard = self.lock();
+                        // Unrelated to prev_len, but convenient to update here since we already
+                        // have `guard`.
+                        guard.debug_start_stage_counter = 2;
+                        // Number of pending timers before any start-related adjustments.
+                        let prev_len = guard.get_pending_timers_count();
+                        let maybe_cancel = guard.pending_timers.remove(&timer_id);
+                        (prev_len, maybe_cancel)
+                    };
                     log_long_op!(cancel_by_id(
                         &message_counter,
                         maybe_cancel,
@@ -921,7 +929,6 @@ impl HrTimerManager {
                         ),
                     };
                     let mut done_sender = self.get_sender();
-                    let prev_len = self.lock().get_pending_timers_count();
 
                     self.lock().debug_start_stage_counter = 4;
                     let self_clone = self.clone();
