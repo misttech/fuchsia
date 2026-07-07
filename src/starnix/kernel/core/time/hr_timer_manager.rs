@@ -198,11 +198,11 @@ fn connect_to_wake_alarms_async() -> Result<zx::Channel, Errno> {
 
 #[derive(Debug)]
 enum InspectHrTimerEvent {
-    Add,
-    Update,
-    Remove,
-    // The String inside will be used in fmt. But the compiler does not recognize the use when
+    // The parameter inside will be used in fmt. But the compiler does not recognize the use when
     // formatting with the Debug derivative.
+    Add(#[allow(dead_code)] zx::Koid),
+    Update(#[allow(dead_code)] zx::Koid),
+    Remove(#[allow(dead_code)] zx::Koid),
     Error(#[allow(dead_code)] String),
 }
 
@@ -715,12 +715,13 @@ impl HrTimerManager {
         self: &HrTimerManagerHandle,
         guard: &mut LockDepGuard<'_, HrTimerManagerState>,
         prev_len: usize,
+        koid: zx::Koid,
     ) {
         let after_len = guard.get_pending_timers_count();
         let inspect_event_type = if after_len == prev_len {
             None
         } else if after_len == prev_len - 1 {
-            Some(InspectHrTimerEvent::Remove)
+            Some(InspectHrTimerEvent::Remove(koid))
         } else {
             Some(InspectHrTimerEvent::retain_err(prev_len, after_len, "removing timer"))
         };
@@ -755,9 +756,9 @@ impl HrTimerManager {
         // Record the inspect event
         let after_len = guard.get_pending_timers_count();
         let inspect_event_type = if after_len == prev_len {
-            InspectHrTimerEvent::Update
+            InspectHrTimerEvent::Update(timer_id)
         } else if after_len == prev_len + 1 {
-            InspectHrTimerEvent::Add
+            InspectHrTimerEvent::Add(timer_id)
         } else {
             InspectHrTimerEvent::retain_err(prev_len, after_len, "adding timer")
         };
@@ -1061,7 +1062,7 @@ impl HrTimerManager {
 
                     {
                         let mut guard = self.lock();
-                        self.record_inspect_on_stop(&mut guard, prev_len);
+                        self.record_inspect_on_stop(&mut guard, prev_len, timer_id);
                     }
                     log_debug!("Cmd::Stop done: {timer_id:?}");
                     self.lock().debug_start_stage_counter = 29;
