@@ -4,7 +4,7 @@
 
 #include "aml-spifc.h"
 
-#include <lib/ddk/debug.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -219,7 +219,7 @@ zx_status_t AmlSpiFlashController::Xfer(TransferMsg msg, uint32_t transfer_len, 
       auto transfer_size = std::min(len, kCacheSizeInByte);
       status = UserCmdDout(msg.cmd, continuous, addr, msg.addr_len, buf, transfer_size);
       if (status != ZX_OK) {
-        zxlogf(ERROR, "data transfer don't finished");
+        FDF_LOG(ERROR, "data transfer didn't finish");
         break;
       }
       buf += transfer_size;
@@ -237,7 +237,7 @@ zx_status_t AmlSpiFlashController::Xfer(TransferMsg msg, uint32_t transfer_len, 
       auto transfer_size = std::min(len, kCacheSizeInByte);
       status = UserCmdDin(msg.cmd, addr, addr_len, buf, transfer_size);
       if (status != ZX_OK) {
-        zxlogf(ERROR, "data transfer don't finished");
+        FDF_LOG(ERROR, "data transfer didn't finish");
         break;
       }
       buf += transfer_size;

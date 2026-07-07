@@ -4,29 +4,58 @@
 
 #include "aml-spinand.h"
 
-#include <fuchsia/hardware/nandinfo/c/banjo.h>
-#include <lib/ddk/binding_driver.h>
-#include <lib/ddk/debug.h>
-#include <lib/ddk/driver.h>
+#include <lib/driver/component/cpp/driver_export2.h>
+#include <lib/driver/component/cpp/node_properties.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <zircon/errors.h>
+#include <zircon/status.h>
 #include <zircon/syscalls.h>
 #include <zircon/time.h>
 #include <zircon/types.h>
 
 #include <cstddef>
 
-#include <ddktl/device.h>
-
 namespace amlspinand {
 
-zx_status_t AmlSpiNand::Bind() {
-  zx_status_t status;
+AmlSpiNand::AmlSpiNand() : fdf::DriverBase2("aml-spinand") {}
+
+zx::result<> AmlSpiNand::Start(fdf::DriverContext context) {
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+
+  zx::result pdev_client_end =
+      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
+  if (pdev_client_end.is_error()) {
+    FDF_LOG(ERROR, "Failed to connect to platform device: %s", pdev_client_end.status_string());
+    return pdev_client_end.take_error();
+  }
+  fdf::PDev pdev{std::move(pdev_client_end.value())};
+
+  zx::result controller_mmio = pdev.MapMmio(0);
+  if (controller_mmio.is_error()) {
+    FDF_LOG(ERROR, "Failed to map controller mmio: %s", controller_mmio.status_string());
+    return controller_mmio.take_error();
+  }
+
+  zx::result clk_mmio = pdev.MapMmio(1);
+  if (clk_mmio.is_error()) {
+    FDF_LOG(ERROR, "Failed to map clock mmio: %s", clk_mmio.status_string());
+    return clk_mmio.take_error();
+  }
+
+  flash_controller_ = std::make_unique<AmlSpiFlashController>(std::move(controller_mmio.value()),
+                                                              std::move(clk_mmio.value()));
+
+  zx_status_t status = Init();
+  if (status != ZX_OK) {
+    FDF_LOG(ERROR, "AML spi nand init failed: %s", zx_status_get_string(status));
+    return zx::error(status);
+  }
 
   // detect the nand chip
   flash_chip_ = DetermineFlashChip();
   if (!flash_chip_.has_value()) {
-    return ZX_ERR_NOT_SUPPORTED;
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
   auto data_len = flash_chip_->mem_org.pagesize + flash_chip_->mem_org.oobsize;
@@ -36,29 +65,54 @@ zx_status_t AmlSpiNand::Bind() {
 
   status = SpiNandInitCfgCache();
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandInitCfgCache failed");
-    return status;
+    FDF_LOG(ERROR, "SpiNandInitCfgCache failed");
+    return zx::error(status);
   }
   status = SpiNandInitQuadEnable();
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandInitQuadEnable failed");
-    return status;
+    FDF_LOG(ERROR, "SpiNandInitQuadEnable failed");
+    return zx::error(status);
   }
   status = SpiNandUpdateCfg(kCfgOtpEnable, 0);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandUpdateCfg failed");
-    return status;
+    FDF_LOG(ERROR, "SpiNandUpdateCfg failed");
+    return zx::error(status);
   }
   status = SpiNandWriteRegOp(kBlockLockReg, kBlockAllUnlocked);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandWriteRegOp failed");
-    return status;
+    FDF_LOG(ERROR, "SpiNandWriteRegOp failed");
+    return zx::error(status);
   }
 
-  return DdkAdd("aml-spinand");
-}
+  // Initialize compat server
+  compat::DeviceServer::BanjoConfig banjo_config;
+  banjo_config.callbacks[ZX_PROTOCOL_RAW_NAND] = [this]() {
+    return compat::DeviceServer::GenericProtocol{
+        .ops = &raw_nand_protocol_ops_,
+        .ctx = this,
+    };
+  };
 
-void AmlSpiNand::DdkUnbind(ddk::UnbindTxn txn) { txn.Reply(); }
+  auto compat_status =
+      compat_server_.Initialize(incoming(), outgoing(), context.node_name(), name(),
+                                compat::ForwardMetadata::None(), std::move(banjo_config));
+  if (compat_status.is_error()) {
+    return compat_status.take_error();
+  }
+
+  auto offers = compat_server_.CreateOffers2();
+  std::vector<fuchsia_driver_framework::NodeProperty2> properties = {
+      fdf::MakeProperty2("fuchsia.BIND_PROTOCOL", static_cast<uint32_t>(ZX_PROTOCOL_RAW_NAND)),
+  };
+  auto child_result = AddChild(name(), properties, offers);
+  if (child_result.is_error()) {
+    FDF_LOG(ERROR, "Failed to add child node: %s", child_result.status_string());
+    return child_result.take_error();
+  }
+  child_node_controller_ = std::move(child_result.value());
+
+  return zx::ok();
+}
 
 zx_status_t AmlSpiNand::RawNandGetNandInfo(nand_info_t *nand_info) {
   nand_info->page_size = flash_chip_->mem_org.pagesize;
@@ -75,29 +129,37 @@ zx_status_t AmlSpiNand::RawNandGetNandInfo(nand_info_t *nand_info) {
 }
 
 zx_status_t AmlSpiNand::RawNandEraseBlock(uint32_t nand_page) {
+  uint32_t flash_size = GetFlashSizeInPages();
+  if (nand_page >= flash_size) {
+    FDF_LOG(ERROR, "Erase block 0x%x goes beyond chip size of 0x%x", nand_page, flash_size);
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+
   if (nand_page % flash_chip_->mem_org.pages_per_eraseblock) {
-    zxlogf(ERROR, "NAND block %u must be a erasesize_pages (%u) multiple", nand_page,
-           flash_chip_->mem_org.pages_per_eraseblock);
+    FDF_LOG(ERROR, "NAND block %u must be a erasesize_pages (%u) multiple", nand_page,
+            flash_chip_->mem_org.pages_per_eraseblock);
     return ZX_ERR_INVALID_ARGS;
   }
 
   zx_status_t status;
   status = SpiNandWriteEnableOp();
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandErase->SpiNandWriteEnableOp failed");
+    FDF_LOG(ERROR, "SpiNandErase->SpiNandWriteEnableOp failed");
     return status;
   }
 
   status = SpiNandEraseOp(nand_page);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandErase->SpiNandWriteEnableOp failed");
+    FDF_LOG(ERROR, "SpiNandErase->SpiNandEraseOp failed");
     return status;
   }
 
   uint8_t result;
   status = SpiNandWait(&result);
-  if (status != ZX_OK && (result & kStatusEraseFailed)) {
-    zxlogf(ERROR, "SpiNandErase->SpiNandWait failed");
+  if (status != ZX_OK) {
+    FDF_LOG(ERROR, "SpiNandErase->SpiNandWait failed");
+  } else if (result & kStatusEraseFailed) {
+    FDF_LOG(ERROR, "SpiNandErase->SpiNandEraseOp failed");
     status = ZX_ERR_IO;
   }
 
@@ -107,13 +169,9 @@ zx_status_t AmlSpiNand::RawNandEraseBlock(uint32_t nand_page) {
 zx_status_t AmlSpiNand::RawNandWritePageHwecc(const uint8_t *data, size_t data_size,
                                               const uint8_t *oob, size_t oob_size,
                                               uint32_t nand_page) {
-  // size in pages
-  uint32_t flash_size = flash_chip_->mem_org.ntargets * flash_chip_->mem_org.luns_per_target *
-                        flash_chip_->mem_org.planes_per_lun *
-                        flash_chip_->mem_org.eraseblocks_per_lun *
-                        flash_chip_->mem_org.pages_per_eraseblock;
-  if (nand_page > flash_size) {
-    zxlogf(ERROR, "Write page 0x%x goes beyond chip size of 0x%x", nand_page, flash_size);
+  uint32_t flash_size = GetFlashSizeInPages();
+  if (nand_page >= flash_size) {
+    FDF_LOG(ERROR, "Write page 0x%x goes beyond chip size of 0x%x", nand_page, flash_size);
     return ZX_ERR_OUT_OF_RANGE;
   }
 
@@ -121,13 +179,13 @@ zx_status_t AmlSpiNand::RawNandWritePageHwecc(const uint8_t *data, size_t data_s
   // Enable ecc function
   status = SpiNandUpdateCfg(kCfgEccEnable, kCfgEccEnable);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandUpdateCfg failed");
+    FDF_LOG(ERROR, "SpiNandUpdateCfg failed");
     return status;
   }
 
   status = SpiNandWritePage(OobOps::kOpsAutoOob, nand_page, data, data_size, oob, oob_size);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandWritePage failed");
+    FDF_LOG(ERROR, "SpiNandWritePage failed");
   }
 
   return status;
@@ -136,13 +194,9 @@ zx_status_t AmlSpiNand::RawNandWritePageHwecc(const uint8_t *data, size_t data_s
 zx_status_t AmlSpiNand::RawNandReadPageHwecc(uint32_t nand_page, uint8_t *data, size_t data_size,
                                              size_t *data_actual, uint8_t *oob, size_t oob_size,
                                              size_t *oob_actual, uint32_t *ecc_correct) {
-  // size in pages
-  uint32_t flash_size = flash_chip_->mem_org.ntargets * flash_chip_->mem_org.luns_per_target *
-                        flash_chip_->mem_org.planes_per_lun *
-                        flash_chip_->mem_org.eraseblocks_per_lun *
-                        flash_chip_->mem_org.pages_per_eraseblock;
-  if (nand_page > flash_size) {
-    zxlogf(ERROR, "Read page 0x%x goes beyond chip size of 0x%x", nand_page, flash_size);
+  uint32_t flash_size = GetFlashSizeInPages();
+  if (nand_page >= flash_size) {
+    FDF_LOG(ERROR, "Read page 0x%x goes beyond chip size of 0x%x", nand_page, flash_size);
     return ZX_ERR_OUT_OF_RANGE;
   }
 
@@ -150,7 +204,7 @@ zx_status_t AmlSpiNand::RawNandReadPageHwecc(uint32_t nand_page, uint8_t *data, 
   // Enable ecc function
   status = SpiNandUpdateCfg(kCfgEccEnable, kCfgEccEnable);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandUpdateCfg failed");
+    FDF_LOG(ERROR, "SpiNandUpdateCfg failed");
     return status;
   }
 
@@ -158,7 +212,7 @@ zx_status_t AmlSpiNand::RawNandReadPageHwecc(uint32_t nand_page, uint8_t *data, 
   status = SpiNandReadPage(OobOps::kOpsAutoOob, nand_page, data, data_size, data_actual, oob,
                            oob_size, oob_actual, &ecc_bitflips);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandReadPage failed");
+    FDF_LOG(ERROR, "SpiNandReadPage failed");
     return status;
   }
 
@@ -206,7 +260,7 @@ zx_status_t AmlSpiNand::SpiNandExecOp(const SpiOp op) {
 
   status = flash_controller_->Xfer(msg, op.data.nbytes, tx_buf, rx_buf);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "spi transfer failed");
+    FDF_LOG(ERROR, "spi transfer failed");
   }
 
   return status;
@@ -218,7 +272,7 @@ zx_status_t AmlSpiNand::SpiNandReadRegOp(uint8_t reg, uint8_t *val) {
 
   status = SpiNandExecOp(op.GetFeature(reg, val));
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandExecOp failed");
+    FDF_LOG(ERROR, "SpiNandExecOp failed");
   }
 
   return status;
@@ -242,7 +296,7 @@ zx_status_t AmlSpiNand::SpiNandWait(uint8_t *data) {
   do {
     status = SpiNandReadStatus(&reg_val);
     if (status != ZX_OK) {
-      zxlogf(ERROR, "SpiNandReadStatus failed");
+      FDF_LOG(ERROR, "SpiNandReadStatus failed");
       return status;
     }
     if (!(reg_val & kStatusBusy)) {
@@ -263,7 +317,7 @@ zx_status_t AmlSpiNand::SpiNandResetOp() {
   SpiOp op;
   status = SpiNandExecOp(op.Reset());
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandExecOp failed");
+    FDF_LOG(ERROR, "SpiNandExecOp failed");
     return status;
   }
 
@@ -276,7 +330,7 @@ zx_status_t AmlSpiNand::SpiNandReadIdOp(uint8_t *buf) {
 
   status = SpiNandExecOp(op.ReadId(0, buf, kSpinandMaxIdLen));
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandExecOp(ReadId) failed");
+    FDF_LOG(ERROR, "SpiNandExecOp(ReadId) failed");
   }
 
   return status;
@@ -287,7 +341,7 @@ zx_status_t AmlSpiNand::SpiNandInitCfgCache() {
 
   status = SpiNandReadRegOp(kCfgReg, &nand_dev_.cfg_cache);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandReadRegOp failed");
+    FDF_LOG(ERROR, "SpiNandReadRegOp failed");
   }
 
   return status;
@@ -308,7 +362,7 @@ zx_status_t AmlSpiNand::SpiNandSetCfg(uint8_t cfg) {
 
   status = SpiNandWriteRegOp(kCfgReg, cfg);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandSetCfg failed");
+    FDF_LOG(ERROR, "SpiNandSetCfg failed");
     return status;
   }
 
@@ -322,7 +376,7 @@ zx_status_t AmlSpiNand::SpiNandUpdateCfg(uint8_t mask, uint8_t val) {
 
   status = SpiNandGetCfg(&cfg);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandGetCfg");
+    FDF_LOG(ERROR, "SpiNandGetCfg failed");
     return status;
   }
 
@@ -337,13 +391,13 @@ zx_status_t AmlSpiNand::SpiNandDetect() {
 
   status = SpiNandResetOp();
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandResetOp failed");
+    FDF_LOG(ERROR, "SpiNandResetOp failed");
     return status;
   }
 
   status = SpiNandReadIdOp(nand_dev_.id.data);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandReadIdOp failed");
+    FDF_LOG(ERROR, "SpiNandReadIdOp failed");
     return status;
   }
   nand_dev_.id.len = kSpinandMaxIdLen;
@@ -396,7 +450,7 @@ zx_status_t AmlSpiNand::SpiNandReadFromCacheOp(OobOps mode, uint8_t *data, size_
 
   status = SpiNandExecOp(op);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandReadFromCacheOp -> SpiNandExecOp failed");
+    FDF_LOG(ERROR, "SpiNandReadFromCacheOp -> SpiNandExecOp failed");
     return status;
   }
 
@@ -456,7 +510,7 @@ zx_status_t AmlSpiNand::SpiNandWriteToCacheOp(OobOps mode, const uint8_t *data, 
 
   zx_status_t status = SpiNandExecOp(op);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandWriteToCacheOp->SpiMemExecOp failed");
+    FDF_LOG(ERROR, "SpiNandWriteToCacheOp->SpiNandExecOp failed");
   }
 
   return status;
@@ -501,24 +555,26 @@ zx_status_t AmlSpiNand::SpiNandWritePage(OobOps mode, uint32_t nand_page, const 
 
   status = SpiNandWriteEnableOp();
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandWriteEnableOp failed");
+    FDF_LOG(ERROR, "SpiNandWriteEnableOp failed");
     return status;
   }
 
   status = SpiNandWriteToCacheOp(mode, data, data_size, oob, oob_size);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandWriteEnableOp failed");
+    FDF_LOG(ERROR, "SpiNandWriteToCacheOp failed");
     return status;
   }
   status = SpiNandProgramOp(nand_page);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandWriteEnableOp failed");
+    FDF_LOG(ERROR, "SpiNandProgramOp failed");
     return status;
   }
   uint8_t result;
   status = SpiNandWait(&result);
-  if (status != ZX_OK && (result & kStatusProgFailed)) {
-    zxlogf(ERROR, "SpiNandWriteEnableOp failed");
+  if (status != ZX_OK) {
+    FDF_LOG(ERROR, "SpiNandWait failed");
+  } else if (result & kStatusProgFailed) {
+    FDF_LOG(ERROR, "SpiNandProgramOp failed");
     status = ZX_ERR_IO;
   }
 
@@ -531,20 +587,20 @@ zx_status_t AmlSpiNand::SpiNandReadPage(OobOps mode, uint32_t nand_page, uint8_t
                                         uint8_t *out_bitflips) {
   zx_status_t status = SpiNandLoadPageOp(nand_page);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandLoadPageOp failed");
+    FDF_LOG(ERROR, "SpiNandLoadPageOp failed");
     return status;
   }
 
   uint8_t result;
   status = SpiNandWait(&result);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandWait failed");
+    FDF_LOG(ERROR, "SpiNandWait failed");
     return status;
   }
 
   status = SpiNandReadFromCacheOp(mode, data, data_size, data_actual, oob, oob_size, oob_actual);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandReadFromCacheOp failed");
+    FDF_LOG(ERROR, "SpiNandReadFromCacheOp failed");
     return status;
   }
 
@@ -554,15 +610,15 @@ zx_status_t AmlSpiNand::SpiNandReadPage(OobOps mode, uint32_t nand_page, uint8_t
 std::optional<FlashChipInfo> AmlSpiNand::DetermineFlashChip() {
   zx_status_t status = SpiNandDetect();
   if (status != ZX_OK) {
-    zxlogf(ERROR, "SpiNandDetect failed");
+    FDF_LOG(ERROR, "SpiNandDetect failed");
     return std::nullopt;
   }
 
-  zxlogf(INFO, "Found nand device with vendor: 0x%x device: 0x%x", nand_dev_.id.data[0],
-         nand_dev_.id.data[1]);
+  FDF_LOG(INFO, "Found nand device with vendor: 0x%x device: 0x%x", nand_dev_.id.data[0],
+          nand_dev_.id.data[1]);
   for (const auto &device : kFlashDevices) {
     if (device.vendor_id == nand_dev_.id.data[0] && device.device_id == nand_dev_.id.data[1]) {
-      zxlogf(INFO, "%s %s SPI NAND was found", device.name.data(), device.model.data());
+      FDF_LOG(INFO, "%s %s SPI NAND was found", device.name.data(), device.model.data());
       return device;
     }
   }
@@ -587,7 +643,7 @@ void AmlSpiNand::PlatDataInit(uint32_t speed, uint32_t tx_bus_width, uint32_t rx
       tx_mode = SpiTxMode::kSpiTxQuad;
       break;
     default:
-      zxlogf(INFO, "spi tx_bus_width %d not supported", tx_bus_width);
+      FDF_LOG(INFO, "spi tx_bus_width %d not supported", tx_bus_width);
       break;
   }
 
@@ -601,12 +657,21 @@ void AmlSpiNand::PlatDataInit(uint32_t speed, uint32_t tx_bus_width, uint32_t rx
       rx_mode = SpiRxMode::kSpiRxQuad;
       break;
     default:
-      zxlogf(INFO, "spi rx_bus_width %d not supported", rx_bus_width);
+      FDF_LOG(INFO, "spi rx_bus_width %d not supported", rx_bus_width);
       break;
   }
 
   device_config_.tx_mode = tx_mode;
   device_config_.rx_mode = rx_mode;
+}
+
+uint32_t AmlSpiNand::GetFlashSizeInPages() const {
+  if (!flash_chip_) {
+    return 0;
+  }
+  return flash_chip_->mem_org.ntargets * flash_chip_->mem_org.luns_per_target *
+         flash_chip_->mem_org.planes_per_lun * flash_chip_->mem_org.eraseblocks_per_lun *
+         flash_chip_->mem_org.pages_per_eraseblock;
 }
 
 zx_status_t AmlSpiNand::Init() {
@@ -618,56 +683,6 @@ zx_status_t AmlSpiNand::Init() {
   return ZX_OK;
 }
 
-zx_status_t AmlSpiNand::Create(void *ctx, zx_device_t *parent) {
-  zx_status_t status = ZX_OK;
-
-  zx::result pdev_client_end =
-      DdkConnectFragmentFidlProtocol<fuchsia_hardware_platform_device::Service::Device>(parent,
-                                                                                        "pdev");
-  if (pdev_client_end.is_error()) {
-    zxlogf(ERROR, "Failed to connect to platform device: %s", pdev_client_end.status_string());
-    return pdev_client_end.status_value();
-  }
-  fdf::PDev pdev{std::move(pdev_client_end.value())};
-
-  zx::result controller_mmio = pdev.MapMmio(0);
-  if (controller_mmio.is_error()) {
-    zxlogf(ERROR, "Failed to map controller mmio: %s", controller_mmio.status_string());
-    return controller_mmio.status_value();
-  }
-
-  zx::result clk_mmio = pdev.MapMmio(1);
-  if (clk_mmio.is_error()) {
-    zxlogf(ERROR, "Failed to map clock mmio: %s", clk_mmio.status_string());
-    return clk_mmio.status_value();
-  }
-
-  auto spifc = std::make_unique<AmlSpiFlashController>(std::move(controller_mmio.value()),
-                                                       std::move(clk_mmio.value()));
-
-  auto spinand = std::make_unique<AmlSpiNand>(parent, std::move(spifc));
-  status = spinand->Init();
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "AML spi nand init failed");
-    return status;
-  }
-  status = spinand->Bind();
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "AML spi nand bind failed");
-    return status;
-  }
-
-  [[maybe_unused]] auto *unused = spinand.release();
-  return ZX_OK;
-}
-
-static constexpr zx_driver_ops_t driver_ops = []() {
-  zx_driver_ops_t ops = {};
-  ops.version = DRIVER_OPS_VERSION;
-  ops.bind = AmlSpiNand::Create;
-  return ops;
-}();
 }  // namespace amlspinand
 
-// clang-format off
-ZIRCON_DRIVER(aml-spinand, amlspinand::driver_ops, "zircon", "0.1");
+FUCHSIA_DRIVER_EXPORT2(amlspinand::AmlSpiNand);

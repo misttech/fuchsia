@@ -5,9 +5,8 @@
 #define SRC_DEVICES_NAND_DRIVERS_AML_SPINAND_AML_SPINAND_H_
 
 #include <fuchsia/hardware/rawnand/cpp/banjo.h>
-#include <lib/ddk/platform-defs.h>
-
-#include <ddktl/device.h>
+#include <lib/driver/compat/cpp/device_server.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 
 #include "aml-spifc.h"
 #include "flash-chips.h"
@@ -21,20 +20,13 @@ constexpr uint32_t kDefaultRXBusWidth = 4;
 constexpr uint32_t kSpinandMaxIdLen = 4;
 constexpr uint32_t kSpinandHasQeBit = 1;
 
-class AmlSpiNand;
-using DeviceType = ddk::Device<AmlSpiNand, ddk::Unbindable>;
-
-class AmlSpiNand : public DeviceType, public ddk::RawNandProtocol<AmlSpiNand, ddk::base_protocol> {
+class AmlSpiNand : public fdf::DriverBase2, public ddk::RawNandProtocol<AmlSpiNand> {
  public:
-  explicit AmlSpiNand(zx_device_t *parent, std::unique_ptr<AmlSpiFlashController> flash_controller)
-      : DeviceType(parent), flash_controller_(std::move(flash_controller)) {}
-
-  static zx_status_t Create(void *ctx, zx_device_t *parent);
+  AmlSpiNand();
 
   virtual ~AmlSpiNand() = default;
 
-  void DdkUnbind(ddk::UnbindTxn txn);
-  void DdkRelease() { delete this; }
+  zx::result<> Start(fdf::DriverContext context) override;
 
   // RawNand protocol implementation.
   zx_status_t RawNandReadPageHwecc(uint32_t nand_page, uint8_t *data, size_t data_size,
@@ -83,6 +75,7 @@ class AmlSpiNand : public DeviceType, public ddk::RawNandProtocol<AmlSpiNand, dd
   };
 
   std::optional<FlashChipInfo> DetermineFlashChip();
+  uint32_t GetFlashSizeInPages() const;
 
   // Covert the page index to row address
   uint32_t PageToRow(uint32_t page_idx);
@@ -150,6 +143,12 @@ class AmlSpiNand : public DeviceType, public ddk::RawNandProtocol<AmlSpiNand, dd
   std::optional<FlashChipInfo> flash_chip_;
   SpiNandDev nand_dev_;
   PlatData device_config_;
+
+  compat::SyncInitializedDeviceServer compat_server_;
+  fidl::ClientEnd<fuchsia_driver_framework::NodeController> child_node_controller_;
+
+  std::shared_ptr<fdf::Namespace> incoming_;
+  const std::shared_ptr<fdf::Namespace> &incoming() const { return incoming_; }
 };
 
 }  // namespace amlspinand

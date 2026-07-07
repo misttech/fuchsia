@@ -6,7 +6,6 @@ import("//build/bind/bind.gni")
 import("//build/drivers.gni")
 
 fuchsia_cc_driver("aml-spinand-driver") {
-  legacy = true
   output_name = "aml-spinand"
   deps = [
     ":common",
@@ -24,7 +23,7 @@ fuchsia_driver_component("aml-spinand") {
 driver_bind_rules("aml-spinand-bind") {
   rules = "meta/aml-spinand.bind"
   bind_output = "aml-spinand.bindbc"
-  tests = "meta/bind-tests.json"
+  tests = "bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.platform",
@@ -45,13 +44,20 @@ source_set("common") {
   public_deps = [
     ":aml-spinand-bind",
     "//sdk/banjo/fuchsia.hardware.rawnand:fuchsia.hardware.rawnand_banjo_cpp",
+    "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/mmio/cpp",
     "//sdk/lib/driver/platform-device/cpp",
     "//src/devices/lib/amlogic",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
+    "//src/devices/lib/driver:driver_runtime",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/hwreg",
     "//zircon/system/ulib/zx",
   ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":aml-spinand-bind_test" ]
 }

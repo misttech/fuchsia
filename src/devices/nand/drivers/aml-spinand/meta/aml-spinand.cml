@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 {
     include: [
-        "//sdk/lib/driver/compat/compat.shard.cml",
         "driver/platform-device.shard.cml",
+        "driver_component/driver.shard.cml",
     ],
     program: {
+        binary: "driver/aml-spinand.so",
         bind: "meta/bind/aml-spinand.bindbc",
         colocate: "true",
-        compat: "driver/aml-spinand.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
 }
