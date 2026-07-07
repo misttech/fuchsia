@@ -732,8 +732,11 @@ void Dwc2::HandleEp0Setup() {
 
   // No data to read, can handle setup now
   if (length == 0 || is_in) {
-    // TODO(voydanoff) stall if this fails (after we implement stalling)
-    [[maybe_unused]] zx_status_t _ = HandleSetupRequest(&actual);
+    zx_status_t status = HandleSetupRequest(&actual);
+    if (status != ZX_OK) {
+      StallEp0();
+      return;
+    }
   }
 
   if (length > 0) {
@@ -755,6 +758,23 @@ void Dwc2::HandleEp0Setup() {
     // status in IN direction
     HandleEp0Status(true);
   }
+}
+
+void Dwc2::StallEp0() {
+  auto* mmio = get_mmio();
+
+  // Stall OUT EP0
+  auto depctl_out = DEPCTL::Get(DWC_EP0_OUT).ReadFrom(mmio);
+  depctl_out.set_stall(1);
+  depctl_out.WriteTo(mmio);
+
+  // Stall IN EP0
+  auto depctl_in = DEPCTL::Get(DWC_EP0_IN).ReadFrom(mmio);
+  depctl_in.set_stall(1);
+  depctl_in.WriteTo(mmio);
+
+  ep0_state_ = Ep0State::IDLE;
+  StartEp0();
 }
 
 // Handles status phase of a setup request
@@ -785,37 +805,45 @@ void Dwc2::HandleEp0TransferComplete(bool is_in) {
       if (is_in) {  // data direction is IN-type (to the host).
         if (ep->req_offset == ep->req_length) {
           HandleEp0Status(false);
-        } else {
-          auto length = ep->req_length - ep->req_offset;
-          length = std::min<uint32_t>(length, 64);
-
-          // It's possible the data to be transmitted never makes it to the host. For all but the
-          // last packet's worth of data, the core handles retransmission internally. To prepare to
-          // (potentially) retransmit data, the last transmission's size is recorded.
-          last_transmission_len_ = length;
-
-          std::lock_guard<std::mutex> _(ep->lock);
-          StartTransfer(&*ep, length);
+          return;
         }
+
+        auto length = ep->req_length - ep->req_offset;
+        length = std::min<uint32_t>(length, 64);
+
+        // It's possible the data to be transmitted never makes it to the host. For all but the
+        // last packet's worth of data, the core handles retransmission internally. To prepare to
+        // (potentially) retransmit data, the last transmission's size is recorded.
+        last_transmission_len_ = length;
+
+        std::lock_guard<std::mutex> _(ep->lock);
+        StartTransfer(&*ep, length);
       } else {  // data direction is OUT-type (from the host).
         if (ep->req_offset == ep->req_length) {
-          if (dci_intf_.is_valid()) {
-            size_t actual;
-            DoControl(cur_setup_, (uint8_t*)ep0_buffer_->virt(), ep->req_length, nullptr, 0,
-                      &actual);
+          if (!dci_intf_.is_valid()) {
+            StallEp0();
+            return;
+          }
+          size_t actual;
+          zx_status_t status = DoControl(cur_setup_, (uint8_t*)ep0_buffer_->virt(), ep->req_length,
+                                         nullptr, 0, &actual);
+          if (status != ZX_OK) {
+            StallEp0();
+            return;
           }
           HandleEp0Status(true);
-        } else {
-          auto length = ep->req_length - ep->req_offset;
-          // Strangely, the controller can transfer up to 127 bytes in a single transaction.
-          // But if length is > 127, the transfer must be done in multiple chunks, and those
-          // chunks must be 64 bytes long.
-          if (length > 127) {
-            length = 64;
-          }
-          std::lock_guard<std::mutex> _(ep->lock);
-          StartTransfer(&*ep, length);
+          return;
         }
+
+        auto length = ep->req_length - ep->req_offset;
+        // Strangely, the controller can transfer up to 127 bytes in a single transaction.
+        // But if length is > 127, the transfer must be done in multiple chunks, and those
+        // chunks must be 64 bytes long.
+        if (length > 127) {
+          length = 64;
+        }
+        std::lock_guard<std::mutex> _(ep->lock);
+        StartTransfer(&*ep, length);
       }
       break;
     }

@@ -167,6 +167,7 @@ class Dwc2 : public fdf::DriverBase2, public fidl::Server<fuchsia_hardware_usb_d
   void StartEp0();
   void StartEndpoints();
   void HandleEp0Setup();
+  void StallEp0();
   void HandleEp0Status(bool is_in);
   void HandleEp0TimeoutRecovery() __TA_EXCLUDES(lock_);
   void HandleEp0TransferComplete(bool is_in) __TA_EXCLUDES(lock_);
