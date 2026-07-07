@@ -4,7 +4,7 @@
     <project name="third_party/android/platform/hardware/google/gfxstream"
              path="third_party/gfxstream/src"
              remote="https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/hardware/google/gfxstream"
-             revision="c55a80588b5375210b2b55b3a37c52e851b7f2ab"/>
+             revision="94a77895251fc240fb3f2b10a95a297d2b8ad243"/>
     <project name="third_party/android/platform/hardware/google/aemu"
              path="third_party/gfxstream/aemu/src"
              remote="https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/hardware/google/aemu"
