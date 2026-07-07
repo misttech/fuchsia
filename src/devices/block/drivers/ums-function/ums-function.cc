@@ -31,6 +31,8 @@
 #include <usb/request-fidl.h>
 #include <usb/ums.h>
 
+#include "src/devices/block/lib/common/include/common.h"
+
 namespace ums {
 
 namespace fendpoint = fuchsia_hardware_usb_endpoint;
@@ -250,7 +252,12 @@ void UmsFunction::QueueCsw(uint8_t status, bool also_cbw) {
 
   csw->dCSWSignature = htole32(CSW_SIGNATURE);
   csw->dCSWTag = current_cbw_.dCBWTag;
-  csw->dCSWDataResidue = htole32(le32toh(current_cbw_.dCBWDataTransferLength) - data_length_);
+  uint32_t cbw_len = le32toh(current_cbw_.dCBWDataTransferLength);
+  uint32_t residue = 0;
+  if (cbw_len > data_length_) {
+    residue = static_cast<uint32_t>(cbw_len - data_length_);
+  }
+  csw->dCSWDataResidue = htole32(residue);
   csw->bmCSWStatus = status;
 
   std::vector<size_t> actual = csw_req_->CopyTo(0, csw, sizeof(ums_csw_t), in_ep_.GetMapped());
@@ -282,18 +289,23 @@ void UmsFunction::ContinueTransfer() {
   }
 }
 
-void UmsFunction::StartTransfer(DataState state, uint32_t transfer_bytes, uint64_t lba) {
-  zx_off_t offset = lba * kBlockSize;
-  if (offset + transfer_bytes > kStorageSize) {
-    fdf::error("StartTransfer: transfer out of range state: {}, lba: {} transfer_bytes: {}",
-               static_cast<uint32_t>(state), lba, transfer_bytes);
+void UmsFunction::StartTransferBlocks(DataState state, uint32_t transfer_blocks, uint64_t lba) {
+  if (zx_status_t status = block::CheckIoRange(lba, transfer_blocks, kBlockCount, logger());
+      status != ZX_OK) {
+    fdf::error("StartTransfer: transfer out of range state: {}, lba: {} transfer_blocks: {}",
+               static_cast<uint32_t>(state), lba, transfer_blocks);
     QueueCsw(CSW_FAILED);
     return;
   }
 
+  data_offset_ = lba * kBlockSize;  // Not applicable for the DATA_STATE_UNMAP case.
+  StartTransferBytes(state, static_cast<size_t>(transfer_blocks) * kBlockSize);
+}
+
+void UmsFunction::StartTransferBytes(DataState state, size_t transfer_bytes) {
   data_state_ = state;
-  data_offset_ = offset;  // Not applicable for the DATA_STATE_UNMAP case.
-  data_remaining_ = transfer_bytes;
+  data_remaining_ =
+      std::min(transfer_bytes, static_cast<size_t>(le32toh(current_cbw_.dCBWDataTransferLength)));
 
   ContinueTransfer();
 }
@@ -492,42 +504,42 @@ void UmsFunction::HandleRead10(ums_cbw_t* cbw) {
   scsi::Read10CDB* command = reinterpret_cast<scsi::Read10CDB*>(cbw->CBWCB);
   uint64_t lba = be32toh(command->logical_block_address);
   uint32_t blocks = be16toh(command->transfer_length);
-  StartTransfer(DATA_STATE_READ, blocks * kBlockSize, lba);
+  StartTransferBlocks(DATA_STATE_READ, blocks, lba);
 }
 
 void UmsFunction::HandleRead12(ums_cbw_t* cbw) {
   scsi::Read12CDB* command = reinterpret_cast<scsi::Read12CDB*>(cbw->CBWCB);
   uint64_t lba = be32toh(command->logical_block_address);
   uint32_t blocks = be32toh(command->transfer_length);
-  StartTransfer(DATA_STATE_READ, blocks * kBlockSize, lba);
+  StartTransferBlocks(DATA_STATE_READ, blocks, lba);
 }
 
 void UmsFunction::HandleRead16(ums_cbw_t* cbw) {
   scsi::Read16CDB* command = reinterpret_cast<scsi::Read16CDB*>(cbw->CBWCB);
   uint64_t lba = be64toh(command->logical_block_address);
   uint32_t blocks = be32toh(command->transfer_length);
-  StartTransfer(DATA_STATE_READ, blocks * kBlockSize, lba);
+  StartTransferBlocks(DATA_STATE_READ, blocks, lba);
 }
 
 void UmsFunction::HandleWrite10(ums_cbw_t* cbw) {
   scsi::Write10CDB* command = reinterpret_cast<scsi::Write10CDB*>(cbw->CBWCB);
   uint64_t lba = be32toh(command->logical_block_address);
   uint32_t blocks = be16toh(command->transfer_length);
-  StartTransfer(DATA_STATE_WRITE, blocks * kBlockSize, lba);
+  StartTransferBlocks(DATA_STATE_WRITE, blocks, lba);
 }
 
 void UmsFunction::HandleWrite12(ums_cbw_t* cbw) {
   scsi::Write12CDB* command = reinterpret_cast<scsi::Write12CDB*>(cbw->CBWCB);
   uint64_t lba = be32toh(command->logical_block_address);
   uint32_t blocks = be32toh(command->transfer_length);
-  StartTransfer(DATA_STATE_WRITE, blocks * kBlockSize, lba);
+  StartTransferBlocks(DATA_STATE_WRITE, blocks, lba);
 }
 
 void UmsFunction::HandleWrite16(ums_cbw_t* cbw) {
   scsi::Write16CDB* command = reinterpret_cast<scsi::Write16CDB*>(cbw->CBWCB);
   uint64_t lba = be64toh(command->logical_block_address);
   uint32_t blocks = be32toh(command->transfer_length);
-  StartTransfer(DATA_STATE_WRITE, blocks * kBlockSize, lba);
+  StartTransferBlocks(DATA_STATE_WRITE, blocks, lba);
 }
 
 void UmsFunction::HandleUnmap(ums_cbw_t* cbw) {
@@ -541,7 +553,7 @@ void UmsFunction::HandleUnmap(ums_cbw_t* cbw) {
     return;
   }
 
-  StartTransfer(DATA_STATE_UNMAP, unmap_data_length);
+  StartTransferBytes(DATA_STATE_UNMAP, unmap_data_length);
 }
 
 void UmsFunction::HandleCbw(ums_cbw_t* cbw) {
@@ -667,6 +679,13 @@ void UmsFunction::DataComplete(fendpoint::Completion completion) {
     ZX_ASSERT(result.size() == 1);
     ZX_ASSERT(result[0] == *completion.transfer_size());
   } else if (data_state_ == DATA_STATE_UNMAP) {
+    if (actual < sizeof(scsi::UnmapParameterListHeader) + sizeof(scsi::UnmapBlockDescriptor)) {
+      fdf::error("DataComplete: UNMAP actual size {} too small", actual);
+      data_state_ = DATA_STATE_NONE;
+      QueueCsw(CSW_FAILED);
+      return;
+    }
+
     // Overwrite the unmapped blocks with zeros.
     req->CacheFlushInvalidate(out_ep_.GetMapped());
 
@@ -680,9 +699,18 @@ void UmsFunction::DataComplete(fendpoint::Completion completion) {
 
     scsi::UnmapBlockDescriptor* block_descriptor = reinterpret_cast<scsi::UnmapBlockDescriptor*>(
         data + sizeof(scsi::UnmapParameterListHeader));
-    size_t block_count = betoh32(block_descriptor->blocks);
+    uint32_t block_count = betoh32(block_descriptor->blocks);
     uint64_t start_lba = betoh64(block_descriptor->logical_block_address);
-    memset(static_cast<char*>(storage_) + (start_lba * kBlockSize), 0, block_count * kBlockSize);
+    if (zx_status_t status = block::CheckIoRange(start_lba, block_count, kBlockCount, logger());
+        status != ZX_OK) {
+      fdf::error("DataComplete: UNMAP out of bounds: start_lba={} block_count={}", start_lba,
+                 block_count);
+      data_state_ = DATA_STATE_NONE;
+      QueueCsw(CSW_FAILED);
+      return;
+    }
+    memset(static_cast<char*>(storage_) + (start_lba * kBlockSize), 0,
+           static_cast<size_t>(block_count) * kBlockSize);
   } else if (data_state_ == DATA_STATE_FAILED) {
     data_state_ = DATA_STATE_NONE;
     QueueCsw(CSW_FAILED);

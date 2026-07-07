@@ -460,6 +460,16 @@ zx_status_t UsbMassStorageDevice::ExecuteCommandSync(uint8_t target, uint16_t lu
     fdf::error("Request exceeding max transfer size.");
     return ZX_ERR_INVALID_ARGS;
   }
+  if (is_write && data.iov_len > 0) {
+    fdf::error("Write data transfers are not supported in ExecuteCommandSync.");
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+  const bool read_data_transfer = !is_write && data.iov_base != nullptr;
+  if (read_data_transfer && data.iov_len > zx_system_get_page_size()) {
+    // data_req_ has a size of zx_system_get_page_size().
+    fdf::error("Read data transfer request exceeding page size.");
+    return ZX_ERR_INVALID_ARGS;
+  }
 
   // Per section 6.5 of UMS specification version 1.0
   // the device should report any errors in the CSW stage,
@@ -475,7 +485,6 @@ zx_status_t UsbMassStorageDevice::ExecuteCommandSync(uint8_t target, uint16_t lu
     return status;
   }
 
-  const bool read_data_transfer = !is_write && data.iov_base != nullptr;
   if (read_data_transfer) {
     // read response
     status = ReadSync(data.iov_len);

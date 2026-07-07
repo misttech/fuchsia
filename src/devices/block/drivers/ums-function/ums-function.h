@@ -75,7 +75,8 @@ class UmsFunction : public fdf::DriverBase2,
   void QueueData(usb::FidlRequest* req);
   void QueueCsw(uint8_t status, bool also_cbw = true);
   void ContinueTransfer();
-  void StartTransfer(DataState state, uint32_t transfer_bytes, uint64_t lba = 0);
+  void StartTransferBlocks(DataState state, uint32_t transfer_blocks, uint64_t lba);
+  void StartTransferBytes(DataState state, size_t transfer_bytes);
   zx::result<> CancelAll(usb::EndpointClient<UmsFunction>& ep);
 
   void HandleInquiry(ums_cbw_t* cbw);
@@ -170,7 +171,7 @@ class UmsFunction : public fdf::DriverBase2,
   // command we are currently handling
   ums_cbw_t current_cbw_ = {};
   // data transferred for the current command
-  uint32_t data_length_ = 0;
+  size_t data_length_ = 0;
 
   // state for data transfers
   DataState data_state_;

@@ -35,6 +35,7 @@ fuchsia_cc_driver("ums-function-driver") {
     "//sdk/fidl/fuchsia.hardware.usb.request:fuchsia.hardware.usb.request_cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/logging/cpp",
+    "//src/devices/block/lib/common",
     "//src/devices/block/lib/scsi",
     "//src/devices/usb/lib/usb:descriptors",
     "//src/devices/usb/lib/usb:ums",
