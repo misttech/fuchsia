@@ -42,12 +42,10 @@ def run_cmd(cmd: List[str], input_data: str = None) -> str:
 
 
 def fetch_builds(builder: str, bucket: str, cutoff_date: str) -> List[str]:
-    """Fetches failed build IDs for a specific builder since the cutoff date."""
-    print(
-        f"Fetching failed builds for {builder} in {bucket} since {cutoff_date}..."
-    )
+    """Fetches relevant build IDs for a specific builder since the cutoff date, including SUCCESS to catch flaky runs."""
+    print(f"Fetching builds for {builder} in {bucket} since {cutoff_date}...")
     page_token = ""
-    failed_builds = []
+    relevant_builds = []
 
     while True:
         payload = {
@@ -59,6 +57,7 @@ def fetch_builds(builder: str, bucket: str, cutoff_date: str) -> List[str]:
                 }
             },
             "pageSize": 50,
+            "mask": {"fields": "id,status,createTime,summaryMarkdown"},
         }
         if page_token:
             payload["pageToken"] = page_token
@@ -86,8 +85,10 @@ def fetch_builds(builder: str, bucket: str, cutoff_date: str) -> List[str]:
                 if date_str < cutoff_date:
                     should_break = True
                     break
-                if build.get("status") == "FAILURE":
-                    failed_builds.append(build["id"])
+                status = build.get("status")
+                summary = build.get("summaryMarkdown", "").lower()
+                if status == "FAILURE" or "flake" in summary:
+                    relevant_builds.append(build["id"])
 
         if should_break:
             break
@@ -96,7 +97,7 @@ def fetch_builds(builder: str, bucket: str, cutoff_date: str) -> List[str]:
         if not page_token:
             break
 
-    return failed_builds
+    return relevant_builds
 
 
 def fetch_results_with_bot_ids(
@@ -135,7 +136,7 @@ def fetch_results_with_bot_ids(
             except json.JSONDecodeError:
                 continue
 
-    return all_failures
+    return all_results
 
 
 def main():

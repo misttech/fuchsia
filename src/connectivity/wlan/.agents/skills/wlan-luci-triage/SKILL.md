@@ -22,7 +22,7 @@ If these tools are not present, the automation script will fail and direct you t
 
 ## Workflow
 
-### Step 1: Query Buildbucket for Failing WLAN Builds
+### Step 1: Query Buildbucket for Relevant WLAN Builds
 To get a list of builds for a specific builder and date range, use the `prpc` CLI to query `buildbucket.v2.Builds.SearchBuilds`. Note that builders can be in different buckets like `global.ci` or `smart.ci`, so verify which bucket your target builder belongs to.
 
 *   **Command**: `prpc call cr-buildbucket.appspot.com buildbucket.v2.Builds.SearchBuilds`
