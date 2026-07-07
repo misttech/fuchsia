@@ -7,22 +7,26 @@ load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 load(":host_test.bzl", "host_test")
 load(":host_test_data.bzl", "host_test_data_files")
 
-def wrap_host_rustc_test(
+def wrap_host_rust_test(
+        *,
         name,
         binary_name,
         test_label = None,
         test_args = [],
         test_data = [],
         visibility = None):
-    """Generate a host_test() target to run a rustc_test().
+    """Generate a host_test() target to run a rust_test().
 
-    This ensures that a host rustc_test() binary can be run with 'fx test'
-    and in infra builders. This is called implicitely by 'host_rustc_test()'
-    and other macros wrapping Rust test targets.
+    This ensures that a host rust_test() binary can be run with 'fx test' and in infra builders
+    by creating a wrapping `host_test()` target with the right set of dependencies.
+
+    Note that test arguments must be passed here in `test_args`, as Bazel does not record
+    the `rust_test()`'s own `args` values in providers, making them unavailable to the
+    wrapper target.
 
     Args:
        name: (string) host_test() target name
-       binary_name: (string) label to rustc_test() binary.
+       binary_name: (string) label to rust_test() binary.
        test_label: (Optional[string]) Optional test_label to pass to host_test(). Default to None.
        test_args: (list[string]) List of test arguments.
        test_data: (list[string]) List of labels to test's runtime requirements.
@@ -69,6 +73,75 @@ def wrap_host_rustc_test(
         visibility = visibility,
     )
 
+def define_and_wrap_host_rust_test(
+        *,
+        name,
+        rust_test_rule,
+        binary_name = None,
+        test_label = None,
+        test_args = [],
+        test_data = [],
+        tags = [],
+        visibility,
+        **kwargs):
+    """Generate a host_test() target wrapping a new rust_test() target.
+
+    This is a convenience macro to call rust_test_rule() and wrap_host_rust_test()
+    together. Unlike rust_test() targets, these tests will be usable with
+    `fx test` and `botanist`, and can still be run locally using
+    `fx bazel test --config=host <label>`.
+
+    Note that test arguments must be passed here in `test_args`, as Bazel does not record
+    the `rust_test()`'s own `args` values in providers, making them unavailable to the
+    wrapper target.
+
+    The "manual" tag will be set on the leaf rust_test() target. Hence something
+    like `fx bazel test --config=host //build/bazel/host_tests/rust_tests/...`
+    will correctly only run one test target, instead of two.
+
+    Args:
+      name: (string) The name of the parent host_test() target.
+      rust_test_rule: (rule) The rule used to define the real rust_test() target. This
+         can be either rust_test() or rustc_test(), the latter implementing
+         Fuchsia-specific features.
+      binary_name: (string) Optional. The name of the rust_test_rule() target, defaults to
+          "<name>_bin".
+      test_label: (string) Optional test label to appear in tests.json.
+      test_args: (string list) Optional arguments to pass to the test binary. Do not use `args`.
+      test_data: (string list) Optional. The data dependencies for the test target itself.
+      tags: (string list) Optional. List of test tags.
+      visibility: (string list) Optional. Visibility of the top-level test target, the leaf
+        rust_test() target will have private visibility instead.
+      **kwargs: Arguments to pass to `rust_test_rule`.
+    """
+    if kwargs.get("args"):
+        fail("Use `test_args` to pass test arguments instead of `args`")
+
+    binary_name = binary_name if binary_name else name + "_bin"
+
+    # When tags comes from expanding the kwargs of an inherited parent rule,
+    # attributes such as tags can be set to None instead of an empty list. In
+    # that case, default to an empty list.
+    tags = (tags or [])
+    if "manual" not in tags:
+        tags = tags + ["manual"]
+
+    rust_test_rule(
+        name = binary_name,
+        tags = tags,
+        visibility = ["//visibility:private"],
+        **kwargs
+    )
+
+    wrap_host_rust_test(
+        name = name,
+        test_label = test_label,
+        binary_name = binary_name,
+        test_args = test_args,
+        test_data = test_data,
+        visibility = visibility,
+    )
+
 def legacy_host_rustc_test(
         name,
         binary_name = "",
@@ -98,31 +171,15 @@ def legacy_host_rustc_test(
       tags: Optional: List of test tags.
       **kwargs: Arguments to pass to `rustc_test`.
     """
-
-    if "args" in kwargs:
-        fail("Use `test_args` to pass test arguments instead of `args`")
-
-    binary_name = binary_name if binary_name else name + "_bin"
-    binary_as_test_data = binary_name + "_as_test_data"
-
-    if "manual" not in tags:
-        tags = tags + ["manual"]
-
-    rustc_test(
-        name = binary_name,
-        tags = tags,
-        visibility = ["//visibility:private"],
-        target_compatible_with = HOST_CONSTRAINTS,
-        **kwargs
-    )
-
-    wrap_host_rustc_test(
-        name,
+    define_and_wrap_host_rust_test(
+        name = name,
+        rust_test_rule = rustc_test,
         test_label = test_label,
-        binary_name = binary_name,
         test_args = test_args,
         test_data = test_data,
+        tags = tags,
         visibility = visibility,
+        **kwargs
     )
 
 def _host_rustc_test_impl(

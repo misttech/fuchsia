@@ -19,7 +19,18 @@ def _rustc_test_impl(name, lint_config, rustc_flags, **kwargs):
     )
 
 rustc_test = macro(
-    doc = "rustc_test defines a Rust test target with Fuchsia-specific lint config by default.",
+    doc = """Define a rust_test() target with Fuchsia-specific features
+
+    Applies Fuchsia-specific Rust flags.
+
+    lint_config is set to "//build/config/rust/lints:clippy_warn_default",
+    unless specified by the user.
+
+    IMPORTANT: The resulting Bazel test target is *not* visible to Fuchsia test
+    runners. It must be exposed via a secondary mechanism. For example using
+    wrap_host_rust_test() for host build configurations, or using it in a test
+    component for Fuchsia ones.
+    """,
     implementation = _rustc_test_impl,
     inherit_attrs = rust_test,
 )
