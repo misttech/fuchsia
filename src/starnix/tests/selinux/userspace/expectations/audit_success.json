@@ -400,8 +400,6 @@
                 "avc:  denied  { associate } for name=\"fifo_label_test\" scontext=test_u:object_r:test_fifo_file_t:s0 tcontext=system_u:object_r:tmpfs_t:s0 tclass=filesystem permissive=1",
                 "avc:  denied  { getattr } for name=\"fifo_label_test\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:pipe_test_t:s0 tcontext=test_u:object_r:test_fifo_file_t:s0 tclass=fifo_file permissive=1",
                 "avc:  denied  { read write } for name=\"fifo_label_test\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:pipe_test_t:s0 tcontext=test_u:object_r:test_fifo_file_t:s0 tclass=fifo_file permissive=1",
-                "avc:  denied  { search } for name=\"56\" dev=\"proc\" ino=873 scontext=test_u:test_r:pipe_test_t:s0 tcontext=test_u:test_r:pipe_test_t:s0 tclass=dir permissive=1",
-                "avc:  denied  { write } for name=\"current\" dev=\"proc\" ino=875 scontext=test_u:test_r:pipe_test_t:s0 tcontext=test_u:test_r:pipe_test_t:s0 tclass=file permissive=1",
                 "avc:  denied  { dyntransition } for scontext=test_u:test_r:pipe_test_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=process permissive=1"
             ]
         },
@@ -705,10 +703,7 @@
                 "avc:  denied  { relabelto } for scontext=test_u:test_r:test_mount_permissive_t:s0 tcontext=test_u:object_r:test_mount_fscontext_t:s0 tclass=filesystem permissive=1",
                 "avc:  denied  { relabelfrom } for scontext=test_u:test_r:test_mount_permissive_t:s0 tcontext=test_u:object_r:test_mount_fscontext_t:s0 tclass=filesystem permissive=1",
                 "avc:  denied  { mount } for name=\"/\" dev=\"tmpfs\" ino=1 scontext=test_u:test_r:test_mount_permissive_t:s0 tcontext=test_u:object_r:test_mount_fscontext_t:s0 tclass=filesystem permissive=1",
-                "avc:  denied  { remount } for scontext=test_u:test_r:test_mount_permissive_t:s0 tcontext=test_u:object_r:test_mount_fscontext_t:s0 tclass=filesystem permissive=1",
-                "avc:  denied  { search } for name=\"71\" dev=\"proc\" ino=898 scontext=test_u:test_r:test_mount_permissive_t:s0 tcontext=test_u:test_r:test_mount_permissive_t:s0 tclass=dir permissive=1",
-                "avc:  denied  { read } for name=\"mounts\" dev=\"proc\" ino=901 scontext=test_u:test_r:test_mount_permissive_t:s0 tcontext=test_u:test_r:test_mount_permissive_t:s0 tclass=file permissive=1",
-                "avc:  denied  { getattr } for path=\"/proc/71/mounts\" dev=\"proc\" ino=901 scontext=test_u:test_r:test_mount_permissive_t:s0 tcontext=test_u:test_r:test_mount_permissive_t:s0 tclass=file permissive=1"
+                "avc:  denied  { remount } for scontext=test_u:test_r:test_mount_permissive_t:s0 tcontext=test_u:object_r:test_mount_fscontext_t:s0 tclass=filesystem permissive=1"
             ]
         },
         {
