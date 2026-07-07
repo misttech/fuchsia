@@ -313,7 +313,7 @@ unsafe impl Recyclable for OpaqueRefCounted<CppRefObject> {
 ::zr::static_assert!(core::mem::size_of::<SharedRefObject>() == 80);
 
 // Bindgen layout asserts for production library types
-type BindgenCanaryContainer = crate::bindings::fbl_bindgen_CanaryContainer;
+type BindgenCanaryContainer = fbl_bindings::fbl_bindgen_CanaryContainer;
 #[allow(dead_code)]
 struct RustCanaryContainer {
     canary: crate::Canary<0x12345678>,
@@ -325,7 +325,7 @@ struct RustCanaryContainer {
     core::mem::align_of::<RustCanaryContainer>() == core::mem::align_of::<BindgenCanaryContainer>()
 );
 
-type BindgenRefCountedObject = crate::bindings::fbl_bindgen_RefCountedObject;
+type BindgenRefCountedObject = fbl_bindings::fbl_bindgen_RefCountedObject;
 #[allow(dead_code)]
 struct RustRefCountedObject {
     _base: crate::RefCounted,
@@ -341,27 +341,27 @@ struct RustRefCountedObject {
 
 ::zr::static_assert!(
     core::mem::size_of::<crate::SinglyLinkedListNode<()>>()
-        == core::mem::size_of::<crate::bindings::fbl_bindgen_SinglyNodeWrapper>()
+        == core::mem::size_of::<fbl_bindings::fbl_bindgen_SinglyNodeWrapper>()
 );
 ::zr::static_assert!(
     core::mem::align_of::<crate::SinglyLinkedListNode<()>>()
-        == core::mem::align_of::<crate::bindings::fbl_bindgen_SinglyNodeWrapper>()
+        == core::mem::align_of::<fbl_bindings::fbl_bindgen_SinglyNodeWrapper>()
 );
 
 ::zr::static_assert!(
     core::mem::size_of::<crate::DoublyLinkedListNode<()>>()
-        == core::mem::size_of::<crate::bindings::fbl_bindgen_DoublyNodeWrapper>()
+        == core::mem::size_of::<fbl_bindings::fbl_bindgen_DoublyNodeWrapper>()
 );
 ::zr::static_assert!(
     core::mem::align_of::<crate::DoublyLinkedListNode<()>>()
-        == core::mem::align_of::<crate::bindings::fbl_bindgen_DoublyNodeWrapper>()
+        == core::mem::align_of::<fbl_bindings::fbl_bindgen_DoublyNodeWrapper>()
 );
 
 ::zr::static_assert!(
     core::mem::size_of::<crate::WavlTreeNode<()>>()
-        == core::mem::size_of::<crate::bindings::fbl_bindgen_WAVLNodeWrapper>()
+        == core::mem::size_of::<fbl_bindings::fbl_bindgen_WAVLNodeWrapper>()
 );
 ::zr::static_assert!(
     core::mem::align_of::<crate::WavlTreeNode<()>>()
-        == core::mem::align_of::<crate::bindings::fbl_bindgen_WAVLNodeWrapper>()
+        == core::mem::align_of::<fbl_bindings::fbl_bindgen_WAVLNodeWrapper>()
 );

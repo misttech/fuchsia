@@ -10,10 +10,8 @@ import("//build/rust/rustc_library.gni")
 
 rustc_library("fbl") {
   edition = "2024"
-  validations = [ ":fbl_bindgen_golden" ]
   sources = [
     "src/array.rs",
-    "src/bindings.rs",
     "src/canary.rs",
     "src/conditional_select_nospec.rs",
     "src/confine_array_index.rs",
@@ -40,6 +38,7 @@ rustc_library("fbl") {
   ]
   with_unit_tests = true
   test_deps = [
+    ":fbl-bindings",
     ":test_support",
     "//third_party/rust_crates:lock_api",
   ]
@@ -80,12 +79,18 @@ fuchsia_unittest_package("fbl-rust-test-pkg") {
 
 group("tests") {
   testonly = true
-  deps = [ ":fbl-rust-test-pkg" ]
+  deps = [
+    ":fbl-bindings",
+    ":fbl-rust-test-pkg",
+  ]
 }
 
-rustc_bindgen_golden("fbl_bindgen_golden") {
+rustc_bindgen("fbl-bindings.bindgen") {
+  testonly = true
+  visibility = [ ":*" ]
   headers = [ "bindgen.h" ]
-  checked_in_source = "src/bindings.rs"
+  deps = [ "//zircon/system/ulib/fbl" ]
+  output = "fbl_bindings.rs"
 
   type_allowlist = [ "fbl_bindgen::.*" ]
 
@@ -114,9 +119,18 @@ rustc_bindgen_golden("fbl_bindgen_golden") {
   notice_year = 2026
   use_core = true
 
+  raw_lines = [ "#![no_std]" ]
+
   expect_lints = [
-    "dead_code",
     "non_camel_case_types",
     "non_upper_case_globals",
   ]
+}
+
+rustc_library("fbl-bindings") {
+  testonly = true
+  edition = "2024"
+  source_root = "$target_gen_dir/fbl_bindings.rs"
+  sources = [ "$target_gen_dir/fbl_bindings.rs" ]
+  deps = [ ":fbl-bindings.bindgen" ]
 }
