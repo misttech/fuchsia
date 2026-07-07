@@ -29,6 +29,7 @@ closed protocol Interrupt {
     /// operational model for interrupt objects before making use of them in code.
     ///
     /// To create a physical interrupt, users must:
+    ///
     /// + Pass a handle to a suitable resource for creating platform interrupts, or a handle to a
     ///   PCI object, via the *src_obj* parameter.
     /// + Pass the associated interrupt number via the *src_num* parameter.

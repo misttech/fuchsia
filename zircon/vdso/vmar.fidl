@@ -95,6 +95,7 @@ closed protocol Vmar {
     /// `ZX_ERR_BAD_STATE`  *parent_vmar* refers to a destroyed VMAR.
     ///
     /// `ZX_ERR_INVALID_ARGS`  for any of the following:
+    ///
     ///  - *child_vmar* or *child_addr* are not valid,
     ///  - *offset* is non-zero when `ZX_VM_SPECIFIC` or `ZX_VM_OFFSET_IS_UPPER_LIMIT` is not given.
     ///  - `ZX_VM_OFFSET_IS_UPPER_LIMIT` is specified together with `ZX_VM_SPECIFIC`.
@@ -294,7 +295,9 @@ closed protocol Vmar {
     /// - `ZX_VM_ALIGN_2KB` aligns *child_addr* to a power-of-2 at least 2K bytes.
     /// - `ZX_VM_ALIGN_4KB` aligns *child_addr* to a power-of-2 at least 4K bytes.
     /// - `ZX_VM_ALIGN_8KB` aligns *child_addr* to a power-of-2 at least 8K bytes.
+    ///
     /// and continues up to
+    ///
     /// - `ZX_VM_ALIGN_4GB` aligns *child_addr* to a power-of-2 at least 4G bytes.
     ///
     /// Using `ZX_VM_ALIGN` flags with `ZX_VM_SPECIFIC` will fail if the vmar
@@ -321,6 +324,7 @@ closed protocol Vmar {
     /// `ZX_ERR_BAD_STATE`  *handle* refers to a destroyed VMAR.
     ///
     /// `ZX_ERR_INVALID_ARGS` for any of the following:
+    ///
     ///  - *mapped_addr* or *options* is not valid.
     ///  - *vmar_offset* is non-zero when none of `ZX_VM_SPECIFIC`, `ZX_VM_SPECIFIC_OVERWRITE` or
     ///    `ZX_VM_OFFSET_IS_UPPER_LIMIT` is specified.
@@ -744,6 +748,7 @@ closed protocol Vmar {
     /// `ZX_ERR_BAD_STATE`  *handle* refers to a destroyed VMAR.
     ///
     /// `ZX_ERR_INVALID_ARGS` for any of the following:
+    ///
     ///  - *mapped_addr* or *options* is not valid.
     ///  - *vmar_offset* is non-zero when none of `ZX_VM_SPECIFIC`, `ZX_VM_SPECIFIC_OVERWRITE` or
     ///    `ZX_VM_OFFSET_IS_UPPER_LIMIT` is specified.
@@ -773,6 +778,7 @@ closed protocol Vmar {
     /// In a future build this error will no longer occur.
     ///
     /// `ZX_ERR_OUT_OF_RANGE` for any of the following:
+    ///
     ///   - `region_offset + ROUNDUP(len, PAGE_SIZE)` overflows.
     ///   - *region_index* is not valid for the provided IOB
     ///
@@ -869,6 +875,7 @@ closed protocol Vmar {
     /// `ZX_ERR_BAD_STATE`  *handle* refers to a destroyed VMAR.
     ///
     /// `ZX_ERR_INVALID_ARGS` for any of the following:
+    ///
     ///  - `len` does not match the mapped size reported by `ZX_INFO_CLOCK_MAPPED_SIZE`.
     ///  - `options` contains one of the explicitly disallowed flags specified above.
     ///

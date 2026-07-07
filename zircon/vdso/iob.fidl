@@ -62,6 +62,7 @@ closed protocol Iob {
     ///
     /// *type* specifies the type of the region and memory object backing it.
     /// The valid types are:
+    ///
     ///   - ZX_IOB_REGION_TYPE_PRIVATE: a region backed by a private memory
     ///     uniquely owned by the IOB.
     ///

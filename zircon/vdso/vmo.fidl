@@ -754,6 +754,7 @@ closed protocol Vmo {
     /// and range was not page aligned.
     ///
     /// `ZX_ERR_NOT_SUPPORTED` under any of these conditions:
+    ///
     /// - *op* was `ZX_VMO_OP_LOCK`, `ZX_VMO_OP_TRY_LOCK` or `ZX_VMO_OP_UNLOCK` and the VMO was not
     ///   created with `ZX_VMO_DISCARDABLE`.
     /// - *op* was `ZX_VMO_OP_DECOMMIT` and the underlying VMO does not allow decommiting.
@@ -839,6 +840,7 @@ closed protocol Vmo {
     /// `ZX_VMO_CHILD_NO_WRITE` and not `ZX_VMO_CHILD_RESIZABLE`.
     ///
     /// This flag is not supported on:
+    ///
     ///  - VMOs with pinned regions.
     ///  - VMOs created with or descended from [`zx_vmo_create_physical()`] or
     ///    [`zx_vmo_create_contiguous()`]
