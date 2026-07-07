@@ -110,6 +110,14 @@ class DisplayCompositorSmokeTest : public DisplayCompositorTestBase {
   std::unique_ptr<async::Executor> executor_;
   std::unique_ptr<display::DisplayManager> display_manager_;
 
+  // Run promise on this test case's executor.
+  // Return true if result is_ok().
+  bool RunPromise(fpromise::promise<> promise) {
+    return integration_tests::RunPromise(
+        *executor_, [this](bool& done) { RunLoopUntil([&done] { return done; }); },
+        std::move(promise));
+  }
+
   static std::pair<std::unique_ptr<escher::Escher>, std::shared_ptr<flatland::VkRenderer>>
   NewVkRenderer() {
     auto env = escher::test::EscherEnvironment::GetGlobalTestEnvironment();
@@ -136,9 +144,7 @@ class DisplayCompositorSmokeTest : public DisplayCompositorTestBase {
         collection_id, sysmem_allocator_, std::move(dup_token), BufferCollectionUsage::kClientImage,
         std::nullopt);
 
-    bool import_success = integration_tests::RunPromise(
-        *executor_, [this](bool& done) { RunLoopUntil([&done] { return done; }); },
-        std::move(import_promise));
+    bool import_success = RunPromise(std::move(import_promise));
     EXPECT_TRUE(import_success);
 
     auto [buffer_usage, memory_constraints] = GetUsageAndMemoryConstraintsForCpuWriteOften();
@@ -208,9 +214,8 @@ VK_TEST_P(DisplayCompositorParameterizedSmokeTest, FullscreenRectangleTest) {
                                       .width = kTextureWidth,
                                       .height = kTextureHeight,
                                       .blend_mode = BlendMode::kReplace()};
-  auto result =
-      display_compositor->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage);
-  EXPECT_TRUE(result);
+  EXPECT_TRUE(RunPromise(
+      display_compositor->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
 
   // We cannot send to display because it is not supported in allocations.
   EXPECT_TRUE(IsDisplaySupported(display_compositor.get(), kTextureCollectionId));

@@ -558,6 +558,15 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // this code was written).
   std::shared_ptr<std::unordered_set<allocation::GlobalImageId>> images_to_release_;
 
+  // Keeps the BufferCollectionImportToken alive for each active image. Dropping these tokens
+  // triggers garbage collection of the associated BufferCollection in the Allocator. We keep them
+  // here so that their lifetime is tied to the lifecycle of the Image resources themselves,
+  // preventing the BufferCollection from being destroyed while asynchronous image imports are still
+  // running.
+  std::shared_ptr<std::unordered_map<allocation::GlobalImageId,
+                                     fuchsia_ui_composition::BufferCollectionImportToken>>
+      import_tokens_;
+
   // Tracks API calls which have the potential to modify the view tree.  If true, the next-presented
   // frame will trigger view tree recomputation.
   bool view_tree_dirty_ = false;

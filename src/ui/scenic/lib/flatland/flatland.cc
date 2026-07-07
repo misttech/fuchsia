@@ -197,6 +197,9 @@ Flatland::Flatland(std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
       layer_stacks_(&pool_),
       error_reporter_(scenic_impl::ErrorReporter::DefaultUnique()),
       images_to_release_(std::make_shared<std::unordered_set<allocation::GlobalImageId>>()),
+      import_tokens_(
+          std::make_shared<std::unordered_map<
+              allocation::GlobalImageId, fuchsia_ui_composition::BufferCollectionImportToken>>()),
       register_view_focuser_(std::move(register_view_focuser)),
       register_view_ref_focused_(std::move(register_view_ref_focused)),
       register_touch_source_(std::move(register_touch_source)),
@@ -298,6 +301,7 @@ Flatland::~Flatland() {
     zx_status_t status = wait->Begin(
         dispatcher(),
         [importer_refs = buffer_collection_importers_, images_to_release = images_to_release_,
+         import_tokens = import_tokens_,
          // We keep several objects alive in the closure:
          //   - the dispatcher, which is about to be released by the Flatland and FlatlandManager.
          //   - the wait object keeps itself alive via the ref in this closure
@@ -307,6 +311,7 @@ Flatland::~Flatland() {
          keepalive_evt = std::move(evt)](async_dispatcher_t*, async::WaitOnce*, zx_status_t status,
                                          const zx_packet_signal_t* /*signal*/) mutable {
           for (auto& image_id : *images_to_release) {
+            import_tokens->erase(image_id);
             for (auto& importer : importer_refs) {
               importer->ReleaseBufferImage(image_id);
             }
@@ -443,7 +448,7 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
     status = wait->Begin(
         dispatcher(),
         [copy_ref = wait, importer_refs = buffer_collection_importers_, images_to_release,
-         all_images_to_release = images_to_release_,
+         all_images_to_release = images_to_release_, import_tokens = import_tokens_,
          session_id = session_id_](async_dispatcher_t*, async::WaitOnce*, zx_status_t status,
                                    const zx_packet_signal_t* /*signal*/) mutable {
           // The wait is canceled if the dispatcher is destroyed before the event is signaled.
@@ -467,6 +472,7 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
               continue;
             }
 
+            import_tokens->erase(image_id);
             for (auto& importer : importer_refs) {
               importer->ReleaseBufferImage(image_id);
             }
@@ -1427,6 +1433,8 @@ void Flatland::CreateImage(ContentId image_id,
                        << "  size=" << properties.size()->width() << "x"
                        << properties.size()->height();
 
+  import_tokens_->emplace(metadata.identifier, std::move(import_token));
+
   // This fence is used to bridge promise resolution (see below) to the existing `fence_queue_`
   // mechanism, to guarantee that the image has been created by the time the corresponding
   // `Present()`'s UberStruct is applied to the global scene graph.
@@ -1459,6 +1467,7 @@ void Flatland::CreateImage(ContentId image_id,
                 buffer_collection_importers_[i]->ReleaseBufferImage(id);
               }
             }
+            import_tokens_->erase(id);
             error_reporter_->ERROR() << "Importer could not import image.";
             CloseConnection(FlatlandError::kBadOperation);
             return fpromise::error();

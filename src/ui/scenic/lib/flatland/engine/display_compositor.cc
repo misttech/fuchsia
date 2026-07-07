@@ -405,15 +405,6 @@ void DisplayCompositor::ReleaseBufferCollection(
   buffer_collection_supports_display_.erase(collection_id);
 }
 
-fuchsia::sysmem2::BufferCollectionSyncPtr DisplayCompositor::TakeDisplayBufferCollectionPtr(
-    const allocation::GlobalBufferCollectionId collection_id) {
-  const auto token_it = display_buffer_collection_ptrs_.find(collection_id);
-  FX_DCHECK(token_it != display_buffer_collection_ptrs_.end());
-  auto token = std::move(token_it->second);
-  display_buffer_collection_ptrs_.erase(token_it);
-  return token;
-}
-
 fpromise::promise<> DisplayCompositor::ImportBufferImage(const allocation::ImageMetadata& metadata,
                                                          const BufferCollectionUsage usage) {
   // Called from main thread or Flatland threads.
@@ -423,64 +414,75 @@ fpromise::promise<> DisplayCompositor::ImportBufferImage(const allocation::Image
     return fpromise::make_error_promise();
   }
 
-  if (!renderer_->ImportBufferImage(metadata, usage)) {
-    FX_LOGS(ERROR) << "Renderer could not import image.";
-    return fpromise::make_error_promise();
-  }
+  // NOTE: The VkRenderer::ImportBufferImage() is currently synchronous. If we want to improve
+  // latency, we'd need to make it asynchronous and start both import operations concurrently.
+  return renderer_->ImportBufferImage(metadata, usage)
+      .or_else([] {
+        FX_LOGS(ERROR) << "Renderer could not import image.";
+        return fpromise::error();
+      })
+      .and_then([this, metadata]() -> fpromise::result<> {
+        std::scoped_lock lock(lock_);
+        FX_DCHECK(display_coordinator_.is_valid());
 
-  std::scoped_lock lock(lock_);
-  FX_DCHECK(display_coordinator_.is_valid());
+        const allocation::GlobalBufferCollectionId collection_id = metadata.collection_id;
+        const display::WireBufferCollectionId display_collection_id =
+            display::ToDisplayFidlBufferCollectionId(collection_id);
+        const bool display_support_already_set =
+            buffer_collection_supports_display_.contains(collection_id);
 
-  const allocation::GlobalBufferCollectionId collection_id = metadata.collection_id;
-  const display::WireBufferCollectionId display_collection_id =
-      display::ToDisplayFidlBufferCollectionId(collection_id);
-  const bool display_support_already_set =
-      buffer_collection_supports_display_.contains(collection_id);
+        // When display composition is disabled, the only images that should be imported by the
+        // display are the framebuffers, and their display support is already set in AddDisplay()
+        // (instead of below). For every other image with display composition off mode we can early
+        // exit.
+        if (!config_.enable_direct_to_display &&
+            (!display_support_already_set || !buffer_collection_supports_display_[collection_id])) {
+          buffer_collection_supports_display_[collection_id] = false;
+          return fpromise::ok();
+        }
 
-  // When display composition is disabled, the only images that should be imported by the display
-  // are the framebuffers, and their display support is already set in AddDisplay() (instead of
-  // below). For every other image with display composition off mode we can early exit.
-  if (!config_.enable_direct_to_display &&
-      (!display_support_already_set || !buffer_collection_supports_display_[collection_id])) {
-    buffer_collection_supports_display_[collection_id] = false;
-    return fpromise::make_ok_promise();
-  }
+        if (!display_support_already_set) {
+          // TODO(https://fxbug.dev/386263977): this makes blocking FIDL calls while `lock_` is
+          // held. This isn't great, because means that a Flatland session thread can block the
+          // render thread.
+          auto node = display_buffer_collection_ptrs_.extract(collection_id);
+          if (node.empty()) {
+            FX_LOGS(ERROR) << "Display buffer collection token not found for collection ID "
+                           << collection_id;
+            return fpromise::error();
+          }
+          const auto pixel_format_modifier = DetermineDisplaySupportFor(std::move(node.mapped()));
+          buffer_collection_supports_display_[collection_id] = pixel_format_modifier.has_value();
+          if (pixel_format_modifier.has_value()) {
+            buffer_collection_tiling_type_map_[collection_id] =
+                BufferCollectionPixelFormatToImageTilingType(pixel_format_modifier.value());
+          }
+        }
 
-  if (!display_support_already_set) {
-    // TODO(https://fxbug.dev/386263977): this makes blocking FIDL calls while `lock_` is held.
-    // This isn't great, because means that a Flatland session thread can block the render thread.
-    const auto pixel_format_modifier =
-        DetermineDisplaySupportFor(TakeDisplayBufferCollectionPtr(collection_id));
-    buffer_collection_supports_display_[collection_id] = pixel_format_modifier.has_value();
-    if (pixel_format_modifier.has_value()) {
-      buffer_collection_tiling_type_map_[collection_id] =
-          BufferCollectionPixelFormatToImageTilingType(pixel_format_modifier.value());
-    }
-  }
+        if (!buffer_collection_supports_display_[collection_id]) {
+          // When display isn't supported we fallback to using the renderer.
+          return fpromise::ok();
+        }
 
-  if (!buffer_collection_supports_display_[collection_id]) {
-    // When display isn't supported we fallback to using the renderer.
-    return fpromise::make_ok_promise();
-  }
+        // TODO(https://fxbug.dev/42150686): Pixel format (and hence tiling type) should be ignored
+        // when using sysmem. We do not want to have to deal with this default image format. Work
+        // was in progress to address this, but is currently stalled: see fxr/716543.
+        FX_DCHECK(buffer_collection_tiling_type_map_.contains(collection_id));
+        const uint32_t image_tiling_type = buffer_collection_tiling_type_map_.at(collection_id);
 
-  // TODO(https://fxbug.dev/42150686): Pixel format (and hence tiling type) should be ignored when
-  // using sysmem. We do not want to have to deal with this default image format. Work was in
-  // progress to address this, but is currently stalled: see fxr/716543.
-  FX_DCHECK(buffer_collection_tiling_type_map_.contains(collection_id));
-  const uint32_t image_tiling_type = buffer_collection_tiling_type_map_.at(collection_id);
+        const auto image_extent = types::Extent2({.width = static_cast<int32_t>(metadata.width),
+                                                  .height = static_cast<int32_t>(metadata.height)});
 
-  const auto image_extent = types::Extent2({.width = static_cast<int32_t>(metadata.width),
-                                            .height = static_cast<int32_t>(metadata.height)});
+        zx::result<> result =
+            display_coordinator_.ImportImage(image_extent, image_tiling_type, display_collection_id,
+                                             metadata.vmo_index, metadata.identifier);
+        if (result.is_ok()) {
+          image_tiling_type_map_[metadata.identifier] = image_tiling_type;
+          return fpromise::ok();
+        }
 
-  zx::result<> result =
-      display_coordinator_.ImportImage(image_extent, image_tiling_type, display_collection_id,
-                                       metadata.vmo_index, metadata.identifier);
-  if (result.is_ok()) {
-    image_tiling_type_map_[metadata.identifier] = image_tiling_type;
-    return fpromise::make_ok_promise();
-  }
-
-  return fpromise::make_error_promise();
+        return fpromise::error();
+      });
 }
 
 void DisplayCompositor::ReleaseBufferImage(const allocation::GlobalImageId image_id) {

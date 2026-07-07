@@ -923,9 +923,8 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
                                       .vmo_index = 0,
                                       .width = kTextureWidth,
                                       .height = kTextureHeight};
-  auto result =
-      display_compositor->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage);
-  EXPECT_TRUE(result);
+  EXPECT_TRUE(RunPromise(
+      display_compositor->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
 
   // We cannot send to display because it is not supported in allocations.
   if (!IsDisplaySupported(display_compositor.get(), kTextureCollectionId)) {
@@ -1465,9 +1464,8 @@ VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest
 
   // We now have to import the textures to the engine and the renderer.
   for (uint32_t i = 0; i < 2; i++) {
-    auto result = display_compositor->ImportBufferImage(image_metadatas[i],
-                                                        BufferCollectionUsage::kClientImage);
-    EXPECT_TRUE(result);
+    EXPECT_TRUE(RunPromise(display_compositor->ImportBufferImage(
+        image_metadatas[i], BufferCollectionUsage::kClientImage)));
   }
 
   fuchsia::sysmem2::BufferCollectionInfo render_target_info;
@@ -1641,9 +1639,8 @@ VK_TEST_P(DisplayCompositorTransparencyPixelTest, OverlappingTransparencyTest) {
 
   // We now have to import the textures to the engine and the renderer.
   for (uint32_t i = 0; i < 2; i++) {
-    auto result = display_compositor->ImportBufferImage(image_metadatas[i],
-                                                        BufferCollectionUsage::kClientImage);
-    EXPECT_TRUE(result);
+    EXPECT_TRUE(RunPromise(display_compositor->ImportBufferImage(
+        image_metadatas[i], BufferCollectionUsage::kClientImage)));
   }
 
   fuchsia::sysmem2::BufferCollectionInfo render_target_info;
@@ -1862,9 +1859,8 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
       FX_NOTREACHED();
   }
 
-  auto result =
-      display_compositor->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage);
-  EXPECT_TRUE(result);
+  EXPECT_TRUE(RunPromise(
+      display_compositor->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
 
   // Create a flatland session to represent a graph that has magnification applied.
   auto session = CreateSession();
@@ -2125,9 +2121,8 @@ VK_TEST_P(DisplayCompositorParameterizedTest, ImageFlipRotate180DegreesPixelTest
       FX_NOTREACHED();
   }
 
-  auto result =
-      display_compositor->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage);
-  EXPECT_TRUE(result);
+  EXPECT_TRUE(RunPromise(
+      display_compositor->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
 
   auto session = CreateSession();
   const TransformHandle root_handle = session.graph().CreateTransform();
@@ -2318,12 +2313,10 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
   auto& green_image_metadata = image_metadatas[1];
 
   {
-    auto result = display_compositor->ImportBufferImage(blue_image_metadata,
-                                                        BufferCollectionUsage::kClientImage);
-    EXPECT_TRUE(result);
-    result = display_compositor->ImportBufferImage(green_image_metadata,
-                                                   BufferCollectionUsage::kClientImage);
-    EXPECT_TRUE(result);
+    EXPECT_TRUE(RunPromise(display_compositor->ImportBufferImage(
+        blue_image_metadata, BufferCollectionUsage::kClientImage)));
+    EXPECT_TRUE(RunPromise(display_compositor->ImportBufferImage(
+        green_image_metadata, BufferCollectionUsage::kClientImage)));
   }
 
   // Create a flatland session with a root and image handle. Import to the engine as display root.

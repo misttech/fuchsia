@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <deque>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 
 #include "src/lib/fxl/synchronization/thread_annotations.h"
@@ -212,10 +213,6 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
 
   // Generates a new FrameEventData struct to be used with a render target on a display.
   FrameEventData NewFrameEventData() FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
-
-  // Moves a token out of |display_buffer_collection_ptrs_| and returns it.
-  fuchsia::sysmem2::BufferCollectionSyncPtr TakeDisplayBufferCollectionPtr(
-      allocation::GlobalBufferCollectionId collection_id) FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Used when we're forced to fall back to GPU rendering.
   bool PerformGpuComposition(

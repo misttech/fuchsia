@@ -434,13 +434,13 @@ TEST_F(DisplayCompositorTest,
 
   // ImportBufferImage() to confirm that the allocation was handled correctly.
   EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).WillOnce(ReturnPromise(fpromise::ok()));
-  ASSERT_TRUE(display_compositor_->ImportBufferImage(
+  ASSERT_TRUE(RunPromise(display_compositor_->ImportBufferImage(
       ImageMetadata{.collection_id = kGlobalBufferCollectionId,
                     .identifier = display::ImageId(1),
                     .vmo_index = 0,
                     .width = 1,
                     .height = 1},
-      BufferCollectionUsage::kClientImage));
+      BufferCollectionUsage::kClientImage)));
   EXPECT_TRUE(BufferCollectionSupportsDisplay(kGlobalBufferCollectionId));
 }
 
@@ -555,13 +555,13 @@ TEST_F(DisplayCompositorTest,
 
   // ImportBufferImage() to confirm that the allocation was handled correctly.
   EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).WillOnce(ReturnPromise(fpromise::ok()));
-  ASSERT_TRUE(display_compositor_->ImportBufferImage(
+  ASSERT_TRUE(RunPromise(display_compositor_->ImportBufferImage(
       ImageMetadata{.collection_id = kGlobalBufferCollectionId,
                     .identifier = display::ImageId(1),
                     .vmo_index = 0,
                     .width = 1,
                     .height = 1},
-      BufferCollectionUsage::kClientImage));
+      BufferCollectionUsage::kClientImage)));
   EXPECT_FALSE(BufferCollectionSupportsDisplay(kGlobalBufferCollectionId));
 }
 
@@ -628,13 +628,13 @@ TEST_F(DisplayCompositorTest, SysmemNegotiationTest_InRendererOnlyMode_DisplaySh
 
   // ImportBufferImage() to confirm that the allocation was handled correctly.
   EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).WillOnce(ReturnPromise(fpromise::ok()));
-  ASSERT_TRUE(display_compositor_->ImportBufferImage(
+  ASSERT_TRUE(RunPromise(display_compositor_->ImportBufferImage(
       ImageMetadata{.collection_id = kGlobalBufferCollectionId,
                     .identifier = display::ImageId(1),
                     .vmo_index = 0,
                     .width = 1,
                     .height = 1},
-      BufferCollectionUsage::kClientImage));
+      BufferCollectionUsage::kClientImage)));
   EXPECT_FALSE(BufferCollectionSupportsDisplay(kGlobalBufferCollectionId));
 }
 
@@ -745,7 +745,8 @@ TEST_F(DisplayCompositorTest, ImageIsValidAfterReleaseBufferCollection) {
       }));
   EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _))
       .WillOnce(ReturnPromise(fpromise::ok()));
-  display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage);
+  EXPECT_TRUE(RunPromise(
+      display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
 
   // Release buffer collection. Make sure that does not release Image.
   const display::WireImageId kFidlImageId = image_metadata.identifier.ToFidl();
@@ -1095,8 +1096,8 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
   EXPECT_CALL(*renderer_, ImportBufferImage(parent_image_metadata, _))
       .WillOnce(ReturnPromise(fpromise::ok()));
 
-  display_compositor_->ImportBufferImage(parent_image_metadata,
-                                         BufferCollectionUsage::kClientImage);
+  EXPECT_TRUE(RunPromise(display_compositor_->ImportBufferImage(
+      parent_image_metadata, BufferCollectionUsage::kClientImage)));
 
   const display::WireImageId fidl_child_image_id = child_image_metadata.identifier.ToFidl();
 
@@ -1115,7 +1116,8 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
 
   EXPECT_CALL(*renderer_, ImportBufferImage(child_image_metadata, _))
       .WillOnce(ReturnPromise(fpromise::ok()));
-  display_compositor_->ImportBufferImage(child_image_metadata, BufferCollectionUsage::kClientImage);
+  EXPECT_TRUE(RunPromise(display_compositor_->ImportBufferImage(
+      child_image_metadata, BufferCollectionUsage::kClientImage)));
 
   EXPECT_CALL(*renderer_, SetColorConversionValues(_, _, _)).WillOnce(Return());
   display_compositor_->SetColorConversionValues({1, 0, 0, 0, 1, 0, 0, 0, 1}, {0.1f, 0.2f, 0.3f},
@@ -1320,8 +1322,8 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
   EXPECT_CALL(*renderer_, ImportBufferImage(parent_image_metadata, _))
       .WillOnce(ReturnPromise(fpromise::ok()));
 
-  display_compositor_->ImportBufferImage(parent_image_metadata,
-                                         BufferCollectionUsage::kClientImage);
+  EXPECT_TRUE(RunPromise(display_compositor_->ImportBufferImage(
+      parent_image_metadata, BufferCollectionUsage::kClientImage)));
 
   EXPECT_CALL(*renderer_, SetColorConversionValues(_, _, _)).WillOnce(Return());
 
@@ -1877,7 +1879,8 @@ TEST_F(DisplayCompositorTest, ImageContentTakesImageLayerPath) {
   EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _))
       .WillOnce(ReturnPromise(fpromise::ok()));
 
-  display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage);
+  EXPECT_TRUE(RunPromise(
+      display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
 
   ResolvedLayer layer = {
       .rect = {glm::vec2(0, 0), glm::vec2(128, 256)},
