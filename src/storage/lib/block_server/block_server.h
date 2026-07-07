@@ -10,9 +10,11 @@
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/zx/result.h>
 #include <zircon/assert.h>
+#include <zircon/compiler.h>
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <span>
 
 #include "src/storage/lib/block_server/block_server_c.h"
@@ -153,8 +155,13 @@ class BlockServer {
   // (including in the callback itself).
   template <typename Callback>
   void DestroyAsync(Callback callback) {
-    ZX_ASSERT_MSG(server_, "DestroyAsync called multiple times!");
-    internal::BlockServer* server = server_;
+    internal::BlockServer* server;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      ZX_ASSERT_MSG(server_ && !shutdown_, "DestroyAsync called multiple times!");
+      shutdown_ = true;
+      server = server_;
+    }
 
     struct State {
       BlockServer* self;
@@ -167,7 +174,10 @@ class BlockServer {
         server,
         [](void* arg) {
           auto state = std::unique_ptr<State>(reinterpret_cast<State*>(arg));
-          state->self->server_ = nullptr;
+          {
+            std::lock_guard<std::mutex> lock(state->self->mutex_);
+            state->self->server_ = nullptr;
+          }
           state->callback();
         },
         state.release());
@@ -180,7 +190,9 @@ class BlockServer {
 
  private:
   Interface* interface_ = nullptr;
-  internal::BlockServer* server_ = nullptr;
+  mutable std::mutex mutex_;
+  internal::BlockServer* server_ __TA_GUARDED(mutex_) = nullptr;
+  bool shutdown_ __TA_GUARDED(mutex_) = false;
 };
 
 // Splits the request at `block_offset` returning the head and leaving the tail in `request`.

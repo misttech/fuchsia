@@ -1162,5 +1162,44 @@ TEST(BlockServer, ThreadLifetimeOutlivesDispatcherShutdown) {
   EXPECT_TRUE(thread_released_after_shutdown);
 }
 
+TEST(BlockServer, ServeAfterDestroyAsync) {
+  fdf_testing::DriverRuntime runtime;
+  ThreadLifetimeTestInterface test_interface;
+
+  std::atomic<bool> server_destroyed = false;
+
+  {
+    block_server::BlockServer server(
+        PartitionInfo{
+            .start_block = 0,
+            .block_count = kBlocks,
+            .block_size = kBlockSize,
+            .type_guid = {1, 2, 3, 4},
+            .instance_guid = {5, 6, 7, 8},
+            .name = "partition",
+        },
+        &test_interface);
+
+    auto [block_client, server_end] = fidl::Endpoints<fblock::Block>::Create();
+    server.Serve(std::move(server_end));
+
+    // Start destruction.
+    server.DestroyAsync([&] { server_destroyed = true; });
+
+    // Try to serve a new connection. This should be rejected (close the channel).
+    auto [block_client2, server_end2] = fidl::Endpoints<fblock::Block>::Create();
+    server.Serve(std::move(server_end2));
+
+    // The client end should be closed.
+    zx_signals_t signals;
+    EXPECT_EQ(
+        block_client2.channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite(), &signals),
+        ZX_OK);
+    EXPECT_TRUE(signals & ZX_CHANNEL_PEER_CLOSED);
+
+    runtime.RunUntil([&] { return server_destroyed.load(); });
+  }
+}
+
 }  // namespace
 }  // namespace block_server

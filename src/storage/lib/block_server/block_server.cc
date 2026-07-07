@@ -8,6 +8,8 @@
 #include <lib/driver/logging/cpp/logger.h>
 #include <zircon/assert.h>
 
+#include <utility>
+
 #include "src/storage/lib/block_server/block_server_c.h"
 
 namespace block_server {
@@ -60,17 +62,29 @@ Session::~Session() {
 void Session::Run() { block_server_session_run(session_); }
 
 BlockServer::~BlockServer() {
-  if (server_) {
-    block_server_delete(server_);
+  internal::BlockServer* server;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    server = std::exchange(server_, nullptr);
+  }
+  if (server) {
+    block_server_delete(server);
   }
 }
 
 void BlockServer::Serve(fidl::ServerEnd<fuchsia_storage_block::Block> server_end) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (shutdown_ || !server_) {
+    return;
+  }
   block_server_serve(server_, server_end.TakeChannel().release());
 }
 
 void BlockServer::SendReply(RequestId request_id, zx::result<> result) const {
-  block_server_send_reply(server_, request_id, result.status_value());
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (server_) {
+    block_server_send_reply(server_, request_id, result.status_value());
+  }
 }
 
 Request SplitRequest(Request& request, uint32_t block_offset, uint32_t block_size) {
