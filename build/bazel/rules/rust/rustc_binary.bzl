@@ -4,6 +4,11 @@
 
 """A macro for defining a Rust binary with optional unit tests."""
 
+load(
+    "@fuchsia_rules_common//build_flags:rust.bzl",
+    "BUILD_FLAGS_RUST_ATTRS_KWARGS",
+    "wrap_rust_macro_args_with_build_flags",
+)
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//build/bazel/rules/rust:common.bzl", "with_fuchsia_rustc_flags")
 load("//build/bazel/rules/rust:generate_unit_tests.bzl", "generate_unit_tests")
@@ -15,6 +20,7 @@ def _rustc_binary_impl(
         test_deps,
         lint_config,
         rustc_flags,
+        build_flags,
         visibility,
         **kwargs):
     if lint_config == None:
@@ -23,11 +29,18 @@ def _rustc_binary_impl(
     else:
         test_lint_config = lint_config
 
-    rustc_flags = with_fuchsia_rustc_flags(rustc_flags)
+    kwargs["rustc_flags"] = with_fuchsia_rustc_flags(rustc_flags)
+
+    kwargs = wrap_rust_macro_args_with_build_flags(
+        kwargs,
+        name,
+        "rust_binary",
+        build_flags,
+        "executable",
+    )
 
     rust_binary(
         name = name,
-        rustc_flags = rustc_flags,
         lint_config = lint_config,
         visibility = visibility,
         **kwargs
@@ -48,7 +61,6 @@ def _rustc_binary_impl(
             with_unit_tests = with_unit_tests,
             test_deps = test_deps,
             lint_config = test_lint_config,
-            rustc_flags = rustc_flags,
             visibility = visibility,
             **kwargs
         )
@@ -86,5 +98,5 @@ See details in https://fxbug.dev/407441714.
             doc = "Extra dependencies for the test target.",
             default = [],
         ),
-    },
+    } | BUILD_FLAGS_RUST_ATTRS_KWARGS,
 )
