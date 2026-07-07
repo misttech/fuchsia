@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/board.gni")
-import("//build/images/vbmeta.gni")
 import("//build/testing/boot_tests/boot_test.gni")
 import("//build/testing/environments.gni")
 import("//build/zbi/zbi.gni")
@@ -20,9 +19,6 @@ if (current_cpu != "riscv64") {
 # should be used in deps.  The actual zbi() target is defined as
 # "$target_name.zbi" so that e.g. get_target_outputs(":$target_name.zbi")
 # can be used.
-#
-# If `use_vbmeta` is true, an associated VBMeta image (of the same base name)
-# will be output alongside the ZBI.
 #
 # Parameters
 #
@@ -170,15 +166,6 @@ template("zbi_test") {
     output_zbi = "$target_out_dir/$output_zbi"
   }
 
-  if (use_vbmeta) {
-    vbmeta_target = "${target_name}.vbmeta"
-    vbmeta(vbmeta_target) {
-      forward_variables_from(invoker, [ "visibility" ])
-      testonly = true
-      zbi = ":$zbi_target"
-    }
-  }
-
   boot_test(main_target) {
     forward_variables_from(invoker,
                            [
@@ -194,8 +181,5 @@ template("zbi_test") {
       environments = _all_emu_envs
     }
     zbi = ":$zbi_target"
-    if (use_vbmeta) {
-      vbmeta = ":$vbmeta_target"
-    }
   }
 }

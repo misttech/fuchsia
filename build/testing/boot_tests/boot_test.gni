@@ -5,6 +5,7 @@
 import("//build/assembly/assembled_system.gni")
 import("//build/assembly/hybrid_board_configuration.gni")
 import("//build/assembly/product_bundle.gni")
+import("//build/images/vbmeta.gni")
 import("//build/testing/environments.gni")
 import("//build/testing/test_spec.gni")
 import("//zircon/kernel/phys/qemu.gni")
@@ -137,9 +138,6 @@ template("_boot_test") {
     if (defined(invoker.qemu_kernel)) {
       deps += [ invoker.qemu_kernel ]
     }
-    if (defined(invoker.vbmeta)) {
-      deps += [ invoker.vbmeta ]
-    }
     if (defined(invoker.zbi)) {
       deps += [ invoker.zbi ]
     }
@@ -181,9 +179,9 @@ template("_boot_test") {
 #      in //build/testing/environments.gni.
 #    - Type: list of strings
 #
-#  * zbi, ramdisk, qemu_kernel, vbmeta, dtbo, efi_disk
-#    - Optional: A label specifying a ZBI, QEMU kernel, VBMeta, dtbo, UEFI
-#      executable, or a bootable UEFI filesystem or disk image, respectively.
+#  * zbi, ramdisk, qemu_kernel, dtbo, efi_disk
+#    - Optional: A label specifying a ZBI, QEMU kernel, dtbo, UEFI executable,
+#      or a bootable UEFI filesystem or disk image, respectively.
 #      At least one of these parameters must be set, but each on their own is
 #      optional.
 #
@@ -236,9 +234,9 @@ template("boot_test") {
          "boot_test(\"$target_name\") must define `environments`")
   assert(
       defined(invoker.zbi) || defined(invoker.ramdisk) ||
-          defined(invoker.qemu_kernel) || defined(invoker.vbmeta) ||
-          defined(invoker.efi_disk) || defined(invoker.dtbo),
-      "boot_test(\"$target_name\") must define at least one of `zbi`, `ramdisk`, `qemu_kernel`, `vbmeta`, `efi_disk`, `dtbo`")
+          defined(invoker.qemu_kernel) || defined(invoker.efi_disk) ||
+          defined(invoker.dtbo),
+      "boot_test(\"$target_name\") must define at least one of `zbi`, `ramdisk`, `qemu_kernel`, `efi_disk`, `dtbo`")
 
   main_target = target_name
   product_bundle_target = "$target_name.product_bundle"
