@@ -776,6 +776,7 @@ func (m *fakeModules) PrebuiltVersions() ([]build.PrebuiltVersion, error) {
 	}, nil
 }
 func (m *fakeModules) ProductBundles() []build.ProductBundle { return m.productBundles }
+func (m *fakeModules) TefmocheckRulesManifest() []string     { return []string{} }
 func (m *fakeModules) Tools() build.Tools {
 	var tools build.Tools
 	for _, tool := range []string{

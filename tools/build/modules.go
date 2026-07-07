@@ -40,6 +40,7 @@ type Modules struct {
 	productBundles           []ProductBundle
 	productSizeCheckerOutput []ProductSizeCheckerOutput
 	sdkArchives              []SDKArchive
+	tefmocheckRulesManifest  []string
 	testDurations            []TestDuration
 	testListLocation         []string
 	testSpecs                []TestSpec
@@ -76,6 +77,7 @@ func NewModules(buildDir string) (*Modules, error) {
 		"product_size_checker_output": &m.productSizeCheckerOutput,
 		"rust_target_mapping":         &m.clippyTargets,
 		"sdk_archives":                &m.sdkArchives,
+		"tefmocheck_rules_manifest":   &m.tefmocheckRulesManifest,
 		"test_durations":              &m.testDurations,
 		"test_list_location":          &m.testListLocation,
 		"tests":                       &m.testSpecs,
@@ -187,6 +189,10 @@ func (m Modules) ProductBundles() []ProductBundle {
 
 func (m Modules) SDKArchives() []SDKArchive {
 	return m.sdkArchives
+}
+
+func (m Modules) TefmocheckRulesManifest() []string {
+	return m.tefmocheckRulesManifest
 }
 
 func (m Modules) TestDurations() []TestDuration {

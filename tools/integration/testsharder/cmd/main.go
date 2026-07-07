@@ -136,6 +136,7 @@ type buildModules interface {
 	Images() []build.Image
 	ModulePaths() ([]string, error)
 	Platforms() []build.DimensionSet
+	TefmocheckRulesManifest() []string
 	TestSpecs() []build.TestSpec
 	TestListLocation() []string
 	TestDurations() []build.TestDuration
@@ -517,7 +518,9 @@ func execute(ctx context.Context, flags testsharderFlags, params *proto.Params, 
 		if err != nil {
 			return err
 		}
-		for _, file := range append(m.TriageSources(), buildAPIFiles...) {
+		buildAPIFiles = append(buildAPIFiles, m.TriageSources()...)
+		buildAPIFiles = append(buildAPIFiles, m.TefmocheckRulesManifest()...)
+		for _, file := range buildAPIFiles {
 			absPath := file
 			if !filepath.IsAbs(absPath) {
 				absPath = filepath.Join(flags.buildDir, file)
