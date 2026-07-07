@@ -100,8 +100,16 @@ VirtualAudioCodec::VirtualAudioCodec(fuchsia_virtualaudio::Configuration config,
   zx_status_t status = DdkAdd(ddk::DeviceAddArgs(instance_name_));
   ZX_ASSERT_MSG(status == ZX_OK, "DdkAdd failed");
 
-  if (config.device_specific()->codec()->plug_properties()->plug_state()) {
+  if (config.device_specific() && config.device_specific()->codec() &&
+      config.device_specific()->codec()->plug_properties() &&
+      config.device_specific()->codec()->plug_properties()->plug_state()) {
     plug_state_ = *config.device_specific()->codec()->plug_properties()->plug_state();
+  }
+}
+
+VirtualAudioCodec::~VirtualAudioCodec() {
+  if (codec_binding_.has_value()) {
+    codec_binding_->Unbind();
   }
 }
 
@@ -109,6 +117,7 @@ void VirtualAudioCodec::ResetCodecState() {
   should_return_plug_state_ = true;
   watch_plug_state_completer_.reset();
   connected_ = false;
+  codec_binding_.reset();
 }
 
 void VirtualAudioCodec::Connect(ConnectRequestView request, ConnectCompleter::Sync& completer) {
@@ -117,10 +126,14 @@ void VirtualAudioCodec::Connect(ConnectRequestView request, ConnectCompleter::Sy
     return;
   }
   connected_ = true;
-  fidl::BindServer(
+  codec_binding_ = fidl::BindServer(
       fdf::Dispatcher::GetCurrent()->async_dispatcher(), std::move(request->codec_protocol), this,
-      [](VirtualAudioCodec* codec_instance, fidl::UnbindInfo,
-         fidl::ServerEnd<fuchsia_hardware_audio::Codec>) { codec_instance->ResetCodecState(); });
+      [weak = weak_from_this()](VirtualAudioCodec*, fidl::UnbindInfo,
+                                fidl::ServerEnd<fuchsia_hardware_audio::Codec>) {
+        if (auto self = weak.lock()) {
+          static_cast<VirtualAudioCodec*>(self.get())->ResetCodecState();
+        }
+      });
 }
 
 // FIDL natural C++ methods for fuchsia.hardware.audio.Codec.
@@ -144,22 +157,24 @@ void VirtualAudioCodec::GetProperties(
 
   fidl::Arena arena;
   fuchsia_hardware_audio::CodecProperties properties;
-  properties.is_input(codec_config().is_input());
-  properties.manufacturer(config_.manufacturer_name());
-  properties.product(config_.product_name());
+  if (config_.device_specific() && config_.device_specific()->codec() &&
+      config_.device_specific()->codec()->is_input()) {
+    properties.is_input(*config_.device_specific()->codec()->is_input());
+  }
+  if (config_.manufacturer_name()) {
+    properties.manufacturer(*config_.manufacturer_name());
+  }
+  if (config_.product_name()) {
+    properties.product(*config_.product_name());
+  }
   if (config_.unique_id()) {
     properties.unique_id() = *config_.unique_id();
   }
-  if (config_.device_specific()) {
-    ZX_ASSERT_MSG(
-        config_.device_specific()->Which() == fuchsia_virtualaudio::DeviceSpecific::Tag::kCodec,
-        "Codec::GetProperties with wrong (non-Codec) device type");
-
-    if (config_.device_specific()->codec()->plug_properties() &&
-        config_.device_specific()->codec()->plug_properties()->plug_detect_capabilities()) {
-      properties.plug_detect_capabilities() =
-          config_.device_specific()->codec()->plug_properties()->plug_detect_capabilities();
-    }
+  if (config_.device_specific() && config_.device_specific()->codec() &&
+      config_.device_specific()->codec()->plug_properties() &&
+      config_.device_specific()->codec()->plug_properties()->plug_detect_capabilities()) {
+    properties.plug_detect_capabilities() =
+        config_.device_specific()->codec()->plug_properties()->plug_detect_capabilities();
   }
   completer.Reply(std::move(properties));
 }
@@ -167,7 +182,13 @@ void VirtualAudioCodec::GetProperties(
 void VirtualAudioCodec::GetDaiFormats(GetDaiFormatsCompleter::Sync& completer) {
   auto parent = parent_.lock();
   ZX_ASSERT(parent);
-  completer.Reply(zx::ok(codec_config().dai_interconnect()->dai_supported_formats().value()));
+  std::vector<fuchsia_hardware_audio::DaiSupportedFormats> formats;
+  if (config_.device_specific() && config_.device_specific()->codec() &&
+      config_.device_specific()->codec()->dai_interconnect() &&
+      config_.device_specific()->codec()->dai_interconnect()->dai_supported_formats()) {
+    formats = *config_.device_specific()->codec()->dai_interconnect()->dai_supported_formats();
+  }
+  completer.Reply(zx::ok(std::move(formats)));
 }
 
 void VirtualAudioCodec::SetDaiFormat(SetDaiFormatRequest& request,
@@ -180,9 +201,13 @@ void VirtualAudioCodec::SetDaiFormat(SetDaiFormatRequest& request,
     return;
   }
 
-  std::vector<fuchsia_hardware_audio::DaiSupportedFormats> supported_formats =
-      config_.device_specific()->codec()->dai_interconnect()->dai_supported_formats().value_or(
-          std::vector<fuchsia_hardware_audio::DaiSupportedFormats>{});
+  std::vector<fuchsia_hardware_audio::DaiSupportedFormats> supported_formats;
+  if (config_.device_specific() && config_.device_specific()->codec() &&
+      config_.device_specific()->codec()->dai_interconnect() &&
+      config_.device_specific()->codec()->dai_interconnect()->dai_supported_formats()) {
+    supported_formats =
+        *config_.device_specific()->codec()->dai_interconnect()->dai_supported_formats();
+  }
 
   for (auto dai_format_set : supported_formats) {
     std::optional<uint32_t> number_of_channels;
@@ -282,8 +307,18 @@ void VirtualAudioCodec::PlugStateChanged(const fuchsia_hardware_audio::PlugState
   should_return_plug_state_ = true;
 }
 
-void VirtualAudioCodec::ShutdownAsync() { DdkAsyncRemove(); }
+void VirtualAudioCodec::ShutdownAsync() {
+  if (codec_binding_.has_value()) {
+    codec_binding_->Unbind();
+  }
+  DdkAsyncRemove();
+}
 
-void VirtualAudioCodec::DdkRelease() { OnShutdown(); }
+void VirtualAudioCodec::DdkRelease() {
+  if (codec_binding_.has_value()) {
+    codec_binding_->Unbind();
+  }
+  OnShutdown();
+}
 
 }  // namespace virtual_audio

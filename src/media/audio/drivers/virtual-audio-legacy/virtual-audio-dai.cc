@@ -107,7 +107,12 @@ void VirtualAudioDai::GetFormatForVA(
     return;
   }
   auto& pcm_format = ring_buffer_format_->pcm_format();
-  auto& ring_buffer = dai_config().ring_buffer().value();
+  if (!config_.device_specific() || !config_.device_specific()->dai() ||
+      !config_.device_specific()->dai()->ring_buffer()) {
+    callback(fit::error(ErrorT::kNoRingBuffer));
+    return;
+  }
+  auto& ring_buffer = *config_.device_specific()->dai()->ring_buffer();
   int64_t external_delay = ring_buffer.external_delay().value_or(0);
   callback(fit::ok(CurrentFormat{
       .frames_per_second = pcm_format->frame_rate(),
@@ -142,66 +147,92 @@ void VirtualAudioDai::GetBufferForVA(
   }));
 }
 
+VirtualAudioDai::~VirtualAudioDai() {
+  if (ring_buffer_binding_.has_value()) {
+    ring_buffer_binding_->Unbind();
+  }
+  if (dai_binding_.has_value()) {
+    dai_binding_->Unbind();
+  }
+}
+
 void VirtualAudioDai::GetProperties(
     fidl::Server<fuchsia_hardware_audio::Dai>::GetPropertiesCompleter::Sync& completer) {
-  fidl::Arena arena;
+  auto parent = parent_.lock();
+  ZX_ASSERT(parent);
+
   fuchsia_hardware_audio::DaiProperties properties;
-  properties.is_input(dai_config().is_input());
+  if (config_.device_specific() && config_.device_specific()->dai() &&
+      config_.device_specific()->dai()->is_input()) {
+    properties.is_input(*config_.device_specific()->dai()->is_input());
+  }
   properties.unique_id(config_.unique_id());
   properties.product_name(config_.product_name());
   properties.manufacturer(config_.manufacturer_name());
-  ZX_ASSERT(dai_config().clock_properties().has_value());
-  properties.clock_domain(dai_config().clock_properties()->domain());
+  if (config_.device_specific() && config_.device_specific()->dai() &&
+      config_.device_specific()->dai()->clock_properties() &&
+      config_.device_specific()->dai()->clock_properties()->domain()) {
+    properties.clock_domain(*config_.device_specific()->dai()->clock_properties()->domain());
+  }
   completer.Reply(std::move(properties));
 }
 
 void VirtualAudioDai::GetDaiFormats(GetDaiFormatsCompleter::Sync& completer) {
-  completer.Reply(zx::ok(dai_config().dai_interconnect()->dai_supported_formats().value()));
+  std::vector<fuchsia_hardware_audio::DaiSupportedFormats> formats;
+  if (config_.device_specific() && config_.device_specific()->dai() &&
+      config_.device_specific()->dai()->dai_interconnect() &&
+      config_.device_specific()->dai()->dai_interconnect()->dai_supported_formats()) {
+    formats = *config_.device_specific()->dai()->dai_interconnect()->dai_supported_formats();
+  }
+  completer.Reply(zx::ok(std::move(formats)));
 }
 
 void VirtualAudioDai::GetRingBufferFormats(GetRingBufferFormatsCompleter::Sync& completer) {
-  auto& ring_buffer = dai_config().ring_buffer();
   std::vector<fuchsia_hardware_audio::SupportedFormats> all_formats;
-  for (auto& formats : ring_buffer->supported_formats().value()) {
-    fuchsia_hardware_audio::PcmSupportedFormats pcm_formats;
-    std::vector<fuchsia_hardware_audio::ChannelSet> channel_sets;
-    for (uint8_t number_of_channels = formats.min_channels();
-         number_of_channels <= formats.max_channels(); ++number_of_channels) {
-      // Vector with number_of_channels empty attributes.
-      std::vector<fuchsia_hardware_audio::ChannelAttributes> attributes(number_of_channels);
-      fuchsia_hardware_audio::ChannelSet channel_set;
-      channel_set.attributes(std::move(attributes));
-      channel_sets.push_back(std::move(channel_set));
-    }
-    pcm_formats.channel_sets(std::move(channel_sets));
+  if (config_.device_specific() && config_.device_specific()->dai() &&
+      config_.device_specific()->dai()->ring_buffer() &&
+      config_.device_specific()->dai()->ring_buffer()->supported_formats()) {
+    for (auto& formats : *config_.device_specific()->dai()->ring_buffer()->supported_formats()) {
+      fuchsia_hardware_audio::PcmSupportedFormats pcm_formats;
+      std::vector<fuchsia_hardware_audio::ChannelSet> channel_sets;
+      for (uint8_t number_of_channels = formats.min_channels();
+           number_of_channels <= formats.max_channels(); ++number_of_channels) {
+        // Vector with number_of_channels empty attributes.
+        std::vector<fuchsia_hardware_audio::ChannelAttributes> attributes(number_of_channels);
+        fuchsia_hardware_audio::ChannelSet channel_set;
+        channel_set.attributes(std::move(attributes));
+        channel_sets.push_back(std::move(channel_set));
+      }
+      pcm_formats.channel_sets(std::move(channel_sets));
 
-    std::vector<uint32_t> frame_rates;
-    audio_stream_format_range_t range;
-    range.sample_formats = formats.sample_format_flags();
-    range.min_frames_per_second = formats.min_frame_rate();
-    range.max_frames_per_second = formats.max_frame_rate();
-    range.min_channels = formats.min_channels();
-    range.max_channels = formats.max_channels();
-    range.flags = formats.rate_family_flags();
-    audio::utils::FrameRateEnumerator enumerator(range);
-    for (uint32_t frame_rate : enumerator) {
-      frame_rates.push_back(frame_rate);
-    }
-    pcm_formats.frame_rates(std::move(frame_rates));
+      std::vector<uint32_t> frame_rates;
+      audio_stream_format_range_t range;
+      range.sample_formats = formats.sample_format_flags();
+      range.min_frames_per_second = formats.min_frame_rate();
+      range.max_frames_per_second = formats.max_frame_rate();
+      range.min_channels = formats.min_channels();
+      range.max_channels = formats.max_channels();
+      range.flags = formats.rate_family_flags();
+      audio::utils::FrameRateEnumerator enumerator(range);
+      for (uint32_t frame_rate : enumerator) {
+        frame_rates.push_back(frame_rate);
+      }
+      pcm_formats.frame_rates(std::move(frame_rates));
 
-    std::vector<audio::utils::Format> formats2 =
-        audio::utils::GetAllFormats(formats.sample_format_flags());
-    for (audio::utils::Format& format : formats2) {
-      std::vector<fuchsia_hardware_audio::SampleFormat> sample_formats{format.format};
-      std::vector<uint8_t> bytes_per_sample{format.bytes_per_sample};
-      std::vector<uint8_t> valid_bits_per_sample{format.valid_bits_per_sample};
-      auto pcm_formats2 = pcm_formats;
-      pcm_formats2.sample_formats(std::move(sample_formats));
-      pcm_formats2.bytes_per_sample(std::move(bytes_per_sample));
-      pcm_formats2.valid_bits_per_sample(std::move(valid_bits_per_sample));
-      fuchsia_hardware_audio::SupportedFormats formats_entry;
-      formats_entry.pcm_supported_formats(std::move(pcm_formats2));
-      all_formats.push_back(std::move(formats_entry));
+      std::vector<audio::utils::Format> formats2 =
+          audio::utils::GetAllFormats(formats.sample_format_flags());
+      for (audio::utils::Format& format : formats2) {
+        std::vector<fuchsia_hardware_audio::SampleFormat> sample_formats{format.format};
+        std::vector<uint8_t> bytes_per_sample{format.bytes_per_sample};
+        std::vector<uint8_t> valid_bits_per_sample{format.valid_bits_per_sample};
+        auto pcm_formats2 = pcm_formats;
+        pcm_formats2.sample_formats(std::move(sample_formats));
+        pcm_formats2.bytes_per_sample(std::move(bytes_per_sample));
+        pcm_formats2.valid_bits_per_sample(std::move(valid_bits_per_sample));
+        fuchsia_hardware_audio::SupportedFormats formats_entry;
+        formats_entry.pcm_supported_formats(std::move(pcm_formats2));
+        all_formats.push_back(std::move(formats_entry));
+      }
     }
   }
   completer.Reply(zx::ok(std::move(all_formats)));
@@ -209,22 +240,32 @@ void VirtualAudioDai::GetRingBufferFormats(GetRingBufferFormatsCompleter::Sync& 
 
 void VirtualAudioDai::CreateRingBuffer(CreateRingBufferRequest& request,
                                        CreateRingBufferCompleter::Sync& completer) {
+  if (!request.ring_buffer_format().pcm_format() ||
+      !request.ring_buffer_format().pcm_format()->number_of_channels()) {
+    request.ring_buffer().Close(ZX_ERR_INVALID_ARGS);
+    return;
+  }
   ring_buffer_format_.emplace(request.ring_buffer_format());
   ring_buffer_active_channel_mask_ =
       (1 << ring_buffer_format_->pcm_format()->number_of_channels()) - 1;
   active_channel_set_time_ = zx::clock::get_monotonic();
   dai_format_.emplace(request.dai_format());
   fidl::OnUnboundFn<fidl::Server<fuchsia_hardware_audio::RingBuffer>> on_unbound =
-      [this](fidl::Server<fuchsia_hardware_audio::RingBuffer>*, fidl::UnbindInfo info,
-             fidl::ServerEnd<fuchsia_hardware_audio::RingBuffer>) {
-        // Do not log canceled cases which happens too often in particular in test cases.
-        if (info.status() != ZX_ERR_CANCELED && !info.is_peer_closed() &&
-            !info.is_user_initiated()) {
-          zxlogf(INFO, "Ring buffer channel closing: %s", info.FormatDescription().c_str());
+      [weak = weak_from_this()](fidl::Server<fuchsia_hardware_audio::RingBuffer>*,
+                                fidl::UnbindInfo info,
+                                fidl::ServerEnd<fuchsia_hardware_audio::RingBuffer>) {
+        if (auto self = weak.lock()) {
+          auto* dai = static_cast<VirtualAudioDai*>(self.get());
+          // Do not log canceled cases: happens too often in specific test cases.
+          if (info.status() != ZX_ERR_CANCELED && !info.is_peer_closed() &&
+              !info.is_user_initiated()) {
+            zxlogf(INFO, "Ring buffer channel closing: %s", info.FormatDescription().c_str());
+          }
+          dai->ResetRingBuffer();
         }
-        ResetRingBuffer();
       };
-  fidl::BindServer(dispatcher_, std::move(request.ring_buffer()), this, std::move(on_unbound));
+  ring_buffer_binding_ =
+      fidl::BindServer(dispatcher_, std::move(request.ring_buffer()), this, std::move(on_unbound));
 }
 
 void VirtualAudioDai::ResetRingBuffer() {
@@ -235,6 +276,7 @@ void VirtualAudioDai::ResetRingBuffer() {
   notifications_per_ring_ = 0;
   position_info_completer_.reset();
   delay_info_completer_.reset();
+  ring_buffer_binding_.reset();
   // We don't reset ring_buffer_format_ and dai_format_ to allow for retrieval for observability.
 }
 
@@ -242,28 +284,37 @@ void VirtualAudioDai::GetProperties(
     fidl::Server<fuchsia_hardware_audio::RingBuffer>::GetPropertiesCompleter::Sync& completer) {
   fidl::Arena arena;
   fuchsia_hardware_audio::RingBufferProperties properties;
-  auto& ring_buffer = dai_config().ring_buffer();
-  properties.needs_cache_flush_or_invalidate(false).driver_transfer_bytes(
-      ring_buffer->driver_transfer_bytes());
+  uint32_t transfer_bytes = 48;
+  if (config_.device_specific() && config_.device_specific()->dai() &&
+      config_.device_specific()->dai()->ring_buffer() &&
+      config_.device_specific()->dai()->ring_buffer()->driver_transfer_bytes()) {
+    transfer_bytes = *config_.device_specific()->dai()->ring_buffer()->driver_transfer_bytes();
+  }
+  properties.needs_cache_flush_or_invalidate(false).driver_transfer_bytes(transfer_bytes);
   completer.Reply(std::move(properties));
 }
 
 void VirtualAudioDai::GetVmo(GetVmoRequest& request, GetVmoCompleter::Sync& completer) {
+  if (!config_.device_specific() || !config_.device_specific()->dai() ||
+      !config_.device_specific()->dai()->ring_buffer()) {
+    completer.Close(ZX_ERR_BAD_STATE);
+    return;
+  }
   if (ring_buffer_mapper_.start() != nullptr) {
     ring_buffer_mapper_.Unmap();
   }
 
   uint32_t min_frames = 0;
   uint32_t modulo_frames = 1;
-  auto& ring_buffer = dai_config().ring_buffer();
-  if (ring_buffer->ring_buffer_constraints().has_value()) {
-    min_frames = ring_buffer->ring_buffer_constraints()->min_frames();
-    modulo_frames = ring_buffer->ring_buffer_constraints()->modulo_frames();
+  auto& ring_buffer = *config_.device_specific()->dai()->ring_buffer();
+  if (ring_buffer.ring_buffer_constraints().has_value()) {
+    min_frames = ring_buffer.ring_buffer_constraints()->min_frames();
+    modulo_frames = ring_buffer.ring_buffer_constraints()->modulo_frames();
   }
+  uint32_t driver_transfer_bytes = ring_buffer.driver_transfer_bytes().value_or(48);
   // The ring buffer must be at least min_frames + (rounded up) "driver transfer frames".
   num_ring_buffer_frames_ =
-      request.min_frames() +
-      ((ring_buffer->driver_transfer_bytes().value() + frame_size_ - 1) / frame_size_);
+      request.min_frames() + ((driver_transfer_bytes + frame_size_ - 1) / frame_size_);
 
   num_ring_buffer_frames_ = std::max(
       min_frames, fbl::round_up<uint32_t, uint32_t>(num_ring_buffer_frames_, modulo_frames));
@@ -372,9 +423,12 @@ void VirtualAudioDai::WatchClockRecoveryPositionInfo(
 void VirtualAudioDai::WatchDelayInfo(WatchDelayInfoCompleter::Sync& completer) {
   if (should_reply_to_delay_request_) {
     fuchsia_hardware_audio::DelayInfo delay_info;
-    auto& ring_buffer = dai_config().ring_buffer().value();
-    delay_info.internal_delay(ring_buffer.internal_delay());
-    delay_info.external_delay(ring_buffer.external_delay());
+    if (config_.device_specific() && config_.device_specific()->dai() &&
+        config_.device_specific()->dai()->ring_buffer()) {
+      auto& ring_buffer = *config_.device_specific()->dai()->ring_buffer();
+      delay_info.internal_delay(ring_buffer.internal_delay());
+      delay_info.external_delay(ring_buffer.external_delay());
+    }
     completer.Reply(std::move(delay_info));
     should_reply_to_delay_request_ = false;
     return;
@@ -396,7 +450,11 @@ void VirtualAudioDai::WatchDelayInfo(WatchDelayInfoCompleter::Sync& completer) {
 void VirtualAudioDai::SetActiveChannels(
     fuchsia_hardware_audio::RingBufferSetActiveChannelsRequest& request,
     SetActiveChannelsCompleter::Sync& completer) {
-  ZX_ASSERT(ring_buffer_format_);  // A RingBuffer must exist, for this FIDL method to be called.
+  if (!ring_buffer_format_ || !ring_buffer_format_->pcm_format() ||
+      !ring_buffer_format_->pcm_format()->number_of_channels()) {
+    completer.Reply(zx::error(ZX_ERR_BAD_STATE));
+    return;
+  }
 
   uint64_t max_channel_bitmask = (1 << ring_buffer_format_->pcm_format()->number_of_channels()) - 1;
   if (request.active_channels_bitmask() > max_channel_bitmask) {
@@ -413,8 +471,8 @@ void VirtualAudioDai::SetActiveChannels(
   completer.Reply(zx::ok(active_channel_set_time_.get()));
 }
 
-// Complain loudly but don't close the connection, since it is possible for this test fixture to be
-// used with a client that is built with a newer SDK version.
+// Complain loudly but don't close the connection, since it is possible for this test fixture to
+// be used with a client that is built with a newer SDK version.
 void VirtualAudioDai::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_audio::RingBuffer> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
@@ -422,8 +480,24 @@ void VirtualAudioDai::handle_unknown_method(
          metadata.method_ordinal);
 }
 
-void VirtualAudioDai::ShutdownAsync() { DdkAsyncRemove(); }
+void VirtualAudioDai::ShutdownAsync() {
+  if (ring_buffer_binding_.has_value()) {
+    ring_buffer_binding_->Unbind();
+  }
+  if (dai_binding_.has_value()) {
+    dai_binding_->Unbind();
+  }
+  DdkAsyncRemove();
+}
 
-void VirtualAudioDai::DdkRelease() { OnShutdown(); }
+void VirtualAudioDai::DdkRelease() {
+  if (ring_buffer_binding_.has_value()) {
+    ring_buffer_binding_->Unbind();
+  }
+  if (dai_binding_.has_value()) {
+    dai_binding_->Unbind();
+  }
+  OnShutdown();
+}
 
 }  // namespace virtual_audio

@@ -101,7 +101,7 @@ class VirtualAudioDevice : public fidl::WireServer<fuchsia_virtualaudio::Device>
   std::optional<fidl::ServerBindingRef<fuchsia_virtualaudio::Device>> binding_;
 
   // Will be set to `std::nullptr` when the driver is completely shutdown.
-  std::unique_ptr<VirtualAudioDriver> driver_;
+  std::shared_ptr<VirtualAudioDriver> driver_;
 
   // Called when `binding_` is unbound and `driver_` is shutdown.
   fit::closure on_shutdown_;

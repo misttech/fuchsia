@@ -92,7 +92,10 @@ void VirtualAudioLegacy::GetDefaultConfiguration(
 void VirtualAudioLegacy::AddDevice(AddDeviceRequestView request,
                                    AddDeviceCompleter::Sync& completer) {
   auto config = fidl::ToNatural(request->config);
-  ZX_ASSERT(config.device_specific().has_value());
+  if (!config.device_specific().has_value()) {
+    completer.ReplyError(fuchsia_virtualaudio::wire::Error::kInvalidArgs);
+    return;
+  }
   auto device_id = next_device_id_++;
   auto result = VirtualAudioDevice::Create(config, std::move(request->server), parent_,
                                            [this, device_id]() { OnDeviceShutdown(device_id); });

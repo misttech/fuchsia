@@ -33,7 +33,11 @@ class VirtualAudioDai final : public VirtualAudioDaiDeviceType,
   VirtualAudioDai(fuchsia_virtualaudio::Configuration config,
                   std::weak_ptr<VirtualAudioDevice> owner, zx_device_t* parent,
                   fit::closure on_shutdown);
-  void ResetDaiState() { connected_ = false; }
+  ~VirtualAudioDai() override;
+  void ResetDaiState() {
+    connected_ = false;
+    dai_binding_.reset();
+  }
   void ShutdownAsync() override;
   void DdkRelease();
 
@@ -52,10 +56,14 @@ class VirtualAudioDai final : public VirtualAudioDaiDeviceType,
       return;
     }
     connected_ = true;
-    fidl::BindServer(
-        dispatcher_, std::move(request->dai_protocol), this,
-        [](VirtualAudioDai* dai_instance, fidl::UnbindInfo,
-           fidl::ServerEnd<fuchsia_hardware_audio::Dai>) { dai_instance->ResetDaiState(); });
+    dai_binding_ =
+        fidl::BindServer(dispatcher_, std::move(request->dai_protocol), this,
+                         [weak = weak_from_this()](VirtualAudioDai*, fidl::UnbindInfo,
+                                                   fidl::ServerEnd<fuchsia_hardware_audio::Dai>) {
+                           if (auto self = weak.lock()) {
+                             static_cast<VirtualAudioDai*>(self.get())->ResetDaiState();
+                           }
+                         });
   }
 
   // FIDL natural C++ methods for fuchsia.hardware.audio.Dai.
@@ -101,6 +109,8 @@ class VirtualAudioDai final : public VirtualAudioDaiDeviceType,
   static int instance_count_;
   char instance_name_[64];
   bool connected_ = false;
+  std::optional<fidl::ServerBindingRef<fuchsia_hardware_audio::Dai>> dai_binding_;
+  std::optional<fidl::ServerBindingRef<fuchsia_hardware_audio::RingBuffer>> ring_buffer_binding_;
 
   fzl::VmoMapper ring_buffer_mapper_;
   uint32_t notifications_per_ring_ = 0;

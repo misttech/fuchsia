@@ -4,6 +4,8 @@
 #ifndef SRC_MEDIA_AUDIO_DRIVERS_VIRTUAL_AUDIO_LEGACY_VIRTUAL_AUDIO_DRIVER_H_
 #define SRC_MEDIA_AUDIO_DRIVERS_VIRTUAL_AUDIO_LEGACY_VIRTUAL_AUDIO_DRIVER_H_
 
+#include <memory>
+
 #include "src/media/audio/drivers/virtual-audio-legacy/virtual-audio-device.h"
 
 namespace virtual_audio {
@@ -29,7 +31,7 @@ struct CurrentPosition {
   uint32_t ring_position;
 };
 
-class VirtualAudioDriver {
+class VirtualAudioDriver : public std::enable_shared_from_this<VirtualAudioDriver> {
  public:
   using ErrorT = fuchsia_virtualaudio::Error;
 

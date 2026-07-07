@@ -57,10 +57,12 @@ class VirtualAudioStream : public audio::SimpleAudioStream {
   VirtualAudioStream(const fuchsia_virtualaudio::Configuration& cfg,
                      std::weak_ptr<VirtualAudioDevice> parent, zx_device_t* dev_node,
                      fit::closure on_shutdown)
-      // StreamConfig is either input or output;
-      // if direction is unspecified the is_input field access will assert.
+      // StreamConfig is either input or output (if unspecified then output).
       : audio::SimpleAudioStream(dev_node,
-                                 cfg.device_specific()->stream_config()->is_input().value()),
+                                 cfg.device_specific() && cfg.device_specific()->stream_config() &&
+                                         cfg.device_specific()->stream_config()->is_input()
+                                     ? *cfg.device_specific()->stream_config()->is_input()
+                                     : false),
         config_(cfg),
         parent_(std::move(parent)),
         on_shutdown_(std::move(on_shutdown)) {}

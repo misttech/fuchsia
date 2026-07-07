@@ -20,15 +20,27 @@ fit::result<fuchsia_virtualaudio::Error, std::shared_ptr<VirtualAudioDevice>>
 VirtualAudioDevice::Create(const fuchsia_virtualaudio::Configuration& cfg,
                            fidl::ServerEnd<fuchsia_virtualaudio::Device> server,
                            zx_device_t* dev_node, fit::closure on_shutdown) {
+  if (!cfg.device_specific().has_value()) {
+    return fit::error(fuchsia_virtualaudio::Error::kInternal);
+  }
   std::optional<bool> is_input;
   switch (cfg.device_specific()->Which()) {
     case fuchsia_virtualaudio::DeviceSpecific::Tag::kCodec:
+      if (!cfg.device_specific()->codec().has_value()) {
+        return fit::error(fuchsia_virtualaudio::Error::kInternal);
+      }
       is_input = cfg.device_specific()->codec()->is_input();
       break;
     case fuchsia_virtualaudio::DeviceSpecific::Tag::kDai:
+      if (!cfg.device_specific()->dai().has_value()) {
+        return fit::error(fuchsia_virtualaudio::Error::kInternal);
+      }
       is_input = cfg.device_specific()->dai()->is_input();
       break;
     case fuchsia_virtualaudio::DeviceSpecific::Tag::kStreamConfig:
+      if (!cfg.device_specific()->stream_config().has_value()) {
+        return fit::error(fuchsia_virtualaudio::Error::kInternal);
+      }
       is_input = cfg.device_specific()->stream_config()->is_input();
       break;
     default:
@@ -43,17 +55,17 @@ VirtualAudioDevice::Create(const fuchsia_virtualaudio::Configuration& cfg,
 
   switch (cfg.device_specific()->Which()) {
     case fuchsia_virtualaudio::DeviceSpecific::Tag::kCodec:
-      device->driver_ = std::make_unique<VirtualAudioCodec>(
+      device->driver_ = std::make_shared<VirtualAudioCodec>(
           cfg, device, dev_node,
           fit::bind_member<&VirtualAudioDevice::OnDriverShutdown>(device.get()));
       break;
     case fuchsia_virtualaudio::DeviceSpecific::Tag::kDai:
-      device->driver_ = std::make_unique<VirtualAudioDai>(
+      device->driver_ = std::make_shared<VirtualAudioDai>(
           cfg, device, dev_node,
           fit::bind_member<&VirtualAudioDevice::OnDriverShutdown>(device.get()));
       break;
     case fuchsia_virtualaudio::DeviceSpecific::Tag::kStreamConfig:
-      device->driver_ = std::make_unique<VirtualAudioStreamWrapper>(
+      device->driver_ = std::make_shared<VirtualAudioStreamWrapper>(
           cfg, device, dev_node,
           fit::bind_member<&VirtualAudioDevice::OnDriverShutdown>(device.get()));
       break;
@@ -111,6 +123,10 @@ void VirtualAudioDevice::ShutdownAsync() {
   if (binding_.has_value()) {
     // The unbinding will trigger a callback to shutdown the driver.
     binding_->Unbind();
+  } else if (driver_ != nullptr) {
+    driver_->ShutdownAsync();
+  } else {
+    on_shutdown_();
   }
 }
 

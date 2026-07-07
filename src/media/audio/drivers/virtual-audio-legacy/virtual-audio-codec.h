@@ -30,6 +30,7 @@ class VirtualAudioCodec : public VirtualAudioCodecDeviceType,
   VirtualAudioCodec(fuchsia_virtualaudio::Configuration config,
                     std::weak_ptr<VirtualAudioDevice> owner, zx_device_t* parent,
                     fit::closure on_shutdown);
+  ~VirtualAudioCodec() override;
   void ResetCodecState();
 
   void DdkRelease();
@@ -66,6 +67,7 @@ class VirtualAudioCodec : public VirtualAudioCodecDeviceType,
   static int instance_count_;
   char instance_name_[64];
   bool connected_ = false;
+  std::optional<fidl::ServerBindingRef<fuchsia_hardware_audio::Codec>> codec_binding_;
   std::optional<fuchsia_hardware_audio::DaiFormat> dai_format_;
   fuchsia_virtualaudio::Configuration config_;
 
