@@ -38,9 +38,13 @@ impl<T> Deref for CppArray<'_, T> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
-        // SAFETY: The `CPPArray` is constructed from valid slices or arrays,
-        // ensuring `self.ptr` points to `self.len` elements of type `T`.
-        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+        if self.len == 0 || self.ptr.is_null() {
+            &[]
+        } else {
+            // SAFETY: The `CPPArray` is constructed from valid slices or arrays,
+            // ensuring `self.ptr` points to `self.len` elements of type `T`.
+            unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+        }
     }
 }
 
@@ -71,12 +75,16 @@ impl Deref for CppString<'_> {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
-        // SAFETY: CppString is always constructed from valid UTF-8.
-        unsafe {
-            std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                self.inner.ptr,
-                self.inner.len,
-            ))
+        if self.inner.len == 0 || self.inner.ptr.is_null() {
+            ""
+        } else {
+            // SAFETY: CppString is always constructed from valid UTF-8.
+            unsafe {
+                std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+                    self.inner.ptr,
+                    self.inner.len,
+                ))
+            }
         }
     }
 }
@@ -688,5 +696,36 @@ mod test {
         assert!(res.0.is_some());
         let log_message = res.0.unwrap();
         assert_eq!(&*log_message.message, "status=\"ok\" code=200");
+    }
+
+    #[fuchsia::test]
+    fn test_cpp_array_and_string_deref_handles_null_and_zero_len() {
+        use std::ops::Deref;
+
+        // Test CppArray deref handles null pointer or zero length
+        let empty_array: CppArray<'_, u32> =
+            CppArray { len: 0, ptr: std::ptr::null(), phantom: PhantomData };
+        assert_eq!(empty_array.deref(), &[] as &[u32]);
+
+        let zero_len_array: CppArray<'_, u32> =
+            CppArray { len: 0, ptr: 0x1234 as *const u32, phantom: PhantomData };
+        assert_eq!(zero_len_array.deref(), &[] as &[u32]);
+
+        let null_ptr_array: CppArray<'_, u32> =
+            CppArray { len: 5, ptr: std::ptr::null(), phantom: PhantomData };
+        assert_eq!(null_ptr_array.deref(), &[] as &[u32]);
+
+        // Test CppString deref handles null pointer or zero length
+        let empty_string = CppString::default();
+        assert_eq!(empty_string.deref(), "");
+
+        let zero_len_string = CppString {
+            inner: CppArray { len: 0, ptr: 0x1234 as *const u8, phantom: PhantomData },
+        };
+        assert_eq!(zero_len_string.deref(), "");
+
+        let null_ptr_string =
+            CppString { inner: CppArray { len: 5, ptr: std::ptr::null(), phantom: PhantomData } };
+        assert_eq!(null_ptr_string.deref(), "");
     }
 }
