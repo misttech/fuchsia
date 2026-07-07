@@ -2199,7 +2199,7 @@ impl ObjectStore {
             // We must populate the cache before calling flush, because flush itself does not top up
             // the cache (it avoids calling crypt).
             self.pre_cache_keys().await?;
-            self.flush_with_reason(flush::Reason::Unlock).await?;
+            self.flush_with_reason(flush::Reason::PostMount).await?;
 
             // Reap purged files within this store.
             let _ = self.filesystem().graveyard().initial_reap(&self).await?;

@@ -28,8 +28,9 @@ pub enum Reason {
     /// Journal memory or space pressure.
     Journal,
 
-    /// After unlock and replay of encrypted mutations.
-    Unlock,
+    /// After replay of encrypted mutations, or to upgrade lsm tree versions. If neither of these
+    /// things actually needs to be done, it will be a no-op.
+    PostMount,
 }
 
 #[fxfs_trace::trace]
@@ -54,15 +55,15 @@ impl ObjectStore {
         }
 
         match reason {
-            Reason::Unlock => {
+            Reason::PostMount => {
                 // If we're unlocking, only flush if there are encrypted mutations currently stored
-                // in a file.  We don't worry if they're in memory because a flush should get
-                // triggered when the journal gets full.
+                // in a file or the version needs to be updated.  We don't worry if the mutations
+                // are in memory because a flush should get triggered when the journal gets full.
                 // Safe to unwrap store_info here because this was invoked from ObjectStore::unlock,
                 // so store_info is already accessible.
-                if self.store_info().unwrap().encrypted_mutations_object_id == INVALID_OBJECT_ID {
-                    // TODO(https://fxbug.dev/42179266): Add earliest_version support for encrypted
-                    // mutations.
+                if self.store_info().unwrap().encrypted_mutations_object_id == INVALID_OBJECT_ID
+                    && self.tree.get_earliest_version() == LATEST_VERSION
+                {
                     // Early exit, but still return the earliest version used by a struct in the
                     // tree.
                     return Ok(self.tree.get_earliest_version());

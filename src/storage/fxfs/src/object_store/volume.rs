@@ -5,6 +5,7 @@
 use crate::errors::FxfsError;
 use crate::filesystem::FxFilesystem;
 use crate::object_store::directory::Directory;
+use crate::object_store::flush::Reason;
 use crate::object_store::transaction::{LockKeys, Mutation, Options, Transaction, lock_keys};
 use crate::object_store::tree_cache::TreeCache;
 use crate::object_store::{
@@ -118,6 +119,9 @@ impl RootVolume {
             store.unlock_inner(crypt, read_only).await.context("Failed to unlock volume")?;
         } else if store.is_locked() {
             bail!(FxfsError::AccessDenied);
+        }
+        if !self.filesystem.options().read_only {
+            store.flush_with_reason(Reason::PostMount).await?;
         }
         Ok(store)
     }
@@ -313,15 +317,22 @@ mod tests {
     use super::root_volume;
     use crate::filesystem::{FxFilesystem, JournalingObject, SyncOptions};
     use crate::fsck::{FsckOptions, fsck_volume_with_options, fsck_with_options};
+    use crate::lsm_tree::persistent_layer::PersistentLayerWriter;
+    use crate::lsm_tree::types::LayerWriter as _;
     use crate::object_handle::{ObjectHandle, WriteObjectHandle};
     use crate::object_store::directory::Directory;
     use crate::object_store::transaction::{Options, lock_keys};
-    use crate::object_store::{LockKey, NewChildStoreOptions, StoreOptions};
-    use fxfs_crypto::Crypt;
+    use crate::object_store::{
+        DirectWriter, HandleOptions, LockKey, NewChildStoreOptions, ObjectKey, ObjectStore,
+        ObjectValue, StoreOptions,
+    };
+    use crate::serialized_types::{EARLIEST_SUPPORTED_VERSION, LATEST_VERSION};
+    use fxfs_crypto::{Crypt, EncryptionKey, KeyPurpose};
     use fxfs_insecure_crypto::new_insecure_crypt;
     use std::sync::Arc;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
+    use test_case::test_case;
 
     async fn do_fsck(
         fs: &Arc<FxFilesystem>,
@@ -652,5 +663,120 @@ mod tests {
             assert_eq!(vol.guid(), guid);
         }
         fs.close().await.unwrap();
+    }
+
+    #[test_case(false; "unencrypted")]
+    #[test_case(true; "encrypted")]
+    #[fuchsia::test]
+    async fn test_flush_on_open_to_update_version(encrypted: bool) {
+        // Can't test it if we don't have any versions that we can migrate between.
+        if LATEST_VERSION == EARLIEST_SUPPORTED_VERSION {
+            return;
+        }
+
+        let device = DeviceHolder::new(FakeDevice::new(8192, 1024));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let crypt: Option<Arc<dyn Crypt>> =
+            if encrypted { Some(Arc::new(new_insecure_crypt())) } else { None };
+        {
+            let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
+            let store = root_vol
+                .new_volume(
+                    "test",
+                    NewChildStoreOptions {
+                        options: StoreOptions { crypt: crypt.clone(), ..StoreOptions::default() },
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("new_volume failed");
+
+            let parent_store = store.parent_store().unwrap();
+            let txn_options = Options {
+                skip_journal_checks: true,
+                skip_key_roll: true,
+                borrow_metadata_space: true,
+                allocator_reservation: Some(fs.object_manager().metadata_reservation()),
+                ..Default::default()
+            };
+            let mut transaction = parent_store
+                .new_transaction(lock_keys![], txn_options)
+                .await
+                .expect("new_transaction failed");
+            let new_layer_object = if let Some(crypt) = &crypt {
+                let raw_id = parent_store.get_next_object_id().await.unwrap();
+                let (fxfs_key, unwrapped_key) =
+                    crypt.create_key(raw_id.get(), KeyPurpose::Data).await.unwrap();
+                ObjectStore::create_object_with_key(
+                    &parent_store,
+                    &mut transaction,
+                    raw_id,
+                    HandleOptions { skip_journal_checks: true, ..Default::default() },
+                    EncryptionKey::Fxfs(fxfs_key),
+                    unwrapped_key,
+                )
+                .await
+                .expect("create_object_with_key failed")
+            } else {
+                ObjectStore::create_object(
+                    &parent_store,
+                    &mut transaction,
+                    HandleOptions { skip_journal_checks: true, ..Default::default() },
+                    None,
+                )
+                .await
+                .expect("create_object failed")
+            };
+            transaction.commit().await.expect("commit failed");
+
+            // Add an empty layer to the set with the old version.
+            {
+                let layer_writer = DirectWriter::new(&new_layer_object, txn_options).await;
+                let writer = PersistentLayerWriter::<_, ObjectKey, ObjectValue>::new_with_version(
+                    layer_writer,
+                    0,
+                    fs.block_size(),
+                    EARLIEST_SUPPORTED_VERSION,
+                )
+                .await
+                .expect("writer failed");
+                writer.complete().await.expect("writer complete failed");
+            }
+
+            let mut store_info = store.load_store_info().await.unwrap();
+            store_info.layers = vec![new_layer_object.object_id()];
+            let mut end_transaction = parent_store
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        parent_store.store_object_id(),
+                        store.store_info_handle_object_id().unwrap()
+                    )],
+                    txn_options,
+                )
+                .await
+                .expect("new_transaction failed");
+            store
+                .write_store_info(&mut end_transaction, &store_info)
+                .await
+                .expect("write_store_info failed");
+            end_transaction.commit().await.expect("commit failed");
+        }
+        fs.close().await.expect("close failed");
+
+        // Re-open filesystem.
+        let device = fs.take_device().await;
+        device.reopen(false);
+        let fs = FxFilesystem::open(device).await.expect("open failed");
+        let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
+        let store = root_vol
+            .volume("test", StoreOptions { crypt: crypt.clone(), ..StoreOptions::default() })
+            .await
+            .expect("volume failed");
+
+        assert_eq!(store.tree.get_earliest_version(), LATEST_VERSION);
+        // Should have exactly 1 flush despite being called twice in the encrypted case.
+        assert_eq!(store.counters.lock().num_flushes, 1);
+
+        fs.close().await.expect("close failed");
     }
 }
