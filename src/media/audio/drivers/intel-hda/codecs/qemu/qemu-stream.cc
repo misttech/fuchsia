@@ -54,11 +54,19 @@ zx_status_t QemuStream::OnActivateLocked() {
 
   audio_proto::FormatRange range;
   range.sample_formats = AUDIO_SAMPLE_FORMAT_16BIT;
-  range.min_channels = 1;
-  range.max_channels = 2;
-  range.min_frames_per_second = 16000;
-  range.max_frames_per_second = 96000;
-  range.flags = ASF_RANGE_FLAG_FPS_48000_FAMILY | ASF_RANGE_FLAG_FPS_44100_FAMILY;
+  if (is_input()) {
+    range.min_channels = 1;
+    range.max_channels = 1;
+    range.min_frames_per_second = 16000;
+    range.max_frames_per_second = 16000;
+    range.flags = ASF_RANGE_FLAG_FPS_48000_FAMILY;
+  } else {
+    range.min_channels = 1;
+    range.max_channels = 2;
+    range.min_frames_per_second = 16000;
+    range.max_frames_per_second = 96000;
+    range.flags = ASF_RANGE_FLAG_FPS_48000_FAMILY | ASF_RANGE_FLAG_FPS_44100_FAMILY;
+  }
 
   fbl::AllocChecker ac;
   supported_formats.push_back(range, &ac);

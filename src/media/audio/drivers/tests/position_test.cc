@@ -155,6 +155,10 @@ void PositionTest::ValidatePositionInfo() {
                       << std::setw(21) << notifications_[idx].arrival_time  //
                       << std::setw(12) << arrival_delta;
       }
+      FX_LOGS(INFO) << "Expected values:     " << std::setw(8)
+                    << ring_buffer_bytes / notifications_per_ring() << "                     "
+                    << std::setw(12) << nsec_per_notif << "                     " << std::setw(12)
+                    << nsec_per_notif;
     }
   }
 }
@@ -175,6 +179,11 @@ void PositionTest::ValidatePositionInfo() {
 DEFINE_POSITION_TEST_CLASS(PositionNotifyFast, {
   constexpr auto kNotifsPerRingBuffer = 32u;
   ASSERT_NO_FAILURE_OR_SKIP(RetrieveProperties());
+  if (properties() && properties()->manufacturer == "QEMU" &&
+      properties()->is_input.value_or(false)) {
+    GTEST_SKIP()
+        << "*** QEMU audio input claims 16k but actually runs at 12.8k. Skipping this test. ***";
+  }
   ASSERT_NO_FAILURE_OR_SKIP(RetrieveRingBufferFormats());
   ASSERT_NO_FAILURE_OR_SKIP(RequestRingBufferChannelWithMaxFormat());
   ASSERT_NO_FAILURE_OR_SKIP(RequestRingBufferProperties());
