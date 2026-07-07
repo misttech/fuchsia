@@ -150,7 +150,6 @@ __BEGIN_CDECLS
   } while (0)
 
 #ifndef NTRACE
-// TODO(fmeawad): The generated code for this macro is too big (https://fxbug.dev/42096981)
 #define TRACE_INTERNAL_DECLARE_DURATION_SCOPE(variable, args_variable, category_literal,         \
                                               name_literal, args...)                             \
   TRACE_INTERNAL_HOLD_ARGS(args_variable, args);                                                 \
