@@ -7,7 +7,7 @@
 use crate::deps::{self, DatagramInfo, Instant as _, Socket as _};
 use crate::inspect::{
     Counters, MessagingRelatedCounters, RebindingCounters, RenewingCounters, RequestingCounters,
-    SelectingCounters, record_optional_duration_secs,
+    SelectingCounters,
 };
 use crate::parse::{
     FieldsFromOfferToUseInRequest, FieldsToRetainFromAck, FieldsToRetainFromNak, OptionCodeMap,
@@ -280,7 +280,7 @@ impl<I: deps::Instant> State<I> {
                         let newly_acquired_lease = NewlyAcquiredLease {
                             ip_address: *yiaddr,
                             start_time: *start_time,
-                            lease_time: *ip_address_lease_time,
+                            lease_time: *ip_address_lease_time.as_ref(),
                             parameters,
                         };
                         Ok(Step::NextState(Transition::BoundWithNewLease(
@@ -354,7 +354,7 @@ impl<I: deps::Instant> State<I> {
                         } = &lease_state;
                         let lease_renewal = LeaseRenewal {
                             start_time: *start_time,
-                            lease_time: *ip_address_lease_time,
+                            lease_time: *ip_address_lease_time.as_ref(),
                             parameters,
                         };
                         Ok(Step::NextState(Transition::BoundWithRenewedLease(
@@ -375,7 +375,7 @@ impl<I: deps::Instant> State<I> {
                         let new_lease = NewlyAcquiredLease {
                             ip_address: *yiaddr,
                             start_time: *start_time,
-                            lease_time: *ip_address_lease_time,
+                            lease_time: *ip_address_lease_time.as_ref(),
                             parameters,
                         };
                         Ok(Step::NextState(Transition::BoundWithNewLease(
@@ -447,7 +447,7 @@ impl<I: deps::Instant> State<I> {
                         } = &lease_state;
                         let renewal = LeaseRenewal {
                             start_time: *start_time,
-                            lease_time: *ip_address_lease_time,
+                            lease_time: *ip_address_lease_time.as_ref(),
                             parameters,
                         };
                         Ok(Step::NextState(Transition::BoundWithRenewedLease(
@@ -468,7 +468,7 @@ impl<I: deps::Instant> State<I> {
                         let new_lease = NewlyAcquiredLease {
                             ip_address: *yiaddr,
                             start_time: *start_time,
-                            lease_time: *ip_address_lease_time,
+                            lease_time: *ip_address_lease_time.as_ref(),
                             parameters,
                         };
                         Ok(Step::NextState(Transition::BoundWithNewLease(
@@ -1480,7 +1480,23 @@ impl<I: deps::Instant> Requesting<I> {
                     .context("error extracting needed fields from DHCP message during Requesting")
                     .map(|(fields, soft_errors)| {
                         messaging.increment_soft_errors(soft_errors);
-                        Some((src_addr, fields))
+                        fields
+                    })
+                    .map(|fields| {
+                        // If the DHCP Server did not provide an IP Address
+                        // Lease Time in the DHCPACK, this is in violation of
+                        // the RFC, but we accept the ACK regardless for
+                        // compatibility and fall back to the lease length from
+                        // the offer if one was included, or
+                        // `DEFAULT_LEASE_TIME` if not.
+                        let fallback_lease_time = fields_from_offer_to_use_in_request
+                            .ip_address_lease_time_secs
+                            .map(|t| Duration::from_secs(t.get().into()));
+                        let (validated, soft_errors) =
+                            validate_response_to_request(fields, fallback_lease_time);
+                        soft_errors.increment(&messaging);
+
+                        Some((src_addr, validated))
                     })
                 },
                 *debug_log_prefix,
@@ -1498,9 +1514,9 @@ impl<I: deps::Instant> Requesting<I> {
             .fuse()
         );
 
-        let (src_addr, fields_to_retain) = select_biased! {
-            fields_to_retain_result = ack_or_nak_stream.select_next_some() => {
-                fields_to_retain_result?
+        let (src_addr, validated) = select_biased! {
+            validated_result = ack_or_nak_stream.select_next_some() => {
+                validated_result?
             },
             () = stop_receiver.select_next_some() => {
                 return Ok(RequestingOutcome::GracefulShutdown)
@@ -1512,15 +1528,15 @@ impl<I: deps::Instant> Requesting<I> {
             }
         };
 
-        match fields_to_retain {
-            crate::parse::IncomingResponseToRequest::Ack(ack) => {
+        match validated {
+            ValidatedResponse::Ack { ack, lease_time, renewal_time, rebinding_time } => {
                 log_ack(&debug_log_prefix, &src_addr, &ack);
                 let FieldsToRetainFromAck {
                     yiaddr,
                     server_identifier,
-                    ip_address_lease_time_secs,
-                    renewal_time_value_secs,
-                    rebinding_time_value_secs,
+                    ip_address_lease_time_secs: _,
+                    renewal_time_value_secs: _,
+                    rebinding_time_value_secs: _,
                     parameters,
                 } = ack;
                 let server_identifier = server_identifier.unwrap_or({
@@ -1532,56 +1548,31 @@ impl<I: deps::Instant> Requesting<I> {
                     *server_identifier
                 });
 
-                let ip_address_lease_time = match ip_address_lease_time_secs {
-                    Some(lease_time) => Duration::from_secs(lease_time.get().into()),
-                    None => {
-                        // The DHCP Server did not provide an IP Address Lease
-                        // Time in the DHCPACK. This is in violation of the RFC,
-                        // but we accept the ACK regardless for compatibility.
-                        //
-                        // Prefer the lease length from the offer, if one was
-                        // included, otherwise fall back to the default.
+                match lease_time {
+                    RelativeTime::Explicit(_) => {}
+                    r @ (RelativeTime::Previous(_) | RelativeTime::Default(_)) => {
                         messaging.recv_ack_no_addr_lease_time.increment();
-                        match fields_from_offer_to_use_in_request.ip_address_lease_time_secs {
-                            Some(lease_time) => {
-                                let lease_time = Duration::from_secs(lease_time.get().into());
-                                log::warn!(
-                                    "{debug_log_prefix} accepting DHCPACK from {src_addr} that did \
-                                    not provide an IP Address Lease Time. Falling back to the \
-                                    lease time from the DHCPOFFER: {lease_time:?}."
-                                );
-                                lease_time
-                            }
-                            None => {
-                                log::warn!(
-                                    "{debug_log_prefix} accepting DHCPACK from {src_addr} that did \
-                                    not provide an IP Address Lease Time. Falling back to the \
-                                    default: {DEFAULT_LEASE_TIME:?}."
-                                );
-                                DEFAULT_LEASE_TIME
-                            }
-                        }
+                        log::warn!(
+                            "{debug_log_prefix} accepting DHCPACK from {src_addr} that did \
+                            not provide an IP Address Lease Time. Using {r:?} instead."
+                        );
                     }
-                };
+                }
 
                 Ok(RequestingOutcome::Bound(
                     LeaseState {
                         discover_options: discover_options.clone(),
                         yiaddr,
                         server_identifier,
-                        ip_address_lease_time,
-                        renewal_time: renewal_time_value_secs
-                            .map(u64::from)
-                            .map(Duration::from_secs),
-                        rebinding_time: rebinding_time_value_secs
-                            .map(u64::from)
-                            .map(Duration::from_secs),
+                        ip_address_lease_time: lease_time,
+                        renewal_time,
+                        rebinding_time,
                         start_time: *start_time,
                     },
                     parameters,
                 ))
             }
-            crate::parse::IncomingResponseToRequest::Nak(nak) => {
+            ValidatedResponse::Nak(nak) => {
                 log_nak(&debug_log_prefix, &src_addr, &nak);
                 recv_nak.increment();
                 Ok(RequestingOutcome::Nak(nak))
@@ -1687,10 +1678,10 @@ pub struct LeaseState<I> {
     discover_options: DiscoverOptions,
     yiaddr: SpecifiedAddr<net_types::ip::Ipv4Addr>,
     server_identifier: SpecifiedAddr<net_types::ip::Ipv4Addr>,
-    ip_address_lease_time: Duration,
+    ip_address_lease_time: RelativeTime,
     start_time: I,
-    renewal_time: Option<Duration>,
-    rebinding_time: Option<Duration>,
+    renewal_time: RelativeTime,
+    rebinding_time: RelativeTime,
 }
 
 impl<I: deps::Instant> Bound<I> {
@@ -1759,7 +1750,7 @@ async fn do_bound_awaiting_assignment<I: deps::Instant, C: deps::Clock<Instant =
     // `start_time`, we'll simply wait for times in the past, which
     // will allow the client to proceed to the renewing/rebinding
     // phases without waiting.
-    let lease_timeout_fut = time.wait_until(start_time.add(*ip_address_lease_time)).fuse();
+    let lease_timeout_fut = time.wait_until(start_time.add(*ip_address_lease_time.as_ref())).fuse();
     let mut lease_timeout_fut = pin!(lease_timeout_fut);
 
     let mut address_removed_or_assigned = pin!(address_event_receiver.filter_map(async |event| {
@@ -1830,16 +1821,13 @@ async fn do_bound_assigned<I: deps::Instant, C: deps::Clock<Instant = I>, R>(
         rebinding_time: _,
     } = lease_state;
 
-    // Per RFC 2131 section 4.4.5, "T1 defaults to
-    // (0.5 * duration_of_lease)". (T1 is how the RFC refers to the
-    // time at which we transition to Renewing.)
-    let renewal_time = renewal_time.unwrap_or(*ip_address_lease_time / 2);
+    let renewal_time = *renewal_time.as_ref();
 
     let debug_log_prefix = &client_config.debug_log_prefix;
     log::info!(
         "{debug_log_prefix} In Bound state; ip_address_lease_time = {}, \
         renewal_time = {}, server_identifier = {server_identifier}",
-        ip_address_lease_time.as_secs(),
+        ip_address_lease_time.as_ref().as_secs(),
         renewal_time.as_secs(),
     );
 
@@ -1888,9 +1876,13 @@ impl<I: deps::Instant> LeaseState<I> {
         discover_options.record(inspector);
         inspector.record_ip_addr("Yiaddr", **yiaddr);
         inspector.record_ip_addr("ServerIdentifier", **server_identifier);
-        inspector.record_uint("IpAddressLeaseTimeSecs", ip_address_lease_time.as_secs());
-        record_optional_duration_secs(inspector, "RenewalTimeSecs", *renewal_time);
-        record_optional_duration_secs(inspector, "RebindingTimeSecs", *rebinding_time);
+        ip_address_lease_time.record(
+            inspector,
+            "IpAddressLeaseTimeSecs",
+            "IpAddressLeaseTimeSource",
+        );
+        renewal_time.record(inspector, "RenewalTimeSecs", "RenewalTimeSource");
+        rebinding_time.record(inspector, "RebindingTimeSecs", "RebindingTimeSource");
     }
 }
 
@@ -1958,7 +1950,7 @@ impl<I: deps::Instant> Renewing<I> {
                     rebinding_time,
                 },
         } = self;
-        let rebinding_time = rebinding_time.unwrap_or(*ip_address_lease_time / 8 * 7);
+        let rebinding_time = *rebinding_time.as_ref();
         let mut address_removed =
             pin!(address_event_receiver.filter_map(async |event| match event {
                 AddressEvent::Rejected => {
@@ -2074,7 +2066,21 @@ impl<I: deps::Instant> Renewing<I> {
                     .context("error extracting needed fields from DHCP message during Renewing")
                     .map(|(fields, soft_errors)| {
                         messaging.increment_soft_errors(soft_errors);
-                        (addr, fields)
+                        fields
+                    })
+                    .map(|fields| {
+                        let (validated, soft_errors) = validate_response_to_request(
+                            fields,
+                            // If the DHCP Server did not provide an IP Address
+                            // Lease Time in the DHCPACK, this is in violation
+                            // of the RFC, but we accept the ACK regardless for
+                            // compatibility and fall back to the lease time we
+                            // previously had.
+                            Some(*ip_address_lease_time.as_ref()),
+                        );
+                        soft_errors.increment(&messaging);
+
+                        (addr, validated)
                     })
                 },
                 debug_log_prefix,
@@ -2094,7 +2100,7 @@ impl<I: deps::Instant> Renewing<I> {
 
         let mut timeout_fut = pin!(time.wait_until(t2).fuse());
 
-        let (src_addr, response) = select_biased! {
+        let (src_addr, validated) = select_biased! {
             response = responses_stream.select_next_some() => {
                 response?
             },
@@ -2113,15 +2119,15 @@ impl<I: deps::Instant> Renewing<I> {
             }
         };
 
-        match response {
-            crate::parse::IncomingResponseToRequest::Ack(ack) => {
+        match validated {
+            ValidatedResponse::Ack { ack, lease_time, renewal_time, rebinding_time } => {
                 log_ack(&debug_log_prefix, &src_addr, &ack);
                 let FieldsToRetainFromAck {
                     yiaddr: new_yiaddr,
                     server_identifier: _,
-                    ip_address_lease_time_secs,
-                    renewal_time_value_secs,
-                    rebinding_time_value_secs,
+                    ip_address_lease_time_secs: _,
+                    renewal_time_value_secs: _,
+                    rebinding_time_value_secs: _,
                     parameters,
                 } = ack;
                 let variant = if new_yiaddr == *yiaddr {
@@ -2134,42 +2140,31 @@ impl<I: deps::Instant> Renewing<I> {
                     RenewingOutcome::NewAddress
                 };
 
-                let ip_address_lease_time = match ip_address_lease_time_secs {
-                    Some(lease_time) => Duration::from_secs(lease_time.get().into()),
-                    None => {
-                        // The DHCP Server did not provide an IP Address Lease
-                        // Time in the DHCPACK. This is in violation of the RFC,
-                        // but we accept the ACK regardless for compatibility.
-                        //
-                        // Reuse the previously established lease length.
+                match lease_time {
+                    RelativeTime::Explicit(_) => {}
+                    r @ (RelativeTime::Previous(_) | RelativeTime::Default(_)) => {
                         messaging.recv_ack_no_addr_lease_time.increment();
                         log::warn!(
-                            "{debug_log_prefix} accepting DHCPACK from that did not provide an \
-                            IP Address Lease Time. Falling back to the original lease time: \
-                            {ip_address_lease_time:?}."
+                            "{debug_log_prefix} accepting DHCPACK from {src_addr} that did \
+                            not provide an IP Address Lease Time. Using {r:?} instead."
                         );
-                        *ip_address_lease_time
                     }
-                };
+                }
 
                 Ok(variant(
                     LeaseState {
                         discover_options: discover_options.clone(),
                         yiaddr: new_yiaddr,
                         server_identifier: *server_identifier,
-                        ip_address_lease_time,
-                        renewal_time: renewal_time_value_secs
-                            .map(u64::from)
-                            .map(Duration::from_secs),
-                        rebinding_time: rebinding_time_value_secs
-                            .map(u64::from)
-                            .map(Duration::from_secs),
+                        ip_address_lease_time: lease_time,
+                        renewal_time,
+                        rebinding_time,
                         start_time: renewal_start_time,
                     },
                     parameters,
                 ))
             }
-            crate::parse::IncomingResponseToRequest::Nak(nak) => {
+            ValidatedResponse::Nak(nak) => {
                 log_nak(&debug_log_prefix, &src_addr, &nak);
                 recv_nak.increment();
                 Ok(RenewingOutcome::Nak(nak))
@@ -2316,7 +2311,7 @@ impl<I: deps::Instant> Rebinding<I> {
         );
         let message_bytes = message.serialize();
 
-        let lease_expiry = start_time.add(*ip_address_lease_time);
+        let lease_expiry = start_time.add(*ip_address_lease_time.as_ref());
         let server_sockaddr = std::net::SocketAddr::V4(std::net::SocketAddrV4::new(
             Ipv4Addr::BROADCAST,
             SERVER_PORT.get(),
@@ -2376,11 +2371,21 @@ impl<I: deps::Instant> Rebinding<I> {
                             Ok(crate::parse::IncomingResponseToRequest::Nak(nak))
                         }
                     })
-                    .inspect_err(|e| {
-                        recv_error.increment(e);
-                    })
+                    .inspect_err(|e| recv_error.increment(e))
                     .context("error extracting needed fields from DHCP message during Rebinding")
-                    .map(|fields_to_retain| (addr, fields_to_retain))
+                    .map(|response| {
+                        let (validated, soft_errors) = validate_response_to_request(
+                            response,
+                            // If the DHCP Server did not provide an IP Address
+                            // Lease Time in the DHCPACK, this is in violation of
+                            // the RFC, but we accept the ACK regardless for
+                            // compatibility and fall back to the lease time we
+                            // previously had.
+                            Some(*ip_address_lease_time.as_ref()),
+                        );
+                        soft_errors.increment(&messaging);
+                        (addr, validated)
+                    })
                 },
                 debug_log_prefix,
                 messaging
@@ -2399,7 +2404,7 @@ impl<I: deps::Instant> Rebinding<I> {
 
         let mut timeout_fut = pin!(time.wait_until(lease_expiry).fuse());
 
-        let (src_addr, response) = select_biased! {
+        let (src_addr, validated) = select_biased! {
             response = responses_stream.select_next_some() => {
                 response?
             },
@@ -2416,15 +2421,15 @@ impl<I: deps::Instant> Rebinding<I> {
             }
         };
 
-        match response {
-            crate::parse::IncomingResponseToRequest::Ack(ack) => {
+        match validated {
+            ValidatedResponse::Ack { ack, lease_time, renewal_time, rebinding_time } => {
                 log_ack(&debug_log_prefix, &src_addr, &ack);
                 let FieldsToRetainFromAck {
                     yiaddr: new_yiaddr,
                     server_identifier,
-                    ip_address_lease_time_secs,
-                    renewal_time_value_secs,
-                    rebinding_time_value_secs,
+                    ip_address_lease_time_secs: _,
+                    renewal_time_value_secs: _,
+                    rebinding_time_value_secs: _,
                     parameters,
                 } = ack;
                 let variant = if new_yiaddr == *yiaddr {
@@ -2437,46 +2442,171 @@ impl<I: deps::Instant> Rebinding<I> {
                     RebindingOutcome::NewAddress
                 };
 
-                let ip_address_lease_time = match ip_address_lease_time_secs {
-                    Some(lease_time) => Duration::from_secs(lease_time.get().into()),
-                    None => {
-                        // The DHCP Server did not provide an IP Address Lease
-                        // Time in the DHCPACK. This is in violation of the RFC,
-                        // but we accept the ACK regardless for compatibility.
-                        //
-                        // Reuse the previously established lease length.
+                match lease_time {
+                    RelativeTime::Explicit(_) => {}
+                    r @ (RelativeTime::Previous(_) | RelativeTime::Default(_)) => {
                         messaging.recv_ack_no_addr_lease_time.increment();
                         log::warn!(
-                            "{debug_log_prefix} accepting DHCPACK from that did not provide an \
-                            IP Address Lease Time. Falling back to the original lease time: \
-                            {ip_address_lease_time:?}."
+                            "{debug_log_prefix} accepting DHCPACK from {src_addr} that did \
+                            not provide an IP Address Lease Time. Using {r:?} instead."
                         );
-                        *ip_address_lease_time
                     }
-                };
+                }
 
                 Ok(variant(
                     LeaseState {
                         discover_options: discover_options.clone(),
                         yiaddr: new_yiaddr,
                         server_identifier,
-                        ip_address_lease_time,
-                        renewal_time: renewal_time_value_secs
-                            .map(u64::from)
-                            .map(Duration::from_secs),
-                        rebinding_time: rebinding_time_value_secs
-                            .map(u64::from)
-                            .map(Duration::from_secs),
+                        ip_address_lease_time: lease_time,
+                        renewal_time,
+                        rebinding_time,
                         start_time: rebinding_start_time,
                     },
                     parameters,
                 ))
             }
-            crate::parse::IncomingResponseToRequest::Nak(nak) => {
+            ValidatedResponse::Nak(nak) => {
                 log_nak(&debug_log_prefix, &src_addr, &nak);
                 recv_nak.increment();
                 Ok(RebindingOutcome::Nak(nak))
             }
+        }
+    }
+}
+
+/// A relative time value, which can be explicit, based on a previous value, or
+/// a default value.
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub(crate) enum RelativeTime {
+    /// An explicitly-provided value.
+    Explicit(Duration),
+    /// A value based on a previous `RelativeTime` value.
+    Previous(Duration),
+    /// A default value.
+    Default(Duration),
+}
+
+impl AsRef<Duration> for RelativeTime {
+    fn as_ref(&self) -> &Duration {
+        match self {
+            RelativeTime::Explicit(d) | RelativeTime::Previous(d) | RelativeTime::Default(d) => d,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub(crate) enum ValidatedResponse<S> {
+    Ack {
+        ack: crate::parse::FieldsToRetainFromAck<S>,
+        lease_time: RelativeTime,
+        renewal_time: RelativeTime,
+        rebinding_time: RelativeTime,
+    },
+    Nak(crate::parse::FieldsToRetainFromNak),
+}
+
+impl RelativeTime {
+    fn record(&self, inspector: &mut impl Inspector, value_key: &str, source_key: &str) {
+        inspector.record_uint(value_key, self.as_ref().as_secs());
+        match self {
+            RelativeTime::Explicit(_) => {}
+            RelativeTime::Previous(_) => {
+                inspector.record_str(source_key, "Previous");
+            }
+            RelativeTime::Default(_) => {
+                inspector.record_str(source_key, "Default");
+            }
+        }
+    }
+}
+
+/// Determines the default renewal time (T1) for a given lease time.
+///
+/// Per RFC 2131 section 4.4.5, T1 defaults to (0.5 * duration_of_lease).
+fn default_renewal_time(lease_time: Duration) -> RelativeTime {
+    RelativeTime::Default(lease_time / 2)
+}
+
+/// Determines the default rebinding time (T2) for a given lease time.
+///
+/// Per RFC 2131 section 4.4.5, T2 defaults to (0.875 * duration_of_lease).
+fn default_rebinding_time(lease_time: Duration) -> RelativeTime {
+    RelativeTime::Default(lease_time / 8 * 7)
+}
+
+#[derive(Default)]
+struct ResponseValidationSoftErrors {
+    t1_outlives_t2: bool,
+    t2_outlives_lease: bool,
+}
+
+impl ResponseValidationSoftErrors {
+    fn increment(&self, counters: &MessagingRelatedCounters) {
+        if self.t1_outlives_t2 {
+            counters.recv_ack_renewal_time_after_rebinding_time.increment();
+        }
+        if self.t2_outlives_lease {
+            counters.recv_ack_rebinding_time_outlives_lease.increment();
+        }
+    }
+}
+
+/// Validates the server response.
+///
+///
+/// If the response does not provide an explicit lease time,
+/// `fallback_lease_time` is used.
+fn validate_response_to_request<S>(
+    response: crate::parse::IncomingResponseToRequest<S>,
+    fallback_lease_time: Option<Duration>,
+) -> (ValidatedResponse<S>, ResponseValidationSoftErrors) {
+    let mut soft_errors = ResponseValidationSoftErrors::default();
+    match response {
+        crate::parse::IncomingResponseToRequest::Ack(ack) => {
+            let lease_time = match ack.ip_address_lease_time_secs {
+                Some(t) => RelativeTime::Explicit(Duration::from_secs(t.get().into())),
+                None => match fallback_lease_time {
+                    Some(t) => RelativeTime::Previous(t),
+                    None => RelativeTime::Default(DEFAULT_LEASE_TIME),
+                },
+            };
+            let mut t1 = ack
+                .renewal_time_value_secs
+                .map(|t| RelativeTime::Explicit(Duration::from_secs(t.into())))
+                .unwrap_or_else(|| default_renewal_time(*lease_time.as_ref()));
+            let mut t2 = ack
+                .rebinding_time_value_secs
+                .map(|t| RelativeTime::Explicit(Duration::from_secs(t.into())))
+                .unwrap_or_else(|| default_rebinding_time(*lease_time.as_ref()));
+            // Per RFC 2131 section 4.4.5, T1 MUST be earlier than T2, which, in
+            // turn, MUST be earlier than the time at which the client's lease
+            // will expire.
+            //
+            // If the server-provided values violate either of these properties
+            // then we fall back to the default values for T1 and T2 and accept
+            // the lease for robustness' sake.
+            if t1.as_ref() >= t2.as_ref() {
+                soft_errors.t1_outlives_t2 = true;
+            }
+            if t2.as_ref() >= lease_time.as_ref() {
+                soft_errors.t2_outlives_lease = true;
+            }
+            if soft_errors.t1_outlives_t2 || soft_errors.t2_outlives_lease {
+                if !matches!(t1, RelativeTime::Default(_)) {
+                    t1 = default_renewal_time(*lease_time.as_ref());
+                }
+                if !matches!(t2, RelativeTime::Default(_)) {
+                    t2 = default_rebinding_time(*lease_time.as_ref());
+                }
+            }
+            (
+                ValidatedResponse::Ack { ack, lease_time, renewal_time: t1, rebinding_time: t2 },
+                soft_errors,
+            )
+        }
+        crate::parse::IncomingResponseToRequest::Nak(nak) => {
+            (ValidatedResponse::Nak(nak), soft_errors)
         }
     }
 }
@@ -2583,6 +2713,9 @@ mod test {
     const YIADDR: Ipv4Addr = std_ip_v4!("198.168.1.5");
     const OTHER_ADDR: Ipv4Addr = std_ip_v4!("198.168.1.6");
     const DEFAULT_LEASE_LENGTH_SECONDS: u32 = 100;
+    const DEFAULT_RENEWAL_TIME: RelativeTime = RelativeTime::Default(Duration::from_secs(50));
+    const DEFAULT_REBINDING_TIME: RelativeTime =
+        RelativeTime::Default(Duration::from_millis(87500));
     const MAX_LEASE_LENGTH_SECONDS: u32 = 200;
     const TEST_PREFIX_LENGTH: PrefixLength<Ipv4> = prefix_length_v4!(24);
 
@@ -3348,6 +3481,8 @@ mod test {
         recv_message: usize,
         recv_nak: usize,
         recv_missing_option: usize,
+        recv_ack_renewal_time_after_rebinding_time: usize,
+        recv_ack_rebinding_time_outlives_lease: usize,
     }
 
     #[test_case(VaryingIncomingMessageFields {
@@ -3373,11 +3508,11 @@ mod test {
             server_identifier: net_types::ip::Ipv4Addr::from(SERVER_IP)
                 .try_into()
                 .expect("should be specified"),
-            ip_address_lease_time: std::time::Duration::from_secs(
+            ip_address_lease_time: RelativeTime::Explicit(std::time::Duration::from_secs(
                 DEFAULT_LEASE_LENGTH_SECONDS.into()
-            ),
-            renewal_time: None,
-            rebinding_time: None,
+            )),
+            renewal_time: DEFAULT_RENEWAL_TIME,
+            rebinding_time: DEFAULT_REBINDING_TIME,
             start_time: TestInstant(std::time::Duration::from_secs(0)),
         }, test_parameter_values().into_iter().collect()),
         counters: RequestingTestCounters {
@@ -3406,11 +3541,11 @@ mod test {
             server_identifier: net_types::ip::Ipv4Addr::from(SERVER_IP)
                 .try_into()
                 .expect("should be specified"),
-            ip_address_lease_time: std::time::Duration::from_secs(
+            ip_address_lease_time: RelativeTime::Previous(std::time::Duration::from_secs(
                 DEFAULT_LEASE_LENGTH_SECONDS.into()
-            ),
-            renewal_time: None,
-            rebinding_time: None,
+            )),
+            renewal_time: DEFAULT_RENEWAL_TIME,
+            rebinding_time: DEFAULT_REBINDING_TIME,
             start_time: TestInstant(std::time::Duration::from_secs(0)),
         }, test_parameter_values().into_iter().collect()),
         counters: RequestingTestCounters {
@@ -3470,6 +3605,85 @@ mod test {
             ..Default::default()
         },
     }; "transitions to Init after receiving DHCPNAK")]
+    #[test_case(VaryingIncomingMessageFields {
+        yiaddr: YIADDR,
+        options: [
+            dhcp_protocol::DhcpOption::DhcpMessageType(
+                dhcp_protocol::MessageType::DHCPACK,
+            ),
+            dhcp_protocol::DhcpOption::ServerIdentifier(SERVER_IP),
+            dhcp_protocol::DhcpOption::IpAddressLeaseTime(
+                DEFAULT_LEASE_LENGTH_SECONDS,
+            ),
+            dhcp_protocol::DhcpOption::RenewalTimeValue(DEFAULT_LEASE_LENGTH_SECONDS - 1),
+            dhcp_protocol::DhcpOption::RebindingTimeValue(DEFAULT_LEASE_LENGTH_SECONDS - 2),
+        ]
+        .into_iter()
+        .chain(test_parameter_values())
+        .collect(),
+    } => RequestingTestResult {
+        outcome: RequestingOutcome::Bound(LeaseState {
+            discover_options: TEST_DISCOVER_OPTIONS,
+            yiaddr: net_types::ip::Ipv4Addr::from(YIADDR)
+                .try_into()
+                .expect("should be specified"),
+            server_identifier: net_types::ip::Ipv4Addr::from(SERVER_IP)
+                .try_into()
+                .expect("should be specified"),
+            ip_address_lease_time: RelativeTime::Explicit(std::time::Duration::from_secs(
+                DEFAULT_LEASE_LENGTH_SECONDS.into()
+            )),
+            renewal_time: DEFAULT_RENEWAL_TIME,
+            rebinding_time: DEFAULT_REBINDING_TIME,
+            start_time: TestInstant(std::time::Duration::from_secs(0)),
+        }, test_parameter_values().into_iter().collect()),
+        counters: RequestingTestCounters {
+            send_message: 1,
+            recv_message: 1,
+            recv_ack_renewal_time_after_rebinding_time: 1,
+            recv_ack_rebinding_time_outlives_lease: 0,
+            ..Default::default()
+        },
+    }; "transitions to Bound with default T1 and T2 if provided T1 greater than T2")]
+    #[test_case(VaryingIncomingMessageFields {
+        yiaddr: YIADDR,
+        options: [
+            dhcp_protocol::DhcpOption::DhcpMessageType(
+                dhcp_protocol::MessageType::DHCPACK,
+            ),
+            dhcp_protocol::DhcpOption::ServerIdentifier(SERVER_IP),
+            dhcp_protocol::DhcpOption::IpAddressLeaseTime(
+                DEFAULT_LEASE_LENGTH_SECONDS,
+            ),
+            dhcp_protocol::DhcpOption::RebindingTimeValue(DEFAULT_LEASE_LENGTH_SECONDS + 1),
+        ]
+        .into_iter()
+        .chain(test_parameter_values())
+        .collect(),
+    } => RequestingTestResult {
+        outcome: RequestingOutcome::Bound(LeaseState {
+            discover_options: TEST_DISCOVER_OPTIONS,
+            yiaddr: net_types::ip::Ipv4Addr::from(YIADDR)
+                .try_into()
+                .expect("should be specified"),
+            server_identifier: net_types::ip::Ipv4Addr::from(SERVER_IP)
+                .try_into()
+                .expect("should be specified"),
+            ip_address_lease_time: RelativeTime::Explicit(std::time::Duration::from_secs(
+                DEFAULT_LEASE_LENGTH_SECONDS.into()
+            )),
+            renewal_time: DEFAULT_RENEWAL_TIME,
+            rebinding_time: DEFAULT_REBINDING_TIME,
+            start_time: TestInstant(std::time::Duration::from_secs(0)),
+        }, test_parameter_values().into_iter().collect()),
+        counters: RequestingTestCounters {
+            send_message: 1,
+            recv_message: 1,
+            recv_ack_renewal_time_after_rebinding_time: 0,
+            recv_ack_rebinding_time_outlives_lease: 1,
+            ..Default::default()
+        },
+    }; "transitions to Bound with default T1 and T2 if provided T2 greater than lease_time")]
     fn do_requesting_transitions_on_reply(
         incoming_message: VaryingIncomingMessageFields,
     ) -> RequestingTestResult {
@@ -3584,6 +3798,16 @@ mod test {
             recv_message: counters.requesting.messaging.recv_message.load(),
             recv_nak: counters.requesting.recv_nak.load(),
             recv_missing_option: counters.requesting.recv_error.missing_required_option.load(),
+            recv_ack_renewal_time_after_rebinding_time: counters
+                .requesting
+                .messaging
+                .recv_ack_renewal_time_after_rebinding_time
+                .load(),
+            recv_ack_rebinding_time_outlives_lease: counters
+                .requesting
+                .messaging
+                .recv_ack_rebinding_time_outlives_lease
+                .load(),
         };
         RequestingTestResult { outcome, counters }
     }
@@ -3607,10 +3831,14 @@ mod test {
             server_identifier: net_types::ip::Ipv4Addr::from(SERVER_IP)
                 .try_into()
                 .expect("should be specified"),
-            ip_address_lease_time: lease_length,
+            ip_address_lease_time: RelativeTime::Explicit(lease_length),
             start_time: TestInstant(std::time::Duration::from_secs(0)),
-            renewal_time,
-            rebinding_time,
+            renewal_time: renewal_time
+                .map(RelativeTime::Explicit)
+                .unwrap_or_else(|| default_renewal_time(lease_length)),
+            rebinding_time: rebinding_time
+                .map(RelativeTime::Explicit)
+                .unwrap_or_else(|| default_rebinding_time(lease_length)),
         }
     }
 
@@ -3980,7 +4208,7 @@ mod test {
         "waits default renewal time when not specified")]
     #[test_case(
         LeaseState {
-            renewal_time: Some(Duration::from_secs(10)),
+            renewal_time: RelativeTime::Explicit(Duration::from_secs(10)),
             ..build_test_lease_state()
         } => TestInstant(Duration::from_secs(10));
         "waits specified renewal time")]
@@ -4285,11 +4513,11 @@ mod test {
             server_identifier: net_types::ip::Ipv4Addr::from(SERVER_IP)
                 .try_into()
                 .expect("should be specified"),
-            ip_address_lease_time: std::time::Duration::from_secs(
+            ip_address_lease_time: RelativeTime::Explicit(std::time::Duration::from_secs(
                 DEFAULT_LEASE_LENGTH_SECONDS.into()
-            ),
-            renewal_time: None,
-            rebinding_time: None,
+            )),
+            renewal_time: DEFAULT_RENEWAL_TIME,
+            rebinding_time: DEFAULT_REBINDING_TIME,
             start_time: TestInstant(std::time::Duration::from_secs(0)),
         }, test_parameter_values().into_iter().collect()),
         counters: RenewingTestCounters {
@@ -4318,11 +4546,11 @@ mod test {
             server_identifier: net_types::ip::Ipv4Addr::from(SERVER_IP)
                 .try_into()
                 .expect("should be specified"),
-            ip_address_lease_time: std::time::Duration::from_secs(
+            ip_address_lease_time: RelativeTime::Previous(std::time::Duration::from_secs(
                 DEFAULT_LEASE_LENGTH_SECONDS.into()
-            ),
-            renewal_time: None,
-            rebinding_time: None,
+            )),
+            renewal_time: DEFAULT_RENEWAL_TIME,
+            rebinding_time: DEFAULT_REBINDING_TIME,
             start_time: TestInstant(std::time::Duration::from_secs(0)),
         }, test_parameter_values().into_iter().collect()),
         counters: RenewingTestCounters {
@@ -4354,9 +4582,11 @@ mod test {
             server_identifier: net_types::ip::Ipv4Addr::from(SERVER_IP)
                 .try_into()
                 .expect("should be specified"),
-            ip_address_lease_time: std::time::Duration::from_secs(DEFAULT_LEASE_LENGTH_SECONDS.into()),
-            renewal_time: None,
-            rebinding_time: None,
+            ip_address_lease_time: RelativeTime::Explicit(
+                std::time::Duration::from_secs(DEFAULT_LEASE_LENGTH_SECONDS.into())
+            ),
+            renewal_time: DEFAULT_RENEWAL_TIME,
+            rebinding_time: DEFAULT_REBINDING_TIME,
             start_time: TestInstant(std::time::Duration::from_secs(0)),
         }, test_parameter_values().into_iter().collect()),
         counters: RenewingTestCounters {
@@ -4693,11 +4923,11 @@ mod test {
             server_identifier: net_types::ip::Ipv4Addr::from(OTHER_SERVER_IP)
                 .try_into()
                 .expect("should be specified"),
-            ip_address_lease_time: std::time::Duration::from_secs(
+            ip_address_lease_time: RelativeTime::Explicit(std::time::Duration::from_secs(
                 DEFAULT_LEASE_LENGTH_SECONDS.into()
-            ),
-            renewal_time: None,
-            rebinding_time: None,
+            )),
+            renewal_time: DEFAULT_RENEWAL_TIME,
+            rebinding_time: DEFAULT_REBINDING_TIME,
             start_time: TestInstant(std::time::Duration::from_secs(0)),
         }, test_parameter_values().into_iter().collect()),
         counters: RebindingTestCounters {
@@ -4726,11 +4956,11 @@ mod test {
             server_identifier: net_types::ip::Ipv4Addr::from(OTHER_SERVER_IP)
                 .try_into()
                 .expect("should be specified"),
-            ip_address_lease_time: std::time::Duration::from_secs(
+            ip_address_lease_time: RelativeTime::Previous(std::time::Duration::from_secs(
                 DEFAULT_LEASE_LENGTH_SECONDS.into()
-            ),
-            renewal_time: None,
-            rebinding_time: None,
+            )),
+            renewal_time: DEFAULT_RENEWAL_TIME,
+            rebinding_time: DEFAULT_REBINDING_TIME,
             start_time: TestInstant(std::time::Duration::from_secs(0)),
         }, test_parameter_values().into_iter().collect()),
         counters: RebindingTestCounters {
@@ -4755,18 +4985,20 @@ mod test {
         .collect(),
     } => RebindingTestResult {
         outcome: RebindingOutcome::NewAddress(LeaseState {
-        discover_options: TEST_DISCOVER_OPTIONS,
-        yiaddr: net_types::ip::Ipv4Addr::from(OTHER_ADDR)
-            .try_into()
-            .expect("should be specified"),
-        server_identifier: net_types::ip::Ipv4Addr::from(OTHER_SERVER_IP)
-            .try_into()
-            .expect("should be specified"),
-        ip_address_lease_time: std::time::Duration::from_secs(DEFAULT_LEASE_LENGTH_SECONDS.into()),
-        renewal_time: None,
-        rebinding_time: None,
-        start_time: TestInstant(std::time::Duration::from_secs(0)),
-    }, test_parameter_values().into_iter().collect()),
+            discover_options: TEST_DISCOVER_OPTIONS,
+            yiaddr: net_types::ip::Ipv4Addr::from(OTHER_ADDR)
+                .try_into()
+                .expect("should be specified"),
+            server_identifier: net_types::ip::Ipv4Addr::from(OTHER_SERVER_IP)
+                .try_into()
+                .expect("should be specified"),
+            ip_address_lease_time: RelativeTime::Explicit(
+                std::time::Duration::from_secs(DEFAULT_LEASE_LENGTH_SECONDS.into())
+            ),
+            renewal_time: DEFAULT_RENEWAL_TIME,
+            rebinding_time: DEFAULT_REBINDING_TIME,
+            start_time: TestInstant(std::time::Duration::from_secs(0)),
+        }, test_parameter_values().into_iter().collect()),
     counters: RebindingTestCounters {
         send_message: 1,
         recv_message: 1,

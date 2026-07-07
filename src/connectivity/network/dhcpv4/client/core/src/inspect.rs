@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
 
 use diagnostics_traits::{InspectableValue, Inspector};
 
@@ -28,17 +27,6 @@ impl Counter {
 impl InspectableValue for Counter {
     fn record<I: diagnostics_traits::Inspector>(&self, name: &str, inspector: &mut I) {
         inspector.record_uint(name, u64::try_from(self.load()).unwrap_or(u64::MAX));
-    }
-}
-
-pub(crate) fn record_optional_duration_secs(
-    inspector: &mut impl Inspector,
-    name: &str,
-    value: Option<Duration>,
-) {
-    match value {
-        Some(value) => inspector.record_uint(name, value.as_secs()),
-        None => inspector.record_display(name, "Unset"),
     }
 }
 
@@ -70,6 +58,10 @@ pub(crate) struct MessagingRelatedCounters {
     /// A counter for each time the client received a DHCPACK that omitted the
     /// IP Address Lease Time option.
     pub(crate) recv_ack_no_addr_lease_time: Counter,
+    /// A counter for each time the client received a DHCPACK where T1 >= T2.
+    pub(crate) recv_ack_renewal_time_after_rebinding_time: Counter,
+    /// A counter for each time the client received a DHCPACK where T2 >= lease_time.
+    pub(crate) recv_ack_rebinding_time_outlives_lease: Counter,
     /// A counter for each time the client received a DHCP message that
     /// contained an illegal option.
     pub(crate) recv_illegal_option: Counter,
@@ -87,6 +79,8 @@ impl MessagingRelatedCounters {
             recv_wrong_chaddr,
             recv_failed_dhcp_parse,
             recv_ack_no_addr_lease_time,
+            recv_ack_renewal_time_after_rebinding_time,
+            recv_ack_rebinding_time_outlives_lease,
             recv_illegal_option,
         } = self;
         inspector.record_inspectable_value("SendMessage", send_message);
@@ -104,6 +98,14 @@ impl MessagingRelatedCounters {
         inspector.record_inspectable_value("RecvWrongChaddr", recv_wrong_chaddr);
         inspector.record_inspectable_value("RecvFailedDhcpParse", recv_failed_dhcp_parse);
         inspector.record_inspectable_value("NoLeaseTime", recv_ack_no_addr_lease_time);
+        inspector.record_inspectable_value(
+            "RenewalTimeAfterRebindingTime",
+            recv_ack_renewal_time_after_rebinding_time,
+        );
+        inspector.record_inspectable_value(
+            "RebindingTimeOutlivesLease",
+            recv_ack_rebinding_time_outlives_lease,
+        );
         inspector.record_inspectable_value("IllegallyIncludedOption", recv_illegal_option);
     }
 
