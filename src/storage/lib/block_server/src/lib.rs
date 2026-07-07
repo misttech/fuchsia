@@ -736,11 +736,17 @@ impl<SM: SessionManager> SessionHelper<SM> {
                     if request.length == 0 {
                         return Err(zx::Status::INVALID_ARGS);
                     }
-                    // Make sure the end offsets won't wrap.
-                    if request.dev_offset.checked_add(request.length as u64).is_none()
-                        || (code != BlockOpcode::Trim
-                            && request_bytes.checked_add(request.vmo_offset).is_none())
-                    {
+                    // Make sure the end offset won't wrap.
+                    if request.dev_offset.checked_add(request.length as u64).is_none() {
+                        return Err(zx::Status::OUT_OF_RANGE);
+                    }
+                }
+                if matches!(code, BlockOpcode::Read | BlockOpcode::Write) {
+                    let vmo_byte_offset = request
+                        .vmo_offset
+                        .checked_mul(self.block_size as u64)
+                        .ok_or(zx::Status::OUT_OF_RANGE)?;
+                    if request_bytes.checked_add(vmo_byte_offset).is_none() {
                         return Err(zx::Status::OUT_OF_RANGE);
                     }
                 }
@@ -2167,6 +2173,19 @@ mod tests {
                 );
 
                 assert_eq!(
+                    test(
+                        &mut fifo,
+                        BlockFifoRequest {
+                            vmo_offset: 0x007f_ffff_ffff_ffff,
+                            length: 2,
+                            ..good_read_request()
+                        }
+                    )
+                    .await,
+                    Err(zx::Status::OUT_OF_RANGE)
+                );
+
+                assert_eq!(
                     test(&mut fifo, BlockFifoRequest { length: 0, ..good_read_request() }).await,
                     Err(zx::Status::INVALID_ARGS)
                 );
@@ -2197,6 +2216,19 @@ mod tests {
                         &mut fifo,
                         BlockFifoRequest {
                             vmo_offset: 0xffff_ffff_ffff_ffff,
+                            ..good_write_request()
+                        }
+                    )
+                    .await,
+                    Err(zx::Status::OUT_OF_RANGE)
+                );
+
+                assert_eq!(
+                    test(
+                        &mut fifo,
+                        BlockFifoRequest {
+                            vmo_offset: 0x007f_ffff_ffff_ffff,
+                            length: 2,
                             ..good_write_request()
                         }
                     )
