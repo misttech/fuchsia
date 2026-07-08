@@ -9,6 +9,7 @@
 #include <lib/component/incoming/cpp/clone.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
 #include <lib/fdio/directory.h>
+#include <lib/fdio/fd.h>
 #include <lib/zbi-format/partition.h>
 #include <lib/zx/vmo.h>
 #include <limits.h>
@@ -26,6 +27,7 @@
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
 #include "src/storage/lib/block_client/cpp/reader_writer.h"
 #include "src/storage/lib/block_client/cpp/remote_block_device.h"
+#include "src/storage/lib/vfs/cpp/service.h"
 
 namespace {
 
@@ -291,4 +293,32 @@ fbl::Array<uint8_t> CreateZbiHeader(paver::Arch arch, size_t payload_size,
 
 std::unique_ptr<paver::VolumeConnector> BlockDevice::GetConnector() const {
   return std::make_unique<RamdiskVolumeConnector>(ramdisk_);
+}
+
+FakeBlockDirectory::FakeBlockDirectory(async_dispatcher_t* dispatcher,
+                                       std::vector<block_server::PartitionInfo> partitions)
+    : root_dir_(fbl::MakeRefCounted<fs::PseudoDir>()), vfs_(dispatcher) {
+  for (size_t i = 0; i < partitions.size(); ++i) {
+    servers_.push_back(std::make_unique<block_server::FakeServer>(std::move(partitions[i])));
+    auto device_dir = fbl::MakeRefCounted<fs::PseudoDir>();
+    ZX_ASSERT(root_dir_->AddEntry("block-" + std::to_string(i), device_dir) == ZX_OK);
+    ZX_ASSERT(device_dir->AddEntry("fuchsia.storage.block.Block",
+                                   fbl::MakeRefCounted<fs::Service>([this, i](zx::channel channel) {
+                                     fidl::ServerEnd<fuchsia_storage_block::Block> request(
+                                         std::move(channel));
+                                     this->servers_[i]->Serve(std::move(request));
+                                     return ZX_OK;
+                                   })) == ZX_OK);
+  }
+
+  auto [client, server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
+  ZX_ASSERT(vfs_.ServeDirectory(root_dir_, std::move(server)) == ZX_OK);
+
+  fbl::unique_fd fd;
+  ZX_ASSERT(fdio_fd_create(client.TakeChannel().release(), fd.reset_and_get_address()) == ZX_OK);
+  block_dir_fd_ = std::move(fd);
+}
+
+fbl::unique_fd FakeBlockDirectory::DuplicateBlockDirFd() {
+  return fbl::unique_fd(dup(block_dir_fd_.get()));
 }

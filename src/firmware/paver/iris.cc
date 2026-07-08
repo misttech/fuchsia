@@ -242,68 +242,71 @@ zx::result<std::unique_ptr<PartitionClient>> IrisPartitioner::FindPartition(
     return gpt.take_error();
   }
 
-  std::vector<std::string> part_names;
+  std::string part_name;
   switch (spec.partition) {
     case Partition::kBootloaderA:
     case Partition::kBootloaderB:
-      part_names.emplace_back(spec.content_type);
-      part_names.back() += spec.partition == Partition::kBootloaderA ? "_a" : "_b";
+      part_name = spec.content_type;
+      part_name += spec.partition == Partition::kBootloaderA ? "_a" : "_b";
       break;
     case Partition::kZirconA:
-      part_names.emplace_back("boot_a");
+      part_name = "boot_a";
       break;
     case Partition::kZirconB:
-      part_names.emplace_back("boot_b");
+      part_name = "boot_b";
       break;
     case Partition::kVbMetaA:
-      part_names.emplace_back("vbmeta_a");
+      part_name = "vbmeta_a";
       break;
     case Partition::kVbMetaB:
-      part_names.emplace_back("vbmeta_b");
+      part_name = "vbmeta_b";
       break;
     case Partition::kAbrMeta:
-      part_names.emplace_back("devinfo");
+      part_name = "devinfo";
       break;
     case Partition::kFuchsiaVolumeManager:
-      part_names.emplace_back("super");
+      part_name = "super";
       break;
     default:
       ERROR("Iris partitioner cannot find unknown partition type\n");
       return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
-  for (const auto& part_name : part_names) {
-    if (auto client = gpt->gpt->FindPartition([&part_name](const GptPartitionMetadata& part) {
-          return FilterByName(part, part_name);
-        });
-        client.is_ok()) {
-      return client;
-    }
+  // First check the GPT, but this currently only serves the partitions that exist in the first
+  // GPT (LUN0). These partitions are all exposed by default.
+  if (auto client = gpt->gpt->FindPartition(
+          [&part_name](const GptPartitionMetadata& part) { return FilterByName(part, part_name); });
+      client.is_ok()) {
+    return client;
   }
 
-  if (spec.partition == Partition::kAbrMeta) {
-    return OpenAbrBlockDevice();
+  // Next check partitions that have been exposed as block devices (LUN1-3). These partitions
+  // must be explicitly declared in the build file `fuchsia_board_configuration.filesystems` in
+  // order to be visible to the paver.
+  if (auto client = OpenPartitionFromBlockDevices(part_name); client.is_ok()) {
+    return client;
   }
 
   return zx::error(ZX_ERR_NOT_FOUND);
 }
 
-zx::result<std::unique_ptr<PartitionClient>> IrisPartitioner::OpenAbrBlockDevice() const {
+zx::result<std::unique_ptr<PartitionClient>> IrisPartitioner::OpenPartitionFromBlockDevices(
+    std::string_view name) const {
   // TODO(b/512994030): Switch to an explicit synchronous API.
-  auto part_connector =
-      OpenBlockPartition(devices_, std::nullopt, std::nullopt, "devinfo", ZX_SEC(5));
+  auto part_connector = OpenBlockPartition(devices_, std::nullopt, std::nullopt, name, ZX_SEC(5));
   if (part_connector.is_error()) {
-    ERROR("Failed to open block partition via OpenBlockPartition: %s\n",
-          part_connector.status_string());
+    ERROR("Failed to open block partition %.*s via OpenBlockPartition: %s\n",
+          static_cast<int>(name.size()), name.data(), part_connector.status_string());
     return part_connector.take_error();
   }
   auto client = BlockPartitionClient::Create(std::move(part_connector.value()));
   if (client.is_error()) {
-    ERROR("Failed to create BlockPartitionClient via OpenBlockPartition: %s\n",
-          client.status_string());
+    ERROR("Failed to create BlockPartitionClient %.*s via OpenBlockPartition: %s\n",
+          static_cast<int>(name.size()), name.data(), client.status_string());
     return client.take_error();
   }
-  LOG("Successfully found ABRmeta on raw block device via OpenBlockPartition\n");
+  LOG("Successfully found %.*s on raw block device via OpenBlockPartition\n",
+      static_cast<int>(name.size()), name.data());
   return zx::ok(std::move(client.value()));
 }
 

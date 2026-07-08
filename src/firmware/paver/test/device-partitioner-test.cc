@@ -1316,6 +1316,52 @@ TEST_F(IrisPartitionerTests, FindPartition) {
   EXPECT_NOT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kBootloaderA, "cache")));
 }
 
+TEST_F(IrisPartitionerTests, FindPartitionFromBlockFallback) {
+  // Set up a fake /block directory containing "abl_a" and "devinfo" partitions.
+  std::vector<block_server::PartitionInfo> fake_partitions;
+  fake_partitions.emplace_back(block_server::PartitionInfo{
+      .block_count = 512,
+      .block_size = 512,
+      .type_guid = {1, 2, 3, 4},
+      .instance_guid = {5, 6, 7, 8},
+      .name = "abl_a",
+  });
+  fake_partitions.emplace_back(block_server::PartitionInfo{
+      .block_count = 512,
+      .block_size = 512,
+      .type_guid = {9, 10, 11, 12},
+      .instance_guid = {13, 14, 15, 16},
+      .name = "devinfo",
+  });
+  FakeBlockDirectory fake_block_dir(loop_.dispatcher(), std::move(fake_partitions));
+
+  // Initialize BlockDevices pointing directly to our fake directory FD.
+  zx::result devices =
+      paver::BlockDevices::CreateFromFshostBlockDir(fake_block_dir.DuplicateBlockDirFd());
+  ASSERT_OK(devices);
+
+  // We still need a GPT device to satisfy InitializeGpt / PartitionService dependencies.
+  std::unique_ptr<BlockDevice> gpt_dev;
+  ASSERT_NO_FATAL_FAILURE(CreateIrisFullGptDevice(&gpt_dev));
+
+  zx::result svc_root = fake_ufs_svc_->svc();
+  ASSERT_OK(svc_root);
+
+  auto paver_config = paver::PaverConfig{
+      .arch = paver::Arch::kArm64,
+      .system_partition_names = {"super"},
+      .zvb_current_slot = "_a",
+  };
+  zx::result partitioner_res =
+      paver::IrisPartitioner::Initialize(*devices, std::move(*svc_root), paver_config);
+  ASSERT_OK(partitioner_res);
+  std::unique_ptr<paver::DevicePartitioner>& partitioner = partitioner_res.value();
+
+  // FindPartition should successfully fall back to /block and resolve the partitions.
+  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kBootloaderA, "abl")));
+  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kAbrMeta)));
+}
+
 TEST_F(IrisPartitionerTests, SupportsPartition) {
   std::unique_ptr<BlockDevice> gpt_dev;
   ASSERT_NO_FATAL_FAILURE(CreateIrisFullGptDevice(&gpt_dev));

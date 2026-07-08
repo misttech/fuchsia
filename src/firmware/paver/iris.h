@@ -43,7 +43,8 @@ class IrisPartitioner : public DevicePartitioner {
   zx::result<std::unique_ptr<abr::Client>> CreateAbrClient() const override;
 
  private:
-  zx::result<std::unique_ptr<PartitionClient>> OpenAbrBlockDevice() const;
+  zx::result<std::unique_ptr<PartitionClient>> OpenPartitionFromBlockDevices(
+      std::string_view name) const;
 
   IrisPartitioner(BlockDevices devices, fidl::ClientEnd<fuchsia_io::Directory> svc_root)
       : devices_(std::move(devices)), svc_root_(std::move(svc_root)) {}

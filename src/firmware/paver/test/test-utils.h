@@ -30,6 +30,9 @@
 #include "src/firmware/paver/sherlock.h"
 #include "src/firmware/paver/uefi.h"
 #include "src/firmware/paver/vim3.h"
+#include "src/storage/lib/block_server/fake_server.h"
+#include "src/storage/lib/vfs/cpp/pseudo_dir.h"
+#include "src/storage/lib/vfs/cpp/synchronous_vfs.h"
 
 constexpr uint64_t kBlockSize = 0x1000;
 constexpr uint32_t kBlockCount = 0x100;
@@ -204,5 +207,24 @@ paver::PaverConfig FakePaverConfig(std::string slot_suffix = "-a");
 fbl::Array<uint8_t> CreateZbiHeader(paver::Arch arch, size_t payload_size,
                                     ZbiKernelImage** result_header,
                                     std::span<uint8_t>* span = nullptr);
+
+// Creates fake partitions under /block.
+//
+// This allows mocking out partitions that are not directly provided by the GPT but are routed
+// explicitly, e.g. when a device has multiple GPTs but only provides the first by default.
+class FakeBlockDirectory {
+ public:
+  FakeBlockDirectory(async_dispatcher_t* dispatcher,
+                     std::vector<block_server::PartitionInfo> partitions);
+
+  fbl::unique_fd DuplicateBlockDirFd();
+
+ private:
+  fbl::unique_fd block_dir_fd_;
+  std::vector<std::unique_ptr<block_server::FakeServer>> servers_;
+  fbl::RefPtr<fs::PseudoDir> root_dir_;
+  // This must come last so it gets shut down first to avoid dangling references to `servers_`.
+  fs::SynchronousVfs vfs_;
+};
 
 #endif  // SRC_FIRMWARE_PAVER_TEST_TEST_UTILS_H_
