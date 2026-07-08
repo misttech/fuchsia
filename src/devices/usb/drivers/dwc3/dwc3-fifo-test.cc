@@ -27,7 +27,7 @@ class FifoTest : public testing::Test {
     ASSERT_TRUE(bti.is_ok());
     bti_ = std::move(*bti);
 
-    ASSERT_TRUE(fifo_.Init(bti_, true).is_ok());
+    ASSERT_TRUE(fifo_.Init(bti_).is_ok());
   }
 
   void TearDown() override {
@@ -103,7 +103,7 @@ TEST_F(FifoTestU32, ReInitTest) {
   ASSERT_NE(fifo_.write_, fifo_.first_);
 
   fifo_.Release();
-  ASSERT_TRUE(fifo_.Init(bti_, true).is_ok());
+  ASSERT_TRUE(fifo_.Init(bti_).is_ok());
 
   ASSERT_EQ(fifo_.write_, fifo_.first_);
   ASSERT_EQ(fifo_.read_, fifo_.first_);

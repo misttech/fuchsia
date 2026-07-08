@@ -80,8 +80,6 @@ void Dwc3::CmdEpSetConfig(const Endpoint& ep, bool modify) {
       .set_INTERVAL(ep.interval)
       .set_XFER_NOT_READY_EN(1)
       .set_XFER_COMPLETE_EN(1)
-      // Only pertinent if we're allowing multiple TRBs per transfer.
-      .set_XFER_IN_PROGRESS_EN(AllowEnqueueManyTRBs(ep.type))
       .set_INTR_NUM(0)
       .WriteTo(mmio);
   DEPCMDPAR2::Get(ep_num).FromValue(0).WriteTo(mmio);
@@ -124,30 +122,6 @@ void Dwc3::CmdEpStartTransfer(const Endpoint& ep, zx_paddr_t trb_phys) {
   WaitForCmdAct(__func__, ep_num);
 }
 
-void Dwc3::CmdEpUpdateTransfer(const Endpoint& ep) {
-  TRACE_DURATION("dwc3", "Dwc3::CmdEpUpdateTransfer", "ep_num", ep.ep_num);
-  auto* mmio = get_mmio();
-  const uint8_t ep_num = ep.ep_num;
-
-  // From the DWC3 programming manual, section 3.2.26
-  //
-  //    Software may issue a special "No Response Update Transfer" command by
-  //    setting CmdAct=0 and CmdIOC=0. In this case, the hardware does not
-  //    generate a Command Complete event, does not set the CmdAct bit to '0'
-  //    (because it will be '0'), and software may immediately issue another
-  //    command to the same endpoint following this one.
-  //
-  // This command is used to "kick" the controller to fetch more TRBs but we
-  // don't need to wait on it, allowing for much faster TRB enqueuing.
-  DEPCMD::Get(ep_num)
-      .FromValue(0)
-      .set_CMDTYP(DEPCMD::DEPUPDXFER)
-      .set_COMMANDPARAM(ep.rsrc_id)
-      .set_CMDACT(0)
-      .set_CMDIOC(0)
-      .WriteTo(mmio);
-}
-
 void Dwc3::CmdEpEndTransfer(const Endpoint& ep) {
   TRACE_DURATION("dwc3", "Dwc3::CmdEpEndTransfer", "ep_num", ep.ep_num);
   if (!power_on_) {
@@ -159,12 +133,15 @@ void Dwc3::CmdEpEndTransfer(const Endpoint& ep) {
   const uint8_t ep_num = ep.ep_num;
   const uint32_t rsrc_id = ep.rsrc_id;
 
-  ZX_DEBUG_ASSERT_MSG(rsrc_id != Endpoint::kInvalidResourceId,
-                      "%s: Called before rsrc_id was initialized with a valid value "
-                      "ep.ep_num=%d ep.enabled=%d ep.type=%d ep.transfer_state=%d "
-                      "ep.stalled=%d ep.rsrc_id=0x%08x",
-                      __func__, ep_num, ep.enabled, ep.type, ep.transfer_state, ep.stalled,
-                      rsrc_id);
+  // TODO(https://fxbug.dev/528372991): The assertion commented out below
+  // triggers under normal use. Revise the assertion or the surrounding code.
+  //
+  // ZX_DEBUG_ASSERT_MSG(rsrc_id != Endpoint::kInvalidResourceId,
+  //                     "%s: Called before rsrc_id was initialized with a valid value "
+  //                     "ep.ep_num=%d ep.enabled=%d ep.type=%d ep.xfer_in_progress=%d "
+  //                     "ep.stalled=%d ep.rsrc_id=0x%08x",
+  //                     __func__, ep_num, ep.enabled, ep.type, ep.xfer_in_progress, ep.stalled,
+  //                     rsrc_id);
 
   DEPCMDPAR0::Get(ep_num).FromValue(0).WriteTo(mmio);
   DEPCMDPAR1::Get(ep_num).FromValue(0).WriteTo(mmio);

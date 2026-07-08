@@ -12,9 +12,9 @@ namespace dwc3 {
 
 class TrbFifo : public Fifo<dwc3_trb_t> {
  public:
-  zx::result<> Init(zx::bti& bti, bool cached) override {
+  zx::result<> Init(zx::bti& bti) override {
     bool needs_init = !buffer_;
-    auto result = Fifo::Init(bti, cached);
+    auto result = Fifo::Init(bti);
     if (result.is_error()) {
       fdf::error("Failed to init FIFO {}", result);
       return result.take_error();
@@ -28,17 +28,16 @@ class TrbFifo : public Fifo<dwc3_trb_t> {
       last_->ptr_high = (uint32_t)(trb_phys >> 32);
       last_->status = 0;
       last_->control = TRB_TRBCTL_LINK | TRB_HWO;
-      CacheFlushIfCached(buffer_.get(), (last_ - first_) * sizeof(dwc3_trb_t), sizeof(dwc3_trb_t));
+      CacheFlush(buffer_.get(), (last_ - first_) * sizeof(dwc3_trb_t), sizeof(dwc3_trb_t));
     }
     return zx::ok();
   }
 
-  const dwc3_trb_t& ReadOne() {
-    const zx_off_t offset = (read_ - first_) * sizeof(dwc3_trb_t);
-    CacheFlushInvalidateIfCashed(buffer_.get(), offset, sizeof(dwc3_trb_t));
-    return *read_;
+  dwc3_trb_t Read() {
+    std::vector<dwc3_trb_t> trbs = Fifo::Read(read_, 1);
+    ZX_ASSERT(trbs.size() == 1);
+    return trbs[0];
   }
-
   dwc3_trb_t* AdvanceWrite() { return Fifo::Advance(write_); }
   void AdvanceRead() {
     if (read_ == write_) {
@@ -46,15 +45,6 @@ class TrbFifo : public Fifo<dwc3_trb_t> {
       return;
     }
     Fifo::Advance(read_);
-  }
-
-  void Reset() {
-    for (auto x = first_; x < last_; x++) {
-      x->control = 0;
-    }
-    write_ = first_;
-    read_ = write_;
-    CacheFlushIfCached(buffer_.get(), 0, (last_ - first_) * sizeof(dwc3_trb_t));
   }
 };
 

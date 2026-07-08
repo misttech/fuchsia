@@ -38,11 +38,7 @@ class EndpointServer : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoi
                       UnregisterVmosCompleter::Sync& completer) final;
 
   // Completes a request.
-  void RequestComplete(zx_status_t status, size_t actual, RequestVariant request,
-                       bool send_now = true);
-
-  // Sends any deferred completions
-  void SendCompletions();
+  void RequestComplete(zx_status_t status, size_t actual, RequestVariant request);
 
   // Gets all the iterators for a request.
   zx::result<std::vector<dma_buffer::PhysIter>> get_iter(RequestVariant& req,

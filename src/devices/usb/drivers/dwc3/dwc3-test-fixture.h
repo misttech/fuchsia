@@ -247,9 +247,6 @@ class Config final {
 template <bool manage_lifetime, typename gtest_base = testing::Test>
 class TestFixture : public gtest_base {
  public:
-  using Endpoint = Dwc3::Endpoint;
-  using TransferState = Dwc3::Endpoint::TransferState;
-
   static Dwc3::UserEndpoint& GetUserEndpoint(Dwc3& drv, uint8_t ep_num) {
     auto* uep = drv.get_user_endpoint(ep_num);
     ZX_ASSERT(uep != nullptr);
@@ -276,42 +273,10 @@ class TestFixture : public gtest_base {
     }
 
     drv.HandleEpTransferCompleteEvent(ep_num);
-
-    // In production, SendCompletions is called at the end of the global event
-    // interrupt handler loop (once per interrupt batch), rather than from
-    // inside the individual endpoint event handlers. We simulate that final
-    // step here so that completions are immediately dispatched to test
-    // clients.
-    uep->server->SendCompletions();
-  }
-
-  static void TriggerEpTransferInProgress(Dwc3& drv, uint8_t ep_num) {
-    auto* uep = drv.get_user_endpoint(ep_num);
-    ZX_ASSERT(uep != nullptr);
-
-    if (uep->fifo.GetActiveCount() > 0) {
-      dwc3_trb_t* trb = uep->fifo.read_;
-      trb->control &= ~TRB_HWO;
-      trb->status = 0;
-      uep->fifo.Write(trb, 1);
-    }
-
-    drv.HandleEpTransferInProgressEvent(ep_num);
-
-    // In production, SendCompletions is called at the end of the global event
-    // interrupt handler loop (once per interrupt batch), rather than from
-    // inside the individual endpoint event handlers. We simulate that final
-    // step here so that completions are immediately dispatched to test
-    // clients.
-    uep->server->SendCompletions();
   }
 
   static void TriggerEpTransferStarted(Dwc3& drv, uint8_t ep_num, uint32_t rsrc_id) {
     drv.HandleEpTransferStartedEvent(ep_num, rsrc_id);
-  }
-
-  static void TriggerEpTransferEnded(Dwc3& drv, uint8_t ep_num) {
-    drv.HandleEpTransferEndedEvent(ep_num);
   }
 
   static void TriggerConnectionDone(Dwc3& drv) { drv.HandleConnectionDoneEvent(); }
