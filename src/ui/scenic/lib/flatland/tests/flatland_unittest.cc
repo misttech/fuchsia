@@ -1072,6 +1072,18 @@ TEST_F(FlatlandTest, SetHitRegionsErrorTest) {
     PRESENT(flatland, /*expect_success=*/false);
   }
 
+  // Negative hit region width.
+  {
+    std::shared_ptr<Flatland> flatland = CreateFlatland();
+    const TransformId kId(1);
+    flatland->CreateTransform(kId);
+    flatland->SetRootTransform(kId);
+    fuchsia_ui_composition::HitRegion region = {
+        {0, 2, -10, 4}, fuchsia_ui_composition::HitTestInteraction::kDefault};
+    flatland->SetHitRegions(kId, {region});
+    PRESENT(flatland, /*expect_success=*/false);
+  }
+
   // Transform ID should be present.
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();

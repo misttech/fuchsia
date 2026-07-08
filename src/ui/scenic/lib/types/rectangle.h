@@ -9,6 +9,8 @@
 #include <fidl/fuchsia.math/cpp/wire.h>
 #include <lib/syslog/cpp/macros.h>
 
+#include <algorithm>
+
 #include "src/ui/scenic/lib/types/extent2.h"
 #include "src/ui/scenic/lib/types/point2.h"
 #include "src/ui/scenic/lib/types/util/hash_combine.h"
@@ -223,20 +225,20 @@ constexpr bool operator==(const Rectangle& lhs, const Rectangle& rhs) {
 constexpr bool operator!=(const Rectangle& lhs, const Rectangle& rhs) { return !(lhs == rhs); }
 
 inline fuchsia_math::RectU Rectangle::ToFidlRectU() const {
-  FX_DCHECK(origin_.x() >= 0) << origin_.x();
-  FX_DCHECK(origin_.y() >= 0) << origin_.y();
-  FX_DCHECK(extent_.width() >= 0) << extent_.width();
-  FX_DCHECK(extent_.height() >= 0) << extent_.height();
+  FX_CHECK(origin_.x() >= 0) << origin_.x();
+  FX_CHECK(origin_.y() >= 0) << origin_.y();
+  FX_CHECK(extent_.width() >= 0) << extent_.width();
+  FX_CHECK(extent_.height() >= 0) << extent_.height();
   return fuchsia_math::RectU(static_cast<uint32_t>(origin_.x()), static_cast<uint32_t>(origin_.y()),
                              static_cast<uint32_t>(extent_.width()),
                              static_cast<uint32_t>(extent_.height()));
 }
 
 constexpr fuchsia_math::wire::RectU Rectangle::ToWireRectU() const {
-  FX_DCHECK(origin_.x() >= 0) << origin_.x();
-  FX_DCHECK(origin_.y() >= 0) << origin_.y();
-  FX_DCHECK(extent_.width() >= 0) << extent_.width();
-  FX_DCHECK(extent_.height() >= 0) << extent_.height();
+  FX_CHECK(origin_.x() >= 0) << origin_.x();
+  FX_CHECK(origin_.y() >= 0) << origin_.y();
+  FX_CHECK(extent_.width() >= 0) << extent_.width();
+  FX_CHECK(extent_.height() >= 0) << extent_.height();
   return fuchsia_math::wire::RectU{
       .x = static_cast<uint32_t>(origin_.x()),
       .y = static_cast<uint32_t>(origin_.y()),

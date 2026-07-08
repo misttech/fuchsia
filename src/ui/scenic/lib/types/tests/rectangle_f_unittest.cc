@@ -22,8 +22,14 @@ TEST(RectangleFTest, IsValid) {
   // Invalid cases.
   EXPECT_FALSE(RectangleF::IsValid({.x = kFpInfinity, .y = 0.f, .width = 0.f, .height = 0.f}));
   EXPECT_FALSE(RectangleF::IsValid({.x = 0.f, .y = 0.f, .width = -1.f, .height = 0.f}));
-  EXPECT_FALSE(RectangleF::IsValid(
+  // Adding a small width to `float::max()` evaluates to `float::max()` due to precision limits.
+  // This is a valid geometric rectangle, even if its bounds get absorbed.
+  EXPECT_TRUE(RectangleF::IsValid(
       {.x = std::numeric_limits<float>::max(), .y = 0.f, .width = 1.f, .height = 0.f}));
+  EXPECT_FALSE(RectangleF::IsValid({.x = std::numeric_limits<float>::max(),
+                                    .y = 0.f,
+                                    .width = std::numeric_limits<float>::max(),
+                                    .height = 0.f}));
 }
 
 TEST(RectangleFTest, FromFidl) {

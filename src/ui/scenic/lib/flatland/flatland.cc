@@ -1818,11 +1818,11 @@ void Flatland::SetHitRegions(TransformId transform_id,
   }
 
   // Validate |regions|.
-  for (auto& region : regions) {
-    auto& rect = region.region();
+  for (const auto& region : regions) {
+    const auto& rect = region.region();
 
-    if (rect.width() < 0 || rect.height() < 0) {
-      error_reporter_->ERROR() << "SetHitRegions failed, contains invalid (negative) dimensions: ("
+    if (!types::RectangleF::IsValid(rect)) {
+      error_reporter_->ERROR() << "SetHitRegions failed, contains invalid dimensions: ("
                                << rect.width() << "," << rect.height() << ")";
       CloseConnection(FlatlandError::kBadOperation);
       return;
@@ -1832,11 +1832,11 @@ void Flatland::SetHitRegions(TransformId transform_id,
   // Reformat into internal type.
   std::vector<flatland::HitRegion> list;
   list.reserve(regions.size());
-  for (auto& region : regions) {
+  for (const auto& region : regions) {
     list.emplace_back(types::RectangleF::From(region.region()),
                       fidl::NaturalToHLCPP(region.hit_test()));
   }
-  hit_regions_[transform_kv->second] = list;
+  hit_regions_[transform_kv->second] = std::move(list);
 }
 
 void Flatland::SetInfiniteHitRegion(SetInfiniteHitRegionRequest& request,

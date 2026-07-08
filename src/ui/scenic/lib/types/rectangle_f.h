@@ -100,19 +100,6 @@ constexpr bool RectangleF::IsValid(const ConstructorArgs& args, bool should_asse
   const auto opposite_x = args.x + args.width;
   const auto opposite_y = args.y + args.height;
 
-  // Check for overflow. If the extent is positive, the opposite corner must be greater than the
-  // origin.
-  if (args.width > 0.f && opposite_x <= args.x) {
-    FX_DCHECK(!should_assert) << "Overflow when adding x and width. x=" << args.x
-                              << ", width=" << args.width;
-    return false;
-  }
-  if (args.height > 0.f && opposite_y <= args.y) {
-    FX_DCHECK(!should_assert) << "Overflow when adding y and height. y=" << args.y
-                              << ", height=" << args.height;
-    return false;
-  }
-
   return Point2F::IsValid(opposite_x, opposite_y, should_assert);
 }
 

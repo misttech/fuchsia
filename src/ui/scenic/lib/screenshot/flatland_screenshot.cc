@@ -267,7 +267,8 @@ void FlatlandScreenshot::Take(fuchsia_ui_composition::ScreenshotTakeRequest para
           zx::vmo response_vmo;
           zx::vmo response_vmo_copy;
           const auto response_vmo_size =
-              (display_size_.width * display_size_.height * kBytesPerPixel) +
+              (static_cast<uint64_t>(display_size_.width) *
+               static_cast<uint64_t>(display_size_.height) * kBytesPerPixel) +
               zx_system_get_page_size();
           FX_CHECK(zx::vmo::create(response_vmo_size, ZX_VMO_RESIZABLE, &response_vmo) == ZX_OK);
           FX_CHECK(response_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &response_vmo_copy) == ZX_OK);
@@ -364,7 +365,8 @@ zx::vmo FlatlandScreenshot::HandleFrameRender() {
         ZX_RIGHT_READ | ZX_RIGHT_MAP | ZX_RIGHT_TRANSFER | ZX_RIGHT_GET_PROPERTY, &response_vmo);
     FX_DCHECK(status == ZX_OK);
   } else {
-    const auto response_vmo_size = display_size_.width * display_size_.height * kBytesPerPixel;
+    const auto response_vmo_size = static_cast<uint64_t>(display_size_.width) *
+                                   static_cast<uint64_t>(display_size_.height) * kBytesPerPixel;
     FX_CHECK(ZX_OK == zx::vmo::create(response_vmo_size, 0, &response_vmo));
     uint8_t* response_vmo_base;
     FX_CHECK(ZX_OK == zx::vmar::root_self()->map(ZX_VM_PERM_WRITE | ZX_VM_PERM_READ, 0,
@@ -483,7 +485,8 @@ void FlatlandScreenshot::TakeFile(fuchsia_ui_composition::ScreenshotTakeFileRequ
           // Make |resonpnse_vmo| large enough to hold any potential PNG encoding of |raw_vmo|.
           // Once compression is complete |resonpnse_vmo| gets resized back down.
           const auto response_vmo_size =
-              (display_size_.width * display_size_.height * kBytesPerPixel) +
+              (static_cast<uint64_t>(display_size_.width) *
+               static_cast<uint64_t>(display_size_.height) * kBytesPerPixel) +
               zx_system_get_page_size();
           FX_CHECK(zx::vmo::create(response_vmo_size, ZX_VMO_RESIZABLE, &response_vmo) == ZX_OK);
           FX_CHECK(response_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &response_vmo_copy) == ZX_OK);
