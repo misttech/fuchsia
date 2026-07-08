@@ -12,6 +12,8 @@ flash_manifest_version = 3
 
 # These are the common assembly-related labels.
 labels = {
+  assert(use_bazel_images_only,
+         "Only bazel-based products and bringup are supported.")
   if (bazel_product_bundle_target != "") {
     # For now only Fuchsia images built by Bazel are useful.
     assembly_name = "fuchsia"

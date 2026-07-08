@@ -108,14 +108,14 @@ import("//src/sys/pkg/bin/package-tool/package-tool.gni")
 #    bundles for products that don't need the 'core' realm, or are building
 #    for architectures where the full set of bundles won't compile.
 #
-#  generate_product_bundle_metadata (optional; default = true)
+#  generate_product_bundle_metadata (optional; default = use_bazel_images_only)
 #    Whether to generate the product bundle metadata for this product bundle.
 #
 #  product_bundle_name (required)
 #    The name of the product bundle produced in Bazel.
 #    This name will be used to populate the GN metadata.
 #
-#  generate_image_metadata (optional; default = true)
+#  generate_image_metadata (optional; default = use_bazel_images_only)
 #    Whether to generate image metadata for this product bundle.
 #
 #  image_has_fxfs_blob (optional; default = true)
@@ -231,7 +231,7 @@ template("bazel_product_bundle") {
                "allow_eng_platform_bundle_use",
              ])
 
-  _generate_image_metadata = true
+  _generate_image_metadata = use_bazel_images_only
   if (defined(invoker.generate_image_metadata)) {
     _generate_image_metadata = invoker.generate_image_metadata
   }
@@ -459,7 +459,7 @@ template("bazel_product_bundle") {
       "system_a/fuchsia.zbi",
     ]
 
-    _generate_product_bundle_metadata = true
+    _generate_product_bundle_metadata = use_bazel_images_only
     if (defined(invoker.generate_product_bundle_metadata)) {
       _generate_product_bundle_metadata =
           invoker.generate_product_bundle_metadata

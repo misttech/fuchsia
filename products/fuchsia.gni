@@ -15,6 +15,9 @@
 #   fx set-main-pb microfuchsia_eng.pkvm-arm64
 #   fx build
 
+# GN products are not supported in multi-product builds.
+use_bazel_images_only = true
+
 # Packages to be published to universe that do not go through assembly.
 discoverable_package_labels = [ "//src/developer/debug/debug_agent" ]
 

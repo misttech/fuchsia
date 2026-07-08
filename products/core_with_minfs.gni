@@ -24,6 +24,7 @@
 # upon solution for how to address the tech-debt.
 
 bazel_product_bundle_prefix = "//products/core:product_bundle_minfs"
+use_bazel_images_only = true
 
 fxfs_blob = false
 

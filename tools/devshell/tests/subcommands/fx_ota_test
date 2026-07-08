@@ -39,12 +39,6 @@ declare fx build check_package_server trigger_update commit_update
 BT_SET_UP() {
   source "${BT_TEMP_DIR}/tools/devshell/tests/lib/fuchsia-mock.sh"
   fx="$(btf::setup_fx)"
-  cat > "${BT_TEMP_DIR}/out/default/args.json" <<EOF
-{
-  "bazel_product_bundle_prefix": "//products/core:product_bundle",
-  "bazel_product_bundle_board": "x64"
-}
-EOF
   source "${BT_TEMP_DIR}/tools/devshell/lib/vars.sh"
   fx-config-read
   build="${BT_TEMP_DIR}/tools/devshell/build"

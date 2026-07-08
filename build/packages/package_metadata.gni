@@ -4,7 +4,7 @@
 
 import("//build/dist/generated_resource.gni")
 import("//build/group_with_inputs.gni")
-import("//build/host.gni")
+import("//build/images/args.gni")
 
 # Generate a list of package metadata exported from all packages in the
 # transitive closure of declared dependencies. This list is then used to form
@@ -75,7 +75,9 @@ template("generate_package_metadata") {
       "package_names_barrier",
     ]
 
-    assert_no_deps = [ "//build/images/fuchsia" ]
+    if (use_bazel_images_only) {
+      assert_no_deps = [ "//build/images/fuchsia" ]
+    }
   }
 
   action(target_name) {

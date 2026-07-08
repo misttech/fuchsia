@@ -23,6 +23,10 @@ assert(is_fuchsia,
 #   assembly_label (GN label, required)
 #     Label for the assembled_system() invocation to use, e.g. //build/images/fuchsia.
 #
+#   is_bazel_assembled (bool, required)
+#     Whether the assembly label corresponds to a Bazel-assembled or GN-assembled product.
+#     Typically you'd want this value to be the same as `use_bazel_images_only`.
+#
 #   namespace (string, optional)
 #     The effective namespace used by the system label.
 #     Defaults to the 'name' of the label in 'assembly_label'.

@@ -568,19 +568,27 @@ if (product_assembly_overrides_label != false) {
   if (_temp_labels.main_pb != "") {
     # main_pb works only with bazel targets. See below.
     _assembly_pattern = get_label_info(_temp_labels.main_pb, "dir") + "/*"
-  } else if (_temp_scope.bazel_product_bundle_target != "") {
-    # For Bazel-assembled products we directly set the assembly target that's
-    # matched against as a wildcard in the directory of the product bundle.
-    # This imposes restrictions on the product to define the product assembly
-    # in the same dir, or a subdir, of the one that the product bundle is
-    # defined in.
-    _assembly_pattern = get_label_info(_temp_labels.images, "dir") + "/*"
-  } else if (current_toolchain == default_toolchain) {
-    print()
-    print(
-        "WARNING:  Developer overrides specified but no main product assembly set.")
-    print("            If this is unexpected, set a main product bundle.")
-    print()
+  } else if (_temp_scope.use_bazel_images_only) {
+    if (_temp_scope.bazel_product_bundle_target != "") {
+      # For Bazel-assembled products we directly set the assembly target that's
+      # matched against as a wildcard in the directory of the product bundle.
+      # This imposes restrictions on the product to define the product assembly
+      # in the same dir, or a subdir, of the one that the product bundle is
+      # defined in.
+      _assembly_pattern = get_label_info(_temp_labels.images, "dir") + "/*"
+    } else {
+      if (current_toolchain == default_toolchain) {
+        print()
+        print(
+            "WARNING:  Developer overrides specified but no main product assembly set.")
+        print("            If this is unexpected, set a main product bundle.")
+        print()
+      }
+    }
+  } else {
+    # For GN-assembled products, we'll use the wildcard on the directory to get
+    # the right one.
+    _assembly_pattern = get_label_info(_temp_labels.images, "dir") + ":*"
   }
 
   if (defined(_assembly_pattern)) {
