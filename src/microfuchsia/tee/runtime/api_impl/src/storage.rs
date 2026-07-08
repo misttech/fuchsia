@@ -486,7 +486,7 @@ impl KeyType for EccKeypair {
         };
         match id {
             AttributeId::EccPrivateValue => {
-                Some(BufferAttribute::Vector(secret.to_be_bytes().as_slice().to_vec()))
+                Some(BufferAttribute::Vector(secret.to_bytes().as_slice().to_vec()))
             }
             AttributeId::EccPublicValueX => Some(BufferAttribute::Vector(
                 secret
@@ -548,7 +548,7 @@ impl KeyType for EccKeypair {
             return Err(Error::NotSupported);
         }
 
-        let secret = P256SecretKey::from_be_bytes(private_value).unwrap();
+        let secret = P256SecretKey::from_slice(private_value).unwrap();
 
         // Check that provided public parameters coincide with those computed
         // by the private key abstraction.

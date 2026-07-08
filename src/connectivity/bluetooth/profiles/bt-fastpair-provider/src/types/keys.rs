@@ -36,7 +36,7 @@ pub fn public_key_from_bytes(bytes: Vec<u8>) -> Result<PublicKey, Error> {
 
 /// Returns a SecretKey representing an integer [1, n-1] on the secp256r1 elliptic curve.
 pub fn private_key_from_bytes(bytes: Vec<u8>) -> Result<SecretKey, Error> {
-    SecretKey::from_be_bytes(&bytes[..])
+    SecretKey::from_slice(&bytes[..])
         .map_err(|e| Error::internal(&format!("Invalid private key: {:?}", e)))
 }
 

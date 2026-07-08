@@ -1819,8 +1819,26 @@ alias(
 )
 
 alias(
-    name = "p256",
+    name = "p256_0_11-0.11.1",
     actual = "//third_party/rust_crates/vendor/p256-0.11.1:p256",
+    tags = ["manual"],
+)
+
+alias(
+    name = "p256_0_11",
+    actual = "//third_party/rust_crates/vendor/p256-0.11.1:p256",
+    tags = ["manual"],
+)
+
+alias(
+    name = "p256-0.13.2",
+    actual = "//third_party/rust_crates/vendor/p256-0.13.2:p256",
+    tags = ["manual"],
+)
+
+alias(
+    name = "p256",
+    actual = "//third_party/rust_crates/vendor/p256-0.13.2:p256",
     tags = ["manual"],
 )
 

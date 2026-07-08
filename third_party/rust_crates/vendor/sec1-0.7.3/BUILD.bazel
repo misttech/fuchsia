@@ -53,22 +53,17 @@ rust_library(
         ],
     ),
     crate_features = [
+        "alloc",
         "default",
         "der",
+        "pem",
+        "pkcs8",
         "point",
+        "serde",
+        "std",
         "subtle",
         "zeroize",
-    ] + select({
-        "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [
-            "alloc",  # aarch64-unknown-fuchsia
-            "pkcs8",  # aarch64-unknown-fuchsia
-        ],
-        "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [
-            "alloc",  # x86_64-unknown-fuchsia
-            "pkcs8",  # x86_64-unknown-fuchsia
-        ],
-        "//conditions:default": [],
-    }),
+    ],
     crate_root = "src/lib.rs",
     edition = "2021",
     rustc_flags = [
@@ -94,14 +89,8 @@ rust_library(
         "//third_party/rust_crates/vendor/base16ct-0.2.0:base16ct",
         "//third_party/rust_crates/vendor/der-0.7.10:der",
         "//third_party/rust_crates/vendor/generic-array-0.14.9:generic_array",
+        "//third_party/rust_crates/vendor/pkcs8-0.10.2:pkcs8",
+        "//third_party/rust_crates/vendor/serdect-0.2.0:serdect",
         "//third_party/rust_crates/vendor/subtle-2.6.1:subtle",
-    ] + select({
-        "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [
-            "//third_party/rust_crates/vendor/pkcs8-0.10.2:pkcs8",  # aarch64-unknown-fuchsia
-        ],
-        "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [
-            "//third_party/rust_crates/vendor/pkcs8-0.10.2:pkcs8",  # x86_64-unknown-fuchsia
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )

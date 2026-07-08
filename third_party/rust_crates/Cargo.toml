@@ -176,7 +176,8 @@ num-traits = "0.2.19"
 omaha_client = "0.3.8"
 once_cell = "1.21.3"
 overload = "0.1.1"
-p256 = { version = "0.11.1", features = ["ecdh", "pem", "serde"] }
+p256 = { version = "0.13.2", features = ["ecdh", "pem", "serde"] }
+p256-0_11 = { package = "p256", version = "0.11.1", features = ["ecdh", "pem", "serde"] }
 paste = "1.0.15"
 pathdiff = { version = "0.2.3", features = ["camino"] }
 pem = "3.0.6"
@@ -854,6 +855,13 @@ configs = ["//third_party/boringssl/rust:osslconf"]
 [gn.package.openssl-sys."0.9.117"]
 rustflags = ["--cfg=boringssl"]
 configs = ["//third_party/boringssl/rust:osslconf"]
+
+[gn.package.p256."0.11.1"]
+group_name = "p256-0_11"
+visibility = [
+  ":*",
+  "//src/sys/pkg/bin/pkg-resolver:*",
+]
 
 [gn.package.parking_lot."0.12.5"]
 # Funnel usage of parking_lot through fuchsia_sync.

@@ -419,7 +419,8 @@ _NORMAL_DEPENDENCIES = {
             "omaha_client": Label("//third_party/rust_crates/vendor/omaha_client-0.3.8:omaha_client"),
             "once_cell": Label("//third_party/rust_crates/vendor/once_cell-1.21.3:once_cell"),
             "overload": Label("//third_party/rust_crates/vendor/overload-0.1.1:overload"),
-            "p256": Label("//third_party/rust_crates/vendor/p256-0.11.1:p256"),
+            "p256": Label("//third_party/rust_crates/vendor/p256-0.13.2:p256"),
+            "p256_0_11": Label("//third_party/rust_crates/vendor/p256-0.11.1:p256"),
             "pathdiff": Label("//third_party/rust_crates/vendor/pathdiff-0.2.3:pathdiff"),
             "pem": Label("//third_party/rust_crates/vendor/pem-3.0.6:pem"),
             "percent-encoding": Label("//third_party/rust_crates/vendor/percent-encoding-2.3.1:percent_encoding"),
@@ -584,6 +585,7 @@ _NORMAL_ALIASES = {
     "third_party/rust_crates": {
         _COMMON_CONDITION: {
             Label("//third_party/rust_crates/vendor/heck-0.3.1:heck"): "heck_0_3",
+            Label("//third_party/rust_crates/vendor/p256-0.11.1:p256"): "p256_0_11",
         },
         "cfg(not(target_os = \"fuchsia\"))": {
         },

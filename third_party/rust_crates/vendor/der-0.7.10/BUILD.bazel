@@ -55,19 +55,17 @@ rust_library(
     crate_features = [
         "alloc",
         "oid",
+        "pem",
+        "std",
         "zeroize",
     ] + select({
         "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [
             "derive",  # aarch64-unknown-fuchsia
             "flagset",  # aarch64-unknown-fuchsia
-            "pem",  # aarch64-unknown-fuchsia
-            "std",  # aarch64-unknown-fuchsia
         ],
         "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [
             "derive",  # x86_64-unknown-fuchsia
             "flagset",  # x86_64-unknown-fuchsia
-            "pem",  # x86_64-unknown-fuchsia
-            "std",  # x86_64-unknown-fuchsia
         ],
         "//conditions:default": [],
     }),
@@ -103,14 +101,13 @@ rust_library(
     deps = [
         "//third_party/rust_crates/forks/zeroize",
         "//third_party/rust_crates/vendor/const-oid-0.9.6:const_oid",
+        "//third_party/rust_crates/vendor/pem-rfc7468-0.7.0:pem_rfc7468",
     ] + select({
         "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [
             "//third_party/rust_crates/vendor/flagset-0.4.7:flagset",  # aarch64-unknown-fuchsia
-            "//third_party/rust_crates/vendor/pem-rfc7468-0.7.0:pem_rfc7468",  # aarch64-unknown-fuchsia
         ],
         "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [
             "//third_party/rust_crates/vendor/flagset-0.4.7:flagset",  # x86_64-unknown-fuchsia
-            "//third_party/rust_crates/vendor/pem-rfc7468-0.7.0:pem_rfc7468",  # x86_64-unknown-fuchsia
         ],
         "//conditions:default": [],
     }),
