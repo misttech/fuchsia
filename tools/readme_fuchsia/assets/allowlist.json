@@ -5,7 +5,6 @@
         "vendor/"
     ],
     "ignored_files": [
-        "build/secondary/third_party/acpica/README.fuchsia",
         "build/secondary/third_party/glog/README.fuchsia",
         "scripts/third_party/d3/README.fuchsia",
         "scripts/third_party/d3_v3/README.fuchsia",
