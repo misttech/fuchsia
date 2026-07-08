@@ -6,8 +6,6 @@
     ],
     "ignored_files": [
         "build/secondary/third_party/glog/README.fuchsia",
-        "scripts/third_party/d3/README.fuchsia",
-        "scripts/third_party/d3_v3/README.fuchsia",
         "src/connectivity/network/tools/nc/third_party/openbsd-netcat/README.fuchsia",
         "src/connectivity/wlan/drivers/third_party/intel/iwlwifi/README.fuchsia",
         "src/firmware/gigaboot/third_party/include/gbl/README.fuchsia",
