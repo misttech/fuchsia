@@ -48,6 +48,7 @@ type testsharderFlags struct {
 	affectedOnly                bool
 	skipUnaffected              bool
 	preserveTestOrder           bool
+	productBundleOverride       string
 	testsharderParamsFile       string
 	depsFile                    string
 	ignoreMultiplyIsolatedLimit bool
@@ -66,6 +67,7 @@ func parseFlags() testsharderFlags {
 	flag.BoolVar(&flags.affectedOnly, "affected-only", false, "whether to create test shards for only the affected tests found in either the modifiers file or the affected-tests file.")
 	flag.BoolVar(&flags.skipUnaffected, "skip-unaffected", false, "whether the shards should ignore hermetic, unaffected tests")
 	flag.BoolVar(&flags.preserveTestOrder, "preserve-order", false, "whether to preserve the test order of affected tests provided through the modifiers file. This only has an effect if used with --affected-only and --skip-unaffected and will run all affected tests in one shard.")
+	flag.StringVar(&flags.productBundleOverride, "product-bundle", "", "default product bundle to override the one in the testsharder params.")
 	flag.StringVar(&flags.testsharderParamsFile, "params-file", "", "path to the testsharder params file")
 	flag.StringVar(&flags.depsFile, "deps-file", "", "path to a file to write all the builder deps to in the format expected from `cas archive -paths-json`.")
 	flag.BoolVar(&flags.ignoreMultiplyIsolatedLimit, "ignore-multiply-limit", false, "whether to ignore the limit on multiplied runs per isolated test")
@@ -155,6 +157,10 @@ var getHostPlatform = func() (string, error) {
 func execute(ctx context.Context, flags testsharderFlags, params *proto.Params, m buildModules) error {
 	if flags.depsFile != "" && flags.outputFile == "" {
 		return fmt.Errorf("output-file needs to be set if deps-file is set")
+	}
+
+	if flags.productBundleOverride != "" {
+		params.ProductBundleName = flags.productBundleOverride
 	}
 
 	targetDuration := params.TargetDuration.AsDuration()
