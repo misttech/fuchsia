@@ -61,7 +61,6 @@ fuchsia_product_bundle(
     name = "product_bundle.x64",
     main = ":image.x64",
     product_bundle_name = "bringup.x64",
-    product_bundle_version = build_info_version,
     recovery = "//products/zedboot:x64",
 )
 
@@ -76,7 +75,6 @@ fuchsia_product_bundle(
     name = "product_bundle_with_tests.x64",
     main = ":image_with_tests.x64",
     product_bundle_name = "bringup_with_tests.x64",
-    product_bundle_version = build_info_version,
     recovery = "//products/zedboot:x64",
     virtual_devices = [
         "//build/bazel/assembly/virtual_devices:x64-emu-recommended",
@@ -99,7 +97,6 @@ fuchsia_product_bundle(
     name = "product_bundle.arm64",
     main = ":image.arm64",
     product_bundle_name = "bringup.arm64",
-    product_bundle_version = build_info_version,
     recovery = "//products/zedboot:arm64",
 )
 
@@ -114,7 +111,6 @@ fuchsia_product_bundle(
     name = "product_bundle_with_tests.arm64",
     main = ":image_with_tests.arm64",
     product_bundle_name = "bringup_with_tests.arm64",
-    product_bundle_version = build_info_version,
     recovery = "//products/zedboot:arm64",
     virtual_devices = [
         "//build/bazel/assembly/virtual_devices:arm64-emu-recommended",
@@ -137,7 +133,6 @@ fuchsia_product_bundle(
     name = "product_bundle.qemu-arm64",
     main = ":image.qemu-arm64",
     product_bundle_name = "bringup.qemu-arm64",
-    product_bundle_version = build_info_version,
     recovery = "//products/zedboot:qemu-arm64",
 )
 
@@ -152,7 +147,6 @@ fuchsia_product_bundle(
     name = "product_bundle_with_tests.qemu-arm64",
     main = ":image_with_tests.qemu-arm64",
     product_bundle_name = "bringup_with_tests.qemu-arm64",
-    product_bundle_version = build_info_version,
     recovery = "//products/zedboot:qemu-arm64",
     virtual_devices = [
         "//build/bazel/assembly/virtual_devices:arm64-emu-recommended",
@@ -175,7 +169,6 @@ fuchsia_product_bundle(
     name = "product_bundle.vim3",
     main = ":image.vim3",
     product_bundle_name = "bringup.vim3",
-    product_bundle_version = build_info_version,
     recovery = "//products/zedboot:vim3_recovery",
 )
 
@@ -190,7 +183,6 @@ fuchsia_product_bundle(
     name = "product_bundle_with_tests.vim3",
     main = ":image_with_tests.vim3",
     product_bundle_name = "bringup_with_tests.vim3",
-    product_bundle_version = build_info_version,
     recovery = "//products/zedboot:vim3_recovery",
 )
 
@@ -208,7 +200,6 @@ fuchsia_product_bundle(
     name = "product_bundle.riscv64",
     main = ":image.riscv64",
     product_bundle_name = "bringup.riscv64",
-    product_bundle_version = build_info_version,
     recovery = "//products/zedboot:riscv64",
 )
 
@@ -223,7 +214,6 @@ fuchsia_product_bundle(
     name = "product_bundle_with_tests.riscv64",
     main = ":image_with_tests.riscv64",
     product_bundle_name = "bringup_with_tests.riscv64",
-    product_bundle_version = build_info_version,
     recovery = "//products/zedboot:riscv64",
     virtual_devices = [
         "//build/bazel/assembly/virtual_devices:riscv64-emu-recommended",

@@ -42,7 +42,6 @@ fuchsia_product_bundle(
     default_virtual_device = ":microfuchsia_emu_x64",
     main = ":microfuchsia_eng.x64",
     product_bundle_name = "microfuchsia_eng.x64",
-    product_bundle_version = build_info_version,
     virtual_devices = [
         ":microfuchsia_emu_x64",
     ],
@@ -53,7 +52,6 @@ fuchsia_product_bundle(
     default_virtual_device = ":microfuchsia_emu_x64",
     main = ":microfuchsia_eng.pkvm-x64",
     product_bundle_name = "microfuchsia_eng.pkvm-x64",
-    product_bundle_version = build_info_version,
     virtual_devices = [
         ":microfuchsia_emu_x64",
     ],
@@ -63,7 +61,6 @@ fuchsia_product_bundle(
     name = "product_bundle_eng.arm64",
     main = ":microfuchsia_eng.arm64",
     product_bundle_name = "microfuchsia_eng.arm64",
-    product_bundle_version = build_info_version,
 )
 
 fuchsia_product_bundle(
@@ -71,7 +68,6 @@ fuchsia_product_bundle(
     default_virtual_device = ":microfuchsia_emu_arm64",
     main = ":microfuchsia_eng.pkvm-arm64",
     product_bundle_name = "microfuchsia_eng.pkvm-arm64",
-    product_bundle_version = build_info_version,
     virtual_devices = [
         ":microfuchsia_emu_arm64",
     ],
