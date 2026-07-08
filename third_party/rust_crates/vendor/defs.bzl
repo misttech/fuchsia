@@ -533,7 +533,7 @@ _NORMAL_DEPENDENCIES = {
             "rustfix": Label("//third_party/rust_crates/vendor/rustfix-0.9.5:rustfix"),
             "rustls-native-certs": Label("//third_party/rust_crates/vendor/rustls-native-certs-0.6.3:rustls_native_certs"),
             "semver": Label("//third_party/rust_crates/vendor/semver-1.0.28:semver"),
-            "serde_yaml": Label("//third_party/rust_crates/vendor/serde_yaml-0.9.14:serde_yaml"),
+            "serde_yaml": Label("//third_party/rust_crates/vendor/serde_yaml-0.9.34+deprecated:serde_yaml"),
             "serial_test": Label("//third_party/rust_crates/vendor/serial_test-0.8.0:serial_test"),
             "shared_child": Label("//third_party/rust_crates/vendor/shared_child-1.1.1:shared_child"),
             "signal-hook": Label("//third_party/rust_crates/vendor/signal-hook-0.4.4:signal_hook"),

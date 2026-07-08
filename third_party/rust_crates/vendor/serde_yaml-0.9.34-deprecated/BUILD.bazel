@@ -8,7 +8,6 @@
 
 load("@rules_license//rules:license.bzl", "license")
 load("@rules_license//rules:package_info.bzl", "package_info")
-load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
 load("@rules_rust//rust:defs.bzl", "rust_library")
 
 package(
@@ -21,9 +20,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "indexmap",
-    package_url = "https://github.com/bluss/indexmap",
-    package_version = "1.9.2",
+    package_name = "serde_yaml",
+    package_url = "https://github.com/dtolnay/serde-yaml",
+    package_version = "0.9.34+deprecated",
 )
 
 license(
@@ -36,7 +35,7 @@ license(
 )
 
 rust_library(
-    name = "indexmap",
+    name = "serde_yaml",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -53,10 +52,6 @@ rust_library(
             "WORKSPACE.bazel",
         ],
     ),
-    crate_features = [
-        "serde",
-        "serde-1",
-    ],
     crate_root = "src/lib.rs",
     edition = "2021",
     rustc_flags = [
@@ -64,7 +59,7 @@ rust_library(
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=indexmap",
+        "crate-name=serde_yaml",
         "manual",
         "noclippy",
         "norustfmt",
@@ -76,72 +71,12 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.9.2",
+    version = "0.9.34+deprecated",
     deps = [
-        "//third_party/rust_crates/vendor/hashbrown-0.12.3:hashbrown",
-        "//third_party/rust_crates/vendor/indexmap-1.9.2:build_script_build",
+        "//third_party/rust_crates/vendor/indexmap-2.13.0:indexmap",
+        "//third_party/rust_crates/vendor/itoa-1.0.18:itoa",
+        "//third_party/rust_crates/vendor/ryu-1.0.22:ryu",
         "//third_party/rust_crates/vendor/serde-1.0.228:serde",
+        "//third_party/rust_crates/vendor/unsafe-libyaml-0.2.11:unsafe_libyaml",
     ],
-)
-
-cargo_build_script(
-    name = "_bs",
-    srcs = glob(
-        include = ["**/*.rs"],
-        allow_empty = False,
-    ),
-    compile_data = glob(
-        include = ["**"],
-        allow_empty = True,
-        exclude = [
-            "**/* *",
-            "**/*.rs",
-            ".tmp_git_root/**/*",
-            "BUILD",
-            "BUILD.bazel",
-            "WORKSPACE",
-            "WORKSPACE.bazel",
-        ],
-    ),
-    crate_features = [
-        "serde",
-        "serde-1",
-    ],
-    crate_name = "build_script_build",
-    crate_root = "build.rs",
-    data = glob(
-        include = ["**"],
-        allow_empty = True,
-        exclude = [
-            "**/* *",
-            ".tmp_git_root/**/*",
-            "BUILD",
-            "BUILD.bazel",
-            "WORKSPACE",
-            "WORKSPACE.bazel",
-        ],
-    ),
-    edition = "2021",
-    pkg_name = "indexmap",
-    rustc_flags = [
-        "--cap-lints=allow",
-    ],
-    tags = [
-        "cargo-bazel",
-        "crate-name=indexmap",
-        "manual",
-        "noclippy",
-        "norustfmt",
-    ],
-    version = "1.9.2",
-    visibility = ["//visibility:private"],
-    deps = [
-        "//third_party/rust_crates/vendor/autocfg-1.5.0:autocfg",
-    ],
-)
-
-alias(
-    name = "build_script_build",
-    actual = ":_bs",
-    tags = ["manual"],
 )

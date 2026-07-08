@@ -2701,14 +2701,14 @@ alias(
 )
 
 alias(
-    name = "serde_yaml-0.9.14",
-    actual = "//third_party/rust_crates/vendor/serde_yaml-0.9.14:serde_yaml",
+    name = "serde_yaml-0.9.34+deprecated",
+    actual = "//third_party/rust_crates/vendor/serde_yaml-0.9.34-deprecated:serde_yaml",
     tags = ["manual"],
 )
 
 alias(
     name = "serde_yaml",
-    actual = "//third_party/rust_crates/vendor/serde_yaml-0.9.14:serde_yaml",
+    actual = "//third_party/rust_crates/vendor/serde_yaml-0.9.34-deprecated:serde_yaml",
     tags = ["manual"],
 )
 

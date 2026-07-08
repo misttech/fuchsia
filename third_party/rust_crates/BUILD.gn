@@ -2005,13 +2005,13 @@ group("serde_repr-0.1.7") {
 
 if (!(current_os == "fuchsia")) {
   group("serde_yaml") {
-    public_deps = [ ":serde_yaml-v0_9_14" ]
+    public_deps = [ ":serde_yaml-v0_9_34+deprecated" ]
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("serde_yaml-0.9.14") {
-    public_deps = [ ":serde_yaml-v0_9_14" ]
+  group("serde_yaml-0.9.34+deprecated") {
+    public_deps = [ ":serde_yaml-v0_9_34+deprecated" ]
   }
 }
 
@@ -11481,7 +11481,6 @@ rustc_library("indexmap-v1_9_2") {
     "-Cextra-filename=-48d3353175399349",
     "--cfg=feature=\"serde\"",
     "--cfg=feature=\"serde-1\"",
-    "--cfg=feature=\"std\"",
     "--cfg=has_std",
   ]
 
@@ -19777,41 +19776,42 @@ rustc_library("serde_spanned-v1_1_1") {
   applicable_licenses = [ ":serde_spanned-v1_1_1.license" ]
 }
 
-license("serde_yaml-v0_9_14.license") {
+license("serde_yaml-v0_9_34+deprecated.license") {
   public_package_name = "serde_yaml"
   license_files = [
-    "//third_party/rust_crates/vendor/serde_yaml-0.9.14/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/serde_yaml-0.9.14/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/serde_yaml-0.9.34-deprecated/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/serde_yaml-0.9.34-deprecated/LICENSE-MIT",
   ]
 }
 
-rustc_library("serde_yaml-v0_9_14") {
+rustc_library("serde_yaml-v0_9_34+deprecated") {
   crate_name = "serde_yaml"
-  source_root = "//third_party/rust_crates/vendor/serde_yaml-0.9.14/src/lib.rs"
-  output_name = "serde_yaml-ffc5fc40615e989"
+  source_root =
+      "//third_party/rust_crates/vendor/serde_yaml-0.9.34-deprecated/src/lib.rs"
+  output_name = "serde_yaml-a3bd503aa55a56c0"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":indexmap-v1_9_2" ]
+  deps += [ ":indexmap-v2_13_0" ]
   deps += [ ":itoa-v1_0_18" ]
   deps += [ ":ryu-v1_0_22" ]
   deps += [ ":serde-v1_0_228" ]
-  deps += [ ":unsafe-libyaml-v0_2_4" ]
+  deps += [ ":unsafe-libyaml-v0_2_11" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=ffc5fc40615e989",
-    "-Cextra-filename=-ffc5fc40615e989",
+    "-Cmetadata=a3bd503aa55a56c0",
+    "-Cextra-filename=-a3bd503aa55a56c0",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":serde_yaml-v0_9_14.license" ]
+  applicable_licenses = [ ":serde_yaml-v0_9_34+deprecated.license" ]
 }
 
 license("serdect-v0_1_0.license") {
@@ -23347,17 +23347,17 @@ rustc_library("universal-hash-v0_5_1") {
   applicable_licenses = [ ":universal-hash-v0_5_1.license" ]
 }
 
-license("unsafe-libyaml-v0_2_4.license") {
+license("unsafe-libyaml-v0_2_11.license") {
   public_package_name = "unsafe_libyaml"
   license_files =
-      [ "//third_party/rust_crates/vendor/unsafe-libyaml-0.2.4/LICENSE-MIT" ]
+      [ "//third_party/rust_crates/vendor/unsafe-libyaml-0.2.11/LICENSE-MIT" ]
 }
 
-rustc_library("unsafe-libyaml-v0_2_4") {
+rustc_library("unsafe-libyaml-v0_2_11") {
   crate_name = "unsafe_libyaml"
   source_root =
-      "//third_party/rust_crates/vendor/unsafe-libyaml-0.2.4/src/lib.rs"
-  output_name = "unsafe_libyaml-6ca95d2df768fdf1"
+      "//third_party/rust_crates/vendor/unsafe-libyaml-0.2.11/src/lib.rs"
+  output_name = "unsafe_libyaml-a85d278345731804"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -23369,13 +23369,13 @@ rustc_library("unsafe-libyaml-v0_2_4") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=6ca95d2df768fdf1",
-    "-Cextra-filename=-6ca95d2df768fdf1",
+    "-Cmetadata=a85d278345731804",
+    "-Cextra-filename=-a85d278345731804",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":unsafe-libyaml-v0_2_4.license" ]
+  applicable_licenses = [ ":unsafe-libyaml-v0_2_11.license" ]
 }
 
 license("untrusted-v0_9_0.license") {

@@ -344,7 +344,7 @@ quote = "1.0.45"
 rustfix = "0.9.5"
 rustls-native-certs = "0.6.3"
 semver = "1.0.28"
-serde_yaml = "0.9.14" # To use on Fuchsia, serde_yaml and unsafe-libyaml will need to be re-audited.
+serde_yaml = "0.9.34+deprecated" # To use on Fuchsia, serde_yaml and unsafe-libyaml will need to be re-audited.
 serial_test = "0.8.0" # Not for use on Fuchsia, only for a single process.
 shared_child = { version = "1.1.1", default-features = false }
 signal-hook = "0.4.4"
