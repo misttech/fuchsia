@@ -137,6 +137,16 @@ tools_bazel_root_targets = [
     bazel_label = "//tools/fidl/fidldoc:fidldoc"
     install_host_tool = true
   },
+  {
+    bazel_label = "//tools/fidl/fidlmerge:fidlmerge"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidlmerge_/fidlmerge"
+        ninja = "fidlmerge"
+      },
+    ]
+    install_host_tool = true
+  },
 
   # Various tests that we want to ensure can
   # build correctly.

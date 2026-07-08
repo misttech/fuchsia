@@ -27,10 +27,10 @@ group("core-tools") {
 group("host_tools") {
   testonly = true
   public_deps = [
+    "//build/bazel/host:bazel_root_host_tools.fidlmerge.host_tool($host_toolchain)",
     "//src/performance/trace2json($host_toolchain)",
     "//src/sys/pkg/bin/far:host($host_toolchain)",
     "//tools/check-licenses:host($host_toolchain)",
-    "//tools/fidl/fidlmerge:host",
     "//tools/fidl/gidl:host",
     "//tools/whereiscl:host($host_toolchain)",
   ]
