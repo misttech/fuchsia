@@ -5,21 +5,17 @@
 // Implements Zxcrypt.  This is tested via the fshost tests.
 
 use super::{AlignedMem, Fvm, IoTrait, ReadToMem, WriteFromMem};
-use crate::device::{BUFFER_SIZE, BufferGuard, Device};
+use crate::buffers::{BUFFER_SIZE, BufferGuard};
+use crate::device::Device;
 use aes::Aes256;
-use aes::cipher::inout::InOut;
-use aes::cipher::typenum::consts::U16;
-use aes::cipher::{
-    BlockCipherDecBackend, BlockCipherDecClosure, BlockCipherDecrypt, BlockCipherEncBackend,
-    BlockCipherEncClosure, BlockCipherEncrypt, BlockSizeUser, KeyInit,
-};
+use aes::cipher::{BlockCipherDecrypt, BlockCipherEncrypt, KeyInit};
 use anyhow::{Error, ensure};
-use block_client::{
-    BlockClient, BufferSlice, MutableBufferSlice, ReadOptions, RemoteBlockClient, WriteOptions,
-};
+use block_client::{BlockClient, BufferSlice, MutableBufferSlice, ReadOptions, WriteOptions};
+use std::sync::Arc;
 
 use futures::stream::{FuturesUnordered, TryStreamExt};
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, little_endian, transmute_mut};
+use storage_xts::{Tweak, XtsProcessor};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, little_endian};
 
 pub struct Key {
     data_cipher: Aes256,
@@ -70,8 +66,8 @@ impl Key {
         let unwrapped_key = crypt.unwrap_key(0, &key).await?.map_err(zx::Status::from_raw)?;
 
         Ok(Self {
-            data_cipher: Aes256::new(unwrapped_key[..32].try_into().unwrap()),
-            iv_cipher: Aes256::new(unwrapped_key[32..64].try_into().unwrap()),
+            data_cipher: Aes256::new_from_slice(&unwrapped_key[..32]).unwrap(),
+            iv_cipher: Aes256::new_from_slice(&unwrapped_key[32..64]).unwrap(),
             iv: little_endian::U128::from_bytes(unwrapped_key[64..80].try_into().unwrap()).get(),
         })
     }
@@ -103,8 +99,8 @@ impl Key {
         fvm.do_io(WriteFromMem::new(&fvm.device, &data), partition_index, 0, 1, 0).await?;
 
         Ok(Self {
-            data_cipher: Aes256::new(unwrapped_key[..32].try_into().unwrap()),
-            iv_cipher: Aes256::new(unwrapped_key[32..64].try_into().unwrap()),
+            data_cipher: Aes256::new_from_slice(&unwrapped_key[..32]).unwrap(),
+            iv_cipher: Aes256::new_from_slice(&unwrapped_key[32..64]).unwrap(),
             iv: little_endian::U128::from_bytes(unwrapped_key[64..80].try_into().unwrap()).get(),
         })
     }
@@ -138,9 +134,10 @@ pub struct EncryptedRead<'a> {
     device: &'a Device,
     key: &'a Key,
     tweak: u128,
-    target_vmo: &'a zx::Vmo,
+    vmo: Arc<zx::Vmo>,
     vmo_offset: u64,
-    buffer: BufferGuard<'a, RemoteBlockClient>,
+    buffer: BufferGuard,
+    private_buffer: BufferGuard,
     ops: Vec<Op>,
     queued_len: u64,
 }
@@ -150,16 +147,17 @@ impl<'a> EncryptedRead<'a> {
         device: &'a Device,
         key: &'a Key,
         block_offset: u64,
-        target_vmo: &'a zx::Vmo,
+        vmo: Arc<zx::Vmo>,
         vmo_offset: u64,
     ) -> Self {
         Self {
             device,
             key,
             tweak: key.iv + block_offset as u128,
-            target_vmo,
+            vmo,
             vmo_offset,
             buffer: device.get_buffer().await,
+            private_buffer: device.get_private_buffer().await,
             ops: Vec::new(),
             queued_len: 0,
         }
@@ -198,7 +196,7 @@ impl IoTrait for EncryptedRead<'_> {
             |Op { offset, len, trace_flow_id }| {
                 let fut = self.device.read_at_with_opts_traced(
                     MutableBufferSlice::new_with_vmo_id(
-                        self.buffer.vmo_id(),
+                        self.device.shared_vmo_id(),
                         self.buffer.vmo_offset() + buf_offset,
                         len,
                     ),
@@ -213,19 +211,34 @@ impl IoTrait for EncryptedRead<'_> {
         self.queued_len = 0;
         let () = futures.try_collect().await?;
 
-        let buf = &mut self.buffer[..buf_offset as usize];
+        let src_slice = self.buffer.as_ptr_slice().subslice(0..buf_offset as usize);
+        let mut dst_slice =
+            self.private_buffer.as_mut_ptr_slice().subslice_mut(0..buf_offset as usize);
 
         // Decrypt the buffer
         let iv = &mut self.tweak;
-        for chunk in buf.chunks_exact_mut(self.device.block_size() as usize) {
+        let block_size = self.device.block_size() as usize;
+        assert_eq!(buf_offset as usize % block_size, 0, "buf_offset must be block aligned");
+        let mut sector_offset = 0;
+        while sector_offset < buf_offset as usize {
+            let src_sector = src_slice.subslice(sector_offset..sector_offset + block_size);
+            let dst_sector = dst_slice.subslice_mut(sector_offset..sector_offset + block_size);
             let mut tweak = Tweak(*iv);
             self.key.iv_cipher.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
-            self.key.data_cipher.decrypt_with_backend(XtsProcessor::new(tweak, chunk));
+            self.key
+                .data_cipher
+                .decrypt_with_backend(XtsProcessor::new(tweak, src_sector, dst_sector));
             *iv += 1;
+            sector_offset += block_size;
         }
 
-        // Write to the VMO.
-        self.target_vmo.write(buf, self.vmo_offset)?;
+        let ptr = dst_slice.as_mut_ptr();
+
+        // SAFETY: self.private_buffer is private, safe to create &[u8]
+        let slice = unsafe { std::slice::from_raw_parts(ptr, buf_offset as usize) };
+
+        self.vmo.write(slice, self.vmo_offset)?;
+
         self.vmo_offset += buf_offset;
         Ok(())
     }
@@ -235,10 +248,11 @@ pub struct EncryptedWrite<'a> {
     device: &'a Device,
     key: &'a Key,
     tweak: u128,
-    source_vmo: &'a zx::Vmo,
+    vmo: Arc<zx::Vmo>,
     vmo_offset: u64,
     options: WriteOptions,
-    buffer: BufferGuard<'a, RemoteBlockClient>,
+    buffer: BufferGuard,
+    private_buffer: BufferGuard,
     ops: Vec<Op>,
     queued_len: u64,
 }
@@ -248,7 +262,7 @@ impl<'a> EncryptedWrite<'a> {
         device: &'a Device,
         key: &'a Key,
         block_offset: u64,
-        source_vmo: &'a zx::Vmo,
+        vmo: Arc<zx::Vmo>,
         vmo_offset: u64,
         options: WriteOptions,
     ) -> Self {
@@ -256,10 +270,11 @@ impl<'a> EncryptedWrite<'a> {
             device,
             key,
             tweak: key.iv + block_offset as u128,
-            source_vmo,
+            vmo,
             vmo_offset,
             options,
             buffer: device.get_buffer().await,
+            private_buffer: device.get_private_buffer().await,
             ops: Vec::new(),
             queued_len: 0,
         }
@@ -292,27 +307,46 @@ impl IoTrait for EncryptedWrite<'_> {
     }
 
     async fn flush(&mut self) -> Result<(), zx::Status> {
-        // Read from the source VMO.
-        let buf = &mut self.buffer[..self.queued_len as usize];
-        self.source_vmo.read(buf, self.vmo_offset)?;
+        let dst_slice =
+            self.private_buffer.as_mut_ptr_slice().subslice_mut(0..self.queued_len as usize);
+        let ptr = dst_slice.as_mut_ptr();
+
+        // SAFETY: self.private_buffer is private, and we have &mut self, so it is safe to create
+        // &mut [u8]
+        let slice_mut = unsafe { std::slice::from_raw_parts_mut(ptr, self.queued_len as usize) };
+
+        self.vmo.read(slice_mut, self.vmo_offset)?;
         self.vmo_offset += self.queued_len;
-        self.queued_len = 0;
+
+        let src_slice = dst_slice.as_ptr_slice();
+        let mut encrypt_dst_slice =
+            self.buffer.as_mut_ptr_slice().subslice_mut(0..self.queued_len as usize);
 
         // Encrypt the buffer
         let iv = &mut self.tweak;
-        for chunk in buf.chunks_exact_mut(self.device.block_size() as usize) {
+        let block_size = self.device.block_size() as usize;
+        assert_eq!(self.queued_len as usize % block_size, 0, "queued_len must be block aligned");
+        let mut sector_offset = 0;
+        while sector_offset < self.queued_len as usize {
+            let src_sector = src_slice.subslice(sector_offset..sector_offset + block_size);
+            let dst_sector =
+                encrypt_dst_slice.subslice_mut(sector_offset..sector_offset + block_size);
             let mut tweak = Tweak(*iv);
             self.key.iv_cipher.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
-            self.key.data_cipher.encrypt_with_backend(XtsProcessor::new(tweak, chunk));
+            self.key
+                .data_cipher
+                .encrypt_with_backend(XtsProcessor::new(tweak, src_sector, dst_sector));
             *iv += 1;
+            sector_offset += block_size;
         }
+        self.queued_len = 0;
 
         // Write to the device.
         let mut buf_offset = 0;
         FuturesUnordered::from_iter(self.ops.drain(..).map(|Op { offset, len, trace_flow_id }| {
             let fut = self.device.write_at_with_opts_traced(
                 BufferSlice::new_with_vmo_id(
-                    self.buffer.vmo_id(),
+                    self.device.shared_vmo_id(),
                     self.buffer.vmo_offset() + buf_offset,
                     len,
                 ),
@@ -325,63 +359,5 @@ impl IoTrait for EncryptedWrite<'_> {
         }))
         .try_collect()
         .await
-    }
-}
-
-#[derive(FromBytes, IntoBytes)]
-#[repr(C)]
-struct Tweak(u128);
-
-// To be used with encrypt|decrypt_with_backend.
-struct XtsProcessor<'a> {
-    tweak: Tweak,
-    data: &'a mut [u8],
-}
-
-impl<'a> XtsProcessor<'a> {
-    // `tweak` should be encrypted.  `data` should be a single sector and *must* be 16 byte aligned.
-    fn new(tweak: Tweak, data: &'a mut [u8]) -> Self {
-        assert_eq!(data.as_ptr() as usize & 15, 0, "data must be 16 byte aligned");
-        Self { tweak, data }
-    }
-}
-
-impl BlockSizeUser for XtsProcessor<'_> {
-    type BlockSize = U16;
-}
-
-impl BlockCipherEncClosure for XtsProcessor<'_> {
-    fn call<B: BlockCipherEncBackend<BlockSize = Self::BlockSize>>(self, backend: &B) {
-        let Self { mut tweak, data } = self;
-        let (chunks, _remainder) = data.as_chunks_mut::<16>();
-        for chunk in chunks {
-            let val: &mut zerocopy::Unalign<u128> = transmute_mut!(chunk);
-            val.set(val.get() ^ tweak.0);
-
-            let chunk_ga: &mut aes::cipher::Array<u8, U16> = chunk.into();
-            backend.encrypt_block(InOut::from(chunk_ga));
-
-            let val: &mut zerocopy::Unalign<u128> = transmute_mut!(chunk);
-            val.set(val.get() ^ tweak.0);
-            tweak.0 = (tweak.0 << 1) ^ ((tweak.0 as i128 >> 127) as u128 & 0x87);
-        }
-    }
-}
-
-impl BlockCipherDecClosure for XtsProcessor<'_> {
-    fn call<B: BlockCipherDecBackend<BlockSize = Self::BlockSize>>(self, backend: &B) {
-        let Self { mut tweak, data } = self;
-        let (chunks, _remainder) = data.as_chunks_mut::<16>();
-        for chunk in chunks {
-            let val: &mut zerocopy::Unalign<u128> = transmute_mut!(chunk);
-            val.set(val.get() ^ tweak.0);
-
-            let chunk_ga: &mut aes::cipher::Array<u8, U16> = chunk.into();
-            backend.decrypt_block(InOut::from(chunk_ga));
-
-            let val: &mut zerocopy::Unalign<u128> = transmute_mut!(chunk);
-            val.set(val.get() ^ tweak.0);
-            tweak.0 = (tweak.0 << 1) ^ ((tweak.0 as i128 >> 127) as u128 & 0x87);
-        }
     }
 }

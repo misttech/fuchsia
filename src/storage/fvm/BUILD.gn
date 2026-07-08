@@ -225,6 +225,7 @@ fuchsia_test_package("fvm-integration-test") {
 }
 
 fvm_sources = [
+  "src/buffers.rs",
   "src/device.rs",
   "src/main.rs",
   "src/mapping.rs",
@@ -250,6 +251,8 @@ fvm_deps = [
   "//src/storage/lib/block_client/rust",
   "//src/storage/lib/block_server",
   "//src/storage/lib/fs_management/rust:fs_management",
+  "//src/storage/lib/ptr_slice",
+  "//src/storage/lib/storage_xts",
   "//src/storage/lib/vfs/rust:vfs",
   "//third_party/rust_crates:aes",
   "//third_party/rust_crates:anyhow",

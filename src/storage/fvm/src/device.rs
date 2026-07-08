@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::buffers::{BufferGuard, BufferPool, TOTAL_SIZE};
 use block_client::{BlockClient, BlockDeviceFlag, RemoteBlockClient, VmoId};
-use event_listener::Event;
 use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use std::collections::HashMap;
 use std::num::NonZero;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::sync::{Arc, Weak};
 
 pub type Device = DeviceImpl<RemoteBlockClient>;
@@ -17,13 +17,29 @@ pub type Device = DeviceImpl<RemoteBlockClient>;
 pub struct DeviceImpl<C: BlockClient + 'static> {
     client: C,
     vmo_ids: Mutex<HashMap<usize, Arc<VmoIdWrapperImpl<C>>>>,
-    buffers: Buffers,
+    buffers: Arc<BufferPool>,
+    private_buffers: Arc<BufferPool>,
+    shared_vmo_id: VmoId,
 }
 
 impl<C: BlockClient> DeviceImpl<C> {
     pub async fn new(client: C) -> Result<Self, zx::Status> {
-        let buffers = Buffers::new(&client).await?;
-        Ok(Self { client, vmo_ids: Mutex::default(), buffers })
+        let shared_vmo = zx::Vmo::create(TOTAL_SIZE as u64)?;
+
+        // SAFETY: The shared VMO is newly created and only attached once here. All accesses to it
+        // are managed by `BufferPool` and its guards, ensuring no aliasing issues during I/O.
+        let shared_vmo_id = unsafe { client.attach_vmo(&shared_vmo) }.await?;
+
+        let buffers = Arc::new(BufferPool::new(shared_vmo)?);
+
+        let private_vmo = zx::Vmo::create(TOTAL_SIZE as u64)?;
+        let private_buffers = Arc::new(BufferPool::new(private_vmo)?);
+
+        Ok(Self { client, vmo_ids: Mutex::default(), buffers, private_buffers, shared_vmo_id })
+    }
+
+    pub fn shared_vmo_id(&self) -> &VmoId {
+        &self.shared_vmo_id
     }
 
     pub fn block_flags(&self) -> BlockDeviceFlag {
@@ -36,8 +52,10 @@ impl<C: BlockClient> DeviceImpl<C> {
 
     /// Ataches `vmo`.  NOTE: This assumes that the pointer &zx::Vmo will remain stable.
     pub async fn attach_vmo(self: &Arc<Self>, vmo: &zx::Vmo) -> Result<(), zx::Status> {
-        // SAFETY: FVM ensures that we only attach this VMO once.
+        // SAFETY: FVM does not map this VMO, so it cannot violate Rust's aliasing rules. The
+        // client is responsible for ensuring no references are held during I/O.
         let vmo_id = unsafe { self.client.attach_vmo(vmo) }.await?;
+
         assert!(
             self.vmo_ids
                 .lock()
@@ -67,29 +85,20 @@ impl<C: BlockClient> DeviceImpl<C> {
         self.vmo_ids.lock()[&(vmo as *const _ as usize)].clone()
     }
 
-    /// Returns a buffer that can be used that is registered with the device.
-    pub async fn get_buffer(&self) -> BufferGuard<'_, C> {
-        loop {
-            let listener = {
-                let mut buffers = self.buffers.buffers.lock();
-                if let Some(offset) = buffers.pop() {
-                    return BufferGuard {
-                        device: self,
-                        vmo_offset: offset as u64,
-                        vmo_id: &self.buffers.vmo_id,
-                        // SAFETY: We mapped this range in `Buffers::new`.
-                        buffer: unsafe {
-                            std::slice::from_raw_parts_mut(
-                                (self.buffers.addr + offset) as *mut u8,
-                                BUFFER_SIZE,
-                            )
-                        },
-                    };
-                }
-                self.buffers.event.listen()
-            };
-            listener.await
-        }
+    pub async fn get_buffer(&self) -> BufferGuard {
+        self.buffers.get_buffer().await
+    }
+
+    pub async fn get_private_buffer(&self) -> BufferGuard {
+        self.private_buffers.get_buffer().await
+    }
+}
+
+impl<C: BlockClient + 'static> Drop for DeviceImpl<C> {
+    fn drop(&mut self) {
+        // Prevent VmoId drop panic. Safe to leak because the session client (C)
+        // is being dropped, closing the connection to the block device.
+        let _ = self.shared_vmo_id.take().into_id();
     }
 }
 
@@ -124,94 +133,10 @@ impl<C: BlockClient> Deref for VmoIdWrapperImpl<C> {
     }
 }
 
-pub const BUFFER_SIZE: usize = 1048576;
-const BUFFER_COUNT: usize = 16;
-const TOTAL_SIZE: usize = BUFFER_SIZE * BUFFER_COUNT;
-
-struct Buffers {
-    _vmo: zx::Vmo,
-    vmo_id: VmoId,
-    addr: usize,
-    event: Event,
-    buffers: Mutex<Vec<usize>>,
-}
-
-impl Buffers {
-    async fn new(client: &impl BlockClient) -> Result<Self, zx::Status> {
-        let vmo = zx::Vmo::create(TOTAL_SIZE as u64)?;
-        // SAFETY: This VMO is newly created and only attached once here.
-        let vmo_id = unsafe { client.attach_vmo(&vmo) }.await?;
-        let addr = fuchsia_runtime::vmar_root_self().map(
-            0,
-            &vmo,
-            0,
-            TOTAL_SIZE,
-            zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE,
-        )?;
-        Ok(Self {
-            _vmo: vmo,
-            vmo_id,
-            addr,
-            event: Event::new(),
-            buffers: Mutex::new((0..TOTAL_SIZE).into_iter().step_by(BUFFER_SIZE).collect()),
-        })
-    }
-}
-
-impl Drop for Buffers {
-    fn drop(&mut self) {
-        // SAFETY: We mapped this address in `Buffer::new`.
-        let _ = unsafe { fuchsia_runtime::vmar_root_self().unmap(self.addr, TOTAL_SIZE) };
-
-        // If we're being dropped, then it means the client is about to be dropped, which means we
-        // can just leak `vmo_id`.
-        let _ = self.vmo_id.take().into_id();
-    }
-}
-
-pub struct BufferGuard<'a, C: BlockClient + 'static> {
-    device: &'a DeviceImpl<C>,
-    vmo_offset: u64,
-    vmo_id: &'a VmoId,
-    buffer: &'a mut [u8],
-}
-
-impl<C: BlockClient> BufferGuard<'_, C> {
-    pub fn vmo_id(&self) -> &VmoId {
-        &self.vmo_id
-    }
-
-    pub fn vmo_offset(&self) -> u64 {
-        self.vmo_offset
-    }
-}
-
-impl<C: BlockClient> Drop for BufferGuard<'_, C> {
-    fn drop(&mut self) {
-        {
-            let mut buffers = self.device.buffers.buffers.lock();
-            buffers.push(self.buffer.as_ptr() as usize - self.device.buffers.addr);
-        }
-        self.device.buffers.event.notify_additional_relaxed(1);
-    }
-}
-
-impl<C: BlockClient> Deref for BufferGuard<'_, C> {
-    type Target = [u8];
-    fn deref(&self) -> &[u8] {
-        &self.buffer
-    }
-}
-
-impl<C: BlockClient> DerefMut for BufferGuard<'_, C> {
-    fn deref_mut(&mut self) -> &mut [u8] {
-        &mut self.buffer
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{BUFFER_COUNT, BUFFER_SIZE, DeviceImpl};
+    use super::DeviceImpl;
+    use crate::buffers::{BUFFER_COUNT, BUFFER_SIZE};
     use assert_matches::assert_matches;
     use fake_block_client::FakeBlockClient;
     use fuchsia_async::{self as fasync, TestExecutor};
@@ -238,13 +163,13 @@ mod tests {
             let mut buf = device.get_buffer().now_or_never().unwrap();
             check_no_overlap(&offsets, buf.vmo_offset());
             offsets.push(buf.vmo_offset());
-            buf.fill(i as u8);
+            buf.as_mut_ptr_slice().fill(i as u8);
             bufs.push(buf);
         }
 
         // Check that all the buffers contain the expected fill.
         for (i, buf) in bufs.iter().enumerate() {
-            assert_eq!(&**buf, &[i as u8; BUFFER_SIZE]);
+            assert_eq!(buf.as_ptr_slice().to_vec(), vec![i as u8; BUFFER_SIZE]);
         }
 
         // The next buffer we get should stall.

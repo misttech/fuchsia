@@ -251,6 +251,22 @@ impl<'a> MutPtrByteSlice<'a> {
         }
     }
 
+    /// Copies the contents of a standard safe slice into this mutable slice.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the lengths of the slices do not match.
+    pub fn copy_from_slice(&mut self, src: &[u8]) {
+        assert_eq!(self.len(), src.len());
+        // SAFETY:
+        // - `self.slice` is valid for writes of `self.len()` bytes.
+        // - `src` is valid for reads of `src.len()` bytes.
+        // - They do not overlap because `src` is an exclusive Rust reference.
+        unsafe {
+            std::ptr::copy_nonoverlapping(src.as_ptr(), self.slice as *mut u8, self.len());
+        }
+    }
+
     /// Fills the slice with the given byte value.
     pub fn fill(&mut self, val: u8) {
         // SAFETY: `self.slice` is valid for writes of `self.len()` bytes.

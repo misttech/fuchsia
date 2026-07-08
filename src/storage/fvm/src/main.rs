@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+mod buffers;
 mod device;
 mod mapping;
 mod zxcrypt;
@@ -1758,11 +1759,21 @@ struct PartitionInterface {
 
 impl Interface for PartitionInterface {
     async fn on_attach_vmo(&self, vmo: &zx::Vmo) -> Result<(), zx::Status> {
-        self.fvm.device.attach_vmo(vmo).await
+        // For encrypted partitions, we avoid exposing plaintext to the underlying block driver.
+        // Instead of sending client VMOs directly to the driver, all I/O is bounced through local,
+        // private staging buffers in zxcrypt where data is encrypted/decrypted out of place.
+        // Only the local staging VMO containing ciphertext is registered with the underlying
+        // device, so attaching client VMOs is a no-op.
+        if self.key.is_some() { Ok(()) } else { self.fvm.device.attach_vmo(vmo).await }
     }
 
     fn on_detach_vmo(&self, vmo: &zx::Vmo) {
-        self.fvm.device.detach_vmo(vmo);
+        if self.key.is_some() {
+            // No-op: client VMOs are never attached to the underlying device when encrypted
+            // because I/O uses local staging buffers to avoid exposing plaintext to the driver.
+        } else {
+            self.fvm.device.detach_vmo(vmo);
+        }
     }
 
     fn get_info(&self) -> Cow<'_, DeviceInfo> {
@@ -1793,7 +1804,7 @@ impl Interface for PartitionInterface {
                         &device,
                         &key,
                         device_block_offset,
-                        vmo,
+                        vmo.clone(),
                         vmo_offset,
                     )
                     .await,
@@ -1853,7 +1864,7 @@ impl Interface for PartitionInterface {
                         &device,
                         &key,
                         device_block_offset,
-                        vmo,
+                        vmo.clone(),
                         vmo_offset,
                         options,
                     )
