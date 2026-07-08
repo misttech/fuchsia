@@ -706,11 +706,11 @@ group("foreign-types-0.3.2") {
 }
 
 group("foreign-types-shared") {
-  public_deps = [ ":foreign-types-shared-v0_1_1" ]
+  public_deps = [ ":foreign-types-shared-v0_3_1" ]
 }
 
-group("foreign-types-shared-0.1.1") {
-  public_deps = [ ":foreign-types-shared-v0_1_1" ]
+group("foreign-types-shared-0.3.1") {
+  public_deps = [ ":foreign-types-shared-v0_3_1" ]
 }
 
 group("fragile") {
@@ -9206,6 +9206,39 @@ rustc_library("foreign-types-shared-v0_1_1") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":foreign-types-shared-v0_1_1.license" ]
+}
+
+license("foreign-types-shared-v0_3_1.license") {
+  public_package_name = "foreign_types_shared"
+  license_files = [
+    "//third_party/rust_crates/vendor/foreign-types-shared-0.3.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/foreign-types-shared-0.3.1/LICENSE-MIT",
+  ]
+}
+
+rustc_library("foreign-types-shared-v0_3_1") {
+  crate_name = "foreign_types_shared"
+  source_root =
+      "//third_party/rust_crates/vendor/foreign-types-shared-0.3.1/src/lib.rs"
+  output_name = "foreign_types_shared-94bcc05c3b190abb"
+  edition = "2018"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=94bcc05c3b190abb",
+    "-Cextra-filename=-94bcc05c3b190abb",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":foreign-types-shared-v0_3_1.license" ]
 }
 
 license("form_urlencoded-v1_2_2.license") {

@@ -1015,14 +1015,14 @@ alias(
 )
 
 alias(
-    name = "foreign-types-shared-0.1.1",
-    actual = "//third_party/rust_crates/vendor/foreign-types-shared-0.1.1:foreign_types_shared",
+    name = "foreign-types-shared-0.3.1",
+    actual = "//third_party/rust_crates/vendor/foreign-types-shared-0.3.1:foreign_types_shared",
     tags = ["manual"],
 )
 
 alias(
     name = "foreign-types-shared",
-    actual = "//third_party/rust_crates/vendor/foreign-types-shared-0.1.1:foreign_types_shared",
+    actual = "//third_party/rust_crates/vendor/foreign-types-shared-0.3.1:foreign_types_shared",
     tags = ["manual"],
 )
 
