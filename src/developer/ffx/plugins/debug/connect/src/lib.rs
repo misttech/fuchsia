@@ -80,11 +80,24 @@ async fn choose_debug_agent(launcher_proxy: &fdebugger::LauncherProxy) -> Result
     Ok(None)
 }
 
+fn is_allowed_in_agent_env(cmd: &ConnectCommand) -> bool {
+    cmd.zxdb_args
+        .iter()
+        .any(|arg| arg == "--enable-debug-adapter")
+}
+
 async fn connect_tool_impl(
     ctx: &EnvironmentContext,
     cmd: ConnectCommand,
     launcher_proxy: fdebugger::LauncherProxy,
 ) -> Result<()> {
+    if agents::is_agent_env() && !is_allowed_in_agent_env(&cmd) {
+        return Err(ffx_error!(
+            "Agents should use `fx debug cli` and/or `fx test --agent-debugging-mode`."
+        )
+        .into());
+    }
+
     let socket = if cmd.new_agent {
         DebugAgentSocket::create(DebuggerProxy::LauncherProxy(launcher_proxy))?
     } else {
@@ -136,4 +149,25 @@ async fn connect_tool_impl(
     };
 
     debugger.run_with_command(command).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_allowed_in_agent_env() {
+        let mut cmd = ConnectCommand {
+            debugger: None,
+            agent_only: false,
+            attach: vec![],
+            execute: vec![],
+            new_agent: false,
+            zxdb_args: vec![],
+        };
+        assert!(!is_allowed_in_agent_env(&cmd));
+
+        cmd.zxdb_args = vec!["--enable-debug-adapter".to_string()];
+        assert!(is_allowed_in_agent_env(&cmd));
+    }
 }
