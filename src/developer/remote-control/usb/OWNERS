@@ -1,2 +1,3 @@
 mgnb@google.com
 sadmac@google.com
+include /src/devices/usb/OWNERS
