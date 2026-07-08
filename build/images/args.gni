@@ -45,10 +45,7 @@ declare_args() {
 
   # If true, the images.json build API modules will only include images
   # identified by bazel_product_bundle_target and its dependencies.
-  #
-  # NOTE: This field is highly experimental, do not set it unless you know
-  # exactly what you are doing.
-  use_bazel_images_only = false
+  use_bazel_images_only = true
 
   # bazel_product_bundle_[full|root|prefix|board] together identifies the
   # bazel_product_bundle target in GN target to use in Bazel assembly. The
