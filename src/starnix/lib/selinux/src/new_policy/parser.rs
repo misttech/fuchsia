@@ -10,6 +10,7 @@ use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le
 use super::NewPolicy;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::traits::{Parse, Serialize, Validate};
+use selinux_policy_derive::{Parse, Serialize};
 
 /// Cursor used to parse elements from the binary policy data.
 #[derive(Debug)]
@@ -267,7 +268,7 @@ impl<T: Validate> Validate for Array<T> {
 /// In the SELinux binary policy database, each symbol table is prefixed by a header
 /// containing a `primary_names_count` field, followed by the array of items (which itself
 /// is prefixed by an `items_count` field).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Parse, Serialize)]
 pub struct SymbolArray<T> {
     /// The number of primary names in this array (excluding aliases).
     /// Included in the policy to allow allocation of index structures to be optimized.
@@ -279,22 +280,6 @@ impl<T> Deref for SymbolArray<T> {
     type Target = [T];
     fn deref(&self) -> &Self::Target {
         &self.items
-    }
-}
-
-impl<T: Parse> Parse for SymbolArray<T> {
-    fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
-        let primary_names_count = u32::parse(cursor)?;
-        let items = Array::<T>::parse(cursor)?;
-        Ok(Self { primary_names_count, items })
-    }
-}
-
-impl<T: Serialize> Serialize for SymbolArray<T> {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
-        self.primary_names_count.serialize(writer)?;
-        self.items.serialize(writer)?;
-        Ok(())
     }
 }
 

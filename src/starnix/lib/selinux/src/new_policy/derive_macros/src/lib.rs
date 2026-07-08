@@ -4,7 +4,17 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{Attribute, Data, DeriveInput, Fields, Ident, Result, parse_macro_input};
+use syn::{
+    Attribute, Data, DeriveInput, Fields, Generics, Ident, Result, TypeParamBound,
+    parse_macro_input,
+};
+
+fn add_trait_bounds(mut generics: Generics, bound: TypeParamBound) -> Generics {
+    for param in generics.type_params_mut() {
+        param.bounds.push(bound.clone());
+    }
+    generics
+}
 
 /// Derives `Parse` for a struct or a unit enum.
 ///
@@ -65,7 +75,9 @@ use syn::{Attribute, Data, DeriveInput, Fields, Ident, Result, parse_macro_input
 pub fn derive_parse(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let generics =
+        add_trait_bounds(input.generics, syn::parse_quote!(crate::new_policy::traits::Parse));
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let wire_type = match get_wire_type(&input.attrs) {
         Ok(t) => t,
@@ -175,7 +187,9 @@ pub fn derive_parse(input: TokenStream) -> TokenStream {
 pub fn derive_serialize(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let generics =
+        add_trait_bounds(input.generics, syn::parse_quote!(crate::new_policy::traits::Serialize));
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let wire_type = match get_wire_type(&input.attrs) {
         Ok(t) => t,
@@ -284,7 +298,9 @@ pub fn derive_serialize(input: TokenStream) -> TokenStream {
 pub fn derive_validate(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let generics =
+        add_trait_bounds(input.generics, syn::parse_quote!(crate::new_policy::traits::Validate));
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let validate_impl = match &input.data {
         Data::Struct(data) => match gen_struct_validate(data) {
@@ -434,31 +450,72 @@ fn validate_wire_enum(data_enum: &syn::DataEnum) -> Result<()> {
     Ok(())
 }
 
+/// Helper to map across all fields of a struct (named or unnamed).
+fn map_struct_fields<F>(data: &syn::DataStruct, mut gen_field: F) -> Vec<proc_macro2::TokenStream>
+where
+    F: FnMut(&syn::Type, &syn::Member) -> proc_macro2::TokenStream,
+{
+    match &data.fields {
+        Fields::Named(fields) => fields
+            .named
+            .iter()
+            .map(|f| {
+                let member = syn::Member::Named(f.ident.clone().unwrap());
+                gen_field(&f.ty, &member)
+            })
+            .collect(),
+        Fields::Unnamed(fields) => fields
+            .unnamed
+            .iter()
+            .enumerate()
+            .map(|(i, f)| {
+                let member = syn::Member::Unnamed(syn::Index::from(i));
+                gen_field(&f.ty, &member)
+            })
+            .collect(),
+        Fields::Unit => Vec::new(),
+    }
+}
+
+/// Helper to generate sequential `<FieldType as Trait>::method(&self.field, arg)?;` calls for all struct fields.
+fn gen_struct_visitor_calls(
+    data: &syn::DataStruct,
+    trait_path: &proc_macro2::TokenStream,
+    method_name: &Ident,
+    arg: &proc_macro2::TokenStream,
+) -> Result<proc_macro2::TokenStream> {
+    let calls = map_struct_fields(data, |ty, member| {
+        quote! {
+            <#ty as #trait_path>::#method_name(&self.#member, #arg)?;
+        }
+    });
+    Ok(quote! { #(#calls)* })
+}
+
 /// Code generator for parsing struct fields sequentially.
 fn gen_struct_parse(data: &syn::DataStruct) -> Result<proc_macro2::TokenStream> {
     match &data.fields {
-        Fields::Named(fields) => {
-            let recurse = fields.named.iter().map(|f| {
-                let name = &f.ident;
+        Fields::Named(_) => {
+            let fields = map_struct_fields(data, |ty, member| {
                 quote! {
-                    #name: crate::new_policy::traits::Parse::parse(cursor)?,
+                    #member: <#ty as crate::new_policy::traits::Parse>::parse(cursor)?,
                 }
             });
             Ok(quote! {
                 Ok(Self {
-                    #(#recurse)*
+                    #(#fields)*
                 })
             })
         }
-        Fields::Unnamed(fields) => {
-            let recurse = fields.unnamed.iter().map(|_| {
+        Fields::Unnamed(_) => {
+            let fields = map_struct_fields(data, |ty, _| {
                 quote! {
-                    crate::new_policy::traits::Parse::parse(cursor)?,
+                    <#ty as crate::new_policy::traits::Parse>::parse(cursor)?,
                 }
             });
             Ok(quote! {
                 Ok(Self (
-                    #(#recurse)*
+                    #(#fields)*
                 ))
             })
         }
@@ -495,27 +552,12 @@ fn gen_enum_parse(
 
 /// Code generator for serializing struct fields sequentially.
 fn gen_struct_serialize(data: &syn::DataStruct) -> Result<proc_macro2::TokenStream> {
-    match &data.fields {
-        Fields::Named(fields) => {
-            let recurse = fields.named.iter().map(|f| {
-                let name = &f.ident;
-                quote! {
-                    crate::new_policy::traits::Serialize::serialize(&self.#name, writer)?;
-                }
-            });
-            Ok(quote! { #(#recurse)* })
-        }
-        Fields::Unnamed(fields) => {
-            let recurse = fields.unnamed.iter().enumerate().map(|(i, _)| {
-                let index = syn::Index::from(i);
-                quote! {
-                    crate::new_policy::traits::Serialize::serialize(&self.#index, writer)?;
-                }
-            });
-            Ok(quote! { #(#recurse)* })
-        }
-        Fields::Unit => Ok(quote! {}),
-    }
+    gen_struct_visitor_calls(
+        data,
+        &quote!(crate::new_policy::traits::Serialize),
+        &syn::parse_quote!(serialize),
+        &quote!(writer),
+    )
 }
 
 /// Code generator for serializing unit enum to its wire representation.
@@ -532,27 +574,12 @@ fn gen_enum_serialize(
 
 /// Code generator for validating struct fields sequentially.
 fn gen_struct_validate(data: &syn::DataStruct) -> Result<proc_macro2::TokenStream> {
-    match &data.fields {
-        Fields::Named(fields) => {
-            let recurse = fields.named.iter().map(|f| {
-                let name = &f.ident;
-                quote! {
-                    crate::new_policy::traits::Validate::validate(&self.#name, policy)?;
-                }
-            });
-            Ok(quote! { #(#recurse)* })
-        }
-        Fields::Unnamed(fields) => {
-            let recurse = fields.unnamed.iter().enumerate().map(|(i, _)| {
-                let index = syn::Index::from(i);
-                quote! {
-                    crate::new_policy::traits::Validate::validate(&self.#index, policy)?;
-                }
-            });
-            Ok(quote! { #(#recurse)* })
-        }
-        Fields::Unit => Ok(quote! {}),
-    }
+    gen_struct_visitor_calls(
+        data,
+        &quote!(crate::new_policy::traits::Validate),
+        &syn::parse_quote!(validate),
+        &quote!(policy),
+    )
 }
 
 /// Code generator for validating unit enum (always succeeds trivially).

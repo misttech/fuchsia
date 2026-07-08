@@ -12,13 +12,13 @@ pub use selinux_policy_derive::{Parse, Serialize, Validate};
 
 /// Set of identifiers (Users, Roles, or Types) with negative matching and flags used in constraints.
 #[derive(Debug, Clone, PartialEq, Eq, Parse, Serialize, Validate)]
-pub struct ConstraintSet<T: PolicyId + Validate> {
+pub struct ConstraintSet<T: PolicyId> {
     types: IdSet<T>,
     negative_set: IdSet<T>,
     flags: u32,
 }
 
-impl<T: PolicyId + Validate> ConstraintSet<T> {
+impl<T: PolicyId> ConstraintSet<T> {
     /// Returns true if the type set, negative set, and flags are all empty/zero.
     pub fn is_empty(&self) -> bool {
         self.types.is_empty() && self.negative_set.is_empty() && self.flags == 0
