@@ -339,7 +339,7 @@ parking_lot = "0.12.5"
 parking_lot_core = "0.9.12"
 petgraph = { version = "0.6.2" }
 proc-macro2 = { version = "1.0.106", features = ["span-locations"] }
-pulldown-cmark = { version = "0.9.3", features = ["serde"] }
+pulldown-cmark = { version = "0.13.4", features = ["serde"] }
 quote = "1.0.45"
 rustfix = "0.9.5"
 rustls-native-certs = "0.6.3"
@@ -890,7 +890,7 @@ rustflags = ["--cfg=use_fallback"]
 [gn.package.proc-macro2."1.0.106"]
 rustflags = ["--cfg=span_locations", "--cfg=wrap_proc_macro"]
 
-[gn.package.pulldown-cmark."0.9.3"]
+[gn.package.pulldown-cmark."0.13.4"]
 # Has build script but no config needed.
 
 [gn.package.quote."1.0.45"]

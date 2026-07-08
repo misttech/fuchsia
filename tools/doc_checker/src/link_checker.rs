@@ -224,6 +224,7 @@ impl DocCheck for LinkChecker {
                             }
                             LinkType::Autolink => link_url,
                             LinkType::Email => return Ok(None),
+                            LinkType::WikiLink { .. } => link_url,
                         };
                         if link.starts_with("mailto:") {
                             // do nothing.
@@ -284,6 +285,7 @@ impl DocCheck for LinkChecker {
                             }
                             LinkType::Autolink => link_url,
                             LinkType::Email => return Ok(None),
+                            LinkType::WikiLink { .. } => link_url,
                         };
                         if link.starts_with("mailto:") {
                             // do nothing.

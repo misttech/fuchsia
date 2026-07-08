@@ -6,7 +6,7 @@
 //! checked.
 
 use crate::{DocLine, parser};
-pub use pulldown_cmark::{BrokenLinkCallback, CowStr, LinkType, Options, Parser, Tag};
+pub use pulldown_cmark::{CowStr, LinkType, Options, Parser, Tag};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::Range;
@@ -199,10 +199,23 @@ impl<'a> Element<'a> {
     }
 }
 
+pub(crate) struct CallbackWrapper<'a>(
+    Box<dyn FnMut(pulldown_cmark::BrokenLink<'a>) -> Option<(CowStr<'a>, CowStr<'a>)> + 'a>,
+);
+
+impl<'a> pulldown_cmark::BrokenLinkCallback<'a> for CallbackWrapper<'a> {
+    fn handle_broken_link(
+        &mut self,
+        link: pulldown_cmark::BrokenLink<'a>,
+    ) -> Option<(CowStr<'a>, CowStr<'a>)> {
+        (self.0)(link)
+    }
+}
+
 pub struct DocContext<'a> {
     pub file_name: PathBuf,
     pub line_num: usize,
-    pub(crate) parser: pulldown_cmark::OffsetIter<'a, 'a>,
+    pub(crate) parser: pulldown_cmark::OffsetIter<'a, CallbackWrapper<'a>>,
     file_text: &'a str,
     line_index: HashMap<&'a str, usize>,
 }
@@ -229,11 +242,10 @@ impl<'a> DocContext<'a> {
         }
     }
 
-    pub fn new(
-        filename: PathBuf,
-        text: &'a str,
-        callback: BrokenLinkCallback<'a, 'a>,
-    ) -> DocContext<'a> {
+    pub fn new<F>(filename: PathBuf, text: &'a str, callback: Option<F>) -> DocContext<'a>
+    where
+        F: FnMut(pulldown_cmark::BrokenLink<'a>) -> Option<(CowStr<'a>, CowStr<'a>)> + 'a,
+    {
         let options = Options::ENABLE_FOOTNOTES;
         let mut index = HashMap::new();
         let lines = text.lines();
@@ -242,10 +254,14 @@ impl<'a> DocContext<'a> {
             index.insert(l, line_num);
             line_num += 1;
         }
+        let wrapper = match callback {
+            Some(cb) => CallbackWrapper(Box::new(cb)),
+            None => CallbackWrapper(Box::new(|_| None)),
+        };
         DocContext {
             file_name: filename,
             line_num: 1,
-            parser: Parser::new_with_broken_link_callback(text, options, callback)
+            parser: Parser::new_with_broken_link_callback(text, options, Some(wrapper))
                 .into_offset_iter(),
             file_text: text,
             line_index: index,

@@ -2125,14 +2125,14 @@ alias(
 )
 
 alias(
-    name = "pulldown-cmark-0.9.3",
-    actual = "//third_party/rust_crates/vendor/pulldown-cmark-0.9.3:pulldown_cmark",
+    name = "pulldown-cmark-0.13.4",
+    actual = "//third_party/rust_crates/vendor/pulldown-cmark-0.13.4:pulldown_cmark",
     tags = ["manual"],
 )
 
 alias(
     name = "pulldown-cmark",
-    actual = "//third_party/rust_crates/vendor/pulldown-cmark-0.9.3:pulldown_cmark",
+    actual = "//third_party/rust_crates/vendor/pulldown-cmark-0.13.4:pulldown_cmark",
     tags = ["manual"],
 )
 
