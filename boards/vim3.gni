@@ -52,6 +52,3 @@ vbmeta_b_partition = "vbmeta_b"
 vbmeta_r_partition = "vbmeta_r"
 fvm_partition = "fvm"
 fxfs_partition = "fvm"
-
-# Supports only physical devices.
-board_is_emu = false
