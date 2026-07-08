@@ -4,8 +4,10 @@
 
 use super::index::PolicyIndex;
 use super::new::{CategorySetBuilder, Context, IdSpan, MlsLevel, MlsRange};
-use super::{CategoryId, ParsedPolicy, RoleId, TypeId, UserId};
+use super::parser::PolicyCursor;
+use super::{CategoryId, Parse, PolicyValidationContext, RoleId, TypeId, UserId, Validate};
 use crate::NullessByteStr;
+use crate::new_policy::NewPolicy;
 use crate::new_policy::traits::{HasName, HasPolicyId};
 
 use bstr::BString;
@@ -255,7 +257,8 @@ impl MlsLevel {
 
         // Lookup the sensitivity, and associated categories/ranges, if any.
         let sensitivity = policy_index
-            .sensitivity_by_name(sensitivity)
+            .sensitivities()
+            .get_by_name(sensitivity.as_bytes())
             .ok_or_else(|| SecurityContextError::UnknownSensitivity { name: sensitivity.into() })?
             .id();
 
@@ -284,7 +287,8 @@ impl MlsLevel {
         name: &str,
     ) -> Result<CategoryId, SecurityContextError> {
         Ok(policy_index
-            .category_by_name(name)
+            .categories()
+            .get_by_name(name.as_bytes())
             .ok_or_else(|| SecurityContextError::UnknownCategory { name: name.into() })?
             .id())
     }
@@ -293,11 +297,11 @@ impl MlsLevel {
         self.categories().spans()
     }
 
-    pub fn to_string(&self, parsed_policy: &ParsedPolicy) -> Vec<u8> {
-        let sensitivity = parsed_policy.sensitivity(self.sensitivity()).name_bytes();
+    pub fn to_string(&self, policy: &NewPolicy) -> Vec<u8> {
+        let sensitivity = policy.sensitivities().get_by_id(self.sensitivity()).unwrap().name();
         let categories = self
             .category_spans()
-            .map(|x| x.to_string(parsed_policy))
+            .map(|x| x.to_string(policy))
             .collect::<Vec<Vec<u8>>>()
             .join(b",".as_ref());
 
@@ -316,15 +320,65 @@ pub type CategorySpan = IdSpan<CategoryId>;
 
 impl IdSpan<CategoryId> {
     /// Returns `Vec<u8>` describing the category, or category range.
-    fn to_string(&self, parsed_policy: &ParsedPolicy) -> Vec<u8> {
+    fn to_string(&self, policy: &NewPolicy) -> Vec<u8> {
         match self.low() == self.high() {
-            true => parsed_policy.category(self.low()).name_bytes().into(),
+            true => policy.categories().get_by_id(self.low()).unwrap().name().into(),
             false => [
-                parsed_policy.category(self.low()).name_bytes(),
-                parsed_policy.category(self.high()).name_bytes(),
+                policy.categories().get_by_id(self.low()).unwrap().name(),
+                policy.categories().get_by_id(self.high()).unwrap().name(),
             ]
             .join(b".".as_ref()),
         }
+    }
+}
+
+/// Temporary adapter implementing legacy policy Parse trait by delegating to new_policy trait during migration.
+impl Parse for MlsLevel {
+    type Error = anyhow::Error;
+
+    fn parse<'a>(cursor: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
+        let offset = cursor.offset() as usize;
+        let slice = &cursor.data().as_ref()[offset..];
+        let mut new_cursor = crate::new_policy::parser::PolicyCursor::new(slice);
+        let level = <Self as crate::new_policy::traits::Parse>::parse(&mut new_cursor)
+            .map_err(|e| anyhow::anyhow!("Parse error: {:?}", e))?;
+        let bytes_parsed = new_cursor.offset();
+        let new_offset = cursor.offset() + bytes_parsed as u32;
+        Ok((level, PolicyCursor::new_at(cursor.data(), new_offset)))
+    }
+}
+
+/// Temporary adapter implementing legacy policy Validate trait by delegating to new_policy trait during migration.
+impl Validate for MlsLevel {
+    type Error = anyhow::Error;
+
+    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
+        crate::new_policy::traits::Validate::validate(self, &context.new_policy).map_err(Into::into)
+    }
+}
+
+/// Temporary adapter implementing legacy policy Parse trait by delegating to new_policy trait during migration.
+impl Parse for MlsRange {
+    type Error = anyhow::Error;
+
+    fn parse<'a>(cursor: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
+        let offset = cursor.offset() as usize;
+        let slice = &cursor.data().as_ref()[offset..];
+        let mut new_cursor = crate::new_policy::parser::PolicyCursor::new(slice);
+        let range = <Self as crate::new_policy::traits::Parse>::parse(&mut new_cursor)
+            .map_err(|e| anyhow::anyhow!("Parse error: {:?}", e))?;
+        let bytes_parsed = new_cursor.offset();
+        let new_offset = cursor.offset() + bytes_parsed as u32;
+        Ok((range, PolicyCursor::new_at(cursor.data(), new_offset)))
+    }
+}
+
+/// Temporary adapter implementing legacy policy Validate trait by delegating to new_policy trait during migration.
+impl Validate for MlsRange {
+    type Error = anyhow::Error;
+
+    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
+        crate::new_policy::traits::Validate::validate(self, &context.new_policy).map_err(Into::into)
     }
 }
 
@@ -386,17 +440,17 @@ mod tests {
     }
 
     fn sensitivity_name(policy: &Policy, id: SensitivityId) -> &str {
-        std::str::from_utf8(policy.sensitivity(id).name_bytes()).unwrap()
+        std::str::from_utf8(policy.sensitivities().get_by_id(id).unwrap().name()).unwrap()
     }
 
-    fn category_name(policy: &Policy, id: CategoryId) -> String {
-        std::str::from_utf8(policy.category(id).name_bytes()).unwrap().into()
+    fn category_name(policy: &Policy, id: CategoryId) -> &str {
+        std::str::from_utf8(policy.categories().get_by_id(id).unwrap().name()).unwrap()
     }
 
     fn category_span(policy: &Policy, category: &CategorySpan) -> CategoryItem {
         CategoryItem {
-            low: category_name(policy, category.low()),
-            high: category_name(policy, category.high()),
+            low: category_name(policy, category.low()).into(),
+            high: category_name(policy, category.high()).into(),
         }
     }
 

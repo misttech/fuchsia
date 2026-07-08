@@ -20,7 +20,6 @@ use super::extensible_bitmap::ExtensibleBitmap;
 use super::constraints::evaluate_constraint;
 use super::parser::{PolicyCursor, PolicyData};
 use super::security_context::SecurityContext;
-use super::symbols::{Category, CategoryIndex, Sensitivity, SymbolList};
 use super::view::{Hashable, HashedArrayView};
 use super::{
     AccessDecision, AccessVector, CategoryId, ClassId, MlsLevel, Parse, PolicyValidationContext,
@@ -56,10 +55,6 @@ pub struct ParsedPolicy {
     /// [`NewPolicy`] that handles the header and base tables.
     new_policy: Arc<NewPolicy>,
 
-    /// The set of sensitivity levels referenced by this policy.
-    sensitivities: SymbolList<Sensitivity>,
-    /// The set of categories referenced by this policy.
-    categories: CategoryIndex,
     /// The set of access vector rules referenced by this policy.
     access_vector_rules: HashedArrayView<AccessVectorRule>,
     conditional_lists: SimpleArray<ConditionalNode>,
@@ -338,28 +333,6 @@ impl ParsedPolicy {
         &self.initial_sids.data.iter().find(|initial| initial.id() == id).unwrap().context()
     }
 
-    /// Returns the `Sensitivity` structure for the requested Id. Valid policies include definitions
-    /// for all the Ids they refer to internally; supply some other Id will trigger a panic.
-    pub(super) fn sensitivity(&self, id: SensitivityId) -> &Sensitivity {
-        self.sensitivities.data.iter().find(|x| x.id() == id).unwrap()
-    }
-
-    /// Returns the named sensitivity level, if present in the policy.
-    pub(super) fn sensitivity_by_name(&self, name: &str) -> Option<&Sensitivity> {
-        self.sensitivities.data.iter().find(|x| x.name_bytes() == name.as_bytes())
-    }
-
-    /// Returns the `Category` structure for the requested Id. Valid policies include definitions
-    /// for all the Ids they refer to internally; supplying some other Id will trigger a panic.
-    pub(super) fn category(&self, id: CategoryId) -> Category {
-        self.categories.category(&self.data, id)
-    }
-
-    /// Returns the named category, if present in the policy.
-    pub(super) fn category_by_name(&self, name: &str) -> Option<Category> {
-        self.categories.category_by_name(&self.data, name)
-    }
-
     pub(super) fn fs_uses(&self) -> &[FsUse] {
         &self.fs_uses.data
     }
@@ -544,14 +517,6 @@ fn parse_policy_remaining(
 ) -> Result<(ParsedPolicy, usize), anyhow::Error> {
     let tail = PolicyCursor::new(&rest_data);
 
-    let (sensitivities, tail) = SymbolList::<Sensitivity>::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing sensitivites")?;
-
-    let (categories, tail) = CategoryIndex::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing categories")?;
-
     let (access_vector_rules, tail) = HashedArrayView::<AccessVectorRule>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing access vector rules")?;
@@ -652,8 +617,6 @@ fn parse_policy_remaining(
             data: rest_data,
             new_policy: Arc::new(new_policy),
 
-            sensitivities,
-            categories,
             access_vector_rules,
             conditional_lists,
             role_transitions,
@@ -685,14 +648,6 @@ impl ParsedPolicy {
             new_policy: self.new_policy.clone(),
         };
 
-        self.sensitivities
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating sensitivities")?;
-        self.categories
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating categories")?;
         self.access_vector_rules
             .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
@@ -768,17 +723,9 @@ impl ParsedPolicy {
         let class_ids: HashSet<ClassId> = self.classes().iter().map(|x| x.id()).collect();
         let type_ids: HashSet<TypeId> = self.new_policy.types().iter().map(|t| t.id()).collect();
         let sensitivity_ids: HashSet<SensitivityId> =
-            self.sensitivities.data.iter().map(|x| x.id()).collect();
+            self.new_policy.sensitivities().iter().map(|x| x.id()).collect();
         let category_ids: HashSet<CategoryId> =
-            self.categories.categories(&self.data).map(|x| x.id()).collect();
-
-        // Validate that users use only defined sensitivities and categories.
-        for user in self.new_policy.users().iter() {
-            self.validate_mls_level(user.mls_range().low(), &sensitivity_ids, &category_ids)?;
-            if let Some(high) = user.mls_range().high() {
-                self.validate_mls_level(high, &sensitivity_ids, &category_ids)?;
-            }
-        }
+            self.new_policy.categories().iter().map(|x| x.id()).collect();
 
         // Validate that initial contexts use only defined user, role, type, etc Ids.
         // Check that all sensitivity and category IDs are defined and that MLS levels

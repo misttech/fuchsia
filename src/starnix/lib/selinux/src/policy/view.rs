@@ -384,11 +384,6 @@ pub(super) struct U24 {
 const_assert!(std::mem::size_of::<U24>() == 3);
 const_assert!(std::mem::align_of::<U24>() == 1);
 
-impl U24 {
-    /// The zero value.
-    pub const ZERO: Self = Self { low: 0, middle: 0, high: 0 };
-}
-
 impl TryFrom<u32> for U24 {
     type Error = ();
 

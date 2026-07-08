@@ -13,7 +13,6 @@ pub mod view;
 mod constraints;
 mod extensible_bitmap;
 mod security_context;
-mod symbols;
 
 pub use arrays::{FsUseType, XpermsBitmap};
 pub use index::FsUseLabelAndType;

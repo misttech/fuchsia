@@ -4,7 +4,7 @@
 
 use std::cmp::Ordering;
 
-pub use selinux_policy_derive::{Parse, Serialize, Validate};
+use selinux_policy_derive::{Parse, Serialize, Validate};
 
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::parser::PolicyCursor;

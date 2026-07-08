@@ -12,6 +12,7 @@ pub(super) mod error;
 pub(super) mod id_type;
 pub(super) mod indexed;
 pub(super) mod metadata;
+pub(super) mod mls;
 pub(super) mod parser;
 pub(super) mod permissions;
 pub(super) mod roles;
@@ -40,6 +41,7 @@ pub use constraints::{
 pub use context::{Context, MlsLevel, MlsRange};
 pub use id_type::*;
 pub use indexed::IdAndNameIndexed;
+pub use mls::{Category, Sensitivity};
 pub use parser::SymbolArray;
 pub use permissions::PermissionId;
 pub use roles::{Role, RoleId, RoleSet};
@@ -90,6 +92,8 @@ pub struct NewPolicy {
     types: Types,
     users: IdAndNameIndexed<SymbolArray<User>>,
     conditional_booleans: IdAndNameIndexed<SymbolArray<ConditionalBoolean>>,
+    sensitivities: IdAndNameIndexed<SymbolArray<Sensitivity>>,
+    categories: IdAndNameIndexed<SymbolArray<Category>>,
     rest: RemainingBytes,
 }
 
@@ -155,25 +159,22 @@ impl NewPolicy {
         &self.conditional_booleans
     }
 
+    /// Returns the sensitivities table.
+    pub fn sensitivities(&self) -> &IdAndNameIndexed<SymbolArray<Sensitivity>> {
+        &self.sensitivities
+    }
+
+    /// Returns the categories table.
+    pub fn categories(&self) -> &IdAndNameIndexed<SymbolArray<Category>> {
+        &self.categories
+    }
+
     /// Returns a shared reference to the remaining unparsed bytes.
     pub fn rest_bytes(&self) -> std::sync::Arc<[u8]> {
         self.rest.bytes.clone()
     }
 }
 
-impl Validate for SensitivityId {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
-        // TODO: Validate against sensitivities table when integrated
-        Ok(())
-    }
-}
-
-impl Validate for CategoryId {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
-        // TODO: Validate against categories table when integrated
-        Ok(())
-    }
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,6 +255,16 @@ mod tests {
         assert!(!new_policy.conditional_booleans().is_empty());
         let b = &new_policy.conditional_booleans()[0];
         assert!(!b.name().is_empty());
+
+        // Verify sensitivities are parsed
+        assert!(!new_policy.sensitivities().is_empty());
+        let s = &new_policy.sensitivities()[0];
+        assert!(!s.name().is_empty());
+
+        // Verify categories are parsed
+        assert!(!new_policy.categories().is_empty());
+        let c = &new_policy.categories()[0];
+        assert!(!c.name().is_empty());
 
         // Verify 100% byte-for-byte roundtrip fidelity
         let mut serialized = Vec::new();
