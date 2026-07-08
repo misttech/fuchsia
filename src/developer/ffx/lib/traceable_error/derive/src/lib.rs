@@ -23,8 +23,8 @@
 //!
 //! #[derive(TraceableError)]
 //! pub enum SimpleError {
-//!     InvalidInput, // Assigned Variant ID 0x00
-//!     Timeout,      // Assigned Variant ID 0x01
+//!     InvalidInput,
+//!     Timeout,
 //! }
 //! ```
 //!
@@ -33,8 +33,8 @@
 //! use traceable_error::TraceableError;
 //! # struct FidlError;
 //! # impl TraceableError for FidlError {
-//! #     fn layer_code(&self) -> u32 { 0x11223300 }
-//! #     fn chain_codes(&self) -> Vec<u32> { vec![0x11223300] }
+//! #     fn layer_code(&self) -> String { "Crate::Enum::Val".to_string() }
+//! #     fn chain_codes(&self) -> Vec<String> { vec![self.layer_code()] }
 //! # }
 //!
 //! #[derive(TraceableError)]
@@ -49,8 +49,8 @@
 //! use traceable_error::TraceableError;
 //! # struct DiscoveryError;
 //! # impl TraceableError for DiscoveryError {
-//! #     fn layer_code(&self) -> u32 { 0x99887700 }
-//! #     fn chain_codes(&self) -> Vec<u32> { vec![0x99887700] }
+//! #     fn layer_code(&self) -> String { "Crate::Enum::Val".to_string() }
+//! #     fn chain_codes(&self) -> Vec<String> { vec![self.layer_code()] }
 //! # }
 //!
 //! #[derive(TraceableError)]
@@ -65,8 +65,8 @@
 //! use traceable_error::TraceableError;
 //! # struct InternalDaoError;
 //! # impl TraceableError for InternalDaoError {
-//! #     fn layer_code(&self) -> u32 { 0x44556600 }
-//! #     fn chain_codes(&self) -> Vec<u32> { vec![0x44556600] }
+//! #     fn layer_code(&self) -> String { "Crate::Enum::Val".to_string() }
+//! #     fn chain_codes(&self) -> Vec<String> { vec![self.layer_code()] }
 //! # }
 //!
 //! #[derive(TraceableError)]
@@ -85,18 +85,16 @@ use syn::{Data, DeriveInput, parse_macro_input};
 
 /// Derives the `TraceableError` trait for an enum.
 ///
-/// This procedural macro automatically calculates a stable 32-bit layer identifier for each variant
-/// by shifting the 24-bit FNV-1a crate hash and combining it with an 8-bit variant index.
+/// This procedural macro automatically implements the `TraceableError` trait for an enum.
 /// It generates `layer_code()` and `chain_codes()` match arms based on `#[source]`, `#[from]`,
 /// and `#[trace(opaque)]` attributes.
+///
+/// The `layer_code()` is generated in the format `{crate_name}::{enum_name}::{variant_name}`.
 ///
 /// ### Compilation-Time Constraints & Safety Panics
 ///
 /// - **Enum Only**: This macro is strictly restricted to `enum` declarations. Attempting to derive
 ///   `TraceableError` on a `struct` or `union` will result in a compilation-time panic.
-/// - **Variant Count**: Since the variant ID field occupies exactly 8 bits (low bits) of the 32-bit
-///   layer code, the enum is capped at a maximum of **256 variants** (0x00 to 0xFF). Enums with
-///   257 or more variants will trigger a compilation failure.
 ///
 /// # Examples
 ///
@@ -124,8 +122,7 @@ pub fn derive_traceable_error(input: TokenStream) -> TokenStream {
     let mut layer_match_arms = Vec::new();
     let mut chain_match_arms = Vec::new();
 
-    for (variant_idx, variant) in data_enum.variants.iter().enumerate() {
-        assert!(variant_idx < 256, "TraceableError supports a maximum of 256 variants per crate");
+    for variant in data_enum.variants.iter() {
         let variant_ident = &variant.ident;
 
         // 1. Find the chained field (if any)
@@ -153,18 +150,39 @@ pub fn derive_traceable_error(input: TokenStream) -> TokenStream {
 
         let is_chained = chained_field.is_some() && !is_opaque;
 
-        // 3. Generate the correct destructuring pattern to extract `inner`
-        let destructure = match &variant.fields {
-            syn::Fields::Named(_) => {
-                if let Some(field) = chained_field {
+        // 3. Generate destructuring patterns to avoid unused variable warnings
+        let empty_destructure = match &variant.fields {
+            syn::Fields::Named(_) => quote! { { .. } },
+            syn::Fields::Unnamed(_) => quote! { ( .. ) },
+            syn::Fields::Unit => quote! {},
+        };
+
+        let cfg_attrs = variant
+            .attrs
+            .iter()
+            .filter(|attr| attr.path().is_ident("cfg") || attr.path().is_ident("cfg_attr"))
+            .collect::<Vec<_>>();
+
+        // --- Generate layer_code() arm ---
+        let name_str = name.to_string();
+        let variant_str = variant_ident.to_string();
+        layer_match_arms.push(quote! {
+            #(#cfg_attrs)*
+            Self::#variant_ident #empty_destructure => {
+                format!("{}::{}::{}", CRATE_NAME, #name_str, #variant_str)
+            }
+        });
+
+        // --- Generate chain_codes() arm ---
+        if is_chained {
+            let chain_destructure = match &variant.fields {
+                syn::Fields::Named(_) => {
+                    let field = chained_field.unwrap();
                     let field_name = &field.ident;
                     quote! { { #field_name: inner, .. } }
-                } else {
-                    quote! { { .. } }
                 }
-            }
-            syn::Fields::Unnamed(fields) => {
-                if let Some(idx) = chained_field_idx {
+                syn::Fields::Unnamed(fields) => {
+                    let idx = chained_field_idx.unwrap();
                     let pats = (0..fields.unnamed.len()).map(|i| {
                         if i == idx {
                             quote! { inner }
@@ -173,30 +191,14 @@ pub fn derive_traceable_error(input: TokenStream) -> TokenStream {
                         }
                     });
                     quote! { ( #(#pats),* ) }
-                } else {
-                    quote! { ( .. ) }
                 }
-            }
-            syn::Fields::Unit => quote! {},
-        };
+                syn::Fields::Unit => quote! {},
+            };
 
-        // --- Generate layer_code() arm ---
-        let name_str = name.to_string();
-        let variant_str = variant_ident.to_string();
-        layer_match_arms.push(quote! {
-            Self::#variant_ident #destructure => {
-                const CRATE_NAME: &str = match option_env!("CARGO_PKG_NAME") {
-                    Some(name) => name,
-                    None => "unknown",
-                };
-                format!("{}::{}::{}", CRATE_NAME, #name_str, #variant_str)
-            }
-        });
-
-        // --- Generate chain_codes() arm ---
-        if is_chained {
             chain_match_arms.push(quote! {
-                Self::#variant_ident #destructure => {
+                #(#cfg_attrs)*
+                Self::#variant_ident #chain_destructure => {
+                    use ::traceable_error::TraceableError as _;
                     let mut trace = inner.chain_codes();
                     trace.insert(0, self.layer_code());
                     trace
@@ -205,7 +207,8 @@ pub fn derive_traceable_error(input: TokenStream) -> TokenStream {
         } else {
             // Base case or Opaque boundary: Trace stops here
             chain_match_arms.push(quote! {
-                Self::#variant_ident #destructure => vec![self.layer_code()],
+                #(#cfg_attrs)*
+                Self::#variant_ident #empty_destructure => vec![self.layer_code()],
             });
         }
     }
@@ -213,6 +216,10 @@ pub fn derive_traceable_error(input: TokenStream) -> TokenStream {
     let expanded = quote! {
         impl ::traceable_error::TraceableError for #name {
             fn layer_code(&self) -> String {
+                const CRATE_NAME: &str = match option_env!("CARGO_PKG_NAME") {
+                    Some(name) => name,
+                    None => "unknown",
+                };
                 match self {
                     #(#layer_match_arms)*
                 }

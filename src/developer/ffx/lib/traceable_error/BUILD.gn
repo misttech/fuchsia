@@ -4,8 +4,6 @@
 
 import("//build/rust/rustc_library.gni")
 
-assert(is_host, "traceable_error is for use with the host toolchain only")
-
 rustc_library("lib") {
   name = "traceable_error"
   version = "0.1.0"

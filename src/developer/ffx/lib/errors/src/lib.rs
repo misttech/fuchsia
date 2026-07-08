@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use std::process::ExitStatus;
+use traceable_error_derive::TraceableError;
 
 /// Re-exported libraries for macros
 #[doc(hidden)]
@@ -19,7 +20,7 @@ pub const BUG_REPORT_URL: &str =
 /// to improve the error condition that they have experienced, with a goal to maximize actionable
 /// errors over time.
 // TODO(https://fxbug.dev/42135455): consider extending this to allow custom types from plugins.
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, TraceableError)]
 pub enum FfxError {
     #[error("{}", .0)]
     Error(#[source] anyhow::Error, i32 /* Error status code */),
@@ -30,6 +31,7 @@ pub enum FfxError {
     DaemonError { err: Box<dyn std::error::Error + Send + Sync>, target: Option<String> },
     #[cfg(not(target_os = "fuchsia"))]
     #[error("{}", .err)]
+    #[trace(opaque)]
     OpenTargetError {
         #[source]
         err: Box<dyn std::error::Error + Send + Sync>,
@@ -38,6 +40,7 @@ pub enum FfxError {
     },
     #[cfg(not(target_os = "fuchsia"))]
     #[error("{}", .err)]
+    #[trace(opaque)]
     TunnelError {
         #[source]
         err: Box<dyn std::error::Error + Send + Sync>,
@@ -45,6 +48,7 @@ pub enum FfxError {
     },
     #[cfg(not(target_os = "fuchsia"))]
     #[error("{}", .err)]
+    #[trace(opaque)]
     TargetConnectionError {
         #[source]
         err: Box<dyn std::error::Error + Send + Sync>,

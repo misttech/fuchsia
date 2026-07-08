@@ -12,9 +12,8 @@
 //! When dealing with deeply nested software stacks or distributed IPC boundaries
 //! (e.g. FIDL, Overnet), errors often undergo type erasure or stringification. This crate
 //! establishes a mechanism where each distinct error variant across independent crates
-//! is assigned a stable 32-bit layer code composed of:
-//! - **24-bit Crate Hash**: Generated at compile time from the crate's package name via FNV-1a.
-//! - **8-bit Variant ID**: Discriminant assigned by the procedural macro based on variant declaration order.
+//! is assigned a stable string-based layer code in the format:
+//! `{crate_name}::{enum_name}::{variant_name}`.
 //!
 //! By chaining these layer codes chronologically, diagnostic systems can reconstruct the exact
 //! trajectory of a failure without relying on brittle string parsing or runtime type metadata.
@@ -30,7 +29,7 @@
 ///
 /// This structured layout facilitates highly readable failure trajectory reconstruction
 /// across distributed IPC boundaries and dynamic crate boundaries.
-pub trait TraceableError: std::fmt::Debug {
+pub trait TraceableError: std::fmt::Debug + std::fmt::Display {
     /// Returns this specific layer's string identifier (format: CrateName::EnumName::EnumValue).
     fn layer_code(&self) -> String;
 
@@ -47,11 +46,22 @@ pub trait TraceableError: std::fmt::Debug {
 
 impl TraceableError for anyhow::Error {
     fn layer_code(&self) -> String {
-        "anyhow".to_string()
+        if let Some(boxed) = self.downcast_ref::<TraceableBox>() {
+            boxed.layer_code()
+        } else {
+            "anyhow".to_string()
+        }
     }
 
     fn chain_codes(&self) -> Vec<String> {
-        vec![self.layer_code()]
+        if let Some(boxed) = self.downcast_ref::<TraceableBox>() {
+            // If the anyhow::Error contains a TraceableBox, we traverse into it.
+            // This intentionally bypasses the "anyhow" type-erasing transport layer
+            // to focus on the semantic concrete error chain.
+            boxed.chain_codes()
+        } else {
+            vec!["anyhow".to_string()]
+        }
     }
 }
 
@@ -76,28 +86,55 @@ impl TraceableError for anyhow::Error {
 ///     Ok(())
 /// }
 /// ```
+// Note: TraceableBox intentionally does NOT implement TraceableError.
+// This prevents double-boxing (e.g., wrapping a TraceableBox inside another TraceableBox)
+// at compile time, as it will fail the `E: TraceableError` bound in the `From` implementation.
 #[derive(Debug)]
 pub struct TraceableBox(pub Box<dyn TraceableError + Send + Sync + 'static>);
 
-impl From<anyhow::Error> for TraceableBox {
-    fn from(err: anyhow::Error) -> Self {
+impl<E: TraceableError + Send + Sync + 'static> From<E> for TraceableBox {
+    fn from(err: E) -> Self {
         TraceableBox(Box::new(err))
     }
 }
 
-impl TraceableError for TraceableBox {
-    fn layer_code(&self) -> String {
+impl TraceableBox {
+    pub fn layer_code(&self) -> String {
         self.0.layer_code()
     }
 
-    fn chain_codes(&self) -> Vec<String> {
+    pub fn chain_codes(&self) -> Vec<String> {
         self.0.chain_codes()
+    }
+
+    pub fn diagnostic_code(&self) -> String {
+        self.0.diagnostic_code()
     }
 }
 
 impl std::fmt::Display for TraceableBox {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "TraceableError [{}]", self.0.diagnostic_code())
+        let mut err_str = self.0.to_string();
+        let chain = self.0.chain_codes();
+        let diag_code = self.0.diagnostic_code();
+
+        let mut sub_slice = diag_code.as_str();
+        for (i, layer) in chain.iter().enumerate() {
+            let suffix = format!(" [{}]", sub_slice);
+            if let Some(stripped) = err_str.strip_suffix(&suffix) {
+                err_str = stripped.to_string();
+                break;
+            }
+            if i + 1 < chain.len() {
+                sub_slice = &sub_slice[layer.len() + 1..];
+            }
+        }
+
+        if err_str.is_empty() {
+            write!(f, "[{}]", diag_code)
+        } else {
+            write!(f, "{} [{}]", err_str, diag_code)
+        }
     }
 }
 
@@ -109,6 +146,11 @@ mod tests {
 
     #[derive(Debug)]
     struct DummyError;
+    impl std::fmt::Display for DummyError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "DummyError")
+        }
+    }
     impl TraceableError for DummyError {
         fn layer_code(&self) -> String {
             "DummyError".to_string()
@@ -124,12 +166,54 @@ mod tests {
     }
 
     #[test]
+    fn test_traceable_box_display_deduplicates_suffix() {
+        #[derive(Debug)]
+        struct InnerError;
+        impl std::fmt::Display for InnerError {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "root failure")
+            }
+        }
+        impl TraceableError for InnerError {
+            fn layer_code(&self) -> String {
+                "Inner".to_string()
+            }
+            fn chain_codes(&self) -> Vec<String> {
+                vec![self.layer_code()]
+            }
+        }
+
+        #[derive(Debug)]
+        struct OuterError(TraceableBox);
+        impl std::fmt::Display for OuterError {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "outer wrapper: {}", self.0)
+            }
+        }
+        impl TraceableError for OuterError {
+            fn layer_code(&self) -> String {
+                "Outer".to_string()
+            }
+            fn chain_codes(&self) -> Vec<String> {
+                let mut c = self.0.chain_codes();
+                c.insert(0, self.layer_code());
+                c
+            }
+        }
+
+        let inner_box = TraceableBox::from(InnerError);
+        assert_eq!(inner_box.to_string(), "root failure [Inner]");
+
+        let outer_box = TraceableBox::from(OuterError(inner_box));
+        assert_eq!(outer_box.to_string(), "outer wrapper: root failure [Outer-Inner]");
+    }
+
+    #[test]
     fn test_anyhow_traceable() {
         let err = anyhow::anyhow!("boom");
         assert_eq!(err.chain_codes().len(), 1);
         assert_eq!(err.chain_codes()[0], "anyhow");
     }
-
     #[test]
     fn test_traceable_box_conversion() {
         fn produce_anyhow() -> anyhow::Result<()> {
@@ -143,6 +227,23 @@ mod tests {
 
         let boxed_err = consume_box().unwrap_err();
         assert_eq!(boxed_err.chain_codes().len(), 1);
-        assert!(boxed_err.to_string().contains("TraceableError"));
+        assert!(boxed_err.to_string().contains("root failure"));
+        assert!(boxed_err.to_string().contains("[anyhow]"));
+    }
+
+    #[test]
+    fn test_nested_traceable_box_display() {
+        let root_err = DummyError;
+        let boxed_root: TraceableBox = root_err.into();
+        let anyhow_err = anyhow::Error::new(boxed_root);
+        let boxed_anyhow: TraceableBox = anyhow_err.into();
+
+        let display_str = boxed_anyhow.to_string();
+        let occurrences = display_str.matches("[DummyError]").count();
+        assert_eq!(
+            occurrences, 1,
+            "Expected '[DummyError]' to appear only once in: {}",
+            display_str
+        );
     }
 }

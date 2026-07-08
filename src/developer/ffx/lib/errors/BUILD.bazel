@@ -11,6 +11,9 @@ rustc_library(
     srcs = ["src/lib.rs"],
     crate_name = "errors",
     edition = "2024",
+    proc_macro_deps = [
+        "//src/developer/ffx/lib/traceable_error/derive:lib",
+    ],
     tags = [
         # There should be no dependencies on FIDL or anything to do with
         # communicating with target devices.
@@ -23,6 +26,7 @@ rustc_library(
     version = "0.1.0",
     with_host_unit_tests = True,
     deps = [
+        "//src/developer/ffx/lib/traceable_error:lib",
         "//third_party/rust_crates/vendor:anyhow",
         "//third_party/rust_crates/vendor:thiserror",
     ],

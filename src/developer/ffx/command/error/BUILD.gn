@@ -52,6 +52,7 @@ rustc_library("lib") {
   ]
   crate_name = "ffx_command_error"
   edition = "2024"
+  proc_macro_deps = [ "//src/developer/ffx/lib/traceable_error/derive:lib" ]
   assert_no_deps = [
     "//src/developer/ffx/config/*",
     "//src/developer/ffx/daemon/*",
@@ -67,6 +68,7 @@ rustc_library("lib") {
   with_unit_tests = true
   deps = [
     "//src/developer/ffx/lib/errors:lib",
+    "//src/developer/ffx/lib/traceable_error:lib",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:thiserror",

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use errors::FfxError;
+use traceable_error_derive::TraceableError;
 
 /// Represents a recoverable error. Intended to be embedded in `Error`.
 #[derive(thiserror::Error, Debug)]
@@ -10,7 +11,7 @@ use errors::FfxError;
 pub struct NonFatalError(#[source] pub anyhow::Error);
 
 /// A top level error type for ffx tool results
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, TraceableError)]
 pub enum Error {
     /// An error that qualifies as a bugcheck
     Unexpected(#[source] anyhow::Error),
@@ -29,6 +30,7 @@ pub enum Error {
     /// An error from general I/O. Meant mostly to handle things like write!() and such, but also
     /// for potential issues with piping outputs of other commands into ffx. This isn't something
     /// that's exactly common, but is a possibility.
+    #[trace(opaque)]
     IoError(#[from] std::io::Error),
     /// Something failed before ffx's configuration could be loaded (like an
     /// invalid argument, a failure to read an env config file, etc).

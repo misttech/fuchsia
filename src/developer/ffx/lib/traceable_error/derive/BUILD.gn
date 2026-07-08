@@ -4,9 +4,6 @@
 
 import("//build/rust/rustc_macro.gni")
 
-assert(is_host,
-       "traceable_error_derive is for use with the host toolchain only")
-
 rustc_macro("lib") {
   name = "traceable_error_derive"
   version = "0.1.0"

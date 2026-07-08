@@ -2,17 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use traceable_error::TraceableError;
+use traceable_error::{TraceableBox, TraceableError};
 use traceable_error_derive::TraceableError;
 
-#[derive(Debug, TraceableError)]
+#[derive(Debug, thiserror::Error, TraceableError)]
 enum SimpleError {
+    #[error("CodeZero")]
     CodeZero,
+    #[error("CodeOne")]
     CodeOne,
 }
 
 #[derive(Debug)]
 struct RootError;
+
+impl std::fmt::Display for RootError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RootError")
+    }
+}
+
+impl std::error::Error for RootError {}
 
 impl TraceableError for RootError {
     fn layer_code(&self) -> String {
@@ -23,19 +33,23 @@ impl TraceableError for RootError {
     }
 }
 
-#[derive(Debug, TraceableError)]
+#[derive(Debug, thiserror::Error, TraceableError)]
 enum FromError {
+    #[error("FromZero")]
     FromZero,
 }
 
-#[derive(Debug, TraceableError)]
+#[derive(Debug, thiserror::Error, TraceableError)]
 enum ChainedError {
+    #[error("Wrapped")]
     Wrapped(#[source] RootError),
+    #[error("FromError")]
     FromError(#[from] FromError),
 }
 
-#[derive(Debug, TraceableError)]
+#[derive(Debug, thiserror::Error, TraceableError)]
 enum OpaqueError {
+    #[error("Wrapped")]
     #[trace(opaque)]
     Wrapped(#[source] RootError),
 }
@@ -102,4 +116,22 @@ fn test_nested_error_chain() {
     assert_eq!(codes.len(), 2);
     assert!(codes[0].ends_with("::OuterError::FromInner"));
     assert!(codes[1].ends_with("::InnerError::InnerOne"));
+}
+
+#[derive(Debug, thiserror::Error, TraceableError)]
+enum ChainedBoxError {
+    #[error("WrappedBox")]
+    WrappedBox(#[source] TraceableBox),
+}
+
+#[test]
+fn test_derive_chained_box() {
+    let root_err = SimpleError::CodeZero;
+    let boxed_root: TraceableBox = root_err.into();
+    let err = ChainedBoxError::WrappedBox(boxed_root);
+    let codes = err.chain_codes();
+
+    assert_eq!(codes.len(), 2);
+    assert!(codes[0].ends_with("::ChainedBoxError::WrappedBox"));
+    assert!(codes[1].ends_with("::SimpleError::CodeZero"));
 }
