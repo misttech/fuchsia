@@ -174,7 +174,7 @@ impl Policy {
         self.0
             .conditional_booleans()
             .iter()
-            .map(|boolean| (boolean.data.as_slice(), boolean.metadata.active()))
+            .map(|boolean| (boolean.name(), boolean.active()))
             .collect()
     }
 

@@ -25,11 +25,13 @@ pub use metadata::{HandleUnknown, POLICYDB_VERSION_MAX};
 use parser::{PolicyCursor, RemainingBytes};
 use traits::Validate;
 
+pub(super) mod booleans;
 pub(super) mod types;
 pub(super) mod users;
 
 pub use access_vector::AccessVector;
 pub use bitmap::{ExtensibleBitmap, IdSpan};
+pub use booleans::ConditionalBoolean;
 pub use classes::{Class, ClassDefault, ClassDefaultRange, ClassId};
 pub use common_symbols::CommonSymbol;
 pub use constraints::{
@@ -87,6 +89,7 @@ pub struct NewPolicy {
     roles: IdAndNameIndexed<SymbolArray<Role>>,
     types: Types,
     users: IdAndNameIndexed<SymbolArray<User>>,
+    conditional_booleans: IdAndNameIndexed<SymbolArray<ConditionalBoolean>>,
     rest: RemainingBytes,
 }
 
@@ -145,6 +148,11 @@ impl NewPolicy {
     /// Returns the users table.
     pub fn users(&self) -> &IdAndNameIndexed<SymbolArray<User>> {
         &self.users
+    }
+
+    /// Returns the conditional booleans table.
+    pub fn conditional_booleans(&self) -> &IdAndNameIndexed<SymbolArray<ConditionalBoolean>> {
+        &self.conditional_booleans
     }
 
     /// Returns a shared reference to the remaining unparsed bytes.
@@ -236,6 +244,16 @@ mod tests {
         assert!(!new_policy.types().is_empty());
         let t = &new_policy.types().iter().next().unwrap();
         assert!(!t.name().is_empty());
+
+        // Verify users are parsed
+        assert!(!new_policy.users().is_empty());
+        let u = &new_policy.users()[0];
+        assert!(!u.name().is_empty());
+
+        // Verify conditional booleans are parsed
+        assert!(!new_policy.conditional_booleans().is_empty());
+        let b = &new_policy.conditional_booleans()[0];
+        assert!(!b.name().is_empty());
 
         // Verify 100% byte-for-byte roundtrip fidelity
         let mut serialized = Vec::new();

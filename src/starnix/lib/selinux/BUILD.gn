@@ -19,6 +19,7 @@ rustc_library("selinux") {
     "src/local_cache.rs",
     "src/new_policy/access_vector.rs",
     "src/new_policy/bitmap.rs",
+    "src/new_policy/booleans.rs",
     "src/new_policy/classes.rs",
     "src/new_policy/common_symbols.rs",
     "src/new_policy/constraints.rs",

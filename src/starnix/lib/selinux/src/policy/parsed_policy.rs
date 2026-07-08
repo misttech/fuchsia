@@ -20,7 +20,7 @@ use super::extensible_bitmap::ExtensibleBitmap;
 use super::constraints::evaluate_constraint;
 use super::parser::{PolicyCursor, PolicyData};
 use super::security_context::SecurityContext;
-use super::symbols::{Category, CategoryIndex, ConditionalBoolean, Sensitivity, SymbolList};
+use super::symbols::{Category, CategoryIndex, Sensitivity, SymbolList};
 use super::view::{Hashable, HashedArrayView};
 use super::{
     AccessDecision, AccessVector, CategoryId, ClassId, MlsLevel, Parse, PolicyValidationContext,
@@ -56,8 +56,6 @@ pub struct ParsedPolicy {
     /// [`NewPolicy`] that handles the header and base tables.
     new_policy: Arc<NewPolicy>,
 
-    /// The set of dynamically adjustable booleans referenced by this policy.
-    conditional_booleans: SymbolList<ConditionalBoolean>,
     /// The set of sensitivity levels referenced by this policy.
     sensitivities: SymbolList<Sensitivity>,
     /// The set of categories referenced by this policy.
@@ -362,10 +360,6 @@ impl ParsedPolicy {
         self.categories.category_by_name(&self.data, name)
     }
 
-    pub(super) fn conditional_booleans(&self) -> &Vec<ConditionalBoolean> {
-        &self.conditional_booleans.data
-    }
-
     pub(super) fn fs_uses(&self) -> &[FsUse] {
         &self.fs_uses.data
     }
@@ -550,10 +544,6 @@ fn parse_policy_remaining(
 ) -> Result<(ParsedPolicy, usize), anyhow::Error> {
     let tail = PolicyCursor::new(&rest_data);
 
-    let (conditional_booleans, tail) = SymbolList::<ConditionalBoolean>::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing conditional booleans")?;
-
     let (sensitivities, tail) = SymbolList::<Sensitivity>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing sensitivites")?;
@@ -662,7 +652,6 @@ fn parse_policy_remaining(
             data: rest_data,
             new_policy: Arc::new(new_policy),
 
-            conditional_booleans,
             sensitivities,
             categories,
             access_vector_rules,
@@ -696,10 +685,6 @@ impl ParsedPolicy {
             new_policy: self.new_policy.clone(),
         };
 
-        self.conditional_booleans
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating conditional_booleans")?;
         self.sensitivities
             .validate(&context)
             .map_err(Into::<anyhow::Error>::into)

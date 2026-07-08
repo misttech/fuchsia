@@ -133,56 +133,6 @@ impl Validate for MlsRange {
     }
 }
 
-array_type!(ConditionalBoolean, ConditionalBooleanMetadata, u8);
-
-array_type_validate_deref_both!(ConditionalBoolean);
-
-impl ValidateArray<ConditionalBooleanMetadata, u8> for ConditionalBoolean {
-    type Error = anyhow::Error;
-
-    /// TODO: Validate consistency between [`ConditionalBooleanMetadata`] and `[u8]` key.
-    fn validate_array(
-        _context: &PolicyValidationContext,
-        _metadata: &ConditionalBooleanMetadata,
-        _items: &[u8],
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
-#[repr(C, packed)]
-pub(super) struct ConditionalBooleanMetadata {
-    id: le::U32,
-    /// Current active value of this conditional boolean.
-    active: le::U32,
-    length: le::U32,
-}
-
-impl ConditionalBooleanMetadata {
-    /// Returns the active value for the boolean.
-    pub(super) fn active(&self) -> bool {
-        self.active != le::U32::ZERO
-    }
-}
-
-impl Counted for ConditionalBooleanMetadata {
-    /// [`ConditionalBooleanMetadata`] used as `M` in of `Array<PS, PS::Output<M>, PS::Slice<u8>>` with
-    /// `self.length` denoting size of inner `[u8]`.
-    fn count(&self) -> u32 {
-        self.length.get()
-    }
-}
-
-impl Validate for ConditionalBooleanMetadata {
-    type Error = anyhow::Error;
-
-    /// TODO: Validate internal consistency of [`ConditionalBooleanMetadata`].
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub(super) struct Sensitivity {
     metadata: SensitivityMetadata,
