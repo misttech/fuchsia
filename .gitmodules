@@ -738,3 +738,8 @@
 	url = https://fuchsia.googlesource.com/third_party/github.com/tink-crypto/tink-cc
 	name = third_party/github.com/tink-crypto/tink-cc
 	ignore = all
+[submodule "third_party/github.com/simdutf/simdutf/src"]
+	path = third_party/github.com/simdutf/simdutf/src
+	url = https://fuchsia.googlesource.com/third_party/github.com/simdutf/simdutf
+	name = third_party/github.com/simdutf/simdutf
+	ignore = all
