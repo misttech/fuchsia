@@ -33,6 +33,13 @@ pub struct DriverFrameworkConfig {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub disabled_drivers: Vec<String>,
 
+    /// The list of devicetree nodes to enable even if their status is disabled.
+    ///
+    /// List of absolute devicetree node paths (always starting with `"/"` and
+    /// separated by `"/"`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub enabled_devicetree_nodes: Vec<String>,
+
     /// Fuzzing configuration used for testing.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub test_fuzzing_config: Option<TestFuzzingConfig>,

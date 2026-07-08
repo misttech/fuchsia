@@ -121,6 +121,18 @@ impl
             ),
         )?;
 
+        let enabled_devicetree_nodes = driver_framework.enabled_devicetree_nodes.clone();
+        builder.set_config_capability(
+            "fuchsia.driver.devicetree.EnabledNodes",
+            Config::new(
+                ConfigValueType::Vector {
+                    nested_type: ConfigNestedValueType::String { max_size: 100 },
+                    max_count: 50,
+                },
+                enabled_devicetree_nodes.into(),
+            ),
+        )?;
+
         builder.set_config_capability(
             "fuchsia.driver.manager.RootDriver",
             Config::new(

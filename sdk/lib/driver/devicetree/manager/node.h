@@ -64,6 +64,9 @@ class NodeManager {
   virtual zx::result<> RegisterIommu(uint32_t iommu_id,
                                      fuchsia_hardware_platform_bus::Iommu iommu) = 0;
 
+  // Returns true if the node at |path| is enabled by override.
+  virtual bool IsNodeForceEnabled(std::string_view path) = 0;
+
   virtual ~NodeManager();
 };
 
@@ -116,6 +119,7 @@ class Node {
 
   const std::string& name() const { return name_; }
   const std::string& fdf_name() const { return fdf_name_; }
+  std::string path() const;
 
   std::string_view driver_host() const { return driver_host_; }
 

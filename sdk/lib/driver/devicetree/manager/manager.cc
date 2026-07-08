@@ -212,6 +212,11 @@ zx::result<> Manager::RegisterIommu(uint32_t iommu_id, fhpb::Iommu iommu) {
   return zx::ok();
 }
 
+bool Manager::IsNodeForceEnabled(std::string_view path) {
+  return std::find(force_enabled_nodes_.begin(), force_enabled_nodes_.end(), path) !=
+         force_enabled_nodes_.end();
+}
+
 std::optional<Node*> Manager::FindNode(std::string_view name) {
   for (auto& node : nodes_publish_order_) {
     if (node->name() == name) {

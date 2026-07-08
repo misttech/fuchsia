@@ -105,6 +105,7 @@
         },
         {
             config: [
+                "fuchsia.driver.devicetree.EnabledNodes",
                 "fuchsia.driver.ExposeDebugCapabilities",
                 "fuchsia.driver.UseHardwareIommu",
                 "fuchsia.power.RuntimeProcessorPowerManagementEnabled",

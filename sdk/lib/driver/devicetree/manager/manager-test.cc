@@ -418,6 +418,26 @@ TEST_F(ManagerTest, TestSkipDisabledNodes) {
   ASSERT_NE(nullptr, strstr("status-none-device", board_child_node2.name.data()));
 }
 
+TEST_F(ManagerTest, TestOverrideDisabledNodes) {
+  Manager manager(testing::LoadTestBlob("/pkg/test-data/status-disabled.dtb"));
+  manager.SetForceEnabledNodes({"/status-disabled-device"});
+  DefaultVisitors<> default_visitors;
+  ASSERT_EQ(ZX_OK, manager.Walk(default_visitors).status_value());
+
+  ASSERT_TRUE(DoPublish(manager).is_ok());
+  ASSERT_EQ(0lu, publisher()->GetPbusNodes().size());
+  ASSERT_EQ(4lu, publisher()->GetBoardChildNodes().size());
+
+  bool found_disabled = false;
+  for (const BoardChildNode& node : publisher()->GetBoardChildNodes()) {
+    if (node.name == "status-disabled-device") {
+      found_disabled = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found_disabled);
+}
+
 TEST_F(ManagerTest, TestBoardChildCompositeSpec) {
   Manager manager(testing::LoadTestBlob("/pkg/test-data/simple.dtb"));
   static const std::string kTestKey = "test-key";

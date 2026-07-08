@@ -31,8 +31,8 @@ constexpr const char kPhandleProp[] = "phandle";
 
 NodeManager::~NodeManager() = default;
 
-Node::Node(Node *parent, const std::string_view name, devicetree::Properties properties,
-           uint32_t id, NodeManager *manager)
+Node::Node(Node* parent, const std::string_view name, devicetree::Properties properties,
+           uint32_t id, NodeManager* manager)
     : parent_(parent), name_(name), id_(id), manager_(manager) {
   ZX_ASSERT(manager_);
 
@@ -111,7 +111,7 @@ void Node::AddBootMetadata(const fuchsia_hardware_platform_bus::BootMetadata& bo
   add_platform_device_ = true;
 }
 
-void Node::AddNodeSpec(const fuchsia_driver_framework::ParentSpec2 &spec) {
+void Node::AddNodeSpec(const fuchsia_driver_framework::ParentSpec2& spec) {
   parents_.emplace_back(spec);
 }
 
@@ -139,7 +139,7 @@ zx::result<> Node::ChangePublishOrder(uint32_t new_index) {
   return manager_->ChangePublishOrder(id(), new_index);
 }
 
-zx::result<> Node::Publish(PublisherInterface &publisher) {
+zx::result<> Node::Publish(PublisherInterface& publisher) {
   if (node_properties_.empty() && parents_.empty() && !add_platform_device_) {
     fdf::debug(
         "Not publishing node '{}' because it has no node properties, no platform resources, "
@@ -150,8 +150,12 @@ zx::result<> Node::Publish(PublisherInterface &publisher) {
 
   auto status_property = GetProperty<std::string>("status");
   if (status_property.is_ok() && *status_property != "okay") {
-    fdf::debug("Not publishing node '{}' because its status is {}.", name(), *status_property);
-    return zx::ok();
+    if (!manager_->IsNodeForceEnabled(path())) {
+      fdf::debug("Not publishing node '{}' because its status is {}.", name(), *status_property);
+      return zx::ok();
+    }
+    fdf::info("Publishing node '{}' despite status '{}' due to override.", name(),
+              *status_property);
   }
 
   // Nodes are published as per below logic -
@@ -232,7 +236,7 @@ zx::result<> Node::Publish(PublisherInterface &publisher) {
     fdf::ParentSpec2 board_child_node;
     board_child_node.properties() = node_properties_;
 
-    for (auto &node_property : node_properties_) {
+    for (auto& node_property : node_properties_) {
       fdf::BindRule2 bind_rule = {node_property.key(),
                                   fuchsia_driver_framework::Condition::kAccept,
                                   {node_property.value()}};
@@ -259,10 +263,23 @@ zx::result<ReferenceNode> Node::GetReferenceNode(Phandle parent) {
 
 ParentNode Node::parent() const { return ParentNode(parent_); }
 
+std::string Node::path() const {
+  ParentNode p = parent();
+  if (!p) {
+    return "/";
+  }
+  std::string path = p.GetNode()->path();
+  if (path != "/") {
+    path.append("/");
+  }
+  path.append(name());
+  return path;
+}
+
 std::vector<ChildNode> Node::children() {
   std::vector<ChildNode> children;
   children.reserve(children_.size());
-  for (Node *child : children_) {
+  for (Node* child : children_) {
     children.emplace_back(child);
   }
   return children;
@@ -280,7 +297,7 @@ typename GetPropertyReturn<T>::type Node::GetProperty(std::string_view property_
       return zx::error(ZX_ERR_NOT_FOUND);
     }
 
-    const devicetree::PropertyValue &prop_value = it->second;
+    const devicetree::PropertyValue& prop_value = it->second;
 
     if constexpr (std::is_same_v<T, std::string>) {
       auto val = prop_value.AsString();

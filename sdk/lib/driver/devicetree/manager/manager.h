@@ -63,6 +63,12 @@ class Manager final : public NodeManager {
   zx::result<> RegisterIommu(uint32_t iommu_id,
                              fuchsia_hardware_platform_bus::Iommu iommu) override;
 
+  bool IsNodeForceEnabled(std::string_view path) override;
+
+  void SetForceEnabledNodes(std::vector<std::string> enabled_nodes) {
+    force_enabled_nodes_ = std::move(enabled_nodes);
+  }
+
   // Find a node by its name.
   std::optional<Node*> FindNode(std::string_view name);
 
@@ -83,6 +89,7 @@ class Manager final : public NodeManager {
   uint32_t node_id_ = 0;
 
   std::unordered_map<uint32_t, fuchsia_hardware_platform_bus::Iommu> iommus_;
+  std::vector<std::string> force_enabled_nodes_;
 };
 
 }  // namespace fdf_devicetree

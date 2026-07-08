@@ -32,6 +32,7 @@
                 "fuchsia.driver.BindEager",
                 "fuchsia.driver.BootDrivers",
                 "fuchsia.driver.DelayFallbackUntilBaseDriversIndexed",
+                "fuchsia.driver.devicetree.EnabledNodes",
                 "fuchsia.driver.DisabledDrivers",
                 "fuchsia.driver.DriverLoadFuzzerMaxDelayMs",
                 "fuchsia.driver.EnableDriverLoadFuzzer",
