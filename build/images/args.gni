@@ -5,22 +5,6 @@
 import("//build/info/info.gni")
 
 declare_args() {
-  # This is really a build for a recovery image, and so the fuchsia image that
-  # is being built isn't properly configured, and so just disable the new image
-  # assembly work until that's been addressed.
-  recovery_only = false
-
-  # The epoch to use in the update (OTA) package.
-  # Before applying an update, Fuchsia confirms that the epoch in the update
-  # package is not smaller than the epoch installed on the system. This prevents
-  # Fuchsia from downloading an update that may not boot.
-  #
-  # The product epoch is added to the platform epoch before placed in the update
-  # package. Having a separate platform epoch ensures that every time the
-  # platform introduces a backwards-incompatible change, each product gets their
-  # epoch increased.
-  update_product_epoch = 0
-
   # Check that all vtables in fuchsia binaries listed in binaries.json are in
   # readonly data sections. This check will be run at the end of a full build.
   #
@@ -45,19 +29,10 @@ declare_args() {
   vbmeta_r_partition = ""
   fvm_partition = ""
   fxfs_partition = ""
-  active_partition = ""
-  fastboot_product = ""
-  pre_erase_flash = false
 
   # Whether to include images necessary to run Fuchsia in QEMU in build
   # archives.
   add_qemu_to_build_archives = false
-
-  # Additional bootserver args to add to pave.sh. New uses of this should be
-  # added with caution, and ideally discussion. The present use case is to
-  # enable throttling of netboot when specific network adapters are combined
-  # with specific boards, due to driver and hardware challenges.
-  additional_bootserver_arguments = ""
 
   # Controls what type of delivery blob pkg-resolver fetches and blobfs accepts.
   # Supported types can be found in //src/storage/blobfs/delivery_blob.h
@@ -65,28 +40,8 @@ declare_args() {
   # This arg is for local developer only, products should not set this arg.
   delivery_blob_type = 1
 
-  # Build boot images that prefer Zedboot over local boot (only for EFI).
-  always_zedboot = false
-
   # Include an account partition in the FVM image if set to true.
   include_account_in_fvm = false
-
-  # The size in bytes of the FVM partition on the target eMMC devices.
-  # Specifying this parameter will lead build to generate a fvm.fastboot.blk
-  # suitable for flashing through fastboot for eMMC devices.
-  assembly_generate_fvm_fastboot = false
-
-  # Specifying these variables will generate a NAND FVM image suitable for
-  # directly flashing via fastboot. The NAND characteristics are required
-  # in order to properly initialize the FTL metadata in the OOB area.
-  # `fvm_max_disk_size` should also be nonzero or else minfs will not have any
-  # room to initialize on boot.
-  assembly_generate_fvm_nand = false
-
-  # Enable verbose output from `ffx assembly image`, this creates non-silent
-  # build output and therefore should never be 'true' in checked-in configs, and
-  # is meant solely for developer debugging.
-  verbose_image_assembly = false
 
   # If true, the images.json build API modules will only include images
   # identified by bazel_product_bundle_target and its dependencies.
@@ -130,11 +85,6 @@ declare_args() {
   # product in a multi-product build is not desired.
   main_pb_label = ""
 }
-
-# The platform epoch that is added to every product.
-# Increment this number if the platform has introduced a backwards-incompatible
-# change. See: src/sys/pkg/bin/system-updater/epoch/playbook.md
-update_platform_epoch = 1
 
 if (main_pb_label != "") {
   assert(use_bazel_images_only,

@@ -37,8 +37,6 @@ avb_key =
 avb_atx_metadata =
     "//third_party/android/platform/external/avb/test/data/atx_metadata.bin"
 
-assembly_generate_fvm_fastboot = true
-
 zircon_a_partition = "zircon_a"
 zircon_b_partition = "zircon_b"
 zircon_r_partition = "zircon_r"
@@ -47,5 +45,3 @@ vbmeta_b_partition = "vbmeta_b"
 vbmeta_r_partition = "vbmeta_r"
 fvm_partition = "fvm"
 fxfs_partition = "fvm"
-active_partition = "a"
-fastboot_product = "gigaboot"

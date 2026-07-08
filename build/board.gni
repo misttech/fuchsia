@@ -13,10 +13,6 @@ declare_args() {
   # Human readable board description corresponding to the board name.
   board_description = ""
 
-  # A list of paths to the unlock credentials file necessary to unlock this
-  # board's fastboot protocol.
-  board_fastboot_unlock_credentials = []
-
   # List of paths to board-specific tools to include in the build output.
   #
   # Most development tools can just be used in-tree and do not need to be
