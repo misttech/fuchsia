@@ -15,7 +15,17 @@ import("//build/zbi/kernel_cmdline.gni")
 group("common-package-items") {
   visibility = [ "./*" ]
   public_deps = [
+    ":common-package-items.no-userboot",
     "//zircon/kernel/lib/userabi/userboot",
+  ]
+}
+
+group("common-package-items.no-userboot") {
+  visibility = [
+    "./*",
+    "//src/bringup/lib/userboot/*",
+  ]
+  public_deps = [
     "//zircon/kernel/lib/userabi/vdso",
     "//zircon/kernel/lib/version:version-string.txt",
   ]

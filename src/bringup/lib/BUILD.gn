@@ -6,6 +6,8 @@ group("lib") {
   deps = [
     "mexec",
     "netboot",
+
+    # "userboot",   # all testonly for now, will be listed here later
   ]
 }
 
@@ -14,12 +16,16 @@ group("tests") {
   deps = [
     "mexec:tests",
     "netboot:tests",
+    "userboot:tests",
   ]
 }
 
 group("boot_tests") {
   testonly = true
-  deps = [ "netboot:boot_tests" ]
+  deps = [
+    "netboot:boot_tests",
+    "userboot:boot_tests",
+  ]
   if (current_cpu != "riscv64") {  # mexec is not supported on RISC-V.
     deps += [ "mexec:boot_tests" ]
   }

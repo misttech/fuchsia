@@ -163,6 +163,7 @@ template("hermetic_source_set") {
     ]
     forward_variables_from(invoker, [ "testonly" ])
 
+    deps = []
     ldflags = []
     forward_variables_from(invoker,
                            "*",
@@ -175,6 +176,8 @@ template("hermetic_source_set") {
                              "output_name",
                              "visibility",
                            ])
+
+    deps += toolchain_variant.source_deps
 
     output_dir = target_out_dir
     output_name = link_output_name

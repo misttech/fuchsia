@@ -982,6 +982,11 @@ time spent waiting for user pagers. This brings Zircon's stall metrics closer to
 Linux's PSI (Pressure Stall Information) semantics.
 )""")
 
+DEFINE_OPTION("kernel.userboot.experimental-protocol", bool, userboot_experimental_protocol, {false}, R"""(
+When true, userboot expects the experimental new protocol for the messages
+on its bootstrap channel.
+)""")
+
 // Machine-specific options are included here for all the kernel places.
 // In the generator program, they're included separately.
 

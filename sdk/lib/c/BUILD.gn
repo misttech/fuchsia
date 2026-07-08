@@ -596,15 +596,10 @@ ifs_shared_library("c") {
 
 if (toolchain_environment != "user.libc") {
   group("static") {
-    # TODO(https://fxbug.dev/342469121): not hermetic, still experimental
-    testonly = true
-
     public_deps = [ ":static($libc_toolchain)" ]
   }
 } else {
   static_library("static") {
-    testonly = true  # TODO(https://fxbug.dev/342469121)
-
     complete_static_lib = true
     output_name = "c"
     public_configs = [
@@ -617,7 +612,6 @@ if (toolchain_environment != "user.libc") {
       "ld",
       "startup:static-only",
       "threads",
-      "threads:musl-glue",
       "//zircon/third_party/ulib/musl:common-impl",
     ]
 

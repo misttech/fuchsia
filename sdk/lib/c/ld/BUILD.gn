@@ -149,6 +149,7 @@ libc_source_set("sanitizer-log-write") {
 # list "${libc_namespace}_gLog" in $undefined_symbols.  It provides the panic
 # printfs used by various assert macros and such.
 libc_source_set("log-panic") {
+  visibility = [ "//src/bringup/lib/userboot/*" ]
   sources = [ "log-panic.cc" ]
   deps = [ ":log.headers" ]
   libc_deps = [

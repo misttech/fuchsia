@@ -24,12 +24,15 @@
 #include <zircon/types.h>
 
 #include <ktl/bit.h>
+#include <ktl/concepts.h>
+#include <ktl/ranges.h>
 #include <ktl/source_location.h>
 #include <ktl/utility.h>
 #include <lk/init.h>
 #include <object/channel_dispatcher.h>
 #include <object/handle.h>
 #include <object/job_dispatcher.h>
+#include <object/log_dispatcher.h>
 #include <object/message_packet.h>
 #include <object/process_dispatcher.h>
 #include <object/thread_dispatcher.h>
@@ -407,6 +410,26 @@ class BootstrapChannel {
     return zx::ok();
   }
 
+  // Send a message containing only handles.
+  template <ktl::ranges::sized_range R>
+    requires(ktl::same_as<ktl::ranges::range_reference_t<R>, HandleOwner&>)
+  zx_status_t SendHandles(R&& handles) {
+    RETURN_IF_NOT(send_, ZX_ERR_BAD_STATE);
+    const uint32_t count = static_cast<uint32_t>(ktl::ranges::size(handles));
+    MessagePacketPtr msg;
+    zx_status_t status = MessagePacket::Create(nullptr, 0, count, &msg);
+    RETURN_IF_NOT_OK(status, status);
+    msg->set_owns_handles(true);
+    ktl::span msg_handles{msg->mutable_handles(), msg->num_handles()};
+    ZX_DEBUG_ASSERT(msg_handles.size() == count);
+    auto it = msg_handles.begin();
+    for (HandleOwner& handle : handles) {
+      RETURN_IF_NOT(handle, ZX_ERR_BAD_HANDLE);
+      *it++ = handle.release();
+    }
+    return send_->Write(ZX_KOID_INVALID, ktl::move(msg));
+  }
+
   zx::result<> Send(MessagePacketPtr msg) {
     RETURN_IF_NOT(send_, zx::make_result(ZX_ERR_BAD_STATE));
     return zx::make_result(ktl::exchange(send_, {})->Write(ZX_KOID_INVALID, ktl::move(msg)));
@@ -505,6 +528,31 @@ void userboot_init(HandoffEnd handoff_end) {
   RETURN_IF_NOT(handles[userboot::kSystemResource]);
   handles[userboot::kRootJob] = get_job_handle().release();
   RETURN_IF_NOT(handles[userboot::kRootJob]);
+
+  // In the new protocol, there is a first message with a debuglog handle and
+  // the handles about the process itself.  This precedes the main message that
+  // just contains all the capabilities for userland to consume generally.
+  //
+  // For compatibility, the second message still contains the precise expected
+  // sequence of handles, which duplicates the process-describing ones in the
+  // first message.  When the old userboot code requiriing the rigid ordering
+  // is gone, the second message will just be an arbitrary, unordered bag of
+  // handles that are self-describing via object type, properties, etc.
+  if (BootOptions::Get()->userboot_experimental_protocol) {
+    KernelHandle<LogDispatcher> log;
+    zx_rights_t log_rights;
+    RETURN_IF_NOT_OK(LogDispatcher::Create(0, &log, &log_rights));
+    auto get_handles = [log = Handle::Make(ktl::move(log), log_rights),
+                        &handles](auto... idx) mutable {
+      return ktl::to_array<HandleOwner>({
+          ktl::move(log),
+          Handle::Dup(*handles[idx], handles[idx]->rights())...,
+      });
+    };
+    RETURN_IF_NOT_OK(bootstrap_channel->SendHandles(get_handles(  //
+        userboot::kProcSelf, userboot::kVmarRootSelf, userboot::kThreadSelf,
+        userboot::kVmarLoaded)));
+  }
 
   // Send the bootstrap message.
   if (zx::result<> send_result = bootstrap_channel->Send(ktl::move(msg)); send_result.is_error()) {
