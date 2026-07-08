@@ -43,6 +43,7 @@ fidl("fuchsia.wlan.tap") {
     "//sdk/fidl/fuchsia.wlan.device",
     "//sdk/fidl/fuchsia.wlan.driver",
     "//sdk/fidl/fuchsia.wlan.ieee80211",
+    "//sdk/fidl/fuchsia.wlan.internal",
     "//sdk/fidl/fuchsia.wlan.softmac",
     "//zircon/vdso/zx",
   ]

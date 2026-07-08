@@ -13,6 +13,9 @@ library fuchsia.wlan.internal;
 @namespaced
 const MAX_ASSOC_BASIC_RATES uint8 = 14;
 
+@namespaced
+const COUNTRY_CODE_LEN uint32 = 2;
+
 type WmmStatusResponse = struct {
     apsd bool;
     ac_be_params WmmAcParams;
@@ -72,4 +75,8 @@ type TxPowerScenario = flexible enum {
 type OwePublicKey = struct {
     group uint16;
     key vector<uint8>:MAX;
+};
+
+type CriticalErrorReason = strict enum : uint8 {
+    FW_CRASH = 1;
 };

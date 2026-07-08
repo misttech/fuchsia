@@ -358,7 +358,7 @@ const countryEnvironNonCountry uint8 = 88; // an ASCII 'X' character
 
 // Information derived from Country Element, IEEE Std 802.11-2016, 9.4.2.9.
 type Country = struct {
-    alpha2 array<uint8, 2>; // ISO 3116-1
+    alpha2 array<uint8, internal.COUNTRY_CODE_LEN>; // ISO 3116-1
 
     // countryEnviron constant from above
     // or Operating Class Table number from IEEE Std 802.11-2016 Annex D.
