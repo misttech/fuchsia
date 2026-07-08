@@ -63,12 +63,18 @@ impl ExceptionsConfig {
 
                     // Parse the source & target types. If either of these is not defined by the
                     // `policy` then the statement is ignored.
-                    let stype = policy.type_id_by_name(
-                        parts.next().ok_or_else(|| anyhow!("Expected source type"))?,
-                    );
-                    let ttype = policy.type_id_by_name(
-                        parts.next().ok_or_else(|| anyhow!("Expected target type"))?,
-                    );
+                    let stype = policy
+                        .types()
+                        .get_by_name(
+                            parts.next().ok_or_else(|| anyhow!("Expected source type"))?.as_bytes(),
+                        )
+                        .map(|t| t.id());
+                    let ttype = policy
+                        .types()
+                        .get_by_name(
+                            parts.next().ok_or_else(|| anyhow!("Expected target type"))?.as_bytes(),
+                        )
+                        .map(|t| t.id());
 
                     let class_name = parts.next().ok_or_else(|| anyhow!("Target class missing"))?;
 
@@ -119,9 +125,12 @@ impl ExceptionsConfig {
                     )?;
 
                     // Parse the source type. The statement is ignored if the type is not defined by policy.
-                    let stype = policy.type_id_by_name(
-                        parts.next().ok_or_else(|| anyhow!("Expected source type"))?,
-                    );
+                    let stype = policy
+                        .types()
+                        .get_by_name(
+                            parts.next().ok_or_else(|| anyhow!("Expected source type"))?.as_bytes(),
+                        )
+                        .map(|t| t.id());
 
                     if let Some(source) = stype {
                         self.permissive_entries.insert(source, bug_id);
@@ -170,10 +179,10 @@ mod tests {
     const TEST_POLICY: &[u8] =
         include_bytes!("../testdata/composite_policies/compiled/exceptions_config_policy");
 
-    const EXCEPTION_SOURCE_TYPE: &str = "test_exception_source_t";
-    const EXCEPTION_TARGET_TYPE: &str = "test_exception_target_t";
-    const _EXCEPTION_OTHER_TYPE: &str = "test_exception_other_t";
-    const UNMATCHED_TYPE: &str = "test_exception_unmatched_t";
+    const EXCEPTION_SOURCE_TYPE: &[u8] = b"test_exception_source_t";
+    const EXCEPTION_TARGET_TYPE: &[u8] = b"test_exception_target_t";
+    const _EXCEPTION_OTHER_TYPE: &[u8] = b"test_exception_other_t";
+    const UNMATCHED_TYPE: &[u8] = b"test_exception_unmatched_t";
 
     const NON_KERNEL_CLASS: &str = "test_exception_non_kernel_class";
 
@@ -213,12 +222,12 @@ mod tests {
     fn test_data() -> TestData {
         let parsed = parse_policy_by_value(TEST_POLICY.to_vec()).unwrap();
         let policy = Arc::new(parsed.validate().unwrap());
-        let defined_source = policy.type_id_by_name(EXCEPTION_SOURCE_TYPE).unwrap();
-        let defined_target = policy.type_id_by_name(EXCEPTION_TARGET_TYPE).unwrap();
-        let unmatched_type = policy.type_id_by_name(UNMATCHED_TYPE).unwrap();
+        let defined_source = policy.types().get_by_name(EXCEPTION_SOURCE_TYPE).unwrap().id();
+        let defined_target = policy.types().get_by_name(EXCEPTION_TARGET_TYPE).unwrap().id();
+        let unmatched_type = policy.types().get_by_name(UNMATCHED_TYPE).unwrap().id();
 
-        assert!(policy.type_id_by_name("test_undefined_source_t").is_none());
-        assert!(policy.type_id_by_name("test_undefined_target_t").is_none());
+        assert!(policy.types().get_by_name(b"test_undefined_source_t").is_none());
+        assert!(policy.types().get_by_name(b"test_undefined_target_t").is_none());
 
         TestData { policy, defined_source, defined_target, unmatched_type }
     }

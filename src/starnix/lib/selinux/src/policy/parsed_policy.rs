@@ -19,9 +19,7 @@ use super::extensible_bitmap::ExtensibleBitmap;
 
 use super::parser::{PolicyCursor, PolicyData};
 use super::security_context::SecurityContext;
-use super::symbols::{
-    Category, CategoryIndex, ConditionalBoolean, Sensitivity, SymbolList, Type, TypeIndex, User,
-};
+use super::symbols::{Category, CategoryIndex, ConditionalBoolean, Sensitivity, SymbolList, User};
 use super::view::{Hashable, HashedArrayView};
 use super::{
     AccessDecision, AccessVector, CategoryId, ClassId, MlsLevel, Parse, PolicyValidationContext,
@@ -56,8 +54,6 @@ pub struct ParsedPolicy {
 
     /// [`NewPolicy`] that handles the header and base tables.
     new_policy: Arc<NewPolicy>,
-    /// The set of types referenced by this policy.
-    types: TypeIndex,
     /// The set of users referenced by this policy.
     users: SymbolList<User>,
     /// The set of dynamically adjustable booleans referenced by this policy.
@@ -191,7 +187,7 @@ impl ParsedPolicy {
         // If the `source_type` is bounded by some `parent_type` then bound the allowed permissions
         // to those available to the parent. Doing the calculation here ensures that type-bounds
         // take into account bounding ancestors, if any.
-        if let Some(parent) = self.type_(source_type).bounded_by() {
+        if let Some(parent) = self.types().get_by_id(source_type).unwrap().bounded_by() {
             // If `source_type`==`target_type` then this is a "self" permission check, which should
             // be bounded to the parent domain's "self" permissions.
             let access = if source_type == target_type {
@@ -361,17 +357,6 @@ impl ParsedPolicy {
     /// Returns the named user, if present in the policy.
     pub(super) fn user_by_name(&self, name: &str) -> Option<&User> {
         self.users.data.iter().find(|x| x.name_bytes() == name.as_bytes())
-    }
-
-    /// Returns the `Type` structure for the requested Id. Valid policies include definitions
-    /// for all the Ids they refer to internally; supply some other Id will trigger a panic.
-    pub(super) fn type_(&self, id: TypeId) -> Type {
-        self.types.type_by_type_id(id, &self.data)
-    }
-
-    /// Returns the [`TypeId`] of the [`Type`] with the given name, if present in the policy.
-    pub(crate) fn type_id_by_name(&self, name: &str) -> Option<TypeId> {
-        self.types.type_id_by_name(name, &self.data)
     }
 
     /// Returns the `Sensitivity` structure for the requested Id. Valid policies include definitions
@@ -575,9 +560,6 @@ fn parse_policy_remaining(
 ) -> Result<(ParsedPolicy, usize), anyhow::Error> {
     let tail = PolicyCursor::new(&rest_data);
 
-    let (types, tail) =
-        TypeIndex::parse(tail).map_err(anyhow::Error::from).context("parsing types")?;
-
     let (users, tail) = SymbolList::<User>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing users")?;
@@ -673,7 +655,7 @@ fn parse_policy_remaining(
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing range transitions")?;
 
-    let primary_names_count = types.primary_names_count();
+    let primary_names_count = new_policy.types().primary_names_count();
     let mut attribute_maps = Vec::with_capacity(primary_names_count as usize);
     let mut tail = tail;
 
@@ -693,7 +675,6 @@ fn parse_policy_remaining(
         ParsedPolicy {
             data: rest_data,
             new_policy: Arc::new(new_policy),
-            types,
             users,
             conditional_booleans,
             sensitivities,
@@ -729,10 +710,6 @@ impl ParsedPolicy {
             new_policy: self.new_policy.clone(),
         };
 
-        self.types
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating types")?;
         self.users
             .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
@@ -822,7 +799,7 @@ impl ParsedPolicy {
         let user_ids: HashSet<UserId> = self.users.data.iter().map(|x| x.id()).collect();
         let role_ids: HashSet<RoleId> = self.roles().iter().map(|x| x.id()).collect();
         let class_ids: HashSet<ClassId> = self.classes().iter().map(|x| x.id()).collect();
-        let type_ids: HashSet<TypeId> = self.types.all_type_ids().collect();
+        let type_ids: HashSet<TypeId> = self.new_policy.types().iter().map(|t| t.id()).collect();
         let sensitivity_ids: HashSet<SensitivityId> =
             self.sensitivities.data.iter().map(|x| x.id()).collect();
         let category_ids: HashSet<CategoryId> =

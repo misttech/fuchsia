@@ -146,8 +146,10 @@ impl SecurityContext {
             .ok_or_else(|| SecurityContextError::UnknownRole { name: role.into() })?
             .id();
         let type_ = policy_index
-            .type_id_by_name(type_)
-            .ok_or_else(|| SecurityContextError::UnknownType { name: type_.into() })?;
+            .types()
+            .get_by_name(type_.as_bytes())
+            .ok_or_else(|| SecurityContextError::UnknownType { name: type_.into() })?
+            .id();
 
         let low_level = MlsLevel::from_string(policy_index, low_level)?;
         let high_level = high_level.map(|x| MlsLevel::from_string(policy_index, x)).transpose()?;
@@ -162,11 +164,11 @@ impl SecurityContext {
             levels.push(b'-');
             levels.extend(high_level.to_string(policy_index));
         }
-        let type_ = policy_index.type_(self.type_());
+        let type_ = policy_index.types().get_by_id(self.type_()).unwrap();
         let parts: [&[u8]; 4] = [
             policy_index.user(self.user()).name_bytes(),
             policy_index.roles().get_by_id(self.role()).unwrap().name(),
-            type_.name_bytes(),
+            type_.name(),
             levels.as_slice(),
         ];
         parts.join(b":".as_ref())
@@ -192,7 +194,7 @@ impl SecurityContext {
             let role = policy_index.roles().get_by_id(self.role()).unwrap();
             if !role.types().contains(self.type_()) {
                 return Err(SecurityContextError::InvalidTypeForRole {
-                    type_: policy_index.type_(self.type_()).name_bytes().into(),
+                    type_: policy_index.types().get_by_id(self.type_()).unwrap().name().into(),
                     role: role.name().into(),
                 });
             }
@@ -378,8 +380,8 @@ mod tests {
         std::str::from_utf8(policy.roles().get_by_id(id).unwrap().name()).unwrap()
     }
 
-    fn type_name(policy: &Policy, id: TypeId) -> String {
-        std::str::from_utf8(policy.type_(id).name_bytes()).unwrap().into()
+    fn type_name(policy: &Policy, id: TypeId) -> &str {
+        std::str::from_utf8(policy.types().get_by_id(id).unwrap().name()).unwrap()
     }
 
     fn sensitivity_name(policy: &Policy, id: SensitivityId) -> &str {

@@ -14,7 +14,7 @@ use super::parser::PolicyCursor;
 use super::traits::{HasName, HasPolicyId, Parse, PolicyId, Serialize, Validate};
 
 /// Helper to hash a byte slice name using the rapidhash hasher.
-fn hash_name(hasher: &rapidhash::RapidBuildHasher, name: &[u8]) -> u64 {
+pub(super) fn hash_name(hasher: &rapidhash::RapidBuildHasher, name: &[u8]) -> u64 {
     let mut state = hasher.build_hasher();
     name.hash(&mut state);
     state.finish()

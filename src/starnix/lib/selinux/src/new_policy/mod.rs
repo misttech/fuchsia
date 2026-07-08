@@ -83,6 +83,7 @@ pub struct NewPolicy {
     common_symbols: IdAndNameIndexed<SymbolArray<CommonSymbol>>,
     classes: IdAndNameIndexed<SymbolArray<Class>>,
     roles: IdAndNameIndexed<SymbolArray<Role>>,
+    types: Types,
     rest: RemainingBytes,
 }
 
@@ -131,6 +132,11 @@ impl NewPolicy {
     /// Returns the roles table.
     pub fn roles(&self) -> &IdAndNameIndexed<SymbolArray<Role>> {
         &self.roles
+    }
+
+    /// Returns the types table.
+    pub fn types(&self) -> &Types {
+        &self.types
     }
 
     /// Returns a shared reference to the remaining unparsed bytes.
@@ -225,6 +231,11 @@ mod tests {
         assert!(!new_policy.classes().is_empty());
         let class = &new_policy.classes()[0];
         assert!(!class.name().is_empty());
+
+        // Verify types are parsed
+        assert!(!new_policy.types().is_empty());
+        let t = &new_policy.types().iter().next().unwrap();
+        assert!(!t.name().is_empty());
 
         // Verify 100% byte-for-byte roundtrip fidelity
         let mut serialized = Vec::new();

@@ -351,7 +351,7 @@ impl Policy {
     }
 
     pub fn is_bounded_by(&self, bounded_type: TypeId, parent_type: TypeId) -> bool {
-        self.0.type_(bounded_type).bounded_by() == Some(parent_type)
+        self.0.types().get_by_id(bounded_type).unwrap().bounded_by() == Some(parent_type)
     }
 
     /// Returns true if the policy has the marked the type/domain for permissive checks.
@@ -798,7 +798,7 @@ pub(super) mod tests {
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate selinux testsuite policy");
 
-        let unconfined_t = policy.type_id_by_name("unconfined_t").expect("look up type id");
+        let unconfined_t = policy.types().get_by_name(b"unconfined_t").expect("look up type").id();
 
         assert!(is_explicitly_allowed(&policy, unconfined_t, unconfined_t, "process", "fork",));
     }
@@ -824,8 +824,8 @@ pub(super) mod tests {
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
 
-        let a_t = policy.type_id_by_name("a_t").expect("look up type id");
-        let b_t = policy.type_id_by_name("b_t").expect("look up type id");
+        let a_t = policy.types().get_by_name(b"a_t").expect("look up type").id();
+        let b_t = policy.types().get_by_name(b"b_t").expect("look up type").id();
 
         assert!(is_explicitly_allowed(&policy, a_t, b_t, "class0", "perm0"));
     }
@@ -837,8 +837,8 @@ pub(super) mod tests {
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
 
-        let a_t = policy.type_id_by_name("a_t").expect("look up type id");
-        let b_t = policy.type_id_by_name("b_t").expect("look up type id");
+        let a_t = policy.types().get_by_name(b"a_t").expect("look up type").id();
+        let b_t = policy.types().get_by_name(b"b_t").expect("look up type").id();
 
         assert!(!is_explicitly_allowed(&policy, a_t, b_t, "class0", "perm0"));
     }
@@ -850,8 +850,8 @@ pub(super) mod tests {
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
 
-        let a_t = policy.type_id_by_name("a_t").expect("look up type id");
-        let b_t = policy.type_id_by_name("b_t").expect("look up type id");
+        let a_t = policy.types().get_by_name(b"a_t").expect("look up type").id();
+        let b_t = policy.types().get_by_name(b"b_t").expect("look up type").id();
 
         assert!(is_explicitly_allowed(&policy, a_t, b_t, "class0", "perm0"));
     }
@@ -863,8 +863,8 @@ pub(super) mod tests {
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
 
-        let a_t = policy.type_id_by_name("a_t").expect("look up type id");
-        let b_t = policy.type_id_by_name("b_t").expect("look up type id");
+        let a_t = policy.types().get_by_name(b"a_t").expect("look up type").id();
+        let b_t = policy.types().get_by_name(b"b_t").expect("look up type").id();
 
         assert!(!is_explicitly_allowed(&policy, a_t, b_t, "class0", "perm0"));
     }
@@ -876,8 +876,8 @@ pub(super) mod tests {
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
 
-        let a_t = policy.type_id_by_name("a_t").expect("look up type id");
-        let b_t = policy.type_id_by_name("b_t").expect("look up type id");
+        let a_t = policy.types().get_by_name(b"a_t").expect("look up type").id();
+        let b_t = policy.types().get_by_name(b"b_t").expect("look up type").id();
 
         assert!(is_explicitly_allowed(&policy, a_t, b_t, "class0", "perm0"));
     }
@@ -890,8 +890,8 @@ pub(super) mod tests {
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
 
-        let a_t = policy.type_id_by_name("a_t").expect("look up type id");
-        let b_t = policy.type_id_by_name("b_t").expect("look up type id");
+        let a_t = policy.types().get_by_name(b"a_t").expect("look up type").id();
+        let b_t = policy.types().get_by_name(b"b_t").expect("look up type").id();
 
         assert!(!is_explicitly_allowed(&policy, a_t, b_t, "class0", "perm0"));
     }
@@ -904,7 +904,7 @@ pub(super) mod tests {
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
 
-        let a_t = policy.type_id_by_name("a_t").expect("look up type id");
+        let a_t = policy.types().get_by_name(b"a_t").expect("look up type").id();
 
         let classes = policy.classes();
         let class = classes.get_by_name(b"class0").expect("class not found");

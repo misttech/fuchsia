@@ -9,26 +9,17 @@ use super::parser::{PolicyCursor, PolicyData, PolicyOffset};
 use super::view::U24;
 use super::{
     Array, CategoryId, Counted, MlsLevel, MlsRange, Parse, PolicyValidationContext, SensitivityId,
-    TypeId, UserId, Validate, ValidateArray, array_type, array_type_validate_deref_both,
+    UserId, Validate, ValidateArray, array_type, array_type_validate_deref_both,
 };
 
 use crate::new_policy::traits::PolicyId;
-use anyhow::{Context as _, anyhow};
+use anyhow::Context as _;
 use hashbrown::hash_table::HashTable;
 use rapidhash::RapidHasher;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le};
-
-/// Exact value of [`Type`] `properties` when the underlying data refers to an SELinux type.
-const TYPE_PROPERTIES_TYPE: u32 = 1;
-
-/// Exact value of [`Type`] `properties` when the underlying data refers to an SELinux alias.
-const TYPE_PROPERTIES_ALIAS: u32 = 0;
-
-/// Exact value of [`Type`] `properties` when the underlying data refers to an SELinux attribute.
-const TYPE_PROPERTIES_ATTRIBUTE: u32 = 3;
 
 /// [`SymbolList`] is an [`Array`] of items with the count of items determined by [`Metadata`] as
 /// [`Counted`].
@@ -73,12 +64,6 @@ pub(super) struct Metadata {
     count: le::U32,
 }
 
-impl Metadata {
-    pub fn primary_names_count(&self) -> u32 {
-        self.primary_names_count.get()
-    }
-}
-
 impl Counted for Metadata {
     /// The number of items that follow a [`Metadata`] is the value stored in the `metadata.count`
     /// field.
@@ -96,238 +81,10 @@ impl Validate for Metadata {
     }
 }
 
-array_type!(Type, TypeMetadata, u8);
-
-array_type_validate_deref_both!(Type);
-
-impl Type {
-    /// Returns the name of this type.
-    pub fn name_bytes(&self) -> &[u8] {
-        &self.data
-    }
-
-    /// Returns the id associated with this type. The id is used to index into collections and
-    /// bitmaps associated with this type. The id is 1-indexed, whereas most collections and
-    /// bitmaps are 0-indexed, so clients of this API will usually use `id - 1`.
-    pub fn id(&self) -> TypeId {
-        TypeId::from_u32(self.metadata.id.get()).unwrap()
-    }
-
-    /// Returns the Id of the bounding type, if any.
-    pub fn bounded_by(&self) -> Option<TypeId> {
-        TypeId::from_u32(self.metadata.bounds.get())
-    }
-}
-
-impl ValidateArray<TypeMetadata, u8> for Type {
-    type Error = anyhow::Error;
-
-    /// TODO: Validate that `PS::deref(&self.data)` is an ascii string that contains a valid type name.
-    fn validate_array(
-        _context: &PolicyValidationContext,
-        _metadata: &TypeMetadata,
-        _items: &[u8],
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
-#[repr(C, packed)]
-pub(super) struct TypeMetadata {
-    length: le::U32,
-    id: le::U32,
-    properties: le::U32,
-    bounds: le::U32,
-}
-
-impl Counted for TypeMetadata {
-    fn count(&self) -> u32 {
-        self.length.get()
-    }
-}
-
-impl Validate for TypeMetadata {
-    type Error = anyhow::Error;
-
-    /// TODO: Validate [`TypeMetadata`] internals.
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
 fn name_hash(name: &[u8]) -> u64 {
     let mut hasher = RapidHasher::default();
     name.hash(&mut hasher);
     hasher.finish()
-}
-
-#[derive(Debug)]
-pub(super) struct TypeIndex {
-    // TODO: https://fxbug.dev/483930877 - we don't use or need this after validation; it
-    // would be nice to avoid having it continue to be stored here after its last use.
-    primary_names_count: u32,
-
-    /// A mapping from [`TypeId`] (represented as position-in-the-array-plus-one) to
-    /// the corresponding [`Type`] (represented as an offset into the policy bytes).
-    /// If zero is the value at index `i` of this structure, that indicates that the
-    /// binary policy has no type with type ID `i + 1`. Only types ([`Type`]s matching
-    /// `TYPE_PROPERTIES_TYPE`) and attributes ([`Type`]s matching
-    /// `TYPE_PROPERTIES_ATTRIBUTE`) are included in this structure; type aliases are
-    /// excluded (were we to want to include them, they would "claim" the ID properly
-    /// belonging to exactly one non-alias [`Type`]).
-    //
-    // TODO: https://fxbug.dev/479180246 - we currently allow for "holes" (integer type IDs
-    // that do not correspond to any type) in this array, but do we need to? Will all the
-    // binary policies that we encounter be "packed" such that they use every integer
-    // between one and the largest integer that they use?
-    offsets_by_id_minus_one: Box<[U24]>,
-
-    /// A mapping from the string name of a [`Type`] to that type's location in the policy
-    /// bytes. This structure contains entries for all types ([`Type`]s matching
-    /// `TYPE_PROPERTIES_TYPE`) and type aliases ([`Type`]s matching
-    /// `TYPE_PROPERTIES_ALIAS`) but not attributes ([`Type`]s matching
-    /// `TYPE_PROPERTIES_ATTRIBUTE`); attributes are never looked up by name.
-    offsets_by_name: HashTable<U24>,
-}
-
-impl TypeIndex {
-    fn parse_type_at(policy_bytes: &PolicyData, offset: U24) -> Type {
-        Type::parse(PolicyCursor::new_at(policy_bytes, PolicyOffset::from(offset)))
-            .expect("These bytes already successfully parsed")
-            .0
-    }
-
-    pub(super) fn primary_names_count(&self) -> u32 {
-        self.primary_names_count
-    }
-
-    pub(super) fn type_id_by_name(&self, name: &str, data: &PolicyData) -> Option<TypeId> {
-        let name_bytes = name.as_bytes();
-        self.offsets_by_name
-            .find(name_hash(name_bytes), |&other_offset| {
-                Self::parse_type_at(data, other_offset).name_bytes() == name_bytes
-            })
-            .map(|&offset| Self::parse_type_at(data, offset).id())
-    }
-
-    pub(super) fn type_by_type_id(&self, id: TypeId, data: &PolicyData) -> Type {
-        Self::parse_type_at(data, self.offsets_by_id_minus_one[(id.as_u32() - 1) as usize])
-    }
-
-    /// Returns an iterator over all the type-Ids, for use by the post-parse validation.
-    pub(super) fn all_type_ids(&self) -> impl Iterator<Item = TypeId> {
-        self.offsets_by_id_minus_one.iter().enumerate().filter_map(
-            |(index, offset)| match u32::from(*offset) {
-                0 => None,
-                _ => Some(TypeId::from_u32((index + 1) as u32).unwrap()),
-            },
-        )
-    }
-}
-
-impl Parse for TypeIndex {
-    type Error = anyhow::Error;
-
-    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let policy_data = bytes.data();
-        let (metadata, mut tail) = Metadata::parse(bytes)?;
-        let type_count = usize::try_from(metadata.count()).unwrap();
-        let mut offsets_by_id_minus_one = Vec::with_capacity(type_count);
-        let mut offsets_by_name = HashTable::with_capacity(type_count);
-        for _ in 0..type_count {
-            let offset = U24::try_from(tail.offset()).unwrap();
-            let (type_, next_tail) = Type::parse(tail)?;
-
-            let will_be_looked_up_by_id;
-            let will_be_looked_up_by_name;
-            match type_.metadata.properties.get() {
-                TYPE_PROPERTIES_TYPE => {
-                    will_be_looked_up_by_id = true;
-                    will_be_looked_up_by_name = true;
-                }
-                TYPE_PROPERTIES_ATTRIBUTE => {
-                    will_be_looked_up_by_id = true;
-                    will_be_looked_up_by_name = false;
-                }
-                TYPE_PROPERTIES_ALIAS => {
-                    will_be_looked_up_by_id = false;
-                    will_be_looked_up_by_name = true;
-                }
-                unrecognized => {
-                    return Err(anyhow!(
-                        "Can't parse \"type\" element with \"properties\" value {:?}",
-                        unrecognized
-                    ));
-                }
-            }
-
-            if will_be_looked_up_by_id {
-                let type_id_as_usize = type_.id().as_u32() as usize;
-                if offsets_by_id_minus_one.len() < type_id_as_usize {
-                    offsets_by_id_minus_one.resize(type_id_as_usize, U24::try_from(0).unwrap());
-                }
-                offsets_by_id_minus_one[type_id_as_usize - 1] = offset;
-            }
-
-            if will_be_looked_up_by_name {
-                let name_bytes = type_.name_bytes();
-                offsets_by_name
-                    .entry(
-                        name_hash(name_bytes),
-                        |&other_offset| {
-                            Self::parse_type_at(&policy_data, other_offset).name_bytes()
-                                == name_bytes
-                        },
-                        |&other_offset| {
-                            name_hash(Self::parse_type_at(&policy_data, other_offset).name_bytes())
-                        },
-                    )
-                    .insert(offset);
-            }
-
-            tail = next_tail;
-        }
-        let offsets_by_id_minus_one = Box::<[U24]>::from(offsets_by_id_minus_one);
-        offsets_by_name.shrink_to_fit(|&other_offset| {
-            name_hash(Self::parse_type_at(&policy_data, other_offset).name_bytes())
-        });
-
-        Ok((
-            Self {
-                primary_names_count: metadata.primary_names_count(),
-                offsets_by_id_minus_one,
-                offsets_by_name,
-            },
-            tail,
-        ))
-    }
-}
-
-impl Validate for TypeIndex {
-    type Error = anyhow::Error;
-
-    /// TODO: Validate internal consistency between consecutive [`Type`] instances.
-    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        let data = context.data.clone();
-        let mut primary_names_count = 0u32;
-        for offset in &self.offsets_by_id_minus_one {
-            if PolicyOffset::from(*offset) != 0 {
-                Self::parse_type_at(&data, *offset).validate(context)?;
-                primary_names_count += 1;
-            }
-        }
-
-        if self.primary_names_count != primary_names_count {
-            return Err(anyhow!(
-                "Expected {:?} primary names but found {:?}",
-                self.primary_names_count,
-                primary_names_count
-            ));
-        }
-
-        Ok(())
-    }
 }
 
 impl Validate for User {
