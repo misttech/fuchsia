@@ -33,6 +33,7 @@ rustc_library("selinux") {
     "src/new_policy/roles.rs",
     "src/new_policy/traits.rs",
     "src/new_policy/types.rs",
+    "src/new_policy/users.rs",
     "src/permission_check.rs",
     "src/policy/arrays.rs",
     "src/policy/constraints.rs",

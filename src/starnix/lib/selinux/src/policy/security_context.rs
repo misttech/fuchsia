@@ -6,7 +6,7 @@ use super::index::PolicyIndex;
 use super::new::{CategorySetBuilder, Context, IdSpan, MlsLevel, MlsRange};
 use super::{CategoryId, ParsedPolicy, RoleId, TypeId, UserId};
 use crate::NullessByteStr;
-use crate::new_policy::traits::{HasName, HasPolicyId, PolicyId};
+use crate::new_policy::traits::{HasName, HasPolicyId};
 
 use bstr::BString;
 
@@ -137,7 +137,8 @@ impl SecurityContext {
 
         // Resolve the user, role, type and security levels to identifiers.
         let user = policy_index
-            .user_by_name(user)
+            .users()
+            .get_by_name(user.as_bytes())
             .ok_or_else(|| SecurityContextError::UnknownUser { name: user.into() })?
             .id();
         let role = policy_index
@@ -166,7 +167,7 @@ impl SecurityContext {
         }
         let type_ = policy_index.types().get_by_id(self.type_()).unwrap();
         let parts: [&[u8]; 4] = [
-            policy_index.user(self.user()).name_bytes(),
+            policy_index.users().get_by_id(self.user()).unwrap().name(),
             policy_index.roles().get_by_id(self.role()).unwrap().name(),
             type_.name(),
             levels.as_slice(),
@@ -177,16 +178,16 @@ impl SecurityContext {
     /// Validates that this [`SecurityContext`]'s fields are consistent with policy constraints
     /// (e.g. that the role is valid for the user).
     pub(super) fn validate(&self, policy_index: &PolicyIndex) -> Result<(), SecurityContextError> {
-        let user = policy_index.user(self.user());
+        let user = policy_index.users().get_by_id(self.user()).unwrap();
 
         // Validation of the user/role/type relationships is skipped for the special "object_r"
         // role, which is applied by default to non-process/socket-like resources.
         if self.role() != policy_index.object_role() {
             // Validate that the selected role is valid for this user.
-            if !user.roles().is_set(self.role().as_u32() - 1) {
+            if !user.roles().contains(self.role()) {
                 return Err(SecurityContextError::InvalidRoleForUser {
                     role: policy_index.roles().get_by_id(self.role()).unwrap().name().into(),
-                    user: user.name_bytes().into(),
+                    user: user.name().into(),
                 });
             }
 
@@ -209,7 +210,7 @@ impl SecurityContext {
         if !(self.low_level().dominates(valid_low) && valid_high.dominates(self.low_level())) {
             return Err(SecurityContextError::InvalidLevelForUser {
                 level: self.low_level().to_string(policy_index).into(),
-                user: user.name_bytes().into(),
+                user: user.name().into(),
             });
         }
         if let Some(high_level) = self.high_level() {
@@ -217,7 +218,7 @@ impl SecurityContext {
             if !(valid_high.dominates(high_level) && high_level.dominates(valid_low)) {
                 return Err(SecurityContextError::InvalidLevelForUser {
                     level: high_level.to_string(policy_index).into(),
-                    user: user.name_bytes().into(),
+                    user: user.name().into(),
                 });
             }
 
@@ -373,7 +374,7 @@ mod tests {
     }
 
     fn user_name(policy: &Policy, id: UserId) -> &str {
-        std::str::from_utf8(policy.user(id).name_bytes()).unwrap()
+        std::str::from_utf8(policy.users().get_by_id(id).unwrap().name()).unwrap()
     }
 
     fn role_name(policy: &Policy, id: RoleId) -> &str {

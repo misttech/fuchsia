@@ -19,7 +19,7 @@ use super::extensible_bitmap::ExtensibleBitmap;
 
 use super::parser::{PolicyCursor, PolicyData};
 use super::security_context::SecurityContext;
-use super::symbols::{Category, CategoryIndex, ConditionalBoolean, Sensitivity, SymbolList, User};
+use super::symbols::{Category, CategoryIndex, ConditionalBoolean, Sensitivity, SymbolList};
 use super::view::{Hashable, HashedArrayView};
 use super::{
     AccessDecision, AccessVector, CategoryId, ClassId, MlsLevel, Parse, PolicyValidationContext,
@@ -54,8 +54,7 @@ pub struct ParsedPolicy {
 
     /// [`NewPolicy`] that handles the header and base tables.
     new_policy: Arc<NewPolicy>,
-    /// The set of users referenced by this policy.
-    users: SymbolList<User>,
+
     /// The set of dynamically adjustable booleans referenced by this policy.
     conditional_booleans: SymbolList<ConditionalBoolean>,
     /// The set of sensitivity levels referenced by this policy.
@@ -348,17 +347,6 @@ impl ParsedPolicy {
         &self.initial_sids.data.iter().find(|initial| initial.id() == id).unwrap().context()
     }
 
-    /// Returns the `User` structure for the requested Id. Valid policies include definitions
-    /// for all the Ids they refer to internally; supply some other Id will trigger a panic.
-    pub(super) fn user(&self, id: UserId) -> &User {
-        self.users.data.iter().find(|x| x.id() == id).unwrap()
-    }
-
-    /// Returns the named user, if present in the policy.
-    pub(super) fn user_by_name(&self, name: &str) -> Option<&User> {
-        self.users.data.iter().find(|x| x.name_bytes() == name.as_bytes())
-    }
-
     /// Returns the `Sensitivity` structure for the requested Id. Valid policies include definitions
     /// for all the Ids they refer to internally; supply some other Id will trigger a panic.
     pub(super) fn sensitivity(&self, id: SensitivityId) -> &Sensitivity {
@@ -474,6 +462,21 @@ impl ParsedPolicy {
         }
     }
 
+    // Validate that all sensitivity and category IDs referenced in the MLS level are
+    // defined.
+    fn validate_mls_level(
+        &self,
+        level: &MlsLevel,
+        sensitivity_ids: &HashSet<SensitivityId>,
+        category_ids: &HashSet<CategoryId>,
+    ) -> Result<(), anyhow::Error> {
+        validate_id(sensitivity_ids, level.sensitivity(), "sensitivity")?;
+        for id in level.category_ids() {
+            validate_id(category_ids, id, "category")?;
+        }
+        Ok(())
+    }
+
     // Validate an MLS range statement against sets of defined sensitivity and category
     // IDs:
     // - Verify that all sensitivity and category IDs referenced in the MLS levels are
@@ -487,15 +490,9 @@ impl ParsedPolicy {
         sensitivity_ids: &HashSet<SensitivityId>,
         category_ids: &HashSet<CategoryId>,
     ) -> Result<(), anyhow::Error> {
-        validate_id(sensitivity_ids, low_level.sensitivity(), "sensitivity")?;
-        for id in low_level.category_ids() {
-            validate_id(category_ids, id, "category")?;
-        }
+        self.validate_mls_level(low_level, sensitivity_ids, category_ids)?;
         if let Some(high) = high_level {
-            validate_id(sensitivity_ids, high.sensitivity(), "sensitivity")?;
-            for id in high.category_ids() {
-                validate_id(category_ids, id, "category")?;
-            }
+            self.validate_mls_level(high, sensitivity_ids, category_ids)?;
             if !high.dominates(low_level) {
                 return Err(ValidateError::InvalidMlsRange {
                     low: low_level.to_string(self).into(),
@@ -559,10 +556,6 @@ fn parse_policy_remaining(
     rest_data: PolicyData,
 ) -> Result<(ParsedPolicy, usize), anyhow::Error> {
     let tail = PolicyCursor::new(&rest_data);
-
-    let (users, tail) = SymbolList::<User>::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing users")?;
 
     let (conditional_booleans, tail) = SymbolList::<ConditionalBoolean>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
@@ -675,7 +668,7 @@ fn parse_policy_remaining(
         ParsedPolicy {
             data: rest_data,
             new_policy: Arc::new(new_policy),
-            users,
+
             conditional_booleans,
             sensitivities,
             categories,
@@ -710,10 +703,6 @@ impl ParsedPolicy {
             new_policy: self.new_policy.clone(),
         };
 
-        self.users
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating users")?;
         self.conditional_booleans
             .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
@@ -796,7 +785,7 @@ impl ParsedPolicy {
             .context("validating attribute_maps")?;
 
         // Collate the sets of user, role, type, sensitivity and category Ids.
-        let user_ids: HashSet<UserId> = self.users.data.iter().map(|x| x.id()).collect();
+        let user_ids: HashSet<UserId> = self.new_policy.users().iter().map(|x| x.id()).collect();
         let role_ids: HashSet<RoleId> = self.roles().iter().map(|x| x.id()).collect();
         let class_ids: HashSet<ClassId> = self.classes().iter().map(|x| x.id()).collect();
         let type_ids: HashSet<TypeId> = self.new_policy.types().iter().map(|t| t.id()).collect();
@@ -805,16 +794,12 @@ impl ParsedPolicy {
         let category_ids: HashSet<CategoryId> =
             self.categories.categories(&self.data).map(|x| x.id()).collect();
 
-        // Validate that users use only defined sensitivities and categories, and that
-        // each user's MLS levels are internally consistent (i.e., the high level
-        // dominates the low level).
-        for user in &self.users.data {
-            self.validate_mls_range(
-                user.mls_range().low(),
-                user.mls_range().high(),
-                &sensitivity_ids,
-                &category_ids,
-            )?;
+        // Validate that users use only defined sensitivities and categories.
+        for user in self.new_policy.users().iter() {
+            self.validate_mls_level(user.mls_range().low(), &sensitivity_ids, &category_ids)?;
+            if let Some(high) = user.mls_range().high() {
+                self.validate_mls_level(high, &sensitivity_ids, &category_ids)?;
+            }
         }
 
         // Validate that initial contexts use only defined user, role, type, etc Ids.

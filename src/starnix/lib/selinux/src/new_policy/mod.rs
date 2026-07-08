@@ -26,6 +26,7 @@ use parser::{PolicyCursor, RemainingBytes};
 use traits::Validate;
 
 pub(super) mod types;
+pub(super) mod users;
 
 pub use access_vector::AccessVector;
 pub use bitmap::{ExtensibleBitmap, IdSpan};
@@ -39,8 +40,9 @@ pub use id_type::*;
 pub use indexed::IdAndNameIndexed;
 pub use parser::SymbolArray;
 pub use permissions::PermissionId;
-pub use roles::{Role, RoleId};
+pub use roles::{Role, RoleId, RoleSet};
 pub use types::*;
+pub use users::User;
 
 /// Tag type for type safety of policy user identifiers.
 #[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
@@ -84,6 +86,7 @@ pub struct NewPolicy {
     classes: IdAndNameIndexed<SymbolArray<Class>>,
     roles: IdAndNameIndexed<SymbolArray<Role>>,
     types: Types,
+    users: IdAndNameIndexed<SymbolArray<User>>,
     rest: RemainingBytes,
 }
 
@@ -139,16 +142,14 @@ impl NewPolicy {
         &self.types
     }
 
+    /// Returns the users table.
+    pub fn users(&self) -> &IdAndNameIndexed<SymbolArray<User>> {
+        &self.users
+    }
+
     /// Returns a shared reference to the remaining unparsed bytes.
     pub fn rest_bytes(&self) -> std::sync::Arc<[u8]> {
         self.rest.bytes.clone()
-    }
-}
-
-impl Validate for UserId {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
-        // TODO: Validate against users table when integrated
-        Ok(())
     }
 }
 
@@ -165,7 +166,6 @@ impl Validate for CategoryId {
         Ok(())
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

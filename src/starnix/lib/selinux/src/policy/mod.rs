@@ -24,7 +24,7 @@ use crate::new_policy::traits::Serialize as _;
 pub use crate::new_policy::traits::{HasName, HasPolicyId, PolicyId};
 pub use crate::new_policy::{
     AccessVector, CategoryId, ClassId, HandleUnknown, MlsLevel, MlsRange, POLICYDB_VERSION_MAX,
-    PermissionId, RoleId, SensitivityId, TypeId, UserId,
+    PermissionId, RoleId, SensitivityId, TypeId, User, UserId,
 };
 use crate::{ClassPermission, KernelClass, NullessByteStr, ObjectClass, new_policy as new};
 use index::PolicyIndex;

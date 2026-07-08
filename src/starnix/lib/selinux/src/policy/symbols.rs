@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use super::error::ValidateError;
-use super::extensible_bitmap::ExtensibleBitmap;
+
 use super::parser::{PolicyCursor, PolicyData, PolicyOffset};
 
 use super::view::U24;
 use super::{
     Array, CategoryId, Counted, MlsLevel, MlsRange, Parse, PolicyValidationContext, SensitivityId,
-    UserId, Validate, ValidateArray, array_type, array_type_validate_deref_both,
+    Validate, ValidateArray, array_type, array_type_validate_deref_both,
 };
 
 use crate::new_policy::traits::PolicyId;
@@ -85,104 +85,6 @@ fn name_hash(name: &[u8]) -> u64 {
     let mut hasher = RapidHasher::default();
     name.hash(&mut hasher);
     hasher.finish()
-}
-
-impl Validate for User {
-    type Error = anyhow::Error;
-
-    /// TODO: Validate [`User`].
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub(super) struct User {
-    user_data: UserData,
-    roles: ExtensibleBitmap,
-    expanded_range: MlsRange,
-    default_level: MlsLevel,
-}
-
-impl User {
-    pub(super) fn id(&self) -> UserId {
-        UserId::from_u32(self.user_data.metadata.id.get()).unwrap()
-    }
-
-    pub(super) fn name_bytes(&self) -> &[u8] {
-        &self.user_data.data
-    }
-
-    pub(super) fn roles(&self) -> &ExtensibleBitmap {
-        &self.roles
-    }
-
-    pub(super) fn mls_range(&self) -> &MlsRange {
-        &self.expanded_range
-    }
-}
-
-impl Parse for User {
-    type Error = anyhow::Error;
-
-    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let tail = bytes;
-
-        let (user_data, tail) = UserData::parse(tail)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("parsing user data")?;
-
-        let (roles, tail) = ExtensibleBitmap::parse(tail)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("parsing user roles")?;
-
-        let (expanded_range, tail) =
-            MlsRange::parse(tail).context("parsing user expanded range")?;
-
-        let (default_level, tail) = MlsLevel::parse(tail).context("parsing user default level")?;
-
-        Ok((Self { user_data, roles, expanded_range, default_level }, tail))
-    }
-}
-
-array_type!(UserData, UserMetadata, u8);
-
-array_type_validate_deref_both!(UserData);
-
-impl ValidateArray<UserMetadata, u8> for UserData {
-    type Error = anyhow::Error;
-
-    /// TODO: Validate consistency between [`UserMetadata`] in `self.metadata` and `[u8]` key in `self.data`.
-    fn validate_array(
-        _context: &PolicyValidationContext,
-        _metadata: &UserMetadata,
-        _items: &[u8],
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
-#[repr(C, packed)]
-pub(super) struct UserMetadata {
-    length: le::U32,
-    id: le::U32,
-    bounds: le::U32,
-}
-
-impl Counted for UserMetadata {
-    fn count(&self) -> u32 {
-        self.length.get()
-    }
-}
-
-impl Validate for UserMetadata {
-    type Error = anyhow::Error;
-
-    /// TODO: Validate [`UserMetadata`] internals.
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
 }
 
 impl Parse for MlsLevel {
@@ -560,7 +462,7 @@ mod tests {
         let policy = parse_policy_by_value(TEST_POLICY.to_vec()).unwrap();
         let policy = policy.validate().unwrap();
 
-        let user = policy.user(UserId::for_test(1));
+        let user = policy.users().get_by_id(UserId::for_test(1)).unwrap();
         let mls_range = user.mls_range();
         let low_level = mls_range.low();
         let high_level = mls_range.high().as_ref().expect("user 1 has a high mls level");
