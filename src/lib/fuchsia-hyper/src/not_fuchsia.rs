@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{parse_ip_addr, HyperConnectorFuture, SocketOptions, TcpOptions, TcpStream};
+use crate::{HyperConnectorFuture, SocketOptions, TcpOptions, TcpStream, parse_ip_addr};
 use futures::io;
 use http::uri::{Scheme, Uri};
 use hyper::service::Service;
@@ -19,12 +19,8 @@ pub fn new_root_cert_store() -> Arc<RootCertStore> {
     static ROOT_STORE: LazyLock<Arc<RootCertStore>> = LazyLock::new(|| {
         let mut root_store = rustls::RootCertStore::empty();
 
-        let certs = match rustls_native_certs::load_native_certs() {
-            Ok(certs) => certs,
-            Err(err) => {
-                panic!("Could not load TLS CA certificates from platform root store: {err}")
-            }
-        };
+        let certs = rustls_native_certs::load_native_certs()
+            .expect("Could not load TLS CA certificates from platform root store");
 
         if !certs.is_empty() {
             let (added, ignored) = root_store.add_parsable_certificates(&certs);
@@ -107,7 +103,9 @@ impl HyperConnector {
         .await?;
 
         if self.socket_options.bind_device.is_some() {
-            unimplemented!("TODO(https://fxbug.dev/42083862) fuchsia-hyper does not support bind_device on non-fuchsia devices");
+            unimplemented!(
+                "TODO(https://fxbug.dev/42083862) fuchsia-hyper does not support bind_device on non-fuchsia devices"
+            );
         }
 
         let stream = if let Some(addr) = addr {
@@ -155,8 +153,8 @@ mod test {
     use futures::stream::FuturesUnordered;
     use futures::{StreamExt, TryFutureExt, TryStreamExt};
     use hyper::body::HttpBody;
-    use hyper::server::accept::from_stream;
     use hyper::server::Server;
+    use hyper::server::accept::from_stream;
     use hyper::service::{make_service_fn, service_fn};
     use hyper::{Response, StatusCode};
     use std::convert::Infallible;

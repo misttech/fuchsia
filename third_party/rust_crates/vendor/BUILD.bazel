@@ -2479,14 +2479,14 @@ alias(
 )
 
 alias(
-    name = "rustls-native-certs-0.6.3",
-    actual = "//third_party/rust_crates/vendor/rustls-native-certs-0.6.3:rustls_native_certs",
+    name = "rustls-native-certs-0.8.4",
+    actual = "//third_party/rust_crates/vendor/rustls-native-certs-0.8.4:rustls_native_certs",
     tags = ["manual"],
 )
 
 alias(
     name = "rustls-native-certs",
-    actual = "//third_party/rust_crates/vendor/rustls-native-certs-0.6.3:rustls_native_certs",
+    actual = "//third_party/rust_crates/vendor/rustls-native-certs-0.8.4:rustls_native_certs",
     tags = ["manual"],
 )
 

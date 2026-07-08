@@ -1841,13 +1841,13 @@ group("rustls-0.21.12") {
 
 if (!(current_os == "fuchsia")) {
   group("rustls-native-certs") {
-    public_deps = [ ":rustls-native-certs-v0_6_3" ]
+    public_deps = [ ":rustls-native-certs-v0_8_4" ]
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("rustls-native-certs-0.6.3") {
-    public_deps = [ ":rustls-native-certs-v0_6_3" ]
+  group("rustls-native-certs-0.8.4") {
+    public_deps = [ ":rustls-native-certs-v0_8_4" ]
   }
 }
 
@@ -6087,20 +6087,11 @@ rustc_library("const-oid-v0_9_6") {
   applicable_licenses = [ ":const-oid-v0_9_6.license" ]
 }
 
-license("core-foundation-sys-v0_8_7.license") {
-  public_package_name = "core_foundation_sys"
-  license_files = [
-    "//third_party/rust_crates/vendor/core-foundation-sys-0.8.7/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/core-foundation-sys-0.8.7/LICENSE-MIT",
-  ]
-}
-
 rustc_library("core-foundation-sys-v0_8_7") {
   crate_name = "core_foundation_sys"
-  source_root =
-      "//third_party/rust_crates/vendor/core-foundation-sys-0.8.7/src/lib.rs"
+  source_root = "//third_party/rust_crates/empty/core-foundation-sys/src/lib.rs"
   output_name = "core_foundation_sys-6927fb967bafc451"
-  edition = "2018"
+  edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -6113,16 +6104,11 @@ rustc_library("core-foundation-sys-v0_8_7") {
     "--cap-lints=allow",
     "-Cmetadata=6927fb967bafc451",
     "-Cextra-filename=-6927fb967bafc451",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"link\"",
   ]
-  if (current_os == "mac") {
-    rustflags += [ "-lframework=CoreFoundation" ]
-  }
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":core-foundation-sys-v0_8_7.license" ]
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
 license("coset-v0_4_2.license") {
@@ -14229,6 +14215,39 @@ rustc_library("openssl-probe-v0_1_6") {
   applicable_licenses = [ ":openssl-probe-v0_1_6.license" ]
 }
 
+license("openssl-probe-v0_2_1.license") {
+  public_package_name = "openssl_probe"
+  license_files = [
+    "//third_party/rust_crates/vendor/openssl-probe-0.2.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/openssl-probe-0.2.1/LICENSE-MIT",
+  ]
+}
+
+rustc_library("openssl-probe-v0_2_1") {
+  crate_name = "openssl_probe"
+  source_root =
+      "//third_party/rust_crates/vendor/openssl-probe-0.2.1/src/lib.rs"
+  output_name = "openssl_probe-ec997f3e6ed8618a"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=ec997f3e6ed8618a",
+    "-Cextra-filename=-ec997f3e6ed8618a",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":openssl-probe-v0_2_1.license" ]
+}
+
 license("openssl-sys-v0_9_117.license") {
   public_package_name = "openssl_sys"
   license_files =
@@ -18771,6 +18790,54 @@ rustc_library("rustls-native-certs-v0_6_3") {
   applicable_licenses = [ ":rustls-native-certs-v0_6_3.license" ]
 }
 
+license("rustls-native-certs-v0_8_4.license") {
+  public_package_name = "rustls_native_certs"
+  license_files = [
+    "//third_party/rust_crates/vendor/rustls-native-certs-0.8.4/LICENSE",
+    "//third_party/rust_crates/vendor/rustls-native-certs-0.8.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/rustls-native-certs-0.8.4/LICENSE-ISC",
+    "//third_party/rust_crates/vendor/rustls-native-certs-0.8.4/LICENSE-MIT",
+  ]
+}
+
+rustc_library("rustls-native-certs-v0_8_4") {
+  crate_name = "rustls_native_certs"
+  source_root =
+      "//third_party/rust_crates/vendor/rustls-native-certs-0.8.4/src/lib.rs"
+  output_name = "rustls_native_certs-807969e1e0b02cfe"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":rustls-pki-types-v1_15_0" ]
+  if (true && !(current_os == "mac")) {
+    deps += [ ":openssl-probe-v0_2_1" ]
+  }
+  if (current_os == "mac") {
+    deps += [ ":security-framework-v3_7_0" ]
+  }
+  if (false) {
+    deps += [ ":schannel-v0_1_29" ]
+  }
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=807969e1e0b02cfe",
+    "-Cextra-filename=-807969e1e0b02cfe",
+  ]
+
+  aliased_deps = {
+    pki_types = ":rustls-pki-types-v1_15_0.actual"
+  }
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":rustls-native-certs-v0_8_4.license" ]
+}
+
 license("rustls-pemfile-v1_0_4.license") {
   public_package_name = "rustls_pemfile"
   license_files = [
@@ -18805,6 +18872,43 @@ rustc_library("rustls-pemfile-v1_0_4") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":rustls-pemfile-v1_0_4.license" ]
+}
+
+license("rustls-pki-types-v1_15_0.license") {
+  public_package_name = "rustls_pki_types"
+  license_files = [
+    "//third_party/rust_crates/vendor/rustls-pki-types-1.15.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/rustls-pki-types-1.15.0/LICENSE-MIT",
+  ]
+}
+
+rustc_library("rustls-pki-types-v1_15_0") {
+  crate_name = "rustls_pki_types"
+  source_root =
+      "//third_party/rust_crates/vendor/rustls-pki-types-1.15.0/src/lib.rs"
+  output_name = "rustls_pki_types-40f55b552558b4c5"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":zeroize-v1_8_1" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=40f55b552558b4c5",
+    "-Cextra-filename=-40f55b552558b4c5",
+    "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":rustls-pki-types-v1_15_0.license" ]
 }
 
 rustc_macro("rustversion-v1_0_22") {
@@ -19548,6 +19652,31 @@ rustc_library("security-framework-v2_3_1") {
     "--cap-lints=allow",
     "-Cmetadata=152315bbaadf7b20",
     "-Cextra-filename=-152315bbaadf7b20",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+}
+
+rustc_library("security-framework-v3_7_0") {
+  crate_name = "security_framework"
+  source_root =
+      "//third_party/rust_crates/empty/security-framework-3/src/lib.rs"
+  output_name = "security_framework-fa831a9f71751abd"
+  edition = "2015"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=fa831a9f71751abd",
+    "-Cextra-filename=-fa831a9f71751abd",
   ]
 
   visibility = [ ":*" ]

@@ -343,7 +343,7 @@ proc-macro2 = { version = "1.0.106", features = ["span-locations"] }
 pulldown-cmark = { version = "0.13.4", features = ["serde"] }
 quote = "1.0.45"
 rustfix = "0.9.5"
-rustls-native-certs = "0.6.3"
+rustls-native-certs = "0.8.4"
 semver = "1.0.28"
 serde_yaml = "0.9.34+deprecated" # To use on Fuchsia, serde_yaml and unsafe-libyaml will need to be re-audited.
 serial_test = "0.8.0" # Not for use on Fuchsia, only for a single process.
@@ -397,6 +397,7 @@ android_system_properties = { path = "empty/android_system_properties" }
 cc = { path = "empty/cc" }
 cfg_aliases = { path = "empty/cfg_aliases"}
 cloudabi = { path = "empty/cloudabi"}
+core-foundation-sys = { path = "empty/core-foundation-sys" }
 crossterm_winapi = { path = "empty/crossterm_winapi" }
 ctor = { path = "empty/ctor" }
 hermit-abi = { path = "empty/hermit-abi" }
@@ -413,7 +414,8 @@ portable-atomic-util = { path = "empty/portable-atomic-util" }
 r-efi = { path = "empty/r-efi" }
 r-efi-6 = { package = "r-efi", path = "empty/r-efi-6" }
 rustversion = { path = "empty/rustversion" }
-security-framework = { path = "empty/security-framework-2" }
+security-framework-2 = { package = "security-framework", path = "empty/security-framework-2" }
+security-framework-3 = { package = "security-framework", path = "empty/security-framework-3" }
 vcpkg = { path = "empty/vcpkg" }
 wasi-0_11_0_preview1 = { path = "empty/wasi-0.11.0-wasi-snapshot-preview1", package = "wasi" }
 wasip2 = { path = "empty/wasip2" }
@@ -603,9 +605,6 @@ rustflags = [
 
 [gn.package.cast."0.2.7"]
 rustflags = []
-
-[gn.package.core-foundation-sys."0.8.7".platform."cfg(target_os = \"macos\")"]
-rustflags = ["-lframework=CoreFoundation"]
 
 [gn.package.crc-catalog."2.4.0"]
 license_files = ["LICENSES/Apache-2.0.txt"]
