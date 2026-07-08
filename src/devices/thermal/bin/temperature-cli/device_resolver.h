@@ -29,7 +29,7 @@ inline constexpr std::string_view kCmdReadAll = "readall";
 inline constexpr std::string_view kCmdTripPoint = "trippoint";
 inline constexpr std::string_view kCmdWait = "wait";
 inline constexpr std::string_view kCmdName = "name";
-inline constexpr std::string_view kCmdTrip = "trip";
+inline constexpr std::string_view kCmdTrigger = "trigger";
 inline constexpr std::string_view kCmdHelp = "help";
 
 template <typename Protocol>
@@ -53,13 +53,18 @@ enum class DeviceType : uint8_t {
   kTrippoint,
 };
 
+// Represents the final, fully-resolved device targeting a specific connection path.
+// This is the public configuration passed to the execution layers.
 struct ResolvedDevice {
   std::string path;
   DeviceType type;
+  std::string friendly_name;
+  std::string base_path;
 };
 
 // Public API
 std::string_view ToString(DeviceType type);
+std::string_view GetDeviceTypeName(DeviceType type, std::string_view command);
 zx::result<ResolvedDevice> ResolveDevice(std::string_view provided_path_or_name,
                                          std::string_view command);
 void do_list();

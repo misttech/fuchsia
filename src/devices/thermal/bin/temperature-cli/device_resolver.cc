@@ -14,7 +14,6 @@
 #include <array>
 #include <cctype>
 #include <charconv>
-#include <cstdlib>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -37,6 +36,9 @@ constexpr char kServiceMemberDevice[] = "device";
 constexpr char kServiceMemberTripPoint[] = "trippoint";
 constexpr char kServiceMemberDebug[] = "debug";
 
+// Represents a raw device candidate found during filesystem scanning (discovery phase).
+// This is transient internal helper state and is mapped to the public ResolvedDevice
+// once a command and resolution path are selected.
 struct DiscoveredDevice {
   std::string name;
   std::string path;
@@ -44,7 +46,7 @@ struct DiscoveredDevice {
 };
 
 bool IsTrippointCommand(std::string_view arg) {
-  return arg == kCmdTripPoint || arg == kCmdWait || arg == kCmdTrip;
+  return arg == kCmdTripPoint || arg == kCmdWait || arg == kCmdTrigger;
 }
 
 std::string_view GetMemberForService(std::string_view service_dir, std::string_view command) {
@@ -120,17 +122,13 @@ zx::result<size_t> PromptUserSelection(const std::vector<std::string>& display_i
   }
 
   std::string_view input_sv(input_buf);
-  while (!input_sv.empty() && std::isspace(static_cast<unsigned char>(input_sv.front()))) {
-    input_sv.remove_prefix(1);
-  }
-  while (!input_sv.empty() && std::isspace(static_cast<unsigned char>(input_sv.back()))) {
-    input_sv.remove_suffix(1);
-  }
-
-  if (input_sv.empty()) {
+  auto first = input_sv.find_first_not_of(" \t\r\n");
+  if (first == std::string_view::npos) {
     printf("Invalid selection.\n");
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
+  auto last = input_sv.find_last_not_of(" \t\r\n");
+  input_sv = input_sv.substr(first, last - first + 1);
 
   uint64_t selection;
   auto [p, ec] = std::from_chars(input_sv.data(), input_sv.data() + input_sv.size(), selection);
@@ -233,19 +231,24 @@ std::vector<DiscoveredDevice> GetAdcDevices() {
   return devices;
 }
 
-zx::result<std::string> ResolveDeviceFromList(const std::vector<DiscoveredDevice>& devices,
-                                              std::string_view provided_path_or_name,
-                                              std::string_view command,
-                                              std::string_view device_type_name,
-                                              bool silent = false) {
+zx::result<ResolvedDevice> ResolveDeviceFromList(const std::vector<DiscoveredDevice>& devices,
+                                                 std::string_view provided_path_or_name,
+                                                 std::string_view command, DeviceType device_type,
+                                                 bool suppress_errors = false) {
+  std::string_view device_type_name = GetDeviceTypeName(device_type, command);
   if (!provided_path_or_name.empty()) {
     for (const auto& dev : devices) {
       std::string instance_name = std::filesystem::path(dev.path).filename().string();
       if (dev.name == provided_path_or_name || instance_name == provided_path_or_name) {
-        return zx::ok(GetPathForDevice(dev, command));
+        return zx::ok(ResolvedDevice{
+            .path = GetPathForDevice(dev, command),
+            .type = device_type,
+            .friendly_name = dev.name,
+            .base_path = dev.path,
+        });
       }
     }
-    if (!silent) {
+    if (!suppress_errors) {
       printf("Failed to resolve %.*s device name '%.*s'\n",
              static_cast<int>(device_type_name.size()), device_type_name.data(),
              static_cast<int>(provided_path_or_name.size()), provided_path_or_name.data());
@@ -254,7 +257,7 @@ zx::result<std::string> ResolveDeviceFromList(const std::vector<DiscoveredDevice
   }
 
   if (devices.empty()) {
-    if (!silent) {
+    if (!suppress_errors) {
       printf("No %.*s devices found.\n", static_cast<int>(device_type_name.size()),
              device_type_name.data());
     }
@@ -265,7 +268,12 @@ zx::result<std::string> ResolveDeviceFromList(const std::vector<DiscoveredDevice
     std::string path = GetPathForDevice(devices[0], command);
     printf("Using %.*s device: %s (%s)\n", static_cast<int>(device_type_name.size()),
            device_type_name.data(), devices[0].name.c_str(), path.c_str());
-    return zx::ok(path);
+    return zx::ok(ResolvedDevice{
+        .path = path,
+        .type = device_type,
+        .friendly_name = devices[0].name,
+        .base_path = devices[0].path,
+    });
   }
 
   std::vector<std::string> display_items;
@@ -283,21 +291,29 @@ zx::result<std::string> ResolveDeviceFromList(const std::vector<DiscoveredDevice
   std::string path = GetPathForDevice(devices[selection], command);
   printf("Using %.*s device: %s (%s)\n", static_cast<int>(device_type_name.size()),
          device_type_name.data(), devices[selection].name.c_str(), path.c_str());
-  return zx::ok(path);
+  return zx::ok(ResolvedDevice{
+      .path = path,
+      .type = device_type,
+      .friendly_name = devices[selection].name,
+      .base_path = devices[selection].path,
+  });
 }
 
-zx::result<std::string> ResolveTemperatureDevice(std::string_view provided_path_or_name,
-                                                 std::string_view command, bool silent = false) {
+zx::result<ResolvedDevice> ResolveTemperatureDevice(std::string_view provided_path_or_name,
+                                                    std::string_view command,
+                                                    bool suppress_errors = false) {
   return ResolveDeviceFromList(GetTemperatureDevices(), provided_path_or_name, command,
-                               ToString(DeviceType::kTemperature), silent);
+                               DeviceType::kTemperature, suppress_errors);
 }
 
-zx::result<std::string> ResolveTrippointDevice(std::string_view provided_path_or_name,
-                                               std::string_view command) {
-  bool is_trip = command == kCmdTrip;
-  auto devices = is_trip ? GetTrippointDebugDevices() : GetTrippointDevices();
-  std::string_view type_name = is_trip ? "trippoint debug" : ToString(DeviceType::kTrippoint);
-  return ResolveDeviceFromList(devices, provided_path_or_name, command, type_name);
+zx::result<ResolvedDevice> ResolveTrippointDevice(std::string_view provided_path_or_name,
+                                                  std::string_view command) {
+  // The 'trigger' command simulates a trippoint event for testing, which requires the
+  // trippoint debug service. Other commands (e.g., 'trippoint', 'wait') interact with the
+  // production trippoint service.
+  bool is_debug = command == kCmdTrigger;
+  auto devices = is_debug ? GetTrippointDebugDevices() : GetTrippointDevices();
+  return ResolveDeviceFromList(devices, provided_path_or_name, command, DeviceType::kTrippoint);
 }
 
 DeviceType DeduceDeviceTypeFromPathAndCommand(std::string_view path, std::string_view command) {
@@ -333,10 +349,11 @@ DeviceType DeduceDeviceTypeFromPathAndCommand(std::string_view path, std::string
   return DeviceType::kTemperature;
 }
 
-zx::result<std::string> ResolveAdcDevice(std::string_view provided_path_or_name,
-                                         std::string_view command, bool silent = false) {
-  return ResolveDeviceFromList(GetAdcDevices(), provided_path_or_name, command,
-                               ToString(DeviceType::kAdc), silent);
+zx::result<ResolvedDevice> ResolveAdcDevice(std::string_view provided_path_or_name,
+                                            std::string_view command,
+                                            bool suppress_errors = false) {
+  return ResolveDeviceFromList(GetAdcDevices(), provided_path_or_name, command, DeviceType::kAdc,
+                               suppress_errors);
 }
 
 }  // namespace
@@ -352,16 +369,22 @@ std::string_view ToString(DeviceType type) {
   }
 }
 
+std::string_view GetDeviceTypeName(DeviceType type, std::string_view command) {
+  if (type == DeviceType::kTrippoint && command == kCmdTrigger) {
+    return "trippoint debug";
+  }
+  return ToString(type);
+}
+
 bool IsInteger(std::string_view s) {
   return !s.empty() &&
          std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isdigit(c); });
 }
 
 bool IsKnownCommand(std::string_view arg) {
-  // All commands except kCmdHelp
   static constexpr std::array kKnownCommands = {
-      kCmdList, kCmdResolution, kCmdRead, kCmdReadNorm, kCmdTripPoint,
-      kCmdWait, kCmdName,       kCmdTrip, kCmdReadAll,
+      kCmdList, kCmdResolution, kCmdRead,    kCmdReadNorm, kCmdTripPoint,
+      kCmdWait, kCmdName,       kCmdTrigger, kCmdReadAll,  kCmdHelp,
   };
   return std::find(kKnownCommands.begin(), kKnownCommands.end(), arg) != kKnownCommands.end();
 }
@@ -403,42 +426,44 @@ zx::result<ResolvedDevice> ResolveDevice(std::string_view provided_path_or_name,
         break;
       }
     }
-    return zx::ok(ResolvedDevice{path, dev_type});
+    return zx::ok(ResolvedDevice{
+        .path = path,
+        .type = dev_type,
+        .friendly_name = "",
+        .base_path = "",
+    });
   }
 
   if (IsTrippointCommand(command)) {
-    auto path_res = ResolveTrippointDevice(path, command);
-    if (path_res.is_error())
-      return path_res.take_error();
-    return zx::ok(ResolvedDevice{path_res.value(), DeviceType::kTrippoint});
+    return ResolveTrippointDevice(path, command);
   }
 
   if (command == kCmdResolution || command == kCmdReadNorm) {
-    auto path_res = ResolveAdcDevice(path, command);
-    if (path_res.is_error())
-      return path_res.take_error();
-    return zx::ok(ResolvedDevice{path_res.value(), DeviceType::kAdc});
+    return ResolveAdcDevice(path, command);
   }
 
   if (command == kCmdRead) {
     // Try Temperature first (silently to avoid noisy fallback prints)
-    auto temp_res = ResolveTemperatureDevice(path, command, /*silent=*/true);
+    auto temp_res = ResolveTemperatureDevice(path, command, /*suppress_errors=*/true);
     if (temp_res.is_ok()) {
-      return zx::ok(ResolvedDevice{temp_res.value(), DeviceType::kTemperature});
+      return temp_res;
     }
     // Fallback to ADC
-    auto adc_res = ResolveAdcDevice(path, command);
+    auto adc_res = ResolveAdcDevice(path, command, /*suppress_errors=*/true);
     if (adc_res.is_ok()) {
-      return zx::ok(ResolvedDevice{adc_res.value(), DeviceType::kAdc});
+      return adc_res;
+    }
+    if (!path.empty()) {
+      printf("Failed to resolve device name '%.*s' as a temperature or ADC device\n",
+             static_cast<int>(path.size()), path.data());
+    } else {
+      printf("No temperature or ADC devices found.\n");
     }
     return temp_res.take_error();
   }
 
   // Fallback for any other command (e.g., name or unknown commands)
-  auto path_res = ResolveTemperatureDevice(path, command);
-  if (path_res.is_error())
-    return path_res.take_error();
-  return zx::ok(ResolvedDevice{path_res.value(), DeviceType::kTemperature});
+  return ResolveTemperatureDevice(path, command);
 }
 
 std::vector<DeviceInfo> GetTemperatureDevicesForReading() {
