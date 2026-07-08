@@ -7,19 +7,16 @@
 Tests STA handling of channel switch announcements.
 """
 
+import asyncio
 import logging
 import random
 import time
 from typing import Sequence
 
 import fidl_fuchsia_wlan_common as f_wlan_common
+import fuchsia_wlan_base_test
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
-from antlion.controllers.ap_lib.hostapd_security import SecurityMode
-from antlion.controllers.fuchsia_device import FuchsiaDevice
-from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
-from antlion.utils import rand_ascii_str
-from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
@@ -30,7 +27,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     SecurityType,
 )
 from mobly import asserts, signals, test_runner
-from mobly.config_parser import TestRunConfig
 from openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
@@ -73,7 +69,7 @@ US_DFS_CHANNELS = [
 ]
 
 
-class ChannelSwitchTest(base_test.WifiBaseTest):
+class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     # Time to wait between issuing channel switches
     WAIT_BETWEEN_CHANNEL_SWITCHES_S = 15
 
@@ -87,40 +83,33 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
     # A channel outside the operating class.
     NON_GLOBAL_OPERATING_CLASS_124_CHANNEL = 52
 
-    def __init__(self, configs: TestRunConfig) -> None:
-        super().__init__(configs)
+    async def setup_class(self) -> None:
+        await super().setup_class()
         self.log = logging.getLogger()
-        self.ssid = rand_ascii_str(10)
+        self.ssid = AccessPointConfig.random_string(10)
 
-        if self.openwrt_aps:
-            self.openwrt_ap = self.openwrt_aps[0]
-        elif self.access_points:
-            self.access_point = self.access_points[0]
-            self.access_point.stop_all_aps()
-        else:
+        if not self.openwrt_ap and not self.access_point:
             raise signals.TestAbortClass("Requires at least one access point")
 
-        self.fuchsia_device, self.dut = self.get_dut_type(
-            FuchsiaDevice, AssociationMode.POLICY
-        )
+        if self.access_point:
+            self.access_point.stop_all_aps()
 
-    def setup_class(self) -> None:
-        super().setup_class()
+    async def setup_test(self) -> None:
+        await super().setup_test()
+        await self.dut.wlan_policy.ensure_clean_state()
 
-    def teardown_test(self) -> None:
-        self.dut.disconnect()
-        self.dut.reset_wifi()
-        self.download_logs()
+    async def teardown_test(self) -> None:
+        await self.dut.wlan_policy.ensure_clean_state()
         if self.access_point:
             self.access_point.stop_all_aps()
         try:
-            self.fuchsia_device.honeydew_fd.wlan_policy_ap_deprecated_sync.stop_all()
+            await self.dut.wlan_policy_ap.stop_all()
         except HoneydewWlanError as e:
             # This is expected for devices without soft-AP support.
             self.log.info("Failed to stop soft APs: %s", e)
-        super().teardown_test()
+        await super().teardown_test()
 
-    def channel_switch(
+    async def channel_switch(
         self,
         band: Band,
         starting_channel: int,
@@ -209,10 +198,10 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
             )
 
         if test_with_soft_ap:
-            self._start_soft_ap()
-        self.log.info("sending associate command for ssid %s", self.ssid)
-        self.dut.associate(self.ssid, SecurityMode.OPEN)
-        asserts.assert_true(self.dut.is_connected(), "Failed to connect.")
+            await self._start_soft_ap()
+        self.log.info("connecting to network with ssid %s", self.ssid)
+        await self.dut.wlan_policy.save_network(self.ssid, SecurityType.NONE)
+        await self.dut.wlan_policy.connect(self.ssid, SecurityType.NONE)
 
         asserts.assert_true(
             channel_switches, "Cannot run test, no channels to switch to"
@@ -269,9 +258,7 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
             must_change_channel_by = time.time() + must_change_channel_within
 
             while time.time() < change_channel_after:
-                status = (
-                    self.fuchsia_device.honeydew_fd.wlan_core_deprecated_sync.status()
-                )
+                status = await self.dut.wlan_core.status()
                 if not isinstance(status, ClientStatusConnected):
                     raise signals.TestFailure(
                         f"want ClientStatusConnected, got {type(status)} after "
@@ -289,7 +276,7 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
                         f"{previous_channel} to {current_channel} "
                         f"within {must_change_channel_within:.2}s",
                     )
-                    time.sleep(0.1)
+                    await asyncio.sleep(0.1)
                     continue
 
                 asserts.assert_equal(
@@ -298,73 +285,75 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
                     f"want channel={current_channel}, got {got_channel}",
                 )
                 if test_with_soft_ap:
-                    soft_ap_channel = self._soft_ap_channel()
+                    soft_ap_channel = await self._soft_ap_channel()
                     asserts.assert_equal(
                         soft_ap_channel,
                         channel_num,
                         f"SoftAP interface on wrong channel ({soft_ap_channel})",
                     )
-                time.sleep(1)
+                await asyncio.sleep(1)
 
-    def test_channel_switch_2g(self) -> None:
+    async def test_channel_switch_2g(self) -> None:
         """Channel switch through all (US only) channels in the 2 GHz band."""
-        self.channel_switch(
+        await self.channel_switch(
             band=Band.BAND_2G,
             starting_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             channel_switches=hostapd_constants.US_CHANNELS_2G,
         )
 
-    def test_channel_switch_2g_with_soft_ap(self) -> None:
+    async def test_channel_switch_2g_with_soft_ap(self) -> None:
         """Channel switch through (US only) 2 Ghz channels with SoftAP up."""
-        self.channel_switch(
+        await self.channel_switch(
             band=Band.BAND_2G,
             starting_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             channel_switches=hostapd_constants.US_CHANNELS_2G,
             test_with_soft_ap=True,
         )
 
-    def test_channel_switch_2g_shuffled_with_soft_ap(self) -> None:
+    async def test_channel_switch_2g_shuffled_with_soft_ap(self) -> None:
         """Switch through shuffled (US only) 2 Ghz channels with SoftAP up."""
         channels = hostapd_constants.US_CHANNELS_2G
         random.shuffle(channels)
         self.log.info(f"Shuffled channel switch sequence: {channels}")
-        self.channel_switch(
+        await self.channel_switch(
             band=Band.BAND_2G,
             starting_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             channel_switches=channels,
             test_with_soft_ap=True,
         )
 
-    def test_channel_switch_5g(self) -> None:
+    async def test_channel_switch_5g(self) -> None:
         """Channel switch through all (US only) channels in the 5 GHz band."""
-        self.channel_switch(
+        await self.channel_switch(
             band=Band.BAND_5G,
             starting_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             channel_switches=hostapd_constants.US_CHANNELS_5G,
         )
 
-    def test_channel_switch_5g_with_soft_ap(self) -> None:
+    async def test_channel_switch_5g_with_soft_ap(self) -> None:
         """Channel switch through (US only) 5 GHz channels with SoftAP up."""
-        self.channel_switch(
+        await self.channel_switch(
             band=Band.BAND_5G,
             starting_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             channel_switches=hostapd_constants.US_CHANNELS_5G,
             test_with_soft_ap=True,
         )
 
-    def test_channel_switch_5g_shuffled_with_soft_ap(self) -> None:
+    async def test_channel_switch_5g_shuffled_with_soft_ap(self) -> None:
         """Switch through shuffled (US only) 5 Ghz channels with SoftAP up."""
         channels = hostapd_constants.US_CHANNELS_5G
         random.shuffle(channels)
         self.log.info(f"Shuffled channel switch sequence: {channels}")
-        self.channel_switch(
+        await self.channel_switch(
             band=Band.BAND_5G,
             starting_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             channel_switches=channels,
             test_with_soft_ap=True,
         )
 
-    def test_channel_switch_regression_global_operating_class_115(self) -> None:
+    async def test_channel_switch_regression_global_operating_class_115(
+        self,
+    ) -> None:
         """Channel switch into, through, and out of global op. class 115 channels.
 
         Global operating class 115 is described in IEEE 802.11-2016 Table E-4.
@@ -373,13 +362,13 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
         channels = self.GLOBAL_OPERATING_CLASS_115_CHANNELS + [
             self.NON_GLOBAL_OPERATING_CLASS_115_CHANNEL
         ]
-        self.channel_switch(
+        await self.channel_switch(
             band=Band.BAND_5G,
             starting_channel=self.NON_GLOBAL_OPERATING_CLASS_115_CHANNEL,
             channel_switches=channels,
         )
 
-    def test_channel_switch_regression_global_operating_class_115_with_soft_ap(
+    async def test_channel_switch_regression_global_operating_class_115_with_soft_ap(
         self,
     ) -> None:
         """Test global operating class 124 channel switches, with SoftAP.
@@ -389,14 +378,16 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
         channels = self.GLOBAL_OPERATING_CLASS_115_CHANNELS + [
             self.NON_GLOBAL_OPERATING_CLASS_115_CHANNEL
         ]
-        self.channel_switch(
+        await self.channel_switch(
             band=Band.BAND_5G,
             starting_channel=self.NON_GLOBAL_OPERATING_CLASS_115_CHANNEL,
             channel_switches=channels,
             test_with_soft_ap=True,
         )
 
-    def test_channel_switch_regression_global_operating_class_124(self) -> None:
+    async def test_channel_switch_regression_global_operating_class_124(
+        self,
+    ) -> None:
         """Switch into, through, and out of global op. class 124 channels.
 
         Global operating class 124 is described in IEEE 802.11-2016 Table E-4.
@@ -405,13 +396,13 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
         channels = self.GLOBAL_OPERATING_CLASS_124_CHANNELS + [
             self.NON_GLOBAL_OPERATING_CLASS_124_CHANNEL
         ]
-        self.channel_switch(
+        await self.channel_switch(
             band=Band.BAND_5G,
             starting_channel=self.NON_GLOBAL_OPERATING_CLASS_124_CHANNEL,
             channel_switches=channels,
         )
 
-    def test_channel_switch_regression_global_operating_class_124_with_soft_ap(
+    async def test_channel_switch_regression_global_operating_class_124_with_soft_ap(
         self,
     ) -> None:
         """Test global operating class 124 channel switches, with SoftAP.
@@ -421,7 +412,7 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
         channels = self.GLOBAL_OPERATING_CLASS_124_CHANNELS + [
             self.NON_GLOBAL_OPERATING_CLASS_124_CHANNEL
         ]
-        self.channel_switch(
+        await self.channel_switch(
             band=Band.BAND_5G,
             starting_channel=self.NON_GLOBAL_OPERATING_CLASS_124_CHANNEL,
             channel_switches=channels,
@@ -445,16 +436,16 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
                 band_channels = frozenset(hostapd_constants.US_CHANNELS_5G)
         return channels_set <= band_channels
 
-    def _start_soft_ap(self) -> None:
+    async def _start_soft_ap(self) -> None:
         """Start a SoftAP on the DUT.
 
         Raises:
             EnvironmentError: if the SoftAP does not start
         """
-        ssid = rand_ascii_str(10)
+        ssid = AccessPointConfig.random_string(10)
         self.log.info(f'Starting SoftAP on DUT with ssid "{ssid}"')
 
-        self.fuchsia_device.honeydew_fd.wlan_policy_ap_deprecated_sync.start(
+        await self.dut.wlan_policy_ap.start(
             ssid,
             SecurityType.NONE,
             None,
@@ -463,7 +454,7 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
         )
         self.log.info(f"SoftAp network ({ssid}) is up.")
 
-    def _soft_ap_channel(self) -> int:
+    async def _soft_ap_channel(self) -> int:
         """Determine the channel of the DUT SoftAP interface.
 
         If the interface is not connected, the method will assert a test
@@ -475,19 +466,15 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
             EnvironmentError: if SoftAP interface channel cannot be determined.
             signals.TestFailure: when the SoftAP interface is not connected.
         """
-        iface_ids = self.dut.get_wlan_interface_id_list()
+        iface_ids = await self.dut.wlan_core.get_iface_id_list()
         for iface_id in iface_ids:
             try:
-                result = self.fuchsia_device.honeydew_fd.wlan_core_deprecated_sync.query_iface(
-                    iface_id
-                )
+                result = await self.dut.wlan_core.query_iface(iface_id)
             except HoneydewWlanError as e:
                 self.log.warning(f"Query iface {iface_id} failed: {e}")
                 continue
             if result.role == f_wlan_common.WlanMacRole.AP:
-                status = (
-                    self.fuchsia_device.honeydew_fd.wlan_core_deprecated_sync.status()
-                )
+                status = await self.dut.wlan_core.status()
                 if not isinstance(status, ClientStatusConnected):
                     raise signals.TestFailure(
                         f"want ClientStatusConnected, got {type(status)}"
