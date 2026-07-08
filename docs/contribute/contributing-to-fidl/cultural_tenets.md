@@ -135,7 +135,7 @@ craft of being an engineer. Practice makes perfect.
 
     * Fuchsia FIDL team size, i.e. more fire power;
     * Solving short term issues (e.g.
-      [FTP](docs/contribute/governance/deprecated-ftp-process.md) backlog in
+      [FTP](/docs/contribute/governance/deprecated-ftp-process.md) backlog in
       2018, `fidlc` bugs blocking other teams);
     * Clear expectations of how work happens (e.g. guidelines for team syncs, or
       project updates), further speeding up execution;
