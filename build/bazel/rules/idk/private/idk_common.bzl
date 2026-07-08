@@ -286,7 +286,7 @@ def _get_api_level_condition(api_level):
     Returns:
         The label for the condition that is true when the current API level is `api_level`.
     """
-    return "//build/bazel:is_api_level_" + api_level
+    return "//build/bazel/versioning:is_api_level_" + api_level
 
 def get_golden_file(golden_file_name, *, support_platform = False):
     """Returns a `select()` statement for the golden file for the current API level.

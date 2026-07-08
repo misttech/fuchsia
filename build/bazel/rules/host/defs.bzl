@@ -19,7 +19,7 @@ load("//build/bazel/rules/rust:defs.bzl", "rustc_binary")
 # @@platforms//:incompatible" and not mention the API level.
 _target_compatible_with_platform_api_level = select({
     # If the API level is not "PLATFORM", the target is incompatible.
-    "//build/bazel:is_api_level_PLATFORM": [],
+    "//build/bazel/versioning:is_api_level_PLATFORM": [],
     "//conditions:default": ["@platforms//:incompatible"],
 })
 

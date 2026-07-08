@@ -26,7 +26,7 @@ def _verify_is_main_platform_configuration(current_platforms, current_api_level)
 def _verify_is_main_platform_configuration_from_settings(settings):
     _verify_is_main_platform_configuration(
         settings["//command_line_option:platforms"],
-        settings["@//build/bazel:fuchsia_api_level"],
+        settings["@//build/bazel/versioning:api_level"],
     )
 
 def _api_level_and_cpu_combinations_transition_impl(settings, _attr):
@@ -46,7 +46,7 @@ def _api_level_and_cpu_combinations_transition_impl(settings, _attr):
                 continue
 
             combinations.append({
-                "@//build/bazel:fuchsia_api_level": api_level,
+                "@//build/bazel/versioning:api_level": api_level,
                 "//command_line_option:platforms": "@//build/bazel/platforms:fuchsia_platform_%s" % cpu,
             })
     return combinations
@@ -55,11 +55,11 @@ def _api_level_and_cpu_combinations_transition_impl(settings, _attr):
 api_level_and_cpu_combinations_transition = transition(
     implementation = _api_level_and_cpu_combinations_transition_impl,
     inputs = [
-        "@//build/bazel:fuchsia_api_level",
+        "@//build/bazel/versioning:api_level",
         "//command_line_option:platforms",
     ],
     outputs = [
-        "@//build/bazel:fuchsia_api_level",
+        "@//build/bazel/versioning:api_level",
         "//command_line_option:platforms",
     ],
 )
@@ -113,7 +113,7 @@ def _get_host_platform_cpu(host_cpu):
 def _current_host_cpu_transition_impl(settings, _attr):
     _verify_is_main_platform_configuration(
         settings["//command_line_option:platforms"],
-        settings["@//build/bazel:fuchsia_api_level"],
+        settings["@//build/bazel/versioning:api_level"],
     )
 
     host_platform_cpu = _get_host_platform_cpu(settings["//command_line_option:host_cpu"])
@@ -126,7 +126,7 @@ def _current_host_cpu_transition_impl(settings, _attr):
 current_host_cpu_transition = transition(
     implementation = _current_host_cpu_transition_impl,
     inputs = [
-        "@//build/bazel:fuchsia_api_level",
+        "@//build/bazel/versioning:api_level",
         "//command_line_option:host_cpu",
         "//command_line_option:platforms",
     ],
@@ -136,7 +136,7 @@ current_host_cpu_transition = transition(
 def _configured_host_cpus_transition_impl(settings, _attr):
     _verify_is_main_platform_configuration(
         settings["//command_line_option:platforms"],
-        settings["@//build/bazel:fuchsia_api_level"],
+        settings["@//build/bazel/versioning:api_level"],
     )
 
     host_platform_os = "linux"
@@ -155,7 +155,7 @@ def _configured_host_cpus_transition_impl(settings, _attr):
 configured_host_cpus_transition = transition(
     implementation = _configured_host_cpus_transition_impl,
     inputs = [
-        "@//build/bazel:fuchsia_api_level",
+        "@//build/bazel/versioning:api_level",
         "//command_line_option:host_cpu",
         "//command_line_option:platforms",
     ],

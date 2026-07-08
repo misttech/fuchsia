@@ -14,7 +14,7 @@ load(
     "generate_clang_cc_toolchain",
 )
 load("@rules_fuchsia//common/platforms:utils.bzl", "to_bazel_cpu_name", "to_bazel_os_name")
-load("//build/bazel:fuchsia_api_level.bzl", "get_integer_for_api_level")
+load("//build/bazel/versioning:api_level.bzl", "get_integer_for_api_level")
 
 def _fuchsia_api_level_info_impl(ctx):
     api_level_str = ctx.attr.fuchsia_api_level[BuildSettingInfo].value
@@ -27,7 +27,7 @@ _fuchsia_api_level_info = rule(
     implementation = _fuchsia_api_level_info_impl,
     attrs = {
         "fuchsia_api_level": attr.label(
-            default = "//build/bazel:fuchsia_api_level",
+            default = "//build/bazel/versioning:api_level",
             providers = [BuildSettingInfo],
         ),
     },

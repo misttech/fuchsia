@@ -151,7 +151,7 @@ _build_fuchsia_package = rule(
             cfg = "exec",
         ),
         "_current_api_level": attr.label(
-            default = "@//build/bazel:fuchsia_api_level",
+            default = "@//build/bazel/versioning:api_level",
         ),
     },
 )

@@ -597,7 +597,7 @@ Possible values, from most restrictive to least restrictive:
             default = "",
         ),
         "_current_api_level": attr.label(
-            default = "@//build/bazel:fuchsia_api_level",
+            default = "@//build/bazel/versioning:api_level",
         ),
         "_current_platform": attr.label(
             providers = [CurrentPlatformInfo],
