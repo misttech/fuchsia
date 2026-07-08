@@ -244,7 +244,7 @@ From //boards/arm64.gni:25
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:78
+From //build/images/args.gni:75
 
 **Current value for `target_cpu = "riscv64"`:** `"riscv64"`
 
@@ -252,7 +252,7 @@ From //boards/riscv64.gni:32
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:78
+From //build/images/args.gni:75
 
 **Current value for `target_cpu = "x64"`:** `"x64"`
 
@@ -260,7 +260,7 @@ From //boards/x64.gni:28
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:78
+From //build/images/args.gni:75
 
 ### bazel_product_bundle_full
 
@@ -289,7 +289,7 @@ The actual bazel_product_bundle used for Bazel assembly is:
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:75
+From //build/images/args.gni:72
 
 ### bazel_product_bundle_prefix
 
@@ -299,7 +299,7 @@ From //products/core.gni:26
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:77
+From //build/images/args.gni:74
 
 **Current value for `target_cpu = "riscv64"`:** `"//products/minimal:product_bundle"`
 
@@ -307,7 +307,7 @@ From //products/minimal.gni:34
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:77
+From //build/images/args.gni:74
 
 **Current value for `target_cpu = "x64"`:** `"//products/core:product_bundle"`
 
@@ -315,13 +315,13 @@ From //products/core.gni:26
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:77
+From //build/images/args.gni:74
 
 ### bazel_product_bundle_root
 
 **Current value (from the default):** `"//"`
 
-From //build/images/args.gni:76
+From //build/images/args.gni:73
 
 ### bazel_rbe_download_outputs
 
@@ -956,7 +956,7 @@ This should never be set as a build argument.
 }
   hwasan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.hwasan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
@@ -965,7 +965,7 @@ This should never be set as a build argument.
 }
   lsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
@@ -1035,7 +1035,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
@@ -1639,7 +1639,7 @@ This should never be set as a build argument.
 }
   lsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "lib/clang/23/lib/x86_64-unknown-fuchsia/libclang_rt.lsan.a"
@@ -2174,6 +2174,13 @@ From //build/config/compiler.gni:82
   install_host_tool = true
 }, {
   bazel_label = "//tools/fidl/fidldoc:fidldoc"
+  install_host_tool = true
+}, {
+  bazel_label = "//tools/fidl/fidlmerge:fidlmerge"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidlmerge_/fidlmerge"
+  ninja = "fidlmerge"
+}]
   install_host_tool = true
 }, {
   bazel_label = "//tools/check-licenses:tests"
@@ -3800,7 +3807,7 @@ warning.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:118
+From //build/images/args.gni:115
 
 ### enable_netstack2_tracing
 
@@ -4278,7 +4285,7 @@ useful for including verification and other Bazel assembly specific targets.
 
 **Current value (from the default):** `[]`
 
-From //build/images/args.gni:82
+From //build/images/args.gni:79
 
 ### extra_bazel_build_action_labels
 
@@ -5120,7 +5127,7 @@ From //build/config/BUILDCONFIG.gn:30
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:111
+From //build/images/args.gni:108
 
 ### is_perfetto_build_generator
 
@@ -5624,7 +5631,7 @@ product in a multi-product build is not desired.
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:86
+From //build/images/args.gni:83
 
 ### max_log_disk_usage
 
@@ -9625,32 +9632,29 @@ From //build/testing/config.gni:9
 If true, the images.json build API modules will only include images
 identified by bazel_product_bundle_target and its dependencies.
 
-NOTE: This field is highly experimental, do not set it unless you know
-exactly what you are doing.
-
 **Current value for `target_cpu = "arm64"`:** `true`
 
 From //products/core.gni:27
 
-**Overridden from the default:** `false`
+**Overridden from the default:** `true`
 
-From //build/images/args.gni:51
+From //build/images/args.gni:48
 
 **Current value for `target_cpu = "riscv64"`:** `true`
 
 From //products/minimal.gni:39
 
-**Overridden from the default:** `false`
+**Overridden from the default:** `true`
 
-From //build/images/args.gni:51
+From //build/images/args.gni:48
 
 **Current value for `target_cpu = "x64"`:** `true`
 
 From //products/core.gni:27
 
-**Overridden from the default:** `false`
+**Overridden from the default:** `true`
 
-From //build/images/args.gni:51
+From //build/images/args.gni:48
 
 ### use_blink
 
