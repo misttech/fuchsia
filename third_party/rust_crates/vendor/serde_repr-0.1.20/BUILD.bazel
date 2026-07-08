@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "serde_repr",
     package_url = "https://github.com/dtolnay/serde-repr",
-    package_version = "0.1.7",
+    package_version = "0.1.20",
 )
 
 license(
@@ -53,7 +53,7 @@ rust_proc_macro(
         ],
     ),
     crate_root = "src/lib.rs",
-    edition = "2018",
+    edition = "2021",
     rustc_flags = [
         "--cap-lints=allow",
     ],
@@ -71,10 +71,10 @@ rust_proc_macro(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.1.7",
+    version = "0.1.20",
     deps = [
         "//third_party/rust_crates/vendor/proc-macro2-1.0.106:proc_macro2",
         "//third_party/rust_crates/vendor/quote-1.0.45:quote",
-        "//third_party/rust_crates/vendor/syn-1.0.109:syn",
+        "//third_party/rust_crates/vendor/syn-2.0.118:syn",
     ],
 )

@@ -2004,11 +2004,11 @@ group("serde_json5-0.2.1") {
 }
 
 group("serde_repr") {
-  public_deps = [ ":serde_repr-v0_1_7($host_toolchain)" ]
+  public_deps = [ ":serde_repr-v0_1_20($host_toolchain)" ]
 }
 
-group("serde_repr-0.1.7") {
-  public_deps = [ ":serde_repr-v0_1_7" ]
+group("serde_repr-0.1.20") {
+  public_deps = [ ":serde_repr-v0_1_20" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -14013,7 +14013,7 @@ rustc_library("omaha_client-v0_3_8") {
   deps += [ ":rand-v0_8_4" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_149" ]
-  deps += [ ":serde_repr-v0_1_7($host_toolchain)" ]
+  deps += [ ":serde_repr-v0_1_20($host_toolchain)" ]
   deps += [ ":sha2-v0_10_9" ]
   deps += [ ":signature-v1_6_4" ]
   deps += [ ":thiserror-v2_0_18" ]
@@ -20000,19 +20000,19 @@ rustc_library("serde_json5-v0_2_1") {
   applicable_licenses = [ ":serde_json5-v0_2_1.license" ]
 }
 
-license("serde_repr-v0_1_7.license") {
+license("serde_repr-v0_1_20.license") {
   public_package_name = "serde_repr"
   license_files = [
-    "//third_party/rust_crates/vendor/serde_repr-0.1.7/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/serde_repr-0.1.7/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/serde_repr-0.1.20/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/serde_repr-0.1.20/LICENSE-MIT",
   ]
 }
 
-rustc_macro("serde_repr-v0_1_7") {
+rustc_macro("serde_repr-v0_1_20") {
   crate_name = "serde_repr"
-  source_root = "//third_party/rust_crates/vendor/serde_repr-0.1.7/src/lib.rs"
-  output_name = "serde_repr-2607863d914a7535"
-  edition = "2018"
+  source_root = "//third_party/rust_crates/vendor/serde_repr-0.1.20/src/lib.rs"
+  output_name = "serde_repr-72bc72975dca0e5d"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -20020,19 +20020,19 @@ rustc_macro("serde_repr-v0_1_7") {
   deps = []
   deps += [ ":proc-macro2-v1_0_106" ]
   deps += [ ":quote-v1_0_45" ]
-  deps += [ ":syn-v1_0_109" ]
+  deps += [ ":syn-v2_0_118" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=2607863d914a7535",
-    "-Cextra-filename=-2607863d914a7535",
+    "-Cmetadata=72bc72975dca0e5d",
+    "-Cextra-filename=-72bc72975dca0e5d",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":serde_repr-v0_1_7.license" ]
+  applicable_licenses = [ ":serde_repr-v0_1_20.license" ]
 }
 
 license("serde_spanned-v1_1_1.license") {
