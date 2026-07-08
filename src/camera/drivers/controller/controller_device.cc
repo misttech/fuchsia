@@ -4,6 +4,7 @@
 
 #include "src/camera/drivers/controller/controller_device.h"
 
+#include <lib/async/cpp/task.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/driver.h>
@@ -44,8 +45,15 @@ fpromise::result<std::unique_ptr<ControllerDevice>, zx_status_t> ControllerDevic
     return fpromise::error(status);
   }
   fuchsia_hardware_camera::Service::InstanceHandler handler({
-      .device = device->bindings_.CreateHandler(device.get(), device->loop_.dispatcher(),
-                                                fidl::kIgnoreBindingClosure),
+      .device =
+          [device_ptr = device.get(), dispatcher = device->loop_.dispatcher()](
+              fidl::ServerEnd<fuchsia_hardware_camera::Device> server_end) {
+            async::PostTask(
+                dispatcher, [device_ptr, dispatcher, server_end = std::move(server_end)]() mutable {
+                  device_ptr->bindings_.AddBinding(dispatcher, std::move(server_end), device_ptr,
+                                                   fidl::kIgnoreBindingClosure);
+                });
+          },
   });
   zx::result add_result =
       device->DdkAddService<fuchsia_hardware_camera::Service>(std::move(handler));
