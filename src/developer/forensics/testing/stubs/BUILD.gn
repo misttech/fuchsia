@@ -237,8 +237,9 @@ source_set("ui_state_provider") {
   ]
 
   public_deps = [
-    ":fidl_server_hlcpp",
-    "//sdk/fidl/fuchsia.ui.activity:fuchsia.ui.activity_hlcpp",
+    ":fidl_server",
+    "//sdk/fidl/fuchsia.ui.activity:fuchsia.ui.activity_cpp",
+    "//src/developer/forensics/utils:fidl_event_handler",
   ]
 }
 

@@ -5,31 +5,33 @@
 #ifndef SRC_DEVELOPER_FORENSICS_TESTING_STUBS_UI_STATE_PROVIDER_H_
 #define SRC_DEVELOPER_FORENSICS_TESTING_STUBS_UI_STATE_PROVIDER_H_
 
-#include <fuchsia/ui/activity/cpp/fidl.h>
-#include <fuchsia/ui/activity/cpp/fidl_test_base.h>
+#include <fidl/fuchsia.ui.activity/cpp/fidl.h>
+#include <fidl/fuchsia.ui.activity/cpp/test_base.h>
 
-#include "src/developer/forensics/testing/stubs/fidl_server_hlcpp.h"
+#include "src/developer/forensics/testing/stubs/fidl_server.h"
+#include "src/developer/forensics/utils/fidl_event_handler.h"
 
 namespace forensics::stubs {
 
-using UIStateProviderBase = SINGLE_BINDING_STUB_FIDL_SERVER(fuchsia::ui::activity, Provider);
+using UIStateProviderBase = SingleBindingFidlServer<fuchsia_ui_activity::Provider>;
 
 class UIStateProvider : public UIStateProviderBase {
  public:
-  UIStateProvider(async_dispatcher_t* dispatcher, fuchsia::ui::activity::State state,
+  UIStateProvider(async_dispatcher_t* dispatcher, fuchsia_ui_activity::State state,
                   zx::time_monotonic time);
 
-  void WatchState(::fidl::InterfaceHandle<::fuchsia::ui::activity::Listener> listener) override;
-  void SetState(fuchsia::ui::activity::State state, zx::time_monotonic time);
+  void WatchState(WatchStateRequest& request, WatchStateCompleter::Sync& completer) override;
+  void SetState(fuchsia_ui_activity::State state, zx::time_monotonic time);
   void UnbindListener();
 
  private:
   void OnStateChanged();
 
   async_dispatcher_t* dispatcher_;
-  fuchsia::ui::activity::State state_;
+  fuchsia_ui_activity::State state_;
   zx::time_monotonic time_;
-  fuchsia::ui::activity::ListenerPtr listener_;
+  std::optional<fidl::Client<fuchsia_ui_activity::Listener>> listener_;
+  AsyncEventHandlerClosed<fuchsia_ui_activity::Listener> event_handler_;
 };
 
 }  // namespace forensics::stubs

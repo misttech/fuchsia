@@ -9,40 +9,43 @@
 
 namespace forensics::stubs {
 
-UIStateProvider::UIStateProvider(async_dispatcher_t* dispatcher, fuchsia::ui::activity::State state,
+UIStateProvider::UIStateProvider(async_dispatcher_t* dispatcher, fuchsia_ui_activity::State state,
                                  zx::time_monotonic time)
     : dispatcher_(dispatcher), state_(state), time_(time) {}
 
-void UIStateProvider::WatchState(
-    ::fidl::InterfaceHandle<::fuchsia::ui::activity::Listener> listener) {
-  listener_.Bind(std::move(listener), dispatcher_);
-  listener_.set_error_handler([](const zx_status_t status) {
-    FX_PLOGS(WARNING, status) << "Lost connection to fuchsia.ui.activity listener";
-  });
-
+void UIStateProvider::WatchState(WatchStateRequest& request, WatchStateCompleter::Sync& completer) {
+  listener_.emplace(std::move(request.listener()), dispatcher_, &event_handler_);
   OnStateChanged();
 }
 
-void UIStateProvider::SetState(fuchsia::ui::activity::State state, zx::time_monotonic time) {
+void UIStateProvider::SetState(fuchsia_ui_activity::State state, zx::time_monotonic time) {
   state_ = state;
   time_ = time;
 
-  if (!binding() || !binding()->is_bound() || !listener_.is_bound()) {
+  if (!IsBound() || !listener_.has_value()) {
     return;
   }
 
   OnStateChanged();
 }
 
-void UIStateProvider::UnbindListener() { listener_.Unbind(); }
+void UIStateProvider::UnbindListener() { listener_ = std::nullopt; }
 
 void UIStateProvider::OnStateChanged() {
   auto check_callback = fit::defer(
       [] { FX_LOGS(FATAL) << "fuchsia.ui.activity/Listener.OnStateChange not responded to"; });
 
-  listener_->OnStateChanged(
-      state_, time_.get(),
-      [check_callback = std::move(check_callback)]() mutable { check_callback.cancel(); });
+  (*listener_)
+      ->OnStateChanged({{
+          .state = state_,
+          .transition_time = time_.get(),
+      }})
+      .ThenExactlyOnce(
+          [check_callback = std::move(check_callback)](
+              fidl::Result<fuchsia_ui_activity::Listener::OnStateChanged>& result) mutable {
+            FX_CHECK(result.is_ok()) << "OnStateChanged failed: " << result.error_value();
+            check_callback.cancel();
+          });
 }
 
 }  // namespace forensics::stubs
