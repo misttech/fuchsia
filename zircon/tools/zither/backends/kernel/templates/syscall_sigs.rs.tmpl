@@ -11,11 +11,11 @@
 // DO NOT EDIT. Generated from FIDL library zx by zither, a Fuchsia platform tool.
 
 #![no_std]
-#![allow(non_camel_case_types)]
+#![allow(non_camel_case_types, unused_imports)]
 
 use object::HandleValue;
 use user_copy::{UserInOutPtr, UserInPtr, UserOutPtr};
-use zx_status::Status;
+use zx_status::{ErrorStatus, Status};
 
 {{ range . }}
 {{ if .Rust }}

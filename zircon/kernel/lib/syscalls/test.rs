@@ -7,48 +7,63 @@
 use object::HandleValue;
 use syscalls_macro::syscall;
 use user_copy::{UserInOutPtr, UserInPtr, UserOutPtr};
-use zx_status::Status;
+use zx_status::{ErrorStatus, Status};
 
 #[syscall]
-pub fn sys_syscall_test_rust_0() -> Status {
-    Status::OK
+pub fn sys_syscall_test_rust_0() -> Result<(), ErrorStatus> {
+    Ok(())
 }
 
 #[syscall]
-pub fn sys_syscall_test_rust_1(a: i32) -> Status {
-    Status::from_raw(a)
+pub fn sys_syscall_test_rust_1(a: i32) -> Result<(), ErrorStatus> {
+    ErrorStatus::ok(a)
 }
 
 #[syscall]
-pub fn sys_syscall_test_rust_2(a: i32, b: i32) -> Status {
-    Status::from_raw(a.wrapping_add(b))
+pub fn sys_syscall_test_rust_2(a: i32, b: i32) -> Result<(), ErrorStatus> {
+    ErrorStatus::ok(a.wrapping_add(b))
 }
 
 #[syscall]
-pub fn sys_syscall_test_rust_3(a: i32, b: i32, c: i32) -> Status {
-    Status::from_raw(a.wrapping_add(b).wrapping_add(c))
+pub fn sys_syscall_test_rust_3(a: i32, b: i32, c: i32) -> Result<(), ErrorStatus> {
+    ErrorStatus::ok(a.wrapping_add(b).wrapping_add(c))
 }
 
 #[syscall]
-pub fn sys_syscall_test_rust_4(a: i32, b: i32, c: i32, d: i32) -> Status {
-    Status::from_raw(a.wrapping_add(b).wrapping_add(c).wrapping_add(d))
+pub fn sys_syscall_test_rust_4(a: i32, b: i32, c: i32, d: i32) -> Result<(), ErrorStatus> {
+    ErrorStatus::ok(a.wrapping_add(b).wrapping_add(c).wrapping_add(d))
 }
 
 #[syscall]
-pub fn sys_syscall_test_rust_5(a: i32, b: i32, c: i32, d: i32, e: i32) -> Status {
-    Status::from_raw(a.wrapping_add(b).wrapping_add(c).wrapping_add(d).wrapping_add(e))
+pub fn sys_syscall_test_rust_5(a: i32, b: i32, c: i32, d: i32, e: i32) -> Result<(), ErrorStatus> {
+    ErrorStatus::ok(a.wrapping_add(b).wrapping_add(c).wrapping_add(d).wrapping_add(e))
 }
 
 #[syscall]
-pub fn sys_syscall_test_rust_6(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> Status {
-    Status::from_raw(
+pub fn sys_syscall_test_rust_6(
+    a: i32,
+    b: i32,
+    c: i32,
+    d: i32,
+    e: i32,
+    f: i32,
+) -> Result<(), ErrorStatus> {
+    ErrorStatus::ok(
         a.wrapping_add(b).wrapping_add(c).wrapping_add(d).wrapping_add(e).wrapping_add(f),
     )
 }
 
 #[syscall]
-pub fn sys_syscall_test_rust_7(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32) -> Status {
-    Status::from_raw(
+pub fn sys_syscall_test_rust_7(
+    a: i32,
+    b: i32,
+    c: i32,
+    d: i32,
+    e: i32,
+    f: i32,
+    g: i32,
+) -> Result<(), ErrorStatus> {
+    ErrorStatus::ok(
         a.wrapping_add(b)
             .wrapping_add(c)
             .wrapping_add(d)
@@ -68,8 +83,8 @@ pub fn sys_syscall_test_rust_8(
     f: i32,
     g: i32,
     h: i32,
-) -> Status {
-    Status::from_raw(
+) -> Result<(), ErrorStatus> {
+    ErrorStatus::ok(
         a.wrapping_add(b)
             .wrapping_add(c)
             .wrapping_add(d)
@@ -81,60 +96,54 @@ pub fn sys_syscall_test_rust_8(
 }
 
 #[syscall]
-pub fn sys_syscall_test_rust_wrapper(a: i32, b: i32, c: i32) -> Status {
+pub fn sys_syscall_test_rust_wrapper(a: i32, b: i32, c: i32) -> Result<(), ErrorStatus> {
     if a < 0 || b < 0 || c < 0 {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS.into());
     }
     let ret = a.wrapping_add(b).wrapping_add(c);
-    if ret > 50 { Status::OUT_OF_RANGE } else { Status::from_raw(ret) }
+    if ret > 50 { Err(Status::OUT_OF_RANGE.into()) } else { ErrorStatus::ok(ret) }
 }
 
 #[syscall]
-pub fn sys_syscall_test_rust_inptr(ptr: UserInPtr<i32>, value: UserOutPtr<i32>) -> Status {
+pub fn sys_syscall_test_rust_inptr(
+    ptr: UserInPtr<i32>,
+    value: UserOutPtr<i32>,
+) -> Result<(), ErrorStatus> {
     if ptr.is_null() || value.is_null() {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS.into());
     }
-    match ptr.read() {
-        Ok(val) => match value.write(val) {
-            Ok(()) => Status::OK,
-            Err(err) => err,
-        },
-        Err(err) => err,
-    }
+    let val = ptr.read()?;
+    value.write(val)?;
+    Ok(())
 }
 
 #[syscall]
-pub fn sys_syscall_test_rust_outptr(value: i32, ptr: UserOutPtr<i32>) -> Status {
+pub fn sys_syscall_test_rust_outptr(value: i32, ptr: UserOutPtr<i32>) -> Result<(), ErrorStatus> {
     if ptr.is_null() {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS.into());
     }
-    match ptr.write(value) {
-        Ok(()) => Status::OK,
-        Err(err) => err,
-    }
+    ptr.write(value)?;
+    Ok(())
 }
 
 #[syscall]
-pub fn sys_syscall_test_rust_inoutptr(ptr: UserInOutPtr<i32>) -> Status {
+pub fn sys_syscall_test_rust_inoutptr(ptr: UserInOutPtr<i32>) -> Result<(), ErrorStatus> {
     if ptr.is_null() {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS.into());
     }
-    match ptr.read() {
-        Ok(val) => match ptr.write(val.wrapping_add(val)) {
-            Ok(()) => Status::OK,
-            Err(err) => err,
-        },
-        Err(err) => err,
-    }
+    let val = ptr.read()?;
+    ptr.write(val.wrapping_add(val))?;
+    Ok(())
 }
 
 #[syscall]
-pub fn sys_syscall_test_rust_handle(handle: HandleValue, value: UserOutPtr<u32>) -> Status {
+pub fn sys_syscall_test_rust_handle(
+    handle: HandleValue,
+    value: UserOutPtr<u32>,
+) -> Result<(), ErrorStatus> {
     if value.is_null() {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS.into());
     }
-    match value.write(handle.raw_value()) {
-        Ok(()) => Status::OK,
-        Err(err) => err,
-    }
+    value.write(handle.raw_value())?;
+    Ok(())
 }

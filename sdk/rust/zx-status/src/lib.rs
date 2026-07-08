@@ -287,6 +287,63 @@ impl From<core::convert::Infallible> for Status {
     }
 }
 
+/// A non-zero Zircon status code representing an error.
+///
+/// Because this wraps a `NonZero<sys::zx_status_t>`, `Result<T, ErrorStatus>` has a niche at `0`
+/// (`ZX_OK`), guaranteeing that `Result<(), ErrorStatus>` has the exact same 4-byte memory layout
+/// and machine ABI as `sys::zx_status_t` (`Status`).
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+#[repr(transparent)]
+pub struct ErrorStatus(core::num::NonZero<sys::zx_status_t>);
+
+impl ErrorStatus {
+    pub fn from_raw(raw: sys::zx_status_t) -> Option<Self> {
+        core::num::NonZero::new(raw).map(ErrorStatus)
+    }
+
+    pub fn into_raw(self) -> sys::zx_status_t {
+        self.0.get()
+    }
+
+    pub fn ok(raw: sys::zx_status_t) -> Result<(), Self> {
+        match core::num::NonZero::new(raw) {
+            Some(err) => Err(ErrorStatus(err)),
+            None => Ok(()),
+        }
+    }
+}
+
+impl From<Status> for ErrorStatus {
+    #[inline]
+    fn from(status: Status) -> Self {
+        ErrorStatus(
+            core::num::NonZero::new(status.into_raw())
+                .expect("Attempted to convert Status::OK into ErrorStatus"),
+        )
+    }
+}
+
+impl From<ErrorStatus> for Status {
+    #[inline]
+    fn from(err: ErrorStatus) -> Self {
+        Status::from_raw(err.0.get())
+    }
+}
+
+impl fmt::Debug for ErrorStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&Status::from_raw(self.0.get()), f)
+    }
+}
+
+impl fmt::Display for ErrorStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&Status::from_raw(self.0.get()), f)
+    }
+}
+
+impl core::error::Error for ErrorStatus {}
+
 #[cfg(test)]
 mod test {
     extern crate std;
@@ -312,5 +369,11 @@ mod test {
 
         let err_result: Result<(), Status> = Status::BAD_SYSCALL.into();
         assert_eq!(err_result, Err(Status::BAD_SYSCALL));
+    }
+
+    #[test]
+    fn error_status_conversions() {
+        let err_res: Result<(), super::ErrorStatus> = Err(Status::BAD_SYSCALL.into());
+        assert_eq!(err_res, Err(Status::BAD_SYSCALL.into()));
     }
 }

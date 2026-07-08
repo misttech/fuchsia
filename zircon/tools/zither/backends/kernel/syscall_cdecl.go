@@ -194,6 +194,8 @@ func rustKernelParameterType(param zither.SyscallParameter) string {
 			elementType = "u8"
 		} else if isPointer {
 			elementType = rust.DescribeType(*param.Type.ElementType, rust.CaseStyleSyscall)
+		} else if kind == zither.TypeKindHandle {
+			elementType = "HandleValue"
 		}
 
 		switch param.Orientation {
@@ -201,7 +203,7 @@ func rustKernelParameterType(param zither.SyscallParameter) string {
 			typ = fmt.Sprintf("UserInPtr<%s>", elementType)
 		case zither.ParameterOrientationOut:
 			if kind == zither.TypeKindHandle && !param.HasTag(zither.ParameterTagDecayedFromVector) {
-				typ = fmt.Sprintf("*mut %s", elementType)
+				typ = fmt.Sprintf("&mut %s", elementType)
 			} else {
 				typ = fmt.Sprintf("UserOutPtr<%s>", elementType)
 			}
@@ -220,7 +222,7 @@ func rustKernelReturnType(syscall zither.Syscall) string {
 	}
 	typ := rust.DescribeType(*syscall.ReturnType, rust.CaseStyleSyscall)
 	if typ == "zx_status_t" {
-		return "Status"
+		return "Result<(), ErrorStatus>"
 	}
 	return typ
 }

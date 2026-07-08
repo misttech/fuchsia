@@ -64,6 +64,7 @@ pub fn syscall(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let block = &fn_item.block;
 
     quote! {
+        #[allow(improper_ctypes_definitions)]
         #[unsafe(no_mangle)]
         #vis extern "C" fn #fn_name(#inputs) #output #block
 
