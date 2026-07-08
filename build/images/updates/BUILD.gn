@@ -167,7 +167,7 @@ all_package_manifests_inputs = []
 # The ':package_lists', and bundle-dependent package lists all require a product
 # bundle, so we only create them if there's a product bundle to create them
 # from.
-if (use_bazel_images_only && bazel_product_bundle_target != "") {
+if (bazel_product_bundle_target != "") {
   # These package lists are used by `fx list-packages`, and while
   # workflows remain that use those, they need to be created.
   group("package_lists") {

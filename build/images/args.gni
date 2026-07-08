@@ -43,10 +43,6 @@ declare_args() {
   # Include an account partition in the FVM image if set to true.
   include_account_in_fvm = false
 
-  # If true, the images.json build API modules will only include images
-  # identified by bazel_product_bundle_target and its dependencies.
-  use_bazel_images_only = true
-
   # bazel_product_bundle_[full|root|prefix|board] together identifies the
   # bazel_product_bundle target in GN target to use in Bazel assembly. The
   # actual target used is:
@@ -84,8 +80,6 @@ declare_args() {
 }
 
 if (main_pb_label != "") {
-  assert(use_bazel_images_only,
-         "main_pb_label can only be set when use_bazel_images_only=true")
   bazel_product_bundle_target = main_pb_label
 } else if (bazel_product_bundle_full != false &&
            bazel_product_bundle_board != "") {
@@ -102,11 +96,10 @@ if (main_pb_label != "") {
 
 declare_args() {
   # The build is configured as a multi-product build. This is any product.gni
-  # that is bazel-only, but doesn't specify a default PB. If this is bazel-only,
-  # and a main_pb_label is provided, we are also multi-product.
+  # that doesn't specify a default PB. If a main_pb_label is provided, we
+  # are also multi-product.
   is_multi_product_build =
-      use_bazel_images_only &&
-      (bazel_product_bundle_target == "" || main_pb_label != "")
+      bazel_product_bundle_target == "" || main_pb_label != ""
 }
 
 declare_args() {

@@ -5,8 +5,15 @@
 
 ### Test fx flash
 
+function read_host_platform() {
+  source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)/../../lib/platform.sh" || exit $?
+  echo "$HOST_PLATFORM"
+}
+
 BT_FILE_DEPS=(
+  "prebuilt/third_party/jq/$(read_host_platform)/bin/jq"
   "scripts/fx"
+  "tools/devshell/jq.fx"
   "tools/devshell/flash"
   "tools/devshell/lib/fx-cmd-locator.sh"
   "tools/devshell/lib/fx-flash.sh"
@@ -28,6 +35,12 @@ BT_SET_UP() {
   source "${BT_TEMP_DIR}/tools/devshell/lib/vars.sh"
   source "${BT_TEMP_DIR}/tools/devshell/tests/lib/fuchsia-mock.sh"
   fx="$(btf::setup_fx)"
+  cat > "${BT_TEMP_DIR}/out/default/args.json" <<EOF
+{
+  "bazel_product_bundle_prefix": "//products/core:product_bundle",
+  "bazel_product_bundle_board": "x64"
+}
+EOF
   fx-config-read
   ffx="$(btf::make_installed_hosttools_mock ffx)"
   btf::make_mock "${BT_TEMP_DIR}/tools/devshell/get-flash-source"
