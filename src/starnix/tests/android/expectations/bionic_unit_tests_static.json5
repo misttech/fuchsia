@@ -25,11 +25,34 @@
                 "android_mallopt.DISABLED_multiple_enable_gwp_asan",
                 "__cxa_demangle.DISABLED_cxa_demangle_fuzz_167977068",
 
-                // Requires MTE support
+                // TODO(https://fxbug.dev/528339136): Starnix does not support ARM64 memory tagging.
                 "malloc.disable_mte",
+
+                // TODO(https://fxbug.dev/531779277): This group of tests all verify Scudo behavior,
+                // which Starnix doesn't support. They are skipped during runtime by the Bionic test
+                // framework, but something is going awry in translating that to the Fuchsia test
+                // framework's expectation_comparer, which considers them failing.
+                "malloc.alloc_after_fork",
+                "android_mallopt.get_fault_information_errors",
+                "android_mallopt.get_fault_information_scudo",
                 "malloc.allocation_slack",
                 "malloc.mallopt_scudo_only_options",
                 "malloc.zero_init",
+
+                // TODO(https://fxbug.dev/531779277): This group of tests are skipped internally by
+                // the Bionic test framework, as they are irrelevant for low-memory devices.
+                // However, our test runner has a bug and still considers them failing.
+                "malloc.zeroed_allocations_small_medium_sizes",
+                "malloc.zeroed_allocations_large_sizes",
+                "malloc.zeroed_allocations_realloc",
+
+                // TODO(https://fxbug.dev/531779277): These tests validate deprecated malloc
+                // functions which Starnix doesn't support. They are skipped internally by the
+                // Bionic test framework, but our test runner has a bug and considers them failing.
+                "malloc.pvalloc_std",
+                "malloc.pvalloc_overflow",
+                "malloc.valloc_std",
+                "malloc.valloc_overflow",
 
                 // TODO(https://fxbug.dev/42066087): CLONE_VM for child processes.
                 "sched.clone",
@@ -125,17 +148,6 @@
                 "pthread.pthread_sigmask64_SIGTRMIN",
                 "signal.pthread_sigqueue_other",
 
-                // This test requires scudo
-                "malloc.alloc_after_fork",
-                "android_mallopt.get_fault_information_errors",
-                "android_mallopt.get_fault_information_scudo",
-
-                // Tests for deprecated functions not supported in our configuration.
-                "malloc.pvalloc_std",
-                "malloc.pvalloc_overflow",
-                "malloc.valloc_std",
-                "malloc.valloc_overflow",
-
                 // These tests only work when the test suite is dynamically linked so they can find icu.
                 "wctype.towlower",
                 "wctype.towlower_l",
@@ -160,11 +172,6 @@
                 // These tests were updated and no longer pass.
                 "stdio.popen_return_value_signal",
                 "stdio_nofortify.popen_return_value_signal",
-
-                // These tests are skipped on low memory devices.
-                "malloc.zeroed_allocations_small_medium_sizes",
-                "malloc.zeroed_allocations_large_sizes",
-                "malloc.zeroed_allocations_realloc",
 
                 // TODO(b/308967162): Flaky on the bots - needs to be investigated.
                 "properties.empty_value",
