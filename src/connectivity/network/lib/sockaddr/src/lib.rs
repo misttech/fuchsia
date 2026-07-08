@@ -42,7 +42,7 @@ impl TryToSockaddrLl for socket2::SockAddr {
 
         // SAFETY: we've checked that len <= size_of<sockaddr_ll>().
         unsafe {
-            let sockaddr: *const libc::sockaddr = self.as_ptr();
+            let sockaddr: *const libc::sockaddr = self.as_ptr().cast();
             let sockaddr_ll: *mut libc::sockaddr_ll = &mut sockaddr_ll;
             std::ptr::copy_nonoverlapping(sockaddr.cast::<u8>(), sockaddr_ll.cast::<u8>(), len);
         }

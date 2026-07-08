@@ -52,7 +52,6 @@ rust_library(
     crate_features = [
         "default",
         "log",
-        "net",
         "os-ext",
         "os-poll",
     ],

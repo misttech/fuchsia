@@ -259,7 +259,11 @@ impl UdpSocketHelpers for ot::UdpSocket<'_> {
             ot::Error::Failed
         })?;
 
-        socket.as_ref().set_ttl(DEFAULT_HOP_LIMIT.into()).map_err(move |err| {
+        socket.as_ref().set_unicast_hops_v6(DEFAULT_HOP_LIMIT.into()).map_err(move |err| {
+            error!(tag = "udp"; "Error: {:?}", err);
+            ot::Error::Failed
+        })?;
+        socket.as_ref().set_multicast_hops_v6(DEFAULT_HOP_LIMIT.into()).map_err(move |err| {
             error!(tag = "udp"; "Error: {:?}", err);
             ot::Error::Failed
         })?;
@@ -333,7 +337,11 @@ impl UdpSocketHelpers for ot::UdpSocket<'_> {
         let should_set_hop_limit = info.hop_limit() > 0 || info.allow_zero_hop_limit();
 
         if should_set_hop_limit {
-            socket.as_ref().set_ttl(info.hop_limit().into()).map_err(move |err| {
+            socket.as_ref().set_unicast_hops_v6(info.hop_limit().into()).map_err(move |err| {
+                error!(tag = "udp"; "Error: {:?}", err);
+                ot::Error::Failed
+            })?;
+            socket.as_ref().set_multicast_hops_v6(info.hop_limit().into()).map_err(move |err| {
                 error!(tag = "udp"; "Error: {:?}", err);
                 ot::Error::Failed
             })?;
@@ -383,10 +391,16 @@ impl UdpSocketHelpers for ot::UdpSocket<'_> {
 
         // Restore hop limit
         if should_set_hop_limit {
-            socket.as_ref().set_ttl(DEFAULT_HOP_LIMIT.into()).map_err(move |err| {
+            socket.as_ref().set_unicast_hops_v6(DEFAULT_HOP_LIMIT.into()).map_err(move |err| {
                 error!(tag = "udp"; "Error: {:?}", err);
                 ot::Error::Failed
             })?;
+            socket.as_ref().set_multicast_hops_v6(DEFAULT_HOP_LIMIT.into()).map_err(
+                move |err| {
+                    error!(tag = "udp"; "Error: {:?}", err);
+                    ot::Error::Failed
+                },
+            )?;
         }
 
         // Reset the multicast loop flag.

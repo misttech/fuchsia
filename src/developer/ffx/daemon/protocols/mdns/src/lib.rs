@@ -239,7 +239,7 @@ mod tests {
             Some(socket2::Protocol::UDP),
         )
         .unwrap();
-        socket.set_ttl(1).unwrap();
+        socket.set_ttl_v4(1).unwrap();
         socket.set_multicast_ttl_v4(1).unwrap();
         let addr: SocketAddr = (std::net::Ipv4Addr::LOCALHOST, bound_port).into();
 
@@ -314,7 +314,7 @@ mod tests {
             Some(socket2::Protocol::UDP),
         )
         .unwrap();
-        socket.set_ttl(1).unwrap();
+        socket.set_ttl_v4(1).unwrap();
         socket.set_multicast_ttl_v4(1).unwrap();
         let addr: SocketAddr = (std::net::Ipv4Addr::UNSPECIFIED, bound_port).into();
         // This is just a copy of the valid mdns packet but with a few bytes altered.
@@ -361,7 +361,7 @@ mod tests {
             Some(socket2::Protocol::UDP),
         )
         .unwrap();
-        socket.set_ttl(1).unwrap();
+        socket.set_ttl_v4(1).unwrap();
         socket.set_multicast_ttl_v4(1).unwrap();
         let addr: SocketAddr = (std::net::Ipv4Addr::UNSPECIFIED, bound_port).into();
 

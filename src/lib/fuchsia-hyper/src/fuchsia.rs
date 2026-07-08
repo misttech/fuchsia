@@ -332,9 +332,9 @@ mod test {
         let stream = socket2::SockRef::from(stream.std());
 
         assert_matches!(stream.keepalive(), Ok(v) if v);
-        assert_matches!(stream.keepalive_time(), Ok(v) if v == idle);
-        assert_matches!(stream.keepalive_interval(), Ok(v) if v == interval);
-        assert_matches!(stream.keepalive_retries(), Ok(v) if v == count);
+        assert_matches!(stream.tcp_keepalive_time(), Ok(v) if v == idle);
+        assert_matches!(stream.tcp_keepalive_interval(), Ok(v) if v == interval);
+        assert_matches!(stream.tcp_keepalive_retries(), Ok(v) if v == count);
     }
 
     #[fasync::run_singlethreaded(test)]

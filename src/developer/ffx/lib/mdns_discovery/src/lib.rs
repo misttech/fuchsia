@@ -1049,7 +1049,7 @@ fn make_sender_socket(
                 Some(socket2::Protocol::UDP),
             )
             .map_err(MdnsDiscoveryError::Io)?;
-            socket.set_ttl(ttl).map_err(MdnsDiscoveryError::SetSocketOption)?;
+            socket.set_ttl_v4(ttl).map_err(MdnsDiscoveryError::SetSocketOption)?;
             socket.set_multicast_if_v4(saddr.ip()).map_err(MdnsDiscoveryError::SetSocketOption)?;
             socket.set_multicast_ttl_v4(ttl).map_err(MdnsDiscoveryError::SetSocketOption)?;
             socket.bind(&addr.into()).map_err(|e| MdnsDiscoveryError::BindSocket(addr, e))?;

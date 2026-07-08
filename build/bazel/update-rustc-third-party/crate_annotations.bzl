@@ -92,7 +92,7 @@ CRATE_ANNOTATIONS = {
     ],
     "tokio": [
         crate.annotation(
-            version = "1.38.1",
+            version = "1.52.3",
             deps = crate.select(
                 common = [],
                 selects = {
@@ -100,10 +100,10 @@ CRATE_ANNOTATIONS = {
                         "//third_party/rust_crates/vendor/bytes-1.11.1:bytes",
                         "//third_party/rust_crates/vendor/libc-0.2.186:libc",
                         "//third_party/rust_crates/ask2patch/memchr",
-                        "//third_party/rust_crates/vendor/mio-0.8.11:mio",
+                        "//third_party/rust_crates/vendor/mio-1.2.1:mio",
                         "//third_party/rust_crates/vendor/num_cpus-1.17.0:num_cpus",
                         "//third_party/rust_crates/vendor/signal-hook-registry-1.4.8:signal_hook_registry",
-                        "//third_party/rust_crates/vendor/socket2-0.5.10:socket2",
+                        "//third_party/rust_crates/vendor/socket2-0.6.4:socket2",
                     ],
                 },
             ),

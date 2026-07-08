@@ -5034,7 +5034,7 @@ async fn redirect_original_destination_v4(name: &str, test_case: TestCaseV4) {
 
     // The original destination should be observable on both the client and server sockets.
     let verify_original_dst = |socket: &socket2::Socket| {
-        let result = socket.original_dst();
+        let result = socket.original_dst_v4();
         if expect_redirect {
             assert_eq!(
                 result
@@ -5114,7 +5114,7 @@ async fn redirect_original_destination_v6(name: &str, test_case: TestCaseV6) {
     // Although this connection was redirected, SO_ORIGINAL_DST should return
     // ENOENT because the original destination was not an IPv4 address.
     let verify_original_dst = |socket: &socket2::Socket| {
-        let result = socket.original_dst();
+        let result = socket.original_dst_v4();
         let error = result.expect_err("socket should have no original destination").kind();
         assert_eq!(error, std::io::ErrorKind::NotFound);
     };
@@ -5186,7 +5186,7 @@ async fn redirect_original_destination_dual_stack(name: &str, test_case: TestCas
 
     // The original destination should be observable on both the client and server sockets.
     let verify_original_dst = |socket: &socket2::Socket| {
-        let result = socket.original_dst();
+        let result = socket.original_dst_v4();
         if expect_redirect {
             assert_eq!(
                 result

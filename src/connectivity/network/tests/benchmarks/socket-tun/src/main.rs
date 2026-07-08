@@ -261,7 +261,7 @@ async fn bench_tcp<'a, I: IpExt>(
 
         // Disable the Nagle algorithm, it introduces artificial
         // latency that defeats this benchmark.
-        client_sock.set_nodelay(true).expect("set TCP NODELAY to true");
+        client_sock.set_tcp_nodelay(true).expect("set TCP NODELAY to true");
         client_sock.connect(&listen_sockaddr).expect("connect");
 
         let (server_sock, _): (_, socket2::SockAddr) = listen_sock.accept().expect("accept");

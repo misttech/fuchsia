@@ -88,7 +88,7 @@ rust_library(
         "//third_party/rust_crates/vendor/libc-0.2.186:libc",
         "//third_party/rust_crates/vendor/serde-1.0.228:serde",
         "//third_party/rust_crates/vendor/slab-0.4.11:slab",
-        "//third_party/rust_crates/vendor/tokio-1.38.1:tokio",
+        "//third_party/rust_crates/vendor/tokio-1.52.3:tokio",
         "//third_party/rust_crates/vendor/tracing-0.1.44:tracing",
         "//third_party/rust_crates/vendor/which-4.0.2:which",
     ],

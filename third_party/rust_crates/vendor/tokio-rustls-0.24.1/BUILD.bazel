@@ -79,6 +79,6 @@ rust_library(
     version = "0.24.1",
     deps = [
         "//third_party/rust_crates/vendor/rustls-0.21.12:rustls",
-        "//third_party/rust_crates/vendor/tokio-1.38.1:tokio",
+        "//third_party/rust_crates/vendor/tokio-1.52.3:tokio",
     ],
 )

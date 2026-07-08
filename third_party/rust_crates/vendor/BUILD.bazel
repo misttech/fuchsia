@@ -1597,14 +1597,14 @@ alias(
 )
 
 alias(
-    name = "mio-0.8.11",
-    actual = "//third_party/rust_crates/vendor/mio-0.8.11:mio",
+    name = "mio-1.2.1",
+    actual = "//third_party/rust_crates/vendor/mio-1.2.1:mio",
     tags = ["manual"],
 )
 
 alias(
     name = "mio",
-    actual = "//third_party/rust_crates/vendor/mio-0.8.11:mio",
+    actual = "//third_party/rust_crates/vendor/mio-1.2.1:mio",
     tags = ["manual"],
 )
 
@@ -2821,14 +2821,14 @@ alias(
 )
 
 alias(
-    name = "socket2-0.5.10",
-    actual = "//third_party/rust_crates/vendor/socket2-0.5.10:socket2",
+    name = "socket2-0.6.4",
+    actual = "//third_party/rust_crates/vendor/socket2-0.6.4:socket2",
     tags = ["manual"],
 )
 
 alias(
     name = "socket2",
-    actual = "//third_party/rust_crates/vendor/socket2-0.5.10:socket2",
+    actual = "//third_party/rust_crates/vendor/socket2-0.6.4:socket2",
     tags = ["manual"],
 )
 
@@ -3013,14 +3013,14 @@ alias(
 )
 
 alias(
-    name = "tokio-1.38.1",
-    actual = "//third_party/rust_crates/vendor/tokio-1.38.1:tokio",
+    name = "tokio-1.52.3",
+    actual = "//third_party/rust_crates/vendor/tokio-1.52.3:tokio",
     tags = ["manual"],
 )
 
 alias(
     name = "tokio",
-    actual = "//third_party/rust_crates/vendor/tokio-1.38.1:tokio",
+    actual = "//third_party/rust_crates/vendor/tokio-1.52.3:tokio",
     tags = ["manual"],
 )
 

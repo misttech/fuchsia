@@ -241,7 +241,7 @@ simplelog = "0.10.2"
 siphasher = "1.0.2"
 slab = "0.4.11"
 smallvec = {version= "1.15.1", features = ["const_generics", "const_new", "union"]}
-socket2 = { version = "0.5.10", features = ["all"] }
+socket2 = { version = "=0.6.4", features = ["all"] }
 splines = "5.0.0"
 static_assertions = "1.1.0"
 strsim = "0.11.1"
@@ -305,7 +305,7 @@ rust_icu_unorm2 = { version = "5.6.0", default-features = false, features = ["re
 rust_icu_ustring = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
 sec1 = { version = "0.7.3", features = ["alloc", "der", "pkcs8", "zeroize"] }
 spki = { version = "0.7.3", features = ["alloc"] }
-tokio = { version = "=1.38.1", default-features = false }
+tokio = { version = "=1.52.3", default-features = false }
 trust-dns-proto = { version = "0.22.0", default-features = false, features = ["testing"] }
 trust-dns-resolver = { version = "0.22.0", default-features = false, features = ["testing"] }
 ttf-parser = "0.10.1"
@@ -329,7 +329,7 @@ indoc = "2.0.7"
 loom = { version = "0.7.2", features = ["checkpoint", "futures"] }
 # TODO(https://fxbug.dev/106164) Remove this explicit mio dependency when it can be
 # pulled in automatically by tokio
-mio = { version = "0.8.11", features = ["net", "os-ext", "os-poll"] }
+mio = { version = "=1.2.1", features = ["net", "os-ext", "os-poll"] }
 notify = { version = "5.1.0", default-features = false, features = ["macos_fsevent"] }
 # TODO(https://fxbug.dev/106164) Remove this explicit num_cpus dependency when it can be
 # pulled in automatically by tokio
@@ -354,7 +354,7 @@ tar = "0.4.46"
 term_grid = "0.2.0"
 # TODO(https://fxbug.dev/106164) Enable the "rt" and "net" features here once gnaw
 # supports target-specific feature resolution
-tokio = { version = "=1.38.1", default-features = false }
+tokio = { version = "=1.52.3", default-features = false }
 tokio-stream = "0.1.18"
 wait-timeout = "0.2.1"
 xattr = "1.6.1"
@@ -393,7 +393,6 @@ walkdir = { path = "ask2patch/walkdir" }
 ### Empty Forks: empty forks kept only for satisfying cargo's resolution
 # keep-sorted start
 android_system_properties = { path = "empty/android_system_properties" }
-backtrace = { path = "empty/backtrace" }
 cc = { path = "empty/cc" }
 cfg_aliases = { path = "empty/cfg_aliases"}
 cloudabi = { path = "empty/cloudabi"}
@@ -1196,7 +1195,7 @@ env_vars = [
 # TODO(https://fxbug.dev/106164) This manual configuration enables the "rt", "net"
 # "fs" and "sync" features on non-Fuchsia targets. It should be removed
 # once gnaw supports target-specific features.
-[gn.package.tokio."1.38.1"]
+[gn.package.tokio."1.52.3"]
 reviewed_features = [
   "bytes",
   "default",
@@ -1215,15 +1214,15 @@ reviewed_features = [
   "time",
 ]
 
-[gn.package.tokio."1.38.1".platform."cfg(not(target_os = \"fuchsia\"))"]
+[gn.package.tokio."1.52.3".platform."cfg(not(target_os = \"fuchsia\"))"]
 deps = [
   ":bytes-v1_11_1",
   ":libc-v0_2_186",
   ":memchr-v2_8_0",
-  ":mio-v0_8_11",
+  ":mio-v1_2_1",
   ":num_cpus-v1_17_0",
   ":signal-hook-registry-v1_4_8",
-  ":socket2-v0_5_10",
+  ":socket2-v0_6_4",
 ]
 rustflags = [
   "--cfg=feature=\\\"bytes\\\"",

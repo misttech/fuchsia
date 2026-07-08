@@ -437,7 +437,7 @@ impl SocketType for TcpSocket {
                             let original_dst = socket2::Socket::from(
                                 stream.std().try_clone().expect("clone socket"),
                             )
-                            .original_dst()
+                            .original_dst_v4()
                             .expect("get original destination of connection");
                             assert_eq!(original_dst, expected.into());
                         } else {
@@ -501,7 +501,7 @@ impl SocketType for TcpSocket {
                             let original_dst = socket2::Socket::from(
                                 stream.std().try_clone().expect("clone socket"),
                             )
-                            .original_dst()
+                            .original_dst_v4()
                             .expect("get original destination of connection");
                             assert_eq!(original_dst, expected.into());
                         } else {
