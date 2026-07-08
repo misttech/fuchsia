@@ -11,7 +11,6 @@
 #include <zircon/assert.h>
 #include <zircon/errors.h>
 #include <zircon/status.h>
-#include <zircon/syscalls/object.h>
 #include <zircon/types.h>
 
 #include <algorithm>
@@ -30,7 +29,6 @@
 #include "src/storage/blobfs/blobfs_metrics.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/compression/chunked.h"
-#include "src/storage/blobfs/compression/external_decompressor.h"
 #include "src/storage/blobfs/compression/seekable_decompressor.h"
 #include "src/storage/blobfs/compression_settings.h"
 #include "src/storage/blobfs/format.h"
@@ -39,7 +37,6 @@
 #include "src/storage/blobfs/loader_info.h"
 #include "src/storage/blobfs/node_finder.h"
 #include "src/storage/blobfs/transaction_manager.h"
-#include "src/storage/blobfs/transfer_buffer.h"
 #include "src/storage/lib/trace/trace.h"
 
 namespace blobfs {
@@ -53,51 +50,25 @@ constexpr uint64_t kChunkedHeaderSize = 4 * kBlobfsBlockSize;
 
 BlobLoader::BlobLoader(TransactionManager* txn_manager, BlockIteratorProvider* block_iter_provider,
                        NodeFinder* node_finder, std::shared_ptr<BlobfsMetrics> metrics,
-                       storage::ResizeableVmoBuffer read_mapper, zx::vmo sandbox_vmo,
-                       std::unique_ptr<ExternalDecompressorClient> decompressor_client)
+                       storage::ResizeableVmoBuffer read_mapper)
     : txn_manager_(txn_manager),
       block_iter_provider_(block_iter_provider),
       node_finder_(node_finder),
       metrics_(std::move(metrics)),
-      read_mapper_(std::move(read_mapper)),
-      sandbox_vmo_(std::move(sandbox_vmo)),
-      decompressor_client_(std::move(decompressor_client)) {}
+      read_mapper_(std::move(read_mapper)) {}
 
 BlobLoader::~BlobLoader() { [[maybe_unused]] auto status = read_mapper_.Detach(txn_manager_); }
 
 zx::result<std::unique_ptr<BlobLoader>> BlobLoader::Create(
     TransactionManager* txn_manager, BlockIteratorProvider* block_iter_provider,
-    NodeFinder* node_finder, std::shared_ptr<BlobfsMetrics> metrics,
-    DecompressorCreatorConnector* decompression_connector) {
-  auto read_mapper = storage::ResizeableVmoBuffer(txn_manager->Info().block_size);
+    NodeFinder* node_finder, std::shared_ptr<BlobfsMetrics> metrics) {
+  storage::ResizeableVmoBuffer read_mapper(txn_manager->Info().block_size);
   if (auto status = read_mapper.Attach("blobfs-loader", txn_manager); status.is_error()) {
     FX_LOGS(ERROR) << "blobfs: Failed to attach read vmo: " << status.status_string();
     return status.take_error();
   }
-  auto detach = fit::defer([&] { static_cast<void>(read_mapper.Detach(txn_manager)); });
-  zx::vmo sandbox_vmo;
-  std::unique_ptr<ExternalDecompressorClient> decompressor_client = nullptr;
-  if (decompression_connector) {
-    if (zx_status_t status = zx::vmo::create(kTransferBufferSize, 0, &sandbox_vmo);
-        status != ZX_OK) {
-      FX_LOGS(ERROR) << "Failed to create VMO for decompression buffer: "
-                     << zx_status_get_string(status);
-      return zx::error(status);
-    }
-    const char* name = "blobfs-sandbox";
-    sandbox_vmo.set_property(ZX_PROP_NAME, name, strlen(name));
-    zx::result<std::unique_ptr<ExternalDecompressorClient>> client_or =
-        ExternalDecompressorClient::Create(decompression_connector, sandbox_vmo, read_mapper.vmo());
-    if (!client_or.is_ok()) {
-      FX_LOGS(ERROR) << "Failed to create decompressor client: " << client_or.status_string();
-      return client_or.take_error();
-    }
-    decompressor_client = std::move(client_or).value();
-  }
-  detach.cancel();
   return zx::ok(std::unique_ptr<BlobLoader>(new BlobLoader(
-      txn_manager, block_iter_provider, node_finder, std::move(metrics), std::move(read_mapper),
-      std::move(sandbox_vmo), std::move(decompressor_client))));
+      txn_manager, block_iter_provider, node_finder, std::move(metrics), std::move(read_mapper))));
 }
 
 zx::result<LoaderInfo> BlobLoader::LoadBlob(uint32_t node_index) {
@@ -249,7 +220,7 @@ zx::result<std::span<const uint8_t>> BlobLoader::LoadBlocks(uint32_t node_index,
 
   status = StreamBlocks(&block_iter.value(), block_count,
                         [&](uint64_t vmo_offset, uint64_t dev_offset, uint64_t length) {
-                          operations.push_back({.vmoid = read_mapper_.GetHandle(),
+                          operations.push_back({.vmoid = read_mapper_.vmoid(),
                                                 .op = {
                                                     .type = storage::OperationType::kRead,
                                                     .vmo_offset = vmo_offset - block_offset,

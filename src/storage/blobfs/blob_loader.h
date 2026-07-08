@@ -6,7 +6,6 @@
 #define SRC_STORAGE_BLOBFS_BLOB_LOADER_H_
 
 #include <lib/zx/result.h>
-#include <lib/zx/vmo.h>
 #include <zircon/types.h>
 
 #include <cstdint>
@@ -18,7 +17,6 @@
 #include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/blob_verifier.h"
 #include "src/storage/blobfs/blobfs_metrics.h"
-#include "src/storage/blobfs/compression/external_decompressor.h"
 #include "src/storage/blobfs/compression/seekable_decompressor.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/iterator/block_iterator_provider.h"
@@ -38,10 +36,10 @@ class BlobLoader {
   BlobLoader& operator=(BlobLoader&& o) = delete;
 
   // Creates a BlobLoader.
-  static zx::result<std::unique_ptr<BlobLoader>> Create(
-      TransactionManager* txn_manager, BlockIteratorProvider* block_iter_provider,
-      NodeFinder* node_finder, std::shared_ptr<BlobfsMetrics> metrics,
-      DecompressorCreatorConnector* decompression_connector);
+  static zx::result<std::unique_ptr<BlobLoader>> Create(TransactionManager* txn_manager,
+                                                        BlockIteratorProvider* block_iter_provider,
+                                                        NodeFinder* node_finder,
+                                                        std::shared_ptr<BlobfsMetrics> metrics);
 
   // Loads the merkle tree for the blob referenced |inode|, and prepare a pager-backed VMO for
   // data.
@@ -57,8 +55,7 @@ class BlobLoader {
  private:
   BlobLoader(TransactionManager* txn_manager, BlockIteratorProvider* block_iter_provider,
              NodeFinder* node_finder, std::shared_ptr<BlobfsMetrics> metrics,
-             storage::ResizeableVmoBuffer read_mapper, zx::vmo sandbox_vmo,
-             std::unique_ptr<ExternalDecompressorClient> decompressor_client);
+             storage::ResizeableVmoBuffer read_mapper);
 
   // Loads the merkle tree from disk and initializes a VMO mapping and BlobVerifier with the
   // contents.
@@ -91,8 +88,6 @@ class BlobLoader {
   NodeFinder* node_finder_ = nullptr;
   std::shared_ptr<BlobfsMetrics> metrics_;
   storage::ResizeableVmoBuffer read_mapper_;
-  zx::vmo sandbox_vmo_;
-  std::unique_ptr<ExternalDecompressorClient> decompressor_client_ = nullptr;
 };
 
 }  // namespace blobfs
