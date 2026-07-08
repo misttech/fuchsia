@@ -85,7 +85,9 @@ void EndpointServer::OnUnbound(
   }
 
   if (info.is_peer_closed()) {
-    fdf::info("Client disconnected");
+    fdf::info(
+        "EndpointServer ep(0x{:x}) fuchsia.hardware.usb.endpoint.Endpoint client disconnected",
+        ep_addr_);
   } else {
     fdf::error("Server error: {}", info.ToError().status_string());
   }

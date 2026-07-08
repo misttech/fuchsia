@@ -1392,7 +1392,9 @@ void Dwc3::EpServer::QueueRequests(QueueRequestsRequest& request,
                                    QueueRequestsCompleter::Sync& completer) {
   TRACE_DURATION("dwc3", "Dwc3::EpServer::QueueRequests");
   if (!uep_->ep.enabled) {
-    fdf::error("Dwc3: ep({}) not enabled!", uep_->ep.ep_num);
+    fdf::warn(
+        "Dwc3: ep({}) fuchsia.hardware.usb.endpoint.Endpoint/QueueRequests received while endpoint is disabled (expected during SetInterface teardown)",
+        uep_->ep.ep_num);
   }
   if (!uep_->ep.enabled || !dwc3_->power_on()) {
     for (auto& req : request.req()) {
