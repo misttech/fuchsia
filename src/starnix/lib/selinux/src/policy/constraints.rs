@@ -2,204 +2,111 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use super::MlsLevel;
 use super::security_context::SecurityContext;
-use super::{MlsLevel, PolicyId};
 
-use crate::new_policy::bitmap::IdSet;
+use crate::new_policy::traits::PolicyId;
 use crate::new_policy::{
-    ConstraintNames, ConstraintOperand, ConstraintOperator, ConstraintSubject, ConstraintTerm,
+    ConstraintOperator, ConstraintSubject, ConstraintTerm, MlsOperands, MlsOperator, NameExpression,
 };
-
-use thiserror::Error;
-
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
-pub(super) enum ConstraintError {
-    #[error("invalid operand type for context expression: {type_:?}")]
-    InvalidContextOperandType { type_: u32 },
-    #[error("invalid operand type for context expression with names: {type_:?}")]
-    InvalidContextWithNamesOperandType { type_: u32 },
-    #[error("invalid operator type {operator:?} for operands ({left}, {right})")]
-    InvalidOperatorForOperandTypes {
-        operator: ConstraintOperator,
-        left: &'static str,
-        right: &'static str,
-    },
-    #[error("invalid constraint term sequence")]
-    InvalidTermSequence,
-}
 
 /// Evaluates constraint expression for the given source and target [`SecurityContext`]s.
 ///
 /// Assumes that the terms of the constraint expression were sequenced in postfix
-/// order by the policy compiler.
-///
-/// This implementation deliberately avoids shortcuts, since it is used to
-/// validate that constraint expressions are well-formed as well as for
-/// access decisions.
+/// order and validated at policy load time by [`crate::new_policy::ConstraintNode::validate`].
 pub(super) fn evaluate_constraint(
     constraint_expr: &[ConstraintTerm],
     source: &SecurityContext,
     target: &SecurityContext,
-) -> Result<bool, ConstraintError> {
+) -> bool {
     let mut stack: Vec<bool> = Vec::with_capacity(constraint_expr.len());
     for term in constraint_expr {
         match term {
             ConstraintTerm::Not => {
-                let arg = stack.last_mut().ok_or(ConstraintError::InvalidTermSequence)?;
+                let arg = stack.last_mut().expect("validated term sequence");
                 *arg = !*arg;
             }
             ConstraintTerm::And => {
-                let right = stack.pop().ok_or(ConstraintError::InvalidTermSequence)?;
-                let left = stack.last_mut().ok_or(ConstraintError::InvalidTermSequence)?;
+                let right = stack.pop().expect("validated term sequence");
+                let left = stack.last_mut().expect("validated term sequence");
                 *left = *left && right;
             }
             ConstraintTerm::Or => {
-                let right = stack.pop().ok_or(ConstraintError::InvalidTermSequence)?;
-                let left = stack.last_mut().ok_or(ConstraintError::InvalidTermSequence)?;
+                let right = stack.pop().expect("validated term sequence");
+                let left = stack.last_mut().expect("validated term sequence");
                 *left = *left || right;
             }
-            ConstraintTerm::Expression { operand, operator } => {
-                stack.push(evaluate_expression(*operand, *operator, source, target)?);
+            ConstraintTerm::UserAttributeOp(operator) => {
+                stack.push(evaluate_simple(source.user(), target.user(), *operator));
             }
-            ConstraintTerm::ExpressionWithNames { operand, operator, names } => {
-                stack.push(evaluate_expression_with_names(
-                    *operand, *operator, names, source, target,
-                )?);
+            ConstraintTerm::RoleAttributeOp(operator) => {
+                stack.push(evaluate_simple(source.role(), target.role(), *operator));
+            }
+            ConstraintTerm::TypeAttributeOp(operator) => {
+                stack.push(evaluate_simple(source.type_(), target.type_(), *operator));
+            }
+            ConstraintTerm::MlsOp(operand, operator) => {
+                let (left_val, right_val) = match operand {
+                    MlsOperands::L1L2 => (source.low_level(), target.low_level()),
+                    MlsOperands::L1H2 => (source.low_level(), target.effective_high_level()),
+                    MlsOperands::H1L2 => (source.effective_high_level(), target.low_level()),
+                    MlsOperands::H1H2 => {
+                        (source.effective_high_level(), target.effective_high_level())
+                    }
+                    MlsOperands::L1H1 => (source.low_level(), source.effective_high_level()),
+                    MlsOperands::L2H2 => (target.low_level(), target.effective_high_level()),
+                };
+                stack.push(evaluate_levels(left_val, right_val, *operator));
+            }
+            ConstraintTerm::UserNameOp(expr) => {
+                stack.push(evaluate_name_expr(expr, source.user(), target.user()))
+            }
+            ConstraintTerm::RoleNameOp(expr) => {
+                stack.push(evaluate_name_expr(expr, source.role(), target.role()))
+            }
+            ConstraintTerm::TypeNameOp(expr) => {
+                stack.push(evaluate_name_expr(expr, source.type_(), target.type_()))
             }
         }
     }
-    let result = stack.pop().ok_or(ConstraintError::InvalidTermSequence)?;
-    if !stack.is_empty() {
-        return Err(ConstraintError::InvalidTermSequence);
-    }
-    Ok(result)
+    let result = stack.pop().expect("validated term sequence");
+    debug_assert!(stack.is_empty(), "validated term sequence leaves stack empty");
+    result
 }
 
-fn evaluate_simple<T>(
-    left: T,
-    right: T,
-    operator: ConstraintOperator,
-    type_name: &'static str,
-) -> Result<bool, ConstraintError>
-where
-    T: Eq,
-{
-    if operator == ConstraintOperator::Eq {
-        Ok(left == right)
-    } else if operator == ConstraintOperator::Ne {
-        Ok(left != right)
-    } else {
-        Err(ConstraintError::InvalidOperatorForOperandTypes {
-            operator,
-            left: type_name,
-            right: type_name,
-        })
-    }
-}
-
-fn evaluate_with_names<T>(
-    val: T,
-    ids: &IdSet<T>,
-    operator: ConstraintOperator,
-    val_type_name: &'static str,
-    ids_type_name: &'static str,
-) -> Result<bool, ConstraintError>
-where
-    T: PolicyId,
-{
-    if operator == ConstraintOperator::Eq {
-        Ok(ids.contains(val))
-    } else if operator == ConstraintOperator::Ne {
-        Ok(!ids.contains(val))
-    } else {
-        Err(ConstraintError::InvalidOperatorForOperandTypes {
-            operator,
-            left: val_type_name,
-            right: ids_type_name,
-        })
-    }
-}
-
-fn evaluate_expression(
-    operand: ConstraintOperand,
-    operator: ConstraintOperator,
-    source: &SecurityContext,
-    target: &SecurityContext,
-) -> Result<bool, ConstraintError> {
-    match operand {
-        ConstraintOperand::User(ConstraintSubject::Source) => {
-            evaluate_simple(source.user(), target.user(), operator, "UserId")
-        }
-        ConstraintOperand::Role(ConstraintSubject::Source) => {
-            evaluate_simple(source.role(), target.role(), operator, "RoleId")
-        }
-        ConstraintOperand::Type(ConstraintSubject::Source) => {
-            evaluate_simple(source.type_(), target.type_(), operator, "TypeId")
-        }
-        ConstraintOperand::L1L2 => {
-            Ok(evaluate_levels(source.low_level(), target.low_level(), operator))
-        }
-        ConstraintOperand::L1H2 => {
-            Ok(evaluate_levels(source.low_level(), target.effective_high_level(), operator))
-        }
-        ConstraintOperand::H1L2 => {
-            Ok(evaluate_levels(source.effective_high_level(), target.low_level(), operator))
-        }
-        ConstraintOperand::H1H2 => Ok(evaluate_levels(
-            source.effective_high_level(),
-            target.effective_high_level(),
-            operator,
-        )),
-        ConstraintOperand::L1H1 => {
-            Ok(evaluate_levels(source.low_level(), source.effective_high_level(), operator))
-        }
-        ConstraintOperand::L2H2 => {
-            Ok(evaluate_levels(target.low_level(), target.effective_high_level(), operator))
-        }
-        _ => Err(ConstraintError::InvalidContextOperandType { type_: operand.as_u32() }),
-    }
-}
-
-fn evaluate_levels(left: &MlsLevel, right: &MlsLevel, operator: ConstraintOperator) -> bool {
+fn evaluate_simple<T: Eq>(left: T, right: T, operator: ConstraintOperator) -> bool {
     match operator {
         ConstraintOperator::Eq => left == right,
         ConstraintOperator::Ne => left != right,
-        ConstraintOperator::Dom => left.dominates(right),
-        ConstraintOperator::DomBy => right.dominates(left),
-        ConstraintOperator::Incomp => !left.dominates(right) && !right.dominates(left),
     }
 }
 
-fn evaluate_expression_with_names(
-    operand: ConstraintOperand,
-    operator: ConstraintOperator,
-    names: &ConstraintNames,
-    source: &SecurityContext,
-    target: &SecurityContext,
-) -> Result<bool, ConstraintError> {
-    match (operand, names) {
-        (ConstraintOperand::User(subject), ConstraintNames::Users(ids, _)) => {
-            let val = match subject {
-                ConstraintSubject::Source => source.user(),
-                ConstraintSubject::Target => target.user(),
-            };
-            evaluate_with_names(val, ids, operator, "UserId", "IdSet<UserId>")
-        }
-        (ConstraintOperand::Role(subject), ConstraintNames::Roles(ids, _)) => {
-            let val = match subject {
-                ConstraintSubject::Source => source.role(),
-                ConstraintSubject::Target => target.role(),
-            };
-            evaluate_with_names(val, ids, operator, "RoleId", "IdSet<RoleId>")
-        }
-        (ConstraintOperand::Type(subject), ConstraintNames::Types(ids, _)) => {
-            let val = match subject {
-                ConstraintSubject::Source => source.type_(),
-                ConstraintSubject::Target => target.type_(),
-            };
-            evaluate_with_names(val, ids, operator, "TypeId", "IdSet<TypeId>")
-        }
-        _ => Err(ConstraintError::InvalidContextWithNamesOperandType { type_: operand.as_u32() }),
+fn evaluate_contains(contains: bool, operator: ConstraintOperator) -> bool {
+    match operator {
+        ConstraintOperator::Eq => contains,
+        ConstraintOperator::Ne => !contains,
+    }
+}
+
+fn evaluate_name_expr<T: Eq + Copy + PolicyId>(
+    expr: &NameExpression<T>,
+    source_val: T,
+    target_val: T,
+) -> bool {
+    let val = match expr.subject() {
+        ConstraintSubject::Source => source_val,
+        ConstraintSubject::Target => target_val,
+    };
+    evaluate_contains(expr.names().contains(val), expr.operator())
+}
+
+fn evaluate_levels(left: &MlsLevel, right: &MlsLevel, operator: MlsOperator) -> bool {
+    match operator {
+        MlsOperator::Eq => left == right,
+        MlsOperator::Ne => left != right,
+        MlsOperator::Dom => left.dominates(right),
+        MlsOperator::DomBy => right.dominates(left),
+        MlsOperator::Incomp => !left.dominates(right) && !right.dominates(left),
     }
 }
 
@@ -230,10 +137,7 @@ mod tests {
         assert_eq!(class_constraint_eq_constraints.len(), 1);
         // ( u1 == u2 )
         let constraint_eq = class_constraint_eq_constraints[0].constraint_expr();
-        assert_eq!(
-            evaluate_constraint(constraint_eq, &source, &target).expect("evaluate constraint"),
-            false
-        );
+        assert_eq!(evaluate_constraint(constraint_eq, &source, &target), false);
 
         let class_constraint_with_and =
             classes.get_by_name(b"class_constraint_with_and").expect("look up class");
@@ -241,11 +145,7 @@ mod tests {
         assert_eq!(class_constraint_with_and_constraints.len(), 1);
         // ( ( u1 == u2 ) and ( t1 == t2 ) )
         let constraint_with_and = class_constraint_with_and_constraints[0].constraint_expr();
-        assert_eq!(
-            evaluate_constraint(constraint_with_and, &source, &target)
-                .expect("evaluate constraint"),
-            false
-        );
+        assert_eq!(evaluate_constraint(constraint_with_and, &source, &target), false);
 
         let class_constraint_with_not =
             classes.get_by_name(b"class_constraint_with_not").expect("look up class");
@@ -253,11 +153,7 @@ mod tests {
         assert_eq!(class_constraint_with_not_constraints.len(), 1);
         // ( not ( ( u1 == u2 ) and ( t1 == t2 ) )
         let constraint_with_not = class_constraint_with_not_constraints[0].constraint_expr();
-        assert_eq!(
-            evaluate_constraint(constraint_with_not, &source, &target)
-                .expect("evaluate constraint"),
-            true
-        );
+        assert_eq!(evaluate_constraint(constraint_with_not, &source, &target), true);
 
         let class_constraint_with_names =
             classes.get_by_name(b"class_constraint_with_names").expect("look up class");
@@ -265,11 +161,7 @@ mod tests {
         assert_eq!(class_constraint_with_names_constraints.len(), 1);
         // ( u1 != { user0 user1 })
         let constraint_with_names = class_constraint_with_names_constraints[0].constraint_expr();
-        assert_eq!(
-            evaluate_constraint(constraint_with_names, &source, &target)
-                .expect("evaluate constraint"),
-            false
-        );
+        assert_eq!(evaluate_constraint(constraint_with_names, &source, &target), false);
 
         let class_constraint_nested =
             classes.get_by_name(b"class_constraint_nested").expect("look up class");
@@ -277,10 +169,31 @@ mod tests {
         assert_eq!(class_constraint_nested_constraints.len(), 1);
         // ( ( ( u2 == { user0 user1} ) and ( r1 == r2 ) ) or ( ( u1 == u2 ) and ( not (t1 == t2 ) ) ) )
         let constraint_nested = class_constraint_nested_constraints[0].constraint_expr();
-        assert_eq!(
-            evaluate_constraint(constraint_nested, &source, &target).expect("evaluate constraint"),
-            true
-        )
+        assert_eq!(evaluate_constraint(constraint_nested, &source, &target), true);
+
+        let class_constraint_role_names =
+            classes.get_by_name(b"class_constraint_role_names").expect("look up class");
+        let class_constraint_role_names_constraints = class_constraint_role_names.constraints();
+        assert_eq!(class_constraint_role_names_constraints.len(), 1);
+        // ( r1 == { object_r } ) where source is object_r
+        let constraint_role_names = class_constraint_role_names_constraints[0].constraint_expr();
+        assert_eq!(evaluate_constraint(constraint_role_names, &source, &target), true);
+
+        let class_constraint_type_names =
+            classes.get_by_name(b"class_constraint_type_names").expect("look up class");
+        let class_constraint_type_names_constraints = class_constraint_type_names.constraints();
+        assert_eq!(class_constraint_type_names_constraints.len(), 1);
+        // ( t1 == { domain } ) where source type0 is in domain
+        let constraint_type_names = class_constraint_type_names_constraints[0].constraint_expr();
+        assert_eq!(evaluate_constraint(constraint_type_names, &source, &target), true);
+
+        let class_constraint_type_list =
+            classes.get_by_name(b"class_constraint_type_list").expect("look up class");
+        let class_constraint_type_list_constraints = class_constraint_type_list.constraints();
+        assert_eq!(class_constraint_type_list_constraints.len(), 1);
+        // ( t1 == { type0 security_t } ) where source type is type0
+        let constraint_type_list = class_constraint_type_list_constraints[0].constraint_expr();
+        assert_eq!(evaluate_constraint(constraint_type_list, &source, &target), true);
     }
 
     #[test]
@@ -312,8 +225,7 @@ mod tests {
         ];
         for (i, constraint) in constraints.iter().enumerate() {
             assert_eq!(
-                evaluate_constraint(constraint.constraint_expr(), &source, &target)
-                    .expect("evaluate constraint",),
+                evaluate_constraint(constraint.constraint_expr(), &source, &target),
                 expected[i],
                 "constraint {}",
                 i

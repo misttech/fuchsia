@@ -26,6 +26,8 @@ pub enum ParseError {
     TrailingBytes { num_bytes: usize },
     #[error("unexpected non-empty type set in constraint")]
     UnexpectedConstraintTypeSet,
+    #[error("unexpected non-empty names in type constraint")]
+    UnexpectedConstraintTypeNames,
     #[error("invalid constraint term type: {value}")]
     InvalidConstraintTermType { value: u32 },
     #[error(
@@ -55,6 +57,8 @@ pub enum ValidateError {
     InvalidSignatureLength { found_length: u32 },
     #[error("undefined {kind} Id value {id}")]
     UnknownId { kind: &'static str, id: u32 },
+    #[error("invalid sequence of terms in constraint expression")]
+    InvalidConstraintTermSequence,
     #[error("expected extensible bitmap items to have at least one bit set")]
     InvalidExtensibleBitmapItem,
     #[error(

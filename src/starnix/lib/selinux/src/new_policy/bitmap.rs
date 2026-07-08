@@ -405,6 +405,11 @@ pub struct IdSet<T: PolicyId, const WITH_ID_ZERO: bool = false> {
 }
 
 impl<T: PolicyId, const WITH_ID_ZERO: bool> IdSet<T, WITH_ID_ZERO> {
+    /// Constructs an empty [`IdSet`].
+    pub fn empty() -> Self {
+        IdSetBuilder::new().build()
+    }
+
     /// Constructs an [`IdSet`] wrapping the supplied `bitmap`.
     pub fn from_bitmap(bitmap: ExtensibleBitmap) -> Self {
         Self { bitmap, _phantom: PhantomData }

@@ -74,6 +74,12 @@ impl Validate for Box<[u8]> {
     }
 }
 
+impl<T: Validate> Validate for Box<T> {
+    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+        (**self).validate(policy)
+    }
+}
+
 impl<T: Validate> Validate for Option<T> {
     fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
         if let Some(value) = self {

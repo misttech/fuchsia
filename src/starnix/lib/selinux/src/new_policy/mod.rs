@@ -33,7 +33,7 @@ pub use bitmap::{ExtensibleBitmap, IdSpan};
 pub use classes::{Class, ClassDefault, ClassDefaultRange, ClassId};
 pub use common_symbols::CommonSymbol;
 pub use constraints::{
-    ConstraintNames, ConstraintOperand, ConstraintOperator, ConstraintSubject, ConstraintTerm,
+    ConstraintOperator, ConstraintSubject, ConstraintTerm, MlsOperands, MlsOperator, NameExpression,
 };
 pub use context::{Context, MlsLevel, MlsRange};
 pub use id_type::*;

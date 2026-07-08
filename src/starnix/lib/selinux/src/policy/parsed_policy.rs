@@ -17,6 +17,7 @@ use super::arrays::{
 use super::error::{ParseError, ValidateError};
 use super::extensible_bitmap::ExtensibleBitmap;
 
+use super::constraints::evaluate_constraint;
 use super::parser::{PolicyCursor, PolicyData};
 use super::security_context::SecurityContext;
 use super::symbols::{Category, CategoryIndex, ConditionalBoolean, Sensitivity, SymbolList};
@@ -219,16 +220,8 @@ impl ParsedPolicy {
     ) -> AccessVector {
         let mut denied = AccessVector::NONE;
         for constraint in target_class.constraints() {
-            match crate::policy::constraints::evaluate_constraint(
-                constraint.constraint_expr(),
-                source_context,
-                target_context,
-            ) {
-                Err(err) => {
-                    unreachable!("validated constraint expression failed to evaluate: {:?}", err)
-                }
-                Ok(false) => denied |= constraint.access_vector(),
-                Ok(true) => {}
+            if !evaluate_constraint(constraint.constraint_expr(), source_context, target_context) {
+                denied |= constraint.access_vector();
             }
         }
         denied
@@ -865,23 +858,6 @@ impl ParsedPolicy {
             let access_vector_rule = access_vector_rule_view.parse(&self.data);
             if let Some(type_id) = access_vector_rule.new_type() {
                 validate_id(&type_ids, type_id, "new_type")?;
-            }
-        }
-
-        // Validate that constraints are well-formed by evaluating against
-        // a source and target security context.
-        let initial_context = SecurityContext::new_from_policy_context(
-            self.initial_context(crate::InitialSid::Kernel),
-        );
-        for class in self.classes().iter() {
-            for constraint in class.constraints() {
-                crate::policy::constraints::evaluate_constraint(
-                    constraint.constraint_expr(),
-                    &initial_context,
-                    &initial_context,
-                )
-                .map_err(Into::<anyhow::Error>::into)
-                .context("validating constraints")?;
             }
         }
 

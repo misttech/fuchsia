@@ -452,7 +452,7 @@ mod tests {
     use super::super::{AccessVector, CategoryId, SensitivityId, UserId, parse_policy_by_value};
 
     use crate::new_policy::{
-        ConstraintNames, ConstraintOperand, ConstraintOperator, ConstraintSubject, ConstraintTerm,
+        ConstraintOperator, ConstraintSubject, ConstraintTerm, MlsOperands, MlsOperator,
     };
 
     #[test]
@@ -495,30 +495,12 @@ mod tests {
         assert_eq!(constraints.len(), 6);
 
         let expected = [
-            ConstraintTerm::Expression {
-                operand: ConstraintOperand::L1H1,
-                operator: ConstraintOperator::Incomp,
-            },
-            ConstraintTerm::Expression {
-                operand: ConstraintOperand::H1H2,
-                operator: ConstraintOperator::Incomp,
-            },
-            ConstraintTerm::Expression {
-                operand: ConstraintOperand::L1H2,
-                operator: ConstraintOperator::DomBy,
-            },
-            ConstraintTerm::Expression {
-                operand: ConstraintOperand::H1L2,
-                operator: ConstraintOperator::Dom,
-            },
-            ConstraintTerm::Expression {
-                operand: ConstraintOperand::L2H2,
-                operator: ConstraintOperator::Ne,
-            },
-            ConstraintTerm::Expression {
-                operand: ConstraintOperand::L1L2,
-                operator: ConstraintOperator::Eq,
-            },
+            ConstraintTerm::MlsOp(MlsOperands::L1H1, MlsOperator::Incomp),
+            ConstraintTerm::MlsOp(MlsOperands::H1H2, MlsOperator::Incomp),
+            ConstraintTerm::MlsOp(MlsOperands::L1H2, MlsOperator::DomBy),
+            ConstraintTerm::MlsOp(MlsOperands::H1L2, MlsOperator::Dom),
+            ConstraintTerm::MlsOp(MlsOperands::L2H2, MlsOperator::Ne),
+            ConstraintTerm::MlsOp(MlsOperands::L1L2, MlsOperator::Eq),
         ];
         for (i, constraint) in constraints.iter().enumerate() {
             assert_eq!(constraint.access_vector(), AccessVector::from(1), "constraint {}", i);
@@ -547,45 +529,125 @@ mod tests {
         assert_eq!(terms[6], ConstraintTerm::And);
         assert_eq!(terms[5], ConstraintTerm::Not);
 
-        assert_eq!(
-            terms[4],
-            ConstraintTerm::Expression {
-                operand: ConstraintOperand::Type(ConstraintSubject::Source),
-                operator: ConstraintOperator::Eq,
-            }
-        );
+        assert_eq!(terms[4], ConstraintTerm::TypeAttributeOp(ConstraintOperator::Eq));
 
-        assert_eq!(
-            terms[3],
-            ConstraintTerm::Expression {
-                operand: ConstraintOperand::User(ConstraintSubject::Source),
-                operator: ConstraintOperator::Eq,
-            }
-        );
+        assert_eq!(terms[3], ConstraintTerm::UserAttributeOp(ConstraintOperator::Eq));
 
         assert_eq!(terms[2], ConstraintTerm::And);
 
-        assert_eq!(
-            terms[1],
-            ConstraintTerm::Expression {
-                operand: ConstraintOperand::Role(ConstraintSubject::Source),
-                operator: ConstraintOperator::Eq,
-            }
-        );
+        assert_eq!(terms[1], ConstraintTerm::RoleAttributeOp(ConstraintOperator::Eq));
 
         match &terms[0] {
-            ConstraintTerm::ExpressionWithNames { operand, operator, names } => {
-                assert_eq!(operand, &ConstraintOperand::User(ConstraintSubject::Target));
-                assert_eq!(operator, &ConstraintOperator::Eq);
-                match &**names {
-                    ConstraintNames::Users(ids, set) => {
-                        assert!(!ids.is_empty());
-                        assert!(set.is_empty());
-                    }
-                    _ => panic!("expected Users"),
-                }
+            ConstraintTerm::UserNameOp(expr) => {
+                assert_eq!(expr.subject(), ConstraintSubject::Target);
+                assert_eq!(expr.operator(), ConstraintOperator::Eq);
+                assert!(!expr.names().is_empty());
             }
-            _ => panic!("expected ExpressionWithNames"),
+            _ => panic!("expected UserNameOp"),
+        }
+    }
+
+    #[test]
+    fn parse_constrain_user_names_statement() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy");
+        let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let policy = policy.validate().expect("validate policy");
+
+        let classes = policy.classes();
+        let class = classes.get_by_name(b"class_constraint_with_names").expect("look up class");
+        let constraints = class.constraints();
+        assert_eq!(constraints.len(), 1);
+        let terms = constraints[0].constraint_expr();
+        assert_eq!(terms.len(), 1);
+
+        match &terms[0] {
+            ConstraintTerm::UserNameOp(expr) => {
+                assert_eq!(expr.subject(), ConstraintSubject::Source);
+                assert_eq!(expr.operator(), ConstraintOperator::Ne);
+                assert_eq!(expr.names().iter().count(), 2);
+            }
+            _ => panic!("expected UserNameOp"),
+        }
+    }
+
+    #[test]
+    fn parse_constrain_role_names_statement() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy");
+        let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let policy = policy.validate().expect("validate policy");
+
+        let classes = policy.classes();
+        let class = classes.get_by_name(b"class_constraint_role_names").expect("look up class");
+        let constraints = class.constraints();
+        assert_eq!(constraints.len(), 1);
+        let terms = constraints[0].constraint_expr();
+        assert_eq!(terms.len(), 1);
+
+        match &terms[0] {
+            ConstraintTerm::RoleNameOp(expr) => {
+                assert_eq!(expr.subject(), ConstraintSubject::Source);
+                assert_eq!(expr.operator(), ConstraintOperator::Eq);
+                assert_eq!(expr.names().iter().count(), 1);
+            }
+            _ => panic!("expected RoleNameOp"),
+        }
+    }
+
+    #[test]
+    fn parse_constrain_type_names_statement() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy");
+        let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let policy = policy.validate().expect("validate policy");
+
+        let classes = policy.classes();
+        let class = classes.get_by_name(b"class_constraint_type_names").expect("look up class");
+        let constraints = class.constraints();
+        assert_eq!(constraints.len(), 1);
+        let terms = constraints[0].constraint_expr();
+        assert_eq!(terms.len(), 1);
+
+        match &terms[0] {
+            ConstraintTerm::TypeNameOp(expr) => {
+                assert_eq!(expr.subject(), ConstraintSubject::Source);
+                assert_eq!(expr.operator(), ConstraintOperator::Eq);
+                // domain attribute expands to type0, type1, and type2 in `names`
+                assert_eq!(expr.names().iter().count(), 3);
+                // constraint_sets should contain the un-expanded attribute ID in include_set(), empty exclude_set, and 0 flags
+                let constraint_sets = expr.constraint_sets().expect("constraint sets");
+                assert_eq!(constraint_sets.include_set().iter().count(), 1);
+                assert!(constraint_sets.exclude_set().is_empty());
+                assert_eq!(constraint_sets.flags(), 0);
+            }
+            _ => panic!("expected TypeNameOp"),
+        }
+    }
+
+    #[test]
+    fn parse_constrain_type_list_statement() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy");
+        let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let policy = policy.validate().expect("validate policy");
+
+        let classes = policy.classes();
+        let class = classes.get_by_name(b"class_constraint_type_list").expect("look up class");
+        let constraints = class.constraints();
+        assert_eq!(constraints.len(), 1);
+        let terms = constraints[0].constraint_expr();
+        assert_eq!(terms.len(), 1);
+
+        match &terms[0] {
+            ConstraintTerm::TypeNameOp(expr) => {
+                assert_eq!(expr.subject(), ConstraintSubject::Source);
+                assert_eq!(expr.operator(), ConstraintOperator::Eq);
+                // list { type0 security_t } expands to type0 and security_t in `names`
+                assert_eq!(expr.names().iter().count(), 2);
+                // constraint_sets should contain type0 and security_t in include_set(), empty exclude_set, and 0 flags
+                let constraint_sets = expr.constraint_sets().expect("constraint sets");
+                assert_eq!(constraint_sets.include_set().iter().count(), 2);
+                assert!(constraint_sets.exclude_set().is_empty());
+                assert_eq!(constraint_sets.flags(), 0);
+            }
+            _ => panic!("expected TypeNameOp"),
         }
     }
 }
