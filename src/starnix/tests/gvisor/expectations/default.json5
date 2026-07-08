@@ -1235,9 +1235,6 @@
                 // TODO(https://fxbug.dev/429143932): Investigate and re-enable
                 "PreadvTest.MMConcurrencyStress",
 
-                // TODO(https://fxbug.dev/439576932): Investigate and re-enable, seems to be timing out.
-                "PtraceTest.ExecvePtraceLockStress",
-
                 // TODO(https://fxbug.dev/361175318): FUTEX_TRYLOCK_PI is not supported yet
                 "SharedPrivate/PrivateAndSharedFutexTest.PITryLock*",
 

@@ -657,12 +657,40 @@ pub enum PtraceAllowedPtracers {
     Any,
 }
 
+#[derive(Copy, Clone)]
+pub enum PtraceTracer<'a> {
+    /// Tracer thread group is exiting, which detaches all its tracees.
+    Exiting(&'a ThreadGroup),
+    /// Tracer invoked a ptrace syscall.
+    Syscall(&'a Arc<Task>),
+}
+
+impl<'a> PtraceTracer<'a> {
+    fn thread_group(self) -> &'a ThreadGroup {
+        match self {
+            PtraceTracer::Exiting(tg) => tg,
+            PtraceTracer::Syscall(task) => &task.thread_group,
+        }
+    }
+
+    fn matches_task(self, task: &Arc<Task>) -> bool {
+        match self {
+            PtraceTracer::Syscall(expected_task) => task == expected_task,
+            PtraceTracer::Exiting(expected_tg) => &*task.thread_group == expected_tg,
+        }
+    }
+}
+
 /// Continues the target thread, optionally detaching from it.
-/// |data| is treated as it is in PTRACE_CONT.
-/// |new_status| is the PtraceStatus to set for this trace.
-/// |detach| will cause the tracer to detach from the tracee.
+///
+/// # Arguments
+/// * `tracer` - The context of the tracer performing the operation.
+/// * `tracee` - The target thread to continue.
+/// * `data` - Is treated as it is in PTRACE_CONT.
+/// * `detach` - If true, the tracer will detach from the tracee.
 fn ptrace_cont<L>(
     locked: &mut Locked<L>,
+    tracer: PtraceTracer<'_>,
     tracee: &Task,
     data: &UserAddress,
     detach: bool,
@@ -680,12 +708,32 @@ where
     };
 
     let mut state = tracee.write();
+
+    // Verify under lock that we are still the tracer.
+    // This check is performed under the tracee task lock to prevent races where the tracee
+    // is concurrently detached or re-attached to another tracer in the window between our
+    // initial check (e.g. in ptrace_dispatch or wait_on_pid) and when we actually execute
+    // the continuation. This ensures we don't accidentally control a task we no longer trace,
+    // or interfere with another tracer's control.
+    {
+        let ptrace = state.ptrace.as_ref().ok_or_else(|| errno!(ESRCH))?;
+        let tracer_task = ptrace.core_state.task.upgrade().ok_or_else(|| errno!(ESRCH))?;
+        if !tracer.matches_task(&tracer_task) {
+            return error!(ESRCH);
+        }
+    }
     let is_listen = state.is_ptrace_listening();
 
     if tracee.load_stopped().is_waking_or_awake() && !is_listen {
-        if detach {
+        if detach && matches!(tracer, PtraceTracer::Exiting(_)) {
+            // If the tracer thread group is exiting, we must force-detach even if the
+            // tracee is currently running (waking/awake), otherwise the tracee would
+            // be left permanently attached to a dead tracer.
             state.set_ptrace(None)?;
+            return Ok(());
         }
+        // Manual PTRACE_DETACH via syscall (tracer is CurrentTask) is not allowed
+        // on running tracees and returns EIO.
         return error!(EIO);
     }
 
@@ -778,18 +826,20 @@ fn ptrace_listen(tracee: &Task) -> Result<(), Errno> {
 pub fn ptrace_detach<L>(
     locked: &mut Locked<L>,
     pids: &mut PidTable,
-    thread_group: &ThreadGroup,
+    tracer: PtraceTracer<'_>,
     tracee: &Task,
     data: &UserAddress,
 ) -> Result<(), Errno>
 where
     L: LockBefore<ThreadGroupLimits>,
 {
-    if let Err(x) = ptrace_cont(locked, &tracee, &data, true) {
-        return Err(x);
-    }
     let tid = tracee.get_tid();
-    thread_group.ptracees.lock().remove(&tid);
+    let thread_group = tracer.thread_group();
+    {
+        let mut ptracees = thread_group.ptracees.lock();
+        ptrace_cont(locked, tracer, tracee, &data, true)?;
+        ptracees.remove(&tid);
+    }
     let zombie_notification = thread_group.write().zombie_ptracees.detach(pids, tid);
     if let Some(zombie_notification) = zombie_notification {
         zombie_notification.deliver(pids);
@@ -844,16 +894,34 @@ where
             return Ok(starnix_syscalls::SUCCESS);
         }
         PTRACE_CONT => {
-            ptrace_cont(locked, &tracee, &data, false)?;
+            ptrace_cont(
+                locked,
+                PtraceTracer::Syscall(&current_task.task),
+                tracee.as_ref(),
+                &data,
+                false,
+            )?;
             return Ok(starnix_syscalls::SUCCESS);
         }
         PTRACE_SYSCALL => {
             tracee.trace_syscalls.store(true, std::sync::atomic::Ordering::Relaxed);
-            ptrace_cont(locked, &tracee, &data, false)?;
+            ptrace_cont(
+                locked,
+                PtraceTracer::Syscall(&current_task.task),
+                tracee.as_ref(),
+                &data,
+                false,
+            )?;
             return Ok(starnix_syscalls::SUCCESS);
         }
         PTRACE_DETACH => {
-            ptrace_detach(locked, &mut pids, current_task.thread_group(), tracee.as_ref(), &data)?;
+            ptrace_detach(
+                locked,
+                &mut pids,
+                PtraceTracer::Syscall(&current_task.task),
+                tracee.as_ref(),
+                &data,
+            )?;
             return Ok(starnix_syscalls::SUCCESS);
         }
         _ => {}
@@ -1074,7 +1142,11 @@ fn do_attach(
     attach_type: PtraceAttachType,
     options: PtraceOptions,
 ) -> Result<(), Errno> {
-    thread_group.ptracees.lock().insert(task.get_tid(), task.into());
+    let mut ptracees = thread_group.ptracees.lock();
+
+    if !thread_group.read().is_running() {
+        return error!(ESRCH);
+    }
 
     let process_state = &mut task.thread_group().write();
     let mut state = task.write();
@@ -1084,6 +1156,8 @@ fn do_attach(
         attach_type,
         options,
     )))?;
+
+    ptracees.insert(task.get_tid(), task.into());
 
     // If the tracee is already stopped, make sure that the tracer can
     // identify that right away.

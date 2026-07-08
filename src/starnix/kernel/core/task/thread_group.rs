@@ -5,8 +5,8 @@
 use crate::device::terminal::{Terminal, TerminalController};
 use crate::mutable_state::{state_accessor, state_implementation};
 use crate::ptrace::{
-    AtomicStopState, PtraceAllowedPtracers, PtraceEvent, PtraceOptions, PtraceStatus, StopState,
-    ZombiePtracees, ptrace_detach,
+    AtomicStopState, PtraceAllowedPtracers, PtraceEvent, PtraceOptions, PtraceStatus, PtraceTracer,
+    StopState, ZombiePtracees, ptrace_detach,
 };
 use crate::security;
 use crate::signals::syscalls::WaitingOptions;
@@ -1095,7 +1095,13 @@ impl ThreadGroup {
                 send_standard_signal(locked, tracee.as_ref(), SignalInfo::kernel(SIGKILL));
             }
 
-            let _ = ptrace_detach(locked, pids, self, tracee.as_ref(), &UserAddress::NULL);
+            let _ = ptrace_detach(
+                locked,
+                pids,
+                PtraceTracer::Exiting(self),
+                tracee.as_ref(),
+                &UserAddress::NULL,
+            );
         }
     }
 
