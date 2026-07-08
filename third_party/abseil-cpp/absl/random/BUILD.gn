@@ -9,7 +9,6 @@ visibility = [
   "$cobalt_root/*",
   "//third_party/abseil-cpp/*",
   "//third_party/tink-cc/*",
-  "//third_party/tink/*",
 ]
 
 source_set("random") {

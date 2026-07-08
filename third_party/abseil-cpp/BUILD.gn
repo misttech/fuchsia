@@ -11,7 +11,6 @@ visibility = [
   "//third_party/grpc:*",
   "//third_party/protobuf:*",
   "//third_party/tink-cc/*",
-  "//third_party/tink/*",
 ]
 
 group("abseil-cpp") {

@@ -38,7 +38,6 @@
                     "third_party/icu/latest",
                     "third_party/iperf",
                     "third_party/luci-go",
-                    "third_party/tink",
                     "third_party/zlib",
                     "tools/check-licenses/assets/readmes/prebuilt/starnix/linux-amd64",
                     "tools/check-licenses/assets/readmes/prebuilt/starnix/linux-arm64",
@@ -50,7 +49,6 @@
                     "tools/check-licenses/assets/readmes/third_party/icu/latest",
                     "tools/check-licenses/assets/readmes/third_party/iperf",
                     "tools/check-licenses/assets/readmes/third_party/luci-go",
-                    "tools/check-licenses/assets/readmes/third_party/tink",
                     "tools/check-licenses/assets/readmes/third_party/zlib"
                 ]
             }

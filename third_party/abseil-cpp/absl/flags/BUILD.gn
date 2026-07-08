@@ -10,7 +10,6 @@ visibility = [
   "//third_party/abseil-cpp/*",
   "//third_party/gvisor_syscall_tests/*",
   "//third_party/tink-cc/*",
-  "//third_party/tink/*",
 ]
 
 source_set("path_util") {

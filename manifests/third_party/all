@@ -506,11 +506,6 @@
              path="third_party/tcpdump/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/the-tcpdump-group/tcpdump"
              revision="7d5f6e526733c542732edcb6d27d9555bf876d99"/>
-    <project name="third_party/tink"
-             path="third_party/tink"
-             remote="https://fuchsia.googlesource.com/third_party/tink"
-             gerrithost="https://fuchsia-review.googlesource.com"
-             revision="4eb4d23222b666217d8e1f3cf27518687e9af310"/>
     <project name="third_party/github.com/tink-crypto/tink-cc"
              path="third_party/tink-cc/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/tink-crypto/tink-cc"

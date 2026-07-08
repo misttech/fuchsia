@@ -162,8 +162,6 @@
           "third_party/pigweed/src/third_party": true,
           "third_party/protobuf/conformance/third_party/jsoncpp": true,
           "third_party/rust_crates": true,
-          "third_party/tink/cc/third_party/boringssl_fips": true,
-          "third_party/tink/third_party": true,
           "tools/debug/covargs/api/third_party/codecoverage": true,
           "zircon/third_party": true,
           "zircon/third_party/uapp/mkfs-msdosfs": true,
@@ -183,9 +181,6 @@
           "vendor": true,
           "zircon/third_party": true,
           "third_party/golibs/vendor": true,
-          "third_party/tink/cc/third_party": true,
-          "third_party/tink/cc/integration/awskms/third_party": true,
-          "third_party/tink/testing/java_src/third_party": true,
           "third_party/syzkaller": true,
           "build/secondary/vendor/google/build": true
         }

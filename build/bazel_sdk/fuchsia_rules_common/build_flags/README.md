@@ -352,7 +352,7 @@ This is seldom used for third-party libraries whose public headers trigger
 many compiler warnings, and which come with a Fuchsia-maintained `BUILD.gn`.
 
 ```py
-# From //third_party/tink/BUILD.gn
+# From //third_party/tink-cc/BUILD.gn
 
 # Used as a public_config() for most Tink libraries.
 config("tink_config") {
@@ -380,7 +380,7 @@ There is *no direct way* to support this in Bazel, the alternatives are:
   e.g.:
 
   ```py
-  # From //third_party/tink/BUILD.bazel
+  # From //third_party/tink-cc/BUILD.bazel
   load("@rules_fuchsia_common//build_flags:build_flags.bzl")
 
   # These build flags are required to use the public Tink library headers
@@ -411,8 +411,8 @@ There is *no direct way* to support this in Bazel, the alternatives are:
   fx_cc_library(
       name = "foo",
       ...
-      build_flags = [ "//third_party/tink:tink_public_header_flags" ],
-      deps = [ "//third_party/tink:tink" ],
+      build_flags = [ "//third_party/tink-cc:tink_public_header_flags" ],
+      deps = [ "//third_party/tink-cc:tink" ],
   )
   ```
 
