@@ -10,8 +10,9 @@
 
 namespace scenic_impl::input {
 
-// TODO(https://fxbug.dev/https://fxbug.dev/42153191): Rename all instances of "stream" to "interaction".
-using StreamId = uint32_t;
+// TODO(https://fxbug.dev/https://fxbug.dev/42153191): Rename all instances of "stream" to
+// "interaction".
+using StreamId = uint64_t;
 constexpr StreamId kInvalidStreamId = 0;
 StreamId NewStreamId();
 

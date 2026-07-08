@@ -74,7 +74,12 @@ fuchsia::ui::pointer::TouchEvent NewTouchEvent(StreamId stream_id, const Interna
     pointer.set_position_in_viewport(
         {event.position_in_viewport[0], event.position_in_viewport[1]});
     pointer.set_interaction(fuchsia::ui::pointer::TouchInteractionId{
-        .device_id = event.device_id, .pointer_id = event.pointer_id, .interaction_id = stream_id});
+        .device_id = event.device_id,
+        .pointer_id = event.pointer_id,
+        // The truncation from uint64_t to uint32_t is safe because stream collisions
+        // only affect internal Scenic mapping. Clients only ever observe streams
+        // related to their own views, which practically never exceed 2^32 concurrent touches.
+        .interaction_id = static_cast<uint32_t>(stream_id)});
     new_event.set_pointer_sample(std::move(pointer));
   }
 
@@ -86,7 +91,12 @@ void AddInteractionResultsToEvent(fuchsia::ui::pointer::TouchEvent& event, Strea
   event.set_interaction_result(fuchsia::ui::pointer::TouchInteractionResult{
       .interaction =
           fuchsia::ui::pointer::TouchInteractionId{
-              .device_id = device_id, .pointer_id = pointer_id, .interaction_id = stream_id},
+              .device_id = device_id,
+              .pointer_id = pointer_id,
+              // The truncation from uint64_t to uint32_t is safe because stream collisions
+              // only affect internal Scenic mapping. Clients only ever observe streams
+              // related to their own views, which practically never exceed 2^32 concurrent touches.
+              .interaction_id = static_cast<uint32_t>(stream_id)},
       .status = awarded_win ? fuchsia::ui::pointer::TouchInteractionStatus::GRANTED
                             : fuchsia::ui::pointer::TouchInteractionStatus::DENIED});
 }

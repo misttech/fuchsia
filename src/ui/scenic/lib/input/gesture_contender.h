@@ -27,7 +27,7 @@ enum GestureResponse {
   kUndefined = 9
 };
 
-using ContenderId = uint32_t;
+using ContenderId = uint64_t;
 constexpr ContenderId kInvalidContenderId = 0;
 
 // Interface for a gesture disambiguation contender. All methods are called in response to
