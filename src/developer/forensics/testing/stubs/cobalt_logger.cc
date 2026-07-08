@@ -13,26 +13,29 @@ void CobaltLoggerBase::InsertEvent(cobalt::EventType event_type, uint32_t metric
   events_.push_back(cobalt::Event(event_type, metric_id, event_codes, count));
 }
 
-void CobaltLogger::LogOccurrence(uint32_t metric_id, uint64_t count,
-                                 ::std::vector<uint32_t> event_codes,
-                                 LogOccurrenceCallback callback) {
-  InsertEvent(cobalt::EventType::kOccurrence, metric_id, event_codes, count);
-  callback(fpromise::ok());
+void CobaltLogger::LogOccurrence(LogOccurrenceRequest& request,
+                                 LogOccurrenceCompleter::Sync& completer) {
+  InsertEvent(cobalt::EventType::kOccurrence, request.metric_id(), request.event_codes(),
+              request.count());
+  completer.Reply(fit::success());
 }
 
-void CobaltLogger::LogInteger(uint32_t metric_id, int64_t value,
-                              ::std::vector<uint32_t> event_codes, LogIntegerCallback callback) {
-  InsertEvent(cobalt::EventType::kInteger, metric_id, event_codes, value);
-  callback(fpromise::ok());
+void CobaltLogger::LogInteger(LogIntegerRequest& request, LogIntegerCompleter::Sync& completer) {
+  InsertEvent(cobalt::EventType::kInteger, request.metric_id(), request.event_codes(),
+              request.value());
+  completer.Reply(fit::success());
 }
 
-void CobaltLoggerIgnoresFirstEvents::LogOccurrence(uint32_t metric_id, uint64_t count,
-                                                   ::std::vector<uint32_t> event_codes,
-                                                   LogOccurrenceCallback callback) {
-  if (call_idx_++ >= ignore_call_count_) {
-    InsertEvent(cobalt::EventType::kOccurrence, metric_id, event_codes, count);
-    callback(fpromise::ok());
+void CobaltLoggerIgnoresFirstEvents::LogOccurrence(LogOccurrenceRequest& request,
+                                                   LogOccurrenceCompleter::Sync& completer) {
+  if (call_idx_++ < ignore_call_count_) {
+    ignored_completers_.push_back(completer.ToAsync());
+    return;
   }
+
+  InsertEvent(cobalt::EventType::kOccurrence, request.metric_id(), request.event_codes(),
+              request.count());
+  completer.Reply(fit::success());
 }
 
 }  // namespace stubs

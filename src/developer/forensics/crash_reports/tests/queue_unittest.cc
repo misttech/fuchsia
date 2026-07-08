@@ -124,7 +124,7 @@ class QueueTest : public UnitTestFixture {
         std::make_shared<InfoContext>(&InspectRoot(), &clock_, dispatcher(), services());
     report_store_ = std::make_unique<ScopedTestReportStore>(&annotation_manager_, info_context_);
 
-    SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+    SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
     RunLoopUntilIdle();
   }
 

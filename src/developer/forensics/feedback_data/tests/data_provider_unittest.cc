@@ -77,7 +77,7 @@ class DataProviderTest : public UnitTestFixture {
  public:
   void SetUp() override {
     cobalt_ = std::make_unique<cobalt::Logger>(dispatcher(), services(), &clock_);
-    SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+    SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
 
     inspect_node_manager_ = std::make_unique<InspectNodeManager>(&InspectRoot());
     inspect_data_budget_ = std::make_unique<InspectDataBudget>(

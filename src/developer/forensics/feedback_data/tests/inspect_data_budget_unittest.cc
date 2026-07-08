@@ -39,7 +39,7 @@ using testing::UnorderedElementsAreArray;
 class InspectDataBudgetTest : public UnitTestFixture {
  public:
   void SetUp() override {
-    SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+    SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
     cobalt_ = std::make_unique<cobalt::Logger>(dispatcher(), services(), &clock_);
   }
 

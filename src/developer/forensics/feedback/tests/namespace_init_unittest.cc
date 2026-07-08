@@ -184,7 +184,7 @@ TEST_F(NamespaceInitTest, MoveAndRecordBuildVersion) {
 TEST_F(NamespaceInitTest, CreatePreviousLogsFile) {
   timekeeper::TestClock clock;
   cobalt::Logger cobalt(dispatcher(), services(), &clock);
-  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
 
   std::string logs_dir;
   ASSERT_TRUE(temp_dir_.NewTempDir(&logs_dir));

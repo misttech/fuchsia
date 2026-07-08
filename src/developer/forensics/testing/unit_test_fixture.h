@@ -87,7 +87,7 @@ class UnitTestFixture : public gtest::TestLoopFixture {
     return logger_factory_server_->WasMethodCalled(name);
   }
 
-  void CloseFactoryConnection() { logger_factory_server_->CloseConnection(); }
+  void CloseFactoryConnection() { logger_factory_server_->CloseConnection(ZX_ERR_PEER_CLOSED); }
   void CloseLoggerConnection() { logger_factory_server_->CloseLoggerConnection(); }
 
  private:

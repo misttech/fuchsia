@@ -158,7 +158,7 @@ class CrashReporterTest : public UnitTestFixture {
         std::make_shared<InfoContext>(&InspectRoot(), &clock_, dispatcher(), services());
     crash_register_ = std::make_unique<CrashRegister>(info_context_, RegisterJsonPath());
 
-    SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+    SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
     RunLoopUntilIdle();
   }
 

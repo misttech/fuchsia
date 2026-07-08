@@ -48,8 +48,8 @@ source_set("cobalt") {
   ]
 
   public_deps = [
-    ":fidl_server_hlcpp",
-    "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_hlcpp",
+    ":fidl_server",
+    "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_cpp",
     "//src/developer/forensics/utils/cobalt",
   ]
 

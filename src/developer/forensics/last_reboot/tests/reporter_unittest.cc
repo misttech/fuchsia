@@ -157,7 +157,7 @@ TEST_F(GenericReporterTest, Succeed_WellFormedRebootLog) {
           .runtime = final_shutdown_info.Runtime(),
           .is_fatal = true,
       }));
-  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
 
   ReportOn(reboot_log);
 
@@ -187,7 +187,7 @@ TEST_F(GenericReporterTest, Succeed_RootJobTerminationRebootLog) {
           .runtime = final_shutdown_info.Runtime(),
           .is_fatal = true,
       }));
-  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
 
   ReportOn(reboot_log);
 
@@ -212,7 +212,7 @@ TEST_F(GenericReporterTest, Succeed_NoUptime) {
           .runtime = std::nullopt,
           .is_fatal = true,
       }));
-  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
 
   ReportOn(reboot_log);
 
@@ -239,7 +239,7 @@ TEST_F(GenericReporterTest, Succeed_NoRuntime) {
           .runtime = std::nullopt,
           .is_fatal = true,
       }));
-  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
 
   ReportOn(reboot_log);
 
@@ -279,7 +279,7 @@ TEST_F(GenericReporterTest, Succeed_RedactsData) {
           .runtime = std::nullopt,
           .is_fatal = true,
       }));
-  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
   SetUpRedactor(std::make_unique<SimpleRedactor>());
 
   ReportOn(reboot_log);
@@ -309,7 +309,7 @@ TEST_F(GenericReporterTest, Succeed_NoCrashReportFiledCleanReboot) {
           .runtime = runtime,
           .is_fatal = true,
       }));
-  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
 
   ReportOn(reboot_log);
 
@@ -324,7 +324,7 @@ TEST_F(GenericReporterTest, Succeed_NoCrashReportFiledColdReboot) {
   const feedback::RebootLog reboot_log(final_shutdown_info, "");
 
   SetUpCrashReporterServer(std::make_unique<stubs::CrashReporterNoFileExpected>());
-  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
 
   ReportOn(reboot_log);
 
@@ -345,7 +345,7 @@ TEST_F(GenericReporterTest, Fail_CrashReporterFailsToFile) {
       "HW REBOOT REASON (WARM BOOT)\n\n"
       "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072");
   SetUpCrashReporterServer(std::make_unique<stubs::CrashReporterAlwaysReturnsError>());
-  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
 
   ReportOn(reboot_log);
 
@@ -368,7 +368,7 @@ TEST_F(GenericReporterTest, Succeed_DoesNothingIfAlreadyReportedOn) {
       "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072");
 
   SetUpCrashReporterServer(std::make_unique<stubs::CrashReporterNoFileExpected>());
-  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
 
   ReportOn(reboot_log);
 
@@ -466,7 +466,7 @@ TEST_P(UngracefulReporterTest, Succeed) {
           .runtime = param.output_runtime,
           .is_fatal = true,
       }));
-  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
 
   ReportOnRebootLog();
 
@@ -512,7 +512,7 @@ TEST_P(GracefulReporterTest, Succeed) {
   WriteGracefulShutdownInfoContents(param.graceful_shutdown_info);
 
   SetUpCrashReporterServer(std::make_unique<stubs::CrashReporterNoFileExpected>());
-  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
 
   ReportOnRebootLog();
 
@@ -530,7 +530,7 @@ TEST_P(GracefulReporterTest, Succeed_FDR) {
   SetAsFdr();
 
   SetUpCrashReporterServer(std::make_unique<stubs::CrashReporterNoFileExpected>());
-  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
 
   ReportOnRebootLog();
 
@@ -688,7 +688,7 @@ TEST_P(GracefulWithCrashReporterTest, Succeed) {
           .runtime = param.output_runtime,
           .is_fatal = true,
       }));
-  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
 
   ReportOnRebootLog();
 
@@ -726,7 +726,7 @@ TEST_P(GracefulWithCrashReporterTest, SucceedForLegacyFile) {
           .runtime = param.output_runtime,
           .is_fatal = true,
       }));
-  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
 
   ReportOnRebootLog();
 

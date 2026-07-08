@@ -34,7 +34,7 @@ class AnnotationMetricsTest : public UnitTestFixture,
                               public ::testing::WithParamInterface<ExpectedMetric> {
  public:
   AnnotationMetricsTest() : cobalt_(dispatcher(), services(), &clock_) {
-    SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+    SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
   }
 
   cobalt::Logger* Cobalt() { return &cobalt_; }

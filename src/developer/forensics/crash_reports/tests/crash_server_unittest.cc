@@ -54,7 +54,7 @@ class CrashServerTest : public UnitTestFixture {
     annotation_manager_ = std::make_unique<feedback::AnnotationManager>(
         dispatcher(), std::set<std::string>({feedback::kSystemBootIdCurrentKey}),
         feedback::Annotations({{feedback::kSystemBootIdCurrentKey, ErrorOrString("some-value")}}));
-    SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+    SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
     RunLoopUntilIdle();
   }
 

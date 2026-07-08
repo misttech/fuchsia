@@ -30,7 +30,7 @@ using ::testing::UnorderedElementsAreArray;
 class LastRebootTest : public UnitTestFixture {
  public:
   LastRebootTest() : clock_(dispatcher()), cobalt_(dispatcher(), services(), &clock_) {
-    SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+    SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
   }
 
   void TearDown() override {

@@ -4,63 +4,62 @@
 
 #include "src/developer/forensics/testing/stubs/cobalt_logger_factory.h"
 
-#include <fuchsia/metrics/cpp/fidl.h>
+#include <fidl/fuchsia.metrics/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
-#include <lib/fidl/cpp/interface_request.h>
-#include <lib/fidl/cpp/internal/stub.h>
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/errors.h>
 
 namespace forensics {
 namespace stubs {
 
-using fuchsia::metrics::Error;
-using fuchsia::metrics::MetricEventLogger;
+using fuchsia_metrics::Error;
 
 void CobaltLoggerFactoryBase::CloseLoggerConnection() {
-  if (logger_binding_) {
+  if (logger_binding_.has_value()) {
     logger_binding_->Close(ZX_ERR_PEER_CLOSED);
   }
 }
 
 void CobaltLoggerFactory::CreateMetricEventLogger(
-    ::fuchsia::metrics::ProjectSpec project_spec,
-    ::fidl::InterfaceRequest<::fuchsia::metrics::MetricEventLogger> logger,
-    CreateMetricEventLoggerCallback callback) {
-  logger_binding_ = std::make_unique<::fidl::Binding<fuchsia::metrics::MetricEventLogger>>(
-      logger_.get(), std::move(logger));
-  callback(fpromise::ok());
+    CreateMetricEventLoggerRequest& request, CreateMetricEventLoggerCompleter::Sync& completer) {
+  logger_binding_.emplace(dispatcher_, std::move(request.logger()), logger_.get(),
+                          [](fidl::UnbindInfo info) {});
+  completer.Reply(fit::success());
+}
+
+void CobaltLoggerFactoryClosesConnection::CreateMetricEventLogger(
+    CreateMetricEventLoggerRequest& request, CreateMetricEventLoggerCompleter::Sync& completer) {
+  logger_binding_.emplace(dispatcher_, std::move(request.logger()), logger_.get(),
+                          [](fidl::UnbindInfo info) {});
+  CloseLoggerConnection();
+  completer.Reply(fit::success());
 }
 
 void CobaltLoggerFactoryFailsToCreateLogger::CreateMetricEventLogger(
-    ::fuchsia::metrics::ProjectSpec project_spec,
-    ::fidl::InterfaceRequest<::fuchsia::metrics::MetricEventLogger> logger,
-    CreateMetricEventLoggerCallback callback) {
-  callback(fpromise::error(Error::INVALID_ARGUMENTS));
+    CreateMetricEventLoggerRequest& request, CreateMetricEventLoggerCompleter::Sync& completer) {
+  completer.Reply(fit::error(Error::kInvalidArguments));
 }
 
 void CobaltLoggerFactoryCreatesOnRetry::CreateMetricEventLogger(
-    ::fuchsia::metrics::ProjectSpec project_spec,
-    ::fidl::InterfaceRequest<::fuchsia::metrics::MetricEventLogger> logger,
-    CreateMetricEventLoggerCallback callback) {
+    CreateMetricEventLoggerRequest& request, CreateMetricEventLoggerCompleter::Sync& completer) {
   ++num_calls_;
   if (num_calls_ >= succeed_after_) {
-    logger_binding_ = std::make_unique<::fidl::Binding<fuchsia::metrics::MetricEventLogger>>(
-        logger_.get(), std::move(logger));
-    callback(fpromise::ok());
+    logger_binding_.emplace(dispatcher_, std::move(request.logger()), logger_.get(),
+                            [](fidl::UnbindInfo info) {});
+    completer.Reply(fit::success());
     return;
   }
 
-  callback(fpromise::error(Error::INVALID_ARGUMENTS));
+  completer.Reply(fit::error(Error::kInvalidArguments));
 }
 
 void CobaltLoggerFactoryDelaysCallback::CreateMetricEventLogger(
-    ::fuchsia::metrics::ProjectSpec project_spec,
-    ::fidl::InterfaceRequest<::fuchsia::metrics::MetricEventLogger> logger,
-    CreateMetricEventLoggerCallback callback) {
-  logger_binding_ = std::make_unique<::fidl::Binding<fuchsia::metrics::MetricEventLogger>>(
-      logger_.get(), std::move(logger));
-  async::PostDelayedTask(dispatcher_, [cb = std::move(callback)]() { cb(fpromise::ok()); }, delay_);
+    CreateMetricEventLoggerRequest& request, CreateMetricEventLoggerCompleter::Sync& completer) {
+  logger_binding_.emplace(dispatcher_, std::move(request.logger()), logger_.get(),
+                          [](fidl::UnbindInfo info) {});
+  async::PostDelayedTask(
+      dispatcher_, [completer = completer.ToAsync()]() mutable { completer.Reply(fit::success()); },
+      delay_);
 }
 
 }  // namespace stubs

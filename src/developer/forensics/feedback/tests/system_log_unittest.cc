@@ -105,7 +105,7 @@ class SystemLogTest : public UnitTestFixture {
         log_buffer_(feedback_data::kCurrentLogBufferSize, &redactor_),
         system_log_(dispatcher(), services(), &clock_, &redactor_, kActivePeriod, &cobalt_,
                     &log_buffer_) {
-    SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+    SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
   }
 
  protected:
