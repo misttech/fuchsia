@@ -318,11 +318,6 @@
 	url = https://fuchsia.googlesource.com/third_party/github.com/the-tcpdump-group/tcpdump
 	name = third_party/github.com/the-tcpdump-group/tcpdump
 	ignore = all
-[submodule "third_party/tink"]
-	path = third_party/tink
-	url = https://fuchsia.googlesource.com/third_party/tink
-	name = third_party/tink
-	ignore = all
 [submodule "third_party/tpm2-tss/src"]
 	path = third_party/tpm2-tss/src
 	url = https://fuchsia.googlesource.com/third_party/github.com/tpm2-software/tpm2-tss
