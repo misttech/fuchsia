@@ -7,11 +7,11 @@ use crate::task::{CurrentTask, CurrentTaskAndLocked, register_delayed_release};
 use crate::vfs::{FdNumber, FileHandle, FileReleaser};
 use bitflags::bitflags;
 use fuchsia_rcu::subtle::{RcuPtrRef, rcu_ptr_to_arc};
-use fuchsia_rcu::{RcuReadScope, rcu_drop};
+use fuchsia_rcu::{RcuArc, RcuReadGuard, RcuReadScope, rcu_drop};
 use fuchsia_rcu_collections::rcu_array::RcuArray;
 use linux_uapi::{FD_CLOEXEC, FIOCLEX, FIONCLEX};
 use starnix_sync::{
-    FdTableShareCountLock, FileOpsCore, LockBefore, LockDepGuard, LockDepMutex, LockEqualOrBefore,
+    FdTableWriterQueueLock, FileOpsCore, LockBefore, LockDepGuard, LockDepMutex, LockEqualOrBefore,
     Locked, ThreadGroupLimits, Unlocked,
 };
 use starnix_syscalls::SyscallResult;
@@ -22,7 +22,7 @@ use starnix_uapi::resource_limits::Resource;
 use starnix_uapi::{errno, error};
 use static_assertions::const_assert;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering, fence};
 
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -332,39 +332,10 @@ impl<'a> FdTableView<'a> {
 
 struct FdTableWriteGuard<'a> {
     store: &'a FdTableInner,
-    share_count: LockDepGuard<'a, usize>,
+    _write_guard: LockDepGuard<'a, ()>,
 }
 
 impl<'a> FdTableWriteGuard<'a> {
-    /// Increases the share count for this `FdTableInner`.
-    fn share(&mut self) {
-        assert!(*self.share_count > 0, "Cannot share unshared table");
-        *self.share_count += 1;
-    }
-
-    /// Decreases the share count for this `FdTableInner`. The table is cleared when the count
-    /// reaches zero.
-    fn unshare(mut self) {
-        if *self.share_count > 0 {
-            *self.share_count -= 1;
-            if *self.share_count == 0 {
-                self.clear();
-            }
-        }
-    }
-
-    /// Creates a snapshot of the table with the same files but a separate share count.
-    fn fork(&self) -> FdTableInner {
-        // THREAD SAFETY: Holding the `share_count` lock through `Self::share_count` ensures
-        // coherence between `entries` and `next_fd` because they must only be modified while
-        // holding the lock.
-        FdTableInner {
-            entries: self.store.entries.clone(),
-            next_fd: self.store.next_fd.clone(),
-            share_count: LockDepMutex::new(1),
-        }
-    }
-
     /// The lowest available `FdNumber`.
     fn next_fd(&self) -> FdNumber {
         self.store.next_fd.get()
@@ -546,53 +517,45 @@ impl Clone for AtomicFdNumber {
     }
 }
 
-/// The inner state of a file descriptor table which is shared between tasks.
+/// The state of an `FdTable` that is shared between tasks.
 ///
-/// # Thread Safety
-///
-/// The table supports concurrent, lock-free reads via RCU. Writers serialize on the share count
-/// mutex independently from readers.
+/// The `writer_queue` is used to serialize concurrent writers to the `FdTable`, and to prevent
+/// writers from being blocked by readers.
 #[derive(Debug)]
 struct FdTableInner {
+    // The number of shared references to this table.
+    share_count: AtomicUsize,
+
     /// The entries of the `FdTable`.
-    ///
-    /// # Thread Safety
-    ///
-    /// Must only be modified while holding the `share_count` lock.
     entries: RcuArray<EncodedEntry>,
 
     /// The next available `FdNumber`.
-    ///
-    /// # Thread Safety
-    ///
-    /// Must only be modified while holding the `share_count` lock.
     next_fd: AtomicFdNumber,
 
-    /// The number of shared references to this table, and the mutex that serializes writers.
-    ///
-    /// If the value is 0, the table is read-only and empty.
-    share_count: LockDepMutex<usize, FdTableShareCountLock>,
+    /// A mutex used to serialize concurrent writers to the `FdTable`, and to prevent writers from
+    /// being blocked by readers.
+    writer_queue: LockDepMutex<(), FdTableWriterQueueLock>,
 }
 
 impl Default for FdTableInner {
     fn default() -> Self {
-        Self {
+        FdTableInner {
+            share_count: AtomicUsize::new(1),
             entries: Default::default(),
             next_fd: AtomicFdNumber::default(),
-            share_count: LockDepMutex::new(1),
+            writer_queue: Default::default(),
         }
     }
 }
 
 impl Clone for FdTableInner {
     fn clone(&self) -> Self {
-        // THREAD SAFETY: Holding the `share_count` lock ensures coherence between `entries` and
-        // `next_fd` because they must only be modified while holding the lock.
-        let _guard = self.share_count.lock();
+        let _guard = self.writer_queue.lock();
         Self {
+            share_count: AtomicUsize::new(1),
             entries: self.entries.clone(),
             next_fd: self.next_fd.clone(),
-            share_count: LockDepMutex::new(1),
+            writer_queue: Default::default(),
         }
     }
 }
@@ -613,6 +576,36 @@ impl FdTableInner {
         FdTableId::new(self as *const Self)
     }
 
+    /// Gets the number of `FdTable` instances sharing this `FdTableInner`.
+    fn share_count(&self) -> usize {
+        self.share_count.load(Ordering::Relaxed)
+    }
+
+    /// Increases the share count for this `FdTableInner`.
+    fn share(&self) {
+        self.share_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Decreases the share count for this `FdTableInner`. The table is cleared when the count
+    /// reaches zero.
+    fn unshare(self: Arc<Self>) {
+        // Explicitly clear the table when the last sharer of this table drops its reference.
+        //
+        // We cannot rely on the table being implicitly cleared by `Drop`. RCU drops are deferred to
+        // guarantee memory safety. This introduces nondeterminism to the teardown process, but file
+        // cleanup must be done deterministically.
+        if self.share_count.fetch_sub(1, Ordering::Release) == 1 {
+            fence(Ordering::Acquire);
+            // Clearing releases `FileHandle`s, which transitively calls `FileOps::flush()`. This
+            // effectively makes clear into a blocking operation which can re-enter userspace.
+            // Blocking in this way is unsafe while an RCU read lock is held. `FdTable` is managed
+            // by RCU, so a read lock will generally be held in contexts where `unshare()` is
+            // called. Use a delayed release to clear the table at a known point outside of an RCU
+            // read scope, through a reference held outside RCU.
+            register_delayed_release(ClearFdTable(self));
+        }
+    }
+
     /// Returns a `FdTableView` that provides read-only access to the state of the `FdTableInner`.
     fn read<'a>(&self, scope: &'a RcuReadScope) -> FdTableView<'a> {
         let slice = self.entries.as_slice(scope);
@@ -621,66 +614,62 @@ impl FdTableInner {
 
     /// Returns a `FdTableWriteGuard` that provides exclusive access to the state of the
     /// `FdTableInner`.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Err(ESRCH)`] if the table has no active sharers, indicating it is in the process
-    /// of being destroyed.
-    fn write(&self) -> Result<FdTableWriteGuard<'_>, Errno> {
-        let share_count = self.share_count.lock();
-        if *share_count == 0 {
-            return error!(ESRCH);
-        }
-        Ok(FdTableWriteGuard { store: self, share_count })
+    fn write(&self) -> FdTableWriteGuard<'_> {
+        FdTableWriteGuard { store: self, _write_guard: self.writer_queue.lock() }
     }
 }
 
-/// A wrapper around `FdTable` that manages the table's logical share count.
-///
-/// This type represents the primary reference to the file descriptor table held by a task. Cloning
-/// and dropping `SharedFdTable` increment and decrement the share count of the `FdTable`,
-/// respectively. When the last `SharedFdTable` for the table is dropped, the table is cleared.
-#[derive(Debug, Default)]
-pub struct SharedFdTable {
-    pub table: FdTable,
+/// An `FdTableInner` that is waiting to be cleared.
+struct ClearFdTable(Arc<FdTableInner>);
+
+impl Releasable for ClearFdTable {
+    type Context<'a> = CurrentTaskAndLocked<'a>;
+    fn release<'a>(self, _context: Self::Context<'a>) {
+        self.0.write().clear();
+    }
 }
 
-impl Clone for SharedFdTable {
+/// An RCU smart pointer wrapper for `FdTableInner` that automatically tracks active sharers via the
+/// underlying `share_count` and triggers deterministic cleanup when the last sharer drops its
+/// reference.
+#[derive(Debug)]
+struct FdTableInnerArc {
+    inner: RcuArc<FdTableInner>,
+}
+
+impl Default for FdTableInnerArc {
+    fn default() -> Self {
+        Self::new(FdTableInner::default())
+    }
+}
+
+impl Clone for FdTableInnerArc {
     fn clone(&self) -> Self {
-        self.table.inner.write().expect("FdTable must be writable").share();
-        Self { table: self.table.clone() }
+        let inner = self.inner.to_arc();
+        inner.share();
+        Self { inner: RcuArc::new(inner) }
     }
 }
 
-impl std::ops::Deref for SharedFdTable {
-    type Target = FdTable;
-    fn deref(&self) -> &Self::Target {
-        &self.table
-    }
-}
-
-impl Drop for SharedFdTable {
+impl Drop for FdTableInnerArc {
     fn drop(&mut self) {
-        if let Ok(guard) = self.table.inner.write() {
-            guard.unshare();
-        }
+        self.inner.to_arc().unshare();
     }
 }
 
-impl SharedFdTable {
-    pub fn new(table: FdTable) -> Self {
-        Self { table }
+impl FdTableInnerArc {
+    pub fn new(inner: FdTableInner) -> Self {
+        assert_eq!(inner.share_count(), 1, "FdTableInner must only be shared via clone()");
+        Self { inner: RcuArc::new(Arc::new(inner)) }
     }
 
-    /// Replaces the wrapped table with a fork that has an independent share count.
-    pub fn unshare(&mut self) {
-        if let Ok(mut guard) = self.table.inner.clone().write() {
-            if *guard.share_count > 1 {
-                let inner = Arc::new(guard.fork());
-                *guard.share_count -= 1;
-                self.table = FdTable { inner };
-            }
-        }
+    pub fn read(&self) -> RcuReadGuard<FdTableInner> {
+        self.inner.read()
+    }
+
+    pub fn update(&self, scope: &RcuReadScope, new_inner: FdTableInner) {
+        let old_inner = self.inner.update_swap(scope, Arc::new(new_inner));
+        old_inner.unshare();
     }
 }
 
@@ -688,7 +677,7 @@ impl SharedFdTable {
 #[derive(Debug, Clone, Default)]
 pub struct FdTable {
     /// The state of the `FdTable` that is shared between tasks.
-    inner: Arc<FdTableInner>,
+    inner: FdTableInnerArc,
 }
 
 /// The target `FdNumber` for a duplicated file descriptor.
@@ -706,13 +695,24 @@ pub enum TargetFdNumber {
 impl FdTable {
     /// Returns the `FdTableId` of the `FdTable`.
     pub fn id(&self) -> FdTableId {
-        self.inner.id()
+        self.inner.read().id()
     }
 
     /// Returns new unshared `FdTable` that is a snapshot of the state of the `FdTable`.
     pub fn fork(&self) -> FdTable {
-        let forked = (*self.inner).clone();
-        FdTable { inner: Arc::new(forked) }
+        let forked = self.inner.read().clone();
+        FdTable { inner: FdTableInnerArc::new(forked) }
+    }
+
+    /// Ensures that this `FdTable` is not shared by any other `FdTable` instances.
+    pub fn unshare(&self) {
+        let unshared = self.inner.read().clone();
+        self.inner.update(&RcuReadScope::new(), unshared);
+    }
+
+    /// Releases the `FdTable`, closing any files opened exclusively by this table.
+    pub fn release(&self) {
+        self.inner.update(&RcuReadScope::new(), Default::default());
     }
 
     /// Trims close-on-exec file descriptors from the table.
@@ -733,8 +733,9 @@ impl FdTable {
     {
         let flags = FdFlags::empty();
         let rlimit = current_task.thread_group().get_rlimit(locked, Resource::NOFILE);
-        let guard = self.inner.write()?;
-        guard.insert_entry(&RcuReadScope::new(), fd, rlimit, FdTableEntry { file, flags })?;
+        let inner = self.inner.read();
+        let guard = inner.write();
+        guard.insert_entry(inner.scope(), fd, rlimit, FdTableEntry { file, flags })?;
         Ok(())
     }
 
@@ -757,9 +758,10 @@ impl FdTable {
     {
         let locked = locked.cast_locked::<FileOpsCore>();
         let rlimit = current_task.thread_group().get_rlimit(locked, Resource::NOFILE);
-        let guard = self.inner.write()?;
+        let inner = self.inner.read();
+        let guard = inner.write();
         let fd = guard.next_fd();
-        guard.insert_entry(&RcuReadScope::new(), fd, rlimit, FdTableEntry { file, flags })?;
+        guard.insert_entry(inner.scope(), fd, rlimit, FdTableEntry { file, flags })?;
         Ok(fd)
     }
 
@@ -779,9 +781,9 @@ impl FdTable {
         L: LockBefore<ThreadGroupLimits>,
     {
         let rlimit = current_task.thread_group().get_rlimit(locked, Resource::NOFILE);
-        let guard = self.inner.write()?;
-        let scope = RcuReadScope::new();
-        let file = guard.get_file(&scope, oldfd).ok_or_else(|| errno!(EBADF))?;
+        let inner = self.inner.read();
+        let guard = inner.write();
+        let file = guard.get_file(inner.scope(), oldfd).ok_or_else(|| errno!(EBADF))?;
 
         let fd = match target {
             TargetFdNumber::Specific(fd) => {
@@ -793,14 +795,16 @@ impl FdTable {
                     // when we're past the rlimit.
                     return error!(EBADF);
                 }
-                guard.remove_entry(&scope, &fd);
+                guard.remove_entry(inner.scope(), &fd);
                 fd
             }
-            TargetFdNumber::Minimum(fd) => guard.get_lowest_available_fd(&scope, fd),
-            TargetFdNumber::Default => guard.get_lowest_available_fd(&scope, FdNumber::from_raw(0)),
+            TargetFdNumber::Minimum(fd) => guard.get_lowest_available_fd(inner.scope(), fd),
+            TargetFdNumber::Default => {
+                guard.get_lowest_available_fd(inner.scope(), FdNumber::from_raw(0))
+            }
         };
         let existing_entry =
-            guard.insert_entry(&scope, fd, rlimit, FdTableEntry { file, flags })?;
+            guard.insert_entry(inner.scope(), fd, rlimit, FdTableEntry { file, flags })?;
         assert!(!existing_entry);
         Ok(fd)
     }
@@ -825,9 +829,9 @@ impl FdTable {
         &self,
         fd: FdNumber,
     ) -> Result<(FileHandle, FdFlags), Errno> {
-        let scope = RcuReadScope::new();
-        let view = self.inner.read(&scope);
-        view.get_entry(&scope, fd)
+        let inner = self.inner.read();
+        let view = inner.read(inner.scope());
+        view.get_entry(inner.scope(), fd)
             .map(|entry| (entry.file, entry.flags))
             .ok_or_else(|| errno!(EBADF))
     }
@@ -847,9 +851,9 @@ impl FdTable {
     ///
     /// This operation fails if the file descriptor is not valid.
     pub fn close(&self, fd: FdNumber) -> Result<(), Errno> {
-        let guard = self.inner.write()?;
-        let scope = RcuReadScope::new();
-        if guard.remove_entry(&scope, &fd) { Ok(()) } else { error!(EBADF) }
+        let inner = self.inner.read();
+        let guard = inner.write();
+        if guard.remove_entry(inner.scope(), &fd) { Ok(()) } else { error!(EBADF) }
     }
 
     /// Returns the flags associated with the given file descriptor.
@@ -868,9 +872,9 @@ impl FdTable {
         fd: FdNumber,
         request: u32,
     ) -> Result<(), Errno> {
-        let guard = self.inner.write()?;
-        let scope = RcuReadScope::new();
-        let file = guard.get_file(&scope, fd).ok_or_else(|| errno!(EBADF))?;
+        let inner = self.inner.read();
+        let guard = inner.write();
+        let file = guard.get_file(inner.scope(), fd).ok_or_else(|| errno!(EBADF))?;
         if file.flags().contains(OpenFlags::PATH) {
             return error!(EBADF);
         }
@@ -882,15 +886,16 @@ impl FdTable {
             }
         };
         security::check_file_ioctl_access(current_task, &file, request)?;
-        guard.set_fd_flags(&scope, fd, flags)
+        guard.set_fd_flags(inner.scope(), fd, flags)
     }
 
     /// Sets the flags associated with the given file descriptor.
     ///
     /// This operation fails if the file descriptor is not valid.
     pub fn set_fd_flags_allowing_opath(&self, fd: FdNumber, flags: FdFlags) -> Result<(), Errno> {
-        let guard = self.inner.write()?;
-        guard.set_fd_flags(&RcuReadScope::new(), fd, flags)
+        let inner = self.inner.read();
+        let guard = inner.write();
+        guard.set_fd_flags(inner.scope(), fd, flags)
     }
 
     /// Retains only the FDs matching the given `predicate`.
@@ -903,15 +908,15 @@ impl FdTable {
         L: LockEqualOrBefore<FileOpsCore>,
         F: Fn(FdNumber, &mut FdFlags) -> bool,
     {
-        if let Ok(guard) = self.inner.write() {
-            guard.retain(&RcuReadScope::new(), predicate);
-        }
+        let inner = self.inner.read();
+        let guard = inner.write();
+        guard.retain(inner.scope(), predicate);
     }
 
     /// Returns a vector of all current file descriptors in the table.
     pub fn get_all_fds(&self) -> Vec<FdNumber> {
-        let scope = RcuReadScope::new();
-        let view = self.inner.read(&scope);
+        let inner = self.inner.read();
+        let view = inner.read(inner.scope());
         view.slice
             .iter()
             .enumerate()
@@ -933,9 +938,9 @@ impl FdTable {
     ) where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        if let Ok(guard) = self.inner.write() {
-            guard.remap(&RcuReadScope::new(), predicate);
-        }
+        let inner = self.inner.read();
+        let guard = inner.write();
+        guard.remap(inner.scope(), predicate);
     }
 }
 
@@ -957,7 +962,7 @@ mod test {
     #[::fuchsia::test]
     async fn test_fd_table_install() {
         spawn_kernel_and_run(async |locked, current_task| {
-            let files = SharedFdTable::default();
+            let files = FdTable::default();
             let file = SyslogFile::new_file(locked, &current_task);
 
             let fd0 = add(locked, &current_task, &files, file.clone()).unwrap();
@@ -968,6 +973,8 @@ mod test {
             assert!(Arc::ptr_eq(&files.get(fd0).unwrap(), &file));
             assert!(Arc::ptr_eq(&files.get(fd1).unwrap(), &file));
             assert_eq!(files.get(FdNumber::from_raw(fd1.raw() + 1)).map(|_| ()), error!(EBADF));
+
+            files.release();
         })
         .await;
     }
@@ -975,14 +982,14 @@ mod test {
     #[::fuchsia::test]
     async fn test_fd_table_fork() {
         spawn_kernel_and_run(async |locked, current_task| {
-            let files = SharedFdTable::default();
+            let files = FdTable::default();
             let file = SyslogFile::new_file(locked, &current_task);
 
             let fd0 = add(locked, &current_task, &files, file.clone()).unwrap();
             let fd1 = add(locked, &current_task, &files, file).unwrap();
             let fd2 = FdNumber::from_raw(2);
 
-            let forked = SharedFdTable::new(files.fork());
+            let forked = files.fork();
 
             assert_eq!(
                 Arc::as_ptr(&files.get(fd0).unwrap()),
@@ -998,6 +1005,9 @@ mod test {
             files.set_fd_flags_allowing_opath(fd0, FdFlags::CLOEXEC).unwrap();
             assert_eq!(FdFlags::CLOEXEC, files.get_fd_flags_allowing_opath(fd0).unwrap());
             assert_ne!(FdFlags::CLOEXEC, forked.get_fd_flags_allowing_opath(fd0).unwrap());
+
+            forked.release();
+            files.release();
         })
         .await;
     }
@@ -1005,7 +1015,7 @@ mod test {
     #[::fuchsia::test]
     async fn test_fd_table_exec() {
         spawn_kernel_and_run(async |locked, current_task| {
-            let files = SharedFdTable::default();
+            let files = FdTable::default();
             let file = SyslogFile::new_file(locked, &current_task);
 
             let fd0 = add(locked, &current_task, &files, file.clone()).unwrap();
@@ -1020,6 +1030,8 @@ mod test {
 
             assert!(files.get(fd0).is_err());
             assert!(files.get(fd1).is_ok());
+
+            files.release();
         })
         .await;
     }
@@ -1027,7 +1039,7 @@ mod test {
     #[::fuchsia::test]
     async fn test_fd_table_pack_values() {
         spawn_kernel_and_run(async |locked, current_task| {
-            let files = SharedFdTable::default();
+            let files = FdTable::default();
             let file = SyslogFile::new_file(locked, &current_task);
 
             // Add two FDs.
@@ -1045,6 +1057,8 @@ mod test {
             // The next FD we insert fills in the hole we created.
             let another_fd = add(locked, &current_task, &files, file).unwrap();
             assert_eq!(another_fd.raw(), 0);
+
+            files.release();
         })
         .await;
     }
@@ -1052,43 +1066,25 @@ mod test {
     #[::fuchsia::test]
     async fn test_fd_table_shared_release() {
         spawn_kernel_and_run(async |locked, current_task| {
-            let files = SharedFdTable::default();
+            let files = FdTable::default();
             let file = SyslogFile::new_file(locked, &current_task);
 
             let fd = add(locked, &current_task, &files, file).unwrap();
             assert_eq!(files.get_all_fds(), vec![fd]);
 
+            // Share the table by cloning `FdTable`
             let shared_files = files.clone();
             assert_eq!(shared_files.get_all_fds(), vec![fd]);
 
             // Release the original files. Since `shared_files` holds a shared reference, the table
             // should not be cleared.
-            drop(files);
+            files.release();
+            assert_eq!(files.get_all_fds(), vec![]);
             assert_eq!(shared_files.get_all_fds(), vec![fd]);
-        })
-        .await;
-    }
 
-    #[::fuchsia::test]
-    async fn test_fd_table_mutate_after_clear() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let shared_files = SharedFdTable::default();
-            let file = SyslogFile::new_file(locked, &current_task);
-
-            // Clone the underlying FdTable. This does not increment the share_count, but it does
-            // increment the Arc reference count of FdTableInner.
-            let fd_table_clone = shared_files.table.clone();
-
-            // Drop the SharedFdTable. This decrements share_count to 0, triggering a table clear.
-            drop(shared_files);
-
-            // Now attempt to add a file to the cloned FdTable. It should fail with ESRCH.
-            let result = fd_table_clone.add(locked, &current_task, file, FdFlags::empty());
-            assert_eq!(result.map(|_| ()), error!(ESRCH));
-
-            // When fd_table_clone is dropped, it should not panic because the above add() call
-            // failed to insert an entry.
-            drop(fd_table_clone);
+            // Release the shared files. This should clear the table.
+            shared_files.release();
+            assert_eq!(shared_files.get_all_fds(), vec![]);
         })
         .await;
     }

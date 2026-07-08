@@ -251,7 +251,7 @@ pub fn sys_close_range(
         return error!(EINVAL);
     }
     if flags & CLOSE_RANGE_UNSHARE != 0 {
-        current_task.running_state().unshare_files();
+        current_task.running_state().files.unshare();
     }
     let files = current_task.files();
     let in_range = |fd: FdNumber| fd.raw() as u32 >= first && fd.raw() as u32 <= last;

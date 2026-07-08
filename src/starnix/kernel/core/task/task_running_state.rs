@@ -4,9 +4,8 @@
 
 use crate::mm::MemoryManager;
 use crate::task::{AbstractUnixSocketNamespace, AbstractVsockSocketNamespace};
-use crate::vfs::{FdTable, FsContext, FsNodeHandle, SharedFdTable};
+use crate::vfs::{FdTable, FsContext, FsNodeHandle};
 use fuchsia_rcu::{RcuArc, RcuOptionArc, RcuOptionBox};
-use starnix_sync::{LockDepMutex, TaskFilesLock};
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use std::ops::Deref;
@@ -25,10 +24,8 @@ pub struct TaskRunningState {
 
     /// The file descriptor table for this task.
     ///
-    /// This table can be shared by many tasks.
-    ///
-    /// This is always `Some` while the task is running. It becomes `None` upon exit.
-    pub files: LockDepMutex<Option<SharedFdTable>, TaskFilesLock>,
+    /// This table can be share by many tasks.
+    pub files: FdTable,
 
     /// The memory manager for this task.  This is `None` only for system tasks.
     pub mm: RcuOptionArc<MemoryManager>,
@@ -48,23 +45,8 @@ pub struct TaskRunningState {
 }
 
 impl TaskRunningState {
-    #[track_caller]
-    pub fn files(&self) -> Result<FdTable, Errno> {
-        self.files.lock().as_ref().map(|files| files.table.clone()).ok_or_else(|| errno!(ESRCH))
-    }
-
-    pub fn fork_files(&self) -> Option<SharedFdTable> {
-        self.files.lock().as_ref().map(|files| SharedFdTable::new(files.fork()))
-    }
-
-    pub fn share_files(&self) -> Option<SharedFdTable> {
-        self.files.lock().as_ref().map(|files| files.clone())
-    }
-
-    pub fn unshare_files(&self) {
-        if let Some(ref mut files) = *self.files.lock() {
-            files.unshare();
-        }
+    pub fn files(&self) -> FdTable {
+        self.files.clone()
     }
 
     pub fn mm(&self) -> Result<Arc<MemoryManager>, Errno> {

@@ -1830,7 +1830,7 @@ pub fn sys_unshare(
     }
 
     if (flags & CLONE_FILES) != 0 {
-        current_task.running_state().unshare_files();
+        current_task.running_state().files.unshare();
     }
 
     if (flags & CLONE_FS) != 0 {

@@ -9,7 +9,7 @@ use crate::task::{
     CurrentTask, Kernel, PidTable, ProcessGroup, RobustListHeadPtr, SeccompFilterContainer,
     SeccompState, Task, TaskBuilder, ThreadGroup, ThreadGroupParent, ThreadGroupWriteGuard,
 };
-use crate::vfs::{FsContext, SharedFdTable};
+use crate::vfs::{FdTable, FsContext};
 use starnix_sync::{
     LockBefore, Locked, ProcessGroupState, RwLockWriteGuard, TaskRelease, Unlocked, allow_subclass,
 };
@@ -356,7 +356,7 @@ where
             pid,
             initial_name,
             thread_group,
-            SharedFdTable::default(),
+            FdTable::default(),
             memory_manager,
             root_fs,
             creds,
@@ -431,7 +431,7 @@ where
         pid,
         initial_name,
         system_task.thread_group().clone(),
-        SharedFdTable::default(),
+        FdTable::default(),
         mm,
         fs,
         system_task.clone_creds(),
