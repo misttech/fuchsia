@@ -198,7 +198,7 @@ zx_status_t TestLoopDispatcher::CancelWait(async_wait_t* wait) {
   auto it = pending_waits_.find(wait);
   if (it != pending_waits_.end()) {
     pending_waits_.erase(it);
-    return zx_port_cancel(port_.get(), wait->object, reinterpret_cast<uintptr_t>(wait));
+    return zx_port_cancel_key(port_.get(), 0u, reinterpret_cast<uintptr_t>(wait));
   }
 
   return CancelActivatedTaskOrWaitLocked(wait);
