@@ -1966,6 +1966,8 @@ async fn add_use_decl_if_needed(
     match capability {
         // Resolvers don't support Use.
         ftest::Capability::Resolver(_) => return Ok(()),
+        // We don't have enough information to generate a Use for a config capability.
+        ftest::Capability::Config(_) => return Ok(()),
         _ => {}
     }
     if let fcdecl::Ref::Child(child) = ref_ {
