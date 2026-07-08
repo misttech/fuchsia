@@ -13,14 +13,6 @@ pub struct CreateCommand {
     #[argh(option)]
     pub product_name: String,
 
-    /// unique version of this product.board.
-    #[argh(option)]
-    pub product_version: Option<String>,
-
-    /// file containing a unique version of this product.board.
-    #[argh(option)]
-    pub product_version_file: Option<Utf8PathBuf>,
-
     /// path to an assembly manifest, which specifies images to put in slot A.
     #[argh(option)]
     pub system_a: Option<Utf8PathBuf>,

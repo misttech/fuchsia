@@ -69,18 +69,12 @@ pub async fn assemble(
     let system = AssembledSystem::from_dir(&create_system_outputs.outdir)
         .context("Loading system instance from assembly output directory")?;
 
-    let pb_version = product_artifact.version.clone();
-
     let pb_slot = match slot {
         Slot::A => PBSlot::A,
         Slot::R => PBSlot::R,
     };
-    // While the version of the PB will default to that of 'product_artifact',
-    // we'll be explicit here to make sure that they all line up.
-    let builder = ProductBundleBuilder::new(pb_name)
-        .version(pb_version)
-        .system(system, pb_slot)
-        .update_package(1, None);
+    let builder =
+        ProductBundleBuilder::new(pb_name).system(system, pb_slot).update_package(1, None);
 
     builder.build(Box::new(tools), outdir).await?;
     print_fn("Assembly complete.");

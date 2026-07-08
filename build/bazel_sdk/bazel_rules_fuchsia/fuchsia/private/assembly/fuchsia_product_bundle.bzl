@@ -685,14 +685,6 @@ def _build_fuchsia_product_bundle_impl(ctx):
         size_report.path,
     ]
 
-    # If the product bundle version or version file is provided, it takes precedence
-    # over the version in the assembled product artifact.
-    if ctx.attr.product_bundle_version != "":
-        ffx_pb_invocation += ["--product-version", ctx.attr.product_bundle_version]
-    elif ctx.file.product_bundle_version_file:
-        ffx_pb_invocation += ["--product-version-file", ctx.file.product_bundle_version_file.path]
-        all_inputs.append(ctx.file.product_bundle_version_file)
-
     if delivery_blob_type:
         ffx_pb_invocation.append("--delivery-blob-type " + delivery_blob_type)
 
@@ -806,14 +798,6 @@ _build_fuchsia_product_bundle = rule(
     attrs = {
         "product_bundle_name": attr.string(
             doc = "Name of the Fuchsia product. E.g. workstation_eng.x64",
-        ),
-        "product_bundle_version": attr.string(
-            doc = "Version of the Fuchsia product. E.g. 35.20221231.0.1.",
-        ),
-        "product_bundle_version_file": attr.label(
-            doc = "File containing the version of the Fuchsia product. E.g. 35.20221231.0.1.",
-            default = None,
-            allow_single_file = True,
         ),
         "delivery_blob_type": attr.string(
             doc = "Delivery blob type of the product bundle.",

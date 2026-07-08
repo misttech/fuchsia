@@ -95,7 +95,6 @@ pub enum ProductBundleBuildError {
 /// Build a ProductBundle.
 pub struct ProductBundleBuilder {
     product_bundle_name: String,
-    product_bundle_version: Option<String>,
     sdk_version: String,
     system_a: Option<AssembledSystem>,
     system_b: Option<AssembledSystem>,
@@ -125,7 +124,6 @@ impl ProductBundleBuilder {
         let product_bundle_name = product_bundle_name.as_ref().into();
         Self {
             product_bundle_name,
-            product_bundle_version: None,
             sdk_version: "not_built_from_sdk".into(),
             system_a: None,
             system_b: None,
@@ -136,12 +134,6 @@ impl ProductBundleBuilder {
             repository_details: None,
             gerrit_size_report: None,
         }
-    }
-
-    /// Set the product bundle version, if different from the main system's version.
-    pub fn version(mut self, version: impl Into<String>) -> Self {
-        self.product_bundle_version = Some(version.into());
-        self
     }
 
     /// Set the SDK version if built from the SDK.
@@ -210,7 +202,6 @@ impl ProductBundleBuilder {
     ) -> std::result::Result<ProductBundle, ProductBundleBuildError> {
         let ProductBundleBuilder {
             product_bundle_name,
-            product_bundle_version,
             sdk_version,
             system_a,
             system_b,
@@ -223,19 +214,21 @@ impl ProductBundleBuilder {
         } = self;
 
         // Resolve the product bundle version in precedence order:
-        // 1. Explicitly provided version on the builder.
-        // 2. Version from slot A assembled system.
-        // 3. Version from slot B assembled system.
-        // 4. Version from slot R assembled system.
+        // 1. Version from slot A assembled system.
+        // 2. Version from slot B assembled system.
+        // 3. Version from slot R assembled system.
         //
         // If none are present or if the found version is empty, get_release_version defaults
         // to "unversioned".
-        let resolved_version = product_bundle_version.or_else(|| {
-            [&system_a, &system_b, &system_r].into_iter().find_map(|s| {
-                s.as_ref().map(|sys| sys.system_release_info.product.info.version.clone())
-            })
-        });
-
+        let resolved_version = if let Some(sys) = &system_a {
+            Some(sys.system_release_info.product.info.version.clone())
+        } else if let Some(sys) = &system_b {
+            Some(sys.system_release_info.product.info.version.clone())
+        } else if let Some(sys) = &system_r {
+            Some(sys.system_release_info.product.info.version.clone())
+        } else {
+            None
+        };
         let product_bundle_version = get_release_version(&resolved_version, &None)
             .map_err(ProductBundleBuildError::GetReleaseVersion)?;
 
@@ -812,7 +805,6 @@ mod test {
 
         let product_bundle_path = tempdir.join("pb");
         let product_bundle = ProductBundleBuilder::new("name")
-            .version("version")
             .system(system, Slot::A)
             .build(Box::new(tools), &product_bundle_path)
             .await
@@ -820,7 +812,7 @@ mod test {
 
         let expected = ProductBundle::V2(ProductBundleV2 {
             product_name: "name".into(),
-            product_version: "version".into(),
+            product_version: "unversioned".into(),
             partitions: PartitionsConfig::default(),
             sdk_version: "not_built_from_sdk".into(),
             system_a: Some(vec![]),
@@ -834,7 +826,7 @@ mod test {
             virtual_devices_path: None,
             release_info: Some(ProductBundleReleaseInfo {
                 name: "name".to_string(),
-                version: "version".to_string(),
+                version: "unversioned".to_string(),
                 sdk_version: "not_built_from_sdk".to_string(),
                 system_a: Some(SystemReleaseInfo::new_for_testing()),
                 system_b: None,
@@ -881,11 +873,13 @@ mod test {
         partitions.write_to_dir(&partitions_path, None::<Utf8PathBuf>).unwrap();
 
         // Construct the system.
+        let mut release_info = SystemReleaseInfo::new_for_testing();
+        release_info.product.info.version = "1.2.3.4".to_string();
         let system = AssembledSystem {
             images: vec![Image::ZBI { path: zbi_path, signed: false }],
             board_name: "board_name".into(),
             partitions_config: Some(DirectoryPathBuf::new(partitions_path)),
-            system_release_info: SystemReleaseInfo::new_for_testing(),
+            system_release_info: release_info,
             platform_tools: vec![],
         };
 
@@ -893,7 +887,6 @@ mod test {
         let size_report_path = tempdir.join("size_report.json");
         let product_bundle_path = tempdir.join("pb");
         let product_bundle = ProductBundleBuilder::new("name")
-            .version("1.2.3.4")
             .sdk_version("custom_sdk_version".into())
             .system(system, Slot::A)
             .virtual_device(
@@ -951,7 +944,11 @@ mod test {
                 name: "name".to_string(),
                 version: "1.2.3.4".to_string(),
                 sdk_version: "custom_sdk_version".to_string(),
-                system_a: Some(SystemReleaseInfo::new_for_testing()),
+                system_a: Some({
+                    let mut r = SystemReleaseInfo::new_for_testing();
+                    r.product.info.version = "1.2.3.4".to_string();
+                    r
+                }),
                 system_b: None,
                 system_r: None,
             }),
@@ -983,30 +980,6 @@ mod test {
             partitions_config: Some(DirectoryPathBuf::new(partitions_path.to_path_buf())),
             system_release_info: release_info,
             platform_tools: vec![],
-        }
-    }
-
-    #[fuchsia::test]
-    async fn test_version_precedence_explicit() {
-        // Test that an explicit builder version takes precedence over all system slots (A, B, R).
-        let tempdir = TempDir::new().unwrap();
-        let tempdir = Utf8Path::from_path(tempdir.path()).unwrap();
-        let tools = FakeToolProvider::default();
-        let partitions = PartitionsConfig::default();
-        let partitions_path = tempdir.join("partitions");
-        partitions.write_to_dir(&partitions_path, None::<Utf8PathBuf>).unwrap();
-
-        let pb = ProductBundleBuilder::new("name")
-            .version("explicit_version")
-            .system(make_test_system("version_a", &partitions_path), Slot::A)
-            .system(make_test_system("version_b", &partitions_path), Slot::B)
-            .system(make_test_system("version_r", &partitions_path), Slot::R)
-            .build(Box::new(tools), tempdir.join("pb"))
-            .await
-            .unwrap();
-
-        match pb {
-            ProductBundle::V2(pb) => assert_eq!(pb.product_version, "explicit_version"),
         }
     }
 

@@ -111,12 +111,6 @@ struct SanitizedCreateCommand {
     /// The name to add to the output product bundle.
     pub output_name: Option<String>,
 
-    /// The version to add to the output product bundle.
-    pub output_version: Option<String>,
-
-    /// The path to a file containing the version to add to the output product bundle.
-    pub output_version_file: Option<Utf8PathBuf>,
-
     /// The authentication flow to use to access googleapis.
     pub auth: pbms::AuthFlowChoice,
 
@@ -197,14 +191,8 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
                 (p, b)
             };
 
-        if cmd.output_version.is_some() && cmd.output_version_file.is_some() {
-            anyhow::bail!("--output-version and --output-version-file cannot be used together.");
-        }
-
         let CreateCommand {
             output_name,
-            output_version,
-            output_version_file,
             tuf_keys,
             ota_manifest_key,
             developer_overrides,
@@ -230,8 +218,6 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
             board_config,
             recovery_board_config,
             output_name,
-            output_version,
-            output_version_file,
             auth,
             tuf_keys,
             ota_manifest_key,
@@ -299,13 +285,6 @@ async fn sanitized_product_bundle_create(
         CreateResult::Default => default_path_for_product_bundle_name(&name),
     }?;
 
-    let version = if let Some(version_file) = cmd.output_version_file {
-        read_version_from_file(version_file)?
-    } else {
-        cmd.output_version
-            .unwrap_or_else(|| assembly.product_config_release_info.info.version.clone())
-    };
-
     writer
         .line(format!("Assembling into {} ...", out))
         .map_err(|e| ArtifactError::new(anyhow::anyhow!("{}", e)))?;
@@ -343,7 +322,6 @@ async fn sanitized_product_bundle_create(
         return Ok(());
     }
     let mut builder = ProductBundleBuilder::new(name.clone())
-        .version(version)
         .system(system, Slot::A)
         .update_package(1, cmd.ota_manifest_key);
 
@@ -393,14 +371,6 @@ async fn sanitized_product_bundle_create(
     Ok(())
 }
 
-/// Read the product version from a file.
-fn read_version_from_file(version_file: Utf8PathBuf) -> Result<String> {
-    Ok(std::fs::read_to_string(&version_file)
-        .with_context(|| format!("Failed to read version file '{}'", version_file))?
-        .trim()
-        .to_string())
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -416,8 +386,6 @@ mod test {
             board_config: Some("board".to_string()),
             recovery_board_config: Some("recovery_board".to_string()),
             output_name: None,
-            output_version: None,
-            output_version_file: None,
             tuf_keys: None,
             ota_manifest_key: None,
             developer_overrides: None,
@@ -447,8 +415,6 @@ mod test {
             board_config: Some("board".to_string()),
             recovery_board_config: Some("recovery_board".to_string()),
             output_name: None,
-            output_version: None,
-            output_version_file: None,
             tuf_keys: None,
             ota_manifest_key: None,
             developer_overrides: None,

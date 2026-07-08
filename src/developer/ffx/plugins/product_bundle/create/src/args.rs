@@ -95,14 +95,6 @@ pub struct CreateCommand {
     #[argh(option)]
     pub output_name: Option<String>,
 
-    /// the version to add to the output product bundle.
-    #[argh(option)]
-    pub output_version: Option<String>,
-
-    /// file containing the version to add to the output product bundle.
-    #[argh(option)]
-    pub output_version_file: Option<Utf8PathBuf>,
-
     /// the tuf keys to use.
     #[argh(option)]
     pub tuf_keys: Option<Utf8PathBuf>,

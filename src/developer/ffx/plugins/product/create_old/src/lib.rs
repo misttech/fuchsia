@@ -80,14 +80,6 @@ pub async fn pb_create_with_sdk_version(
     let mut pb_builder =
         ProductBundleBuilder::new(cmd.product_name.clone()).sdk_version(sdk_version.to_string());
 
-    // If an explicit version or version file is provided, it takes precedence
-    // over the version in the systems.
-    if let Some(version_file) = &cmd.product_version_file {
-        pb_builder = pb_builder.version(read_version_from_file(version_file)?);
-    } else if let Some(version) = &cmd.product_version {
-        pb_builder = pb_builder.version(version.clone());
-    }
-
     if let Some(system_path) = &cmd.system_a {
         let system = AssembledSystem::from_dir(system_path)?;
         pb_builder = pb_builder.system(system, PartitionSlot::A);
@@ -136,14 +128,6 @@ pub async fn pb_create_with_sdk_version(
     Ok(())
 }
 
-/// Read the product version from a file.
-fn read_version_from_file(version_file: &camino::Utf8PathBuf) -> Result<String> {
-    Ok(std::fs::read_to_string(version_file)
-        .with_context(|| format!("Failed to read version file '{}'", version_file))?
-        .trim()
-        .to_string())
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -188,8 +172,6 @@ mod test {
         pb_create_with_sdk_version(
             CreateCommand {
                 product_name: String::default(),
-                product_version: Some(String::default()),
-                product_version_file: None,
                 system_a: Some(system_dir),
                 system_b: None,
                 system_r: None,
@@ -268,8 +250,6 @@ mod test {
         pb_create_with_sdk_version(
             CreateCommand {
                 product_name: String::default(),
-                product_version: Some(String::default()),
-                product_version_file: None,
                 system_a: Some(system_dir.clone()),
                 system_b: None,
                 system_r: Some(system_dir),
@@ -354,8 +334,6 @@ mod test {
             pb_create_with_sdk_version(
                 CreateCommand {
                     product_name: String::default(),
-                    product_version: Some(String::default()),
-                    product_version_file: None,
                     system_a: Some(system_dir.clone()),
                     system_b: None,
                     system_r: Some(system_dir),
@@ -410,8 +388,6 @@ mod test {
         pb_create_with_sdk_version(
             CreateCommand {
                 product_name: String::default(),
-                product_version: Some(String::default()),
-                product_version_file: None,
                 system_a: Some(system_dir.clone()),
                 system_b: None,
                 system_r: Some(system_dir),
@@ -508,8 +484,6 @@ mod test {
         pb_create_with_sdk_version(
             CreateCommand {
                 product_name: String::default(),
-                product_version: Some(String::default()),
-                product_version_file: None,
                 system_a: Some(system_dir),
                 system_b: None,
                 system_r: None,
@@ -606,8 +580,6 @@ mod test {
         pb_create_with_sdk_version(
             CreateCommand {
                 product_name: String::default(),
-                product_version: Some(String::default()),
-                product_version_file: None,
                 system_a: Some(system_dir),
                 system_b: None,
                 system_r: None,

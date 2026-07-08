@@ -20,9 +20,6 @@ main_product_bundle_name = "${build_info_product}.${build_info_board}"
 #   name (required)
 #     [string] The name of the product bundle.
 #
-#   version (optional)
-#     [string] The version of the product bundle.
-#
 #   system_a (optional)
 #     [path] The path to the images manifest that describes images intended
 #     for slot A.
@@ -189,14 +186,6 @@ template("product_bundle") {
       "--gerrit-size-report",
       rebase_path(files.image_size_report, root_build_dir),
     ]
-
-    # Set the version if provided.
-    if (defined(invoker.version) && invoker.version != "") {
-      args += [
-        "--product-version",
-        invoker.version,
-      ]
-    }
 
     outputs += [ files.product_bundle_manifest ]
     inputs = [

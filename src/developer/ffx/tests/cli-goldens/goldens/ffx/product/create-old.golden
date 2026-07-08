@@ -26,30 +26,6 @@
     {
       "kind": {
         "Option": {
-          "arg_name": "product-version"
-        }
-      },
-      "optionality": "optional",
-      "long": "--product-version",
-      "short": null,
-      "description": "unique version of this product.board.",
-      "hidden": false
-    },
-    {
-      "kind": {
-        "Option": {
-          "arg_name": "product-version-file"
-        }
-      },
-      "optionality": "optional",
-      "long": "--product-version-file",
-      "short": null,
-      "description": "file containing a unique version of this product.board.",
-      "hidden": false
-    },
-    {
-      "kind": {
-        "Option": {
           "arg_name": "system-a"
         }
       },
