@@ -71,6 +71,11 @@ test("tpm-driver-test-bin") {
 
 fuchsia_unittest_package("tpm-driver-test") {
   deps = [ ":tpm-driver-test-bin" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }
 
 group("tpm") {

@@ -91,6 +91,24 @@ class TpmTest : public zxtest::Test, public fidl::WireServer<fuchsia_hardware_tp
         break;
       }
       case RegisterAddress::kTpmDataFifo: {
+        if (inject_overflow_) {
+          // Return a placeholder buffer that is larger than requested. We populate it with a valid
+          // TpmResponseHeader (if it fits) to avoid secondary crashes during header parsing if the
+          // overflow is not detected.
+          const size_t amount = std::min<size_t>(
+              request->count + 1, fuchsia_hardware_tpmimpl::wire::kTpmMaxDataTransfer);
+          alignas(TpmResponseHeader)
+              uint8_t placeholder_buf[fuchsia_hardware_tpmimpl::wire::kTpmMaxDataTransfer] = {};
+          if (amount >= sizeof(TpmResponseHeader)) {
+            TpmResponseHeader* hdr = reinterpret_cast<TpmResponseHeader*>(placeholder_buf);
+            hdr->tag = htobe16(TPM_ST_NO_SESSIONS);
+            hdr->response_size = htobe32(sizeof(TpmResponseHeader));
+            hdr->response_code = 0;
+          }
+          completer.ReplySuccess(fidl::VectorView<uint8_t>::FromExternal(placeholder_buf, amount));
+          break;
+        }
+
         ASSERT_LE(request->count, status_.burst_count());
         ASSERT_GT(request->count, 0);
         std::scoped_lock lock(state_mutex_);
@@ -129,7 +147,8 @@ class TpmTest : public zxtest::Test, public fidl::WireServer<fuchsia_hardware_tp
       if (state_ == kIdle) {
         state_ = kReady;
         fifo_.clear();
-        status_.set_command_ready(1).set_burst_count(64);
+        status_.set_command_ready(1).set_burst_count(
+            fuchsia_hardware_tpmimpl::wire::kTpmMaxDataTransfer);
       } else {
         state_ = kIdle;
         status_.set_command_ready(0);
@@ -230,6 +249,9 @@ class TpmTest : public zxtest::Test, public fidl::WireServer<fuchsia_hardware_tp
 
   std::shared_ptr<MockDevice> fake_root_;
   std::function<void(TpmCmdHeader*, std::vector<uint8_t>&)> handle_command_;
+
+  // When true, the mock TPM will return more bytes than requested in `Read()` calls.
+  bool inject_overflow_ = false;
 };
 
 TEST_F(TpmTest, TestDdkInit) {
@@ -432,4 +454,33 @@ TEST_F(TpmTest, TestExecuteCommandMismatchedSize) {
   // This should fail with INVALID_ARGS (or whatever we choose) and NOT crash/leak.
   ASSERT_OK(result.status());
   ASSERT_EQ(result->error_value(), ZX_ERR_INVALID_ARGS);
+}
+
+// Verify that the TPM driver verifies that it received the correct amount of bytes when making a
+// `Read()` FIDL request.
+TEST_F(TpmTest, TestSendVendorCommandOverflow) {
+  auto dev = fake_root_->GetLatestChild();
+  dev->InitOp();
+  ASSERT_OK(dev->WaitUntilInitReplyCalled());
+
+  handle_command_ = [](TpmCmdHeader* c, std::vector<uint8_t>& out) {
+    TpmResponseHeader r{
+        .tag = htobe16(TPM_ST_NO_SESSIONS),
+        .response_size = htobe32(sizeof(TpmResponseHeader)),
+        .response_code = 0,
+    };
+    out.resize(sizeof(r), 0);
+    memcpy(out.data(), &r, sizeof(r));
+  };
+
+  // Make the fake TPM send more data than the driver requested.
+  inject_overflow_ = true;
+
+  // The request should fail because the fake TPM returned more data than the driver requested.
+  auto tpm = GetTpmClient();
+  uint8_t value = 0xaa;
+  auto result = tpm->ExecuteVendorCommand(0x10, fidl::VectorView<uint8_t>::FromExternal(&value, 1));
+  ASSERT_OK(result.status());
+  ASSERT_TRUE(result->is_error());
+  ASSERT_EQ(result->error_value(), ZX_ERR_IO);
 }

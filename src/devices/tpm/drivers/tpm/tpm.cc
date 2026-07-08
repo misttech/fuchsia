@@ -423,7 +423,11 @@ zx_status_t TpmDevice::ReadFromFifo(cpp20::span<uint8_t> data) {
         return result->error_value();
       }
       auto &received = result->value()->data;
-
+      if (received.size() > burst_count) {
+        zxlogf(ERROR, "Received more bytes than requested: %zu > %zu", received.size(),
+               burst_count);
+        return ZX_ERR_IO;
+      }
       memcpy(&data.data()[read], received.data(), received.size());
       read += received.size();
     }
