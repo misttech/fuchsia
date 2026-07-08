@@ -226,6 +226,16 @@ impl Validate for Class {
     }
 }
 
+impl Validate for ClassId {
+    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+        policy
+            .classes()
+            .get_by_id(*self)
+            .map(|_| ())
+            .ok_or_else(|| ValidateError::UnknownId { kind: "class", id: self.as_u32() })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::traits::{HasName, HasPolicyId};

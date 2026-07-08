@@ -26,19 +26,9 @@ pub struct Permission {
 }
 
 impl Permission {
-    /// Returns the class-relative permission ID.
-    pub fn id(&self) -> PermissionId {
-        self.id
-    }
-
     /// Returns the 0-based index of this permission in the access vector (0..31).
     pub fn index(&self) -> u8 {
         (self.id.as_u32() - 1) as u8
-    }
-
-    /// Returns the name of the permission as a byte slice.
-    pub fn name_bytes(&self) -> &[u8] {
-        &self.name
     }
 }
 
@@ -72,6 +62,12 @@ impl Serialize for Permission {
 impl Validate for Permission {
     fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
         // Validation is complete structurally during parsing (ID is non-zero and <= 32).
+        Ok(())
+    }
+}
+
+impl Validate for PermissionId {
+    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
         Ok(())
     }
 }

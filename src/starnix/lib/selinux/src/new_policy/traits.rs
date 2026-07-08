@@ -57,15 +57,6 @@ where
     }
 }
 
-impl<T> Validate for T
-where
-    T: PolicyId,
-{
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
-        Ok(())
-    }
-}
-
 /// Trait for policy elements with a byte slice name.
 pub trait HasName {
     fn name(&self) -> &[u8];
@@ -79,6 +70,15 @@ pub trait HasPolicyId {
 
 impl Validate for Box<[u8]> {
     fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+        Ok(())
+    }
+}
+
+impl<T: Validate> Validate for Option<T> {
+    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+        if let Some(value) = self {
+            value.validate(policy)?;
+        }
         Ok(())
     }
 }

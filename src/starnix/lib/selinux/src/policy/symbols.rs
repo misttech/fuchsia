@@ -8,9 +8,8 @@ use super::parser::{PolicyCursor, PolicyData, PolicyOffset};
 
 use super::view::U24;
 use super::{
-    Array, CategoryId, Counted, MlsLevel, MlsRange, Parse, PolicyValidationContext, RoleId,
-    SensitivityId, TypeId, UserId, Validate, ValidateArray, array_type,
-    array_type_validate_deref_both,
+    Array, CategoryId, Counted, MlsLevel, MlsRange, Parse, PolicyValidationContext, SensitivityId,
+    TypeId, UserId, Validate, ValidateArray, array_type, array_type_validate_deref_both,
 };
 
 use crate::new_policy::traits::PolicyId;
@@ -92,99 +91,6 @@ impl Validate for Metadata {
     type Error = anyhow::Error;
 
     /// TODO: Should there be an upper bound on `primary_names_count` or `count`?
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-impl Validate for Role {
-    type Error = anyhow::Error;
-
-    /// TODO: Validate [`Role`].
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub(super) struct Role {
-    metadata: RoleMetadata,
-    role_dominates: ExtensibleBitmap,
-    role_types: ExtensibleBitmap,
-}
-
-impl Role {
-    pub(super) fn id(&self) -> RoleId {
-        RoleId::from_u32(self.metadata.metadata.id.get()).unwrap()
-    }
-
-    pub(super) fn name_bytes(&self) -> &[u8] {
-        &self.metadata.data
-    }
-
-    pub(super) fn types(&self) -> &ExtensibleBitmap {
-        &self.role_types
-    }
-}
-
-impl Parse for Role {
-    type Error = anyhow::Error;
-
-    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let tail = bytes;
-
-        let (metadata, tail) = RoleMetadata::parse(tail)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("parsing role metadata")?;
-
-        let (role_dominates, tail) = ExtensibleBitmap::parse(tail)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("parsing role dominates")?;
-
-        let (role_types, tail) = ExtensibleBitmap::parse(tail)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("parsing role types")?;
-
-        Ok((Self { metadata, role_dominates, role_types }, tail))
-    }
-}
-
-array_type!(RoleMetadata, RoleStaticMetadata, u8);
-
-array_type_validate_deref_both!(RoleMetadata);
-
-impl ValidateArray<RoleStaticMetadata, u8> for RoleMetadata {
-    type Error = anyhow::Error;
-
-    /// [`RoleMetadata`] has no internal constraints beyond those imposed by [`Array`].
-    fn validate_array(
-        _context: &PolicyValidationContext,
-        _metadata: &RoleStaticMetadata,
-        _items: &[u8],
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
-#[repr(C, packed)]
-pub(super) struct RoleStaticMetadata {
-    length: le::U32,
-    id: le::U32,
-    bounds: le::U32,
-}
-
-impl Counted for RoleStaticMetadata {
-    /// [`RoleStaticMetadata`] serves as [`Counted`] for a length-encoded `[u8]`.
-    fn count(&self) -> u32 {
-        self.length.get()
-    }
-}
-
-impl Validate for RoleStaticMetadata {
-    type Error = anyhow::Error;
-
-    /// TODO: Should there be any constraints on `length`, `value`, or `bounds`?
     fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }

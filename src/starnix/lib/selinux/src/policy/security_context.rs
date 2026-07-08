@@ -6,7 +6,7 @@ use super::index::PolicyIndex;
 use super::new::{CategorySetBuilder, Context, IdSpan, MlsLevel, MlsRange};
 use super::{CategoryId, ParsedPolicy, RoleId, TypeId, UserId};
 use crate::NullessByteStr;
-use crate::new_policy::traits::PolicyId;
+use crate::new_policy::traits::{HasName, HasPolicyId, PolicyId};
 
 use bstr::BString;
 
@@ -141,7 +141,8 @@ impl SecurityContext {
             .ok_or_else(|| SecurityContextError::UnknownUser { name: user.into() })?
             .id();
         let role = policy_index
-            .role_by_name(role)
+            .roles()
+            .get_by_name(role.as_bytes())
             .ok_or_else(|| SecurityContextError::UnknownRole { name: role.into() })?
             .id();
         let type_ = policy_index
@@ -164,7 +165,7 @@ impl SecurityContext {
         let type_ = policy_index.type_(self.type_());
         let parts: [&[u8]; 4] = [
             policy_index.user(self.user()).name_bytes(),
-            policy_index.role(self.role()).name_bytes(),
+            policy_index.roles().get_by_id(self.role()).unwrap().name(),
             type_.name_bytes(),
             levels.as_slice(),
         ];
@@ -182,17 +183,17 @@ impl SecurityContext {
             // Validate that the selected role is valid for this user.
             if !user.roles().is_set(self.role().as_u32() - 1) {
                 return Err(SecurityContextError::InvalidRoleForUser {
-                    role: policy_index.role(self.role()).name_bytes().into(),
+                    role: policy_index.roles().get_by_id(self.role()).unwrap().name().into(),
                     user: user.name_bytes().into(),
                 });
             }
 
             // Validate that the selected type is valid for this role.
-            let role = policy_index.role(self.role());
-            if !role.types().is_set(self.type_().as_u32() - 1) {
+            let role = policy_index.roles().get_by_id(self.role()).unwrap();
+            if !role.types().contains(self.type_()) {
                 return Err(SecurityContextError::InvalidTypeForRole {
                     type_: policy_index.type_(self.type_()).name_bytes().into(),
-                    role: role.name_bytes().into(),
+                    role: role.name().into(),
                 });
             }
         }
@@ -374,7 +375,7 @@ mod tests {
     }
 
     fn role_name(policy: &Policy, id: RoleId) -> &str {
-        std::str::from_utf8(policy.role(id).name_bytes()).unwrap()
+        std::str::from_utf8(policy.roles().get_by_id(id).unwrap().name()).unwrap()
     }
 
     fn type_name(policy: &Policy, id: TypeId) -> String {

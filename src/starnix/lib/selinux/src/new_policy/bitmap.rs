@@ -513,13 +513,12 @@ impl<T: PolicyId, const WITH_ID_ZERO: bool> IdSetBuilder<T, WITH_ID_ZERO> {
     }
 }
 
-impl<T: PolicyId, const WITH_ID_ZERO: bool> Validate for IdSet<T, WITH_ID_ZERO> {
+impl<T: PolicyId + Validate, const WITH_ID_ZERO: bool> Validate for IdSet<T, WITH_ID_ZERO> {
     fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
         self.bitmap.validate(policy)?;
         for index in self.bitmap.indices_of_set_bits() {
-            if Self::index_to_id(index).is_none() {
-                return Err(ValidateError::InvalidIdSetIndex { index });
-            }
+            let id = Self::index_to_id(index).ok_or(ValidateError::InvalidIdSetIndex { index })?;
+            id.validate(policy)?;
         }
         Ok(())
     }

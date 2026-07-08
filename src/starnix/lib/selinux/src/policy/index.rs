@@ -103,7 +103,8 @@ impl PolicyIndex {
 
         // Locate the "object_r" role.
         let cached_object_r_role = parsed_policy
-            .role_by_name("object_r".into())
+            .roles()
+            .get_by_name(b"object_r")
             .ok_or_else(|| anyhow::anyhow!("missing 'object_r' role"))?
             .id();
 
@@ -509,13 +510,13 @@ fn get_permission_id_by_name(
     name: &str,
 ) -> Option<PermissionId> {
     let name = name.as_bytes();
-    if let Some(permission) = class.permissions().iter().find(|p| p.name_bytes() == name) {
+    if let Some(permission) = class.permissions().iter().find(|p| p.name() == name) {
         return Some(permission.id());
     }
     let common_name = class.common_name();
     if !common_name.is_empty() {
         let common_symbol = common_symbols.get_by_name(common_name)?;
-        let permission = common_symbol.permissions().iter().find(|p| p.name_bytes() == name)?;
+        let permission = common_symbol.permissions().iter().find(|p| p.name() == name)?;
         return Some(permission.id());
     }
     None

@@ -4,8 +4,11 @@
 
 use std::num::NonZeroU16;
 
-use super::bitmap::{IdSet, IdSetBuilder};
+use super::NewPolicy;
+use super::bitmap::IdSet;
+use super::error::ValidateError;
 use super::id_type::IdType;
+use super::traits::Validate;
 
 /// Tag type for type safety of policy type identifiers.
 #[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
@@ -17,22 +20,12 @@ pub type TypeId = IdType<NonZeroU16, TypeTag>;
 /// Set of types that are marked permissive.
 pub type PermissiveTypeSet = IdSet<TypeId, true>;
 
-/// Tag type for type safety of policy sensitivity identifiers.
-#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
-pub struct SensitivityTag;
+/// Set of [`TypeId`]s.
+pub type TypeSet = IdSet<TypeId>;
 
-/// Identifies a sensitivity level within a policy.
-pub type SensitivityId = IdType<NonZeroU16, SensitivityTag>;
-
-/// Tag type for type safety of policy category identifiers.
-#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
-pub struct CategoryTag;
-
-/// Identifies a security category within a policy.
-pub type CategoryId = IdType<NonZeroU16, CategoryTag>;
-
-/// Set of security categories.
-pub type CategorySet = IdSet<CategoryId>;
-
-/// Builder for constructing [`CategorySet`]s dynamically.
-pub type CategorySetBuilder = IdSetBuilder<CategoryId>;
+impl Validate for TypeId {
+    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+        // TODO: Validate against types table when integrated
+        Ok(())
+    }
+}

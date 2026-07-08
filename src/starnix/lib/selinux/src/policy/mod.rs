@@ -20,8 +20,8 @@ pub use index::FsUseLabelAndType;
 pub use parser::PolicyCursor;
 pub use security_context::{SecurityContext, SecurityContextError};
 
-pub use crate::new_policy::traits::PolicyId;
 use crate::new_policy::traits::Serialize as _;
+pub use crate::new_policy::traits::{HasName, HasPolicyId, PolicyId};
 pub use crate::new_policy::{
     AccessVector, CategoryId, ClassId, HandleUnknown, MlsLevel, MlsRange, POLICYDB_VERSION_MAX,
     PermissionId, RoleId, SensitivityId, TypeId, UserId,
@@ -192,7 +192,7 @@ impl Policy {
 
         let mut result: Vec<_> = owned_permissions
             .iter()
-            .map(|permission| (permission.id(), permission.name_bytes().to_vec()))
+            .map(|permission| (permission.id(), permission.name().to_vec()))
             .collect();
 
         // common_name() is empty when the class doesn't inherit from a CommonSymbol.
@@ -206,7 +206,7 @@ impl Policy {
         result.append(
             &mut common_symbol_permissions
                 .iter()
-                .map(|permission| (permission.id(), permission.name_bytes().to_vec()))
+                .map(|permission| (permission.id(), permission.name().to_vec()))
                 .collect(),
         );
 

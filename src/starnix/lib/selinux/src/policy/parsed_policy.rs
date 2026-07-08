@@ -20,8 +20,7 @@ use super::extensible_bitmap::ExtensibleBitmap;
 use super::parser::{PolicyCursor, PolicyData};
 use super::security_context::SecurityContext;
 use super::symbols::{
-    Category, CategoryIndex, ConditionalBoolean, Role, Sensitivity, SymbolList, Type, TypeIndex,
-    User,
+    Category, CategoryIndex, ConditionalBoolean, Sensitivity, SymbolList, Type, TypeIndex, User,
 };
 use super::view::{Hashable, HashedArrayView};
 use super::{
@@ -57,9 +56,6 @@ pub struct ParsedPolicy {
 
     /// [`NewPolicy`] that handles the header and base tables.
     new_policy: Arc<NewPolicy>,
-
-    /// The set of roles referenced by this policy.
-    roles: SymbolList<Role>,
     /// The set of types referenced by this policy.
     types: TypeIndex,
     /// The set of users referenced by this policy.
@@ -367,17 +363,6 @@ impl ParsedPolicy {
         self.users.data.iter().find(|x| x.name_bytes() == name.as_bytes())
     }
 
-    /// Returns the `Role` structure for the requested Id. Valid policies include definitions
-    /// for all the Ids they refer to internally; supply some other Id will trigger a panic.
-    pub(super) fn role(&self, id: RoleId) -> &Role {
-        self.roles.data.iter().find(|x| x.id() == id).unwrap()
-    }
-
-    /// Returns the named role, if present in the policy.
-    pub(super) fn role_by_name(&self, name: &str) -> Option<&Role> {
-        self.roles.data.iter().find(|x| x.name_bytes() == name.as_bytes())
-    }
-
     /// Returns the `Type` structure for the requested Id. Valid policies include definitions
     /// for all the Ids they refer to internally; supply some other Id will trigger a panic.
     pub(super) fn type_(&self, id: TypeId) -> Type {
@@ -590,10 +575,6 @@ fn parse_policy_remaining(
 ) -> Result<(ParsedPolicy, usize), anyhow::Error> {
     let tail = PolicyCursor::new(&rest_data);
 
-    let (roles, tail) = SymbolList::<Role>::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing roles")?;
-
     let (types, tail) =
         TypeIndex::parse(tail).map_err(anyhow::Error::from).context("parsing types")?;
 
@@ -712,7 +693,6 @@ fn parse_policy_remaining(
         ParsedPolicy {
             data: rest_data,
             new_policy: Arc::new(new_policy),
-            roles,
             types,
             users,
             conditional_booleans,
@@ -749,10 +729,6 @@ impl ParsedPolicy {
             new_policy: self.new_policy.clone(),
         };
 
-        self.roles
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating roles")?;
         self.types
             .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
@@ -844,7 +820,7 @@ impl ParsedPolicy {
 
         // Collate the sets of user, role, type, sensitivity and category Ids.
         let user_ids: HashSet<UserId> = self.users.data.iter().map(|x| x.id()).collect();
-        let role_ids: HashSet<RoleId> = self.roles.data.iter().map(|x| x.id()).collect();
+        let role_ids: HashSet<RoleId> = self.roles().iter().map(|x| x.id()).collect();
         let class_ids: HashSet<ClassId> = self.classes().iter().map(|x| x.id()).collect();
         let type_ids: HashSet<TypeId> = self.types.all_type_ids().collect();
         let sensitivity_ids: HashSet<SensitivityId> =

@@ -14,6 +14,7 @@ pub(super) mod indexed;
 pub(super) mod metadata;
 pub(super) mod parser;
 pub(super) mod permissions;
+pub(super) mod roles;
 pub(super) mod traits;
 
 use selinux_policy_derive::{Parse, Serialize, Validate};
@@ -38,6 +39,7 @@ pub use id_type::*;
 pub use indexed::IdAndNameIndexed;
 pub use parser::SymbolArray;
 pub use permissions::PermissionId;
+pub use roles::{Role, RoleId};
 pub use types::*;
 
 /// Tag type for type safety of policy user identifiers.
@@ -47,12 +49,25 @@ pub struct UserTag;
 /// Identifies a user within a policy.
 pub type UserId = IdType<std::num::NonZeroU16, UserTag>;
 
-/// Tag type for type safety of policy role identifiers.
+/// Tag type for type safety of policy sensitivity identifiers.
 #[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
-pub struct RoleTag;
+pub struct SensitivityTag;
 
-/// Identifies a role within a policy.
-pub type RoleId = IdType<std::num::NonZeroU16, RoleTag>;
+/// Identifies a sensitivity level within a policy.
+pub type SensitivityId = IdType<std::num::NonZeroU16, SensitivityTag>;
+
+/// Tag type for type safety of policy category identifiers.
+#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+pub struct CategoryTag;
+
+/// Identifies a security category within a policy.
+pub type CategoryId = IdType<std::num::NonZeroU16, CategoryTag>;
+
+/// Set of security categories.
+pub type CategorySet = bitmap::IdSet<CategoryId>;
+
+/// Builder for constructing [`CategorySet`]s dynamically.
+pub type CategorySetBuilder = bitmap::IdSetBuilder<CategoryId>;
 
 /// Top-level [`NewPolicy`] structure that parses the first few fields
 /// and stores the rest in [`Self::rest`] to allow round-trip testing.
@@ -67,6 +82,7 @@ pub struct NewPolicy {
     permissive_map: PermissiveTypeSet,
     common_symbols: IdAndNameIndexed<SymbolArray<CommonSymbol>>,
     classes: IdAndNameIndexed<SymbolArray<Class>>,
+    roles: IdAndNameIndexed<SymbolArray<Role>>,
     rest: RemainingBytes,
 }
 
@@ -112,9 +128,35 @@ impl NewPolicy {
         &self.classes
     }
 
+    /// Returns the roles table.
+    pub fn roles(&self) -> &IdAndNameIndexed<SymbolArray<Role>> {
+        &self.roles
+    }
+
     /// Returns a shared reference to the remaining unparsed bytes.
     pub fn rest_bytes(&self) -> std::sync::Arc<[u8]> {
         self.rest.bytes.clone()
+    }
+}
+
+impl Validate for UserId {
+    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+        // TODO: Validate against users table when integrated
+        Ok(())
+    }
+}
+
+impl Validate for SensitivityId {
+    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+        // TODO: Validate against sensitivities table when integrated
+        Ok(())
+    }
+}
+
+impl Validate for CategoryId {
+    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+        // TODO: Validate against categories table when integrated
+        Ok(())
     }
 }
 
