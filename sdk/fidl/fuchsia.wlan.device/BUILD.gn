@@ -36,6 +36,7 @@ if (is_host) {
 fidl("fuchsia.wlan.device") {
   sources = [ "phy.fidl" ]
   enable_hlcpp = true
+  enable_rust_next = true
   visibility = [ "*" ]
   public_deps = [
     "//sdk/fidl/fuchsia.wlan.common",

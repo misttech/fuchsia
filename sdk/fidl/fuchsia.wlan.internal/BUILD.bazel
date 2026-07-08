@@ -11,6 +11,7 @@ fidl_library(
         "wlan_internal.fidl",
     ],
     enable_hlcpp = True,
+    enable_rust_next = True,
     visibility = ["//visibility:public"],
     deps = [],
 )

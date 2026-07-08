@@ -39,6 +39,7 @@ fidl("fuchsia.wlan.internal") {
     "wlan_internal.fidl",
   ]
   enable_hlcpp = true
+  enable_rust_next = true
   visibility = [ "*" ]
   public_deps = []
 }

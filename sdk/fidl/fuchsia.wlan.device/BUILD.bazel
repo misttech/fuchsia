@@ -10,6 +10,7 @@ fidl_library(
         "phy.fidl",
     ],
     enable_hlcpp = True,
+    enable_rust_next = True,
     visibility = ["//visibility:public"],
     deps = [
         "//sdk/fidl/fuchsia.wlan.common",
