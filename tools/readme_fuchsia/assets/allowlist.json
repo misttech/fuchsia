@@ -10,7 +10,6 @@
         "src/connectivity/wlan/drivers/third_party/intel/iwlwifi/README.fuchsia",
         "src/firmware/gigaboot/third_party/include/gbl/README.fuchsia",
         "src/lib/android/binder/rust/rpcbinder/third_party/binder_rpc_unstable_bindgen/README.fuchsia",
-        "src/lib/fxl/third_party/icu/README.fuchsia",
         "src/security/bin/root_ssl_certificates/third_party/cert/README.fuchsia",
         "src/starnix/lib/third_party/rust_netlink/README.fuchsia",
         "src/starnix/lib/third_party/rust_netlink/netlink_packet_core/README.fuchsia",
