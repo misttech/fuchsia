@@ -131,7 +131,46 @@ breakpoint hit. Perform diagnostics:
     }
     ```
 
-3.  **Teardown Session:** Once diagnostics are complete, terminate the debugging
+3.  **Inspect Local Variables:** Retrieve variables and arguments within a
+    specific stack frame:
+    ```bash
+    fx debug cli --json '{"command": "variables", "thread_id": 1, "frame_index": 0}'
+    ```
+
+4.  **Evaluate Dynamic Expressions / Commands:** Run dynamic expression
+    evaluation or debugger commands within a stack frame. The underlying
+    debugger handles `evaluate` requests in the `"repl"` context, executing the
+    expression directly as a zxdb console command line.
+
+    Note that `evaluate` requires the target thread to be stopped prior to
+    invocation. If the thread is running, the request immediately returns an
+    error (`success: false`). Ensure the thread is suspended via a breakpoint or
+    `pause` command before evaluating.
+
+    To evaluate an expression or print a variable, prefix the expression with
+    the debugger's print command:
+    ```bash
+    fx debug cli --json '{"command": "evaluate", "thread_id": 1, "frame_index": 0, "expression": "print my_var"}'
+    ```
+
+    Example Response:
+    ```json
+    {
+      "success": true,
+      "body": {
+        "result": "42",
+        "type": "int"
+      }
+    }
+    ```
+
+    You can also execute arbitrary zxdb console commands such as symbol
+    inspection:
+    ```bash
+    fx debug cli --json '{"command": "evaluate", "thread_id": 1, "frame_index": 0, "expression": "sym-info my_var"}'
+    ```
+
+5.  **Teardown Session:** Once diagnostics are complete, terminate the debugging
     session. This detaches from targets and lets the background test runner exit
     cleanly:
     ```bash
@@ -184,6 +223,8 @@ All commands are sent as serialized JSON payloads to `fx debug cli --json
 | **Attach Process** | `{"command": "attach", "filter": "<name_or_pid>"}` |
 | **Detach Process** | `{"command": "detach", "pid": <pid>}` or `{"command": "detach", "all": true}` |
 | **Get Stack Trace** | `{"command": "stackTrace", "thread_id": <thread_id>}` |
+| **List Variables** | `{"command": "variables", "thread_id": <thread_id>, "frame_index": <frame_index>}` |
+| **Evaluate Expression** | `{"command": "evaluate", "thread_id": <thread_id>, "frame_index": <idx> or "frame_id": <id>, "expression": "<expr>", "start": <start>, "count": <count>}` |
 | **Continue Thread** | `{"command": "continue", "thread_id": <thread_id>}` |
 | **Pause Thread** | `{"command": "pause", "thread_id": <thread_id>}` |
 | **Stop Session** | `{"command": "stop"}` |
@@ -197,4 +238,5 @@ All commands are sent as serialized JSON payloads to `fx debug cli --json
 ### Performance & Blocking
 * **Smart Blocking**: Commands like `pause`, `stackTrace`, and `wait-for-event`
   are blocking operations and may take up to 10 seconds depending on the
-  target's execution state.
+  target's execution state. Unlike those commands, `evaluate` is non-blocking
+  and fails immediately if the target thread is not already stopped.
