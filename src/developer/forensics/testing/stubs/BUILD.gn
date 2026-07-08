@@ -208,22 +208,6 @@ source_set("loader") {
   ]
 }
 
-source_set("product_info_provider") {
-  testonly = true
-
-  sources = [
-    "product_info_provider.cc",
-    "product_info_provider.h",
-  ]
-
-  public_deps = [
-    ":fidl_server_hlcpp",
-    "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_hlcpp",
-  ]
-
-  deps = [ "//sdk/lib/syslog/cpp" ]
-}
-
 source_set("system_activity_governor") {
   testonly = true
 

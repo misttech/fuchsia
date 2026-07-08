@@ -46,7 +46,6 @@ cc_test_executable("attachment_manager_unittest_exe") {
     "//src/developer/forensics/testing/stubs:cobalt",
     "//src/developer/forensics/testing/stubs:device_id_provider",
     "//src/developer/forensics/testing/stubs:diagnostics",
-    "//src/developer/forensics/testing/stubs:product_info_provider",
     "//src/developer/forensics/utils:logs",
     "//src/developer/forensics/utils:time",
     "//src/developer/forensics/utils/cobalt",
