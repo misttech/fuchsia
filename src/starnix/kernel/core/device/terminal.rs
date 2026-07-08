@@ -28,12 +28,12 @@ pub struct TtyState {
     /// The terminal objects indexed by their identifier.
     pub terminals: LockDepRwLock<HashMap<u32, Weak<Terminal>>, DeviceTerminalsLock>,
 
-    /// The set of available terminal identifier.
+    /// The set of allocated terminal identifiers.
     pts_ids_set: LockDepMutex<PtsIdsSet, PtsIdsSetLock>,
 }
 
 impl TtyState {
-    /// Returns the next available terminal.
+    /// Allocates a new terminal and returns it.
     pub fn get_next_terminal(
         self: &Arc<Self>,
         dev_pts_root: DirEntryHandle,

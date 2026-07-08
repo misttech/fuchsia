@@ -11,10 +11,10 @@ use crate::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, Waiter};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use crate::vfs::{
-    CacheMode, DirectoryEntryType, FileHandle, FileObject, FileObjectState, FileOps, FileSystem,
-    FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo,
-    FsNodeOps, FsStr, FsString, LookupContext, NamespaceNode, SpecialNode, SymlinkMode,
-    fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_dir_readonly,
+    CacheMode, DirectoryEntryType, FdFlags, FileHandle, FileObject, FileObjectState, FileOps,
+    FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle,
+    FsNodeInfo, FsNodeOps, FsStr, FsString, LookupContext, MountInfo, NamespaceNode, SpecialNode,
+    SymlinkMode, fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_dir_readonly,
 };
 use starnix_logging::track_stub;
 use starnix_sync::{
@@ -25,7 +25,8 @@ use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::{DeviceId, TTY_ALT_MAJOR};
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::mode;
+use starnix_uapi::file_mode::{AccessCheck, mode};
+use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::SIGWINCH;
 use starnix_uapi::termios::{
@@ -37,12 +38,13 @@ use starnix_uapi::{
     DEVPTS_SUPER_MAGIC, FIOASYNC, FIONREAD, FIOQSIZE, TCFLSH, TCGETA, TCGETS, TCGETS2, TCGETX,
     TCSBRK, TCSBRKP, TCSETA, TCSETAF, TCSETAW, TCSETS, TCSETS2, TCSETSF, TCSETSF2, TCSETSW,
     TCSETSW2, TCSETX, TCSETXF, TCSETXW, TCXONC, TIOCCBRK, TIOCCONS, TIOCEXCL, TIOCGETD,
-    TIOCGICOUNT, TIOCGLCKTRMIOS, TIOCGPGRP, TIOCGPTLCK, TIOCGPTN, TIOCGRS485, TIOCGSERIAL,
-    TIOCGSID, TIOCGSOFTCAR, TIOCGWINSZ, TIOCLINUX, TIOCMBIC, TIOCMBIS, TIOCMGET, TIOCMIWAIT,
-    TIOCMSET, TIOCNOTTY, TIOCNXCL, TIOCOUTQ, TIOCPKT, TIOCSBRK, TIOCSCTTY, TIOCSERCONFIG,
-    TIOCSERGETLSR, TIOCSERGETMULTI, TIOCSERGSTRUCT, TIOCSERGWILD, TIOCSERSETMULTI, TIOCSERSWILD,
-    TIOCSETD, TIOCSLCKTRMIOS, TIOCSPGRP, TIOCSPTLCK, TIOCSRS485, TIOCSSERIAL, TIOCSSOFTCAR,
-    TIOCSTI, TIOCSWINSZ, TIOCVHANGUP, errno, error, gid_t, ino_t, pid_t, statfs, uapi, uid_t,
+    TIOCGICOUNT, TIOCGLCKTRMIOS, TIOCGPGRP, TIOCGPTLCK, TIOCGPTN, TIOCGPTPEER, TIOCGRS485,
+    TIOCGSERIAL, TIOCGSID, TIOCGSOFTCAR, TIOCGWINSZ, TIOCLINUX, TIOCMBIC, TIOCMBIS, TIOCMGET,
+    TIOCMIWAIT, TIOCMSET, TIOCNOTTY, TIOCNXCL, TIOCOUTQ, TIOCPKT, TIOCSBRK, TIOCSCTTY,
+    TIOCSERCONFIG, TIOCSERGETLSR, TIOCSERGETMULTI, TIOCSERGSTRUCT, TIOCSERGWILD, TIOCSERSETMULTI,
+    TIOCSERSWILD, TIOCSETD, TIOCSLCKTRMIOS, TIOCSPGRP, TIOCSPTLCK, TIOCSRS485, TIOCSSERIAL,
+    TIOCSSOFTCAR, TIOCSTI, TIOCSWINSZ, TIOCVHANGUP, errno, error, gid_t, ino_t, pid_t, statfs,
+    uapi, uid_t,
 };
 use std::sync::{Arc, Weak};
 
@@ -311,10 +313,18 @@ fn open_dev_pts_device(
                 return open_dev_pts_device(locked, current_task, id, &ptmx_node, flags);
             };
 
-            let terminal = devpts_fs
-                .state
-                .get_next_terminal(fs.root().clone(), devpts_fs.pty_creds_for(current_task))?;
-            Ok(Box::new(DevPtmxFile::new(terminal)))
+            let creds = devpts_fs.pty_creds_for(current_task);
+            let terminal = devpts_fs.state.get_next_terminal(fs.root().clone(), creds)?;
+            let name = FsString::from(terminal.id.to_string());
+            let replica_dir_entry = fs.root().component_lookup(
+                locked,
+                current_task,
+                &MountInfo::detached(),
+                name.as_ref(),
+            )?;
+            let replica_node =
+                NamespaceNode { mount: node.mount.clone(), entry: replica_dir_entry };
+            Ok(Box::new(DevPtmxFile::new(terminal, Some(replica_node))))
         }
         // /dev/tty
         DeviceId::TTY => {
@@ -328,7 +338,7 @@ fn open_dev_pts_device(
                 .clone();
             if let Some(controlling_terminal) = controlling_terminal {
                 if controlling_terminal.is_main {
-                    Ok(Box::new(DevPtmxFile::new(controlling_terminal.terminal)))
+                    Ok(Box::new(DevPtmxFile::new(controlling_terminal.terminal, None)))
                 } else {
                     Ok(Box::new(TtyFile::new(controlling_terminal.terminal)))
                 }
@@ -376,12 +386,18 @@ fn open_dev_pts_device(
 
 struct DevPtmxFile {
     terminal: Arc<Terminal>,
+
+    /// The replica's NamespaceNode, used to implement `TIOCGPTPEER` when opened via `/dev/ptmx`.
+    /// It is `None` if opened via `/dev/tty` redirecting to the main terminal. On Linux, `/dev/tty`
+    /// always redirects to the replica PTY (even if `TIOCSCTTY` is called on the main PTY), where
+    /// `TIOCGPTPEER` is unsupported.
+    replica_node: Option<NamespaceNode>,
 }
 
 impl DevPtmxFile {
-    pub fn new(terminal: Arc<Terminal>) -> Self {
+    pub fn new(terminal: Arc<Terminal>, replica_node: Option<NamespaceNode>) -> Self {
         terminal.main_open();
-        Self { terminal }
+        Self { terminal, replica_node }
     }
 }
 
@@ -458,7 +474,7 @@ impl FileOps for DevPtmxFile {
     fn ioctl(
         &self,
         locked: &mut Locked<Unlocked>,
-        _file: &FileObject,
+        file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
@@ -483,7 +499,28 @@ impl FileOps for DevPtmxFile {
                 self.terminal.write().line_discipline.locked = value != 0;
                 Ok(SUCCESS)
             }
-            _ => shared_ioctl(locked, &self.terminal, true, _file, current_task, request, arg),
+            TIOCGPTPEER => {
+                let Some(replica_node) = &self.replica_node else {
+                    return error!(ENOTTY);
+                };
+
+                if replica_node.mount.flags().contains(MountFlags::NODEV) {
+                    return error!(EACCES);
+                }
+
+                let flags = OpenFlags::from_bits_truncate(u32::from(arg));
+                let replica_file =
+                    replica_node.open(locked, current_task, flags, AccessCheck::default())?;
+
+                let fd_flags = if flags.contains(OpenFlags::CLOEXEC) {
+                    FdFlags::CLOEXEC
+                } else {
+                    FdFlags::empty()
+                };
+                let fd = current_task.add_file(locked, replica_file, fd_flags)?;
+                Ok(fd.into())
+            }
+            _ => shared_ioctl(locked, &self.terminal, true, file, current_task, request, arg),
         }
     }
 }

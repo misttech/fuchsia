@@ -928,9 +928,6 @@
                 // xattr_test
                 "XattrTest.SecurityCapacityXattr",
 
-                // TODO(https://fxbug.dev/525046044): TIOCGPTPEER is not implemented in Starnix.
-                "BasicPtyTest.TIOCGPTPEER*",
-
                 // fuse_test
                 "FuseTest.CloneDevice",
                 "FuseTest.CloneToConnectedDeviceFails",

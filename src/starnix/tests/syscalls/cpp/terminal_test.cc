@@ -763,4 +763,42 @@ TEST_F(Pty, PacketModeEvents) {
   });
 }
 
+TEST_F(Pty, IoctlTIOCGPTPEER) {
+  int main_terminal = OpenMainTerminal();
+
+  // Test basic functionality.
+  int replica_terminal = ioctl(main_terminal, TIOCGPTPEER, O_RDWR | O_NOCTTY);
+  ASSERT_GE(replica_terminal, 0);
+
+  // Verify we can communicate.
+  ASSERT_EQ(write(main_terminal, "hello\n", 6), 6);
+  char buf[10];
+  ASSERT_EQ(read(replica_terminal, buf, sizeof(buf)), 6);
+  EXPECT_EQ(strncmp(buf, "hello\n", 6), 0);
+
+  close(replica_terminal);
+
+  // Test O_CLOEXEC.
+  replica_terminal = ioctl(main_terminal, TIOCGPTPEER, O_RDWR | O_CLOEXEC | O_NOCTTY);
+  ASSERT_GE(replica_terminal, 0);
+  int fd_flags = fcntl(replica_terminal, F_GETFD);
+  ASSERT_GE(fd_flags, 0);
+  EXPECT_TRUE(fd_flags & FD_CLOEXEC);
+  close(replica_terminal);
+
+  // Test O_NONBLOCK.
+  replica_terminal = ioctl(main_terminal, TIOCGPTPEER, O_RDWR | O_NONBLOCK | O_NOCTTY);
+  ASSERT_GE(replica_terminal, 0);
+  int file_flags = fcntl(replica_terminal, F_GETFL);
+  ASSERT_GE(file_flags, 0);
+  EXPECT_TRUE(file_flags & O_NONBLOCK);
+
+  // Verify it is indeed non-blocking.
+  ASSERT_EQ(read(replica_terminal, buf, sizeof(buf)), -1);
+  EXPECT_EQ(errno, EAGAIN);
+
+  close(replica_terminal);
+  close(main_terminal);
+}
+
 }  // namespace

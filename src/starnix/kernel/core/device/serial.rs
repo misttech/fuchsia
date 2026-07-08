@@ -122,7 +122,8 @@ impl SerialDevice {
 
         let state = Arc::new(TtyState::default());
         let fs = new_pts_fs_with_state(locked, kernel, Default::default(), state.clone())?;
-        let terminal = state.get_next_terminal(fs.root().clone(), current_task.current_fscred())?;
+        let creds = current_task.current_fscred();
+        let terminal = state.get_next_terminal(fs.root().clone(), creds)?;
 
         let serial_proxy = Arc::new(serial_device.into_sync_proxy());
         let forward_task = ForwardTask::new(terminal.clone(), serial_proxy);

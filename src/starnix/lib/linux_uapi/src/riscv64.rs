@@ -24422,6 +24422,7 @@ pub const TIOCGPTLCK: __u32 = 2147767353;
 pub const TIOCGPKT: __u32 = 2147767352;
 pub const TIOCSIG: __u32 = 1074025526;
 pub const TIOCGPTN: __u32 = 2147767344;
+pub const TIOCGPTPEER: __u32 = 21569;
 pub const BLKFLSBUF: __u32 = 4705;
 pub const BLKGETSIZE: __u32 = 4704;
 pub const BLKGETSIZE64: __u32 = 2148012658;
