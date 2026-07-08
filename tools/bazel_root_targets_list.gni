@@ -24,6 +24,16 @@ tools_bazel_root_targets = [
     install_host_tool = true
   },
   {
+    bazel_label = "//tools/fidl/fidlcparsequality:fidlcparsequality"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidlcparsequality_/fidlcparsequality"
+        ninja = "fidlcparsequality"
+      },
+    ]
+    install_host_tool = true
+  },
+  {
     bazel_label = "//tools/go_test_parser:go_test_parser"
     copy_outputs = [
       {

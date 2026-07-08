@@ -7,8 +7,8 @@ then collecting and categorizing the errors reported by the compiler.
 
 ## Build and Run
 
-    fx set core.x64 --with //tools/fidl/fidlcparsequality:host
-    fx build
+    fx build --host //build/bazel/host:bazel_root_host_tools.fidlcparsequality
+
 
 Then
 

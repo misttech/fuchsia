@@ -10,7 +10,6 @@ group("fidl") {
     "fidl_api_summarize:host",
     "fidl_ir",
     "fidlc:host",
-    "fidlcparsequality:host",
     "fidlgen_cpp:host($host_toolchain)",
     "fidlgen_go:host",
     "fidlgen_hlcpp:host",
@@ -24,6 +23,7 @@ group("fidl") {
     "lib:lib($host_toolchain)",
     "measure-tape/src:host",
     "//build/bazel/host:bazel_root_host_tools.fidl_api_diff.host_tool($host_toolchain)",
+    "//build/bazel/host:bazel_root_host_tools.fidlcparsequality.host_tool($host_toolchain)",
     "//build/bazel/host:bazel_root_host_tools.fidldoc.host_tool($host_toolchain)",
   ]
 }
