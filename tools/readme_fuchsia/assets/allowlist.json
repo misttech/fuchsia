@@ -6,10 +6,7 @@
     ],
     "ignored_files": [
         "build/secondary/third_party/acpica/README.fuchsia",
-        "build/secondary/third_party/alacritty/README.fuchsia",
-        "build/secondary/third_party/gflags/README.fuchsia",
         "build/secondary/third_party/glog/README.fuchsia",
-        "build/secondary/third_party/ogg/README.fuchsia",
         "scripts/third_party/d3/README.fuchsia",
         "scripts/third_party/d3_v3/README.fuchsia",
         "src/connectivity/network/tools/nc/third_party/openbsd-netcat/README.fuchsia",
@@ -25,7 +22,6 @@
         "third_party/Vulkan-Loader/README.fuchsia",
         "third_party/Vulkan-Tools/README.fuchsia",
         "third_party/abseil-cpp/README.fuchsia",
-        "third_party/alacritty-migrating/README.fuchsia",
         "third_party/bazel_vendor/apple_support+/README.fuchsia",
         "third_party/bazel_vendor/bazel_tools+remote_coverage_tools_extension+remote_coverage_tools/README.fuchsia",
         "third_party/bazel_vendor/rules_kotlin+/README.fuchsia",
