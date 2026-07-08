@@ -163,6 +163,9 @@ async fn assemble_realm(
                 .capability(Capability::configuration("fuchsia.scenic.UseSeparateInputThread"))
                 .capability(Capability::configuration("fuchsia.ui.Prefetch"))
                 .capability(Capability::configuration("fuchsia.ui.VisualDebuggingLevel"))
+                .capability(Capability::configuration(
+                    "fuchsia.scenic.UseFlatland2UberstructSchema",
+                ))
                 .from(&config)
                 .to(Ref::child(SCENIC)),
         )

@@ -38,7 +38,7 @@ class Engine {
          std::shared_ptr<flatland::FlatlandPresenterImpl> flatland_presenter,
          std::shared_ptr<flatland::UberStructSystem> uber_struct_system,
          std::shared_ptr<flatland::LinkSystem> link_system, inspect::Node inspect_node,
-         GetRootTransformFunc get_root_transform);
+         GetRootTransformFunc get_root_transform, bool use_flatland2_uberstruct_schema = false);
   ~Engine() = default;
 
   // Orchestrates the generation and submission of a frame to the `DisplayCompositor`.
@@ -137,6 +137,9 @@ class Engine {
   inspect::UintProperty inspect_gpu_composition_frame_count_;
   inspect::UintProperty inspect_failed_frame_count_;
   GetRootTransformFunc get_root_transform_;
+
+  // Temporary flag.  Must match `FlatlandManager::use_flatland2_uberstruct_schema_`.
+  const bool use_flatland2_uberstruct_schema_;
 
   async::Executor executor_;
 };

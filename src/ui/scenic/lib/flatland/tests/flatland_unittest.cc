@@ -6566,6 +6566,22 @@ TEST_F(FlatlandTest, EpochIncrementsOnTypeTransition) {
   EXPECT_TRUE(std::holds_alternative<LayerObject::SolidColorContent>(obj->content));
 }
 
+TEST_F(FlatlandTest, PresentStampsFlatlandVersion) {
+  // Classic session Present -> snapshot flatland_version == 1
+  {
+    std::shared_ptr<Flatland> flatland = CreateFlatland();
+    PRESENT(flatland, true);
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_NE(uber_struct, nullptr);
+    EXPECT_EQ(uber_struct->flatland_version, 1u);
+  }
+
+  // Flatland2 session constructed with FlatlandConfig{.use_flatland2 = true}
+  // Present -> snapshot flatland_version == 2
+  // NOTE: this half of the test cannot be added until `FlatlandConfig::use_flatland2` exists;
+  //       it will land in the Flatland2 API CL.
+}
+
 // TODO(https://fxbug.dev/42156567): other FlatlandDisplayTests that should be written:
 // - version of SimpleSetContent where the child presents before SetDisplayContent() is called.
 

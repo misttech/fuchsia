@@ -468,7 +468,9 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
                zx_koid_t view_ref_koid) {
           input_manager_.AsyncCall(&input::InputManager::RegisterMouseSource,
                                    std::move(mouse_source), view_ref_koid);
-        });
+        },
+        /*use_flatland2_uberstruct_schema*/
+        config_values_.use_flatland2_uberstruct_schema());
 
     // TODO(https://fxbug.dev/42146099): these should be moved into FlatlandManager.
     {
@@ -524,12 +526,16 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
 
     flatland_engine_ = std::make_shared<flatland::Engine>(
         flatland_compositor_, flatland_presenter_, uber_struct_system_, link_system_,
-        inspect_node_.CreateChild("FlatlandEngine"), [this] {
+        inspect_node_.CreateChild("FlatlandEngine"),
+        /*get_root_transform*/
+        [this] {
           FX_DCHECK(flatland_manager_);
           const auto display = flatland_manager_->GetPrimaryFlatlandDisplayForRendering();
           return display ? std::optional<flatland::TransformHandle>(display->root_transform())
                          : std::nullopt;
-        });
+        },
+        /*use_flatland2_uberstruct_schema*/
+        config_values_.use_flatland2_uberstruct_schema());
     display_manager_->SetDisplayAddedCallback(
         [weak_engine = std::weak_ptr{flatland_engine_}](display::Display& display) {
           if (auto engine = weak_engine.lock()) {

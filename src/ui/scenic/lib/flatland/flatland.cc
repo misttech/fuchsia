@@ -527,6 +527,7 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
 
     uber_struct->debug_name.assign(debug_name_);
     uber_struct->creation_time = zx::time_monotonic(async_now(dispatcher()));
+    uber_struct->flatland_version = 1u;  // Will use FlatlandConfig::use_flatland2 when it exists.
   }
 
   // Obtain the PresentId which is needed to:

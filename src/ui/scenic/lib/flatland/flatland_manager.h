@@ -46,7 +46,8 @@ class FlatlandManager {
                   std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSource>, zx_koid_t)>
                       register_touch_source,
                   std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
-                      register_mouse_source);
+                      register_mouse_source,
+                  bool use_flatland2_uberstruct_schema = false);
   ~FlatlandManager();
 
   scheduling::SessionId CreateFlatland(
@@ -191,6 +192,12 @@ class FlatlandManager {
       register_touch_source_;
   std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
       register_mouse_source_;
+
+  // Temporary flag that specifies whether ALL Flatland sessions created by this manager will use
+  // the legacy UberStruct schema, or the new Flatland2 schema (which will be used by both Flatland1
+  // and Flatland2 APIs going forward).  Meant to be short-lived; after a transition period only the
+  // Flatland2-schema path will remain.
+  const bool use_flatland2_uberstruct_schema_;
 
   // This loop executes tasks related to shutting down Flatland sessions and FlatlandDisplays.
   // It avoids potential jank that might be caused by executing these on the main thread, and

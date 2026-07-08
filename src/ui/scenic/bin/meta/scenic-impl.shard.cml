@@ -92,6 +92,11 @@
             type: "bool",
         },
         {
+            config: "fuchsia.scenic.UseFlatland2UberstructSchema",
+            key: "use_flatland2_uberstruct_schema",
+            type: "bool",
+        },
+        {
             config: "fuchsia.scenic.ICanHazDisplayId",
             key: "i_can_haz_display_id",
             type: "int64",

@@ -73,6 +73,7 @@ struct LayerObject {
     std::array<float, 4> color = {1.f, 1.f, 1.f, 1.f};
     types::Rectangle display_rect;
     float opacity = 1.f;
+    types::BlendMode blend_mode = types::BlendMode::kReplace();
   };
 
   uint64_t epoch = 0;

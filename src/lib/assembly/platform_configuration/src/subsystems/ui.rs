@@ -183,6 +183,10 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
             Config::new(ConfigValueType::Bool, ui_config.scenic_frame_counter_overlay.into()),
         )?;
         builder.set_config_capability(
+            "fuchsia.scenic.UseFlatland2UberstructSchema",
+            Config::new(ConfigValueType::Bool, false.into()),
+        )?;
+        builder.set_config_capability(
             "fuchsia.ui.SupportedInputDevices",
             Config::new(
                 ConfigValueType::Vector {

@@ -98,10 +98,14 @@ impl FlatlandEnvironment {
                         "fuchsia.scenic.MaxDisplayRefreshRateMillihertz",
                     ))
                     .capability(Capability::configuration("fuchsia.scenic.FrameCounterOverlay"))
-                    .capability(Capability::configuration("fuchsia.scenic.UseSeparateInputThread"))
                     .capability(Capability::configuration("fuchsia.scenic.InputNoncritical"))
+                    .capability(Capability::configuration(
+                        "fuchsia.scenic.UseFlatland2UberstructSchema",
+                    ))
+                    .capability(Capability::configuration("fuchsia.scenic.UseSeparateInputThread"))
                     .capability(Capability::configuration("fuchsia.ui.VisualDebuggingLevel"))
                     .capability(Capability::configuration("fuchsia.ui.Prefetch"))
+                    .capability(Capability::configuration("fuchsia.ui.VisualDebuggingLevel"))
                     .from(&config)
                     .to(&scenic),
             )

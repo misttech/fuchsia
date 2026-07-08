@@ -568,5 +568,119 @@ TEST(UberStructSystemTest, NeedsViewTreeRecompute) {
   EXPECT_FALSE(system.MustRecomputeViewTree());
 }
 
+TEST(UberStructSystemTest, LayerStacksSurviveSnapshot) {
+  UberStructSystem system;
+  const scheduling::SessionId kSessionId = 1;
+
+  std::shared_ptr<UberStructSystem::UberStructQueue> queue =
+      system.AllocateQueueForSession(kSessionId);
+
+  auto uber_struct = std::make_unique<UberStruct>();
+
+  const TransformHandle parent_handle(kSessionId, 1);
+  const LayerHandle layer1(kSessionId, 2);
+  const LayerHandle layer2(kSessionId, 3);
+
+  std::pmr::vector<LayerHandle> layers(uber_struct->resource());
+  layers.push_back(layer1);
+  layers.push_back(layer2);
+
+  uber_struct->layer_stacks.insert({parent_handle, std::move(layers)});
+
+  queue->Push(0, std::move(uber_struct));
+  system.UpdateInstances({{kSessionId, scheduling::PresentId(0)}});
+
+  auto snapshot = system.Snapshot();
+  auto iter = snapshot.map.find(kSessionId);
+  ASSERT_NE(iter, snapshot.map.end());
+
+  EXPECT_EQ(iter->second->layer_stacks.size(), 1u);
+  auto stacks_iter = iter->second->layer_stacks.find(parent_handle);
+  ASSERT_NE(stacks_iter, iter->second->layer_stacks.end());
+  EXPECT_EQ(stacks_iter->second.size(), 2u);
+  EXPECT_EQ(stacks_iter->second[0], layer1);
+  EXPECT_EQ(stacks_iter->second[1], layer2);
+}
+
+TEST(UberStructSystemTest, UberStructLayerFieldsRoundTrip) {
+  UberStructSystem system;
+  const scheduling::SessionId kSessionId = 1;
+
+  std::shared_ptr<UberStructSystem::UberStructQueue> queue =
+      system.AllocateQueueForSession(kSessionId);
+
+  auto uber_struct = std::make_unique<UberStruct>();
+  uber_struct->flatland_version = 2u;
+
+  const LayerHandle layer_image(kSessionId, 1);
+  UberStructLayer us_layer_image{
+      .epoch = 42,
+      .content = UberStructLayer::ImageContent{
+          .sample_rect = {{.x = 1.f, .y = 2.f, .width = 3.f, .height = 4.f}},
+          .transform = types::RotateFlip::kRotateCcw90(),
+          .display_rect = {{.x = 5, .y = 6, .width = 7, .height = 8}},
+          .opacity = 0.5f,
+          .blend_mode = types::BlendMode::kPremultipliedAlpha(),
+          .image_id = allocation::GlobalImageId(123),
+          .image_width = 100,
+          .image_height = 200}};
+
+  const LayerHandle layer_color(kSessionId, 2);
+  UberStructLayer us_layer_color{.epoch = 84,
+                                 .content = UberStructLayer::SolidColorContent{
+                                     .color = {0.1f, 0.2f, 0.3f, 0.4f},
+                                     .display_rect = {{.x = 9, .y = 10, .width = 11, .height = 12}},
+                                     .opacity = 0.75f,
+                                     .blend_mode = types::BlendMode::kPremultipliedAlpha()}};
+
+  uber_struct->layers.insert({layer_image, us_layer_image});
+  uber_struct->layers.insert({layer_color, us_layer_color});
+
+  queue->Push(0, std::move(uber_struct));
+  system.UpdateInstances({{kSessionId, scheduling::PresentId(0)}});
+
+  auto snapshot = system.Snapshot();
+  auto iter = snapshot.map.find(kSessionId);
+  ASSERT_NE(iter, snapshot.map.end());
+
+  EXPECT_EQ(iter->second->layers.size(), 2u);
+
+  auto image_iter = iter->second->layers.find(layer_image);
+  ASSERT_NE(image_iter, iter->second->layers.end());
+  EXPECT_EQ(image_iter->second.epoch, 42u);
+  ASSERT_TRUE(std::holds_alternative<UberStructLayer::ImageContent>(image_iter->second.content));
+  auto snap_image = std::get<UberStructLayer::ImageContent>(image_iter->second.content);
+  EXPECT_EQ(snap_image.sample_rect.x(), 1.f);
+  EXPECT_EQ(snap_image.sample_rect.y(), 2.f);
+  EXPECT_EQ(snap_image.sample_rect.width(), 3.f);
+  EXPECT_EQ(snap_image.sample_rect.height(), 4.f);
+  EXPECT_EQ(snap_image.transform, types::RotateFlip::kRotateCcw90());
+  EXPECT_EQ(snap_image.display_rect.x(), 5);
+  EXPECT_EQ(snap_image.display_rect.y(), 6);
+  EXPECT_EQ(snap_image.display_rect.width(), 7);
+  EXPECT_EQ(snap_image.display_rect.height(), 8);
+  EXPECT_EQ(snap_image.opacity, 0.5f);
+  EXPECT_EQ(snap_image.blend_mode, types::BlendMode::kPremultipliedAlpha());
+  EXPECT_EQ(snap_image.image_id, allocation::GlobalImageId(123));
+  EXPECT_EQ(snap_image.image_width, 100u);
+  EXPECT_EQ(snap_image.image_height, 200u);
+
+  auto color_iter = iter->second->layers.find(layer_color);
+  ASSERT_NE(color_iter, iter->second->layers.end());
+  EXPECT_EQ(color_iter->second.epoch, 84u);
+  ASSERT_TRUE(
+      std::holds_alternative<UberStructLayer::SolidColorContent>(color_iter->second.content));
+  auto snap_color = std::get<UberStructLayer::SolidColorContent>(color_iter->second.content);
+  EXPECT_EQ(snap_color.color, (std::array<float, 4>{0.1f, 0.2f, 0.3f, 0.4f}));
+  EXPECT_EQ(snap_color.display_rect.x(), 9);
+  EXPECT_EQ(snap_color.display_rect.y(), 10);
+  EXPECT_EQ(snap_color.display_rect.width(), 11);
+  EXPECT_EQ(snap_color.display_rect.height(), 12);
+  EXPECT_EQ(snap_color.opacity, 0.75f);
+  EXPECT_EQ(snap_color.blend_mode, types::BlendMode::kPremultipliedAlpha());
+
+  EXPECT_EQ(iter->second->flatland_version, 2u);
+}
+
 }  // namespace test
 }  // namespace flatland

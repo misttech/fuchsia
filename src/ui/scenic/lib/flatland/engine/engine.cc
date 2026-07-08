@@ -33,7 +33,7 @@ Engine::Engine(std::shared_ptr<DisplayCompositor> flatland_compositor,
                std::shared_ptr<FlatlandPresenterImpl> flatland_presenter,
                std::shared_ptr<UberStructSystem> uber_struct_system,
                std::shared_ptr<LinkSystem> link_system, inspect::Node inspect_node,
-               GetRootTransformFunc get_root_transform)
+               GetRootTransformFunc get_root_transform, bool use_flatland2_uberstruct_schema)
     : flatland_compositor_(std::move(flatland_compositor)),
       flatland_presenter_(std::move(flatland_presenter)),
       uber_struct_system_(std::move(uber_struct_system)),
@@ -41,6 +41,7 @@ Engine::Engine(std::shared_ptr<DisplayCompositor> flatland_compositor,
       cleared_scene_state_(std::make_unique<SceneState>()),
       inspect_node_(std::move(inspect_node)),
       get_root_transform_(std::move(get_root_transform)),
+      use_flatland2_uberstruct_schema_(use_flatland2_uberstruct_schema),
       executor_(async_get_default_dispatcher()) {
   utils::CheckIsOnMainThread();
   FX_DCHECK(flatland_compositor_);
@@ -254,6 +255,19 @@ Renderables Engine::GetRenderables(const FlatlandDisplay& display) {
 void Engine::SceneState::Initialize(Engine& engine, TransformHandle root_transform) {
   TRACE_DURATION("gfx", "flatland::Engine::SceneState::Initialize");
   snapshot = engine.uber_struct_system_->Snapshot();
+
+  // FlatlandEngine and FlatlandManager work together to ensure that, globally, either everyone
+  // (i.e. all Flatland sessions, the engine, etc.) is using the legacy image-based UberStruct
+  // schema, or everyone is using the layer-based "Flatland2" UberStruct schema.
+  // Also see `FlatlandManager::use_flatland2_uberstruct_schema_`.
+  for (const auto& [id, us] : snapshot.map) {
+    FX_DCHECK(us->flatland_version == 1 || us->flatland_version == 2);
+    if (engine.use_flatland2_uberstruct_schema_) {
+      FX_DCHECK(us->images.empty());
+    } else {
+      FX_DCHECK(us->layer_stacks.empty() && us->layers.empty());
+    }
+  }
 
   const auto links = engine.link_system_->GetResolvedTopologyLinks();
   const auto link_system_id = engine.link_system_->GetInstanceId();

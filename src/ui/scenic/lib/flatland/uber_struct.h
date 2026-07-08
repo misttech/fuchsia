@@ -11,6 +11,7 @@
 #include <unordered_map>
 
 #include "src/ui/scenic/lib/allocation/image_metadata.h"
+#include "src/ui/scenic/lib/flatland/flatland2_state.h"
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
 #include "src/ui/scenic/lib/flatland/transform_graph.h"
 #include "src/ui/scenic/lib/flatland/transform_handle.h"
@@ -19,6 +20,27 @@
 #include <glm/mat3x3.hpp>
 
 namespace flatland {
+
+// TODO(https://fxbug.dev/523371761): document.
+struct UberStructLayer {
+  struct ImageContent {
+    types::RectangleF sample_rect;
+    types::RotateFlip transform;
+    types::Rectangle display_rect;
+    float opacity = 1.f;
+    types::BlendMode blend_mode = types::BlendMode::kReplace();
+    allocation::GlobalImageId image_id = allocation::kInvalidImageId;
+    uint32_t image_width = 0, image_height = 0;
+  };
+  struct SolidColorContent {
+    std::array<float, 4> color = {1.f, 1.f, 1.f, 1.f};
+    types::Rectangle display_rect;
+    float opacity = 1.f;
+    types::BlendMode blend_mode = types::BlendMode::kReplace();
+  };
+  uint64_t epoch = 0;
+  std::variant<std::monostate, ImageContent, SolidColorContent> content;
+};
 
 // TODO(https://fxbug.dev/42122511): find the appropriate name for this struct.
 //
@@ -44,6 +66,8 @@ struct UberStruct {
         local_clip_regions(&resource_),
         images(&resource_),
         local_hit_regions_map(&resource_),
+        layer_stacks(&resource_),
+        layers(&resource_),
         debug_name(&resource_) {}
 
   // Note: this MUST only be used to allocate memory for this UberStruct's fields
@@ -72,6 +96,19 @@ struct UberStruct {
   // Map of local hit regions.
   std::pmr::unordered_map<TransformHandle, std::pmr::vector<flatland::HitRegion>>
       local_hit_regions_map;
+
+  // Flatland2 layer stacks associated with each TransformHandle.
+  std::pmr::unordered_map<TransformHandle, std::pmr::vector<LayerHandle>> layer_stacks;
+
+  // Flatland2 layers.
+  std::pmr::unordered_map<LayerHandle, UberStructLayer> layers;
+
+  // Describes the API version of the Flatland session which authored this UberStruct.  Almost all
+  // fields are interpreted identically, regardless of which API produced it (this is the whole
+  // point of having Flatland1/2 share the same UberStruct schema).  However, there are a few places
+  // where classic Flatland1 semantics are incompatible with the Composer3 HAL semantics that
+  // Flatland2 is designed to support.
+  uint32_t flatland_version = 1;
 
   // The ViewRef for the root (View) of this Flatland instance.
   // Can be nullptr when not attached to the scene, otherwise must be set.

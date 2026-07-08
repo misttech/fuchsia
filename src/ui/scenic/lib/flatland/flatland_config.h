@@ -15,6 +15,7 @@ struct FlatlandConfig {
   bool skips_present_credits = false;
   bool skips_on_frame_presented = false;
   bool use_trusted_flatland_api = false;
+  bool use_flatland2_uberstruct_schema = false;
 };
 
 }  // namespace flatland
