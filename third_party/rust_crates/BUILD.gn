@@ -6078,43 +6078,6 @@ rustc_library("const-oid-v0_9_6") {
   applicable_licenses = [ ":const-oid-v0_9_6.license" ]
 }
 
-license("core-foundation-v0_9_4.license") {
-  public_package_name = "core_foundation"
-  license_files = [
-    "//third_party/rust_crates/vendor/core-foundation-0.9.4/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/core-foundation-0.9.4/LICENSE-MIT",
-  ]
-}
-
-rustc_library("core-foundation-v0_9_4") {
-  crate_name = "core_foundation"
-  source_root =
-      "//third_party/rust_crates/vendor/core-foundation-0.9.4/src/lib.rs"
-  output_name = "core_foundation-f9e1f1978da592dd"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":core-foundation-sys-v0_8_7" ]
-  deps += [ ":libc-v0_2_186" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=f9e1f1978da592dd",
-    "-Cextra-filename=-f9e1f1978da592dd",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"link\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":core-foundation-v0_9_4.license" ]
-}
-
 license("core-foundation-sys-v0_8_7.license") {
   public_package_name = "core_foundation_sys"
   license_files = [
@@ -19403,27 +19366,17 @@ rustc_library("sec1-v0_7_3") {
   applicable_licenses = [ ":sec1-v0_7_3.license" ]
 }
 
-license("security-framework-v2_3_1.license") {
-  public_package_name = "security_framework"
-  license_files =
-      [ "//third_party/rust_crates/forks/security-framework/LICENSE" ]
-}
-
 rustc_library("security-framework-v2_3_1") {
   crate_name = "security_framework"
-  source_root = "//third_party/rust_crates/forks/security-framework/src/lib.rs"
+  source_root =
+      "//third_party/rust_crates/empty/security-framework-2/src/lib.rs"
   output_name = "security_framework-152315bbaadf7b20"
-  edition = "2018"
+  edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":bitflags-v1_3_2" ]
-  deps += [ ":core-foundation-sys-v0_8_7" ]
-  deps += [ ":core-foundation-v0_9_4" ]
-  deps += [ ":libc-v0_2_186" ]
-  deps += [ ":security-framework-sys-v2_4_2" ]
 
   rustenv = []
 
@@ -19431,48 +19384,11 @@ rustc_library("security-framework-v2_3_1") {
     "--cap-lints=allow",
     "-Cmetadata=152315bbaadf7b20",
     "-Cextra-filename=-152315bbaadf7b20",
-    "--cfg=feature=\"OSX_10_9\"",
-    "--cfg=feature=\"default\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":security-framework-v2_3_1.license" ]
-}
-
-license("security-framework-sys-v2_4_2.license") {
-  public_package_name = "security_framework_sys"
-  license_files = [
-    "//third_party/rust_crates/vendor/security-framework-sys-2.4.2/LICENSE",
-  ]
-}
-
-rustc_library("security-framework-sys-v2_4_2") {
-  crate_name = "security_framework_sys"
-  source_root =
-      "//third_party/rust_crates/vendor/security-framework-sys-2.4.2/src/lib.rs"
-  output_name = "security_framework_sys-74e76edd8396fffb"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":core-foundation-sys-v0_8_7" ]
-  deps += [ ":libc-v0_2_186" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=74e76edd8396fffb",
-    "-Cextra-filename=-74e76edd8396fffb",
-    "--cfg=feature=\"OSX_10_9\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":security-framework-sys-v2_4_2.license" ]
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
 license("semver-v1_0_28.license") {

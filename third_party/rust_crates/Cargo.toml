@@ -412,6 +412,7 @@ portable-atomic-util = { path = "empty/portable-atomic-util" }
 r-efi = { path = "empty/r-efi" }
 r-efi-6 = { package = "r-efi", path = "empty/r-efi-6" }
 rustversion = { path = "empty/rustversion" }
+security-framework = { path = "empty/security-framework-2" }
 vcpkg = { path = "empty/vcpkg" }
 wasi-0_11_0_preview1 = { path = "empty/wasi-0.11.0-wasi-snapshot-preview1", package = "wasi" }
 wasip2 = { path = "empty/wasip2" }
@@ -458,7 +459,6 @@ prettytable-rs = { path = "forks/prettytable-rs" }
 rapidhash = { path = "forks/rapidhash-1.4.0" }
 ring = { path = "forks/ring-0.17.8" }
 rustyline = { path = "forks/rustyline" }
-security-framework = { path = "forks/security-framework" }
 semver = { path = "forks/semver-1.0.28" }
 tracing-core = { path = "forks/tracing-core" }
 tracing-mutex = { path = "forks/tracing-mutex-0.3.2" }
