@@ -5,7 +5,8 @@
 use fidl_next::{Request, Responder};
 use fidl_next_fuchsia_hardware_gpio as fgpio;
 use fidl_next_fuchsia_hardware_spiimpl::{
-    self, SpiImplExchangeVectorResponse, SpiImplReceiveVectorResponse, spi_impl as fspi_impl,
+    self, SpiImplExchangeVectorResponse, SpiImplReceiveVectorResponse,
+    SpiImplUnregisterVmoResponse, spi_impl as fspi_impl,
 };
 use log::{debug, error, warn};
 use mmio::Register;
@@ -16,12 +17,22 @@ mod registers;
 use registers::DwSpiRegsBlock;
 use zx::Status;
 
+use fidl_next_fuchsia_hardware_sharedmemory as fsharedmemory;
+use fidl_next_fuchsia_mem as fmem;
+use std::collections::HashMap;
+
 const FIFO_SIZE: usize = 256;
+
+pub struct RegisteredVmo {
+    pub vmo: fmem::natural::Range,
+    pub _rights: fsharedmemory::natural::SharedVmoRight,
+}
 
 pub struct DwSpiDevice {
     mmio: DwSpiRegsBlock<MmioRegion<VmoMemory>>,
     cs_gpio: Option<fidl_next::Client<fgpio::Gpio>>,
     interrupt: zx::Interrupt,
+    registered_vmos: HashMap<u32, RegisteredVmo>,
 }
 
 impl DwSpiDevice {
@@ -30,7 +41,12 @@ impl DwSpiDevice {
         cs_gpio: Option<fidl_next::Client<fgpio::Gpio>>,
         interrupt: zx::Interrupt,
     ) -> Self {
-        DwSpiDevice { mmio: DwSpiRegsBlock { mmio }, cs_gpio, interrupt }
+        DwSpiDevice {
+            mmio: DwSpiRegsBlock { mmio },
+            cs_gpio,
+            interrupt,
+            registered_vmos: HashMap::new(),
+        }
     }
 
     fn set_baud_rate(
@@ -294,6 +310,56 @@ impl DwSpiDevice {
 
         rxdata
     }
+
+    pub fn register_vmo_impl(
+        &mut self,
+        chip_select: u32,
+        vmo_id: u32,
+        vmo: fmem::natural::Range,
+        rights: fsharedmemory::natural::SharedVmoRight,
+    ) -> Result<(), Status> {
+        if chip_select != 0 {
+            return Err(Status::NOT_FOUND);
+        }
+        if self.registered_vmos.contains_key(&vmo_id) {
+            return Err(Status::ALREADY_EXISTS);
+        }
+
+        let vmo_size = vmo.vmo.get_size()?;
+        if let Some(end) = vmo.offset.checked_add(vmo.size) {
+            if end > vmo_size {
+                error!("VMO range end {} is greater than or equal to VMO size {}", end, vmo_size);
+                return Err(Status::INVALID_ARGS);
+            }
+        } else {
+            error!("VMO offset {} and size {} overflow", vmo.offset, vmo.size);
+            return Err(Status::INVALID_ARGS);
+        }
+
+        self.registered_vmos.insert(vmo_id, RegisteredVmo { vmo, _rights: rights });
+        Ok(())
+    }
+
+    pub fn unregister_vmo_impl(
+        &mut self,
+        chip_select: u32,
+        vmo_id: u32,
+    ) -> Result<zx::Vmo, Status> {
+        if chip_select != 0 {
+            return Err(Status::NOT_FOUND);
+        }
+        if let Some(registered) = self.registered_vmos.remove(&vmo_id) {
+            Ok(registered.vmo.vmo)
+        } else {
+            Err(Status::NOT_FOUND)
+        }
+    }
+
+    pub fn release_registered_vmos_impl(&mut self, chip_select: u32) {
+        if chip_select == 0 {
+            self.registered_vmos.clear();
+        }
+    }
 }
 
 impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for DwSpiDevice {
@@ -358,24 +424,37 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for DwSpiDevice {
 
     async fn register_vmo(
         &mut self,
-        _request: Request<fspi_impl::RegisterVmo>,
+        request: Request<fspi_impl::RegisterVmo>,
         responder: Responder<fspi_impl::RegisterVmo>,
     ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
+        let payload = request.payload();
+        let result = self.register_vmo_impl(
+            payload.chip_select,
+            payload.vmo_id,
+            payload.vmo,
+            payload.rights,
+        );
+        let _ = responder.respond_with(result).await;
     }
 
     async fn unregister_vmo(
         &mut self,
-        _request: Request<fspi_impl::UnregisterVmo>,
+        request: Request<fspi_impl::UnregisterVmo>,
         responder: Responder<fspi_impl::UnregisterVmo>,
     ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
+        let payload = request.payload();
+        let result = self
+            .unregister_vmo_impl(payload.chip_select, payload.vmo_id)
+            .map(|vmo| SpiImplUnregisterVmoResponse { vmo });
+        let _ = responder.respond_with(result).await;
     }
 
     async fn release_registered_vmos(
         &mut self,
-        _request: Request<fspi_impl::ReleaseRegisteredVmos>,
+        request: Request<fspi_impl::ReleaseRegisteredVmos>,
     ) {
+        let payload = request.payload();
+        self.release_registered_vmos_impl(payload.chip_select);
     }
 
     async fn transmit_vmo(

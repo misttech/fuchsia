@@ -14,7 +14,9 @@ use fidl::Serializable;
 use fidl_fuchsia_driver_metadata as fmetadata;
 use fidl_fuchsia_hardware_spi_businfo as fspi_businfo;
 use fidl_next_fuchsia_hardware_platform_device as fdevice;
+use fidl_next_fuchsia_hardware_sharedmemory as fsharedmemory;
 use fidl_next_fuchsia_hardware_spiimpl as fspiimpl;
+use fidl_next_fuchsia_mem as fmem;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::future::{self, Either};
@@ -239,6 +241,106 @@ async fn test_exchange_vector() {
     assert_eq!(read_u32(0x60), 5);
     // The RX path should have read the last value that was written to the FIFO.
     assert_eq!(rxdata, vec![5, 5, 5, 5, 5]);
+
+    started_driver.stop_driver().await;
+}
+
+#[fuchsia::test]
+async fn test_vmo_registration() {
+    let mut service_fs = ServiceFs::new();
+    let scope = fasync::Scope::new_with_name("test");
+
+    let vmo = Vmo::create(0x100).expect("Failed to create VMO");
+    let mmio = fdevice::natural::Mmio { offset: Some(0), size: Some(0x100), vmo: Some(vmo) };
+
+    let mut pdev_config: fake_pdev::Config = Default::default();
+    pdev_config.mmios.insert(0, mmio);
+    pdev_config.use_fake_irq = true;
+
+    let pdev = FakePDev::new();
+    pdev.set_config(pdev_config);
+
+    let powerdomain = FakePowerDomain::new();
+    let clock_bus = FakeClock::new();
+    let clock_regs = FakeClock::new();
+    let reset = FakeReset::new();
+    let gpio = FakeGpio::default();
+
+    let mut harness = TestHarness::<DwSpiDriver>::new()
+        .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "pdev"))
+        .add_offer(powerdomain.serve(&mut service_fs, scope.to_handle(), "power-domain"))
+        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "clock-bus"))
+        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "clock-registers"))
+        .add_offer(reset.serve(&mut service_fs, scope.to_handle(), "reset"))
+        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "gpio-cs-0"))
+        .set_driver_incoming(service_fs);
+
+    let dispatcher = fdf_fidl::FidlExecutor::from(harness.dispatcher().clone());
+    let started_driver = harness.start_driver().await.expect("Failed to start driver");
+
+    let spi_service: fdf_component::ServiceInstance<fspiimpl::Service> =
+        started_driver.driver_outgoing().service().connect_next().unwrap();
+
+    let (client_end, server_end) = fdf_fidl::create_channel();
+    spi_service.device(server_end).unwrap();
+    let client = client_end.spawn_on(&dispatcher);
+
+    // Create a VMO and register it.
+    let vmo = Vmo::create(4096).unwrap();
+    let dup_vmo = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+    let range = fmem::natural::Range { vmo: vmo, offset: 0, size: 4096 };
+    client
+        .register_vmo(0, 1, range, fsharedmemory::natural::SharedVmoRight::READ)
+        .await
+        .expect("FIDL call failed")
+        .expect("Register VMO failed");
+
+    // Registering the same VMO ID again should fail.
+    let vmo = Vmo::create(4096).unwrap();
+    let range = fmem::natural::Range { vmo: vmo, offset: 0, size: 4096 };
+    let res = client
+        .register_vmo(0, 1, range, fsharedmemory::natural::SharedVmoRight::READ)
+        .await
+        .expect("FIDL call failed");
+    assert_eq!(res.unwrap_err(), zx::Status::ALREADY_EXISTS);
+
+    // Unregister the VMO and make sure it's the same one we registered.
+    let unreg_vmo = client
+        .unregister_vmo(0, 1)
+        .await
+        .expect("FIDL call failed")
+        .expect("Unregister VMO failed")
+        .vmo;
+    assert_eq!(dup_vmo.koid().unwrap(), unreg_vmo.koid().unwrap());
+
+    // Unregistering again should fail.
+    let res = client.unregister_vmo(0, 1).await.expect("FIDL call failed");
+    assert_eq!(res.unwrap_err(), zx::Status::NOT_FOUND);
+
+    let vmo = Vmo::create(4096).unwrap();
+    let range = fmem::natural::Range { vmo: vmo, offset: 0, size: 4096 };
+    client
+        .register_vmo(0, 2, range, fsharedmemory::natural::SharedVmoRight::READ)
+        .await
+        .expect("FIDL call failed")
+        .expect("Register VMO failed");
+
+    let vmo = Vmo::create(4096).unwrap();
+    let range = fmem::natural::Range { vmo: vmo, offset: 0, size: 4096 };
+    client
+        .register_vmo(0, 3, range, fsharedmemory::natural::SharedVmoRight::READ)
+        .await
+        .expect("FIDL call failed")
+        .expect("Register VMO failed");
+
+    // Release VMOs, and check that unregistering fails.
+    client.release_registered_vmos(0).await.unwrap();
+
+    let res = client.unregister_vmo(0, 2).await.expect("FIDL call failed");
+    assert_eq!(res.unwrap_err(), zx::Status::NOT_FOUND);
+
+    let res = client.unregister_vmo(0, 3).await.expect("FIDL call failed");
+    assert_eq!(res.unwrap_err(), zx::Status::NOT_FOUND);
 
     started_driver.stop_driver().await;
 }
