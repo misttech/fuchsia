@@ -11,61 +11,13 @@
 #include <zircon/errors.h>
 #include <zircon/fidl.h>
 
+#include "lib/fidl/cpp/internal/canary.h"
+
 namespace fidl {
 namespace internal {
 namespace {
 
 constexpr zx_signals_t kSignals = ZX_CHANNEL_READABLE | ZX_CHANNEL_PEER_CLOSED;
-
-// |Canary| is a stack-allocated object that observes when a |MessageReader| is
-// destroyed or unbound from the current channel.
-//
-// Because |WaitAndDispatchOneMessageUntil| can be called re-entrantly, we can
-// be in a state where there are N nested calls to |ReadAndDispatchMessage| on
-// the stack. While dispatching any of those messages, the client can destroy
-// the |MessageReader| or unbind it from the current channel. When that happens
-// we need to stop reading messages from the channel and unwind the stack
-// safely.
-//
-// The |Canary| works by storing a pointer to its |should_stop_| field in the
-// |MessageReader|.  Upon destruction or unbinding, the |MessageReader| writes
-// |true| into |should_stop_|. When we unwind the stack, the |Canary| forwards
-// that value to the next |Canary| on the stack.
-class Canary {
- public:
-  explicit Canary(bool** should_stop_slot)
-      : should_stop_slot_(should_stop_slot),
-        previous_should_stop_(*should_stop_slot_),
-        should_stop_(false) {
-    *should_stop_slot_ = &should_stop_;
-  }
-
-  ~Canary() {
-    if (should_stop_) {
-      // If we should stop, we need to propagate that information to the
-      // |Canary| higher up the stack, if any. We also cannot touch
-      // |*should_stop_slot_| because the |MessageReader| might have been
-      // destroyed (or bound to another channel).
-      if (previous_should_stop_)
-        *previous_should_stop_ = should_stop_;
-    } else {
-      // Otherwise, the |MessageReader| was not destroyed and is still bound to
-      // the same channel. We need to restore the previous |should_stop_|
-      // pointer so that a |Canary| further up the stack can still be informed
-      // about whether to stop.
-      *should_stop_slot_ = previous_should_stop_;
-    }
-  }
-
-  // Whether the |ReadAndDispatchMessage| that created the |Canary| should stop
-  // after dispatching the current message.
-  bool should_stop() const { return should_stop_; }
-
- private:
-  bool** should_stop_slot_;
-  bool* previous_should_stop_;
-  bool should_stop_;
-};
 
 }  // namespace
 

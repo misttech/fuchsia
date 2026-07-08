@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <utility>
 
+#include "lib/fidl/cpp/internal/canary.h"
 #include "lib/fidl/cpp/internal/logging.h"
 
 namespace fidl {
@@ -24,12 +25,20 @@ static std::atomic<uint32_t> transitory_clientside_error_disable_count(0);
 
 }  // namespace
 
-ProxyController::ProxyController() : reader_(this), next_txid_(1) {}
+ProxyController::ProxyController() : reader_(this), destroyed_(nullptr), next_txid_(1) {}
 
-ProxyController::~ProxyController() = default;
+ProxyController::~ProxyController() {
+  if (destroyed_) {
+    *destroyed_ = true;
+    destroyed_ = nullptr;
+  }
+}
 
 ProxyController::ProxyController(ProxyController&& other)
-    : reader_(this), handlers_(std::move(other.handlers_)), next_txid_(other.next_txid_) {
+    : reader_(this),
+      destroyed_(nullptr),
+      handlers_(std::move(other.handlers_)),
+      next_txid_(other.next_txid_) {
   reader_.TakeChannelAndErrorHandlerFrom(&other.reader());
   other.Reset();
 }
@@ -46,6 +55,8 @@ ProxyController& ProxyController::operator=(ProxyController&& other) {
 
 void ProxyController::Send(const fidl_type_t* type, HLCPPOutgoingMessage message,
                            std::unique_ptr<SingleUseMessageHandler> response_handler) {
+  Canary canary(&destroyed_);
+
   zx_txid_t txid = 0;
   if (response_handler) {
     txid = next_txid_++ & kUserspaceTxidMask;
@@ -62,6 +73,11 @@ void ProxyController::Send(const fidl_type_t* type, HLCPPOutgoingMessage message
       if (transitory_clientside_error_disable_count == 0) {
         if (reader_.error_handler_ != nullptr) {
           reader_.error_handler_(status);
+          // If the canary was signaled, `this` was destroyed while calling
+          // `reader_.error_handler_` and we should stop immediately.
+          if (canary.should_stop()) {
+            return;
+          }
         }
         reader_.Reset();
       }
@@ -80,6 +96,11 @@ void ProxyController::Send(const fidl_type_t* type, HLCPPOutgoingMessage message
       if (transitory_clientside_error_disable_count == 0) {
         if (reader_.error_handler_ != nullptr) {
           reader_.error_handler_(status);
+          // If the canary was signaled, `this` was destroyed while calling
+          // `reader_.error_handler_` and we should stop immediately.
+          if (canary.should_stop()) {
+            return;
+          }
         }
         reader_.Reset();
       }

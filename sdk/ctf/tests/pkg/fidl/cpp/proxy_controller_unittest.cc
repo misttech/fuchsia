@@ -381,6 +381,46 @@ TEST(ProxyController, ReentrantDestructor) {
   EXPECT_EQ(destructor_count, 1);
 }
 
+TEST(ProxyController, SendValidationErrorDestroysProxyController) {
+  zx::channel h1, h2;
+  EXPECT_EQ(ZX_OK, zx::channel::create(0, &h1, &h2));
+
+  fidl::test::AsyncLoopForTest loop;
+
+  auto controller = std::make_unique<ProxyController>();
+  EXPECT_EQ(ZX_OK, controller->reader().Bind(std::move(h1)));
+
+  controller->reader().set_error_handler([&controller](zx_status_t status) {
+    EXPECT_EQ(ZX_ERR_BUFFER_TOO_SMALL, status);
+    controller.reset();
+  });
+
+  MessageEncoder encoder(3u, fidl::MessageDynamicFlags::kStrictMethod);
+  // This fails validation and invokes the error handler.
+  controller->Send(&unbounded_nonnullable_string_message_type, encoder.GetMessage(), nullptr);
+
+  EXPECT_NULL(controller);
+}
+
+TEST(ProxyController, SendWriteErrorDestroysProxyController) {
+  fidl::test::AsyncLoopForTest loop;
+
+  auto controller = std::make_unique<ProxyController>();
+  // Leaving the channel unbound will trigger ZX_ERR_BAD_HANDLE on write.
+
+  controller->reader().set_error_handler([&controller](zx_status_t status) {
+    EXPECT_EQ(ZX_ERR_BAD_HANDLE, status);
+    controller.reset();
+  });
+
+  // Create an empty message with only a header.
+  MessageEncoder encoder(3u, fidl::MessageDynamicFlags::kStrictMethod);
+  // Send with type = nullptr to skip validation.
+  controller->Send(nullptr, encoder.GetMessage(), nullptr);
+
+  EXPECT_NULL(controller);
+}
+
 }  // namespace
 }  // namespace internal
 }  // namespace fidl

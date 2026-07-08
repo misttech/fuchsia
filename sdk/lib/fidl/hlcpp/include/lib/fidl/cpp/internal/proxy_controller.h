@@ -85,6 +85,7 @@ class ProxyController : public MessageHandler {
 
   MessageReader reader_;
   Proxy* proxy_ = nullptr;
+  bool* destroyed_;  // See |Canary| uses in proxy_controller.cc.
   std::map<zx_txid_t, std::unique_ptr<SingleUseMessageHandler>> handlers_;
   zx_txid_t next_txid_;
 };

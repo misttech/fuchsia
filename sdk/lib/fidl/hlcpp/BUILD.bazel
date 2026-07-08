@@ -95,6 +95,7 @@ idk_cc_source_library(
         "include/lib/fidl/cpp/event_sender.h",
         "include/lib/fidl/cpp/interface_ptr.h",
         "include/lib/fidl/cpp/interface_ptr_set.h",
+        "include/lib/fidl/cpp/internal/canary.h",
         "include/lib/fidl/cpp/internal/header.h",
         "include/lib/fidl/cpp/internal/implementation.h",
         "include/lib/fidl/cpp/internal/message_handler.h",
