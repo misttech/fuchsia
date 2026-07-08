@@ -103,7 +103,7 @@ zx::eventpair MakeEvent(zx_time_t deadline, zx_clock_t clock_id) {
 
 // Manages port keys used by the fake clock implementation. All keys provided by callers to
 // zx_object_wait_async() and zx_port_queue() have their keys replaced by a new key allocated
-// by this type which is then translated in zx_port_cancel() and zx_port_wait() calls.
+// by this type which is then translated in zx_port_cancel_key() and zx_port_wait() calls.
 class PortKeyNamespace {
  public:
   // Allocates a new key backed by a given client key.
@@ -313,11 +313,6 @@ __EXPORT zx_status_t zx_object_wait_async(zx_handle_t handle, zx_handle_t port, 
   // Allocate a key for |key| that is unique within this process and register on that.
   uint64_t syscall_key = GetPortKeyNamespace().AddNewKey(key);
   return _zx_object_wait_async(handle, port, syscall_key, signals, options);
-}
-
-__EXPORT zx_status_t zx_port_cancel(zx_handle_t handle, zx_handle_t object, uint64_t key) {
-  uint64_t syscall_key = GetPortKeyNamespace().MapAndRemoveKey(key);
-  return _zx_port_cancel(handle, object, syscall_key);
 }
 
 __EXPORT zx_status_t zx_port_cancel_key(zx_handle_t handle, uint32_t options, uint64_t key) {
