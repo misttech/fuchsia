@@ -25,7 +25,7 @@ const FIFO_SIZE: usize = 256;
 
 pub struct RegisteredVmo {
     pub vmo: fmem::natural::Range,
-    pub _rights: fsharedmemory::natural::SharedVmoRight,
+    pub rights: fsharedmemory::natural::SharedVmoRight,
 }
 
 pub struct DwSpiDevice {
@@ -328,7 +328,7 @@ impl DwSpiDevice {
         let vmo_size = vmo.vmo.get_size()?;
         if let Some(end) = vmo.offset.checked_add(vmo.size) {
             if end > vmo_size {
-                error!("VMO range end {} is greater than or equal to VMO size {}", end, vmo_size);
+                error!("VMO range end {} is greater than VMO size {}", end, vmo_size);
                 return Err(Status::INVALID_ARGS);
             }
         } else {
@@ -336,7 +336,7 @@ impl DwSpiDevice {
             return Err(Status::INVALID_ARGS);
         }
 
-        self.registered_vmos.insert(vmo_id, RegisteredVmo { vmo, _rights: rights });
+        self.registered_vmos.insert(vmo_id, RegisteredVmo { vmo, rights });
         Ok(())
     }
 
@@ -359,6 +359,84 @@ impl DwSpiDevice {
         if chip_select == 0 {
             self.registered_vmos.clear();
         }
+    }
+
+    fn get_validated_vmo(
+        &self,
+        buffer: &fsharedmemory::natural::SharedVmoBuffer,
+        required_right: fsharedmemory::natural::SharedVmoRight,
+    ) -> Result<(&zx::Vmo, u64), Status> {
+        let registered = self.registered_vmos.get(&buffer.vmo_id).ok_or(Status::NOT_FOUND)?;
+
+        if !registered.rights.contains(required_right) {
+            return Err(Status::ACCESS_DENIED);
+        }
+
+        let end = buffer.offset.checked_add(buffer.size).ok_or(Status::OUT_OF_RANGE)?;
+        if end > registered.vmo.size {
+            return Err(Status::OUT_OF_RANGE);
+        }
+
+        let final_offset =
+            registered.vmo.offset.checked_add(buffer.offset).ok_or(Status::OUT_OF_RANGE)?;
+        Ok((&registered.vmo.vmo, final_offset))
+    }
+
+    pub async fn transmit_vmo_impl(
+        &mut self,
+        chip_select: u32,
+        buffer: &fsharedmemory::natural::SharedVmoBuffer,
+    ) -> Result<(), Status> {
+        // TODO(https://fxbug.dev/529838127): Use DMA instead of copying into/out of vectors.
+        let mut tx_data = vec![0u8; buffer.size as usize];
+        {
+            let (vmo, offset) =
+                self.get_validated_vmo(buffer, fsharedmemory::natural::SharedVmoRight::READ)?;
+            vmo.read(&mut tx_data, offset)?;
+        }
+
+        self.exchange_pio(chip_select, &tx_data, false, tx_data.len()).await?;
+        Ok(())
+    }
+
+    pub async fn receive_vmo_impl(
+        &mut self,
+        chip_select: u32,
+        buffer: &fsharedmemory::natural::SharedVmoBuffer,
+    ) -> Result<(), Status> {
+        let rx_data = self.exchange_pio(chip_select, &[], true, buffer.size as usize).await?;
+
+        // TODO(https://fxbug.dev/529838127): Use DMA instead of copying into/out of vectors.
+        let (vmo, offset) =
+            self.get_validated_vmo(buffer, fsharedmemory::natural::SharedVmoRight::WRITE)?;
+        vmo.write(&rx_data, offset)?;
+        Ok(())
+    }
+
+    pub async fn exchange_vmo_impl(
+        &mut self,
+        chip_select: u32,
+        tx_buffer: &fsharedmemory::natural::SharedVmoBuffer,
+        rx_buffer: &fsharedmemory::natural::SharedVmoBuffer,
+    ) -> Result<(), Status> {
+        if tx_buffer.size != rx_buffer.size {
+            return Err(Status::INVALID_ARGS);
+        }
+
+        // TODO(https://fxbug.dev/529838127): Use DMA instead of copying into/out of vectors.
+        let mut tx_data = vec![0u8; tx_buffer.size as usize];
+        {
+            let (tx_vmo, tx_offset) =
+                self.get_validated_vmo(tx_buffer, fsharedmemory::natural::SharedVmoRight::READ)?;
+            tx_vmo.read(&mut tx_data, tx_offset)?;
+        }
+
+        let rx_data = self.exchange_pio(chip_select, &tx_data, true, tx_data.len()).await?;
+
+        let (rx_vmo, rx_offset) =
+            self.get_validated_vmo(rx_buffer, fsharedmemory::natural::SharedVmoRight::WRITE)?;
+        rx_vmo.write(&rx_data, rx_offset)?;
+        Ok(())
     }
 }
 
@@ -459,26 +537,34 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for DwSpiDevice {
 
     async fn transmit_vmo(
         &mut self,
-        _request: Request<fspi_impl::TransmitVmo>,
+        request: Request<fspi_impl::TransmitVmo>,
         responder: Responder<fspi_impl::TransmitVmo>,
     ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
+        let payload = request.payload();
+        let result = self.transmit_vmo_impl(payload.chip_select, &payload.buffer).await;
+        let _ = responder.respond_with(result).await;
     }
 
     async fn receive_vmo(
         &mut self,
-        _request: Request<fspi_impl::ReceiveVmo>,
+        request: Request<fspi_impl::ReceiveVmo>,
         responder: Responder<fspi_impl::ReceiveVmo>,
     ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
+        let payload = request.payload();
+        let result = self.receive_vmo_impl(payload.chip_select, &payload.buffer).await;
+        let _ = responder.respond_with(result).await;
     }
 
     async fn exchange_vmo(
         &mut self,
-        _request: Request<fspi_impl::ExchangeVmo>,
+        request: Request<fspi_impl::ExchangeVmo>,
         responder: Responder<fspi_impl::ExchangeVmo>,
     ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
+        let payload = request.payload();
+        let result = self
+            .exchange_vmo_impl(payload.chip_select, &payload.tx_buffer, &payload.rx_buffer)
+            .await;
+        let _ = responder.respond_with(result).await;
     }
 }
 

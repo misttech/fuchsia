@@ -344,3 +344,408 @@ async fn test_vmo_registration() {
 
     started_driver.stop_driver().await;
 }
+
+#[fuchsia::test]
+async fn test_transmit_vmo() {
+    let mut service_fs = ServiceFs::new();
+    let scope = fasync::Scope::new_with_name("test");
+
+    let pdev = FakePDev::new();
+
+    let vmo = Vmo::create(0x100).expect("Failed to create VMO");
+    vmo.set_cache_policy(zx::CachePolicy::UnCachedDevice).expect("Failed to set cache policy");
+    let mapping = mapped_vmo::Mapping::create_from_vmo(
+        &vmo,
+        0x100,
+        zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE,
+    )
+    .expect("Failed to map VMO");
+
+    let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed to duplicate VMO");
+    let irq = zx::VirtualInterrupt::create_virtual().expect("Failed to create virtual interrupt");
+    let irq_dup =
+        irq.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed to duplicate interrupt");
+
+    let mut pdev_config: fake_pdev::Config = Default::default();
+    let mmio = fdevice::natural::Mmio { offset: Some(0), size: Some(0x100), vmo: Some(dup) };
+    pdev_config.mmios.insert(0, mmio);
+    pdev_config.irqs.insert(0, zx::Interrupt::from(irq.into_handle()));
+    pdev.set_config(pdev_config);
+
+    let powerdomain = FakePowerDomain::new();
+    let clock_bus = FakeClock::new();
+    let clock_regs = FakeClock::new();
+    let reset = FakeReset::new();
+    let gpio = FakeGpio::default();
+
+    let mut harness = TestHarness::<DwSpiDriver>::new()
+        .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "pdev"))
+        .add_offer(powerdomain.serve(&mut service_fs, scope.to_handle(), "power-domain"))
+        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "clock-bus"))
+        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "clock-registers"))
+        .add_offer(reset.serve(&mut service_fs, scope.to_handle(), "reset"))
+        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "gpio-cs-0"))
+        .set_driver_incoming(service_fs);
+
+    let dispatcher = fdf_fidl::FidlExecutor::from(harness.dispatcher().clone());
+    let started_driver = harness.start_driver().await.expect("Failed to start driver");
+
+    let spi_service: fdf_component::ServiceInstance<fspiimpl::Service> =
+        started_driver.driver_outgoing().service().connect_next().unwrap();
+
+    let (client_end, server_end) = fdf_fidl::create_channel();
+    spi_service.device(server_end).unwrap();
+    let client = client_end.spawn_on(&dispatcher);
+
+    let read_u32 = |offset: usize| -> u32 {
+        let mut bytes = [0u8; 4];
+        mapping.read_at(offset, &mut bytes);
+        u32::from_le_bytes(bytes)
+    };
+
+    let write_u32 = |offset: usize, value: u32| {
+        mapping.write_at(offset, &value.to_le_bytes());
+    };
+
+    let tx_vmo = Vmo::create(4096).unwrap();
+    let txdata = vec![1u8, 2, 3, 4, 5];
+    tx_vmo.write(&txdata, 0).unwrap();
+    let range = fmem::natural::Range { vmo: tx_vmo, offset: 0, size: 4096 };
+    client
+        .register_vmo(0, 1, range, fsharedmemory::natural::SharedVmoRight::READ)
+        .await
+        .expect("FIDL call failed")
+        .expect("Register VMO failed");
+
+    // Set TXFLR and ISR.TXEIS to indicate TX FIFO empty, then trigger the interrupt.
+    write_u32(0x20, 0x0);
+    write_u32(0x30, 0x01);
+    irq_dup.trigger(zx::BootInstant::ZERO).expect("Failed to trigger interrupt");
+
+    let buffer = fsharedmemory::natural::SharedVmoBuffer { vmo_id: 1, offset: 0, size: 5 };
+    let transmit_future = client.transmit_vmo(0, buffer);
+    let transmit_future = std::pin::pin!(transmit_future);
+
+    let untriggered_future =
+        fasync::OnSignals::new(&irq_dup, zx::Signals::VIRTUAL_INTERRUPT_UNTRIGGERED);
+    let untriggered_future = std::pin::pin!(untriggered_future);
+
+    let transmit_future = match future::select(transmit_future, untriggered_future).await {
+        Either::Left((res, _)) => {
+            panic!("transmit_vmo completed prematurely: {:?}", res);
+        }
+        Either::Right((res, remaining_future)) => {
+            res.expect("Failed to wait for untriggered signal");
+            remaining_future
+        }
+    };
+
+    // Set RXFLR and ISR.RXFIS to indicate that 5 bytes can be read from the RX FIFO, then trigger
+    // the interrupt again.
+    write_u32(0x24, 0x5);
+    write_u32(0x30, 0x10);
+    irq_dup.trigger(zx::BootInstant::ZERO).expect("Failed to trigger interrupt");
+
+    let response = transmit_future.await;
+    assert!(response.is_ok());
+    assert!(response.unwrap().is_ok());
+
+    // Verify what was written to the TX FIFO.
+    assert_eq!(read_u32(0x60), 5);
+
+    started_driver.stop_driver().await;
+}
+
+#[fuchsia::test]
+async fn test_receive_vmo() {
+    let mut service_fs = ServiceFs::new();
+    let scope = fasync::Scope::new_with_name("test");
+
+    let pdev = FakePDev::new();
+
+    let vmo = Vmo::create(0x100).expect("Failed to create VMO");
+    vmo.set_cache_policy(zx::CachePolicy::UnCachedDevice).expect("Failed to set cache policy");
+    let mapping = mapped_vmo::Mapping::create_from_vmo(
+        &vmo,
+        0x100,
+        zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE,
+    )
+    .expect("Failed to map VMO");
+
+    let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed to duplicate VMO");
+    let irq = zx::VirtualInterrupt::create_virtual().expect("Failed to create virtual interrupt");
+    let irq_dup =
+        irq.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed to duplicate interrupt");
+
+    let mut pdev_config: fake_pdev::Config = Default::default();
+    let mmio = fdevice::natural::Mmio { offset: Some(0), size: Some(0x100), vmo: Some(dup) };
+    pdev_config.mmios.insert(0, mmio);
+    pdev_config.irqs.insert(0, zx::Interrupt::from(irq.into_handle()));
+    pdev.set_config(pdev_config);
+
+    let powerdomain = FakePowerDomain::new();
+    let clock_bus = FakeClock::new();
+    let clock_regs = FakeClock::new();
+    let reset = FakeReset::new();
+    let gpio = FakeGpio::default();
+
+    let mut harness = TestHarness::<DwSpiDriver>::new()
+        .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "pdev"))
+        .add_offer(powerdomain.serve(&mut service_fs, scope.to_handle(), "power-domain"))
+        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "clock-bus"))
+        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "clock-registers"))
+        .add_offer(reset.serve(&mut service_fs, scope.to_handle(), "reset"))
+        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "gpio-cs-0"))
+        .set_driver_incoming(service_fs);
+
+    let dispatcher = fdf_fidl::FidlExecutor::from(harness.dispatcher().clone());
+    let started_driver = harness.start_driver().await.expect("Failed to start driver");
+
+    let spi_service: fdf_component::ServiceInstance<fspiimpl::Service> =
+        started_driver.driver_outgoing().service().connect_next().unwrap();
+
+    let (client_end, server_end) = fdf_fidl::create_channel();
+    spi_service.device(server_end).unwrap();
+    let client = client_end.spawn_on(&dispatcher);
+
+    let write_u32 = |offset: usize, value: u32| {
+        mapping.write_at(offset, &value.to_le_bytes());
+    };
+
+    let rx_vmo = Vmo::create(4096).unwrap();
+    let dup_rx_vmo = rx_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+    let range = fmem::natural::Range { vmo: rx_vmo, offset: 0, size: 4096 };
+    client
+        .register_vmo(0, 1, range, fsharedmemory::natural::SharedVmoRight::WRITE)
+        .await
+        .expect("FIDL call failed")
+        .expect("Register VMO failed");
+
+    // Set TXFLR and ISR.TXEIS to indicate TX FIFO empty, then trigger the interrupt.
+    write_u32(0x20, 0x0);
+    write_u32(0x30, 0x01);
+    irq_dup.trigger(zx::BootInstant::ZERO).expect("Failed to trigger interrupt");
+
+    let buffer = fsharedmemory::natural::SharedVmoBuffer { vmo_id: 1, offset: 0, size: 5 };
+    let receive_future = client.receive_vmo(0, buffer);
+    let receive_future = std::pin::pin!(receive_future);
+
+    let untriggered_future =
+        fasync::OnSignals::new(&irq_dup, zx::Signals::VIRTUAL_INTERRUPT_UNTRIGGERED);
+    let untriggered_future = std::pin::pin!(untriggered_future);
+
+    let receive_future = match future::select(receive_future, untriggered_future).await {
+        Either::Left((res, _)) => {
+            panic!("receive_vmo completed prematurely: {:?}", res);
+        }
+        Either::Right((res, remaining_future)) => {
+            res.expect("Failed to wait for untriggered signal");
+            remaining_future
+        }
+    };
+
+    // Set RXFLR and ISR.RXFIS to indicate that 5 bytes can be read from the RX FIFO, then trigger
+    // the interrupt again.
+    write_u32(0x24, 0x5);
+    write_u32(0x30, 0x10);
+    irq_dup.trigger(zx::BootInstant::ZERO).expect("Failed to trigger interrupt");
+
+    let response = receive_future.await;
+    assert!(response.is_ok());
+    assert!(response.unwrap().is_ok());
+
+    // Verify what was written to the VMO (0xFF because txdata was empty).
+    let mut rx_data = vec![0u8; 5];
+    dup_rx_vmo.read(&mut rx_data, 0).unwrap();
+    assert_eq!(rx_data, vec![0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
+
+    started_driver.stop_driver().await;
+}
+
+#[fuchsia::test]
+async fn test_exchange_vmo() {
+    let mut service_fs = ServiceFs::new();
+    let scope = fasync::Scope::new_with_name("test");
+
+    let pdev = FakePDev::new();
+
+    let vmo = Vmo::create(0x100).expect("Failed to create VMO");
+    vmo.set_cache_policy(zx::CachePolicy::UnCachedDevice).expect("Failed to set cache policy");
+    let mapping = mapped_vmo::Mapping::create_from_vmo(
+        &vmo,
+        0x100,
+        zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE,
+    )
+    .expect("Failed to map VMO");
+
+    let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed to duplicate VMO");
+    let irq = zx::VirtualInterrupt::create_virtual().expect("Failed to create virtual interrupt");
+    let irq_dup =
+        irq.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed to duplicate interrupt");
+
+    let mut pdev_config: fake_pdev::Config = Default::default();
+    let mmio = fdevice::natural::Mmio { offset: Some(0), size: Some(0x100), vmo: Some(dup) };
+    pdev_config.mmios.insert(0, mmio);
+    pdev_config.irqs.insert(0, zx::Interrupt::from(irq.into_handle()));
+    pdev.set_config(pdev_config);
+
+    let powerdomain = FakePowerDomain::new();
+    let clock_bus = FakeClock::new();
+    let clock_regs = FakeClock::new();
+    let reset = FakeReset::new();
+    let gpio = FakeGpio::default();
+
+    let mut harness = TestHarness::<DwSpiDriver>::new()
+        .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "pdev"))
+        .add_offer(powerdomain.serve(&mut service_fs, scope.to_handle(), "power-domain"))
+        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "clock-bus"))
+        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "clock-registers"))
+        .add_offer(reset.serve(&mut service_fs, scope.to_handle(), "reset"))
+        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "gpio-cs-0"))
+        .set_driver_incoming(service_fs);
+
+    let dispatcher = fdf_fidl::FidlExecutor::from(harness.dispatcher().clone());
+    let started_driver = harness.start_driver().await.expect("Failed to start driver");
+
+    let spi_service: fdf_component::ServiceInstance<fspiimpl::Service> =
+        started_driver.driver_outgoing().service().connect_next().unwrap();
+
+    let (client_end, server_end) = fdf_fidl::create_channel();
+    spi_service.device(server_end).unwrap();
+    let client = client_end.spawn_on(&dispatcher);
+
+    let write_u32 = |offset: usize, value: u32| {
+        mapping.write_at(offset, &value.to_le_bytes());
+    };
+
+    // Create TX VMO and write [1, 2, 3, 4, 5].
+    let tx_vmo = Vmo::create(4096).unwrap();
+    tx_vmo.write(&[1u8, 2, 3, 4, 5], 0).unwrap();
+    let tx_range = fmem::natural::Range { vmo: tx_vmo, offset: 0, size: 4096 };
+    client
+        .register_vmo(0, 1, tx_range, fsharedmemory::natural::SharedVmoRight::READ)
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Create RX VMO.
+    let rx_vmo = Vmo::create(4096).unwrap();
+    let dup_rx_vmo = rx_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+    let rx_range = fmem::natural::Range { vmo: rx_vmo, offset: 0, size: 4096 };
+    client
+        .register_vmo(0, 2, rx_range, fsharedmemory::natural::SharedVmoRight::WRITE)
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Set TXFLR and ISR.TXEIS to indicate TX FIFO empty, then trigger the interrupt.
+    write_u32(0x20, 0x0);
+    write_u32(0x30, 0x01);
+    irq_dup.trigger(zx::BootInstant::ZERO).expect("Failed to trigger interrupt");
+
+    let tx_buffer = fsharedmemory::natural::SharedVmoBuffer { vmo_id: 1, offset: 0, size: 5 };
+    let rx_buffer = fsharedmemory::natural::SharedVmoBuffer { vmo_id: 2, offset: 0, size: 5 };
+    let exchange_future = client.exchange_vmo(0, tx_buffer, rx_buffer);
+    let exchange_future = std::pin::pin!(exchange_future);
+
+    let untriggered_future =
+        fasync::OnSignals::new(&irq_dup, zx::Signals::VIRTUAL_INTERRUPT_UNTRIGGERED);
+    let untriggered_future = std::pin::pin!(untriggered_future);
+
+    let exchange_future = match future::select(exchange_future, untriggered_future).await {
+        Either::Left((res, _)) => {
+            panic!("exchange_vmo completed prematurely: {:?}", res);
+        }
+        Either::Right((res, remaining_future)) => {
+            res.expect("Failed to wait for untriggered signal");
+            remaining_future
+        }
+    };
+
+    // Set RXFLR and ISR.RXFIS to indicate that 5 bytes can be read from the RX FIFO, then trigger
+    // the interrupt again.
+    write_u32(0x24, 0x5);
+    write_u32(0x30, 0x10);
+    irq_dup.trigger(zx::BootInstant::ZERO).expect("Failed to trigger interrupt");
+
+    let response = exchange_future.await;
+    assert!(response.is_ok());
+    assert!(response.unwrap().is_ok());
+
+    // Check RX VMO content. Last written byte was 5.
+    let mut rx_data = vec![0u8; 5];
+    dup_rx_vmo.read(&mut rx_data, 0).unwrap();
+    assert_eq!(rx_data, vec![5, 5, 5, 5, 5]);
+
+    started_driver.stop_driver().await;
+}
+
+#[fuchsia::test]
+async fn test_vmo_validation() {
+    let mut service_fs = ServiceFs::new();
+    let scope = fasync::Scope::new_with_name("test");
+
+    let pdev = FakePDev::new();
+
+    let vmo = Vmo::create(0x100).expect("Failed to create VMO");
+    let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed to duplicate VMO");
+    let irq = zx::VirtualInterrupt::create_virtual().expect("Failed to create virtual interrupt");
+
+    let mut pdev_config: fake_pdev::Config = Default::default();
+    let mmio = fdevice::natural::Mmio { offset: Some(0), size: Some(0x100), vmo: Some(dup) };
+    pdev_config.mmios.insert(0, mmio);
+    pdev_config.irqs.insert(0, zx::Interrupt::from(irq.into_handle()));
+    pdev.set_config(pdev_config);
+
+    let powerdomain = FakePowerDomain::new();
+    let clock_bus = FakeClock::new();
+    let clock_regs = FakeClock::new();
+    let reset = FakeReset::new();
+    let gpio = FakeGpio::default();
+
+    let mut harness = TestHarness::<DwSpiDriver>::new()
+        .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "pdev"))
+        .add_offer(powerdomain.serve(&mut service_fs, scope.to_handle(), "power-domain"))
+        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "clock-bus"))
+        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "clock-registers"))
+        .add_offer(reset.serve(&mut service_fs, scope.to_handle(), "reset"))
+        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "gpio-cs-0"))
+        .set_driver_incoming(service_fs);
+
+    let dispatcher = fdf_fidl::FidlExecutor::from(harness.dispatcher().clone());
+    let started_driver = harness.start_driver().await.expect("Failed to start driver");
+
+    let spi_service: fdf_component::ServiceInstance<fspiimpl::Service> =
+        started_driver.driver_outgoing().service().connect_next().unwrap();
+
+    let (client_end, server_end) = fdf_fidl::create_channel();
+    spi_service.device(server_end).unwrap();
+    let client = client_end.spawn_on(&dispatcher);
+
+    let vmo = Vmo::create(4096).unwrap();
+    let range = fmem::natural::Range { vmo: vmo, offset: 0, size: 1024 }; // only register 1024 bytes
+
+    client
+        .register_vmo(0, 1, range, fsharedmemory::natural::SharedVmoRight::READ)
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Invalid VMO ID
+    let buffer = fsharedmemory::natural::SharedVmoBuffer { vmo_id: 99, offset: 0, size: 5 };
+    let res = client.transmit_vmo(0, buffer).await.unwrap();
+    assert_eq!(res.unwrap_err(), zx::Status::NOT_FOUND);
+
+    // Out of range (offset + size > registered size)
+    let buffer = fsharedmemory::natural::SharedVmoBuffer { vmo_id: 1, offset: 1020, size: 10 };
+    let res = client.transmit_vmo(0, buffer).await.unwrap();
+    assert_eq!(res.unwrap_err(), zx::Status::OUT_OF_RANGE);
+
+    // Out of range (overflow)
+    let buffer =
+        fsharedmemory::natural::SharedVmoBuffer { vmo_id: 1, offset: u64::MAX - 2, size: 10 };
+    let res = client.transmit_vmo(0, buffer).await.unwrap();
+    assert_eq!(res.unwrap_err(), zx::Status::OUT_OF_RANGE);
+
+    started_driver.stop_driver().await;
+}
