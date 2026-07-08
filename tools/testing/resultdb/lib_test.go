@@ -51,6 +51,8 @@ func TestParseSummary(t *testing.T) {
 func TestSetTestDetailsToResultSink(t *testing.T) {
 	outputRoot := t.TempDir()
 	detail := createTestDetailWithPassedAndFailedTestCase(5, 2, outputRoot)
+	expectedFailureReason := "some failure reason reported by test runner"
+	detail.FailureReason = expectedFailureReason
 	// include 7 owners to test truncation of owner list
 	detail.Metadata = metadata.TestMetadata{
 		Owners: []string{
@@ -72,13 +74,12 @@ func TestSetTestDetailsToResultSink(t *testing.T) {
 		t.Fatalf("Cannot parse test detail. got %s", err)
 	}
 
-	expectedTopLevelTestFailureReason := "bar_0: test case failed\nbar_1: test case failed"
 	var gotErr string
 	if result.FailureReason != nil && len(result.FailureReason.Errors) > 0 {
 		gotErr = result.FailureReason.Errors[0].Message
 	}
-	if !(result.StatusV2 == resultpb.TestResult_FAILED && gotErr == expectedTopLevelTestFailureReason) {
-		t.Errorf("If a test failed, the top level test should have a failure reason with a list of the failed tests.\n The error message is %q.\n The expected failure reason is %q.", gotErr, expectedTopLevelTestFailureReason)
+	if !(result.StatusV2 == resultpb.TestResult_FAILED && gotErr == expectedFailureReason) {
+		t.Errorf("If a test failed, the top level test should have the reported failure reason.\n The error message is %q.\n The expected failure reason is %q.", gotErr, expectedFailureReason)
 	}
 
 	tags := make(map[string]string)
@@ -127,9 +128,11 @@ func TestSetTestDetailsToResultSink(t *testing.T) {
 	}
 }
 
-func TestSetTestDetailsToResultSink_DefaultFailureReason_ExceedsMaxSize(t *testing.T) {
+func TestSetTestDetailsToResultSink_FailureReason_ExceedsMaxSize(t *testing.T) {
 	outputRoot := t.TempDir()
 	detail := createTestDetailWithPassedAndFailedTestCase(5, 200, outputRoot)
+	detail.FailureReason = strings.Repeat("a", 2000)
+	expectedFailureReason := strings.Repeat("a", MaxFailureReasonLength-3) + "..."
 	extraTags := []*resultpb.StringPair{
 		{Key: "key1", Value: "value1"},
 	}
@@ -138,13 +141,12 @@ func TestSetTestDetailsToResultSink_DefaultFailureReason_ExceedsMaxSize(t *testi
 		t.Fatalf("Cannot parse test detail. got %s", err)
 	}
 
-	expectedTopLevelTestFailureReason := "bar_0: test case failed\nbar_1: test case failed\nbar_2: test case failed\nbar_3: test case failed\nbar_4: test case failed\nbar_5: test case failed\nbar_6: test case failed\nbar_7: test case failed\nbar_8: test case failed\nbar_9: test case failed\nbar_10: test case failed\nbar_11: test case failed\nbar_12: test case failed\nbar_13: test case failed\nbar_14: test case failed\nbar_15: test case failed\nbar_16: test case failed\nbar_17: test case failed\nbar_18: test case failed\nbar_19: test case failed\nbar_20: test case failed\nbar_21: test case failed\nbar_22: test case failed\nbar_23: test case failed\nbar_24: test case failed\nbar_25: test case failed\nbar_26: test case failed\nbar_27: test case failed\nbar_28: test case failed\nbar_29: test case failed\nbar_30: test case failed\nbar_31: test case failed\nbar_32: test case failed\nbar_33: test case failed\nbar_34: test case failed\nbar_35: test case failed\nbar_36: test case failed\nbar_37: test case failed\nbar_38: test case failed\nbar_39: test case failed\nbar_40: test case failed\nbar_41..."
 	var gotErr string
 	if result.FailureReason != nil && len(result.FailureReason.Errors) > 0 {
 		gotErr = result.FailureReason.Errors[0].Message
 	}
-	if !(result.StatusV2 == resultpb.TestResult_FAILED && gotErr == expectedTopLevelTestFailureReason) {
-		t.Errorf("If a test failed, the top level test should have a failure reason with a list of the failed tests.\n The error message is %q.\n The expected failure reason is %q.", gotErr, expectedTopLevelTestFailureReason)
+	if !(result.StatusV2 == resultpb.TestResult_FAILED && gotErr == expectedFailureReason) {
+		t.Errorf("If a test failed, the top level test should have the reported failure reason truncated.\n The error message is %q.\n The expected failure reason is %q.", gotErr, expectedFailureReason)
 	}
 
 	tags := make(map[string]string)
@@ -193,7 +195,8 @@ func TestSetTestDetailsToResultSink_NonSuccessCases(t *testing.T) {
 				SourceLabel: "some source label",
 				Status:      runtests.TestFailure,
 				TestResult: runtests.TestResult{
-					OutputDir: "foo",
+					OutputDir:     "foo",
+					FailureReason: "some failure reason reported by test runner",
 					Cases: []runtests.TestCaseResult{
 						{CaseName: "failed_case", Status: runtests.TestFailure},
 						{CaseName: "skipped_with_reason", Status: runtests.TestSkipped, FailReason: "skipped for some reason"},
@@ -201,7 +204,7 @@ func TestSetTestDetailsToResultSink_NonSuccessCases(t *testing.T) {
 					},
 				},
 			},
-			expectedFailureReason: "failed_case: test case failed\nskipped_with_reason: skipped for some reason",
+			expectedFailureReason: "some failure reason reported by test runner",
 		},
 		{
 			name: "all_skipped_some_with_reason",

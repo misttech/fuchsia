@@ -133,9 +133,10 @@ func (o *TestOutputs) Record(ctx context.Context, result runtests.TestDetails) e
 		SourceLabel: result.SourceLabel,
 		Status:      result.Status,
 		TestResult: runtests.TestResult{
-			OutputFiles: suiteOutputFiles,
-			OutputDir:   outputRelPath,
-			Cases:       cases,
+			OutputFiles:   suiteOutputFiles,
+			OutputDir:     outputRelPath,
+			Cases:         cases,
+			FailureReason: result.FailureReason,
 		},
 		StartTime:      result.StartTime,
 		DurationMillis: duration.Milliseconds(),

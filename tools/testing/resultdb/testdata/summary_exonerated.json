@@ -15,6 +15,7 @@
             "gn_label": "label_case_exonerated",
             "output_file": "path/to/output.txt",
             "result": "FAIL",
+            "error_line": "CaseExonerated: Flaky run instance",
             "cases": [
                 {
                     "display_name": "SuiteX.CaseExonerated",

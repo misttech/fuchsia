@@ -285,9 +285,8 @@ func testDetailsToResultSink(tags []*resultpb.StringPair, testDetail *runtests.T
 	r.StatusV2 = testStatus
 	if testStatus == resultpb.TestResult_FAILED {
 		r.FailureReason = &resultpb.FailureReason{Kind: failureReasonKind}
-		errorMessage := createTopLevelFailureReason(testDetail)
-		if errorMessage != "" {
-			r.FailureReason.Errors = []*resultpb.FailureReason_Error{{Message: errorMessage}}
+		if testDetail.FailureReason != "" {
+			r.FailureReason.Errors = []*resultpb.FailureReason_Error{{Message: truncateString(testDetail.FailureReason, MaxFailureReasonLength)}}
 		}
 	} else if testStatus == resultpb.TestResult_SKIPPED {
 		r.SkippedReason = &resultpb.SkippedReason{Kind: resultpb.SkippedReason_OTHER, ReasonMessage: "skipped because unaffected"}
@@ -320,35 +319,6 @@ func testDetailsToResultSink(tags []*resultpb.StringPair, testDetail *runtests.T
 	}
 
 	return &r, nil, "", nil
-}
-
-func createTopLevelFailureReason(topLevelTest *runtests.TestDetails) string {
-	if topLevelTest.FailureReason != "" {
-		return truncateString(topLevelTest.FailureReason, MaxFailureReasonLength)
-	}
-	var builder strings.Builder
-	for _, testCase := range topLevelTest.Cases {
-		if testCase.Status != runtests.TestSuccess {
-			var text string
-			if testCase.FailReason != "" {
-				text = fmt.Sprintf("%s: %s", testCase.CaseName, testCase.FailReason)
-			} else if testCase.Status == runtests.TestFailure {
-				text = fmt.Sprintf("%s: test case failed", testCase.CaseName)
-			}
-
-			if text != "" {
-				if builder.Len() > 0 {
-					builder.WriteString("\n")
-				}
-				builder.WriteString(text)
-			}
-		}
-	}
-	if builder.Len() == 0 {
-		return ""
-	}
-
-	return truncateString(builder.String(), MaxFailureReasonLength)
 }
 
 func resultDBStatus(result runtests.TestStatus) (resultpb.TestResult_Status, resultpb.FailureReason_Kind, error) {

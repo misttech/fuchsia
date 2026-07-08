@@ -525,7 +525,11 @@ func TestRunAndOutputTests(t *testing.T) {
 				"foo/0": {pkgResolutionDuration: 60 * time.Second, pkgResolveFailed: true},
 			},
 			expectedResults: []runtests.TestDetails{
-				failedTest("foo", 0, 60*time.Second),
+				func() runtests.TestDetails {
+					d := failedTest("foo", 0, 60*time.Second)
+					d.FailureReason = "failed to setup test: package resolution failed"
+					return d
+				}(),
 			},
 		},
 		{
