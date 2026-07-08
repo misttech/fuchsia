@@ -19,7 +19,10 @@ use metrics_registry::InputPipelineErrorMetricDimensionEvent;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::LazyLock;
-use zx::{AsHandleRef, MonotonicDuration, MonotonicInstant, Signals, Status};
+use zx::{
+    AsHandleRef, MonotonicDuration, MonotonicInstant, NullableHandle, Rights, Signals, Status,
+    WaitResult,
+};
 
 // The signal value corresponding to the `DISPLAY_OWNED_SIGNAL`.  Same as zircon's signal
 // USER_0.
@@ -124,6 +127,7 @@ pub struct DisplayOwnership {
     /// precise event sequencing is relevant.
     #[cfg(test)]
     loop_done: RefCell<Option<UnboundedSender<()>>>,
+    display_ownership_event: NullableHandle,
 }
 
 impl DisplayOwnership {
@@ -168,6 +172,10 @@ impl DisplayOwnership {
         input_handlers_node: &fuchsia_inspect::Node,
         metrics_logger: metrics::MetricsLogger,
     ) -> Rc<Self> {
+        let event_handle = display_ownership_event
+            .as_handle_ref()
+            .duplicate_handle(Rights::SAME_RIGHTS)
+            .expect("unable to duplicate display ownership event");
         let initial_state = display_ownership_event
             // scenic guarantees that ANY_DISPLAY_EVENT is asserted. If it is
             // not, this will fail with a timeout error.
@@ -214,12 +222,40 @@ impl DisplayOwnership {
             inspect_status,
             #[cfg(test)]
             loop_done: RefCell::new(_loop_done),
+            display_ownership_event: event_handle,
         })
     }
 
     /// Returns true if the display is currently *not* owned by Scenic.
     fn is_display_ownership_lost(&self) -> bool {
-        self.ownership.borrow().is_display_ownership_lost()
+        // Query the signal state synchronously with INFINITE_PAST (non-blocking)
+        // to get the real-time state and avoid TOCTOU race conditions during
+        // display transitions. While this introduces a syscall overhead, it is
+        // negligible for low-frequency keyboard events.
+        match self
+            .display_ownership_event
+            .wait_one(*ANY_DISPLAY_EVENT, MonotonicInstant::INFINITE_PAST)
+        {
+            WaitResult::Ok(signals) | WaitResult::TimedOut(signals) => {
+                if signals.contains(Signals::OBJECT_PEER_CLOSED) {
+                    true
+                } else {
+                    signals.contains(*DISPLAY_UNOWNED)
+                }
+            }
+            WaitResult::Err(Status::PEER_CLOSED) => {
+                // Peer is closed, assume ownership is lost.
+                true
+            }
+            WaitResult::Canceled(_) => {
+                // Handle is closed, assume ownership is lost.
+                true
+            }
+            WaitResult::Err(e) => {
+                log::error!("Unexpected error on display ownership event: {:?}", e);
+                self.ownership.borrow().is_display_ownership_lost()
+            }
+        }
     }
 
     /// Watches for display ownership changes and sends cancel/sync events.
@@ -780,5 +816,37 @@ mod tests {
                 }
             }
         });
+    }
+
+    #[fuchsia::test]
+    async fn display_ownership_peer_closed() {
+        let (test_event, handler_event) = EventPair::create();
+        let (loop_done_sender, mut loop_done) = mpsc::unbounded::<()>();
+
+        let mut wrangler = DisplayWrangler::new(test_event);
+        let handler = DisplayOwnership::new_for_test(
+            handler_event,
+            loop_done_sender,
+            metrics::MetricsLogger::default(),
+        );
+
+        let (handler_sender, _test_receiver) = mpsc::unbounded::<Vec<InputEvent>>();
+        let handler_clone = handler.clone();
+        let _task = fasync::Task::local(async move {
+            handler_clone.handle_ownership_change(handler_sender).await.unwrap();
+        });
+
+        // 1. Set to owned.
+        wrangler.set_owned();
+        loop_done.next().await;
+
+        // Verify it is owned (not lost).
+        assert!(!handler.is_display_ownership_lost());
+
+        // 2. Close the peer by dropping wrangler.
+        std::mem::drop(wrangler);
+
+        // Verify it is now lost.
+        assert!(handler.is_display_ownership_lost());
     }
 }
