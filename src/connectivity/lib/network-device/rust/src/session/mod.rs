@@ -5,6 +5,7 @@
 //! Fuchsia netdevice session.
 
 mod buffer;
+mod tx;
 
 use std::fmt::Debug;
 use std::mem::MaybeUninit;
@@ -26,11 +27,12 @@ use futures::task::{Context, Poll};
 use futures::{Stream, StreamExt as _, ready};
 
 use crate::error::{Error, Result};
-use buffer::pool::{Pool, RxLeaseWatcher};
+use buffer::pool::{CreatedPool, Pool, RxLeaseWatcher};
 use buffer::{
     AllocKind, DescId, NETWORK_DEVICE_DESCRIPTOR_LENGTH, NETWORK_DEVICE_DESCRIPTOR_VERSION,
 };
 pub use buffer::{Buffer, ChecksumRxOffloading, Rx, SinglePartTxBuffer, Tx};
+use tx::{BufferUsageEstimator, TxState, TxVmoConfig};
 
 // TODO(https://fxbug.dev/438527741): This is the VMO ID used for single VMO
 // clients (Rx + Tx in the same VMO). When VMO split is applied everywhere,
@@ -46,17 +48,7 @@ pub struct Session {
 impl Debug for Session {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Self { inner } = self;
-        let Inner {
-            name,
-            pool: _,
-            proxy: _,
-            rx: _,
-            tx: _,
-            tx_pending: _,
-            rx_ready: _,
-            tx_ready: _,
-            tx_idle_listeners: _,
-        } = &**inner;
+        let Inner { name, .. } = &**inner;
         f.debug_struct("Session").field("name", &name).finish_non_exhaustive()
     }
 }
@@ -68,8 +60,14 @@ impl Session {
         name: &str,
         config: Config,
     ) -> Result<(Self, Task)> {
+        let sample_interval = config.buffer_usage_sample_interval;
         let inner = Inner::new(device, name, config).await?;
-        Ok((Session { inner: Arc::clone(&inner) }, Task { inner }))
+        let buffer_usage_sampler = inner
+            .pool
+            .has_decommittable_tx_vmo()
+            .then(|| (fasync::Interval::new(sample_interval.into()), BufferUsageEstimator::new()));
+
+        Ok((Session { inner: Arc::clone(&inner) }, Task { inner, buffer_usage_sampler }))
     }
 
     /// Sends a [`Buffer`] to the network device in this session.
@@ -221,17 +219,28 @@ struct Inner {
     name: String,
     rx: fasync::Fifo<DescId<Rx>>,
     tx: fasync::Fifo<DescId<Tx>>,
-    // Pending tx descriptors to be sent.
-    tx_pending: Pending<Tx>,
     rx_ready: Mutex<ReadyBuffer<DescId<Rx>>>,
     tx_ready: Mutex<ReadyBuffer<DescId<Tx>>>,
     tx_idle_listeners: TxIdleListeners,
+    tx_state: Mutex<TxState>,
 }
 
 impl Inner {
     /// Creates a new session.
     async fn new(device: &netdev::DeviceProxy, name: &str, config: Config) -> Result<Arc<Self>> {
-        let (pool, descriptors, data) = Pool::new(config)?;
+        let CreatedPool { pool, descriptors_vmo, data_vmos } = Pool::new(config.clone())?;
+        let tx_vmo_cumulative_buffers = {
+            let mut cumulative = 0u16;
+            config
+                .tx_vmos
+                .iter()
+                .map(|vmo_config| {
+                    cumulative += vmo_config.num_buffers;
+                    cumulative
+                })
+                .collect::<Vec<_>>()
+        };
+        let tx_state = Mutex::new(TxState::new(tx_vmo_cumulative_buffers));
 
         let session_info = {
             // The following two constants are not provided by user, panic
@@ -239,18 +248,27 @@ impl Inner {
             let descriptor_length =
                 u8::try_from(NETWORK_DEVICE_DESCRIPTOR_LENGTH / std::mem::size_of::<u64>())
                     .expect("descriptor length in 64-bit words not representable by u8");
-            let data = vec![fidl_fuchsia_hardware_network::DataVmo {
-                id: Some(DEFAULT_VMO_ID),
-                vmo: Some(data),
-                num_rx_buffers: Some(config.num_rx_buffers.get()),
-                __source_breaking: fidl::marker::SourceBreaking,
-            }];
+            let data = data_vmos
+                .into_iter()
+                .enumerate()
+                .map(|(idx, vmo)| {
+                    let vmo_id = netdev::VmoId::try_from(idx).expect("invalid vmo id");
+                    let num_rx_buffers =
+                        if vmo_id == DEFAULT_VMO_ID { config.num_rx_buffers.get() } else { 0 };
+                    fidl_fuchsia_hardware_network::DataVmo {
+                        id: Some(vmo_id),
+                        vmo: Some(vmo),
+                        num_rx_buffers: Some(num_rx_buffers),
+                        __source_breaking: fidl::marker::SourceBreaking,
+                    }
+                })
+                .collect::<Vec<_>>();
             netdev::SessionInfo {
-                descriptors: Some(descriptors),
+                descriptors: Some(descriptors_vmo),
                 data: Some(data),
                 descriptor_version: Some(NETWORK_DEVICE_DESCRIPTOR_VERSION),
                 descriptor_length: Some(descriptor_length),
-                descriptor_count: Some(config.num_tx_buffers.get() + config.num_rx_buffers.get()),
+                descriptor_count: Some(config.num_tx_buffers().get() + config.num_rx_buffers.get()),
                 options: Some(config.options),
                 ..Default::default()
             }
@@ -262,14 +280,18 @@ impl Inner {
             .map_err(|raw| Error::Open(name.to_owned(), zx::Status::from_raw(raw)))?;
         let proxy = client.into_proxy();
 
-        if config.num_tx_buffers.get() > 0 {
-            let (_successful, status) =
-                proxy.register_for_tx(&[DEFAULT_VMO_ID]).await.map_err(Error::Fidl)?;
-            zx::Status::ok(status).map_err(Error::RegisterForTx)?;
-        }
-
         let rx = fasync::Fifo::from_fifo(rx);
         let tx = fasync::Fifo::from_fifo(tx);
+
+        let vmos_to_register = if pool.has_decommittable_tx_vmo() {
+            // We keep the smallest VMO always registered for Tx.
+            &pool.decommittable_tx_vmo_ids[0..=0]
+        } else {
+            &[DEFAULT_VMO_ID]
+        };
+        let (s, status) = proxy.register_for_tx(vmos_to_register).await.map_err(Error::Fidl)?;
+        zx::Status::ok(status).map_err(Error::RegisterForTx)?;
+        assert_eq!(s, 1);
 
         Ok(Arc::new(Self {
             pool,
@@ -277,10 +299,10 @@ impl Inner {
             name: name.to_owned(),
             rx,
             tx,
-            tx_pending: Pending::new(Vec::new()),
             rx_ready: Mutex::new(ReadyBuffer::new(config.num_rx_buffers.get().into())),
-            tx_ready: Mutex::new(ReadyBuffer::new(config.num_tx_buffers.get().into())),
+            tx_ready: Mutex::new(ReadyBuffer::new(config.num_tx_buffers().get().into())),
             tx_idle_listeners: TxIdleListeners::new(),
+            tx_state,
         }))
     }
 
@@ -288,7 +310,7 @@ impl Inner {
     ///
     /// Returns the number of rx descriptors that are submitted.
     fn poll_submit_rx(&self, cx: &mut Context<'_>) -> Poll<Result<usize>> {
-        self.pool.rx_pending.poll_submit(&self.rx, cx)
+        self.pool.rx_pending.lock().poll_submit(&self.rx, cx)
     }
 
     /// Polls completed rx descriptors from the driver.
@@ -303,7 +325,7 @@ impl Inner {
     ///
     /// Returns the number of tx descriptors that are successfully submitted.
     fn poll_submit_tx(&self, cx: &mut Context<'_>) -> Poll<Result<usize>> {
-        self.tx_pending.poll_submit(&self.tx, cx)
+        self.tx_state.lock().poll_submit_tx(&self.proxy, &self.pool, &self.tx, cx)
     }
 
     /// Polls completed tx descriptors from the driver then puts them in pool.
@@ -334,7 +356,8 @@ impl Inner {
     /// and design tradeoffs).
     fn send(&self, buffer: Buffer<Tx>) {
         self.tx_idle_listeners.tx_started();
-        self.tx_pending.extend(std::iter::once(buffer.leak()));
+        let mut state = self.tx_state.lock();
+        state.send(&self.proxy, &self.pool, buffer);
     }
 
     /// Receives a [`Buffer`] from the driver.
@@ -355,14 +378,17 @@ impl Inner {
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct Task {
     inner: Arc<Inner>,
+    buffer_usage_sampler: Option<(fasync::Interval, BufferUsageEstimator)>,
 }
 
 impl Future for Task {
     type Output = Result<()>;
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let inner = &Pin::into_inner(self).inner;
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.as_mut().get_mut();
+        let inner = &*this.inner;
         loop {
             let mut all_pending = true;
+
             // TODO(https://fxbug.dev/42158458): poll once for all completed
             // descriptors if this becomes a performance bottleneck.
             while inner.poll_complete_tx(cx)?.is_ready_checked::<()>() {
@@ -374,6 +400,27 @@ impl Future for Task {
             if inner.poll_submit_tx(cx)?.is_ready_checked::<usize>() {
                 all_pending = false;
             }
+
+            if !all_pending {
+                continue;
+            }
+
+            if let Some((interval, estimator)) = &mut this.buffer_usage_sampler {
+                while interval.poll_next_unpin(cx).is_ready_checked::<Option<()>>() {
+                    let buffer_usage_estimate = {
+                        let mut state = inner.pool.tx_alloc_state.lock();
+                        estimator.update(state.sample_peak_buffer_usage())
+                    };
+                    if inner.tx_state.lock().attempt_unregister(
+                        buffer_usage_estimate,
+                        &inner.proxy,
+                        &inner.pool,
+                    ) {
+                        all_pending = false;
+                    }
+                }
+            }
+
             if all_pending {
                 return Poll::Pending;
             }
@@ -382,18 +429,27 @@ impl Future for Task {
 }
 
 /// Session configuration.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Config {
     /// Buffer stride on VMO, in bytes.
     buffer_stride: NonZeroU64,
     /// Number of rx descriptors to allocate.
     num_rx_buffers: NonZeroU16,
-    /// Number of tx descriptors to allocate.
-    num_tx_buffers: NonZeroU16,
+    /// Collection of tx VMO configurations.
+    tx_vmos: Vec<TxVmoConfig>,
     /// Session flags.
     options: netdev::SessionFlags,
     /// Buffer layout.
     buffer_layout: BufferLayout,
+    buffer_usage_sample_interval: std::time::Duration,
+}
+
+impl Config {
+    /// Returns the total number of Tx buffers across all VMOs.
+    pub fn num_tx_buffers(&self) -> NonZeroU16 {
+        let sum: u16 = self.tx_vmos.iter().map(|v| v.num_buffers).sum();
+        NonZeroU16::new(sum).expect("num_tx_buffers is zero")
+    }
 }
 
 /// Describes the buffer layout that [`Pool`] needs to know.
@@ -460,6 +516,10 @@ pub struct DerivableConfig {
     pub default_buffer_length: usize,
     /// Enable rx lease watching.
     pub watch_rx_leases: bool,
+    /// Enable multi VMO Tx.
+    pub multi_vmo: bool,
+    /// Sampling interval for the buffer usage estimator.
+    pub buffer_usage_sample_interval: std::time::Duration,
 }
 
 impl DerivableConfig {
@@ -471,8 +531,12 @@ impl DerivableConfig {
     /// This is the value of the buffer length in the `Default` impl.
     pub const DEFAULT_BUFFER_LENGTH: usize = 2048;
     /// The value returned by the `Default` impl.
-    pub const DEFAULT: Self =
-        Self { default_buffer_length: Self::DEFAULT_BUFFER_LENGTH, watch_rx_leases: false };
+    pub const DEFAULT: Self = Self {
+        default_buffer_length: Self::DEFAULT_BUFFER_LENGTH,
+        watch_rx_leases: false,
+        multi_vmo: false,
+        buffer_usage_sample_interval: std::time::Duration::from_secs(1),
+    };
 }
 
 impl Default for DerivableConfig {
@@ -517,12 +581,18 @@ impl DeviceInfo {
             )));
         }
 
-        let DerivableConfig { default_buffer_length, watch_rx_leases } = config;
+        let DerivableConfig {
+            default_buffer_length,
+            watch_rx_leases,
+            multi_vmo,
+            buffer_usage_sample_interval,
+        } = config;
 
         let num_rx_buffers =
             NonZeroU16::new(*rx_depth).ok_or_else(|| Error::Config("no RX buffers".to_owned()))?;
-        let num_tx_buffers =
-            NonZeroU16::new(*tx_depth).ok_or_else(|| Error::Config("no TX buffers".to_owned()))?;
+        if *tx_depth == 0 {
+            return Err(Error::Config("no TX buffers".to_owned()));
+        }
 
         let max_buffer_length = max_buffer_length
             .and_then(|max| {
@@ -617,10 +687,33 @@ impl DeviceInfo {
         let mut options = netdev::SessionFlags::empty();
         options.set(netdev::SessionFlags::RECEIVE_RX_POWER_LEASES, watch_rx_leases);
 
+        let page_size = u64::from(zx::system_get_page_size());
+        let min_tx_buffers = u16::try_from(std::cmp::max(1, page_size / buffer_stride.get()))
+            .map_err(|TryFromIntError { .. }| Error::Config("Too many Tx buffers".to_owned()))?;
+
+        let tx_vmos = if multi_vmo {
+            let mut tx_vmos = Vec::new();
+            let mut current_buffers = min_tx_buffers;
+            let mut total_allocated = 0u16;
+            let mut vmo_id = 1;
+            while total_allocated < *tx_depth {
+                let num_buffers = std::cmp::min(current_buffers, *tx_depth - total_allocated);
+                tx_vmos.push(TxVmoConfig { vmo_id, num_buffers });
+                total_allocated += num_buffers;
+                vmo_id += 1;
+                if vmo_id > 2 {
+                    current_buffers *= 2;
+                }
+            }
+            tx_vmos
+        } else {
+            vec![TxVmoConfig { vmo_id: DEFAULT_VMO_ID, num_buffers: *tx_depth }]
+        };
+
         Ok(Config {
             buffer_stride,
             num_rx_buffers,
-            num_tx_buffers,
+            tx_vmos,
             options,
             buffer_layout: BufferLayout {
                 length: buffer_length,
@@ -628,6 +721,7 @@ impl DeviceInfo {
                 min_tx_tail: *min_tx_buffer_tail,
                 min_tx_data,
             },
+            buffer_usage_sample_interval,
         })
     }
 }
@@ -658,18 +752,18 @@ impl From<Port> for netdev::PortId {
 
 /// Pending descriptors to be sent to driver.
 struct Pending<K: AllocKind> {
-    inner: Mutex<(Vec<DescId<K>>, Option<Waker>)>,
+    storage: Vec<DescId<K>>,
+    waker: Option<Waker>,
 }
 
 impl<K: AllocKind> Pending<K> {
     fn new(descs: Vec<DescId<K>>) -> Self {
-        Self { inner: Mutex::new((descs, None)) }
+        Self { storage: descs, waker: None }
     }
 
     /// Extends the pending descriptors buffer.
-    fn extend(&self, descs: impl IntoIterator<Item = DescId<K>>) {
-        let mut guard = self.inner.lock();
-        let (storage, waker) = &mut *guard;
+    fn extend(&mut self, descs: impl IntoIterator<Item = DescId<K>>) {
+        let Self { storage, waker } = self;
         storage.extend(descs);
         if let Some(waker) = waker.take() {
             waker.wake();
@@ -682,14 +776,15 @@ impl<K: AllocKind> Pending<K> {
     ///   - There are no descriptors pending.
     ///   - The fifo is not ready for write.
     fn poll_submit(
-        &self,
+        &mut self,
         fifo: &fasync::Fifo<DescId<K>>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<usize>> {
-        let mut guard = self.inner.lock();
-        let (storage, waker) = &mut *guard;
+        let Self { storage, waker } = self;
         if storage.is_empty() {
-            *waker = Some(cx.waker().clone());
+            if waker.as_ref().is_none_or(|waker| !waker.will_wake(cx.waker())) {
+                *waker = Some(cx.waker().clone());
+            }
             return Poll::Pending;
         }
 
@@ -856,6 +951,7 @@ impl RxLease {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use std::num::NonZeroU32;
     use std::ops::Deref;
     use std::sync::Arc;
@@ -872,11 +968,46 @@ mod tests {
         AllocKind, DescId, NETWORK_DEVICE_DESCRIPTOR_LENGTH, NETWORK_DEVICE_DESCRIPTOR_VERSION,
     };
     use super::{
-        BufferLayout, Config, DeviceBaseInfo, DeviceInfo, Error, Inner, Mutex, Pending, Pool,
-        ReadyBuffer, Task, TxIdleListeners,
+        BufferLayout, BufferUsageEstimator, Config, DeviceBaseInfo, DeviceInfo, Error, Inner,
+        Mutex, Pool, ReadyBuffer, Task, TxIdleListeners, TxState,
     };
 
-    const DEFAULT_DEVICE_BASE_INFO: DeviceBaseInfo = DeviceBaseInfo {
+    impl Inner {
+        pub(super) fn new_test(
+            pool: Arc<Pool>,
+            proxy: netdev::SessionProxy,
+            name: String,
+            rx: Fifo<DescId<Rx>>,
+            tx: Fifo<DescId<Tx>>,
+            rx_ready: Mutex<ReadyBuffer<DescId<Rx>>>,
+            tx_ready: Mutex<ReadyBuffer<DescId<Tx>>>,
+            tx_idle_listeners: TxIdleListeners,
+            tx_state: Mutex<TxState>,
+        ) -> Self {
+            Self { pool, proxy, name, rx, tx, rx_ready, tx_ready, tx_idle_listeners, tx_state }
+        }
+
+        pub(super) fn tx_state(&self) -> &Mutex<TxState> {
+            &self.tx_state
+        }
+
+        pub(super) fn pool(&self) -> &Arc<Pool> {
+            &self.pool
+        }
+    }
+
+    impl Task {
+        pub(super) fn new_test(
+            inner: Arc<Inner>,
+            sample_interval: Option<std::time::Duration>,
+        ) -> Self {
+            let buffer_usage_sampler = sample_interval
+                .map(|i| (fasync::Interval::new(i.into()), BufferUsageEstimator::new()));
+            Self { inner, buffer_usage_sampler }
+        }
+    }
+
+    pub(super) const DEFAULT_DEVICE_BASE_INFO: DeviceBaseInfo = DeviceBaseInfo {
         rx_depth: 1,
         tx_depth: 1,
         buffer_alignment: 1,
@@ -889,7 +1020,7 @@ mod tests {
         min_rx_buffers: None,
     };
 
-    const DEFAULT_DEVICE_INFO: DeviceInfo = DeviceInfo {
+    pub(super) const DEFAULT_DEVICE_INFO: DeviceInfo = DeviceInfo {
         min_descriptor_length: 0,
         descriptor_version: 1,
         base_info: DEFAULT_DEVICE_BASE_INFO,
@@ -1013,14 +1144,15 @@ mod tests {
             buffer_layout: BufferLayout { length, min_tx_data: _, min_tx_head: _, min_tx_tail: _ },
             buffer_stride: _,
             num_rx_buffers: _,
-            num_tx_buffers: _,
+            tx_vmos: _,
             options: _,
+            buffer_usage_sample_interval: _,
         } = config;
         assert_eq!(length, expected_length);
     }
 
-    fn make_fifos<K: AllocKind>() -> (Fifo<DescId<K>>, zx::Fifo<DescId<K>>) {
-        let (handle, other_end) = zx::Fifo::create(1).unwrap();
+    pub(super) fn make_fifos<K: AllocKind>() -> (Fifo<DescId<K>>, zx::Fifo<DescId<K>>) {
+        let (handle, other_end) = zx::Fifo::create(256).unwrap();
         (Fifo::from_fifo(handle), other_end)
     }
 
@@ -1051,15 +1183,14 @@ mod tests {
         // altering the right on the FIFOs the task uses so as to cause either
         // an attempt to write or to read to fail. For completeness, it
         // exercises all the FIFO polls that comprise Task::poll.
-        let (pool, _descriptors, _data) = Pool::new(
-            DEFAULT_DEVICE_INFO
-                .make_config(DerivableConfig {
-                    default_buffer_length: DEFAULT_BUFFER_LENGTH,
-                    ..Default::default()
-                })
-                .expect("is valid"),
-        )
-        .expect("is valid");
+        let config = DEFAULT_DEVICE_INFO
+            .make_config(DerivableConfig {
+                default_buffer_length: DEFAULT_BUFFER_LENGTH,
+                ..Default::default()
+            })
+            .expect("is valid");
+        let CreatedPool { pool, descriptors_vmo: _descriptors_vmo, data_vmos: _data_vmos } =
+            Pool::new(config).expect("is valid");
         let (session_proxy, _session_server) =
             fidl::endpoints::create_proxy::<fidl_fuchsia_hardware_network::SessionMarker>();
 
@@ -1072,6 +1203,8 @@ mod tests {
             TxOrRx::Rx => (tx, remove_rights(rx, right_to_remove)),
         };
 
+        let tx_state = Mutex::new(TxState::new(vec![]));
+
         let buf = pool.alloc_tx_buffer(1).await.expect("can allocate");
         let inner = Arc::new(Inner {
             pool,
@@ -1079,18 +1212,19 @@ mod tests {
             name: "fake_task".to_string(),
             rx,
             tx,
-            tx_pending: Pending::new(vec![]),
             rx_ready: Mutex::new(ReadyBuffer::new(10)),
             tx_ready: Mutex::new(ReadyBuffer::new(10)),
             tx_idle_listeners: TxIdleListeners::new(),
+            tx_state,
         });
 
         inner.send(buf);
 
-        let mut task = Task { inner };
+        let task = Task { inner, buffer_usage_sampler: None };
+        futures::pin_mut!(task);
 
         // The task should not be able to continue because it can't read from or
         // write to one of the FIFOs.
-        assert_matches!(futures::poll!(&mut task), Poll::Ready(Err(Error::Fifo(_, _, _))));
+        assert_matches!(futures::poll!(task.as_mut()), Poll::Ready(Err(Error::Fifo(_, _, _))));
     }
 }

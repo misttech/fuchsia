@@ -8,4 +8,5 @@
     opaque_iids: false,
     suspend_enabled: false,
     sampled_stats_enabled: true,
+    multi_vmo: true,
 }

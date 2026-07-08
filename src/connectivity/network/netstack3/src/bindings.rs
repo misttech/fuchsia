@@ -404,6 +404,7 @@ const LOOPBACK_INTERFACE_METRIC: u32 = 1000;
 pub(crate) struct GlobalConfig {
     pub(crate) suspend_enabled: bool,
     pub(crate) sampled_stats_enabled: bool,
+    pub(crate) multi_vmo: bool,
 }
 
 pub(crate) struct BindingsCtxInner {

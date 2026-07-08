@@ -30,6 +30,7 @@ pub fn main() {
         opaque_iids,
         suspend_enabled,
         sampled_stats_enabled,
+        multi_vmo,
     } = &config;
     let num_threads = NonZeroU8::new(*num_threads).expect("invalid 0 thread count value");
     let mut executor = SendExecutorBuilder::new().num_threads(num_threads.get().into()).build();
@@ -108,6 +109,7 @@ pub fn main() {
         GlobalConfig {
             suspend_enabled: *suspend_enabled,
             sampled_stats_enabled: *sampled_stats_enabled,
+            multi_vmo: *multi_vmo,
         },
         &InterfaceConfigDefaults { opaque_iids: *opaque_iids },
     );

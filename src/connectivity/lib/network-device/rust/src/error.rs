@@ -50,6 +50,8 @@ pub enum Error {
     InvalidLease,
     #[error("failed to register VMO for Tx: {0}")]
     RegisterForTx(zx::Status),
+    #[error("failed to unregister VMO for Tx: {0}")]
+    UnregisterForTx(zx::Status),
 }
 
 /// Common result type for methods in this crate.

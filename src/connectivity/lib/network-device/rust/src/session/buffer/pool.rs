@@ -27,25 +27,35 @@ use futures::channel::oneshot::{Receiver, Sender, channel};
 
 use super::{ChainLength, DescId, DescRef, DescRefMut, Descriptors};
 use crate::error::{Error, Result};
-use crate::session::{BufferLayout, Config, Pending, Port};
+use crate::session::tx::TxVmoIndex;
+use crate::session::{BufferLayout, Config, DEFAULT_VMO_ID, Pending, Port};
 
 /// Responsible for managing [`Buffer`]s for a [`Session`](crate::session::Session).
 pub(in crate::session) struct Pool {
     /// Base address of the pool.
     // Note: This field requires us to manually implement `Sync` and `Send`.
     base: NonNull<u8>,
-    /// The length of the pool in bytes.
-    bytes: usize,
     /// The descriptors allocated for the pool.
     descriptors: Descriptors,
     /// Shared state for allocation.
-    tx_alloc_state: Mutex<TxAllocState>,
+    pub(in crate::session) tx_alloc_state: Mutex<TxAllocState>,
     /// The free rx descriptors pending to be sent to driver.
-    pub(in crate::session) rx_pending: Pending<Rx>,
+    pub(in crate::session) rx_pending: Mutex<Pending<Rx>>,
     /// The buffer layout.
     buffer_layout: BufferLayout,
     /// State-keeping allowing sessions to handle rx leases.
     rx_leases: RxLeaseHandlingState,
+    /// All VMOs are mapped contiguously starting from `base`. This list records
+    /// offsets from `base` each VMO is mapped at. The last element is the size
+    /// of the entire allocation.
+    vmo_offsets: Vec<usize>,
+    /// VMO IDs that support dynamic decommitment. The VMO IDs are contiguous
+    /// and sorted. This list is guaranteed to be non-empty if
+    /// `decommittable_tx_vmar` is [`Some`].
+    pub(in crate::session) decommittable_tx_vmo_ids: Vec<netdev::VmoId>,
+    /// Handle used to decommit Tx-only VMOs. [`None`] when single VMO mode is
+    /// in use (ie. all data is in one VMO).
+    decommittable_tx_vmar: Option<zx::Vmar>,
 }
 
 // `Pool` is `Send` and `Sync`, and this allows the compiler to deduce `Buffer`
@@ -56,10 +66,49 @@ unsafe impl Send for Pool {}
 unsafe impl Sync for Pool {}
 
 /// The shared state which keeps track of available buffers and tx buffers.
-struct TxAllocState {
+pub(in crate::session) struct TxAllocState {
     /// All pending tx allocation requests.
     requests: VecDeque<TxAllocReq>,
-    free_list: TxFreeList,
+    free_lists: Vec<TxFreeList>,
+    /// Index into `free_lists` that holds the first free list with available
+    /// buffers. If there are no available buffers, this is equal to
+    /// `free_lists.len()`.
+    first_available_index: usize,
+    /// Current number of buffers in use.
+    total_in_use: u16,
+    /// Peak number of buffers in use during the last measuring window. Cleared
+    /// when `sample_peak_buffer_usage` is called.
+    peak_in_use: u16,
+}
+
+impl TxAllocState {
+    fn try_alloc(
+        &mut self,
+        num_parts: ChainLength,
+        descriptors: &Descriptors,
+    ) -> Option<Chained<DescId<Tx>>> {
+        for free_list in self.free_lists[self.first_available_index..].iter_mut() {
+            if let Some(allocated) = free_list.try_alloc(num_parts, descriptors) {
+                while self.first_available_index < self.free_lists.len()
+                    && self.free_lists[self.first_available_index].free == 0
+                {
+                    self.first_available_index += 1;
+                }
+                self.total_in_use += u16::from(num_parts.get());
+                self.peak_in_use = self.peak_in_use.max(self.total_in_use);
+                return Some(allocated);
+            }
+        }
+        None
+    }
+
+    pub(in crate::session) fn sample_peak_buffer_usage(&mut self) -> u16 {
+        std::mem::replace(&mut self.peak_in_use, 0)
+    }
+
+    pub(in crate::session) fn is_tx_vmo_index_in_use(&self, idx: TxVmoIndex) -> bool {
+        self.free_lists[idx].max_free > self.free_lists[idx].free
+    }
 }
 
 /// We use a linked list to maintain the tx free descriptors - they are linked
@@ -73,27 +122,99 @@ struct TxFreeList {
     /// The head of a linked list of available descriptors that can be allocated
     /// for tx.
     head: Option<DescId<Tx>>,
-    /// How many free descriptors are there in the pool.
-    len: u16,
+    /// How many free descriptors are there in this list.
+    free: u16,
+    /// Maximum possible number of free descriptors this list can have.
+    max_free: u16,
+}
+
+/// The created [`Pool`] and its backing [`zx::Vmo`]s.
+pub(in crate::session) struct CreatedPool {
+    pub pool: Arc<Pool>,
+    pub descriptors_vmo: zx::Vmo,
+    pub data_vmos: Vec<zx::Vmo>,
 }
 
 impl Pool {
     /// Creates a new [`Pool`] and its backing [`zx::Vmo`]s.
     ///
-    /// Returns [`Pool`] and the [`zx::Vmo`]s for descriptors and data, in that
-    /// order.
-    pub(in crate::session) fn new(config: Config) -> Result<(Arc<Self>, zx::Vmo, zx::Vmo)> {
-        let Config { buffer_stride, num_rx_buffers, num_tx_buffers, options, buffer_layout } =
-            config;
-        let num_buffers = num_rx_buffers.get() + num_tx_buffers.get();
-        let (descriptors, descriptors_vmo, tx_free, mut rx_free) =
-            Descriptors::new(num_tx_buffers, num_rx_buffers, buffer_stride)?;
+    /// When `config.multi_vmo` is true, `data_vmos` contains one RX VMO
+    /// followed by multiple TX VMOs. These VMOs are mapped to `base`
+    /// contiguously, with the RX VMO starting at `base` and the TX VMOs
+    /// starting after the RX VMO. `vmo_offsets` contains the offset of each VMO
+    /// in the `base` address space: `vmo_offsets[0]` is 0 and
+    /// `vmo_offset[vmo_offset.len()-1]` is the total length of the mapped
+    /// address space in bytes.
+    ///
+    /// When `config.multi_vmo` is false, `data_vmos` contains only one VMO for
+    /// both RX and TX.
+    pub(in crate::session) fn new(config: Config) -> Result<CreatedPool> {
+        let create_and_name_vmo = |size: u64, name: &zx::Name| -> Result<zx::Vmo> {
+            let vmo = zx::Vmo::create(size).map_err(|status| Error::Vmo("create", status))?;
+            vmo.set_name(&name).map_err(|status| Error::Vmo("set_name", status))?;
+            Ok(vmo)
+        };
 
-        // Construct the free list.
-        let free_head = tx_free.into_iter().rev().fold(None, |head, mut curr| {
-            descriptors.borrow_mut(&mut curr).set_nxt(head);
-            Some(curr)
-        });
+        let descriptor_count = config
+            .num_rx_buffers
+            .get()
+            .checked_add(config.num_tx_buffers().get())
+            .ok_or(Error::Config("too many descriptors".to_string()))?;
+        let descriptor_vmo_size =
+            u64::try_from(super::NETWORK_DEVICE_DESCRIPTOR_LENGTH * usize::from(descriptor_count))
+                .expect("vmo_size overflows u64");
+        const DESCRIPTORS_VMO_NAME: zx::Name =
+            const_unwrap::const_unwrap_result(zx::Name::new("netdevice:descriptors"));
+        let descriptors_vmo = create_and_name_vmo(descriptor_vmo_size, &DESCRIPTORS_VMO_NAME)?;
+
+        let Config {
+            buffer_stride,
+            num_rx_buffers,
+            tx_vmos,
+            options,
+            buffer_layout,
+            buffer_usage_sample_interval: _,
+        } = config;
+        let num_tx_buffers = {
+            let sum: u16 = tx_vmos.iter().map(|v| v.num_buffers).sum();
+            NonZeroU16::new(sum).expect("num_tx_buffers is zero")
+        };
+        let num_buffers = num_rx_buffers.get() + num_tx_buffers.get();
+        let single_data_vmo = tx_vmos.len() == 1 && tx_vmos[0].vmo_id == DEFAULT_VMO_ID;
+        let decommittable_tx_vmo_ids = if single_data_vmo {
+            vec![]
+        } else {
+            tx_vmos.iter().map(|v| v.vmo_id).collect::<Vec<_>>()
+        };
+
+        let page_size = u64::from(zx::system_get_page_size());
+        let data_vmos = if single_data_vmo {
+            const VMO_NAME: zx::Name =
+                const_unwrap::const_unwrap_result(zx::Name::new("netdevice:data"));
+            let size = (buffer_stride.get() * u64::from(num_buffers)).next_multiple_of(page_size);
+            let data_vmo = create_and_name_vmo(size, &VMO_NAME)?;
+            vec![data_vmo]
+        } else {
+            const RX_VMO_NAME: zx::Name =
+                const_unwrap::const_unwrap_result(zx::Name::new("netdevice:rx_data"));
+            const TX_VMO_NAME: zx::Name =
+                const_unwrap::const_unwrap_result(zx::Name::new("netdevice:tx_data"));
+
+            let rx_size =
+                (buffer_stride.get() * u64::from(num_rx_buffers.get())).next_multiple_of(page_size);
+            let rx_vmo = create_and_name_vmo(rx_size, &RX_VMO_NAME)?;
+
+            std::iter::once(Ok(rx_vmo))
+                .chain(tx_vmos.iter().map(|vmo_config| {
+                    let size = (buffer_stride.get() * u64::from(vmo_config.num_buffers))
+                        .next_multiple_of(page_size);
+                    create_and_name_vmo(size, &TX_VMO_NAME)
+                }))
+                .collect::<Result<Vec<_>>>()?
+        };
+
+        let (descriptors, mut tx_free, mut rx_free) =
+            Descriptors::new(&tx_vmos, num_rx_buffers, buffer_stride, &descriptors_vmo)?;
 
         for rx_desc in rx_free.iter_mut() {
             descriptors.borrow_mut(rx_desc).initialize(
@@ -104,44 +225,112 @@ impl Pool {
             );
         }
 
-        let tx_alloc_state = TxAllocState {
-            free_list: TxFreeList { head: free_head, len: num_tx_buffers.get() },
-            requests: VecDeque::new(),
+        let mut total_len = 0;
+        let mut vmo_offsets = vec![0];
+
+        for vmo in &data_vmos {
+            total_len +=
+                usize::try_from(vmo.get_size().map_err(|status| Error::VmoSize("data", status))?)
+                    .expect("usize must be able to hold u64");
+            vmo_offsets.push(total_len);
+        }
+
+        // Use variable shadowing to prevent any modification from now on.
+        let (total_len, vmo_offsets) = (total_len, vmo_offsets);
+
+        let map_data_vmo = |vmar: &zx::Vmar,
+                            data_vmo: usize,
+                            vmar_start_offset: usize|
+         -> Result<()> {
+            let offset = vmo_offsets[data_vmo] - vmar_start_offset;
+            let len = vmo_offsets[data_vmo + 1] - vmo_offsets[data_vmo];
+            let _addr = vmar
+                .map(
+                    offset,
+                    &data_vmos[data_vmo],
+                    0,
+                    len,
+                    zx::VmarFlags::SPECIFIC | zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE,
+                )
+                .map_err(|status| Error::Map("map data vmo", status))?;
+            Ok(())
         };
 
-        let size = buffer_stride.get() * u64::from(num_buffers);
-        let data_vmo = zx::Vmo::create(size).map_err(|status| Error::Vmo("data", status))?;
+        let (vmar, vmar_start) = vmar_root_self()
+            .allocate(
+                0,
+                total_len,
+                zx::VmarFlags::CAN_MAP_READ
+                    | zx::VmarFlags::CAN_MAP_WRITE
+                    | zx::VmarFlags::CAN_MAP_SPECIFIC,
+            )
+            .map_err(|status| Error::Map("allocate vmar", status))?;
+        let base = NonNull::new(vmar_start as *mut u8).expect("must not be null");
 
-        const VMO_NAME: zx::Name =
-            const_unwrap::const_unwrap_result(zx::Name::new("netdevice:data"));
-        data_vmo.set_name(&VMO_NAME).map_err(|status| Error::Vmo("set name", status))?;
-        // `as` is OK because `size` is positive and smaller than isize::MAX.
-        // This is following the practice of rust stdlib to ensure allocation
-        // size never reaches isize::MAX.
-        // https://doc.rust-lang.org/std/primitive.pointer.html#method.add-1.
-        let len = isize::try_from(size).expect("VMO size larger than isize::MAX") as usize;
-        // The returned address of zx_vmar_map on success must be non-zero:
-        // https://fuchsia.dev/fuchsia-src/reference/syscalls/vmar_map
-        let base = NonNull::new(
-            vmar_root_self()
-                .map(0, &data_vmo, 0, len, zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE)
-                .map_err(|status| Error::Map("data", status))? as *mut u8,
-        )
-        .unwrap();
+        map_data_vmo(&vmar, 0, 0)?;
 
-        Ok((
-            Arc::new(Pool {
-                base,
-                bytes: len,
-                descriptors,
-                tx_alloc_state: Mutex::new(tx_alloc_state),
-                rx_pending: Pending::new(rx_free),
-                buffer_layout,
-                rx_leases: RxLeaseHandlingState::new_with_flags(options),
-            }),
-            descriptors_vmo,
-            data_vmo,
-        ))
+        let decommittable_tx_vmar = (!single_data_vmo)
+            .then(|| {
+                // TODO(https://fxbug.dev/438527741): Remove this constant when Rx path
+                // supports dynamic VMO management.
+                const NUM_RX_VMO: usize = 1;
+                let rx_size = vmo_offsets[NUM_RX_VMO];
+                let tx_vmar_len = total_len - rx_size;
+                let (tx_vmar, _tx_vmar_base) = vmar
+                    .allocate(
+                        rx_size,
+                        tx_vmar_len,
+                        zx::VmarFlags::SPECIFIC
+                            | zx::VmarFlags::CAN_MAP_READ
+                            | zx::VmarFlags::CAN_MAP_WRITE
+                            | zx::VmarFlags::CAN_MAP_SPECIFIC,
+                    )
+                    .map_err(|status| Error::Map("allocate tx-vmar", status))?;
+                for i in NUM_RX_VMO..data_vmos.len() {
+                    map_data_vmo(&tx_vmar, i, rx_size)?;
+                }
+                Ok::<_, Error>(tx_vmar)
+            })
+            .transpose()?;
+
+        let mut free_lists = Vec::new();
+        for vmo_config in &tx_vmos {
+            let head = tx_free.drain(..usize::from(vmo_config.num_buffers)).rev().fold(
+                None,
+                |head, mut curr| {
+                    descriptors.borrow_mut(&mut curr).set_nxt(head);
+                    assert_eq!(descriptors.borrow(&curr).vmo_id(), vmo_config.vmo_id);
+                    Some(curr)
+                },
+            );
+            free_lists.push(TxFreeList {
+                head,
+                free: vmo_config.num_buffers,
+                max_free: vmo_config.num_buffers,
+            });
+        }
+
+        let tx_alloc_state = Mutex::new(TxAllocState {
+            free_lists,
+            requests: VecDeque::new(),
+            first_available_index: 0,
+            total_in_use: 0,
+            peak_in_use: 0,
+        });
+
+        let pool = Arc::new(Pool {
+            base,
+            descriptors,
+            tx_alloc_state,
+            rx_pending: Mutex::new(Pending::new(rx_free)),
+            buffer_layout,
+            rx_leases: RxLeaseHandlingState::new_with_flags(options),
+            vmo_offsets,
+            decommittable_tx_vmo_ids,
+            decommittable_tx_vmar,
+        });
+
+        Ok(CreatedPool { pool, descriptors_vmo, data_vmos })
     }
 
     /// Allocates `num_parts` tx descriptors.
@@ -156,7 +345,7 @@ impl Pool {
     ) -> AllocGuard<Tx> {
         let receiver = {
             let mut state = self.tx_alloc_state.lock();
-            match state.free_list.try_alloc(num_parts, &self.descriptors) {
+            match state.try_alloc(num_parts, &self.descriptors) {
                 Some(allocated) => {
                     return AllocGuard::new(allocated, self.clone());
                 }
@@ -186,7 +375,6 @@ impl Pool {
         }
         self.tx_alloc_state
             .lock()
-            .free_list
             .try_alloc(ChainLength::try_from(1u8).unwrap(), &self.descriptors)
             .map(|allocated| -> Result<SinglePartTxBuffer> {
                 let mut alloc = AllocGuard::new(allocated, self.clone());
@@ -238,7 +426,6 @@ impl Pool {
             .chain(std::iter::from_fn(move || {
                 let mut state = self.tx_alloc_state.lock();
                 state
-                    .free_list
                     .try_alloc(chain_length, &self.descriptors)
                     .map(|allocated| AllocGuard::new(allocated, self.clone()))
             }))
@@ -254,7 +441,7 @@ impl Pool {
 
     /// Frees rx descriptors.
     pub(in crate::session) fn free_rx(&self, descs: impl IntoIterator<Item = DescId<Rx>>) {
-        self.rx_pending.extend(descs.into_iter().map(|mut desc| {
+        self.rx_pending.lock().extend(descs.into_iter().map(|mut desc| {
             self.descriptors.borrow_mut(&mut desc).initialize(
                 ChainLength::ZERO,
                 0,
@@ -280,18 +467,22 @@ impl Pool {
         >::new();
 
         let mut state = self.tx_alloc_state.lock();
-
+        state.total_in_use -= u16::from(chain.len.get());
         {
+            let vmo_id =
+                self.descriptors.borrow(chain.first().expect("chain is not empty")).vmo_id();
+            let idx = self.free_list_index(vmo_id);
+            if idx < state.first_available_index {
+                state.first_available_index = idx;
+            }
+
             let mut descs = chain.into_iter();
-            // The following can't overflow because we can have at most u16::MAX
-            // descriptors: free_len + #(to_free) + #(descs in use) <= u16::MAX,
-            // Thus free_len + #(to_free) <= u16::MAX.
-            state.free_list.len += u16::try_from(descs.len()).unwrap();
+            state.free_lists[idx].free += u16::try_from(descs.len()).unwrap();
             let head = descs.next();
-            let old_head = std::mem::replace(&mut state.free_list.head, head);
+            let old_head = std::mem::replace(&mut state.free_lists[idx].head, head);
             let mut tail = descs.last();
             let mut tail_ref = self.descriptors.borrow_mut(
-                tail.as_mut().unwrap_or_else(|| state.free_list.head.as_mut().unwrap()),
+                tail.as_mut().unwrap_or_else(|| state.free_lists[idx].head.as_mut().unwrap()),
             );
             tail_ref.set_nxt(old_head);
         }
@@ -308,7 +499,7 @@ impl Pool {
                 continue;
             }
             let size = req.size;
-            match state.free_list.try_alloc(size, &self.descriptors) {
+            match state.try_alloc(size, &self.descriptors) {
                 Some(descs) => {
                     // The unwrap is safe because we know requests is not empty.
                     let req = state.requests.pop_front().unwrap();
@@ -361,8 +552,11 @@ impl Pool {
 
     fn get_slice<'a, K: AllocKind>(&self, desc: &'a DescId<K>) -> &'a [u8] {
         let desc = self.descriptors.borrow(desc);
-        let offset = usize::try_from(desc.offset() + u64::from(desc.head_length()))
-            .expect("usize must hold u64");
+        let vmo_id = desc.vmo_id();
+        let vmo_offset = self.vmo_offsets[usize::from(vmo_id)];
+        let offset = vmo_offset
+            + usize::try_from(desc.offset() + u64::from(desc.head_length()))
+                .expect("usize must hold u64");
         let len = usize::try_from(desc.data_length()).expect("usize must hold u32");
         // Safety: The descriptor is describing a buffer from this pool. It must
         // be valid to create a slice into that region. We hold a immutable
@@ -376,8 +570,11 @@ impl Pool {
 
     fn get_slice_mut<'a, K: AllocKind>(&self, desc: &'a mut DescId<K>) -> &'a mut [u8] {
         let desc = self.descriptors.borrow_mut(desc);
-        let offset = usize::try_from(desc.offset() + u64::from(desc.head_length()))
-            .expect("usize must hold u64");
+        let vmo_id = desc.vmo_id();
+        let vmo_offset = self.vmo_offsets[usize::from(vmo_id)];
+        let offset = vmo_offset
+            + usize::try_from(desc.offset() + u64::from(desc.head_length()))
+                .expect("usize must hold u64");
         let len = usize::try_from(desc.data_length()).expect("usize must hold u32");
         // Safety: The descriptor is describing a buffer from this pool. It must
         // be valid to create a slice into that region. We hold a mutable
@@ -388,13 +585,47 @@ impl Pool {
             std::slice::from_raw_parts_mut(ptr, len)
         }
     }
+
+    pub(in crate::session) fn decommit_tx_vmo(&self, tx_vmo_idx: TxVmoIndex) -> Result<()> {
+        let tx_vmar = self
+            .decommittable_tx_vmar
+            .as_ref()
+            .ok_or(Error::Vmo("decommit", zx::Status::NOT_SUPPORTED))?;
+        let vmo_idx = tx_vmo_idx + usize::from(self.decommittable_tx_vmo_ids[0]);
+        let start_offset = self.vmo_offsets[vmo_idx];
+        let end_offset = self.vmo_offsets[vmo_idx + 1];
+        let len = end_offset - start_offset;
+        let addr = self.base.addr().get() + start_offset;
+        tx_vmar
+            .op_range(zx::VmarOp::DECOMMIT, addr, len)
+            .map_err(|status| Error::Vmo("decommit", status))
+    }
+
+    pub(in crate::session) fn has_decommittable_tx_vmo(&self) -> bool {
+        self.decommittable_tx_vmar.is_some()
+    }
+
+    fn free_list_index(&self, vmo_id: u8) -> usize {
+        if self.decommittable_tx_vmo_ids.is_empty() {
+            // If we are in the single data VMO mode, there is only one free list.
+            0
+        } else {
+            // If we have multiple dedicated Tx VMOs, then free_lists[0] is used to
+            // track free buffers from VMO `decommittable_tx_vmo_ids[0]`. The VMO
+            // ids from `decommittable_tx_vmo_ids` are contiguous and sorted so
+            // we can just offset the vmo_id by the first vmo_id to get the
+            // index of the free list to use.
+            usize::from(vmo_id - self.decommittable_tx_vmo_ids[0])
+        }
+    }
 }
 
 impl Drop for Pool {
     fn drop(&mut self) {
+        let bytes = *self.vmo_offsets.last().unwrap();
         unsafe {
             vmar_root_self()
-                .unmap(self.base.as_ptr() as usize, self.bytes)
+                .unmap(self.base.as_ptr() as usize, bytes)
                 .expect("failed to unmap VMO for Pool")
         }
     }
@@ -409,7 +640,7 @@ impl TxFreeList {
         num_parts: ChainLength,
         descriptors: &Descriptors,
     ) -> Option<Chained<DescId<Tx>>> {
-        if u16::from(num_parts.get()) > self.len {
+        if u16::from(num_parts.get()) > self.free {
             return None;
         }
 
@@ -426,7 +657,7 @@ impl TxFreeList {
         });
         let allocated = free_list.take(num_parts.get().into()).collect::<Chained<_>>();
         assert_eq!(allocated.len(), num_parts.into());
-        self.len -= u16::from(num_parts.get());
+        self.free -= u16::from(num_parts.get());
         Some(allocated)
     }
 }
@@ -438,6 +669,12 @@ pub struct Buffer<K: AllocKind> {
 }
 
 impl<K: AllocKind> Buffer<K> {
+    pub(in crate::session) fn vmo_id(&self) -> u8 {
+        // Safety: Must not have an empty allocation.
+        let desc_id = unsafe { self.alloc.descs.storage[0].assume_init_ref() };
+        self.alloc.pool.descriptors.borrow(desc_id).vmo_id()
+    }
+
     /// Returns the length of data region of the buffer.
     pub fn len(&self) -> usize {
         self.parts().map(|s| s.len()).sum()
@@ -595,10 +832,7 @@ impl SinglePartTxBuffer {
         } else {
             let cap = usize::try_from(buffer.alloc.descriptor().data_length())
                 .expect("u32 must fit in a usize");
-            if cap < len {
-                return None;
-            }
-            Some(Self(buffer))
+            if cap < len { None } else { Some(Self(buffer)) }
         }
     }
 
@@ -1338,7 +1572,9 @@ mod tests {
     use std::collections::HashSet;
     use std::num::{NonZeroU16, NonZeroU64, NonZeroUsize};
     use std::pin::pin;
-    use std::task::{Poll, Waker};
+    use std::task::Poll;
+
+    use crate::session::tx::TxVmoConfig;
 
     const DEFAULT_MIN_TX_BUFFER_HEAD: u16 = 4;
     const DEFAULT_MIN_TX_BUFFER_TAIL: u16 = 8;
@@ -1355,24 +1591,39 @@ mod tests {
     const WRITE_BYTE: u8 = 1;
     const PAD_BYTE: u8 = 0;
 
-    const DEFAULT_CONFIG: Config = Config {
-        buffer_stride: NonZeroU64::new(DEFAULT_BUFFER_LENGTH.get() as u64).unwrap(),
-        num_rx_buffers: DEFAULT_RX_BUFFERS,
-        num_tx_buffers: DEFAULT_TX_BUFFERS,
-        options: netdev::SessionFlags::empty(),
-        buffer_layout: BufferLayout {
-            length: DEFAULT_BUFFER_LENGTH.get(),
-            min_tx_head: DEFAULT_MIN_TX_BUFFER_HEAD,
-            min_tx_tail: DEFAULT_MIN_TX_BUFFER_TAIL,
-            min_tx_data: 0,
-        },
-    };
+    fn default_config() -> Config {
+        Config {
+            buffer_stride: NonZeroU64::new(DEFAULT_BUFFER_LENGTH.get() as u64).unwrap(),
+            num_rx_buffers: DEFAULT_RX_BUFFERS,
+            tx_vmos: vec![TxVmoConfig {
+                vmo_id: DEFAULT_VMO_ID,
+                num_buffers: DEFAULT_TX_BUFFERS.get(),
+            }],
+            options: netdev::SessionFlags::empty(),
+            buffer_layout: BufferLayout {
+                length: DEFAULT_BUFFER_LENGTH.get(),
+                min_tx_head: DEFAULT_MIN_TX_BUFFER_HEAD,
+                min_tx_tail: DEFAULT_MIN_TX_BUFFER_TAIL,
+                min_tx_data: 0,
+            },
+            buffer_usage_sample_interval: std::time::Duration::from_secs(1),
+        }
+    }
 
     impl Pool {
+        fn new_test_pool(config: Config) -> (Arc<Self>, zx::Vmo, Vec<zx::Vmo>) {
+            let CreatedPool { pool, descriptors_vmo, data_vmos } =
+                Pool::new(config).expect("failed to create pool");
+            (pool, descriptors_vmo, data_vmos)
+        }
+
         fn new_test_default() -> Arc<Self> {
-            let (pool, _descriptors, _data) =
-                Pool::new(DEFAULT_CONFIG).expect("failed to create default pool");
+            let (pool, _descriptors, _data) = Pool::new_test_pool(default_config());
             pool
+        }
+
+        fn tx_alloc_state_lock(&self) -> fuchsia_sync::MutexGuard<'_, TxAllocState> {
+            self.tx_alloc_state.lock()
         }
 
         async fn alloc_tx_checked(self: &Arc<Self>, n: u8) -> AllocGuard<Tx> {
@@ -1402,7 +1653,8 @@ mod tests {
         fn fill_sentinel_bytes(&mut self) {
             // Safety: We have mut reference to Pool, so we get to modify the
             // VMO pointed by self.base.
-            unsafe { std::ptr::write_bytes(self.base.as_ptr(), SENTINEL_BYTE, self.bytes) };
+            let bytes = *self.vmo_offsets.last().unwrap();
+            unsafe { std::ptr::write_bytes(self.base.as_ptr(), SENTINEL_BYTE, bytes) };
         }
     }
 
@@ -1479,9 +1731,9 @@ mod tests {
                 allocated.iter().fold(0, |acc, a| { acc + a.descs.len() }),
                 DEFAULT_TX_BUFFERS.get().into()
             );
-            assert_eq!(pool.tx_alloc_state.lock().free_list.len, 0);
+            assert_eq!(pool.tx_alloc_state_lock().free_lists[0].free, 0);
         }
-        assert_eq!(pool.tx_alloc_state.lock().free_list.len, DEFAULT_TX_BUFFERS.get());
+        assert_eq!(pool.tx_alloc_state_lock().free_lists[0].free, DEFAULT_TX_BUFFERS.get());
     }
 
     #[test]
@@ -1548,7 +1800,7 @@ mod tests {
         // The allocation should block.
         assert_matches!(executor.run_until_stalled(&mut alloc_fut), Poll::Pending);
         // And the allocation request should be queued.
-        assert!(!pool.tx_alloc_state.lock().requests.is_empty());
+        assert!(!pool.tx_alloc_state_lock().requests.is_empty());
         let freed = allocated
             .pop()
             .expect("no fulfulled allocations")
@@ -1563,7 +1815,7 @@ mod tests {
             Poll::Ready(AllocGuard{ descs, pool: _ }) if same_as_freed(descs)
         );
         // And the queued request should now be removed.
-        assert!(pool.tx_alloc_state.lock().requests.is_empty());
+        assert!(pool.tx_alloc_state_lock().requests.is_empty());
     }
 
     #[test]
@@ -1576,7 +1828,7 @@ mod tests {
             let mut alloc_fut = pin!(alloc_fut);
             assert_matches!(executor.run_until_stalled(&mut alloc_fut), Poll::Pending);
             assert_matches!(
-                pool.tx_alloc_state.lock().requests.as_slices(),
+                pool.tx_alloc_state_lock().requests.as_slices(),
                 (&[ref req1, ref req2], &[]) if req1.size.get() == 1 && req2.size.get() == 1
             );
         }
@@ -1585,8 +1837,8 @@ mod tests {
             Some(AllocGuard { ref descs, pool: ref p })
                 if descs == &[DEFAULT_TX_BUFFERS.get() - 1] && Arc::ptr_eq(p, &pool)
         );
-        let state = pool.tx_alloc_state.lock();
-        assert_eq!(state.free_list.len, 1);
+        let state = pool.tx_alloc_state_lock();
+        assert_eq!(state.free_lists[0].free, 1);
         assert!(state.requests.is_empty());
     }
 
@@ -1600,7 +1852,7 @@ mod tests {
             let mut alloc_fut = pin!(alloc_fut);
             assert_matches!(executor.run_until_stalled(&mut alloc_fut), Poll::Pending);
             assert_matches!(
-                pool.tx_alloc_state.lock().requests.as_slices(),
+                pool.tx_alloc_state_lock().requests.as_slices(),
                 (&[ref req1, ref req2], &[]) if req1.size.get() == 1 && req2.size.get() == 1
             );
             assert_matches!(
@@ -1609,8 +1861,8 @@ mod tests {
                     if descs == &[DEFAULT_TX_BUFFERS.get() - 1] && Arc::ptr_eq(p, &pool)
             );
         }
-        let state = pool.tx_alloc_state.lock();
-        assert_eq!(state.free_list.len, 1);
+        let state = pool.tx_alloc_state_lock();
+        assert_eq!(state.free_lists[0].free, 1);
         assert!(state.requests.is_empty());
     }
 
@@ -1634,7 +1886,7 @@ mod tests {
             assert_eq!(idx + *req_size, TASKS_TOTAL);
         }
         {
-            let state = pool.tx_alloc_state.lock();
+            let state = pool.tx_alloc_state_lock();
             // The first pending request was introduced by `alloc_tx_all`.
             assert_eq!(state.requests.len(), TASKS_TOTAL + 1);
             let mut requests = state.requests.iter();
@@ -1677,7 +1929,7 @@ mod tests {
                 assert_matches!(executor.run_until_stalled(task), Poll::Pending);
             }
         }
-        assert!(pool.tx_alloc_state.lock().requests.is_empty());
+        assert!(pool.tx_alloc_state_lock().requests.is_empty());
     }
 
     #[test]
@@ -1771,8 +2023,8 @@ mod tests {
     #[test]
     fn rx_distinct() {
         let pool = Pool::new_test_default();
-        let mut guard = pool.rx_pending.inner.lock();
-        let (descs, _): &mut (Vec<_>, Option<Waker>) = &mut *guard;
+        let mut guard = pool.rx_pending.lock();
+        let descs = &mut guard.storage;
         assert_eq!(descs.len(), usize::from(DEFAULT_RX_BUFFERS.get()));
         let distinct = descs.iter().map(|desc| desc.get()).collect::<HashSet<u16>>();
         assert_eq!(descs.len(), distinct.len());
@@ -1781,8 +2033,8 @@ mod tests {
     #[test]
     fn alloc_rx_layout() {
         let pool = Pool::new_test_default();
-        let mut guard = pool.rx_pending.inner.lock();
-        let (descs, _): &mut (Vec<_>, Option<Waker>) = &mut *guard;
+        let mut guard = pool.rx_pending.lock();
+        let descs = &mut guard.storage;
         assert_eq!(descs.len(), usize::from(DEFAULT_RX_BUFFERS.get()));
         for desc in descs.iter() {
             let descriptor = pool.descriptors.borrow(desc);
@@ -2015,9 +2267,9 @@ mod tests {
         const WRITE_BYTE: u8 = 0xff;
         const WRITE_SENTINAL_BYTE: u8 = 0xee;
         const READ_SENTINAL_BYTE: u8 = 0xdd;
-        let mut config = DEFAULT_CONFIG;
+        let mut config = default_config();
         config.buffer_layout.min_tx_data = MIN_TX_DATA;
-        let (pool, _descriptors, _vmo) = Pool::new(config).expect("failed to create a new pool");
+        let (pool, _descriptors, _vmo) = Pool::new_test_pool(config);
         for mut buffer in Vec::from_iter(std::iter::from_fn({
             let pool = pool.clone();
             move || pool.alloc_tx_buffer_now_or_never(MIN_TX_DATA)
@@ -2045,11 +2297,86 @@ mod tests {
 
     #[test]
     fn invalid_tx_length() {
-        let mut config = DEFAULT_CONFIG;
+        let mut config = default_config();
         config.buffer_layout.length = usize::from(u16::MAX) + 2;
         config.buffer_layout.min_tx_head = 0;
-        let (pool, _descriptors, _vmo) = Pool::new(config).expect("failed to create pool");
+        let (pool, _descriptors, _vmo) = Pool::new_test_pool(config);
         assert_matches!(pool.alloc_tx_buffer(1).now_or_never(), Some(Err(Error::TxLength)));
+    }
+
+    #[test]
+    fn vmo_indices_tracking() {
+        let mut config = default_config();
+        config.tx_vmos = vec![
+            TxVmoConfig { vmo_id: 0, num_buffers: 2 },
+            TxVmoConfig { vmo_id: 1, num_buffers: 4 },
+        ];
+
+        let (pool, _descriptors, _vmos) = Pool::new_test_pool(config);
+
+        // Check initial state:
+        // - first VMO index with free buffers should be 0
+        {
+            let state = pool.tx_alloc_state_lock();
+            assert_eq!(state.first_available_index, 0);
+        }
+
+        // Allocate 1 buffer (takes from VMO 0)
+        let alloc1 = pool.alloc_tx_now_or_never(1).expect("alloc 1");
+        {
+            let state = pool.tx_alloc_state_lock();
+            // VMO 0 still has 1 free buffer
+            assert_eq!(state.first_available_index, 0);
+        }
+
+        // Allocate second buffer from VMO 0
+        let alloc2 = pool.alloc_tx_now_or_never(1).expect("alloc 2");
+        {
+            let state = pool.tx_alloc_state_lock();
+            // VMO 0 has 0 free, so VMO 1 is the first with free.
+            assert_eq!(state.first_available_index, 1);
+        }
+
+        // Allocate 1 buffer from VMO 1
+        let alloc3 = pool.alloc_tx_now_or_never(1).expect("alloc 3");
+        {
+            let state = pool.tx_alloc_state_lock();
+            // VMO 1 still has 3 free buffers.
+            assert_eq!(state.first_available_index, 1);
+        }
+
+        // Allocate remaining buffers from VMO 1 to allocate all buffers
+        let _alloc4 = pool.alloc_tx_now_or_never(1).expect("alloc 4");
+        let _alloc5 = pool.alloc_tx_now_or_never(1).expect("alloc 5");
+        let _alloc6 = pool.alloc_tx_now_or_never(1).expect("alloc 6");
+        {
+            let state = pool.tx_alloc_state_lock();
+            assert_eq!(state.first_available_index, state.free_lists.len());
+        }
+
+        // Free the first buffer (belongs to VMO 0)
+        drop(alloc1);
+        {
+            let state = pool.tx_alloc_state_lock();
+            // VMO 0 now has 1 free buffer again
+            assert_eq!(state.first_available_index, 0);
+        }
+
+        // Free the third buffer (belongs to VMO 1)
+        drop(alloc3);
+        {
+            let state = pool.tx_alloc_state_lock();
+            // VMO 0 still has 1 free buffer, VMO 1 has 4 free.
+            assert_eq!(state.first_available_index, 0);
+        }
+
+        // Free the second buffer (belongs to VMO 0)
+        drop(alloc2);
+        {
+            let state = pool.tx_alloc_state_lock();
+            // VMO 0 still has 2 free.
+            assert_eq!(state.first_available_index, 0);
+        }
     }
 
     #[test]

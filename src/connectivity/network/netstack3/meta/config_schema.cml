@@ -19,5 +19,10 @@
 
         // Whether to enable the sampled statistics service.
         sampled_stats_enabled: { type: "bool" },
+
+        // Whether to enable multi-VMO data path for network device sessions.
+        // TODO(https://fxbug.dev/438527741): Remove this flag when enabled by
+        // default.
+        multi_vmo: { type: "bool" },
     },
 }

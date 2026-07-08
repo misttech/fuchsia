@@ -36,8 +36,8 @@ use crate::bindings::interfaces_admin::{InterfaceOptions, maybe_create_local_rou
 use crate::bindings::stats_sampler::{InterfaceStatusBufferedState, InterfaceStatusSampler};
 use crate::bindings::util::{IntoFidl, NeedsDataNotifier, ScopeExt as _};
 use crate::bindings::{
-    BindingId, BindingsCtx, Ctx, DEFAULT_INTERFACE_METRIC, DeviceId, Netstack, devices,
-    interfaces_admin, routes,
+    BindingId, BindingsCtx, Ctx, DEFAULT_INTERFACE_METRIC, DeviceId, GlobalConfig, Netstack,
+    devices, interfaces_admin, routes,
 };
 
 /// Like [`DeviceId`], but restricted to netdevice devices.
@@ -140,13 +140,17 @@ impl NetdeviceWorker {
     ) -> Result<Self, Error> {
         let device = netdevice_client::Client::new(device.into_proxy());
         // Enable rx lease watching when suspension is enabled.
-        let watch_rx_leases = ctx.bindings_ctx().config.suspend_enabled;
+        let GlobalConfig { suspend_enabled, multi_vmo, sampled_stats_enabled: _ } =
+            &ctx.bindings_ctx().config;
+        let watch_rx_leases = *suspend_enabled;
         let (session, task) = device
             .new_session_with_derivable_config(
                 "netstack3",
                 netdevice_client::DerivableConfig {
                     default_buffer_length: DEFAULT_BUFFER_LENGTH,
                     watch_rx_leases,
+                    multi_vmo: *multi_vmo,
+                    ..Default::default()
                 },
             )
             .await

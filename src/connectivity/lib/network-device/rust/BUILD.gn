@@ -19,6 +19,7 @@ rustc_library("rust") {
     "src/session/buffer/pool.rs",
     "src/session/buffer/sys.rs",
     "src/session/mod.rs",
+    "src/session/tx.rs",
   ]
 
   deps = [

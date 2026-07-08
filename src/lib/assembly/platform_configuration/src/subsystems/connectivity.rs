@@ -205,6 +205,7 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
                         "sampled_stats_enabled",
                         matches!(context.build_type, BuildType::Eng | BuildType::UserDebug),
                     )?
+                    .field("multi_vmo", false)?
                     // Routed from fuchsia.power.SuspendEnabled capability.
                     //
                     // TODO(https://fxbug.dev/368386068): This should not be
