@@ -19,7 +19,9 @@ A memory management unit that allows arbitrary mapping of system memory pages in
 ### Per-client independent address space
 For system security it’s important to maintain address space isolation in the gpu domain as well as in the cpu domain.
 
-### Unified memory architecture
+### Unified memory architecture (UMA)
+
+The CPU and GPU access the same physical system memory.
 This may be relaxed in the future.
 
 ## Architecture
