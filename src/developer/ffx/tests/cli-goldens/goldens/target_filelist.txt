@@ -5,7 +5,6 @@ ffx/target/bootloader/boot.golden
 ffx/target/bootloader/info.golden
 ffx/target/bootloader/lock.golden
 ffx/target/bootloader/unlock.golden
-ffx/target/clear-preferred-ssh-address.golden
 ffx/target/default.golden
 ffx/target/default/get.golden
 ffx/target/discover.golden
@@ -38,7 +37,6 @@ ffx/target/repository/register.golden
 ffx/target/repository/rule.golden
 ffx/target/repository/rule/replace.golden
 ffx/target/screenshot.golden
-ffx/target/set-preferred-ssh-address.golden
 ffx/target/shell.golden
 ffx/target/show.golden
 ffx/target/snapshot.golden

@@ -13,7 +13,6 @@ if (is_host) {
     plugin_deps = [
       "add:ffx_target_add",
       "bootloader:ffx_bootloader",
-      "clear-preferred-ssh-address:ffx_target_clear_preferred_ssh_address",
       "default:ffx_target_default",
       "discover:ffx_target_discover",
       "echo:ffx_target_echo",
@@ -28,7 +27,6 @@ if (is_host) {
       "remove:ffx_target_remove",
       "repository:ffx_target_repository",
       "screenshot:ffx_target_screenshot",
-      "set-preferred-ssh-address:ffx_target_set_preferred_ssh_address",
       "shell:ffx_target_shell",
       "show:ffx_target_show",
       "snapshot:ffx_snapshot",
