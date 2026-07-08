@@ -197,8 +197,8 @@ source_set("loader") {
   ]
 
   public_deps = [
-    ":fidl_server_hlcpp",
-    "//sdk/fidl/fuchsia.net.http:fuchsia.net.http_hlcpp",
+    ":fidl_server",
+    "//sdk/fidl/fuchsia.net.http:fuchsia.net.http_cpp",
   ]
 
   deps = [

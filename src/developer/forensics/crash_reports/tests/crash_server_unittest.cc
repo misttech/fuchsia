@@ -134,7 +134,7 @@ TEST_F(CrashServerTest, UrlWithEncodedParameter) {
 }
 
 TEST_F(CrashServerTest, Fails_OnError) {
-  SetUpLoader({stubs::LoaderResponse::WithError(fuchsia::net::http::Error::CONNECT)});
+  SetUpLoader({stubs::LoaderResponse::WithError(fuchsia_net_http::Error::kConnect)});
 
   std::optional<CrashServer::UploadStatus> upload_status{std::nullopt};
   crash_server().MakeRequest(
@@ -147,7 +147,7 @@ TEST_F(CrashServerTest, Fails_OnError) {
 }
 
 TEST_F(CrashServerTest, Fails_OnTimeout) {
-  SetUpLoader({stubs::LoaderResponse::WithError(fuchsia::net::http::Error::DEADLINE_EXCEEDED)});
+  SetUpLoader({stubs::LoaderResponse::WithError(fuchsia_net_http::Error::kDeadlineExceeded)});
 
   std::optional<CrashServer::UploadStatus> upload_status{std::nullopt};
   crash_server().MakeRequest(
@@ -360,7 +360,7 @@ TEST_F(CrashServerTest, LogsReportUploadDuration) {
 }
 
 TEST_F(CrashServerTest, LogsReportUploadDurationWithUploadStatus) {
-  SetUpLoader({stubs::LoaderResponse::WithError(fuchsia::net::http::Error::CONNECT)});
+  SetUpLoader({stubs::LoaderResponse::WithError(fuchsia_net_http::Error::kConnect)});
 
   std::optional<CrashServer::UploadStatus> upload_status{std::nullopt};
   crash_server().MakeRequest(kReport, GetSnapshot(), cobalt(),

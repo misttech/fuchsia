@@ -13,7 +13,7 @@
 namespace forensics {
 namespace stubs {
 
-using namespace fuchsia::net::http;
+using namespace fuchsia_net_http;
 
 LoaderResponse LoaderResponse::WithError(const Error error) {
   return LoaderResponse{
@@ -48,9 +48,9 @@ Loader::~Loader() {
                            std::distance(responses_.cbegin(), next_response_), responses_.size());
 }
 
-void Loader::Fetch(Request request, FetchCallback callback) {
-  if (request.has_url()) {
-    url_ = request.url();
+void Loader::Fetch(FetchRequest& request, FetchCompleter::Sync& completer) {
+  if (request.request().url().has_value()) {
+    url_ = *request.request().url();
   }
   FX_CHECK(next_response_ != responses_.end())
       << fxl::StringPrintf("no more calls to Fetch() expected (%lu/%lu calls made)",
@@ -59,18 +59,18 @@ void Loader::Fetch(Request request, FetchCallback callback) {
 
   Response response;
   if (next_response_->error.has_value()) {
-    response.set_error(next_response_->error.value());
+    response.error(next_response_->error.value());
   } else if (next_response_->status_code.has_value()) {
-    response.set_status_code(next_response_->status_code.value());
+    response.status_code(next_response_->status_code.value());
     if (next_response_->body.has_value()) {
-      response.set_body(fsl::WriteStringToSocket(next_response_->body.value()));
+      response.body(fsl::WriteStringToSocket(next_response_->body.value()));
     }
   } else {
     FX_LOGS(FATAL) << "Bad LoaderResponse";
   }
 
   next_response_++;
-  callback(std::move(response));
+  completer.Reply(std::move(response));
 }
 
 std::string Loader::LastRequestUrl() const { return url_; }

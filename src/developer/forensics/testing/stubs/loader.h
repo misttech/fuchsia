@@ -5,39 +5,37 @@
 #ifndef SRC_DEVELOPER_FORENSICS_TESTING_STUBS_LOADER_H_
 #define SRC_DEVELOPER_FORENSICS_TESTING_STUBS_LOADER_H_
 
-#include <fuchsia/net/http/cpp/fidl.h>
-#include <fuchsia/net/http/cpp/fidl_test_base.h>
+#include <fidl/fuchsia.net.http/cpp/fidl.h>
+#include <fidl/fuchsia.net.http/cpp/test_base.h>
 
 #include <optional>
 #include <string>
 #include <vector>
 
-#include "src/developer/forensics/testing/stubs/fidl_server_hlcpp.h"
+#include "src/developer/forensics/testing/stubs/fidl_server.h"
 
 namespace forensics {
 namespace stubs {
 
 struct LoaderResponse {
-  static LoaderResponse WithError(fuchsia::net::http::Error error);
+  static LoaderResponse WithError(fuchsia_net_http::Error error);
   static LoaderResponse WithError(uint32_t status_code);
   static LoaderResponse WithBody(uint32_t status_code, const std::string& body);
 
-  std::optional<fuchsia::net::http::Error> error;
+  std::optional<fuchsia_net_http::Error> error;
   std::optional<uint32_t> status_code;
   std::optional<std::string> body;
 };
 
-using LoaderBase = SINGLE_BINDING_STUB_FIDL_SERVER(fuchsia::net::http, Loader);
+using LoaderBase = SingleBindingFidlServer<fuchsia_net_http::Loader>;
 
 class Loader : public LoaderBase {
  public:
   Loader(async_dispatcher_t* dispatcher, std::vector<LoaderResponse> responses)
-      : LoaderBase(dispatcher),
-        responses_(std::move(responses)),
-        next_response_(responses_.begin()) {}
-  ~Loader();
+      : responses_(std::move(responses)), next_response_(responses_.begin()) {}
+  ~Loader() override;
 
-  void Fetch(fuchsia::net::http::Request request, FetchCallback callback) override;
+  void Fetch(FetchRequest& request, FetchCompleter::Sync& completer) override;
   std::string LastRequestUrl() const;
 
  private:
