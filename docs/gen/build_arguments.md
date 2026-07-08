@@ -10,12 +10,6 @@ Enable debug output in the ACPI library (used by the ACPI bus driver).
 
 From //zircon/system/ulib/acpica/acpica.gni:7
 
-### active_partition
-
-**Current value (from the default):** `""`
-
-From //build/images/args.gni:49
-
 ### add_qemu_to_build_archives
 
 Whether to include images necessary to run Fuchsia in QEMU in build
@@ -23,7 +17,7 @@ archives.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:55
+From //build/images/args.gni:35
 
 ### additional_bazel_sdk_labels
 
@@ -34,17 +28,6 @@ main repository.
 **Current value (from the default):** `[]`
 
 From //BUILD.gn:114
-
-### additional_bootserver_arguments
-
-Additional bootserver args to add to pave.sh. New uses of this should be
-added with caution, and ideally discussion. The present use case is to
-enable throttling of netboot when specific network adapters are combined
-with specific boards, due to driver and hardware challenges.
-
-**Current value (from the default):** `""`
-
-From //build/images/args.gni:61
 
 ### additional_default_targets
 
@@ -109,14 +92,6 @@ these device types will be used for tests.
 
 From //build/testing/test_spec.gni:14
 
-### always_zedboot
-
-Build boot images that prefer Zedboot over local boot (only for EFI).
-
-**Current value (from the default):** `false`
-
-From //build/images/args.gni:70
-
 ### amlogic_decoder_firmware_path
 
 Path to the amlogic decoder firmware file. Overrides the default in the
@@ -165,28 +140,6 @@ The result will be built and uploaded to CIPD by infra.
 **Current value (from the default):** `[]`
 
 From //BUILD.gn:118
-
-### assembly_generate_fvm_fastboot
-
-The size in bytes of the FVM partition on the target eMMC devices.
-Specifying this parameter will lead build to generate a fvm.fastboot.blk
-suitable for flashing through fastboot for eMMC devices.
-
-**Current value (from the default):** `false`
-
-From //build/images/args.gni:78
-
-### assembly_generate_fvm_nand
-
-Specifying these variables will generate a NAND FVM image suitable for
-directly flashing via fastboot. The NAND characteristics are required
-in order to properly initialize the FTL metadata in the OOB area.
-`fvm_max_disk_size` should also be nonzero or else minfs will not have any
-room to initialize on boot.
-
-**Current value (from the default):** `false`
-
-From //build/images/args.gni:85
 
 ### assembly_partitions_configs
 
@@ -291,7 +244,7 @@ From //boards/arm64.gni:25
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:124
+From //build/images/args.gni:78
 
 **Current value for `target_cpu = "riscv64"`:** `"riscv64"`
 
@@ -299,7 +252,7 @@ From //boards/riscv64.gni:32
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:124
+From //build/images/args.gni:78
 
 **Current value for `target_cpu = "x64"`:** `"x64"`
 
@@ -307,7 +260,7 @@ From //boards/x64.gni:28
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:124
+From //build/images/args.gni:78
 
 ### bazel_product_bundle_full
 
@@ -336,7 +289,7 @@ The actual bazel_product_bundle used for Bazel assembly is:
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:121
+From //build/images/args.gni:75
 
 ### bazel_product_bundle_prefix
 
@@ -346,7 +299,7 @@ From //products/core.gni:26
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:123
+From //build/images/args.gni:77
 
 **Current value for `target_cpu = "riscv64"`:** `"//products/minimal:product_bundle"`
 
@@ -354,7 +307,7 @@ From //products/minimal.gni:34
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:123
+From //build/images/args.gni:77
 
 **Current value for `target_cpu = "x64"`:** `"//products/core:product_bundle"`
 
@@ -362,13 +315,13 @@ From //products/core.gni:26
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:123
+From //build/images/args.gni:77
 
 ### bazel_product_bundle_root
 
 **Current value (from the default):** `"//"`
 
-From //build/images/args.gni:122
+From //build/images/args.gni:76
 
 ### bazel_rbe_download_outputs
 
@@ -454,7 +407,7 @@ From //boards/arm64.gni:24
 
 **Overridden from the default:** `false`
 
-From //build/board.gni:32
+From //build/board.gni:28
 
 **Current value for `target_cpu = "riscv64"`:** `"//boards/riscv64"`
 
@@ -462,7 +415,7 @@ From //boards/riscv64.gni:24
 
 **Overridden from the default:** `false`
 
-From //build/board.gni:32
+From //build/board.gni:28
 
 **Current value for `target_cpu = "x64"`:** `"//boards/x64"`
 
@@ -470,7 +423,7 @@ From //boards/x64.gni:27
 
 **Overridden from the default:** `false`
 
-From //build/board.gni:32
+From //build/board.gni:28
 
 ### board_description
 
@@ -500,15 +453,6 @@ From //boards/x64.gni:24
 
 From //build/board.gni:14
 
-### board_fastboot_unlock_credentials
-
-A list of paths to the unlock credentials file necessary to unlock this
-board's fastboot protocol.
-
-**Current value (from the default):** `[]`
-
-From //build/board.gni:18
-
 ### board_is_emu
 
 Whether or not the board supports emulator devices.
@@ -521,7 +465,7 @@ From //boards/arm64.gni:31
 
 **Overridden from the default:** `false`
 
-From //build/board.gni:37
+From //build/board.gni:33
 
 **Current value for `target_cpu = "riscv64"`:** `true`
 
@@ -529,7 +473,7 @@ From //boards/riscv64.gni:30
 
 **Overridden from the default:** `false`
 
-From //build/board.gni:37
+From //build/board.gni:33
 
 **Current value for `target_cpu = "x64"`:** `true`
 
@@ -537,7 +481,7 @@ From //boards/x64.gni:31
 
 **Overridden from the default:** `false`
 
-From //build/board.gni:37
+From //build/board.gni:33
 
 ### board_name
 
@@ -581,7 +525,7 @@ any kind of stable contract for users of the archive.
 
 **Current value (from the default):** `[]`
 
-From //build/board.gni:29
+From //build/board.gni:25
 
 ### build_all_vp9_file_decoder_conformance_tests
 
@@ -806,7 +750,7 @@ This is primarily meant to be used by the clang canary builders.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:29
+From //build/images/args.gni:12
 
 ### chromium_build_dir
 
@@ -1012,7 +956,7 @@ This should never be set as a build argument.
 }
   hwasan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.hwasan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
@@ -1030,7 +974,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -1091,7 +1035,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
+  clang_rt = ""
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
@@ -2152,6 +2096,13 @@ From //build/config/compiler.gni:82
 }]
   install_host_tool = true
 }, {
+  bazel_label = "//tools/fidl/fidlcparsequality:fidlcparsequality"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidlcparsequality_/fidlcparsequality"
+  ninja = "fidlcparsequality"
+}]
+  install_host_tool = true
+}, {
   bazel_label = "//tools/go_test_parser:go_test_parser"
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/go_test_parser_/go_test_parser"
@@ -2302,7 +2253,7 @@ This arg is for local developer only, products should not set this arg.
 
 **Current value (from the default):** `1`
 
-From //build/images/args.gni:67
+From //build/images/args.gni:41
 
 ### deny_warnings
 
@@ -3655,7 +3606,7 @@ TODO(https://fxbug.dev/320511796): Cleanup when no longer necessary.
 
 **Current value (from the default):** `false`
 
-From //build/testing/boot_tests/boot_test.gni:15
+From //build/testing/boot_tests/boot_test.gni:16
 
 ### disable_xattr_for_rbe
 
@@ -3849,7 +3800,7 @@ warning.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:169
+From //build/images/args.gni:118
 
 ### enable_netstack2_tracing
 
@@ -4327,7 +4278,7 @@ useful for including verification and other Bazel assembly specific targets.
 
 **Current value (from the default):** `[]`
 
-From //build/images/args.gni:128
+From //build/images/args.gni:82
 
 ### extra_bazel_build_action_labels
 
@@ -4366,12 +4317,6 @@ This is just added to [`known_variants`](#known_variants).
 **Current value (from the default):** `[]`
 
 From //build/config/BUILDCONFIG.gn:540
-
-### fastboot_product
-
-**Current value (from the default):** `""`
-
-From //build/images/args.gni:50
 
 ### fat_lto_objects
 
@@ -4494,7 +4439,7 @@ From //zircon/kernel/params.gni:60
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:47
+From //build/images/args.gni:30
 
 ### fxfs_blob
 
@@ -4510,7 +4455,7 @@ From //src/storage/fshost/generated_fshost_config.gni:17
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:48
+From //build/images/args.gni:31
 
 ### gcc_tool_dir
 
@@ -5070,7 +5015,7 @@ Include an account partition in the FVM image if set to true.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:73
+From //build/images/args.gni:44
 
 ### include_clippy
 
@@ -5175,7 +5120,7 @@ From //build/config/BUILDCONFIG.gn:30
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:162
+From //build/images/args.gni:111
 
 ### is_perfetto_build_generator
 
@@ -5679,7 +5624,7 @@ product in a multi-product build is not desired.
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:132
+From //build/images/args.gni:86
 
 ### max_log_disk_usage
 
@@ -6556,12 +6501,6 @@ Profile data path that is used by PGO.
 **Current value (from the default):** `""`
 
 From //build/config/profile/config.gni:47
-
-### pre_erase_flash
-
-**Current value (from the default):** `false`
-
-From //build/images/args.gni:51
 
 ### prebuilt_dart_sdk
 
@@ -8596,17 +8535,7 @@ provided value for 'board_configuration_label'
 
 **Current value (from the default):** `"//boards/arm64"`
 
-From //build/board.gni:46
-
-### recovery_only
-
-This is really a build for a recovery image, and so the fuchsia image that
-is being built isn't properly configured, and so just disable the new image
-assembly work until that's been addressed.
-
-**Current value (from the default):** `false`
-
-From //build/images/args.gni:12
+From //build/board.gni:42
 
 ### redirect_guest_serial_logs
 
@@ -9691,22 +9620,6 @@ LINT.IfChange
 
 From //build/testing/config.gni:9
 
-### update_product_epoch
-
-The epoch to use in the update (OTA) package.
-Before applying an update, Fuchsia confirms that the epoch in the update
-package is not smaller than the epoch installed on the system. This prevents
-Fuchsia from downloading an update that may not boot.
-
-The product epoch is added to the platform epoch before placed in the update
-package. Having a separate platform epoch ensures that every time the
-platform introduces a backwards-incompatible change, each product gets their
-epoch increased.
-
-**Current value (from the default):** `0`
-
-From //build/images/args.gni:23
-
 ### use_bazel_images_only
 
 If true, the images.json build API modules will only include images
@@ -9721,7 +9634,7 @@ From //products/core.gni:27
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:97
+From //build/images/args.gni:51
 
 **Current value for `target_cpu = "riscv64"`:** `true`
 
@@ -9729,7 +9642,7 @@ From //products/minimal.gni:39
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:97
+From //build/images/args.gni:51
 
 **Current value for `target_cpu = "x64"`:** `true`
 
@@ -9737,7 +9650,7 @@ From //products/core.gni:27
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:97
+From //build/images/args.gni:51
 
 ### use_blink
 
@@ -9916,29 +9829,19 @@ From //build/fuchsia/sdk.gni:8
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:44
+From //build/images/args.gni:27
 
 ### vbmeta_b_partition
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:45
+From //build/images/args.gni:28
 
 ### vbmeta_r_partition
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:46
-
-### verbose_image_assembly
-
-Enable verbose output from `ffx assembly image`, this creates non-silent
-build output and therefore should never be 'true' in checked-in configs, and
-is meant solely for developer debugging.
-
-**Current value (from the default):** `false`
-
-From //build/images/args.gni:90
+From //build/images/args.gni:29
 
 ### verify_depfile
 
@@ -10136,7 +10039,7 @@ doesn't require the FVM or SSH keys.
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:41
+From //build/images/args.gni:24
 
 ### zircon_asserts
 
@@ -10156,13 +10059,13 @@ From //build/config/fuchsia/zircon_asserts.gni:13
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:42
+From //build/images/args.gni:25
 
 ### zircon_r_partition
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:43
+From //build/images/args.gni:26
 
 ### zircon_toolchain
 
