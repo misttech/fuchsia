@@ -194,6 +194,9 @@ tables_generator_tests_*.txt
 !/third_party/github.com/ridiculousfish/
 !/third_party/github.com/ridiculousfish/libdivide
 /third_party/github.com/ridiculousfish/libdivide/src
+!/third_party/github.com/simdutf
+!/third_party/github.com/simdutf/simdutf
+/third_party/github.com/simdutf/simdutf/src
 !/third_party/pylibs/annotated_types
 /third_party/pylibs/annotated_types/src
 !/third_party/pylibs/coverage
