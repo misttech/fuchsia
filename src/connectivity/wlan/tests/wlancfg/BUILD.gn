@@ -123,6 +123,28 @@ antlion_host_test("beacon_loss_test") {
   timeout_secs = 900
 }
 
+antlion_host_test("channel_switch_test_without_soft_ap") {
+  main_source = "//src/connectivity/wlan/tests/wlancfg/ChannelSwitchTest.py"
+  libraries = [
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
+    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_python",
+    "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_python",
+  ]
+  test_cases = [ "re:(?!.*with_soft_ap).*" ]
+}
+
+antlion_host_test("channel_switch_test_with_soft_ap") {
+  main_source = "//src/connectivity/wlan/tests/wlancfg/ChannelSwitchTest.py"
+  libraries = [
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
+    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_python",
+    "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_python",
+  ]
+  test_cases = [ "re:.*with_soft_ap.*" ]
+}
+
 # This is a helper group so developers can easily add all tests to their build.
 # It is not run by infra. You should not directly add tests here, but rather to
 # one of the other groups below so it runs in infra.

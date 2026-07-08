@@ -44,6 +44,8 @@ wlancfg_tests_for_wlan_cq = [
 # above.
 wlancfg_tests_for_fyi = [
   "//src/connectivity/wlan/tests/wlancfg:beacon_loss_test",
+  "//src/connectivity/wlan/tests/wlancfg:channel_switch_test_with_soft_ap",
+  "//src/connectivity/wlan/tests/wlancfg:channel_switch_test_without_soft_ap",
   "//src/connectivity/wlan/tests/wlancfg:ping_test",
   "//src/connectivity/wlan/tests/wlancfg:policy_scan_test",
   "//src/connectivity/wlan/tests/wlancfg:saved_networks_test",
