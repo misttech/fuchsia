@@ -14,7 +14,6 @@ ffx_plugin("ffx_package_ota_manifest_generate") {
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/lib/assembly/product_bundle",
-    "//src/lib/include_bytes_from_working_dir",
     "//src/sys/pkg/lib/update-package",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
@@ -37,9 +36,4 @@ ffx_plugin("ffx_package_ota_manifest_generate") {
   ]
 
   sources = [ "src/lib.rs" ]
-  inputs = [ "//src/sys/pkg/bin/system-updater/keys/manifest_dev_key.pem" ]
-  manifest_dev_key_path =
-      rebase_path("//src/sys/pkg/bin/system-updater/keys/manifest_dev_key.pem",
-                  root_build_dir)
-  rustenv = [ "MANIFEST_DEV_KEY_PATH=$manifest_dev_key_path" ]
 }

@@ -73,8 +73,7 @@ pub async fn assemble(
         Slot::A => PBSlot::A,
         Slot::R => PBSlot::R,
     };
-    let builder =
-        ProductBundleBuilder::new(pb_name).system(system, pb_slot).update_package(1, None);
+    let builder = ProductBundleBuilder::new(pb_name).system(system, pb_slot).update_package(1);
 
     builder.build(Box::new(tools), outdir).await?;
     print_fn("Assembly complete.");

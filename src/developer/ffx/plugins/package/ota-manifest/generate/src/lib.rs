@@ -6,11 +6,7 @@ use async_trait::async_trait;
 use ffx_package_ota_manifest_generate_args::GenerateCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxContext as _, FfxMain, FfxTool, Result};
-use include_bytes_from_working_dir::include_bytes_from_working_dir_env;
 use update_package::manifest::{AssetType, Image, ImageType, Slot};
-
-/// The default manifest key used to sign OTA manifests for development purposes.
-const MANIFEST_DEV_KEY_PEM: &[u8] = include_bytes_from_working_dir_env!("MANIFEST_DEV_KEY_PATH");
 
 #[derive(FfxTool)]
 pub struct GenerateTool {
@@ -91,7 +87,8 @@ impl FfxMain for GenerateTool {
                 .map_err(|e| anyhow::anyhow!("{e}"))
                 .user_message("Parsing pkcs8 private key")?
         } else {
-            let pem = pem::parse(MANIFEST_DEV_KEY_PEM).bug_context("Parsing default dev pem")?;
+            let pem = pem::parse(update_package::MANIFEST_DEV_KEY_PEM)
+                .bug_context("Parsing default dev pem")?;
             ring::signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(pem.contents())
                 .map_err(|e| anyhow::anyhow!("{e}"))
                 .bug_context("Parsing default dev pkcs8")?
@@ -182,7 +179,7 @@ mod tests {
     }
 
     fn parse_and_verify(bytes: &[u8]) -> OtaManifest {
-        let pem = pem::parse(MANIFEST_DEV_KEY_PEM).unwrap();
+        let pem = pem::parse(update_package::MANIFEST_DEV_KEY_PEM).unwrap();
         let keypair =
             ring::signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(pem.contents()).unwrap();
         let public_key = ring::signature::UnparsedPublicKey::new(

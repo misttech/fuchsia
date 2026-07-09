@@ -23,6 +23,7 @@ rustc_library("update-package") {
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-fs",
     "//src/lib/fuchsia-url",
+    "//src/lib/include_bytes_from_working_dir",
     "//src/sys/pkg/lib/epoch",
     "//src/sys/pkg/lib/fuchsia-hash",
     "//src/sys/pkg/lib/fuchsia-merkle",
@@ -64,6 +65,12 @@ rustc_library("update-package") {
     "src/update_mode.rs",
     "src/version.rs",
   ]
+
+  inputs = [ "//src/sys/pkg/bin/system-updater/keys/manifest_dev_key.pem" ]
+  manifest_dev_key_path =
+      rebase_path("//src/sys/pkg/bin/system-updater/keys/manifest_dev_key.pem",
+                  root_build_dir)
+  rustenv = [ "MANIFEST_DEV_KEY_PATH=$manifest_dev_key_path" ]
 
   if (!is_host) {
     deps += [ "//sdk/rust/zx" ]

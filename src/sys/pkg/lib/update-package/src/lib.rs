@@ -31,6 +31,7 @@ pub use crate::name::VerifyNameError;
 pub use crate::packages::{
     ParsePackageError, SerializePackageError, parse_packages_json, serialize_packages_json,
 };
+pub use crate::signed_manifest::MANIFEST_DEV_KEY_PEM;
 pub use crate::update_mode::{ParseUpdateModeError, UpdateMode};
 pub use crate::version::{ReadVersionError, SystemVersion};
 

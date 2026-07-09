@@ -109,7 +109,6 @@ pub struct ProductBundleBuilder {
 /// The details needed to build an update package.
 struct UpdateDetails {
     epoch: EpochFile,
-    ota_manifest_key_path: Option<Utf8PathBuf>,
 }
 
 /// The details needed to build a TUF repository.
@@ -167,13 +166,9 @@ impl ProductBundleBuilder {
     }
 
     /// Add an update package.
-    pub fn update_package(
-        mut self,
-        epoch: u64,
-        ota_manifest_key_path: Option<Utf8PathBuf>,
-    ) -> Self {
+    pub fn update_package(mut self, epoch: u64) -> Self {
         let epoch: EpochFile = EpochFile::Version1 { epoch };
-        self.update_details = Some(UpdateDetails { epoch, ota_manifest_key_path });
+        self.update_details = Some(UpdateDetails { epoch });
         self
     }
 
@@ -276,16 +271,13 @@ impl ProductBundleBuilder {
         })?;
         let mut ota_manifest_path = None;
         let update_package = if let Some(update_details) = update_details {
-            if let Some(repository_details) = &repository_details
-                && let Some(key_path) = &update_details.ota_manifest_key_path
-            {
+            if let Some(repository_details) = &repository_details {
                 // The manifest is stored in the `repository` directory, because ffx
                 // `repository server` serves all files from that directory.
                 let path = out_dir.join("repository/ota_manifest");
                 write_ota_manifest(
                     &product_bundle_version,
                     &update_details.epoch,
-                    &key_path,
                     repository_details.delivery_blob_type,
                     &system_a,
                     &system_r,
@@ -847,14 +839,6 @@ mod test {
         let mut zbi_file = std::fs::File::create(&zbi_path).unwrap();
         zbi_file.write_all(b"zbi contents").unwrap();
 
-        // Write a test key for the OTA manifest.
-        let rng = ring::rand::SystemRandom::new();
-        let pkcs8_bytes = ring::signature::Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
-        let pem = pem::Pem::new("PRIVATE KEY", pkcs8_bytes.as_ref().to_vec());
-        let ota_key_path = tempdir.join("ota_key.pem");
-        let mut ota_key_file = std::fs::File::create(&ota_key_path).unwrap();
-        ota_key_file.write_all(pem::encode(&pem).as_bytes()).unwrap();
-
         // Write the test key for the repository.
         let tuf_keys = tempdir.join("keys");
         test_utils::make_repo_keys_dir(&tuf_keys);
@@ -894,7 +878,7 @@ mod test {
                 VirtualDevice::V1(VirtualDeviceV1::new("my_virtual_device", Hardware::default())),
             )
             .recommended_virtual_device("my_virtual_device")
-            .update_package(42, Some(ota_key_path))
+            .update_package(42)
             .repository(delivery_blob::DeliveryBlobType::Type1, tuf_keys)
             .gerrit_size_report(&size_report_path)
             .build(Box::new(tools), &product_bundle_path)

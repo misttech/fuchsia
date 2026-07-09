@@ -32,6 +32,10 @@ pub const MAX_MANIFEST_SIZE: usize = 10 * 1024 * 1024;
 /// Maximum allowed payload size for the `Signatures` portion (1 MiB).
 pub const MAX_SIGNATURE_SIZE: usize = 1024 * 1024;
 
+/// The default manifest key used to sign OTA manifests for development purposes.
+pub const MANIFEST_DEV_KEY_PEM: &[u8] =
+    include_bytes_from_working_dir::include_bytes_from_working_dir_env!("MANIFEST_DEV_KEY_PATH");
+
 trait U32Ext {
     fn get_usize(&self) -> usize;
 }

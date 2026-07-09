@@ -118,6 +118,7 @@ struct SanitizedCreateCommand {
     pub tuf_keys: Option<Utf8PathBuf>,
 
     /// path to the Ed25519 private key in PEM format to sign the ota manifest.
+    #[allow(dead_code)]
     pub ota_manifest_key: Option<Utf8PathBuf>,
 
     /// path to a file specifying developer-level overrides for assembly.
@@ -321,9 +322,8 @@ async fn sanitized_product_bundle_create(
         println!("{}", dest_path);
         return Ok(());
     }
-    let mut builder = ProductBundleBuilder::new(name.clone())
-        .system(system, Slot::A)
-        .update_package(1, cmd.ota_manifest_key);
+    let mut builder =
+        ProductBundleBuilder::new(name.clone()).system(system, Slot::A).update_package(1);
 
     if let Some(tuf_keys) = cmd.tuf_keys {
         builder = builder.repository(DeliveryBlobType::Type1, tuf_keys);

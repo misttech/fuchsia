@@ -47,7 +47,6 @@ fn get_all_blobs(
 pub fn write_ota_manifest(
     version: impl AsRef<str>,
     epoch: &EpochFile,
-    private_key_path: impl AsRef<std::path::Path>,
     delivery_blob_type: DeliveryBlobType,
     system_a: &Option<AssembledSystem>,
     system_r: &Option<AssembledSystem>,
@@ -189,9 +188,7 @@ pub fn write_ota_manifest(
             .with_context(|| format!("creating directory {}", parent.display()))?;
     }
 
-    let key_bytes = std::fs::read(&private_key_path)
-        .with_context(|| format!("reading private key {}", private_key_path.as_ref().display()))?;
-    let pem = pem::parse(key_bytes).context("parsing pem")?;
+    let pem = pem::parse(update_package::MANIFEST_DEV_KEY_PEM).context("parsing pem")?;
     let key_pair = ring::signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(&pem.contents())
         .map_err(|e| anyhow::anyhow!("parsing pkcs8: {e}"))?;
     let signed_manifest_bytes =
@@ -212,27 +209,20 @@ mod tests {
     };
     use pretty_assertions::assert_eq;
     use ring::signature::KeyPair as _;
-    use std::io::Write as _;
     use tempfile::NamedTempFile;
 
-    fn create_private_key() -> (NamedTempFile, ring::signature::UnparsedPublicKey<Vec<u8>>) {
-        let rng = ring::rand::SystemRandom::new();
-        let pkcs8_bytes = ring::signature::Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
-        let pem = pem::Pem::new("PRIVATE KEY", pkcs8_bytes.as_ref().to_vec());
-        let mut private_key_file = NamedTempFile::new().unwrap();
-        write!(private_key_file, "{}", pem::encode(&pem)).unwrap();
-        let key_pair = ring::signature::Ed25519KeyPair::from_pkcs8(pkcs8_bytes.as_ref()).unwrap();
-        let public_key = ring::signature::UnparsedPublicKey::new(
+    fn dev_public_key() -> ring::signature::UnparsedPublicKey<Vec<u8>> {
+        let pem = pem::parse(update_package::MANIFEST_DEV_KEY_PEM).unwrap();
+        let key_pair =
+            ring::signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(pem.contents()).unwrap();
+        ring::signature::UnparsedPublicKey::new(
             &ring::signature::ED25519,
             key_pair.public_key().as_ref().to_vec(),
-        );
-        (private_key_file, public_key)
+        )
     }
 
     #[test]
     fn build_ota_manifest() {
-        let (private_key_file, public_key) = create_private_key();
-
         let fake_zbi = NamedTempFile::new().unwrap();
         let fake_vbmeta = NamedTempFile::new().unwrap();
         let system_a = Some(AssembledSystem {
@@ -285,7 +275,6 @@ mod tests {
         write_ota_manifest(
             "1.2.3.4",
             &EpochFile::Version1 { epoch: 1 },
-            private_key_file.path(),
             DeliveryBlobType::Type1,
             &system_a,
             &None,
@@ -297,7 +286,7 @@ mod tests {
 
         let manifest_bytes = std::fs::read(manifest_file.path()).unwrap();
         let manifest =
-            update_package::signed_manifest::parse_and_verify(&manifest_bytes, &[public_key])
+            update_package::signed_manifest::parse_and_verify(&manifest_bytes, &[dev_public_key()])
                 .unwrap();
 
         assert_eq!(manifest.product_bundle_version, "1.2.3.4".parse().unwrap());
@@ -455,13 +444,10 @@ mod tests {
             .add_subpackage(subpackage_info)
             .build();
 
-        let (private_key_file, public_key) = create_private_key();
-
         let manifest_file = NamedTempFile::new().unwrap();
         write_ota_manifest(
             "1.2.3.4",
             &EpochFile::Version1 { epoch: 1 },
-            private_key_file.path(),
             DeliveryBlobType::Type1,
             &system_a,
             &system_r,
@@ -473,7 +459,7 @@ mod tests {
 
         let manifest_bytes = std::fs::read(manifest_file.path()).unwrap();
         let manifest =
-            update_package::signed_manifest::parse_and_verify(&manifest_bytes, &[public_key])
+            update_package::signed_manifest::parse_and_verify(&manifest_bytes, &[dev_public_key()])
                 .unwrap();
 
         assert_eq!(manifest.product_bundle_version, "1.2.3.4".parse().unwrap());
@@ -589,13 +575,10 @@ mod tests {
             ssh_key_upload_method: None,
         };
 
-        let (private_key_file, public_key) = create_private_key();
-
         let manifest_file = NamedTempFile::new().unwrap();
         write_ota_manifest(
             "1.2.3.4",
             &EpochFile::Version1 { epoch: 1 },
-            private_key_file.path(),
             DeliveryBlobType::Type1,
             &system_a,
             &system_r,
@@ -607,7 +590,7 @@ mod tests {
 
         let manifest_bytes = std::fs::read(manifest_file.path()).unwrap();
         let manifest =
-            update_package::signed_manifest::parse_and_verify(&manifest_bytes, &[public_key])
+            update_package::signed_manifest::parse_and_verify(&manifest_bytes, &[dev_public_key()])
                 .unwrap();
 
         assert_eq!(manifest.images.len(), 5);
@@ -665,13 +648,10 @@ mod tests {
             ssh_key_upload_method: None,
         };
 
-        let (private_key_file, public_key) = create_private_key();
-
         let manifest_file = NamedTempFile::new().unwrap();
         write_ota_manifest(
             "1.2.3.4",
             &EpochFile::Version1 { epoch: 1 },
-            private_key_file.path(),
             DeliveryBlobType::Type1,
             &system_a,
             &system_r,
@@ -683,7 +663,7 @@ mod tests {
 
         let manifest_bytes = std::fs::read(manifest_file.path()).unwrap();
         let manifest =
-            update_package::signed_manifest::parse_and_verify(&manifest_bytes, &[public_key])
+            update_package::signed_manifest::parse_and_verify(&manifest_bytes, &[dev_public_key()])
                 .unwrap();
 
         // Bootloader image should have de-duped so there's only one.
