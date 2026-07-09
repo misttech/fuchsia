@@ -13,13 +13,17 @@ use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
 use crate::att::pdu::{
     DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp, FindByTypeValueReq,
     FindInformationReq, FindInformationRspHeader, HandlesInformation, Header, InformationData,
-    InformationData16, InformationData128, Opcode, Packet, PacketBuilder, ReadBlobReq,
-    ReadByGroupTypeReq, ReadByGroupTypeRspEntryHeader, ReadByTypeReq, ReadReq, UuidFormat,
-    WriteCmd, WriteReq, WriteRsp,
+    InformationData16, InformationData128, Opcode, Packet, PacketBuilder, PrepareWriteReq,
+    ReadBlobReq, ReadByGroupTypeReq, ReadByGroupTypeRspEntryHeader, ReadByTypeReq, ReadReq,
+    UuidFormat, WriteCmd, WriteReq, WriteRsp,
 };
 use core::cmp::{max, min};
 use core::convert::Infallible;
+use core::marker::PhantomData;
 use core::mem::{MaybeUninit, size_of};
+use core::ptr::NonNull;
+use sapphire_collections::storage::StorageFamily;
+use sapphire_collections::vec::Vec;
 use sapphire_peer_cache::PeerId;
 use sapphire_uuid::Uuid;
 use thiserror::Error;
@@ -77,20 +81,146 @@ impl RangeRequest for ReadByGroupTypeReq {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrepareError {
+    QueueFull,
+    PayloadTooLarge,
+}
+
+/// A queue for buffering ATT Prepare Write request payloads.
+///
+/// Under the hood, this stores queued requests contiguously inside a single `Vec`
+/// using length-prefix serialization. This is generic over a `StorageFamily` to
+/// allow using either stack-allocated or heap-allocated memory backings.
+pub struct PrepareQueue<S: StorageFamily> {
+    buffer: Vec<u8, S>,
+}
+
+impl<S: StorageFamily> Default for PrepareQueue<S>
+where
+    Vec<u8, S>: Default,
+{
+    fn default() -> Self {
+        Self { buffer: Default::default() }
+    }
+}
+
+impl<S: StorageFamily> PrepareQueue<S> {
+    pub fn new() -> Self
+    where
+        Self: Default,
+    {
+        Self::default()
+    }
+
+    /// Creates a new `PrepareQueue` using the provided storage allocator.
+    pub fn new_in(alloc: S::Storage<u8>) -> Self {
+        Self { buffer: Vec::new_in(alloc) }
+    }
+
+    /// Attempts to serialize and push a Prepare Write request.
+    pub fn try_push(&mut self, req: &PrepareWriteReq) -> Result<(), PrepareError> {
+        let payload = req.as_bytes();
+        let initial_len = self.buffer.len();
+
+        let len = u16::try_from(payload.len()).map_err(|_| PrepareError::PayloadTooLarge)?;
+        if self.buffer.try_extend(&len.to_ne_bytes()).is_err()
+            || self.buffer.try_extend(payload).is_err()
+        {
+            self.buffer.truncate(initial_len);
+            return Err(PrepareError::QueueFull);
+        }
+        Ok(())
+    }
+
+    /// Clears all queued requests.
+    pub fn clear(&mut self) {
+        self.buffer.clear();
+    }
+
+    /// Returns a draining iterator over the queued write requests.
+    ///
+    /// The queue is automatically cleared when the iterator is dropped.
+    pub fn drain<'a>(&'a mut self) -> PrepareQueueDrain<'a, S> {
+        let queue = NonNull::from(&mut *self);
+        let slice = &self.buffer[..];
+        PrepareQueueDrain { slice, cursor: 0, queue, _marker: PhantomData }
+    }
+}
+
+/// A draining iterator over the queued write requests in `PrepareQueue`.
+pub struct PrepareQueueDrain<'a, S: StorageFamily> {
+    slice: &'a [u8],
+    cursor: usize,
+    queue: NonNull<PrepareQueue<S>>,
+    // Conceptually borrows the `PrepareQueue` mutably for `'a` to ensure the borrow checker
+    // locks the queue exclusively and the drop checker prevents drop-before-use bugs.
+    _marker: PhantomData<&'a mut PrepareQueue<S>>,
+}
+
+impl<'a, S: StorageFamily> Iterator for PrepareQueueDrain<'a, S> {
+    type Item = &'a PrepareWriteReq;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let buffer_len = self.slice.len();
+        if self.cursor == buffer_len {
+            return None;
+        }
+        if self.cursor > buffer_len {
+            panic!("PrepareQueue cursor {} exceeded buffer length {}", self.cursor, buffer_len);
+        }
+
+        const LENGTH_PREFIX_SIZE: usize = size_of::<u16>();
+        let start = self.cursor;
+        if start + LENGTH_PREFIX_SIZE > buffer_len {
+            panic!("PrepareQueue truncated length prefix at offset {}", start);
+        }
+        let len_bytes = &self.slice[start..start + LENGTH_PREFIX_SIZE];
+        let len = u16::from_ne_bytes([len_bytes[0], len_bytes[1]]) as usize;
+
+        let req_start = start + LENGTH_PREFIX_SIZE;
+        let req_end = req_start + len;
+        if req_end > buffer_len {
+            panic!("PrepareQueue truncated request payload at offset {}", req_start);
+        }
+
+        self.cursor = req_end;
+        let raw_req = &self.slice[req_start..req_end];
+        let req = PrepareWriteReq::try_ref_from_bytes(raw_req)
+            .expect("PrepareQueue element is not a valid PrepareWriteReq");
+        Some(req)
+    }
+}
+
+impl<'a, S: StorageFamily> Drop for PrepareQueueDrain<'a, S> {
+    fn drop(&mut self) {
+        // SAFETY: The lifetime 'a of the mutable borrow of the queue ensures
+        // that the raw pointer is valid and exclusive.
+        unsafe {
+            self.queue.as_mut().clear();
+        }
+    }
+}
+
 /// The ATT Server protocol wrapper.
-pub struct Server<Tx, Rx, DB> {
+pub struct Server<Tx, Rx, DB, S>
+where
+    S: StorageFamily,
+{
     peer_id: PeerId,
     bearer_tx: BearerTx<Tx>,
     bearer_rx: BearerRx<Rx>,
     server_rx_mtu: u16,
     database: DB,
+    prepare_storage: PrepareQueue<S>,
 }
 
-impl<Tx, Rx, DB> Server<Tx, Rx, DB>
+impl<Tx, Rx, DB, S> Server<Tx, Rx, DB, S>
 where
     Tx: L2CapChannelTx,
     Rx: L2CapChannelRx,
     DB: Database,
+    S: StorageFamily,
 {
     /// Creates a new ATT Server instance.
     pub fn new(
@@ -99,6 +229,7 @@ where
         bearer_rx: BearerRx<Rx>,
         server_rx_mtu: u16,
         database: DB,
+        prepare_storage: PrepareQueue<S>,
     ) -> Self {
         assert!(
             usize::from(server_rx_mtu) <= MAX_SUPPORTED_MTU,
@@ -106,7 +237,7 @@ where
             server_rx_mtu,
             MAX_SUPPORTED_MTU
         );
-        Self { peer_id, bearer_tx, bearer_rx, server_rx_mtu, database }
+        Self { peer_id, bearer_tx, bearer_rx, server_rx_mtu, database, prepare_storage }
     }
 
     /// Runs the server receive loop, processing inbound requests sequentially
@@ -171,6 +302,7 @@ where
             Opcode::ReadByGroupTypeReq => self.handle_read_by_group_type(&rx_packet.data).await,
             Opcode::WriteReq => self.handle_write_req(&rx_packet.data).await,
             Opcode::WriteCmd => self.handle_write_cmd(&rx_packet.data).await,
+            Opcode::PrepareWriteReq => self.handle_prepare_write(&rx_packet.data).await,
             other => Err(TransactionError::UnexpectedPdu { received_opcode: other }),
         };
 
@@ -721,6 +853,70 @@ where
         Ok(())
     }
 
+    /// Handles a Prepare Write Request.
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.1).
+    async fn handle_prepare_write(&mut self, payload: &[u8]) -> Result<(), TransactionError> {
+        let req = PrepareWriteReq::try_ref_from_bytes(payload).map_err(|_| {
+            TransactionError::InvalidPdu { request_opcode: Opcode::PrepareWriteReq }
+        })?;
+
+        let handle_val = req.header.attribute_handle.get();
+        let handle = to_handle(handle_val, Opcode::PrepareWriteReq)?;
+        let offset = req.header.value_offset.get();
+
+        let attr = self.database.find_attribute(handle).ok_or_else(|| {
+            TransactionError::ErrorResponse {
+                request_opcode: Opcode::PrepareWriteReq,
+                attribute_handle: handle_val,
+                error_code: ErrorCode::InvalidHandle,
+            }
+        })?;
+
+        // Validate offset. If offset > attribute value length, return InvalidOffset.
+        attr.read_chunk(self.peer_id, offset, &mut []).await.map_err(|error_code| {
+            TransactionError::ErrorResponse {
+                request_opcode: Opcode::PrepareWriteReq,
+                attribute_handle: handle_val,
+                error_code,
+            }
+        })?;
+
+        // Enforce maximum BT Spec attribute value length (512 bytes)
+        if usize::from(offset) + req.part_attribute_value.len() > MAX_ATTRIBUTE_SIZE {
+            return Err(TransactionError::ErrorResponse {
+                request_opcode: Opcode::PrepareWriteReq,
+                attribute_handle: handle_val,
+                error_code: ErrorCode::InvalidAttributeValueLength,
+            });
+        }
+
+        self.prepare_storage.try_push(req).map_err(|error| match error {
+            PrepareError::QueueFull => TransactionError::ErrorResponse {
+                request_opcode: Opcode::PrepareWriteReq,
+                attribute_handle: handle_val,
+                error_code: ErrorCode::PrepareQueueFull,
+            },
+            PrepareError::PayloadTooLarge => TransactionError::ErrorResponse {
+                request_opcode: Opcode::PrepareWriteReq,
+                attribute_handle: handle_val,
+                error_code: ErrorCode::InvalidAttributeValueLength,
+            },
+        })?;
+
+        let header = PacketBuilder {
+            header: Header { opcode: Opcode::PrepareWriteRsp },
+            payload: req.header,
+        };
+        let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
+        let mut builder =
+            DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header, self.effective_mtu());
+        builder.extend_from_slice(&req.part_attribute_value).unwrap();
+
+        self.send_packet(builder.as_packet()).await?;
+        Ok(())
+    }
+
     /// Helper to read an attribute value at an offset and cap it to a maximum buffer size.
     async fn read_attribute_at(
         &self,
@@ -813,12 +1009,14 @@ mod tests {
     use crate::att::database::testing::MockDb;
     use crate::att::l2cap::mock::setup_mock_channel;
     use crate::att::pdu::{
-        FindByTypeValueReqHeader, FindInformationRsp, InformationData16, ReadByGroupTypeReqHeader,
-        ReadByTypeReqHeader, WriteCmdHeader, WriteReqHeader,
+        FindByTypeValueReqHeader, FindInformationRsp, InformationData16, PrepareWriteHeader,
+        PrepareWriteRsp, ReadByGroupTypeReqHeader, ReadByTypeReqHeader, WriteCmdHeader,
+        WriteReqHeader,
     };
 
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
+    use sapphire_collections::storage::ArrayStorage;
     use sapphire_uuid::Uuid;
     use zerocopy::{IntoBytes, TryFromBytes};
 
@@ -829,13 +1027,36 @@ mod tests {
     const CLIENT_PREFERRED_MTU: u16 = 512;
     const SERVER_MTU: u16 = 256;
     const TEST_RX_BUF_SIZE: usize = 64;
+    const TEST_ARENA_SIZE: usize = 1024;
+
+    fn new_server<Tx, Rx, DB>(
+        peer_id: PeerId,
+        bearer_tx: BearerTx<Tx>,
+        bearer_rx: BearerRx<Rx>,
+        server_rx_mtu: u16,
+        database: DB,
+    ) -> Server<Tx, Rx, DB, ArrayStorage<TEST_ARENA_SIZE>>
+    where
+        Tx: L2CapChannelTx,
+        Rx: L2CapChannelRx,
+        DB: Database,
+    {
+        Server {
+            peer_id,
+            bearer_tx,
+            bearer_rx,
+            server_rx_mtu,
+            database,
+            prepare_storage: PrepareQueue::new(),
+        }
+    }
 
     #[test]
     fn test_server_handle_mtu_exchange_success() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
             let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -884,7 +1105,7 @@ mod tests {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
             let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -944,7 +1165,7 @@ mod tests {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
             let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -987,7 +1208,7 @@ mod tests {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
             let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -1043,7 +1264,7 @@ mod tests {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
             let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -1083,7 +1304,7 @@ mod tests {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
             let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -1133,7 +1354,7 @@ mod tests {
             db.insert(h(1), name_attr);
             db.insert(h(2), custom_attr);
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -1212,7 +1433,7 @@ mod tests {
             let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone"); // handle 1
             db.insert(h(1), name_attr);
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -1302,7 +1523,7 @@ mod tests {
             db.insert(h(1), svc_attr);
             db.insert(h(6), svc_attr2);
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -1362,7 +1583,7 @@ mod tests {
             let svc_attr = MockAttribute::new_grouped(Uuid::from_u16(0x2800), &[0x0D, 0x18], 5);
             db.insert(h(1), svc_attr);
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -1420,7 +1641,7 @@ mod tests {
             let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone");
             db.insert(h(1), name_attr);
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -1467,7 +1688,7 @@ mod tests {
             let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone");
             db.insert(h(1), name_attr);
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -1516,7 +1737,7 @@ mod tests {
             let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone");
             db.insert(h(1), name_attr);
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -1568,7 +1789,7 @@ mod tests {
             db.insert(h(1), name_attr);
 
             // Set server MTU to 23 bytes
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -1615,7 +1836,7 @@ mod tests {
             let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone");
             db.insert(h(1), name_attr);
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -1665,7 +1886,7 @@ mod tests {
             let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone");
             db.insert(h(1), name_attr);
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -1720,7 +1941,7 @@ mod tests {
             db.insert(h(1), name_attr);
 
             // Set server MTU to 23 bytes
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -1773,7 +1994,7 @@ mod tests {
             db.insert(h(4), MockAttribute::new(Uuid::from_u16(0x2A00), b"Sapphire"));
             db.insert(h(6), MockAttribute::new(Uuid::from_u16(0x2A00), b"Gatt")); // different length!
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -1843,7 +2064,7 @@ mod tests {
             let mut db = MockDb::new();
             db.insert(h(2), MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone"));
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -1925,7 +2146,7 @@ mod tests {
             db.insert(h(2), MockAttribute::new_grouped(Uuid::from_u16(0x2800), b"Service1", 5));
             db.insert(h(6), MockAttribute::new_grouped(Uuid::from_u16(0x2800), b"Service2", 10));
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -2013,7 +2234,7 @@ mod tests {
             // Match but non-grouping type! (returns None for group_end_handle)
             db.insert(h(2), MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone"));
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -2073,7 +2294,7 @@ mod tests {
             // Attribute 2 has value of length 11 (different!)
             db.insert(h(6), MockAttribute::new_grouped(Uuid::from_u16(0x2800), b"ServiceLong", 10));
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -2156,7 +2377,7 @@ mod tests {
             let attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue");
             db.insert(h(10), attr);
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -2220,7 +2441,7 @@ mod tests {
             attr.set_write_error(ErrorCode::WriteNotPermitted);
             db.insert(h(10), attr);
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(test_tx),
                 BearerRx::new(test_rx),
@@ -2276,7 +2497,7 @@ mod tests {
             let mut db = MockDb::new();
             db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue"));
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(server_tx),
                 BearerRx::new(server_rx),
@@ -2336,7 +2557,7 @@ mod tests {
             readonly_attr.set_write_error(ErrorCode::WriteNotPermitted);
             db.insert(h(10), readonly_attr);
 
-            let mut server = Server::new(
+            let mut server = new_server(
                 PeerId::new(1).unwrap(),
                 BearerTx::new(server_tx),
                 BearerRx::new(server_rx),
@@ -2393,6 +2614,182 @@ mod tests {
             let server_handle = executor.spawn(async move {
                 let res = server.run().await;
                 assert_eq!(res, Err(ServerError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_prepare_write_success() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let mut db = MockDb::new();
+            db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue"));
+
+            let mut server = new_server(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            let client_handle = executor.spawn(async move {
+                let mut app_tx_bearer = BearerTx::new(app_channel.sender);
+                let mut app_rx_bearer = BearerRx::new(app_channel.receiver);
+
+                // Send PrepareWriteReq
+                let mut tx_buf = [0u8; 128];
+                let mut builder = DynamicPacketBuilder::new(
+                    &mut tx_buf,
+                    PacketBuilder {
+                        header: Header { opcode: Opcode::PrepareWriteReq },
+                        payload: PrepareWriteHeader {
+                            attribute_handle: U16::new(10),
+                            value_offset: U16::new(0),
+                        },
+                    },
+                    128,
+                );
+                builder.extend_from_slice(b"Part1").unwrap();
+                app_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                // Read response
+                let mut rx_buf = [MaybeUninit::uninit(); 128];
+                let packet = app_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::PrepareWriteRsp);
+                let rsp = PrepareWriteRsp::try_ref_from_bytes(&packet.data).unwrap();
+                assert_eq!(rsp.header.attribute_handle.get(), 10);
+                assert_eq!(rsp.header.value_offset.get(), 0);
+                assert_eq!(rsp.part_attribute_value, *b"Part1");
+            });
+
+            let server_handle = executor.spawn(async move {
+                server.handle_request().await.unwrap();
+                let mut drain = server.prepare_storage.drain();
+                let req = drain.next().unwrap();
+                assert_eq!(req.header.attribute_handle.get(), 10);
+                assert_eq!(req.header.value_offset.get(), 0);
+                assert_eq!(req.part_attribute_value, *b"Part1");
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_prepare_write_invalid_offset() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let mut db = MockDb::new();
+            db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue")); // Length 12
+
+            let mut server = new_server(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            let client_handle = executor.spawn(async move {
+                let mut app_tx_bearer = BearerTx::new(app_channel.sender);
+                let mut app_rx_bearer = BearerRx::new(app_channel.receiver);
+
+                // Send PrepareWriteReq with invalid offset 13 (exceeds value length 12)
+                let mut tx_buf = [0u8; 128];
+                let mut builder = DynamicPacketBuilder::new(
+                    &mut tx_buf,
+                    PacketBuilder {
+                        header: Header { opcode: Opcode::PrepareWriteReq },
+                        payload: PrepareWriteHeader {
+                            attribute_handle: U16::new(10),
+                            value_offset: U16::new(13),
+                        },
+                    },
+                    128,
+                );
+                builder.extend_from_slice(b"Part1").unwrap();
+                app_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                // Read response (should be ErrorRsp with InvalidOffset)
+                let mut rx_buf = [MaybeUninit::uninit(); 128];
+                let packet = app_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                let rsp = ErrorRsp::try_read_from_bytes(&packet.data).unwrap();
+                assert_eq!(rsp.request_opcode, Opcode::PrepareWriteReq as u8);
+                assert_eq!(rsp.attribute_handle.get(), 10);
+                assert_eq!(rsp.error_code, ErrorCode::InvalidOffset);
+            });
+
+            let server_handle = executor.spawn(async move {
+                let _ = server.handle_request().await;
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_prepare_write_queue_full() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let mut db = MockDb::new();
+            db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue"));
+
+            let mut server = new_server(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            // Manually fill prepare_queue to max capacity
+            let header =
+                PrepareWriteHeader { attribute_handle: U16::new(10), value_offset: U16::new(0) };
+            let mut buf = [0u8; 4];
+            header.write_to(&mut buf).expect("buffer is exactly header size");
+            let req = PrepareWriteReq::try_ref_from_bytes(&buf).unwrap();
+            while server.prepare_storage.try_push(req).is_ok() {}
+
+            let client_handle = executor.spawn(async move {
+                let mut app_tx_bearer = BearerTx::new(app_channel.sender);
+                let mut app_rx_bearer = BearerRx::new(app_channel.receiver);
+
+                // Send another PrepareWriteReq
+                let mut tx_buf = [0u8; 128];
+                let mut builder = DynamicPacketBuilder::new(
+                    &mut tx_buf,
+                    PacketBuilder {
+                        header: Header { opcode: Opcode::PrepareWriteReq },
+                        payload: PrepareWriteHeader {
+                            attribute_handle: U16::new(10),
+                            value_offset: U16::new(0),
+                        },
+                    },
+                    128,
+                );
+                builder.extend_from_slice(b"Overflow").unwrap();
+                app_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                // Read response (should be ErrorRsp with PrepareQueueFull)
+                let mut rx_buf = [MaybeUninit::uninit(); 128];
+                let packet = app_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                let rsp = ErrorRsp::try_read_from_bytes(&packet.data).unwrap();
+                assert_eq!(rsp.error_code, ErrorCode::PrepareQueueFull);
+            });
+
+            let server_handle = executor.spawn(async move {
+                let _ = server.handle_request().await;
             });
 
             executor.run_until_stalled();

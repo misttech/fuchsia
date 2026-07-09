@@ -10,8 +10,8 @@ use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
 use crate::att::pdu::{
     DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp,
     FindByTypeValueReqHeader, FindInformationReq, FindInformationRsp, HandlesInformation, Header,
-    InformationData16, InformationData128, Opcode, Packet, PacketBuilder, ReadBlobReq,
-    ReadByGroupTypeReqHeader, ReadByGroupTypeRsp, ReadByGroupTypeRspEntryHeader,
+    InformationData16, InformationData128, Opcode, Packet, PacketBuilder, PrepareWriteHeader,
+    ReadBlobReq, ReadByGroupTypeReqHeader, ReadByGroupTypeRsp, ReadByGroupTypeRspEntryHeader,
     ReadByTypeReqHeader, ReadByTypeRsp, ReadReq, UuidFormat, WriteCmdHeader, WriteReqHeader,
 };
 use core::cmp::{max, min};
@@ -611,6 +611,42 @@ where
         self.send_packet(tx_packet).await?;
         Ok(())
     }
+
+    /// Initiates a Prepare Write procedure to write a part of an attribute value.
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.1).
+    pub async fn prepare_write<'a>(
+        &mut self,
+        attribute_handle: AttributeHandle,
+        value_offset: u16,
+        part_attribute_value: &[u8],
+        rx_buf: &'a mut [MaybeUninit<u8>],
+    ) -> Result<(), ClientError> {
+        let header_builder = PacketBuilder {
+            header: Header { opcode: Opcode::PrepareWriteReq },
+            payload: PrepareWriteHeader {
+                attribute_handle: U16::new(attribute_handle.value()),
+                value_offset: U16::new(value_offset),
+            },
+        };
+        let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
+        let mut builder =
+            DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header_builder, self.effective_mtu());
+        builder
+            .extend_from_slice(part_attribute_value)
+            .expect("Programming error: request packet size exceeds negotiated MTU.");
+        let tx_packet = builder.as_packet();
+
+        let rx_packet = self
+            .transaction(Opcode::PrepareWriteReq, tx_packet, rx_buf, Opcode::PrepareWriteRsp)
+            .await?;
+
+        if rx_packet.data != tx_packet.data {
+            return Err(ClientError::InvalidIncomingData);
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -618,8 +654,8 @@ mod tests {
     use super::*;
     use crate::att::l2cap::mock::setup_mock_channel;
     use crate::att::pdu::{
-        DynamicPacketBuilder, FindByTypeValueReq, FindInformationRspHeader, WriteCmd, WriteReq,
-        WriteRsp,
+        DynamicPacketBuilder, FindByTypeValueReq, FindInformationRspHeader, PrepareWriteHeader,
+        PrepareWriteReq, WriteCmd, WriteReq, WriteRsp,
     };
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
@@ -1567,6 +1603,143 @@ mod tests {
             });
 
             executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_prepare_write_success() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            let server_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 128];
+                let mut server_rx = BearerRx::new(test_rx);
+                let mut server_tx = BearerTx::new(test_tx);
+
+                // Receive PrepareWriteReq
+                let packet = server_rx.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::PrepareWriteReq);
+                let req = PrepareWriteReq::try_ref_from_bytes(&packet.data).unwrap();
+                assert_eq!(req.header.attribute_handle.get(), 10);
+                assert_eq!(req.header.value_offset.get(), 0);
+                assert_eq!(req.part_attribute_value, *b"Part1");
+
+                // Echo back PrepareWriteRsp
+                let response_header = PacketBuilder {
+                    header: Header { opcode: Opcode::PrepareWriteRsp },
+                    payload: req.header,
+                };
+                let mut tx_buf = [0u8; 128];
+                let mut builder =
+                    DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, response_header, 128);
+                builder.extend_from_slice(b"Part1").unwrap();
+                server_tx.send(builder.as_packet()).await.unwrap();
+            });
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 128];
+                client.prepare_write(h(10), 0, b"Part1", &mut rx_buf).await.unwrap();
+            });
+
+            executor.run_until_stalled();
+            assert!(server_handle.is_finished());
+            assert!(client_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_prepare_write_error() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            let server_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 128];
+                let mut server_rx = BearerRx::new(test_rx);
+                let mut server_tx = BearerTx::new(test_tx);
+
+                let _packet = server_rx.next_packet(&mut rx_buf).await.unwrap();
+
+                // Respond with ErrorRsp (InvalidOffset)
+                let err_builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ErrorRsp },
+                    payload: ErrorRsp {
+                        request_opcode: Opcode::PrepareWriteReq as u8,
+                        attribute_handle: U16::new(10),
+                        error_code: ErrorCode::InvalidOffset,
+                    },
+                };
+                server_tx.send(err_builder.as_packet()).await.unwrap();
+            });
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 128];
+                let result = client.prepare_write(h(10), 5, b"Part1", &mut rx_buf).await;
+                assert_eq!(
+                    result.err(),
+                    Some(ClientError::ErrorResponse(ErrorCode::InvalidOffset))
+                );
+            });
+
+            executor.run_until_stalled();
+            assert!(server_handle.is_finished());
+            assert!(client_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_prepare_write_invalid_echo() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            let server_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 128];
+                let mut server_rx = BearerRx::new(test_rx);
+                let mut server_tx = BearerTx::new(test_tx);
+
+                let _packet = server_rx.next_packet(&mut rx_buf).await.unwrap();
+
+                // Respond with mismatched echoed payload (mismatched offset 1 instead of 0)
+                let response_header = PacketBuilder {
+                    header: Header { opcode: Opcode::PrepareWriteRsp },
+                    payload: PrepareWriteHeader {
+                        attribute_handle: U16::new(10),
+                        value_offset: U16::new(1),
+                    },
+                };
+                let mut tx_buf = [0u8; 128];
+                let mut builder =
+                    DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, response_header, 128);
+                builder.extend_from_slice(b"Part1").unwrap();
+                server_tx.send(builder.as_packet()).await.unwrap();
+            });
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 128];
+                let result = client.prepare_write(h(10), 0, b"Part1", &mut rx_buf).await;
+                assert_eq!(result.err(), Some(ClientError::InvalidIncomingData));
+            });
+
+            executor.run_until_stalled();
+            assert!(server_handle.is_finished());
             assert!(client_handle.is_finished());
         });
     }
