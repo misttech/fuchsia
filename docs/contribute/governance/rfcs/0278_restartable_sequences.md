@@ -276,7 +276,7 @@ cache for efficiency.
 
 When the Zircon scheduler switches a CPU from one thread to another, the
 scheduler will check whether the new thread has a restartable sequence
-registered. If so, the the scheduler will raise the `THREAD_SIGNAL_CHECK_RSEQ`
+registered. If so, the scheduler will raise the `THREAD_SIGNAL_CHECK_RSEQ`
 signal on that thread.
 
 When the thread is processing its signals, if the `THREAD_SIGNAL_CHECK_RSEQ`

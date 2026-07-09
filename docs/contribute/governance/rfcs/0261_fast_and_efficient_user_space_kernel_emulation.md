@@ -91,7 +91,7 @@ for implementing a user space kernel on top of Zircon abstractions.
 With this architecture, each guest thread will be modeled by one Zircon thread
 and each guest process will be modeled by one Zircon process.  Each of the
 Zircon processes will have a region of their address space that's common to all.
-To a guest kernel developer, the shared region will make the the guest kernel
+To a guest kernel developer, the shared region will make the guest kernel
 look and feel more like a single multi-threaded program.
 
 ### Element 1: restricted mode
@@ -257,7 +257,7 @@ When the syscall instruction is executed, the CPU will first trap into kernel
 mode.  The usual syscall path in the kernel will test if the thread is in
 restricted mode.  If so, it will take an alternate path that involves saving the
 restricted general purpose register state and directly returning back to normal
-mode to an address passed in in the original syscall.  Normal mode must then
+mode to an address passed in the original syscall.  Normal mode must then
 recover its saved register state and then process the syscall.  Logically,
 control will pass from restricted mode to normal mode, however, it will actually
 bounce through kernel mode on each leg of the journey.  Here's an example:
@@ -349,7 +349,7 @@ mappings.  The addresses used for the guest code and data must be disjoint from
 the addresses used for the user mode supervisor's code and data.  Since the
 restricted region is in the "lower half" of user address space, Fuchsia runtimes
 used to implement the user mode supervisor must be flexible and not require any
-of their mappings to be in the the lower half.  To accomplish this, we had to
+of their mappings to be in the lower half.  To accomplish this, we had to
 make some changes to the Fuchsia process builder.  Sanitizers sometimes have
 additional requirements on location of mappings so future work may be required
 to support certain sanitizers.
@@ -742,7 +742,7 @@ threads in its process.  In other words, we may need to create a way for a
 debugger to query a suspended thread for its address space.
 
 Fuchsia process builder - Minor changes to the process builder are necessary
-since we've changed some some assumptions about which parts of a process's
+since we've changed some assumptions about which parts of a process's
 address space are accessible.  For example, the prototype process won't have a
 lower half.
 

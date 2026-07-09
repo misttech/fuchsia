@@ -140,7 +140,7 @@ Base ui components -> test ui stack component (base ui services)
 Test UI stack component -> test fixture component (base ui services, helper
 services)
 Test UI stack component -> test ui client (base ui services)
-Test UI client -> test fixture component (fuchisa.ui.app.ViewProvider)
+Test UI client -> test fixture component (fuchsia.ui.app.ViewProvider)
 Supporting components -> test UI client (supporting services)
 Local mocks -> test ui client (mocked services)
 ](resources/0180_test_ui_stack/test_ui_stack_topology.png)

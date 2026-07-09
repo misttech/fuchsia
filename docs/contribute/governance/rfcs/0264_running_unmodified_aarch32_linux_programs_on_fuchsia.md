@@ -589,7 +589,7 @@ build/toolchain/BUILD.gn:
 ```
 
 Since Fuchsia is not intended to be built or run on legacy ARM cores or in the
-AArch32 state, we do not not need to enable this support for Fuchsia-specific
+AArch32 state, we do not need to enable this support for Fuchsia-specific
 build target macros.
 
 There are likely a few other configurations, such as rust, which will need to be

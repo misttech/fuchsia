@@ -107,7 +107,7 @@ considering the compatibility of individual types exchanged between external
 components and platform components, both in protocols over channels and
 [serialized][fidl-at-rest] and exchanged out of band.
 
-All exchange of FIDL data between components is rooted in in one of:
+All exchange of FIDL data between components is rooted in one of:
 
  - FIDL protocols that are exchanged through [component
    framework][component-framework] protocol capabilities. These are marked with
@@ -256,7 +256,7 @@ Neither runtime inspection of the component graph, nor static evaluation of CML
 shards were clear. Instead we'll look at the manifests of external components
 for which protocol capabilities they use and offer.
 
-For standalone data-types we will look for calls the the various language
+For standalone data-types we will look for calls to the various language
 bindings' explicit serialization APIs and annotate the types that are used there
 appropriately.
 

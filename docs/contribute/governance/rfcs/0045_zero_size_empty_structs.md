@@ -159,7 +159,7 @@ If the struct later changes to become non-empty, the containing struct can
 emit the formerly empty struct member `options` in a source
 compatible way [^3].
 
-One reasonable operation that people may wish to to do is to take the
+One reasonable operation that people may wish to do is to take the
 address of an empty struct, i.e. `&(foo.options)`, which will no longer be
 possible with this change.
 We think this is an acceptable trade-off for consistent, cross-language

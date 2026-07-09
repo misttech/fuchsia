@@ -2922,7 +2922,7 @@
 
 - name: 'RFC-0224'
   title: 'Userspace J-Extension Pointer Masking'
-  short_description: 'Changes needed to accomodate the RISC-V pointer masking extension.'
+  short_description: 'Changes needed to accommodate the RISC-V pointer masking extension.'
   authors: ['leonardchan@google.com']
   file: '0224_userspace_pointer_masking.md'
   area: ['Kernel']
@@ -3117,7 +3117,7 @@
 
 - name: 'RFC-0239'
   title: 'Platform Versioning in Practice'
-  short_description: 'Conceptual model and guarantees for compatability on Fuchsia.'
+  short_description: 'Conceptual model and guarantees for compatibility on Fuchsia.'
   authors: ['hjfreyer@google.com']
   file: '0239_platform_versioning_in_practice.md'
   area: ['General', 'Governance']

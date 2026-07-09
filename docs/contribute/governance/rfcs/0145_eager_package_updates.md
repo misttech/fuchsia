@@ -73,7 +73,7 @@ package updates cannot _only_ come as part of a system update.
 
 #### Component Relationships
 
-Package owners must be able to to qualify the release of a
+Package owners must be able to qualify the release of a
 multiple-package group independently of the base system and push out an update
 for only the packages and components in that group.
 

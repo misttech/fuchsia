@@ -205,10 +205,10 @@ fx build
 
 ## Serve the protocol {#main}
 
-Now that you've defined code to handle incoming requests, you'll need listen for incoming
+Now that you've defined code to handle incoming requests, you'll need to listen for incoming
 connections to the Echo server. This is done by asking the
 [component manager][component-manager] to expose the Echo protocol to other components. The
-comopnent manager then routes any requests for the echo protocol to our server.
+component manager then routes any requests for the echo protocol to our server.
 
 To fulfill these requests, the component manager requires the name of the protocol
 as well as a handler that it should call when it has any incoming requests to

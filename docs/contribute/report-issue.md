@@ -18,7 +18,7 @@ types of changes:
 For proposing code changes that would affect Fuchsia significantly, see
 [Propose significant code changes](#significant-code-changes).
 
-As an open source contributor, you can file a issue with the
+As an open source contributor, you can file an issue with the
 following templates:
 
 <table>

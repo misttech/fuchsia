@@ -587,7 +587,7 @@ the `fx test` command with `zxdb`.
 
   It seems that the test's expectations are slightly incorrect. You only
   injected 2 mock processes, but the test was expecting 3. You can simply
-  update the test to expect the size of the `reply.processes` vector to be be
+  update the test to expect the size of the `reply.processes` vector to be
   2 instead of 3. You can now close zxdb with `quit` to then update and fix the
   tests:
 

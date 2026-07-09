@@ -120,7 +120,7 @@ method of the iterator instance itself. Testing an iterator for validity in this
 way is equivalent to testing `iter != container.end()`, however the `IsValid`
 approach may produce _slightly_ more efficient code, depending on how smart the
 compiler is and how much visibility it has into the implementation of the
-container's `end()` method..
+container's `end()` method.
 
 ## iterator::CopyPointer()
 

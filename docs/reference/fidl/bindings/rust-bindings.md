@@ -730,11 +730,11 @@ the [parameter type conversion rules](#request-response-event-parameters).
 #### Server-side
 
 When a protocol is declared as `open` or `ajar`, the generated [request
-enum](#request-enum) will will have an additional variant called
+enum](#request-enum) will have an additional variant called
 `_UnknownMethod` which has these fields:
 
 ```rust
-#[non_exhausitve]
+#[non_exhaustive]
 _UnknownMethod {
     /// Ordinal of the method that was called.
     ordinal: u64,
@@ -841,7 +841,7 @@ format][rfc-0120], the bindings offer a [persistence API](#persistence) and a
 
 ### Persistence {#persistence}
 
-The recommended way to to explicitly encode and decode is to use [`persist`] and
+The recommended way to explicitly encode and decode is to use [`persist`] and
 [`unpersist`]. This works for [non-resource][lang-resource] structs, tables, and
 unions.
 

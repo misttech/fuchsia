@@ -268,7 +268,7 @@ very similarly to `zx_vmap_map_vmo()`, only with some extra built in
 restrictions.  Notably:
 
 1) Only the `ZX_VM_PERM_READ` permission is allowed, all of the other
-   `ZX_VM_PERM` flags are are explicitly disallowed, regardless of the handle
+   `ZX_VM_PERM` flags are explicitly disallowed, regardless of the handle
    rights the user possesses.  Mapped clock data must always be read only.
 2) The `len` parameter passed to the syscall *must* match the value retrieved
    from the get-info call.

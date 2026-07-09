@@ -898,7 +898,7 @@ A lease is taken on (High Priority Feature, Active). This changes the steady sta
 </div>
 
 <div>
-<img src="resources/0250_power_topology/opportunistic-dependency-example-3.png" alt="This diagram shows the third of eight steps in a sequence demonstrating the behavior of an opportunistic dependency on a managed element. This diagram differs from the second step only in the the System Activity element changing its operating level from Low to High.">
+<img src="resources/0250_power_topology/opportunistic-dependency-example-3.png" alt="This diagram shows the third of eight steps in a sequence demonstrating the behavior of an opportunistic dependency on a managed element. This diagram differs from the second step only in the System Activity element changing its operating level from Low to High.">
 
 <br>
 System Activity is raised to High.

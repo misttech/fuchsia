@@ -4,7 +4,7 @@
 and [associative containers](associative_containers.md)
 
 Sequenced containers are containers where the enumeration order of elements is
-determined by by how a user specifically added and removed elements to and from
+determined by how a user specifically added and removed elements to and from
 the container. `fbl::` defines two types of sequenced containers.
 
 * `SinglyLinkedList` is a sequenced container that supports forward-only
@@ -45,7 +45,7 @@ transfer their reference to the container using `std::move`.
 ### Pushing elements into a sequenced container {#pushing-elements}
 
 The push methods behave as expected, adding a new element and making it the new
-front or or back element in the sequence (in other words, either the first or
+front or back element in the sequence (in other words, either the first or
 the last element in the enumeration order). For example:
 
 ```cpp

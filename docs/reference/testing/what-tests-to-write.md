@@ -94,7 +94,7 @@ The following scenarios are validated for the component under test:
 * It interacts as expected with its own dependencies
 * If the driver is made up of multiple components, check the components are behaving correctly inside the driver
 
-The recommendation is to to run integration tests hermetically (in isolation) using [Test Realm Factory](/docs/development/testing/components/test_realm_factory.md), but they can be run in non-hermetically if needed.
+The recommendation is to run integration tests hermetically (in isolation) using [Test Realm Factory](/docs/development/testing/components/test_realm_factory.md), but they can be run non-hermetically if needed.
 
 ### Hermetic Integration Tests
 

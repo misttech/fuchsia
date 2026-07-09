@@ -46,7 +46,7 @@ Discussed among the Zircon kernel/VM teams.
 
 As `zx_cache_flush` already exists and is implemented there is nothing new that
 needs to be built for this proposal. The proposal therefore is simply to remove
-support for the the following operations on physical VMOs, i.e. those created by
+support for the following operations on physical VMOs, i.e. those created by
 `zx_vmo_create_physical`:
 
  * `ZX_VMO_OP_CACHE_SYNC`

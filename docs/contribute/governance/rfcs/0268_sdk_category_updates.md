@@ -273,7 +273,7 @@ but may not be used by production code or prebuilt binaries in the SDK."_
   target Fuchsia device supporting API level(s) supported by the tools.
 - **ABI compatibility window:** APIs must be supported until the platform no
   longer supports communicating with host tools at any of the API levels at
-  which the the APIs are supported.
+  which the APIs are supported.
     - This is related to using host tools from _different_ releases to
       communicate with a given platform release.
     - NOTE: The set of API levels for which the platform provides this host tool

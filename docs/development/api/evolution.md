@@ -232,7 +232,7 @@ more closed protocol.
 
 One potential exception is for _tear-off protocols_, representing a transaction,
 where the only two-way method is a commit operation which must be strict while
-other operations on the transaction may evolve.. If a protocol is very small,
+other operations on the transaction may evolve. If a protocol is very small,
 unlikely to change, and expected to be implemented by clients, you can make it
 `closed` and all the methods `strict`. This will spare the client the trouble of
 deciding how to handle an "unknown interaction." The cost, however, is that

@@ -124,7 +124,7 @@ core/timekeeper:root:start_time_monotonic_nanos
 #### `--data`
 
 A repeatable argument specifying a tree selector. A single positional argument should be used with
-this flag. The positional argument must be be a fuzzy-search query, that will be converted to a
+this flag. The positional argument must be a fuzzy-search query, that will be converted to a
 moniker, and spliced onto the tree selectors to form complete diagnostics selectors.
 
 If this is specified, the output only contains monikers for components whose URL contains the
@@ -158,8 +158,8 @@ core/timekeeper:
 
 #### `--data`
 
-A repeatable argumrent specifying a tree selector. A single positional argument should be used
-with this flag. The positional argument must be be a fuzzy-search query, that will be converted to
+A repeatable argument specifying a tree selector. A single positional argument should be used
+with this flag. The positional argument must be a fuzzy-search query, that will be converted to
 a moniker, and spliced onto the tree selectors to form complete diagnostics selectors.
 
 

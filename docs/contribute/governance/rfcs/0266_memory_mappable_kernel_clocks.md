@@ -28,7 +28,7 @@ rate of the system's underlying reference clock hardware, and no attempts are
 made to rate match to any external reference.
 
 It is expected that Starnix's clients' usage of the Linux `CLOCK_MONOTONIC`
-clock will be high, and every effort needs to be be made to make any solution as
+clock will be high, and every effort needs to be made to make any solution as
 inexpensive as possible to query.  Complicating matters is the fact that
 Starnix's clients are required to operate in
 [restricted mode](/docs/contribute/governance/rfcs/0261_fast_and_efficient_user_space_kernel_emulation.md#element_1_restricted_mode),

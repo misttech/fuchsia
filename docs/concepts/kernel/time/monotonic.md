@@ -8,7 +8,7 @@ time spent in Suspend-To-Idle.
 Monotonic time is the most reliable time standard on Fuchsia and reading
 monotonic time is usually cheaper than reading UTC or local time. Monotonic time
 is always available and it always increases continuously and monotonically.
-Monotonic time ticks at a rate determined by the the underlying hardware
+Monotonic time ticks at a rate determined by the underlying hardware
 oscillator, and no attempts are made by Zircon to correct that rate against any
 external reference.
 

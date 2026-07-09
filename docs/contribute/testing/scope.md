@@ -10,7 +10,7 @@ called an integration test. Most tests can also be arranged in the
 
 A unit is arbitrarily defined from the test author’s perspective. For instance
 in object-oriented programming, a unit is typically a class. Throughout this
-document, and generally on Fuchsia, is is often mention ed that a unit under
+document, and generally on Fuchsia, it is often mentioned that a unit under
 test is a component unless otherwise stated.
 
 As you write tests for Fuchsia, you want to make sure that you are familiarized

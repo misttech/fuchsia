@@ -122,7 +122,7 @@ After the stepping stone build has been established:
 
 *   The server side package serving infrastructure will no longer guarantee type
     1 blobs are available to client devices for builds after the stepping stone.
-    The the step-by-step process of migrating the production builds through the
+    The step-by-step process of migrating the production builds through the
     stepping stone build is described in the section
     [Implementation](#implementation).
 

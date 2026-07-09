@@ -331,7 +331,7 @@ The error in the UTC clock is composed of three components:
    approaches a normal distribution as the filter accumulates a large number of
    samples, with a standard deviation that is determined by the covariance. This
    error bound includes a term of [twice the square root of covariance][3] in
-   the error bound to account for this error component. This this may either be
+   the error bound to account for this error component. This may either be
    optimistic or pessimistic for early time samples while the filter error is
    dominated by the unknown probability distribution received from the time
    source.

@@ -5,7 +5,7 @@ interfaces in order to automatically find defects, vulnerabilities, or both.
 
 In other words, fuzzing is simply an automated way of testing APIs with generated data.
 
-A fuzzer is a program that is used to fuzz a interface. It typically has three steps that it
+A fuzzer is a program that is used to fuzz an interface. It typically has three steps that it
 executes repeatedly:
 
 1. Generate a new input. This part of the fuzzer is referred to as the _fuzzing engine_.

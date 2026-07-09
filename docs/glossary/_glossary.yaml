@@ -2179,7 +2179,7 @@
   short_description: "A keyword for a component instance to consume a capability that was offered to it."
   full_description: "A <a href=\"/docs/glossary#component-instance\">component instance</a>
   may use the <code>use</code> <a href=\"/docs/glossary#component-manifest\">manifest</a>
-  keyword to to consume a capability that was <a href=\"/docs/glossary#offer\">offered</a>
+  keyword to consume a capability that was <a href=\"/docs/glossary#offer\">offered</a>
   to it by its parent."
   see_also: ["<a href=\"/docs/glossary#capability\">Capability</a>"]
   related_guides: [""]

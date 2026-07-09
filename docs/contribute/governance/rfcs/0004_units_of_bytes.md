@@ -96,7 +96,7 @@ CLs.
 ## Documentation
 
 Clear communication is the heart of this proposal. Documentation will be updated
-to conform this this RFC as non-conformance issues are found.
+to conform to this RFC as non-conformance issues are found.
 
 ### Guidelines
 

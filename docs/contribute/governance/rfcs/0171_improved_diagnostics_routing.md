@@ -319,7 +319,7 @@ _Cons_:
 ### Make `LogSink` and `InspectSink` framework capabilities
 
 Allow these protocols to be used `from: framework`. The Archivist can either expose these
-capabilities to to framework or there can be a contract between Archivist and Component Manager to
+capabilities to the framework or there can be a contract between Archivist and Component Manager to
 serve these capabilities.
 
 _Pros_:

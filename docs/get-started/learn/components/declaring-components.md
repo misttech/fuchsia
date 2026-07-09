@@ -71,7 +71,7 @@ Packages can contain multiple components, listed as `deps` in the
 containing only one component using the `fuchsia_package_with_single_component()`
 template.
 
-The following simplified `BUILD.gn` example is equivalent to to the previous
+The following simplified `BUILD.gn` example is equivalent to the previous
 example:
 
 ```gn

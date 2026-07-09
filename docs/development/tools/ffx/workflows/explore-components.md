@@ -270,7 +270,7 @@ namespace will match the component's namespace.
 
 This is not supported directly from the command interpreter.
 
-### How do I file a feature request for ffx component explore? {:#how-do-i-file-a-feature-request-for-ffx-compoent-explore}
+### How do I file a feature request for ffx component explore? {:#how-do-i-file-a-feature-request-for-ffx-component-explore}
 
 File all feature requests under the
 [`ComponentFramework > Tools`][cf-tools-buganizer]{:.external} Issue Tracker

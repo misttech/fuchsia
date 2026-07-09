@@ -1,7 +1,7 @@
 # FIDL internal library zx
 
-The `zx` library is is defined in [//zircon/vdso](/zircon/vdso), and can be
-depended on in-tree by adding the `//zircon/vdso/zx` target to a  `fidl`
+The `zx` library is defined in [//zircon/vdso](/zircon/vdso), and can be
+depended on in-tree by adding the `//zircon/vdso/zx` target to a `fidl`
 target's `public_deps`. If invoking `fidlc` directly, `zx_common.fidl` would
 need to be included with a `--files` argument if necessary.
 

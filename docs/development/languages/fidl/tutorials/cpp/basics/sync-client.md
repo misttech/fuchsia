@@ -57,7 +57,7 @@ defined in `//examples/fidl/cpp/client_sync/BUILD.gn`:
 
 1. The component is then put into a package, which is the unit of software
    distribution on Fuchsia. In this case, the package contains a client and
-   a server component, and [realm][glossary.realm] component to to declare the
+   a server component, and a [realm][glossary.realm] component to declare the
    appropriate capabilities and routes.
 
     ```gn

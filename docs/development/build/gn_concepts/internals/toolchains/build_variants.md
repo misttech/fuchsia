@@ -383,7 +383,7 @@ This is a scope with the following schema:
 
 - **`exclude_variant_tags`**: Used internally by the variant selection logic.
   Inherited from a `clang_toolchain_suite()` or `zircon_toolchain_suite()`
-  call, or directly from a target definition. It is is a list of tags used to
+  call, or directly from a target definition. It is a list of tags used to
   exclude variants to be applied to a base toolchain, or target, as is
   sometimes necessary.
 

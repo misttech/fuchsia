@@ -27,7 +27,7 @@ signaled.
 When the queue is non-empty Scenic looks at the first item on each client's
 presentation queue and selects the earliest requested presentation time. It uses
 that time along with vsync timing information from the display to determine when
-to wake up. Scenic tries to wake in time to to produce the next frame at a vsync
+to wake up. Scenic tries to wake in time to produce the next frame at a vsync
 as close as possible to, but no earlier than, the requested presentation time.
 Scenic then goes to sleep waiting for the calculated wake-up time.
 

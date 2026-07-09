@@ -131,7 +131,7 @@ across Fuchsia releases at the same ABI revision.
 
 Syntactically, a Fuchsia *ABI revision* is an unsigned, 64-bit integer. An ABI
 revision is an opaque identifier without internal structure. To create an
-identifier for a new ABI revision, select a unsigned, 64-bit integer at random
+identifier for a new ABI revision, select an unsigned, 64-bit integer at random
 among values that have never been used to identify a Fuchsia ABI revision
 before.
 

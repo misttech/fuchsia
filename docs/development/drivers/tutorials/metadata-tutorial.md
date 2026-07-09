@@ -55,7 +55,7 @@ class Sender : public fdf::DriverBase2 {
 FUCHSIA_DRIVER_EXPORT2(Sender);
 ```
 
-It's component manifest is the following:
+Its component manifest is the following:
 
 ```
 {
@@ -232,7 +232,7 @@ class Retriever : public fdf::DriverBase2 {
 FUCHSIA_DRIVER_EXPORT2(Retriever);
 ```
 
-It's component manifest is the following:
+Its component manifest is the following:
 
 ```
 {
@@ -356,7 +356,7 @@ class Forwarder : public fdf::DriverBase2 {
 FUCHSIA_DRIVER_EXPORT2(Forwarder);
 ```
 
-It's component manifest is the following:
+Its component manifest is the following:
 
 ```
 {

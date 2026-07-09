@@ -170,7 +170,7 @@ Now, we unplug this USB WLAN device.
     }
 ```
 
-* When it's children have been removed, the WLAN PHY's `unbind()` is called.
+* When its children have been removed, the WLAN PHY's `unbind()` is called.
   Once it completes unbinding, it would call `device_unbind_reply()`.
 
 ```c

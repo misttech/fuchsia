@@ -6,7 +6,7 @@ hardware, which happens well before userspace is initialized. Boot time is
 guaranteed to progress during periods of Suspend-To-Idle.
 
 Boot time is always available and guaranteed to be continuous and monotonic. It
-ticks at a rate determined by the the underlying hardware oscillator, and no
+ticks at a rate determined by the underlying hardware oscillator, and no
 attempts are made by Zircon to correct that rate against any external reference.
 
 Components may read boot time using [`zx_clock_get_boot`][clock-get-boot].

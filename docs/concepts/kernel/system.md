@@ -77,7 +77,7 @@ in prose in comments in the FIDL definitions.
 When run, components are given a [namespace][glossary.namespace] and serve an
 [outgoing directory][glossary.outgoing-directory].
 The names in the namespace and outgoing directory follow certain conventions,
-which are are part of the system ABI.
+which are part of the system ABI.
 
 #### Namespace
 

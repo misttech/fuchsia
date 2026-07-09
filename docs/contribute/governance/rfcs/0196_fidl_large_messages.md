@@ -183,7 +183,7 @@ buffer **MUST** be a VMO. This means that the number of accompanying handles on
 the control plane message **MUST** be at least one. The kernel object pointed to
 by that last handle **MUST** be a VMO, and the amount of bytes read out from
 that VMO by the receiver **MUST** be equal to the value of the `msg_byte_count`
-field of the `message_info` struct. If the message is known to be be bounded,
+field of the `message_info` struct. If the message is known to be bounded,
 this value **MUST** be less than or equal to the statically-deduced maximum size
 for the payload in question.
 
