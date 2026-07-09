@@ -8,6 +8,7 @@
 #include <lib/fit/result.h>
 
 #include <array>
+#include <bitset>
 #include <cassert>
 #include <concepts>
 #include <ranges>
@@ -128,8 +129,7 @@ class PerfectSymbolSet {
 
   template <size_t N>
   static consteval bool HashCollisions() {
-    // std::bitset is not constexpr until C++23.
-    std::array<bool, N> used = {};
+    std::bitset<N> used;
     for (const SymbolName& name : Names) {
       const size_t slot = name.gnu_hash() % N;
       if (used[slot]) {
@@ -217,7 +217,7 @@ template <const auto& Names, class ElfLayout = Elf<>, auto... SetArgs>
 class PerfectSymbolFilter : public PerfectSymbolMap<const typename ElfLayout::Sym*, Names> {
  public:
   using Elf = ElfLayout;
-  using Sym = typename Elf::Sym;
+  using Sym = Elf::Sym;
 
   // This takes a Module API object as described in <lib/elfldltl/resolve.h>
   // and uses it to look up each symbol in the set.  If the .Lookup() calls
