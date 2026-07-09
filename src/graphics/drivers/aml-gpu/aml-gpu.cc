@@ -363,6 +363,21 @@ zx::result<> AmlGpu::Start(fdf::DriverContext context) {
           fdf::error("Unsupported PID 0x{:x} for VID 0x{:x}", board_info.pid, board_info.vid);
           return zx::error(ZX_ERR_INVALID_ARGS);
       }
+    } else if (board_info.vid == PDEV_VID_GOOGLE) {
+      switch (board_info.pid) {
+        case PDEV_PID_ASTRO:
+          info.pid = PDEV_PID_AMLOGIC_S905D2;
+          break;
+        case PDEV_PID_SHERLOCK:
+          info.pid = PDEV_PID_AMLOGIC_T931;
+          break;
+        case PDEV_PID_NELSON:
+          info.pid = PDEV_PID_AMLOGIC_S905D3;
+          break;
+        default:
+          fdf::error("Unsupported PID 0x{:x} for VID 0x{:x}", board_info.pid, board_info.vid);
+          return zx::error(ZX_ERR_INVALID_ARGS);
+      }
     } else {
       fdf::error("Unsupported VID 0x{:x}", board_info.vid);
       return zx::error(ZX_ERR_INVALID_ARGS);
