@@ -157,10 +157,26 @@ config("lto-whole-program-devirtualization") {
 # https://doc.rust-lang.org/rustc/codegen-options/index.html#linker-plugin-lto
 # for details.
 config("lto-rust-linker-plugin") {
-  rustflags = [
-    "-Clinker-plugin-lto",
-    "-Zsplit-lto-unit",
-  ]
+  if (is_kernel || is_host) {
+    # TODO(https://fxbug.dev/529449843): `-Clinker-plugin-lto` forces rust to just emit LLVM
+    # bitcode and punt LTO to the linker. During the link, LTO can eliminate
+    # dead code which could contain references to symbols defined in a normal
+    # rlib that would be linked with this bitcode. If we're building a shared
+    # library, this can result in symbols which should be exported in the shared
+    # library from not being defined in the shared lib because there's nothing
+    # which would extract them from the rlib. This only occurs when LLD drives
+    # LTO. When rustc drives LTO, it creates a list of symbols that LTO should
+    # never omit which allows these symbols to make it to the final lib.
+    # Ideally, this would be fixed upstream, and ideally the quick workaround
+    # would be to gate this flag on `current_toolchain != shlib_toolchain`, but
+    # all rust targets which would use the shared library toolchain actually use
+    # the non-shared normal toolchain. As a backup workaround, we only limit
+    # this flag to the kernel since this would break rust shared lib targets.
+    rustflags = [
+      "-Zsplit-lto-unit",
+      "-Clinker-plugin-lto",
+    ]
+  }
 }
 
 config("lto-rust") {
@@ -261,6 +277,7 @@ compiler_config("thinlto-rust") {
   }
 
   configs = [
+    ":lto-rust-linker-plugin",
     ":lto-workarounds",
 
     # As thin lto is multi-threaded, use the larger RBE workers
