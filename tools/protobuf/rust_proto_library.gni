@@ -109,6 +109,9 @@ template("rust_proto_library") {
       prost_build_label,
       protoc_label,
     ]
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
     sources = invoker.sources
     outputs = [ "${target_crate_root}/lib.rs" ] + expected_outputs
     depfile = "$target_gen_dir/$target_name.d"
