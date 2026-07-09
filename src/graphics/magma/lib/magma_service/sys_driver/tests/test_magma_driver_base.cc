@@ -204,6 +204,5 @@ TEST_F(MagmaDriverStarted, DependencyInjection) {
 
 }  // namespace msd
 
-// Export the |FakeTestDriver| for the |fdf_testing::internal::DriverUnderTest<FakeTestDriver>| to
-// use.
+// Export the |FakeTestDriver| for the test to use.
 FUCHSIA_DRIVER_EXPORT2(msd::FakeTestDriver);

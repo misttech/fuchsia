@@ -267,8 +267,6 @@ class TestConfig final {
   using EnvironmentType = TestEnvironment;
 };
 
-// WARNING: Don't use this test as a template for new tests as it uses the old driver testing
-// library.
 class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
  public:
   SdmmcBlockDeviceTest() {}

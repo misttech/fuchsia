@@ -113,8 +113,6 @@ class TiTca6408aTestConfig {
   using EnvironmentType = Environment;
 };
 
-// WARNING: Don't use this test as a template for new tests as it uses the old driver testing
-// library.
 class TiTca6408aTest : public testing::Test {
  public:
   void SetUp() override {

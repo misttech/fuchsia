@@ -27,8 +27,6 @@ namespace sysmem_service {
 
 namespace {
 
-// WARNING: Don't use this test as a template for new tests as it uses the old driver testing
-// library.
 class FakeDdkSysmem : public ::testing::Test {
  public:
   FakeDdkSysmem() : loop_(&kAsyncLoopConfigNeverAttachToThread) {}
