@@ -95,8 +95,11 @@ int main(int argc, const char** argv) {
       const char* role =
           input_noncritical ? "fuchsia.scenic.input.noncritical" : "fuchsia.scenic.input";
       const zx_status_t role_status = fuchsia_scheduler::SetRoleForThisThread(role);
-      if (role_status != ZX_OK) {
-        FX_LOGS(WARNING) << "Failed to apply profile to input thread: " << role_status;
+      if (role_status == ZX_OK) {
+        FX_LOGS(INFO) << "Applied profile " << role << " to input thread";
+      } else {
+        FX_LOGS(WARNING) << "Failed to apply profile " << role
+                         << " to input thread: " << role_status;
       }
     });
 
