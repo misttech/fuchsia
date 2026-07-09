@@ -1406,62 +1406,61 @@ mod tests {
         }).await;
     }
 
-    #[test]
-    fn container_power_controller_drop_wake_lock() {
-        let mut exec = fasync::TestExecutor::new();
-        #[allow(deprecated, reason = "pre-existing usage")]
-        let (kernel, _init_task) = starnix_core::testing::create_kernel_and_task();
+    #[::fuchsia::test]
+    async fn container_power_controller_drop_wake_lock() {
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel().clone();
 
-        let (power_controller, power_controller_server_end) = fidl::endpoints::create_proxy();
-        let counter = zx::Counter::create();
-        let message_counter = OwnedMessageCounter::new(
-            "test",
-            Some(counter.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed handle dup")),
-        );
-        // Simulate the proxy incrementing the message counter.
-        counter.add(1).expect("Failed to add to counter");
+            let (power_controller, power_controller_server_end) = fidl::endpoints::create_proxy();
+            let counter = zx::Counter::create();
+            let message_counter = OwnedMessageCounter::new(
+                "test",
+                Some(counter.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed handle dup")),
+            );
+            // Simulate the proxy incrementing the message counter.
+            counter.add(1).expect("Failed to add to counter");
 
-        let kernel_clone = kernel.clone();
-        let _server_task = fasync::Task::local(async move {
-            let result =
-                RemoteBinderHandle::<TestRemoteControllerConnector>::serve_container_power_controller(
-                    power_controller_server_end,
-                    message_counter,
-                    kernel_clone,
-                    "test"
-                ).await;
-            assert_matches::assert_matches!(result, Ok(_));
-        });
+            let kernel_clone = kernel.clone();
+            let _server_task = fasync::Task::local(async move {
+                let result =
+                    RemoteBinderHandle::<TestRemoteControllerConnector>::serve_container_power_controller(
+                        power_controller_server_end,
+                        message_counter,
+                        kernel_clone,
+                        "test"
+                    ).await;
+                assert_matches::assert_matches!(result, Ok(_));
+            });
 
-        let (wake_lock, wake_lock_remote) = zx::EventPair::create();
-        power_controller
-            .wake(fbinder::ContainerPowerControllerWakeRequest {
-                wake_lock: Some(wake_lock_remote),
-                ..Default::default()
-            })
-            .unwrap();
-        exec.run_singlethreaded(wait_for_message(&counter));
+            let (wake_lock, wake_lock_remote) = zx::EventPair::create();
+            power_controller
+                .wake(fbinder::ContainerPowerControllerWakeRequest {
+                    wake_lock: Some(wake_lock_remote),
+                    ..Default::default()
+                })
+                .unwrap();
+            wait_for_message(&counter).await;
 
-        // Check that the wake lock event pair has been signalled to indicate the wake lock being
-        // acquired.
-        exec.run_singlethreaded(fasync::OnSignals::new(&wake_lock, WAKE_LOCK_ACQUIRED_SIGNAL))
-            .unwrap();
+            // Check that the wake lock event pair has been signalled to indicate the wake lock being
+            // acquired.
+            fasync::OnSignals::new(&wake_lock, WAKE_LOCK_ACQUIRED_SIGNAL).await.unwrap();
 
-        // Check that we already have the lock.
-        assert!(
-            !kernel
+            // Check that we already have the lock.
+            assert!(
+                !kernel
+                    .suspend_resume_manager
+                    .activate_wakeup_source(WakeupSourceOrigin::HAL("test".to_string()))
+            );
+
+            // Drop our lock, and wait for the lock to be released by the background task.
+            drop(wake_lock);
+
+            while !kernel
                 .suspend_resume_manager
                 .activate_wakeup_source(WakeupSourceOrigin::HAL("test".to_string()))
-        );
-
-        // Drop our lock, run the executor, and check that the lock dropped.
-        drop(wake_lock);
-
-        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
-        assert!(
-            kernel
-                .suspend_resume_manager
-                .activate_wakeup_source(WakeupSourceOrigin::HAL("test".to_string()))
-        );
+            {
+                fuchsia_async::Timer::new(std::time::Duration::from_millis(10)).await;
+            }
+        }).await;
     }
 }
