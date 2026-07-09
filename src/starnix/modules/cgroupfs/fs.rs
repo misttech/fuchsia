@@ -289,9 +289,7 @@ impl DirectoryNodes {
 #[cfg(test)]
 mod test {
     use super::*;
-
-    #[allow(deprecated, reason = "pre-existing usage")]
-    use starnix_core::testing::create_kernel_and_task;
+    use starnix_core::testing::spawn_kernel_and_run;
     use starnix_core::vfs::FsNodeOps;
     use starnix_core::vfs::fs_args::MountParams;
     use starnix_core::vfs::fs_registry::FsRegistry;
@@ -299,67 +297,72 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_filesystem_creates_nodes() {
-        #[allow(deprecated, reason = "pre-existing usage")]
-        let (kernel, current_task) = create_kernel_and_task();
-        let registry = kernel.expando.get::<FsRegistry>();
-        registry.register(b"cgroup2".into(), cgroup2_fs);
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel();
+            let registry = kernel.expando.get::<FsRegistry>();
+            registry.register(b"cgroup2".into(), cgroup2_fs);
 
-        let fs = current_task
-            .create_filesystem(b"cgroup2".into(), Default::default())
-            .expect("create_filesystem");
+            let fs = current_task
+                .create_filesystem(b"cgroup2".into(), Default::default())
+                .expect("create_filesystem");
 
-        let cgroupfs = fs.downcast_ops::<CgroupV2Fs>().expect("downcast_ops");
-        let dir_nodes = cgroupfs.dir_nodes.clone();
-        assert!(dir_nodes.nodes.lock().is_empty(), "new filesystem does not contain nodes");
+            let cgroupfs = fs.downcast_ops::<CgroupV2Fs>().expect("downcast_ops");
+            let dir_nodes = cgroupfs.dir_nodes.clone();
+            assert!(dir_nodes.nodes.lock().is_empty(), "new filesystem does not contain nodes");
 
-        let root_dir = dir_nodes.root.clone();
-        assert!(root_dir.has_interface_files(), "root directory is initialized");
+            let root_dir = dir_nodes.root.clone();
+            assert!(root_dir.has_interface_files(), "root directory is initialized");
+        })
+        .await;
     }
-
     #[::fuchsia::test]
     async fn test_cgroup_v1_remount_preserves_tree() {
-        #[allow(deprecated, reason = "pre-existing usage")]
-        let (kernel, current_task) = create_kernel_and_task();
-        let registry = kernel.expando.get::<FsRegistry>();
-        registry.register(b"cgroup".into(), CgroupV1Fs::new_fs);
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel();
+            let registry = kernel.expando.get::<FsRegistry>();
+            registry.register(b"cgroup".into(), CgroupV1Fs::new_fs);
 
-        let options = FileSystemOptions {
-            params: MountParams::parse(b"memory".into()).unwrap(),
-            ..Default::default()
-        };
+            let options = FileSystemOptions {
+                params: MountParams::parse(b"memory".into()).unwrap(),
+                ..Default::default()
+            };
 
-        {
-            let fs1 = current_task
-                .create_filesystem(b"cgroup".into(), options.clone())
+            {
+                let fs1 = current_task
+                    .create_filesystem(b"cgroup".into(), options.clone())
+                    .expect("create_filesystem");
+                let cgroupfs1 = fs1.downcast_ops::<CgroupV1Fs>().expect("downcast_ops");
+                let dir_nodes1 = cgroupfs1.dir_nodes.clone();
+                let root_dir1 = dir_nodes1.root.clone();
+                let root_node1 = fs1.root();
+
+                root_dir1
+                    .mkdir(
+                        &root_node1.node,
+                        current_task,
+                        "test_child".into(),
+                        FileMode::default(),
+                        FsCred::root(),
+                    )
+                    .expect("mkdir");
+
+                let lookup_result1 =
+                    root_dir1.lookup(&root_node1.node, current_task, "test_child".into());
+                assert!(lookup_result1.is_ok());
+            }
+
+            let fs2 = current_task
+                .create_filesystem(b"cgroup".into(), options)
                 .expect("create_filesystem");
-            let cgroupfs1 = fs1.downcast_ops::<CgroupV1Fs>().expect("downcast_ops");
-            let dir_nodes1 = cgroupfs1.dir_nodes.clone();
-            let root_dir1 = dir_nodes1.root.clone();
-            let root_node1 = fs1.root();
+            let cgroupfs2 = fs2.downcast_ops::<CgroupV1Fs>().expect("downcast_ops");
+            let dir_nodes2 = cgroupfs2.dir_nodes.clone();
+            let root_dir2 = dir_nodes2.root.clone();
+            let root_node2 = fs2.root();
 
-            root_dir1
-                .mkdir(
-                    &root_node1.node,
-                    &current_task,
-                    "test_child".into(),
-                    FileMode::default(),
-                    FsCred::root(),
-                )
-                .expect("mkdir");
-
-            let lookup_result1 =
-                root_dir1.lookup(&root_node1.node, &current_task, "test_child".into());
-            assert!(lookup_result1.is_ok());
-        }
-
-        let fs2 =
-            current_task.create_filesystem(b"cgroup".into(), options).expect("create_filesystem");
-        let cgroupfs2 = fs2.downcast_ops::<CgroupV1Fs>().expect("downcast_ops");
-        let dir_nodes2 = cgroupfs2.dir_nodes.clone();
-        let root_dir2 = dir_nodes2.root.clone();
-        let root_node2 = fs2.root();
-
-        let lookup_result2 = root_dir2.lookup(&root_node2.node, &current_task, "test_child".into());
-        assert!(lookup_result2.is_ok(), "child cgroup should be preserved on remount");
+            let lookup_result2 =
+                root_dir2.lookup(&root_node2.node, current_task, "test_child".into());
+            assert!(lookup_result2.is_ok(), "child cgroup should be preserved on remount");
+        })
+        .await;
     }
 }
