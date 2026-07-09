@@ -4,34 +4,78 @@
 
 #include "pci-sdhci.h"
 
-#include <lib/ddk/binding_driver.h>
-#include <lib/ddk/debug.h>
-#include <lib/ddk/device.h>
-#include <lib/ddk/driver.h>
-#include <lib/device-protocol/pci.h>
+/// Exports the driver using the `FUCHSIA_DRIVER_EXPORT2` macro for `fdf::DriverBase2`.
+#include <lib/driver/component/cpp/driver_export2.h>
+#include <lib/driver/component/cpp/node_offers.h>
+#include <lib/driver/component/cpp/node_properties.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/param.h>
-#include <threads.h>
 #include <unistd.h>
 #include <zircon/status.h>
+
+#include <bind/fuchsia/hardware/sdhci/cpp/bind.h>
 
 #define HOST_CONTROL1_OFFSET 0x28
 #define SDHCI_EMMC_HW_RESET (1 << 12)
 
-constexpr auto kTag = "pci-sdhci";
-
 namespace sdhci {
 
-PciSdhci::PciSdhci(zx_device_t* parent) : DeviceType(parent) {}
+// PciSdhci::Start implements the DFv2 driver start hook.
+// It connects to parent services and sets up child nodes.
+zx::result<> PciSdhci::Start(fdf::DriverContext context) {
+  auto pci_client_end = context.incoming().Connect<fuchsia_hardware_pci::Service::Device>();
+  if (pci_client_end.is_error()) {
+    FDF_LOG(ERROR, "Failed to connect to PCI: %s", pci_client_end.status_string());
+    return pci_client_end.take_error();
+  }
+  pci_ = ddk::Pci(std::move(pci_client_end.value()));
+
+  zx_status_t status = pci_.SetBusMastering(true);
+  if (status != ZX_OK) {
+    FDF_LOG(ERROR, "Failed to set bus mastering: %s", zx_status_get_string(status));
+    return zx::error(status);
+  }
+
+  fuchsia_hardware_sdhci::Service::InstanceHandler handler({
+      .device =
+          bindings_.CreateHandler(this, driver_dispatcher()->get(), fidl::kIgnoreBindingClosure),
+  });
+
+  zx::result<> result = outgoing()->AddService<fuchsia_hardware_sdhci::Service>(std::move(handler));
+  if (result.is_error()) {
+    FDF_LOG(ERROR, "Failed to add sdhci fidl service: %s", result.status_string());
+    return result.take_error();
+  }
+
+  // Offer the service to child nodes using `fdf::MakeOffer2`.
+  std::vector<fuchsia_driver_framework::Offer> offers = {
+      fdf::MakeOffer2<fuchsia_hardware_sdhci::Service>(),
+  };
+
+  // Add the child node using `NodeProperty2` and `MakeProperty2`.
+  std::vector<fuchsia_driver_framework::NodeProperty2> properties = {
+      fdf::MakeProperty2(bind_fuchsia_hardware_sdhci::SERVICE,
+                         bind_fuchsia_hardware_sdhci::SERVICE_DRIVERTRANSPORT),
+  };
+  zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> child_result =
+      AddChild("pci-sdhci", properties, offers);
+  if (child_result.is_error()) {
+    FDF_LOG(ERROR, "Failed to add child node: %s", child_result.status_string());
+    return child_result.take_error();
+  }
+  node_controller_ = std::move(child_result.value());
+
+  return zx::ok();
+}
 
 void PciSdhci::GetInterrupt(fdf::Arena& arena, GetInterruptCompleter::Sync& completer) {
   // select irq mode
   fuchsia_hardware_pci::InterruptMode mode = fuchsia_hardware_pci::InterruptMode::kDisabled;
   zx_status_t status = pci_.ConfigureInterruptMode(1, &mode);
   if (status != ZX_OK) {
-    fdf::error("{}: error setting irq mode: {}", kTag, zx_status_get_string(status));
+    FDF_LOG(ERROR, "Error setting irq mode: %s", zx_status_get_string(status));
     completer.buffer(arena).ReplyError(status);
     return;
   }
@@ -40,7 +84,7 @@ void PciSdhci::GetInterrupt(fdf::Arena& arena, GetInterruptCompleter::Sync& comp
   zx::interrupt interrupt;
   status = pci_.MapInterrupt(0, &interrupt);
   if (status != ZX_OK) {
-    fdf::error("{}: error getting irq handle: {}", kTag, zx_status_get_string(status));
+    FDF_LOG(ERROR, "Error getting irq handle: %s", zx_status_get_string(status));
     completer.buffer(arena).ReplyError(status);
     return;
   }
@@ -52,7 +96,7 @@ void PciSdhci::GetSdhciMmio(fdf::Arena& arena, GetSdhciMmioCompleter::Sync& comp
   if (!mmio_.has_value()) {
     zx_status_t status = pci_.MapMmio(0u, ZX_CACHE_POLICY_UNCACHED_DEVICE, &mmio_);
     if (status != ZX_OK) {
-      fdf::error("{}: error mapping register window: {}", kTag, zx_status_get_string(status));
+      FDF_LOG(ERROR, "Error mapping register window: %s", zx_status_get_string(status));
       completer.buffer(arena).ReplyError(status);
       return;
     }
@@ -129,88 +173,6 @@ void PciSdhci::VendorPerformTuning(VendorPerformTuningRequestView request, fdf::
   completer.buffer(arena).ReplyError(ZX_ERR_STOP);
 }
 
-void PciSdhci::DdkUnbind(ddk::UnbindTxn txn) { device_unbind_reply(zxdev()); }
-
-zx_status_t PciSdhci::Bind(void* /* unused */, zx_device_t* parent) {
-  auto dev = std::make_unique<PciSdhci>(parent);
-  if (!dev) {
-    fdf::error("{}: out of memory", kTag);
-    return ZX_ERR_NO_MEMORY;
-  }
-
-  zx_status_t status = dev->Init();
-  if (status != ZX_OK) {
-    fdf::error("Failed to initialize device: {}", zx_status_get_string(status));
-    return status;
-  }
-
-  // The object is owned by the DDK, now that it has been added. It will be deleted
-  // when the device is released.
-  [[maybe_unused]] auto ptr = dev.release();
-
-  return ZX_OK;
-}
-
-zx_status_t PciSdhci::Init() {
-  pci_ = ddk::Pci(parent_, "pci");
-  if (!pci_.is_valid()) {
-    fdf::error("Failed to connect to PCI protocol");
-    return ZX_ERR_INTERNAL;
-  }
-
-  zx_status_t status = pci_.SetBusMastering(true);
-  if (status != ZX_OK) {
-    fdf::error("Failed to set bus mastering: {}", zx_status_get_string(status));
-    return status;
-  }
-
-  {
-    fuchsia_hardware_sdhci::Service::InstanceHandler handler(
-        {.device = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->get(),
-                                           fidl::kIgnoreBindingClosure)});
-
-    zx::result result = outgoing_.AddService<fuchsia_hardware_sdhci::Service>(std::move(handler));
-    if (result.is_error()) {
-      fdf::error("Failed to add sdhci fidl service to outgoing directory: {}",
-                 result.status_string());
-      return result.error_value();
-    }
-  }
-
-  auto endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
-  if (endpoints.is_error()) {
-    fdf::error("Failed to create endpoints: {}", endpoints.status_string());
-    return endpoints.status_value();
-  }
-
-  zx::result result = outgoing_.Serve(std::move(endpoints->server));
-  if (result.is_error()) {
-    fdf::error("Failed to serve outgoing directory: {}", result.status_string());
-    return result.error_value();
-  }
-
-  std::array offers = {
-      fuchsia_hardware_sdhci::Service::Name,
-  };
-
-  status = DdkAdd(ddk::DeviceAddArgs("pci-sdhci")
-                      .set_runtime_service_offers(offers)
-                      .set_outgoing_dir(endpoints->client.TakeChannel()));
-  if (status != ZX_OK) {
-    fdf::error("Failed to add device: {}", zx_status_get_string(status));
-    return status;
-  }
-
-  return ZX_OK;
-}
-
-static zx_driver_ops_t pci_sdhci_driver_ops = {
-    .version = DRIVER_OPS_VERSION,
-    .bind = PciSdhci::Bind,
-};
-
-void PciSdhci::DdkRelease() { delete this; }
-
 }  // namespace sdhci
 
-ZIRCON_DRIVER(pci_sdhci, sdhci::pci_sdhci_driver_ops, "zircon", "0.1");
+FUCHSIA_DRIVER_EXPORT2(sdhci::PciSdhci);

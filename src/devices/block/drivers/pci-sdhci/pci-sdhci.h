@@ -7,24 +7,25 @@
 
 #include <fidl/fuchsia.hardware.sdhci/cpp/driver/fidl.h>
 #include <lib/device-protocol/pci.h>
-#include <lib/driver/outgoing/cpp/outgoing_directory.h>
+/// Under DFv2, we inherit from `fdf::DriverBase2`.
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/fidl_driver/cpp/server.h>
 
 #include <optional>
 
-#include <ddktl/device.h>
-
 namespace sdhci {
 
-class PciSdhci;
-using DeviceType = ddk::Device<PciSdhci>;
-
-class PciSdhci final : public DeviceType, public fdf::WireServer<fuchsia_hardware_sdhci::Device> {
+/// `PciSdhci` implements the SDHCI device protocol.
+/// It inherits from `fdf::DriverBase2` which provides the DFv2 lifecycle.
+class PciSdhci final : public fdf::DriverBase2,
+                       public fdf::WireServer<fuchsia_hardware_sdhci::Device> {
  public:
-  explicit PciSdhci(zx_device_t*);
+  /// Constructor for default-constructible `fdf::DriverBase2`.
+  PciSdhci() : fdf::DriverBase2("pci-sdhci") {}
 
-  static zx_status_t Bind(void*, zx_device_t* parent);
-
-  zx_status_t Init();
+  /// Starts the driver using the `DriverContext` which provides access to
+  /// incoming services via `context.incoming()`.
+  zx::result<> Start(fdf::DriverContext context) override;
 
   // fuchsia.hardware.sdhci/Device protocol implementation
   void GetInterrupt(fdf::Arena& arena, GetInterruptCompleter::Sync& completer) override;
@@ -40,17 +41,14 @@ class PciSdhci final : public DeviceType, public fdf::WireServer<fuchsia_hardwar
   void VendorPerformTuning(VendorPerformTuningRequestView request, fdf::Arena& arena,
                            VendorPerformTuningCompleter::Sync& completer) override;
 
-  void DdkUnbind(ddk::UnbindTxn txn);
-  void DdkRelease();
-
  private:
   ddk::Pci pci_;
 
   std::optional<fdf::MmioBuffer> mmio_;
   zx::bti bti_;
+
+  fidl::ClientEnd<fuchsia_driver_framework::NodeController> node_controller_;
   fdf::ServerBindingGroup<fuchsia_hardware_sdhci::Device> bindings_;
-  fdf::OutgoingDirectory outgoing_{
-      fdf::OutgoingDirectory::Create(fdf::Dispatcher::GetCurrent()->get())};
 };
 
 }  // namespace sdhci
