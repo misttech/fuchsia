@@ -36,6 +36,7 @@ group("tests") {
     "trace:tests",
     "vfs/cpp:tests",
     "vfs/rust:tests",
+    "vmo-fifo:tests",
     "watchdog:tests",
   ]
 }
