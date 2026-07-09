@@ -7,9 +7,11 @@
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fidl/cpp/wire/status.h>
+#include <lib/fit/defer.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
+#include <type_traits>
 #include <utility>
 
 #include <wlan/common/phy.h>
@@ -18,6 +20,13 @@
 #include "utils.h"
 
 namespace wlan {
+
+template <class... Ts>
+struct overloaded : Ts... {
+  using Ts::operator()...;
+};
+template <class... Ts>
+overloaded(Ts...) -> overloaded<Ts...>;
 
 std::shared_ptr<WlanPhyImplDevice> WlanPhyImplDevice::New(
     const std::shared_ptr<const WlantapDriverContext>& context, zx::channel user_channel,
@@ -79,23 +88,43 @@ void WlanPhyImplDevice::Init(
         : device_(std::move(device)) {}
     void on_fidl_error(::fidl::UnbindInfo error) override {
       WLAN_TRACE_DURATION();
+      auto cleanup = fit::defer([this] { delete this; });
 
-      // TODO(https://fxbug.dev/307809104): Determine which FIDL errors are normal
-      // during shutdown.
-      fdf::info("{}: phy node unbound: {}", device_->name_, error.FormatDescription());
+      auto device = std::move(device_);
+      fdf::info("{}: phy node unbound: {}", device->name_, error.FormatDescription());
+      device->phy_controller_ = {};
 
-      // If an iface exists, then iface destruction will call ShutdownComplete().
-      if (device_->IfaceExists()) {
-        auto status = device_->iface_controller_->Remove();
+      std::optional<WlanPhyImplDevice::IfaceSlot> next_slot;
+      std::visit(
+          overloaded{
+              [device, &next_slot](WlanPhyImplDevice::SlotActive& slot) {
+                auto controller = std::move(slot.controller);
+                auto mac = std::move(slot.mac);
+                next_slot = WlanPhyImplDevice::SlotDestroying{.mac = std::move(mac),
+                                                              .controller = std::move(controller)};
+              },
+              [device](WlanPhyImplDevice::SlotDestroying& slot) {
+                auto status = slot.controller->Remove();
+                if (status.is_error()) {
+                  fdf::error("{}: Could not remove iface: {}", device->name_,
+                             status.error_value().status_string());
+                  device->ShutdownComplete();
+                }
+              },
+              [device](WlanPhyImplDevice::SlotEmpty& slot) { device->ShutdownComplete(); },
+              [device](WlanPhyImplDevice::SlotCreating& slot) { device->ShutdownComplete(); }},
+          device->iface_slot_);
+
+      if (next_slot.has_value()) {
+        device->iface_slot_ = std::move(*next_slot);
+        auto& destroying = std::get<WlanPhyImplDevice::SlotDestroying>(device->iface_slot_);
+        auto status = destroying.controller->Remove();
         if (status.is_error()) {
-          fdf::error("{}: Could not remove iface: {}", device_->name_,
+          fdf::error("{}: Could not remove iface: {}", device->name_,
                      status.error_value().status_string());
-          device_->ShutdownComplete();
+          device->ShutdownComplete();
         }
-      } else {
-        device_->ShutdownComplete();
       }
-      delete this;
     }
     void handle_unknown_event(
         fidl::UnknownEventMetadata<fuchsia_driver_framework::NodeController> metadata) override {}
@@ -142,7 +171,7 @@ void WlanPhyImplDevice::CreateIface(CreateIfaceRequestView request, fdf::Arena& 
     return;
   }
 
-  if (IfaceExists()) {
+  if (!std::holds_alternative<SlotEmpty>(iface_slot_)) {
     fdf::error(
         "{}: CreateIface({}): Failed to create iface. wlantap only supports at most one iface.",
         name_, role_str);
@@ -156,10 +185,13 @@ void WlanPhyImplDevice::CreateIface(CreateIfaceRequestView request, fdf::Arena& 
     return;
   }
 
+  iface_slot_ = SlotCreating{};
+
   zx_status_t status = CreateWlanSoftmac(request->role(), std::move(request->mlme_channel()));
   if (status != ZX_OK) {
     fdf::error("{}: CreateIface({}): Could not create softmac: {}", name_, role_str,
                zx_status_get_string(status));
+    iface_slot_ = SlotEmpty{};
     completer.buffer(arena).ReplyError(status);
     return;
   }
@@ -171,25 +203,22 @@ void WlanPhyImplDevice::CreateIface(CreateIfaceRequestView request, fdf::Arena& 
   completer.buffer(arena).ReplySuccess(resp);
 }
 
-bool WlanPhyImplDevice::IfaceExists() {
-  WLAN_TRACE_DURATION();
-  return this->iface_controller_.is_valid() && this->wlantap_mac_;
-}
-
 fit::result<zx_status_t> WlanPhyImplDevice::DestroyIface() {
   WLAN_TRACE_DURATION();
-  if (!IfaceExists()) {
-    fdf::error("{}: Iface doesn't exist", name_);
+  if (!std::holds_alternative<SlotActive>(iface_slot_)) {
+    fdf::error("{}: Iface doesn't exist or is not active", name_);
     return fit::error(ZX_ERR_NOT_FOUND);
   }
 
-  auto status = iface_controller_->Remove();
+  auto& active = std::get<SlotActive>(iface_slot_);
+  auto status = active.controller->Remove();
   if (status.is_error()) {
     fdf::error("{}: Failed to destroy iface: {}", name_, status.error_value().status_string());
     return fit::error(status.error_value().status());
   }
 
-  wlantap_mac_.reset();
+  iface_slot_ =
+      SlotDestroying{.mac = std::move(active.mac), .controller = std::move(active.controller)};
 
   return fit::ok();
 }
@@ -313,15 +342,21 @@ zx_status_t WlanPhyImplDevice::CreateWlanSoftmac(wlan_common::WlanMacRole role,
     return endpoints.status_value();
   }
 
-  zx_status_t status = ServeWlanSoftmac(name, role, std::move(mlme_channel));
-  if (status != ZX_OK) {
-    fdf::error("{}: ServeWlanSoftmac failed: {}", name_, zx_status_get_string(status));
-    return status;
+  auto serve_result = ServeWlanSoftmac(name, role, std::move(mlme_channel));
+  if (serve_result.is_error()) {
+    fdf::error("{}: ServeWlanSoftmac failed: {}", name_, serve_result.status_string());
+    return serve_result.error_value();
   }
+  std::unique_ptr<WlantapMac> mac = std::move(serve_result.value());
 
-  status = AddWlanSoftmacChild(name, std::move(endpoints->server));
+  zx_status_t status = AddWlanSoftmacChild(name, std::move(endpoints->server));
   if (status != ZX_OK) {
     fdf::error("{}: AddWlanSoftmacChild failed: {}", name_, zx_status_get_string(status));
+    zx::result remove_res =
+        driver_context_->outgoing()->RemoveService<fuchsia_wlan_softmac::Service>(name);
+    if (remove_res.is_error()) {
+      fdf::error("{}: Failed to remove service instance during rollback: {}", name_, remove_res);
+    }
     return status;
   }
 
@@ -333,13 +368,23 @@ zx_status_t WlanPhyImplDevice::CreateWlanSoftmac(wlan_common::WlanMacRole role,
     explicit IfaceControllerEventHandler(std::shared_ptr<WlanPhyImplDevice> device)
         : device_(std::move(device)) {}
     void on_fidl_error(::fidl::UnbindInfo error) override {
-      // TODO(b/307809104): Determine which FIDL errors are
-      // normal during shutdown and iface destruction.
-      fdf::info("{}: Iface node unbound: {}", device_->name_, error.FormatDescription());
-      if (device_->wlantap_phy_shutdown_completer_.has_value()) {
-        device_->ShutdownComplete();
-      }
-      delete this;
+      auto cleanup = fit::defer([this] { delete this; });
+      auto device = std::move(device_);
+      fdf::info("{}: Iface node unbound: {}", device->name_, error.FormatDescription());
+
+      std::visit(overloaded{[device](WlanPhyImplDevice::SlotActive& slot) {
+                              fdf::warn("{}: Iface node unexpectedly unbound!", device->name_);
+                            },
+                            [device](WlanPhyImplDevice::SlotDestroying& slot) {
+                              if (device->wlantap_phy_shutdown_completer_.has_value()) {
+                                device->ShutdownComplete();
+                              }
+                            },
+                            [](WlanPhyImplDevice::SlotEmpty& slot) {},
+                            [](WlanPhyImplDevice::SlotCreating& slot) {}},
+                 device->iface_slot_);
+
+      device->iface_slot_ = WlanPhyImplDevice::SlotEmpty{};
     }
     void handle_unknown_event(
         fidl::UnknownEventMetadata<fuchsia_driver_framework::NodeController> metadata) override {}
@@ -347,9 +392,12 @@ zx_status_t WlanPhyImplDevice::CreateWlanSoftmac(wlan_common::WlanMacRole role,
    private:
     std::shared_ptr<WlanPhyImplDevice> device_;
   };
-  iface_controller_.Bind(std::move(endpoints->client),
-                         fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                         new IfaceControllerEventHandler(shared_from_this()));
+
+  fidl::Client<fuchsia_driver_framework::NodeController> controller;
+  controller.Bind(std::move(endpoints->client), fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                  new IfaceControllerEventHandler(shared_from_this()));
+
+  iface_slot_ = SlotActive{.mac = std::move(mac), .controller = std::move(controller)};
   return ZX_OK;
 }
 
@@ -374,31 +422,25 @@ zx_status_t WlanPhyImplDevice::AddWlanSoftmacChild(
   return ZX_OK;
 }
 
-zx_status_t WlanPhyImplDevice::ServeWlanSoftmac(std::string_view name,
-                                                wlan_common::WlanMacRole role,
-                                                zx::channel mlme_channel) {
+zx::result<std::unique_ptr<WlantapMac>> WlanPhyImplDevice::ServeWlanSoftmac(
+    std::string_view name, wlan_common::WlanMacRole role, zx::channel mlme_channel) {
   WLAN_TRACE_DURATION();
-  if (wlantap_mac_) {
-    fdf::error("{}: Softmac already exists, only one allowed", name_);
-    return ZX_ERR_ALREADY_EXISTS;
-  }
-
-  wlantap_mac_ =
+  auto out_mac =
       std::make_unique<WlantapMac>(wlantap_phy_.get(), role, phy_config_, std::move(mlme_channel));
 
   fdf::info("{}: Adding softmac outgoing service", name_);
   fuchsia_wlan_softmac::Service::InstanceHandler handler(
-      {.wlan_softmac = wlantap_mac_->ProtocolHandler()});
+      {.wlan_softmac = out_mac->ProtocolHandler()});
 
   zx::result result = driver_context_->outgoing()->AddService<fuchsia_wlan_softmac::Service>(
       std::move(handler), name);
 
   if (result.is_error()) {
     fdf::error("{}: Failed To add WlanSoftmac service: {}", name_, result);
-    return result.status_value();
+    return result.take_error();
   }
 
-  return ZX_OK;
+  return zx::ok(std::move(out_mac));
 }
 
 }  // namespace wlan

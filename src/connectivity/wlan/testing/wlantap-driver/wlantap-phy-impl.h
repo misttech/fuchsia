@@ -7,6 +7,9 @@
 
 #include <fidl/fuchsia.wlan.phyimpl/cpp/driver/wire.h>
 #include <lib/zx/channel.h>
+#include <lib/zx/result.h>
+
+#include <variant>
 
 #include "wlantap-driver-context.h"
 #include "wlantap-mac.h"
@@ -70,12 +73,24 @@ class WlanPhyImplDevice : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyIm
                                 zx::channel mlme_channel) __TA_NO_THREAD_SAFETY_ANALYSIS;
   zx_status_t AddWlanSoftmacChild(std::string_view name,
                                   fidl::ServerEnd<fuchsia_driver_framework::NodeController> server);
-  zx_status_t ServeWlanSoftmac(std::string_view name, wlan_common::WlanMacRole role,
-                               zx::channel mlme_channel);
+  zx::result<std::unique_ptr<WlantapMac>> ServeWlanSoftmac(std::string_view name,
+                                                           wlan_common::WlanMacRole role,
+                                                           zx::channel mlme_channel);
 
-  bool IfaceExists();
   fit::result<zx_status_t> DestroyIface();
   void ShutdownComplete();
+
+  struct SlotEmpty {};
+  struct SlotCreating {};
+  struct SlotActive {
+    std::unique_ptr<WlantapMac> mac;
+    fidl::Client<fuchsia_driver_framework::NodeController> controller;
+  };
+  struct SlotDestroying {
+    std::unique_ptr<WlantapMac> mac;
+    fidl::Client<fuchsia_driver_framework::NodeController> controller;
+  };
+  using IfaceSlot = std::variant<SlotEmpty, SlotCreating, SlotActive, SlotDestroying>;
 
   const std::shared_ptr<const WlantapDriverContext> driver_context_;
 
@@ -86,11 +101,9 @@ class WlanPhyImplDevice : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyIm
   // Initialize in Init() with a shared_ptr to this instance.
   std::unique_ptr<WlantapPhy> wlantap_phy_ = nullptr;
 
-  std::unique_ptr<WlantapMac> wlantap_mac_;
-
   fidl::Client<fuchsia_driver_framework::NodeController> phy_controller_;
 
-  fidl::Client<fuchsia_driver_framework::NodeController> iface_controller_;
+  IfaceSlot iface_slot_{SlotEmpty{}};
 
   std::optional<WlantapPhy::ShutdownCompleter::Async> wlantap_phy_shutdown_completer_;
 };
