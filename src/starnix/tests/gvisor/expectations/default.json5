@@ -1031,9 +1031,6 @@
                 "NetlinkRouteTest.RemoveLoopbackByName",
                 "NetlinkRouteTest.RemoveLoopbackByIndex",
 
-                // These tests assume 2+ Inotify events are returned and crashes otherwise.
-                "Inotify.GetdentsGeneratesAccessEvent",
-
                 // Breaks tests that run after it.
                 "MountTest.MaxMounts",
                 "MountTest.MountFailsOnPseudoFilesystemMountpoint",
