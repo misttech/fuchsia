@@ -302,6 +302,7 @@ impl Component {
             .read_only(options.read_only.unwrap_or(false))
             .inline_crypto_enabled(options.inline_crypto_enabled.unwrap_or(false))
             .barriers_enabled(options.barriers_enabled.unwrap_or(false))
+            .allow_type3_blobs(options.allow_type3_blobs.unwrap_or(false))
             .power_manager(FuchsiaPowerManager::new())
             .open(DeviceHolder::new(
                 BlockDevice::new(client, options.read_only.unwrap_or(false)).await?,
@@ -577,6 +578,7 @@ mod tests {
     use fidl_fuchsia_fs_startup::{
         CreateOptions, MountOptions, StartOptions, StartupMarker, VolumesMarker,
     };
+    use fidl_fuchsia_fxfs::DebugMarker;
     use fidl_fuchsia_io as fio;
     use fidl_fuchsia_process_lifecycle::{LifecycleMarker, LifecycleProxy};
     use fuchsia_async as fasync;
@@ -662,6 +664,27 @@ mod tests {
         }
 
         (component_task, block_server)
+    }
+
+    #[fuchsia::test(threads = 2)]
+    async fn test_clear_caches() {
+        let (component_task, _block_server) = run_test(|client, _| {
+            let debug_proxy = connect_to_protocol_at_dir_svc::<DebugMarker>(client)
+                .expect("Unable to connect to Debug protocol");
+            let admin_proxy = connect_to_protocol_at_dir_svc::<AdminMarker>(client)
+                .expect("Unable to connect to Admin protocol");
+            async move {
+                debug_proxy
+                    .clear_caches()
+                    .await
+                    .expect("clear_caches failed (FIDL)")
+                    .expect("clear_caches failed");
+                admin_proxy.shutdown().await.expect("shutdown failed");
+            }
+            .boxed()
+        })
+        .await;
+        component_task.await;
     }
 
     #[fuchsia::test(threads = 2)]

@@ -78,11 +78,14 @@ rustc_binary("fuchsia-storage-benchmarks") {
     "src/main.rs",
   ]
   deps = [
+    ":benchmark_blobs",
     ":framework",
     ":fuchsia-storage-benchmarks-config",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/fidl/fuchsia.power.cpu.manager:fuchsia.power.cpu.manager_rust",
     "//sdk/rust/zx",
     "//src/lib/fuchsia",
+    "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
     "//src/lib/fuchsia-runtime",
     "//src/lib/trace/rust:trace-provider",
@@ -93,6 +96,7 @@ rustc_binary("fuchsia-storage-benchmarks") {
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:log",
     "//third_party/rust_crates:rand",
     "//third_party/rust_crates:rand_xorshift",
     "//third_party/rust_crates:regex",
@@ -244,4 +248,46 @@ group("tests") {
 group("benchmark-packages") {
   testonly = true
   deps = [ ":storage-benchmarks" ]
+}
+
+resource("benchmark_blob_lz4_40") {
+  sources = [ "test_data/lz4_40.bin" ]
+  outputs = [ "data/blobs/lz4_40.bin" ]
+}
+
+resource("benchmark_blob_lz4_55") {
+  sources = [ "test_data/lz4_55.bin" ]
+  outputs = [ "data/blobs/lz4_55.bin" ]
+}
+
+resource("benchmark_blob_lz4_70") {
+  sources = [ "test_data/lz4_70.bin" ]
+  outputs = [ "data/blobs/lz4_70.bin" ]
+}
+
+resource("benchmark_blob_zstd_40") {
+  sources = [ "test_data/zstd_40.bin" ]
+  outputs = [ "data/blobs/zstd_40.bin" ]
+}
+
+resource("benchmark_blob_zstd_55") {
+  sources = [ "test_data/zstd_55.bin" ]
+  outputs = [ "data/blobs/zstd_55.bin" ]
+}
+
+resource("benchmark_blob_zstd_70") {
+  sources = [ "test_data/zstd_70.bin" ]
+  outputs = [ "data/blobs/zstd_70.bin" ]
+}
+
+group("benchmark_blobs") {
+  testonly = true
+  deps = [
+    ":benchmark_blob_lz4_40",
+    ":benchmark_blob_lz4_55",
+    ":benchmark_blob_lz4_70",
+    ":benchmark_blob_zstd_40",
+    ":benchmark_blob_zstd_55",
+    ":benchmark_blob_zstd_70",
+  ]
 }

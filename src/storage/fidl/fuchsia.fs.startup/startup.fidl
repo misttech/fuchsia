@@ -51,6 +51,10 @@ type StartOptions = table {
     /// `fxfs` when possible.  The partitions must be physically contiguous.  See
     /// fuchsia.storage.partitions.OverlayPartition for more details.
     10: merge_super_and_userdata bool;
+
+    /// If true, allows writing Type 3 delivery blobs. Defaults to false.
+    /// NOTE: Type 3 delivery blobs are currently UNSTABLE / EXPERIMENTAL and subject to change.
+    11: allow_type3_blobs bool;
 };
 // LINT.ThenChange(//src/storage/lib/fs_management/cpp/options_test.cc)
 

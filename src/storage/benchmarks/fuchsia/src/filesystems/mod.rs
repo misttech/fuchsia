@@ -4,7 +4,7 @@
 
 use async_trait::async_trait;
 use blob_writer::BlobWriter;
-use delivery_blob::{CompressionMode, Type1Blob};
+use delivery_blob::{CompressionMode, DeliveryBlobType, Type1Blob, Type3Blob};
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions};
 use fidl_fuchsia_fxfs::{BlobCreatorProxy, BlobReaderProxy, CryptMarker};
@@ -32,7 +32,7 @@ mod testing;
 
 pub use blobfs::Blobfs;
 pub use f2fs::F2fs;
-pub use fxblob::Fxblob;
+pub use fxblob::{Fxblob, FxblobInstance};
 pub use fxfs::Fxfs;
 pub use memfs::Memfs;
 pub use minfs::Minfs;
@@ -48,8 +48,21 @@ pub struct DeliveryBlob {
 
 impl DeliveryBlob {
     pub fn new(data: Vec<u8>, mode: CompressionMode) -> Self {
+        Self::new_with_type(DeliveryBlobType::Type1, data, mode)
+    }
+
+    pub fn new_with_type(
+        delivery_type: DeliveryBlobType,
+        data: Vec<u8>,
+        mode: CompressionMode,
+    ) -> Self {
         let name = fuchsia_merkle::root_from_slice(&data);
-        Self { data: Type1Blob::generate(&data, mode), name }
+        let data = match delivery_type {
+            DeliveryBlobType::Type1 => Type1Blob::generate(&data, mode),
+            DeliveryBlobType::Type3 => Type3Blob::generate(&data, mode),
+            _ => panic!("Unsupported delivery blob type"),
+        };
+        Self { data, name }
     }
 }
 
@@ -176,7 +189,7 @@ impl FsManagementFilesystemInstance {
 
     // Instead of returning the directory that is the data root for this filesystem, return the root
     // that would be used for accessing top level service protocols.
-    fn exposed_services_dir(&self) -> &fio::DirectoryProxy {
+    pub(crate) fn exposed_services_dir(&self) -> &fio::DirectoryProxy {
         let fs = self.serving_filesystem.as_ref().unwrap();
         match fs {
             FsType::SingleVolume(serving_filesystem) => serving_filesystem.exposed_dir(),

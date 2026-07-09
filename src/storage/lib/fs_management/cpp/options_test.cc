@@ -35,6 +35,10 @@ void AssertStartOptionsEqual(const fuchsia_fs_startup::wire::StartOptions& a,
   if (a.has_barriers_enabled()) {
     ASSERT_EQ(a.barriers_enabled(), b.barriers_enabled());
   }
+  ASSERT_EQ(a.has_allow_type3_blobs(), b.has_allow_type3_blobs());
+  if (a.has_allow_type3_blobs()) {
+    ASSERT_EQ(a.allow_type3_blobs(), b.allow_type3_blobs());
+  }
 }
 
 void AssertFormatOptionsEqual(const fuchsia_fs_startup::wire::FormatOptions& a,

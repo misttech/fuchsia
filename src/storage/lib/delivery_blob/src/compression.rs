@@ -630,6 +630,14 @@ impl ChunkedDecompressor {
         Ok(Self { error_handler: Some(error_handler), ..Self::new(decoded_archive)? })
     }
 
+    /// Returns the compression algorithm used by this decompressor.
+    pub fn algorithm(&self) -> CompressionAlgorithm {
+        match &self.decompressor {
+            Decompressor::Zstd(_) => CompressionAlgorithm::Zstd,
+            Decompressor::Lz4 => CompressionAlgorithm::Lz4,
+        }
+    }
+
     pub fn seek_table(&self) -> &Vec<ChunkInfo> {
         &self.seek_table
     }

@@ -406,6 +406,17 @@ impl VolumesDirectory {
         Ok(me)
     }
 
+    /// Clears the directory entry cache (dirent cache) for all mounted volumes.  This drops the
+    /// strong references to nodes held by the cache, allowing them (and their associated VMOs) to
+    /// be freed if they are not otherwise open.  Note that this does not clear other internal
+    /// caches (like LSM tree caches or CachingObjectHandle).
+    pub async fn clear_caches(&self) {
+        let volumes = self.mounted_volumes.lock().await;
+        for mounted_volume in volumes.values() {
+            mounted_volume.volume.volume().dirent_cache().clear();
+        }
+    }
+
     /// Delete a profile for a given volume. Fails if that volume isn't mounted or if there is
     /// active profile recording or replay.
     pub async fn delete_profile(

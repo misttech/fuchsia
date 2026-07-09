@@ -229,6 +229,7 @@ pub struct Fxfs {
     pub startup_profiling_seconds: Option<u32>,
     pub inline_crypto_enabled: bool,
     pub barriers_enabled: bool,
+    pub allow_type3_blobs: bool,
 }
 
 impl Default for Fxfs {
@@ -240,6 +241,7 @@ impl Default for Fxfs {
             startup_profiling_seconds: None,
             inline_crypto_enabled: false,
             barriers_enabled: false,
+            allow_type3_blobs: false,
         }
     }
 }
@@ -273,6 +275,7 @@ impl FSConfig for Fxfs {
                 startup_profiling_seconds: Some(self.startup_profiling_seconds.unwrap_or(0)),
                 inline_crypto_enabled: Some(self.inline_crypto_enabled),
                 barriers_enabled: Some(self.barriers_enabled),
+                allow_type3_blobs: Some(self.allow_type3_blobs),
                 ..Default::default()
             },
             component_type: self.component_type.clone(),

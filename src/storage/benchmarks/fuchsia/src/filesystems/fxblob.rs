@@ -6,7 +6,7 @@ use crate::filesystems::{BlobFilesystem, FsManagementFilesystemInstance};
 use async_trait::async_trait;
 use fidl_fuchsia_fxfs::{BlobCreatorMarker, BlobCreatorProxy, BlobReaderMarker, BlobReaderProxy};
 use fidl_fuchsia_io as fio;
-use fuchsia_component::client::connect_to_protocol_at_dir_svc;
+use fuchsia_component::client::{connect_to_protocol_at_dir_root, connect_to_protocol_at_dir_svc};
 use std::path::Path;
 use storage_benchmarks::{
     BlockDeviceConfig, BlockDeviceFactory, CacheClearableFilesystem, Filesystem, FilesystemConfig,
@@ -32,7 +32,7 @@ impl FilesystemConfig for Fxblob {
             })
             .await;
         let fxblob = FsManagementFilesystemInstance::new(
-            fs_management::Fxfs::default,
+            || fs_management::Fxfs { allow_type3_blobs: true, ..Default::default() },
             block_device,
             None,
             /*as_blob=*/ true,
@@ -55,6 +55,15 @@ pub struct FxblobInstance {
     blob_creator: BlobCreatorProxy,
     blob_reader: BlobReaderProxy,
     fxblob: FsManagementFilesystemInstance,
+}
+
+impl FxblobInstance {
+    pub fn connect_to_debug(&self) -> fidl_fuchsia_fxfs::DebugProxy {
+        connect_to_protocol_at_dir_root::<fidl_fuchsia_fxfs::DebugMarker>(
+            self.fxblob.exposed_services_dir(),
+        )
+        .expect("failed to connect to Debug protocol")
+    }
 }
 
 #[async_trait]

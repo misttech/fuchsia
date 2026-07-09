@@ -3,8 +3,11 @@
 // found in the LICENSE file.
 
 use crate::blob_benchmarks::{
-    OpenAndGetVmoBenchmark, PageInBlobBenchmark, WriteBlob, WriteRealisticBlobs,
+    ColdPageFaultBenchmark, OpenAndGetVmoBenchmark, PageInBlobBenchmark, WriteBlob,
+    WriteRealisticBlobs,
 };
+use fidl_fuchsia_power_cpu_manager as fcpumanager;
+use fuchsia_component::client::connect_to_protocol;
 use fuchsia_storage_benchmarks::block_devices::BenchmarkVolumeFactory;
 use fuchsia_storage_benchmarks::filesystems::{
     Blobfs, F2fs, Fxblob, Fxfs, Memfs, Minfs, PkgDirTest,
@@ -143,6 +146,18 @@ fn add_blob_benchmarks(benchmark_set: &mut BenchmarkSet) {
     add_benchmarks!(
         benchmark_set,
         [
+            ColdPageFaultBenchmark::new_lz4_40(),
+            ColdPageFaultBenchmark::new_lz4_55(),
+            ColdPageFaultBenchmark::new_lz4_70(),
+            ColdPageFaultBenchmark::new_zstd_40(),
+            ColdPageFaultBenchmark::new_zstd_55(),
+            ColdPageFaultBenchmark::new_zstd_70(),
+        ],
+        [Fxblob]
+    );
+    add_benchmarks!(
+        benchmark_set,
+        [
             OpenAndGetVmoBenchmark::new_content_blob_cold(),
             OpenAndGetVmoBenchmark::new_content_blob_warm(),
             OpenAndGetVmoBenchmark::new_meta_file_cold(),
@@ -156,6 +171,28 @@ fn add_blob_benchmarks(benchmark_set: &mut BenchmarkSet) {
 async fn main() {
     let args: Args = argh::from_env();
     let config = fuchsia_storage_benchmarks_config::Config::take_from_startup_handle();
+
+    let booster = connect_to_protocol::<fcpumanager::BoostMarker>();
+    let _boost_token = match booster {
+        Ok(proxy) => match proxy.boost().await {
+            Ok(Ok(token)) => {
+                log::info!("CPU performance boost active for benchmarks.");
+                Some(token)
+            }
+            Ok(Err(e)) => {
+                log::warn!("CPU boost protocol returned error: {:?}", e);
+                None
+            }
+            Err(e) => {
+                log::warn!("Failed to call CPU boost: {:?}", e);
+                None
+            }
+        },
+        Err(e) => {
+            log::warn!("CPU boost protocol not available: {:?}", e);
+            None
+        }
+    };
 
     let _loaded_blobs = blob_loader::BlobLoader::load_blobs().await;
     if args.load_blobs_for_tracing {

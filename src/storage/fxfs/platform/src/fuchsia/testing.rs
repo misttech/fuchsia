@@ -47,11 +47,18 @@ pub struct TestFixtureOptions {
     pub as_blob: bool,
     pub format: bool,
     pub pre_commit_hook: PreCommitHook,
+    pub allow_type3_blobs: bool,
 }
 
 impl Default for TestFixtureOptions {
     fn default() -> Self {
-        Self { encrypted: true, as_blob: false, format: true, pre_commit_hook: None }
+        Self {
+            encrypted: true,
+            as_blob: false,
+            format: true,
+            pre_commit_hook: None,
+            allow_type3_blobs: false,
+        }
     }
 }
 
@@ -105,7 +112,9 @@ impl TestFixture {
             Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
         let volume_name = if options.as_blob { "blob" } else { "vol" };
         let (filesystem, volume, volumes_directory) = if options.format {
-            let mut builder = FxFilesystemBuilder::new().format(true);
+            let mut builder = FxFilesystemBuilder::new()
+                .format(true)
+                .allow_type3_blobs(options.allow_type3_blobs);
             if let Some(pre_commit_hook) = options.pre_commit_hook {
                 builder = builder.pre_commit_hook(pre_commit_hook);
             }
@@ -160,7 +169,11 @@ impl TestFixture {
             };
             (filesystem, vol, volumes_directory)
         } else {
-            let filesystem = FxFilesystemBuilder::new().open(device).await.unwrap();
+            let filesystem = FxFilesystemBuilder::new()
+                .allow_type3_blobs(options.allow_type3_blobs)
+                .open(device)
+                .await
+                .unwrap();
             let root_volume = root_volume(filesystem.clone()).await.unwrap();
             let store = root_volume
                 .volume(

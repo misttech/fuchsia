@@ -492,5 +492,11 @@
             rights: [ "r*" ],
             availability: "optional",
         },
+        {
+            protocol: [ "fuchsia.power.cpu.manager.Boost" ],
+            from: "parent",
+            to: [ "#system-tests" ],
+            availability: "optional",
+        },
     ],
 }

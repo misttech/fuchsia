@@ -325,6 +325,14 @@ closed protocol Debug {
     /// Stops all profile recording and replay activity. Ongoing recordings are completed and
     /// persisted.
     strict StopProfileTasks() -> () error zx.Status;
+
+    /// Clears the directory entry cache (dirent cache) for all volumes. This drops the strong
+    /// references held by the cache to filesystem nodes (files and directories). If these nodes
+    /// are not currently open elsewhere, they will be dropped, freeing their associated resources
+    /// (including VMOs). Subsequent access to these paths will force Fxfs to recreate the nodes.
+    /// Note that this does not clear other internal caches (e.g., CachingObjectHandle's caches
+    /// used for LSM tree layers).
+    strict ClearCaches() -> () error zx.Status;
 };
 
 /// A protocol to serve the Volume protocol on a file-backed device.

@@ -653,6 +653,10 @@ pub async fn handle_debug_request(
             volumes.stop_profile_tasks().await;
             responder.send(Ok(()))
         }
+        DebugRequest::ClearCaches { responder } => {
+            volumes.clear_caches().await;
+            responder.send(Ok(()))
+        }
     }
 }
 

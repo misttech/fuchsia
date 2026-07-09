@@ -4,9 +4,12 @@
 
 use async_trait::async_trait;
 use delivery_blob::CompressionMode;
+use delivery_blob::compression::CompressionAlgorithm;
 use fidl_fuchsia_io as fio;
 use fuchsia_pkg_testing::PackageBuilder;
-use fuchsia_storage_benchmarks::filesystems::{BlobFilesystem, DeliveryBlob, PkgDirInstance};
+use fuchsia_storage_benchmarks::filesystems::{
+    BlobFilesystem, DeliveryBlob, FxblobInstance, PkgDirInstance,
+};
 use futures::stream::{self, StreamExt};
 use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
@@ -310,7 +313,7 @@ impl MappedBlob {
     }
 
     fn data(&self) -> &[u8] {
-        unsafe { std::slice::from_raw_parts_mut(self.addr as *mut u8, self.size) }
+        unsafe { std::slice::from_raw_parts(self.addr as *const u8, self.size) }
     }
 }
 
@@ -414,6 +417,119 @@ async fn page_in_blob_benchmark(
         durations.push(timer.stop());
     }
     durations
+}
+
+#[derive(Clone)]
+pub struct ColdPageFaultBenchmark {
+    name: &'static str,
+    resource_path: &'static str,
+    algo: CompressionAlgorithm,
+}
+
+impl ColdPageFaultBenchmark {
+    pub fn new(
+        name: &'static str,
+        resource_path: &'static str,
+        algo: CompressionAlgorithm,
+    ) -> Self {
+        Self { name, resource_path, algo }
+    }
+
+    pub fn new_lz4_40() -> Self {
+        Self::new("ColdPageFault/LZ4/40p", "/pkg/data/blobs/lz4_40.bin", CompressionAlgorithm::Lz4)
+    }
+    pub fn new_lz4_55() -> Self {
+        Self::new("ColdPageFault/LZ4/55p", "/pkg/data/blobs/lz4_55.bin", CompressionAlgorithm::Lz4)
+    }
+    pub fn new_lz4_70() -> Self {
+        Self::new("ColdPageFault/LZ4/70p", "/pkg/data/blobs/lz4_70.bin", CompressionAlgorithm::Lz4)
+    }
+    pub fn new_zstd_40() -> Self {
+        Self::new(
+            "ColdPageFault/ZSTD/40p",
+            "/pkg/data/blobs/zstd_40.bin",
+            CompressionAlgorithm::Zstd,
+        )
+    }
+    pub fn new_zstd_55() -> Self {
+        Self::new(
+            "ColdPageFault/ZSTD/55p",
+            "/pkg/data/blobs/zstd_55.bin",
+            CompressionAlgorithm::Zstd,
+        )
+    }
+    pub fn new_zstd_70() -> Self {
+        Self::new(
+            "ColdPageFault/ZSTD/70p",
+            "/pkg/data/blobs/zstd_70.bin",
+            CompressionAlgorithm::Zstd,
+        )
+    }
+}
+
+#[async_trait]
+impl Benchmark<FxblobInstance> for ColdPageFaultBenchmark {
+    async fn run(&self, fs: &mut FxblobInstance) -> Vec<OperationDuration> {
+        storage_trace::duration!("benchmark", self.name);
+
+        let raw_data = std::fs::read(self.resource_path)
+            .unwrap_or_else(|e| panic!("failed to read resource {}: {:?}", self.resource_path, e));
+
+        let delivery_blob = match self.algo {
+            CompressionAlgorithm::Zstd => {
+                DeliveryBlob::new(raw_data, delivery_blob::CompressionMode::Always)
+            }
+            CompressionAlgorithm::Lz4 => DeliveryBlob::new_with_type(
+                delivery_blob::DeliveryBlobType::Type3,
+                raw_data,
+                delivery_blob::CompressionMode::Always,
+            ),
+        };
+        let blob_hash = delivery_blob.name;
+
+        fs.write_blob(&delivery_blob).await;
+
+        // Warm up the decompression threads (to avoid measuring startup latency).
+        {
+            let vmo = fs.get_vmo(&blob_hash).await;
+            let mut warm_buf = [0u8; 1];
+            vmo.read(&mut warm_buf, 0).expect("warm up read failed");
+        }
+
+        let debug_proxy = fs.connect_to_debug();
+
+        let mut durations = Vec::new();
+        for _ in 0..20 {
+            // Call ClearCaches to purge Fxfs's internal caches.
+            debug_proxy
+                .clear_caches()
+                .await
+                .expect("ClearCaches transport error")
+                .expect("ClearCaches failed");
+
+            let vmo = fs.get_vmo(&blob_hash).await;
+            let mapped = MappedBlob::new(&vmo);
+
+            let duration = {
+                storage_trace::duration!("benchmark", "page_in", "offset" => 0usize);
+                let timer = OperationTimer::start();
+                // Read the first byte of mapped VMO to trigger page fault
+                let ptr = mapped.data().as_ptr();
+                let val = unsafe { std::ptr::read_volatile(ptr) };
+                std::hint::black_box(val);
+                timer.stop()
+            };
+            durations.push(duration);
+        }
+
+        fs.remove_blob(&blob_hash).await;
+
+        durations
+    }
+
+    fn name(&self) -> String {
+        self.name.to_owned()
+    }
 }
 
 #[cfg(test)]

@@ -9,3 +9,9 @@ fuchsia.storage: OpenAndGetVmoMetaFileCold/fxblob-pkgdir
 fuchsia.storage: OpenAndGetVmoMetaFileWarm/fxblob-pkgdir
 fuchsia.storage: OpenAndGetVmoContentBlobCold/fxblob-pkgdir
 fuchsia.storage: OpenAndGetVmoContentBlobWarm/fxblob-pkgdir
+fuchsia.storage: ColdPageFault/LZ4/40p/fxblob
+fuchsia.storage: ColdPageFault/LZ4/55p/fxblob
+fuchsia.storage: ColdPageFault/LZ4/70p/fxblob
+fuchsia.storage: ColdPageFault/ZSTD/40p/fxblob
+fuchsia.storage: ColdPageFault/ZSTD/55p/fxblob
+fuchsia.storage: ColdPageFault/ZSTD/70p/fxblob

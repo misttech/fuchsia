@@ -75,6 +75,7 @@
         {
             protocol: [
                 "fuchsia.fs.startup.Volumes",
+                "fuchsia.power.cpu.manager.Boost",
                 "fuchsia.storage.partitions.PartitionsManager",
             ],
             from: "parent",

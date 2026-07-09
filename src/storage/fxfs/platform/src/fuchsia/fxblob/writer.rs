@@ -279,14 +279,17 @@ impl DeliveryBlobWriter {
                 let (uncompressed_size, chunk_size, compressed_offsets) =
                     parse_seek_table(decompressor.seek_table())
                         .context("Failed to parse seek table.")?;
-                BlobMetadata {
-                    merkle_leaves: hashes,
-                    format: BlobFormat::ChunkedZstd {
+                let format = match decompressor.algorithm() {
+                    CompressionAlgorithm::Zstd => BlobFormat::ChunkedZstd {
                         uncompressed_size,
                         chunk_size,
                         compressed_offsets,
                     },
-                }
+                    CompressionAlgorithm::Lz4 => {
+                        BlobFormat::ChunkedLz4 { uncompressed_size, chunk_size, compressed_offsets }
+                    }
+                };
+                BlobMetadata { merkle_leaves: hashes, format }
             }
         };
         Ok(metadata)
@@ -445,7 +448,10 @@ impl DeliveryBlobWriter {
     async fn process_buffer(&mut self) -> Result<(), Error> {
         // Decode delivery blob header.
         if self.header.is_none() {
-            let Some((header, payload)) = DeliveryBlob::parse(&self.buffer)
+            // Type 3 delivery blobs are currently UNSTABLE / EXPERIMENTAL and subject to change,
+            // so they are gated by `allow_type3_blobs` (defaults to false).
+            let allow_type3 = self.parent.store().filesystem().options().allow_type3_blobs;
+            let Some((header, payload)) = DeliveryBlob::parse(&self.buffer, allow_type3)
                 .context("Failed to decode delivery blob header.")?
             else {
                 return Ok(()); // Not enough data to decode header yet.
@@ -667,8 +673,9 @@ fn parse_seek_table(
 mod tests {
     use super::*;
     use crate::fuchsia::fxblob::testing::{BlobFixture, new_blob_fixture, open_blob_fixture};
+    use crate::fuchsia::testing::{TestFixture, TestFixtureOptions};
     use core::ops::Range;
-    use delivery_blob::{CompressionMode, Type1Blob};
+    use delivery_blob::{CompressionMode, Type1Blob, Type3Blob};
     use fidl_fuchsia_fxfs::{BlobCreatorMarker, CreateBlobError};
     use fidl_fuchsia_io::UnlinkOptions;
     use fuchsia_async::epoch::Epoch;
@@ -1631,6 +1638,62 @@ mod tests {
                 CompressionMode::Always,
             )
             .await;
+
+        assert_eq!(fixture.read_blob(hash).await, data);
+        fixture.close().await;
+    }
+
+    #[fuchsia::test(threads = 10)]
+    async fn test_write_type_3_blob_rejected_by_default() {
+        let fixture = new_blob_fixture().await;
+        let data = vec![1, 2, 3, 4, 5];
+        let hash = fuchsia_merkle::root_from_slice(&data);
+        let delivery_data = Type3Blob::generate(&data, CompressionMode::Always);
+
+        let writer =
+            fixture.create_blob(&hash.into(), false).await.expect("Failed to create BlobWriter");
+        let vmo = writer
+            .get_vmo(delivery_data.len() as u64)
+            .await
+            .expect("transport error on get_vmo")
+            .expect("failed to get vmo");
+        vmo.write(&delivery_data, 0).expect("failed to write to vmo");
+
+        let result = writer.bytes_ready(delivery_data.len() as u64).await.expect("transport error");
+        assert!(result.is_err());
+        fixture.close().await;
+    }
+
+    #[fuchsia::test(threads = 10)]
+    async fn test_write_type_3_blob_allowed_when_enabled() {
+        let fixture = TestFixture::open(
+            DeviceHolder::new(FakeDevice::new(16384, 512)),
+            TestFixtureOptions {
+                allow_type3_blobs: true,
+                encrypted: false,
+                as_blob: true,
+                ..Default::default()
+            },
+        )
+        .await;
+        let data = vec![1, 2, 3, 4, 5];
+        let hash = fuchsia_merkle::root_from_slice(&data);
+        let delivery_data = Type3Blob::generate(&data, CompressionMode::Always);
+
+        let writer =
+            fixture.create_blob(&hash.into(), false).await.expect("Failed to create BlobWriter");
+        let vmo = writer
+            .get_vmo(delivery_data.len() as u64)
+            .await
+            .expect("transport error on get_vmo")
+            .expect("failed to get vmo");
+        vmo.write(&delivery_data, 0).expect("failed to write to vmo");
+
+        writer
+            .bytes_ready(delivery_data.len() as u64)
+            .await
+            .expect("transport error on bytes_ready")
+            .expect("failed to write data");
 
         assert_eq!(fixture.read_blob(hash).await, data);
         fixture.close().await;

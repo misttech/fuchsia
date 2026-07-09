@@ -25,6 +25,10 @@
             protocol: [ "fuchsia.diagnostics.ArchiveAccessor" ],
         },
         {
+            protocol: [ "fuchsia.power.cpu.manager.Boost" ],
+            availability: "optional",
+        },
+        {
             config: "fuchsia.fshost.FxfsBlob",
             key: "fxfs_blob",
             type: "bool",

@@ -4784,6 +4784,7 @@ mod test {
                     commit_count_clone.fetch_add(1, Ordering::SeqCst);
                     Ok(())
                 })),
+                ..Default::default()
             },
         )
         .await;

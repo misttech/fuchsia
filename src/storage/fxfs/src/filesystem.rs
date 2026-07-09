@@ -143,6 +143,10 @@ pub struct Options {
 
     /// How long to wait after being placed on a charger before starting a trim.
     pub trim_charger_wait: Duration,
+
+    /// If true, allows writing Type 3 delivery blobs.
+    /// NOTE: Type 3 delivery blobs are currently UNSTABLE / EXPERIMENTAL and subject to change.
+    pub allow_type3_blobs: bool,
 }
 
 impl Default for Options {
@@ -159,6 +163,7 @@ impl Default for Options {
             barriers_enabled: false,
             power_manager: None,
             trim_charger_wait: Duration::from_secs(10),
+            allow_type3_blobs: false,
         }
     }
 }
@@ -321,6 +326,12 @@ impl FxFilesystemBuilder {
     /// Incompatible with `format`.
     pub fn read_only(mut self, read_only: bool) -> Self {
         self.options.read_only = read_only;
+        self
+    }
+
+    /// Sets whether Type 3 delivery blobs are allowed. Defaults to `false`.
+    pub fn allow_type3_blobs(mut self, allow: bool) -> Self {
+        self.options.allow_type3_blobs = allow;
         self
     }
 

@@ -13,7 +13,7 @@
 //! ```
 
 use crate::compression::{ChunkedArchive, ChunkedArchiveOptions, ChunkedDecompressor};
-use crate::format::SerializedType1Blob;
+use crate::format::{SerializedType1Blob, SerializedType3Blob};
 use serde::{Deserialize, Serialize};
 use static_assertions::assert_eq_size;
 use thiserror::Error;
@@ -30,6 +30,7 @@ pub fn generate(delivery_type: DeliveryBlobType, data: &[u8]) -> Vec<u8> {
     match delivery_type {
         DeliveryBlobType::Type1 => Type1Blob::generate(data, CompressionMode::Attempt),
         DeliveryBlobType::Type2 => Type2Blob::generate(data, CompressionMode::Attempt),
+        DeliveryBlobType::Type3 => Type3Blob::generate(data, CompressionMode::Attempt),
         _ => panic!("Unsupported delivery blob type: {:?}", delivery_type),
     }
 }
@@ -44,6 +45,7 @@ pub fn generate_to(
     match delivery_type {
         DeliveryBlobType::Type1 => Type1Blob::generate_to(data, CompressionMode::Attempt, writer),
         DeliveryBlobType::Type2 => Type2Blob::generate_to(data, CompressionMode::Attempt, writer),
+        DeliveryBlobType::Type3 => Type3Blob::generate_to(data, CompressionMode::Attempt, writer),
         _ => panic!("Unsupported delivery blob type: {:?}", delivery_type),
     }
 }
@@ -176,6 +178,9 @@ pub enum DeliveryBlobType {
     Type1 = 1,
     /// Type 2 delivery blobs use zstd-chunked compression with level 21 and 128KiB chunk size.
     Type2 = 2,
+    /// Type 3 delivery blobs support the lz4-chunked compression format.
+    /// NOTE: Type 3 delivery blobs are currently UNSTABLE / EXPERIMENTAL and subject to change.
+    Type3 = 3,
 }
 
 impl TryFrom<u32> for DeliveryBlobType {
@@ -185,6 +190,7 @@ impl TryFrom<u32> for DeliveryBlobType {
             value if value == DeliveryBlobType::Reserved as u32 => Ok(DeliveryBlobType::Reserved),
             value if value == DeliveryBlobType::Type1 as u32 => Ok(DeliveryBlobType::Type1),
             value if value == DeliveryBlobType::Type2 as u32 => Ok(DeliveryBlobType::Type2),
+            value if value == DeliveryBlobType::Type3 as u32 => Ok(DeliveryBlobType::Type3),
             _ => Err(DeliveryBlobError::InvalidType),
         }
     }
@@ -218,17 +224,44 @@ pub struct DeliveryBlob {
 impl DeliveryBlob {
     /// Attempt to parse `data` as a delivery blob. On success, returns validated blob info,
     /// and the remainder of `data` representing the blob payload.
-    pub fn parse(data: &[u8]) -> Result<Option<(DeliveryBlob, &[u8])>, DeliveryBlobError> {
-        let Ok((serialized_header, payload)) = Ref::<_, SerializedType1Blob>::from_prefix(data)
-        else {
+    ///
+    /// If `allow_type3` is false, Type 3 delivery blobs will return
+    /// `DeliveryBlobError::InvalidType`.
+    pub fn parse(
+        data: &[u8],
+        allow_type3: bool,
+    ) -> Result<Option<(DeliveryBlob, &[u8])>, DeliveryBlobError> {
+        let Some(header) = DeliveryBlobHeader::parse(data)? else {
             return Ok(None);
         };
-        serialized_header.decode().map(|metadata| Some((metadata, payload)))
+        match header.delivery_type {
+            DeliveryBlobType::Type1 | DeliveryBlobType::Type2 => {
+                let Ok((serialized_header, payload)) =
+                    Ref::<_, format::SerializedType1Blob>::from_prefix(data)
+                else {
+                    return Ok(None);
+                };
+                serialized_header.decode().map(|metadata| Some((metadata, payload)))
+            }
+            DeliveryBlobType::Type3 => {
+                if !allow_type3 {
+                    return Err(DeliveryBlobError::InvalidType);
+                }
+                let Ok((serialized_header, payload)) =
+                    Ref::<_, format::SerializedType3Blob>::from_prefix(data)
+                else {
+                    return Ok(None);
+                };
+                serialized_header.decode().map(|metadata| Some((metadata.into(), payload)))
+            }
+            _ => Err(DeliveryBlobError::InvalidType),
+        }
     }
 
     /// Return the decompressed size of the blob without decompressing it.
     pub fn decompressed_size(delivery_blob: &[u8]) -> Result<u64, DecompressError> {
-        let (header, payload) = Self::parse(delivery_blob)?.ok_or(DecompressError::NeedMoreData)?;
+        let (header, payload) =
+            Self::parse(delivery_blob, true)?.ok_or(DecompressError::NeedMoreData)?;
         if !header.is_compressed {
             return Ok(header.payload_length as u64);
         }
@@ -252,7 +285,8 @@ impl DeliveryBlob {
         delivery_blob: &[u8],
         mut writer: impl std::io::Write,
     ) -> Result<(), DecompressError> {
-        let (header, payload) = Self::parse(delivery_blob)?.ok_or(DecompressError::NeedMoreData)?;
+        let (header, payload) =
+            Self::parse(delivery_blob, true)?.ok_or(DecompressError::NeedMoreData)?;
         if !header.is_compressed {
             return Ok(writer.write_all(payload)?);
         }
@@ -336,7 +370,7 @@ impl Type1Blob {
     /// Attempt to parse `data` as a Type 1 delivery blob. On success, returns validated blob info,
     /// and the remainder of `data` representing the blob payload.
     pub fn parse(data: &[u8]) -> Result<Option<(Type1Blob, &[u8])>, DeliveryBlobError> {
-        match DeliveryBlob::parse(data)? {
+        match DeliveryBlob::parse(data, true)? {
             Some((blob, payload)) if blob.header.delivery_type == DeliveryBlobType::Type1 => {
                 Ok(Some((blob.into(), payload)))
             }
@@ -410,13 +444,109 @@ impl Type2Blob {
     /// Attempt to parse `data` as a Type 2 delivery blob. On success, returns validated blob info,
     /// and the remainder of `data` representing the blob payload.
     pub fn parse(data: &[u8]) -> Result<Option<(Type2Blob, &[u8])>, DeliveryBlobError> {
-        match DeliveryBlob::parse(data)? {
+        match DeliveryBlob::parse(data, true)? {
             Some((blob, payload)) if blob.header.delivery_type == DeliveryBlobType::Type2 => {
                 Ok(Some((blob.into(), payload)))
             }
             Some(_) => Err(DeliveryBlobError::InvalidType),
             None => Ok(None),
         }
+    }
+}
+
+/// Header + metadata fields of a Type 3 blob.
+///
+/// **NOTE**: Type 3 delivery blobs are currently UNSTABLE / EXPERIMENTAL and subject to change.
+///
+/// **WARNING**: Outside of storage-owned components, this should only be used for informational
+/// or debugging purposes. The contents of this struct should be considered internal implementation
+/// details and are subject to change at any time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Type3Blob {
+    pub header: DeliveryBlobHeader,
+    pub payload_length: usize,
+    pub is_compressed: bool,
+}
+
+impl From<DeliveryBlob> for Type3Blob {
+    fn from(blob: DeliveryBlob) -> Self {
+        Self {
+            header: blob.header,
+            payload_length: blob.payload_length,
+            is_compressed: blob.is_compressed,
+        }
+    }
+}
+
+impl From<Type3Blob> for DeliveryBlob {
+    fn from(blob: Type3Blob) -> Self {
+        Self {
+            header: blob.header,
+            payload_length: blob.payload_length,
+            is_compressed: blob.is_compressed,
+        }
+    }
+}
+
+impl Type3Blob {
+    pub const HEADER: DeliveryBlobHeader = DeliveryBlobHeader {
+        delivery_type: DeliveryBlobType::Type3,
+        header_length: std::mem::size_of::<SerializedType3Blob>() as u32,
+    };
+
+    pub const CHUNKED_ARCHIVE_OPTIONS: ChunkedArchiveOptions =
+        ChunkedArchiveOptions::V3 { compression_algorithm: compression::CompressionAlgorithm::Lz4 };
+
+    /// Generate a Type 3 delivery blob for `data` using the specified `mode`.
+    pub fn generate(data: &[u8], mode: CompressionMode) -> Vec<u8> {
+        let mut delivery_blob: Vec<u8> = vec![];
+        Self::generate_to(data, mode, &mut delivery_blob).unwrap();
+        delivery_blob
+    }
+
+    /// Generate a Type 3 delivery blob for `data` using the specified `mode`. Writes delivery blob
+    /// directly into `writer`.
+    pub fn generate_to(
+        data: &[u8],
+        mode: CompressionMode,
+        mut writer: impl std::io::Write,
+    ) -> Result<(), std::io::Error> {
+        let compressed = match mode {
+            CompressionMode::Attempt | CompressionMode::Always => {
+                let compressed = ChunkedArchive::new(data, Self::CHUNKED_ARCHIVE_OPTIONS)
+                    .expect("failed to compress data");
+                if mode == CompressionMode::Always || compressed.serialized_size() <= data.len() {
+                    Some(compressed)
+                } else {
+                    None
+                }
+            }
+            CompressionMode::Never => None,
+        };
+
+        let payload_length =
+            compressed.as_ref().map(|archive| archive.serialized_size()).unwrap_or(data.len());
+        let header =
+            Self { header: Self::HEADER, payload_length, is_compressed: compressed.is_some() };
+        let serialized_header: SerializedType3Blob = header.into();
+        writer.write_all(serialized_header.as_bytes())?;
+
+        if let Some(archive) = compressed {
+            archive.write(writer)?;
+        } else {
+            writer.write_all(data)?;
+        }
+        Ok(())
+    }
+
+    /// Attempt to parse `data` as a Type 3 delivery blob. On success, returns validated blob info,
+    /// and the remainder of `data` representing the blob payload.
+    pub fn parse(data: &[u8]) -> Result<Option<(Type3Blob, &[u8])>, DeliveryBlobError> {
+        let Ok((serialized_header, payload)) = Ref::<_, SerializedType3Blob>::from_prefix(data)
+        else {
+            return Ok(None);
+        };
+        serialized_header.decode().map(|metadata| Some((metadata, payload)))
     }
 }
 
@@ -546,11 +676,6 @@ mod tests {
         assert_eq!(header.header.delivery_type, DeliveryBlobType::Type2);
         assert!(header.is_compressed);
         assert_eq!(decompress(&delivery_blob).unwrap(), data);
-        assert_eq!(decompressed_size(&delivery_blob).unwrap(), DATA_LEN as u64);
-        assert_eq!(
-            calculate_digest(&delivery_blob).unwrap(),
-            fuchsia_merkle::root_from_slice(&data)
-        );
     }
 
     #[test]
@@ -559,16 +684,78 @@ mod tests {
         let blob_v1 = Type1Blob::generate(&data, CompressionMode::Always);
         let blob_v2 = Type2Blob::generate(&data, CompressionMode::Always);
 
-        let (_, payload_v1) = DeliveryBlob::parse(&blob_v1).unwrap().unwrap();
+        let (_, payload_v1) = DeliveryBlob::parse(&blob_v1, true).unwrap().unwrap();
         let (decoded_v1, _) =
             compression::decode_archive(payload_v1, payload_v1.len()).unwrap().unwrap();
-        // Type 1 has 32 KiB chunks (8 chunks for 256 KiB)
         assert_eq!(decoded_v1.seek_table().len(), 8);
 
-        let (_, payload_v2) = DeliveryBlob::parse(&blob_v2).unwrap().unwrap();
+        let (_, payload_v2) = DeliveryBlob::parse(&blob_v2, true).unwrap().unwrap();
         let (decoded_v2, _) =
             compression::decode_archive(payload_v2, payload_v2.len()).unwrap().unwrap();
-        // Type 2 has 128 KiB chunks (2 chunks for 256 KiB)
         assert_eq!(decoded_v2.seek_table().len(), 2);
+    }
+
+    #[test]
+    fn type_3_compression_mode_never() {
+        let data: Vec<u8> = vec![0; DATA_LEN];
+        let delivery_blob = Type3Blob::generate(&data, CompressionMode::Never);
+        let (header, _) = Type3Blob::parse(&delivery_blob).unwrap().unwrap();
+        assert!(!header.is_compressed);
+        assert_eq!(header.payload_length, data.len());
+        assert_eq!(decompress(&delivery_blob).unwrap(), data);
+    }
+
+    #[test]
+    fn type_3_compression_mode_always() {
+        let data: Vec<u8> = {
+            let range = rand::distr::Uniform::<u8>::new_inclusive(0, 255).unwrap();
+            rand::rng().sample_iter(&range).take(DATA_LEN).collect()
+        };
+        let delivery_blob = Type3Blob::generate(&data, CompressionMode::Always);
+        let (header, _) = Type3Blob::parse(&delivery_blob).unwrap().unwrap();
+        assert!(header.is_compressed);
+        assert!(header.payload_length > data.len());
+        assert_eq!(decompress(&delivery_blob).unwrap(), data);
+    }
+
+    #[test]
+    fn type_3_compression_mode_attempt_compressible() {
+        let data: Vec<u8> = vec![0; DATA_LEN];
+        let delivery_blob = Type3Blob::generate(&data, CompressionMode::Attempt);
+        let (header, _) = Type3Blob::parse(&delivery_blob).unwrap().unwrap();
+        assert!(header.is_compressed);
+        assert!(header.payload_length < data.len());
+        assert_eq!(decompress(&delivery_blob).unwrap(), data);
+    }
+
+    #[test]
+    fn type_3_get_decompressed_size_and_digest() {
+        let data: Vec<u8> = {
+            let range = rand::distr::Uniform::<u8>::new_inclusive(0, 255).unwrap();
+            rand::rng().sample_iter(&range).take(DATA_LEN).collect()
+        };
+        let delivery_blob = generate(DeliveryBlobType::Type3, &data);
+        assert_eq!(decompressed_size(&delivery_blob).unwrap(), DATA_LEN as u64);
+        assert_eq!(
+            calculate_digest(&delivery_blob).unwrap(),
+            fuchsia_merkle::root_from_slice(&data)
+        );
+        assert_eq!(decompress(&delivery_blob).unwrap(), data);
+    }
+
+    #[test]
+    fn test_delivery_blob_parse() {
+        let data: Vec<u8> = vec![1, 2, 3, 4];
+        let type1_blob = generate(DeliveryBlobType::Type1, &data);
+        let type3_blob = generate(DeliveryBlobType::Type3, &data);
+
+        assert!(DeliveryBlob::parse(&type1_blob, false).unwrap().is_some());
+        assert!(DeliveryBlob::parse(&type1_blob, true).unwrap().is_some());
+
+        assert_eq!(
+            DeliveryBlob::parse(&type3_blob, false).unwrap_err(),
+            DeliveryBlobError::InvalidType
+        );
+        assert!(DeliveryBlob::parse(&type3_blob, true).unwrap().is_some());
     }
 }

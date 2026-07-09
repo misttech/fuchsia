@@ -769,6 +769,7 @@
         {
             protocol: [
                 "fuchsia.factory.WeaveFactoryStoreProvider",
+                "fuchsia.power.cpu.manager.Boost",
                 "fuchsia.ui.composition.Flatland",
             ],
             from: "parent",

@@ -14,7 +14,7 @@ use static_assertions::const_assert_eq;
 use zerocopy::byteorder::{LE, U32, U64};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
-use crate::{DeliveryBlobError, DeliveryBlobHeader, DeliveryBlobType, Type1Blob};
+use crate::{DeliveryBlobError, DeliveryBlobHeader, DeliveryBlobType, Type1Blob, Type3Blob};
 
 /// Delivery blob magic number (0xfc1ab10b or "Fuchsia Blob" in big-endian).
 const DELIVERY_BLOB_MAGIC: [u8; 4] = [0xfc, 0x1a, 0xb1, 0x0b];
@@ -23,6 +23,10 @@ const DELIVERY_BLOB_MAGIC: [u8; 4] = [0xfc, 0x1a, 0xb1, 0x0b];
 const_assert_eq!(std::mem::size_of::<SerializedHeader>(), 12);
 const_assert_eq!(
     std::mem::size_of::<SerializedType1Blob>(),
+    std::mem::size_of::<SerializedHeader>() + 16
+);
+const_assert_eq!(
+    std::mem::size_of::<SerializedType3Blob>(),
     std::mem::size_of::<SerializedHeader>() + 16
 );
 
@@ -170,6 +174,88 @@ impl SerializedType1Blob {
     }
 }
 
+bitflags! {
+    /// Type 3 delivery blob flags.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    struct SerializedType3Flags : u32 {
+        const IS_COMPRESSED = 0x00000001;
+        const VALID_FLAGS_MASK = Self::IS_COMPRESSED.bits();
+    }
+}
+
+impl From<&Type3Blob> for SerializedType3Flags {
+    fn from(value: &Type3Blob) -> Self {
+        if value.is_compressed {
+            SerializedType3Flags::IS_COMPRESSED
+        } else {
+            SerializedType3Flags::empty()
+        }
+    }
+}
+
+/// Serialized header + metadata of a Type 3 delivery blob. Use [`Type3Blob::parse`] to deserialize
+/// and validate a Type 3 delivery blob as opposed to deserializing this struct directly.
+#[derive(IntoBytes, KnownLayout, FromBytes, Immutable, Unaligned, Clone, Copy, Debug)]
+#[repr(C)]
+pub(crate) struct SerializedType3Blob {
+    // Header:
+    header: SerializedHeader,
+    // Metadata:
+    payload_length: U64<LE>,
+    checksum: U32<LE>,
+    flags: U32<LE>,
+}
+
+impl From<Type3Blob> for SerializedType3Blob {
+    fn from(value: Type3Blob) -> Self {
+        let serialized = Self {
+            header: (&value.header).into(),
+            payload_length: (value.payload_length as u64).into(),
+            checksum: Default::default(), // Calculated below.
+            flags: SerializedType3Flags::from(&value).bits().into(),
+        };
+
+        Self { checksum: serialized.checksum().into(), ..serialized }
+    }
+}
+
+impl SerializedType3Blob {
+    pub fn checksum(&self) -> u32 {
+        // Create a copy of the serialized blob but with the checksum zeroed.
+        let header = Self { checksum: 0.into(), ..*self };
+        let crc_algo = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
+        let mut digest = crc_algo.digest();
+        digest.update(header.as_bytes());
+        digest.finalize()
+    }
+
+    /// Decode and verify this serialized Type 3 delivery blob.
+    pub fn decode(&self) -> Result<Type3Blob, DeliveryBlobError> {
+        // Validate checksum before other integrity checks.
+        if self.checksum.get() != self.checksum() {
+            return Err(DeliveryBlobError::IntegrityError);
+        }
+        // Validate header.
+        let header: DeliveryBlobHeader = self.header.decode()?;
+        if header.delivery_type != DeliveryBlobType::Type3 {
+            return Err(DeliveryBlobError::InvalidType);
+        }
+        if header.header_length != Type3Blob::HEADER.header_length {
+            return Err(DeliveryBlobError::IntegrityError);
+        }
+        // Validate and decode remaining metadata fields.
+        let payload_length = self.payload_length.get() as usize;
+        let flags = SerializedType3Flags::from_bits(self.flags.get())
+            .ok_or(DeliveryBlobError::IntegrityError)?;
+
+        Ok(Type3Blob {
+            header,
+            payload_length,
+            is_compressed: flags.contains(SerializedType3Flags::IS_COMPRESSED),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,6 +374,40 @@ mod tests {
             SerializedType1Blob { checksum: corrupted_checksum.into(), ..serialized };
         assert_eq!(
             Type1Blob::parse(corrupted_blob.as_bytes()).unwrap_err(),
+            DeliveryBlobError::IntegrityError
+        );
+    }
+
+    #[test]
+    fn type_3_round_trip_uncompressed() {
+        let delivery_blob = Type3Blob::generate(TEST_DATA, CompressionMode::Never);
+        assert_eq!(
+            delivery_blob.len(),
+            std::mem::size_of::<SerializedType3Blob>() + TEST_DATA.len()
+        );
+        let (metadata, payload) = Type3Blob::parse(&delivery_blob).unwrap().unwrap();
+        assert_eq!(metadata.header, Type3Blob::HEADER);
+        assert_eq!(metadata.payload_length, TEST_DATA.len());
+        assert_eq!(metadata.is_compressed, false);
+        assert_eq!(payload, TEST_DATA);
+    }
+
+    #[test]
+    fn type_3_verify_checksum() {
+        let serialized: SerializedType3Blob = Type3Blob {
+            header: Type3Blob::HEADER,
+            payload_length: TEST_DATA.len(),
+            is_compressed: false,
+        }
+        .try_into()
+        .unwrap();
+        assert!(serialized.decode().is_ok());
+        assert_eq!(serialized.checksum.get(), serialized.checksum());
+        let corrupted_checksum: u32 = !(serialized.checksum.get());
+        let corrupted_blob =
+            SerializedType3Blob { checksum: corrupted_checksum.into(), ..serialized };
+        assert_eq!(
+            Type3Blob::parse(corrupted_blob.as_bytes()).unwrap_err(),
             DeliveryBlobError::IntegrityError
         );
     }
