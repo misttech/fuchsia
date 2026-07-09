@@ -54,7 +54,7 @@ group("images") {
     deps += [ ":check_vtables_in_rodata" ]
   }
 
-  if (defined(main_pb_label) && main_pb_label != "") {
+  if (bazel_product_bundle_target != "") {
     deps += [ "//build/assembly/overrides:build_zbi_developer_overrides.json" ]
   }
 }

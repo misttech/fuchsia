@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/assembly/developer_overrides.gni")
+import("//build/images/paths.gni")
 
 #  This is a generated target based on the 'product_assembly_overrides_contents' GN arg.
 if (product_assembly_overrides_contents != false) {
@@ -37,9 +38,9 @@ assembly_developer_overrides("overrides_for_test") {
   }
 }
 
-if (defined(main_pb_label) && main_pb_label != "") {
+if (bazel_product_bundle_target != "") {
   developer_overrides_list("build_zbi_developer_overrides.json") {
-    assembly_target = main_pb_label
+    assembly_target = bazel_product_bundle_target
     outputs = [ "$target_out_dir/build_zbi_developer_overrides.json" ]
   }
 }

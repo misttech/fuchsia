@@ -4,8 +4,6 @@
 
 import("//build/images/paths.gni")
 
-assert(use_bazel_images_only, "Only bazel-assembled products are supported.")
-
 if (is_host) {
   import("//build/testing/host_test_data.gni")
 

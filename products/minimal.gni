@@ -35,5 +35,3 @@ bazel_product_bundle_prefix = "//products/minimal:product_bundle"
 
 # Packages to be published to universe that do not go through assembly.
 discoverable_package_labels = [ "//src/developer/debug/debug_agent" ]
-
-use_bazel_images_only = true

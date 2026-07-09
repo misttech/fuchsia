@@ -61,15 +61,6 @@ if (current_toolchain == default_toolchain) {
     output_conversion = "json"
   }
 
-  if (main_pb_label == "") {
-    if (defined(files) && defined(files.product_bundle_dir)) {
-      _product_path = files.product_bundle_dir
-    }
-  } else {
-    _product_path = get_label_info(main_pb_label, "target_out_dir") + "/" +
-                    get_label_info(main_pb_label, "name") + "/product_bundle"
-  }
-
   group("default_ffx_config") {
     #
     # NOTE: There is a long standing issue with using $ in the value of string
@@ -120,9 +111,10 @@ if (current_toolchain == default_toolchain) {
           # since there are builds, such as SDK only, that do not build any
           # product bundles. In those builds, there is no product, so it is OK
           # to not set this value.
-          if (defined(_product_path)) {
+          if (defined(files.product_bundle_dir)) {
             product = {
-              path = "!!BUILD_DIR/" + rebase_path(_product_path, root_out_dir)
+              path = "!!BUILD_DIR/" +
+                     rebase_path(files.product_bundle_dir, root_out_dir)
             }
           }
 
