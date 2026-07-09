@@ -1010,10 +1010,6 @@
                 "AllInetTests/UdpSocketTest.ReconnectDoesNotClearReadShutdown/*",
                 "AllInetTests/UdpSocketTest.ReconnectDoesNotClearWriteShutdown/*",
 
-                // TODO(https://fxbug.dev/328692410): Re-enable once flake is resolved.
-                "All/SocketInetLoopbackIsolatedTest.TCPFinWait2Test/ListenV4*",
-                "All/SocketInetLoopbackIsolatedTest.TCPFinWait2Test/ListenV6*",
-
                 // This hangs on debug builds.
                 //
                 // See https://fxbug.dev/42084731.
