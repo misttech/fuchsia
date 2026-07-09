@@ -11,7 +11,6 @@ mod watchable_map;
 mod watcher_service;
 
 use anyhow::Error;
-use fidl_fuchsia_wlan_device as fidl_wlan_dev;
 use fidl_fuchsia_wlan_device_service as fidl_svc;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
@@ -27,7 +26,7 @@ const PHY_PATH: &str = "/dev/class/wlanphy";
 fn serve_phys(
     phys: Arc<device::PhyMap>,
     inspect_tree: Arc<inspect::WlanMonitorTree>,
-    phy_event_sender: mpsc::Sender<(u16, fidl_wlan_dev::PhyEvent)>,
+    phy_event_sender: mpsc::Sender<(u16, device::PhyEvent)>,
 ) -> BoxFuture<'static, Result<std::convert::Infallible, Error>> {
     info!("Serving real device environment");
     let fut = device::serve_phys(phys, inspect_tree, PHY_PATH, phy_event_sender);

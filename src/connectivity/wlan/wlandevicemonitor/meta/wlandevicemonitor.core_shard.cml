@@ -27,6 +27,11 @@
             to: "#wlandevicemonitor",
         },
         {
+            service: "fuchsia.wlan.phy.Service",
+            from: "parent",
+            to: "#wlandevicemonitor",
+        },
+        {
             protocol: "fuchsia.wlan.device.service.DeviceMonitor",
             from: "#wlandevicemonitor",
             to: "self/toolbox",

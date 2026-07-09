@@ -218,6 +218,7 @@
                 "fuchsia.hardware.vsock.Service",
                 "fuchsia.storage.ftl.Service",
                 "fuchsia.sysinfo.Service",
+                "fuchsia.wlan.phy.Service",
 
                 // These duplicate a service advertised by devfs, below.
                 // "fuchsia.gpu.magma.Service",

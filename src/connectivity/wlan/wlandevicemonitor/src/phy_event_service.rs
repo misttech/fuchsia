@@ -4,9 +4,7 @@
 
 use anyhow::{Error, bail};
 use fidl::endpoints::ServerEnd;
-use fidl_fuchsia_wlan_device as fidl_dev;
 use fidl_fuchsia_wlan_device_service as fidl_svc;
-use fidl_fuchsia_wlan_internal as fidl_internal;
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
 use futures::stream::FuturesUnordered;
@@ -16,8 +14,10 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
 
+use crate::device::PhyEvent;
+
 pub fn serve_phy_events(
-    phy_event_stream: mpsc::Receiver<(u16, fidl_dev::PhyEvent)>,
+    phy_event_stream: mpsc::Receiver<(u16, PhyEvent)>,
 ) -> (PhyEventService, impl Future<Output = Result<Infallible, Error>>) {
     let (watcher_sender, watcher_stream) = mpsc::unbounded();
     let inner = Arc::new(Mutex::new(Inner {
@@ -32,14 +32,8 @@ pub fn serve_phy_events(
     (service, fut)
 }
 
-fn convert_reason_code(code: fidl_dev::CriticalErrorReason) -> fidl_internal::CriticalErrorReason {
-    match code {
-        fidl_dev::CriticalErrorReason::FwCrash => fidl_internal::CriticalErrorReason::FwCrash,
-    }
-}
-
 async fn notify_phy_event_watchers(
-    mut phy_event_stream: mpsc::Receiver<(u16, fidl_dev::PhyEvent)>,
+    mut phy_event_stream: mpsc::Receiver<(u16, PhyEvent)>,
     mut watcher_stream: mpsc::UnboundedReceiver<ServerEnd<fidl_svc::PhyEventWatcherMarker>>,
     inner: Arc<Mutex<Inner>>,
 ) -> Result<Infallible, Error> {
@@ -50,7 +44,7 @@ async fn notify_phy_event_watchers(
             phy_event = phy_event_stream.next() => match phy_event {
                 Some((phy_id, event)) =>  {
                     match event {
-                        fidl_dev::PhyEvent::OnCriticalError { reason_code } => {
+                        PhyEvent::OnCriticalError { reason_code } => {
                             let locked = inner.lock();
                             if locked.watchers.is_empty() {
                                 warn!(
@@ -59,9 +53,9 @@ async fn notify_phy_event_watchers(
                                 );
                             }
                             for (watcher_id, watcher) in locked.watchers.iter() {
-                                if let Err(e) = watcher.send_on_critical_error(
-                                    phy_id, convert_reason_code(reason_code)
-                                ) {
+                                if let Err(e) =
+                                    watcher.send_on_critical_error(phy_id, reason_code)
+                                {
                                     warn!(
                                         "Failed to send on critical error to watcher {}: {}",
                                         watcher_id, e
@@ -69,7 +63,7 @@ async fn notify_phy_event_watchers(
                                 }
                             }
                         }
-                        fidl_dev::PhyEvent::OnCountryCodeChange { .. } => {
+                        PhyEvent::OnCountryCodeChange { .. } => {
                             warn!("Received country code change indication");
                         }
                     }
@@ -129,6 +123,7 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy;
+    use fidl_fuchsia_wlan_internal as fidl_internal;
     use fuchsia_async::TestExecutor;
     use futures::task::Poll;
     use std::pin::pin;
@@ -157,8 +152,8 @@ mod tests {
         phy_event_sink
             .try_send((
                 123,
-                fidl_dev::PhyEvent::OnCriticalError {
-                    reason_code: fidl_dev::CriticalErrorReason::FwCrash,
+                crate::device::PhyEvent::OnCriticalError {
+                    reason_code: fidl_internal::CriticalErrorReason::FwCrash,
                 },
             ))
             .expect("Failed to send event");

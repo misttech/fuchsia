@@ -22,11 +22,13 @@
             directory: "dev-wlanphy",
             rights: [ "r*" ],
             path: "/dev/class/wlanphy",
+            availability: "optional",
         },
         {
             // This service replaces the directory capability above.
             service: "fuchsia.wlan.device.Service",
         },
+        { service: "fuchsia.wlan.phy.Service" },
     ],
     expose: [
         {

@@ -4,99 +4,201 @@
 
 use anyhow::Context as _;
 use fidl_fuchsia_io as fio;
-use fidl_fuchsia_wlan_device as fidl_wlan_dev;
 use fuchsia_fs::directory::{WatchEvent, WatchMessage, Watcher};
-use futures::future::TryFutureExt as _;
-use futures::stream::{Stream, TryStreamExt as _};
+use futures::stream::{BoxStream, StreamExt as _, TryStreamExt as _};
 use log::error;
 use std::hash::{Hash as _, Hasher as _};
 
-#[derive(Debug)]
+use crate::device::{PhyEvent, PhyProxy};
+
 pub struct NewPhyDevice {
     pub id: u16,
-    pub proxy: fidl_wlan_dev::PhyProxy,
+    pub proxy: PhyProxy,
+    pub event_stream: futures::stream::BoxStream<'static, Result<PhyEvent, anyhow::Error>>,
 }
 
-pub fn watch_phy_devices(
-    device_directory: &str,
-) -> Result<impl Stream<Item = Result<NewPhyDevice, anyhow::Error>> + '_, anyhow::Error> {
-    let directory = fuchsia_fs::directory::open_in_namespace(device_directory, fio::Flags::empty())
-        .context("open directory")?;
-    Ok(async move {
-        let watcher = Watcher::new(&directory).await.context("create watcher")?;
-        Ok(watcher.err_into().try_filter_map(move |WatchMessage { event, filename }| {
-            futures::future::ready((|| {
-                match event {
-                    WatchEvent::ADD_FILE | WatchEvent::EXISTING => {}
-                    _ => return Ok(None),
-                };
-                let filename = match filename.as_path().to_str() {
-                    Some(filename) => filename,
-                    None => return Ok(None),
-                };
-                if filename == "." {
-                    return Ok(None);
-                }
-                let (proxy, server_end) = fidl::endpoints::create_proxy();
-                let connector = fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
-                    fidl_fuchsia_wlan_device::ConnectorMarker,
-                >(&directory, filename)
-                .context("connect to device")?;
-                let () = match connector.connect(server_end) {
-                    Ok(()) => (),
-                    Err(e) => {
-                        return match e {
-                            fidl::Error::ClientChannelClosed { .. } => {
-                                error!("Error opening '{}': {}", filename, e);
-                                Ok(None)
-                            }
-                            e => Err(e.into()),
-                        };
-                    }
-                };
-                // TODO(https://fxbug.dev/42075598): remove the assumption that devices have numeric IDs.
-                let mut s = std::collections::hash_map::DefaultHasher::new();
-                let () = filename.hash(&mut s);
-                let mut s: u64 = s.finish();
-                let mut id: u16 = 0;
-                while s != 0 {
-                    id |= s as u16;
-                    s >>= 16;
-                }
-                Ok(Some(NewPhyDevice { id, proxy }))
-            })())
-        }))
+// Implement Debug manually because BoxStream doesn't implement Debug
+impl std::fmt::Debug for NewPhyDevice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NewPhyDevice").field("id", &self.id).field("proxy", &self.proxy).finish()
     }
-    .try_flatten_stream())
+}
+
+fn generate_phy_id(name: &str) -> u16 {
+    let mut s = std::collections::hash_map::DefaultHasher::new();
+    let () = name.hash(&mut s);
+    let mut s: u64 = s.finish();
+    let mut id: u16 = 0;
+    while s != 0 {
+        id |= s as u16;
+        s >>= 16;
+    }
+    id
+}
+
+pub async fn watch_phy_devices(
+    device_directory: &str,
+) -> Result<BoxStream<'static, Result<NewPhyDevice, anyhow::Error>>, anyhow::Error> {
+    let devfs_dir =
+        fuchsia_fs::directory::open_in_namespace(device_directory, fio::Flags::empty()).ok();
+    let service =
+        fuchsia_component::client::Service::open(fidl_fuchsia_wlan_phy::ServiceMarker).ok();
+    watch_phy_devices_impl(devfs_dir, service).await
+}
+
+async fn watch_phy_devices_impl(
+    devfs_dir: Option<fio::DirectoryProxy>,
+    service: Option<fuchsia_component::client::Service<fidl_fuchsia_wlan_phy::ServiceMarker>>,
+) -> Result<BoxStream<'static, Result<NewPhyDevice, anyhow::Error>>, anyhow::Error> {
+    let devfs_watcher = match &devfs_dir {
+        Some(dir) => Watcher::new(dir).await.map(Some).context("create watcher"),
+        None => Err(anyhow::anyhow!("devfs directory not available")),
+    };
+
+    let service_stream = match service {
+        Some(svc) => svc.watch().await.map(Some).context("watch service"),
+        None => Err(anyhow::anyhow!("service not available")),
+    };
+
+    if devfs_watcher.is_err() && service_stream.is_err() {
+        return Err(anyhow::anyhow!(
+            "Both devfs watcher and service watcher failed to initialize. Devfs: {:?}, Service: {:?}",
+            devfs_watcher.err(),
+            service_stream.err()
+        ));
+    }
+
+    let devfs_stream = match (devfs_watcher, devfs_dir) {
+        (Ok(Some(watcher)), Some(devfs_dir)) => {
+            watcher
+                .err_into()
+                .try_filter_map(move |WatchMessage { event, filename }| {
+                    // Explicitly clone the DirectoryProxy client-end (cloning the underlying Arc)
+                    // so it can be moved into the async block without triggering a remote clone
+                    // at the filesystem level.
+                    let devfs_dir = Clone::clone(&devfs_dir);
+                    async move {
+                        match event {
+                            WatchEvent::ADD_FILE | WatchEvent::EXISTING => {}
+                            _ => return Ok(None),
+                        };
+                        let filename = match filename.as_path().to_str() {
+                            Some(filename) => filename,
+                            None => return Ok(None),
+                        };
+                        if filename == "." {
+                            return Ok(None);
+                        }
+                        let (proxy, server_end) = fidl::endpoints::create_proxy();
+                        let connector =
+                            fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
+                                fidl_fuchsia_wlan_device::ConnectorMarker,
+                            >(&devfs_dir, filename)
+                            .context("connect to device")?;
+                        let () = match connector.connect(server_end) {
+                            Ok(()) => (),
+                            Err(e @ fidl::Error::ClientChannelClosed { .. }) => {
+                                error!("Error opening PHY '{}': {:?}", filename, e);
+                                return Ok(None);
+                            }
+                            Err(e) => return Err(e.into()),
+                        };
+                        let id = generate_phy_id(filename);
+                        let event_stream = PhyProxy::old_event_stream(&proxy);
+                        Ok(Some(NewPhyDevice { id, proxy: PhyProxy::Old(proxy), event_stream }))
+                    }
+                })
+                .boxed()
+        }
+        _ => futures::stream::empty::<Result<NewPhyDevice, anyhow::Error>>().boxed(),
+    };
+
+    let svc_stream = match service_stream {
+        Ok(Some(stream)) => stream
+            .err_into()
+            .try_filter_map(move |instance_proxy| async move {
+                let proxy = match instance_proxy.connect_to_device() {
+                    Ok(proxy) => proxy,
+                    Err(e @ fidl::Error::ClientChannelClosed { .. }) => {
+                        error!(
+                            "Error opening PHY service instance {}: {:?}",
+                            instance_proxy.instance_name(),
+                            e
+                        );
+                        return Ok(None);
+                    }
+                    Err(e) => return Err(e.into()),
+                };
+                let id = generate_phy_id(instance_proxy.instance_name());
+                let (proxy, event_stream) = PhyProxy::new(proxy).await?;
+                Ok(Some(NewPhyDevice { id, proxy, event_stream }))
+            })
+            .boxed(),
+        _ => futures::stream::empty::<Result<NewPhyDevice, anyhow::Error>>().boxed(),
+    };
+
+    let merged = futures::stream::select(devfs_stream, svc_stream);
+    Ok(merged.boxed())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl::endpoints::Proxy as _;
     use fidl_fuchsia_wlan_device::{ConnectorRequest, ConnectorRequestStream};
     use fuchsia_async as fasync;
     use futures::poll;
-    use futures::stream::StreamExt as _;
+
     use futures::task::Poll;
     use log::info;
     use std::pin::pin;
     use std::sync::Arc;
-    use vfs::directory::entry_container::Directory;
     use vfs::pseudo_directory;
     use wlan_common::test_utils::ExpectWithin;
+
+    fn serve_mock_wlan_phy() -> Arc<vfs::service::Service> {
+        vfs::service::host(
+            move |mut stream: fidl_fuchsia_wlan_phy::WlanPhyRequestStream| async move {
+                use futures::StreamExt as _;
+                while let Some(Ok(req)) = stream.next().await {
+                    if let fidl_fuchsia_wlan_phy::WlanPhyRequest::Init { payload: _, responder } =
+                        req
+                    {
+                        let _ = responder.send(Ok(()));
+                    }
+                }
+            },
+        )
+    }
+
+    fn serve_device_connector() -> Arc<vfs::service::Service> {
+        vfs::service::host(move |mut stream: ConnectorRequestStream| async move {
+            while let Some(request) = stream.next().await {
+                match request {
+                    Ok(ConnectorRequest::Connect { request: _request, .. }) => {
+                        info!("device connector got connect request");
+                    }
+                    Err(e) => {
+                        panic!("Unexpected error in device connector {e:?}");
+                    }
+                }
+            }
+        })
+    }
 
     #[fasync::run_singlethreaded(test)]
     async fn watch_single_phy() {
         let fake_dir = pseudo_directory! {
             "123" => serve_device_connector(),
         };
+        let dir_proxy =
+            vfs::directory::serve_read_only(fake_dir, vfs::execution_scope::ExecutionScope::new());
 
-        serve_and_bind_vfs(fake_dir.clone(), "/test-dev");
-
-        let mut phy_watcher =
-            pin!(watch_phy_devices("/test-dev").expect("Failed to create phy_watcher"));
+        let mut phy_watcher = pin!(
+            watch_phy_devices_impl(Some(dir_proxy), None)
+                .await
+                .expect("Failed to create phy_watcher")
+        );
 
         phy_watcher
             .next()
@@ -114,11 +216,14 @@ mod tests {
             "123" => serve_device_connector(),
             "456" => serve_device_connector(),
         };
+        let dir_proxy =
+            vfs::directory::serve_read_only(fake_dir, vfs::execution_scope::ExecutionScope::new());
 
-        serve_and_bind_vfs(fake_dir.clone(), "/test-dev");
-
-        let mut phy_watcher =
-            pin!(watch_phy_devices("/test-dev").expect("Failed to create phy_watcher"));
+        let mut phy_watcher = pin!(
+            watch_phy_devices_impl(Some(dir_proxy), None)
+                .await
+                .expect("Failed to create phy_watcher")
+        );
 
         for _ in 0..2 {
             phy_watcher
@@ -135,25 +240,192 @@ mod tests {
         assert_matches!(poll!(phy_watcher.next()), Poll::Pending);
     }
 
-    fn serve_and_bind_vfs(vfs_dir: Arc<dyn Directory>, path: &'static str) {
-        let client =
-            vfs::directory::serve_read_only(vfs_dir, vfs::execution_scope::ExecutionScope::new());
-        let ns = fdio::Namespace::installed().expect("failed to get installed namespace");
-        ns.bind(path, client.into_client_end().unwrap()).expect("Failed to bind dev in namespace");
+    #[fasync::run_singlethreaded(test)]
+    async fn test_watch_neither_available() {
+        let res = watch_phy_devices_impl(None, None).await;
+        assert!(res.is_err());
     }
 
-    fn serve_device_connector() -> Arc<vfs::service::Service> {
-        vfs::service::host(move |mut stream: ConnectorRequestStream| async move {
-            while let Some(request) = stream.next().await {
-                match request {
-                    Ok(ConnectorRequest::Connect { request: _request, .. }) => {
-                        info!("device connector got connect request");
-                    }
-                    Err(e) => {
-                        panic!("Unexpected error in device connector {e:?}");
-                    }
+    #[fasync::run_singlethreaded(test)]
+    async fn test_watch_only_service_available() {
+        let fake_svc_dir = pseudo_directory! {
+            "fuchsia.wlan.phy.Service" => pseudo_directory! {
+                "default" => pseudo_directory! {
+                    "device" => serve_mock_wlan_phy(),
                 }
             }
-        })
+        };
+        let dir_proxy = vfs::directory::serve_read_only(
+            fake_svc_dir,
+            vfs::execution_scope::ExecutionScope::new(),
+        );
+        let service = fuchsia_component::client::Service::open_from_dir(
+            dir_proxy,
+            fidl_fuchsia_wlan_phy::ServiceMarker,
+        )
+        .expect("open_from_dir failed");
+
+        let phy_watcher =
+            watch_phy_devices_impl(None, Some(service)).await.expect("failed to start watcher");
+        let mut phy_watcher = pin!(phy_watcher);
+
+        let new_phy =
+            phy_watcher.next().await.expect("stream ended").expect("watcher returned error");
+        assert_eq!(new_phy.id, generate_phy_id("default"));
+
+        assert_matches!(poll!(phy_watcher.next()), Poll::Pending);
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_watch_only_devfs_available() {
+        let fake_dir = pseudo_directory! {
+            "123" => serve_device_connector(),
+        };
+        let dir_proxy =
+            vfs::directory::serve_read_only(fake_dir, vfs::execution_scope::ExecutionScope::new());
+
+        let phy_watcher =
+            watch_phy_devices_impl(Some(dir_proxy), None).await.expect("failed to start watcher");
+        let mut phy_watcher = pin!(phy_watcher);
+
+        let new_phy =
+            phy_watcher.next().await.expect("stream ended").expect("watcher returned error");
+        assert_eq!(new_phy.id, generate_phy_id("123"));
+
+        assert_matches!(poll!(phy_watcher.next()), Poll::Pending);
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_watch_both_available() {
+        let fake_dir = pseudo_directory! {
+            "123" => serve_device_connector(),
+        };
+        let dir_proxy =
+            vfs::directory::serve_read_only(fake_dir, vfs::execution_scope::ExecutionScope::new());
+
+        let fake_svc_dir = pseudo_directory! {
+            "fuchsia.wlan.phy.Service" => pseudo_directory! {
+                "default" => pseudo_directory! {
+                    "device" => serve_mock_wlan_phy(),
+                }
+            }
+        };
+        let svc_dir_proxy = vfs::directory::serve_read_only(
+            fake_svc_dir,
+            vfs::execution_scope::ExecutionScope::new(),
+        );
+        let service = fuchsia_component::client::Service::open_from_dir(
+            svc_dir_proxy,
+            fidl_fuchsia_wlan_phy::ServiceMarker,
+        )
+        .expect("open_from_dir failed");
+
+        let phy_watcher = watch_phy_devices_impl(Some(dir_proxy), Some(service))
+            .await
+            .expect("failed to start watcher");
+        let mut phy_watcher = pin!(phy_watcher);
+
+        let phy1 = phy_watcher.next().await.expect("stream ended").expect("watcher returned error");
+        let phy2 = phy_watcher.next().await.expect("stream ended").expect("watcher returned error");
+
+        let mut ids = vec![phy1.id, phy2.id];
+        ids.sort();
+        let mut expected_ids = vec![generate_phy_id("123"), generate_phy_id("default")];
+        expected_ids.sort();
+        assert_eq!(ids, expected_ids);
+
+        assert_matches!(poll!(phy_watcher.next()), Poll::Pending);
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_watch_3_phys_2_devfs_1_service() {
+        let fake_dir = pseudo_directory! {
+            "123" => serve_device_connector(),
+            "456" => serve_device_connector(),
+        };
+        let dir_proxy =
+            vfs::directory::serve_read_only(fake_dir, vfs::execution_scope::ExecutionScope::new());
+
+        let fake_svc_dir = pseudo_directory! {
+            "fuchsia.wlan.phy.Service" => pseudo_directory! {
+                "default" => pseudo_directory! {
+                    "device" => serve_mock_wlan_phy(),
+                }
+            }
+        };
+        let svc_dir_proxy = vfs::directory::serve_read_only(
+            fake_svc_dir,
+            vfs::execution_scope::ExecutionScope::new(),
+        );
+        let service = fuchsia_component::client::Service::open_from_dir(
+            svc_dir_proxy,
+            fidl_fuchsia_wlan_phy::ServiceMarker,
+        )
+        .expect("open_from_dir failed");
+
+        let phy_watcher = watch_phy_devices_impl(Some(dir_proxy), Some(service))
+            .await
+            .expect("failed to start watcher");
+        let mut phy_watcher = pin!(phy_watcher);
+
+        let phy1 = phy_watcher.next().await.expect("stream ended").expect("watcher returned error");
+        let phy2 = phy_watcher.next().await.expect("stream ended").expect("watcher returned error");
+        let phy3 = phy_watcher.next().await.expect("stream ended").expect("watcher returned error");
+
+        let mut ids = vec![phy1.id, phy2.id, phy3.id];
+        ids.sort();
+        let mut expected_ids =
+            vec![generate_phy_id("123"), generate_phy_id("456"), generate_phy_id("default")];
+        expected_ids.sort();
+        assert_eq!(ids, expected_ids);
+
+        assert_matches!(poll!(phy_watcher.next()), Poll::Pending);
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_watch_3_phys_1_devfs_2_service() {
+        let fake_dir = pseudo_directory! {
+            "123" => serve_device_connector(),
+        };
+        let dir_proxy =
+            vfs::directory::serve_read_only(fake_dir, vfs::execution_scope::ExecutionScope::new());
+
+        let fake_svc_dir = pseudo_directory! {
+            "fuchsia.wlan.phy.Service" => pseudo_directory! {
+                "inst1" => pseudo_directory! {
+                    "device" => serve_mock_wlan_phy(),
+                },
+                "inst2" => pseudo_directory! {
+                    "device" => serve_mock_wlan_phy(),
+                }
+            }
+        };
+        let svc_dir_proxy = vfs::directory::serve_read_only(
+            fake_svc_dir,
+            vfs::execution_scope::ExecutionScope::new(),
+        );
+        let service = fuchsia_component::client::Service::open_from_dir(
+            svc_dir_proxy,
+            fidl_fuchsia_wlan_phy::ServiceMarker,
+        )
+        .expect("open_from_dir failed");
+
+        let phy_watcher = watch_phy_devices_impl(Some(dir_proxy), Some(service))
+            .await
+            .expect("failed to start watcher");
+        let mut phy_watcher = pin!(phy_watcher);
+
+        let phy1 = phy_watcher.next().await.expect("stream ended").expect("watcher returned error");
+        let phy2 = phy_watcher.next().await.expect("stream ended").expect("watcher returned error");
+        let phy3 = phy_watcher.next().await.expect("stream ended").expect("watcher returned error");
+
+        let mut ids = vec![phy1.id, phy2.id, phy3.id];
+        ids.sort();
+        let mut expected_ids =
+            vec![generate_phy_id("123"), generate_phy_id("inst1"), generate_phy_id("inst2")];
+        expected_ids.sort();
+        assert_eq!(ids, expected_ids);
+
+        assert_matches!(poll!(phy_watcher.next()), Poll::Pending);
     }
 }
