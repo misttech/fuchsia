@@ -9,6 +9,10 @@
             "data": "hello"
         },
         {
+            "action": "wait_until_readable",
+            "side": "main"
+        },
+        {
             "action": "flush",
             "side": "replica",
             "queue_selector": "TCOFLUSH"
@@ -19,7 +23,7 @@
         },
         {
             "action": "read_from_master",
-            "data": "world"
+            "data": "helloworld"
         }
     ]
 }

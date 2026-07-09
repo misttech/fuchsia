@@ -9,6 +9,10 @@
             "data": "hello"
         },
         {
+            "type": "wait_until_readable",
+            "side": "main"
+        },
+        {
             "type": "flush",
             "side": "replica",
             "queue_selector": "TCOFLUSH"

@@ -66,6 +66,8 @@ enum Event {
     SetTermios { termios: TermiosConfig },
     #[serde(rename = "flush")]
     Flush { side: String, queue_selector: String },
+    #[serde(rename = "wait_until_readable")]
+    WaitUntilReadable { side: String },
 }
 
 struct TestBuffer {
@@ -333,6 +335,29 @@ fn run_scenario(scenario: Scenario) {
                     _ => panic!("Unknown queue_selector {}", queue_selector),
                 };
                 ld.flush(is_main, queue_selector_val).expect("flush failed");
+            }
+            Event::WaitUntilReadable { side } => {
+                // Line discipline read and write operations are blocking, so once the write has
+                // returned, the data is already available in the read queue.
+                //
+                // Instead, we simply assert that there is data to read.
+                struct ZeroSizedBuffer {}
+                impl OutputBuffer for ZeroSizedBuffer {
+                    fn write(&mut self, _data: &[u8]) -> Result<usize, Errno> {
+                        Ok(0)
+                    }
+                }
+                let mut buf = ZeroSizedBuffer {};
+
+                match side.as_str() {
+                    "main" => {
+                        assert_eq!(Ok(0), ld.main_read(&mut buf));
+                    }
+                    "replica" => {
+                        assert_eq!(Ok(0), ld.replica_read(&mut buf));
+                    }
+                    _ => panic!("Unknown side {}", side),
+                };
             }
         }
     }

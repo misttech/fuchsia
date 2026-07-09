@@ -13,6 +13,10 @@
             "data": "output"
         },
         {
+            "action": "wait_until_readable",
+            "side": "main"
+        },
+        {
             "action": "flush",
             "side": "replica",
             "queue_selector": "TCIOFLUSH"
@@ -31,7 +35,7 @@
         },
         {
             "action": "read_from_master",
-            "data": "output2"
+            "data": "outputoutput2"
         }
     ]
 }

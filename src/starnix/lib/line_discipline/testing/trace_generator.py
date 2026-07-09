@@ -227,6 +227,8 @@ class ScenarioRunner:
                 self._handle_set_termios(self.slave_fd, evt, "set_termios")
             elif action == "flush":
                 self._handle_flush(evt, "flush")
+            elif action == "wait_until_readable":
+                self._handle_wait_until_readable(evt, "wait_until_readable")
             elif action == "sleep":
                 time.sleep(evt.get("duration", 0.05))
 
@@ -276,6 +278,21 @@ class ScenarioRunner:
                 "queue_selector": queue_selector_str,
             }
         )
+
+    def _handle_wait_until_readable(
+        self, evt: Dict[str, Any], event_type: str
+    ) -> None:
+        side = evt["side"]
+        if side == "main":
+            fd = self.master_fd
+        elif side == "replica":
+            fd = self.slave_fd
+        else:
+            raise ValueError(f"Unknown side: {side}")
+
+        # Wait up to 2 seconds for the file descriptor to become readable.
+        select.select([fd], [], [], 2.0)
+        self.recorded_events.append({"type": event_type, "side": side})
 
     def _handle_write(
         self, fd: int, evt: Dict[str, Any], event_type: str

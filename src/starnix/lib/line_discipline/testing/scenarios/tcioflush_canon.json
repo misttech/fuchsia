@@ -15,6 +15,10 @@
             "data": "output"
         },
         {
+            "action": "wait_until_readable",
+            "side": "main"
+        },
+        {
             "action": "flush",
             "side": "replica",
             "queue_selector": "TCIOFLUSH"

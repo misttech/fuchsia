@@ -43,6 +43,10 @@
             "data": "A"
         },
         {
+            "type": "wait_until_readable",
+            "side": "main"
+        },
+        {
             "type": "write_to_slave",
             "data": "World\n"
         },

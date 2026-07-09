@@ -48,6 +48,10 @@
             "data": "A"
         },
         {
+            "action": "wait_until_readable",
+            "side": "main"
+        },
+        {
             "action": "write_to_slave",
             "data": "World\n"
         },
