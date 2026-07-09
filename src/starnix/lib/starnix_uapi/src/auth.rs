@@ -8,68 +8,78 @@ use crate::errors::{Errno, error};
 use crate::selinux::TaskAttrs;
 use crate::{gid_t, uapi, uid_t};
 use bitflags::bitflags;
-use std::ops;
 use std::sync::{Arc, LazyLock};
 
-// We don't use bitflags for this because capability sets can have bits set that don't have defined
-// meaning as capabilities. init has all 64 bits set, even though only 40 of them are valid.
-#[derive(Clone, Copy, Eq, PartialEq)]
-pub struct Capabilities {
-    mask: u64,
+bitflags! {
+    /// Linux capability flags for thread permission checks and bounding sets.
+    ///
+    /// Handles only known and valid Linux capabilities (bits `0` through
+    /// [`CAP_LAST_CAP`]). Any undefined capability bits in raw masks from user space
+    /// are truncated during ABI conversion using [`Self::from_bits_truncate`].
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct Capabilities: u64 {
+        // keep-sorted start
+        const AUDIT_CONTROL = 1 << uapi::CAP_AUDIT_CONTROL;
+        const AUDIT_READ = 1 << uapi::CAP_AUDIT_READ;
+        const AUDIT_WRITE = 1 << uapi::CAP_AUDIT_WRITE;
+        const BLOCK_SUSPEND = 1 << uapi::CAP_BLOCK_SUSPEND;
+        const BPF = 1 << uapi::CAP_BPF;
+        const CHECKPOINT_RESTORE = 1 << uapi::CAP_CHECKPOINT_RESTORE;
+        const CHOWN = 1 << uapi::CAP_CHOWN;
+        const DAC_OVERRIDE = 1 << uapi::CAP_DAC_OVERRIDE;
+        const DAC_READ_SEARCH = 1 << uapi::CAP_DAC_READ_SEARCH;
+        const FOWNER = 1 << uapi::CAP_FOWNER;
+        const FSETID = 1 << uapi::CAP_FSETID;
+        const IPC_LOCK = 1 << uapi::CAP_IPC_LOCK;
+        const IPC_OWNER = 1 << uapi::CAP_IPC_OWNER;
+        const KILL = 1 << uapi::CAP_KILL;
+        const LEASE = 1 << uapi::CAP_LEASE;
+        const LINUX_IMMUTABLE = 1 << uapi::CAP_LINUX_IMMUTABLE;
+        const MAC_ADMIN = 1 << uapi::CAP_MAC_ADMIN;
+        const MAC_OVERRIDE = 1 << uapi::CAP_MAC_OVERRIDE;
+        const MKNOD = 1 << uapi::CAP_MKNOD;
+        const NET_ADMIN = 1 << uapi::CAP_NET_ADMIN;
+        const NET_BIND_SERVICE = 1 << uapi::CAP_NET_BIND_SERVICE;
+        const NET_BROADCAST = 1 << uapi::CAP_NET_BROADCAST;
+        const NET_RAW = 1 << uapi::CAP_NET_RAW;
+        const PERFMON = 1 << uapi::CAP_PERFMON;
+        const SETFCAP = 1 << uapi::CAP_SETFCAP;
+        const SETGID = 1 << uapi::CAP_SETGID;
+        const SETPCAP = 1 << uapi::CAP_SETPCAP;
+        const SETUID = 1 << uapi::CAP_SETUID;
+        const SYSLOG = 1 << uapi::CAP_SYSLOG;
+        const SYS_ADMIN = 1 << uapi::CAP_SYS_ADMIN;
+        const SYS_BOOT = 1 << uapi::CAP_SYS_BOOT;
+        const SYS_CHROOT = 1 << uapi::CAP_SYS_CHROOT;
+        const SYS_MODULE = 1 << uapi::CAP_SYS_MODULE;
+        const SYS_NICE = 1 << uapi::CAP_SYS_NICE;
+        const SYS_PACCT = 1 << uapi::CAP_SYS_PACCT;
+        const SYS_PTRACE = 1 << uapi::CAP_SYS_PTRACE;
+        const SYS_RAWIO = 1 << uapi::CAP_SYS_RAWIO;
+        const SYS_RESOURCE = 1 << uapi::CAP_SYS_RESOURCE;
+        const SYS_TIME = 1 << uapi::CAP_SYS_TIME;
+        const SYS_TTY_CONFIG = 1 << uapi::CAP_SYS_TTY_CONFIG;
+        const WAKE_ALARM = 1 << uapi::CAP_WAKE_ALARM;
+        // keep-sorted end
+    }
 }
 
 impl Capabilities {
-    pub const fn empty() -> Self {
-        Self { mask: 0 }
-    }
-
-    pub const fn all() -> Self {
-        const fn make_mask(cap: u32) -> u64 {
-            let mask = if cap > 0 { make_mask(cap - 1) << 1 } else { 0u64 };
-            mask | 1u64
-        }
-        const ALL_CAPS_MASK: u64 = make_mask(CAP_LAST_CAP);
-        Self { mask: ALL_CAPS_MASK }
-    }
-
-    pub fn union(&self, caps: Capabilities) -> Self {
-        let mut new_caps = *self;
-        new_caps.insert(caps);
-        new_caps
-    }
-
-    pub fn difference(&self, caps: Capabilities) -> Self {
-        let mut new_caps = *self;
-        new_caps.remove(caps);
-        new_caps
-    }
-
-    pub fn contains(self, caps: Capabilities) -> bool {
-        (self & caps) == caps
-    }
-
-    pub fn insert(&mut self, caps: Capabilities) {
-        *self |= caps;
-    }
-
-    pub fn remove(&mut self, caps: Capabilities) {
-        *self &= !caps;
-    }
-
     pub const fn as_abi_v1(self) -> u32 {
-        self.mask as u32
+        self.bits() as u32
     }
 
     pub fn from_abi_v1(bits: u32) -> Self {
-        Self { mask: bits as u64 } & Self::all()
+        Self::from_bits_truncate(bits as u64)
     }
 
     pub const fn as_abi_v3(self) -> (u32, u32) {
-        (self.mask as u32, (self.mask >> 32) as u32)
+        (self.bits() as u32, (self.bits() >> 32) as u32)
     }
 
     pub fn from_abi_v3(u32s: (u32, u32)) -> Self {
-        Self { mask: u32s.0 as u64 | ((u32s.1 as u64) << 32) } & Self::all()
+        let mask = u32s.0 as u64 | ((u32s.1 as u64) << 32);
+        Self::from_bits_truncate(mask)
     }
 }
 
@@ -78,59 +88,12 @@ impl std::convert::TryFrom<u64> for Capabilities {
 
     fn try_from(capability_num: u64) -> Result<Self, Self::Error> {
         match 1u64.checked_shl(capability_num as u32) {
-            Some(mask) => Ok(Self { mask }),
+            Some(mask) => {
+                let caps = Self::from_bits_truncate(mask);
+                if caps.is_empty() { error!(EINVAL) } else { Ok(caps) }
+            }
             _ => error!(EINVAL),
         }
-    }
-}
-
-impl ops::BitAnd for Capabilities {
-    type Output = Self;
-
-    // rhs is the "right-hand side" of the expression `a & b`
-    fn bitand(self, rhs: Self) -> Self::Output {
-        Self { mask: self.mask & rhs.mask }
-    }
-}
-
-impl ops::BitAndAssign for Capabilities {
-    // rhs is the "right-hand side" of the expression `a & b`
-    fn bitand_assign(&mut self, rhs: Self) {
-        self.mask &= rhs.mask;
-    }
-}
-
-impl ops::BitOr for Capabilities {
-    type Output = Self;
-
-    fn bitor(self, rhs: Self) -> Self::Output {
-        Self { mask: self.mask | rhs.mask }
-    }
-}
-
-impl ops::BitOrAssign for Capabilities {
-    fn bitor_assign(&mut self, rhs: Self) {
-        self.mask |= rhs.mask;
-    }
-}
-
-impl ops::Not for Capabilities {
-    type Output = Self;
-
-    fn not(self) -> Self::Output {
-        Self { mask: !self.mask }
-    }
-}
-
-impl std::fmt::Debug for Capabilities {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f, "Capabilities({:#x})", self.mask)
-    }
-}
-
-impl std::fmt::LowerHex for Capabilities {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        std::fmt::LowerHex::fmt(&self.mask, f)
     }
 }
 
@@ -138,98 +101,97 @@ impl std::str::FromStr for Capabilities {
     type Err = Errno;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
-            "CHOWN" => CAP_CHOWN,
-            "DAC_OVERRIDE" => CAP_DAC_OVERRIDE,
-            "DAC_READ_SEARCH" => CAP_DAC_READ_SEARCH,
-            "FOWNER" => CAP_FOWNER,
-            "FSETID" => CAP_FSETID,
-            "KILL" => CAP_KILL,
-            "SETGID" => CAP_SETGID,
-            "SETUID" => CAP_SETUID,
-            "SETPCAP" => CAP_SETPCAP,
-            "LINUX_IMMUTABLE" => CAP_LINUX_IMMUTABLE,
-            "NET_BIND_SERVICE" => CAP_NET_BIND_SERVICE,
-            "NET_BROADCAST" => CAP_NET_BROADCAST,
-            "NET_ADMIN" => CAP_NET_ADMIN,
-            "NET_RAW" => CAP_NET_RAW,
-            "IPC_LOCK" => CAP_IPC_LOCK,
-            "IPC_OWNER" => CAP_IPC_OWNER,
-            "SYS_MODULE" => CAP_SYS_MODULE,
-            "SYS_RAWIO" => CAP_SYS_RAWIO,
-            "SYS_CHROOT" => CAP_SYS_CHROOT,
-            "SYS_PTRACE" => CAP_SYS_PTRACE,
-            "SYS_PACCT" => CAP_SYS_PACCT,
-            "SYS_ADMIN" => CAP_SYS_ADMIN,
-            "SYS_BOOT" => CAP_SYS_BOOT,
-            "SYS_NICE" => CAP_SYS_NICE,
-            "SYS_RESOURCE" => CAP_SYS_RESOURCE,
-            "SYS_TIME" => CAP_SYS_TIME,
-            "SYS_TTY_CONFIG" => CAP_SYS_TTY_CONFIG,
-            "MKNOD" => CAP_MKNOD,
-            "LEASE" => CAP_LEASE,
-            "AUDIT_WRITE" => CAP_AUDIT_WRITE,
-            "AUDIT_CONTROL" => CAP_AUDIT_CONTROL,
-            "SETFCAP" => CAP_SETFCAP,
-            "MAC_OVERRIDE" => CAP_MAC_OVERRIDE,
-            "MAC_ADMIN" => CAP_MAC_ADMIN,
-            "SYSLOG" => CAP_SYSLOG,
-            "WAKE_ALARM" => CAP_WAKE_ALARM,
-            "BLOCK_SUSPEND" => CAP_BLOCK_SUSPEND,
-            "AUDIT_READ" => CAP_AUDIT_READ,
-            "PERFMON" => CAP_PERFMON,
-            "BPF" => CAP_BPF,
-            "CHECKPOINT_RESTORE" => CAP_CHECKPOINT_RESTORE,
+            // keep-sorted start
+            "AUDIT_CONTROL" => Self::AUDIT_CONTROL,
+            "AUDIT_READ" => Self::AUDIT_READ,
+            "AUDIT_WRITE" => Self::AUDIT_WRITE,
+            "BLOCK_SUSPEND" => Self::BLOCK_SUSPEND,
+            "BPF" => Self::BPF,
+            "CHECKPOINT_RESTORE" => Self::CHECKPOINT_RESTORE,
+            "CHOWN" => Self::CHOWN,
+            "DAC_OVERRIDE" => Self::DAC_OVERRIDE,
+            "DAC_READ_SEARCH" => Self::DAC_READ_SEARCH,
+            "FOWNER" => Self::FOWNER,
+            "FSETID" => Self::FSETID,
+            "IPC_LOCK" => Self::IPC_LOCK,
+            "IPC_OWNER" => Self::IPC_OWNER,
+            "KILL" => Self::KILL,
+            "LEASE" => Self::LEASE,
+            "LINUX_IMMUTABLE" => Self::LINUX_IMMUTABLE,
+            "MAC_ADMIN" => Self::MAC_ADMIN,
+            "MAC_OVERRIDE" => Self::MAC_OVERRIDE,
+            "MKNOD" => Self::MKNOD,
+            "NET_ADMIN" => Self::NET_ADMIN,
+            "NET_BIND_SERVICE" => Self::NET_BIND_SERVICE,
+            "NET_BROADCAST" => Self::NET_BROADCAST,
+            "NET_RAW" => Self::NET_RAW,
+            "PERFMON" => Self::PERFMON,
+            "SETFCAP" => Self::SETFCAP,
+            "SETGID" => Self::SETGID,
+            "SETPCAP" => Self::SETPCAP,
+            "SETUID" => Self::SETUID,
+            "SYSLOG" => Self::SYSLOG,
+            "SYS_ADMIN" => Self::SYS_ADMIN,
+            "SYS_BOOT" => Self::SYS_BOOT,
+            "SYS_CHROOT" => Self::SYS_CHROOT,
+            "SYS_MODULE" => Self::SYS_MODULE,
+            "SYS_NICE" => Self::SYS_NICE,
+            "SYS_PACCT" => Self::SYS_PACCT,
+            "SYS_PTRACE" => Self::SYS_PTRACE,
+            "SYS_RAWIO" => Self::SYS_RAWIO,
+            "SYS_RESOURCE" => Self::SYS_RESOURCE,
+            "SYS_TIME" => Self::SYS_TIME,
+            "SYS_TTY_CONFIG" => Self::SYS_TTY_CONFIG,
+            "WAKE_ALARM" => Self::WAKE_ALARM,
+            // keep-sorted end
             _ => return error!(EINVAL),
         })
     }
 }
 
-pub const CAP_CHOWN: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_CHOWN };
-pub const CAP_DAC_OVERRIDE: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_DAC_OVERRIDE };
-pub const CAP_DAC_READ_SEARCH: Capabilities =
-    Capabilities { mask: 1u64 << uapi::CAP_DAC_READ_SEARCH };
-pub const CAP_FOWNER: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_FOWNER };
-pub const CAP_FSETID: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_FSETID };
-pub const CAP_KILL: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_KILL };
-pub const CAP_SETGID: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_SETGID };
-pub const CAP_SETUID: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_SETUID };
-pub const CAP_SETPCAP: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_SETPCAP };
-pub const CAP_LINUX_IMMUTABLE: Capabilities =
-    Capabilities { mask: 1u64 << uapi::CAP_LINUX_IMMUTABLE };
-pub const CAP_NET_BIND_SERVICE: Capabilities =
-    Capabilities { mask: 1u64 << uapi::CAP_NET_BIND_SERVICE };
-pub const CAP_NET_BROADCAST: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_NET_BROADCAST };
-pub const CAP_NET_ADMIN: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_NET_ADMIN };
-pub const CAP_NET_RAW: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_NET_RAW };
-pub const CAP_IPC_LOCK: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_IPC_LOCK };
-pub const CAP_IPC_OWNER: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_IPC_OWNER };
-pub const CAP_SYS_MODULE: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_SYS_MODULE };
-pub const CAP_SYS_RAWIO: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_SYS_RAWIO };
-pub const CAP_SYS_CHROOT: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_SYS_CHROOT };
-pub const CAP_SYS_PTRACE: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_SYS_PTRACE };
-pub const CAP_SYS_PACCT: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_SYS_PACCT };
-pub const CAP_SYS_ADMIN: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_SYS_ADMIN };
-pub const CAP_SYS_BOOT: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_SYS_BOOT };
-pub const CAP_SYS_NICE: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_SYS_NICE };
-pub const CAP_SYS_RESOURCE: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_SYS_RESOURCE };
-pub const CAP_SYS_TIME: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_SYS_TIME };
-pub const CAP_SYS_TTY_CONFIG: Capabilities =
-    Capabilities { mask: 1u64 << uapi::CAP_SYS_TTY_CONFIG };
-pub const CAP_MKNOD: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_MKNOD };
-pub const CAP_LEASE: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_LEASE };
-pub const CAP_AUDIT_WRITE: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_AUDIT_WRITE };
-pub const CAP_AUDIT_CONTROL: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_AUDIT_CONTROL };
-pub const CAP_SETFCAP: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_SETFCAP };
-pub const CAP_MAC_OVERRIDE: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_MAC_OVERRIDE };
-pub const CAP_MAC_ADMIN: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_MAC_ADMIN };
-pub const CAP_SYSLOG: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_SYSLOG };
-pub const CAP_WAKE_ALARM: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_WAKE_ALARM };
-pub const CAP_BLOCK_SUSPEND: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_BLOCK_SUSPEND };
-pub const CAP_AUDIT_READ: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_AUDIT_READ };
-pub const CAP_PERFMON: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_PERFMON };
-pub const CAP_BPF: Capabilities = Capabilities { mask: 1u64 << uapi::CAP_BPF };
-pub const CAP_CHECKPOINT_RESTORE: Capabilities =
-    Capabilities { mask: 1u64 << uapi::CAP_CHECKPOINT_RESTORE };
+// keep-sorted start
+pub const CAP_AUDIT_CONTROL: Capabilities = Capabilities::AUDIT_CONTROL;
+pub const CAP_AUDIT_READ: Capabilities = Capabilities::AUDIT_READ;
+pub const CAP_AUDIT_WRITE: Capabilities = Capabilities::AUDIT_WRITE;
+pub const CAP_BLOCK_SUSPEND: Capabilities = Capabilities::BLOCK_SUSPEND;
+pub const CAP_BPF: Capabilities = Capabilities::BPF;
+pub const CAP_CHECKPOINT_RESTORE: Capabilities = Capabilities::CHECKPOINT_RESTORE;
+pub const CAP_CHOWN: Capabilities = Capabilities::CHOWN;
+pub const CAP_DAC_OVERRIDE: Capabilities = Capabilities::DAC_OVERRIDE;
+pub const CAP_DAC_READ_SEARCH: Capabilities = Capabilities::DAC_READ_SEARCH;
+pub const CAP_FOWNER: Capabilities = Capabilities::FOWNER;
+pub const CAP_FSETID: Capabilities = Capabilities::FSETID;
+pub const CAP_IPC_LOCK: Capabilities = Capabilities::IPC_LOCK;
+pub const CAP_IPC_OWNER: Capabilities = Capabilities::IPC_OWNER;
+pub const CAP_KILL: Capabilities = Capabilities::KILL;
+pub const CAP_LEASE: Capabilities = Capabilities::LEASE;
+pub const CAP_LINUX_IMMUTABLE: Capabilities = Capabilities::LINUX_IMMUTABLE;
+pub const CAP_MAC_ADMIN: Capabilities = Capabilities::MAC_ADMIN;
+pub const CAP_MAC_OVERRIDE: Capabilities = Capabilities::MAC_OVERRIDE;
+pub const CAP_MKNOD: Capabilities = Capabilities::MKNOD;
+pub const CAP_NET_ADMIN: Capabilities = Capabilities::NET_ADMIN;
+pub const CAP_NET_BIND_SERVICE: Capabilities = Capabilities::NET_BIND_SERVICE;
+pub const CAP_NET_BROADCAST: Capabilities = Capabilities::NET_BROADCAST;
+pub const CAP_NET_RAW: Capabilities = Capabilities::NET_RAW;
+pub const CAP_PERFMON: Capabilities = Capabilities::PERFMON;
+pub const CAP_SETFCAP: Capabilities = Capabilities::SETFCAP;
+pub const CAP_SETGID: Capabilities = Capabilities::SETGID;
+pub const CAP_SETPCAP: Capabilities = Capabilities::SETPCAP;
+pub const CAP_SETUID: Capabilities = Capabilities::SETUID;
+pub const CAP_SYSLOG: Capabilities = Capabilities::SYSLOG;
+pub const CAP_SYS_ADMIN: Capabilities = Capabilities::SYS_ADMIN;
+pub const CAP_SYS_BOOT: Capabilities = Capabilities::SYS_BOOT;
+pub const CAP_SYS_CHROOT: Capabilities = Capabilities::SYS_CHROOT;
+pub const CAP_SYS_MODULE: Capabilities = Capabilities::SYS_MODULE;
+pub const CAP_SYS_NICE: Capabilities = Capabilities::SYS_NICE;
+pub const CAP_SYS_PACCT: Capabilities = Capabilities::SYS_PACCT;
+pub const CAP_SYS_PTRACE: Capabilities = Capabilities::SYS_PTRACE;
+pub const CAP_SYS_RAWIO: Capabilities = Capabilities::SYS_RAWIO;
+pub const CAP_SYS_RESOURCE: Capabilities = Capabilities::SYS_RESOURCE;
+pub const CAP_SYS_TIME: Capabilities = Capabilities::SYS_TIME;
+pub const CAP_SYS_TTY_CONFIG: Capabilities = Capabilities::SYS_TTY_CONFIG;
+pub const CAP_WAKE_ALARM: Capabilities = Capabilities::WAKE_ALARM;
+// keep-sorted end
 pub const CAP_LAST_CAP: u32 = uapi::CAP_LAST_CAP;
 
 bitflags! {
@@ -548,12 +510,12 @@ mod tests {
 
     #[::fuchsia::test]
     fn test_empty() {
-        assert_eq!(Capabilities::empty().mask, 0);
+        assert_eq!(Capabilities::empty().bits(), 0);
     }
 
     #[::fuchsia::test]
     fn test_union() {
-        let expected = Capabilities { mask: CAP_BLOCK_SUSPEND.mask | CAP_AUDIT_READ.mask };
+        let expected = CAP_BLOCK_SUSPEND | CAP_AUDIT_READ;
         assert_eq!(CAP_BLOCK_SUSPEND.union(CAP_AUDIT_READ), expected);
         assert_eq!(CAP_BLOCK_SUSPEND.union(CAP_BLOCK_SUSPEND), CAP_BLOCK_SUSPEND);
     }
@@ -584,7 +546,7 @@ mod tests {
         assert_eq!(capabilities, CAP_BLOCK_SUSPEND);
 
         capabilities.insert(CAP_AUDIT_READ);
-        let expected = Capabilities { mask: CAP_BLOCK_SUSPEND.mask | CAP_AUDIT_READ.mask };
+        let expected = CAP_BLOCK_SUSPEND | CAP_AUDIT_READ;
         assert_eq!(capabilities, expected);
     }
 
