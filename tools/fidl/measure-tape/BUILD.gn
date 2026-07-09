@@ -9,7 +9,7 @@ group("tests") {
   deps = [
     ":integration-tests",
     "rust-tests",
-    "src/measurer:measure-tape_test($host_toolchain)",
+    "src:measure_tape_test($host_toolchain)",
   ]
 }
 

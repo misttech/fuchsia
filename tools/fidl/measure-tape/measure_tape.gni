@@ -129,7 +129,8 @@ template("measure_tape") {
 
   # code generation
   compiled_action(gen_target_name) {
-    tool = "//tools/fidl/measure-tape/src:measure-tape"
+    tool = "//build/bazel/host:bazel_root_host_tools.measure-tape"
+    tool_output_name = "measure-tape"
 
     args = gen_args
     outputs = generated_outputs

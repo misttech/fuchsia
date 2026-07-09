@@ -157,6 +157,16 @@ tools_bazel_root_targets = [
     ]
     install_host_tool = true
   },
+  {
+    bazel_label = "//tools/fidl/measure-tape/src:measure-tape"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/measure-tape_/measure-tape"
+        ninja = "measure-tape"
+      },
+    ]
+    install_host_tool = true
+  },
 
   # Various tests that we want to ensure can
   # build correctly.
