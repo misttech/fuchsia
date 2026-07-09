@@ -60,6 +60,12 @@ UsbVideoStream::UsbVideoStream(zx_device_t* parent, usb_protocol_t usb, Streamin
   fidl_dispatch_loop_->StartThread();
 }
 
+UsbVideoStream::~UsbVideoStream() {
+  if (fidl_dispatch_loop_) {
+    fidl_dispatch_loop_->Shutdown();
+  }
+}
+
 zx_status_t UsbVideoStream::Bind(void* ctx, zx_device_t* device) {
   usb_protocol_t usb;
   zx_status_t status = device_get_protocol(device, ZX_PROTOCOL_USB, &usb);
@@ -84,8 +90,15 @@ zx_status_t UsbVideoStream::Bind(void* ctx, zx_device_t* device) {
   auto dev = std::make_unique<UsbVideoStream>(device, usb, std::move(*streams_or));
 
   fuchsia_hardware_camera::Service::InstanceHandler handler({
-      .device = dev->bindings_.CreateHandler(dev.get(), dev->fidl_dispatch_loop_->dispatcher(),
-                                             fidl::kIgnoreBindingClosure),
+      .device =
+          [dev_ptr = dev.get(), dispatcher = dev->fidl_dispatch_loop_->dispatcher()](
+              fidl::ServerEnd<fuchsia_hardware_camera::Device> server_end) {
+            async::PostTask(dispatcher,
+                            [dev_ptr, dispatcher, server_end = std::move(server_end)]() mutable {
+                              dev_ptr->bindings_.AddBinding(dispatcher, std::move(server_end),
+                                                            dev_ptr, fidl::kIgnoreBindingClosure);
+                            });
+          },
   });
   zx::result add_result = dev->DdkAddService<fuchsia_hardware_camera::Service>(std::move(handler));
   if (add_result.is_error()) {

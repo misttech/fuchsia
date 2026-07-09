@@ -118,7 +118,7 @@ class UsbVideoStream : public UsbVideoStreamBase,
   // to DdkUnbind.
   // This method will not be called on the fidl_dispatch_loop_.
   void DdkRelease() { delete this; }
-  ~UsbVideoStream() override = default;
+  ~UsbVideoStream() override;
 
   // This method will not be called on the fidl_dispatch_loop_.
   static zx_status_t Bind(void* ctx, zx_device_t* device);
