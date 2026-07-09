@@ -41,6 +41,7 @@ config("config") {
   # "#define BORINGSSL_NO_CXX" statement before any "#include <openssl/...>"
   # statements to avoid pulling in C++ headers.
   include_dirs = [
+    "//third_party/boringssl/fuchsia/include",
     "//third_party/boringssl/src/include",
     ".",  # For <sys/types.h>
     "//",  # For .inc files

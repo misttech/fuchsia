@@ -412,7 +412,10 @@ if (!is_kernel) {
 # Note that //zircon/kernel/lib/crypto/boringssl/BUILD.gn uses this config but
 # it doesn't use the rest of this file's targets or configs for kernel cases.
 config("boringssl_config") {
-  include_dirs = [ "src/include" ]
+  include_dirs = [
+    "fuchsia/include",
+    "src/include",
+  ]
 
   cflags = [
     "-Wno-conversion",
