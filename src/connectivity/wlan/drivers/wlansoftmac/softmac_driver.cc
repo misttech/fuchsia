@@ -130,15 +130,14 @@ void SoftmacDriver::Start(fdf::DriverContext context, fdf::StartCompleter comple
         request.controller(std::move(controller_endpoints.server));
 
         node_client_->AddChild(std::move(request))
-            .Then([&, completer = std::move(completer)](
+            .Then([this, completer = std::move(completer)](
                       fidl::Result<fuchsia_driver_framework::Node::AddChild> result) mutable {
               if (result.is_error()) {
                 fdf::error("Failed to add ethernet device child: {}",
                            result.error_value().FormatDescription());
-              }
-
-              if (result.is_error()) {
-                completer(compat_server_init_result);
+                auto e = result.error_value();
+                completer(zx::error(e.is_domain_error() ? ZX_ERR_INTERNAL
+                                                        : e.framework_error().status()));
                 return;
               }
 
