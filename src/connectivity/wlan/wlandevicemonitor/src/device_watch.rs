@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Context as _;
+use anyhow::{Context as _, format_err};
 use fidl_fuchsia_io as fio;
 use fuchsia_fs::directory::{WatchEvent, WatchMessage, Watcher};
 use futures::stream::{BoxStream, StreamExt as _, TryStreamExt as _};
-use log::error;
 use std::hash::{Hash as _, Hasher as _};
 
 use crate::device::{PhyEvent, PhyProxy};
@@ -51,12 +50,12 @@ async fn watch_phy_devices_impl(
     service: Option<fuchsia_component::client::Service<fidl_fuchsia_wlan_phy::ServiceMarker>>,
 ) -> Result<BoxStream<'static, Result<NewPhyDevice, anyhow::Error>>, anyhow::Error> {
     let devfs_watcher = match &devfs_dir {
-        Some(dir) => Watcher::new(dir).await.map(Some).context("create watcher"),
+        Some(dir) => Watcher::new(dir).await.context("create watcher"),
         None => Err(anyhow::anyhow!("devfs directory not available")),
     };
 
     let service_stream = match service {
-        Some(svc) => svc.watch().await.map(Some).context("watch service"),
+        Some(svc) => svc.watch().await.context("watch service"),
         None => Err(anyhow::anyhow!("service not available")),
     };
 
@@ -69,70 +68,92 @@ async fn watch_phy_devices_impl(
     }
 
     let devfs_stream = match (devfs_watcher, devfs_dir) {
-        (Ok(Some(watcher)), Some(devfs_dir)) => {
-            watcher
-                .err_into()
-                .try_filter_map(move |WatchMessage { event, filename }| {
-                    // Explicitly clone the DirectoryProxy client-end (cloning the underlying Arc)
-                    // so it can be moved into the async block without triggering a remote clone
-                    // at the filesystem level.
-                    let devfs_dir = Clone::clone(&devfs_dir);
-                    async move {
-                        match event {
-                            WatchEvent::ADD_FILE | WatchEvent::EXISTING => {}
-                            _ => return Ok(None),
-                        };
-                        let filename = match filename.as_path().to_str() {
-                            Some(filename) => filename,
-                            None => return Ok(None),
-                        };
-                        if filename == "." {
-                            return Ok(None);
+        (Ok(watcher), Some(devfs_dir)) => watcher
+            .then(move |result| {
+                let devfs_dir = Clone::clone(&devfs_dir);
+
+                async move {
+                    let WatchMessage { event, filename } = match result {
+                        Err(e) => {
+                            return Err(format_err!("Error in devfs watcher stream {e:?}"));
                         }
-                        let (proxy, server_end) = fidl::endpoints::create_proxy();
-                        let connector =
-                            fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
-                                fidl_fuchsia_wlan_device::ConnectorMarker,
-                            >(&devfs_dir, filename)
-                            .context("connect to device")?;
-                        let () = match connector.connect(server_end) {
-                            Ok(()) => (),
-                            Err(e @ fidl::Error::ClientChannelClosed { .. }) => {
-                                error!("Error opening PHY '{}': {:?}", filename, e);
-                                return Ok(None);
-                            }
-                            Err(e) => return Err(e.into()),
-                        };
-                        let id = generate_phy_id(filename);
-                        let event_stream = PhyProxy::old_event_stream(&proxy);
-                        Ok(Some(NewPhyDevice { id, proxy: PhyProxy::Old(proxy), event_stream }))
+                        Ok(x) => x,
+                    };
+
+                    if !matches!(event, WatchEvent::ADD_FILE | WatchEvent::EXISTING) {
+                        // Ignore all other events since we only care about PHYs being added.
+                        return Ok(None);
                     }
-                })
-                .boxed()
-        }
+                    let filename = match filename.as_path().to_str() {
+                        Some(filename) => filename,
+                        None => {
+                            return Err(format_err!(
+                                "Dropping PHY devfs instance that is not valid unicode: {}",
+                                filename.as_path().to_string_lossy()
+                            ));
+                        }
+                    };
+
+                    // Avoid trying to open '.', which is never valid
+                    if filename == "." {
+                        return Ok(None);
+                    }
+                    let (phy_proxy, server_end) = fidl::endpoints::create_proxy();
+                    let connector =
+                        match fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
+                            fidl_fuchsia_wlan_device::ConnectorMarker,
+                        >(&devfs_dir, filename)
+                        {
+                            Err(e) => {
+                                return Err(format_err!(
+                                    "Failed to connect to devfs instance: {devfs_dir:?}, {filename}, {e:?}"
+                                ));
+                            }
+                            Ok(x) => x,
+                        };
+
+                    if let Err(e) = connector.connect(server_end) {
+                        return Err(format_err!("Error opening '{}': {}", filename, e));
+                    }
+
+                    let id = generate_phy_id(filename);
+                    let event_stream = PhyProxy::old_event_stream(&phy_proxy);
+                    Ok(Some(NewPhyDevice { id, proxy: PhyProxy::Old(phy_proxy), event_stream }))
+                }
+            })
+            // Using `.then` before `try_filter_map` surfaces all stream and item-level
+            // errors explicitly in the async closure, allowing `try_filter_map` to filter
+            // out `None` items while propagating any encountered `Err`.
+            .try_filter_map(|x| futures::future::ready(Ok(x)))
+            .boxed(),
         _ => futures::stream::empty::<Result<NewPhyDevice, anyhow::Error>>().boxed(),
     };
 
     let svc_stream = match service_stream {
-        Ok(Some(stream)) => stream
-            .err_into()
-            .try_filter_map(move |instance_proxy| async move {
-                let proxy = match instance_proxy.connect_to_device() {
-                    Ok(proxy) => proxy,
-                    Err(e @ fidl::Error::ClientChannelClosed { .. }) => {
-                        error!(
-                            "Error opening PHY service instance {}: {:?}",
-                            instance_proxy.instance_name(),
-                            e
-                        );
-                        return Ok(None);
+        Ok(stream) => stream
+            .then(move |result| async move {
+                let instance_proxy = match result {
+                    Err(e) => {
+                        return Err(format_err!("Error in service instance stream {e:?}"));
                     }
-                    Err(e) => return Err(e.into()),
+                    Ok(x) => x,
                 };
+
+                let phy_proxy = match instance_proxy.connect_to_device() {
+                    Err(e) => {
+                        return Err(format_err!("Error connecting to PHY service instance: {}", e));
+                    }
+                    Ok(x) => x,
+                };
+
                 let id = generate_phy_id(instance_proxy.instance_name());
-                let (proxy, event_stream) = PhyProxy::new(proxy).await?;
+                let (proxy, event_stream) = PhyProxy::new(phy_proxy).await?;
                 Ok(Some(NewPhyDevice { id, proxy, event_stream }))
             })
+            // Using `.then` before `try_filter_map` surfaces all stream and item-level
+            // errors explicitly in the async closure, allowing `try_filter_map` to filter
+            // out `None` items while propagating any encountered `Err`.
+            .try_filter_map(|x| futures::future::ready(Ok(x)))
             .boxed(),
         _ => futures::stream::empty::<Result<NewPhyDevice, anyhow::Error>>().boxed(),
     };
