@@ -9,6 +9,7 @@
 
 #include "src/developer/debug/zxdb/common/err.h"
 #include "src/developer/debug/zxdb/common/host_util.h"
+#include "src/developer/debug/zxdb/symbols/file_line.h"
 #include "src/developer/debug/zxdb/symbols/input_location.h"
 #include "src/developer/debug/zxdb/symbols/location.h"
 #include "src/developer/debug/zxdb/symbols/module_symbols.h"
@@ -18,18 +19,9 @@
 
 namespace {
 
-TEST(DapSymbolTest, CrasherSymbolAvailable) {
-  std::filesystem::path symbol_dir =
-      std::filesystem::path(zxdb::GetSelfPath()).parent_path() / DAP_E2E_TESTS_SYMBOL_DIR;
-
-  ASSERT_TRUE(std::filesystem::exists(symbol_dir))
-      << "Symbol directory does not exist: " << symbol_dir;
-
-  zxdb::SystemSymbols system_symbols([](const std::string&, zxdb::DebugSymbolFileType) {});
-  system_symbols.build_id_index().AddBuildIdDir(symbol_dir.string());
-
-  bool found_blind_write = false;
-
+bool ResolveLocationInSymbolDir(zxdb::SystemSymbols& system_symbols,
+                                const std::filesystem::path& symbol_dir,
+                                const zxdb::InputLocation& input_location) {
   for (const auto& entry : std::filesystem::recursive_directory_iterator(symbol_dir)) {
     if (!entry.is_regular_file() || entry.path().extension() != ".debug") {
       continue;
@@ -43,26 +35,60 @@ TEST(DapSymbolTest, CrasherSymbolAvailable) {
         entry.path().parent_path().filename().string() + entry.path().stem().string();
 
     fxl::RefPtr<zxdb::ModuleSymbols> debug_module;
-    zxdb::Err err = system_symbols.GetModule("", build_id, false, &debug_module);
-    if (err.has_error() || !debug_module) {
+    if (system_symbols.GetModule("", build_id, false, &debug_module).has_error() || !debug_module) {
       continue;
     }
 
     zxdb::SymbolContext symbol_context(0x10000000);
-    std::vector<zxdb::Location> locs = debug_module->ResolveInputLocation(
-        symbol_context,
-        zxdb::InputLocation(zxdb::Identifier(zxdb::IdentifierQualification::kGlobal,
-                                             zxdb::IdentifierComponent("blind_write"))),
-        zxdb::ResolveOptions());
-
-    if (!locs.empty()) {
-      found_blind_write = true;
-      break;
+    if (!debug_module->ResolveInputLocation(symbol_context, input_location, zxdb::ResolveOptions())
+             .empty()) {
+      return true;
     }
   }
+  return false;
+}
 
-  EXPECT_TRUE(found_blind_write) << "Failed to resolve 'blind_write' symbol in any module under "
-                                 << symbol_dir;
+TEST(DapSymbolTest, CrasherSymbolAvailable) {
+  std::filesystem::path symbol_dir =
+      std::filesystem::path(zxdb::GetSelfPath()).parent_path() / DAP_E2E_TESTS_SYMBOL_DIR;
+
+  ASSERT_TRUE(std::filesystem::exists(symbol_dir))
+      << "Symbol directory does not exist: " << symbol_dir;
+
+  zxdb::SystemSymbols system_symbols([](const std::string&, zxdb::DebugSymbolFileType) {});
+  system_symbols.build_id_index().AddBuildIdDir(symbol_dir.string());
+
+  zxdb::InputLocation input_loc(zxdb::Identifier(zxdb::IdentifierQualification::kGlobal,
+                                                 zxdb::IdentifierComponent("blind_write")));
+  EXPECT_TRUE(ResolveLocationInSymbolDir(system_symbols, symbol_dir, input_loc))
+      << "Failed to resolve 'blind_write' symbol in any module under " << symbol_dir;
+}
+
+TEST(DapSymbolTest, CrasherFileLineAvailable) {
+  std::filesystem::path symbol_dir =
+      std::filesystem::path(zxdb::GetSelfPath()).parent_path() / DAP_E2E_TESTS_SYMBOL_DIR;
+
+  ASSERT_TRUE(std::filesystem::exists(symbol_dir))
+      << "Symbol directory does not exist: " << symbol_dir;
+
+  std::filesystem::path build_root =
+      std::filesystem::path(zxdb::GetSelfPath()).parent_path().parent_path();
+  zxdb::SystemSymbols system_symbols([](const std::string&, zxdb::DebugSymbolFileType) {});
+
+  // Here we also add the build_dir as the build_root to perform the relative path operation.
+  // The resulting relative path will be ../../src/developer/forensics/crasher/cpp/crasher.c,
+  // which perfectly matches the DWARF file path pattern.
+  system_symbols.build_id_index().AddBuildIdDir(symbol_dir.string(), build_root.string());
+
+  std::string crasher_path = (build_root / "../../src/developer/forensics/crasher/cpp/crasher.c")
+                                 .lexically_normal()
+                                 .string();
+
+  const int lineNumber = 25;
+  EXPECT_TRUE(ResolveLocationInSymbolDir(
+      system_symbols, symbol_dir, zxdb::InputLocation(zxdb::FileLine(crasher_path, lineNumber))))
+      << "Failed to resolve '" << crasher_path << ":" << "lineNumber' location in any module under "
+      << symbol_dir;
 }
 
 }  // namespace

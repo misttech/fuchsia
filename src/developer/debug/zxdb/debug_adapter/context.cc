@@ -388,10 +388,16 @@ void DebugAdapterContext::OnThreadStopped(Thread* thread, const StopInfo& info) 
   // `debug_ipc::ExceptionType::kSingleStep` since `StopInfo::hit_breakpoints` will be empty in that
   // case.
   for (auto& bp : info.hit_breakpoints) {
-    if (bp->GetSettings().enabled &&
-        (bp->GetSettings().stop_mode == BreakpointSettings::StopMode::kProcess ||
-         bp->GetSettings().stop_mode == BreakpointSettings::StopMode::kAll)) {
-      event.allThreadsStopped = true;
+    if (bp) {
+      if (!event.hitBreakpointIds.has_value()) {
+        event.hitBreakpointIds = dap::array<dap::integer>();
+      }
+      event.hitBreakpointIds->push_back(IdForBreakpoint(bp.get()));
+      if (bp->GetSettings().enabled &&
+          (bp->GetSettings().stop_mode == BreakpointSettings::StopMode::kProcess ||
+           bp->GetSettings().stop_mode == BreakpointSettings::StopMode::kAll)) {
+        event.allThreadsStopped = true;
+      }
     }
   }
   dap_->send(event);

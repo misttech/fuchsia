@@ -7,6 +7,13 @@ from .dap_test_framework import (
     DapTestFramework,
     RequestFuture,
     get_build_root,
+    get_dap_source_path,
 )
 
-__all__ = ["DapTestFramework", "RequestFuture", "DapTestCase", "get_build_root"]
+__all__ = [
+    "DapTestFramework",
+    "RequestFuture",
+    "DapTestCase",
+    "get_build_root",
+    "get_dap_source_path",
+]

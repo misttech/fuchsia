@@ -162,6 +162,27 @@ def get_build_root() -> Path:
     return curr.parent.parent.parent.parent.parent.parent.parent.parent.parent
 
 
+def get_dap_source_path(repo_relative_path: str) -> str:
+    """Returns an absolute query_path for DAP breakpoint requests to match DWARF source files.
+
+    Args:
+        repo_relative_path: Path from the repository root (e.g., "src/developer/.../crasher.c").
+
+    How query_path matches DWARF files in CQ / Swarming CAS without uploading source code:
+    1. DAP Requirement: DAP strictly requires absolute paths for breakpoint query_paths.
+    2. Build Dir Stripping: Our test framework configures zxdb's `.build_dir` to `get_build_root()`
+       via a dynamic symbol-index.json. Setting this index file is required because when zxdb evaluates
+       `query_path = get_build_root() / "../../<path>"`, it uses `.build_dir` to strip the prefix
+       and convert query_path into relative path `../../<path>`. Without `symbol-index.json`, `.build_dir`
+       is empty in CQ CAS, prefix stripping fails, and breakpoint resolution times out.
+    3. Mandatory Exact Match: For the breakpoint to resolve, the stripped query_path must == `source file`
+       (the exact source string recorded in the DWARF line table, such as `../../src/.../crasher.c`).
+       Because zxdb matches this string directly in memory against the DWARF line table, physical
+       source files do not need to exist on disk.
+    """
+    return str((get_build_root() / "../../" / repo_relative_path).resolve())
+
+
 def get_ffx_bin() -> str:
     build_root = get_build_root()
     DAP_E2E_TESTS_FFX_TEST_DATA = os.environ.get("DAP_E2E_TESTS_FFX_TEST_DATA")
@@ -261,7 +282,20 @@ class DapTestFramework:
                 raise RuntimeError(
                     f"Inferior symbol directory missing or empty: {resolved_sym_dir}"
                 )
-            zxdb_sym_args.append(f"--build-id-dir={resolved_sym_dir}")
+            sym_index_path = Path(self._isolate_dir.name) / "symbol-index.json"
+            with open(sym_index_path, "w") as f:
+                json.dump(
+                    {
+                        "build_id_dirs": [
+                            {
+                                "path": str(resolved_sym_dir),
+                                "build_dir": str(build_root),
+                            }
+                        ]
+                    },
+                    f,
+                )
+            zxdb_sym_args.append(f"--symbol-index={sym_index_path}")
 
         args = [
             "debug",
@@ -555,36 +589,37 @@ class DapTestFramework:
             lambda: self.client.initialize(writer, args),
         )
 
-    async def launch(
+    def launch(
         self, args: LaunchArguments, avoid_racy_attach: bool = True
-    ) -> Any:
+    ) -> RequestFuture:
         # TODO(https://fxbug.dev/476364291): Remove this workaround once process launch synchronization is fixed.
         # Releasing the process starting exception too early causes the inferior to run in
         # parallel with the debugger before attaching completes. Registering any pending
         # breakpoint in advance (even on a placeholder filename) prevents early exception release,
         # ensuring synchronous attach before execution begins.
-        if avoid_racy_attach:
-            avoid_racy_path = str(
-                (
-                    get_build_root() / "this_can_be_any_name_to_avoid_racy"
-                ).resolve()
-            )
-            bp_resp = await self.set_breakpoints(
-                SetBreakpointsArguments(
-                    source=Source(path=avoid_racy_path),
-                    breakpoints=[SourceBreakpoint(line=1)],
+        async def do_launch() -> Any:
+            if avoid_racy_attach:
+                avoid_racy_path = str(
+                    (
+                        get_build_root() / "this_can_be_any_name_to_avoid_racy"
+                    ).resolve()
                 )
-            )
-            if not bp_resp.get("success"):
-                raise RuntimeError(
-                    f"Failed to set preset breakpoint for racy attach avoidance: {bp_resp}"
+                bp_resp = await self.set_breakpoints(
+                    SetBreakpointsArguments(
+                        source=Source(path=avoid_racy_path),
+                        breakpoints=[SourceBreakpoint(line=1)],
+                    )
                 )
+                if not bp_resp.get("success"):
+                    raise RuntimeError(
+                        f"Failed to set preset breakpoint for racy attach avoidance: {bp_resp}"
+                    )
 
-        assert self._writer is not None
-        writer = self._writer
-        return await self._send_wrapper(
-            "launch", lambda: self.client.launch(writer, args)
-        )
+            assert self._writer is not None
+            writer = self._writer
+            return await self.client.launch(writer, args)
+
+        return self._send_wrapper("launch", do_launch)
 
     def evaluate(self, args: EvaluateArguments) -> RequestFuture:
         assert self._writer is not None
@@ -959,12 +994,10 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
     def initialize(self, args: InitializeArguments) -> RequestFuture:
         return self.framework.initialize(args)
 
-    async def launch(
+    def launch(
         self, args: LaunchArguments, avoid_racy_attach: bool = True
-    ) -> Any:
-        return await self.framework.launch(
-            args, avoid_racy_attach=avoid_racy_attach
-        )
+    ) -> RequestFuture:
+        return self.framework.launch(args, avoid_racy_attach=avoid_racy_attach)
 
     def evaluate(self, args: EvaluateArguments) -> RequestFuture:
         return self.framework.evaluate(args)

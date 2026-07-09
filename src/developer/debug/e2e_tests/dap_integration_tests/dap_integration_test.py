@@ -9,8 +9,13 @@ import sys
 import unittest
 from typing import Any, Dict
 
-from dap_test_framework import DapTestCase
-from pydap.models import InitializeArguments, LaunchArguments
+from dap_test_framework import DapTestCase, get_dap_source_path
+from pydap.dap_types import Source, SourceBreakpoint
+from pydap.models import (
+    InitializeArguments,
+    LaunchArguments,
+    SetBreakpointsArguments,
+)
 
 
 class TestDapSmoke(DapTestCase):
@@ -33,7 +38,6 @@ class TestDapInit(DapTestCase):
 
 class TestDapDisconnect(DapTestCase):
     async def test_disconnect_on_close(self) -> None:
-        # Pre-calculate the sequence number of the next request
         seq = self.framework.client._seq_counter
 
         # Create a future to explicitly synchronize when the callback runs
@@ -73,9 +77,48 @@ class TestDapDisconnect(DapTestCase):
             )
 
 
+class TestDapBreakpoint(DapTestCase):
+    async def test_breakpoint(self) -> None:
+        crasher_path = get_dap_source_path(
+            "src/developer/forensics/crasher/cpp/crasher.c"
+        )
+        bp_resp = await self.set_breakpoints(
+            SetBreakpointsArguments(
+                source=Source(path=crasher_path),
+                breakpoints=[SourceBreakpoint(line=25)],
+            )
+        )
+        self.assertTrue(bp_resp["success"])
+        self.assertEqual(len(bp_resp["body"]["breakpoints"]), 1)
+        bp_id = bp_resp["body"]["breakpoints"][0]["id"]
+
+        self.launch(
+            LaunchArguments(
+                process="fuchsia-pkg://fuchsia.com/crasher#meta/cpp_crasher.cm"
+            )
+        )
+        await self.on_event("stopped", 30.0).expect(
+            {
+                "body": {
+                    "reason": "breakpoint",
+                    "hitBreakpointIds": [bp_id],
+                }
+            }
+        )
+
+        clear_resp = await self.set_breakpoints(
+            SetBreakpointsArguments(
+                source=Source(path=crasher_path),
+                breakpoints=[],
+            )
+        )
+        self.assertTrue(clear_resp["success"])
+        self.assertEqual(len(clear_resp["body"]["breakpoints"]), 0)
+
+
 class TestLaunch(DapTestCase):
     async def test_strong_attach(self) -> None:
-        await self.launch(
+        self.launch(
             LaunchArguments(
                 process="fuchsia-pkg://fuchsia.com/crasher#meta/cpp_crasher.cm"
             )

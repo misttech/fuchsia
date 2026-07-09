@@ -187,6 +187,9 @@ TEST_F(ContextTest, StoppedEventThreadLevelBreakpoint) {
     EXPECT_TRUE(arg.threadId.has_value());
     EXPECT_FALSE(arg.allThreadsStopped.value(false));
     EXPECT_EQ(arg.threadId.value(), static_cast<dap::integer>(kThreadKoid));
+    EXPECT_TRUE(arg.hitBreakpointIds.has_value());
+    ASSERT_EQ(1u, arg.hitBreakpointIds->size());
+    EXPECT_EQ(1, arg.hitBreakpointIds.value()[0]);
     event_received = true;
   });
 
@@ -242,6 +245,9 @@ TEST_F(ContextTest, StoppedEventProcessLevelBreakpoint) {
     EXPECT_TRUE(arg.threadId.has_value());
     EXPECT_TRUE(arg.allThreadsStopped.value(false));
     EXPECT_EQ(arg.threadId.value(), static_cast<dap::integer>(kThreadKoid));
+    EXPECT_TRUE(arg.hitBreakpointIds.has_value());
+    ASSERT_EQ(1u, arg.hitBreakpointIds->size());
+    EXPECT_EQ(1, arg.hitBreakpointIds.value()[0]);
     event_received = true;
   });
 
@@ -297,6 +303,9 @@ TEST_F(ContextTest, StoppedEventUnspecifiedAllLevelBreakpoint) {
     EXPECT_TRUE(arg.threadId.has_value());
     EXPECT_TRUE(arg.allThreadsStopped.value(false));
     EXPECT_EQ(arg.threadId.value(), static_cast<dap::integer>(kThreadKoid));
+    EXPECT_TRUE(arg.hitBreakpointIds.has_value());
+    ASSERT_EQ(1u, arg.hitBreakpointIds->size());
+    EXPECT_EQ(1, arg.hitBreakpointIds.value()[0]);
     event_received = true;
   });
 
