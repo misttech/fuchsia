@@ -23,7 +23,7 @@
 
 namespace {
 
-constexpr uint64_t kCapacity = 1024;
+constexpr uint64_t kCapacity = 200;
 constexpr uint64_t kSizeMax = 4000;
 constexpr uint64_t kSegMax = 1024;
 constexpr uint64_t kBlkSize = 1024;
@@ -102,6 +102,7 @@ class FakeBackendForBlock : public virtio::FakeBackend {
       uint16_t data_descriptor_idx = UINT16_MAX;
       while (desc->flags & VRING_DESC_F_NEXT) {
         if (desc->addr % zx_system_get_page_size() == kBlkSize * kVmoOffsetBlocks) {
+          last_data_offset_ = desc->addr - FAKE_BTI_PHYS_ADDR;
           data_descriptor_idx = count;
         }
         desc = &descriptors[desc->next];
@@ -177,6 +178,9 @@ class FakeBackendForBlock : public virtio::FakeBackend {
     cond_.notify_all();
   }
 
+  // Used to peek at the data offset of the last submitted request.
+  static std::atomic<uint64_t> last_data_offset_;
+
  private:
   // The vring offsets.
   size_t used_offset_ = 0;
@@ -220,6 +224,7 @@ class TestBlockDriver : public virtio::BlockDriver {
 };
 
 uint8_t TestBlockDriver::backend_status_;
+std::atomic<uint64_t> FakeBackendForBlock::last_data_offset_ = 0;
 
 class TestConfig final {
  public:
@@ -245,115 +250,132 @@ class BlockDriverTest : public ::testing::Test {
     zx::result<> result = driver_test().StopDriver();
     ASSERT_EQ(ZX_OK, result.status_value());
   }
-  fdf_testing::ForegroundDriverTest<TestConfig>& driver_test() { return driver_test_; }
+  fdf_testing::BackgroundDriverTest<TestConfig>& driver_test() { return driver_test_; }
 
-  virtio::block_txn_t TestReadCommand(uint32_t tranfser_blocks = 1) {
-    virtio::block_txn_t txn;
-    memset(&txn, 0, sizeof(txn));
-    txn.op.rw.command.opcode = BLOCK_OPCODE_READ;
-    txn.op.rw.length = tranfser_blocks;
-    txn.op.rw.offset_vmo = kVmoOffsetBlocks;
-    return txn;
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> CreateClient() {
+    auto [volume_client, volume_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
+    driver_test().RunInDriverContext([&](TestBlockDriver& driver) {
+      driver.block_device().ServeRequests(std::move(volume_server));
+    });
+    return block_client::RemoteBlockDevice::Create(std::move(volume_client));
   }
-
-  virtio::block_txn_t TestTrimCommand(uint32_t trim_blocks = 1) {
-    virtio::block_txn_t txn;
-    memset(&txn, 0, sizeof(txn));
-    txn.op.rw.command.opcode = BLOCK_OPCODE_TRIM;
-    txn.op.rw.length = trim_blocks;
-    return txn;
-  }
-
-  static void CompletionCb(void* cookie, zx_status_t status, block_op_t* op) {
-    BlockDriverTest* operation = reinterpret_cast<BlockDriverTest*>(cookie);
-    operation->operation_status_ = status;
-    sync_completion_signal(&operation->event_);
-  }
-
-  zx_status_t Wait() {
-    zx_status_t status = sync_completion_wait(&event_, ZX_SEC(5));
-    sync_completion_reset(&event_);
-    return status;
-  }
-
-  zx_status_t OperationStatus() { return operation_status_; }
 
  private:
-  fdf_testing::ForegroundDriverTest<TestConfig> driver_test_;
-  sync_completion_t event_;
-  zx_status_t operation_status_;
+  fdf_testing::BackgroundDriverTest<TestConfig> driver_test_;
 };
 
-// Tests trivial attempts to queue one operation.
 TEST_F(BlockDriverTest, QueueOne) {
   StartDriver();
 
-  virtio::block_txn_t txn = TestReadCommand(0);
-  driver_test().driver()->BlockImplQueue(reinterpret_cast<block_op_t*>(&txn),
-                                         &BlockDriverTest::CompletionCb, this);
-  ASSERT_OK(Wait());
-  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, OperationStatus());
+  zx::result client = CreateClient();
+  ASSERT_OK(client);
 
-  txn = TestReadCommand(kCapacity * 10);
-  driver_test().driver()->BlockImplQueue(reinterpret_cast<block_op_t*>(&txn),
-                                         &BlockDriverTest::CompletionCb, this);
-  ASSERT_OK(Wait());
-  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, OperationStatus());
+  fuchsia_storage_block::wire::BlockInfo info;
+  ASSERT_OK(client.value()->BlockGetInfo(&info));
+  const size_t kLen = info.max_transfer_size + kBlkSize;
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(kLen, 0, &vmo));
+
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(client.value()->BlockAttachVmo(vmo, &owned_vmoid));
+  vmoid_t vmoid = owned_vmoid.TakeId();
+
+  BlockFifoRequest request = {.command = {.opcode = BLOCK_OPCODE_READ},
+                              .vmoid = vmoid,
+                              .length = 0,
+                              .vmo_offset = kVmoOffsetBlocks,
+                              .dev_offset = 0};
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS, client.value()->FifoTransaction(&request, 1));
+
+  request.length = kCapacity + 1;
+  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, client.value()->FifoTransaction(&request, 1));
 }
 
 TEST_F(BlockDriverTest, CheckQuery) {
   StartDriver();
 
-  block_info_t info;
-  size_t operation_size;
-  driver_test().driver()->BlockImplQuery(&info, &operation_size);
+  zx::result client = CreateClient();
+  ASSERT_OK(client);
+
+  fuchsia_storage_block::wire::BlockInfo info;
+  ASSERT_OK(client.value()->BlockGetInfo(&info));
   ASSERT_EQ(info.block_size, kBlkSize);
   ASSERT_EQ(info.block_count, kCapacity);
   ASSERT_GE(info.max_transfer_size, zx_system_get_page_size());
-  ASSERT_GT(operation_size, sizeof(block_op_t));
 }
 
 TEST_F(BlockDriverTest, ReadOk) {
   StartDriver();
 
-  virtio::block_txn_t txn = TestReadCommand();
+  zx::result client = CreateClient();
+  ASSERT_OK(client);
+
+  fuchsia_storage_block::wire::BlockInfo info;
+  ASSERT_OK(client.value()->BlockGetInfo(&info));
+
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
-  txn.op.rw.vmo = vmo.get();
-  driver_test().driver()->BlockImplQueue(reinterpret_cast<block_op_t*>(&txn),
-                                         &BlockDriverTest::CompletionCb, this);
-  ASSERT_OK(Wait());
-  ASSERT_EQ(ZX_OK, OperationStatus());
+
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(client.value()->BlockAttachVmo(vmo, &owned_vmoid));
+  vmoid_t vmoid = owned_vmoid.TakeId();
+
+  BlockFifoRequest request = {.command = {.opcode = BLOCK_OPCODE_READ},
+                              .vmoid = vmoid,
+                              .length = 1,
+                              .vmo_offset = kVmoOffsetBlocks,
+                              .dev_offset = 0};
+
+  EXPECT_OK(client.value()->FifoTransaction(&request, 1));
 }
 
 TEST_F(BlockDriverTest, ReadError) {
   StartDriver(VIRTIO_BLK_S_IOERR);
 
-  virtio::block_txn_t txn = TestReadCommand();
+  zx::result client = CreateClient();
+  ASSERT_OK(client);
+
+  fuchsia_storage_block::wire::BlockInfo info;
+  ASSERT_OK(client.value()->BlockGetInfo(&info));
+
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
-  txn.op.rw.vmo = vmo.get();
-  driver_test().driver()->BlockImplQueue(reinterpret_cast<block_op_t*>(&txn),
-                                         &BlockDriverTest::CompletionCb, this);
-  ASSERT_OK(Wait());
-  ASSERT_EQ(ZX_ERR_IO, OperationStatus());
+
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(client.value()->BlockAttachVmo(vmo, &owned_vmoid));
+  vmoid_t vmoid = owned_vmoid.TakeId();
+
+  BlockFifoRequest request = {.command = {.opcode = BLOCK_OPCODE_READ},
+                              .vmoid = vmoid,
+                              .length = 1,
+                              .vmo_offset = kVmoOffsetBlocks,
+                              .dev_offset = 0};
+
+  ASSERT_EQ(ZX_ERR_IO, client.value()->FifoTransaction(&request, 1));
 }
 
 TEST_F(BlockDriverTest, Trim) {
   StartDriver();
 
-  virtio::block_txn_t txn = TestTrimCommand();
-  driver_test().driver()->BlockImplQueue(reinterpret_cast<block_op_t*>(&txn),
-                                         &BlockDriverTest::CompletionCb, this);
-  ASSERT_OK(Wait());
-  ASSERT_OK(OperationStatus());
+  zx::result client = CreateClient();
+  ASSERT_OK(client);
+
+  BlockFifoRequest request = {.command = {.opcode = BLOCK_OPCODE_TRIM},
+                              .vmoid = 0,
+                              .length = 1,
+                              .vmo_offset = 0,
+                              .dev_offset = 0};
+
+  EXPECT_OK(client.value()->FifoTransaction(&request, 1));
 }
 
 TEST_F(BlockDriverTest, BlockServer) {
   StartDriver();
 
   auto [volume_client, volume_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
-  driver_test().driver()->block_device().ServeRequests(std::move(volume_server));
+  driver_test().RunInDriverContext([&](TestBlockDriver& driver) {
+    driver.block_device().ServeRequests(std::move(volume_server));
+  });
   zx::result client = block_client::RemoteBlockDevice::Create(std::move(volume_client));
   ASSERT_OK(client);
 
@@ -403,7 +425,7 @@ TEST_F(BlockDriverTest, BlockServer) {
                                           .opcode = BLOCK_OPCODE_WRITE,
                                       },
                                   .vmoid = vmoid,
-                                  .length = static_cast<uint32_t>(kLen / kBlkSize),
+                                  .length = static_cast<uint32_t>(kCapacity),
                                   .vmo_offset = 0,
                                   .dev_offset = 0};
 
@@ -414,7 +436,9 @@ TEST_F(BlockDriverTest, BarriersOk) {
   StartDriver();
 
   auto [volume_client, volume_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
-  driver_test().driver()->block_device().ServeRequests(std::move(volume_server));
+  driver_test().RunInDriverContext([&](TestBlockDriver& driver) {
+    driver.block_device().ServeRequests(std::move(volume_server));
+  });
   zx::result client = block_client::RemoteBlockDevice::Create(std::move(volume_client));
   ASSERT_OK(client);
 
@@ -449,7 +473,9 @@ TEST_F(BlockDriverTest, BarriersError) {
   StartDriver(VIRTIO_BLK_S_IOERR);
 
   auto [volume_client, volume_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
-  driver_test().driver()->block_device().ServeRequests(std::move(volume_server));
+  driver_test().RunInDriverContext([&](TestBlockDriver& driver) {
+    driver.block_device().ServeRequests(std::move(volume_server));
+  });
   zx::result client = block_client::RemoteBlockDevice::Create(std::move(volume_client));
   ASSERT_OK(client);
 
@@ -494,21 +520,47 @@ TEST_F(BlockDriverTest, NodeToken) {
 
   fidl::SyncClient<fuchsia_driver_token::NodeToken> client(std::move(connect_result.value()));
 
-  auto get_result =
-      driver_test()
-          .RunOnBackgroundDispatcherSync<fidl::Result<fuchsia_driver_token::NodeToken::Get>>(
-              [&]() { return client->Get(); });
+  auto get_result = client->Get();
 
   ASSERT_OK(get_result);
-  ASSERT_TRUE(get_result.value().is_ok());
 
   zx_info_handle_basic_t info1, info2;
   ASSERT_EQ(token_copy.get_info(ZX_INFO_HANDLE_BASIC, &info1, sizeof(info1), nullptr, nullptr),
             ZX_OK);
-  ASSERT_EQ(get_result.value()->token().get_info(ZX_INFO_HANDLE_BASIC, &info2, sizeof(info2),
-                                                 nullptr, nullptr),
-            ZX_OK);
+  ASSERT_EQ(
+      get_result->token().get_info(ZX_INFO_HANDLE_BASIC, &info2, sizeof(info2), nullptr, nullptr),
+      ZX_OK);
   ASSERT_EQ(info1.koid, info2.koid);
+}
+
+TEST_F(BlockDriverTest, UnalignedVmoOffset) {
+  StartDriver();
+
+  zx::result client = CreateClient();
+  ASSERT_OK(client);
+
+  fuchsia_storage_block::wire::BlockInfo info;
+  ASSERT_OK(client.value()->BlockGetInfo(&info));
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(static_cast<uint64_t>(zx_system_get_page_size()) * 2, 0, &vmo));
+
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(client.value()->BlockAttachVmo(vmo, &owned_vmoid));
+  vmoid_t vmoid = owned_vmoid.TakeId();
+
+  // Use an offset of 1 block. With kBlkSize=1024, this translates to 1024 byte offset.
+  BlockFifoRequest request = {.command = {.opcode = BLOCK_OPCODE_READ},
+                              .vmoid = vmoid,
+                              .length = 1,
+                              .vmo_offset = 1,
+                              .dev_offset = 0};
+
+  FakeBackendForBlock::last_data_offset_ = 0xCAFE;
+
+  EXPECT_OK(client.value()->FifoTransaction(&request, 1));
+
+  EXPECT_EQ(FakeBackendForBlock::last_data_offset_, 1024ul);
 }
 
 FUCHSIA_DRIVER_EXPORT2(TestBlockDriver);

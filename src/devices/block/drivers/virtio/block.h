@@ -7,12 +7,10 @@
 #include <fidl/fuchsia.driver.token/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
-#include <fuchsia/hardware/block/driver/c/banjo.h>
-#include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <lib/dma-buffer/buffer.h>
-#include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
+#include <lib/fit/function.h>
 #include <lib/sync/completion.h>
 #include <lib/virtio/backends/backend.h>
 #include <lib/virtio/device.h>
@@ -27,6 +25,8 @@
 #include <memory>
 #include <span>
 
+#include <fbl/condition_variable.h>
+#include <fbl/mutex.h>
 #include <virtio/block.h>
 
 #include "src/lib/listnode/listnode.h"
@@ -38,11 +38,9 @@ namespace virtio {
 #define MAX_SCATTER 257
 
 struct block_txn_t {
-  block_op_t op;
-  // Only set for requests coming from the block server
-  std::optional<block_server::RequestId> request;
-  block_impl_queue_callback completion_cb;
-  void* cookie;
+  block_server::Operation operation;
+  zx::unowned_vmo vmo;
+  block_server::RequestId request;
   struct vring_desc* desc;
   size_t req_index;
   std::optional<size_t> discard_req_index;  // Only used if op is trim
@@ -66,12 +64,8 @@ class BlockDevice : public virtio::Device, public block_server::DriverInterface 
   uint32_t GetBlockSize() const { return config_.blk_size; }
   uint64_t GetBlockCount() const { return config_.capacity; }
   uint32_t GetMaxTransferSize() const;
-  device_flag_t GetFlags() const;
+  fuchsia_storage_block::wire::DeviceFlag GetFlags() const;
   const char* tag() const override { return "virtio-blk"; }
-
-  // ddk::BlockImplProtocol functions invoked by BlockDriver.
-  void BlockImplQuery(block_info_t* info, size_t* bopsz);
-  void BlockImplQueue(block_op_t* bop, block_impl_queue_callback completion_cb, void* cookie);
 
   // block_server::DriverInterface
   void OnRequests(std::span<block_server::Request>) final;
@@ -137,34 +131,29 @@ class BlockDevice : public virtio::Device, public block_server::DriverInterface 
 
   void FreeRequestContext(RequestContext& context) __TA_REQUIRES(txn_lock_, ring_lock_);
 
-  // Submit a transaction to the worker queue.  Only to be called for Banjo requests.
-  void SignalWorker(block_txn_t*);
-  void WorkerThread();
   void WatchdogThread();
-  void FlushPendingTxns();
-  void CleanupPendingTxns();
+  zx::result<> FlushPendingTxns();
+  void CleanUpPendingTxns();
 
   // Blocks until the request has been submitted to virtio, which may require waiting until another
   // request completes.
-  zx::result<> SubmitBanjoRequest(block_txn_t*);
-  zx::result<> SubmitBlockServerRequest(const block_server::Request& request);
 
-  zx::result<> FlushSync(const block_server::Request& request);
+  zx::result<> SubmitBlockServerRequest(const block_server::Request& request);
 
   // Allocates all of the resources necessary for enqueueing a virtio request.  Blocks until
   // resources are available.
   // The RequestContext object will point at `pages`, so must not outlive it.
   zx::result<RequestContext> AllocateRequestContext(uint32_t type, zx_handle_t vmo,
-                                                    uint64_t vmo_offset_blocks, uint32_t num_blocks,
+                                                    uint64_t vmo_offset_bytes, uint32_t num_blocks,
                                                     std::array<zx_paddr_t, MAX_SCATTER>* pages);
 
   // Returns std::nullopt if there are too many pending transactions; the caller should block on
   // txn_cond_ and try again.
   zx::result<std::optional<RequestContext>> TryAllocateRequestContextLocked(
-      uint32_t type, zx_handle_t vmo, uint64_t vmo_offset_blocks, uint32_t num_blocks,
+      uint32_t type, zx_handle_t vmo, uint64_t vmo_offset_bytes, uint32_t num_blocks,
       std::array<zx_paddr_t, MAX_SCATTER>* pages) __TA_REQUIRES(txn_lock_, ring_lock_);
 
-  zx::result<zx_handle_t> PinPages(zx_handle_t bti, zx_handle_t vmo, uint64_t vmo_offset_blocks,
+  zx::result<zx_handle_t> PinPages(zx_handle_t bti, zx_handle_t vmo, uint64_t vmo_offset_bytes,
                                    uint32_t num_blocks, std::array<zx_paddr_t, MAX_SCATTER>* pages,
                                    size_t* num_pages) const;
 
@@ -234,42 +223,21 @@ class BlockDevice : public virtio::Device, public block_server::DriverInterface 
 
   // # Request flow
   //
-  // Requests follow a slightly different path depending on whether they originate from the legacy
-  // Banjo interface, or the block_server interface.
+  // Requests originate from the block_server interface.
   //
-  // - Banjo requests arrive in BlockDevice::BlockImplQueue as a block_txn_t.  They have already
-  //   been allocated by the caller.
-  //   - The txn is placed into the worker_txn_list_, and the worker thread is signaled via
-  //     worker_signal_.
-  //   - The worker thread loop (WorkerThread) pops the next transaction and calls
-  //     SubmitBanjoRequest.
-  //   - SubmitBanjoRequest calls AllocateRequestContext (which blocks until resources like
-  //     descriptors and request indices are available) and then QueueTxn.
-  //   - QueueTxn populates the virtio_blk_req_t, sets up descriptors, adds the txn to
-  //     pending_txn_list_, and submits to the virtio ring.
   // - Block server requests arrive in BlockDevice::OnRequests as a block_server::Request reference.
   //   - For each request, SubmitBlockServerRequest is called.
   //   - SubmitBlockServerRequest calls AllocateRequestContext (same blocking behavior as above).
   //   - A block_txn_t is allocated from the block_server_request_pool_ using the obtained
-  //     req_index.  From here, QueueTxn is called (same behaviour as above).
+  //     req_index.  From here, QueueTxn is called.
 
   // Pending txns which have been submitted to virtio, and completion signal.
   // List entries are PendingTransaction.
-  std::mutex txn_lock_;
+  fbl::Mutex txn_lock_;
   list_node pending_txn_list_ TA_GUARDED(txn_lock_) = LIST_INITIAL_VALUE(pending_txn_list_);
-  std::condition_variable txn_cond_;
+  fbl::ConditionVariable txn_cond_;
 
-  thrd_t worker_thread_;
-
-  // Worker state for requests originating from Banjo.
-  // TODO(https://fxbug.dev/394968352): Remove once all clients use Volume service provided by
-  // block_server_.
-  // `worker_txn_list_` contains incoming requests (block_txn_t).  Entries are processed by
-  // `worker_thread_`, submitted to virtio, and moved into `pending_transaction_list_`.
-
-  list_node worker_txn_list_ TA_GUARDED(lock_) = LIST_INITIAL_VALUE(worker_txn_list_);
-  sync_completion_t worker_signal_;
-  std::atomic_bool worker_shutdown_ = false;
+  bool shutdown_ TA_GUARDED(txn_lock_) = false;
 
   thrd_t watchdog_thread_;
   sync_completion_t watchdog_signal_;
@@ -281,9 +249,7 @@ class BlockDevice : public virtio::Device, public block_server::DriverInterface 
   fdf::Logger& logger_;
 };
 
-class BlockDriver : public fdf::DriverBase2,
-                    public ddk::BlockImplProtocol<BlockDriver>,
-                    public fidl::Server<fuchsia_driver_token::NodeToken> {
+class BlockDriver : public fdf::DriverBase2, public fidl::Server<fuchsia_driver_token::NodeToken> {
  public:
   static constexpr char kDriverName[] = "virtio-block";
 
@@ -292,10 +258,6 @@ class BlockDriver : public fdf::DriverBase2,
   zx::result<> Start(fdf::DriverContext context) override;
 
   void Stop(fdf::StopCompleter completer) override;
-
-  // ddk::BlockImplProtocol functions passed through to BlockDevice.
-  void BlockImplQuery(block_info_t* info, size_t* bopsz);
-  void BlockImplQueue(block_op_t* bop, block_impl_queue_callback completion_cb, void* cookie);
 
   // fuchsia_driver_token::NodeToken implementation.
   void Get(GetCompleter::Sync& completer) override;
@@ -320,12 +282,6 @@ class BlockDriver : public fdf::DriverBase2,
   zx::event node_token_;
 
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> node_controller_;
-
-  // Legacy DFv1-based protocols.
-  // TODO(https://fxbug.dev/394968352): Remove once all clients use Volume service provided by
-  // block_server_.
-  compat::BanjoServer block_impl_server_{ZX_PROTOCOL_BLOCK_IMPL, this, &block_impl_protocol_ops_};
-  compat::SyncInitializedDeviceServer compat_server_;
 };
 
 }  // namespace virtio

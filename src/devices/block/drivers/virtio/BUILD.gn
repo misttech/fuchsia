@@ -26,7 +26,6 @@ fuchsia_cc_driver("virtio_block-driver") {
   sources = [ "block_driver.cc" ]
   deps = [
     ":block_lib",
-    "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
     "//src/devices/bus/lib/virtio",
   ]
 }
@@ -50,12 +49,10 @@ source_set("block_lib") {
   configs += [ "//build/config:all_source" ]
   sources = [ "block.cc" ]
   public_deps = [
-    "//sdk/banjo/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_banjo_cpp",
     "//sdk/fidl/fuchsia.driver.token:fuchsia.driver.token_cpp",
-    "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
-    "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/runtime:driver_runtime_cpp",
     "//src/devices/block/lib/common",
     "//src/devices/bus/lib/virtio",
