@@ -28,6 +28,7 @@ from workspace_utils import (
     BazelPackageAndTargetToGnInputsEntriesMap,
     BazelTargetGnInputsEntriesMap,
     GeneratedWorkspaceFiles,
+    GnTargetsDirectoryManifestEntry,
     record_gn_targets_dir_from_entries,
 )
 
@@ -245,22 +246,26 @@ def main() -> int:
 
 
 def merge_gn_target_manifests(
-    manifests: T.Sequence[Path],
+    manifests: list[Path],
 ) -> BazelPackageAndTargetToGnInputsEntriesMap:
     manifest_entries_package_map = BazelPackageAndTargetToGnInputsEntriesMap()
     for manifest_path in manifests:
         with open(manifest_path) as f:
-            for entry in json.load(f):
-                bazel_package = entry["bazel_package"]
+            for entry_json in json.load(f):
+                entry = GnTargetsDirectoryManifestEntry.from_json_value(
+                    entry_json
+                )
+
+                bazel_package = entry.bazel_package
                 name_map = manifest_entries_package_map.setdefault(
                     bazel_package, BazelTargetGnInputsEntriesMap()
                 )
 
-                bazel_name = entry["bazel_name"]
+                bazel_name = entry.bazel_name
                 found_entry = name_map.setdefault(bazel_name, entry)
                 if found_entry != entry:
                     raise ValueError(
-                        f"Found duplicate GN target entry for //{bazel_package}:{bazel_name}:  {found_entry['generator']} vs {entry['generator']}"
+                        f"Found duplicate GN target entry for //{bazel_package}:{bazel_name}:  {found_entry.generator_label} vs {entry.generator_label}"
                     )
     return manifest_entries_package_map
 
