@@ -5,6 +5,7 @@
 #ifndef SRC_MEDIA_AUDIO_DRIVERS_AML_G12_PDM_AUDIO_STREAM_IN_H_
 #define SRC_MEDIA_AUDIO_DRIVERS_AML_G12_PDM_AUDIO_STREAM_IN_H_
 
+#include <fidl/fuchsia.hardware.clock/cpp/wire.h>
 #include <lib/fzl/pinned-vmo.h>
 #include <lib/simple-audio-stream/simple-audio-stream.h>
 #include <lib/zircon-internal/thread_annotations.h>
@@ -71,6 +72,9 @@ class AudioStreamIn : public SimpleAudioStream {
   inspect::IntProperty status_time_;
   inspect::UintProperty dma_status_;
   inspect::UintProperty pdm_status_;
+
+  fidl::WireSyncClient<fuchsia_hardware_clock::Clock> clock_gate_;
+  fidl::WireSyncClient<fuchsia_hardware_clock::Clock> clock_pll_;
 };
 }  // namespace audio::aml_g12
 

@@ -9,6 +9,7 @@ using fuchsia.platform;
 using fuchsia.amlogic.platform;
 using fuchsia.clock;
 using fuchsia.gpio;
+using fuchsia.hardware.clock;
 
 primary parent "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
@@ -31,6 +32,16 @@ optional parent "gpio-init" {
 
 parent "clock-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.clock.BIND_INIT_STEP.CLOCK;
+}
+
+optional parent "clock-gate" {
+  fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
+  fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.AUDIO_GATE;
+}
+
+optional parent "clock-pll" {
+  fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
+  fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.AUDIO_PLL;
 }
 
 optional parent "pin-states-0" {

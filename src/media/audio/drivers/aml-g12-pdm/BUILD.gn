@@ -12,6 +12,7 @@ driver_bind_rules("aml_g12_pdm_bind") {
   bind_output = "aml-g12-pdm.bindbc"
   tests = "meta/tests.json"
   deps = [
+    "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_bindlib",
     "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.clock",
@@ -31,6 +32,7 @@ fuchsia_cc_driver("aml-g12-pdm-driver") {
 
   deps = [
     ":aml_g12_pdm_bind",
+    "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_cpp",
     "//sdk/lib/driver/mmio/cpp",
     "//sdk/lib/driver/platform-device/cpp",
     "//sdk/lib/memory_barriers",

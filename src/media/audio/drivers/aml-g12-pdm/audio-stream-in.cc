@@ -111,6 +111,36 @@ zx_status_t AudioStreamIn::InitPDev() {
   }
   fdf::PDev pdev{std::move(pdev_client_end.value())};
 
+  zx::result clock_gate =
+      ddk::Device<void>::DdkConnectFragmentFidlProtocol<fuchsia_hardware_clock::Service::Clock>(
+          parent(), "clock-gate");
+  if (clock_gate.is_ok() && clock_gate->is_valid()) {
+    clock_gate_.Bind(std::move(clock_gate.value()));
+    fidl::WireResult result = clock_gate_->Enable();
+    if (!result.ok()) {
+      zxlogf(ERROR, "Failed to send enable clock-gate request: %s", result.status_string());
+      return result.status();
+    } else if (result->is_error()) {
+      zxlogf(ERROR, "Failed to enable clock-gate: %s", zx_status_get_string(result->error_value()));
+      return result->error_value();
+    }
+  }
+
+  zx::result clock_pll =
+      ddk::Device<void>::DdkConnectFragmentFidlProtocol<fuchsia_hardware_clock::Service::Clock>(
+          parent(), "clock-pll");
+  if (clock_pll.is_ok() && clock_pll->is_valid()) {
+    clock_pll_.Bind(std::move(clock_pll.value()));
+    fidl::WireResult result = clock_pll_->Enable();
+    if (!result.ok()) {
+      zxlogf(ERROR, "Failed to send enable clock-pll request: %s", result.status_string());
+      return result.status();
+    } else if (result->is_error()) {
+      zxlogf(ERROR, "Failed to enable clock-pll: %s", zx_status_get_string(result->error_value()));
+      return result->error_value();
+    }
+  }
+
   zx::result bti = pdev.GetBti(0);
   if (bti.is_error()) {
     zxlogf(ERROR, "Failed to get bti: %s", bti.status_string());
@@ -281,6 +311,24 @@ void AudioStreamIn::ShutdownHook() {
     running_.store(false);
     irq_.destroy();
     thrd_join(thread_, NULL);
+  }
+  if (clock_gate_.is_valid()) {
+    auto result = clock_gate_->Disable();
+    if (!result.ok()) {
+      zxlogf(WARNING, "Failed to send disable clock-gate request: %s", result.status_string());
+    } else if (result->is_error()) {
+      zxlogf(WARNING, "Failed to disable clock-gate: %s",
+             zx_status_get_string(result->error_value()));
+    }
+  }
+  if (clock_pll_.is_valid()) {
+    auto result = clock_pll_->Disable();
+    if (!result.ok()) {
+      zxlogf(WARNING, "Failed to send disable clock-pll request: %s", result.status_string());
+    } else if (result->is_error()) {
+      zxlogf(WARNING, "Failed to disable clock-pll: %s",
+             zx_status_get_string(result->error_value()));
+    }
   }
   lib_->Shutdown();
 }

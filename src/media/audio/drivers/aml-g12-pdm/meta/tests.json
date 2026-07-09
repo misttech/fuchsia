@@ -37,5 +37,43 @@
                 }
             }
         ]
+    },
+    {
+        "parent": "clock-gate",
+        "tests": [
+            {
+                "name": "Match",
+                "expected": "match",
+                "device": {
+                    "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
+                    "fuchsia.clock.FUNCTION": "fuchsia.clock.FUNCTION.AUDIO_GATE"
+                }
+            }
+        ]
+    },
+    {
+        "parent": "clock-pll",
+        "tests": [
+            {
+                "name": "Match",
+                "expected": "match",
+                "device": {
+                    "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
+                    "fuchsia.clock.FUNCTION": "fuchsia.clock.FUNCTION.AUDIO_PLL"
+                }
+            }
+        ]
+    },
+    {
+        "parent": "pin-states-0",
+        "tests": [
+            {
+                "name": "Match",
+                "expected": "match",
+                "device": {
+                    "fuchsia.hardware.pin.PinStatesService": "fuchsia.hardware.pin.PinStatesService.ZirconTransport"
+                }
+            }
+        ]
     }
 ]
