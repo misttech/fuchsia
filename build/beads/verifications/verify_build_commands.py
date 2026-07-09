@@ -53,26 +53,22 @@ def main() -> int:
     parser.add_argument(
         "--fuchsia_dir",
         type=pathlib.Path,
-        required=True,
-        help="Path to Fuchsia directory",
+        help="Path to Fuchsia directory (auto-detected).",
     )
     parser.add_argument(
         "--build_dir",
         type=pathlib.Path,
-        required=True,
-        help="Path to GN build directory (e.g. out/default)",
+        help="Path to GN build directory (auto-detected)",
     )
     parser.add_argument(
         "--ninja_outputs_json",
         type=pathlib.Path,
-        required=True,
-        help="Path to ninja_outputs.json",
+        help="Path to ninja_outputs.json (auto-detected)",
     )
     parser.add_argument(
         "--ninja_bin",
         type=pathlib.Path,
-        required=True,
-        help="Path to ninja binary",
+        help="Path to ninja binary (auto-detected)",
     )
     parser.add_argument(
         "--manifest",
@@ -102,6 +98,31 @@ def main() -> int:
 
     global _DEBUG
     _DEBUG = args.verbose
+
+    if not args.fuchsia_dir:
+        try:
+            args.fuchsia_dir = build_utils.find_fuchsia_dir()
+        except ValueError as e:
+            parser.error(str(e))
+
+    if not args.build_dir:
+        args.build_dir = build_utils.find_fx_build_dir(args.fuchsia_dir)
+        if not args.build_dir:
+            parser.error(
+                "Could not find Fuchsia build directory, please use --build_dir=DIR"
+            )
+
+    if not args.ninja_bin:
+        args.ninja_bin = (
+            args.fuchsia_dir
+            / "prebuilt/third_party/ninja/{}/ninja".format(
+                build_utils.get_host_tag()
+            )
+        )
+
+    if not args.ninja_outputs_json:
+        args.ninja_outputs_json = args.build_dir / "ninja_outputs.json"
+
     build_command_query_utils.set_debug(args.verbose)
 
     with open(args.manifest) as f:
