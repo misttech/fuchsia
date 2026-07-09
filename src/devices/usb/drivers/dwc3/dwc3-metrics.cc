@@ -196,6 +196,29 @@ inspect::Inspector Dwc3Metrics::RecordMetrics(fdf::MmioBuffer* mmio, Dwc3* dwc3)
       endpoints_node.Record(std::move(ep_node));
     }
     root.Record(std::move(endpoints_node));
+
+    auto ep0_state_node = root.CreateChild("ep0_buffer");
+    ep0_state_node.RecordString("state", std::format("{}", dwc3->ep0_.state));
+    ep0_state_node.RecordUint("cur_transfer_len", dwc3->ep0_.cur_transfer_len);
+    ep0_state_node.RecordUint("bm_request_type", dwc3->ep0_.cur_setup.bm_request_type);
+    ep0_state_node.RecordUint("b_request", dwc3->ep0_.cur_setup.b_request);
+    ep0_state_node.RecordUint("w_value", dwc3->ep0_.cur_setup.w_value);
+    ep0_state_node.RecordUint("w_index", dwc3->ep0_.cur_setup.w_index);
+    ep0_state_node.RecordUint("w_length", dwc3->ep0_.cur_setup.w_length);
+    if (dwc3->ep0_.buffer) {
+      ep0_state_node.RecordUint("buffer_size", dwc3->ep0_.buffer->size());
+      ep0_state_node.RecordUint("buffer_phys", dwc3->ep0_.buffer->phys());
+      if (dwc3->ep0_.buffer->virt()) {
+        auto* ptr = reinterpret_cast<const uint8_t*>(dwc3->ep0_.buffer->virt());
+        ep0_state_node.RecordString(
+            "buffer_virt_first_16_bytes",
+            std::format(
+                "{:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
+                ptr[0], ptr[1], ptr[2], ptr[3], ptr[4], ptr[5], ptr[6], ptr[7], ptr[8], ptr[9],
+                ptr[10], ptr[11], ptr[12], ptr[13], ptr[14], ptr[15]));
+      }
+    }
+    root.Record(std::move(ep0_state_node));
   }
 
   return inspector;
