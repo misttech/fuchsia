@@ -1098,10 +1098,9 @@ async fn serve_task_provider(mut job_requests: TaskProviderRequestStream) -> Res
 #[cfg(test)]
 mod test {
     use super::wait_for_init_file;
-    use fuchsia_async as fasync;
+
     use futures::{SinkExt, StreamExt};
-    #[allow(deprecated, reason = "pre-existing usage")]
-    use starnix_core::testing::create_kernel_and_task;
+    use starnix_core::testing::spawn_kernel_and_run;
     use starnix_core::vfs::FdNumber;
     use starnix_uapi::CLONE_FS;
     use starnix_uapi::file_mode::{AccessCheck, FileMode};
@@ -1111,98 +1110,88 @@ mod test {
 
     #[fuchsia::test]
     async fn test_init_file_already_exists() {
-        #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task) = create_kernel_and_task();
-        let (mut sender, mut receiver) = futures::channel::mpsc::unbounded();
+        spawn_kernel_and_run(async move |current_task| {
+            let path = "/path";
+            current_task
+                .open_file_at(
+                    FdNumber::AT_FDCWD,
+                    path.into(),
+                    OpenFlags::CREAT,
+                    FileMode::default(),
+                    ResolveFlags::empty(),
+                    AccessCheck::default(),
+                )
+                .expect("Failed to create file");
 
-        let path = "/path";
-        current_task
-            .open_file_at(
-                FdNumber::AT_FDCWD,
-                path.into(),
-                OpenFlags::CREAT,
-                FileMode::default(),
-                ResolveFlags::empty(),
-                AccessCheck::default(),
-            )
-            .expect("Failed to create file");
-
-        fasync::Task::local(async move {
-            wait_for_init_file(path, &current_task, current_task.get_tid())
+            wait_for_init_file(path, current_task, current_task.get_tid())
                 .await
                 .expect("failed to wait for file");
-            sender.send(()).await.expect("failed to send message");
         })
-        .detach();
-
-        // Wait for the file creation to have been detected.
-        assert!(receiver.next().await.is_some());
+        .await;
     }
-
     #[fuchsia::test]
     async fn test_init_file_wait_required() {
-        #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task) = create_kernel_and_task();
-        let (mut sender, mut receiver) = futures::channel::mpsc::unbounded();
+        spawn_kernel_and_run(async move |current_task| {
+            let (mut sender, mut receiver) = futures::channel::mpsc::unbounded();
 
-        let init_task = current_task.clone_task_for_test(CLONE_FS as u64, Some(SIGCHLD));
-        let path = "/path";
+            let init_task = current_task.clone_task_for_test(CLONE_FS as u64, Some(SIGCHLD));
+            let path = "/path";
 
-        let test_init_tid = current_task.get_tid();
-        fasync::Task::local(async move {
-            sender.send(()).await.expect("failed to send message");
-            wait_for_init_file(path, &init_task, test_init_tid)
-                .await
-                .expect("failed to wait for file");
-            sender.send(()).await.expect("failed to send message");
+            let test_init_tid = current_task.get_tid();
+
+            let wait_fut = async {
+                sender.send(()).await.expect("failed to send message");
+                wait_for_init_file(path, &init_task, test_init_tid)
+                    .await
+                    .expect("failed to wait for file");
+                sender.send(()).await.expect("failed to send message");
+            };
+
+            let create_fut = async {
+                assert!(receiver.next().await.is_some());
+                current_task
+                    .open_file_at(
+                        FdNumber::AT_FDCWD,
+                        path.into(),
+                        OpenFlags::CREAT,
+                        FileMode::default(),
+                        ResolveFlags::empty(),
+                        AccessCheck::default(),
+                    )
+                    .expect("Failed to create file");
+                assert!(receiver.next().await.is_some());
+            };
+
+            futures::join!(wait_fut, create_fut);
         })
-        .detach();
-
-        // Wait for message that file check has started.
-        assert!(receiver.next().await.is_some());
-
-        // Create the file that is being waited on.
-        current_task
-            .open_file_at(
-                FdNumber::AT_FDCWD,
-                path.into(),
-                OpenFlags::CREAT,
-                FileMode::default(),
-                ResolveFlags::empty(),
-                AccessCheck::default(),
-            )
-            .expect("Failed to create file");
-
-        // Wait for the file creation to be detected.
-        assert!(receiver.next().await.is_some());
+        .await;
     }
-
     #[fuchsia::test]
     async fn test_init_exits_before_file_exists() {
-        #[allow(deprecated, reason = "pre-existing usage")]
-        let (_kernel, current_task) = create_kernel_and_task();
-        let (mut sender, mut receiver) = futures::channel::mpsc::unbounded();
+        spawn_kernel_and_run(async move |current_task| {
+            let (mut sender, mut receiver) = futures::channel::mpsc::unbounded();
 
-        let init_task = current_task.clone_task_for_test(CLONE_FS as u64, Some(SIGCHLD));
-        const STARTUP_FILE_PATH: &str = "/path";
+            let init_task = current_task.clone_task_for_test(CLONE_FS as u64, Some(SIGCHLD));
+            const STARTUP_FILE_PATH: &str = "/path";
 
-        let test_init_tid = init_task.get_tid();
-        fasync::Task::local(async move {
-            sender.send(()).await.expect("failed to send message");
-            wait_for_init_file(STARTUP_FILE_PATH, &current_task, test_init_tid)
-                .await
-                .expect_err("Did not detect init exit");
-            sender.send(()).await.expect("failed to send message");
+            let test_init_tid = init_task.get_tid();
+
+            let wait_fut = async {
+                sender.send(()).await.expect("failed to send message");
+                wait_for_init_file(STARTUP_FILE_PATH, current_task, test_init_tid)
+                    .await
+                    .expect_err("Did not detect init exit");
+                sender.send(()).await.expect("failed to send message");
+            };
+
+            let exit_fut = async {
+                assert!(receiver.next().await.is_some());
+                std::mem::drop(init_task);
+                assert!(receiver.next().await.is_some());
+            };
+
+            futures::join!(wait_fut, exit_fut);
         })
-        .detach();
-
-        // Wait for message that file check has started.
-        assert!(receiver.next().await.is_some());
-
-        // Drop the `init_task`.
-        std::mem::drop(init_task);
-
-        // Wait for the init failure to be detected.
-        assert!(receiver.next().await.is_some());
+        .await;
     }
 }
