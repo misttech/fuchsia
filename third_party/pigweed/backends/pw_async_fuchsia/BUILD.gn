@@ -6,11 +6,11 @@ import("//build_overrides/pigweed.gni")
 import("$dir_pw_build/target_types.gni")
 
 config("public_include_path") {
-  include_dirs = [ "public" ]
+  include_dirs = [ "$dir_pw_async_fuchsia/public" ]
 }
 
 config("backend_config") {
-  include_dirs = [ "public_overrides" ]
+  include_dirs = [ "$dir_pw_async_fuchsia/public_overrides" ]
 }
 
 # Backend for //pw_async:task
@@ -24,7 +24,7 @@ pw_source_set("task") {
     "//sdk/lib/async-loop:async-loop-default",
     "//zircon/system/ulib/zx",
   ]
-  sources = [ "task.cc" ]
+  sources = [ "$dir_pw_async_fuchsia/task.cc" ]
 }
 
 # Backend for //pw_async:fake_dispatcher
@@ -33,7 +33,7 @@ pw_source_set("fake_dispatcher") {
     ":public_include_path",
     ":backend_config",
   ]
-  sources = [ "fake_dispatcher.cc" ]
+  sources = [ "$dir_pw_async_fuchsia/fake_dispatcher.cc" ]
   public_deps = [
     ":task",
     "$dir_pw_async:fake_dispatcher.facade",
@@ -42,8 +42,8 @@ pw_source_set("fake_dispatcher") {
 
 source_set("dispatcher") {
   public_configs = [ ":public_include_path" ]
-  public = [ "public/pw_async_fuchsia/dispatcher.h" ]
-  sources = [ "dispatcher.cc" ]
+  public = [ "$dir_pw_async_fuchsia/public/pw_async_fuchsia/dispatcher.h" ]
+  sources = [ "$dir_pw_async_fuchsia/dispatcher.cc" ]
   public_deps = [
     ":task",
     "$dir_pw_async:dispatcher",
@@ -52,7 +52,7 @@ source_set("dispatcher") {
 
 pw_source_set("util") {
   public_configs = [ ":public_include_path" ]
-  public = [ "public/pw_async_fuchsia/util.h" ]
+  public = [ "$dir_pw_async_fuchsia/public/pw_async_fuchsia/util.h" ]
   visibility = [ "//src/connectivity/bluetooth/core/bt-host/*" ]
 }
 
@@ -73,8 +73,8 @@ pw_source_set("fake_dispatcher_fixture") {
 executable("pigweed_backend_pw_async_fuchsia_tests_executable") {
   testonly = true
   sources = [
-    "dispatcher_test.cc",
-    "fake_dispatcher_fixture_test.cc",
+    "$dir_pw_async_fuchsia/dispatcher_test.cc",
+    "$dir_pw_async_fuchsia/fake_dispatcher_fixture_test.cc",
   ]
   deps = [
     ":dispatcher",
@@ -82,6 +82,7 @@ executable("pigweed_backend_pw_async_fuchsia_tests_executable") {
     "$dir_pw_unit_test",
     "//sdk/lib/async-testing",
     "//src/lib/fxl/test:gtest_main",
+    "//src/sys/test_runners/gtest:death_test",
   ]
 }
 

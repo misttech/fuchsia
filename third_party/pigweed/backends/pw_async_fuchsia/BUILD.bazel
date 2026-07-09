@@ -13,93 +13,39 @@ package(default_visibility = ["//visibility:public"])
 # Backend for pw_async:task
 cc_library(
     name = "task",
-    includes = [
-        "public",
-        "public_overrides",
-    ],
     deps = [
-        "@pigweed//pw_async:task_facade",
-        "@fuchsia_sdk//pkg/zx",
-        "@fuchsia_sdk//pkg/async-loop-default",
-        ":util"
-    ],
-    hdrs = [
-        "public/pw_async_fuchsia/task.h",
-        "public_overrides/pw_async_backend/task.h",
-    ],
-    srcs = [
-        "task.cc",
+        "@pigweed//pw_async_fuchsia:task",
     ],
 )
 
 # Backend for pw_async:fake_dispatcher
 cc_library(
     name = "fake_dispatcher",
-    includes = [
-        "public",
-        "public_overrides",
-    ],
-    hdrs = [
-      "public/pw_async_fuchsia/fake_dispatcher.h",
-      "public_overrides/pw_async_backend/fake_dispatcher.h",
-    ],
-    srcs = [
-        "fake_dispatcher.cc",
-    ],
     deps = [
-        ":task",
-        "@pigweed//pw_async:fake_dispatcher_facade",
+        "@pigweed//pw_async_fuchsia:fake_dispatcher",
     ],
 )
 
 cc_library(
-name = "dispatcher",
-    includes = [
-        "public",
-        "public_overrides",
-    ],
-    hdrs = [
-        "public/pw_async_fuchsia/dispatcher.h"
-    ],
-    srcs = [
-        "dispatcher.cc",
-    ],
+    name = "dispatcher",
     deps = [
-        ":task",
-        "@pigweed//pw_async:dispatcher",
-        "@fuchsia_sdk//pkg/async-cpp",
+        "@pigweed//pw_async_fuchsia:dispatcher",
     ],
 )
 
 cc_library(
     name = "util",
-    includes = [
-        "public",
-        "public_overrides",
-    ],
-    hdrs = [
-        "public/pw_async_fuchsia/util.h",
+    deps = [
+        "@pigweed//pw_async_fuchsia:util",
     ],
 )
 
-fuchsia_cc_test(
-  name = "pw_async_fuchsia_test",
-  srcs = [
-    "dispatcher_test.cc",
-    "fake_dispatcher_fixture_test.cc",
-  ],
-  deps = [
-    ":dispatcher",
-    "@pigweed//pw_async:fake_dispatcher_fixture",
-    "@fuchsia_sdk//pkg/async-testing",
-    "@pigweed//pw_unit_test",
-    "@pigweed//pw_unit_test:printf_main",
-  ]
+alias(
+    name = "pw_async_fuchsia_test",
+    actual = "@pigweed//pw_async_fuchsia:pw_async_fuchsia_test",
 )
 
-fuchsia_unittest_package(
-  name = "test_pkg",
-  package_name = "pw_async_fuchsia_tests",
-  fuchsia_api_level = "HEAD",
-  unit_tests = [":pw_async_fuchsia_test"]
+alias(
+    name = "test_pkg",
+    actual = "@pigweed//pw_async_fuchsia:test_pkg",
 )

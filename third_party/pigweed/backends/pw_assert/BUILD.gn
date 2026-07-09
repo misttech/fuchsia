@@ -5,14 +5,21 @@
 import("//build_overrides/pigweed.gni")
 
 config("backend_config") {
-  include_dirs = [ "public_overrides" ]
+  include_dirs = [
+    "$dir_pw_assert_fuchsia/assert_public_overrides",
+    "$dir_pw_assert_fuchsia/check_public_overrides",
+    "$dir_pw_assert_fuchsia/public",
+  ]
   visibility = [ ":*" ]
 }
 
 source_set("pw_assert") {
   public_configs = [ ":backend_config" ]
-  public = [ "public_overrides/pw_assert_backend/check_backend.h" ]
-  sources = [ "assert.cc" ]
+  public = [
+    "$dir_pw_assert_fuchsia/assert_public_overrides/pw_assert_backend/assert_backend.h",
+    "$dir_pw_assert_fuchsia/check_public_overrides/pw_assert_backend/check_backend.h",
+  ]
+  sources = [ "$dir_pw_assert_fuchsia/assert.cc" ]
   deps = [ "$dir_pw_assert:facade" ]
 }
 

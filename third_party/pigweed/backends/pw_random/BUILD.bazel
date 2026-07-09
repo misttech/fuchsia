@@ -6,10 +6,12 @@ package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "zircon_random_generator",
-    hdrs = [
-        "zircon_random_generator.h",
-    ],
     deps = [
-        "@pigweed//pw_random",
+        "@pigweed//pw_random_fuchsia:zircon_random_generator",
     ],
+)
+
+alias(
+    name = "tests",
+    actual = "@pigweed//pw_random_fuchsia:test_pkg",
 )
