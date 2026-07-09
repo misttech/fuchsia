@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use diagnostics_data::{Data, Logs, Severity};
+use diagnostics_data::{Data, Logs, LogsProperty, Severity};
 use diagnostics_reader::{ArchiveReader, RetryConfig};
 use fidl_fuchsia_diagnostics::{
     ArchiveAccessorProxy, ClientSelectorConfiguration, DataType, Format, StreamMode,
@@ -14,6 +14,7 @@ use futures::stream::BoxStream;
 use log_command_ctf::LogsDataStream;
 
 /// The interface format to use for reading logs.
+#[derive(Debug)]
 pub enum LogFormat {
     /// Reads logs using the FXT format. This path utilizes `internal::FfiReader`, which employs
     /// the `diagnostics_message` crate to parse the FXT data. This parsing logic is the same
@@ -36,6 +37,8 @@ pub struct TestLogMessage {
     pub tags: Vec<String>,
     /// Severity of the log message.
     pub severity: Severity,
+    /// Log message properties
+    pub properties: Vec<LogsProperty>,
 }
 
 /// Abstract log reader used for reading logs into a common format
@@ -59,7 +62,7 @@ pub trait LogReader {
 mod ffi_format {
 
     use super::*;
-    use diagnostics_data::Severity;
+    use diagnostics_data::{LogsField, Severity};
     use diagnostics_message::MessageParser;
     use diagnostics_reader::{ToComponentSelectorArguments, ToSelectorArguments};
     use fidl_fuchsia_diagnostics::{
@@ -109,12 +112,24 @@ mod ffi_format {
                                         if let Some(msg) = maybe_msg {
                                             let moniker_tag = msg.moniker_tag.to_string();
                                             let mut message = msg.message.to_string();
+                                            let mut properties = vec![];
                                             for kvp in msg.kvps.iter() {
-                                                if &*kvp.key == "rolled_out"
-                                                    && let diagnostics_message::ffi::CppValue::UnsignedInt(count) = kvp.value
-                                                {
-                                                    message = format!("rolled_out={count}");
+                                                let key_str = kvp.key.to_string();
+                                                if key_str == "rolled_out" {
+                                                    if let diagnostics_message::ffi::CppValue::UnsignedInt(count) = kvp.value {
+                                                        message = format!("rolled_out={count}");
+                                                    }
+                                                    continue;
                                                 }
+                                                let name = LogsField::Other(key_str);
+                                                let property = match &kvp.value {
+                                                    diagnostics_message::ffi::CppValue::SignedInt(v) => LogsProperty::Int(name, *v),
+                                                    diagnostics_message::ffi::CppValue::UnsignedInt(v) => LogsProperty::Uint(name, *v),
+                                                    diagnostics_message::ffi::CppValue::Floating(v) => LogsProperty::Double(name, *v),
+                                                    diagnostics_message::ffi::CppValue::Boolean(v) => LogsProperty::Bool(name, *v),
+                                                    diagnostics_message::ffi::CppValue::Text(v) => LogsProperty::String(name, v.to_string()),
+                                                };
+                                                properties.push(property);
                                             }
                                             let (_, severity) = Severity::parse_exact(msg.severity);
                                             let tags =
@@ -124,6 +139,7 @@ mod ffi_format {
                                                 message,
                                                 tags,
                                                 severity,
+                                                properties,
                                             });
                                         }
                                         current_slice = remaining;
@@ -330,7 +346,9 @@ mod rust_format {
 
         let moniker_tag = log.moniker.as_ref().split('/').next_back().unwrap_or("").to_string();
         let tags = log.tags().cloned().unwrap_or_default();
-        TestLogMessage { moniker_tag, message, tags, severity: log.severity() }
+        let properties = log.payload_keys().map(|p| p.properties.clone()).unwrap_or_default();
+        let severity = log.severity();
+        TestLogMessage { moniker_tag, message, tags, severity, properties }
     }
 }
 
