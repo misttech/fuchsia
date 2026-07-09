@@ -170,7 +170,6 @@
                 "Cgroup.CrossDirRenameNotAllowed",
                 "Cgroup.DirSetStat",
                 "Cgroup.DuplicateUnlinkOnDirFD",
-                "Cgroup.EmptyHierarchyMustHaveName",
                 "Cgroup.MigrateInvalidPID",
                 "Cgroup.MigrateToSubcontainer",
                 "Cgroup.MigrateToSubcontainerThread",
@@ -179,11 +178,11 @@
                 "Cgroup.MountRace",
                 "Cgroup.MountsForAllControllers",
                 "Cgroup.MountSucceeds",
-                "Cgroup.NamedHierarchies",
-                "Cgroup.NameMatchButControllersDont",
-                "Cgroup.NoneExclusiveWithAnyController",
                 "Cgroup.OnlyContainsControllerSpecificFiles",
                 "Cgroup.PIDZeroMovesSelf",
+
+                // TODO(b/532713679): Starnix mounts cgroup2 by default, violating test assumption.
+                "Cgroup.ProcSelfCgroupNoV2LineIfUnmounted",
                 "Cgroup.ProcsAndTasks",
                 "Cgroup.Rename",
                 "Cgroup.RenameNameCollision",
