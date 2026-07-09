@@ -62,6 +62,8 @@ void VirtualKeyboardManager::SetTypeAndVisibility(
   if (last_sent_config_ != proposed_config) {
     pending_config_ = proposed_config;
     MaybeNotifyWatcher();
+  } else {
+    pending_config_.reset();
   }
 }
 
@@ -76,6 +78,8 @@ void VirtualKeyboardManager::SetVisibility(bool is_visible) {
   if (last_sent_config_ != proposed_config) {
     pending_config_ = proposed_config;
     MaybeNotifyWatcher();
+  } else {
+    pending_config_.reset();
   }
 }
 

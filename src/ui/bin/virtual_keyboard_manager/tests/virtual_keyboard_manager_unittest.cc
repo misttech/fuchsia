@@ -304,5 +304,28 @@ TEST_F(VirtualKeyboardManagerTest, SetVisibilityUpdatesVisibilityAndPreservesLas
   EXPECT_EQ(false, is_visible);
 }
 
+TEST_F(VirtualKeyboardManagerTest, FocusLossResetsPendingConfig) {
+  VirtualKeyboardManager manager(coordinator(),
+                                 fuchsia::input::virtualkeyboard::TextType::ALPHANUMERIC);
+
+  // 1. Initial watch to clear pending_config_ and set last_sent_config_ to false.
+  bool was_called = false;
+  manager.WatchTypeAndVisibility([&](fuchsia::input::virtualkeyboard::TextType text_type,
+                                     bool is_visible) { was_called = true; });
+  ASSERT_TRUE(was_called);
+
+  // 2. Set visibility to true.
+  manager.SetVisibility(true);
+
+  // 3. Set visibility to false (simulating focus loss).
+  manager.SetVisibility(false);
+
+  // 4. Register a new watch.
+  was_called = false;
+  manager.WatchTypeAndVisibility([&](fuchsia::input::virtualkeyboard::TextType text_type,
+                                     bool is_visible) { was_called = true; });
+  EXPECT_FALSE(was_called);
+}
+
 }  // namespace
 }  // namespace virtual_keyboard_manager
