@@ -22,12 +22,9 @@ fit::result<Error, LiveHandle> GetFromService() {
     constexpr std::string_view kProtocolName = fidl::DiscoverableProtocolName<Service>;
     constexpr std::string_view kSuffix{".Get"};
     std::array<char, kProtocolName.size() + kSuffix.size()> name{};
-    // string_view::copy is only constexpr in C++20.
-    auto out = name.begin();
+    std::span<char> out{name};
     for (std::string_view str : {kProtocolName, kSuffix}) {
-      for (char c : str) {
-        *out++ = c;
-      }
+      out = out.subspan(str.copy(out.data(), out.size()));
     }
     return name;
   }();
