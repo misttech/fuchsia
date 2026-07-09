@@ -9,6 +9,8 @@
 #include <string.h>
 #include <threads.h>
 
+#include <algorithm>
+
 #include <ddktl/fidl.h>
 #include <fbl/auto_lock.h>
 #include <usb/usb-request.h>
@@ -109,9 +111,12 @@ zx_status_t UsbMidiSource::ReadInternal(void* data, size_t len, size_t* actual) 
   }
 
   // MIDI events are 4 bytes. We can ignore the zeroth byte
-  // TODO(https://fxbug.dev/42142118): Do something with this value.
-  [[maybe_unused]] size_t not_sure_what_to_do_with_this = req->CopyFrom(data, 3, 1);
-  *actual = get_midi_message_length(*(static_cast<uint8_t*>(data)));
+  size_t copied = req->CopyFrom(data, 3, 1);
+  if (copied == 0) {
+    *actual = 0;
+  } else {
+    *actual = std::min<size_t>(copied, get_midi_message_length(*(static_cast<uint8_t*>(data))));
+  }
   free_read_reqs_.push(std::move(*req));
 
   usb_request_complete_callback_t complete = {
@@ -136,7 +141,7 @@ void UsbMidiSource::GetInfo(GetInfoCompleter::Sync& completer) {
 }
 
 void UsbMidiSource::Read(ReadCompleter::Sync& completer) {
-  std::array<uint8_t, fuchsia_hardware_midi::wire::kReadSize> buffer;
+  std::array<uint8_t, fuchsia_hardware_midi::wire::kReadSize> buffer{};
   size_t actual = 0;
   auto status = ReadInternal(buffer.data(), buffer.size(), &actual);
   if (status == ZX_OK) {

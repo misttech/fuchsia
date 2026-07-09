@@ -2,16 +2,19 @@
 // this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.hardware.midi/cpp/wire.h>
 #include <fuchsia/hardware/usb/composite/cpp/banjo.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/default.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
-#include <lib/component/outgoing/cpp/outgoing_directory.h>
+#include <lib/fdf/cpp/dispatcher.h>
 #include <lib/inspect/testing/cpp/zxtest/inspect.h>
+#include <lib/sync/completion.h>
 
 #include <iterator>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <vector>
 
@@ -19,10 +22,11 @@
 #include <usb/request-cpp.h>
 #include <zxtest/zxtest.h>
 
-#include "../usb-audio-device.h"
-#include "../usb-audio-stream.h"
 #include "src/devices/testing/mock-ddk/mock-device.h"
 #include "src/devices/usb/lib/usb-endpoint/testing/fake-usb-endpoint-server.h"
+#include "src/media/audio/drivers/usb-audio/usb-audio-device.h"
+#include "src/media/audio/drivers/usb-audio/usb-audio-stream.h"
+#include "src/media/audio/drivers/usb-audio/usb-midi-source.h"
 
 namespace {
 namespace audio_fidl = fuchsia_hardware_audio;
@@ -30,8 +34,8 @@ using Request = usb::Request<void>;
 using UnownedRequest = usb::BorrowedRequest<void>;
 using UnownedRequestQueue = usb::BorrowedRequestQueue<void>;
 
-static constexpr uint32_t kTestFrameRate = 48'000;
-static constexpr uint32_t MAX_OUTSTANDING_REQ = 6;  // Matches usb-audio-stream.cc
+constexpr uint32_t kTestFrameRate = 48'000;
+constexpr uint32_t MAX_OUTSTANDING_REQ = 6;  // Matches usb-audio-stream.cc
 
 audio_fidl::wire::PcmFormat GetDefaultPcmFormat() {
   audio_fidl::wire::PcmFormat format;
@@ -64,7 +68,7 @@ class FakeDevice : public FakeDeviceType,
                    public ddk::UsbCompositeProtocol<FakeDevice>,
                    public fake_usb_endpoint::FakeUsbFidlProvider<fuchsia_hardware_usb::Usb> {
  public:
-  FakeDevice(zx_device_t* parent)
+  explicit FakeDevice(zx_device_t* parent)
       : FakeDeviceType(parent),
         fake_usb_endpoint::FakeUsbFidlProvider<fuchsia_hardware_usb::Usb>(
             async_get_default_dispatcher()) {}
@@ -104,34 +108,34 @@ class FakeDevice : public FakeDeviceType,
       std::optional<uint8_t> data1;
     } canned_replies[] = {
         // clang-format off
-        {0xA1, 0x82, 0x201, 0x900, 0x00, 0xdb},
-        {0xA1, 0x83, 0x201, 0x900, 0x00, 0x00},
-        {0xA1, 0x84, 0x201, 0x900, 0x00, 0x01},
-        {0xA1, 0x82, 0x202, 0x900, 0x00, 0xdb},
-        {0xA1, 0x83, 0x202, 0x900, 0x00, 0x00},
-        {0xA1, 0x84, 0x202, 0x900, 0x00, 0x01},
-        {0xA1, 0x81, 0x201, 0x900, 0x00, 0xf6},
-        {0xA1, 0x81, 0x100, 0x900, 0x00, std::nullopt},
-        {0xA1, 0x82, 0x200, 0xA00, 0x00, 0xf4},
-        {0xA1, 0x83, 0x200, 0xA00, 0x00, 0x17},
-        {0xA1, 0x84, 0x200, 0xA00, 0x00, 0x01},
-        {0xA1, 0x81, 0x200, 0xA00, 0x00, 0x08},
-        {0xA1, 0x81, 0x100, 0xA00, 0x00, std::nullopt},
-        {0xA1, 0x81, 0x700, 0xA00, 0x01, std::nullopt},
-        {0xA1, 0x82, 0x200, 0xD00, 0x00, 0xe9},
-        {0xA1, 0x83, 0x200, 0xD00, 0x00, 0x08},
-        {0xA1, 0x84, 0x200, 0xD00, 0x00, 0x01},
-        {0xA1, 0x81, 0x200, 0xD00, 0x00, 0xf9},
-        {0xA1, 0x81, 0x100, 0xD00, 0x01, std::nullopt},
+        {.request_type=0xA1, .request=0x82, .value=0x201, .index=0x900, .data0=0x00, .data1=0xdb},
+        {.request_type=0xA1, .request=0x83, .value=0x201, .index=0x900, .data0=0x00, .data1=0x00},
+        {.request_type=0xA1, .request=0x84, .value=0x201, .index=0x900, .data0=0x00, .data1=0x01},
+        {.request_type=0xA1, .request=0x82, .value=0x202, .index=0x900, .data0=0x00, .data1=0xdb},
+        {.request_type=0xA1, .request=0x83, .value=0x202, .index=0x900, .data0=0x00, .data1=0x00},
+        {.request_type=0xA1, .request=0x84, .value=0x202, .index=0x900, .data0=0x00, .data1=0x01},
+        {.request_type=0xA1, .request=0x81, .value=0x201, .index=0x900, .data0=0x00, .data1=0xf6},
+        {.request_type=0xA1, .request=0x81, .value=0x100, .index=0x900, .data0=0x00, .data1=std::nullopt},
+        {.request_type=0xA1, .request=0x82, .value=0x200, .index=0xA00, .data0=0x00, .data1=0xf4},
+        {.request_type=0xA1, .request=0x83, .value=0x200, .index=0xA00, .data0=0x00, .data1=0x17},
+        {.request_type=0xA1, .request=0x84, .value=0x200, .index=0xA00, .data0=0x00, .data1=0x01},
+        {.request_type=0xA1, .request=0x81, .value=0x200, .index=0xA00, .data0=0x00, .data1=0x08},
+        {.request_type=0xA1, .request=0x81, .value=0x100, .index=0xA00, .data0=0x00, .data1=std::nullopt},
+        {.request_type=0xA1, .request=0x81, .value=0x700, .index=0xA00, .data0=0x01, .data1=std::nullopt},
+        {.request_type=0xA1, .request=0x82, .value=0x200, .index=0xD00, .data0=0x00, .data1=0xe9},
+        {.request_type=0xA1, .request=0x83, .value=0x200, .index=0xD00, .data0=0x00, .data1=0x08},
+        {.request_type=0xA1, .request=0x84, .value=0x200, .index=0xD00, .data0=0x00, .data1=0x01},
+        {.request_type=0xA1, .request=0x81, .value=0x200, .index=0xD00, .data0=0x00, .data1=0xf9},
+        {.request_type=0xA1, .request=0x81, .value=0x100, .index=0xD00, .data0=0x01, .data1=std::nullopt},
         // clang-format on
     };
-    for (size_t i = 0; i < std::size(canned_replies); ++i) {
-      if (request_type == canned_replies[i].request_type && request == canned_replies[i].request &&
-          value == canned_replies[i].value && index == canned_replies[i].index) {
-        uint8_t* p = reinterpret_cast<uint8_t*>(out_read_buffer);
-        *p++ = canned_replies[i].data0;
-        if (canned_replies[i].data1.has_value()) {
-          *p++ = canned_replies[i].data1.value();
+    for (auto& canned_reply : canned_replies) {
+      if (request_type == canned_reply.request_type && request == canned_reply.request &&
+          value == canned_reply.value && index == canned_reply.index) {
+        uint8_t* p = out_read_buffer;
+        *p++ = canned_reply.data0;
+        if (canned_reply.data1.has_value()) {
+          *p++ = canned_reply.data1.value();
           *out_read_actual = 2;
         } else {
           *out_read_actual = 1;
@@ -142,8 +146,8 @@ class FakeDevice : public FakeDeviceType,
     return ZX_ERR_INTERNAL;
   }
 
-  void UsbRequestQueue(usb_request_t* usb_request,
-                       const usb_request_complete_callback_t* complete_cb) {}
+  virtual void UsbRequestQueue(usb_request_t* usb_request,
+                               const usb_request_complete_callback_t* complete_cb) {}
 
   usb_speed_t UsbGetSpeed() { return USB_SPEED_FULL; }
 
@@ -160,8 +164,10 @@ class FakeDevice : public FakeDeviceType,
   size_t UsbGetMaxTransferSize(uint8_t ep_address) { return 0; }
   uint32_t UsbGetDeviceId() { return 0; }
   void UsbGetDeviceDescriptor(usb_device_descriptor_t* out_desc) {
-    constexpr uint8_t descriptor[] = {0x12, 0x01, 0x00, 0x02, 0xe0, 0x01, 0x01, 0x40, 0x87,
-                                      0x80, 0xaa, 0x0a, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    constexpr uint8_t descriptor[] = {
+        0x12, 0x01, 0x00, 0x02, 0xe0, 0x01, 0x01, 0x40, 0x87,
+        0x80, 0xaa, 0x0a, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01,
+    };
     memcpy(out_desc, descriptor, sizeof(descriptor));
   }
   zx_status_t UsbGetConfigurationDescriptorLength(uint8_t configuration, size_t* out_length) {
@@ -202,7 +208,7 @@ class FakeDevice : public FakeDeviceType,
   }
 
  private:
-  static inline constexpr uint8_t usb_descriptor_[] = {
+  static constexpr uint8_t usb_descriptor_[] = {
       0x09, 0x04, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x0a, 0x24, 0x01, 0x00, 0x01, 0x64,
       0x00, 0x02, 0x01, 0x02, 0x0c, 0x24, 0x02, 0x01, 0x01, 0x01, 0x00, 0x02, 0x03, 0x00, 0x00,
       0x00, 0x0c, 0x24, 0x02, 0x02, 0x01, 0x02, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x09, 0x24,
@@ -217,7 +223,8 @@ class FakeDevice : public FakeDeviceType,
       0x04, 0x02, 0x00, 0x00, 0x01, 0x02, 0x00, 0x00, 0x09, 0x04, 0x02, 0x01, 0x01, 0x01, 0x02,
       0x00, 0x00, 0x07, 0x24, 0x01, 0x07, 0x01, 0x01, 0x00, 0x0e, 0x24, 0x02, 0x01, 0x01, 0x02,
       0x10, 0x02, 0x80, 0xbb, 0x00, 0x44, 0xac, 0x00, 0x09, 0x05, 0x82, 0x0d, 0x64, 0x00, 0x01,
-      0x00, 0x00, 0x07, 0x25, 0x01, 0x01, 0x00, 0x00, 0x00};
+      0x00, 0x00, 0x07, 0x25, 0x01, 0x01, 0x00, 0x00, 0x00,
+  };
 };
 }  // namespace
 
@@ -472,7 +479,8 @@ class FakeDeviceContinuousFrameRatesRange : public FakeDevice {
   }
 
  private:
-  static inline constexpr uint8_t usb_descriptor2_[] = {
+  static constexpr uint8_t usb_descriptor2_[] = {
+      // clang-format off
       0x09, 0x04, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x0a, 0x24, 0x01, 0x00, 0x01, 0x64,
       0x00, 0x02, 0x01, 0x02, 0x0c, 0x24, 0x02, 0x01, 0x01, 0x01, 0x00, 0x02, 0x03, 0x00, 0x00,
       0x00, 0x0c, 0x24, 0x02, 0x02, 0x01, 0x02, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x09, 0x24,
@@ -509,7 +517,9 @@ class FakeDeviceContinuousFrameRatesRange : public FakeDevice {
       0x88, 0x58, 0x01,  // 88.2kHz, this range specifies the valid 44.1 and 88.2kHz.
       // End of Type I Format Type Descriptor.
       0x09, 0x05, 0x82, 0x0d, 0x64, 0x00, 0x01, 0x00, 0x00, 0x07, 0x25, 0x01, 0x01, 0x00, 0x00,
-      0x00};
+      0x00,
+      // clang-format on
+  };
 };
 
 using UsbAudioContinuousFrameRatesTest = BaseUsbAudioTest<FakeDeviceContinuousFrameRatesRange>;
@@ -560,6 +570,7 @@ class FakeDeviceBadContinuousFrameRatesRange : public FakeDevice {
 
  private:
   static inline constexpr uint8_t usb_descriptor2_[] = {
+      // clang-format off
       0x09, 0x04, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x0a, 0x24, 0x01, 0x00, 0x01, 0x64,
       0x00, 0x02, 0x01, 0x02, 0x0c, 0x24, 0x02, 0x01, 0x01, 0x01, 0x00, 0x02, 0x03, 0x00, 0x00,
       0x00, 0x0c, 0x24, 0x02, 0x02, 0x01, 0x02, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x09, 0x24,
@@ -596,7 +607,9 @@ class FakeDeviceBadContinuousFrameRatesRange : public FakeDevice {
       0xd3, 0x04, 0x00,  // 1235Hz incorrect continuous range, can't generate a family rate.
       // End of Type I Format Type Descriptor.
       0x09, 0x05, 0x82, 0x0d, 0x64, 0x00, 0x01, 0x00, 0x00, 0x07, 0x25, 0x01, 0x01, 0x00, 0x00,
-      0x00};
+      0x00,
+      // clang-format on
+  };
 };
 
 using UsbAudioBadContinuousFrameRatesTest =
@@ -610,6 +623,107 @@ TEST_F(UsbAudioBadContinuousFrameRatesTest, EnumerateBadContinuousFrameRatesRang
   ASSERT_EQ(root_->GetLatestChild()->child_count(), 1);
   // Both interfaces in the descriptor failed to produce valid formats.
   ASSERT_EQ(root_->GetLatestChild()->GetLatestChild()->child_count(), 0);
+}
+
+class FakeMidiDevice : public FakeDevice {
+ public:
+  explicit FakeMidiDevice(zx_device_t* parent) : FakeDevice(parent) {}
+  void UsbGetDescriptors(uint8_t* out_descs_buffer, size_t descs_size,
+                         size_t* out_descs_actual) override {
+    memcpy(out_descs_buffer, usb_descriptor_midi_, sizeof(usb_descriptor_midi_));
+    *out_descs_actual = sizeof(usb_descriptor_midi_);
+  }
+  void UsbRequestQueue(usb_request_t* usb_request,
+                       const usb_request_complete_callback_t* complete_cb) override {
+    std::scoped_lock lock(mutex_);
+    queued_reqs_.push_back({usb_request, *complete_cb});
+  }
+
+  struct QueuedReq {
+    usb_request_t* req;
+    usb_request_complete_callback_t cb;
+  };
+
+  std::optional<QueuedReq> PopQueuedReq() {
+    std::scoped_lock lock(mutex_);
+    if (queued_reqs_.empty()) {
+      return std::nullopt;
+    }
+    QueuedReq req = queued_reqs_.back();
+    queued_reqs_.pop_back();
+    return req;
+  }
+
+  ~FakeMidiDevice() override {
+    std::scoped_lock lock(mutex_);
+    for (auto& qreq : queued_reqs_) {
+      usb_request_release(qreq.req);
+    }
+    queued_reqs_.clear();
+  }
+
+ private:
+  std::mutex mutex_;
+  std::vector<QueuedReq> queued_reqs_;
+  static constexpr uint8_t usb_descriptor_midi_[] = {
+      // clang-format off
+      // Interface 0: MIDI Streaming
+      0x09, 0x04, 0x00, 0x00, 0x01, 0x01, 0x03, 0x00, 0x00,
+      // Bulk IN Endpoint (0x83)
+      0x07, 0x05, 0x83, 0x02, 0x02, 0x00, 0x00,
+      // clang-format on
+  };
+};
+
+using UsbMidiTest = BaseUsbAudioTest<FakeMidiDevice>;
+
+TEST_F(UsbMidiTest, ReadClampsToCopied) {
+  incoming_.SyncCall([](IncomingNamespace<FakeMidiDevice>* infra) {
+    ASSERT_OK(UsbAudioDevice::DriverBind(infra->fake_dev->zxdev()));
+  });
+  ASSERT_EQ(root_->GetLatestChild()->child_count(), 1);
+  ASSERT_EQ(root_->GetLatestChild()->GetLatestChild()->child_count(), 1);
+  auto itr = root_->GetLatestChild()->GetLatestChild()->children().begin();
+  UsbMidiSource* dut = (*itr)->GetDeviceContext<UsbMidiSource>();
+  ASSERT_NE(dut, nullptr);
+
+  std::shared_ptr<libsync::Completion> dispatcher_shutdown =
+      std::make_shared<libsync::Completion>();
+  zx::result fdf_dispatcher = fdf::SynchronizedDispatcher::Create(
+      fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "midi-test",
+      [dispatcher_shutdown](fdf_dispatcher_t* dispatcher) { dispatcher_shutdown->Signal(); });
+  ASSERT_OK(fdf_dispatcher.status_value());
+
+  auto [ctrl_local, ctrl_remote] = fidl::Endpoints<fuchsia_hardware_midi::Controller>::Create();
+  fidl::BindServer(fdf_dispatcher->async_dispatcher(), std::move(ctrl_remote), dut);
+  auto [local, remote] = fidl::Endpoints<fuchsia_hardware_midi::Device>::Create();
+  auto open_res = fidl::WireCall(ctrl_local)->OpenSession(std::move(remote));
+  ASSERT_OK(open_res.status());
+
+  std::atomic<bool> done = {};
+  auto& client = local;
+  auto th = std::thread([&client, &done] {
+    auto read_res = fidl::WireCall(client)->Read();
+    ASSERT_OK(read_res.status());
+    ASSERT_EQ(read_res->value()->event.size(), 1);
+    ASSERT_EQ(read_res->value()->event[0], 0x90);
+    done.store(true);
+  });
+
+  while (!done.load()) {
+    incoming_.SyncCall([](IncomingNamespace<FakeMidiDevice>* infra) {
+      if (auto qreq = infra->fake_dev->PopQueuedReq()) {
+        UnownedRequest req(qreq->req, qreq->cb, sizeof(usb_request_t));
+        uint8_t data[] = {0x00, 0x90};
+        (void)req.CopyTo(data, sizeof(data), 0);
+        req.Complete(ZX_OK, 2);
+      }
+    });
+    zx::nanosleep(zx::deadline_after(zx::msec(10)));
+  }
+  th.join();
+  fdf_dispatcher->ShutdownAsync();
+  dispatcher_shutdown->Wait();
 }
 
 TEST_F(UsbAudioTest, CreateRingBuffer) {
@@ -634,7 +748,7 @@ TEST_F(UsbAudioTest, CreateRingBuffer) {
     fidl::Arena allocator;
     audio_fidl::wire::Format format(allocator);
     format.set_pcm_format(allocator, GetDefaultPcmFormat());
-    auto result1 = stream_client->CreateRingBuffer(std::move(format), std::move(remote));
+    auto result1 = stream_client->CreateRingBuffer(format, std::move(remote));
     ASSERT_OK(result1.status());
 
     // To make sure the 1-way Connect call is completed in the StreamConfigConnector server,
@@ -667,7 +781,7 @@ TEST_F(UsbAudioTest, DelayInfo) {
     fidl::Arena allocator;
     audio_fidl::wire::Format format(allocator);
     format.set_pcm_format(allocator, GetDefaultPcmFormat());
-    auto result = stream_client->CreateRingBuffer(std::move(format), std::move(remote));
+    auto result = stream_client->CreateRingBuffer(format, std::move(remote));
     ASSERT_OK(result.status());
 
     auto delay_info = fidl::WireCall<audio_fidl::RingBuffer>(local)->WatchDelayInfo();
@@ -699,7 +813,7 @@ TEST_F(UsbAudioTest, DISABLED_RingBufferPropertiesAndStartOk) {
   fidl::Arena allocator;
   audio_fidl::wire::Format format(allocator);
   format.set_pcm_format(allocator, GetDefaultPcmFormat());
-  auto rb = stream_client->CreateRingBuffer(std::move(format), std::move(remote));
+  auto rb = stream_client->CreateRingBuffer(format, std::move(remote));
   ASSERT_OK(rb.status());
 
   auto result = fidl::WireCall<audio_fidl::RingBuffer>(local)->GetProperties();
@@ -761,7 +875,7 @@ TEST_F(UsbAudioTest, DISABLED_RingBufferStartBeforeGetVmo) {
   fidl::Arena allocator;
   audio_fidl::wire::Format format(allocator);
   format.set_pcm_format(allocator, GetDefaultPcmFormat());
-  auto rb = stream_client->CreateRingBuffer(std::move(format), std::move(remote));
+  auto rb = stream_client->CreateRingBuffer(format, std::move(remote));
   ASSERT_OK(rb.status());
 
   // Start() before GetVmo() must result in channel closure
@@ -791,7 +905,7 @@ TEST_F(UsbAudioTest, DISABLED_RingBufferStartWhileStarted) {
   fidl::Arena allocator;
   audio_fidl::wire::Format format(allocator);
   format.set_pcm_format(allocator, GetDefaultPcmFormat());
-  auto rb = stream_client->CreateRingBuffer(std::move(format), std::move(remote));
+  auto rb = stream_client->CreateRingBuffer(format, std::move(remote));
   ASSERT_OK(rb.status());
 
   auto vmo = fidl::WireCall<audio_fidl::RingBuffer>(local)->GetVmo(kTestFrameRate, 0);
@@ -850,7 +964,7 @@ TEST_F(UsbAudioTest, DISABLED_RingBufferStopBeforeGetVmo) {
   fidl::Arena allocator;
   audio_fidl::wire::Format format(allocator);
   format.set_pcm_format(allocator, GetDefaultPcmFormat());
-  auto rb = stream_client->CreateRingBuffer(std::move(format), std::move(remote));
+  auto rb = stream_client->CreateRingBuffer(format, std::move(remote));
   ASSERT_OK(rb.status());
 
   // Stop() before GetVmo() must result in channel closure
@@ -879,7 +993,7 @@ TEST_F(UsbAudioTest, RingBufferStopWhileStopped) {
   fidl::Arena allocator;
   audio_fidl::wire::Format format(allocator);
   format.set_pcm_format(allocator, GetDefaultPcmFormat());
-  auto rb = stream_client->CreateRingBuffer(std::move(format), std::move(remote));
+  auto rb = stream_client->CreateRingBuffer(format, std::move(remote));
   ASSERT_OK(rb.status());
 
   auto vmo = fidl::WireCall<audio_fidl::RingBuffer>(local)->GetVmo(kTestFrameRate, 0);
@@ -914,7 +1028,7 @@ TEST_F(UsbAudioTest, Unplug) {
   fidl::Arena allocator;
   audio_fidl::wire::Format format(allocator);
   format.set_pcm_format(allocator, GetDefaultPcmFormat());
-  auto rb = stream_client->CreateRingBuffer(std::move(format), std::move(remote));
+  auto rb = stream_client->CreateRingBuffer(format, std::move(remote));
   ASSERT_OK(rb.status());
 
   auto result = fidl::WireCall<audio_fidl::RingBuffer>(local)->GetProperties();
@@ -970,7 +1084,7 @@ TEST_F(UsbAudioTest, GetDriverTransferBytes) {
   fidl::Arena allocator;
   audio_fidl::wire::Format format(allocator);
   format.set_pcm_format(allocator, GetDefaultPcmFormat());
-  auto rb = stream_client->CreateRingBuffer(std::move(format), std::move(remote));
+  auto rb = stream_client->CreateRingBuffer(format, std::move(remote));
   ASSERT_OK(rb.status());
 
   auto result = fidl::WireCall(local)->GetProperties();
@@ -1002,7 +1116,7 @@ TEST_F(UsbAudioTest, VmoSize) {
   auto default_format = GetDefaultPcmFormat();
   format.set_pcm_format(allocator, default_format);
   uint32_t frame_size = default_format.number_of_channels * default_format.bytes_per_sample;
-  auto rb = stream_client->CreateRingBuffer(std::move(format), std::move(remote));
+  auto rb = stream_client->CreateRingBuffer(format, std::move(remote));
   ASSERT_OK(rb.status());
 
   constexpr uint32_t kNumberOfPositionNotifications = 5;
@@ -1013,8 +1127,93 @@ TEST_F(UsbAudioTest, VmoSize) {
   // transfer bytes is 6 ms x frame rate x frame size.
   static_assert(kTestFrameRate % 1'000 == 0);
   uint32_t transfer_bytes = 6 * kTestFrameRate * frame_size / 1'000;
-  uint32_t frames_expected = kMinFrames + (transfer_bytes + frame_size - 1) / frame_size;
+  uint32_t frames_expected = kMinFrames + ((transfer_bytes + frame_size - 1) / frame_size);
   ASSERT_EQ(vmo->value()->num_frames, frames_expected);
+}
+
+TEST_F(UsbAudioTest, VmoSizeOverflow) {
+  incoming_.SyncCall([](IncomingNamespace<FakeDevice>* infra) {
+    ASSERT_OK(UsbAudioDevice::DriverBind(infra->fake_dev->zxdev()));
+  });
+  ASSERT_EQ(root_->GetLatestChild()->child_count(), 1);
+
+  ASSERT_EQ(root_->GetLatestChild()->GetLatestChild()->child_count(), 2);
+  auto itr = root_->GetLatestChild()->GetLatestChild()->children().begin();
+  std::advance(itr, 0);
+  UsbAudioStream* dut = (*itr)->GetDeviceContext<UsbAudioStream>();
+
+  auto endpoints = fidl::Endpoints<audio_fidl::StreamConfigConnector>::Create();
+  fidl::BindServer(loop_.dispatcher(), std::move(endpoints.server), dut);
+  auto stream_client = GetStreamClient(std::move(endpoints.client));
+  ASSERT_TRUE(stream_client.is_valid());
+
+  auto [local, remote] = fidl::Endpoints<audio_fidl::RingBuffer>::Create();
+
+  fidl::Arena allocator;
+  audio_fidl::wire::Format format(allocator);
+  auto default_format = GetDefaultPcmFormat();
+  format.set_pcm_format(allocator, default_format);
+  auto rb = stream_client->CreateRingBuffer(format, std::move(remote));
+  ASSERT_OK(rb.status());
+
+  constexpr uint32_t kNumberOfPositionNotifications = 5;
+  constexpr uint32_t kMinFrames = 0x3FFFFFA1;
+  auto vmo = fidl::WireCall<audio_fidl::RingBuffer>(local)->GetVmo(kMinFrames,
+                                                                   kNumberOfPositionNotifications);
+  ASSERT_OK(vmo.status());
+  ASSERT_TRUE(vmo->is_error());
+  ASSERT_EQ(vmo->error_value(), audio_fidl::wire::GetVmoError::kInternalError);
+}
+
+TEST_F(UsbAudioTest, LargeTransferSizeOob) {
+  incoming_.SyncCall([](IncomingNamespace<FakeDevice>* infra) {
+    ASSERT_OK(UsbAudioDevice::DriverBind(infra->fake_dev->zxdev()));
+  });
+  ASSERT_EQ(root_->GetLatestChild()->child_count(), 1);
+
+  ASSERT_EQ(root_->GetLatestChild()->GetLatestChild()->child_count(), 2);
+  auto itr = root_->GetLatestChild()->GetLatestChild()->children().begin();
+  std::advance(itr, 0);
+  UsbAudioStream* dut = (*itr)->GetDeviceContext<UsbAudioStream>();
+
+  auto endpoints = fidl::Endpoints<audio_fidl::StreamConfigConnector>::Create();
+  fidl::BindServer(loop_.dispatcher(), std::move(endpoints.server), dut);
+  auto stream_client = GetStreamClient(std::move(endpoints.client));
+  ASSERT_TRUE(stream_client.is_valid());
+
+  auto [local, remote] = fidl::Endpoints<audio_fidl::RingBuffer>::Create();
+
+  fidl::Arena allocator;
+  audio_fidl::wire::Format format(allocator);
+  format.set_pcm_format(allocator, GetDefaultPcmFormat());
+  auto rb = stream_client->CreateRingBuffer(format, std::move(remote));
+  ASSERT_OK(rb.status());
+
+  constexpr uint32_t kNumberOfPositionNotifications = 5;
+  constexpr uint32_t kMinFrames = 10;
+  auto vmo = fidl::WireCall<audio_fidl::RingBuffer>(local)->GetVmo(kMinFrames,
+                                                                   kNumberOfPositionNotifications);
+  ASSERT_OK(vmo.status());
+
+  std::atomic<bool> done = {};
+  auto& ring_buffer = local;
+  incoming_.SyncCall(
+      [](IncomingNamespace<FakeDevice>* infra) { infra->fake_dev->ExpectConnectToEndpoint(1); });
+  auto th = std::thread([&ring_buffer, &done] {
+    auto start = fidl::WireCall<audio_fidl::RingBuffer>(ring_buffer)->Start();
+    ASSERT_OK(start.status());
+    auto stop = fidl::WireCall<audio_fidl::RingBuffer>(ring_buffer)->Stop();
+    ASSERT_OK(stop.status());
+    done.store(true);
+  });
+
+  while (!done.load()) {
+    incoming_.SyncCall([](IncomingNamespace<FakeDevice>* infra) {
+      infra->fake_dev->fake_endpoint(1).RequestComplete(ZX_OK, 100000);
+    });
+    zx::nanosleep(zx::deadline_after(zx::msec(10)));
+  }
+  th.join();
 }
 
 }  // namespace audio::usb

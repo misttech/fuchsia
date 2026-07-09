@@ -189,8 +189,19 @@ void UsbAudioStream::ComputePersistentUniqueId() {
   uint16_t vid = parent_.desc().id_vendor;
   uint16_t pid = parent_.desc().id_product;
   audio_stream_unique_id_t fallback_id{
-      .data = {'U', 'S', 'B', ' ', static_cast<uint8_t>(vid >> 8), static_cast<uint8_t>(vid),
-               static_cast<uint8_t>(pid >> 8), static_cast<uint8_t>(pid), ifc_->iid()}};
+      .data =
+          {
+              'U',
+              'S',
+              'B',
+              ' ',
+              static_cast<uint8_t>(vid >> 8),
+              static_cast<uint8_t>(vid),
+              static_cast<uint8_t>(pid >> 8),
+              static_cast<uint8_t>(pid),
+              ifc_->iid(),
+          },
+  };
   persistent_unique_id_ = fallback_id;
 
   digest::Digest sha;
@@ -205,8 +216,11 @@ void UsbAudioStream::ComputePersistentUniqueId() {
   sha.Update(desc_list->data(), desc_list->size());
 
   // #3: The various descriptor strings which may exist.
-  const fbl::Array<uint8_t>* desc_strings[] = {&parent_.mfr_name(), &parent_.prod_name(),
-                                               &parent_.serial_num()};
+  const fbl::Array<uint8_t>* desc_strings[] = {
+      &parent_.mfr_name(),
+      &parent_.prod_name(),
+      &parent_.serial_num(),
+  };
   for (const auto str : desc_strings) {
     if (!str->empty()) {
       sha.Update(str->data(), str->size());
@@ -265,7 +279,7 @@ void UsbAudioStream::Connect(ConnectRequestView request, ConnectCompleter::Sync&
 
   if (privileged) {
     ZX_DEBUG_ASSERT(stream_channel_ == nullptr);
-    stream_channel_ = stream_channel;
+    stream_channel_ = std::move(stream_channel);
   }
 }
 
@@ -730,7 +744,7 @@ void UsbAudioStream::GetProperties(StreamChannel::GetPropertiesCompleter::Sync& 
     stream_properties.unique_id().data_[i] = persistent_unique_id_.data[i];
   }
 
-  const auto& path = *(ifc_->path());
+  const auto& path = *ifc_->path();
 
   auto product = fidl::StringView::FromExternal(
       reinterpret_cast<const char*>(parent_.prod_name().begin()), parent_.prod_name().size());
@@ -790,7 +804,13 @@ void UsbAudioStream::GetVmo(GetVmoRequestView request, GetVmoCompleter::Sync& co
   // Compute the ring buffer size.  It needs to be at least as big
   // as min_frames + the virtual fifo depth.
   ZX_DEBUG_ASSERT(frame_size_ && ((fifo_bytes_ % frame_size_) == 0));
-  ring_buffer_size_ = request->min_frames * frame_size_ + fifo_bytes_;
+  uint64_t ring_buffer_size =
+      (static_cast<uint64_t>(request->min_frames) * frame_size_) + fifo_bytes_;
+  if (ring_buffer_size > std::numeric_limits<uint32_t>::max()) {
+    LOG(ERROR, "Ring buffer size overflow (%lu)", ring_buffer_size);
+    return;
+  }
+  ring_buffer_size_ = static_cast<uint32_t>(ring_buffer_size);
 
   // Set up our state for generating notifications.
   if (request->clock_recovery_notifications_per_ring) {
@@ -1172,6 +1192,7 @@ size_t UsbAudioStream::CompleteRequestLocked(fuchsia_hardware_usb_endpoint::Comp
   auto req_length = request.length();
 
   // If we are an input stream, copy the payload into the ring buffer.
+  uint32_t todo = std::min<uint32_t>(*completion.transfer_size(), ring_buffer_size_);
   if (is_input()) {
     // TODO(https://fxbug.dev/42106932): for async inputs, measure and report the device's
     // observed sampling rate to the client.  If the device is falling
@@ -1179,7 +1200,6 @@ size_t UsbAudioStream::CompleteRequestLocked(fuchsia_hardware_usb_endpoint::Comp
     // issue; but if they're running faster than the nominal sampling rate,
     // the client will be seeing older and older data as time goes on, and
     // the audio will fall further and further behind realtime.
-    uint32_t todo = *completion.transfer_size();
     uint32_t avail = ring_buffer_size_ - ring_buffer_offset_;
     ZX_DEBUG_ASSERT(ring_buffer_offset_ < ring_buffer_size_);
     ZX_DEBUG_ASSERT((avail % frame_size_) == 0);
@@ -1219,11 +1239,12 @@ size_t UsbAudioStream::CompleteRequestLocked(fuchsia_hardware_usb_endpoint::Comp
     }
   }
 
-  // Update the ring buffer position.
-  ring_buffer_pos_ += *completion.transfer_size();
-  if (ring_buffer_pos_ >= ring_buffer_size_) {
-    ring_buffer_pos_ -= ring_buffer_size_;
-    ZX_DEBUG_ASSERT(ring_buffer_pos_ < ring_buffer_size_);
+  // Update the ring buffer position using 64-bit arithmetic to prevent overflow before modulo.
+  uint64_t new_pos = static_cast<uint64_t>(ring_buffer_pos_) + todo;
+  if (ring_buffer_size_ > 0) {
+    ring_buffer_pos_ = static_cast<uint32_t>(new_pos % ring_buffer_size_);
+  } else {
+    ring_buffer_pos_ = 0;
   }
 
   // If this is an input stream, the ring buffer offset should always be equal
@@ -1273,6 +1294,10 @@ void UsbAudioStream::DeactivateRingBufferChannelLocked(const Channel* channel) {
 }
 
 void UsbAudioStream::RingBufferCopy(::usb::FidlRequest& req, bool copy_to, uint32_t todo) {
+  if (ring_buffer_size_ == 0 || ring_buffer_offset_ >= ring_buffer_size_) {
+    return;
+  }
+  todo = static_cast<uint32_t>(std::min<uint64_t>({todo, ring_buffer_size_, ifc_->max_req_size()}));
   uint32_t avail = ring_buffer_size_ - ring_buffer_offset_;
   ZX_DEBUG_ASSERT(ring_buffer_offset_ < ring_buffer_size_);
   ZX_DEBUG_ASSERT((avail % frame_size_) == 0);
