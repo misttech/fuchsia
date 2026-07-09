@@ -1,14 +1,14 @@
 Name: Protobuf
 URL: https://github.com/protocolbuffers/protobuf
-Revision: 2d4414f384dc499af113b5991ce3eaa9df6dd931
-Version: v29.0
+Revision: 8a74921d1cadfb987d7816d1cae9d2dbe89348a5
+Version: v35.0-rc1
 License: BSD
 License File: src/LICENSE
 License File: src/third_party/utf8_range/LICENSE
 
 Description: Google's data interchange format.
 
-The current revision is based on v29.0
+The current revision is based on v35.0-rc1
 
 src/ contains a checkout of the protobuf repository, which is mirrored verbatim
 from upstream (github) and pinned in //manifests/third_party/all.
