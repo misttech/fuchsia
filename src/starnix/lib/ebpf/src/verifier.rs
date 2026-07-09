@@ -503,32 +503,24 @@ impl Type {
             (JumpWidth::W32, JumpType::Eq, Type::ScalarValue(data1), Type::ScalarValue(data2))
                 if data1.is_fully_initialized() && data2.is_fully_initialized() =>
             {
-                let maybe_umin = if data1.min() <= U32_MAX && data2.min() <= U32_MAX {
-                    Some(std::cmp::max(data1.min(), data2.min()))
+                // Refine ranges only when both operands fit in 32 bits; a range
+                // straddling 2^32 can have low bits below its min, so refining would
+                // drop reachable values.
+                let both_fit_u32 = data1.max() <= U32_MAX && data2.max() <= U32_MAX;
+                let (urange1, urange2) = if both_fit_u32 {
+                    let umin = std::cmp::max(data1.min(), data2.min());
+                    let umax = std::cmp::min(data1.max(), data2.max());
+                    let urange = U64Range::new(umin, umax);
+                    (urange, urange)
                 } else {
-                    None
+                    (data1.urange, data2.urange)
                 };
-                let maybe_umax = if data1.max() <= U32_MAX && data2.max() <= U32_MAX {
-                    Some(std::cmp::min(data1.max(), data2.max()))
-                } else {
-                    None
-                };
-
-                let urange1 = U64Range::new(
-                    maybe_umin.unwrap_or_else(|| data1.min()),
-                    maybe_umax.unwrap_or_else(|| data1.max()),
-                );
                 let v1 = Type::ScalarValue(ScalarValueData::new(
                     data1.value | (data2.value & U32_MAX),
                     data1.unknown_mask & (data2.unknown_mask | (U32_MAX << 32)),
                     0,
                     urange1,
                 ));
-
-                let urange2 = U64Range::new(
-                    maybe_umin.unwrap_or_else(|| data2.min()),
-                    maybe_umax.unwrap_or_else(|| data2.max()),
-                );
                 let v2 = Type::ScalarValue(ScalarValueData::new(
                     data2.value | (data1.value & U32_MAX),
                     data2.unknown_mask & (data1.unknown_mask | (U32_MAX << 32)),
@@ -4713,6 +4705,33 @@ mod tests {
         if let Type::ScalarValue(data1) = new_lhs {
             assert_eq!(data1.min(), 10);
             assert_eq!(data1.max(), 0xffff_ffff_0000_000a);
+        } else {
+            panic!("Expected ScalarValue");
+        }
+    }
+
+    #[test]
+    fn test_type_constraint_w32_straddling_min() {
+        // A 32-bit equality only constrains the low 32 bits. When the comparison
+        // partner's range straddles 2^32 (min <= U32_MAX < max), its low 32 bits
+        // can be smaller than its minimum, so the other register's minimum must
+        // not be raised. `data1` is in [0, 0x40]; `data2` is in [0x30, u64::MAX].
+        // On the equal branch `data1` can still be 0 (e.g. when `data2 == 2^32`,
+        // whose low 32 bits are 0), so its minimum must remain 0.
+        let mut context = ComputationContext::default();
+        let data1 = ScalarValueData::new(0, u64::MAX, 0, U64Range::new(0, 0x40));
+        let data2 = ScalarValueData::new(0, u64::MAX, 0, U64Range::new(0x30, u64::MAX));
+        let (new_lhs, _) = Type::constraint(
+            &mut context,
+            JumpType::Eq,
+            JumpWidth::W32,
+            Type::ScalarValue(data1),
+            Type::ScalarValue(data2),
+        )
+        .unwrap();
+        if let Type::ScalarValue(data) = new_lhs {
+            assert_eq!(data.min(), 0);
+            assert_eq!(data.max(), 0x40);
         } else {
             panic!("Expected ScalarValue");
         }
