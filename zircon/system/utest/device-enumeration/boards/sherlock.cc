@@ -58,7 +58,7 @@ TEST_F(DeviceEnumerationTest, SherlockTest) {
       // Thermal devices.
       "05_04_a",
       "aml-thermal-ddr",
-      "aml-thermal-ddr.thermal",
+      "aml-thermal-ddr.aml_thermal_ddr.thermal",
 
       "adc",
       "adc.aml_saradc.aml-saradc.0",

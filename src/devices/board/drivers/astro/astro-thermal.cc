@@ -9,6 +9,8 @@
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
 #include <lib/ddk/metadata.h>
+#include <lib/driver/component/cpp/composite_node_spec.h>
+#include <lib/driver/component/cpp/node_add_args.h>
 
 #include <soc/aml-s905d2/s905d2-hw.h>
 
@@ -95,9 +97,13 @@ zx::result<> CreateThermalPllNode(
 
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('THER');
-  fdf::WireUnownedResult result = pbus.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, node));
+  auto result = pbus.buffer(arena)->AddCompositeNodeSpec(
+      fidl::ToWire(fidl_arena, node),
+      fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
+                                   {.name = "aml_thermal_pll", .parents2 = {}}}));
   if (!result.ok()) {
-    zxlogf(ERROR, "Failed to send NodeAdd request: %s", result.FormatDescription().data());
+    zxlogf(ERROR, "Failed to send AddCompositeNodeSpec request: %s",
+           result.FormatDescription().data());
     return zx::error(result.status());
   }
   if (result->is_error()) {
@@ -171,9 +177,13 @@ zx::result<> CreateThermalDdrNode(
 
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('THER');
-  fdf::WireUnownedResult result = pbus.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, node));
+  auto result = pbus.buffer(arena)->AddCompositeNodeSpec(
+      fidl::ToWire(fidl_arena, node),
+      fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
+                                   {.name = "aml_thermal_ddr", .parents2 = {}}}));
   if (!result.ok()) {
-    zxlogf(ERROR, "Failed to send NodeAdd request: %s", result.FormatDescription().data());
+    zxlogf(ERROR, "Failed to send AddCompositeNodeSpec request: %s",
+           result.FormatDescription().data());
     return zx::error(result.status());
   }
   if (result->is_error()) {

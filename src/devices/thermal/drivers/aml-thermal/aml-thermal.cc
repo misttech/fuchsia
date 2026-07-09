@@ -25,7 +25,8 @@ namespace thermal {
 
 zx_status_t AmlThermal::Create(void* ctx, zx_device_t* device) {
   zx::result pdev_client_end =
-      DdkConnectFidlProtocol<fuchsia_hardware_platform_device::Service::Device>(device);
+      DdkConnectFragmentFidlProtocol<fuchsia_hardware_platform_device::Service::Device>(device,
+                                                                                        "pdev");
   if (pdev_client_end.is_error()) {
     zxlogf(ERROR, "Failed to connect to platform device: %s", pdev_client_end.status_string());
     return pdev_client_end.status_value();

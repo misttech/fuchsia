@@ -373,9 +373,13 @@ zx::result<> CreateThermalDdrNode(
   fdf::Arena arena('SHER');
 
   // The DDR sensor is controlled by a non-legacy thermal device, which only reads temperature.
-  auto result = pbus.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, node));
+  auto result = pbus.buffer(arena)->AddCompositeNodeSpec(
+      fidl::ToWire(fidl_arena, node),
+      fidl::ToWire(fidl_arena,
+                   fdf::CompositeNodeSpec{{.name = "aml_thermal_ddr", .parents2 = {}}}));
   if (!result.ok()) {
-    zxlogf(ERROR, "Failed to send NodeAdd request: %s", result.FormatDescription().data());
+    zxlogf(ERROR, "Failed to send AddCompositeNodeSpec request: %s",
+           result.FormatDescription().data());
     return zx::error(result.status());
   }
   if (result->is_error()) {

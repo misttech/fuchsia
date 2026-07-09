@@ -352,9 +352,8 @@ zx_status_t AmlTSensor::GetStateChangePort(zx_handle_t* port) {
 
 zx_status_t AmlTSensor::Create(zx_device_t* parent,
                                fuchsia_hardware_thermal::ThermalDeviceInfo thermal_config) {
-  zx::result pdev_client_end =
-      ddk::Device<void>::DdkConnectFidlProtocol<fuchsia_hardware_platform_device::Service::Device>(
-          parent);
+  zx::result pdev_client_end = ddk::Device<void>::DdkConnectFragmentFidlProtocol<
+      fuchsia_hardware_platform_device::Service::Device>(parent, "pdev");
   if (pdev_client_end.is_error()) {
     zxlogf(ERROR, "Failed to connect to platform device: %s", pdev_client_end.status_string());
     return pdev_client_end.status_value();
