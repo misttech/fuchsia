@@ -80,7 +80,13 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
   dwc3_trb_t trb = (ep0_.state == Ep0::State::DataOut || ep0_.state == Ep0::State::DataIn)
                        ? ep0_.shared_fifo.ReadOne()
                        : dwc3_trb_t{};
-  ep0_.shared_fifo.AdvanceRead();
+  // Only advance the shared FIFO read pointer if the FIFO is not empty upon
+  // receiving EP0 completion interrupts. When stall recovery (Ep0EndAndStall)
+  // clears the TRB ring (read_ == write_), advancing unconditionally triggers
+  // underflow logs.
+  if (!ep0_.shared_fifo.IsEmpty()) {
+    ep0_.shared_fifo.AdvanceRead();
+  }
 
   switch (ep0_.state) {
     case Ep0::State::Setup: {
