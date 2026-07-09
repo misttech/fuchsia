@@ -120,7 +120,7 @@ TEST(PrctlTest, SetreuidNoopToPrivilegeEscalation) {
     ASSERT_EQ(euid, 0u);
     ASSERT_EQ(suid, 1000u);
 
-    // Step 2: No-op call — should NOT corrupt saved_uid
+    // Step 2: No-op call - should NOT corrupt saved_uid
     ASSERT_EQ(setreuid(-1, -1), 0);
     ASSERT_EQ(getresuid(&ruid, &euid, &suid), 0);
     ASSERT_EQ(ruid, 1000u);
@@ -134,7 +134,7 @@ TEST(PrctlTest, SetreuidNoopToPrivilegeEscalation) {
     ASSERT_EQ(euid, 1000u);
     ASSERT_EQ(suid, 1000u);
 
-    // Step 4: Try to regain root — must fail
+    // Step 4: Try to regain root - must fail
     seteuid(0);
     ASSERT_EQ(getresuid(&ruid, &euid, &suid), 0);
 
@@ -163,7 +163,7 @@ TEST(PrctlTest, SetreuidRuidCannotUseSavedUid) {
     ASSERT_EQ(euid, 1000u);
     ASSERT_EQ(suid, 0u);
 
-    // setreuid(0, -1) — ruid=saved_uid. Linux denies this with EPERM.
+    // setreuid(0, -1) - ruid=saved_uid. Linux denies this with EPERM.
     int ret = setreuid(0, -1);
     EXPECT_EQ(ret, -1) << "setreuid(saved_uid, -1) should be denied";
     if (ret == -1) {
@@ -201,7 +201,7 @@ TEST(PrctlTest, SetregidRgidCannotUseSavedGid) {
     ASSERT_EQ(egid, 1000u);
     ASSERT_EQ(sgid, 0u);
 
-    // setregid(0, -1) — rgid=saved_gid. Linux denies this with EPERM.
+    // setregid(0, -1) - rgid=saved_gid. Linux denies this with EPERM.
     int ret = setregid(0, -1);
     EXPECT_EQ(ret, -1) << "setregid(saved_gid, -1) should be denied";
     if (ret == -1) {

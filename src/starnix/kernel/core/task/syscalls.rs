@@ -578,7 +578,7 @@ pub fn sys_setreuid(current_task: &CurrentTask, ruid: uid_t, euid: uid_t) -> Res
 }
 
 pub fn sys_setregid(current_task: &CurrentTask, rgid: gid_t, egid: gid_t) -> Result<(), Errno> {
-    // Same asymmetric permission model as setreuid — see above.
+    // Same asymmetric permission model as setreuid - see above.
     let validate_rgid = |gid: gid_t| {
         let creds = current_task.current_creds();
         gid == u32::MAX
