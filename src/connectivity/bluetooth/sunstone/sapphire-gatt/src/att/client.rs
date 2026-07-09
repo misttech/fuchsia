@@ -8,11 +8,12 @@ use crate::att::bearer::{
 };
 use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
 use crate::att::pdu::{
-    DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp,
-    FindByTypeValueReqHeader, FindInformationReq, FindInformationRsp, HandlesInformation, Header,
-    InformationData16, InformationData128, Opcode, Packet, PacketBuilder, PrepareWriteHeader,
-    ReadBlobReq, ReadByGroupTypeReqHeader, ReadByGroupTypeRsp, ReadByGroupTypeRspEntryHeader,
-    ReadByTypeReqHeader, ReadByTypeRsp, ReadReq, UuidFormat, WriteCmdHeader, WriteReqHeader,
+    DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp, ExecuteWriteFlags,
+    ExecuteWriteReq, ExecuteWriteRsp, FindByTypeValueReqHeader, FindInformationReq,
+    FindInformationRsp, HandlesInformation, Header, InformationData16, InformationData128, Opcode,
+    Packet, PacketBuilder, PrepareWriteHeader, ReadBlobReq, ReadByGroupTypeReqHeader,
+    ReadByGroupTypeRsp, ReadByGroupTypeRspEntryHeader, ReadByTypeReqHeader, ReadByTypeRsp, ReadReq,
+    UuidFormat, WriteCmdHeader, WriteReqHeader,
 };
 use core::cmp::{max, min};
 use core::mem::{MaybeUninit, size_of};
@@ -644,6 +645,34 @@ where
         if rx_packet.data != tx_packet.data {
             return Err(ClientError::InvalidIncomingData);
         }
+
+        Ok(())
+    }
+
+    /// Initiates an Execute Write procedure to commit or cancel prepared writes.
+    ///
+    /// Note: Although the Execute Write Response has no payload, `rx_buf` must be
+    /// provided to satisfy the transaction MTU safety guardrail and allow the caller
+    /// to reuse their existing buffer without stack duplication.
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.3).
+    pub async fn execute_write<'a>(
+        &mut self,
+        flags: ExecuteWriteFlags,
+        rx_buf: &'a mut [MaybeUninit<u8>],
+    ) -> Result<(), ClientError> {
+        let builder = PacketBuilder {
+            header: Header { opcode: Opcode::ExecuteWriteReq },
+            payload: ExecuteWriteReq { flags: flags as u8 },
+        };
+        let tx_packet = builder.as_packet();
+
+        let rx_packet = self
+            .transaction(Opcode::ExecuteWriteReq, tx_packet, rx_buf, Opcode::ExecuteWriteRsp)
+            .await?;
+
+        let _ = ExecuteWriteRsp::try_ref_from_bytes(&rx_packet.data)
+            .map_err(|_| ClientError::InvalidIncomingData)?;
 
         Ok(())
     }
@@ -1740,6 +1769,67 @@ mod tests {
 
             executor.run_until_stalled();
             assert!(server_handle.is_finished());
+            assert!(client_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_execute_write_success() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            let server_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 128];
+                let mut server_rx = BearerRx::new(test_rx);
+                let mut server_tx = BearerTx::new(test_tx);
+
+                let packet = server_rx.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ExecuteWriteReq);
+                let req = ExecuteWriteReq::read_from_bytes(&packet.data).unwrap();
+                assert_eq!(req.flags, ExecuteWriteFlags::WriteAll as u8);
+
+                let rsp_builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ExecuteWriteRsp },
+                    payload: ExecuteWriteRsp {},
+                };
+                server_tx.send(rsp_builder.as_packet()).await.unwrap();
+            });
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 128];
+                client.execute_write(ExecuteWriteFlags::WriteAll, &mut rx_buf).await.unwrap();
+            });
+
+            executor.run_until_stalled();
+            assert!(server_handle.is_finished());
+            assert!(client_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_execute_write_error() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, _test_tx, test_rx) = setup_mock_channel(executor);
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+            drop(test_rx); // Simulates LinkClosed
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 128];
+                let result = client.execute_write(ExecuteWriteFlags::WriteAll, &mut rx_buf).await;
+                assert_eq!(result.err(), Some(ClientError::LinkClosed));
+            });
+
+            executor.run_until_stalled();
             assert!(client_handle.is_finished());
         });
     }

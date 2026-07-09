@@ -57,7 +57,9 @@ mod tests {
     use crate::att::database::testing::MockDb;
     use crate::att::l2cap::mock::setup_mock_channel;
     use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
+    use crate::att::pdu::ExecuteWriteFlags;
     use crate::att::server::{PrepareQueue, Server, ServerError};
+    use core::cmp::min;
     use core::mem::MaybeUninit;
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
@@ -744,6 +746,113 @@ mod tests {
         });
     }
 
+    #[test]
+    fn test_client_server_integration_execute_write_commit() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue"));
+
+            let mut server = new_server(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(server_tx),
+                BearerRx::new(server_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            // Server task
+            let server_handle = executor.spawn(async move {
+                // 1. MTU Exchange
+                server.handle_request().await.unwrap();
+                // 2. First Prepare Write
+                server.handle_request().await.unwrap();
+                // 3. Second Prepare Write
+                server.handle_request().await.unwrap();
+                // 4. Execute Write (Commit)
+                server.handle_request().await.unwrap();
+                // 5. Read Request to verify value
+                server.handle_request().await.unwrap();
+            });
+
+            // Client task
+            let client_handle = executor.spawn(async move {
+                // 1. MTU Exchange
+                client.exchange_mtu().await.unwrap();
+
+                // 2. Prepare Write (Part 1)
+                let mut rx_buf = [MaybeUninit::uninit(); CLIENT_PREFERRED_MTU as usize];
+                client.prepare_write(h(10), 0, b"Hello", &mut rx_buf).await.unwrap();
+
+                // 3. Prepare Write (Part 2)
+                client.prepare_write(h(10), 5, b"World", &mut rx_buf).await.unwrap();
+
+                // 4. Execute Write (Commit)
+                client.execute_write(ExecuteWriteFlags::WriteAll, &mut rx_buf).await.unwrap();
+
+                // 5. Verify the updated attribute value
+                let read_res = client.read(h(10), &mut rx_buf).await.unwrap();
+                assert_eq!(read_res, b"HelloWorld");
+            });
+
+            executor.run_until_stalled();
+            assert!(server_handle.is_finished());
+            assert!(client_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_server_integration_execute_write_cancel() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+
+            let mut db = MockDb::new();
+            db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue"));
+
+            let mut server = new_server(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(server_tx),
+                BearerRx::new(server_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            let mut client = Client::new(
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                CLIENT_PREFERRED_MTU,
+            );
+
+            let server_handle = executor.spawn(async move {
+                server.handle_request().await.unwrap(); // MTU Exchange
+                server.handle_request().await.unwrap(); // Prepare Write
+                server.handle_request().await.unwrap(); // Execute Write (Cancel)
+                server.handle_request().await.unwrap(); // Read Request
+            });
+
+            let client_handle = executor.spawn(async move {
+                client.exchange_mtu().await.unwrap();
+
+                let mut rx_buf = [MaybeUninit::uninit(); CLIENT_PREFERRED_MTU as usize];
+                client.prepare_write(h(10), 0, b"Part1", &mut rx_buf).await.unwrap();
+                client.execute_write(ExecuteWriteFlags::CancelAll, &mut rx_buf).await.unwrap();
+
+                let read_res = client.read(h(10), &mut rx_buf).await.unwrap();
+                assert_eq!(read_res, b"InitialValue"); // Value is unmodified!
+            });
+
+            executor.run_until_stalled();
+            assert!(server_handle.is_finished());
+            assert!(client_handle.is_finished());
+        });
+    }
     mod proptests {
         use super::*;
         use crate::att::attribute::Attribute;
@@ -1512,6 +1621,146 @@ mod tests {
                             }
                             other => panic!("Unexpected result: {:?}", other),
                         }
+                    });
+
+                    executor.run_until_stalled();
+                    assert!(client_handle.is_finished());
+                    assert!(server_handle.is_finished());
+                });
+            }
+
+            #[test]
+            fn test_execute_write_consistency(
+                h1_raw in prop::sample::select(vec![1u16, 10u16]),
+                h2_raw in prop::sample::select(vec![1u16, 10u16]),
+                offset1 in 0..=20u16,
+                offset2 in 0..=20u16,
+                data1 in prop::collection::vec(any::<u8>(), 0..30),
+                data2 in prop::collection::vec(any::<u8>(), 0..30),
+                flags in prop::sample::select(vec![ExecuteWriteFlags::CancelAll, ExecuteWriteFlags::WriteAll]),
+                mtu in 23..=256u16,
+            ) {
+                BoundedExecutor::new(TestExecutor::new(), |executor| {
+                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+                    let mut server = new_server(
+                        PeerId::new(1).unwrap(),
+                        BearerTx::new(server_tx),
+                        BearerRx::new(server_rx),
+                        mtu,
+                        setup_db(),
+                    );
+                    let mut client = Client::new(
+                        BearerTx::new(app_channel.sender),
+                        BearerRx::new(app_channel.receiver),
+                        mtu,
+                    );
+
+                    // Truncate payloads to fit within negotiated MTU to prevent client panics.
+                    let max_payload = (mtu as usize) - PREPARE_REQ_HEADER_SIZE;
+                    let test_data1 = if data1.len() > max_payload { &data1[..max_payload] } else { &data1[..] };
+                    let test_data2 = if data2.len() > max_payload { &data2[..max_payload] } else { &data2[..] };
+
+                    // Run the server request loop continuously until the client drops.
+                    let server_handle = executor.spawn(async move {
+                        loop {
+                            if server.handle_request().await.is_err() {
+                                break;
+                            }
+                        }
+                    });
+
+                    // Maintain expected database state.
+                    let mut val1_expected = b"Value1".to_vec();
+                    let mut val10_expected = b"Value10".to_vec();
+
+                    let client_handle = executor.spawn(async move {
+                        client.exchange_mtu().await.expect("MTU exchange failed");
+                        let mut rx_buf = [MaybeUninit::uninit(); 512];
+
+                        let h1 = h(h1_raw);
+                        let h2 = h(h2_raw);
+
+                        // Send Prepare Write 1.
+                        let r1 = client.prepare_write(h1, offset1, test_data1, &mut rx_buf).await;
+                        let p1_ok = r1.is_ok();
+
+                        // Send Prepare Write 2 only if the first request was accepted.
+                        let mut p2_ok = false;
+                        if p1_ok {
+                            let r2 = client.prepare_write(h2, offset2, test_data2, &mut rx_buf).await;
+                            p2_ok = r2.is_ok();
+                        }
+
+                        // If both prepares succeeded, trigger and verify Execute Write.
+                        if p1_ok && p2_ok {
+                            let exec_res = client.execute_write(flags, &mut rx_buf).await;
+                            match flags {
+                                ExecuteWriteFlags::CancelAll => {
+                                    // CancelAll always succeeds and leaves values unchanged.
+                                    assert!(exec_res.is_ok());
+                                }
+                                ExecuteWriteFlags::WriteAll => {
+                                    let mut val1 = val1_expected.clone();
+                                    let mut val10 = val10_expected.clone();
+
+                                    // Simulate Write 1. Should succeed since prepare succeeded.
+                                    let w1_ok = if h1_raw == 1 {
+                                        offset1 as usize <= val1.len()
+                                    } else {
+                                        offset1 as usize <= val10.len()
+                                    };
+
+                                    if w1_ok {
+                                        if h1_raw == 1 {
+                                            val1.truncate(offset1 as usize);
+                                            val1.extend_from_slice(test_data1);
+                                        } else {
+                                            val10.truncate(offset1 as usize);
+                                            val10.extend_from_slice(test_data1);
+                                        }
+
+                                        // Simulate Write 2 against the database state modified by Write 1.
+                                        let w2_ok = if h2_raw == 1 {
+                                            offset2 as usize <= val1.len()
+                                        } else {
+                                            offset2 as usize <= val10.len()
+                                        };
+
+                                        if w2_ok {
+                                            // Both writes succeed during execution.
+                                            if h2_raw == 1 {
+                                                val1.truncate(offset2 as usize);
+                                                val1.extend_from_slice(test_data2);
+                                            } else {
+                                                val10.truncate(offset2 as usize);
+                                                val10.extend_from_slice(test_data2);
+                                            }
+                                            assert!(exec_res.is_ok());
+                                            val1_expected = val1;
+                                            val10_expected = val10;
+                                        } else {
+                                            // Write 2 fails due to truncation from Write 1.
+                                            assert_eq!(
+                                                exec_res.expect_err("expected execution failure"),
+                                                ClientError::ErrorResponse(ErrorCode::InvalidOffset)
+                                            );
+                                            val1_expected = val1;
+                                            val10_expected = val10;
+                                        }
+                                    } else {
+                                        panic!("Write 1 failed during execution but prepare succeeded!");
+                                    }
+                                }
+                            }
+                        }
+
+                        // Read back values to verify database matches expected state.
+                        let val1_read = client.read(h(1), &mut rx_buf).await.expect("read h(1) failed");
+                        let max_read_len = (mtu - 1) as usize;
+                        assert_eq!(val1_read, &val1_expected[..min(val1_expected.len(), max_read_len)]);
+
+                        let val10_read = client.read(h(10), &mut rx_buf).await.expect("read h(10) failed");
+                        assert_eq!(val10_read, &val10_expected[..min(val10_expected.len(), max_read_len)]);
                     });
 
                     executor.run_until_stalled();

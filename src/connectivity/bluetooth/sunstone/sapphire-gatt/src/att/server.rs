@@ -11,11 +11,12 @@ use crate::att::bearer::{
 use crate::att::database::Database;
 use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
 use crate::att::pdu::{
-    DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp, FindByTypeValueReq,
-    FindInformationReq, FindInformationRspHeader, HandlesInformation, Header, InformationData,
-    InformationData16, InformationData128, Opcode, Packet, PacketBuilder, PrepareWriteReq,
-    ReadBlobReq, ReadByGroupTypeReq, ReadByGroupTypeRspEntryHeader, ReadByTypeReq, ReadReq,
-    UuidFormat, WriteCmd, WriteReq, WriteRsp,
+    DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp, ExecuteWriteFlags,
+    ExecuteWriteReq, ExecuteWriteRsp, FindByTypeValueReq, FindInformationReq,
+    FindInformationRspHeader, HandlesInformation, Header, InformationData, InformationData16,
+    InformationData128, Opcode, Packet, PacketBuilder, PrepareWriteReq, ReadBlobReq,
+    ReadByGroupTypeReq, ReadByGroupTypeRspEntryHeader, ReadByTypeReq, ReadReq, UuidFormat,
+    WriteCmd, WriteReq, WriteRsp,
 };
 use core::cmp::{max, min};
 use core::convert::Infallible;
@@ -136,6 +137,11 @@ impl<S: StorageFamily> PrepareQueue<S> {
     /// Clears all queued requests.
     pub fn clear(&mut self) {
         self.buffer.clear();
+    }
+
+    /// Returns true if the prepare queue is empty.
+    pub fn is_empty(&self) -> bool {
+        self.buffer.is_empty()
     }
 
     /// Returns a draining iterator over the queued write requests.
@@ -303,6 +309,7 @@ where
             Opcode::WriteReq => self.handle_write_req(&rx_packet.data).await,
             Opcode::WriteCmd => self.handle_write_cmd(&rx_packet.data).await,
             Opcode::PrepareWriteReq => self.handle_prepare_write(&rx_packet.data).await,
+            Opcode::ExecuteWriteReq => self.handle_execute_write(&rx_packet.data).await,
             other => Err(TransactionError::UnexpectedPdu { received_opcode: other }),
         };
 
@@ -917,6 +924,73 @@ where
         Ok(())
     }
 
+    /// Handles an Execute Write Request.
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.3).
+    async fn handle_execute_write(&mut self, payload: &[u8]) -> Result<(), TransactionError> {
+        let req = ExecuteWriteReq::read_from_bytes(payload).map_err(|_| {
+            TransactionError::InvalidPdu { request_opcode: Opcode::ExecuteWriteReq }
+        })?;
+
+        let flags = ExecuteWriteFlags::from_repr(req.flags).ok_or_else(|| {
+            TransactionError::InvalidPdu { request_opcode: Opcode::ExecuteWriteReq }
+        })?;
+
+        match flags {
+            ExecuteWriteFlags::CancelAll => {
+                self.prepare_storage.clear();
+            }
+            ExecuteWriteFlags::WriteAll => {
+                // If any queued write fails, the server aborts the transaction, discards all
+                // remaining prepared writes, and returns the error.
+                //
+                // see Bluetooth Core Spec Vol 3, Part F, Section 3.4.6.3.
+                for req in self.prepare_storage.drain() {
+                    let handle_val = req.header.attribute_handle.get();
+                    let handle = match AttributeHandle::try_from(handle_val) {
+                        Ok(h) => h,
+                        Err(_) => {
+                            // Note: Returning early drops the draining iterator, triggering
+                            // RAII cancellation and clearing of all remaining queued writes.
+                            return Err(TransactionError::ErrorResponse {
+                                request_opcode: Opcode::ExecuteWriteReq,
+                                attribute_handle: handle_val,
+                                error_code: ErrorCode::InvalidHandle,
+                            });
+                        }
+                    };
+                    let attr = match self.database.find_attribute(handle) {
+                        Some(a) => a,
+                        None => {
+                            return Err(TransactionError::ErrorResponse {
+                                request_opcode: Opcode::ExecuteWriteReq,
+                                attribute_handle: handle_val,
+                                error_code: ErrorCode::InvalidHandle,
+                            });
+                        }
+                    };
+                    let offset = req.header.value_offset.get();
+                    if let Err(error_code) =
+                        attr.write_chunk(self.peer_id, offset, &req.part_attribute_value).await
+                    {
+                        return Err(TransactionError::ErrorResponse {
+                            request_opcode: Opcode::ExecuteWriteReq,
+                            attribute_handle: handle_val,
+                            error_code,
+                        });
+                    }
+                }
+            }
+        }
+
+        let builder = PacketBuilder {
+            header: Header { opcode: Opcode::ExecuteWriteRsp },
+            payload: ExecuteWriteRsp {},
+        };
+        self.send_packet(builder.as_packet()).await?;
+        Ok(())
+    }
+
     /// Helper to read an attribute value at an offset and cap it to a maximum buffer size.
     async fn read_attribute_at(
         &self,
@@ -1014,6 +1088,7 @@ mod tests {
         WriteReqHeader,
     };
 
+    use core::mem::size_of;
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
     use sapphire_collections::storage::ArrayStorage;
@@ -2790,6 +2865,195 @@ mod tests {
 
             let server_handle = executor.spawn(async move {
                 let _ = server.handle_request().await;
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_execute_write_commit_success() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let mut db = MockDb::new();
+            db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue"));
+
+            let mut server = new_server(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            // Queue up two write chunks using serialized format without magic numbers
+            const HEADER_SIZE: usize = size_of::<PrepareWriteHeader>();
+            const PAYLOAD1: &[u8] = b"Hello";
+            const PAYLOAD2: &[u8] = b"World";
+
+            let header1 =
+                PrepareWriteHeader { attribute_handle: U16::new(10), value_offset: U16::new(0) };
+            let mut buf1 = [0u8; HEADER_SIZE + PAYLOAD1.len()];
+            header1.write_to(&mut buf1[0..HEADER_SIZE]).unwrap();
+            buf1[HEADER_SIZE..].copy_from_slice(PAYLOAD1);
+            let req1 = PrepareWriteReq::try_ref_from_bytes(&buf1).unwrap();
+            server.prepare_storage.try_push(req1).unwrap();
+
+            let header2 =
+                PrepareWriteHeader { attribute_handle: U16::new(10), value_offset: U16::new(5) };
+            let mut buf2 = [0u8; HEADER_SIZE + PAYLOAD2.len()];
+            header2.write_to(&mut buf2[0..HEADER_SIZE]).unwrap();
+            buf2[HEADER_SIZE..].copy_from_slice(PAYLOAD2);
+            let req2 = PrepareWriteReq::try_ref_from_bytes(&buf2).unwrap();
+            server.prepare_storage.try_push(req2).unwrap();
+
+            let client_handle = executor.spawn(async move {
+                let mut app_tx_bearer = BearerTx::new(app_channel.sender);
+                let mut app_rx_bearer = BearerRx::new(app_channel.receiver);
+
+                // Send ExecuteWriteReq with WriteAll flag
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ExecuteWriteReq },
+                    payload: ExecuteWriteReq { flags: ExecuteWriteFlags::WriteAll as u8 },
+                };
+                app_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                // Expect ExecuteWriteRsp
+                let mut rx_buf = [MaybeUninit::uninit(); 128];
+                let packet = app_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ExecuteWriteRsp);
+            });
+
+            let server_handle = executor.spawn(async move {
+                server.handle_request().await.unwrap();
+                assert!(server.prepare_storage.is_empty());
+
+                // Check updated db value
+                let attr = server.database.find_attribute(h(10)).unwrap();
+                let mut val_buf = [0u8; 32];
+                let len = attr.read_chunk(PeerId::new(1).unwrap(), 0, &mut val_buf).await.unwrap();
+                assert_eq!(&val_buf[..len], b"HelloWorld");
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_execute_write_cancel_success() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let mut db = MockDb::new();
+            db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue"));
+
+            let mut server = new_server(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            // Queue up a write using serialized format without magic numbers
+            const HEADER_SIZE: usize = size_of::<PrepareWriteHeader>();
+            const PAYLOAD: &[u8] = b"Hello";
+
+            let header =
+                PrepareWriteHeader { attribute_handle: U16::new(10), value_offset: U16::new(0) };
+            let mut buf = [0u8; HEADER_SIZE + PAYLOAD.len()];
+            header.write_to(&mut buf[0..HEADER_SIZE]).expect("buffer is large enough");
+            buf[HEADER_SIZE..].copy_from_slice(PAYLOAD);
+            let req = PrepareWriteReq::try_ref_from_bytes(&buf).unwrap();
+            server.prepare_storage.try_push(req).unwrap();
+
+            let client_handle = executor.spawn(async move {
+                let mut app_tx_bearer = BearerTx::new(app_channel.sender);
+                let mut app_rx_bearer = BearerRx::new(app_channel.receiver);
+
+                // Send ExecuteWriteReq with CancelAll flag
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ExecuteWriteReq },
+                    payload: ExecuteWriteReq { flags: ExecuteWriteFlags::CancelAll as u8 },
+                };
+                app_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                let mut rx_buf = [MaybeUninit::uninit(); 128];
+                let packet = app_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ExecuteWriteRsp);
+            });
+
+            let server_handle = executor.spawn(async move {
+                server.handle_request().await.unwrap();
+                assert!(server.prepare_storage.is_empty());
+
+                // Db value should remain unmodified
+                let attr = server.database.find_attribute(h(10)).unwrap();
+                let mut val_buf = [0u8; 32];
+                let len = attr.read_chunk(PeerId::new(1).unwrap(), 0, &mut val_buf).await.unwrap();
+                assert_eq!(&val_buf[..len], b"InitialValue");
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_handle_execute_write_failure_discards_rest() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let mut db = MockDb::new();
+            let attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue");
+            attr.set_write_error(ErrorCode::WriteNotPermitted);
+            db.insert(h(10), attr);
+
+            let mut server = new_server(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(test_tx),
+                BearerRx::new(test_rx),
+                SERVER_MTU,
+                db,
+            );
+
+            // Queue up a write using serialized format without magic numbers
+            const HEADER_SIZE: usize = size_of::<PrepareWriteHeader>();
+            const PAYLOAD: &[u8] = b"Hello";
+
+            let header =
+                PrepareWriteHeader { attribute_handle: U16::new(10), value_offset: U16::new(0) };
+            let mut buf = [0u8; HEADER_SIZE + PAYLOAD.len()];
+            header.write_to(&mut buf[0..HEADER_SIZE]).expect("buffer is large enough");
+            buf[HEADER_SIZE..].copy_from_slice(PAYLOAD);
+            let req = PrepareWriteReq::try_ref_from_bytes(&buf).unwrap();
+            server.prepare_storage.try_push(req).unwrap();
+
+            let client_handle = executor.spawn(async move {
+                let mut app_tx_bearer = BearerTx::new(app_channel.sender);
+                let mut app_rx_bearer = BearerRx::new(app_channel.receiver);
+
+                let builder = PacketBuilder {
+                    header: Header { opcode: Opcode::ExecuteWriteReq },
+                    payload: ExecuteWriteReq { flags: ExecuteWriteFlags::WriteAll as u8 },
+                };
+                app_tx_bearer.send(builder.as_packet()).await.unwrap();
+
+                let mut rx_buf = [MaybeUninit::uninit(); 128];
+                let packet = app_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::ErrorRsp);
+                let rsp = ErrorRsp::try_read_from_bytes(&packet.data).unwrap();
+                assert_eq!(rsp.error_code, ErrorCode::WriteNotPermitted);
+                assert_eq!(rsp.attribute_handle.get(), 10);
+            });
+
+            let server_handle = executor.spawn(async move {
+                let _ = server.handle_request().await;
+                // Verify that the queue has been discarded and cleared on failure
+                assert!(server.prepare_storage.is_empty());
             });
 
             executor.run_until_stalled();

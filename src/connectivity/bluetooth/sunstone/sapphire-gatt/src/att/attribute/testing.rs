@@ -131,6 +131,9 @@ impl Attribute for MockAttribute {
         }
         let offset = offset as usize;
         let mut value = self.value.lock();
+        if offset > value.len() {
+            return Err(ErrorCode::InvalidOffset);
+        }
         if offset + data.len() > MAX_ATTRIBUTE_SIZE {
             return Err(ErrorCode::InvalidAttributeValueLength);
         }

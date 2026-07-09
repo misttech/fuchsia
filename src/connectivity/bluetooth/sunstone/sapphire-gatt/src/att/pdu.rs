@@ -39,6 +39,8 @@ pub enum Opcode {
     WriteCmd = 0x52,
     PrepareWriteReq = 0x16,
     PrepareWriteRsp = 0x17,
+    ExecuteWriteReq = 0x18,
+    ExecuteWriteRsp = 0x19,
 }
 
 /// The UUID format types supported in Find Information Response.
@@ -547,6 +549,35 @@ pub struct PrepareWriteReq {
 ///
 /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.2).
 pub type PrepareWriteRsp = PrepareWriteReq;
+
+/// Execute Write Request Flags.
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.3).
+#[derive(
+    TryFromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq, FromRepr,
+)]
+#[repr(u8)]
+pub enum ExecuteWriteFlags {
+    CancelAll = 0x00,
+    WriteAll = 0x01,
+}
+
+/// Execute Write Request PDU (Opcode = 0x18).
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.3).
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed)]
+pub struct ExecuteWriteReq {
+    pub flags: u8,
+}
+
+/// Execute Write Response PDU (Opcode = 0x19).
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.4).
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed)]
+pub struct ExecuteWriteRsp {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -789,5 +820,12 @@ mod tests {
         assert_eq!(parsed.header.attribute_handle.get(), 1);
         assert_eq!(parsed.header.value_offset.get(), 5);
         assert_eq!(parsed.part_attribute_value, [10, 11, 12]);
+    }
+
+    #[test]
+    fn test_execute_write_req() {
+        let req_bytes = [0x01]; // Flags: WriteAll
+        let parsed = ExecuteWriteReq::read_from_bytes(&req_bytes[..]).unwrap();
+        assert_eq!(parsed.flags, ExecuteWriteFlags::WriteAll as u8);
     }
 }
