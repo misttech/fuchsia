@@ -6,7 +6,8 @@ use anyhow::{Context as _, format_err};
 use fidl_fuchsia_io as fio;
 use fuchsia_fs::directory::{WatchEvent, WatchMessage, Watcher};
 use futures::stream::{BoxStream, StreamExt as _, TryStreamExt as _};
-use std::hash::{Hash as _, Hasher as _};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU16, Ordering};
 
 use crate::device::{PhyEvent, PhyProxy};
 
@@ -21,18 +22,6 @@ impl std::fmt::Debug for NewPhyDevice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NewPhyDevice").field("id", &self.id).field("proxy", &self.proxy).finish()
     }
-}
-
-fn generate_phy_id(name: &str) -> u16 {
-    let mut s = std::collections::hash_map::DefaultHasher::new();
-    let () = name.hash(&mut s);
-    let mut s: u64 = s.finish();
-    let mut id: u16 = 0;
-    while s != 0 {
-        id |= s as u16;
-        s >>= 16;
-    }
-    id
 }
 
 pub async fn watch_phy_devices(
@@ -67,94 +56,106 @@ async fn watch_phy_devices_impl(
         ));
     }
 
+    let next_id = Arc::new(AtomicU16::new(0));
+
     let devfs_stream = match (devfs_watcher, devfs_dir) {
-        (Ok(watcher), Some(devfs_dir)) => watcher
-            .then(move |result| {
-                let devfs_dir = Clone::clone(&devfs_dir);
+        (Ok(watcher), Some(devfs_dir)) => {
+            let next_id = Arc::clone(&next_id);
+            watcher
+                .then(move |result| {
+                    let devfs_dir = Clone::clone(&devfs_dir);
+                    let next_id = Arc::clone(&next_id);
 
-                async move {
-                    let WatchMessage { event, filename } = match result {
-                        Err(e) => {
-                            return Err(format_err!("Error in devfs watcher stream {e:?}"));
-                        }
-                        Ok(x) => x,
-                    };
-
-                    if !matches!(event, WatchEvent::ADD_FILE | WatchEvent::EXISTING) {
-                        // Ignore all other events since we only care about PHYs being added.
-                        return Ok(None);
-                    }
-                    let filename = match filename.as_path().to_str() {
-                        Some(filename) => filename,
-                        None => {
-                            return Err(format_err!(
-                                "Dropping PHY devfs instance that is not valid unicode: {}",
-                                filename.as_path().to_string_lossy()
-                            ));
-                        }
-                    };
-
-                    // Avoid trying to open '.', which is never valid
-                    if filename == "." {
-                        return Ok(None);
-                    }
-                    let (phy_proxy, server_end) = fidl::endpoints::create_proxy();
-                    let connector =
-                        match fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
-                            fidl_fuchsia_wlan_device::ConnectorMarker,
-                        >(&devfs_dir, filename)
-                        {
+                    async move {
+                        let WatchMessage { event, filename } = match result {
                             Err(e) => {
-                                return Err(format_err!(
-                                    "Failed to connect to devfs instance: {devfs_dir:?}, {filename}, {e:?}"
-                                ));
+                                return Err(format_err!("Error in devfs watcher stream {e:?}"));
                             }
                             Ok(x) => x,
                         };
 
-                    if let Err(e) = connector.connect(server_end) {
-                        return Err(format_err!("Error opening '{}': {}", filename, e));
-                    }
+                        if !matches!(event, WatchEvent::ADD_FILE | WatchEvent::EXISTING) {
+                            // Ignore all other events since we only care about PHYs being added.
+                            return Ok(None);
+                        }
+                        let filename = match filename.as_path().to_str() {
+                            Some(filename) => filename,
+                            None => {
+                                return Err(format_err!(
+                                    "Dropping PHY devfs instance that is not valid unicode: {}",
+                                    filename.as_path().to_string_lossy()
+                                ));
+                            }
+                        };
 
-                    let id = generate_phy_id(filename);
-                    let event_stream = PhyProxy::old_event_stream(&phy_proxy);
-                    Ok(Some(NewPhyDevice { id, proxy: PhyProxy::Old(phy_proxy), event_stream }))
-                }
-            })
-            // Using `.then` before `try_filter_map` surfaces all stream and item-level
-            // errors explicitly in the async closure, allowing `try_filter_map` to filter
-            // out `None` items while propagating any encountered `Err`.
-            .try_filter_map(|x| futures::future::ready(Ok(x)))
-            .boxed(),
+                        // Avoid trying to open '.', which is never valid
+                        if filename == "." {
+                            return Ok(None);
+                        }
+                        let (phy_proxy, server_end) = fidl::endpoints::create_proxy();
+                        let connector =
+                            match fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
+                                fidl_fuchsia_wlan_device::ConnectorMarker,
+                            >(&devfs_dir, filename)
+                            {
+                                Err(e) => {
+                                    return Err(format_err!(
+                                        "Failed to connect to devfs instance: {devfs_dir:?}, {filename}, {e:?}"
+                                    ));
+                                }
+                                Ok(x) => x,
+                            };
+
+                        if let Err(e) = connector.connect(server_end) {
+                            return Err(format_err!("Error opening '{}': {}", filename, e));
+                        }
+
+                        let id = next_id.fetch_add(1, Ordering::Relaxed);
+                        let event_stream = PhyProxy::old_event_stream(&phy_proxy);
+                        Ok(Some(NewPhyDevice { id, proxy: PhyProxy::Old(phy_proxy), event_stream }))
+                    }
+                })
+                // Using `.then` before `try_filter_map` surfaces all stream and item-level
+                // errors explicitly in the async closure, allowing `try_filter_map` to filter
+                // out `None` items while propagating any encountered `Err`.
+                .try_filter_map(|x| futures::future::ready(Ok(x)))
+                .boxed()
+        }
         _ => futures::stream::empty::<Result<NewPhyDevice, anyhow::Error>>().boxed(),
     };
 
     let svc_stream = match service_stream {
-        Ok(stream) => stream
-            .then(move |result| async move {
-                let instance_proxy = match result {
-                    Err(e) => {
-                        return Err(format_err!("Error in service instance stream {e:?}"));
-                    }
-                    Ok(x) => x,
-                };
+        Ok(stream) => {
+            let next_id = Arc::clone(&next_id);
+            stream
+                .then(move |result| {
+                    let next_id = Arc::clone(&next_id);
+                    async move {
+                        let instance_proxy = match result {
+                            Err(e) => {
+                                return Err(format_err!("Error in service instance stream {e:?}"));
+                            }
+                            Ok(x) => x,
+                        };
 
-                let phy_proxy = match instance_proxy.connect_to_device() {
-                    Err(e) => {
-                        return Err(format_err!("Error connecting to PHY service instance: {}", e));
-                    }
-                    Ok(x) => x,
-                };
+                        let phy_proxy = match instance_proxy.connect_to_device() {
+                            Err(e) => {
+                                return Err(format_err!("Error connecting to PHY service instance: {}", e));
+                            }
+                            Ok(x) => x,
+                        };
 
-                let id = generate_phy_id(instance_proxy.instance_name());
-                let (proxy, event_stream) = PhyProxy::new(phy_proxy).await?;
-                Ok(Some(NewPhyDevice { id, proxy, event_stream }))
-            })
-            // Using `.then` before `try_filter_map` surfaces all stream and item-level
-            // errors explicitly in the async closure, allowing `try_filter_map` to filter
-            // out `None` items while propagating any encountered `Err`.
-            .try_filter_map(|x| futures::future::ready(Ok(x)))
-            .boxed(),
+                        let id = next_id.fetch_add(1, Ordering::Relaxed);
+                        let (proxy, event_stream) = PhyProxy::new(phy_proxy).await?;
+                        Ok(Some(NewPhyDevice { id, proxy, event_stream }))
+                    }
+                })
+                // Using `.then` before `try_filter_map` surfaces all stream and item-level
+                // errors explicitly in the async closure, allowing `try_filter_map` to filter
+                // out `None` items while propagating any encountered `Err`.
+                .try_filter_map(|x| futures::future::ready(Ok(x)))
+                .boxed()
+        }
         _ => futures::stream::empty::<Result<NewPhyDevice, anyhow::Error>>().boxed(),
     };
 
@@ -292,7 +293,7 @@ mod tests {
 
         let new_phy =
             phy_watcher.next().await.expect("stream ended").expect("watcher returned error");
-        assert_eq!(new_phy.id, generate_phy_id("default"));
+        assert_eq!(new_phy.id, 0);
 
         assert_matches!(poll!(phy_watcher.next()), Poll::Pending);
     }
@@ -311,7 +312,7 @@ mod tests {
 
         let new_phy =
             phy_watcher.next().await.expect("stream ended").expect("watcher returned error");
-        assert_eq!(new_phy.id, generate_phy_id("123"));
+        assert_eq!(new_phy.id, 0);
 
         assert_matches!(poll!(phy_watcher.next()), Poll::Pending);
     }
@@ -351,9 +352,7 @@ mod tests {
 
         let mut ids = vec![phy1.id, phy2.id];
         ids.sort();
-        let mut expected_ids = vec![generate_phy_id("123"), generate_phy_id("default")];
-        expected_ids.sort();
-        assert_eq!(ids, expected_ids);
+        assert_eq!(ids, vec![0, 1]);
 
         assert_matches!(poll!(phy_watcher.next()), Poll::Pending);
     }
@@ -395,10 +394,7 @@ mod tests {
 
         let mut ids = vec![phy1.id, phy2.id, phy3.id];
         ids.sort();
-        let mut expected_ids =
-            vec![generate_phy_id("123"), generate_phy_id("456"), generate_phy_id("default")];
-        expected_ids.sort();
-        assert_eq!(ids, expected_ids);
+        assert_eq!(ids, vec![0, 1, 2]);
 
         assert_matches!(poll!(phy_watcher.next()), Poll::Pending);
     }
@@ -442,10 +438,7 @@ mod tests {
 
         let mut ids = vec![phy1.id, phy2.id, phy3.id];
         ids.sort();
-        let mut expected_ids =
-            vec![generate_phy_id("123"), generate_phy_id("inst1"), generate_phy_id("inst2")];
-        expected_ids.sort();
-        assert_eq!(ids, expected_ids);
+        assert_eq!(ids, vec![0, 1, 2]);
 
         assert_matches!(poll!(phy_watcher.next()), Poll::Pending);
     }
