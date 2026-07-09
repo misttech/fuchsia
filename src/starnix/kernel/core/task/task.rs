@@ -997,11 +997,6 @@ impl Task {
     /// When the task exits, if there is a notification that needs to propagate
     /// to a ptracer, make sure it will propagate.
     pub fn set_ptrace_zombie(&self, pids: &mut crate::task::PidTable) {
-        if !self.is_spawned() {
-            // A task that has not fully spawned cannot become a zombie.
-            return;
-        }
-
         let pgid = self.thread_group().read().process_group.leader;
         let exit_signal = self.thread_group().read().exit_signal.clone();
         let mut state = self.write();
