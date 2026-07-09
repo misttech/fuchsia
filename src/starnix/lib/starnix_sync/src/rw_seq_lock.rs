@@ -126,7 +126,7 @@ impl<L: fmt::Debug> fmt::Debug for RwSeqLock<L> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Unlocked, lock_ordering};
+    use crate::lock_ordering;
     use std::sync::atomic::{AtomicU32, Ordering};
 
     lock_ordering! {

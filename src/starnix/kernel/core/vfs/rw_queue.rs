@@ -326,7 +326,7 @@ mod test {
     use crate::testing::*;
     use futures::executor::block_on;
     use futures::future::join_all;
-    use starnix_sync::{Unlocked, lock_ordering};
+    use starnix_sync::lock_ordering;
     use std::future::Future;
     use std::pin::Pin;
     use std::sync::Barrier;

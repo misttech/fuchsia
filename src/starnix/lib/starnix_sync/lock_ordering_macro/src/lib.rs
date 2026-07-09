@@ -80,28 +80,6 @@ impl syn::parse::Parse for Graph {
     }
 }
 
-/// Collect the list of all pairs of nodes where one can be reached from another.
-fn build_lock_graph(
-    current: &Ident,
-    past: &mut Vec<Ident>,
-    adj_list: &BTreeMap<Ident, BTreeSet<Ident>>,
-    all_paths: &mut BTreeSet<Edge>,
-) {
-    for p in past.iter() {
-        if p == current {
-            panic!("Detected a cycle in the lock ordering graph on level {p}.");
-        }
-        all_paths.insert(Edge { from: p.clone(), to: current.clone() });
-    }
-    if let Some(adjacents) = adj_list.get(current) {
-        past.push(current.clone());
-        for id in adjacents {
-            build_lock_graph(&id, past, adj_list, all_paths)
-        }
-        past.pop();
-    }
-}
-
 /// This macro takes a definition of the lock ordering graph in the form of
 /// lock_ordering!{
 ///     Unlocked -> A,
@@ -109,8 +87,7 @@ fn build_lock_graph(
 ///     Unlocked -> C,
 /// }
 ///
-/// and defines the edges as lock level, as well as implementing LockBefore<X>
-/// for all the levels from which X is reachable.
+/// and defines the edges as `LockLevel`.
 #[proc_macro]
 pub fn lock_ordering(input: TokenStream) -> TokenStream {
     let graph = syn::parse_macro_input!(input as Graph);
@@ -122,12 +99,6 @@ pub fn lock_ordering(input: TokenStream) -> TokenStream {
     let mut result = proc_macro2::TokenStream::new();
     for level in levels.iter() {
         adj_list.insert(level.clone(), BTreeSet::new());
-        if *level != "Unlocked" {
-            result.extend(quote::quote! {
-                pub enum #level {}
-                impl starnix_sync::LockEqualOrBefore<#level> for #level {}
-            });
-        }
     }
     for Edge { from, to } in edges.iter() {
         adj_list
@@ -136,23 +107,7 @@ pub fn lock_ordering(input: TokenStream) -> TokenStream {
             .insert(to.clone());
     }
 
-    let unlocked_id = Ident::new("Unlocked", proc_macro2::Span::call_site());
-    let mut past: Vec<Ident> = vec![];
-    let mut all_edges: BTreeSet<Edge> = BTreeSet::new();
-    build_lock_graph(&unlocked_id, &mut past, &adj_list, &mut all_edges);
-
     let mut in_degree = graph.in_degrees();
-
-    // Since terminal locks do not have explicit incoming edges in the macro definition,
-    // they are not reached by `build_lock_graph`. Therefore, we must explicitly add edges
-    // from all non-terminal levels to all terminal locks.
-    for terminal in terminals.iter() {
-        for level in levels.iter() {
-            if !terminals.contains(level) {
-                all_edges.insert(Edge { from: level.clone(), to: terminal.clone() });
-            }
-        }
-    }
 
     let mut queue: std::collections::BTreeSet<Ident> = in_degree
         .iter()
@@ -164,14 +119,12 @@ pub fn lock_ordering(input: TokenStream) -> TokenStream {
     let max_id = usize::MAX & !0xF; // Max value with subclass bits cleared
 
     while let Some(node) = queue.pop_first() {
-        if node != "Unlocked" {
-            if terminals.contains(&node) {
-                lock_ids.insert(node.clone(), max_id);
-            } else {
-                lock_ids.insert(node.clone(), next_id);
-                // Space out IDs by 16 (4 bits) for subclassing
-                next_id += 16;
-            }
+        if terminals.contains(&node) {
+            lock_ids.insert(node.clone(), max_id);
+        } else {
+            lock_ids.insert(node.clone(), next_id);
+            // Space out IDs by 16 (4 bits) for subclassing
+            next_id += 16;
         }
         if let Some(neighbors) = adj_list.get(&node) {
             for neighbor in neighbors {
@@ -185,18 +138,19 @@ pub fn lock_ordering(input: TokenStream) -> TokenStream {
         }
     }
 
-    for Edge { from, to } in all_edges.into_iter() {
-        result.extend(quote::quote! {
-            impl starnix_sync::LockAfter<#from> for #to {}
-        });
+    if lock_ids.len() != levels.len() {
+        let unprocessed: Vec<_> = levels
+            .iter()
+            .filter(|level| !lock_ids.contains_key(*level))
+            .map(|id| id.to_string())
+            .collect();
+        panic!("Cycle detected in the lock ordering graph involving: {:?}", unprocessed);
     }
 
     for (level, id) in lock_ids {
         let name = level.to_string();
         result.extend(quote::quote! {
-            impl #level {
-                pub const LOCK_ID: usize = #id;
-            }
+            pub enum #level {}
             impl starnix_sync::LockLevel for #level {
                 const LOCK_ID: usize = #id;
                 const NAME: &'static str = #name;

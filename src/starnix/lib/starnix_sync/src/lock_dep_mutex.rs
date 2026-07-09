@@ -985,10 +985,9 @@ pub fn assert_lock_level<L: crate::LockLevel>() -> tracking::LockLevelToken {
 #[cfg(feature = "detect_lock_dep_cycles")]
 mod tests {
     use super::*;
-    use crate::{Unlocked, lock_ordering, ordered_lock, ordered_lock_vec};
+    use crate::{lock_ordering, ordered_lock, ordered_lock_vec};
 
     lock_ordering! {
-        Unlocked => LevelA,
         LevelA => LevelB,
         Terminal(TerminalC),
         Terminal(TerminalD),

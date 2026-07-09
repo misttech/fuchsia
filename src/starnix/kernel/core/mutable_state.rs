@@ -173,31 +173,6 @@ macro_rules! state_accessor {
     };
 }
 
-/// Create the read() and write() accessor to respectively access the read guard and write guard
-/// of an LockDepRwLock using a Locked context.
-///
-/// For a base struct named `Foo`, the read guard will be a struct named `FooReadGuard` and the
-/// write guard a struct named `FooWriteGuard`.
-macro_rules! ordered_state_accessor {
-    ($base_name:ident, $field_name:ident, $base_type:ty, $lock_level:ident) => {
-        paste::paste! {
-        #[allow(dead_code)]
-        pub fn read<'a>(self: &'a $base_type) -> [<$base_name ReadGuard>]<'a>
-        {
-            $crate::mutable_state::Guard::new(self, self.$field_name.read())
-        }
-        #[allow(dead_code)]
-        pub fn write<'a>(self: &'a $base_type) -> [<$base_name WriteGuard>]<'a>
-        {
-            $crate::mutable_state::Guard::new(self, self.$field_name.write())
-        }
-        }
-    };
-    ($base_name:ident, $field_name:ident, $lock_level:ident) => {
-        ordered_state_accessor!($base_name, $field_name, $base_name, $lock_level);
-    };
-}
-
 /// Create the structs for the read and write guards using the methods defined inside the macro.
 macro_rules! state_implementation {
     (impl $mutable_name:ident<Base=$base_name:ident> {
@@ -301,7 +276,6 @@ impl<'a, B, S, G: DerefMut<Target = S>> DerefMut for Guard<'a, B, G> {
 }
 
 // Public re-export of macros allows them to be used like regular rust items.
-pub(crate) use ordered_state_accessor;
 pub(crate) use state_accessor;
 pub(crate) use state_implementation;
 

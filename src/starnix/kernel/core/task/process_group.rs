@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::mutable_state::{ordered_state_accessor, state_implementation};
+use crate::mutable_state::{state_accessor, state_implementation};
 use crate::signals::SignalInfo;
 use crate::task::{PidTable, Session, SessionDisassociation, ThreadGroup};
 use macro_rules_attribute::apply;
@@ -83,7 +83,7 @@ impl ProcessGroup {
         process_group
     }
 
-    ordered_state_accessor!(ProcessGroup, mutable_state, ProcessGroupState);
+    state_accessor!(ProcessGroup, mutable_state);
 
     pub fn insert(&self, thread_group: &ThreadGroup) {
         self.write().thread_groups.insert(thread_group.leader, thread_group.weak_self.clone());

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::Unlocked;
 use lock_ordering_macro::lock_ordering;
 
 lock_ordering! {
@@ -71,12 +70,11 @@ lock_ordering! {
     FileObjectOffset => SeLinuxFsContextSidLock,
     FileObjectOffset => SeLinuxPendingFileSystemsLock,
     FileObjectOffset => StubBytesFileStateLock,
-    FileOpsCore => UninterruptibleLock,
     FramebufferInfoLock => FramebufferPresentationReceiverLock,
     FramebufferInfoLock => FramebufferViewBoundProtocolsLock,
     FramebufferInfoLock => FramebufferViewIdentityLock,
     FsContextStateLock => MountsLevel,
-    FsNodeAppend => FileOpsCore,
+    FsNodeAppend => UninterruptibleLock,
     FsNodeFlockInfoLock => WaitQueueImplLock,
     FsNodeInfoLevel => FsNodeWriteGuardStateLock,
     FsNodeInfoRecursiveLevel => FsRename,
@@ -122,7 +120,6 @@ lock_ordering! {
     RecordLocksStateLock => WaitQueueImplLock,
     RemoteBinderHandleLevel => BinderProcsLevel,
     RemoteBlockDeviceRegistryDevicesLock => SimpleDirectoryEntriesLock,
-    ResourceAccessorLevel => FileOpsCore,
     SessionMutableStateLock => TaskMutableStateLock,
     SignalFdMaskLock => ThreadGroupPendingSignalsLock,
     SimpleDirectoryEntriesLock => FsNodeInfoLevel,
@@ -142,7 +139,6 @@ lock_ordering! {
     TaskMutableStateLock => SignalFdMaskLock,
     TaskMutableStateLock => TaskCommandLevel,
     TaskMutableStateLock => UtsNamespaceLock,
-    TaskRelease => FileOpsCore,
     TerminalMutableStateLock => EventHandlerReadyQueueLock,
     TerminalMutableStateLock => SessionMutableStateLock,
     ThreadGroupMutableStateLock => DeviceTerminalsLock,
@@ -182,6 +178,7 @@ lock_ordering! {
     UninterruptibleLock => OverlayFsStateLock,
     UninterruptibleLock => PerfEventLevel,
     UninterruptibleLock => QipcrtrSocketInnerLock,
+    UninterruptibleLock => RecordLocksStateLock,
     UninterruptibleLock => RemoteBinderHandleLevel,
     UninterruptibleLock => RemoteBlockDeviceRegistryDevicesLock,
     UninterruptibleLock => SyslogSubscriptionLock,
@@ -196,9 +193,7 @@ lock_ordering! {
     UnixSocketInnerLock => SocketStateLock,
     Unlocked => FileObjectOffset,
     Unlocked => FuseFsRenameLevel,
-    Unlocked => RecordLocksStateLock,
-    Unlocked => ResourceAccessorLevel,
-    Unlocked => TaskRelease,
+    Unlocked => UninterruptibleLock,
     VsockSocketInnerLock => PortWaiterCallbacksLock,
     VsockSocketInnerLock => WaitQueueImplLock,
     WaitQueueImplLock => PortWaiterWaitQueuesLock,

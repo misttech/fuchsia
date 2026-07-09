@@ -36,7 +36,6 @@ rustc_library("starnix_sync") {
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:lock_api",
     "//third_party/rust_crates:scopeguard",
-    "//third_party/rust_crates:static_assertions",
   ]
 
   test_deps = [
@@ -52,8 +51,6 @@ rustc_library("starnix_sync") {
     "src/lib.rs",
     "src/lock_dep_mutex.rs",
     "src/lock_ordering.rs",
-    "src/lock_relations.rs",
-    "src/lock_sequence.rs",
     "src/lock_traits.rs",
     "src/locks.rs",
     "src/port_event.rs",
