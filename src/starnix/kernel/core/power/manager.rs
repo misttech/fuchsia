@@ -34,6 +34,9 @@ use zx::Peered;
 /// Wake source persistent info, exposed in inspect diagnostics.
 #[derive(Debug, Default)]
 pub struct WakeupSource {
+    /// The last task command that activated this wakeup source.
+    pub last_actor: Option<starnix_task_command::TaskCommand>,
+
     /// The number of times the wakeup source has been activated.
     active_count: u64,
 
@@ -66,6 +69,14 @@ pub struct WakeupSource {
 }
 
 impl WakeupSource {
+    /// Lazily formats the display name for inspection and logging.
+    pub fn display_name(&self, origin: &WakeupSourceOrigin) -> String {
+        match &self.last_actor {
+            Some(actor) => format!("{} [{}]", origin.to_string(), actor),
+            None => origin.to_string(),
+        }
+    }
+
     /// Returns the amount of time passed since this wake source was last
     /// recorded as active. For active wake sources, this is exactly the time
     /// since the source became active. For inactive sources it's zero.
@@ -82,7 +93,7 @@ impl WakeupSource {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum WakeupSourceOrigin {
     WakeLock(String),
-    Epoll(starnix_task_command::TaskCommand, crate::vfs::EpollKey),
+    Epoll(crate::vfs::EpollKey),
     HAL(String),
 }
 
@@ -90,7 +101,7 @@ impl std::string::ToString for WakeupSourceOrigin {
     fn to_string(&self) -> String {
         match self {
             WakeupSourceOrigin::WakeLock(lock) => lock.clone(),
-            WakeupSourceOrigin::Epoll(command, key) => format!("[epoll] [{}] {}", command, key),
+            WakeupSourceOrigin::Epoll(key) => format!("[epoll] {}", key),
             WakeupSourceOrigin::HAL(lock) => format!("[HAL] {}", lock),
         }
     }
@@ -340,8 +351,8 @@ impl SuspendResumeManagerInner {
 
     fn record_wakeup_sources(&self, node: &inspect::Node) {
         let wakeup_node = node.create_child("wakeup_sources");
-        for (name, source) in self.wakeup_sources.iter() {
-            let child = wakeup_node.create_child(name.to_string());
+        for (origin, source) in self.wakeup_sources.iter() {
+            let child = wakeup_node.create_child(&source.display_name(origin));
             child.record_uint("active_count", source.active_count);
             child.record_uint("event_count", source.event_count);
             child.record_uint("wakeup_count", source.wakeup_count);
@@ -444,9 +455,18 @@ impl SuspendResumeManager {
     }
 
     pub fn activate_wakeup_source(&self, origin: WakeupSourceOrigin) -> bool {
+        self.activate_wakeup_source_with_actor(origin, None)
+    }
+
+    pub fn activate_wakeup_source_with_actor(
+        &self,
+        origin: WakeupSourceOrigin,
+        actor: Option<starnix_task_command::TaskCommand>,
+    ) -> bool {
         let mut state = self.lock();
         let did_activate = {
             let entry = state.wakeup_sources.entry(origin).or_default();
+            entry.last_actor = actor;
             let now = zx::MonotonicInstant::get();
             entry.active_count += 1;
             entry.event_count += 1;
@@ -672,7 +692,7 @@ impl SuspendResumeManager {
             .filter_map(|(origin, source)| {
                 if source.active_since > zx::MonotonicInstant::ZERO {
                     source.wakeup_count += 1;
-                    Some(origin.to_string())
+                    Some(source.display_name(origin))
                 } else {
                     None
                 }

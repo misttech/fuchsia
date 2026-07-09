@@ -437,11 +437,14 @@ impl EpollFileObject {
                 // hold a wake lease until the next epoll_wait.
                 if wait.events.contains(FdEvents::EPOLLWAKEUP) {
                     if let ReadyItemKey::Usize(key) = pending_event.key {
-                        let origin = WakeupSourceOrigin::Epoll(current_task.command(), key);
+                        let origin = WakeupSourceOrigin::Epoll(key);
                         current_task
                             .kernel()
                             .suspend_resume_manager
-                            .activate_wakeup_source(origin.clone());
+                            .activate_wakeup_source_with_actor(
+                                origin.clone(),
+                                Some(current_task.command()),
+                            );
                         wait.active_wakeup_source = Some(origin);
                     }
                 }
