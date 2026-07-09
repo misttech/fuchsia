@@ -9,6 +9,10 @@ if (is_linux) {
   go_library("emulatortest") {
     testonly = true
     sources = [ "emulatortest.go" ]
-    deps = [ "//tools/emulator" ]
+    deps = [
+      "//tools/emulator",
+      "//tools/lib/productbundle",
+      "//tools/virtual_device:proto",
+    ]
   }
 }

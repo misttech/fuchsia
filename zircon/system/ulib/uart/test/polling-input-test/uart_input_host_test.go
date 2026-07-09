@@ -6,6 +6,7 @@ package polling_input_test
 
 import (
 	"context"
+	"flag"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,6 +14,8 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/emulator"
 	"go.fuchsia.dev/fuchsia/tools/emulator/emulatortest"
 )
+
+var zbiPathFlag = flag.String("zbi-path", "", "Path to the custom ZBI")
 
 const (
 	// LINT.IfChange
@@ -43,6 +46,14 @@ func getCwd(t *testing.T) string {
 func TestUartInputIsParsedCorrectly(t *testing.T) {
 	cwd := getCwd(t)
 	distro := emulatortest.UnpackFrom(t, filepath.Join(cwd, "test_data"), emulator.DistributionParams{Emulator: emulator.Qemu})
+	if *zbiPathFlag == "" {
+		t.Fatal("-zbi-path flag is required")
+	}
+	absZbiPath, err := filepath.Abs(*zbiPathFlag)
+	if err != nil {
+		t.Fatal(err)
+	}
+	distro.OverrideImage(zbiName, "zbi", absZbiPath)
 	arch := distro.TargetCPU()
 	device := emulator.DefaultVirtualDevice(string(arch))
 	device.Initrd = zbiName

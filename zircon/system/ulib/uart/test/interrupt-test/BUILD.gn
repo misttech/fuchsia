@@ -16,6 +16,10 @@ group("interrupt-test") {
   }
 }
 
+default_target_out_dir =
+    get_label_info(":anything($default_toolchain)", "target_out_dir")
+zbi = "$default_target_out_dir/uart-interrupt-test-zbi.${default_kernel_test_image}.zbi"
+
 if (toolchain_variant.base == default_toolchain) {
   zbi_test_executable("uart-interrupt-test") {
     sources = [ "uart-interrupt-test.cc" ]
@@ -26,8 +30,6 @@ if (toolchain_variant.base == default_toolchain) {
     ]
   }
 
-  zbi =
-      "$target_out_dir/uart-interrupt-test-zbi.${default_kernel_test_image}.zbi"
   kernel_zbi_test("uart-interrupt-test-zbi") {
     deps = [ ":uart-interrupt-test($default_toolchain)" ]
 
@@ -42,13 +44,23 @@ if (toolchain_variant.base == default_toolchain) {
     }
   }
 
-  # Assert that the zbi path was indeed correct.
-  zbi_outputs = get_target_outputs(
-          ":uart-interrupt-test-zbi.${default_kernel_test_image}.zbi")
-  assert(zbi_outputs + [ zbi ] - [ zbi ] != zbi_outputs)
+  if (current_toolchain == default_toolchain) {
+    # Assert that the zbi path was indeed correct.
+    zbi_outputs = get_target_outputs(
+            ":uart-interrupt-test-zbi.${default_kernel_test_image}.zbi")
+    assert(zbi_outputs + [ zbi ] - [ zbi ] != zbi_outputs)
+  }
 }
 
 if (is_host) {
+  host_test_data("uart-interrupt-test-zbi-data") {
+    sources = [ zbi ]
+    outputs = [
+      "$root_out_dir/test_data/uart-interrupt-test/uart-interrupt-test-zbi.zbi",
+    ]
+    deps = [ ":uart-interrupt-test-zbi.${default_kernel_test_image}.zbi($default_toolchain)" ]
+  }
+
   go_library("lib") {
     testonly = true
     sources = [ "uart_interrupt_host_test.go" ]
@@ -57,6 +69,11 @@ if (is_host) {
 
   go_test("uart-interrupt-host-test") {
     embed = [ ":lib" ]
-    non_go_deps = [ ":uart-interrupt-test-zbi($default_toolchain)" ]
+    _outputs = get_target_outputs(":uart-interrupt-test-zbi-data")
+    args = [
+      "-zbi-path",
+      rebase_path(_outputs[0], root_build_dir),
+    ]
+    non_go_deps = [ ":uart-interrupt-test-zbi-data" ]
   }
 }

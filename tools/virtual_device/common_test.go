@@ -7,20 +7,23 @@ package virtual_device
 import (
 	"testing"
 
-	"go.fuchsia.dev/fuchsia/tools/build"
+	"go.fuchsia.dev/fuchsia/tools/lib/productbundle"
 	fvdpb "go.fuchsia.dev/fuchsia/tools/virtual_device/proto"
 )
 
 func TestValidate(t *testing.T) {
-	// An ImageManifest shared by all test cases. This is not modified during testing.
-	testImageManifest := build.ImageManifest{
-		{Name: "qemu-kernel", Path: "/kernel", Type: "kernel"},
-		{Name: "storage-full", Path: "/fvm", Type: "blk"},
-		{Name: "zircon-a", Path: "/ramdisk", Type: "zbi"},
-		// Images for testing error cases.
-		{Name: "no-path"},
-		{Name: "duplicate", Path: "/duplicate"},
-		{Name: "duplicate", Path: "/duplicate"},
+	// An Image list shared by all test cases. This is not modified during testing.
+	testProductBundle := &productbundle.ProductBundle{
+		BaseDir: "/base/dir",
+		SystemA: []productbundle.SystemImage{
+			{Name: "qemu-kernel", Path: "/kernel", Type: "kernel"},
+			{Name: "storage-full", Path: "/fvm", Type: "blk"},
+			{Name: "zircon-a", Path: "/ramdisk", Type: "zbi"},
+			// Images for testing error cases.
+			{Name: "no-path", Type: "kernel"},
+			{Name: "duplicate", Path: "/duplicate", Type: "kernel"},
+			{Name: "duplicate", Path: "/duplicate", Type: "kernel"},
+		},
 	}
 
 	// Test cases.
@@ -76,7 +79,7 @@ func TestValidate(t *testing.T) {
 			inputFVD := Default()
 			tt.setupFVD(inputFVD)
 
-			if err := Validate(inputFVD, testImageManifest); err != nil != tt.wantErr {
+			if err := Validate(inputFVD, testProductBundle, nil); err != nil != tt.wantErr {
 				if tt.wantErr {
 					t.Fatalf("wanted an error but got nil")
 				}
@@ -86,10 +89,10 @@ func TestValidate(t *testing.T) {
 	}
 
 	// Nil cases.
-	if err := Validate(nil, testImageManifest); err == nil {
-		t.Fatalf("Validate(nil, /*images*/) wanted an error but got nil")
+	if err := Validate(nil, testProductBundle, nil); err == nil {
+		t.Fatalf("Validate(nil, /*pb*/) wanted an error but got nil")
 	}
-	if err := Validate(Default(), nil); err == nil {
+	if err := Validate(Default(), nil, nil); err == nil {
 		t.Fatalf("Validate(Default(), nil) wanted an error but got nil")
 	}
 }

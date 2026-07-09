@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"flag"
 	"io"
 	"os"
 	"os/exec"
@@ -22,11 +23,14 @@ import (
 	fvdpb "go.fuchsia.dev/fuchsia/tools/virtual_device/proto"
 )
 
+var zbiPathFlag = flag.String("zbi-path", "", "Path to the custom ZBI")
+
 const NETWORK_TEST_REALM_COMPONENT_NAME = "net-test-realm-controller"
 
 const NETWORK_TEST_REALM_TEST_COLLECTION_MONIKER = "core/testing/netstack-tests"
 
 const NETWORK_TEST_REALM_MONIKER = "/" + NETWORK_TEST_REALM_TEST_COLLECTION_MONIKER + ":" + NETWORK_TEST_REALM_COMPONENT_NAME
+
 const NETWORK_TEST_REALM_URL = "fuchsia-pkg://fuchsia.com/network-test-realm#meta/controller.cm"
 
 const NETSTACK_VERSION = "v2"
@@ -113,8 +117,8 @@ func TestEmulatorWorksWithFfx(t *testing.T) {
 			Initrd:         initrd,
 			HostX64Path:    hostOutDir,
 			NetworkDevices: netdevs,
+			ZBIPath:        *zbiPathFlag,
 		})
-
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"go.fuchsia.dev/fuchsia/tools/emulator"
+	"go.fuchsia.dev/fuchsia/tools/lib/productbundle"
 	fvdpb "go.fuchsia.dev/fuchsia/tools/virtual_device/proto"
 )
 
@@ -42,11 +43,6 @@ func (d *Distribution) NewInstanceWithAuthorizedKeys(ctx context.Context, fvd *f
 	if err != nil {
 		d.t.Fatal(err)
 	}
-	d.t.Cleanup(func() {
-		if err := d.d.Delete(); err != nil {
-			d.t.Error(err)
-		}
-	})
 	return &Instance{i, d.t}
 }
 
@@ -56,11 +52,6 @@ func (d *Distribution) NewInstance(ctx context.Context, fvd *fvdpb.VirtualDevice
 	if err != nil {
 		d.t.Fatal(err)
 	}
-	d.t.Cleanup(func() {
-		if err := d.d.Delete(); err != nil {
-			d.t.Error(err)
-		}
-	})
 	return &Instance{i, d.t}
 }
 
@@ -86,12 +77,28 @@ func (d *Distribution) TargetCPU() emulator.Arch {
 //
 // Caller is responsible for cleaning up the image file at the path returned from this method.
 // Terminates the test if an error occurs during resizing.
-func (d *Distribution) ResizeRawImage(imageName, hostPathResizeBinary string) (path string) {
+func (d *Distribution) ResizeRawImage(imageName, hostPathResizeBinary string, isFvm bool) (path string) {
 	var err error
-	if path, err = d.d.ResizeRawImage(imageName, hostPathResizeBinary); err != nil {
+	if path, err = d.d.ResizeRawImage(imageName, hostPathResizeBinary, isFvm); err != nil {
 		d.t.Fatal(err)
 	}
 	return
+}
+
+// OverrideImage wraps emulator.Distribution.OverrideImage.
+func (d *Distribution) OverrideImage(name, typ, path string) {
+	if err := d.d.OverrideImage(name, typ, path); err != nil {
+		d.t.Fatal(err)
+	}
+}
+
+// FindImageByName wraps emulator.Distribution.FindImageByName.
+func (d *Distribution) FindImageByName(name, typ string) *productbundle.SystemImage {
+	img, err := d.d.FindImageByName(name, typ)
+	if err != nil {
+		d.t.Fatal(err)
+	}
+	return img
 }
 
 // Instance wraps emulator.Instance.

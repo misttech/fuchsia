@@ -31,6 +31,8 @@ type QemuInstanceArgs struct {
 	// The network devices that should be added to the QEMU instance, i.e. any tap interfaces
 	// that it should be using.
 	NetworkDevices []*fvdpb.Netdev
+	// The path to the custom ZBI image.
+	ZBIPath string
 }
 
 // The relative path from the root of the fuchsia checkout to this file. This is used to namespace
@@ -56,6 +58,18 @@ func NewQemuInstance(
 	)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't unpack emulator distribution: %w", err)
+	}
+
+	if args.ZBIPath != "" {
+		absZbiPath, err := filepath.Abs(args.ZBIPath)
+		if err != nil {
+			return nil, err
+		}
+		if err := distro.OverrideImage(args.Initrd, "zbi", absZbiPath); err != nil {
+			return nil, fmt.Errorf("couldn't register custom initrd image: %w", err)
+		}
+	} else if _, err := distro.FindImageByName(args.Initrd, "zbi"); err != nil {
+		return nil, fmt.Errorf("initrd %q not found in distro and no ZbiPath provided: %w", args.Initrd, err)
 	}
 
 	// We don't need the distro after we've created and started the emulator Instance.

@@ -70,6 +70,15 @@ if (is_linux) {
       "//tools/net/tftp",
       "//tools/virtual_device:proto",
     ]
+    _assembled_system_label =
+        "image:limited_netsvc_assembled_system($default_toolchain)"
+    _out_dir = get_label_info(_assembled_system_label, "target_out_dir")
+    args = [
+      "-zbi-path",
+      rebase_path(
+          "$_out_dir/limited_netsvc_assembled_system_gen/limited_netsvc_assembled_system.zbi",
+          root_build_dir),
+    ]
     non_go_deps = [
       ":netsvc_user_tools",
       "image:host_test_data",

@@ -29,9 +29,7 @@ if (is_linux) {
       "//tools/virtual_device",
       "//tools/virtual_device:proto",
     ]
-    non_go_deps = [
-      "//build/images/fuchsia:default_product_bundle_for_emulator.go",
-      "//build/images/fuchsia:fuchsia_zbi_for_host_tests",
-    ]
+    non_go_deps =
+        [ "//build/images/fuchsia:default_product_bundle_for_emulator.go" ]
   }
 }

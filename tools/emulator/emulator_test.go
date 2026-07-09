@@ -7,10 +7,15 @@ package emulator
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"go.fuchsia.dev/fuchsia/tools/lib/productbundle"
 )
 
 func TestCheckForLogMessage(t *testing.T) {
@@ -92,5 +97,48 @@ line 3
 	}
 	if buf.String() != expectedLogOutput {
 		t.Fatalf("got buf.String() = %q, wanted %q", buf.String(), expectedLogOutput)
+	}
+}
+
+func TestFindImageByName(t *testing.T) {
+	tmpDir := t.TempDir()
+	pb := productbundle.ProductBundle{
+		SystemA: []productbundle.SystemImage{
+			{Name: "zircon-a", Path: "zircon-a.zbi", Type: "zbi"},
+		},
+		SystemR: []productbundle.SystemImage{
+			{Name: "zircon-r", Path: "zircon-r.zbi", Type: "zbi"},
+		},
+	}
+	pbData, err := json.Marshal(pb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "product_bundle.json"), pbData, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	dist := &Distribution{
+		pbPath: tmpDir,
+	}
+
+	// Test finding SystemA image
+	img, err := dist.FindImageByName("zircon-a", "zbi")
+	if err != nil {
+		t.Fatalf("FindImageByName(zircon-a) failed: %v", err)
+	}
+	expectedPath := filepath.Join(tmpDir, "zircon-a.zbi")
+	if img.Path != expectedPath {
+		t.Errorf("expected path %q, got %q", expectedPath, img.Path)
+	}
+
+	// Test finding SystemR image (recovery)
+	img, err = dist.FindImageByName("zircon-r", "zbi")
+	if err != nil {
+		t.Fatalf("FindImageByName(zircon-r) failed: %v", err)
+	}
+	expectedPath = filepath.Join(tmpDir, "zircon-r.zbi")
+	if img.Path != expectedPath {
+		t.Errorf("expected path %q, got %q", expectedPath, img.Path)
 	}
 }

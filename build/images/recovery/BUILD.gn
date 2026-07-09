@@ -9,14 +9,6 @@ import("//build/images/vbmeta.gni")
 import("//build/testing/host_test_data.gni")
 import("//src/storage/fshost/generated_fshost_config.gni")
 
-if (is_host) {
-  host_test_data("test_data") {
-    out_dir = get_label_info(":anything($target_toolchain)", "target_out_dir")
-    sources = [ "${out_dir}/recovery-fdr_gen/fuchsia.zbi" ]
-    deps = [ ":recovery-fdr($target_toolchain)" ]
-  }
-}
-
 if (is_fuchsia) {
   assert(current_toolchain == default_toolchain,
          "//build/images/* are only valid in the Fuchsia toolchain")

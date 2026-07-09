@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.fuchsia.dev/fuchsia/tools/build"
+	"go.fuchsia.dev/fuchsia/tools/lib/productbundle"
 	"go.fuchsia.dev/fuchsia/tools/qemu"
 	fvdpb "go.fuchsia.dev/fuchsia/tools/virtual_device/proto"
 )
@@ -24,7 +24,7 @@ var qemuTargets = map[string]qemu.Target{
 
 // QEMUCommand sets options to run Fuchsia in QEMU on the given QEMUCommandBuilder.
 //
-// This returns an error if `Validate(fvd, images)` returns an error.
+// This returns an error if `Validate(fvd, pb)` returns an error.
 //
 // This function is hermetic; It does not lookup or set the path to the QEMU binary, or
 // interact with the filesystem or environment in anyway. These actions are left to the
@@ -32,26 +32,34 @@ var qemuTargets = map[string]qemu.Target{
 //
 // The caller is free to set additional options on the builder before calling this function
 // or after this function returns.
-func QEMUCommand(b *qemu.QEMUCommandBuilder, fvd *fvdpb.VirtualDevice, images build.ImageManifest) error {
-	if len(images) == 0 {
-		return errors.New("image manifest cannot be empty")
+func QEMUCommand(b *qemu.QEMUCommandBuilder, fvd *fvdpb.VirtualDevice, pb *productbundle.ProductBundle, overrides ImageOverrides) error {
+	if pb == nil {
+		return errors.New("product bundle cannot be nil")
 	}
-	if err := Validate(fvd, images); err != nil {
+	if len(pb.SystemA) == 0 {
+		return errors.New("system_a images cannot be empty")
+	}
+	if err := Validate(fvd, pb, overrides); err != nil {
 		return err
 	}
 
-	// Image paths. The previous call to Validate() ensures these exist in the manifest.
-	drive := ""
-	initrd := ""
-	kernel := ""
-	for _, image := range images {
-		switch {
-		case fvd.Kernel != "" && image.Name == fvd.Kernel && image.Type == "kernel":
-			kernel = image.Path
-		case image.Name == fvd.Initrd && image.Type == "zbi":
-			initrd = image.Path
-		case fvd.Drive != nil && image.Name == fvd.Drive.Image && (image.Type == "blk"):
-			drive = image.Path
+	// Image paths. The previous call to Validate() ensures these exist in the manifest or overrides.
+	var drive, initrd, kernel string
+	var err error
+	if fvd.Kernel != "" {
+		kernel, err = ResolveImage(pb, overrides, fvd.Kernel, "kernel")
+		if err != nil {
+			return err
+		}
+	}
+	initrd, err = ResolveImage(pb, overrides, fvd.Initrd, "zbi")
+	if err != nil {
+		return err
+	}
+	if fvd.Drive != nil && !fvd.Drive.IsFilename {
+		drive, err = ResolveImage(pb, overrides, fvd.Drive.Image, "blk")
+		if err != nil {
+			return err
 		}
 	}
 	if fvd.Drive != nil {

@@ -50,28 +50,16 @@ template("coverage_verification_test") {
   instrumented_binary_rebased_path =
       rebase_path(instrumented_binary_path, root_build_dir)
 
-  system_image_name = get_label_info(invoker.assembled_system, "name")
+  product_bundle_name = get_label_info(invoker.product_bundle, "name")
+  product_bundle_dir =
+      get_label_info(invoker.product_bundle, "target_out_dir") + "/" +
+      product_bundle_name
 
-  system_image_path =
-      get_label_info("${invoker.assembled_system}", "target_out_dir") + "/" +
-      system_image_name + "_gen"
-
-  # This is used to tell the emulator which image to boot.
-  zbi_name = "${system_image_name}"
-  zbi_file = "${system_image_path}/fuchsia.zbi"
-
-  # Block image.
-  block_image = "${system_image_name}.fxfs_sparse"
-  block_file = "${system_image_path}/fxfs.sparse.blk"
-
-  # Host test data for both the ZBI and the FXFS image.
+  # Host test data for the product bundle.
   system_image_label = "${target_name}.system-images"
   host_test_data(system_image_label) {
-    sources = [
-      block_file,
-      zbi_file,
-    ]
-    deps = [ "${invoker.assembled_system}" ]
+    sources = [ product_bundle_dir ]
+    deps = [ invoker.product_bundle ]
   }
 
   assert(defined(invoker.expectations) && invoker.expectations != [])
@@ -112,12 +100,17 @@ template("coverage_verification_test") {
       zbi_host_tool = rebase_path("${host_out_dir}/zbi", root_build_dir)
     }
 
+    _block_image = "fxfs.fastboot"
+    if (defined(invoker.block_image)) {
+      _block_image = invoker.block_image
+    }
+
     # Test specific artifacts.
     test = {
       path = instrumented_binary_rebased_path
       name = invoker.test_uri
-      zbi_image = zbi_name
-      block_image = block_image
+      product_bundle_path = rebase_path(product_bundle_dir, root_build_dir)
+      block_image = _block_image
     }
 
     # Represents the validation to be performed on the coverage data.
@@ -141,7 +134,7 @@ template("coverage_verification_test") {
 
   extra_deps = []
   if (defined(invoker.deps)) {
-    extra_deps = invokder.deps
+    extra_deps = invoker.deps
   }
 
   # Instantiate the host interaction helper with the parameters and images

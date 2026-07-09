@@ -74,7 +74,7 @@ if (is_host) {
   cuckoo_system = "standalone-coverage-zbi.${default_kernel_test_image}.cuckoo"
   coverage_verification_test("standalone-coverage-verification-test") {
     instrumented_target = ":standalone-main-bin($target_toolchain)"
-    assembled_system = ":${cuckoo_system}.assembled_system($default_toolchain)"
+    product_bundle = ":${cuckoo_system}($default_toolchain)"
     test_uri = "fuchsia-pkg://fuchsia.com/${cuckoo_system}.test#meta/${cuckoo_system}.test.cm"
     expectations = [
       {

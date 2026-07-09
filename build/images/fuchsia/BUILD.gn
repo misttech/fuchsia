@@ -9,10 +9,8 @@ if (is_host) {
 
   host_test_data("default_product_bundle_for_emulator.go") {
     # No tests should be assuming this product bundle target, but
-    # //tools/emulator/emulator.go finds the images in this product bundle via
-    # images.json, and uses them for its tests. They should explicitly use a
-    # product bundle instead.
-    # TODO(https://fxbug.dev/495904502)
+    # //tools/emulator/emulator.go uses this product bundle by default for its
+    # tests.
     visibility = [
       "//src/devices/block/drivers/ufs/test/e2e:*",
       "//src/tests/disable_shell:*",
@@ -28,30 +26,6 @@ if (is_host) {
       "//src/tests/shutdown:*",
     ]
     sources = [ files.product_bundle_dir ]
-  }
-
-  host_test_data("fuchsia_zbi_for_host_tests") {
-    # No tests should be directly using this zbi, they should be using product
-    # bundles instead. This test hardcodes the path to the fuchsia.zbi file
-    # TODO(https://fxbug.dev/495904502)
-    # TODO(https://fxbug.dev/496264014)
-    visibility = [ "//src/devices/block/drivers/ufs/test/e2e:*" ]
-    sources = [ "$root_build_dir/fuchsia.zbi" ]
-
-    deps = [ ":copy_zbi_to_root(${default_toolchain})" ]
-  }
-}
-
-# The assembly operation should only be defined in the default (fuchsia)
-# toolchain.
-if (is_fuchsia) {
-  assert(current_toolchain == default_toolchain,
-         "//build/images/* are only valid in the Fuchsia toolchain")
-
-  copy("copy_zbi_to_root") {
-    testonly = true
-    sources = [ files.zbi ]
-    outputs = [ "$root_build_dir/fuchsia.zbi" ]
     deps = [ labels.images ]
   }
 }

@@ -52,18 +52,22 @@ if (is_linux) {
     sources = [ "kernel_cprng_test.go" ]
   }
 
-  host_test_data("main_zbi") {
-    path =
+  host_test_data("cprng_draw_pb") {
+    _path =
         get_label_info(":cprng-draw-zbi($default_toolchain)", "target_out_dir")
-    sources = [ "$path/cprng-draw-zbi.zbi" ]
+    sources = [ "$_path/cprng-draw-zbi.product_bundle" ]
     deps = [ ":cprng-draw-zbi($default_toolchain)" ]
   }
 
   go_test("kernel_cprng_tests") {
     embed = [ ":lib" ]
-    non_go_deps = [
-      ":main_zbi",
-      "//build/images/fuchsia:default_product_bundle_for_emulator.go",
+    _zbi_target = ":cprng-draw-zbi($default_toolchain)"
+    _zbi_out_dir = get_label_info(_zbi_target, "target_out_dir")
+    args = [
+      "-product-bundle",
+      rebase_path("$_zbi_out_dir/cprng-draw-zbi.product_bundle",
+                  root_build_dir),
     ]
+    non_go_deps = [ ":cprng_draw_pb" ]
   }
 }

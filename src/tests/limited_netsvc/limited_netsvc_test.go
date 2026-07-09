@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"flag"
 	"net"
 	"os"
 	"os/exec"
@@ -22,6 +23,8 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/net/tftp"
 	fvdpb "go.fuchsia.dev/fuchsia/tools/virtual_device/proto"
 )
+
+var zbiPath = flag.String("zbi-path", "", "Path to the custom ZBI")
 
 // The default nodename given to an target with the default QEMU MAC address.
 const defaultNodename = "fuchsia-5254-0012-3456"
@@ -177,10 +180,20 @@ func attemptLoglistener(t *testing.T, ctx context.Context, shouldWork bool) {
 }
 
 func setupQemu(t *testing.T, ctx context.Context, appendCmdline []string, modeString string) *emulatortest.Instance {
+	if *zbiPath == "" {
+		t.Fatal("-zbi-path flag is required")
+	}
+	absZbiPath, err := filepath.Abs(*zbiPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	exDir := execDir(t)
 	distro := emulatortest.UnpackFrom(t, filepath.Join(exDir, "test_data"), emulator.DistributionParams{
 		Emulator: emulator.Qemu,
 	})
+	distro.OverrideImage("limited_netsvc_assembled_system", "zbi", absZbiPath)
+
 	arch := distro.TargetCPU()
 	device := emulator.DefaultVirtualDevice(string(arch))
 	device.Initrd = "limited_netsvc_assembled_system"

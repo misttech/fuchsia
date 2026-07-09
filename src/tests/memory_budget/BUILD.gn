@@ -4,6 +4,7 @@
 
 import("//build/go/go_library.gni")
 import("//build/go/go_test.gni")
+import("//build/images/paths.gni")
 
 group("tests") {
   testonly = true
@@ -25,15 +26,6 @@ if (is_linux) {
     outputs = [ "$root_out_dir/test_data/tools/{{source_file_part}}" ]
   }
 
-  host_test_data("fvm.blk") {
-    visibility = [ ":*" ]
-
-    deps = [ "//build/images/fuchsia:default_product_bundle_for_emulator.go" ]
-
-    sources = [ get_label_info("//build/images/fuchsia($target_toolchain)",
-                               "target_out_dir") + "/fuchsia/fvm.blk" ]
-  }
-
   host_test_data("vm_config") {
     visibility = [ ":*" ]
 
@@ -41,20 +33,35 @@ if (is_linux) {
     outputs = [ "$root_out_dir/test_data/config/{{source_file_part}}" ]
   }
 
+  host_test_data("memory_budget_pb_data") {
+    sources = [ files.product_bundle_dir ]
+    deps = [ "//build/images/fuchsia:default_product_bundle_for_emulator.go" ]
+  }
+
   go_library("lib") {
     testonly = true
 
-    deps = [ "//tools/emulator/emulatortest" ]
+    deps = [
+      "//tools/emulator",
+      "//tools/emulator/emulatortest",
+      "//tools/lib/jsonutil",
+      "//tools/virtual_device:proto",
+    ]
 
     sources = [ "boot_test.go" ]
   }
 
   go_test("memory_budget_tests") {
     embed = [ ":lib" ]
+    args = [
+      "-product-bundle",
+      rebase_path(files.product_bundle_dir, root_build_dir),
+    ]
     non_go_deps = [
-      ":fvm.blk",
       ":host_fvm",
+      ":memory_budget_pb_data",
       ":vm_config",
+      "//src/storage/lib/sparse/rust:simg2img_sources",
     ]
   }
 }

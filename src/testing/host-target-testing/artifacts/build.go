@@ -654,12 +654,7 @@ func (b *ArtifactsBuild) getVbmetaPathFromProductBundle(ctx context.Context) (st
 		return "", err
 	}
 
-	vbmetaRelativePath, err := productBundle.GetSystemAImage("vbmeta", "zircon-a")
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(productBundleDir, vbmetaRelativePath), nil
+	return productBundle.GetSystemAImage("vbmeta", "zircon-a")
 }
 
 func (b *ArtifactsBuild) getVbmetaPathFromImages(ctx context.Context) (string, error) {
@@ -903,13 +898,7 @@ func (b *ProductBundleDirBuild) GetVbmetaPath(ctx context.Context) (string, erro
 	if err != nil {
 		return "", err
 	}
-
-	relativeVbmetaPath, err := productBundle.GetSystemAImage("vbmeta", "zircon-a")
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(b.productBundleDir, relativeVbmetaPath), nil
+	return productBundle.GetSystemAImage("vbmeta", "zircon-a")
 }
 
 type OmahaBuild struct {
@@ -1080,11 +1069,10 @@ func (b *OmahaBuild) GetProductBundleDir(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	relativeSrcVbmetaPath, err := productBundle.GetSystemAImage("vbmeta", "zircon-a")
+	srcVbmetaPath, err := productBundle.GetSystemAImage("vbmeta", "zircon-a")
 	if err != nil {
 		return "", err
 	}
-	srcVbmetaPath := filepath.Join(productBundleDir, relativeSrcVbmetaPath)
 
 	relativeDestVbmetaPath := "zircon-a-omaha-test.vbmeta"
 	destVbmetaPath := filepath.Join(newProductBundleDir, relativeDestVbmetaPath)

@@ -41,13 +41,13 @@ template("host_test_data") {
           get_label_info(":$target_name", "label_no_toolchain")
       assert(
           _label_no_toolchain ==
-              "//build/images/fuchsia:fuchsia_zbi_for_host_tests" || _label_no_toolchain == "//build/images/fuchsia:default_product_bundle_for_emulator.go",
-          "Only the '//build/images/fuchsia:fuchsia_zbi_for_host_tests' is allowed to provide fuchsia.zbi for host tests.")
+              "//build/images/fuchsia:default_product_bundle_for_emulator.go",
+          "Only the '//build/images/fuchsia:default_product_bundle_for_emulator.go' is allowed to provide the default product bundle for host tests.")
     } else if (source == "$root_build_dir/zedboot.zbi") {
       assert(
           get_label_info(":$target_name", "label_no_toolchain") ==
               "//build/images/fuchsia:default_product_bundle_for_emulator.go",
-          "Only the '//build/images/fuchsia:default_product_bundle_for_emulator.go' is allowed to provide zedboot.zbi for host tests.")
+          "Only the '//build/images/fuchsia:default_product_bundle_for_emulator.go' is allowed to provide the default product bundle for host tests.")
     } else if (source == "$root_build_dir/bringup.zbi") {
       assert(
           get_label_info(":$target_name", "label_no_toolchain") ==

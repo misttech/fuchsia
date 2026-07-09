@@ -54,10 +54,10 @@ type Expectations struct {
 }
 
 type TestInfo struct {
-	Path       string `json:"path"`
-	Name       string `json:"name"`
-	ZbiImage   string `json:"zbi_image"`
-	BlockImage string `json:"block_image"`
+	Path              string `json:"path"`
+	Name              string `json:"name"`
+	ProductBundlePath string `json:"product_bundle_path"`
+	BlockImage        string `json:"block_image"`
 }
 
 type Config struct {
@@ -89,14 +89,16 @@ func ParseConfiguration(t *testing.T) Config {
 
 func GetCoverageDataFromTest(t *testing.T, outDir string, config *Config) []string {
 	exDir := execDir(t)
+	pbPath := filepath.Join(exDir, "..", config.Test.ProductBundlePath)
 	distro := emulatortest.UnpackFrom(t, filepath.Join(exDir, "test_data"), emulator.DistributionParams{
-		Emulator: emulator.Qemu,
+		Emulator:          emulator.Qemu,
+		ProductBundlePath: pbPath,
 	})
 	arch := distro.TargetCPU()
 	device := emulator.DefaultVirtualDevice(string(arch))
+	device.Initrd = "zircon-a"
 
-	// Resize image to avoid problems due to trimmed FVM if FVM.
-	resizeImage := distro.ResizeRawImage(config.Test.BlockImage, config.Bin.Simg2imgHostTool)
+	resizeImage := distro.ResizeRawImage(config.Test.BlockImage, config.Bin.Simg2imgHostTool, false)
 	if len(resizeImage) == 0 {
 		t.Fatalf("Failed to resize image.")
 	}
@@ -108,8 +110,6 @@ func GetCoverageDataFromTest(t *testing.T, outDir string, config *Config) []stri
 		IsFilename: true,
 		Device:     &fvdpb.Device{Model: "virtio-blk-pci"},
 	}
-	// ZBI path
-	device.Initrd = config.Test.ZbiImage
 
 	// Network
 	device.Hw.NetworkDevices = append(device.Hw.NetworkDevices, &fvdpb.Netdev{

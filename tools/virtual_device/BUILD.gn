@@ -17,7 +17,7 @@ go_library("virtual_device") {
   deps = [
     ":proto",
     "//third_party/golibs:github.com/google/go-cmp",
-    "//tools/build",
+    "//tools/lib/productbundle",
     "//tools/qemu",
   ]
 }

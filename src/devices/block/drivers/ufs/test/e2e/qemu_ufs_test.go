@@ -36,10 +36,11 @@ func TestQemuWithUFSDisk(t *testing.T) {
 	device := emulator.DefaultVirtualDevice(string(arch))
 	device.KernelArgs = append(device.KernelArgs, cmdline...)
 
+	zbiImg := distro.FindImageByName("zircon-a", "zbi")
 	// Add UFS disk as a boot drive.
 	device.Hw.Drives = append(device.Hw.Drives, &fvdpb.Drive{
 		Id:         "fuchsia-ufs",
-		Image:      filepath.Join(exDir, "../fuchsia.zbi"),
+		Image:      zbiImg.Path,
 		IsFilename: true,
 		Device:     &fvdpb.Device{Model: "ufs-storage"},
 	})
@@ -68,10 +69,11 @@ func TestQemuWithUFSDiskAndRunBlktest(t *testing.T) {
 	device := emulator.DefaultVirtualDevice(string(arch))
 	device.KernelArgs = append(device.KernelArgs, cmdline...)
 
+	zbiImg := distro.FindImageByName("zircon-a", "zbi")
 	// Add UFS disk as a boot drive.
 	device.Hw.Drives = append(device.Hw.Drives, &fvdpb.Drive{
 		Id:         "fuchsia-ufs",
-		Image:      filepath.Join(exDir, "../fuchsia.zbi"),
+		Image:      zbiImg.Path,
 		IsFilename: true,
 		Device:     &fvdpb.Device{Model: "ufs-storage"},
 	})

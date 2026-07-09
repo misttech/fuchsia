@@ -41,6 +41,14 @@ if (is_linux && has_board) {
 
   go_test("conformance_emulator_test") {
     embed = [ ":emulator" ]
+    _zbi_target = "//build/images/network-conformance:network-conformance-base($target_toolchain)"
+    _zbi_out_dir = get_label_info(_zbi_target, "target_out_dir")
+    args = [
+      "-zbi-path",
+      rebase_path(
+          "$_zbi_out_dir/network-conformance-base_gen/network-conformance-base.zbi",
+          root_build_dir),
+    ]
     non_go_deps = [
       # Add any host_test_data deps to the `conformance_emulator_non_go_deps`
       # group rather than directly on this target so that an internal petal

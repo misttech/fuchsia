@@ -63,7 +63,9 @@ if (is_phys_toolchain) {
 if (is_host && is_linux) {
   host_test_data("uart-host-test-zbi") {
     sources = [ uart_input_zbi ]
-    deps = [ ":uart-input-test-zbi($phys_toolchain)" ]
+    outputs =
+        [ "$root_out_dir/test_data/uart-input-test/uart-input-test-zbi.zbi" ]
+    deps = [ ":uart-input-test-zbi.zbi($phys_toolchain)" ]
   }
 
   go_library("lib") {
@@ -74,6 +76,11 @@ if (is_host && is_linux) {
 
   go_test("uart-input-host-test") {
     embed = [ ":lib" ]
+    _outputs = get_target_outputs(":uart-host-test-zbi")
+    args = [
+      "-zbi-path",
+      rebase_path(_outputs[0], root_build_dir),
+    ]
     non_go_deps = [ ":uart-host-test-zbi" ]
   }
 }

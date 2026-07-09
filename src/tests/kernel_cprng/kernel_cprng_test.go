@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"encoding/hex"
+	"flag"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,6 +17,8 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/emulator"
 	"go.fuchsia.dev/fuchsia/tools/emulator/emulatortest"
 )
+
+var customPbPath = flag.String("product-bundle", "", "Path to the custom product bundle")
 
 var cmdline = []string{
 	"kernel.halt-on-panic=true",
@@ -117,9 +120,17 @@ func TestCmdlineEntropyBoots(t *testing.T) {
 }
 
 func captureCPRNGDraws(t *testing.T, entropy []byte, extraKernelArgs []string) map[string]bool {
+	if *customPbPath == "" {
+		t.Fatal("-product-bundle flag is required")
+	}
+	absPbPath, err := filepath.Abs(*customPbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	exDir := execDir(t)
 	distro := emulatortest.UnpackFrom(t, filepath.Join(exDir, "test_data"), emulator.DistributionParams{
-		Emulator: emulator.Qemu,
+		Emulator:          emulator.Qemu,
+		ProductBundlePath: absPbPath,
 	})
 	arch := distro.TargetCPU()
 	device := emulator.DefaultVirtualDevice(string(arch))
@@ -127,7 +138,7 @@ func captureCPRNGDraws(t *testing.T, entropy []byte, extraKernelArgs []string) m
 	device.KernelArgs = append(device.KernelArgs, cmdline...)
 	device.KernelArgs = removeCmdlineEntropy(device.KernelArgs)
 	device.KernelArgs = append(device.KernelArgs, extraKernelArgs...)
-	device.Initrd = "cprng-draw-zbi"
+	device.Initrd = "zircon-a"
 
 	device.KernelArgs = append(device.KernelArgs, cmdlineEntropy+hex.EncodeToString(entropy))
 

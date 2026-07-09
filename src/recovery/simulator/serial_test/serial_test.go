@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"flag"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,10 +17,20 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/emulator/emulatortest"
 )
 
+var zbiPathFlag = flag.String("zbi-path", "", "Path to the custom ZBI")
+
 // TestSerial verifies that the serial shell is enabled for recovery-eng.
 func TestSerialShellEnabled(t *testing.T) {
 	exPath := execDir(t)
 	distro := emulatortest.UnpackFrom(t, filepath.Join(exPath, "test_data"), emulator.DistributionParams{Emulator: emulator.Qemu})
+	if *zbiPathFlag == "" {
+		t.Fatal("-zbi-path flag is required")
+	}
+	absZbiPath, err := filepath.Abs(*zbiPathFlag)
+	if err != nil {
+		t.Fatal(err)
+	}
+	distro.OverrideImage("recovery-fdr", "zbi", absZbiPath)
 	arch := distro.TargetCPU()
 	device := emulator.DefaultVirtualDevice(string(arch))
 	device.Initrd = "recovery-fdr"

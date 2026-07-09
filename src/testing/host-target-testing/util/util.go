@@ -434,32 +434,16 @@ type ImageFirmware struct {
 }
 
 func ParseProductBundle(path string) (*productbundle.ProductBundle, error) {
-	// We need to create a new product bundle that points at our modified
-	// vbmeta.
-	productBundlePath := filepath.Join(path, "product_bundle.json")
-	f, err := os.Open(productBundlePath)
+	productBundle, err := productbundle.Load(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open product bundle %s: %w", productBundlePath, err)
-	}
-	defer f.Close()
-
-	var productBundle productbundle.ProductBundle
-
-	decoder := json.NewDecoder(f)
-
-	// TODO(https://fxbug.dev/428006070): Re-enable once all relevant tests
-	// are using the updated PB manifest format.
-	// decoder.DisallowUnknownFields()
-
-	if err := decoder.Decode(&productBundle); err != nil {
-		return nil, fmt.Errorf("failed to parse product bundle %s: %w", productBundlePath, err)
+		return nil, err
 	}
 
 	if productBundle.Version != "2" {
 		return nil, fmt.Errorf("Unknown product bundle version %s", productBundle.Version)
 	}
 
-	return &productBundle, nil
+	return productBundle, nil
 }
 
 func UpdateProductBundle(productBundleDir string, productBundle *productbundle.ProductBundle) error {

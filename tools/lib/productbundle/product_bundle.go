@@ -13,6 +13,8 @@ package productbundle
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 )
 
 type BootloaderPartition struct {
@@ -40,8 +42,9 @@ type Partition struct {
 }
 
 type SystemImage struct {
-	Type     string          `json:"type"`
-	Name     string          `json:"name"`
+	Type string `json:"type"`
+	Name string `json:"name"`
+	// Path is the relative path to the image.
 	Path     string          `json:"path"`
 	Signed   *bool           `json:"signed,omitempty"`
 	Contents json.RawMessage `json:"contents,omitempty"`
@@ -79,14 +82,46 @@ type ProductBundle struct {
 	Repositories       []Repository     `json:"repositories,omitempty"`
 	UpdatePackageHash  *string          `json:"update_package_hash,omitempty"`
 	VirtualDevicesPath *string          `json:"virtual_devices_path,omitempty"`
+	// BaseDir is the directory path containing product_bundle.json, used to
+	// resolve relative paths. It is only set when loaded via Load().
+	BaseDir string `json:"-"`
 }
 
+// GetSystemAImage returns the absolute path to the image of the given type and name.
 func (pb *ProductBundle) GetSystemAImage(imageType string, imageName string) (string, error) {
 	for _, image := range pb.SystemA {
 		if image.Type == imageType && image.Name == imageName {
-			return image.Path, nil
+			return pb.ImagePath(image), nil
 		}
 	}
 
 	return "", fmt.Errorf("failed to find system_a %s %s", imageType, imageName)
+}
+
+// Load parses product_bundle.json from the given directory and returns the ProductBundle.
+//
+// It sets the BaseDir field to the given pbDir.
+func Load(pbDir string) (*ProductBundle, error) {
+	pbJSONPath := filepath.Join(pbDir, "product_bundle.json")
+	data, err := os.ReadFile(pbJSONPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s: %w", pbJSONPath, err)
+	}
+	var pb ProductBundle
+	if err := json.Unmarshal(data, &pb); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal %s: %w", pbJSONPath, err)
+	}
+	pb.BaseDir = pbDir
+	return &pb, nil
+}
+
+// ImagePath returns the absolute path to the given image.
+func (pb *ProductBundle) ImagePath(image SystemImage) string {
+	if image.Path == "" {
+		return ""
+	}
+	if filepath.IsAbs(image.Path) || pb.BaseDir == "" {
+		return image.Path
+	}
+	return filepath.Join(pb.BaseDir, image.Path)
 }

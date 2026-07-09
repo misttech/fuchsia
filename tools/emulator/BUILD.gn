@@ -4,6 +4,7 @@
 
 import("//build/go/go_library.gni")
 import("//build/go/go_test.gni")
+import("//build/images/paths.gni")
 import("//build/testing/host_test_data.gni")
 import("//zircon/kernel/phys/qemu.gni")
 
@@ -83,12 +84,12 @@ if (is_linux) {
     generated_file("buildinfo.ini") {
       testonly = true
       contents = [
-        # The path to images.json relative to the test data directory. This must
-        # be relative the test data directory specifically, rather than the
-        # build directory because the build directory is not guaranteed to exist
-        # at runtime, especially on CI.
-        "image_manifest_path=" +
-            rebase_path("$root_build_dir/images.json",
+        # The path to the product bundle directory relative to the test data
+        # directory. This must be relative the test data directory specifically,
+        # rather than the build directory because the build directory is not
+        # guaranteed to exist at runtime, especially on CI.
+        "product_bundle_path=" +
+            rebase_path(files.product_bundle_dir,
                         "$root_out_dir/test_data/emulator"),
         "target_cpu=$target_cpu",
       ]
@@ -96,14 +97,9 @@ if (is_linux) {
     }
 
     host_test_data("test_data") {
-      sources =
-          get_target_outputs(":buildinfo.ini") +
-          get_target_outputs(":archive-qemu") +
-          get_target_outputs(":archive-femu") +
-          [
-            # Any files referenced by :buildinfo.ini should be listed here.
-            "$root_build_dir/images.json",
-          ]
+      sources = get_target_outputs(":buildinfo.ini") +
+                get_target_outputs(":archive-qemu") +
+                get_target_outputs(":archive-femu")
 
       deps = [
         ":archive-femu",
@@ -120,6 +116,7 @@ if (is_linux) {
       "emulator_test.go",
     ]
     deps = [
+      "//tools/lib/productbundle",
       "//tools/qemu",
       "//tools/virtual_device",
       "//tools/virtual_device:proto",

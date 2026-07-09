@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.fuchsia.dev/fuchsia/tools/build"
+	"go.fuchsia.dev/fuchsia/tools/lib/productbundle"
 	fvdpb "go.fuchsia.dev/fuchsia/tools/virtual_device/proto"
 )
 
@@ -50,26 +50,49 @@ func Default() *fvdpb.VirtualDevice {
 	}
 }
 
-// Validate returns nil iff the given FVD is valid for the given ImageManifest.
+// ImageKey uniquely identifies a system image by its name and type.
+type ImageKey struct {
+	Name string
+	Type string
+}
+
+// ImageOverrides is a map of image keys to their overridden absolute host paths.
+// This is used to bypass the paths defined in the product bundle.
+type ImageOverrides map[ImageKey]string
+
+// Validate returns nil iff the given FVD is valid for the given product bundle and overrides.
 //
-// All system images referenced in the FVD must exist in the image manifest.
-func Validate(fvd *fvdpb.VirtualDevice, images build.ImageManifest) error {
+// All system images referenced in the FVD must exist in the product bundle or overrides.
+func Validate(fvd *fvdpb.VirtualDevice, pb *productbundle.ProductBundle, overrides ImageOverrides) error {
 	if fvd == nil {
 		return errors.New("virtual device cannot be nil")
 	}
+	if pb == nil {
+		return errors.New("product bundle cannot be nil")
+	}
 
-	// Ensure the images referenced in the FVD exist in the image manifest.
-	imageByNameAndType := map[string][]string{}
-	for _, image := range images {
-		key := image.Name + ":" + image.Type
-		// Using a custom string key-format is slightly easier than using a nested map.
-		imageByNameAndType[key] = append(imageByNameAndType[key], image.Path)
+	// Ensure the images referenced in the FVD exist in the image manifest or overrides.
+	imageByNameAndType := map[ImageKey][]string{}
+	for _, image := range pb.SystemA {
+		key := ImageKey{Name: image.Name, Type: image.Type}
+		imageByNameAndType[key] = append(imageByNameAndType[key], pb.ImagePath(image))
+	}
+	for _, image := range pb.SystemR {
+		if image.Type == "zbi" || image.Type == "vbmeta" {
+			key := ImageKey{Name: "zircon-r", Type: image.Type}
+			imageByNameAndType[key] = append(imageByNameAndType[key], pb.ImagePath(image))
+		}
+	}
+
+	// Apply overrides.
+	for key, path := range overrides {
+		imageByNameAndType[key] = []string{path}
 	}
 
 	// A helper function that ensures an image exists in the manifest, has a unique
 	// name within the manifest, and has a non-empty path.
 	uniqueImageExists := func(name, typ string) error {
-		if imagePaths, ok := imageByNameAndType[name+":"+typ]; !ok {
+		if imagePaths, ok := imageByNameAndType[ImageKey{Name: name, Type: typ}]; !ok {
 			return fmt.Errorf("image %q of type %q not found", name, typ)
 		} else if len(imagePaths) != 1 {
 			return fmt.Errorf("manifest contains multiple images named %q of type %q: %v", name, typ, imagePaths)
@@ -106,6 +129,27 @@ func Validate(fvd *fvdpb.VirtualDevice, images build.ImageManifest) error {
 		return fmt.Errorf("invalid MAC address: %q", fvd.Hw.Mac)
 	}
 	return nil
+}
+
+// ResolveImage resolves the path to the image of the given name and type,
+// checking overrides first, then the product bundle.
+func ResolveImage(pb *productbundle.ProductBundle, overrides ImageOverrides, name, typ string) (string, error) {
+	if path, ok := overrides[ImageKey{Name: name, Type: typ}]; ok {
+		return path, nil
+	}
+	if name == "zircon-r" {
+		for _, image := range pb.SystemR {
+			if image.Type == typ {
+				return pb.ImagePath(image), nil
+			}
+		}
+	}
+	for _, image := range pb.SystemA {
+		if image.Name == name && image.Type == typ {
+			return pb.ImagePath(image), nil
+		}
+	}
+	return "", fmt.Errorf("could not find %s of type %s", name, typ)
 }
 
 func isValidRAM(ram string) bool {

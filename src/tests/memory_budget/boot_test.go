@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,6 +18,8 @@ import (
 	fvdpb "go.fuchsia.dev/fuchsia/tools/virtual_device/proto"
 )
 
+var customPbPath = flag.String("product-bundle", "", "path to product bundle")
+
 var cmdlineCommon = []string{"kernel.oom.behavior=reboot", "kernel.oom.reboot-timeout-ms=0x000a"}
 
 const hostTestDataDir = "test_data"
@@ -26,11 +29,20 @@ const sessionStartedBreadCrumb = "Session started."
 func TestBoot(t *testing.T) {
 	exDir := execDir(t)
 	testDataPath := filepath.Join(exDir, hostTestDataDir)
-	fvmBinary := filepath.Join(testDataPath, "tools", "fvm")
+	simg2img := filepath.Join(testDataPath, "storage", "sparse", "simg2img")
 	vmConfigPath := filepath.Join(testDataPath, "config", "vm_config.json")
 
+	if *customPbPath == "" {
+		t.Fatal("-product-bundle flag is required")
+	}
+	pbPath, err := filepath.Abs(*customPbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	distro := emulatortest.UnpackFrom(t, testDataPath, emulator.DistributionParams{
-		Emulator: emulator.Qemu,
+		Emulator:          emulator.Qemu,
+		ProductBundlePath: pbPath,
 	})
 
 	vmConfig := struct {
@@ -38,9 +50,9 @@ func TestBoot(t *testing.T) {
 		CpuCount uint32 `json:"cpu_count"`
 	}{}
 	if err := jsonutil.ReadFromFile(vmConfigPath, &vmConfig); err != nil {
-		t.Fatalf("Cannont read VM config %q: %v", vmConfigPath, err)
+		t.Fatalf("Cannot read VM config %q: %v", vmConfigPath, err)
 	}
-	resized := distro.ResizeRawImage("storage-full", fvmBinary)
+	resized := distro.ResizeRawImage("fxfs.fastboot", simg2img, false)
 	defer os.Remove(resized)
 	arch := distro.TargetCPU()
 	device := emulator.DefaultVirtualDevice(string(arch))
