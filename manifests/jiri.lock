@@ -736,13 +736,13 @@
     },
     {
         "package": "fuchsia/third_party/sysroot/focal",
-        "version": "git_revision:702eb9654703a7cec1cadf93a7e3aa269d053943",
-        "instance_id": "36GE6RRPhBro9QANUYSjlnT6upqJkOkkJfTcmryCunQC"
+        "version": "git_revision:1d35e3be9be587ed0de81ea4208be7cc01a7748c",
+        "instance_id": "hx3aAt7x_q9Qk6w6TrpUVtcSqgrVM2-7lyTW9LWU2oIC"
     },
     {
         "package": "fuchsia/third_party/sysroot/linux",
-        "version": "git_revision:cf821ee2dbc2ed61dfc25a814dcc8d090f9fda03",
-        "instance_id": "dCkoVcYlgGIP_pmR61ZMIrSDgdrV81BtxcPeTRuyqlUC"
+        "version": "git_revision:1d35e3be9be587ed0de81ea4208be7cc01a7748c",
+        "instance_id": "OXhlA8crxu_SQ3xDbYimkw0lEZhauocdlvPouYDv-HQC"
     },
     {
         "package": "fuchsia/third_party/tzres",
