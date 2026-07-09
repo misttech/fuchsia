@@ -21,7 +21,8 @@ namespace fpolicy = fuchsia_hardware_usb_policy;
 
 zx_status_t Dwc3::Ep0Init() {
   TRACE_DURATION("dwc3", "Dwc3::Ep0Init");
-  if (zx::result result = ep0_.shared_fifo.Init(bti_); result.is_error()) {
+  // Always use a cached TRB FIFO for EP0.
+  if (zx::result result = ep0_.shared_fifo.Init(bti_, /*cached=*/true); result.is_error()) {
     return result.error_value();
   }
 
@@ -48,8 +49,8 @@ void Dwc3::Ep0Start() {
 
 void Dwc3::Ep0QueueSetup() {
   TRACE_DURATION("dwc3", "Dwc3::Ep0QueueSetup");
-  ep0_.in.xfer_in_progress = false;
-  ep0_.out.xfer_in_progress = false;
+  ep0_.in.transfer_state = Endpoint::TransferState::kIdle;
+  ep0_.out.transfer_state = Endpoint::TransferState::kIdle;
   CacheFlushInvalidate(ep0_.buffer.get(), 0, sizeof(fdescriptor::wire::UsbSetup));
   EpStartTransfer(ep0_.out, ep0_.shared_fifo, TRB_TRBCTL_SETUP, ep0_.buffer->phys(),
                   sizeof(fdescriptor::wire::UsbSetup));
@@ -77,7 +78,7 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
 
   // Only DataOut and DataIn states need TRB read.
   dwc3_trb_t trb = (ep0_.state == Ep0::State::DataOut || ep0_.state == Ep0::State::DataIn)
-                       ? ep0_.shared_fifo.Read()
+                       ? ep0_.shared_fifo.ReadOne()
                        : dwc3_trb_t{};
   ep0_.shared_fifo.AdvanceRead();
 

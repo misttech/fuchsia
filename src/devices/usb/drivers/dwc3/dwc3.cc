@@ -416,10 +416,17 @@ zx_status_t CacheFlushCommon(dma_buffer::ContiguousBuffer* buffer, zx_off_t offs
   TRACE_DURATION("dwc3", "CacheFlushCommon", "offset", offset, "length", length, "flush_options",
                  flush_options);
   if (offset + length < offset || offset + length > buffer->size()) {
+    fdf::error("CacheFlushCommon invalid arguments offset {} + length {} > buffer size {}", offset,
+               length, buffer->size());
     return ZX_ERR_OUT_OF_RANGE;
   }
   auto virt{reinterpret_cast<const uint8_t*>(buffer->virt()) + offset};
-  return zx_cache_flush(virt, length, flush_options);
+  zx_status_t status = zx_cache_flush(virt, length, flush_options);
+  if (status != ZX_OK) {
+    fdf::error("zx_cache_flush() error: {}", zx_status_get_string(status));
+  }
+
+  return status;
 }
 
 }  // namespace
@@ -734,7 +741,7 @@ zx_status_t Dwc3::Init() {
   // allocated dma buffers.
   auto cleanup = fit::defer([this]() { ReleaseResources(); });
 
-  zx::result result = event_fifo_.Init(bti_);
+  zx::result result = event_fifo_.Init(bti_, /*cached=*/true);
   if (result.is_error()) {
     fdf::error("Event FIFO init failed: {}", result);
     return result.error_value();
@@ -1247,7 +1254,11 @@ void Dwc3::ConfigureEndpoint(ConfigureEndpointRequest& request,
     return;
   }
 
-  if (zx::result result = uep->fifo.Init(bti_); result.is_error()) {
+  // TODO(https://fxbug.dev/527137302): When queuing many TRBs we need to use uncached memory
+  // because we don't currently have a way to align TRB dumps to cache line
+  // sizes.
+  const bool cached = !AllowEnqueueManyTRBs(ep_type);
+  if (zx::result result = uep->fifo.Init(bti_, cached); result.is_error()) {
     fdf::error("fifo init failed {}", result);
     completer.Reply(result.take_error());
     return;
@@ -1434,8 +1445,6 @@ void Dwc3::EpReset(Endpoint& ep) {
   EpSetStall(ep, false);
   EpSetConfig(ep, false);
   ep.got_not_ready = false;
-  ep.rsrc_id = Endpoint::kInvalidResourceId;
-  ep.xfer_in_progress = false;
 }
 
 void Dwc3::UserEpReset(UserEndpoint& uep) {
@@ -1446,7 +1455,7 @@ void Dwc3::UserEpReset(UserEndpoint& uep) {
 
 void Dwc3::Ep0Reset() {
   TRACE_DURATION("dwc3", "Dwc3::Ep0Reset");
-  if (ep0_.in.xfer_in_progress || ep0_.out.xfer_in_progress) {
+  if (ep0_.in.TransferStateIsActive() || ep0_.out.TransferStateIsActive()) {
     bool is_out = (ep0_.cur_setup.bm_request_type & USB_DIR_MASK) == USB_DIR_OUT;
     if (ep0_.state == Ep0::State::Status) {
       // Flip direction for status.
@@ -1466,9 +1475,6 @@ void Dwc3::ResetEndpoints() {
   TRACE_DURATION("dwc3", "Dwc3::ResetEndpoints");
   Ep0Reset();
   for (UserEndpoint& uep : user_endpoints_) {
-    if (uep.ep.xfer_in_progress) {
-      CmdEpEndTransfer(uep.ep);
-    }
     UserEpReset(uep);
   }
 }

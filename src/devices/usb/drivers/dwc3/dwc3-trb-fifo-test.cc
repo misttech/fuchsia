@@ -26,7 +26,7 @@ class TrbFifoTest : public testing::Test {
     ASSERT_TRUE(bti.is_ok());
     bti_ = std::move(*bti);
 
-    ASSERT_TRUE(fifo_.Init(bti_).is_ok());
+    ASSERT_TRUE(fifo_.Init(bti_, /*cached=*/true).is_ok());
   }
 
   void TearDown() override {
@@ -66,7 +66,7 @@ TEST_F(TrbFifoTest, WriteAndRead) {
   trb->control = 0xef;
   fifo_.AdvanceWrite();
 
-  dwc3_trb_t read_trb = fifo_.Read();
+  dwc3_trb_t read_trb = fifo_.ReadOne();
   EXPECT_EQ(read_trb.ptr_low, 0x1234u);
   EXPECT_EQ(read_trb.ptr_high, 0x5678u);
   EXPECT_EQ(read_trb.status, 0xabcdu);
@@ -105,7 +105,7 @@ TEST_F(TrbFifoTest, ReInitTest) {
   ASSERT_NE(fifo_.write_, fifo_.first_);
 
   fifo_.Release();
-  ASSERT_TRUE(fifo_.Init(bti_).is_ok());
+  ASSERT_TRUE(fifo_.Init(bti_, /*cached=*/true).is_ok());
 
   ASSERT_EQ(fifo_.write_, fifo_.first_);
   ASSERT_EQ(fifo_.read_, fifo_.first_);

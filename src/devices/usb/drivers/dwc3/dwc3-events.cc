@@ -73,9 +73,11 @@ void Dwc3::HandleEpEvent(uint32_t event) {
       fdf::debug("ep[{}] DEPEVT_XFER_COMPLETE", ep_num);
       HandleEpTransferCompleteEvent(ep_num);
       break;
-    case DEPEVT_XFER_IN_PROGRESS:
-      fdf::debug("ep[{}] DEPEVT_XFER_IN_PROGRESS: status {}", ep_num, status);
-      break;
+    case DEPEVT_XFER_IN_PROGRESS: {
+      const uint16_t param = DEPEVT_PARAMS(event);
+      fdf::debug("ep[{}] DEPEVT_XFER_IN_PROGRESS: status {} param {:X}", ep_num, status, param);
+      HandleEpTransferInProgressEvent(ep_num);
+    } break;
     case DEPEVT_XFER_NOT_READY:
       fdf::debug("ep[{}] DEPEVT_XFER_NOT_READY reason {:s}", ep_num,
                  (event & DEPEVT_XFER_NOT_READY_REASON) ? "XferActive" : "XferNotActive");
@@ -94,7 +96,8 @@ void Dwc3::HandleEpEvent(uint32_t event) {
     case DEPEVT_CMD_CMPLT: {
       uint32_t cmd_type = DEPEVT_CMD_CMPLT_CMD_TYPE(event);
       uint32_t rsrc_id = DEPEVT_CMD_CMPLT_RSRC_ID(event);
-      fdf::debug("ep[{}] DEPEVT_CMD_COMPLETE: type {} rsrc_id {}", ep_num, cmd_type, rsrc_id);
+      fdf::debug("ep[{}] DEPEVT_CMD_COMPLETE: type {} rsrc_id {} status {}", ep_num, cmd_type,
+                 rsrc_id, status);
       if (status != 0) {
         if (is_ep0_num(ep_num)) {
           ((ep_num == kEp0Out) ? ep0_.out : ep0_.in).command_failures++;
@@ -107,8 +110,15 @@ void Dwc3::HandleEpEvent(uint32_t event) {
         metrics_.RecordEvent(
             std::format("ep[{}] command {} failed with status {}", ep_num, cmd_type, status));
       }
-      if (cmd_type == DEPCMD::DEPSTRTXFER) {
-        HandleEpTransferStartedEvent(ep_num, rsrc_id);
+      switch (cmd_type) {
+        case DEPCMD::DEPSTRTXFER:
+          HandleEpTransferStartedEvent(ep_num, rsrc_id);
+          break;
+        case DEPCMD::DEPENDXFER:
+          HandleEpTransferEndedEvent(ep_num);
+          break;
+        default:
+          break;
       }
       break;
     }
@@ -218,11 +228,17 @@ void Dwc3::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_sta
     GEVNTCOUNT::Get(0).FromValue(0).set_EVNTCOUNT(event_bytes).WriteTo(mmio);
   }
   metrics_.UpdateMaxEventBatch(total_processed);
+
+  // Flush any pending completions to the endpoints' fidl channels all at once
+  // per IRQ.
+  for (auto& uep : user_endpoints_) {
+    uep.server->SendCompletions();
+  }
 }
 
 void Dwc3::StartEvents() {
   TRACE_DURATION("dwc3", "Dwc3::StartEvents");
-  zx::result result = event_fifo_.Init(bti_);
+  zx::result result = event_fifo_.Init(bti_, /*cached=*/true);
   if (result.is_error()) {
     fdf::error("Failed to init event fifo {}", result);
     return;

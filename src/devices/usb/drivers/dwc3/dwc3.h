@@ -34,7 +34,9 @@
 #include <zircon/threads.h>
 
 #include <cstdint>
+#include <format>
 #include <memory>
+#include <string_view>
 
 #include <fbl/mutex.h>
 #include <usb-endpoint/sdk/usb-endpoint-server.h>
@@ -132,8 +134,15 @@ class Dwc3 : public fdf::DriverBase2,
     fdf::warn("dwc3: received unknown Controller method: {}", metadata.method_ordinal);
   }
 
+  // Gating flag to enable enqueueing multiple TRBs at once for a given endpoint
+  // type.
+  bool AllowEnqueueManyTRBs(uint8_t ep_type) const {
+    return enable_enqueue_many_trbs_ && ep_type == USB_ENDPOINT_BULK;
+  }
+
   // For testing.
   bool poll_end_xfer() const { return poll_end_xfer_; }
+  void SetEnableEnqueueManyTrbs(bool enable) { enable_enqueue_many_trbs_ = enable; }
 
  private:
   const std::string_view kScheduleProfileRole = "fuchsia.devices.usb.drivers.dwc3.interrupt";
@@ -164,7 +173,8 @@ class Dwc3 : public fdf::DriverBase2,
       size_t completed_trbs;
       size_t completed_bytes;
     };
-    std::optional<RequestState> current_req;  // request currently being processed (if any)
+    std::queue<RequestState> active_reqs;  // requests currently being processed
+    std::optional<zx_status_t> pending_cancel_reason;
 
    private:
     // EndpointServer overrides
@@ -209,14 +219,50 @@ class Dwc3 : public fdf::DriverBase2,
     bool enabled{false};
     // TODO(voydanoff) USB 3 specific stuff here
 
+    enum class TransferState {
+      // Endpoint is Idle.
+      kIdle,
+      // Endpoint has requested a transfer start and is waiting for the resource
+      // ID to move to kActiveSingle.
+      kStartingSingle,
+      // Endpoint has an active transfer with a `LST` marked TRB. Transfer ends
+      // when that TRB is hit.
+      kActiveSingle,
+      // Endpoint has requested a transfer start and is waiting for the
+      // resource ID to move to kActiveOngoing.
+      kStartingOngoing,
+      // Endpoint has an active transfer with no `LST` marked TRB. Transfer only
+      // ends when command is issued.
+      kActiveOngoing,
+      // Endpoint is canceling transfer.
+      kCanceling,
+      // Endpoint is pending cancelation while waiting for a transfer start to
+      // complete.
+      kPendingCancel,
+    };
+    TransferState transfer_state{TransferState::kIdle};
+    // TODO(https://fxbug.dev/527908652): Merge this boolean with transfer
+    // state.
     bool got_not_ready{false};
     bool stalled{false};
-    bool xfer_in_progress{false};
-
     uint64_t total_transfers{0};
     uint64_t total_bytes{0};
     uint64_t command_failures{0};
     uint8_t usb_endpoint_address{0};
+
+    bool TransferStateIsActive() const {
+      switch (transfer_state) {
+        case TransferState::kIdle:
+        case TransferState::kCanceling:
+        case TransferState::kPendingCancel:
+        case TransferState::kStartingSingle:
+        case TransferState::kStartingOngoing:
+          return false;
+        case TransferState::kActiveSingle:
+        case TransferState::kActiveOngoing:
+          return true;
+      }
+    }
   };
 
   struct UserEndpoint {
@@ -346,6 +392,7 @@ class Dwc3 : public fdf::DriverBase2,
   };
 
   friend struct std::formatter<Ep0::State>;
+  friend struct std::formatter<Endpoint::TransferState>;
   friend class Dwc3Metrics;
   template <bool manage_lifetime, typename gtest_base>
   friend class TestFixture;
@@ -386,8 +433,11 @@ class Dwc3 : public fdf::DriverBase2,
 
   // Handlers for end-point specific events posted to the event buffer by the controller HW.
   void HandleEpTransferCompleteEvent(uint8_t ep_num);
+  void HandleEpTransferInProgressEvent(uint8_t ep_num);
   void HandleEpTransferNotReadyEvent(uint8_t ep_num, uint32_t stage);
   void HandleEpTransferStartedEvent(uint8_t ep_num, uint32_t rsrc_id);
+  void HandleEpTransferEndedEvent(uint8_t ep_num);
+  void UserEpCompleteTransfers(UserEndpoint& uep);
 
   [[nodiscard]] zx_status_t CheckHwVersion();
   [[nodiscard]] zx_status_t ResetHw();
@@ -421,6 +471,8 @@ class Dwc3 : public fdf::DriverBase2,
   // This method is safe to call with the core powered down.
   void UserEpReset(UserEndpoint& uep);
   void UserEpQueueNext(UserEndpoint& uep);
+  void UserEpQueueNextSingle(UserEndpoint& uep);
+  void UserEpQueueNextOngoing(UserEndpoint& uep, bool start_transfer);
 
   // This method is safe to call with the core powered down.
   void ResetEndpoints();
@@ -430,6 +482,7 @@ class Dwc3 : public fdf::DriverBase2,
   void CmdEpSetConfig(const Endpoint& ep, bool modify);
   void CmdEpTransferConfig(const Endpoint& ep);
   void CmdEpStartTransfer(const Endpoint& ep, zx_paddr_t trb_phys);
+  void CmdEpUpdateTransfer(const Endpoint& ep);
   // This method is safe to call with the core powered down.
   void CmdEpEndTransfer(const Endpoint& ep);
   void CmdEpSetStall(const Endpoint& ep);
@@ -511,6 +564,11 @@ class Dwc3 : public fdf::DriverBase2,
   std::vector<WatchDeviceStateCompleter::Async> pending_completers_;
   bool has_new_device_state_ = true;
 
+  // Knobs for testing
+
+  // TODO(https://fxbug.dev/527134440): Enable by default.
+  bool enable_enqueue_many_trbs_ = false;
+
   void SetDeviceState(fuchsia_hardware_usb_policy::DeviceState state);
   void SetDeviceState(fuchsia_hardware_usb_policy::DeviceState state, uint8_t address);
 
@@ -554,12 +612,39 @@ struct std::formatter<dwc3::Dwc3::Ep0::State> : std::formatter<std::string> {
       case dwc3::Dwc3::Ep0::State::Status:
         fmt = "Status";
         break;
-      default:
-        // The states changed, but the formatter wasn't updated accordingly
-        fmt = "<unknown>";
-        break;
     }
     return std::formatter<std::string>::format(fmt, ctx);
+  }
+};
+
+template <>
+struct std::formatter<dwc3::Dwc3::Endpoint::TransferState> : std::formatter<std::string_view> {
+  auto format(const dwc3::Dwc3::Endpoint::TransferState state, format_context& ctx) const {
+    std::string_view fmt;
+    switch (state) {
+      case dwc3::Dwc3::Endpoint::TransferState::kIdle:
+        fmt = "idle";
+        break;
+      case dwc3::Dwc3::Endpoint::TransferState::kCanceling:
+        fmt = "canceling";
+        break;
+      case dwc3::Dwc3::Endpoint::TransferState::kPendingCancel:
+        fmt = "pending-cancel";
+        break;
+      case dwc3::Dwc3::Endpoint::TransferState::kStartingSingle:
+        fmt = "starting-single";
+        break;
+      case dwc3::Dwc3::Endpoint::TransferState::kActiveSingle:
+        fmt = "active-single";
+        break;
+      case dwc3::Dwc3::Endpoint::TransferState::kStartingOngoing:
+        fmt = "starting-ongoing";
+        break;
+      case dwc3::Dwc3::Endpoint::TransferState::kActiveOngoing:
+        fmt = "active-ongoing";
+        break;
+    }
+    return std::formatter<std::string_view>::format(fmt, ctx);
   }
 };
 

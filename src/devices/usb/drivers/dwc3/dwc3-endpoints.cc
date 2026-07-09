@@ -56,7 +56,7 @@ void Dwc3::EpStartTransfer(Endpoint& ep, TrbFifo& fifo, uint32_t type, zx_paddr_
                            size_t length, bool zlp) {
   TRACE_DURATION("dwc3", "Dwc3::EpStartTransfer", "ep_num", ep.ep_num, "type", type, "length",
                  length, "zlp", zlp);
-  fdf::debug("Dwc3::EpStartTransfer ep {} type %u length {} zlp {}", ep.ep_num, type, length, zlp);
+  fdf::debug("Dwc3::EpStartTransfer ep {} type {} length {} zlp {}", ep.ep_num, type, length, zlp);
 
   dwc3_trb_t* trb = fifo.AdvanceWrite();
   trb->ptr_low = static_cast<uint32_t>(buffer);
@@ -83,35 +83,87 @@ void Dwc3::EpStartTransfer(Endpoint& ep, TrbFifo& fifo, uint32_t type, zx_paddr_
     trb_phys = fifo.Write(trb, 1);
   }
 
+  ep.transfer_state = Endpoint::TransferState::kStartingSingle;
   CmdEpStartTransfer(ep, trb_phys);
-  ep.xfer_in_progress = true;
 }
 
 void Dwc3::EpServer::CancelAll(zx_status_t reason) {
   TRACE_DURATION("dwc3", "Dwc3::EpServer::CancelAll", "ep_num", uep_->ep.ep_num, "reason", reason);
-  fdf::debug("Dwc3::EpServer::CancelAll ep {} reason {}", uep_->ep.ep_num,
-             zx_status_get_string(reason));
+  fdf::debug("Dwc3::EpServer::CancelAll ep {} reason {} reqs = ({}, {}), controller={}",
+             uep_->ep.ep_num, zx_status_get_string(reason), uep_->server->active_reqs.size(),
+             uep_->server->queued_reqs.size(), dwc3_->controller_started_);
 
-  if (current_req.has_value()) {
-    dwc3_->CmdEpEndTransfer(uep_->ep);
-    RequestComplete(reason, 0, std::move(current_req->request));
-    uep_->ep.xfer_in_progress = false;
-    current_req.reset();
-  }
-
+  // Any request that hasn't being enqueued yet is immediately returned.
   for (; !queued_reqs.empty(); queued_reqs.pop()) {
     RequestComplete(reason, 0, std::move(queued_reqs.front()));
   }
-  uep_->fifo.Clear();
+
+  // Likely performing a full reset. We can't stop any ongoing transfers and
+  // assume everything is back to original state.
+  if (!dwc3_->controller_started_) {
+    for (; !active_reqs.empty(); active_reqs.pop()) {
+      RequestComplete(reason, 0, std::move(active_reqs.front().request));
+    }
+    uep_->ep.transfer_state = Endpoint::TransferState::kIdle;
+    uep_->ep.rsrc_id = Endpoint::kInvalidResourceId;
+    return;
+  }
+
+  switch (uep_->ep.transfer_state) {
+    case Endpoint::TransferState::kIdle:
+    case Endpoint::TransferState::kCanceling:
+    case Endpoint::TransferState::kPendingCancel:
+      return;
+    case Endpoint::TransferState::kActiveOngoing:
+    case Endpoint::TransferState::kActiveSingle:
+      pending_cancel_reason = reason;
+      dwc3_->CmdEpEndTransfer(uep_->ep);
+      uep_->ep.transfer_state = Endpoint::TransferState::kCanceling;
+      break;
+    case Endpoint::TransferState::kStartingSingle:
+    case Endpoint::TransferState::kStartingOngoing:
+      // We're waiting for a start transfer to be emitted, record the
+      // cancelation reason and issue end transfer.
+      pending_cancel_reason = reason;
+      uep_->ep.transfer_state = Endpoint::TransferState::kPendingCancel;
+      break;
+  }
 }
 
 void Dwc3::UserEpQueueNext(UserEndpoint& uep) {
   TRACE_DURATION("dwc3", "Dwc3::UserEpQueueNext", "ep_num", uep.ep.ep_num);
-  if (uep.server->current_req.has_value() || !uep.ep.got_not_ready ||
-      uep.server->queued_reqs.empty() || uep.ep.stalled) {
+  if (!uep.ep.got_not_ready || uep.server->queued_reqs.empty() || uep.ep.stalled) {
     return;
   }
 
+  bool start_transfer;
+  switch (uep.ep.transfer_state) {
+    case Endpoint::TransferState::kIdle:
+      start_transfer = true;
+      break;
+    case Endpoint::TransferState::kCanceling:
+    case Endpoint::TransferState::kActiveSingle:
+    case Endpoint::TransferState::kStartingSingle:
+    case Endpoint::TransferState::kStartingOngoing:
+    case Endpoint::TransferState::kPendingCancel:
+      return;
+    case Endpoint::TransferState::kActiveOngoing:
+      start_transfer = false;
+      break;
+  }
+
+  const bool enable_ongoing_transfer = AllowEnqueueManyTRBs(uep.ep.type);
+  if (!enable_ongoing_transfer) {
+    if (!start_transfer) {
+      return;
+    }
+    UserEpQueueNextSingle(uep);
+  } else {
+    UserEpQueueNextOngoing(uep, start_transfer);
+  }
+}
+
+void Dwc3::UserEpQueueNextSingle(UserEndpoint& uep) {
   auto& pending_req = uep.server->queued_reqs.front();
 
   zx::result result = uep.server->get_iter(pending_req, zx_system_get_page_size());
@@ -139,16 +191,131 @@ void Dwc3::UserEpQueueNext(UserEndpoint& uep) {
     return;
   }
 
-  uep.server->current_req.emplace(EpServer::RequestState{
+  uep.server->active_reqs.emplace(EpServer::RequestState{
       .request = std::move(pending_req),
       .total_trbs = trb_count,
       .completed_trbs = 0,
       .completed_bytes = 0,
   });
-
   uep.server->queued_reqs.pop();
 
   EpStartTransfer(uep.ep, uep.fifo, TRB_TRBCTL_NORMAL, phys, size, needs_zlp);
+}
+
+void Dwc3::UserEpQueueNextOngoing(UserEndpoint& uep, bool start_transfer) {
+  // For endpoints that allow continuous transfers with an ongoing TRB ring, the
+  // strategy is to issue the start transfer command *once* and then only issue
+  // the update-transfer command.
+  //
+  // Note that a "transfer" is not mapped to a specific set of USB requests.
+  // "transfer" means an ongoing session with an active TRB FIFO with the
+  // controller. The programming manual refers to this as a transfer so we
+  // maintain the jargon.
+  //
+  // This allows us to operate on the TRBs in parallel with the controller, only
+  // kicking it when new requests are enqueue for it to look at the head of the
+  // TRB ring.
+  //
+  // This strategy greatly improves performance, even when still getting
+  // interrupts for every transfer, because the transfer only stops/stalls when
+  // endpoint clients run out of requests to send down, as opposed to at every
+  // request upon ending the transfer.
+
+  if (start_transfer) {
+    // Reset the FIFO to a clear state if we're starting a new transfer.
+    uep.fifo.Reset();
+  } else if (uep.ep.rsrc_id == Endpoint::kInvalidResourceId) {
+    // We haven't received a resource ID yet from a started transfer. Can't
+    // proceed.
+    fdf::debug("Dwc3::UserEpQueueNext ep {} waiting for transfer start", uep.ep.ep_num);
+    return;
+  }
+
+  zx_paddr_t first_trb_phys = 0;
+  size_t enqueued = 0;
+  while (!uep.server->queued_reqs.empty()) {
+    auto& pending_req = uep.server->queued_reqs.front();
+
+    zx::result result = uep.server->get_iter(pending_req, zx_system_get_page_size());
+    ZX_ASSERT_MSG(result.is_ok(), "[BUG] server->phys_iter(): %s", result.status_string());
+
+    zx_paddr_t phys;
+    size_t size;
+    std::tie(phys, size) = *result->at(0).begin();
+
+    size_t trb_count = 1;
+    bool need_zlp = false;
+    if (uep.ep.IsInput()) {
+      auto& req = std::get<usb::FidlRequest>(pending_req);
+      bool short_bit = req->short_().value_or(false);
+      if (short_bit && size > 0 && (size % uep.ep.max_packet_size == 0)) {
+        trb_count = 2;
+        need_zlp = true;
+      }
+    }
+
+    if (uep.fifo.AvailableSlots() < trb_count) {
+      fdf::warn("Dwc3::UserEpQueueNext ep {} not enough FIFO slots for {}-TRB request",
+                uep.ep.ep_num, trb_count);
+      break;
+    }
+
+    dwc3_trb_t* trb = uep.fifo.AdvanceWrite();
+    trb->ptr_low = static_cast<uint32_t>(phys);
+    trb->ptr_high = static_cast<uint32_t>(phys >> 32);
+    trb->status = TRB_BUFSIZ(static_cast<uint32_t>(size));
+
+    uint32_t control = TRB_TRBCTL_NORMAL | TRB_HWO;
+    if (uep.ep.IsOutput()) {
+      control |= TRB_CSP | TRB_IOC;
+    } else {
+      if (need_zlp) {
+        // ZLP TRB is chained with this one.
+        control |= TRB_CHN;
+      } else {
+        // We only need the IOC bit in the last TRB.
+        control |= TRB_IOC;
+      }
+    }
+
+    // Ensure the TRB is written before we release it to the controller.
+    std::atomic_thread_fence(std::memory_order_release);
+    trb->control = control;
+
+    zx_paddr_t trb_phys = uep.fifo.Write(trb);
+    if (first_trb_phys == 0) {
+      first_trb_phys = trb_phys;
+    }
+
+    if (need_zlp) {
+      dwc3_trb_t* zlp_trb = uep.fifo.AdvanceWrite();
+      zlp_trb->ptr_low = 0;
+      zlp_trb->ptr_high = 0;
+      zlp_trb->status = TRB_BUFSIZ(0);
+      // Ensure the TRB is written before we release it to the controller.
+      std::atomic_thread_fence(std::memory_order_release);
+      zlp_trb->control = TRB_TRBCTL_NORMAL | TRB_IOC | TRB_HWO;
+      uep.fifo.Write(zlp_trb);
+    }
+
+    uep.server->active_reqs.push(EpServer::RequestState{
+        .request = std::move(pending_req),
+        .total_trbs = trb_count,
+        .completed_trbs = 0,
+        .completed_bytes = 0,
+    });
+    uep.server->queued_reqs.pop();
+    enqueued++;
+  }
+
+  if (start_transfer) {
+    fdf::debug("Dwc3::UserEpQueueNext ep {} starting transfer {}/{}", uep.ep.ep_num, enqueued,
+               uep.server->active_reqs.size());
+    CmdEpStartTransfer(uep.ep, first_trb_phys);
+    uep.ep.transfer_state = Endpoint::TransferState::kStartingOngoing;
+  } else {
+    CmdEpUpdateTransfer(uep.ep);
+  }
 }
 
 void Dwc3::HandleEpTransferCompleteEvent(uint8_t ep_num) {
@@ -160,18 +327,38 @@ void Dwc3::HandleEpTransferCompleteEvent(uint8_t ep_num) {
 
   UserEndpoint* const uep = get_user_endpoint(ep_num);
   ZX_ASSERT(uep != nullptr);
-  if (!uep->server->current_req.has_value()) {
-    fdf::error("no usb request found to complete!");
+  UserEpCompleteTransfers(*uep);
+  uep->ep.transfer_state = Endpoint::TransferState::kIdle;
+  uep->ep.rsrc_id = Endpoint::kInvalidResourceId;
+  UserEpQueueNext(*uep);
+}
+
+void Dwc3::HandleEpTransferInProgressEvent(uint8_t ep_num) {
+  TRACE_DURATION("dwc3", "Dwc3::HandleEpTransferInProgressEvent", "ep_num", ep_num);
+  if (is_ep0_num(ep_num)) {
     return;
   }
-  auto& current_req = uep->server->current_req.value();
-  bool completed = false;
-  while (true) {
-    dwc3_trb_t trb = uep->fifo.Read();
+  UserEndpoint* const uep = get_user_endpoint(ep_num);
+  ZX_ASSERT(uep != nullptr);
+  UserEpCompleteTransfers(*uep);
+  UserEpQueueNext(*uep);
+}
+
+void Dwc3::UserEpCompleteTransfers(UserEndpoint& uep) {
+  if (uep.server->active_reqs.empty()) {
+    return;
+  }
+
+  // Complete all finished TRBs.
+  while (!uep.server->active_reqs.empty()) {
+    const dwc3_trb_t& trb = uep.fifo.ReadOne();
+
     if (trb.control & TRB_HWO) {
+      // not yet completed by the controller
       break;
     }
 
+    auto& current_req = uep.server->active_reqs.front();
     auto& req = std::get<usb::FidlRequest>(current_req.request);
     size_t actual =
         req->data()->size() > current_req.completed_trbs
@@ -181,25 +368,18 @@ void Dwc3::HandleEpTransferCompleteEvent(uint8_t ep_num) {
             : 0;
     current_req.completed_trbs++;
     current_req.completed_bytes += actual;
-    uep->fifo.AdvanceRead();
+    uep.fifo.AdvanceRead();
 
-    if (current_req.completed_trbs == current_req.total_trbs) {
-      completed = true;
-      break;
+    if (current_req.completed_trbs != current_req.total_trbs) {
+      continue;
     }
+
+    uep.ep.total_transfers++;
+    uep.ep.total_bytes += current_req.completed_bytes;
+    uep.server->RequestComplete(ZX_OK, current_req.completed_bytes, std::move(req),
+                                /*send_now=*/false);
+    uep.server->active_reqs.pop();
   }
-
-  if (!completed) {
-    fdf::error("TRB_HWO still set in dwc3_ep_xfer_complete {}", uep->ep.ep_num);
-    return;
-  }
-
-  uep->ep.total_transfers++;
-  uep->ep.total_bytes += current_req.completed_bytes;
-
-  uep->server->RequestComplete(ZX_OK, current_req.completed_bytes, std::move(current_req.request));
-  uep->server->current_req.reset();
-  uep->ep.xfer_in_progress = false;
 }
 
 void Dwc3::HandleEpTransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
@@ -220,11 +400,66 @@ void Dwc3::HandleEpTransferStartedEvent(uint8_t ep_num, uint32_t rsrc_id) {
                  rsrc_id);
   if (is_ep0_num(ep_num)) {
     ((ep_num == kEp0Out) ? ep0_.out : ep0_.in).rsrc_id = rsrc_id;
-  } else {
-    UserEndpoint* const uep = get_user_endpoint(ep_num);
-    ZX_ASSERT(uep != nullptr);
-    uep->ep.rsrc_id = rsrc_id;
+    return;
   }
+
+  UserEndpoint* const uep = get_user_endpoint(ep_num);
+  ZX_ASSERT(uep != nullptr);
+  uep->ep.rsrc_id = rsrc_id;
+  switch (uep->ep.transfer_state) {
+    case Endpoint::TransferState::kIdle:
+    case Endpoint::TransferState::kCanceling:
+    case Endpoint::TransferState::kActiveOngoing:
+    case Endpoint::TransferState::kActiveSingle:
+      fdf::warn("Dwc3::HandleEpTransferStartedEvent ep {} in unexpected state {}", ep_num,
+                uep->ep.transfer_state);
+      break;
+    case Endpoint::TransferState::kStartingSingle:
+      uep->ep.transfer_state = Endpoint::TransferState::kActiveSingle;
+      break;
+    case Endpoint::TransferState::kStartingOngoing:
+      uep->ep.transfer_state = Endpoint::TransferState::kActiveOngoing;
+      break;
+    case Endpoint::TransferState::kPendingCancel:
+      // We've been requested to end the transfer.
+      uep->ep.transfer_state = Endpoint::TransferState::kCanceling;
+      CmdEpEndTransfer(uep->ep);
+      break;
+  }
+  // Attempt to enqueue more things now that we have a resource ID. States that
+  // can't enqueue any more are handled within.
+  UserEpQueueNext(*uep);
+}
+
+void Dwc3::HandleEpTransferEndedEvent(uint8_t ep_num) {
+  TRACE_DURATION("dwc3", "Dwc3::HandleEpTransferEndedEvent", "ep_num", ep_num);
+  if (is_ep0_num(ep_num)) {
+    return;
+  }
+
+  UserEndpoint* const uep = get_user_endpoint(ep_num);
+  ZX_ASSERT(uep != nullptr);
+  fdf::debug("Dwc3::HandleEpTransferEndedEvent ep {}", ep_num);
+
+  if (uep->server) {
+    // Reason may not be set if the endpoint is reset from under us, fallback to
+    // IO_NOT_PRESENT.
+    zx_status_t reason = uep->server->pending_cancel_reason.value_or(ZX_ERR_IO_NOT_PRESENT);
+    uep->server->pending_cancel_reason.reset();
+    size_t pending_trbs = 0;
+    while (!uep->server->active_reqs.empty()) {
+      auto& request_state = uep->server->active_reqs.front();
+      pending_trbs += request_state.total_trbs - request_state.completed_trbs;
+      uep->server->RequestComplete(reason, 0, std::move(request_state.request));
+      uep->server->active_reqs.pop();
+    }
+    size_t active_count = uep->fifo.GetActiveCount();
+    ZX_ASSERT_MSG(active_count == pending_trbs, "%ld == %ld", active_count, pending_trbs);
+  }
+  uep->fifo.Clear();
+  uep->ep.transfer_state = Endpoint::TransferState::kIdle;
+  uep->ep.rsrc_id = Endpoint::kInvalidResourceId;
+  UserEpQueueNext(*uep);
 }
 
 }  // namespace dwc3
