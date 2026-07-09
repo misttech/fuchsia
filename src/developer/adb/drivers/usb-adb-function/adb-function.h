@@ -7,6 +7,7 @@
 
 #include <endian.h>
 #include <fidl/fuchsia.hardware.adb/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async/cpp/task.h>

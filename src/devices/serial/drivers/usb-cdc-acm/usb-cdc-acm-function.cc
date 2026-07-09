@@ -236,12 +236,12 @@ zx::result<> FakeUsbCdcAcmFunction::Start(fdf::DriverContext context) {
   }
 
   fuchsia_hardware_usb_function::EndpointResource in_res;
-  in_res.direction(fuchsia_hardware_usb_function::EndpointDirection::kIn);
+  in_res.direction(fuchsia_hardware_usb_descriptor::EndpointDirection::kIn);
   in_res.endpoint(std::move(bulk_in_endpoints->server));
   ep_res.emplace_back(std::move(in_res));
 
   fuchsia_hardware_usb_function::EndpointResource out_res;
-  out_res.direction(fuchsia_hardware_usb_function::EndpointDirection::kOut);
+  out_res.direction(fuchsia_hardware_usb_descriptor::EndpointDirection::kOut);
   out_res.endpoint(std::move(bulk_out_endpoints->server));
   ep_res.emplace_back(std::move(out_res));
 

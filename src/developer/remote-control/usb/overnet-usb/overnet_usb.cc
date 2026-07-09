@@ -4,6 +4,7 @@
 
 #include "overnet_usb.h"
 
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/component/cpp/driver_base2.h>
@@ -28,6 +29,7 @@
 
 namespace fendpoint = fuchsia_hardware_usb_endpoint;
 namespace ffunction = fuchsia_hardware_usb_function;
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 zx::result<> OvernetUsb::Start(fdf::DriverContext context) {
   inspector_ = context.CreateInspector(this);
@@ -48,18 +50,18 @@ zx::result<> OvernetUsb::Start(fdf::DriverContext context) {
     return bulk_in_endpoints.take_error();
   }
 
-  std::vector<fuchsia_hardware_usb_function::EndpointResource> resources;
-  fuchsia_hardware_usb_function::EndpointResource out_res;
-  out_res.direction(fuchsia_hardware_usb_function::EndpointDirection::kOut);
+  std::vector<ffunction::EndpointResource> resources;
+  ffunction::EndpointResource out_res;
+  out_res.direction(fdescriptor::EndpointDirection::kOut);
   out_res.endpoint(std::move(bulk_out_endpoints->server));
   resources.emplace_back(std::move(out_res));
 
-  fuchsia_hardware_usb_function::EndpointResource in_res;
-  in_res.direction(fuchsia_hardware_usb_function::EndpointDirection::kIn);
+  ffunction::EndpointResource in_res;
+  in_res.direction(fdescriptor::EndpointDirection::kIn);
   in_res.endpoint(std::move(bulk_in_endpoints->server));
   resources.emplace_back(std::move(in_res));
 
-  fidl::Request<fuchsia_hardware_usb_function::UsbFunction::AllocResources> alloc_req;
+  fidl::Request<ffunction::UsbFunction::AllocResources> alloc_req;
   alloc_req.interface_count(1);
   alloc_req.endpoints(std::move(resources));
   alloc_req.strings({{"Overnet USB interface"}});

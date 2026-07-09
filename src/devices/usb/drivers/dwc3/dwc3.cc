@@ -1602,6 +1602,18 @@ void Dwc3::SetDeviceState(fpolicy::DeviceState state, uint8_t address) {
   }
 }
 
+void Dwc3::GetHardwareInfo(GetHardwareInfoCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+}
+
+void Dwc3::AllocEndpoint(AllocEndpointRequest& request, AllocEndpointCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+}
+
+void Dwc3::FreeEndpoint(FreeEndpointRequest& request, FreeEndpointCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+}
+
 }  // namespace dwc3
 
 FUCHSIA_DRIVER_EXPORT2(dwc3::Dwc3);

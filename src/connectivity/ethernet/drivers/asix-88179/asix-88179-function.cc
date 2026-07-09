@@ -177,7 +177,7 @@ zx::result<> FakeUsbAx88179Function::Start(fdf::DriverContext context) {
 
   std::vector<fuchsia_hardware_usb_function::EndpointResource> resources;
   fuchsia_hardware_usb_function::EndpointResource res1;
-  res1.direction(fuchsia_hardware_usb_function::EndpointDirection::kIn);
+  res1.direction(fuchsia_hardware_usb_descriptor::EndpointDirection::kIn);
   res1.endpoint(std::move(endpoints->server));
   resources.emplace_back(std::move(res1));
 
@@ -186,7 +186,7 @@ zx::result<> FakeUsbAx88179Function::Start(fdf::DriverContext context) {
     return bulk_in_endpoints.take_error();
   }
   fuchsia_hardware_usb_function::EndpointResource res2;
-  res2.direction(fuchsia_hardware_usb_function::EndpointDirection::kIn);
+  res2.direction(fuchsia_hardware_usb_descriptor::EndpointDirection::kIn);
   res2.endpoint(std::move(bulk_in_endpoints->server));
   resources.emplace_back(std::move(res2));
 
@@ -195,7 +195,7 @@ zx::result<> FakeUsbAx88179Function::Start(fdf::DriverContext context) {
     return bulk_out_endpoints.take_error();
   }
   fuchsia_hardware_usb_function::EndpointResource res3;
-  res3.direction(fuchsia_hardware_usb_function::EndpointDirection::kOut);
+  res3.direction(fuchsia_hardware_usb_descriptor::EndpointDirection::kOut);
   res3.endpoint(std::move(bulk_out_endpoints->server));
   resources.emplace_back(std::move(res3));
 

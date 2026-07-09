@@ -253,7 +253,7 @@ zx::result<> FakeFtdiFunction::Start(fdf::DriverContext context) {
   // Allocate resources
   std::vector<fuchsia_hardware_usb_function::EndpointResource> endpoints;
   fuchsia_hardware_usb_function::EndpointResource ep_in;
-  ep_in.direction(fuchsia_hardware_usb_function::EndpointDirection::kIn);
+  ep_in.direction(fuchsia_hardware_usb_descriptor::EndpointDirection::kIn);
 
   zx::result ep_in_channels = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
   if (ep_in_channels.is_error())
@@ -263,7 +263,7 @@ zx::result<> FakeFtdiFunction::Start(fdf::DriverContext context) {
   endpoints.push_back(std::move(ep_in));
 
   fuchsia_hardware_usb_function::EndpointResource ep_out;
-  ep_out.direction(fuchsia_hardware_usb_function::EndpointDirection::kOut);
+  ep_out.direction(fuchsia_hardware_usb_descriptor::EndpointDirection::kOut);
 
   zx::result ep_out_channels = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
   if (ep_out_channels.is_error())

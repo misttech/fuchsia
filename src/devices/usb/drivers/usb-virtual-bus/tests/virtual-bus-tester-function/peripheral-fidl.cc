@@ -4,6 +4,7 @@
 
 #include "src/devices/usb/drivers/usb-virtual-bus/tests/virtual-bus-tester-function/peripheral-fidl.h"
 
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/component/cpp/driver_export2.h>
@@ -12,6 +13,8 @@
 namespace virtualbus {
 
 namespace fendpoint = fuchsia_hardware_usb_endpoint;
+namespace ffunction = fuchsia_hardware_usb_function;
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 zx::result<> FidlTestFunction::SetFunctionInterface(bool connect) {
   if (connect) {
@@ -70,18 +73,18 @@ zx::result<> FidlTestFunction::Start(fdf::DriverContext context) {
   }
   ep_in_client_ = std::move(ep_in->client);
 
-  std::vector<fuchsia_hardware_usb_function::EndpointResource> endpoints;
-  fuchsia_hardware_usb_function::EndpointResource ep_out_res;
-  ep_out_res.direction(fuchsia_hardware_usb_function::EndpointDirection::kOut);
+  std::vector<ffunction::EndpointResource> endpoints;
+  ffunction::EndpointResource ep_out_res;
+  ep_out_res.direction(fdescriptor::EndpointDirection::kOut);
   ep_out_res.endpoint(std::move(ep_out->server));
   endpoints.push_back(std::move(ep_out_res));
 
-  fuchsia_hardware_usb_function::EndpointResource ep_in_res;
-  ep_in_res.direction(fuchsia_hardware_usb_function::EndpointDirection::kIn);
+  ffunction::EndpointResource ep_in_res;
+  ep_in_res.direction(fdescriptor::EndpointDirection::kIn);
   ep_in_res.endpoint(std::move(ep_in->server));
   endpoints.push_back(std::move(ep_in_res));
 
-  fuchsia_hardware_usb_function::UsbFunctionAllocResourcesRequest alloc_req;
+  ffunction::UsbFunctionAllocResourcesRequest alloc_req;
   alloc_req.interface_count(1);
   alloc_req.endpoints(std::move(endpoints));
 

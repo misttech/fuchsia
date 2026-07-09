@@ -83,7 +83,7 @@ closed protocol UsbFunction {
     strict AllocResources(resource struct {
         interface_count uint8;
         endpoints vector<@generated_name("EndpointResource") resource struct {
-            direction EndpointDirection;
+            direction fuchsia.hardware.usb.descriptor.EndpointDirection;
             endpoint server_end:fuchsia.hardware.usb.endpoint.Endpoint;
         }>:MAX_ENDPOINTS;
         strings vector<string:MAX_STRING_LEN>:MAX_STRINGS;
@@ -182,11 +182,6 @@ open protocol UsbFunctionInterface {
 };
 
 
-/// The direction of a USB endpoint.
-type EndpointDirection = strict enum : uint8 {
-    OUT = 0x00;
-    IN = 0x80;
-};
 
 /// Endpoint configuration given to [`UsbFunction.ConfigureEndpoint`].
 type EndpointConfiguration = table {

@@ -144,6 +144,19 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
     completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
   }
 
+  void GetHardwareInfo(GetHardwareInfoCompleter::Sync& completer) override {
+    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+  }
+
+  void AllocEndpoint(AllocEndpointRequestView req,
+                     AllocEndpointCompleter::Sync& completer) override {
+    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+  }
+
+  void FreeEndpoint(FreeEndpointRequestView req, FreeEndpointCompleter::Sync& completer) override {
+    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+  }
+
   void handle_unknown_method(fidl::UnknownMethodMetadata<fdci::UsbDci> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override {}
 
@@ -614,14 +627,14 @@ class PeripheralReadyTestBase : public UsbPeripheralHarness<manage_lifetime> {
     if (ep_ends1.is_error()) {
       return ep_ends1.take_error();
     }
-    endpoints[0].direction = ffunction::wire::EndpointDirection::kOut;
+    endpoints[0].direction = fdescriptor::wire::EndpointDirection::kOut;
     endpoints[0].endpoint = std::move(ep_ends1->server);
 
     zx::result ep_ends2 = fidl::CreateEndpoints<fendpoint::Endpoint>();
     if (ep_ends2.is_error()) {
       return ep_ends2.take_error();
     }
-    endpoints[1].direction = ffunction::wire::EndpointDirection::kIn;
+    endpoints[1].direction = fdescriptor::wire::EndpointDirection::kIn;
     endpoints[1].endpoint = std::move(ep_ends2->server);
 
     fidl::WireResult res = function_client->AllocResources(
@@ -1448,9 +1461,9 @@ TEST_F(UsbPeripheralFunctionTest, AllocResources) {
 
   fidl::Arena arena;
   auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 2);
-  endpoints[0].direction = ffunction::wire::EndpointDirection::kIn;
+  endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
   endpoints[0].endpoint = std::move(ep_endpoints1.server);
-  endpoints[1].direction = ffunction::wire::EndpointDirection::kOut;
+  endpoints[1].direction = fdescriptor::wire::EndpointDirection::kOut;
   endpoints[1].endpoint = std::move(ep_endpoints2.server);
 
   auto strings = fidl::VectorView<fidl::StringView>(arena, 2);
@@ -1544,7 +1557,7 @@ TEST_F(UsbPeripheralFunctionTest, ResourceCleanupOnClose) {
 
   fidl::Arena arena;
   auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
-  endpoints[0].direction = ffunction::wire::EndpointDirection::kIn;
+  endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
   auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
   endpoints[0].endpoint = std::move(ep_endpoints.server);
 
@@ -1585,7 +1598,7 @@ TEST_F(UsbPeripheralFunctionTest, AllocResourcesRollback) {
   // 1. Initial success allocation to have a baseline of "used" resources.
   {
     auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
-    endpoints[0].direction = ffunction::wire::EndpointDirection::kIn;
+    endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
     auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
     endpoints[0].endpoint = std::move(ep_endpoints.server);
 
@@ -1609,7 +1622,7 @@ TEST_F(UsbPeripheralFunctionTest, AllocResourcesRollback) {
   //    UsbPeripheral::MAX_INTERFACES more should fail.
   {
     auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
-    endpoints[0].direction = ffunction::wire::EndpointDirection::kOut;
+    endpoints[0].direction = fdescriptor::wire::EndpointDirection::kOut;
     auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
     endpoints[0].endpoint = std::move(ep_endpoints.server);
 
@@ -1635,7 +1648,7 @@ TEST_F(UsbPeripheralFunctionTest, AllocResourcesRollback) {
   //    Requesting enough to exceed UsbPeripheral::MAX_STRINGS should fail.
   {
     auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
-    endpoints[0].direction = ffunction::wire::EndpointDirection::kOut;
+    endpoints[0].direction = fdescriptor::wire::EndpointDirection::kOut;
     auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
     endpoints[0].endpoint = std::move(ep_endpoints.server);
 
@@ -1664,7 +1677,7 @@ TEST_F(UsbPeripheralFunctionTest, AllocResourcesRollback) {
     size_t total_in_eps = UsbPeripheral::kInEpEnd - UsbPeripheral::kInEpStart + 1;
     auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, total_in_eps);
     for (size_t i = 0; i < total_in_eps; i++) {
-      endpoints[i].direction = ffunction::wire::EndpointDirection::kIn;
+      endpoints[i].direction = fdescriptor::wire::EndpointDirection::kIn;
       auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
       endpoints[i].endpoint = std::move(ep_endpoints.server);
     }
@@ -1693,7 +1706,7 @@ TEST_F(UsbPeripheralFunctionTest, EndpointSetStall) {
 
   fidl::Arena arena;
   auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
-  endpoints[0].direction = ffunction::wire::EndpointDirection::kIn;
+  endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
   auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
   endpoints[0].endpoint = std::move(ep_endpoints.server);
 
@@ -1736,7 +1749,7 @@ TEST_F(UsbPeripheralFunctionTest, EndpointClearStall) {
 
   fidl::Arena arena;
   auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
-  endpoints[0].direction = ffunction::wire::EndpointDirection::kIn;
+  endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
   auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
   endpoints[0].endpoint = std::move(ep_endpoints.server);
 
@@ -1783,7 +1796,7 @@ TEST_P(UsbPeripheralFunctionConfigureEndpointTest, ConfigureEndpoint) {
 
   fidl::Arena arena;
   auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
-  endpoints[0].direction = ffunction::wire::EndpointDirection::kIn;
+  endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
   auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
   endpoints[0].endpoint = std::move(ep_endpoints.server);
 
@@ -1865,7 +1878,7 @@ TEST_F(UsbPeripheralFunctionTest, DisableEndpoint) {
 
   fidl::Arena arena;
   auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
-  endpoints[0].direction = ffunction::wire::EndpointDirection::kIn;
+  endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
   auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
   endpoints[0].endpoint = std::move(ep_endpoints.server);
 
@@ -1912,7 +1925,7 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureEndpointDuringSetConfigured) {
 
   fidl::Arena arena;
   auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
-  endpoints[0].direction = ffunction::wire::EndpointDirection::kIn;
+  endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
   auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
   endpoints[0].endpoint = std::move(ep_endpoints.server);
 

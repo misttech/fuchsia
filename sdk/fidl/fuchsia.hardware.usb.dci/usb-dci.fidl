@@ -8,6 +8,75 @@ using zx;
 using fuchsia.hardware.usb.descriptor;
 using fuchsia.hardware.usb.endpoint;
 
+const MAX_SUPPORTED_TYPES uint32 = 4;
+const MAX_ENDPOINTS uint32 = 32;
+
+/// Hardware capability and limit information for a specific endpoint transfer type.
+type SupportedEndpointInfo = table {
+    /// The transfer type supported (`BULK`, `CONTROL`, `ISOCHRONOUS`, or `INTERRUPT`).
+    ///
+    /// Required.
+    1: endpoint_type fuchsia.hardware.usb.descriptor.EndpointType;
+
+    /// The maximum packet size supported for this transfer type in bytes.
+    ///
+    /// Required.
+    2: max_packet_size_limit uint16;
+
+    /// For isochronous endpoints: minimum lead time required in number of transfers.
+    ///
+    /// Optional even when `endpoint_type` is `ISOCHRONOUS`. Interpreted as 0
+    /// (no additional lead time required) if absent.
+    3: min_lead_time uint64;
+};
+
+/// Static configuration and supported types for a physical endpoint.
+type EndpointInfo = table {
+    /// The endpoint address, as defined in USB 2.0 specification section 9.6.6.
+    /// e.g., 0x81 (IN 1), 0x02 (OUT 2).
+    ///
+    /// Required.
+    1: ep_address uint8;
+
+    /// The transfer types supported by this physical endpoint, along with any
+    /// type-specific hardware limits.
+    ///
+    /// Required.
+    2: supported_types vector<SupportedEndpointInfo>:MAX_SUPPORTED_TYPES;
+};
+
+/// Overall hardware capability summary of the DCI controller.
+type DciHardwareInfo = table {
+    /// List of physical endpoint capabilities supported by the controller.
+    ///
+    /// Required if `supports_dynamic_ep_sizing` is false.
+    1: endpoints vector<EndpointInfo>:MAX_ENDPOINTS;
+
+    /// If true, usb-peripheral must use [`UsbDci.AllocEndpoint`].
+    ///
+    /// Optional. Interpreted as false if absent.
+    2: supports_dynamic_ep_sizing bool;
+};
+
+/// Request parameters when dynamically allocating a physical endpoint from the DCI driver.
+type EndpointAllocationRequest = table {
+    /// The required direction of the endpoint (`IN` or `OUT`).
+    ///
+    /// Required.
+    1: direction fuchsia.hardware.usb.descriptor.EndpointDirection;
+
+    /// The transfer type required for this endpoint (`BULK`, `CONTROL`,
+    /// `ISOCHRONOUS`, or `INTERRUPT`).
+    ///
+    /// Required.
+    2: endpoint_type fuchsia.hardware.usb.descriptor.EndpointType;
+
+    /// The maximum packet size required by this endpoint in bytes.
+    ///
+    /// Required.
+    3: max_packet_size uint16;
+};
+
 // References:
 //   usb20 - Universal Serial Bus Specification rev. 2.0
 @discoverable
@@ -62,6 +131,64 @@ open protocol UsbDci {
 
     /// Cancel all pending transactions for the given endpoint.
     flexible CancelAll(struct {
+        ep_address uint8;
+    }) -> () error zx.Status;
+
+    /// Queries the DCI driver for hardware-specific endpoint limits.
+    ///
+    /// This method retrieves the static endpoint configuration and capabilities
+    /// of the DCI controller. It is typically called once by the peripheral
+    /// manager during startup.
+    ///
+    /// * error:
+    ///     * `ZX_ERR_IO_NOT_PRESENT`: The DCI controller is not ready or accessible
+    ///       to handle hardware queries (for example, if underlying hardware conditions
+    ///       such as power, clock enablement, or MMIO register accessibility have not yet
+    ///       been met).
+    ///     * `ZX_ERR_NOT_SUPPORTED`: The DCI driver does not support hardware
+    ///       queries (legacy driver).
+    flexible GetHardwareInfo() -> (struct {
+        info DciHardwareInfo;
+    }) error zx.Status;
+
+    /// Requests the DCI driver to allocate a physical endpoint.
+    ///
+    /// This is used by the peripheral manager to dynamically allocate a physical
+    /// endpoint matching the requested `direction`, `endpoint_type`, and
+    /// `max_packet_size` specified in [`EndpointAllocationRequest`]. This method
+    /// must only be called if `GetHardwareInfo` reported `supports_dynamic_ep_sizing`
+    /// as true.
+    ///
+    /// The allocation is atomic. If the DCI driver cannot satisfy the request,
+    /// it returns an error and no hardware state is modified.
+    ///
+    /// Closing the `UsbDci` channel will automatically free all endpoints
+    /// allocated through it.
+    ///
+    /// * error:
+    ///     * `ZX_ERR_IO_NOT_PRESENT`: The DCI controller is not ready to take
+    ///       allocation requests (for example, in controller drivers that update hardware
+    ///       registers during allocation, if underlying hardware conditions such as power,
+    ///       clocks, reset, or MMIO accessibility have not yet been met).
+    ///     * `ZX_ERR_NO_RESOURCES`: No physical endpoints matching the request
+    ///       are available.
+    ///     * `ZX_ERR_NOT_SUPPORTED`: The DCI driver does not support dynamic
+    ///       endpoint allocation.
+    flexible AllocEndpoint(EndpointAllocationRequest) -> (struct {
+        ep_address uint8;
+    }) error zx.Status;
+
+    /// Frees a previously dynamically allocated endpoint.
+    ///
+    /// Releases the physical endpoint back to the DCI driver's pool. The endpoint
+    /// must be disabled via `DisableEndpoint` before calling this method.
+    ///
+    /// * error:
+    ///     * `ZX_ERR_IO_NOT_PRESENT`: The DCI controller is not ready or accessible
+    ///       to process endpoint deallocation requests.
+    ///     * `ZX_ERR_NOT_FOUND`: The endpoint was not dynamically allocated.
+    ///     * `ZX_ERR_BAD_STATE`: The endpoint is still active or enabled.
+    flexible FreeEndpoint(struct {
         ep_address uint8;
     }) -> () error zx.Status;
 };

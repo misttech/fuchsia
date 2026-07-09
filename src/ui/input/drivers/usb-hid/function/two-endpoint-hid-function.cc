@@ -183,11 +183,11 @@ zx::result<> FakeUsbHidFunction::Start(fdf::DriverContext context) {
   }
 
   fuchsia_hardware_usb_function::EndpointResource ep_in;
-  ep_in.direction() = fuchsia_hardware_usb_function::EndpointDirection::kIn;
+  ep_in.direction() = fuchsia_hardware_usb_descriptor::EndpointDirection::kIn;
   ep_in.endpoint() = std::move(endpoints_res->server);
 
   fuchsia_hardware_usb_function::EndpointResource ep_out;
-  ep_out.direction() = fuchsia_hardware_usb_function::EndpointDirection::kOut;
+  ep_out.direction() = fuchsia_hardware_usb_descriptor::EndpointDirection::kOut;
   ep_out.endpoint() = std::move(endpoints_out_res->server);
 
   std::vector<fuchsia_hardware_usb_function::EndpointResource> endpoints;

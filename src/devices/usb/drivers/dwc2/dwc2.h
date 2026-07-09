@@ -74,9 +74,14 @@ class Dwc2 : public fdf::DriverBase2, public fidl::Server<fuchsia_hardware_usb_d
 
   void CancelAll(CancelAllRequest& request, CancelAllCompleter::Sync& completer) override;
 
+  void GetHardwareInfo(GetHardwareInfoCompleter::Sync& completer) override;
+  void AllocEndpoint(AllocEndpointRequest& request,
+                     AllocEndpointCompleter::Sync& completer) override;
+  void FreeEndpoint(FreeEndpointRequest& request, FreeEndpointCompleter::Sync& completer) override;
+
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_usb_dci::UsbDci> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override {
-    completer.Close(ZX_ERR_NOT_SUPPORTED);
+    fdf::warn("dwc2: received unknown UsbDci method: {}", metadata.method_ordinal);
   }
 
   // Allows tests to configure a fake interrupt.

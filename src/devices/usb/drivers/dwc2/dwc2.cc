@@ -1574,6 +1574,18 @@ void Dwc2::Endpoint::OnUnbound(
   // will be recovered.
 }
 
+void Dwc2::GetHardwareInfo(GetHardwareInfoCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+}
+
+void Dwc2::AllocEndpoint(AllocEndpointRequest& request, AllocEndpointCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+}
+
+void Dwc2::FreeEndpoint(FreeEndpointRequest& request, FreeEndpointCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+}
+
 }  // namespace dwc2
 
 FUCHSIA_DRIVER_EXPORT2(dwc2::Dwc2);

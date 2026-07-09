@@ -19,6 +19,9 @@
 
 namespace usb_adb_function {
 
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+namespace ffunction = fuchsia_hardware_usb_function;
+
 namespace {
 
 // CompleterType follows fidl::internal::WireCompleter<RequestType>::Async
@@ -545,21 +548,21 @@ zx::result<> UsbAdbDevice::Start(fdf::DriverContext context) {
     return bulk_in_endpoints.take_error();
   }
 
-  std::vector<fuchsia_hardware_usb_function::EndpointResource> resources;
+  std::vector<ffunction::EndpointResource> resources;
   {
-    fuchsia_hardware_usb_function::EndpointResource res;
-    res.direction(fuchsia_hardware_usb_function::EndpointDirection::kOut);
+    ffunction::EndpointResource res;
+    res.direction(fdescriptor::EndpointDirection::kOut);
     res.endpoint(std::move(bulk_out_endpoints->server));
     resources.emplace_back(std::move(res));
   }
   {
-    fuchsia_hardware_usb_function::EndpointResource res;
-    res.direction(fuchsia_hardware_usb_function::EndpointDirection::kIn);
+    ffunction::EndpointResource res;
+    res.direction(fdescriptor::EndpointDirection::kIn);
     res.endpoint(std::move(bulk_in_endpoints->server));
     resources.emplace_back(std::move(res));
   }
 
-  fidl::Request<fuchsia_hardware_usb_function::UsbFunction::AllocResources> alloc_req;
+  fidl::Request<ffunction::UsbFunction::AllocResources> alloc_req;
   alloc_req.interface_count(1);
   alloc_req.endpoints(std::move(resources));
 

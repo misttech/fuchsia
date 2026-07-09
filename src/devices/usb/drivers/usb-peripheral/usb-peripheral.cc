@@ -655,16 +655,16 @@ zx_status_t UsbPeripheral::AllocInterfaceLocked(size_t function_index, uint8_t* 
 }
 
 zx_status_t UsbPeripheral::AllocEndpointLocked(size_t function_index,
-                                               ffunction::EndpointDirection direction,
+                                               fdescriptor::EndpointDirection direction,
                                                uint8_t* out_address) {
   TRACE_DURATION("usb-peripheral", __func__, "function_index", function_index, "direction",
                  fidl::ToUnderlying(direction));
   uint8_t start, end;
 
-  if (direction == ffunction::EndpointDirection::kOut) {
+  if (direction == fdescriptor::EndpointDirection::kOut) {
     start = kOutEpStart;
     end = kOutEpEnd;
-  } else if (direction == ffunction::EndpointDirection::kIn) {
+  } else if (direction == fdescriptor::EndpointDirection::kIn) {
     start = kInEpStart;
     end = kInEpEnd;
   } else {

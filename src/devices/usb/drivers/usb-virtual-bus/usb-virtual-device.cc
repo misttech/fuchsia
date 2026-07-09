@@ -115,4 +115,18 @@ void UsbVirtualDevice::CancelAll(CancelAllRequest& request, CancelAllCompleter::
   completer.Reply(zx::ok());
 }
 
+void UsbVirtualDevice::GetHardwareInfo(GetHardwareInfoCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+}
+
+void UsbVirtualDevice::AllocEndpoint(AllocEndpointRequest& request,
+                                     AllocEndpointCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+}
+
+void UsbVirtualDevice::FreeEndpoint(FreeEndpointRequest& request,
+                                    FreeEndpointCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+}
+
 }  // namespace usb_virtual_bus

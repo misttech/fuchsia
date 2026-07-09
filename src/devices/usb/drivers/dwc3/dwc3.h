@@ -113,15 +113,24 @@ class Dwc3 : public fdf::DriverBase2,
 
   void CancelAll(CancelAllRequest& request, CancelAllCompleter::Sync& completer) override;
 
+  void GetHardwareInfo(GetHardwareInfoCompleter::Sync& completer) override;
+  void AllocEndpoint(AllocEndpointRequest& request,
+                     AllocEndpointCompleter::Sync& completer) override;
+  void FreeEndpoint(FreeEndpointRequest& request, FreeEndpointCompleter::Sync& completer) override;
+
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_usb_dci::UsbDci> metadata,
-                             fidl::UnknownMethodCompleter::Sync& completer) override { /* no-op */ }
+                             fidl::UnknownMethodCompleter::Sync& completer) override {
+    fdf::warn("dwc3: received unknown UsbDci method: {}", metadata.method_ordinal);
+  }
 
   // fuchsia_hardware_usb_policy::Controller protocol implementation.
   void WatchDeviceState(WatchDeviceStateCompleter::Sync& completer) override;
 
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_usb_policy::Controller> metadata,
-      fidl::UnknownMethodCompleter::Sync& completer) override { /* no-op */ }
+      fidl::UnknownMethodCompleter::Sync& completer) override {
+    fdf::warn("dwc3: received unknown Controller method: {}", metadata.method_ordinal);
+  }
 
   // For testing.
   bool poll_end_xfer() const { return poll_end_xfer_; }

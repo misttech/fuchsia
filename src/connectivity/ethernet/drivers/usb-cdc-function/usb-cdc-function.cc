@@ -551,7 +551,7 @@ zx::result<> UsbCdcFunction::Start(fdf::DriverContext context) {
   }
   std::vector<ffunction::EndpointResource> resources;
   ffunction::EndpointResource intr_resource;
-  intr_resource.direction(ffunction::EndpointDirection::kIn);
+  intr_resource.direction(fdescriptor::EndpointDirection::kIn);
   intr_resource.endpoint(std::move(intr_endpoints->server));
   resources.emplace_back(std::move(intr_resource));
 
@@ -560,7 +560,7 @@ zx::result<> UsbCdcFunction::Start(fdf::DriverContext context) {
     return bulk_in_endpoints.take_error();
   }
   ffunction::EndpointResource bulk_in_resource;
-  bulk_in_resource.direction(ffunction::EndpointDirection::kIn);
+  bulk_in_resource.direction(fdescriptor::EndpointDirection::kIn);
   bulk_in_resource.endpoint(std::move(bulk_in_endpoints->server));
   resources.emplace_back(std::move(bulk_in_resource));
 
@@ -569,7 +569,7 @@ zx::result<> UsbCdcFunction::Start(fdf::DriverContext context) {
     return bulk_out_endpoints.take_error();
   }
   ffunction::EndpointResource bulk_out_resource;
-  bulk_out_resource.direction(ffunction::EndpointDirection::kOut);
+  bulk_out_resource.direction(fdescriptor::EndpointDirection::kOut);
   bulk_out_resource.endpoint(std::move(bulk_out_endpoints->server));
   resources.emplace_back(std::move(bulk_out_resource));
 

@@ -322,7 +322,7 @@ class UsbPeripheral : public fdf::DriverBase2,
   zx_status_t AllocInterfaceLocked(size_t function_index, uint8_t* out_intf_num)
       __TA_REQUIRES(lock_);
   zx_status_t AllocEndpointLocked(size_t function_index,
-                                  fuchsia_hardware_usb_function::EndpointDirection direction,
+                                  fuchsia_hardware_usb_descriptor::EndpointDirection direction,
                                   uint8_t* out_address) __TA_REQUIRES(lock_);
   zx_status_t AllocStringDescLocked(std::optional<size_t> function_index, std::string desc,
                                     uint8_t* out_index) __TA_REQUIRES(lock_);

@@ -10,6 +10,7 @@
 #include <fidl/fuchsia.hardware.usb.dci/cpp/fidl.h>
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/test/platform/cpp/bind.h>
@@ -62,9 +63,13 @@ class UsbVirtualDevice
   void EndpointClearStall(EndpointClearStallRequest& request,
                           EndpointClearStallCompleter::Sync& completer) override;
   void CancelAll(CancelAllRequest& request, CancelAllCompleter::Sync& completer) override;
+  void GetHardwareInfo(GetHardwareInfoCompleter::Sync& completer) override;
+  void AllocEndpoint(AllocEndpointRequest& request,
+                     AllocEndpointCompleter::Sync& completer) override;
+  void FreeEndpoint(FreeEndpointRequest& request, FreeEndpointCompleter::Sync& completer) override;
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_usb_dci::UsbDci> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override {
-    completer.Close(ZX_ERR_NOT_SUPPORTED);
+    fdf::warn("usb-virtual-device: received unknown UsbDci method: {}", metadata.method_ordinal);
   }
 
   UsbVirtualBus* bus_;

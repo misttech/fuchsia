@@ -6,6 +6,7 @@
 #define SRC_FIRMWARE_DRIVERS_USB_FASTBOOT_FUNCTION_USB_FASTBOOT_FUNCTION_H_
 
 #include <fidl/fuchsia.hardware.fastboot/cpp/wire.h>
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>

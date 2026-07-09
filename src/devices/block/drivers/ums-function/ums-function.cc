@@ -7,6 +7,7 @@
 
 #include <endian.h>
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.request/cpp/fidl.h>
@@ -39,6 +40,7 @@ namespace fendpoint = fuchsia_hardware_usb_endpoint;
 namespace ffunction = fuchsia_hardware_usb_function;
 namespace ffdf = fuchsia_driver_framework;
 namespace frequest = fuchsia_hardware_usb_request;
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 void UmsFunction::Control(ControlRequest& req, ControlCompleter::Sync& completer) {
   if (req.setup().bm_request_type() == (USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE) &&
@@ -807,8 +809,8 @@ zx_status_t UmsFunction::Init(fdf::DriverContext& context) {
   auto [out_client, out_server] = fidl::Endpoints<fendpoint::Endpoint>::Create();
 
   std::vector<ffunction::EndpointResource> ep_resources;
-  ep_resources.emplace_back(ffunction::EndpointDirection::kIn, std::move(in_server));
-  ep_resources.emplace_back(ffunction::EndpointDirection::kOut, std::move(out_server));
+  ep_resources.emplace_back(fdescriptor::EndpointDirection::kIn, std::move(in_server));
+  ep_resources.emplace_back(fdescriptor::EndpointDirection::kOut, std::move(out_server));
 
   fidl::Result alloc = function_->AllocResources({{
       .interface_count = 1,
