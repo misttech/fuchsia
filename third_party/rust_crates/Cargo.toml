@@ -203,7 +203,7 @@ rustc-hash = "1.0.1"
 rustls = { version = "0.21.12", features = ["dangerous_configuration"] }
 rustls-pemfile = "1.0.4"
 rustls-webpki = "0.101.6"
-rustyline = "2.1.0"
+rustyline = "18.0.1"
 rutabaga_gfx = { version = "0.1.75", features = ["gfxstream"] }
 sapphire-async = { version = "0.1.0", features = ["std", "testing"] }
 sapphire-collections = { version = "0.1.0", features = ["std"] }
@@ -377,6 +377,7 @@ walkdir = { path = "ask2patch/walkdir" }
 android_system_properties = { path = "empty/android_system_properties" }
 cc = { path = "empty/cc" }
 cfg_aliases = { path = "empty/cfg_aliases"}
+clipboard-win = { path = "empty/clipboard-win" }
 cloudabi = { path = "empty/cloudabi"}
 core-foundation-sys = { path = "empty/core-foundation-sys" }
 crossterm_winapi = { path = "empty/crossterm_winapi" }
@@ -442,7 +443,6 @@ prettytable-rs = { path = "forks/prettytable-rs" }
 # Fork of `rapidhash` has quality benchmarks removed; see forks/rapidhash-1.4.0/README.fuchsia.
 rapidhash = { path = "forks/rapidhash-1.4.0" }
 ring = { path = "forks/ring-0.17.8" }
-rustyline = { path = "forks/rustyline" }
 semver = { path = "forks/semver-1.0.28" }
 tracing-core = { path = "forks/tracing-core" }
 tracing-mutex = { path = "forks/tracing-mutex-0.3.2" }
@@ -723,9 +723,6 @@ testonly = true
 [gn.package.md-5."0.10.6"]
 group_visibility = { import = "//third_party/rust_crates/visibility.gni", variable = "md5_visibility" }
 
-[gn.package.memoffset."0.7.1"]
-rustflags = ["--cfg=tuple_ty", "--cfg=allow_clippy", "--cfg=maybe_uninit", "--cfg=doctests", "--cfg=raw_ref_macros"]
-
 [gn.package.memoffset."0.9.1"]
 rustflags = ["--cfg=tuple_ty", "--cfg=allow_clippy", "--cfg=maybe_uninit", "--cfg=doctests", "--cfg=raw_ref_macros", "--cfg=stable_const", "--cfg=stable_offset_of"]
 
@@ -768,6 +765,31 @@ rustflags = [
 ]
 
 [gn.package.nix."0.29.0".platform."cfg(target_os = \"macos\")"]
+rustflags = [
+  "--cfg=apple_targets",
+  "--cfg=bsd",
+  "--cfg=macos",
+]
+
+[gn.package.nix."0.31.3"]
+group_visibility = { import = "//src/lib/fuchsia_nix/nix_visibility.gni", variable = "nix_visibility" }
+visibility = [
+  "//third_party/rust_crates/compat/icu:*",":*"]
+
+[gn.package.nix."0.31.3".platform."cfg(target_os = \"linux\")"]
+rustflags = [
+  "--cfg=linux",
+  "--cfg=linux_android",
+]
+
+[gn.package.nix."0.31.3".platform."cfg(target_os = \"freebsd\")"]
+rustflags = [
+  "--cfg=bsd",
+  "--cfg=freebsd",
+  "--cfg=freebsdlike",
+]
+
+[gn.package.nix."0.31.3".platform."cfg(target_os = \"macos\")"]
 rustflags = [
   "--cfg=apple_targets",
   "--cfg=bsd",

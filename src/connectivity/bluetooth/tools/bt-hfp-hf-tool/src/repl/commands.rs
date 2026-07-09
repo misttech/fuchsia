@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use rustyline::Helper;
 use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
+use rustyline::validate::Validator;
+use rustyline::{Context, Helper};
 use std::borrow::Cow::{self, Borrowed, Owned};
 use std::fmt;
 use std::str::FromStr;
@@ -223,7 +224,12 @@ impl CommandHelper {
 impl Completer for CommandHelper {
     type Candidate = String;
 
-    fn complete(&self, line: &str, _pos: usize) -> Result<(usize, Vec<String>), ReadlineError> {
+    fn complete(
+        &self,
+        line: &str,
+        _pos: usize,
+        _ctx: &Context<'_>,
+    ) -> Result<(usize, Vec<String>), ReadlineError> {
         let mut variants = Vec::new();
         for variant in Command::variants() {
             if variant.starts_with(line) {
@@ -235,8 +241,10 @@ impl Completer for CommandHelper {
 }
 
 impl Hinter for CommandHelper {
+    type Hint = String;
+
     /// CommandHelper provides hints for commands with arguments
-    fn hint(&self, line: &str, _pos: usize) -> Option<String> {
+    fn hint(&self, line: &str, _pos: usize, _ctx: &Context<'_>) -> Option<String> {
         let needs_space = !line.ends_with(" ");
         line.trim()
             .parse::<Command>()
@@ -256,8 +264,19 @@ impl Highlighter for CommandHelper {
     }
 }
 
+impl Validator for CommandHelper {}
+
 /// CommandHelper can be used as an `Editor` helper for entering input commands
 impl Helper for CommandHelper {}
+
+#[cfg(test)]
+impl CommandHelper {
+    fn complete(&self, line: &str, pos: usize) -> Result<(usize, Vec<String>), ReadlineError> {
+        let history = rustyline::history::DefaultHistory::new();
+        let ctx = Context::new(&history);
+        Completer::complete(self, line, pos, &ctx)
+    }
+}
 
 #[cfg(test)]
 mod tests {

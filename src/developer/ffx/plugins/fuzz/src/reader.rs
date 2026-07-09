@@ -11,6 +11,7 @@ use fuchsia_async as fasync;
 use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt};
 use rustyline::error::ReadlineError;
+use rustyline::history::DefaultHistory;
 use rustyline::{CompletionType, Config, Editor};
 use std::sync::{Arc, Mutex};
 use std::{io, thread};
@@ -166,7 +167,8 @@ async fn shell_read_loop(
 ) {
     let config =
         Config::builder().history_ignore_space(true).completion_type(CompletionType::List).build();
-    let mut editor = Editor::with_config(config);
+    let mut editor =
+        Editor::<FuzzHelper, DefaultHistory>::with_config(config).expect("failed to create editor");
     let _ = editor.load_history("/tmp/fuzz_history");
     {
         let mut history_mut = history.lock().unwrap();
@@ -186,7 +188,7 @@ async fn shell_read_loop(
                     Ok(line) => match parse(&line) {
                         ParsedCommand::Empty => ParsedCommand::Empty,
                         other => {
-                            editor.add_history_entry(&line);
+                            let _ = editor.add_history_entry(&line);
                             let _ = editor.save_history("/tmp/fuzz_history");
                             let mut history_mut = history.lock().unwrap();
                             history_mut.push(line);

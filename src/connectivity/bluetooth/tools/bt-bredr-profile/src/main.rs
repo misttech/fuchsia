@@ -18,6 +18,7 @@ use futures::channel::oneshot;
 use futures::lock::Mutex;
 use futures::{FutureExt, Sink, SinkExt, Stream, StreamExt, TryStreamExt, select};
 use rustyline::error::ReadlineError;
+use rustyline::history::DefaultHistory;
 use rustyline::{CompletionType, Config, Editor};
 use std::sync::Arc;
 use std::thread;
@@ -488,7 +489,7 @@ fn cmd_stream() -> (impl Stream<Item = String>, impl Sink<(), Error = SendError>
                 .history_ignore_space(true)
                 .completion_type(CompletionType::List)
                 .build();
-            let mut rl = Editor::<CmdHelper>::with_config(config);
+            let mut rl = Editor::<CmdHelper, DefaultHistory>::with_config(config)?;
             rl.set_helper(Some(CmdHelper::new()));
 
             loop {

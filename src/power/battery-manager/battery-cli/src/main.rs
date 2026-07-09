@@ -5,19 +5,19 @@
 mod commands;
 use crate::commands::{CmdHelper, Command, ReplControl};
 use anyhow::{Error, format_err};
+use fidl_fuchsia_power_battery as fpower;
+use fidl_fuchsia_power_battery_test as spower;
 use fidl_fuchsia_power_battery_test::BatterySimulatorProxy;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use futures::channel::mpsc::{SendError, channel};
 use futures::{Sink, SinkExt, Stream, StreamExt, TryFutureExt};
 use rustyline::error::ReadlineError;
+use rustyline::history::DefaultHistory;
 use rustyline::{CompletionType, Config, EditMode, Editor};
 use std::pin::pin;
 use std::time::Duration;
 use std::{fmt, thread};
-use {
-    fidl_fuchsia_power_battery as fpower, fidl_fuchsia_power_battery_test as spower,
-    fuchsia_async as fasync,
-};
 
 static PROMPT: &str = "\x1b[34mbattman>\x1b[0m ";
 
@@ -309,7 +309,7 @@ fn cmd_stream() -> (impl Stream<Item = String>, impl Sink<(), Error = SendError>
                 .completion_type(CompletionType::List)
                 .edit_mode(EditMode::Vi)
                 .build();
-            let mut rl: Editor<CmdHelper> = Editor::with_config(config);
+            let mut rl: Editor<CmdHelper, DefaultHistory> = Editor::with_config(config)?;
             // Add tab completion
             let c = CmdHelper::new();
             rl.set_helper(Some(c));

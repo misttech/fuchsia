@@ -11,6 +11,7 @@ use futures::channel::mpsc::{SendError, channel};
 use futures::{FutureExt, Sink, SinkExt, Stream, StreamExt, TryStreamExt, try_join};
 use log::info;
 use rustyline::error::ReadlineError;
+use rustyline::history::DefaultHistory;
 use rustyline::{CompletionType, Config, EditMode, Editor};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -297,7 +298,7 @@ fn cmd_stream() -> (impl Stream<Item = String>, impl Sink<(), Error = SendError>
                 .completion_type(CompletionType::List)
                 .edit_mode(EditMode::Emacs)
                 .build();
-            let mut rl: Editor<CmdHelper> = Editor::with_config(config);
+            let mut rl: Editor<CmdHelper, DefaultHistory> = Editor::with_config(config)?;
             rl.set_helper(Some(CmdHelper::new()));
             loop {
                 let readline = rl.readline(PROMPT);

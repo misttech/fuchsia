@@ -7,6 +7,7 @@ use fuchsia_async as fasync;
 use futures::channel::mpsc::{SendError, channel};
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use rustyline::error::ReadlineError;
+use rustyline::history::DefaultHistory;
 use rustyline::{CompletionType, Config, EditMode, Editor};
 use std::thread;
 
@@ -70,7 +71,7 @@ impl Runner {
                     .edit_mode(EditMode::Emacs)
                     .build();
                 let c = CommandHelper::new();
-                let mut rl: Editor<CommandHelper> = Editor::with_config(config);
+                let mut rl: Editor<CommandHelper, DefaultHistory> = Editor::with_config(config)?;
                 rl.set_helper(Some(c));
                 loop {
                     let readline = rl.readline(PROMPT);

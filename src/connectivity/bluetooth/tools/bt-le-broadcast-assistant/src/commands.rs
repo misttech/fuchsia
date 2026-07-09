@@ -4,11 +4,12 @@
 
 use bt_broadcast_assistant::debug::AssistantCmd;
 use bt_common::debug_command::CommandSet;
-use rustyline::Helper;
 use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
+use rustyline::validate::Validator;
+use rustyline::{Context, Helper};
 use std::borrow::Cow::{self, Borrowed, Owned};
 use std::fmt;
 use std::str::FromStr;
@@ -105,7 +106,12 @@ impl CmdHelper {
 impl Completer for CmdHelper {
     type Candidate = String;
 
-    fn complete(&self, line: &str, _pos: usize) -> Result<(usize, Vec<String>), ReadlineError> {
+    fn complete(
+        &self,
+        line: &str,
+        _pos: usize,
+        _ctx: &Context<'_>,
+    ) -> Result<(usize, Vec<String>), ReadlineError> {
         let mut variants = Cmd::variants();
         variants.extend(AssistantCmd::variants());
         let mut unique_variants: Vec<String> = variants.into_iter().collect();
@@ -123,8 +129,10 @@ impl Completer for CmdHelper {
 }
 
 impl Hinter for CmdHelper {
+    type Hint = String;
+
     /// CmdHelper provides hints for commands with arguments
-    fn hint(&self, line: &str, _pos: usize) -> Option<String> {
+    fn hint(&self, line: &str, _pos: usize, _ctx: &Context<'_>) -> Option<String> {
         let needs_space = !line.ends_with(' ');
         let trimmed_line = line.trim();
 
@@ -160,13 +168,23 @@ impl Highlighter for CmdHelper {
     }
 }
 
+impl Validator for CmdHelper {}
+
 /// CmdHelper can be used as an `Editor` helper for entering input commands
 impl Helper for CmdHelper {}
 
 #[cfg(test)]
+impl CmdHelper {
+    fn complete(&self, line: &str, pos: usize) -> Result<(usize, Vec<String>), ReadlineError> {
+        let history = rustyline::history::DefaultHistory::new();
+        let ctx = Context::new(&history);
+        Completer::complete(self, line, pos, &ctx)
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
-    use rustyline::completion::Completer;
 
     #[test]
     fn test_cmd_variants() {

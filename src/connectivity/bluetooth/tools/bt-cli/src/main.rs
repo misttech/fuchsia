@@ -19,6 +19,7 @@ use futures::{FutureExt, Sink, SinkExt, Stream, StreamExt, TryFutureExt, select}
 use prettytable::{Row, Table, cell, format, row};
 use regex::Regex;
 use rustyline::error::ReadlineError;
+use rustyline::history::DefaultHistory;
 use rustyline::{CompletionType, Config, EditMode, Editor};
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -648,7 +649,7 @@ fn cmd_stream(
                 .edit_mode(EditMode::Emacs)
                 .build();
             let c = CmdHelper::new(state);
-            let mut rl: Editor<CmdHelper> = Editor::with_config(config);
+            let mut rl: Editor<CmdHelper, DefaultHistory> = Editor::with_config(config)?;
             rl.set_helper(Some(c));
             loop {
                 let readline = rl.readline(PROMPT);

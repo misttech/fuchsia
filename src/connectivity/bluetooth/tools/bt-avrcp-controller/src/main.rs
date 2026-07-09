@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use argh::FromArgs;
 use fidl::endpoints::create_endpoints;
 use fidl_fuchsia_bluetooth_avrcp::{
     self as fidl_avrcp, AttributeRequestOption, BrowseControllerMarker, BrowseControllerProxy,
-    ControllerEvent, ControllerEventStream, ControllerMarker, ControllerProxy, MediaAttributeId,
-    Notifications, PeerManagerMarker, PlayerApplicationSettingAttributeId, MAX_ATTRIBUTES,
+    ControllerEvent, ControllerEventStream, ControllerMarker, ControllerProxy, MAX_ATTRIBUTES,
+    MediaAttributeId, Notifications, PeerManagerMarker, PlayerApplicationSettingAttributeId,
 };
 use fidl_fuchsia_bluetooth_avrcp_test::{
     BrowseControllerExtMarker, BrowseControllerExtProxy, ControllerExtMarker, ControllerExtProxy,
@@ -17,16 +17,17 @@ use fidl_fuchsia_bluetooth_avrcp_test::{
 use fuchsia_async as fasync;
 use fuchsia_bluetooth::types::PeerId;
 use fuchsia_component::client::connect_to_protocol;
-use futures::channel::mpsc::{channel, SendError};
-use futures::{select, FutureExt, Sink, SinkExt, Stream, StreamExt, TryStreamExt};
+use futures::channel::mpsc::{SendError, channel};
+use futures::{FutureExt, Sink, SinkExt, Stream, StreamExt, TryStreamExt, select};
 use hex::FromHex;
 use rustyline::error::ReadlineError;
+use rustyline::history::DefaultHistory;
 use rustyline::{CompletionType, Config, EditMode, Editor};
 use std::pin::pin;
 use std::str::FromStr as _;
 use std::thread;
 
-use crate::commands::{avc_match_string, Cmd, CmdHelper, ReplControl};
+use crate::commands::{Cmd, CmdHelper, ReplControl, avc_match_string};
 
 mod commands;
 
@@ -90,14 +91,13 @@ async fn get_folder_items_with_attrs<'a>(
                 let mut attributes = vec![];
                 for a in attrs {
                     let raw_attr = a.parse::<u32>()?;
-                    attributes.push(MediaAttributeId::from_primitive(raw_attr).ok_or_else(
-                        || {
-                            format_err!(
+                    attributes
+                        .push(MediaAttributeId::from_primitive(raw_attr).ok_or_else(|| {
+                        format_err!(
                             "Invalid MediaAttributeId value: {:?}. Valid value range is [1 - 8]",
                             raw_attr,
                         )
-                        },
-                    )?);
+                    })?);
                 }
                 AttributeRequestOption::AttributeList(attributes)
             }
@@ -468,7 +468,7 @@ fn cmd_stream() -> (impl Stream<Item = String>, impl Sink<(), Error = SendError>
                 .completion_type(CompletionType::List)
                 .edit_mode(EditMode::Emacs)
                 .build();
-            let mut rl: Editor<CmdHelper> = Editor::with_config(config);
+            let mut rl: Editor<CmdHelper, DefaultHistory> = Editor::with_config(config)?;
             rl.set_helper(Some(CmdHelper::new()));
             loop {
                 let readline = rl.readline(PROMPT);

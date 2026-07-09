@@ -89,6 +89,29 @@ CRATE_ANNOTATIONS = {
                 },
             ),
         ),
+        crate.annotation(
+            version = "0.31.3",
+            gen_build_script = False,
+            rustc_flags = crate.select(
+                common = [],
+                selects = {
+                    "@platforms//os:linux": [
+                        "--cfg=linux",
+                        "--cfg=linux_android",
+                    ],
+                    "@platforms//os:freebsd": [
+                        "--cfg=bsd",
+                        "--cfg=freebsd",
+                        "--cfg=freebsdlike",
+                    ],
+                    "@platforms//os:macos": [
+                        "--cfg=apple_targets",
+                        "--cfg=bsd",
+                        "--cfg=macos",
+                    ],
+                },
+            ),
+        ),
     ],
     "tokio": [
         crate.annotation(

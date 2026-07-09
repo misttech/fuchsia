@@ -6,12 +6,12 @@ use crate::options;
 use anyhow::Result;
 use ffx_fuzz_args::*;
 use fuchsia_fuzzctl_fdomain::get_fuzzer_urls;
-use rustyline::Helper;
 use rustyline::completion::{Completer, FilenameCompleter, Pair};
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
-use std::borrow::Cow::{self, Borrowed};
+use rustyline::validate::Validator;
+use rustyline::{Context, Helper};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -29,7 +29,12 @@ pub struct FuzzHelper {
 
 impl Completer for FuzzHelper {
     type Candidate = Pair;
-    fn complete(&self, line: &str, _pos: usize) -> Result<(usize, Vec<Pair>), ReadlineError> {
+    fn complete(
+        &self,
+        line: &str,
+        _pos: usize,
+        ctx: &Context<'_>,
+    ) -> Result<(usize, Vec<Pair>), ReadlineError> {
         // First, complete commands.
         let (command, token) = self.split(line);
         let command = match command {
@@ -51,7 +56,7 @@ impl Completer for FuzzHelper {
         // If the token is expected to be a file or path, use the filename completer.
         match expected {
             Some(ParameterType::Input) | Some(ParameterType::Path) => {
-                if let Ok((_, paths)) = self.file_completer.complete(line, line.len()) {
+                if let Ok((_, paths)) = self.file_completer.complete(line, line.len(), ctx) {
                     pairs.extend(paths);
                 }
             }
@@ -214,18 +219,26 @@ fn trim_replacements(token: &Option<String>, pairs: Vec<Pair>) -> Vec<Pair> {
 }
 
 impl Hinter for FuzzHelper {
-    fn hint(&self, _line: &str, _pos: usize) -> Option<String> {
+    type Hint = String;
+    fn hint(&self, _line: &str, _pos: usize, _ctx: &Context<'_>) -> Option<String> {
         None
     }
 }
 
-impl Highlighter for FuzzHelper {
-    fn highlight_prompt<'p>(&self, prompt: &'p str) -> Cow<'p, str> {
-        Borrowed(prompt)
-    }
-}
+impl Highlighter for FuzzHelper {}
+
+impl Validator for FuzzHelper {}
 
 impl Helper for FuzzHelper {}
+
+#[cfg(test)]
+impl FuzzHelper {
+    pub fn complete(&self, line: &str, pos: usize) -> Result<(usize, Vec<Pair>), ReadlineError> {
+        let history = rustyline::history::DefaultHistory::new();
+        let ctx = Context::new(&history);
+        Completer::complete(self, line, pos, &ctx)
+    }
+}
 
 // Keep this function in sync with the arg types, and verify through tests!
 fn get_parameter_types(
@@ -259,7 +272,7 @@ mod test_fixtures {
     use anyhow::{Context as _, Result};
     use ffx_fuzz_args::FuzzerState;
     use fuchsia_fuzzctl_test_fdomain::Test;
-    use rustyline::completion::{Completer, Pair};
+    use rustyline::completion::Pair;
     use std::sync::{Arc, Mutex};
 
     /// Represents replacement strings when auto-completing. Typically, the replacement is just
@@ -337,7 +350,6 @@ mod tests {
     use anyhow::Result;
     use ffx_fuzz_args::FuzzerState;
     use fuchsia_fuzzctl_test_fdomain::Test;
-    use rustyline::completion::Completer;
     use std::sync::{Arc, Mutex};
 
     #[fuchsia::test]
