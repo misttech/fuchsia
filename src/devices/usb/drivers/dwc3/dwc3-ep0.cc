@@ -86,6 +86,7 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
       // Control Endpoint stall is cleared upon receiving SETUP.
       ep0_.out.stalled = false;
 
+      CacheFlushInvalidate(ep0_.buffer.get(), 0, ep0_.buffer->size());
       memcpy(&ep0_.cur_setup, ep0_.buffer->virt(), sizeof(ep0_.cur_setup));
 
       fdf::debug("got setup: type: 0x{:02x} req: {} value: {} index: {} length: {}",
@@ -105,7 +106,6 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
       // through the stack. For all in-type transfers, the stack generates in-data, and then
       // transfers it to the host.
       if (is_out) {
-        CacheFlushInvalidate(ep0_.buffer.get(), 0, ep0_.buffer->size());
         ep0_.cur_transfer_len = ep0_.buffer->size();
         EpStartTransfer(ep0_.out, ep0_.shared_fifo, TRB_TRBCTL_CONTROL_DATA, ep0_.buffer->phys(),
                         ep0_.buffer->size());
@@ -124,7 +124,11 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
         // unexpected DataIn packet from the host. To recover, gracefully stall and reset the
         // transfer.
 
-        fdf::warn("host/target data direction disagreement, expected data-out, got data-in");
+        fdf::warn(
+            "host/target data direction disagreement, expected data-out, got data-in "
+            "(cur_setup: req_type=0x{:02x}, req=0x{:02x}, val=0x{:04x}, idx=0x{:04x}, len={})",
+            ep0_.cur_setup.bm_request_type, ep0_.cur_setup.b_request, ep0_.cur_setup.w_value,
+            ep0_.cur_setup.w_index, ep0_.cur_setup.w_length);
         Ep0EndAndStall(ep0_.out);
         Ep0QueueSetup();
         break;
@@ -134,13 +138,18 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
       ep0_.out.total_transfers++;
       ep0_.out.total_bytes += received;
       ep0_.state = Ep0::State::WaitNrdyIn;
+      CacheFlushInvalidate(ep0_.buffer.get(), 0, ep0_.buffer->size());
       HandleEp0Setup(received);
       break;
     }
     case Ep0::State::DataIn: {
       if (ep_num != kEp0In) {
         // See above, but reverse the directionality for a control-read.
-        fdf::warn("host/target data direction disagreement, expected data-in, got data-out");
+        fdf::warn(
+            "host/target data direction disagreement, expected data-in, got data-out "
+            "(cur_setup: req_type=0x{:02x}, req=0x{:02x}, val=0x{:04x}, idx=0x{:04x}, len={})",
+            ep0_.cur_setup.bm_request_type, ep0_.cur_setup.b_request, ep0_.cur_setup.w_value,
+            ep0_.cur_setup.w_index, ep0_.cur_setup.w_length);
         Ep0EndAndStall(ep0_.in);
         Ep0QueueSetup();
         break;
