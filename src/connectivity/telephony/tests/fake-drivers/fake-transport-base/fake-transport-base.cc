@@ -119,7 +119,7 @@ zx_status_t Device::SetAsyncWait() {
   return status;
 }
 
-zx_status_t Device::EventLoopCleanup() { return ctrl_channel_port_.cancel(ctrl_channel_, 0); }
+zx_status_t Device::EventLoopCleanup() { return ctrl_channel_port_.cancel_key(0u, 0); }
 
 void Device::Release() { delete this; }
 
