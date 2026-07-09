@@ -392,6 +392,26 @@ async fn write_rfcomm(state: Arc<Mutex<ProfileState>>, args: &Vec<String>) -> Re
     state.lock().await.rfcomm.send_user_data(peer_id, server_channel, bytes)
 }
 
+async fn write_large_rfcomm(
+    state: Arc<Mutex<ProfileState>>,
+    args: &Vec<String>,
+) -> Result<(), Error> {
+    if args.len() != 2 {
+        return Err(anyhow!("Invalid number of arguments"));
+    }
+
+    let peer_id: PeerId = args[0].parse()?;
+    let server_channel =
+        args[1].parse::<u8>().map_err(|_| anyhow!("Server channel must be a u8"))?;
+    let server_channel = ServerChannel::try_from(server_channel)?;
+    // Arbitrary payload of size 900. Just a bunch of "a" chars.
+    let bytes: Vec<u8> = vec![b'a'; 900];
+    for _i in 0..10 {
+        state.lock().await.rfcomm.send_user_data(peer_id, server_channel, bytes.clone())?;
+    }
+    Ok(())
+}
+
 async fn cleanup(state: Arc<Mutex<ProfileState>>) {
     state.lock().await.reset();
 }
@@ -436,6 +456,7 @@ async fn handle_cmd(
         Cmd::SendRls => send_rls(state.clone(), &args).await?,
         Cmd::WriteL2cap => write_l2cap(state.clone(), &args).await?,
         Cmd::WriteRfcomm => write_rfcomm(state.clone(), &args).await?,
+        Cmd::WriteLargeRfcomm => write_large_rfcomm(state.clone(), &args).await?,
         Cmd::Help => println!("{}", Cmd::help_msg()),
         Cmd::Exit | Cmd::Quit => {
             cleanup(state.clone()).await;

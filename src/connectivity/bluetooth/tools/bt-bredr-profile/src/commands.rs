@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use rustyline::Helper;
 use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
-use rustyline::Helper;
 use std::borrow::Cow::{self, Borrowed, Owned};
 use std::fmt;
 use std::str::FromStr;
@@ -112,6 +112,9 @@ gen_commands! {
         WriteRfcomm = ("write-rfcomm", ["peer-id", "channel-id", "data"],
                 "\n\t\tWrite 'data' on the RFCOMM channel represented by 'server-channel'\n\n\
                  \t\tExample: write 028565803f1368b2 1 myexampleuserdata"),
+        WriteLargeRfcomm = ("write-large-rfcomm", ["peer-id", "channel-id"],
+                 "\n\t\tWrite a fixed data buf on the RFCOMM channel represented by 'server-channel'\n\n\
+                  \t\tExample: write-large-rfcomm 028565803f1368b2 1"),
         Help = ("help", [], "Print command help"),
         Exit = ("exit", [], "Remove all services, close all channels, and exit the REPL."),
         Quit = ("quit", [], "Alias for 'exit'."),
