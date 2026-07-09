@@ -159,6 +159,13 @@ Extra aliases to make for specific wheels in the hub repo. This is useful when
 paired with the {attr}`whl_modifications`.
 
 :::{versionadded} 0.38.0
+
+For `pip.parse` with bzlmod
+:::
+
+:::{versionadded} 1.0.0
+
+For `pip_parse` with workspace.
 :::
 """,
         mandatory = False,
@@ -210,7 +217,7 @@ If True, suppress printing stdout and stderr output to the terminal.
 If you would like to get more diagnostic output, set
 {envvar}`RULES_PYTHON_REPO_DEBUG=1 <RULES_PYTHON_REPO_DEBUG>`
 or
-{envvar}`RULES_PYTHON_REPO_DEBUG_VERBOSITY=<INFO|DEBUG|TRACE> <RULES_PYTHON_REPO_DEBUG_VERBOSITY>`
+{envvar}`RULES_PYTHON_REPO_DEBUG_VERBOSITY=INFO|DEBUG|TRACE <RULES_PYTHON_REPO_DEBUG_VERBOSITY>`
 """,
     ),
     # 600 is documented as default here: https://docs.bazel.build/versions/master/skylark/lib/repository_ctx.html#execute
@@ -233,7 +240,7 @@ def use_isolated(ctx, attr):
     use_isolated = attr.isolated
 
     # The environment variable will take precedence over the attribute
-    isolated_env = ctx.os.environ.get("RULES_PYTHON_PIP_ISOLATED", None)
+    isolated_env = ctx.getenv("RULES_PYTHON_PIP_ISOLATED", None)
     if isolated_env != None:
         if isolated_env.lower() in ("0", "false"):
             use_isolated = False

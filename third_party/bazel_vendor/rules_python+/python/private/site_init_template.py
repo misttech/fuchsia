@@ -26,6 +26,8 @@ _WORKSPACE_NAME = "%workspace_name%"
 _SELF_RUNFILES_RELATIVE_PATH = "%site_init_runfiles_path%"
 # Runfiles-relative path to the coverage tool entry point, if any.
 _COVERAGE_TOOL = "%coverage_tool%"
+# True if the runfiles root should be added to sys.path
+_ADD_RUNFILES_ROOT_TO_SYS_PATH = "%add_runfiles_root_to_sys_path%" == "1"
 
 
 def _is_verbose():
@@ -125,6 +127,9 @@ def _search_path(name):
 
 
 def _setup_sys_path():
+    """Perform Bazel/binary specific sys.path setup.
+
+    """
     seen = set(sys.path)
     python_path_entries = []
 
@@ -138,6 +143,17 @@ def _setup_sys_path():
         _print_verbose("append sys.path:", path)
         sys.path.append(path)
         seen.add(path)
+
+    # Adding the runfiles root to sys.path is a legacy behavior that will be
+    # removed. We don't want to add it to sys.path for two reasons:
+    # 1. Under workspace, it makes every external repository importable. If a Bazel
+    #    repository matches a Python import name, they conflict.
+    # 2. Under bzlmod, the repo names in the runfiles directory aren't importable
+    #    Python names, so there's no point in adding the runfiles root to sys.path.
+    # For temporary compatibility with the original system_python bootstrap
+    # behavior, it is conditionally added for that boostrap mode.
+    if _ADD_RUNFILES_ROOT_TO_SYS_PATH:
+        _maybe_add_path(_RUNFILES_ROOT)
 
     for rel_path in _IMPORTS_STR.split(":"):
         abs_path = os.path.join(_RUNFILES_ROOT, rel_path)
@@ -194,6 +210,28 @@ def _setup_sys_path():
 
     return coverage_setup
 
+
+def _fixup_sys_base_executable():
+    """Fixup sys._base_executable to account for Bazel-specific pyvenv.cfg
+
+    The pyvenv.cfg created for py_binary leaves the `home` key unset. A
+    side-effect of this is `sys._base_executable` points to the venv executable,
+    not the actual executable. This mostly doesn't matter, but does affect
+    using the venv module to create venvs (they point to the venv executable, not
+    the actual executable).
+    """
+    # Must have been set correctly?
+    if sys.executable != sys._base_executable:
+        return
+    # Not in a venv, so don't touch anything.
+    if sys.prefix == sys.base_prefix:
+        return
+    exe = os.path.realpath(sys.executable)
+    _print_verbose("setting sys._base_executable:", exe)
+    sys._base_executable = exe
+
+
+_fixup_sys_base_executable()
 
 COVERAGE_SETUP = _setup_sys_path()
 _print_verbose("DONE")

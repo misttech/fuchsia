@@ -68,12 +68,12 @@ def _compile(options: "argparse.Namespace") -> None:
 # A stub type alias for readability.
 # See the Bazel WorkRequest object definition:
 # https://github.com/bazelbuild/bazel/blob/master/src/main/protobuf/worker_protocol.proto
-JsonWorkerRequest = object
+JsonWorkRequest = object
 
 # A stub type alias for readability.
 # See the Bazel WorkResponse object definition:
 # https://github.com/bazelbuild/bazel/blob/master/src/main/protobuf/worker_protocol.proto
-JsonWorkerResponse = object
+JsonWorkResponse = object
 
 
 class _SerialPersistentWorker:
@@ -214,7 +214,7 @@ class _AsyncPersistentWorker:
             # We don't send a response because we assume the request that
             # triggered cancelling sent the response
             raise
-        except:
+        except Exception:
             _logger.exception("Unhandled error: request=%s", request)
             self._send_response(
                 {

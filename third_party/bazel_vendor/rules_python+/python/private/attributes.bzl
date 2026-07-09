@@ -17,14 +17,12 @@ load("@bazel_skylib//lib:dicts.bzl", "dicts")
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load(":attr_builders.bzl", "attrb")
+load(":common_labels.bzl", "labels")
 load(":enum.bzl", "enum")
 load(":flags.bzl", "PrecompileFlag", "PrecompileSourceRetentionFlag")
 load(":py_info.bzl", "PyInfo")
-load(":py_internal.bzl", "py_internal")
 load(":reexports.bzl", "BuiltinPyInfo")
 load(":rule_builders.bzl", "ruleb")
-
-_PackageSpecificationInfo = getattr(py_internal, "PackageSpecificationInfo", None)
 
 # Due to how the common exec_properties attribute works, rules must add exec
 # groups even if they don't actually use them. This is due to two interactions:
@@ -44,12 +42,6 @@ REQUIRED_EXEC_GROUP_BUILDERS = {
     # This exec group is defined by rules_cc for the cc rules.
     "cpp_link": lambda: ruleb.ExecGroup(),
     "py_precompile": lambda: ruleb.ExecGroup(),
-}
-
-# Backwards compatibility symbol for Google.
-REQUIRED_EXEC_GROUPS = {
-    k: v().build()
-    for k, v in REQUIRED_EXEC_GROUP_BUILDERS.items()
 }
 
 _STAMP_VALUES = [-1, 0, 1]
@@ -156,12 +148,6 @@ def copy_common_test_kwargs(kwargs):
         if key in kwargs
     }
 
-CC_TOOLCHAIN = {
-    # NOTE: The `cc_helper.find_cpp_toolchain()` function expects the attribute
-    # name to be this name.
-    "_cc_toolchain": attr.label(default = "@bazel_tools//tools/cpp:current_cc_toolchain"),
-}
-
 # The common "data" attribute definition.
 DATA_ATTRS = {
     # NOTE: The "flags" attribute is deprecated, but there isn't an alternative
@@ -179,33 +165,9 @@ This is because Python has a concept of runtime resources.
     ),
 }
 
-def _create_native_rules_allowlist_attrs():
-    if py_internal:
-        # The fragment and name are validated when configuration_field is called
-        default = configuration_field(
-            fragment = "py",
-            name = "native_rules_allowlist",
-        )
-
-        # A None provider isn't allowed
-        providers = [_PackageSpecificationInfo]
-    else:
-        default = None
-        providers = []
-
-    return {
-        "_native_rules_allowlist": lambda: attrb.Label(
-            default = default,
-            providers = providers,
-        ),
-    }
-
-NATIVE_RULES_ALLOWLIST_ATTRS = _create_native_rules_allowlist_attrs()
-
 # Attributes common to all rules.
 COMMON_ATTRS = dicts.add(
     DATA_ATTRS,
-    NATIVE_RULES_ALLOWLIST_ATTRS,
     # buildifier: disable=attr-licenses
     {
         # NOTE: This attribute is deprecated and slated for removal.
@@ -227,7 +189,14 @@ List of import directories to be added to the PYTHONPATH.
 Subject to "Make variable" substitution. These import directories will be added
 for this rule and all rules that depend on it (note: not the rules this rule
 depends on. Each directory will be added to `PYTHONPATH` by `py_binary` rules
-that depend on this rule. The strings are repo-runfiles-root relative,
+that depend on this rule.
+
+The values are target-directory-relative runfiles-root paths. e.g. given target
+`//foo/bar:baz`, `sys.path` will be affected as:
+* `a/b` adds `$runfilesRoot/$repo/foo/bar/a/b`
+* `../sibling` adds `$runfilesRoot/$repo/foo/sibling`
+* `../../` adds `$runfilesRoot/$repo`
+(where `$repo` is the name of the repository containing the target).
 
 Absolute paths (paths that start with `/`) and paths that references a path
 above the execution root are not allowed and will result in an error.
@@ -260,7 +229,7 @@ The order of this list can matter because it affects the order that information
 from dependencies is merged in, which can be relevant depending on the ordering
 mode of depsets that are merged.
 
-* {obj}`PyInfo.site_packages_symlinks` uses topological ordering.
+* {obj}`PyInfo.venv_symlinks` uses default ordering.
 
 See {obj}`PyInfo` for more information about the ordering of its depsets and
 how its fields are merged.
@@ -376,11 +345,11 @@ files that may be needed at run time belong in `data`.
             doc = "Defunct, unused, does nothing.",
         ),
         "_precompile_flag": lambda: attrb.Label(
-            default = "//python/config_settings:precompile",
+            default = labels.PRECOMPILE,
             providers = [BuildSettingInfo],
         ),
         "_precompile_source_retention_flag": lambda: attrb.Label(
-            default = "//python/config_settings:precompile_source_retention",
+            default = labels.PRECOMPILE_SOURCE_RETENTION,
             providers = [BuildSettingInfo],
         ),
         # Force enabling auto exec groups, see
@@ -397,22 +366,96 @@ COVERAGE_ATTRS = {
     "_collect_cc_coverage": lambda: attrb.Label(
         default = "@bazel_tools//tools/test:collect_cc_coverage",
         executable = True,
-        cfg = "exec",
+        cfg = config.exec(exec_group = "test"),
     ),
     # Magic attribute to make coverage work. There's no
     # docs about this; see TestActionBuilder.java
     "_lcov_merger": lambda: attrb.Label(
         default = configuration_field(fragment = "coverage", name = "output_generator"),
         executable = True,
-        cfg = "exec",
+        cfg = config.exec(exec_group = "test"),
     ),
 }
 
 # Attributes specific to Python executable-equivalent rules. Such rules may not
 # accept Python sources (e.g. some packaged-version of a py_test/py_binary), but
 # still accept Python source-agnostic settings.
+CONFIG_SETTINGS_ATTR = {
+    "config_settings": lambda: attrb.LabelKeyedStringDict(
+        doc = """
+Config settings to change for this target.
+
+The keys are labels for settings, and the values are strings for the new value
+to use. Pass `Label` objects or canonical label strings for the keys to ensure
+they resolve as expected (canonical labels start with `@@` and can be
+obtained by calling `str(Label(...))`).
+
+Most `@rules_python//python/config_setting` settings can be used here, which
+allows, for example, making only a certain `py_binary` use
+{obj}`--bootstrap_impl=script`.
+
+Additional or custom config settings can be registered using the
+{obj}`add_transition_setting` API. This allows, for example, forcing a
+particular CPU, or defining a custom setting that `select()` uses elsewhere
+to pick between `pip.parse` hubs. See the [How to guide on multiple
+versions of a library] for a more concrete example.
+
+:::{important}
+Labels with package `command_line_option` are handled specially: they are treated
+as the Bazel-builtin `//command_line_option:<name>` psuedo-targets.
+
+e.g. `@foo//command_line_option:NAME` will attempt to transition
+the Bazel-builtin `//command_line_option:NAME` setting.
+
+See the {obj}`@rules_python//command_line_option` package for some predefined
+special targets, or define your own by putting them in your own `command_line_option`
+directory.
+:::
+
+:::{seealso}
+* {obj}`//command_line_option:build_runfile_links`
+* {obj}`//command_line_option:enable_runfiles`
+:::
+
+:::{note}
+These values are transitioned on, so will affect the analysis graph and the
+associated memory overhead. The more unique configurations in your overall
+build, the more memory and (often unnecessary) re-analysis and re-building
+can occur. See
+https://bazel.build/extending/config#memory-performance-considerations for
+more information about risks and considerations.
+:::
+
+:::{versionadded} 1.7.0
+:::
+""",
+    ),
+}
+
+def apply_config_settings_attr(settings, attr):
+    """Applies the config_settings attribute to the settings.
+
+    Args:
+        settings: The settings dict to modify in-place.
+        attr: The rule attributes struct.
+
+    Returns:
+        {type}`dict[str, object]` the input `settings` value.
+    """
+    for key, value in attr.config_settings.items():
+        if key.package == "command_line_option":
+            if value == "INHERIT":
+                continue
+            else:
+                str_key = "//command_line_option:" + key.name
+        else:
+            str_key = str(key)
+        settings[str_key] = value
+    return settings
+
 AGNOSTIC_EXECUTABLE_ATTRS = dicts.add(
     DATA_ATTRS,
+    CONFIG_SETTINGS_ATTR,
     {
         "env": lambda: attrb.StringDict(
             doc = """\
@@ -438,8 +481,20 @@ Whether to encode build information into the binary. Possible values:
 
 Stamped binaries are not rebuilt unless their dependencies change.
 
-WARNING: Stamping can harm build performance by reducing cache hits and should
+Stamped build information can accessed using the `bazel_binary_info` module.
+See the [Accessing build information docs] for more information.
+
+:::{warning}
+Stamping can harm build performance by reducing cache hits and should
 be avoided if possible.
+
+In addition, this transitions the {flag}`--stamp <stamp>` flag, which can additional
+config state overhead.
+:::
+
+:::{note}
+Stamping of build data output is always disabled for the exec config.
+:::
 """,
             default = -1,
         ),

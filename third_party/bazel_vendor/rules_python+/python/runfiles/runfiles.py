@@ -15,12 +15,129 @@
 """Runfiles lookup library for Bazel-built Python binaries and tests.
 
 See @rules_python//python/runfiles/README.md for usage instructions.
+
+:::{versionadded} 1.7.0
+Support for Bazel's `--incompatible_compact_repo_mapping_manifest` flag was added.
+This enables prefix-based repository mappings to reduce memory usage for large
+dependency graphs under bzlmod.
+:::
 """
+import collections.abc
 import inspect
 import os
 import posixpath
 import sys
+from collections import defaultdict
 from typing import Dict, Optional, Tuple, Union
+
+
+class _RepositoryMapping:
+    """Repository mapping for resolving apparent repository names to canonical ones.
+
+    Handles both exact mappings and prefix-based mappings introduced by the
+    --incompatible_compact_repo_mapping_manifest flag.
+    """
+
+    def __init__(
+        self,
+        exact_mappings: Dict[Tuple[str, str], str],
+        prefixed_mappings: Dict[Tuple[str, str], str],
+    ) -> None:
+        """Initialize repository mapping with exact and prefixed mappings.
+
+        Args:
+            exact_mappings: Dict mapping (source_canonical, target_apparent) -> target_canonical
+            prefixed_mappings: Dict mapping (source_prefix, target_apparent) -> target_canonical
+        """
+        self._exact_mappings = exact_mappings
+
+        # Group prefixed mappings by target_apparent for faster lookups
+        self._grouped_prefixed_mappings = defaultdict(list)
+        for (
+            prefix_source,
+            target_app,
+        ), target_canonical in prefixed_mappings.items():
+            self._grouped_prefixed_mappings[target_app].append(
+                (prefix_source, target_canonical)
+            )
+
+    @staticmethod
+    def create_from_file(repo_mapping_path: Optional[str]) -> "_RepositoryMapping":
+        """Create RepositoryMapping from a repository mapping manifest file.
+
+        Args:
+            repo_mapping_path: Path to the repository mapping file, or None if not available
+
+        Returns:
+            RepositoryMapping instance with parsed mappings
+        """
+        # If the repository mapping file can't be found, that is not an error: We
+        # might be running without Bzlmod enabled or there may not be any runfiles.
+        # In this case, just apply empty repo mappings.
+        if not repo_mapping_path:
+            return _RepositoryMapping({}, {})
+
+        try:
+            with open(repo_mapping_path, "r", encoding="utf-8", newline="\n") as f:
+                content = f.read()
+        except FileNotFoundError:
+            return _RepositoryMapping({}, {})
+
+        exact_mappings = {}
+        prefixed_mappings = {}
+        for line in content.splitlines():
+            source_canonical, target_apparent, target_canonical = line.split(",")
+            if source_canonical.endswith("*"):
+                # This is a prefixed mapping - remove the '*' for prefix matching
+                prefix = source_canonical[:-1]
+                prefixed_mappings[(prefix, target_apparent)] = target_canonical
+            else:
+                # This is an exact mapping
+                exact_mappings[(source_canonical, target_apparent)] = target_canonical
+
+        return _RepositoryMapping(exact_mappings, prefixed_mappings)
+
+    def lookup(self, source_repo: Optional[str], target_apparent: str) -> Optional[str]:
+        """Look up repository mapping for the given source and target.
+
+        This handles both exact mappings and prefix-based mappings introduced by the
+        --incompatible_compact_repo_mapping_manifest flag. Exact mappings are tried
+        first, followed by prefix-based mappings where order matters.
+
+        Args:
+            source_repo: Source canonical repository name
+            target_apparent: Target apparent repository name
+
+        Returns:
+            target_canonical repository name, or None if no mapping exists
+        """
+        if source_repo is None:
+            return None
+
+        key = (source_repo, target_apparent)
+
+        # Try exact mapping first
+        if key in self._exact_mappings:
+            return self._exact_mappings[key]
+
+        # Try prefixed mapping if no exact match found
+        if target_apparent in self._grouped_prefixed_mappings:
+            for prefix_source, target_canonical in self._grouped_prefixed_mappings[
+                target_apparent
+            ]:
+                if source_repo.startswith(prefix_source):
+                    return target_canonical
+
+        # No mapping found
+        return None
+
+    def is_empty(self) -> bool:
+        """Check if this repository mapping is empty (no exact or prefixed mappings).
+
+        Returns:
+            True if there are no mappings, False otherwise
+        """
+        return len(self._exact_mappings) == 0 and len(self._grouped_prefixed_mappings) == 0
 
 
 class _ManifestBased:
@@ -112,6 +229,9 @@ class _DirectoryBased:
         # runfiles strategy on those platforms.
         return posixpath.join(self._runfiles_root, path)
 
+    def _GetRunfilesDir(self) -> str:
+        return self._runfiles_root
+
     def EnvVars(self) -> Dict[str, str]:
         return {
             "RUNFILES_DIR": self._runfiles_root,
@@ -129,8 +249,8 @@ class Runfiles:
 
     def __init__(self, strategy: Union[_ManifestBased, _DirectoryBased]) -> None:
         self._strategy = strategy
-        self._python_runfiles_root = _FindPythonRunfilesRoot()
-        self._repo_mapping = _ParseRepoMapping(
+        self._python_runfiles_root = strategy._GetRunfilesDir()
+        self._repo_mapping = _RepositoryMapping.create_from_file(
             strategy.RlocationChecked("_repo_mapping")
         )
 
@@ -179,7 +299,7 @@ class Runfiles:
         if os.path.isabs(path):
             return path
 
-        if source_repo is None and self._repo_mapping:
+        if source_repo is None and not self._repo_mapping.is_empty():
             # Look up runfiles using the repository mapping of the caller of the
             # current method. If the repo mapping is empty, determining this
             # name is not necessary.
@@ -188,7 +308,8 @@ class Runfiles:
         # Split off the first path component, which contains the repository
         # name (apparent or canonical).
         target_repo, _, remainder = path.partition("/")
-        if not remainder or (source_repo, target_repo) not in self._repo_mapping:
+        target_canonical = self._repo_mapping.lookup(source_repo, target_repo)
+        if not remainder or target_canonical is None:
             # One of the following is the case:
             # - not using Bzlmod, so the repository mapping is empty and
             #   apparent and canonical repository names are the same
@@ -202,11 +323,15 @@ class Runfiles:
             source_repo is not None
         ), "BUG: if the `source_repo` is None, we should never go past the `if` statement above"
 
-        # target_repo is an apparent repository name. Look up the corresponding
-        # canonical repository name with respect to the current repository,
-        # identified by its canonical name.
-        target_canonical = self._repo_mapping[(source_repo, target_repo)]
-        return self._strategy.RlocationChecked(target_canonical + "/" + remainder)
+        # Look up the target repository using the repository mapping
+        if target_canonical is not None:
+            return self._strategy.RlocationChecked(
+                target_canonical + "/" + remainder
+            )
+
+        # No mapping found - assume target_repo is already canonical or
+        # we're not using Bzlmod
+        return self._strategy.RlocationChecked(path)
 
     def EnvVars(self) -> Dict[str, str]:
         """Returns environment variables for subprocesses.
@@ -264,11 +389,15 @@ class Runfiles:
             # located in the main repository.
             # With Python 3.11 and higher, the Python launcher sets
             # PYTHONSAFEPATH, which prevents this behavior.
+            # On Windows, the current toolchain being used has a buggy zip file
+            # bootstrap, which leaves RUNFILES_DIR pointing at the first stage
+            # path and not the module path. In this case too, assume that the
+            # module is located in the main repository.
             # TODO: This doesn't cover the case of a script being run from an
             #       external repository, which could be heuristically detected
             #       by parsing the script's path.
             if (
-                sys.version_info.minor <= 10
+                (sys.version_info.minor <= 10 or sys.platform == "win32")
                 and sys.path[0] != self._python_runfiles_root
             ):
                 return ""
@@ -345,42 +474,6 @@ class Runfiles:
 
 # Support legacy imports by defining a private symbol.
 _Runfiles = Runfiles
-
-
-def _FindPythonRunfilesRoot() -> str:
-    """Finds the root of the Python runfiles tree."""
-    root = __file__
-    # Walk up our own runfiles path to the root of the runfiles tree from which
-    # the current file is being run. This path coincides with what the Bazel
-    # Python stub sets up as sys.path[0]. Since that entry can be changed at
-    # runtime, we rederive it here.
-    for _ in range("rules_python/python/runfiles/runfiles.py".count("/") + 1):
-        root = os.path.dirname(root)
-    return root
-
-
-def _ParseRepoMapping(repo_mapping_path: Optional[str]) -> Dict[Tuple[str, str], str]:
-    """Parses the repository mapping manifest."""
-    # If the repository mapping file can't be found, that is not an error: We
-    # might be running without Bzlmod enabled or there may not be any runfiles.
-    # In this case, just apply an empty repo mapping.
-    if not repo_mapping_path:
-        return {}
-    try:
-        with open(repo_mapping_path, "r", encoding="utf-8", newline="\n") as f:
-            content = f.read()
-    except FileNotFoundError:
-        return {}
-
-    repo_mapping = {}
-    for line in content.split("\n"):
-        if not line:
-            # Empty line following the last line break
-            break
-        current_canonical, target_local, target_canonical = line.split(",")
-        repo_mapping[(current_canonical, target_local)] = target_canonical
-
-    return repo_mapping
 
 
 def CreateManifestBased(manifest_path: str) -> Runfiles:

@@ -12,16 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@dev_pip//:requirements.bzl", "requirement")
+load("@sphinxdocs//sphinxdocs:readthedocs.bzl", "readthedocs_install")
+load("@sphinxdocs//sphinxdocs:sphinx.bzl", "sphinx_build_binary", "sphinx_docs")
+load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
+load("@sphinxdocs//sphinxdocs:sphinx_stardoc.bzl", "sphinx_stardoc", "sphinx_stardocs")
 load("//python/private:bzlmod_enabled.bzl", "BZLMOD_ENABLED")  # buildifier: disable=bzl-visibility
-load("//python/private:util.bzl", "IS_BAZEL_7_OR_HIGHER")  # buildifier: disable=bzl-visibility
+load("//python/private:common_labels.bzl", "labels")  # buildifier: disable=bzl-visibility
 load("//python/uv:lock.bzl", "lock")  # buildifier: disable=bzl-visibility
-load("//sphinxdocs:readthedocs.bzl", "readthedocs_install")
-load("//sphinxdocs:sphinx.bzl", "sphinx_build_binary", "sphinx_docs")
-load("//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
-load("//sphinxdocs:sphinx_stardoc.bzl", "sphinx_stardoc", "sphinx_stardocs")
 
 package(default_visibility = ["//:__subpackages__"])
 
@@ -56,7 +55,7 @@ sphinx_docs(
             "_*",
             "*.inv*",
         ],
-    ),
+    ) + ["//gazelle/docs"],
     config = "conf.py",
     formats = [
         "html",
@@ -64,7 +63,7 @@ sphinx_docs(
     renamed_srcs = {
         "//:CHANGELOG.md": "changelog.md",
         "//:CONTRIBUTING.md": "contributing.md",
-        "//sphinxdocs/inventories:bazel_inventory": "bazel_inventory.inv",
+        "@sphinxdocs//sphinxdocs/inventories:bazel_inventory": "bazel_inventory.inv",
     },
     sphinx = ":sphinx-build",
     strip_prefix = package_name() + "/",
@@ -74,7 +73,7 @@ sphinx_docs(
         ":bzl_api_docs",
         ":py_api_srcs",
         ":py_runtime_pair",
-        "//sphinxdocs/docs:docs_lib",
+        "@sphinxdocs//docs:docs_lib",
     ],
 )
 
@@ -90,6 +89,7 @@ sphinx_stardocs(
         "//python:features_bzl",
         "//python:packaging_bzl",
         "//python:pip_bzl",
+        "//python:proto_bzl",
         "//python:py_binary_bzl",
         "//python:py_cc_link_params_info_bzl",
         "//python:py_exec_tools_info_bzl",
@@ -108,29 +108,36 @@ sphinx_stardocs(
         "//python/cc:py_cc_toolchain_bzl",
         "//python/cc:py_cc_toolchain_info_bzl",
         "//python/entry_points:py_console_script_binary_bzl",
+        "//python/extensions:config_bzl",
+        "//python/extensions:python_bzl",
         "//python/local_toolchains:repos_bzl",
         "//python/private:attr_builders_bzl",
+        "//python/private:builders_bzl",
         "//python/private:builders_util_bzl",
         "//python/private:py_binary_rule_bzl",
         "//python/private:py_cc_toolchain_rule_bzl",
+        "//python/private:py_info_bzl",
         "//python/private:py_library_rule_bzl",
         "//python/private:py_runtime_rule_bzl",
         "//python/private:py_test_rule_bzl",
         "//python/private:rule_builders_bzl",
         "//python/private/api:py_common_api_bzl",
         "//python/private/pypi:config_settings_bzl",
+        "//python/private/pypi:env_marker_info_bzl",
         "//python/private/pypi:pkg_aliases_bzl",
+        "//python/private/pypi:whl_config_setting_bzl",
+        "//python/private/pypi:whl_library_bzl",
+        "//python/private/zipapp:py_zipapp_rule_bzl",
         "//python/uv:lock_bzl",
         "//python/uv:uv_bzl",
         "//python/uv:uv_toolchain_bzl",
         "//python/uv:uv_toolchain_info_bzl",
+        "//python/zipapp:py_zipapp_binary_bzl",
+        "//python/zipapp:py_zipapp_test_bzl",
     ] + ([
-        # Bazel 6 + Stardoc isn't able to parse something about the python bzlmod extension
-        "//python/extensions:python_bzl",
-    ] if IS_BAZEL_7_OR_HIGHER else []) + ([
         # This depends on @pythons_hub, which is only created under bzlmod,
         "//python/extensions:pip_bzl",
-    ] if IS_BAZEL_7_OR_HIGHER and BZLMOD_ENABLED else []),
+    ] if BZLMOD_ENABLED else []),
     prefix = "api/rules_python/",
     tags = ["docs"],
     target_compatible_with = _TARGET_COMPATIBLE_WITH,
@@ -160,6 +167,12 @@ readthedocs_install(
 
 sphinx_build_binary(
     name = "sphinx-build",
+    config_settings = {
+        labels.BOOTSTRAP_IMPL: "script",
+        labels.VENVS_SITE_PACKAGES: "yes",
+        labels.PY_FREETHREADED: "yes",
+        labels.PYTHON_VERSION: "3.14",
+    },
     target_compatible_with = _TARGET_COMPATIBLE_WITH,
     deps = [
         requirement("sphinx"),
@@ -169,7 +182,7 @@ sphinx_build_binary(
         requirement("typing_extensions"),
         requirement("sphinx_autodoc2"),
         requirement("sphinx_reredirects"),
-        "//sphinxdocs/src/sphinx_bzl",
+        "@sphinxdocs//sphinxdocs/src/sphinx_bzl",
     ],
 )
 
@@ -183,40 +196,8 @@ lock(
         "--universal",
         "--upgrade",
     ],
+    # NOTE @aignas 2025-08-17: here we select the lowest actively supported version so that the
+    # requirements file is generated to be compatible with Python version 3.9 or greater.
+    python_version = "3.9",
     visibility = ["//:__subpackages__"],
-)
-
-# Temporary compatibility aliases for some other projects depending on the old
-# bzl_library targets.
-alias(
-    name = "defs",
-    actual = "//python:defs_bzl",
-    deprecation = "Use //python:defs_bzl instead; targets under //docs are internal.",
-    visibility = ["//visibility:public"],
-)
-
-alias(
-    name = "bazel_repo_tools",
-    actual = "//python/private:bazel_tools_bzl",
-    deprecation = "Use @bazel_tools//tools:bzl_srcs instead; targets under //docs are internal.",
-    visibility = ["//visibility:public"],
-)
-
-bzl_library(
-    name = "pip_install_bzl",
-    deprecation = "Use //python:pip_bzl or //python/pip_install:pip_repository_bzl instead; " +
-                  "targets under //docs are internal.",
-    visibility = ["//visibility:public"],
-    deps = [
-        "//python:pip_bzl",
-        "//python/pip_install:pip_repository_bzl",
-    ],
-)
-
-alias(
-    name = "requirements_parser_bzl",
-    actual = "//python/pip_install:pip_repository_bzl",
-    deprecation = "Use //python/pip_install:pip_repository_bzl instead; Both the requirements " +
-                  "parser and targets under //docs are internal",
-    visibility = ["//visibility:public"],
 )

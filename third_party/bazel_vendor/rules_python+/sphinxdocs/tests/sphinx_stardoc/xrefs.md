@@ -36,8 +36,23 @@ Various tests of cross referencing support
 
 ## Using origin keys
 
-* provider using `{type}`: {type}`"@rules_python//sphinxdocs/tests/sphinx_stardoc:bzl_rule.bzl%GenericInfo"`
+* provider using `{type}`: {type}`"//tests/sphinx_stardoc:bzl_rule.bzl%GenericInfo"`
 
 ## Any xref
 
 * {any}`LangInfo`
+
+## Tag class refs
+
+* tag class attribute using attr role: {attr}`myext.mytag.ta1`
+* tag class attribute, just attr name, attr role: {attr}`ta1`
+
+## File refs
+
+* without repo {obj}`//lang:rule.bzl`
+* with repo {obj}`@testrepo//lang:rule.bzl`
+
+## Package refs
+
+* absolute label {obj}`//lang`
+* package basename {obj}`lang`

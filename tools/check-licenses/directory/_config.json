@@ -54,7 +54,8 @@
                     "They don't have license files included."
                 ],
                 "paths": [
-                    "third_party/bazel_vendor/rules_go+/tests"
+                    "third_party/bazel_vendor/rules_go+/tests",
+                    "third_party/bazel_vendor/rules_python+/tests"
                 ]
             },
             {

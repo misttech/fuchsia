@@ -21,6 +21,58 @@ unnecessary files when all that are needed are flag definitions.
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load(":enum.bzl", "FlagEnum", "enum")
 
+# Maps "--myflag" to a tuple of:
+#
+# - the flag's ctx.fragments native API accessor
+# -"native|starlark": which definition to use if the flag is available both
+#      from ctx.fragments and Starlark
+#
+# Builds that set --incompatible_remove_ctx_py_fragment or
+# --incompatible_remove_ctx_bazel_py_fragment disable ctx.fragments. These
+# builds assume flags are solely defined in Starlark.
+#
+# The "native|starlark" override is only for devs who are testing flag
+# Starlarkification. If ctx.fragments.[py|bazel_py] is available and
+# a flag is set to "starlark", we exclusively read its starlark version.
+#
+# See https://github.com/bazel-contrib/rules_python/issues/3252.
+_POSSIBLY_NATIVE_FLAGS = {
+    "build_python_zip": (lambda ctx: ctx.fragments.py.build_python_zip, "native"),
+    "default_to_explicit_init_py": (lambda ctx: ctx.fragments.py.default_to_explicit_init_py, "native"),
+    "python_import_all_repositories": (lambda ctx: ctx.fragments.bazel_py.python_import_all_repositories, "native"),
+    "python_path": (lambda ctx: ctx.fragments.bazel_py.python_path, "native"),
+}
+
+def read_possibly_native_flag(ctx, flag_name):
+    """
+    Canonical API for reading a Python build flag.
+
+    Flags might be defined in Starlark or native-Bazel. This function reasd flags
+    from tbe correct source based on supporting Bazel version and --incompatible*
+    flags that disable native references.
+
+    Args:
+        ctx: Rule's configuration context.
+        flag_name: Name of the flag to read, without preceding "--".
+
+    Returns:
+        The flag's value.
+    """
+
+    # Bazel 9.0+ can disable these fragments with --incompatible_remove_ctx_py_fragment and
+    # --incompatible_remove_ctx_bazel_py_fragment. Disabling them means bazel expects
+    # Python to read Starlark flags.
+    use_native_def = hasattr(ctx.fragments, "py") and hasattr(ctx.fragments, "bazel_py")
+
+    # Developer override to force the Starlark definition for testing.
+    if _POSSIBLY_NATIVE_FLAGS[flag_name][1] == "starlark":
+        use_native_def = False
+    if use_native_def:
+        return _POSSIBLY_NATIVE_FLAGS[flag_name][0](ctx)
+    else:
+        # Starlark definition of "--foo" is assumed to be a label dependency named "_foo".
+        return getattr(ctx.attr, "_" + flag_name + "_flag")[BuildSettingInfo].value
+
 def _AddSrcsToRunfilesFlag_is_enabled(ctx):
     value = ctx.attr._add_srcs_to_runfiles_flag[BuildSettingInfo].value
     if value == AddSrcsToRunfilesFlag.AUTO:
@@ -35,8 +87,38 @@ AddSrcsToRunfilesFlag = FlagEnum(
     is_enabled = _AddSrcsToRunfilesFlag_is_enabled,
 )
 
+def _string_flag_impl(ctx):
+    if ctx.attr.override:
+        value = ctx.attr.override
+    else:
+        value = ctx.build_setting_value
+
+    if value not in ctx.attr.values:
+        fail((
+            "Invalid value for {name}: got {value}, must " +
+            "be one of {allowed}"
+        ).format(
+            name = ctx.label,
+            value = value,
+            allowed = ctx.attr.values,
+        ))
+
+    return [
+        BuildSettingInfo(value = value),
+        config_common.FeatureFlagInfo(value = value),
+    ]
+
+string_flag = rule(
+    implementation = _string_flag_impl,
+    build_setting = config.string(flag = True),
+    attrs = {
+        "override": attr.string(),
+        "values": attr.string_list(),
+    },
+)
+
 def _bootstrap_impl_flag_get_value(ctx):
-    return ctx.attr._bootstrap_impl_flag[BuildSettingInfo].value
+    return ctx.attr._bootstrap_impl_flag[config_common.FeatureFlagInfo].value
 
 # buildifier: disable=name-conventions
 BootstrapImplFlag = enum(
@@ -124,12 +206,12 @@ def _venvs_site_packages_is_enabled(ctx):
     flag_value = ctx.attr.experimental_venvs_site_packages[BuildSettingInfo].value
     return flag_value == VenvsSitePackages.YES
 
-# Decides if libraries try to use a site-packages layout using site_packages_symlinks
+# Decides if libraries try to use a site-packages layout using venv_symlinks
 # buildifier: disable=name-conventions
 VenvsSitePackages = FlagEnum(
-    # Use site_packages_symlinks
+    # Use venv_symlinks
     YES = "yes",
-    # Don't use site_packages_symlinks
+    # Don't use venv_symlinks
     NO = "no",
     is_enabled = _venvs_site_packages_is_enabled,
 )

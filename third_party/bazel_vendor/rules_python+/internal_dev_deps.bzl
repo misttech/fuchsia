@@ -41,19 +41,36 @@ def rules_python_internal_deps():
     For dependencies needed by *users* of rules_python, see
     python/private/py_repositories.bzl.
     """
-    internal_config_repo(name = "rules_python_internal")
+    internal_config_repo(
+        name = "rules_python_internal",
+        transition_settings = [
+            str(Label("//tests/multi_pypi:external_deps_name")),
+        ],
+    )
+
+    # Sphinxdocs doesn't support workspace mode, but we have to define it
+    # so that load() passes.
+    local_repository(
+        name = "sphinxdocs",
+        path = "sphinxdocs",
+    )
 
     local_repository(
         name = "other",
         path = "tests/modules/other",
     )
 
+    local_repository(
+        name = "another_module",
+        path = "tests/modules/another_module",
+    )
+
     http_archive(
         name = "bazel_skylib",
-        sha256 = "bc283cdfcd526a52c3201279cda4bc298652efa898b10b4db0837dc51652756f",
+        sha256 = "6e78f0e57de26801f6f564fa7c4a48dc8b36873e416257a92bbb0937eeac8446",
         urls = [
-            "https://mirror.bazel.build/github.com/bazelbuild/bazel-skylib/releases/download/1.7.1/bazel-skylib-1.7.1.tar.gz",
-            "https://github.com/bazelbuild/bazel-skylib/releases/download/1.7.1/bazel-skylib-1.7.1.tar.gz",
+            "https://mirror.bazel.build/github.com/bazelbuild/bazel-skylib/releases/download/1.8.2/bazel-skylib-1.8.2.tar.gz",
+            "https://github.com/bazelbuild/bazel-skylib/releases/download/1.8.2/bazel-skylib-1.8.2.tar.gz",
         ],
     )
 
@@ -68,10 +85,10 @@ def rules_python_internal_deps():
     http_archive(
         name = "rules_pkg",
         urls = [
-            "https://mirror.bazel.build/github.com/bazelbuild/rules_pkg/releases/download/0.7.0/rules_pkg-0.7.0.tar.gz",
-            "https://github.com/bazelbuild/rules_pkg/releases/download/0.7.0/rules_pkg-0.7.0.tar.gz",
+            "https://mirror.bazel.build/github.com/bazelbuild/rules_pkg/releases/download/1.0.1/rules_pkg-1.0.1.tar.gz",
+            "https://github.com/bazelbuild/rules_pkg/releases/download/1.0.1/rules_pkg-1.0.1.tar.gz",
         ],
-        sha256 = "8a298e832762eda1830597d64fe7db58178aa84cd5926d76d5b744d6558941c2",
+        sha256 = "d20c951960ed77cb7b341c2a59488534e494d5ad1d30c4818c736d57772a9fef",
     )
 
     http_archive(
@@ -228,9 +245,9 @@ def rules_python_internal_deps():
 
     http_archive(
         name = "rules_cc",
-        urls = ["https://github.com/bazelbuild/rules_cc/releases/download/0.0.16/rules_cc-0.0.16.tar.gz"],
-        sha256 = "bbf1ae2f83305b7053b11e4467d317a7ba3517a12cef608543c1b1c5bf48a4df",
-        strip_prefix = "rules_cc-0.0.16",
+        urls = ["https://github.com/bazelbuild/rules_cc/releases/download/0.1.5/rules_cc-0.1.5.tar.gz"],
+        sha256 = "b8b918a85f9144c01f6cfe0f45e4f2838c7413961a8ff23bc0c6cdf8bb07a3b6",
+        strip_prefix = "rules_cc-0.1.5",
     )
 
     http_archive(

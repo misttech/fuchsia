@@ -31,6 +31,7 @@ load(
     "kwargs_setter",
     "kwargs_setter_doc",
     "kwargs_setter_mandatory",
+    "normalize_transition_in_out_values",
     "to_label_maybe",
 )
 
@@ -167,6 +168,8 @@ def _AttrCfg_new(
     }
     kwargs_set_default_list(state, _INPUTS)
     kwargs_set_default_list(state, _OUTPUTS)
+    normalize_transition_in_out_values("input", state[_INPUTS])
+    normalize_transition_in_out_values("output", state[_OUTPUTS])
 
     # buildifier: disable=uninitialized
     self = struct(
@@ -589,7 +592,7 @@ def _Label_new(**kwargs):
     """Creates a builder for `attr.label`.
 
     Args:
-        **kwargs: The same as {obj}`attr.label()`.
+        **kwargs: The same as {obj}`attr.label`.
 
     Returns:
         {type}`Label`
@@ -1222,7 +1225,7 @@ def _StringList_typedef():
     :::
 
     :::{field} default
-    :type: Value[list[str] | configuration_field]
+    :type: list[str] | configuration_field
     :::
 
     :::{function} doc() -> str
@@ -1235,6 +1238,9 @@ def _StringList_typedef():
     :::
 
     :::{function} set_allow_empty(v: bool)
+    :::
+
+    :::{function} set_default(v: list[str] | configuration_field)
     :::
 
     :::{function} set_doc(v: str)

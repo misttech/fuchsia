@@ -66,6 +66,30 @@ func matchesAnyGlob(s string, globs []string) bool {
 	return false
 }
 
+// findConftestPaths returns package paths containing conftest.py, from currentPkg
+// up through ancestors, stopping at module root.
+func findConftestPaths(repoRoot, currentPkg, pythonProjectRoot string, includeAncestorConftest bool) []string {
+	var result []string
+	for pkg := currentPkg; ; pkg = filepath.Dir(pkg) {
+		if pkg == "." {
+			pkg = ""
+		}
+		if _, err := os.Stat(filepath.Join(repoRoot, pkg, conftestFilename)); err == nil {
+			result = append(result, pkg)
+		}
+		// We traverse up the tree to find conftest files and we start in
+		// the current package. Thus if we find one in the current package
+		// and do not want ancestors, we break early.
+		if !includeAncestorConftest {
+			break
+		}
+		if pkg == "" {
+			break
+		}
+	}
+	return result
+}
+
 // GenerateRules extracts build metadata from source files in a directory.
 // GenerateRules is called in each directory where an update is requested
 // in depth-first post-order.
@@ -85,8 +109,6 @@ func (py *Python) GenerateRules(args language.GenerateArgs) language.GenerateRes
 			if parent != nil && parent.CoarseGrainedGeneration() {
 				return language.GenerateResult{}
 			}
-		} else if !hasEntrypointFile(args.Dir) {
-			return language.GenerateResult{}
 		}
 	}
 
@@ -172,9 +194,6 @@ func (py *Python) GenerateRules(args language.GenerateArgs) language.GenerateRes
 					//   2. The directory has a BUILD or BUILD.bazel files. Then
 					//       it doesn't matter at all what it has since it's a
 					//       separate Bazel package.
-					//   3. (only for package generation) The directory has an
-					//       __init__.py, __main__.py or __test__.py, meaning a
-					//       BUILD file will be generated.
 					if cfg.PerFileGeneration() {
 						return fs.SkipDir
 					}
@@ -184,7 +203,7 @@ func (py *Python) GenerateRules(args language.GenerateArgs) language.GenerateRes
 						return nil
 					}
 
-					if !cfg.CoarseGrainedGeneration() && hasEntrypointFile(path) {
+					if !cfg.CoarseGrainedGeneration() {
 						return fs.SkipDir
 					}
 
@@ -231,10 +250,19 @@ func (py *Python) GenerateRules(args language.GenerateArgs) language.GenerateRes
 	var result language.GenerateResult
 	result.Gen = make([]*rule.Rule, 0)
 
+	if cfg.GenerateProto() {
+		generateProtoLibraries(args, cfg, pythonProjectRoot, visibility, &result)
+	}
+
 	collisionErrors := singlylinkedlist.New()
+	// Create a validFilesMap of mainModules to validate if python macros have valid srcs.
+	validFilesMap := make(map[string]struct{})
 
 	appendPyLibrary := func(srcs *treeset.Set, pyLibraryTargetName string) {
 		allDeps, mainModules, annotations, err := parser.parse(srcs)
+		for name := range mainModules {
+			validFilesMap[name] = struct{}{}
+		}
 		if err != nil {
 			log.Fatalf("ERROR: %v\n", err)
 		}
@@ -251,6 +279,7 @@ func (py *Python) GenerateRules(args language.GenerateArgs) language.GenerateRes
 					srcs.Remove(name)
 				}
 			}
+
 			sort.Strings(mainFileNames)
 			for _, filename := range mainFileNames {
 				pyBinaryTargetName := strings.TrimSuffix(filepath.Base(filename), ".py")
@@ -260,12 +289,20 @@ func (py *Python) GenerateRules(args language.GenerateArgs) language.GenerateRes
 						fqTarget.String(), actualPyBinaryKind, err)
 					continue
 				}
-				pyBinary := newTargetBuilder(pyBinaryKind, pyBinaryTargetName, pythonProjectRoot, args.Rel, pyFileNames).
+
+				// Add any sibling .pyi files to pyi_srcs
+				filenames := treeset.NewWith(godsutils.StringComparator, filename)
+				pyiSrcs, _ := getPyiFilenames(filenames, cfg.GeneratePyiSrcs(), args.Dir)
+
+				pyBinary := newTargetBuilder(pyBinaryKind, pyBinaryTargetName, pythonProjectRoot, args.Rel, pyFileNames, cfg.ResolveSiblingImports()).
 					addVisibility(visibility).
 					addSrc(filename).
+					addPyiSrcs(pyiSrcs).
 					addModuleDependencies(mainModules[filename]).
 					addResolvedDependencies(annotations.includeDeps).
-					generateImportsAttribute().build()
+					generateImportsAttribute().
+					setAnnotations(*annotations).
+					build()
 				result.Gen = append(result.Gen, pyBinary)
 				result.Imports = append(result.Imports, pyBinary.PrivateAttr(config.GazelleImportsKey))
 			}
@@ -288,6 +325,9 @@ func (py *Python) GenerateRules(args language.GenerateArgs) language.GenerateRes
 			}
 		}
 
+		// Add any sibling .pyi files to pyi_srcs
+		pyiSrcs, _ := getPyiFilenames(srcs, cfg.GeneratePyiSrcs(), args.Dir)
+
 		// Check if a target with the same name we are generating already
 		// exists, and if it is of a different kind from the one we are
 		// generating. If so, we have to throw an error since Gazelle won't
@@ -300,12 +340,14 @@ func (py *Python) GenerateRules(args language.GenerateArgs) language.GenerateRes
 			collisionErrors.Add(err)
 		}
 
-		pyLibrary := newTargetBuilder(pyLibraryKind, pyLibraryTargetName, pythonProjectRoot, args.Rel, pyFileNames).
+		pyLibrary := newTargetBuilder(pyLibraryKind, pyLibraryTargetName, pythonProjectRoot, args.Rel, pyFileNames, cfg.ResolveSiblingImports()).
 			addVisibility(visibility).
 			addSrcs(srcs).
+			addPyiSrcs(pyiSrcs).
 			addModuleDependencies(allDeps).
 			addResolvedDependencies(annotations.includeDeps).
 			generateImportsAttribute().
+			setAnnotations(*annotations).
 			build()
 
 		if pyLibrary.IsEmpty(py.Kinds()[pyLibrary.Kind()]) {
@@ -352,12 +394,18 @@ func (py *Python) GenerateRules(args language.GenerateArgs) language.GenerateRes
 			collisionErrors.Add(err)
 		}
 
-		pyBinaryTarget := newTargetBuilder(pyBinaryKind, pyBinaryTargetName, pythonProjectRoot, args.Rel, pyFileNames).
+		// Add any sibling .pyi files to pyi_srcs
+		filenames := treeset.NewWith(godsutils.StringComparator, pyBinaryEntrypointFilename)
+		pyiSrcs, _ := getPyiFilenames(filenames, cfg.GeneratePyiSrcs(), args.Dir)
+
+		pyBinaryTarget := newTargetBuilder(pyBinaryKind, pyBinaryTargetName, pythonProjectRoot, args.Rel, pyFileNames, cfg.ResolveSiblingImports()).
 			setMain(pyBinaryEntrypointFilename).
 			addVisibility(visibility).
 			addSrc(pyBinaryEntrypointFilename).
+			addPyiSrcs(pyiSrcs).
 			addModuleDependencies(deps).
 			addResolvedDependencies(annotations.includeDeps).
+			setAnnotations(*annotations).
 			generateImportsAttribute()
 
 		pyBinary := pyBinaryTarget.build()
@@ -384,10 +432,16 @@ func (py *Python) GenerateRules(args language.GenerateArgs) language.GenerateRes
 			collisionErrors.Add(err)
 		}
 
-		conftestTarget := newTargetBuilder(pyLibraryKind, conftestTargetname, pythonProjectRoot, args.Rel, pyFileNames).
+		// Add any sibling .pyi files to pyi_srcs
+		filenames := treeset.NewWith(godsutils.StringComparator, conftestFilename)
+		pyiSrcs, _ := getPyiFilenames(filenames, cfg.GeneratePyiSrcs(), args.Dir)
+
+		conftestTarget := newTargetBuilder(pyLibraryKind, conftestTargetname, pythonProjectRoot, args.Rel, pyFileNames, cfg.ResolveSiblingImports()).
 			addSrc(conftestFilename).
+			addPyiSrcs(pyiSrcs).
 			addModuleDependencies(deps).
 			addResolvedDependencies(annotations.includeDeps).
+			setAnnotations(*annotations).
 			addVisibility(visibility).
 			setTestonly().
 			generateImportsAttribute()
@@ -415,10 +469,16 @@ func (py *Python) GenerateRules(args language.GenerateArgs) language.GenerateRes
 				fqTarget.String(), actualPyTestKind, err, pythonconfig.TestNamingConvention)
 			collisionErrors.Add(err)
 		}
-		return newTargetBuilder(pyTestKind, pyTestTargetName, pythonProjectRoot, args.Rel, pyFileNames).
+
+		// Add any sibling .pyi files to pyi_srcs
+		pyiSrcs, _ := getPyiFilenames(srcs, cfg.GeneratePyiSrcs(), args.Dir)
+
+		return newTargetBuilder(pyTestKind, pyTestTargetName, pythonProjectRoot, args.Rel, pyFileNames, cfg.ResolveSiblingImports()).
 			addSrcs(srcs).
+			addPyiSrcs(pyiSrcs).
 			addModuleDependencies(deps).
 			addResolvedDependencies(annotations.includeDeps).
+			setAnnotations(*annotations).
 			generateImportsAttribute()
 	}
 	if (!cfg.PerPackageGenerationRequireTestEntryPoint() || hasPyTestEntryPointFile || hasPyTestEntryPointTarget || cfg.CoarseGrainedGeneration()) && !cfg.PerFileGeneration() {
@@ -470,15 +530,26 @@ func (py *Python) GenerateRules(args language.GenerateArgs) language.GenerateRes
 	}
 
 	for _, pyTestTarget := range pyTestTargets {
-		if conftest != nil {
-			pyTestTarget.addModuleDependency(module{Name: strings.TrimSuffix(conftestFilename, ".py")})
+		shouldAddConftest := pyTestTarget.annotations.includePytestConftest == nil ||
+			*pyTestTarget.annotations.includePytestConftest
+
+		if shouldAddConftest {
+			for _, conftestPkg := range findConftestPaths(args.Config.RepoRoot, args.Rel, pythonProjectRoot, cfg.IncludeAncestorConftest()) {
+				pyTestTarget.addModuleDependency(
+					Module{
+						Name:     importSpecFromSrc(pythonProjectRoot, conftestPkg, conftestFilename).Imp,
+						Filepath: filepath.Join(conftestPkg, conftestFilename),
+					},
+				)
+			}
 		}
 		pyTest := pyTestTarget.build()
 
 		result.Gen = append(result.Gen, pyTest)
 		result.Imports = append(result.Imports, pyTest.PrivateAttr(config.GazelleImportsKey))
 	}
-
+	emptyRules := py.getRulesWithInvalidSrcs(args, validFilesMap)
+	result.Empty = append(result.Empty, emptyRules...)
 	if !collisionErrors.Empty() {
 		it := collisionErrors.Iterator()
 		for it.Next() {
@@ -488,6 +559,42 @@ func (py *Python) GenerateRules(args language.GenerateArgs) language.GenerateRes
 	}
 
 	return result
+}
+
+// getRulesWithInvalidSrcs checks existing Python rules in the BUILD file and return the rules with invalid source files.
+// Invalid source files are files that do not exist or not a target.
+func (py *Python) getRulesWithInvalidSrcs(args language.GenerateArgs, validFilesMap map[string]struct{}) (invalidRules []*rule.Rule) {
+	if args.File == nil {
+		return
+	}
+	for _, file := range args.GenFiles {
+		validFilesMap[file] = struct{}{}
+	}
+
+	isTarget := func(src string) bool {
+		return strings.HasPrefix(src, "@") || strings.HasPrefix(src, "//") || strings.HasPrefix(src, ":")
+	}
+	for _, existingRule := range args.File.Rules {
+		actualPyBinaryKind := GetActualKindName(pyBinaryKind, args)
+		if existingRule.Kind() != actualPyBinaryKind {
+			continue
+		}
+		var hasValidSrcs bool
+		for _, src := range existingRule.AttrStrings("srcs") {
+			if isTarget(src) {
+				hasValidSrcs = true
+				break
+			}
+			if _, ok := validFilesMap[src]; ok {
+				hasValidSrcs = true
+				break
+			}
+		}
+		if !hasValidSrcs {
+			invalidRules = append(invalidRules, newTargetBuilder(pyBinaryKind, existingRule.Name(), "", "", nil, false).build())
+		}
+	}
+	return invalidRules
 }
 
 // isBazelPackage determines if the directory is a Bazel package by probing for
@@ -555,4 +662,85 @@ func ensureNoCollision(file *rule.File, targetName, kind string) error {
 		}
 	}
 	return nil
+}
+
+func generateProtoLibraries(args language.GenerateArgs, cfg *pythonconfig.Config, pythonProjectRoot string, visibility []string, res *language.GenerateResult) {
+	// First, enumerate all the proto_library in this package.
+	var protoRuleNames []string
+	for _, r := range args.OtherGen {
+		if r.Kind() != "proto_library" {
+			continue
+		}
+		protoRuleNames = append(protoRuleNames, r.Name())
+	}
+	sort.Strings(protoRuleNames)
+
+	// Next, enumerate all the pre-existing py_proto_library in this package, so we can delete unnecessary rules later.
+	pyProtoRules := map[string]bool{}
+	pyProtoRulesForProto := map[string]string{}
+	if args.File != nil {
+		for _, r := range args.File.Rules {
+			if r.Kind() == "py_proto_library" {
+				pyProtoRules[r.Name()] = false
+
+				protos := r.AttrStrings("deps")
+				for _, proto := range protos {
+					pyProtoRulesForProto[strings.TrimPrefix(proto, ":")] = r.Name()
+				}
+			}
+		}
+	}
+
+	emptySiblings := treeset.Set{}
+	// Generate a py_proto_library for each proto_library.
+	for _, protoRuleName := range protoRuleNames {
+		pyProtoLibraryName := cfg.RenderProtoName(protoRuleName)
+		if ruleName, ok := pyProtoRulesForProto[protoRuleName]; ok {
+			// There exists a pre-existing py_proto_library for this proto. Keep this name.
+			pyProtoLibraryName = ruleName
+		}
+
+		pyProtoLibrary := newTargetBuilder(pyProtoLibraryKind, pyProtoLibraryName, pythonProjectRoot, args.Rel, &emptySiblings, false).
+			addVisibility(visibility).
+			addResolvedDependency(":" + protoRuleName).
+			generateImportsAttribute().build()
+
+		res.Gen = append(res.Gen, pyProtoLibrary)
+		res.Imports = append(res.Imports, pyProtoLibrary.PrivateAttr(config.GazelleImportsKey))
+		pyProtoRules[pyProtoLibrary.Name()] = true
+
+	}
+
+	// Finally, emit an empty rule for each pre-existing py_proto_library that we didn't already generate.
+	for ruleName, generated := range pyProtoRules {
+		if generated {
+			continue
+		}
+
+		emptyRule := newTargetBuilder(pyProtoLibraryKind, ruleName, pythonProjectRoot, args.Rel, &emptySiblings, false).build()
+		res.Empty = append(res.Empty, emptyRule)
+	}
+
+}
+
+// getPyiFilenames returns a set of existing .pyi source file names for a given set of source
+// file names if GeneratePyiSrcs is set. Otherwise, returns an empty set.
+func getPyiFilenames(filenames *treeset.Set, generatePyiSrcs bool, basePath string) (*treeset.Set, error) {
+	pyiSrcs := treeset.NewWith(godsutils.StringComparator)
+	if !generatePyiSrcs {
+		return pyiSrcs, nil
+	}
+
+	it := filenames.Iterator()
+	for it.Next() {
+		pyiFilename := it.Value().(string) + "i" // foo.py --> foo.pyi
+
+		_, err := os.Stat(filepath.Join(basePath, pyiFilename))
+		// If the file DNE or there's some other error, there's nothing to do.
+		if err == nil {
+			// pyi file exists, add it
+			pyiSrcs.Add(pyiFilename)
+		}
+	}
+	return pyiSrcs, nil
 }

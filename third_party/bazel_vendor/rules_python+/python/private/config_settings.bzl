@@ -18,7 +18,7 @@
 load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//python/private:text_util.bzl", "render")
-load(":semver.bzl", "semver")
+load(":version.bzl", "version")
 
 _PYTHON_VERSION_FLAG = Label("//python/config_settings:python_version")
 _PYTHON_VERSION_MAJOR_MINOR_FLAG = Label("//python/config_settings:python_version_major_minor")
@@ -31,7 +31,18 @@ If the value is missing, then the default value is being used, see documentation
 {docs_url}/python/config_settings
 """
 
-def construct_config_settings(*, name, default_version, versions, minor_mapping, documented_flags):  # buildifier: disable=function-docstring
+# Indicates something needs public visibility so that other generated code can
+# access it, but it's not intended for general public usage.
+_NOT_ACTUALLY_PUBLIC = ["//visibility:public"]
+
+def construct_config_settings(
+        *,
+        name,
+        default_version,
+        versions,
+        minor_mapping,
+        compat_lowest_version = "3.8",
+        documented_flags):  # buildifier: disable=function-docstring
     """Create a 'python_version' config flag and construct all config settings used in rules_python.
 
     This mainly includes the targets that are used in the toolchain and pip hub
@@ -42,6 +53,8 @@ def construct_config_settings(*, name, default_version, versions, minor_mapping,
         default_version: {type}`str` the default value for the `python_version` flag.
         versions: {type}`list[str]` A list of versions to build constraint settings for.
         minor_mapping: {type}`dict[str, str]` A mapping from `X.Y` to `X.Y.Z` python versions.
+        compat_lowest_version: {type}`str` The version that we should use as the lowest available
+            version for `is_python_3.X` flags.
         documented_flags: {type}`list[str]` The labels of the documented settings
             that affect build configuration.
     """
@@ -65,21 +78,21 @@ def construct_config_settings(*, name, default_version, versions, minor_mapping,
     )
 
     _reverse_minor_mapping = {full: minor for minor, full in minor_mapping.items()}
-    for version in versions:
-        minor_version = _reverse_minor_mapping.get(version)
+    for ver in versions:
+        minor_version = _reverse_minor_mapping.get(ver)
         if not minor_version:
             native.config_setting(
-                name = "is_python_{}".format(version),
-                flag_values = {":python_version": version},
+                name = "is_python_{}".format(ver),
+                flag_values = {":python_version": ver},
                 visibility = ["//visibility:public"],
             )
             continue
 
         # Also need to match the minor version when using
-        name = "is_python_{}".format(version)
+        name = "is_python_{}".format(ver)
         native.config_setting(
             name = "_" + name,
-            flag_values = {":python_version": version},
+            flag_values = {":python_version": ver},
             visibility = ["//visibility:public"],
         )
 
@@ -90,7 +103,7 @@ def construct_config_settings(*, name, default_version, versions, minor_mapping,
         selects.config_setting_group(
             name = "_{}_group".format(name),
             match_any = [
-                ":_is_python_{}".format(version),
+                ":_is_python_{}".format(ver),
                 ":is_python_{}".format(minor_version),
             ],
             visibility = ["//visibility:private"],
@@ -105,10 +118,25 @@ def construct_config_settings(*, name, default_version, versions, minor_mapping,
     # It's private because matching the concept of e.g. "3.8" value is done
     # using the `is_python_X.Y` config setting group, which is aware of the
     # minor versions that could match instead.
+    first_minor = None
     for minor in minor_mapping.keys():
+        ver = version.parse(minor)
+        if first_minor == None or version.is_lt(ver, first_minor):
+            first_minor = ver
+
         native.config_setting(
             name = "is_python_{}".format(minor),
             flag_values = {_PYTHON_VERSION_MAJOR_MINOR_FLAG: minor},
+            visibility = ["//visibility:public"],
+        )
+
+    # This is a compatibility layer to ensure that `select` statements don't break out right
+    # when the toolchains for EOL minor versions are no longer registered.
+    compat_lowest_version = version.parse(compat_lowest_version)
+    for minor in range(compat_lowest_version.release[-1], first_minor.release[-1]):
+        native.alias(
+            name = "is_python_3.{}".format(minor),
+            actual = "@platforms//:incompatible",
             visibility = ["//visibility:public"],
         )
 
@@ -128,7 +156,30 @@ def construct_config_settings(*, name, default_version, versions, minor_mapping,
         # `whl_library` in the hub repo created by `pip.parse`.
         flag_values = {"current_config": "will-never-match"},
         # Only public so that PyPI hub repo can access it
-        visibility = ["//visibility:public"],
+        visibility = _NOT_ACTUALLY_PUBLIC,
+    )
+
+    libc = Label("//python/config_settings:py_linux_libc")
+    native.config_setting(
+        name = "_is_py_linux_libc_glibc",
+        flag_values = {libc: "glibc"},
+        visibility = _NOT_ACTUALLY_PUBLIC,
+    )
+    native.config_setting(
+        name = "_is_py_linux_libc_musl",
+        flag_values = {libc: "musl"},
+        visibility = _NOT_ACTUALLY_PUBLIC,
+    )
+    freethreaded = Label("//python/config_settings:py_freethreaded")
+    native.config_setting(
+        name = "_is_py_freethreaded_yes",
+        flag_values = {freethreaded: "yes"},
+        visibility = _NOT_ACTUALLY_PUBLIC,
+    )
+    native.config_setting(
+        name = "_is_py_freethreaded_no",
+        flag_values = {freethreaded: "no"},
+        visibility = _NOT_ACTUALLY_PUBLIC,
     )
 
 def _python_version_flag_impl(ctx):
@@ -154,8 +205,8 @@ _python_version_flag = rule(
 def _python_version_major_minor_flag_impl(ctx):
     input = _flag_value(ctx.attr._python_version_flag)
     if input:
-        version = semver(input)
-        value = "{}.{}".format(version.major, version.minor)
+        ver = version.parse(input)
+        value = "{}.{}".format(ver.release[0], ver.release[1])
     else:
         value = ""
 
@@ -207,5 +258,44 @@ _current_config = rule(
     attrs = {
         "settings": attr.label_list(mandatory = True),
         "_template": attr.string(default = _DEBUG_ENV_MESSAGE_TEMPLATE),
+    },
+)
+
+def is_python_version_at_least(name, **kwargs):
+    flag_name = "_{}_flag".format(name)
+    native.config_setting(
+        name = name,
+        flag_values = {
+            flag_name: "yes",
+        },
+    )
+    _python_version_at_least(
+        name = flag_name,
+        visibility = ["//visibility:private"],
+        **kwargs
+    )
+
+def _python_version_at_least_impl(ctx):
+    flag_value = ctx.attr._major_minor[config_common.FeatureFlagInfo].value
+
+    # CI is, somehow, getting an empty string for the current flag value.
+    # How isn't clear.
+    if not flag_value:
+        return [config_common.FeatureFlagInfo(value = "no")]
+
+    current = tuple([
+        int(x)
+        for x in flag_value.split(".")
+    ])
+    at_least = tuple([int(x) for x in ctx.attr.at_least.split(".")])
+
+    value = "yes" if current >= at_least else "no"
+    return [config_common.FeatureFlagInfo(value = value)]
+
+_python_version_at_least = rule(
+    implementation = _python_version_at_least_impl,
+    attrs = {
+        "at_least": attr.string(mandatory = True),
+        "_major_minor": attr.label(default = _PYTHON_VERSION_MAJOR_MINOR_FLAG),
     },
 )

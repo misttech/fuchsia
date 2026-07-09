@@ -18,11 +18,11 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//python:py_runtime.bzl", "py_runtime")
 load("//python:py_runtime_pair.bzl", "py_runtime_pair")
 load("//python/cc:py_cc_toolchain.bzl", "py_cc_toolchain")
-load(":glob_excludes.bzl", "glob_excludes")
 load(":py_exec_tools_toolchain.bzl", "py_exec_tools_toolchain")
-load(":semver.bzl", "semver")
+load(":version.bzl", "version")
 
-_IS_FREETHREADED = Label("//python/config_settings:is_py_freethreaded")
+_IS_FREETHREADED_YES = Label("//python/config_settings:_is_py_freethreaded_yes")
+_IS_FREETHREADED_NO = Label("//python/config_settings:_is_py_freethreaded_no")
 
 def define_hermetic_runtime_toolchain_impl(
         *,
@@ -53,47 +53,55 @@ def define_hermetic_runtime_toolchain_impl(
             use.
     """
     _ = name  # @unused
-    version_info = semver(python_version)
-    version_dict = version_info.to_dict()
+    version_info = version.parse(python_version)
+    version_dict = {
+        "major": version_info.release[0],
+        "minor": version_info.release[1],
+    }
+    files_include = [
+        "bin/**",
+        "extensions/**",
+        "include/**",
+        "libs/**",
+        "share/**",
+    ]
+    files_include += extra_files_glob_include
+    files_exclude = [
+        # Unused shared libraries. `python` executable and the `:libpython` target
+        # depend on `libpython{python_version}.so.1.0`.
+        "lib/libpython{major}.{minor}*.so".format(**version_dict),
+        # static libraries
+        "lib/**/*.a",
+        # tests for the standard libraries.
+        "lib/python{major}.{minor}*/**/test/**".format(**version_dict),
+        "lib/python{major}.{minor}*/**/tests/**".format(**version_dict),
+        # During pyc creation, temp files named *.pyc.NNN are created
+        "**/__pycache__/*.pyc.*",
+    ]
+    files_exclude += extra_files_glob_exclude
+
     native.filegroup(
         name = "files",
         srcs = native.glob(
-            include = [
-                "bin/**",
-                "extensions/**",
-                "include/**",
-                "libs/**",
-                "share/**",
-            ] + extra_files_glob_include,
+            include = files_include,
             # Platform-agnostic filegroup can't match on all patterns.
             allow_empty = True,
-            exclude = [
-                # Unused shared libraries. `python` executable and the `:libpython` target
-                # depend on `libpython{python_version}.so.1.0`.
-                "lib/libpython{major}.{minor}*.so".format(**version_dict),
-                # static libraries
-                "lib/**/*.a",
-                # tests for the standard libraries.
-                "lib/python{major}.{minor}*/**/test/**".format(**version_dict),
-                "lib/python{major}.{minor}*/**/tests/**".format(**version_dict),
-                # During pyc creation, temp files named *.pyc.NNN are created
-                "**/__pycache__/*.pyc.*",
-            ] + glob_excludes.version_dependent_exclusions() + extra_files_glob_exclude,
+            exclude = files_exclude,
         ),
     )
     cc_import(
         name = "interface",
         interface_library = select({
-            _IS_FREETHREADED: "libs/python{major}{minor}t.lib".format(**version_dict),
-            "//conditions:default": "libs/python{major}{minor}.lib".format(**version_dict),
+            _IS_FREETHREADED_YES: "libs/python{major}{minor}t.lib".format(**version_dict),
+            _IS_FREETHREADED_NO: "libs/python{major}{minor}.lib".format(**version_dict),
         }),
         system_provided = True,
     )
     cc_import(
         name = "abi3_interface",
         interface_library = select({
-            _IS_FREETHREADED: "libs/python3t.lib",
-            "//conditions:default": "libs/python3.lib",
+            _IS_FREETHREADED_YES: "libs/python3t.lib",
+            _IS_FREETHREADED_NO: "libs/python3.lib",
         }),
         system_provided = True,
     )
@@ -103,22 +111,30 @@ def define_hermetic_runtime_toolchain_impl(
         srcs = native.glob(["include/**/*.h"]),
     )
     cc_library(
-        name = "python_headers",
+        name = "python_headers_abi3",
         deps = select({
-            "@bazel_tools//src/conditions:windows": [":interface", ":abi3_interface"],
+            "@bazel_tools//src/conditions:windows": [":abi3_interface"],
             "//conditions:default": None,
         }),
         hdrs = [":includes"],
         includes = [
             "include",
         ] + select({
-            _IS_FREETHREADED: [
+            _IS_FREETHREADED_YES: [
                 "include/python{major}.{minor}t".format(**version_dict),
             ],
-            "//conditions:default": [
+            _IS_FREETHREADED_NO: [
                 "include/python{major}.{minor}".format(**version_dict),
                 "include/python{major}.{minor}m".format(**version_dict),
             ],
+        }),
+    )
+    cc_library(
+        name = "python_headers",
+        hdrs = [":includes"],
+        deps = [":python_headers_abi3"] + select({
+            "@bazel_tools//src/conditions:windows": [":interface"],
+            "//conditions:default": [],
         }),
     )
     native.config_setting(
@@ -169,16 +185,16 @@ def define_hermetic_runtime_toolchain_impl(
                 "libs/python{major}{minor}t.lib".format(**version_dict),
                 "libs/python3t.lib",
             ],
-            "@platforms//os:linux": [
-                "lib/libpython{major}.{minor}.so".format(**version_dict),
-                "lib/libpython{major}.{minor}.so.1.0".format(**version_dict),
-            ],
             "@platforms//os:macos": ["lib/libpython{major}.{minor}.dylib".format(**version_dict)],
             "@platforms//os:windows": [
                 "python3.dll",
                 "python{major}{minor}.dll".format(**version_dict),
                 "libs/python{major}{minor}.lib".format(**version_dict),
                 "libs/python3.lib",
+            ],
+            "//conditions:default": [
+                "lib/libpython{major}.{minor}.so".format(**version_dict),
+                "lib/libpython{major}.{minor}.so.1.0".format(**version_dict),
             ],
         }),
     )
@@ -192,15 +208,25 @@ def define_hermetic_runtime_toolchain_impl(
         values = {"collect_code_coverage": "true"},
         visibility = ["//visibility:private"],
     )
+    if not version_info.pre:
+        releaselevel = "final"
+    else:
+        releaselevel = {
+            "a": "alpha",
+            "b": "beta",
+            "rc": "candidate",
+        }.get(version_info.pre[0])
 
     py_runtime(
         name = "py3_runtime",
         files = [":files"],
         interpreter = python_bin,
         interpreter_version_info = {
-            "major": str(version_info.major),
-            "micro": str(version_info.patch),
-            "minor": str(version_info.minor),
+            "major": str(version_info.release[0]),
+            "micro": str(version_info.release[2]),
+            "minor": str(version_info.release[1]),
+            "releaselevel": releaselevel,
+            "serial": str(version_info.pre[1]) if version_info.pre else "0",
         },
         coverage_tool = select({
             # Convert empty string to None
@@ -211,8 +237,20 @@ def define_hermetic_runtime_toolchain_impl(
         implementation_name = "cpython",
         # See https://peps.python.org/pep-3147/ for pyc tag infix format
         pyc_tag = select({
-            _IS_FREETHREADED: "cpython-{major}{minor}t".format(**version_dict),
-            "//conditions:default": "cpython-{major}{minor}".format(**version_dict),
+            _IS_FREETHREADED_YES: "cpython-{major}{minor}t".format(**version_dict),
+            _IS_FREETHREADED_NO: "cpython-{major}{minor}".format(**version_dict),
+        }),
+        # On Windows, a symlink-style venv requires supporting .dll files.
+        venv_bin_files = select({
+            "@platforms//os:windows": native.glob(
+                include = [
+                    "*.dll",
+                ],
+                # This must be true because glob empty-ness is checked
+                # during loading phase, before select() filters it out.
+                allow_empty = True,
+            ),
+            "//conditions:default": [],
         }),
     )
 
@@ -225,6 +263,8 @@ def define_hermetic_runtime_toolchain_impl(
     py_cc_toolchain(
         name = "py_cc_toolchain",
         headers = ":python_headers",
+        headers_abi3 = ":python_headers_abi3",
+        # TODO #3155: add libctl, libtk
         libs = ":libpython",
         python_version = python_version,
     )

@@ -13,8 +13,6 @@
 # limitations under the License.
 """Providers for Python rules."""
 
-load(":util.bzl", "define_bazel_6_provider")
-
 DEFAULT_STUB_SHEBANG = "#!/usr/bin/env python3"
 
 _PYTHON_VERSION_VALUES = ["PY2", "PY3"]
@@ -67,7 +65,9 @@ def _PyRuntimeInfo_init(
         stage2_bootstrap_template = None,
         zip_main_template = None,
         abi_flags = "",
-        site_init_template = None):
+        site_init_template = None,
+        supports_build_time_venv = True,
+        venv_bin_files = None):
     if (interpreter_path and interpreter) or (not interpreter_path and not interpreter):
         fail("exactly one of interpreter or interpreter_path must be specified")
 
@@ -119,10 +119,12 @@ def _PyRuntimeInfo_init(
         "site_init_template": site_init_template,
         "stage2_bootstrap_template": stage2_bootstrap_template,
         "stub_shebang": stub_shebang,
+        "supports_build_time_venv": supports_build_time_venv,
+        "venv_bin_files": venv_bin_files,
         "zip_main_template": zip_main_template,
     }
 
-PyRuntimeInfo, _unused_raw_py_runtime_info_ctor = define_bazel_6_provider(
+PyRuntimeInfo, _unused_raw_py_runtime_info_ctor = provider(
     doc = """Contains information about a Python runtime, as returned by the `py_runtime`
 rule.
 
@@ -312,6 +314,36 @@ The following substitutions are made during template expansion:
 "Shebang" expression prepended to the bootstrapping Python stub
 script used when executing {obj}`py_binary` targets.  Does not
 apply to Windows.
+""",
+        "supports_build_time_venv": """
+:type: bool
+
+True if this toolchain supports the build-time created virtual environment.
+False if not or unknown. If build-time venv creation isn't supported, then binaries may
+fallback to non-venv solutions or creating a venv at runtime.
+
+In order to use the build-time created virtual environment, a toolchain needs
+to meet two criteria:
+1. Specifying the underlying executable (e.g. `/usr/bin/python3`, as reported by
+   `sys._base_executable`) for the venv executable (`$venv/bin/python3`, as reported
+   by `sys.executable`). This typically requires relative symlinking the venv
+   path to the underlying path at build time, or using the `PYTHONEXECUTABLE`
+   environment variable (Python 3.11+) at runtime.
+2. Having the build-time created site-packages directory
+   (`<venv>/lib/python{version}/site-packages`) recognized by the runtime
+   interpreter. This typically requires the Python version to be known at
+   build-time and match at runtime.
+
+:::{versionadded} 1.5.0
+:::
+""",
+        "venv_bin_files": """
+:type: list[File]
+
+Files that should be added to the venv's `bin/` (or platform-specific equivalent)
+directory (using the file's basename).
+
+:::{versionadded} 2.0.0
 """,
         "zip_main_template": """
 :type: File

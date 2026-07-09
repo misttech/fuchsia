@@ -18,6 +18,7 @@ load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//lib:structs.bzl", "structs")
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
+load("@rules_python_internal//:rules_python_config.bzl", rp_config = "config")
 load(":attr_builders.bzl", "attrb")
 load(
     ":attributes.bzl",
@@ -29,47 +30,72 @@ load(
     "PrecompileAttr",
     "PycCollectionAttr",
     "REQUIRED_EXEC_GROUP_BUILDERS",
+    "apply_config_settings_attr",
 )
 load(":builders.bzl", "builders")
 load(":cc_helper.bzl", "cc_helper")
 load(
     ":common.bzl",
     "collect_cc_info",
+    "collect_deps",
     "collect_imports",
     "collect_runfiles",
     "create_binary_semantics_struct",
     "create_cc_details_struct",
-    "create_executable_result_struct",
     "create_instrumented_files_info",
     "create_output_group_info",
     "create_py_info",
+    "create_windows_exe_launcher",
     "csv",
     "filter_to_py_srcs",
-    "get_imports",
     "is_bool",
+    "maybe_create_repo_mapping",
+    "relative_path",
     "runfiles_root_path",
     "target_platform_has_any_constraint",
 )
-load(":flags.bzl", "BootstrapImplFlag", "VenvsUseDeclareSymlinkFlag")
+load(":common_labels.bzl", "labels")
+load(":flags.bzl", "BootstrapImplFlag", "VenvsUseDeclareSymlinkFlag", "read_possibly_native_flag")
 load(":precompile.bzl", "maybe_precompile")
 load(":py_cc_link_params_info.bzl", "PyCcLinkParamsInfo")
 load(":py_executable_info.bzl", "PyExecutableInfo")
-load(":py_info.bzl", "PyInfo")
+load(":py_info.bzl", "PyInfo", "VenvSymlinkKind")
 load(":py_internal.bzl", "py_internal")
-load(":py_runtime_info.bzl", "DEFAULT_STUB_SHEBANG", "PyRuntimeInfo")
+load(":py_runtime_info.bzl", "DEFAULT_STUB_SHEBANG")
 load(":reexports.bzl", "BuiltinPyInfo", "BuiltinPyRuntimeInfo")
 load(":rule_builders.bzl", "ruleb")
-load(
-    ":toolchain_types.bzl",
-    "EXEC_TOOLS_TOOLCHAIN_TYPE",
-    "TARGET_TOOLCHAIN_TYPE",
-    TOOLCHAIN_TYPE = "TARGET_TOOLCHAIN_TYPE",
-)
+load(":toolchain_types.bzl", "EXEC_TOOLS_TOOLCHAIN_TYPE", "LAUNCHER_MAKER_TOOLCHAIN_TYPE", TOOLCHAIN_TYPE = "TARGET_TOOLCHAIN_TYPE")
+load(":transition_labels.bzl", "TRANSITION_LABELS")
+load(":venv_runfiles.bzl", "create_venv_app_files")
 
 _py_builtins = py_internal
 _EXTERNAL_PATH_PREFIX = "external"
 _ZIP_RUNFILES_DIRECTORY_NAME = "runfiles"
-_PYTHON_VERSION_FLAG = str(Label("//python/config_settings:python_version"))
+_INIT_PY = "__init__.py"
+
+# buildifier: disable=name-conventions
+ExplicitSymlink = provider(
+    doc = """
+A runfile that should be created as a symlink pointing to a specific location.
+
+This is only needed on Windows, where Bazel doesn't preserve declare_symlink
+with relative paths. This is basically manually captures what using
+declare_symlink(), symlink() and runfiles like so would capture:
+
+```
+link = declare_symlink(...)
+link_to_path = relative_path(from=link, to=target)
+symlink(output=link, target_path=link_to_path)
+runfiles.add([link, target])
+```
+""",
+    fields = {
+        "files": "depset[File] of files that should be included if this symlink is used",
+        "link_to_path": "Path the symlink should point to",
+        "runfiles_path": "runfiles-root-relative path for the symlink",
+        "venv_path": "venv-root-relative path for the symlink",
+    },
+)
 
 # Non-Google-specific attributes for executables
 # These attributes are for rules that accept Python sources.
@@ -78,7 +104,13 @@ EXECUTABLE_ATTRS = dicts.add(
     AGNOSTIC_EXECUTABLE_ATTRS,
     PY_SRCS_ATTRS,
     IMPORTS_ATTRS,
-    COVERAGE_ATTRS,
+    # starlark flags attributes
+    {
+        "_build_python_zip_flag": attr.label(default = "//python/config_settings:build_python_zip"),
+        "_default_to_explicit_init_py_flag": attr.label(default = "//python/config_settings:incompatible_default_to_explicit_init_py"),
+        "_python_import_all_repositories_flag": attr.label(default = "//python/config_settings:experimental_python_import_all_repositories"),
+        "_python_path_flag": attr.label(default = "//python/config_settings:python_path"),
+    },
     {
         "interpreter_args": lambda: attrb.StringList(
             doc = """
@@ -141,6 +173,9 @@ This is mutually exclusive with {obj}`main`.
 
 :::{versionadded} 1.3.0
 :::
+:::{versionchanged} 1.7.0
+Support added for {obj}`--bootstrap_impl=system_python`.
+:::
 """,
         ),
         "pyc_collection": lambda: attrb.String(
@@ -188,12 +223,21 @@ accepting arbitrary Python versions.
             default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
         ),
         "_bootstrap_impl_flag": lambda: attrb.Label(
-            default = "//python/config_settings:bootstrap_impl",
+            default = labels.BOOTSTRAP_IMPL,
             providers = [BuildSettingInfo],
         ),
         "_bootstrap_template": lambda: attrb.Label(
             allow_single_file = True,
             default = "@bazel_tools//tools/python:python_bootstrap_template.txt",
+        ),
+        "_build_data_writer": lambda: attrb.Label(
+            default = "//python/private:build_data_writer",
+            allow_files = True,
+            cfg = "exec",
+        ),
+        "_debugger_flag": lambda: attrb.Label(
+            default = "//python/private:debugger_if_target_config",
+            providers = [PyInfo],
         ),
         "_launcher": lambda: attrb.Label(
             cfg = "target",
@@ -202,26 +246,15 @@ accepting arbitrary Python versions.
             # empty target for other platforms.
             default = "//tools/launcher:launcher",
         ),
-        "_py_interpreter": lambda: attrb.Label(
-            # The configuration_field args are validated when called;
-            # we use the precense of py_internal to indicate this Bazel
-            # build has that fragment and name.
-            default = configuration_field(
-                fragment = "bazel_py",
-                name = "python_top",
-            ) if py_internal else None,
-        ),
-        # TODO: This appears to be vestigial. It's only added because
-        # GraphlessQueryTest.testLabelsOperator relies on it to test for
-        # query behavior of implicit dependencies.
-        "_py_toolchain_type": attr.label(
-            default = TARGET_TOOLCHAIN_TYPE,
-        ),
         "_python_version_flag": lambda: attrb.Label(
-            default = "//python/config_settings:python_version",
+            default = labels.PYTHON_VERSION,
+        ),
+        "_uncachable_version_file": lambda: attrb.Label(
+            default = "//python/private:uncachable_version_file",
+            allow_files = True,
         ),
         "_venvs_use_declare_symlink_flag": lambda: attrb.Label(
-            default = "//python/config_settings:venvs_use_declare_symlink",
+            default = labels.VENVS_USE_DECLARE_SYMLINK,
             providers = [BuildSettingInfo],
         ),
         "_windows_constraints": lambda: attrb.LabelList(
@@ -229,17 +262,19 @@ accepting arbitrary Python versions.
                 "@platforms//os:windows",
             ],
         ),
-        "_windows_launcher_maker": lambda: attrb.Label(
-            default = "@bazel_tools//tools/launcher:launcher_maker",
-            cfg = "exec",
-            executable = True,
-        ),
         "_zipper": lambda: attrb.Label(
             cfg = "exec",
             executable = True,
             default = "@bazel_tools//tools/zip:zipper",
         ),
     },
+    {
+        "_windows_launcher_maker": lambda: attrb.Label(
+            default = "@bazel_tools//tools/launcher:launcher_maker",
+            cfg = "exec",
+            executable = True,
+        ),
+    } if not rp_config.bazel_9_or_later else {},
 )
 
 def convert_legacy_create_init_to_int(kwargs):
@@ -263,45 +298,14 @@ def py_executable_impl(ctx, *, is_test, inherited_environment):
 def create_binary_semantics():
     return create_binary_semantics_struct(
         # keep-sorted start
-        create_executable = _create_executable,
-        get_cc_details_for_binary = _get_cc_details_for_binary,
-        get_central_uncachable_version_file = lambda ctx: None,
-        get_coverage_deps = _get_coverage_deps,
-        get_debugger_deps = _get_debugger_deps,
-        get_extra_common_runfiles_for_binary = lambda ctx: ctx.runfiles(),
-        get_extra_providers = _get_extra_providers,
-        get_extra_write_build_data_env = lambda ctx: {},
-        get_imports = get_imports,
-        get_interpreter_path = _get_interpreter_path,
         get_native_deps_dso_name = _get_native_deps_dso_name,
-        get_native_deps_user_link_flags = _get_native_deps_user_link_flags,
-        get_stamp_flag = _get_stamp_flag,
-        maybe_precompile = maybe_precompile,
         should_build_native_deps_dso = lambda ctx: False,
-        should_create_init_files = _should_create_init_files,
-        should_include_build_data = lambda ctx: False,
         # keep-sorted end
     )
 
-def _get_coverage_deps(ctx, runtime_details):
-    _ = ctx, runtime_details  # @unused
-    return []
-
-def _get_debugger_deps(ctx, runtime_details):
-    _ = ctx, runtime_details  # @unused
-    return []
-
-def _get_extra_providers(ctx, main_py, runtime_details):
-    _ = ctx, main_py, runtime_details  # @unused
-    return []
-
-def _get_stamp_flag(ctx):
-    # NOTE: Undocumented API; private to builtins
-    return ctx.configuration.stamp_binaries
-
 def _should_create_init_files(ctx):
     if ctx.attr.legacy_create_init == -1:
-        return not ctx.fragments.py.default_to_explicit_init_py
+        return not read_possibly_native_flag(ctx, "default_to_explicit_init_py")
     else:
         return bool(ctx.attr.legacy_create_init)
 
@@ -315,7 +319,8 @@ def _create_executable(
         runtime_details,
         cc_details,
         native_deps_details,
-        runfiles_details):
+        runfiles_details,
+        extra_deps):
     _ = is_test, cc_details, native_deps_details  # @unused
 
     is_windows = target_platform_has_any_constraint(ctx, ctx.attr._windows_constraints)
@@ -333,14 +338,19 @@ def _create_executable(
     # BuiltinPyRuntimeInfo providers, which is likely to come from
     # @bazel_tools//tools/python:autodetecting_toolchain, the toolchain used
     # for workspace builds when no rules_python toolchain is configured.
-    if (BootstrapImplFlag.get_value(ctx) == BootstrapImplFlag.SCRIPT and
+    if (
         runtime_details.effective_runtime and
-        hasattr(runtime_details.effective_runtime, "stage2_bootstrap_template")):
+        hasattr(runtime_details.effective_runtime, "stage2_bootstrap_template")
+    ):
         venv = _create_venv(
             ctx,
             output_prefix = base_executable_name,
             imports = imports,
             runtime_details = runtime_details,
+            add_runfiles_root_to_sys_path = (
+                "1" if BootstrapImplFlag.get_value(ctx) == BootstrapImplFlag.SYSTEM_PYTHON else "0"
+            ),
+            extra_deps = extra_deps,
         )
 
         stage2_bootstrap = _create_stage2_bootstrap(
@@ -350,8 +360,14 @@ def _create_executable(
             main_py = main_py,
             imports = imports,
             runtime_details = runtime_details,
+            venv = venv,
+            build_data_file = runfiles_details.build_data_file,
         )
-        extra_runfiles = ctx.runfiles([stage2_bootstrap] + venv.files_without_interpreter)
+        extra_runfiles = ctx.runfiles(
+            [stage2_bootstrap] + (
+                venv.files_without_interpreter if venv else []
+            ),
+        ).merge(venv.lib_runfiles)
         zip_main = _create_zip_main(
             ctx,
             stage2_bootstrap = stage2_bootstrap,
@@ -375,20 +391,38 @@ def _create_executable(
     _create_zip_file(
         ctx,
         output = zip_file,
-        original_nonzip_executable = executable,
         zip_main = zip_main,
-        runfiles = runfiles_details.default_runfiles.merge(extra_runfiles),
+        runfiles = runfiles_details.runfiles_without_exe.merge(extra_runfiles),
     )
 
-    extra_files_to_build = []
+    extra_default_outputs = []
 
     # NOTE: --build_python_zip defaults to true on Windows
-    build_zip_enabled = ctx.fragments.py.build_python_zip
+    build_zip_enabled = read_possibly_native_flag(ctx, "build_python_zip") and not is_windows
+    if is_windows:
+        # The legacy build_python_zip codepath isn't compatible with full venvs on Windows.
+        build_zip_enabled = False
 
     # When --build_python_zip is enabled, then the zip file becomes
     # one of the default outputs.
     if build_zip_enabled:
-        extra_files_to_build.append(zip_file)
+        if not is_windows:
+            # buildifier: disable=print
+            print(
+                """
+======================================================================
+WARNING: Target: {}
+  The `--build_python_zip` flag and implicit zipapp output of `py_binary`
+  and `py_test` is deprecated and will be removed in a future release.
+  Switch to `py_zipapp_binary` or `py_zipapp_test`. For migration
+  instructions and guide, see:
+
+  https://github.com/bazel-contrib/rules_python/issues/3567
+======================================================================
+               """.rstrip().format(ctx.label),
+            )
+
+        extra_default_outputs.append(zip_file)
 
     # The logic here is a bit convoluted. Essentially, there are 3 types of
     # executables produced:
@@ -407,7 +441,7 @@ def _create_executable(
         else:
             bootstrap_output = executable
     else:
-        _create_windows_exe_launcher(
+        create_windows_exe_launcher(
             ctx,
             output = executable,
             use_zip_file = build_zip_enabled,
@@ -420,7 +454,7 @@ def _create_executable(
 
             # The launcher looks for the non-zip executable next to
             # itself, so add it to the default outputs.
-            extra_files_to_build.append(bootstrap_output)
+            extra_default_outputs.append(bootstrap_output)
 
     if should_create_executable_zip:
         if bootstrap_output != None:
@@ -458,18 +492,43 @@ def _create_executable(
                 build_zip_enabled = build_zip_enabled,
             ))
 
+    app_runfiles = builders.RunfilesBuilder()
+    app_runfiles.add(runfiles_details.app_runfiles)
+    if venv:
+        app_runfiles.add(venv.files_without_interpreter)
+        app_runfiles.add(venv.lib_runfiles)
+
     # The interpreter is added this late in the process so that it isn't
     # added to the zipped files.
-    if venv:
-        extra_runfiles = extra_runfiles.merge(ctx.runfiles([venv.interpreter]))
-    return create_executable_result_struct(
-        extra_files_to_build = depset(extra_files_to_build),
+    if venv and venv.interpreter_runfiles:
+        extra_runfiles = extra_runfiles.merge(venv.interpreter_runfiles)
+    return struct(
+        # depset[File] of additional files that should be included as default
+        # outputs.
+        extra_default_outputs = depset(extra_default_outputs),
+        # dict[str, depset[File]]; additional output groups that should be
+        # returned.
         output_groups = {"python_zip_file": depset([zip_file])},
+        # runfiles; additional runfiles to include.
         extra_runfiles = extra_runfiles,
+        # File|None; the stage2 bootstrap file, if any
+        stage2_bootstrap = stage2_bootstrap,
+        # runfiles; runfiles for the app itself (e.g its deps, but no Python
+        # runtime files)
+        app_runfiles = app_runfiles.build(ctx),
+        # File|None; the venv `bin/python3` file, if any.
+        venv_python_exe = venv.interpreter if venv else None,
+        # runfiles|None; runfiles in the venv for the interpreter
+        venv_interpreter_runfiles = venv.interpreter_runfiles if venv else None,
+        # depset[ExplicitSymlink]|None; symlinks that should be created
+        venv_interpreter_symlinks = venv.interpreter_symlinks if venv else None,
     )
 
 def _create_zip_main(ctx, *, stage2_bootstrap, runtime_details, venv):
-    python_binary = runfiles_root_path(ctx, venv.interpreter.short_path)
+    if venv.interpreter:
+        python_binary = runfiles_root_path(ctx, venv.interpreter.short_path)
+    else:
+        python_binary = ""
     python_binary_actual = venv.interpreter_actual_path
 
     # The location of this file doesn't really matter. It's added to
@@ -482,45 +541,11 @@ def _create_zip_main(ctx, *, stage2_bootstrap, runtime_details, venv):
         substitutions = {
             "%python_binary%": python_binary,
             "%python_binary_actual%": python_binary_actual,
-            "%stage2_bootstrap%": "{}/{}".format(
-                ctx.workspace_name,
-                stage2_bootstrap.short_path,
-            ),
+            "%stage2_bootstrap%": runfiles_root_path(ctx, stage2_bootstrap.short_path),
             "%workspace_name%": ctx.workspace_name,
         },
     )
     return output
-
-def relative_path(from_, to):
-    """Compute a relative path from one path to another.
-
-    Args:
-        from_: {type}`str` the starting directory. Note that it should be
-            a directory because relative-symlinks are relative to the
-            directory the symlink resides in.
-        to: {type}`str` the path that `from_` wants to point to
-
-    Returns:
-        {type}`str` a relative path
-    """
-    from_parts = from_.split("/")
-    to_parts = to.split("/")
-
-    # Strip common leading parts from both paths
-    n = min(len(from_parts), len(to_parts))
-    for _ in range(n):
-        if from_parts[0] == to_parts[0]:
-            from_parts.pop(0)
-            to_parts.pop(0)
-        else:
-            break
-
-    # Impossible to compute a relative path without knowing what ".." is
-    if from_parts and from_parts[0] == "..":
-        fail("cannot compute relative path from '%s' to '%s'", from_, to)
-
-    parts = ([".."] * len(from_parts)) + to_parts
-    return paths.join(*parts)
 
 # Create a venv the executable can use.
 # For venv details and the venv startup process, see:
@@ -528,57 +553,170 @@ def relative_path(from_, to):
 # * https://snarky.ca/how-virtual-environments-work/
 # * https://github.com/python/cpython/blob/main/Modules/getpath.py
 # * https://github.com/python/cpython/blob/main/Lib/site.py
-def _create_venv(ctx, output_prefix, imports, runtime_details):
-    venv = "_{}.venv".format(output_prefix.lstrip("_"))
-
-    # The pyvenv.cfg file must be present to trigger the venv site hooks.
-    # Because it's paths are expected to be absolute paths, we can't reliably
-    # put much in it. See https://github.com/python/cpython/issues/83650
-    pyvenv_cfg = ctx.actions.declare_file("{}/pyvenv.cfg".format(venv))
-    ctx.actions.write(pyvenv_cfg, "")
-
+def _create_venv(ctx, output_prefix, imports, runtime_details, add_runfiles_root_to_sys_path, extra_deps):
+    venv_ctx_rel_root = "_{}.venv".format(output_prefix.lstrip("_"))
     runtime = runtime_details.effective_runtime
+    if runtime.interpreter:
+        interpreter_actual_path = runfiles_root_path(ctx, runtime.interpreter.short_path)
+    else:
+        interpreter_actual_path = runtime.interpreter_path
+
+    is_windows = target_platform_has_any_constraint(ctx, ctx.attr._windows_constraints)
+    if is_windows:
+        venv_details = _create_venv_windows(
+            ctx,
+            venv_ctx_rel_root = venv_ctx_rel_root,
+            interpreter_actual_path = interpreter_actual_path,
+            runtime = runtime,
+        )
+    else:
+        venv_details = _create_venv_unixy(
+            ctx,
+            venv_ctx_rel_root = venv_ctx_rel_root,
+            interpreter_actual_path = interpreter_actual_path,
+            runtime = runtime,
+        )
+
+    site_packages = "{}/{}".format(venv_ctx_rel_root, venv_details.site_packages)
+
+    pth = ctx.actions.declare_file("{}/bazel.pth".format(site_packages))
+    ctx.actions.write(pth, "import _bazel_site_init\n")
+
+    site_init = ctx.actions.declare_file("{}/_bazel_site_init.py".format(site_packages))
+    computed_subs = ctx.actions.template_dict()
+    computed_subs.add_joined("%imports%", imports, join_with = ":", map_each = _map_each_identity)
+    ctx.actions.expand_template(
+        template = runtime.site_init_template,
+        output = site_init,
+        substitutions = {
+            "%add_runfiles_root_to_sys_path%": add_runfiles_root_to_sys_path,
+            "%coverage_tool%": _get_coverage_tool_runfiles_path(ctx, runtime),
+            "%import_all%": "True" if read_possibly_native_flag(ctx, "python_import_all_repositories") else "False",
+            "%site_init_runfiles_path%": runfiles_root_path(ctx, site_init.short_path),
+            "%workspace_name%": ctx.workspace_name,
+        },
+        computed_substitutions = computed_subs,
+    )
+
+    venv_dir_map = {
+        VenvSymlinkKind.BIN: venv_details.bin_dir,
+        VenvSymlinkKind.LIB: site_packages,
+    }
+    venv_app_files = create_venv_app_files(
+        ctx,
+        deps = collect_deps(ctx, extra_deps),
+        venv_dir_map = venv_dir_map,
+    )
+
+    files_without_interpreter = [pth, site_init] + venv_app_files.venv_files
+    if venv_details.pyvenv_cfg:
+        files_without_interpreter.append(venv_details.pyvenv_cfg)
+
+    return struct(
+        # File or None; the `bin/python3` executable in the venv.
+        # None if a full venv isn't created.
+        interpreter = venv_details.interpreter,
+        # Files in the venv that need to be created for the interpreter to work
+        interpreter_runfiles = venv_details.interpreter_runfiles,
+        # depset[ExplicitSymlink] of symlinks to create.
+        # This is only used when declare_symlink() can't be used to represent
+        # creating such a link (i.e Windows)
+        interpreter_symlinks = venv_details.interpreter_symlinks,
+        # bool; True if the venv should be recreated at runtime
+        recreate_venv_at_runtime = venv_details.recreate_venv_at_runtime,
+        # Runfiles root relative path or absolute path
+        interpreter_actual_path = interpreter_actual_path,
+        files_without_interpreter = files_without_interpreter,
+        # string; venv-relative path to the site-packages directory.
+        venv_site_packages = venv_details.site_packages,
+        # string; runfiles-root relative path to venv root.
+        venv_root = runfiles_root_path(
+            ctx,
+            paths.join(
+                py_internal.get_label_repo_runfiles_path(ctx.label),
+                venv_ctx_rel_root,
+            ),
+        ),
+        # venv files for user library dependencies (files that are specific
+        # to the executable bootstrap and python runtime aren't here).
+        # `root_symlinks` should be used, otherwise, with symlinks files always go
+        # to `_main` prefix, and binaries from non-root module become broken.
+        lib_runfiles = ctx.runfiles(
+            root_symlinks = venv_app_files.runfiles_symlinks,
+        ),
+    )
+
+def _create_venv_unixy(ctx, *, venv_ctx_rel_root, runtime, interpreter_actual_path):
+    interpreter_runfiles = builders.RunfilesBuilder()
+    is_bootstrap_script = BootstrapImplFlag.get_value(ctx) == BootstrapImplFlag.SCRIPT
+    create_full_venv = True
+
+    # The legacy build_python_zip codepath (enabled by default on windows) isn't
+    # compatible with full venv.
+    # TODO: Use non-build_python_zip codepath for Windows
+    if not rp_config.bazel_8_or_later and not is_bootstrap_script:
+        # Full venv for Bazel 7 + system_python is disabled because packaging
+        # it using build_python_zip=true or rules_pkg breaks.
+        # * Using build_python_zip=true breaks because the legacy zipapp support
+        #   doesn't handle symlinks correctly.
+        # * Using rules_pkg breaks for two reasons:
+        #   1. It requires rules_pkg 1.2, which crashes under Bazel 7
+        #   2. It requires File.is_symlink, which is a Bazel 8+ API.
+        # While bootstrap=script has the same problems, it has always been like
+        # that.
+        create_full_venv = False
+
+    if create_full_venv:
+        # The pyvenv.cfg file must be present to trigger the venv site hooks.
+        # Because it's paths are expected to be absolute paths, we can't reliably
+        # put much in it. See https://github.com/python/cpython/issues/83650
+        pyvenv_cfg = ctx.actions.declare_file("{}/pyvenv.cfg".format(venv_ctx_rel_root))
+        ctx.actions.write(pyvenv_cfg, "")
+    else:
+        pyvenv_cfg = None
+
     venvs_use_declare_symlink_enabled = (
         VenvsUseDeclareSymlinkFlag.get_value(ctx) == VenvsUseDeclareSymlinkFlag.YES
     )
 
-    if not venvs_use_declare_symlink_enabled:
-        if runtime.interpreter:
-            interpreter_actual_path = runfiles_root_path(ctx, runtime.interpreter.short_path)
-        else:
-            interpreter_actual_path = runtime.interpreter_path
+    recreate_venv_at_runtime = False
 
+    bin_dir = "{}/bin".format(venv_ctx_rel_root)
+    if create_full_venv:
+        # Some wrappers around the interpreter (e.g. pyenv) use the program
+        # name to decide what to do, so preserve the name.
         py_exe_basename = paths.basename(interpreter_actual_path)
 
-        # When the venv symlinks are disabled, the $venv/bin/python3 file isn't
-        # needed or used at runtime. However, the zip code uses the interpreter
-        # File object to figure out some paths.
-        interpreter = ctx.actions.declare_file("{}/bin/{}".format(venv, py_exe_basename))
-        ctx.actions.write(interpreter, "actual:{}".format(interpreter_actual_path))
+        if not venvs_use_declare_symlink_enabled or not runtime.supports_build_time_venv:
+            recreate_venv_at_runtime = True
 
-    elif runtime.interpreter:
-        py_exe_basename = paths.basename(runtime.interpreter.short_path)
+            # When the venv symlinks are disabled, the $venv/bin/python3 file isn't
+            # needed or used at runtime. However, the zip code uses the interpreter
+            # File object to figure out some paths.
+            interpreter = ctx.actions.declare_file("{}/{}".format(bin_dir, py_exe_basename))
+            ctx.actions.write(interpreter, "actual:{}".format(interpreter_actual_path))
 
-        # Even though ctx.actions.symlink() is used, using
-        # declare_symlink() is required to ensure that the resulting file
-        # in runfiles is always a symlink. An RBE implementation, for example,
-        # may choose to write what symlink() points to instead.
-        interpreter = ctx.actions.declare_symlink("{}/bin/{}".format(venv, py_exe_basename))
+        elif runtime.interpreter:
+            # Even though ctx.actions.symlink() is used, using
+            # declare_symlink() is required to ensure that the resulting file
+            # in runfiles is always a symlink. An RBE implementation, for example,
+            # may choose to write what symlink() points to instead.
+            interpreter = ctx.actions.declare_symlink("{}/{}".format(bin_dir, py_exe_basename))
+            interpreter_runfiles.add(interpreter)
 
-        interpreter_actual_path = runfiles_root_path(ctx, runtime.interpreter.short_path)
-        rel_path = relative_path(
-            # dirname is necessary because a relative symlink is relative to
-            # the directory the symlink resides within.
-            from_ = paths.dirname(runfiles_root_path(ctx, interpreter.short_path)),
-            to = interpreter_actual_path,
-        )
-
-        ctx.actions.symlink(output = interpreter, target_path = rel_path)
+            rel_path = relative_path(
+                # dirname is necessary because a relative symlink is relative to
+                # the directory the symlink resides within.
+                from_ = paths.dirname(runfiles_root_path(ctx, interpreter.short_path)),
+                to = interpreter_actual_path,
+            )
+            ctx.actions.symlink(output = interpreter, target_path = rel_path)
+        else:
+            interpreter = ctx.actions.declare_symlink("{}/{}".format(bin_dir, py_exe_basename))
+            interpreter_runfiles.add(interpreter)
+            ctx.actions.symlink(output = interpreter, target_path = runtime.interpreter_path)
     else:
-        py_exe_basename = paths.basename(runtime.interpreter_path)
-        interpreter = ctx.actions.declare_symlink("{}/bin/{}".format(venv, py_exe_basename))
-        ctx.actions.symlink(output = interpreter, target_path = runtime.interpreter_path)
-        interpreter_actual_path = runtime.interpreter_path
+        interpreter = None
 
     if runtime.interpreter_version_info:
         version = "{}.{}".format(
@@ -594,106 +732,109 @@ def _create_venv(ctx, output_prefix, imports, runtime_details):
     if "t" in runtime.abi_flags:
         version += "t"
 
-    site_packages = "{}/lib/python{}/site-packages".format(venv, version)
-    pth = ctx.actions.declare_file("{}/bazel.pth".format(site_packages))
-    ctx.actions.write(pth, "import _bazel_site_init\n")
-
-    site_init = ctx.actions.declare_file("{}/_bazel_site_init.py".format(site_packages))
-    computed_subs = ctx.actions.template_dict()
-    computed_subs.add_joined("%imports%", imports, join_with = ":", map_each = _map_each_identity)
-    ctx.actions.expand_template(
-        template = runtime.site_init_template,
-        output = site_init,
-        substitutions = {
-            "%coverage_tool%": _get_coverage_tool_runfiles_path(ctx, runtime),
-            "%import_all%": "True" if ctx.fragments.bazel_py.python_import_all_repositories else "False",
-            "%site_init_runfiles_path%": "{}/{}".format(ctx.workspace_name, site_init.short_path),
-            "%workspace_name%": ctx.workspace_name,
-        },
-        computed_substitutions = computed_subs,
-    )
-    site_packages_symlinks = _create_site_packages_symlinks(ctx, site_packages)
-
-    return struct(
+    site_packages = "lib/python{}/site-packages".format(version)
+    return _venv_details(
         interpreter = interpreter,
-        recreate_venv_at_runtime = not venvs_use_declare_symlink_enabled,
-        # Runfiles root relative path or absolute path
-        interpreter_actual_path = interpreter_actual_path,
-        files_without_interpreter = [pyvenv_cfg, pth, site_init] + site_packages_symlinks,
+        pyvenv_cfg = pyvenv_cfg,
+        site_packages = site_packages,
+        bin_dir = bin_dir,
+        recreate_venv_at_runtime = recreate_venv_at_runtime,
+        interpreter_runfiles = interpreter_runfiles.build(ctx),
+        interpreter_symlinks = depset(),
     )
 
-def _create_site_packages_symlinks(ctx, site_packages):
-    """Creates symlinks within site-packages.
+def _create_venv_windows(ctx, *, venv_ctx_rel_root, runtime, interpreter_actual_path):
+    interpreter_runfiles = builders.RunfilesBuilder()
+    interpreter_symlinks = builders.DepsetBuilder()
 
-    Args:
-        ctx: current rule ctx
-        site_packages: runfiles-root-relative path to the site-packages directory
+    # Some wrappers around the interpreter (e.g. pyenv) use the program
+    # name to decide what to do, so preserve the name.
+    py_exe_basename = paths.basename(interpreter_actual_path)
+    venv_bin_rel_path = "Scripts"
+    venv_bin_ctx_rel_path = "{}/{}".format(venv_ctx_rel_root, venv_bin_rel_path)
+    if runtime.interpreter:
+        venv_rel_path = paths.join(venv_bin_rel_path, py_exe_basename)
+        venv_ctx_rel_path = paths.join(venv_ctx_rel_root, venv_rel_path)
+        interpreter = ctx.actions.declare_file(venv_ctx_rel_path)
+        interpreter_runfiles.add(interpreter)
+        ctx.actions.symlink(output = interpreter, target_file = runtime.interpreter)
 
-    Returns:
-        {type}`list[File]` list of the File symlink objects created.
-    """
+        rf_path = runfiles_root_path(ctx, interpreter.short_path)
+        interpreter_symlinks.add(ExplicitSymlink(
+            runfiles_path = rf_path,
+            venv_path = venv_rel_path,
+            link_to_path = interpreter_actual_path,
+            files = depset([runtime.interpreter]),
+        ))
+    else:
+        # It's OK to use declare_symlink here because an absolute path
+        # will be written to it, so Bazel won't mangle it.
+        interpreter = ctx.actions.declare_symlink("{}/{}".format(venv_bin_ctx_rel_path, py_exe_basename))
+        interpreter_runfiles.add(interpreter)
+        ctx.actions.symlink(output = interpreter, target_path = runtime.interpreter_path)
 
-    # maps site-package symlink to the runfiles path it should point to
-    entries = depset(
-        # NOTE: Topological ordering is used so that dependencies closer to the
-        # binary have precedence in creating their symlinks. This allows the
-        # binary a modicum of control over the result.
-        order = "topological",
-        transitive = [
-            dep[PyInfo].site_packages_symlinks
-            for dep in ctx.attr.deps
-            if PyInfo in dep
-        ],
-    ).to_list()
-    link_map = _build_link_map(entries)
+    # NOTE: The .dll files must exist, however, they may not be known at build time
+    # if the interpreter is resolved at runtime.
+    for f in runtime.venv_bin_files:
+        venv_rel_path = paths.join(venv_bin_rel_path, f.basename)
+        venv_ctx_rel_path = paths.join(venv_ctx_rel_root, venv_rel_path)
 
-    sp_files = []
-    for sp_dir_path, link_to in link_map.items():
-        sp_link = ctx.actions.declare_symlink(paths.join(site_packages, sp_dir_path))
-        sp_link_rf_path = runfiles_root_path(ctx, sp_link.short_path)
-        rel_path = relative_path(
-            # dirname is necessary because a relative symlink is relative to
-            # the directory the symlink resides within.
-            from_ = paths.dirname(sp_link_rf_path),
-            to = link_to,
-        )
-        ctx.actions.symlink(output = sp_link, target_path = rel_path)
-        sp_files.append(sp_link)
-    return sp_files
+        venv_file = ctx.actions.declare_file(venv_ctx_rel_path)
+        ctx.actions.symlink(output = venv_file, target_file = f)
 
-def _build_link_map(entries):
-    link_map = {}
-    for link_to_runfiles_path, site_packages_path in entries:
-        if site_packages_path in link_map:
-            # We ignore duplicates by design. The dependency closer to the
-            # binary gets precedence due to the topological ordering.
-            continue
-        else:
-            link_map[site_packages_path] = link_to_runfiles_path
+        interpreter_runfiles.add(venv_file)
 
-    # An empty link_to value means to not create the site package symlink.
-    # Because of the topological ordering, this allows binaries to remove
-    # entries by having an earlier dependency produce empty link_to values.
-    for sp_dir_path, link_to in link_map.items():
-        if not link_to:
-            link_map.pop(sp_dir_path)
+        rf_path = runfiles_root_path(ctx, venv_file.short_path)
+        interpreter_symlinks.add(ExplicitSymlink(
+            runfiles_path = rf_path,
+            venv_path = venv_rel_path,
+            link_to_path = runfiles_root_path(ctx, f.short_path),
+            files = depset([f]),
+        ))
 
-    # Remove entries that would be a child path of a created symlink.
-    # Earlier entries have precedence to match how exact matches are handled.
-    keep_link_map = {}
-    for _ in range(len(link_map)):
-        if not link_map:
-            break
-        dirname, value = link_map.popitem()
-        keep_link_map[dirname] = value
+    # See site.py logic: Windows uses a version/build agnostic site-packages path
+    site_packages = "Lib/site-packages"
 
-        prefix = dirname + "/"  # Add slash to prevent /X matching /XY
-        for maybe_suffix in link_map.keys():
-            maybe_suffix += "/"  # Add slash to prevent /X matching /XY
-            if maybe_suffix.startswith(prefix) or prefix.startswith(maybe_suffix):
-                link_map.pop(maybe_suffix)
+    return _venv_details(
+        interpreter = interpreter,
+        pyvenv_cfg = None,
+        site_packages = site_packages,
+        bin_dir = venv_bin_ctx_rel_path,
+        recreate_venv_at_runtime = True,
+        interpreter_runfiles = interpreter_runfiles.build(ctx),
+        interpreter_symlinks = interpreter_symlinks.build(),
+    )
 
-    return keep_link_map
+def _venv_details(
+        *,
+        interpreter,
+        pyvenv_cfg,
+        site_packages,
+        bin_dir,
+        recreate_venv_at_runtime,
+        interpreter_runfiles,
+        interpreter_symlinks):
+    """Helper to create a struct of platform-specific venv details."""
+    return struct(
+        # File; the `bin/python` executable (or equivalent) within the venv.
+        interpreter = interpreter,
+        # File|None; the pyvenv.cfg file, if any. May be none, in which case,
+        # it's expected that one will be created at runtime.
+        pyvenv_cfg = pyvenv_cfg,
+        # str; venv-relative path to the site-packages directory
+        site_packages = site_packages,
+        # str; ctx-relative path to the venv's bin directory.
+        bin_dir = bin_dir,
+        # bool; True if the venv needs to be recreated at runtime (because the
+        # build-time construction isn't sufficient). False if the build-time
+        # constructed venv is sufficient.
+        recreate_venv_at_runtime = recreate_venv_at_runtime,
+        # runfiles; runfiles for interpreter-specific files in the venv.
+        interpreter_runfiles = interpreter_runfiles,
+        # depset[ExplicitSymlink] of symlinks specific
+        # to the interpreter. Only used for Windows.
+        interpreter_symlinks = interpreter_symlinks,
+    )
 
 def _map_each_identity(v):
     return v
@@ -702,10 +843,7 @@ def _get_coverage_tool_runfiles_path(ctx, runtime):
     if (ctx.configuration.coverage_enabled and
         runtime and
         runtime.coverage_tool):
-        return "{}/{}".format(
-            ctx.workspace_name,
-            runtime.coverage_tool.short_path,
-        )
+        return runfiles_root_path(ctx, runtime.coverage_tool.short_path)
     else:
         return ""
 
@@ -716,7 +854,9 @@ def _create_stage2_bootstrap(
         output_sibling,
         main_py,
         imports,
-        runtime_details):
+        runtime_details,
+        build_data_file,
+        venv):
     output = ctx.actions.declare_file(
         # Prepend with underscore to prevent pytest from trying to
         # process the bootstrap for files starting with `test_`
@@ -728,19 +868,24 @@ def _create_stage2_bootstrap(
     template = runtime.stage2_bootstrap_template
 
     if main_py:
-        main_py_path = "{}/{}".format(ctx.workspace_name, main_py.short_path)
+        main_py_path = runfiles_root_path(ctx, main_py.short_path)
     else:
         main_py_path = ""
+
     ctx.actions.expand_template(
         template = template,
         output = output,
         substitutions = {
+            "%build_data_file%": runfiles_root_path(ctx, build_data_file.short_path),
+            "%coverage_instrumented%": str(int(ctx.configuration.coverage_enabled and ctx.coverage_instrumented())),
             "%coverage_tool%": _get_coverage_tool_runfiles_path(ctx, runtime),
-            "%import_all%": "True" if ctx.fragments.bazel_py.python_import_all_repositories else "False",
+            "%import_all%": "True" if read_possibly_native_flag(ctx, "python_import_all_repositories") else "False",
             "%imports%": ":".join(imports.to_list()),
             "%main%": main_py_path,
             "%main_module%": ctx.attr.main_module,
             "%target%": str(ctx.label),
+            "%venv_rel_site_packages%": venv.venv_site_packages,
+            "%venv_root%": venv.venv_root,
             "%workspace_name%": ctx.workspace_name,
         },
         is_executable = True,
@@ -757,33 +902,50 @@ def _create_stage1_bootstrap(
         is_for_zip,
         runtime_details,
         venv = None):
+    """Create a legacy bootstrap script that is written in Python."""
     runtime = runtime_details.effective_runtime
 
     if venv:
-        python_binary_path = runfiles_root_path(ctx, venv.interpreter.short_path)
+        if venv.interpreter:
+            python_binary_path = runfiles_root_path(ctx, venv.interpreter.short_path)
+        else:
+            python_binary_path = ""
     else:
         python_binary_path = runtime_details.executable_interpreter_path
 
     python_binary_actual = venv.interpreter_actual_path if venv else ""
 
+    # Guard against the following:
+    # * Runtime may be None on Windows due to the --python_path flag.
+    # * Runtime may not have 'supports_build_time_venv' if a really old version is autoloaded
+    #   on bazel 7.6.x.
+    if runtime and getattr(runtime, "supports_build_time_venv", False):
+        resolve_python_binary_at_runtime = "0"
+    else:
+        resolve_python_binary_at_runtime = "1"
+
     subs = {
-        "%interpreter_args%": "\n".join([
-            '"{}"'.format(v)
-            for v in ctx.attr.interpreter_args
-        ]),
+        "%interpreter_args%": "\n".join(ctx.attr.interpreter_args),
         "%is_zipfile%": "1" if is_for_zip else "0",
         "%python_binary%": python_binary_path,
         "%python_binary_actual%": python_binary_actual,
         "%recreate_venv_at_runtime%": str(int(venv.recreate_venv_at_runtime)) if venv else "0",
+        "%resolve_python_binary_at_runtime%": resolve_python_binary_at_runtime,
         "%target%": str(ctx.label),
+        "%venv_rel_site_packages%": venv.venv_site_packages if venv else "",
         "%workspace_name%": ctx.workspace_name,
     }
+    computed_subs = ctx.actions.template_dict()
+    if venv:
+        computed_subs.add_joined(
+            "%runtime_venv_symlinks%",
+            venv.interpreter_symlinks,
+            join_with = "\n",
+            map_each = _map_runtime_venv_symlink,
+        )
 
     if stage2_bootstrap:
-        subs["%stage2_bootstrap%"] = "{}/{}".format(
-            ctx.workspace_name,
-            stage2_bootstrap.short_path,
-        )
+        subs["%stage2_bootstrap%"] = runfiles_root_path(ctx, stage2_bootstrap.short_path)
         template = runtime.bootstrap_template
         subs["%shebang%"] = runtime.stub_shebang
     elif not ctx.files.srcs:
@@ -792,10 +954,7 @@ def _create_stage1_bootstrap(
         if (ctx.configuration.coverage_enabled and
             runtime and
             runtime.coverage_tool):
-            coverage_tool_runfiles_path = "{}/{}".format(
-                ctx.workspace_name,
-                runtime.coverage_tool.short_path,
-            )
+            coverage_tool_runfiles_path = runfiles_root_path(ctx, runtime.coverage_tool.short_path)
         else:
             coverage_tool_runfiles_path = ""
         if runtime:
@@ -806,47 +965,22 @@ def _create_stage1_bootstrap(
             template = ctx.file._bootstrap_template
 
         subs["%coverage_tool%"] = coverage_tool_runfiles_path
-        subs["%import_all%"] = ("True" if ctx.fragments.bazel_py.python_import_all_repositories else "False")
+        subs["%import_all%"] = ("True" if read_possibly_native_flag(ctx, "python_import_all_repositories") else "False")
         subs["%imports%"] = ":".join(imports.to_list())
-        subs["%main%"] = "{}/{}".format(ctx.workspace_name, main_py.short_path)
+        subs["%main%"] = runfiles_root_path(ctx, main_py.short_path)
 
     ctx.actions.expand_template(
         template = template,
         output = output,
         substitutions = subs,
+        computed_substitutions = computed_subs,
+        is_executable = True,
     )
 
-def _create_windows_exe_launcher(
-        ctx,
-        *,
-        output,
-        python_binary_path,
-        use_zip_file):
-    launch_info = ctx.actions.args()
-    launch_info.use_param_file("%s", use_always = True)
-    launch_info.set_param_file_format("multiline")
-    launch_info.add("binary_type=Python")
-    launch_info.add(ctx.workspace_name, format = "workspace_name=%s")
-    launch_info.add(
-        "1" if py_internal.runfiles_enabled(ctx) else "0",
-        format = "symlink_runfiles_enabled=%s",
-    )
-    launch_info.add(python_binary_path, format = "python_bin_path=%s")
-    launch_info.add("1" if use_zip_file else "0", format = "use_zip_file=%s")
+def _map_runtime_venv_symlink(entry):
+    return entry.venv_path + "|" + entry.link_to_path
 
-    launcher = ctx.attr._launcher[DefaultInfo].files_to_run.executable
-    ctx.actions.run(
-        executable = ctx.executable._windows_launcher_maker,
-        arguments = [launcher.path, launch_info, output.path],
-        inputs = [launcher],
-        outputs = [output],
-        mnemonic = "PyBuildLauncher",
-        progress_message = "Creating launcher for %{label}",
-        # Needed to inherit PATH when using non-MSVC compilers like MinGW
-        use_default_shell_env = True,
-    )
-
-def _create_zip_file(ctx, *, output, original_nonzip_executable, zip_main, runfiles):
+def _create_zip_file(ctx, *, output, zip_main, runfiles):
     """Create a Python zipapp (zip with __main__.py entry point)."""
     workspace_name = ctx.workspace_name
     legacy_external_runfiles = _py_builtins.get_legacy_external_runfiles(ctx)
@@ -858,47 +992,45 @@ def _create_zip_file(ctx, *, output, original_nonzip_executable, zip_main, runfi
     manifest.add("__main__.py={}".format(zip_main.path))
     manifest.add("__init__.py=")
     manifest.add(
-        "{}=".format(
-            _get_zip_runfiles_path("__init__.py", workspace_name, legacy_external_runfiles),
-        ),
+        "{}=".format(_get_zip_runfiles_path(_INIT_PY, workspace_name)),
     )
-    for path in runfiles.empty_filenames.to_list():
-        manifest.add("{}=".format(_get_zip_runfiles_path(path, workspace_name, legacy_external_runfiles)))
+
+    def map_zip_empty_filenames(list_paths_cb):
+        return [
+            # FIXME @aignas 2025-12-06: what kind of paths do we expect here? Will they
+            # ever start with `../` or `external`?
+            _get_zip_runfiles_path_legacy(path, workspace_name, legacy_external_runfiles) + "="
+            for path in list_paths_cb().to_list()
+        ]
+
+    manifest.add_all(
+        # NOTE: Accessing runfiles.empty_filenames implicitly flattens the runfiles.
+        # Smuggle a lambda in via a list to defer that flattening.
+        [lambda: runfiles.empty_filenames],
+        map_each = map_zip_empty_filenames,
+        allow_closure = True,
+    )
 
     def map_zip_runfiles(file):
-        if file != original_nonzip_executable and file != output:
-            return "{}={}".format(
-                _get_zip_runfiles_path(file.short_path, workspace_name, legacy_external_runfiles),
-                file.path,
-            )
-        else:
-            return None
+        return (
+            # NOTE: Use "+" for performance
+            _get_zip_runfiles_path_legacy(file.short_path, workspace_name, legacy_external_runfiles) +
+            "=" + file.path
+        )
 
     manifest.add_all(runfiles.files, map_each = map_zip_runfiles, allow_closure = True)
 
     inputs = [zip_main]
-    if _py_builtins.is_bzlmod_enabled(ctx):
-        zip_repo_mapping_manifest = ctx.actions.declare_file(
-            output.basename + ".repo_mapping",
-            sibling = output,
-        )
-        _py_builtins.create_repo_mapping_manifest(
-            ctx = ctx,
-            runfiles = runfiles,
-            output = zip_repo_mapping_manifest,
-        )
+    zip_repo_mapping_manifest = maybe_create_repo_mapping(
+        ctx = ctx,
+        runfiles = runfiles,
+    )
+    if zip_repo_mapping_manifest:
         manifest.add("{}/_repo_mapping={}".format(
             _ZIP_RUNFILES_DIRECTORY_NAME,
             zip_repo_mapping_manifest.path,
         ))
         inputs.append(zip_repo_mapping_manifest)
-
-    for artifact in runfiles.files.to_list():
-        # Don't include the original executable because it isn't used by the
-        # zip file, so no need to build it for the action.
-        # Don't include the zipfile itself because it's an output.
-        if artifact != original_nonzip_executable and artifact != output:
-            inputs.append(artifact)
 
     zip_cli_args = ctx.actions.args()
     zip_cli_args.add("cC")
@@ -907,23 +1039,35 @@ def _create_zip_file(ctx, *, output, original_nonzip_executable, zip_main, runfi
     ctx.actions.run(
         executable = ctx.executable._zipper,
         arguments = [zip_cli_args, manifest],
-        inputs = depset(inputs),
+        inputs = depset(inputs, transitive = [runfiles.files]),
         outputs = [output],
         use_default_shell_env = True,
         mnemonic = "PythonZipper",
         progress_message = "Building Python zip: %{label}",
     )
 
-def _get_zip_runfiles_path(path, workspace_name, legacy_external_runfiles):
-    if legacy_external_runfiles and path.startswith(_EXTERNAL_PATH_PREFIX):
-        zip_runfiles_path = paths.relativize(path, _EXTERNAL_PATH_PREFIX)
+def _get_zip_runfiles_path(path, workspace_name = ""):
+    # NOTE @aignas 2025-12-06: This is to avoid the prefix checking in the very
+    # trivial case that is always happening once per this function call
+
+    # NOTE: Use "+" for performance
+    if workspace_name:
+        # NOTE: Use "+" for performance
+        return _ZIP_RUNFILES_DIRECTORY_NAME + "/" + workspace_name + "/" + path
     else:
+        return _ZIP_RUNFILES_DIRECTORY_NAME + "/" + path
+
+def _get_zip_runfiles_path_legacy(path, workspace_name, legacy_external_runfiles):
+    if legacy_external_runfiles and path.startswith(_EXTERNAL_PATH_PREFIX):
+        return _get_zip_runfiles_path(path.removeprefix(_EXTERNAL_PATH_PREFIX))
+    elif path.startswith("../"):
         # NOTE: External runfiles (artifacts in other repos) will have a leading
         # path component of "../" so that they refer outside the main workspace
-        # directory and into the runfiles root. By normalizing, we simplify e.g.
+        # directory and into the runfiles root. So we simplify it, e.g.
         # "workspace/../foo/bar" to simply "foo/bar".
-        zip_runfiles_path = paths.normalize("{}/{}".format(workspace_name, path))
-    return "{}/{}".format(_ZIP_RUNFILES_DIRECTORY_NAME, zip_runfiles_path)
+        return _get_zip_runfiles_path(path[3:])
+    else:
+        return _get_zip_runfiles_path(path, workspace_name)
 
 def _create_executable_zip_file(
         ctx,
@@ -1002,10 +1146,6 @@ def _get_native_deps_dso_name(ctx):
     _ = ctx  # @unused
     fail("Building native deps DSO not supported.")
 
-def _get_native_deps_user_link_flags(ctx):
-    _ = ctx  # @unused
-    fail("Building native deps DSO not supported.")
-
 def py_executable_base_impl(ctx, *, semantics, is_test, inherited_environment = []):
     """Base rule implementation for a Python executable.
 
@@ -1030,7 +1170,7 @@ def py_executable_base_impl(ctx, *, semantics, is_test, inherited_environment = 
     else:
         main_py = None
     direct_sources = filter_to_py_srcs(ctx.files.srcs)
-    precompile_result = semantics.maybe_precompile(ctx, direct_sources)
+    precompile_result = maybe_precompile(ctx, direct_sources)
 
     required_py_files = precompile_result.keep_srcs
     required_pyc_files = []
@@ -1054,20 +1194,16 @@ def py_executable_base_impl(ctx, *, semantics, is_test, inherited_environment = 
     default_outputs.add(precompile_result.keep_srcs)
     default_outputs.add(required_pyc_files)
 
-    imports = collect_imports(ctx, semantics)
-
-    runtime_details = _get_runtime_details(ctx, semantics)
-    if ctx.configuration.coverage_enabled:
-        extra_deps = semantics.get_coverage_deps(ctx, runtime_details)
-    else:
-        extra_deps = []
+    extra_deps = []
 
     # The debugger dependency should be prevented by select() config elsewhere,
     # but just to be safe, also guard against adding it to the output here.
     if not _is_tool_config(ctx):
-        extra_deps.extend(semantics.get_debugger_deps(ctx, runtime_details))
+        extra_deps.append(ctx.attr._debugger_flag)
 
-    cc_details = semantics.get_cc_details_for_binary(ctx, extra_deps = extra_deps)
+    imports = collect_imports(ctx, extra_deps = extra_deps)
+    runtime_details = _get_runtime_details(ctx)
+    cc_details = _get_cc_details_for_binary(ctx, extra_deps = extra_deps)
     native_deps_details = _get_native_deps_details(
         ctx,
         semantics = semantics,
@@ -1082,15 +1218,13 @@ def py_executable_base_impl(ctx, *, semantics, is_test, inherited_environment = 
         required_pyc_files = required_pyc_files,
         implicit_pyc_files = implicit_pyc_files,
         implicit_pyc_source_files = implicit_pyc_source_files,
+        runtime_runfiles = runtime_details.runfiles,
         extra_common_runfiles = [
-            runtime_details.runfiles,
             cc_details.extra_runfiles,
             native_deps_details.runfiles,
-            semantics.get_extra_common_runfiles_for_binary(ctx),
         ],
-        semantics = semantics,
     )
-    exec_result = semantics.create_executable(
+    exec_result = _create_executable(
         ctx,
         executable = executable,
         main_py = main_py,
@@ -1100,11 +1234,12 @@ def py_executable_base_impl(ctx, *, semantics, is_test, inherited_environment = 
         cc_details = cc_details,
         native_deps_details = native_deps_details,
         runfiles_details = runfiles_details,
+        extra_deps = extra_deps,
     )
-    default_outputs.add(exec_result.extra_files_to_build)
+    default_outputs.add(exec_result.extra_default_outputs)
 
     extra_exec_runfiles = exec_result.extra_runfiles.merge(
-        ctx.runfiles(transitive_files = exec_result.extra_files_to_build),
+        ctx.runfiles(transitive_files = exec_result.extra_default_outputs),
     )
 
     # Copy any existing fields in case of company patches.
@@ -1114,6 +1249,8 @@ def py_executable_base_impl(ctx, *, semantics, is_test, inherited_environment = 
             data_runfiles = runfiles_details.data_runfiles.merge(extra_exec_runfiles),
         )
     ))
+
+    app_runfiles = exec_result.app_runfiles
 
     return _create_providers(
         ctx = ctx,
@@ -1130,8 +1267,13 @@ def py_executable_base_impl(ctx, *, semantics, is_test, inherited_environment = 
         runtime_details = runtime_details,
         cc_info = cc_details.cc_info_for_propagating,
         inherited_environment = inherited_environment,
-        semantics = semantics,
         output_groups = exec_result.output_groups,
+        stage2_bootstrap = exec_result.stage2_bootstrap,
+        app_runfiles = app_runfiles,
+        venv_python_exe = exec_result.venv_python_exe,
+        venv_interpreter_runfiles = exec_result.venv_interpreter_runfiles,
+        venv_interpreter_symlinks = exec_result.venv_interpreter_symlinks,
+        interpreter_args = ctx.attr.interpreter_args,
     )
 
 def _get_build_info(ctx, cc_toolchain):
@@ -1162,7 +1304,7 @@ def _declare_executable_file(ctx):
 
     return executable
 
-def _get_runtime_details(ctx, semantics):
+def _get_runtime_details(ctx):
     """Gets various information about the Python runtime to use.
 
     While most information comes from the toolchain, various legacy and
@@ -1170,7 +1312,6 @@ def _get_runtime_details(ctx, semantics):
 
     Args:
         ctx: Rule ctx
-        semantics: A `BinarySemantics` struct; see `create_binary_semantics_struct`
 
     Returns:
         A struct; see inline-field comments of the return value for details.
@@ -1178,19 +1319,13 @@ def _get_runtime_details(ctx, semantics):
 
     # Bazel has --python_path. This flag has a computed default of "python" when
     # its actual default is null (see
-    # BazelPythonConfiguration.java#getPythonPath). This flag is only used if
-    # toolchains are not enabled and `--python_top` isn't set. Note that Google
-    # used to have a variant of this named --python_binary, but it has since
-    # been removed.
-    #
     # TOOD(bazelbuild/bazel#7901): Remove this once --python_path flag is removed.
 
-    flag_interpreter_path = ctx.fragments.bazel_py.python_path
-    toolchain_runtime, effective_runtime = _maybe_get_runtime_from_ctx(ctx)
-    if not effective_runtime:
-        # Clear these just in case
-        toolchain_runtime = None
-        effective_runtime = None
+    flag_interpreter_path = read_possibly_native_flag(ctx, "python_path")
+    if not flag_interpreter_path.startswith("python") and not paths.is_absolute(flag_interpreter_path):
+        fail("'python_path' must be an absolute path or a name to be resolved from the system PATH (e.g., 'python', 'python3').")
+
+    effective_runtime = _maybe_get_runtime_from_ctx(ctx)
 
     if effective_runtime:
         direct = []  # List of files
@@ -1208,23 +1343,16 @@ def _get_runtime_details(ctx, semantics):
     else:
         runtime_files = depset()
 
-    executable_interpreter_path = semantics.get_interpreter_path(
+    executable_interpreter_path = _get_interpreter_path(
         ctx,
         runtime = effective_runtime,
         flag_interpreter_path = flag_interpreter_path,
     )
 
     return struct(
-        # Optional PyRuntimeInfo: The runtime found from toolchain resolution.
-        # This may be None because, within Google, toolchain resolution isn't
-        # yet enabled.
-        toolchain_runtime = toolchain_runtime,
-        # Optional PyRuntimeInfo: The runtime that should be used. When
-        # toolchain resolution is enabled, this is the same as
-        # `toolchain_resolution`. Otherwise, this probably came from the
-        # `_python_top` attribute that the Google implementation still uses.
-        # This is separate from `toolchain_runtime` because toolchain_runtime
-        # is propagated as a provider, while non-toolchain runtimes are not.
+        # Optional PyRuntimeInfo: The runtime that should be used.
+        # If None, it's probably Windows using the legacy auto-detecting toolchain
+        # that acts as if no toolchain was found.
         effective_runtime = effective_runtime,
         # str; Path to the Python interpreter to use for running the executable
         # itself (not the bootstrap script). Either an absolute path (which
@@ -1241,43 +1369,30 @@ def _maybe_get_runtime_from_ctx(ctx):
     """Finds the PyRuntimeInfo from the toolchain or attribute, if available.
 
     Returns:
-        2-tuple of toolchain_runtime, effective_runtime
+        A PyRuntimeInfo provider, or None.
     """
-    if ctx.fragments.py.use_toolchains:
-        toolchain = ctx.toolchains[TOOLCHAIN_TYPE]
+    toolchain = ctx.toolchains[TOOLCHAIN_TYPE]
 
-        if not hasattr(toolchain, "py3_runtime"):
-            fail("Python toolchain field 'py3_runtime' is missing")
-        if not toolchain.py3_runtime:
-            fail("Python toolchain missing py3_runtime")
-        py3_runtime = toolchain.py3_runtime
+    if not hasattr(toolchain, "py3_runtime"):
+        fail("Python toolchain field 'py3_runtime' is missing")
+    if not toolchain.py3_runtime:
+        fail("Python toolchain missing py3_runtime")
+    py3_runtime = toolchain.py3_runtime
 
-        # Hack around the fact that the autodetecting Python toolchain, which is
-        # automatically registered, does not yet support Windows. In this case,
-        # we want to return null so that _get_interpreter_path falls back on
-        # --python_path. See tools/python/toolchain.bzl.
-        # TODO(#7844): Remove this hack when the autodetecting toolchain has a
-        # Windows implementation.
-        if py3_runtime.interpreter_path == "/_magic_pyruntime_sentinel_do_not_use":
-            return None, None
+    # Hack around the fact that the autodetecting Python toolchain, which is
+    # automatically registered, does not yet support Windows. In this case,
+    # we want to return null so that _get_interpreter_path falls back on
+    # --python_path. See tools/python/toolchain.bzl.
+    # TODO(#7844): Remove this hack when the autodetecting toolchain has a
+    # Windows implementation.
+    if py3_runtime.interpreter_path == "/_magic_pyruntime_sentinel_do_not_use":
+        return None
 
-        if py3_runtime.python_version != "PY3":
-            fail("Python toolchain py3_runtime must be python_version=PY3, got {}".format(
-                py3_runtime.python_version,
-            ))
-        toolchain_runtime = toolchain.py3_runtime
-        effective_runtime = toolchain_runtime
-    else:
-        toolchain_runtime = None
-        attr_target = ctx.attr._py_interpreter
-
-        # In Bazel, --python_top is null by default.
-        if attr_target and PyRuntimeInfo in attr_target:
-            effective_runtime = attr_target[PyRuntimeInfo]
-        else:
-            return None, None
-
-    return toolchain_runtime, effective_runtime
+    if py3_runtime.python_version != "PY3":
+        fail("Python toolchain py3_runtime must be python_version=PY3, got {}".format(
+            py3_runtime.python_version,
+        ))
+    return py3_runtime
 
 def _get_base_runfiles_for_binary(
         ctx,
@@ -1288,8 +1403,8 @@ def _get_base_runfiles_for_binary(
         required_pyc_files,
         implicit_pyc_files,
         implicit_pyc_source_files,
-        extra_common_runfiles,
-        semantics):
+        runtime_runfiles,
+        extra_common_runfiles):
     """Returns the set of runfiles necessary prior to executable creation.
 
     NOTE: The term "common runfiles" refers to the runfiles that are common to
@@ -1309,9 +1424,9 @@ def _get_base_runfiles_for_binary(
             collection is enabled.
         implicit_pyc_source_files: `depset[File]` source files for implicit pyc
             files that are used when the implicit pyc files are not.
+        runtime_runfiles: runfiles for the python runtime.
         extra_common_runfiles: List of runfiles; additional runfiles that
             will be added to the common runfiles.
-        semantics: A `BinarySemantics` struct; see `create_binary_semantics_struct`.
 
     Returns:
         struct with attributes:
@@ -1319,102 +1434,84 @@ def _get_base_runfiles_for_binary(
         * data_runfiles: The data runfiles
         * runfiles_without_exe: The default runfiles, but without the executable
           or files specific to the original program/executable.
-        * build_data_file: A file with build stamp information if stamping is enabled, otherwise
-          None.
+        * build_data_file: A file with build stamp information if stamping is
+          enabled, otherwise None.
+        * app_runfiles: Runfiles for user-space dependencies (doesn't
+          include the runtime or build data files)
     """
-    common_runfiles = builders.RunfilesBuilder()
-    common_runfiles.files.add(required_py_files)
-    common_runfiles.files.add(required_pyc_files)
+    app_runfiles = builders.RunfilesBuilder()
+    app_runfiles.files.add(required_py_files)
+    app_runfiles.files.add(required_pyc_files)
     pyc_collection_enabled = PycCollectionAttr.is_pyc_collection_enabled(ctx)
     if pyc_collection_enabled:
-        common_runfiles.files.add(implicit_pyc_files)
+        app_runfiles.files.add(implicit_pyc_files)
     else:
-        common_runfiles.files.add(implicit_pyc_source_files)
+        app_runfiles.files.add(implicit_pyc_source_files)
 
     for dep in (ctx.attr.deps + extra_deps):
         if not (PyInfo in dep or (BuiltinPyInfo != None and BuiltinPyInfo in dep)):
             continue
         info = dep[PyInfo] if PyInfo in dep else dep[BuiltinPyInfo]
-        common_runfiles.files.add(info.transitive_sources)
+        app_runfiles.files.add(info.transitive_sources)
 
         # Everything past this won't work with BuiltinPyInfo
         if not hasattr(info, "transitive_pyc_files"):
             continue
 
-        common_runfiles.files.add(info.transitive_pyc_files)
+        app_runfiles.files.add(info.transitive_pyc_files)
         if pyc_collection_enabled:
-            common_runfiles.files.add(info.transitive_implicit_pyc_files)
+            app_runfiles.files.add(info.transitive_implicit_pyc_files)
         else:
-            common_runfiles.files.add(info.transitive_implicit_pyc_source_files)
+            app_runfiles.files.add(info.transitive_implicit_pyc_source_files)
 
-    common_runfiles.runfiles.append(collect_runfiles(ctx))
+    app_runfiles.runfiles.append(collect_runfiles(ctx))
     if extra_deps:
-        common_runfiles.add_targets(extra_deps)
-    common_runfiles.add(extra_common_runfiles)
+        app_runfiles.add_targets(extra_deps)
+    app_runfiles.add(extra_common_runfiles)
 
-    common_runfiles = common_runfiles.build(ctx)
+    app_runfiles = app_runfiles.build(ctx)
 
-    if semantics.should_create_init_files(ctx):
-        common_runfiles = _py_builtins.merge_runfiles_with_generated_inits_empty_files_supplier(
+    if _should_create_init_files(ctx):
+        app_runfiles = _py_builtins.merge_runfiles_with_generated_inits_empty_files_supplier(
             ctx = ctx,
-            runfiles = common_runfiles,
+            runfiles = app_runfiles,
         )
 
-    # Don't include build_data.txt in the non-exe runfiles. The build data
-    # may contain program-specific content (e.g. target name).
-    runfiles_with_exe = common_runfiles.merge(ctx.runfiles([executable]))
+    runfiles_without_exe = builders.RunfilesBuilder()
+    runfiles_without_exe.add(app_runfiles)
+    runfiles_without_exe.add(runtime_runfiles)
+    build_data_file = _write_build_data(ctx)
+    runfiles_without_exe.add(build_data_file)
 
-    # Don't include build_data.txt in data runfiles. This allows binaries to
-    # contain other binaries while still using the same fixed location symlink
-    # for the build_data.txt file. Really, the fixed location symlink should be
-    # removed and another way found to locate the underlying build data file.
-    data_runfiles = runfiles_with_exe
+    runfiles_without_exe = runfiles_without_exe.build(ctx)
 
-    if is_stamping_enabled(ctx, semantics) and semantics.should_include_build_data(ctx):
-        build_data_file, build_data_runfiles = _create_runfiles_with_build_data(
-            ctx,
-            semantics.get_central_uncachable_version_file(ctx),
-            semantics.get_extra_write_build_data_env(ctx),
-        )
-        default_runfiles = runfiles_with_exe.merge(build_data_runfiles)
-    else:
-        build_data_file = None
-        default_runfiles = runfiles_with_exe
+    runfiles_with_exe = runfiles_without_exe.merge(ctx.runfiles([executable]))
 
+    # There are three types of runfiles:
+    # 1. app: Deps added by a user. This is akin to the typical files that would
+    #    be in a traditional venv. No Python runtime files or build data files.
+    # 2. without-exe: (1) + build data + python runtime
+    # 3. binary (default/data runfiles): (2) + main executable
     return struct(
-        runfiles_without_exe = common_runfiles,
-        default_runfiles = default_runfiles,
+        app_runfiles = app_runfiles,
         build_data_file = build_data_file,
-        data_runfiles = data_runfiles,
+        data_runfiles = runfiles_with_exe,
+        default_runfiles = runfiles_with_exe,
+        runfiles_without_exe = runfiles_without_exe,
     )
 
-def _create_runfiles_with_build_data(
-        ctx,
-        central_uncachable_version_file,
-        extra_write_build_data_env):
-    build_data_file = _write_build_data(
-        ctx,
-        central_uncachable_version_file,
-        extra_write_build_data_env,
-    )
-    build_data_runfiles = ctx.runfiles(files = [
-        build_data_file,
-    ])
-    return build_data_file, build_data_runfiles
-
-def _write_build_data(ctx, central_uncachable_version_file, extra_write_build_data_env):
-    # TODO: Remove this logic when a central file is always available
-    if not central_uncachable_version_file:
-        version_file = ctx.actions.declare_file(ctx.label.name + "-uncachable_version_file.txt")
-        _py_builtins.copy_without_caching(
-            ctx = ctx,
-            read_from = ctx.version_file,
-            write_to = version_file,
-        )
+def _write_build_data(ctx):
+    inputs = builders.DepsetBuilder()
+    if is_stamping_enabled(ctx):
+        # NOTE: ctx.info_file is undocumented; see
+        # https://github.com/bazelbuild/bazel/issues/9363
+        info_file = ctx.info_file
+        version_file = ctx.files._uncachable_version_file[0]
+        inputs.add(info_file)
+        inputs.add(version_file)
     else:
-        version_file = central_uncachable_version_file
-
-    direct_inputs = [ctx.info_file, version_file]
+        info_file = None
+        version_file = None
 
     # A "constant metadata" file is basically a special file that doesn't
     # support change detection logic and reports that it is unchanged. i.e., it
@@ -1446,23 +1543,44 @@ def _write_build_data(ctx, central_uncachable_version_file, extra_write_build_da
         root = ctx.bin_dir,
     )
 
+    action_args = ctx.actions.args()
+    writer_file = ctx.files._build_data_writer[0]
+    if writer_file.path.endswith(".ps1"):
+        # powershell.exe is used for broader compatibility
+        # It is installed by default on most Windows versions
+        action_exe = "powershell.exe"
+        action_args.add_all([
+            # Bypass execution policy is needed because,
+            # by default, Windows blocks ps1 scripts.
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            writer_file,
+        ])
+        inputs.add(writer_file)
+    else:
+        action_exe = ctx.attr._build_data_writer[DefaultInfo].files_to_run
+
     ctx.actions.run(
-        executable = ctx.executable._build_data_gen,
-        env = dicts.add({
-            # NOTE: ctx.info_file is undocumented; see
-            # https://github.com/bazelbuild/bazel/issues/9363
-            "INFO_FILE": ctx.info_file.path,
+        executable = action_exe,
+        arguments = [action_args],
+        env = {
+            # Include config mode so that binaries can detect if they're
+            # being used as a build tool or not, allowing for runtime optimizations.
+            "CONFIG_MODE": "EXEC" if _is_tool_config(ctx) else "TARGET",
+            "INFO_FILE": info_file.path if info_file else "",
             "OUTPUT": build_data.path,
-            "PLATFORM": cc_helper.find_cpp_toolchain(ctx).toolchain_id,
+            # Include this so it's explicit, otherwise, one has to detect
+            # this by looking for the absense of info_file keys.
+            "STAMPED": "TRUE" if is_stamping_enabled(ctx) else "FALSE",
             "TARGET": str(ctx.label),
-            "VERSION_FILE": version_file.path,
-        }, extra_write_build_data_env),
-        inputs = depset(
-            direct = direct_inputs,
-        ),
+            "VERSION_FILE": version_file.path if version_file else "",
+        },
+        inputs = inputs.build(),
         outputs = [build_data],
         mnemonic = "PyWriteBuildData",
-        progress_message = "Generating %{label} build_data.txt",
+        progress_message = "Reticulating %{label} build data",
+        toolchain = None,
     )
     return build_data
 
@@ -1507,12 +1625,9 @@ def _get_native_deps_details(ctx, *, semantics, cc_details, is_test):
         feature_configuration = cc_feature_config.feature_configuration,
         cc_toolchain = cc_details.cc_toolchain,
         test_only_target = is_test,  # private
-        stamp = 1 if is_stamping_enabled(ctx, semantics) else 0,
+        stamp = 1 if is_stamping_enabled(ctx) else 0,
         main_output = linked_lib,  # private
         use_shareable_artifact_factory = True,  # private
-        # NOTE: Only flags not captured by cc_info.linking_context need to
-        # be manually passed
-        user_link_flags = semantics.get_native_deps_user_link_flags(ctx),
     )
     return struct(
         dso = dso,
@@ -1527,7 +1642,11 @@ def _create_shared_native_deps_dso(
         feature_configuration,
         requested_features,
         cc_toolchain):
-    linkstamps = py_internal.linking_context_linkstamps(cc_info.linking_context)
+    linkstamps = [
+        py_internal.linkstamp_file(linkstamp)
+        for linker_input in cc_info.linking_context.linker_inputs.to_list()
+        for linkstamp in linker_input.linkstamps
+    ]
 
     partially_disabled_thin_lto = (
         cc_common.is_enabled(
@@ -1551,10 +1670,7 @@ def _create_shared_native_deps_dso(
             for input in cc_info.linking_context.linker_inputs.to_list()
             for flag in input.user_link_flags
         ],
-        linkstamps = [
-            py_internal.linkstamp_file(linkstamp)
-            for linkstamp in linkstamps.to_list()
-        ],
+        linkstamps = linkstamps,
         build_info_artifacts = _get_build_info(ctx, cc_toolchain) if linkstamps else [],
         features = requested_features,
         is_test_target_partially_disabled_thin_lto = is_test and partially_disabled_thin_lto,
@@ -1651,15 +1767,17 @@ def _path_endswith(path, endswith):
     # "ab/c.py".endswith("b/c.py") from incorrectly matching.
     return ("/" + path).endswith("/" + endswith)
 
-def is_stamping_enabled(ctx, semantics):
+def is_stamping_enabled(ctx):
     """Tells if stamping is enabled or not.
 
     Args:
         ctx: The rule ctx
-        semantics: a semantics struct (see create_semantics_struct).
     Returns:
         bool; True if stamping is enabled, False if not.
     """
+
+    # Always ignore stamping for exec config. This mitigates stamping
+    # invalidating build action caching.
     if _is_tool_config(ctx):
         return False
 
@@ -1669,7 +1787,9 @@ def is_stamping_enabled(ctx, semantics):
     elif stamp == 0:
         return False
     elif stamp == -1:
-        return semantics.get_stamp_flag(ctx)
+        # NOTE: ctx.configuration.stamp_binaries() exposes this, but that's
+        # a private API. To workaround, it'd been eposed via py_internal.
+        return py_internal.stamp_binaries(ctx)
     else:
         fail("Unsupported `stamp` value: {}".format(stamp))
 
@@ -1696,7 +1816,12 @@ def _create_providers(
         inherited_environment,
         runtime_details,
         output_groups,
-        semantics):
+        stage2_bootstrap,
+        app_runfiles,
+        venv_python_exe,
+        venv_interpreter_runfiles,
+        venv_interpreter_symlinks,
+        interpreter_args):
     """Creates the providers an executable should return.
 
     Args:
@@ -1725,7 +1850,14 @@ def _create_providers(
             is run within.
         runtime_details: struct of runtime information; see _get_runtime_details()
         output_groups: dict[str, depset[File]]; used to create OutputGroupInfo
-        semantics: BinarySemantics struct; see create_binary_semantics()
+        stage2_bootstrap: File; the stage 2 bootstrap script.
+        app_runfiles: runfiles; the runfiles for the application (deps, etc).
+        venv_python_exe: File; the python executable in the venv.
+        venv_interpreter_runfiles: runfiles; runfiles specific to the interpreter
+            for the venv.
+        venv_interpreter_symlinks: depset[ExplicitSymlink]; interpreter-specific symlinks
+            to create for the venv.
+        interpreter_args: list of strings; arguments to pass to the interpreter.
 
     Returns:
         A list of modern providers.
@@ -1746,17 +1878,23 @@ def _create_providers(
         create_instrumented_files_info(ctx),
         _create_run_environment_info(ctx, inherited_environment),
         PyExecutableInfo(
+            app_runfiles = app_runfiles,
+            build_data_file = runfiles_details.build_data_file,
+            interpreter_args = interpreter_args,
+            interpreter_path = runtime_details.executable_interpreter_path,
             main = main_py,
             runfiles_without_exe = runfiles_details.runfiles_without_exe,
-            build_data_file = runfiles_details.build_data_file,
-            interpreter_path = runtime_details.executable_interpreter_path,
+            stage2_bootstrap = stage2_bootstrap,
+            venv_interpreter_runfiles = venv_interpreter_runfiles,
+            venv_interpreter_symlinks = venv_interpreter_symlinks,
+            venv_python_exe = venv_python_exe,
         ),
     ]
 
-    # TODO(b/265840007): Make this non-conditional once Google enables
-    # --incompatible_use_python_toolchains.
-    if runtime_details.toolchain_runtime:
-        py_runtime_info = runtime_details.toolchain_runtime
+    # TODO - The effective runtime can be None for Windows + auto detecting toolchain.
+    # This can be removed once that's fixed; see maybe_get_runtime_from_ctx().
+    if runtime_details.effective_runtime:
+        py_runtime_info = runtime_details.effective_runtime
         providers.append(py_runtime_info)
 
         # Re-add the builtin PyRuntimeInfo for compatibility to make
@@ -1786,7 +1924,7 @@ def _create_providers(
             PyCcLinkParamsInfo(cc_info = cc_info),
         )
 
-    py_info, deps_transitive_sources, builtin_py_info = create_py_info(
+    py_info, builtin_py_info = create_py_info(
         ctx,
         original_sources = original_sources,
         required_py_files = required_py_files,
@@ -1796,25 +1934,10 @@ def _create_providers(
         imports = imports,
     )
 
-    # TODO(b/253059598): Remove support for extra actions; https://github.com/bazelbuild/bazel/issues/16455
-    listeners_enabled = _py_builtins.are_action_listeners_enabled(ctx)
-    if listeners_enabled:
-        _py_builtins.add_py_extra_pseudo_action(
-            ctx = ctx,
-            dependency_transitive_python_sources = deps_transitive_sources,
-        )
-
     providers.append(py_info)
     if builtin_py_info:
         providers.append(builtin_py_info)
     providers.append(create_output_group_info(py_info.transitive_sources, output_groups))
-
-    extra_providers = semantics.get_extra_providers(
-        ctx,
-        main_py = main_py,
-        runtime_details = runtime_details,
-    )
-    providers.extend(extra_providers)
     return providers
 
 def _create_run_environment_info(ctx, inherited_environment):
@@ -1826,17 +1949,46 @@ def _create_run_environment_info(ctx, inherited_environment):
             expression = value,
             targets = ctx.attr.data,
         )
+    if "PYTHONBREAKPOINT" not in inherited_environment:
+        inherited_environment = inherited_environment + ["PYTHONBREAKPOINT"]
     return RunEnvironmentInfo(
         environment = expanded_env,
         inherited_environment = inherited_environment,
     )
 
-def _transition_executable_impl(input_settings, attr):
-    settings = {
-        _PYTHON_VERSION_FLAG: input_settings[_PYTHON_VERSION_FLAG],
-    }
+def _add_config_setting_defaults(kwargs):
+    config_settings = kwargs.get("config_settings", None)
+    if config_settings == None:
+        config_settings = {}
+
+    # NOTE: This code runs in loading phase within the context of the caller.
+    # Label() must be used to resolve repo names within rules_python's
+    # context to avoid unknown repo name errors.
+    default = select({
+        labels.PLATFORMS_OS_WINDOWS: {
+            labels.ENABLE_RUNFILES: "true",
+        },
+        "//conditions:default": {},
+    })
+
+    # Let user-provided settings have precedence
+    config_settings = default | config_settings
+    kwargs["config_settings"] = config_settings
+
+def common_executable_macro_kwargs_setup(kwargs):
+    convert_legacy_create_init_to_int(kwargs)
+    _add_config_setting_defaults(kwargs)
+
+def _transition_executable_impl(settings, attr):
+    settings = dict(settings)
+    apply_config_settings_attr(settings, attr)
+
     if attr.python_version and attr.python_version not in ("PY2", "PY3"):
-        settings[_PYTHON_VERSION_FLAG] = attr.python_version
+        settings[labels.PYTHON_VERSION] = attr.python_version
+
+    if attr.stamp != -1:
+        settings["//command_line_option:stamp"] = str(attr.stamp)
+
     return settings
 
 def create_executable_rule(*, attrs, **kwargs):
@@ -1854,6 +2006,8 @@ def create_base_executable_rule():
     """
     return create_executable_rule_builder().build()
 
+_MaybeBuiltinPyInfo = [BuiltinPyInfo] if BuiltinPyInfo != None else []
+
 # NOTE: Exported publicly
 def create_executable_rule_builder(implementation, **kwargs):
     """Create a rule builder for an executable Python program.
@@ -1869,24 +2023,34 @@ def create_executable_rule_builder(implementation, **kwargs):
     :::
 
     Returns:
-        {type}`ruleb.Rule` with the necessary settings
+        {obj}`ruleb.Rule` with the necessary settings
         for creating an executable Python rule.
     """
     builder = ruleb.Rule(
         implementation = implementation,
-        attrs = EXECUTABLE_ATTRS,
+        attrs = EXECUTABLE_ATTRS | (COVERAGE_ATTRS if kwargs.get("test") else {}),
         exec_groups = dict(REQUIRED_EXEC_GROUP_BUILDERS),  # Mutable copy
         fragments = ["py", "bazel_py"],
-        provides = [PyExecutableInfo],
+        provides = [PyExecutableInfo, PyInfo] + _MaybeBuiltinPyInfo,
         toolchains = [
             ruleb.ToolchainType(TOOLCHAIN_TYPE),
             ruleb.ToolchainType(EXEC_TOOLS_TOOLCHAIN_TYPE, mandatory = False),
             ruleb.ToolchainType("@bazel_tools//tools/cpp:toolchain_type", mandatory = False),
-        ],
+        ] + ([ruleb.ToolchainType(LAUNCHER_MAKER_TOOLCHAIN_TYPE)] if rp_config.bazel_9_or_later else []),
         cfg = dict(
             implementation = _transition_executable_impl,
-            inputs = [_PYTHON_VERSION_FLAG],
-            outputs = [_PYTHON_VERSION_FLAG],
+            inputs = TRANSITION_LABELS + [
+                labels.PYTHON_VERSION,
+                "//command_line_option:stamp",
+                "//command_line_option:build_runfile_links",
+                "//command_line_option:enable_runfiles",
+            ],
+            outputs = TRANSITION_LABELS + [
+                labels.PYTHON_VERSION,
+                "//command_line_option:stamp",
+                "//command_line_option:build_runfile_links",
+                "//command_line_option:enable_runfiles",
+            ],
         ),
         **kwargs
     )
@@ -1927,7 +2091,3 @@ def cc_configure_features(
         feature_configuration = feature_configuration,
         requested_features = requested_features,
     )
-
-only_exposed_for_google_internal_reason = struct(
-    create_runfiles_with_build_data = _create_runfiles_with_build_data,
-)

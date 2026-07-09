@@ -19,14 +19,8 @@
 # rules_testing or as config_setting values, which don't support Label in some
 # places.
 
-load("//python/private:util.bzl", "IS_BAZEL_7_OR_HIGHER")  # buildifier: disable=bzl-visibility
-
-MAC = Label("//tests/support:mac")
-MAC_X86_64 = Label("//tests/support:mac_x86_64")
-LINUX = Label("//tests/support:linux")
-LINUX_X86_64 = Label("//tests/support:linux_x86_64")
-WINDOWS = Label("//tests/support:windows")
-WINDOWS_X86_64 = Label("//tests/support:windows_x86_64")
+load("@rules_python_internal//:rules_python_config.bzl", "config")
+load("//python/private:bzlmod_enabled.bzl", "BZLMOD_ENABLED")  # buildifier: disable=bzl-visibility
 
 PY_TOOLCHAINS = str(Label("//tests/support/py_toolchains:all"))
 CC_TOOLCHAIN = str(Label("//tests/support/cc_toolchains:all"))
@@ -34,16 +28,21 @@ CROSSTOOL_TOP = Label("//tests/support/cc_toolchains:cc_toolchain_suite")
 
 # str() around Label() is necessary because rules_testing's config_settings
 # doesn't accept yet Label objects.
-ADD_SRCS_TO_RUNFILES = str(Label("//python/config_settings:add_srcs_to_runfiles"))
-BOOTSTRAP_IMPL = str(Label("//python/config_settings:bootstrap_impl"))
-EXEC_TOOLS_TOOLCHAIN = str(Label("//python/config_settings:exec_tools_toolchain"))
-PRECOMPILE = str(Label("//python/config_settings:precompile"))
-PRECOMPILE_SOURCE_RETENTION = str(Label("//python/config_settings:precompile_source_retention"))
-PYC_COLLECTION = str(Label("//python/config_settings:pyc_collection"))
-PYTHON_VERSION = str(Label("//python/config_settings:python_version"))
-VISIBLE_FOR_TESTING = str(Label("//python/private:visible_for_testing"))
+CUSTOM_RUNTIME = str(Label("//tests/support:custom_runtime"))
 
 SUPPORTS_BOOTSTRAP_SCRIPT = select({
     "@platforms//os:windows": ["@platforms//:incompatible"],
     "//conditions:default": [],
-}) if IS_BAZEL_7_OR_HIGHER else ["@platforms//:incompatible"]
+})
+
+SUPPORTS_BZLMOD_UNIXY = select({
+    "@platforms//os:windows": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+}) if BZLMOD_ENABLED else ["@platforms//:incompatible"]
+
+NOT_WINDOWS = select({
+    "@platforms//os:windows": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
+BAZEL_8_OR_LATER = [] if config.bazel_8_or_later else ["@platforms//:incompatible"]

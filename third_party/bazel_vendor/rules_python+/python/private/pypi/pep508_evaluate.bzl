@@ -16,22 +16,10 @@
 """
 
 load("//python/private:enum.bzl", "enum")
-load("//python/private:semver.bzl", "semver")
+load("//python/private:version.bzl", "version")
 
 # The expression parsing and resolution for the PEP508 is below
 #
-
-# Taken from
-# https://peps.python.org/pep-0508/#grammar
-#
-# version_cmp   = wsp* '<' | '<=' | '!=' | '==' | '>=' | '>' | '~=' | '==='
-_VERSION_CMP = sorted(
-    [
-        i.strip(" '")
-        for i in "'<' | '<=' | '!=' | '==' | '>=' | '>' | '~=' | '==='".split(" | ")
-    ],
-    key = lambda x: (-len(x), x),
-)
 
 _STATE = enum(
     STRING = "string",
@@ -129,12 +117,14 @@ def evaluate(marker, *, env, strict = True, **kwargs):
 
     Args:
         marker: {type}`str` The string marker to evaluate.
-        env: {type}`dict` The environment to evaluate the marker against.
+        env: {type}`dict[str, str]` The environment to evaluate the marker against.
         strict: {type}`bool` A setting to not fail on missing values in the env.
         **kwargs: Extra kwargs to be passed to the expression evaluator.
 
     Returns:
-        The {type}`bool` If the marker is compatible with the given env.
+        The {type}`bool | str` If the marker is compatible with the given env. If strict is
+        `False`, then the output type is `str` which will represent the remaining
+        expression that has not been evaluated.
     """
     tokens = tokenize(marker)
 
@@ -310,12 +300,10 @@ def marker_expr(left, op, right, *, env, strict = True):
         left = left.strip("\"")
 
         if _ENV_ALIASES in env:
-            # On Windows, Linux, OSX different values may mean the same hardware,
-            # e.g. Python on Windows returns arm64, but on Linux returns aarch64.
-            # e.g. Python on Windows returns amd64, but on Linux returns x86_64.
-            #
-            # The following normalizes the values
-            left = env.get(_ENV_ALIASES, {}).get(var_name, {}).get(left, left)
+            # Normalize the literal value using per-variable normalization
+            # functions. This handles platform aliases (e.g. arm64 -> aarch64)
+            # and PEP 685 extra name normalization (e.g. db-backend -> db_backend).
+            left = env.get(_ENV_ALIASES, {}).get(var_name, lambda x: x)(left)
 
     else:
         var_name = left
@@ -324,7 +312,7 @@ def marker_expr(left, op, right, *, env, strict = True):
 
         if _ENV_ALIASES in env:
             # See the note above on normalization
-            right = env.get(_ENV_ALIASES, {}).get(var_name, {}).get(right, right)
+            right = env.get(_ENV_ALIASES, {}).get(var_name, lambda x: x)(right)
 
     if var_name in _NON_VERSION_VAR_NAMES:
         return _env_expr(left, op, right)
@@ -344,37 +332,43 @@ def _env_expr(left, op, right):
         return left in right
     elif op == "not in":
         return left not in right
+    elif op == "<":
+        return left < right
+    elif op == "<=":
+        return left <= right
+    elif op == ">":
+        return left > right
+    elif op == ">=":
+        return left >= right
     else:
-        return fail("TODO: op unsupported: '{}'".format(op))
+        return fail("unsupported op: '{}' {} '{}'".format(left, op, right))
 
 def _version_expr(left, op, right):
     """Evaluate a version comparison expression"""
-    left = semver(left)
-    right = semver(right)
-    _left = left.key()
-    _right = right.key()
-    if op == "<":
-        return _left < _right
-    elif op == ">":
-        return _left > _right
-    elif op == "<=":
-        return _left <= _right
-    elif op == ">=":
-        return _left >= _right
+    _left = version.parse(left)
+    _right = version.parse(right)
+    if _left == None or _right == None:
+        # Per spec, if either can't be normalized to a version, then
+        # fallback to simple string comparison. Usually this is `platform_version`
+        # or `platform_release`, which vary depending on platform.
+        return _env_expr(left, op, right)
+
+    if op == "===":
+        return version.is_eeq(_left, _right)
     elif op == "!=":
-        return _left != _right
+        return version.is_ne(_left, _right)
     elif op == "==":
-        # Matching of major, minor, patch only
-        return _left[:3] == _right[:3]
+        return version.is_eq(_left, _right)
+    elif op == "<":
+        return version.is_lt(_left, _right)
+    elif op == ">":
+        return version.is_gt(_left, _right)
+    elif op == "<=":
+        return version.is_le(_left, _right)
+    elif op == ">=":
+        return version.is_ge(_left, _right)
     elif op == "~=":
-        right_plus = right.upper()
-        _right_plus = right_plus.key()
-        return _left >= _right and _left < _right_plus
-    elif op == "===":
-        # Strict matching
-        return _left == _right
-    elif op in _VERSION_CMP:
-        fail("TODO: op unsupported: '{}'".format(op))
+        return version.is_compatible(_left, _right)
     else:
         return False  # Let's just ignore the invalid ops
 

@@ -34,6 +34,7 @@ def _impl(rctx):
         },
         extra_hub_aliases = rctx.attr.extra_hub_aliases,
         requirement_cycles = rctx.attr.groups,
+        platform_config_settings = rctx.attr.platform_config_settings,
     )
     for path, contents in aliases.items():
         rctx.file(path, contents)
@@ -49,7 +50,7 @@ def _impl(rctx):
         "config.bzl",
         rctx.attr._config_template,
         substitutions = {
-            "%%TARGET_PLATFORMS%%": render.list(rctx.attr.target_platforms),
+            "%%PACKAGES%%": render.dict(rctx.attr.whl_map, value_repr = lambda x: "None"),
         },
     )
     rctx.template("requirements.bzl", rctx.attr._requirements_bzl_template, substitutions = {
@@ -83,13 +84,13 @@ hub_repository = repository_rule(
 The list of packages that will be exposed via all_*requirements macros. Defaults to whl_map keys.
 """,
         ),
+        "platform_config_settings": attr.string_list_dict(
+            doc = "The constraint values for each platform name. The values are string canonical string Label representations",
+            mandatory = False,
+        ),
         "repo_name": attr.string(
             mandatory = True,
             doc = "The apparent name of the repo. This is needed because in bzlmod, the name attribute becomes the canonical name.",
-        ),
-        "target_platforms": attr.string_list(
-            mandatory = True,
-            doc = "All of the target platforms for the hub repo",
         ),
         "whl_map": attr.string_dict(
             mandatory = True,
@@ -99,7 +100,7 @@ in the pip.parse tag class.
 """,
         ),
         "_config_template": attr.label(
-            default = ":config.bzl.tmpl.bzlmod",
+            default = ":config.bzl.tmpl",
         ),
         "_requirements_bzl_template": attr.label(
             default = ":requirements.bzl.tmpl.bzlmod",
@@ -141,10 +142,6 @@ def whl_config_settings_to_json(repo_mapping):
 
 def _whl_config_setting_dict(a):
     ret = {}
-    if a.config_setting:
-        ret["config_setting"] = a.config_setting
-    if a.filename:
-        ret["filename"] = a.filename
     if a.target_platforms:
         ret["target_platforms"] = a.target_platforms
     if a.version:

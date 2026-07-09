@@ -108,6 +108,8 @@ load(
     "kwargs_setter",
     "kwargs_setter_doc",
     "list_add_unique",
+    "normalize_transition_in_out_value",
+    "normalize_transition_in_out_values",
 )
 
 # Various string constants for kwarg key names used across two or more
@@ -192,7 +194,7 @@ ExecGroup = struct(
 )
 
 def _ToolchainType_typedef():
-    """Builder for {obj}`config_common.toolchain_type()`
+    """Builder for {obj}`config_common.toolchain_type`
 
     :::{include} /_includes/field_kwargs_doc.md
     :::
@@ -253,7 +255,7 @@ def _ToolchainType_build(self):
         self: implicitly added
 
     Returns:
-        {type}`config_common.toolchain_type`
+        {type}`toolchain_type`
     """
     kwargs = dict(self.kwargs)
     name = kwargs.pop("name")  # Name must be positional
@@ -313,6 +315,9 @@ def _RuleCfg_new(rule_cfg_arg):
 
     kwargs_set_default_list(state, _INPUTS)
     kwargs_set_default_list(state, _OUTPUTS)
+
+    normalize_transition_in_out_values("input", state[_INPUTS])
+    normalize_transition_in_out_values("output", state[_OUTPUTS])
 
     # buildifier: disable=uninitialized
     self = struct(
@@ -393,24 +398,32 @@ def _RuleCfg_update_inputs(self, *others):
 
     Args:
         self: implicitly added
-        *others: {type}`collection[Label]` collection of labels to add to
+        *others: {type}`list[Label]` collection of labels to add to
             inputs. Only values not already present are added. Note that a
             `Label`, not `str`, should be passed to ensure different apparent
             labels can be properly de-duplicated.
     """
-    list_add_unique(self._state[_INPUTS], others)
+    list_add_unique(
+        self._state[_INPUTS],
+        others,
+        convert = lambda v: normalize_transition_in_out_value("input", v),
+    )
 
 def _RuleCfg_update_outputs(self, *others):
     """Add a collection of values to outputs.
 
     Args:
         self: implicitly added
-        *others: {type}`collection[Label]` collection of labels to add to
+        *others: {type}`list[Label]` collection of labels to add to
             outputs. Only values not already present are added. Note that a
             `Label`, not `str`, should be passed to ensure different apparent
             labels can be properly de-duplicated.
     """
-    list_add_unique(self._state[_OUTPUTS], others)
+    list_add_unique(
+        self._state[_OUTPUTS],
+        others,
+        convert = lambda v: normalize_transition_in_out_value("output", v),
+    )
 
 # buildifier: disable=name-conventions
 RuleCfg = struct(
@@ -673,12 +686,24 @@ def _AttrsDict_build(self):
     """Build an attribute dict for passing to `rule()`.
 
     Returns:
-        {type}`dict[str, attribute]` where the values are `attr.XXX` objects
+        {type}`dict[str, Attribute]` where the values are `attr.XXX` objects
     """
     attrs = {}
     for k, v in self.map.items():
         attrs[k] = v.build() if _is_builder(v) else v
     return attrs
+
+def _AttributeBuilder_typedef():
+    """An abstract base typedef for builder for a Bazel {obj}`Attribute`
+
+    Instances of this are a builder for a particular `Attribute` type,
+    e.g. `attr.label`, `attr.string`, etc.
+    """
+
+# buildifier: disable=name-conventions
+AttributeBuilder = struct(
+    TYPEDEF = _AttributeBuilder_typedef,
+)
 
 # buildifier: disable=name-conventions
 AttrsDict = struct(

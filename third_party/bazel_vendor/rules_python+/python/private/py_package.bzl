@@ -34,20 +34,15 @@ def _path_inside_wheel(input_file):
 
 def _py_package_impl(ctx):
     inputs = builders.DepsetBuilder()
-    py_info = PyInfoBuilder()
+    py_info = PyInfoBuilder.new()
     for dep in ctx.attr.deps:
         inputs.add(dep[DefaultInfo].data_runfiles.files)
         inputs.add(dep[DefaultInfo].default_runfiles.files)
         py_info.merge_target(dep)
     py_info = py_info.build()
     inputs.add(py_info.transitive_sources)
-
-    # Remove conditional once Bazel 6 support dropped.
-    if hasattr(py_info, "transitive_pyc_files"):
-        inputs.add(py_info.transitive_pyc_files)
-
-    if hasattr(py_info, "transitive_pyi_files"):
-        inputs.add(py_info.transitive_pyi_files)
+    inputs.add(py_info.transitive_pyc_files)
+    inputs.add(py_info.transitive_pyi_files)
 
     inputs = inputs.build()
 

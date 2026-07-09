@@ -19,20 +19,20 @@ load("@rules_testing//lib:analysis_test.bzl", "analysis_test")
 load("@rules_testing//lib:truth.bzl", "matching")
 load("@rules_testing//lib:util.bzl", rt_util = "util")
 load("//python:py_executable_info.bzl", "PyExecutableInfo")
+load("//python:py_info.bzl", "PyInfo")
+load("//python:py_library.bzl", "py_library")
+load("//python/private:common.bzl", "maybe_builtin_build_python_zip")  # buildifier: disable=bzl-visibility
+load("//python/private:common_labels.bzl", "labels")  # buildifier: disable=bzl-visibility
 load("//python/private:reexports.bzl", "BuiltinPyRuntimeInfo")  # buildifier: disable=bzl-visibility
-load("//python/private:util.bzl", "IS_BAZEL_7_OR_HIGHER")  # buildifier: disable=bzl-visibility
 load("//tests/base_rules:base_tests.bzl", "create_base_tests")
 load("//tests/base_rules:util.bzl", "WINDOWS_ATTR", pt_util = "util")
 load("//tests/support:py_executable_info_subject.bzl", "PyExecutableInfoSubject")
-load("//tests/support:support.bzl", "BOOTSTRAP_IMPL", "CC_TOOLCHAIN", "CROSSTOOL_TOP", "LINUX_X86_64", "WINDOWS_X86_64")
+load("//tests/support:support.bzl", "CC_TOOLCHAIN", "CROSSTOOL_TOP")
+load("//tests/support/platforms:platforms.bzl", "platform_targets")
 
 _tests = []
 
 def _test_basic_windows(name, config):
-    if rp_config.enable_pystar:
-        target_compatible_with = []
-    else:
-        target_compatible_with = ["@platforms//:incompatible"]
     rt_util.helper_target(
         config.rule,
         name = name + "_subject",
@@ -44,24 +44,20 @@ def _test_basic_windows(name, config):
         impl = _test_basic_windows_impl,
         target = name + "_subject",
         config_settings = {
-            # NOTE: The default for this flag is based on the Bazel host OS, not
-            # the target platform. For windows, it defaults to true, so force
-            # it to that to match behavior when this test runs on other
-            # platforms.
-            "//command_line_option:build_python_zip": "true",
             "//command_line_option:cpu": "windows_x86_64",
             "//command_line_option:crosstool_top": CROSSTOOL_TOP,
+            "//command_line_option:extra_execution_platforms": [platform_targets.WINDOWS_X86_64],
             "//command_line_option:extra_toolchains": [CC_TOOLCHAIN],
-            "//command_line_option:platforms": [WINDOWS_X86_64],
+            "//command_line_option:platforms": [platform_targets.WINDOWS_X86_64],
         },
-        attr_values = {"target_compatible_with": target_compatible_with},
+        attr_values = {},
     )
 
 def _test_basic_windows_impl(env, target):
     target = env.expect.that_target(target)
     target.executable().path().contains(".exe")
     target.runfiles().contains_predicate(matching.str_endswith(
-        target.meta.format_str("/{name}.zip"),
+        target.meta.format_str("/{name}"),
     ))
     target.runfiles().contains_predicate(matching.str_endswith(
         target.meta.format_str("/{name}.exe"),
@@ -70,14 +66,11 @@ def _test_basic_windows_impl(env, target):
 _tests.append(_test_basic_windows)
 
 def _test_basic_zip(name, config):
-    if rp_config.enable_pystar:
-        target_compatible_with = select({
-            # Disable the new test on windows because we have _test_basic_windows.
-            "@platforms//os:windows": ["@platforms//:incompatible"],
-            "//conditions:default": [],
-        })
-    else:
-        target_compatible_with = ["@platforms//:incompatible"]
+    target_compatible_with = select({
+        # Disable the new test on windows because we have _test_basic_windows.
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    })
     rt_util.helper_target(
         config.rule,
         name = name + "_subject",
@@ -93,12 +86,15 @@ def _test_basic_zip(name, config):
             # the target platform. For windows, it defaults to true, so force
             # it to that to match behavior when this test runs on other
             # platforms.
-            "//command_line_option:build_python_zip": "true",
+            # Pass value to both native and starlark versions of the flag until
+            # the native one is removed.
+            labels.BUILD_PYTHON_ZIP: True,
             "//command_line_option:cpu": "linux_x86_64",
             "//command_line_option:crosstool_top": CROSSTOOL_TOP,
+            "//command_line_option:extra_execution_platforms": [platform_targets.LINUX_X86_64],
             "//command_line_option:extra_toolchains": [CC_TOOLCHAIN],
-            "//command_line_option:platforms": [LINUX_X86_64],
-        },
+            "//command_line_option:platforms": [platform_targets.LINUX_X86_64],
+        } | maybe_builtin_build_python_zip("true"),
         attr_values = {"target_compatible_with": target_compatible_with},
     )
 
@@ -112,6 +108,29 @@ def _test_basic_zip_impl(env, target):
     ))
 
 _tests.append(_test_basic_zip)
+
+def _test_cross_compile_to_unix(name, config):
+    rt_util.helper_target(
+        config.rule,
+        name = name + "_subject",
+        main_module = "dummy",
+    )
+    analysis_test(
+        name = name,
+        impl = _test_cross_compile_to_unix_impl,
+        target = name + "_subject",
+        # Cross-compilation of py_test fails since the default test toolchain
+        # requires an execution platform that matches the target platform.
+        config_settings = {
+            "//command_line_option:platforms": [platform_targets.EXOTIC_UNIX],
+        } if rp_config.bazel_9_or_later and not "py_test" in str(config.rule) else {},
+        expect_failure = True,
+    )
+
+def _test_cross_compile_to_unix_impl(_env, _target):
+    pass
+
+_tests.append(_test_cross_compile_to_unix)
 
 def _test_executable_in_runfiles(name, config):
     rt_util.helper_target(
@@ -137,14 +156,99 @@ def _test_executable_in_runfiles_impl(env, target):
         "{workspace}/{package}/{test_name}_subject" + exe,
     ])
 
-    if rp_config.enable_pystar:
-        py_exec_info = env.expect.that_target(target).provider(PyExecutableInfo, factory = PyExecutableInfoSubject.new)
-        py_exec_info.main().path().contains("_subject.py")
-        py_exec_info.interpreter_path().contains("python")
-        py_exec_info.runfiles_without_exe().contains_none_of([
-            "{workspace}/{package}/{test_name}_subject" + exe,
-            "{workspace}/{package}/{test_name}_subject",
-        ])
+    py_exec_info = env.expect.that_target(target).provider(PyExecutableInfo, factory = PyExecutableInfoSubject.new)
+    py_exec_info.main().path().contains("_subject.py")
+    py_exec_info.interpreter_path().contains("python")
+    py_exec_info.runfiles_without_exe().contains_none_of([
+        "{workspace}/{package}/{test_name}_subject" + exe,
+        "{workspace}/{package}/{test_name}_subject",
+    ])
+
+def _test_debugger(name, config):
+    # Using imports
+    rt_util.helper_target(
+        py_library,
+        name = name + "_debugger",
+        imports = ["."],
+        srcs = [rt_util.empty_file(name + "_debugger.py")],
+    )
+
+    rt_util.helper_target(
+        config.rule,
+        name = name + "_subject",
+        srcs = [rt_util.empty_file(name + "_subject.py")],
+        config_settings = {
+            # config_settings requires a fully qualified label
+            labels.DEBUGGER: "//{}:{}_debugger".format(native.package_name(), name),
+        },
+    )
+
+    # Using venv
+    rt_util.helper_target(
+        py_library,
+        name = name + "_debugger_venv",
+        imports = ["site-packages"],
+        experimental_venvs_site_packages = "@rules_python//python/config_settings:venvs_site_packages",
+        srcs = [rt_util.empty_file("site-packages/" + name + "_debugger_venv.py")],
+    )
+
+    rt_util.helper_target(
+        config.rule,
+        name = name + "_subject_venv",
+        srcs = [rt_util.empty_file(name + "_subject_venv.py")],
+        config_settings = {
+            # config_settings requires a fully qualified label
+            labels.DEBUGGER: "//{}:{}_debugger_venv".format(native.package_name(), name),
+        },
+    )
+
+    analysis_test(
+        name = name,
+        impl = _test_debugger_impl,
+        targets = {
+            "exec_target": name + "_subject",
+            "target": name + "_subject",
+            "target_venv": name + "_subject_venv",
+        },
+        attrs = {
+            "exec_target": attr.label(cfg = "exec"),
+        },
+        config_settings = {
+            labels.VENVS_SITE_PACKAGES: "yes",
+            labels.PYTHON_VERSION: "3.13",
+        },
+    )
+
+_tests.append(_test_debugger)
+
+def _test_debugger_impl(env, targets):
+    # 1. Subject
+
+    # Check the file from debugger dep is injected.
+    env.expect.that_target(targets.target).runfiles().contains_at_least([
+        "{workspace}/{package}/{test_name}_debugger.py",
+    ])
+
+    # #3481: Ensure imports are setup correcty.
+    meta = env.expect.meta.derive(format_str_kwargs = {"package": targets.target.label.package})
+    env.expect.that_target(targets.target).has_provider(PyInfo)
+    imports = targets.target[PyInfo].imports.to_list()
+    env.expect.that_collection(imports).contains(meta.format_str("{workspace}/{package}"))
+
+    # 2. Subject venv
+
+    # #3481: Ensure that venv site-packages is setup correctly, if the dependency is coming
+    # from pip integration.
+    env.expect.that_target(targets.target_venv).runfiles().contains_predicate(
+        matching.str_endswith("site-packages/test_debugger_debugger_venv.py"),
+    )
+
+    # 3. Subject exec
+
+    # Ensure that tools don't inherit debugger.
+    env.expect.that_target(targets.exec_target).runfiles().not_contains(
+        "{workspace}/{package}/{test_name}_debugger.py",
+    )
 
 def _test_default_main_can_be_generated(name, config):
     rt_util.helper_target(
@@ -185,11 +289,6 @@ def _test_default_main_can_have_multiple_path_segments_impl(env, target):
     )
 
 def _test_default_main_must_be_in_srcs(name, config):
-    # Bazel 5 will crash with a Java stacktrace when the native Python
-    # rules have an error.
-    if not pt_util.is_bazel_6_or_higher():
-        rt_util.skip_test(name = name)
-        return
     rt_util.helper_target(
         config.rule,
         name = name + "_subject",
@@ -210,11 +309,6 @@ def _test_default_main_must_be_in_srcs_impl(env, target):
     )
 
 def _test_default_main_cannot_be_ambiguous(name, config):
-    # Bazel 5 will crash with a Java stacktrace when the native Python
-    # rules have an error.
-    if not pt_util.is_bazel_6_or_higher():
-        rt_util.skip_test(name = name)
-        return
     rt_util.helper_target(
         config.rule,
         name = name + "_subject",
@@ -257,11 +351,6 @@ def _test_explicit_main_impl(env, target):
     )
 
 def _test_explicit_main_cannot_be_ambiguous(name, config):
-    # Bazel 5 will crash with a Java stacktrace when the native Python
-    # rules have an error.
-    if not pt_util.is_bazel_6_or_higher():
-        rt_util.skip_test(name = name)
-        return
     rt_util.helper_target(
         config.rule,
         name = name + "_subject",
@@ -282,7 +371,7 @@ def _test_explicit_main_cannot_be_ambiguous_impl(env, target):
         matching.str_matches("foo.py*matches multiple"),
     )
 
-def _test_files_to_build(name, config):
+def _test_default_outputs(name, config):
     rt_util.helper_target(
         config.rule,
         name = name + "_subject",
@@ -290,14 +379,14 @@ def _test_files_to_build(name, config):
     )
     analysis_test(
         name = name,
-        impl = _test_files_to_build_impl,
+        impl = _test_default_outputs_impl,
         target = name + "_subject",
         attrs = WINDOWS_ATTR,
     )
 
-_tests.append(_test_files_to_build)
+_tests.append(_test_default_outputs)
 
-def _test_files_to_build_impl(env, target):
+def _test_default_outputs_impl(env, target):
     default_outputs = env.expect.that_target(target).default_outputs()
     if pt_util.is_windows(env):
         default_outputs.contains("{package}/{test_name}_subject.exe")
@@ -307,22 +396,16 @@ def _test_files_to_build_impl(env, target):
             "{package}/{test_name}_subject.py",
         ])
 
-        if IS_BAZEL_7_OR_HIGHER:
-            # As of Bazel 7, the first default output is the executable, so
-            # verify that is the case. rules_testing
-            # DepsetFileSubject.contains_exactly doesn't provide an in_order()
-            # call, nor access to the underlying depset, so we have to do things
-            # manually.
-            first_default_output = target[DefaultInfo].files.to_list()[0]
-            executable = target[DefaultInfo].files_to_run.executable
-            env.expect.that_file(first_default_output).equals(executable)
+        # As of Bazel 7, the first default output is the executable, so
+        # verify that is the case. rules_testing
+        # DepsetFileSubject.contains_exactly doesn't provide an in_order()
+        # call, nor access to the underlying depset, so we have to do things
+        # manually.
+        first_default_output = target[DefaultInfo].files.to_list()[0]
+        executable = target[DefaultInfo].files_to_run.executable
+        env.expect.that_file(first_default_output).equals(executable)
 
 def _test_name_cannot_end_in_py(name, config):
-    # Bazel 5 will crash with a Java stacktrace when the native Python
-    # rules have an error.
-    if not pt_util.is_bazel_6_or_higher():
-        rt_util.skip_test(name = name)
-        return
     rt_util.helper_target(
         config.rule,
         name = name + "_subject.py",
@@ -353,15 +436,15 @@ def _test_main_module_bootstrap_system_python(name, config):
         impl = _test_main_module_bootstrap_system_python_impl,
         target = name + "_subject",
         config_settings = {
-            BOOTSTRAP_IMPL: "system_python",
-            "//command_line_option:platforms": [LINUX_X86_64],
+            labels.BOOTSTRAP_IMPL: "system_python",
+            "//command_line_option:extra_execution_platforms": ["@bazel_tools//tools:host_platform", platform_targets.LINUX_X86_64],
+            "//command_line_option:platforms": [platform_targets.LINUX_X86_64],
         },
-        expect_failure = True,
     )
 
 def _test_main_module_bootstrap_system_python_impl(env, target):
-    env.expect.that_target(target).failures().contains_predicate(
-        matching.str_matches("mandatory*srcs"),
+    env.expect.that_target(target).default_outputs().contains(
+        "{package}/{test_name}_subject",
     )
 
 _tests.append(_test_main_module_bootstrap_system_python)
@@ -377,8 +460,9 @@ def _test_main_module_bootstrap_script(name, config):
         impl = _test_main_module_bootstrap_script_impl,
         target = name + "_subject",
         config_settings = {
-            BOOTSTRAP_IMPL: "script",
-            "//command_line_option:platforms": [LINUX_X86_64],
+            labels.BOOTSTRAP_IMPL: "script",
+            "//command_line_option:extra_execution_platforms": ["@bazel_tools//tools:host_platform", platform_targets.LINUX_X86_64],
+            "//command_line_option:platforms": [platform_targets.LINUX_X86_64],
         },
     )
 

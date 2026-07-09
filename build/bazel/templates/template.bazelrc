@@ -160,3 +160,7 @@ common --experimental_platform_in_output_dir=True
 # Enable dynamic linking of C++ stdlib for drivers in-tree.
 common --@rules_fuchsia//fuchsia/flags:dynamic_cpp_standard_library_for_drivers=True
 
+# Turn off build-time venv generation to avoid creating dangling symlinks in bazel-out.
+# Without this, host_py_test targets would fail with `No such file or directory` when invoking the
+# interpreter. See https://fxbug.dev/527829442 for details.
+build --@rules_python//python/config_settings:venvs_use_declare_symlink=no

@@ -24,40 +24,53 @@ load(":pythons_hub.bzl", "hub_repo")
 def http_archive(**kwargs):
     maybe(_http_archive, **kwargs)
 
-def py_repositories():
+def py_repositories(transition_settings = []):
     """Runtime dependencies that users must install.
 
     This function should be loaded and called in the user's `WORKSPACE`.
     With `bzlmod` enabled, this function is not needed since `MODULE.bazel` handles transitive deps.
+
+    Args:
+        transition_settings: A list of labels that terminal rules transition on
+            by default.
     """
+
+    # NOTE: The @rules_python_internal repo is special cased by Bazel: it
+    # has autoloading disabled. This allows the rules to load from it
+    # without triggering recursion.
     maybe(
         internal_config_repo,
         name = "rules_python_internal",
+        transition_settings = transition_settings,
     )
     maybe(
         hub_repo,
         name = "pythons_hub",
         minor_mapping = MINOR_MAPPING,
         default_python_version = "",
-        toolchain_prefixes = [],
-        toolchain_python_versions = [],
-        toolchain_set_python_version_constraints = [],
-        toolchain_user_repository_names = [],
         python_versions = sorted(TOOL_VERSIONS.keys()),
+        toolchain_names = [],
+        toolchain_repo_names = {},
+        toolchain_target_compatible_with_map = {},
+        toolchain_target_settings_map = {},
+        toolchain_platform_keys = {},
+        toolchain_python_versions = {},
+        toolchain_set_python_version_constraints = {},
+        host_compatible_repo_names = [],
     )
     http_archive(
         name = "bazel_skylib",
-        sha256 = "d00f1389ee20b60018e92644e0948e16e350a7707219e7a390fb0a99b6ec9262",
+        sha256 = "6e78f0e57de26801f6f564fa7c4a48dc8b36873e416257a92bbb0937eeac8446",
         urls = [
-            "https://mirror.bazel.build/github.com/bazelbuild/bazel-skylib/releases/download/1.7.0/bazel-skylib-1.7.0.tar.gz",
-            "https://github.com/bazelbuild/bazel-skylib/releases/download/1.7.0/bazel-skylib-1.7.0.tar.gz",
+            "https://mirror.bazel.build/github.com/bazelbuild/bazel-skylib/releases/download/1.8.2/bazel-skylib-1.8.2.tar.gz",
+            "https://github.com/bazelbuild/bazel-skylib/releases/download/1.8.2/bazel-skylib-1.8.2.tar.gz",
         ],
     )
     http_archive(
         name = "rules_cc",
-        sha256 = "4b12149a041ddfb8306a8fd0e904e39d673552ce82e4296e96fac9cbf0780e59",
-        strip_prefix = "rules_cc-0.1.0",
-        urls = ["https://github.com/bazelbuild/rules_cc/releases/download/0.1.0/rules_cc-0.1.0.tar.gz"],
+        sha256 = "b8b918a85f9144c01f6cfe0f45e4f2838c7413961a8ff23bc0c6cdf8bb07a3b6",
+        strip_prefix = "rules_cc-0.1.5",
+        urls = ["https://github.com/bazelbuild/rules_cc/releases/download/0.1.5/rules_cc-0.1.5.tar.gz"],
     )
 
     # Needed by rules_cc, triggered by @rules_java_prebuilt in Bazel by using @rules_cc//cc:defs.bzl

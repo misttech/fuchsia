@@ -230,6 +230,25 @@ py_wheel(
     ],
 )
 
+# An example of how to change the wheel package root directory using 'add_path_prefix'.
+py_wheel(
+    name = "custom_prefix_package_root",
+    add_path_prefix = "custom_prefix",
+    # Package data. We're building "examples_custom_prefix_package_root-0.0.1-py3-none-any.whl"
+    distribution = "examples_custom_prefix_package_root",
+    entry_points = {
+        "console_scripts": ["main = foo.bar:baz"],
+    },
+    python_tag = "py3",
+    strip_path_prefixes = [
+        "examples",
+    ],
+    version = "0.0.1",
+    deps = [
+        ":example_pkg",
+    ],
+)
+
 py_wheel(
     name = "python_requires_in_a_package",
     distribution = "example_python_requires_in_a_package",
@@ -313,6 +332,17 @@ wheel; python_version == "3.11" or python_version == "3.12"  # Example comment
 """.splitlines(),
 )
 
+write_file(
+    name = "requires_dist_depends_on_extras_file",
+    out = "requires_dist_depends_on_extras.txt",
+    content = """\
+# Requirements file
+--index-url https://pypi.com
+
+extra_requires[example]==0.0.1
+""".splitlines(),
+)
+
 # py_wheel can use text files to specify their requirements. This
 # can be convenient for users of `compile_pip_requirements` who have
 # granular `requirements.in` files per package. This target shows
@@ -374,6 +404,45 @@ py_wheel(
     deps = [":example_pkg"],
 )
 
+py_wheel(
+    name = "requires_dist_depends_on_extras",
+    distribution = "requires_dist_depends_on_extras",
+    requires = [
+        "extra_requires[example]==0.0.1",
+    ],
+    version = "0.0.1",
+)
+
+py_wheel(
+    name = "requires_dist_depends_on_extras_using_file",
+    distribution = "requires_dist_depends_on_extras_using_file",
+    requires_file = ":requires_dist_depends_on_extras.txt",
+    version = "0.0.1",
+)
+
+filegroup(
+    name = "data_files_test_group",
+    # Re-using some files already checked into the repo.
+    srcs = [
+        "README.md",
+        "//examples/wheel:NOTICE",
+    ],
+)
+
+py_wheel(
+    name = "data_files_installed_in_folder",
+    testonly = True,  # Set this to verify the generated .dist target doesn't break things
+    # Re-using some files already checked into the repo.
+    data_files = {
+        # Single file
+        "//examples/wheel:NOTICE": "scripts/",
+        # Filegroup
+        ":data_files_test_group": "data/",
+    },
+    distribution = "data_files_installed_in_folder",
+    version = "0.0.1",
+)
+
 py_test(
     name = "wheel_test",
     srcs = ["wheel_test.py"],
@@ -382,6 +451,7 @@ py_test(
         ":custom_package_root_multi_prefix",
         ":custom_package_root_multi_prefix_reverse_order",
         ":customized",
+        ":data_files_installed_in_folder",
         ":empty_requires_files",
         ":extra_requires",
         ":filename_escaping",
@@ -391,6 +461,8 @@ py_test(
         ":minimal_with_py_package",
         ":python_abi3_binary_wheel",
         ":python_requires_in_a_package",
+        ":requires_dist_depends_on_extras",
+        ":requires_dist_depends_on_extras_using_file",
         ":requires_files",
         ":use_rule_with_dir_in_outs",
     ],

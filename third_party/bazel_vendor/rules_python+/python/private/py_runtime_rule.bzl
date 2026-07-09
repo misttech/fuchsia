@@ -16,12 +16,12 @@
 load("@bazel_skylib//lib:dicts.bzl", "dicts")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
-load(":attributes.bzl", "NATIVE_RULES_ALLOWLIST_ATTRS")
+load(":common_labels.bzl", "labels")
 load(":flags.bzl", "FreeThreadedFlag")
 load(":py_internal.bzl", "py_internal")
 load(":py_runtime_info.bzl", "DEFAULT_STUB_SHEBANG", "PyRuntimeInfo")
 load(":reexports.bzl", "BuiltinPyRuntimeInfo")
-load(":util.bzl", "IS_BAZEL_7_OR_HIGHER")
+load(":version.bzl", "version")
 
 _py_builtins = py_internal
 
@@ -87,10 +87,9 @@ def _py_runtime_impl(ctx):
         if python_version_flag:
             interpreter_version_info = _interpreter_version_info_from_version_str(python_version_flag)
 
-    # TODO: Uncomment this after --incompatible_python_disable_py2 defaults to true
-    # if ctx.fragments.py.disable_py2 and python_version == "PY2":
-    #     fail("Using Python 2 is not supported and disabled; see " +
-    #          "https://github.com/bazelbuild/bazel/issues/15684")
+    if python_version == "PY2":
+        fail("Using Python 2 is not supported and disabled; see " +
+             "https://github.com/bazelbuild/bazel/issues/15684")
 
     pyc_tag = ctx.attr.pyc_tag
     if not pyc_tag and (ctx.attr.implementation_name and
@@ -130,10 +129,9 @@ def _py_runtime_impl(ctx):
         zip_main_template = ctx.file.zip_main_template,
         abi_flags = abi_flags,
         site_init_template = ctx.file.site_init_template,
+        supports_build_time_venv = ctx.attr.supports_build_time_venv,
+        venv_bin_files = ctx.files.venv_bin_files,
     ))
-
-    if not IS_BAZEL_7_OR_HIGHER:
-        builtin_py_runtime_info_kwargs.pop("bootstrap_template")
 
     providers = [
         PyRuntimeInfo(**py_runtime_info_kwargs),
@@ -189,7 +187,6 @@ py_runtime(
 """,
     fragments = ["py"],
     attrs = dicts.add(
-        {k: v().build() for k, v in NATIVE_RULES_ALLOWLIST_ATTRS.items()},
         {
             "abi_flags": attr.string(
                 default = "<AUTO>",
@@ -353,8 +350,20 @@ motivation.
 Does not apply to Windows.
 """,
             ),
+            "supports_build_time_venv": attr.bool(
+                doc = """
+Whether this runtime supports virtualenvs created at build time.
+
+See {obj}`PyRuntimeInfo.supports_build_time_venv` for docs.
+
+:::{versionadded} 1.5.0
+:::
+""",
+                default = True,
+            ),
+            "venv_bin_files": attr.label_list(allow_files = True),
             "zip_main_template": attr.label(
-                default = "//python/private:zip_main_template",
+                default = "//python/private/zipapp:zip_main_template",
                 allow_single_file = True,
                 doc = """
 The template to use for a zip's top-level `__main__.py` file.
@@ -367,28 +376,24 @@ The {obj}`PyRuntimeInfo.zip_main_template` field.
 """,
             ),
             "_py_freethreaded_flag": attr.label(
-                default = "//python/config_settings:py_freethreaded",
+                default = labels.PY_FREETHREADED,
             ),
             "_python_version_flag": attr.label(
-                default = "//python/config_settings:python_version",
+                default = labels.PYTHON_VERSION,
             ),
         },
     ),
 )
 
 def _is_singleton_depset(files):
-    # Bazel 6 doesn't have this helper to optimize detecting singleton depsets.
-    if _py_builtins:
-        return _py_builtins.is_singleton_depset(files)
-    else:
-        return len(files.to_list()) == 1
+    return _py_builtins.is_singleton_depset(files)
 
 def _interpreter_version_info_from_version_str(version_str):
-    parts = version_str.split(".")
+    v = version.parse(version_str)
     version_info = {}
+    parts = list(v.release)
     for key in ("major", "minor", "micro"):
         if not parts:
             break
         version_info[key] = parts.pop(0)
-
     return version_info

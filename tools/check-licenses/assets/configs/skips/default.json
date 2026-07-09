@@ -32,7 +32,8 @@
         },
         {
             "paths": [
-                "third_party/bazel_vendor/rules_go+/tests"
+                "third_party/bazel_vendor/rules_go+/tests",
+                "third_party/bazel_vendor/rules_python+/tests"
             ],
             "description": "Test directories under repos in bazel_vendor.\nThey don't have license files included."
         },

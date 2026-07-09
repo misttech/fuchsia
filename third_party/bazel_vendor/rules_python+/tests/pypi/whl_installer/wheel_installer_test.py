@@ -63,15 +63,17 @@ class TestWhlFilegroup(unittest.TestCase):
         shutil.copy(os.path.join("examples", "wheel", self.wheel_name), self.wheel_dir)
 
     def tearDown(self):
-        shutil.rmtree(self.wheel_dir)
+        # On windows, the wheel file remains open, so gives an error upon
+        # deletion for some reason.
+        shutil.rmtree(self.wheel_dir, ignore_errors=True)
 
     def test_wheel_exists(self) -> None:
         wheel_installer._extract_wheel(
             Path(self.wheel_path),
             installation_dir=Path(self.wheel_dir),
             extras={},
-            enable_implicit_namespace_pkgs=False,
             platforms=[],
+            enable_pipstar=False,
         )
 
         want_files = [
@@ -96,7 +98,6 @@ class TestWhlFilegroup(unittest.TestCase):
             deps_by_platform={},
             entry_points=[],
             name="example-minimal-package",
-            python_version="3.11.11",
             version="0.0.1",
         )
         self.assertEqual(want, metadata_file_content)

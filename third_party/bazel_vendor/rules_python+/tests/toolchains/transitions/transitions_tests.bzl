@@ -20,9 +20,9 @@ load("@rules_testing//lib:test_suite.bzl", "test_suite")
 load("@rules_testing//lib:util.bzl", rt_util = "util")
 load("//python:versions.bzl", "TOOL_VERSIONS")
 load("//python/private:bzlmod_enabled.bzl", "BZLMOD_ENABLED")  # buildifier: disable=bzl-visibility
+load("//python/private:common_labels.bzl", "labels")  # buildifier: disable=bzl-visibility
 load("//python/private:full_version.bzl", "full_version")  # buildifier: disable=bzl-visibility
 load("//python/private:toolchain_types.bzl", "EXEC_TOOLS_TOOLCHAIN_TYPE")  # buildifier: disable=bzl-visibility
-load("//tests/support:support.bzl", "PYTHON_VERSION")
 
 _analysis_tests = []
 
@@ -33,16 +33,16 @@ def _transition_impl(input_settings, attr):
     for their own rule.
     """
     settings = {
-        PYTHON_VERSION: input_settings[PYTHON_VERSION],
+        labels.PYTHON_VERSION: input_settings[labels.PYTHON_VERSION],
     }
     if attr.python_version:
-        settings[PYTHON_VERSION] = attr.python_version
+        settings[labels.PYTHON_VERSION] = attr.python_version
     return settings
 
 _python_version_transition = transition(
     implementation = _transition_impl,
-    inputs = [PYTHON_VERSION],
-    outputs = [PYTHON_VERSION],
+    inputs = [labels.PYTHON_VERSION],
+    outputs = [labels.PYTHON_VERSION],
 )
 
 TestInfo = provider(
@@ -56,14 +56,21 @@ def _impl(ctx):
 
     exec_tools = ctx.toolchains[EXEC_TOOLS_TOOLCHAIN_TYPE].exec_tools
     got_version = exec_tools.exec_interpreter[platform_common.ToolchainInfo].py3_runtime.interpreter_version_info
+    got = "{}.{}.{}".format(
+        got_version.major,
+        got_version.minor,
+        got_version.micro,
+    )
+    if got_version.releaselevel != "final":
+        got = "{}{}{}".format(
+            got,
+            "rc" if got_version.releaselevel == "candidate" else got_version.releaselevel[0],
+            got_version.serial,
+        )
 
     return [
         TestInfo(
-            got = "{}.{}.{}".format(
-                got_version.major,
-                got_version.minor,
-                got_version.micro,
-            ),
+            got = got,
             want = ctx.attr.want_version,
         ),
     ]

@@ -5,7 +5,7 @@
 ## Overview
 
 This repository is the home of the core Python rules -- `py_library`,
-`py_binary`, `py_test`, `py_proto_library`, and related symbols that provide the basis for Python
+`py_binary`, `py_test`, and related symbols that provide the basis for Python
 support in Bazel. It also contains package installation rules for integrating with PyPI and other indices. 
 
 Documentation for rules_python is at <https://rules-python.readthedocs.io> and in the
@@ -24,8 +24,5 @@ The Bazel community maintains this repository. Neither Google nor the Bazel team
 For detailed documentation, see <https://rules-python.readthedocs.io>
 
 ## Bzlmod support
-
-- Status: Beta
-- Full Feature Parity: No
 
 See [Bzlmod support](BZLMOD_SUPPORT.md) for more details.

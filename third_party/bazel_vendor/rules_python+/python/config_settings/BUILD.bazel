@@ -1,5 +1,6 @@
-load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
 load("@pythons_hub//:versions.bzl", "DEFAULT_PYTHON_VERSION", "MINOR_MAPPING", "PYTHON_VERSIONS")
+load("@rules_python_internal//:rules_python_config.bzl", "config")
 load(
     "//python/private:flags.bzl",
     "AddSrcsToRunfilesFlag",
@@ -11,6 +12,7 @@ load(
     "PrecompileSourceRetentionFlag",
     "VenvsSitePackages",
     "VenvsUseDeclareSymlinkFlag",
+    rp_string_flag = "string_flag",
 )
 load(
     "//python/private/pypi:flags.bzl",
@@ -87,12 +89,31 @@ string_flag(
     visibility = ["//visibility:public"],
 )
 
-string_flag(
+rp_string_flag(
     name = "bootstrap_impl",
     build_setting_default = BootstrapImplFlag.SYSTEM_PYTHON,
+    override = select({
+        # Windows doesn't yet support bootstrap=script, so force disable it
+        ":_is_windows": BootstrapImplFlag.SYSTEM_PYTHON,
+        "//conditions:default": "",
+    }),
     values = sorted(BootstrapImplFlag.__members__.values()),
     # NOTE: Only public because it's an implicit dependency
     visibility = ["//visibility:public"],
+)
+
+label_flag(
+    name = "debugger",
+    build_setting_default = "//python/private:empty",
+    visibility = ["//visibility:public"],
+)
+
+# For some reason, @platforms//os:windows can't be directly used
+# in the select() for the flag. But it can be used when put behind
+# a config_setting().
+config_setting(
+    name = "_is_windows",
+    constraint_values = ["@platforms//os:windows"],
 )
 
 # This is used for pip and hermetic toolchain resolution.
@@ -111,15 +132,19 @@ string_flag(
     visibility = ["//visibility:public"],
 )
 
-config_setting(
+alias(
     name = "is_py_freethreaded",
-    flag_values = {":py_freethreaded": FreeThreadedFlag.YES},
+    actual = ":_is_py_freethreaded_yes",
+    deprecation = "not actually public, please create your own config_setting using the flag that rules_python exposes",
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 
-config_setting(
+alias(
     name = "is_py_non_freethreaded",
-    flag_values = {":py_freethreaded": FreeThreadedFlag.NO},
+    actual = ":_is_py_freethreaded_no",
+    deprecation = "not actually public, please create your own config_setting using the flag that rules_python exposes",
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 
@@ -203,6 +228,51 @@ string_flag(
     visibility = ["//visibility:public"],
 )
 
+config_setting(
+    name = "is_venvs_site_packages",
+    flag_values = {
+        ":venvs_site_packages": VenvsSitePackages.YES,
+    },
+    # NOTE: Only public because it is used in whl_library repos.
+    visibility = ["//visibility:public"],
+)
+
 define_pypi_internal_flags(
     name = "define_pypi_internal_flags",
+)
+
+label_flag(
+    name = "pip_env_marker_config",
+    build_setting_default = ":_pip_env_marker_default_config",
+    # NOTE: Only public because it is used in pip hub repos.
+    visibility = ["//visibility:public"],
+)
+
+bool_flag(
+    name = "experimental_python_import_all_repositories",
+    build_setting_default = True,
+    scope = "universal",
+    visibility = ["//visibility:public"],
+)
+
+bool_flag(
+    name = "build_python_zip",
+    build_setting_default = config.build_python_zip_default,
+    help = "Build python executable zip. Defaults to on on Windows, off on other platforms",
+    scope = "universal",
+    visibility = ["//visibility:public"],
+)
+
+bool_flag(
+    name = "incompatible_default_to_explicit_init_py",
+    build_setting_default = False,
+    scope = "universal",
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "python_path",
+    build_setting_default = "python",
+    scope = "universal",
+    visibility = ["//visibility:public"],
 )

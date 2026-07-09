@@ -26,10 +26,11 @@ _RENDER = {
     "entry_points": render.dict,
     "extras": render.list,
     "group_deps": render.list,
+    "include": str,
     "requires_dist": render.list,
     "srcs_exclude": render.list,
     "tags": render.list,
-    "target_platforms": lambda x: render.list(x) if x else "target_platforms",
+    "target_platforms": render.list,
 }
 
 # NOTE @aignas 2024-10-25: We have to keep this so that files in
@@ -62,30 +63,55 @@ def generate_whl_library_build_bazel(
         A complete BUILD file as a string
     """
 
-    fn = "whl_library_targets"
+    loads = []
     if kwargs.get("tags"):
+        fn = "whl_library_targets"
+
         # legacy path
         unsupported_args = [
             "requires",
             "metadata_name",
             "metadata_version",
+            "packages",
+            "include",
         ]
     else:
-        fn = "{}_from_requires".format(fn)
+        fn = "whl_library_targets_from_requires"
         unsupported_args = [
             "dependencies",
             "dependencies_by_platform",
+            "target_platforms",
+            "default_python_version",
         ]
+        packages_load = kwargs.pop("config_load")
+        if not kwargs.get("requires_dist"):
+            # no deps, we can leave the extra loads out
+            pass
+        else:
+            loads.append("""load("{}", "{}")""".format(packages_load, "packages"))
+            kwargs["include"] = "packages"
 
     for arg in unsupported_args:
         if kwargs.get(arg):
             fail("BUG, unsupported arg: '{}'".format(arg))
 
-    loads = [
+    loads.extend([
         """load("@rules_python//python/private/pypi:whl_library_targets.bzl", "{}")""".format(fn),
-    ]
+    ])
 
     additional_content = []
+    entry_points = kwargs.get("entry_points")
+    if entry_points:
+        entry_point_files = sorted({
+            entry_point_script.replace("\\", "/"): True
+            for entry_point_script in entry_points.values()
+        }.keys())
+        additional_content.append(
+            "exports_files(\n" +
+            "    srcs = {},\n".format(render.list(entry_point_files)) +
+            "    visibility = [\"//visibility:public\"],\n" +
+            ")\n",
+        )
     if annotation:
         kwargs["data"] = annotation.data
         kwargs["copy_files"] = annotation.copy_files

@@ -28,6 +28,13 @@ class PythonToolchainTest(unittest.TestCase):
         self.assertIn(expected, settings["toolchain_label"], msg)
 
         actual = "{v.major}.{v.minor}.{v.micro}".format(v=sys.version_info)
+        if sys.version_info.releaselevel != "final":
+            release_prefix = (
+                "rc"
+                if sys.version_info.releaselevel == "candidate"
+                else sys.version_info.releaselevel[0]
+            )
+            actual = f"{actual}{release_prefix}{sys.version_info.serial}"
         self.assertEqual(actual, expect_version)
 
 

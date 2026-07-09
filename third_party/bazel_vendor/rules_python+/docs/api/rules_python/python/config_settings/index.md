@@ -24,6 +24,86 @@ This is a transition flag and will be removed in a subsequent release.
 ::::
 :::
 
+::::{bzl:flag} build_python_zip
+Controls if a `py_binary/py_test` output is a self-executable zipapp.
+
+When enabled, the output of `py_binary` or `py_test` targets will be a
+self-executable zipapp.
+
+:::{note}
+This affects _all_ `py_binary` and `py_test` targets in the build, not
+only the target(s) specified on the command line.
+:::
+
+Values:
+* `true`
+* `false`
+
+This flag replaces the Bazel builtin `--build_python_zip` flag.
+
+:::{versionadded} 1.7.0
+:::
+::::
+
+::::{bzl:flag} debugger
+A target for providing a custom debugger dependency.
+
+This flag is roughly equivalent to putting a target in `deps`. It allows
+injecting a dependency into executables (`py_binary`, `py_test`) without having
+to modify their deps. The expectation is it points to a target that provides an
+alternative debugger (pudb, winpdb, debugpy, etc).
+
+* Must provide {obj}`PyInfo`.
+* This dependency is only used for the target config, i.e. build tools don't
+  have it added.
+
+:::{note}
+Setting this flag adds the debugger dependency, but doesn't automatically set
+`PYTHONBREAKPOINT` to change `breakpoint()` behavior.
+:::
+
+:::{versionadded} 1.9.0
+:::
+::::
+
+::::{bzl:flag} experimental_python_import_all_repositories
+Controls whether repository directories are added to the import path.
+
+When enabled, the top-level directories in the runfiles root directory (which
+are presumbed to be repository directories) are added to the Python import
+search path.
+
+It's recommended to set this to **`false`** to avoid external dependencies
+unexpectedly interferring with import searching.
+
+Values;
+* `true` (default)
+* `false`
+
+This flag replaces the Bazel builtin
+`--experimental_python_import_all_repositories` flag.
+
+:::{versionadded} 1.7.0
+:::
+::::
+
+::::{bzl:flag} python_path
+A fallback path to use for Python for particular legacy Windows-specific code paths.
+
+Deprecated, do not use. This flag is largely a no-op and was replaced by
+toolchains. It only remains for some legacy Windows code-paths that will
+be removed.
+
+This flag replaces the Bazel builtin `--python_path` flag.
+
+:::{deprecated} 1.7.0
+Use toolchains instead.
+:::
+
+:::{versionadded} 1.7.0
+:::
+::::
+
 :::{bzl:flag} python_version
 Determines the default hermetic Python toolchain version. This can be set to
 one of the values that `rules_python` maintains.
@@ -32,6 +112,29 @@ one of the values that `rules_python` maintains.
 :::{bzl:target} python_version_major_minor
 Parses the value of the `python_version` and transforms it into a `X.Y` value.
 :::
+
+::::{bzl:flag} incompatible_default_to_explicit_init_py
+Controls if missing `__init__.py` files are generated or not.
+
+If false, `py_binary` and `py_test` will, for every `*.py` and `*.so` file,
+create `__init__.py` files for the containing directory, and all parent
+directories, that do not already have an `__init__.py` file. If true, this
+behavior is disabled.
+
+It's recommended to disable this behavior to avoid surprising import effects
+from directories being importable when they otherwise wouldn't be, and for
+how it can interfere with implicit namespace packages.
+
+Values:
+* `true`: do not generate missing `__init__.py` files
+* `false` (default): generate missing `__init__.py` files
+
+This flag replaces the Bazel builtin
+`--incompatible_default_to_explicit_init_py` flag.
+
+:::{versionadded} 1.7.0
+:::
+::::
 
 :::{bzl:target} is_python_*
 config_settings to match Python versions
@@ -66,7 +169,7 @@ If you need to match a version that isn't present, then you have two options:
    )
    ```
 
-2. Use {obj}`python.single_override` to re-introduce the desired version so
+2. Use {obj}`python.single_version_override` to re-introduce the desired version so
    that the corresponding `//python/config_setting:is_python_XXX` target is
    generated.
 :::
@@ -159,6 +262,18 @@ Values:
 :::
 ::::
 
+::::{bzl:flag} pip_env_marker_config
+The target that provides the values for pip env marker evaluation.
+
+Default: `//python/config_settings:_pip_env_marker_default_config`
+
+This flag points to a target providing {obj}`EnvMarkerInfo`, which determines
+the values used when environment markers are resolved at build time.
+
+:::{versionadded} 1.5.0
+:::
+::::
+
 ::::{bzl:flag} pip_whl
 Set what distributions are used in the `pip` integration.
 
@@ -234,7 +349,7 @@ Values:
 Determine how programs implement their startup process.
 
 Values:
-* `system_python`: Use a bootstrap that requires a system Python available
+* `system_python`: (default) Use a bootstrap that requires a system Python available
   in order to start programs. This requires
   {obj}`PyRuntimeInfo.bootstrap_template` to be a Python program.
 * `script`: Use a bootstrap that uses an arbitrary executable script (usually a

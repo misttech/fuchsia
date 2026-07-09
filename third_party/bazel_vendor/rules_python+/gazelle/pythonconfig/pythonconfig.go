@@ -74,6 +74,12 @@ const (
 	// naming convention. See python_library_naming_convention for more info on
 	// the package name interpolation.
 	TestNamingConvention = "python_test_naming_convention"
+	// ProtoNamingConvention represents the directive that controls the
+	// py_proto_library naming convention. It interpolates $proto_name$ with
+	// the proto_library rule name, minus any trailing _proto. E.g. if the
+	// proto_library name is `foo_proto`, setting this to `$proto_name$_my_lib`
+	// would render to `foo_my_lib`.
+	ProtoNamingConvention = "python_proto_naming_convention"
 	// DefaultVisibilty represents the directive that controls what visibility
 	// labels are added to generated python targets.
 	DefaultVisibilty = "python_default_visibility"
@@ -91,6 +97,34 @@ const (
 	// names of labels to third-party dependencies are normalized. Supported values
 	// are 'none', 'pep503' and 'snake_case' (default). See LabelNormalizationType.
 	LabelNormalization = "python_label_normalization"
+	// ExperimentalAllowRelativeImports represents the directive that controls
+	// whether relative imports are allowed.
+	ExperimentalAllowRelativeImports = "python_experimental_allow_relative_imports"
+	// GeneratePyiDeps represents the directive that controls whether to generate
+	// separate pyi_deps attribute or merge type-checking dependencies into deps.
+	// Defaults to false for backward compatibility.
+	GeneratePyiDeps = "python_generate_pyi_deps"
+	// GeneratePyiSrcs represents the directive that controls whether to include
+	// a pyi_srcs attribute if a sibling .pyi file is found.
+	// Defaults to false for backward compatibility.
+	GeneratePyiSrcs = "python_generate_pyi_srcs"
+	// GenerateProto represents the directive that controls whether to generate
+	// python_generate_proto targets.
+	GenerateProto = "python_generate_proto"
+	// PythonResolveSiblingImports represents the directive that controls whether
+	// absolute imports can be solved to sibling modules. When enabled, imports
+	// like "import a" can be resolved to sibling modules. When disabled, they
+	// can only be resolved as an absolute import.
+	PythonResolveSiblingImports = "python_resolve_sibling_imports"
+	// PythonIncludeAncestorConftest represents the directive that controls
+	// whether ancestor conftest.py files are added as dependencies to py_test
+	// targets. When enabled (the default), ancestor conftest.py files are
+	// included as deps.
+	// See also https://github.com/bazel-contrib/rules_python/pull/3498, which
+	// fixed previous behavior that was incorrectly _not_ adding the files and
+	// https://github.com/bazel-contrib/rules_python/issues/3595 which requested
+	// that the behavior be configurable.
+	PythonIncludeAncestorConftest = "python_include_ancestor_conftest"
 )
 
 // GenerationModeType represents one of the generation modes for the Python
@@ -111,6 +145,7 @@ const (
 
 const (
 	packageNameNamingConventionSubstitution     = "$package_name$"
+	protoNameNamingConventionSubstitution       = "$proto_name$"
 	distributionNameLabelConventionSubstitution = "$distribution_name$"
 )
 
@@ -172,11 +207,18 @@ type Config struct {
 	libraryNamingConvention                   string
 	binaryNamingConvention                    string
 	testNamingConvention                      string
+	protoNamingConvention                     string
 	defaultVisibility                         []string
 	visibility                                []string
 	testFilePattern                           []string
 	labelConvention                           string
 	labelNormalization                        LabelNormalizationType
+	experimentalAllowRelativeImports          bool
+	generatePyiDeps                           bool
+	generatePyiSrcs                           bool
+	generateProto                             bool
+	resolveSiblingImports                     bool
+	includeAncestorConftest                   bool
 }
 
 type LabelNormalizationType int
@@ -207,11 +249,18 @@ func New(
 		libraryNamingConvention:                   packageNameNamingConventionSubstitution,
 		binaryNamingConvention:                    fmt.Sprintf("%s_bin", packageNameNamingConventionSubstitution),
 		testNamingConvention:                      fmt.Sprintf("%s_test", packageNameNamingConventionSubstitution),
+		protoNamingConvention:                     fmt.Sprintf("%s_py_pb2", protoNameNamingConventionSubstitution),
 		defaultVisibility:                         []string{fmt.Sprintf(DefaultVisibilityFmtString, "")},
 		visibility:                                []string{},
 		testFilePattern:                           strings.Split(DefaultTestFilePatternString, ","),
 		labelConvention:                           DefaultLabelConvention,
 		labelNormalization:                        DefaultLabelNormalizationType,
+		experimentalAllowRelativeImports:          false,
+		generatePyiDeps:                           false,
+		generatePyiSrcs:                           false,
+		generateProto:                             false,
+		resolveSiblingImports:                     false,
+		includeAncestorConftest:                   true,
 	}
 }
 
@@ -239,11 +288,18 @@ func (c *Config) NewChild() *Config {
 		libraryNamingConvention:                   c.libraryNamingConvention,
 		binaryNamingConvention:                    c.binaryNamingConvention,
 		testNamingConvention:                      c.testNamingConvention,
+		protoNamingConvention:                     c.protoNamingConvention,
 		defaultVisibility:                         c.defaultVisibility,
 		visibility:                                c.visibility,
 		testFilePattern:                           c.testFilePattern,
 		labelConvention:                           c.labelConvention,
 		labelNormalization:                        c.labelNormalization,
+		experimentalAllowRelativeImports:          c.experimentalAllowRelativeImports,
+		generatePyiDeps:                           c.generatePyiDeps,
+		generatePyiSrcs:                           c.generatePyiSrcs,
+		generateProto:                             c.generateProto,
+		resolveSiblingImports:                     c.resolveSiblingImports,
+		includeAncestorConftest:                   c.includeAncestorConftest,
 	}
 }
 
@@ -470,6 +526,17 @@ func (c *Config) RenderTestName(packageName string) string {
 	return strings.ReplaceAll(c.testNamingConvention, packageNameNamingConventionSubstitution, packageName)
 }
 
+// SetProtoNamingConvention sets the py_proto_library target naming convention.
+func (c *Config) SetProtoNamingConvention(protoNamingConvention string) {
+	c.protoNamingConvention = protoNamingConvention
+}
+
+// RenderProtoName returns the py_proto_library target name by performing all
+// substitutions.
+func (c *Config) RenderProtoName(protoName string) string {
+	return strings.ReplaceAll(c.protoNamingConvention, protoNameNamingConventionSubstitution, strings.TrimSuffix(protoName, "_proto"))
+}
+
 // AppendVisibility adds additional items to the target's visibility.
 func (c *Config) AppendVisibility(visibility string) {
 	c.visibility = append(c.visibility, visibility)
@@ -518,6 +585,70 @@ func (c *Config) SetLabelNormalization(normalizationType LabelNormalizationType)
 // LabelConvention returns the label normalization applied to distribution names of third-party dependencies.
 func (c *Config) LabelNormalization() LabelNormalizationType {
 	return c.labelNormalization
+}
+
+// SetExperimentalAllowRelativeImports sets whether relative imports are allowed.
+func (c *Config) SetExperimentalAllowRelativeImports(allowRelativeImports bool) {
+	c.experimentalAllowRelativeImports = allowRelativeImports
+}
+
+// ExperimentalAllowRelativeImports returns whether relative imports are allowed.
+func (c *Config) ExperimentalAllowRelativeImports() bool {
+	return c.experimentalAllowRelativeImports
+}
+
+// SetGeneratePyiDeps sets whether pyi_deps attribute should be generated separately
+// or type-checking dependencies should be merged into the regular deps attribute.
+func (c *Config) SetGeneratePyiDeps(generatePyiDeps bool) {
+	c.generatePyiDeps = generatePyiDeps
+}
+
+// GeneratePyiDeps returns whether pyi_deps attribute should be generated separately
+// or type-checking dependencies should be merged into the regular deps attribute.
+func (c *Config) GeneratePyiDeps() bool {
+	return c.generatePyiDeps
+}
+
+// SetGeneratePyiSrcs sets whether pyi_srcs attribute should be generated if a sibling
+// .pyi file is found.
+func (c *Config) SetGeneratePyiSrcs(generatePyiSrcs bool) {
+	c.generatePyiSrcs = generatePyiSrcs
+}
+
+// GeneratePyiSrcs returns whether pyi_srcs attribute should be generated if a sibling
+// .pyi file is found.
+func (c *Config) GeneratePyiSrcs() bool {
+	return c.generatePyiSrcs
+}
+
+// SetGenerateProto sets whether py_proto_library should be generated for proto_library.
+func (c *Config) SetGenerateProto(generateProto bool) {
+	c.generateProto = generateProto
+}
+
+// GenerateProto returns whether py_proto_library should be generated for proto_library.
+func (c *Config) GenerateProto() bool {
+	return c.generateProto
+}
+
+// SetResolveSiblingImports sets whether absolute imports can be resolved to sibling modules.
+func (c *Config) SetResolveSiblingImports(resolveSiblingImports bool) {
+	c.resolveSiblingImports = resolveSiblingImports
+}
+
+// ResolveSiblingImports returns whether absolute imports can be resolved to sibling modules.
+func (c *Config) ResolveSiblingImports() bool {
+	return c.resolveSiblingImports
+}
+
+// SetIncludeAncestorConftest sets whether ancestor conftest files are added to py_test targets.
+func (c *Config) SetIncludeAncestorConftest(includeAncestorConftest bool) {
+	c.includeAncestorConftest = includeAncestorConftest
+}
+
+// IncludeAncestorConftest returns whether ancestor conftest files are added to py_test targets.
+func (c *Config) IncludeAncestorConftest() bool {
+	return c.includeAncestorConftest
 }
 
 // FormatThirdPartyDependency returns a label to a third-party dependency performing all formating and normalization.
