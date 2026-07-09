@@ -1980,11 +1980,15 @@ impl ComputationContext {
             }
 
             (JumpWidth::W64, Type::ScalarValue(data), t) if data.is_zero() && t.is_non_zero() => {
-                op(1.into(), 0.into())
+                let non_zero =
+                    ScalarValueData::UNKNOWN_WRITTEN.update_range(U64Range::new(1, u64::MAX));
+                op(0.into(), non_zero)
             }
 
             (JumpWidth::W64, t, Type::ScalarValue(data)) if data.is_zero() && t.is_non_zero() => {
-                op(0.into(), 1.into())
+                let non_zero =
+                    ScalarValueData::UNKNOWN_WRITTEN.update_range(U64Range::new(1, u64::MAX));
+                op(non_zero, 0.into())
             }
 
             (JumpWidth::W64, Type::PtrToStack { offset: x }, Type::PtrToStack { offset: y }) => {
