@@ -383,31 +383,33 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_remove_duplicates() {
-        #[allow(deprecated, reason = "pre-existing usage")]
-        let (kernel, current_task) = create_kernel_and_task();
-        let base = TmpFs::new_fs(&kernel);
-        base.root().create_dir_for_testing(&current_task, "d1".into()).expect("create_dir");
-        base.root().create_dir_for_testing(&current_task, "d2".into()).expect("create_dir");
-        let base_entries = get_root_entry_names(&current_task, &base);
-        assert_eq!(base_entries.len(), 4);
-        assert!(base_entries.contains(&b".".to_vec()));
-        assert!(base_entries.contains(&b"..".to_vec()));
-        assert!(base_entries.contains(&b"d1".to_vec()));
-        assert!(base_entries.contains(&b"d2".to_vec()));
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel();
+            let base = TmpFs::new_fs(kernel);
+            base.root().create_dir_for_testing(current_task, "d1".into()).expect("create_dir");
+            base.root().create_dir_for_testing(current_task, "d2".into()).expect("create_dir");
+            let base_entries = get_root_entry_names(current_task, &base);
+            assert_eq!(base_entries.len(), 4);
+            assert!(base_entries.contains(&b".".to_vec()));
+            assert!(base_entries.contains(&b"..".to_vec()));
+            assert!(base_entries.contains(&b"d1".to_vec()));
+            assert!(base_entries.contains(&b"d2".to_vec()));
 
-        let tmpfs1 = TmpFs::new_fs(&kernel);
-        let tmpfs2 = TmpFs::new_fs(&kernel);
-        let layered_fs = LayeredFs::new_fs(
-            &kernel,
-            base,
-            BTreeMap::from([("d1".into(), tmpfs1), ("d3".into(), tmpfs2)]),
-        );
-        let layered_fs_entries = get_root_entry_names(&current_task, &layered_fs);
-        assert_eq!(layered_fs_entries.len(), 5);
-        assert!(layered_fs_entries.contains(&b".".to_vec()));
-        assert!(layered_fs_entries.contains(&b"..".to_vec()));
-        assert!(layered_fs_entries.contains(&b"d1".to_vec()));
-        assert!(layered_fs_entries.contains(&b"d2".to_vec()));
-        assert!(layered_fs_entries.contains(&b"d3".to_vec()));
+            let tmpfs1 = TmpFs::new_fs(kernel);
+            let tmpfs2 = TmpFs::new_fs(kernel);
+            let layered_fs = LayeredFs::new_fs(
+                kernel,
+                base,
+                BTreeMap::from([("d1".into(), tmpfs1), ("d3".into(), tmpfs2)]),
+            );
+            let layered_fs_entries = get_root_entry_names(current_task, &layered_fs);
+            assert_eq!(layered_fs_entries.len(), 5);
+            assert!(layered_fs_entries.contains(&b".".to_vec()));
+            assert!(layered_fs_entries.contains(&b"..".to_vec()));
+            assert!(layered_fs_entries.contains(&b"d1".to_vec()));
+            assert!(layered_fs_entries.contains(&b"d2".to_vec()));
+            assert!(layered_fs_entries.contains(&b"d3".to_vec()));
+        })
+        .await;
     }
 }
