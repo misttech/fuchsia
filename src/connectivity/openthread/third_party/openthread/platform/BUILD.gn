@@ -53,14 +53,8 @@ source_set("platform") {
   ]
 
   # Conditionally compile OpenThread platform code based on the commit used.
-  if (openthread_upstream_version ==
-      "e83f3e11b1e13077b122c288d8f49262e1129828") {
+  if (openthread_upstream_version == "") {
     defines = [ "OPENTHREAD_251001=1" ]
-  }
-
-  if (openthread_upstream_version ==
-      "d5bde0bc31a0733a6aec1cd66ff909018a177ff0") {
-    defines = [ "OPENTHREAD_260323=1" ]
   }
 
   deps = [ "//third_party/openthread:lib-ot-core" ]
