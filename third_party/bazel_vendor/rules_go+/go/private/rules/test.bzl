@@ -32,6 +32,7 @@ load(
     "CGO_FRAGMENTS",
     "CGO_TOOLCHAINS",
     "go_context",
+    "maybe_needs_cc_toolchain",
     "new_go_info",
 )
 load(
@@ -62,10 +63,10 @@ def _go_test_impl(ctx):
 
     go = go_context(
         ctx,
-        include_deprecated_properties = False,
         importpath = ctx.attr.importpath,
         embed = ctx.attr.embed,
         go_context_data = ctx.attr._go_context_data,
+        maybe_needs_cc_toolchain = maybe_needs_cc_toolchain(ctx.attr, go_infos = ctx.attr.deps),
         goos = ctx.attr.goos,
         goarch = ctx.attr.goarch,
     )
@@ -461,6 +462,10 @@ _go_test_kwargs = {
             """,
         ),
         "_go_context_data": attr.label(default = "//:go_context_data"),
+        "_nogo": attr.label(
+            default = Label("@io_bazel_rules_nogo//:nogo"),
+            cfg = "exec",
+        ),
         "_testmain_additional_deps": attr.label_list(
             providers = [GoInfo],
             default = ["//go/tools/bzltestutil"],
@@ -743,6 +748,7 @@ def _recompile_external_deps(go, external_go_info, internal_archive, library_lab
                 transitive = depset(direct = [arc_data], transitive = [a.transitive for a in deps]),
                 x_defs = go_info.x_defs,
                 cgo_deps = depset(transitive = [arc_data._cgo_deps] + [a.cgo_deps for a in deps]),
+                cgo_link_inputs = depset(transitive = [arc_data._cgo_link_inputs] + [a.cgo_link_inputs for a in deps]),
                 cgo_exports = depset(transitive = [a.cgo_exports for a in deps]),
                 runfiles = go_info.runfiles,
                 mode = go.mode,

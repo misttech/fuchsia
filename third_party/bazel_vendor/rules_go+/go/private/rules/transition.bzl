@@ -116,7 +116,7 @@ def _go_transition_impl(settings, attr):
         settings["//go/config:linkmode"] = linkmode
 
     pgoprofile = getattr(attr, "pgoprofile", "auto")
-    if pgoprofile != "auto":
+    if pgoprofile != "auto" and pgoprofile != Label("//go/config:empty"):
         settings["//go/config:pgoprofile"] = pgoprofile
 
     for key, original_key in _SETTING_KEY_TO_ORIGINAL_SETTING_KEY.items():
@@ -159,26 +159,6 @@ go_transition = transition(
     outputs = [
         "//command_line_option:platforms",
     ] + TRANSITIONED_GO_SETTING_KEYS + _SETTING_KEY_TO_ORIGINAL_SETTING_KEY.values(),
-)
-
-def _request_nogo_transition(settings, _attr):
-    """Indicates that we want the project configured nogo instead of a noop.
-
-    This does not guarantee that the project configured nogo will be used (if
-    bootstrap is true we are currently building nogo so that is a cyclic
-    dependency).
-
-    The config setting nogo_active requires bootstrap to be false and
-    request_nogo to be true to provide the project configured nogo.
-    """
-    settings = dict(settings)
-    settings["//go/private:request_nogo"] = True
-    return settings
-
-request_nogo_transition = transition(
-    implementation = _request_nogo_transition,
-    inputs = [],
-    outputs = ["//go/private:request_nogo"],
 )
 
 def _non_request_nogo_transition(_settings, _attr):

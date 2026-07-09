@@ -29,7 +29,6 @@ load(
 load(
     "//go/private:common.bzl",
     "GO_TOOLCHAIN",
-    "GO_TOOLCHAIN_LABEL",
 )
 load(
     "//go/private:context.bzl",
@@ -177,7 +176,7 @@ def go_proto_compile(go, compiler, protos, imports, importpath):
         progress_message = "Generating into %s" % go_srcs[0].dirname,
         mnemonic = "GoProtocGen",
         executable = compiler.internal.go_protoc,
-        toolchain = GO_TOOLCHAIN_LABEL,
+        exec_group = "internal_use_only_go_proto_gen",
         tools = [compiler.internal.protoc, compiler.internal.plugin],
         arguments = [args],
         env = go.env,
@@ -216,7 +215,10 @@ def proto_path(src, proto):
     return src.path[len(prefix):]
 
 def _go_proto_compiler_impl(ctx):
-    go = go_context(ctx, include_deprecated_properties = False)
+    go = go_context(
+        ctx,
+        maybe_needs_cc_toolchain = False,
+    )
     go_info = new_go_info(go, ctx.attr)
     proto_toolchain = _find_toolchain(
         ctx,

@@ -16,10 +16,10 @@ module(
     version = "1",
 )
 
-bazel_dep(name = "bazel_skylib", version = "1.8.2")
-bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "rules_cc", version = "0.2.19")
-bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_go", version = "0.61.1", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_license", version = "1.0.0")
 bazel_dep(name = "rules_python", version = "2.0.3")
 single_version_override(
@@ -29,7 +29,7 @@ single_version_override(
 
 single_version_override(
     module_name = "bazel_skylib",
-    version = "1.8.2",
+    version = "1.9.0",
 )
 
 single_version_override(
@@ -123,7 +123,7 @@ local_path_override(
 )
 
 # TODO(https://fxbug.dev/131788): Use //third_party/re2 when it's upgraded to this version.
-bazel_dep(name = "re2", version = "2024-07-02.bcr.1")
+bazel_dep(name = "re2", version = "2025-11-05.bcr.1")
 bazel_dep(name = "rapidjson", version = "")
 local_path_override(
     module_name = "rapidjson",
@@ -149,7 +149,7 @@ use_repo(fuchsia_build_config_ext, "fuchsia_build_config")
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.wrap(root_file = "@fuchsia_build_config//:host_prebuilts/go/README.md")
 
-bazel_dep(name = "googletest", version = "1.17.0", repo_name = "com_google_googletest")
+bazel_dep(name = "googletest", version = "", repo_name = "com_google_googletest")
 local_path_override(
     module_name = "googletest",
     path = "third_party/googletest/src",

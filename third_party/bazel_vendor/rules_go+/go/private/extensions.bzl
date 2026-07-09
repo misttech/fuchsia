@@ -13,7 +13,7 @@
 # limitations under the License.
 
 load("@io_bazel_rules_go_bazel_features//:features.bzl", "bazel_features")
-load("//go/private:go_mod.bzl", "version_from_go_mod")
+load("//go/private:go_mod.bzl", "version_from_go_mod", "version_from_go_work")
 load("//go/private:nogo.bzl", "DEFAULT_NOGO", "NOGO_DEFAULT_EXCLUDES", "NOGO_DEFAULT_INCLUDES", "go_register_nogo")
 load("//go/private:sdk.bzl", "detect_host_platform", "fetch_sdks_by_version", "go_download_sdk_rule", "go_host_sdk_rule", "go_multiple_toolchains", "go_wrap_sdk_rule")
 
@@ -53,6 +53,10 @@ _COMMON_TAG_ATTRS = {
         doc = "The number of leading path segments to be stripped from the file name in the patches.",
     ),
     "strip_prefix": attr.string(default = "go"),
+    "experimental_build_compiler_from_source": attr.bool(
+        default = False,
+        doc = "Whether to bootstrap compiler tool binaries from source instead of using the prebuilt SDK compiler binaries.",
+    ),
 }
 
 _download_tag = tag_class(
@@ -125,10 +129,13 @@ _wrap_tag = tag_class(
 )
 
 _from_file_tag = tag_class(
-    doc = """Use a specific Go SDK version described by a `go.mod` file.  Optionally supply GOOS, GOARCH, and download from a customisable URL, and apply local patches or set experiments.""",
+    doc = """Use a specific Go SDK version described by a `go.mod` or `go.work` file.  Optionally supply GOOS, GOARCH, and download from a customisable URL, and apply local patches or set experiments.""",
     attrs = _COMMON_TAG_ATTRS | {
         "go_mod": attr.label(
             doc = "The go.mod file to read the SDK version from.",
+        ),
+        "go_work": attr.label(
+            doc = "The go.work file to read the SDK version from.",
         ),
     },
 )
@@ -254,19 +261,26 @@ def _go_sdk_impl(ctx):
                 sdk_version = wrap_tag.version,
             ))
             if (not wrap_tag.goos or wrap_tag.goos == host_detected_goos) and (not wrap_tag.goarch or wrap_tag.goarch == host_detected_goarch):
-                first_host_compatible_toolchain = first_host_compatible_toolchain or "@{}//:ROOT".format(name)
+                first_host_compatible_toolchain = first_host_compatible_toolchain or "@{}//:host_compatible_root_file".format(name)
 
         additional_download_tags = []
 
-        # If the module suggests to read the toolchain version from a `go.mod` file, use that.
+        # If the module suggests to read the toolchain version from a `go.mod` or `go.work` file, use that.
         for index, from_file_tag in enumerate(module.tags.from_file):
-            version = version_from_go_mod(ctx, from_file_tag.go_mod)
+            if from_file_tag.go_mod and from_file_tag.go_work:
+                fail("go_sdk.from_file: either go_mod or go_work must be specified, but not both")
+            elif from_file_tag.go_mod:
+                version = version_from_go_mod(ctx, from_file_tag.go_mod)
+            elif from_file_tag.go_work:
+                version = version_from_go_work(ctx, from_file_tag.go_work)
+            else:
+                fail("go_sdk.from_file: either go_mod or go_work must be specified")
 
             # Synthesize a `download` tag so we can reuse the selection logic below.
             download_tag = {
                 key: getattr(from_file_tag, key)
                 for key in dir(from_file_tag)
-                if key not in ["go_mod"]
+                if key not in ["go_mod", "go_work"]
             }
             download_tag["version"] = version
             additional_download_tags.append(struct(**download_tag))
@@ -297,6 +311,8 @@ def _go_sdk_impl(ctx):
                 multi_version = multi_version_module[module.name],
                 tag_type = "download",
                 index = index,
+                goos = download_tag.goos or host_detected_goos,
+                goarch = download_tag.goarch or host_detected_goarch,
             )
 
             _download_sdk(
@@ -308,7 +324,7 @@ def _go_sdk_impl(ctx):
             )
 
             if (not download_tag.goos or download_tag.goos == host_detected_goos) and (not download_tag.goarch or download_tag.goarch == host_detected_goarch):
-                first_host_compatible_toolchain = first_host_compatible_toolchain or "@{}//:ROOT".format(name)
+                first_host_compatible_toolchain = first_host_compatible_toolchain or "@{}//:host_compatible_root_file".format(name)
 
             toolchains.append(struct(
                 goos = download_tag.goos,
@@ -335,7 +351,8 @@ def _go_sdk_impl(ctx):
                         multi_version = multi_version_module[module.name],
                         tag_type = "download",
                         index = index,
-                        suffix = "_{}_{}".format(goos, goarch),
+                        goos = goos,
+                        goarch = goarch,
                     )
 
                     _download_sdk(
@@ -380,7 +397,7 @@ def _go_sdk_impl(ctx):
                 sdk_type = "host",
                 sdk_version = host_tag.version,
             ))
-            first_host_compatible_toolchain = first_host_compatible_toolchain or "@{}//:ROOT".format(name)
+            first_host_compatible_toolchain = first_host_compatible_toolchain or "@{}//:host_compatible_root_file".format(name)
 
     host_compatible_toolchain(name = "go_host_compatible_sdk_label", toolchain = first_host_compatible_toolchain)
     if len(toolchains) > _MAX_NUM_TOOLCHAINS:
@@ -416,9 +433,15 @@ def _go_sdk_impl(ctx):
     else:
         return None
 
-def _default_go_sdk_name(*, module, multi_version, tag_type, index, suffix = ""):
+def _default_go_sdk_name(*, module, multi_version, tag_type, index, goos = None, goarch = None):
     # Keep the version and name of the root module out of the repository name if possible to
     # prevent unnecessary rebuilds when it changes.
+    if goos and goarch:
+        suffix = "_{}_{}".format(goos, goarch)
+    elif not goos and not goarch:
+        suffix = ""
+    else:
+        fail("goos and goarch must be specified together")
     return "{name}_{version}_{tag_type}_{index}{suffix}".format(
         # "main_" is not a valid module name and thus can't collide.
         name = "main_" if module.is_root else module.name,
@@ -459,6 +482,7 @@ def _download_sdk(*, get_sdks_by_version, name, goos, goarch, download_tag):
         urls = download_tag.urls,
         version = download_tag.version,
         strip_prefix = download_tag.strip_prefix,
+        experimental_build_compiler_from_source = download_tag.experimental_build_compiler_from_source,
     )
 
 go_sdk_extra_kwargs = {

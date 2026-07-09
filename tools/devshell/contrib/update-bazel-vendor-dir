@@ -55,6 +55,7 @@ fx-update-bazel-workspace
     --repo='@@bazel_features+' \
     --repo='@@bazel_skylib+' \
     --repo='@@boringssl+' \
+    --repo='@@package_metadata+' \
     --repo='@@platforms' \
     --repo='@@re2+' \
     --repo='@@rules_cc+' \

@@ -26,6 +26,7 @@ load(
     "CGO_FRAGMENTS",
     "CGO_TOOLCHAINS",
     "go_context",
+    "maybe_needs_cc_toolchain",
     "new_go_info",
 )
 load(
@@ -41,12 +42,12 @@ def _go_library_impl(ctx):
     """Implements the go_library() rule."""
     go = go_context(
         ctx,
-        include_deprecated_properties = False,
         importpath = ctx.attr.importpath,
         importmap = ctx.attr.importmap,
         importpath_aliases = ctx.attr.importpath_aliases,
         embed = ctx.attr.embed,
         go_context_data = ctx.attr._go_context_data,
+        maybe_needs_cc_toolchain = maybe_needs_cc_toolchain(ctx.attr),
     )
 
     go_info = new_go_info(go, ctx.attr)
@@ -191,6 +192,10 @@ go_library = rule(
             """,
         ),
         "_go_context_data": attr.label(default = "//:go_context_data"),
+        "_nogo": attr.label(
+            default = Label("@io_bazel_rules_nogo//:nogo"),
+            cfg = "exec",
+        ),
         "_allowlist_function_transition": attr.label(
             default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
         ),
@@ -214,7 +219,10 @@ go_library = rule(
 
 def _go_tool_library_impl(ctx):
     """Implements the go_tool_library() rule."""
-    go = go_context(ctx, include_deprecated_properties = False)
+    go = go_context(
+        ctx,
+        maybe_needs_cc_toolchain = maybe_needs_cc_toolchain(ctx.attr),
+    )
 
     go_info = new_go_info(go, ctx.attr)
     archive = go.archive(go, go_info)
@@ -236,7 +244,6 @@ go_tool_library = rule(
         "gc_goopts": attr.string_list(),
         "x_defs": attr.string_dict(),
         "_go_config": attr.label(default = "//:go_config"),
-        "_cgo_context_data": attr.label(default = "//:cgo_context_data_proxy"),
         "_stdlib": attr.label(default = "//:stdlib"),
     } | CGO_ATTRS,
     fragments = CGO_FRAGMENTS,

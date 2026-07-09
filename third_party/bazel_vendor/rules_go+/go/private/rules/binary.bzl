@@ -30,6 +30,7 @@ load(
     "CGO_FRAGMENTS",
     "CGO_TOOLCHAINS",
     "go_context",
+    "maybe_needs_cc_toolchain",
     "new_go_info",
 )
 load(
@@ -126,10 +127,10 @@ def _go_binary_impl(ctx):
     """go_binary_impl emits actions for compiling and linking a go executable."""
     go = go_context(
         ctx,
-        include_deprecated_properties = False,
         importpath = ctx.attr.importpath,
         embed = ctx.attr.embed,
         go_context_data = ctx.attr._go_context_data,
+        maybe_needs_cc_toolchain = maybe_needs_cc_toolchain(ctx.attr, go_infos = ctx.attr.deps),
         goos = ctx.attr.goos,
         goarch = ctx.attr.goarch,
     )
@@ -480,6 +481,10 @@ def _go_binary_kwargs(go_cc_aspects = []):
                 default = "//go/config:empty",
             ),
             "_go_context_data": attr.label(default = "//:go_context_data"),
+            "_nogo": attr.label(
+                default = Label("@io_bazel_rules_nogo//:nogo"),
+                cfg = "exec",
+            ),
             "_allowlist_function_transition": attr.label(
                 default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
             ),
