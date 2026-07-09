@@ -484,6 +484,7 @@ fidl_bazel2gn_verification_targets = [
   "//sdk/fidl/fuchsia.wlan.internal:verify_bazel2gn",
   "//sdk/fidl/fuchsia.wlan.minstrel:verify_bazel2gn",
   "//sdk/fidl/fuchsia.wlan.mlme:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.wlan.phy:verify_bazel2gn",
   "//sdk/fidl/fuchsia.wlan.phyimpl:verify_bazel2gn",
   "//sdk/fidl/fuchsia.wlan.policy:verify_bazel2gn",
   "//sdk/fidl/fuchsia.wlan.product.deprecatedclient:verify_bazel2gn",
