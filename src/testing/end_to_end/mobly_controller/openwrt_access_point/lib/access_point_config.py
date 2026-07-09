@@ -86,6 +86,35 @@ class SecurityOpen:
 
 
 @dataclasses.dataclass(frozen=True)
+class SecurityOwe:
+    pmf_support: Literal[Pmf.REQUIRED] = Pmf.REQUIRED
+
+    @property
+    def uci_encryption(self) -> str:
+        return "owe"
+
+    # TODO(https://fxbug.dev/528397348): OWE isn't in WLAN policy's SecurityType yet, use OWE here when it is added.
+    def to_fidl_wlan_policy(self) -> f_wlan_policy.SecurityType:
+        raise NotImplementedError(
+            "OWE is not yet supported in fuchsia.wlan.policy.SecurityType (https://fxbug.dev/528397348)"
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class SecurityOweTransition:
+    open_bssid: str
+    owe_bssid: str
+    pmf_support: Literal[Pmf.REQUIRED] = Pmf.REQUIRED
+
+    @property
+    def uci_encryption(self) -> str:
+        return "none"
+
+    def to_fidl_wlan_policy(self) -> f_wlan_policy.SecurityType:
+        return f_wlan_policy.SecurityType.NONE
+
+
+@dataclasses.dataclass(frozen=True)
 class SecurityWpa:
     cipher: Literal["ccmp", "tkip", "ccmp+tkip"] | None = None
     pmf_support: Literal[Pmf.DISABLED] = Pmf.DISABLED

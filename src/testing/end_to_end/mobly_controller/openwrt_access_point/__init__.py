@@ -7,6 +7,7 @@ import ipaddress
 import json
 import logging
 import os
+import random
 import re
 import string
 import time
@@ -28,6 +29,7 @@ from openwrt_access_point.lib.access_point_config import (
     Band,
     BssSettings,
     SecurityOpen,
+    SecurityOweTransition,
     SecurityWep,
 )
 from openwrt_access_point.lib.dhcp_config import DhcpConfig as DhcpConfig
@@ -110,6 +112,27 @@ class AddrType(StrEnum):
 class InterfaceName(StrEnum):
     lan = "br-lan"
     """The default LAN interface."""
+
+
+def generate_mac_pair() -> tuple[str, str]:
+    """Generate a pair of BSSIDs for the open BSS and OWE BSS of an OWE transition network."""
+
+    def _bytes_to_mac(b: list[int]) -> str:
+        return ":".join(f"{x:02x}" for x in b)
+
+    # Generate a locally administered unicast MAC address base
+    # Use max 254 for the last byte to ensure we can increment it without overflow
+    base = [
+        0x02,
+        0x00,
+        0x00,
+        random.randint(0, 255),
+        random.randint(0, 255),
+        random.randint(0, 254),
+    ]
+    owe = list(base)
+    owe[5] += 1
+    return _bytes_to_mac(base), _bytes_to_mac(owe)
 
 
 @dataclass
@@ -215,6 +238,62 @@ class OpenWrtAP:
             f"uci add_list wireless.{section_name}.hostapd_bss_options='auth_algs={auth_algs}'"
         )
 
+    def _configure_owe_transition(
+        self, open_iface_section: str, bss: BssSettings, radio: Radio
+    ) -> list[str]:
+        """Configures OWE Transition BSS and links it to the Open BSS.
+
+        Args:
+            open_iface_section: The UCI wireless interface section name for the Open BSS.
+            bss: The BSS configuration, which includes OWE Transition settings.
+            radio: The radio device name.
+        Returns:
+            the name of the OWE BSS section, so additional configuration can be added to it.
+        """
+        if not isinstance(bss.security, SecurityOweTransition):
+            raise TypeError(
+                "Expected SecurityOweTransition security configuration, "
+                f"got {type(bss.security)}"
+            )
+        security = bss.security
+        open_bssid = security.open_bssid
+        owe_bssid = security.owe_bssid
+
+        owe_ssid = f"{bss.ssid}-owe"
+        owe_iface_section = f"{open_iface_section}_owe"
+
+        # Update the Open BSS (under `open_iface_section`) to point to the OWE BSS.
+        self.ssh.run(
+            f"uci set wireless.{open_iface_section}.owe_transition_ssid='{owe_ssid}'"
+        )
+        self.ssh.run(
+            f"uci set wireless.{open_iface_section}.owe_transition_bssid='{owe_bssid}'"
+        )
+        self.ssh.run(
+            f"uci set wireless.{open_iface_section}.macaddr='{open_bssid}'"
+        )
+
+        # Configure the OWE BSS
+        self.ssh.run(f"uci set wireless.{owe_iface_section}='wifi-iface'")
+        self.ssh.run(f"uci set wireless.{owe_iface_section}.device='{radio}'")
+        self.ssh.run(f"uci set wireless.{owe_iface_section}.network='lan'")
+        self.ssh.run(f"uci set wireless.{owe_iface_section}.mode='ap'")
+        self.ssh.run(f"uci set wireless.{owe_iface_section}.ssid='{owe_ssid}'")
+        self.ssh.run(f"uci set wireless.{owe_iface_section}.encryption='owe'")
+        # The OWE BSS must also point back to the open BSS
+        self.ssh.run(
+            f"uci set wireless.{owe_iface_section}.owe_transition_ssid='{bss.ssid}'"
+        )
+        self.ssh.run(
+            f"uci set wireless.{owe_iface_section}.owe_transition_bssid='{open_bssid}'"
+        )
+        self.ssh.run(
+            f"uci set wireless.{owe_iface_section}.macaddr='{owe_bssid}'"
+        )
+        self.ssh.run(f"uci set wireless.{owe_iface_section}.hidden='1'")
+
+        return [open_iface_section, owe_iface_section]
+
     def _configure_bss(self, bss: BssSettings, radio: Radio) -> None:
         """Configures a BSS on the Access Point.
 
@@ -247,19 +326,31 @@ class OpenWrtAP:
         hidden = "1" if bss.hidden else "0"
         self.ssh.run(f"uci set wireless.{section_name}.hidden='{hidden}'")
 
-        for option, value in bss.custom_uci_options.items():
-            if isinstance(value, list):
-                for item in value:
+        # OWE transition has two sections. Keep track of section names to apply custom options
+        # to all sections.
+        if isinstance(bss.security, SecurityOweTransition):
+            section_names = self._configure_owe_transition(
+                section_name, bss, radio
+            )
+        else:
+            section_names = [section_name]
+
+        for section_name in section_names:
+            for option, value in bss.custom_uci_options.items():
+                if isinstance(value, list):
+                    for item in value:
+                        self.ssh.run(
+                            f"uci add_list wireless.{section_name}.{option}='{item}'"
+                        )
+                elif isinstance(value, bool):
+                    v = str(int(value))
                     self.ssh.run(
-                        f"uci add_list wireless.{section_name}.{option}='{item}'"
+                        f"uci set wireless.{section_name}.{option}='{v}'"
                     )
-            elif isinstance(value, bool):
-                v = str(int(value))
-                self.ssh.run(f"uci set wireless.{section_name}.{option}='{v}'")
-            else:
-                self.ssh.run(
-                    f"uci set wireless.{section_name}.{option}='{value}'"
-                )
+                else:
+                    self.ssh.run(
+                        f"uci set wireless.{section_name}.{option}='{value}'"
+                    )
 
     def configure_wifi(self, config: AccessPointConfig) -> None:
         """Configures the Wi-Fi on the Access Point.
