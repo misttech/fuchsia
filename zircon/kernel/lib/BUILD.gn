@@ -60,6 +60,7 @@ all_libs = [
   "lockdep",
   "lockup_detector",
   "object_cache",
+  "object-constants",
   "page-map",
   "page_cache",
   "perfmon",

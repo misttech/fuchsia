@@ -103,6 +103,11 @@ class Dispatcher : private fbl::RefCountedUpgradeable<Dispatcher>,
   using fbl::RefCountedUpgradeable<Dispatcher>::Adopt;
   using fbl::RefCountedUpgradeable<Dispatcher>::AddRefMaybeInDestructor;
 
+  void* get_ref_counted_base() const {
+    return const_cast<fbl::RefCountedUpgradeable<Dispatcher>*>(
+        static_cast<const fbl::RefCountedUpgradeable<Dispatcher>*>(this));
+  }
+
   // Dispatchers are either Solo or Peered. They handle refcounting
   // and locking differently.
   virtual ~Dispatcher();

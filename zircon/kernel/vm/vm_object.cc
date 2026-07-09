@@ -404,6 +404,9 @@ extern "C" {
 void* cpp_vm_object_get_ref_counted(const VmObject* vmo);
 void cpp_vm_object_free(VmObject* vmo);
 
-void* cpp_vm_object_get_ref_counted(const VmObject* vmo) { return const_cast<VmObject*>(vmo); }
+void* cpp_vm_object_get_ref_counted(const VmObject* vmo) {
+  return const_cast<fbl::RefCountedUpgradeable<VmObject>*>(
+      static_cast<const fbl::RefCountedUpgradeable<VmObject>*>(vmo));
+}
 void cpp_vm_object_free(VmObject* vmo) { delete vmo; }
 }
