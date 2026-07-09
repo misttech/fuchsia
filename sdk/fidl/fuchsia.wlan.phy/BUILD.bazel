@@ -9,13 +9,13 @@ fidl_library(
     srcs = [
         "wlanphy.fidl",
     ],
-    api_area = "WLAN",
     contains_drivers = True,
     enable_rust_next = True,
     visibility = ["//visibility:public"],
     deps = [
         "//sdk/fidl/fuchsia.wlan.common",
         "//sdk/fidl/fuchsia.wlan.ieee80211",
+        "//sdk/fidl/fuchsia.wlan.internal",
         "//zircon/vdso/zx",
     ],
 )

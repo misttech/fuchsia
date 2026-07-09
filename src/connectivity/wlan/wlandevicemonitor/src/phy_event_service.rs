@@ -4,6 +4,9 @@
 
 use anyhow::{Error, bail};
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_wlan_device as fidl_dev;
+use fidl_fuchsia_wlan_device_service as fidl_svc;
+use fidl_fuchsia_wlan_internal as fidl_internal;
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
 use futures::stream::FuturesUnordered;
@@ -12,7 +15,6 @@ use log::warn;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
-use {fidl_fuchsia_wlan_device as fidl_dev, fidl_fuchsia_wlan_device_service as fidl_svc};
 
 pub fn serve_phy_events(
     phy_event_stream: mpsc::Receiver<(u16, fidl_dev::PhyEvent)>,
@@ -30,9 +32,9 @@ pub fn serve_phy_events(
     (service, fut)
 }
 
-fn convert_reason_code(code: fidl_dev::CriticalErrorReason) -> fidl_svc::CriticalErrorReason {
+fn convert_reason_code(code: fidl_dev::CriticalErrorReason) -> fidl_internal::CriticalErrorReason {
     match code {
-        fidl_dev::CriticalErrorReason::FwCrash => fidl_svc::CriticalErrorReason::FwCrash,
+        fidl_dev::CriticalErrorReason::FwCrash => fidl_internal::CriticalErrorReason::FwCrash,
     }
 }
 
@@ -167,7 +169,7 @@ mod tests {
             event1,
             fidl_svc::PhyEventWatcherEvent::OnCriticalError {
                 phy_id: 123,
-                reason_code: fidl_svc::CriticalErrorReason::FwCrash,
+                reason_code: fidl_internal::CriticalErrorReason::FwCrash,
             }
         );
         let event2 = assert_matches!(exec.run_until_stalled(&mut next_event2), Poll::Ready(Some(Ok(event))) => event);
@@ -175,7 +177,7 @@ mod tests {
             event2,
             fidl_svc::PhyEventWatcherEvent::OnCriticalError {
                 phy_id: 123,
-                reason_code: fidl_svc::CriticalErrorReason::FwCrash,
+                reason_code: fidl_internal::CriticalErrorReason::FwCrash,
             }
         );
     }

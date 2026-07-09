@@ -80,14 +80,10 @@ type DeviceMonitorError = flexible enum {
     INTERNAL = 1;
 };
 
-type CriticalErrorReason = strict enum : uint8 {
-    FW_CRASH = 1;
-};
-
 open protocol PhyEventWatcher {
     strict -> OnCriticalError(struct {
         phy_id uint16;
-        reason_code CriticalErrorReason;
+        reason_code fuchsia.wlan.internal.CriticalErrorReason;
     });
     strict -> OnCountryCodeChange(struct {
         phy_id uint16;

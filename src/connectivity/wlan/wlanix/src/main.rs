@@ -3051,7 +3051,7 @@ async fn serve_phy_events(
                 error!("Critical error on phy {}! ({:?})", phy_id, reason_code);
                 let mut state = state.lock();
                 let status = match reason_code {
-                    fidl_device_service::CriticalErrorReason::FwCrash => zx::sys::ZX_ERR_INTERNAL,
+                    fidl_internal::CriticalErrorReason::FwCrash => zx::sys::ZX_ERR_INTERNAL,
                 };
                 maybe_run_callback(
                     "WifiEventCallback::OnSubsystemRestart",
@@ -7353,7 +7353,7 @@ mod tests {
 
         // Simulate an OnCriticalError event.
         phy_events_handle
-            .send_on_critical_error(1, fidl_device_service::CriticalErrorReason::FwCrash)
+            .send_on_critical_error(1, fidl_internal::CriticalErrorReason::FwCrash)
             .expect("Failed to send event");
 
         // We should see a callback.

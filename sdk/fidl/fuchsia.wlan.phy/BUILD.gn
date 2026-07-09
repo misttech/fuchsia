@@ -35,13 +35,13 @@ if (is_host) {
 
 fidl("fuchsia.wlan.phy") {
   sources = [ "wlanphy.fidl" ]
-  sdk_area = "WLAN"
   contains_drivers = true
   enable_rust_next = true
   visibility = [ "*" ]
   public_deps = [
     "//sdk/fidl/fuchsia.wlan.common",
     "//sdk/fidl/fuchsia.wlan.ieee80211",
+    "//sdk/fidl/fuchsia.wlan.internal",
     "//zircon/vdso/zx",
   ]
 }
