@@ -1512,4 +1512,32 @@ mod tests {
         })
         .await;
     }
+
+    #[::fuchsia::test]
+    async fn test_unspawned_task_remove_does_not_register_zombie() {
+        spawn_kernel_and_run(async |locked, current_task| {
+            let kernel = current_task.kernel().clone();
+            let tracee = create_task(locked, &kernel, "tracee");
+            let mut tracer = create_task(locked, &kernel, "tracer");
+
+            assert!(
+                ptrace_attach(
+                    locked,
+                    &mut tracer,
+                    tracee.as_ref().task.tid,
+                    PtraceAttachType::Attach,
+                    UserAddress::NULL,
+                )
+                .is_ok()
+            );
+
+            // create_task() returns an unspawned task. Dropping the tracee causes it to exit, which
+            // triggers zombie tracee registration. The tracee must not register with the tracer
+            // because it never spawned.
+            assert!(!tracee.is_spawned());
+            drop(tracee);
+            assert!(tracer.thread_group().write().zombie_ptracees.is_empty());
+        })
+        .await;
+    }
 }
