@@ -149,9 +149,7 @@ void BuildIDIndex::AddSymbolIndexFile(const std::string& path) {
 }
 
 void BuildIDIndex::AddPlainFileOrDir(const std::string& path) {
-  // TODO: https://fxbug.dev/459923005 - use std::ranges::contains after
-  // migrating to C++23.
-  if (std::ranges::find(sources_, path) != sources_.end())
+  if (std::ranges::contains(sources_, path))
     return;
 
   sources_.push_back(path);
