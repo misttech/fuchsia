@@ -81,7 +81,7 @@ It will be set below and passed to other toolchains through toolchain_args
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:782
+From //build/config/BUILDCONFIG.gn:774
 
 ### allowed_test_device_types
 
@@ -2187,6 +2187,13 @@ From //build/config/compiler.gni:82
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidlmerge_/fidlmerge"
   ninja = "fidlmerge"
+}]
+  install_host_tool = true
+}, {
+  bazel_label = "//tools/fidl/measure-tape/src:measure-tape"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/measure-tape_/measure-tape"
+  ninja = "measure-tape"
 }]
   install_host_tool = true
 }, {
@@ -4330,7 +4337,7 @@ This is just added to [`known_variants`](#known_variants).
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:540
+From //build/config/BUILDCONFIG.gn:532
 
 ### fat_lto_objects
 
@@ -5452,11 +5459,6 @@ Each element of the list is one variant, which is a scope defining:
 }, {
   name = "gcc"
   tags = ["gcc"]
-}, {
-  name = "cxx20"
-  toolchain_args = {
-  experimental_cxx_version = 20
-}
 }, {
   configs = ["//build/config/profile:heapdump"]
   tags = ["fuchsia-only", "heapdump", "instrumented", "instrumentation-runtime", "kernel-excluded", "needs-compiler-abi"]
@@ -9120,7 +9122,7 @@ is satisfied if any of the strings matches against the candidate string.
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:772
+From //build/config/BUILDCONFIG.gn:764
 
 ### select_variant_canonical
 
@@ -9130,7 +9132,7 @@ See //build/toolchain/clang_toolchain.gni for details.
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:777
+From //build/config/BUILDCONFIG.gn:769
 
 ### select_variant_shortcuts
 
@@ -9207,7 +9209,7 @@ a list that can be spliced into [`select_variant`](#select_variant).
 }]
 ```
 
-From //build/config/BUILDCONFIG.gn:547
+From //build/config/BUILDCONFIG.gn:539
 
 ### skip_buildtools_check
 
@@ -9543,7 +9545,7 @@ for details and documentation for each field.
 }
 ```
 
-From //build/config/BUILDCONFIG.gn:959
+From //build/config/BUILDCONFIG.gn:951
 
 ### truncate_build_info_commit_date
 
@@ -10067,7 +10069,7 @@ This allows testing for a Zircon-specific toolchain with:
 
 **Current value (from the default):** `false`
 
-From //build/config/BUILDCONFIG.gn:976
+From //build/config/BUILDCONFIG.gn:968
 
 ### zircon_tracelog
 
