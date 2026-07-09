@@ -114,7 +114,7 @@ impl PhyProxy {
             .map_err(|e| anyhow::anyhow!("failed to initialize PHY: {:?}", e))?
             .map_err(|status| anyhow::anyhow!("PHY init failed with status: {}", status))?;
 
-        let event_stream = request_stream
+let event_stream = request_stream
             .filter_map(|r| async move {
                 match r {
                     Ok(req) => match PhyEvent::try_from(req) {
