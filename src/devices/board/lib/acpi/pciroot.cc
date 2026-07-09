@@ -52,6 +52,8 @@ zx_status_t AcpiPciroot::PcirootGetPciPlatformInfo(pci_platform_info_t* info) {
   info->irq_routing_count = context_.routing.size();
   info->acpi_bdfs_list = acpi_bdfs_.data();
   info->acpi_bdfs_count = acpi_bdfs_.size();
+  // ACPI platforms do not describe PCI devices via the devicetree.
+  info->devicetree_bdfs_count = 0;
 
   return ZX_OK;
 }

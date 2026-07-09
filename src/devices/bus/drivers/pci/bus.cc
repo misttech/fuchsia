@@ -119,6 +119,8 @@ zx_status_t Bus::Initialize() {
   }
 
   acpi_devices_ = cpp20::span<const pci_bdf_t>(info_.acpi_bdfs_list, info_.acpi_bdfs_count);
+  devicetree_devices_ =
+      cpp20::span<const pci_bdf_t>(info_.devicetree_bdfs_list, info_.devicetree_bdfs_count);
   irqs_ = cpp20::span<const pci_legacy_irq>(info_.legacy_irqs_list, info_.legacy_irqs_count);
   irq_routing_entries_ =
       cpp20::span<const pci_irq_routing_entry_t>(info_.irq_routing_list, info_.irq_routing_count);
@@ -282,7 +284,8 @@ void Bus::ScanBus(BusScanEntry entry, std::list<BusScanEntry>* scan_list) {
       strncpy(addr, config->addr(), sizeof(addr));
       zx_status_t status =
           pci::Device::Create(zxdev(), std::move(config.value()), upstream, this, std::move(node),
-                              /*has_acpi=*/DeviceHasAcpi(config->bdf()));
+                              /*has_acpi=*/DeviceHasAcpi(config->bdf()),
+                              /*has_devicetree=*/DeviceHasDevicetree(config->bdf()));
       if (status != ZX_OK) {
         zxlogf(ERROR, "failed to create device at %s: %s", addr, zx_status_get_string(status));
       }
@@ -302,6 +305,15 @@ bool Bus::DeviceHasAcpi(pci_bdf_t bdf) {
   };
   return std::find_if(acpi_devices_.begin(), acpi_devices_.end(), find_fn) !=
          std::end(acpi_devices_);
+}
+
+bool Bus::DeviceHasDevicetree(pci_bdf_t bdf) {
+  auto find_fn = [&bdf](const pci_bdf_t& entry) -> bool {
+    return bdf.bus_id == entry.bus_id && bdf.device_id == entry.device_id &&
+           bdf.function_id == entry.function_id;
+  };
+  return std::find_if(devicetree_devices_.begin(), devicetree_devices_.end(), find_fn) !=
+         std::end(devicetree_devices_);
 }
 
 zx_status_t Bus::SetUpLegacyIrqHandlers() {

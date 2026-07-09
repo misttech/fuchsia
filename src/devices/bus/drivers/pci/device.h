@@ -171,7 +171,7 @@ class Device : public fbl::WAVLTreeContainable<fbl::RefPtr<pci::Device>>,
   // Create, but do not initialize, a device.
   static zx_status_t Create(zx_device_t* parent, std::unique_ptr<Config>&& config,
                             UpstreamNode* upstream, BusDeviceInterface* bdi, inspect::Node node,
-                            bool has_acpi);
+                            bool has_acpi, bool has_devicetree);
   virtual ~Device();
 
   // Bridge or DeviceImpl will need to implement refcounting
@@ -228,6 +228,7 @@ class Device : public fbl::WAVLTreeContainable<fbl::RefPtr<pci::Device>>,
   bool disabled() const __TA_REQUIRES(dev_lock_) { return disabled_; }
   bool quirks_done() const __TA_REQUIRES(dev_lock_) { return quirks_done_; }
   bool has_acpi() const { return has_acpi_; }
+  bool has_devicetree() const { return has_devicetree_; }
   bool is_bridge() const { return is_bridge_; }
   bool is_pcie() const { return is_pcie_; }
   uint16_t vendor_id() const { return vendor_id_; }
@@ -294,7 +295,8 @@ class Device : public fbl::WAVLTreeContainable<fbl::RefPtr<pci::Device>>,
   // traits facilitate that for us.
  protected:
   Device(zx_device_t* parent, std::unique_ptr<Config>&& config, UpstreamNode* upstream,
-         BusDeviceInterface* bdi, inspect::Node node, bool is_bridge, bool has_acpi);
+         BusDeviceInterface* bdi, inspect::Node node, bool is_bridge, bool has_acpi,
+         bool has_devicetree);
 
   zx_status_t Init() __TA_EXCLUDES(dev_lock_);
   zx_status_t InitLocked() __TA_REQUIRES(dev_lock_);
@@ -378,12 +380,16 @@ class Device : public fbl::WAVLTreeContainable<fbl::RefPtr<pci::Device>>,
 
   const bool is_bridge_;  // True if this device is also a bridge
   const bool has_acpi_;   // True if this device has an acpi fragment for its composite.
-  uint16_t vendor_id_;    // The device's vendor ID, as read from config
-  uint16_t device_id_;    // The device's device ID, as read from config
-  uint8_t class_id_;      // The device's class ID, as read from config.
-  uint8_t subclass_;      // The device's subclass, as read from config.
-  uint8_t prog_if_;       // The device's programming interface (from cfg)
-  uint8_t rev_id_;        // The device's revision ID (from cfg)
+  // True if this device is described by the devicetree. When set, the bus driver
+  // publishes only this device's fragment and leaves composite creation to the
+  // devicetree (pci-child-visitor).
+  const bool has_devicetree_;
+  uint16_t vendor_id_;  // The device's vendor ID, as read from config
+  uint16_t device_id_;  // The device's device ID, as read from config
+  uint8_t class_id_;    // The device's class ID, as read from config.
+  uint8_t subclass_;    // The device's subclass, as read from config.
+  uint8_t prog_if_;     // The device's programming interface (from cfg)
+  uint8_t rev_id_;      // The device's revision ID (from cfg)
 
   // State related to lifetime management.
   bool plugged_in_ __TA_GUARDED(dev_lock_) = false;

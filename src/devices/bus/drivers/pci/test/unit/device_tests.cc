@@ -66,7 +66,7 @@ class PciDeviceTests : protected ::pci_testing::InspectHelper, public ::testing:
     auto fake_cfg = std::make_unique<FakeMmioConfig>(bdf(), std::move(view.value()));
     // Create and initialize the fake device.
     EXPECT_OK(Device::Create(parent, std::move(fake_cfg), &upstream(), &bus(), GetInspectNode(),
-                             /*has_acpi=*/false));
+                             /*has_acpi=*/false, /*has_devicetree=*/false));
     return bus().get_device(bdf());
   }
   void ConfigureDownstreamDevices() { return upstream_.ConfigureDownstreamDevices(); }
@@ -92,11 +92,18 @@ using PciDeviceTestsCam = PciDeviceTests<false>;
 using PciDeviceTestsExtendedCam = PciDeviceTests<true>;
 using PciDeviceTestExtendedCamBridge = PciDeviceTests<true, UpstreamNode::Type::BRIDGE>;
 
+// Counts how many composite node specs the bus driver has published. Tests
+// reset this before exercising a code path and inspect it afterwards. It has
+// external linkage so bus_tests.cc can share it (both are linked into the same
+// pci-unit binary alongside the device_add_composite_spec mock below).
+int g_pci_composite_spec_add_count = 0;
+
 extern "C" {
 // MockDevice does not cover adding composite devices within a driver, but
 // BanjoDevice:Create only needs to think it succeeded.
 __EXPORT zx_status_t device_add_composite_spec(zx_device_t* dev, const char* name,
                                                const composite_node_spec_t* spec) {
+  ++g_pci_composite_spec_add_count;
   return ZX_OK;
 }
 }
@@ -122,7 +129,7 @@ TEST_F(PciDeviceTestsExtendedCam, CreationTest) {
   auto fake_cfg = std::make_unique<FakeMmioConfig>(bdf(), std::move(view.value()));
   ASSERT_OK(Device::Create(MockDevice::FakeRootParent().get(), std::move(fake_cfg), &upstream(),
                            &bus(), GetInspectNode(),
-                           /*has_acpi=*/false));
+                           /*has_acpi=*/false, /*has_devicetree=*/false));
 
   upstream().fake_mmio_regions().FailNextAllocation(true);
   upstream().fake_pf_mmio_regions().FailNextAllocation(true);
@@ -199,7 +206,7 @@ TEST_F(PciDeviceTestsCam, StdCapabilityTest) {
   auto cfg = ecam.CreateMmioConfig(bdf());
   ASSERT_OK(Device::Create(MockDevice::FakeRootParent().get(), std::move(cfg), &upstream(), &bus(),
                            GetInspectNode(),
-                           /*has_acpi=*/false));
+                           /*has_acpi=*/false, /*has_devicetree=*/false));
   auto& dev = bus().get_device(bdf());
 
   // Ensure our faked Keyboard exists.
@@ -221,6 +228,34 @@ TEST_F(PciDeviceTestsCam, StdCapabilityTest) {
   ASSERT_TRUE(cap_iter != dev.capabilities().list.end());
   EXPECT_EQ(static_cast<Capability::Id>((++cap_iter)->id()), Capability::Id::kVendor);
   EXPECT_TRUE(++cap_iter == dev.capabilities().list.end());
+}
+
+// A device that is described by the devicetree publishes its fragment but not a
+// composite node spec: the devicetree (pci-child-visitor) owns the composite.
+TEST_F(PciDeviceTestsCam, DevicetreeDeviceSkipsCompositeSpec) {
+  auto& ecam = bus().pciroot().ecam();
+  ecam.get_config_view(bdf()).WriteBuffer(0, kFakeVirtioInputDeviceConfig.data(),
+                                          kFakeVirtioInputDeviceConfig.max_size());
+  auto cfg = ecam.CreateMmioConfig(bdf());
+
+  g_pci_composite_spec_add_count = 0;
+  ASSERT_OK(Device::Create(MockDevice::FakeRootParent().get(), std::move(cfg), &upstream(), &bus(),
+                           GetInspectNode(), /*has_acpi=*/false, /*has_devicetree=*/true));
+  EXPECT_EQ(g_pci_composite_spec_add_count, 0);
+}
+
+// A device that is not described by the devicetree gets its composite from the
+// bus driver, as before.
+TEST_F(PciDeviceTestsCam, NonDevicetreeDeviceAddsCompositeSpec) {
+  auto& ecam = bus().pciroot().ecam();
+  ecam.get_config_view(bdf()).WriteBuffer(0, kFakeVirtioInputDeviceConfig.data(),
+                                          kFakeVirtioInputDeviceConfig.max_size());
+  auto cfg = ecam.CreateMmioConfig(bdf());
+
+  g_pci_composite_spec_add_count = 0;
+  ASSERT_OK(Device::Create(MockDevice::FakeRootParent().get(), std::move(cfg), &upstream(), &bus(),
+                           GetInspectNode(), /*has_acpi=*/false, /*has_devicetree=*/false));
+  EXPECT_EQ(g_pci_composite_spec_add_count, 1);
 }
 
 // Test an extended capability chain
@@ -279,7 +314,7 @@ TEST_F(PciDeviceTestsCam, InvalidPtrCapabilityTest) {
   ASSERT_OK(cfg.status_value());
   EXPECT_EQ(ZX_ERR_OUT_OF_RANGE,
             Device::Create(MockDevice::FakeRootParent().get(), std::move(cfg.value()), &upstream(),
-                           &bus, GetInspectNode(), /*has_acpi=*/false));
+                           &bus, GetInspectNode(), /*has_acpi=*/false, /*has_devicetree=*/false));
 
   // Ensure no device was added.
   EXPECT_TRUE(bus.devices().is_empty());
@@ -313,7 +348,7 @@ TEST_F(PciDeviceTestsCam, PtrCycleCapabilityTest) {
   auto cfg = bus().pciroot().ecam().CreateMmioConfig(bdf());
   EXPECT_EQ(ZX_ERR_BAD_STATE,
             Device::Create(MockDevice::FakeRootParent().get(), std::move(cfg), &upstream(), &bus(),
-                           GetInspectNode(), /*has_acpi=*/false));
+                           GetInspectNode(), /*has_acpi=*/false, /*has_devicetree=*/false));
 
   // Ensure no device was added.
   EXPECT_TRUE(bus().devices().is_empty());
@@ -348,7 +383,7 @@ TEST_F(PciDeviceTestsCam, DuplicateFixedCapabilityTest) {
   auto cfg = bus().pciroot().ecam().CreateMmioConfig(bdf());
   EXPECT_EQ(ZX_ERR_BAD_STATE,
             Device::Create(MockDevice::FakeRootParent().get(), std::move(cfg), &upstream(), &bus(),
-                           GetInspectNode(), /*has_acpi=*/false));
+                           GetInspectNode(), /*has_acpi=*/false, /*has_devicetree=*/false));
 
   // Ensure no device was added.
   EXPECT_TRUE(bus().devices().is_empty());

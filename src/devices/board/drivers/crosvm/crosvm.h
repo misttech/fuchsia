@@ -32,13 +32,14 @@ class Pciroot : public PcirootBase, public ddk::PcirootProtocol<Pciroot> {
  public:
   Pciroot() = delete;
   Pciroot(std::string node_name, PciRootHost* root_host, zx::vmo cam_vmo, zx::resource irq_resource,
-          zx::resource iommu_resource, bool is_extended)
+          zx::resource iommu_resource, bool is_extended, std::vector<pci_bdf_t> devicetree_bdfs)
       : PcirootBase(root_host),
         node_name_(std::move(node_name)),
         cam_(std::move(cam_vmo)),
         irq_resource_(std::move(irq_resource)),
         iommu_resource_(std::move(iommu_resource)),
-        is_extended_(is_extended) {
+        is_extended_(is_extended),
+        devicetree_bdfs_(std::move(devicetree_bdfs)) {
     ZX_DEBUG_ASSERT(irq_resource_.is_valid());
     ZX_DEBUG_ASSERT(iommu_resource_.is_valid());
   }
@@ -73,6 +74,9 @@ class Pciroot : public PcirootBase, public ddk::PcirootProtocol<Pciroot> {
   std::vector<pci_legacy_irq_t> interrupts_;
   std::vector<pci_irq_routing_entry_t> irq_routing_entries_;
   const bool is_extended_;
+  // BDFs of PCI devices described by the devicetree, reported to the PCI bus
+  // driver so it leaves their composites to the pci-child-visitor.
+  std::vector<pci_bdf_t> devicetree_bdfs_;
 };
 
 // Ideally Crosvm and Pciroot would be the same class but PciRootHost is not trivially

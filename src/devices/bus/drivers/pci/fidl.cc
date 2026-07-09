@@ -109,6 +109,14 @@ zx::result<> FidlDevice::Create(zx_device_t* parent, pci::Device* device) {
 
   auto fidl_dev_unowned = fidl_dev.release();
 
+  // Devices described by the devicetree get their composite from the devicetree
+  // (pci-child-visitor), which already aggregates this fragment with the
+  // device's sideband resources. Publishing a composite here too would race the
+  // devicetree's composite for the same device, so we stop at the fragment.
+  if (device->has_devicetree()) {
+    return zx::ok();
+  }
+
   auto pci_info = CompositeInfo{
       .vendor_id = device->vendor_id(),
       .device_id = device->device_id(),

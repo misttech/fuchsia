@@ -103,6 +103,14 @@ zx::result<> MmioVisitor::MemoryRegionParser(Node& node,
 }
 
 zx::result<> MmioVisitor::Visit(Node& node, const devicetree::PropertyDecoder& decoder) {
+  // Non-MMIO nodes (e.g. PCI devices, whose parent visitor modifies their register type
+  // during the pre-order traversal) are skipped. This prevents the MMIO visitor from
+  // attempting to parse differently-packed reg properties (such as 3-cell PCI addresses),
+  // which would otherwise cause parsing failures.
+  if (node.register_type() != RegisterType::kMmio) {
+    return zx::ok();
+  }
+
   auto parser_output = mmio_parser_->Parse(node);
   if (parser_output.is_error()) {
     fdf::error("Mmio visitor failed for node '{}' : {}", node.name(), parser_output.status_value());

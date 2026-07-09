@@ -56,6 +56,7 @@ devicetree_visitor_collection("all-driver-visitors") {
     "//sdk/lib/driver/devicetree/visitors/drivers/mailbox-controllers/mailbox:mailbox-visitor",
     "//sdk/lib/driver/devicetree/visitors/drivers/mali-gpu:mali-gpu-visitor",
     "//sdk/lib/driver/devicetree/visitors/drivers/mmc/sdmmc:sdmmc-visitor",
+    "//sdk/lib/driver/devicetree/visitors/drivers/pci/pci-child-visitor",
     "//sdk/lib/driver/devicetree/visitors/drivers/power/power-domain:power-domain-visitor",
     "//sdk/lib/driver/devicetree/visitors/drivers/power/power-element:power-element-visitor",
     "//sdk/lib/driver/devicetree/visitors/drivers/pwm-controllers/pwm:pwm-visitor",

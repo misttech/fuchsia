@@ -48,6 +48,7 @@ enum class RegisterType : uint8_t {
   kI2c,   // Register used to represent i2c device address.
   kSpi,   // Register used to represent spi device address.
   kSpmi,  // Register used to represent spmi target id and device registers (sub target id).
+  kPci,   // Register used to represent a PCI bus/device/function (BDF) address.
 };
 
 // Defines interface that an entity managing the Node should implement.

@@ -15,4 +15,5 @@ type BoardConfiguration = table {
     /// bus driver will assume INTA and rely on interrupt mappings, and will wake any device sharing
     /// a legacy interrupt even if their InterruptStatus bit is not set.
     1: use_intx_workaround UseIntxWorkaroundType;
+    2: devicetree_bdfs vector<Address>:MAX;
 };

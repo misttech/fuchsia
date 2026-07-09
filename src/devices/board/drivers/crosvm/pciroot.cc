@@ -79,6 +79,10 @@ zx_status_t Pciroot::PcirootGetPciPlatformInfo(pci_platform_info_t* info) {
   info->irq_routing_list = irq_routing_entries_.data();
   info->irq_routing_count = irq_routing_entries_.size();
   info->acpi_bdfs_count = 0;
+  // Devices the pci-child-visitor wired up: the bus driver publishes only the
+  // fragment for these and the devicetree owns their composite.
+  info->devicetree_bdfs_list = devicetree_bdfs_.data();
+  info->devicetree_bdfs_count = devicetree_bdfs_.size();
   node_name_.copy(info->name, node_name_.size(), 0);
 
   zx::vmo cam{};

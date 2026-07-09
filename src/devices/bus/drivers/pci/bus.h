@@ -144,6 +144,12 @@ class Bus : public PciBusType,
   // the platform to us that use the ACPI fragment.
   bool DeviceHasAcpi(pci_bdf_t bdf);
 
+  // Returns true if a given BDF is present in the list of devices that the
+  // platform told us are described by the devicetree. For these devices the bus
+  // driver publishes only the fragment and leaves composite creation to the
+  // devicetree.
+  bool DeviceHasDevicetree(pci_bdf_t bdf);
+
   // Creates interrupts corresponding to legacy IRQ vectors and configures devices accordingly.
   zx_status_t ConfigureLegacyIrqs() __TA_EXCLUDES(devices_lock_);
   // Creates and binds interrupts to the irq port and sets up Shared IRQ handler lists.
@@ -165,6 +171,7 @@ class Bus : public PciBusType,
   std::optional<fdf::MmioBuffer> ecam_;
   cpp20::span<const pci_legacy_irq> irqs_;
   cpp20::span<const pci_bdf_t> acpi_devices_;
+  cpp20::span<const pci_bdf_t> devicetree_devices_;
   cpp20::span<const pci_irq_routing_entry_t> irq_routing_entries_;
   PciFidl::BoardConfiguration board_config_;
 

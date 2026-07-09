@@ -156,7 +156,7 @@ zx::result<> Crosvm::CreatePciroot(const pci_dt::PciVisitor& pci_visitor,
   }
 
   pciroot_.emplace(kPcirootNodeName, &*root_host_, std::move(ecam), std::move(irq.value()),
-                   std::move(iommu.value()), pci_visitor.is_extended());
+                   std::move(iommu.value()), pci_visitor.is_extended(), std::vector<pci_bdf_t>{});
 
   if (zx::result<> result =
           pciroot_->CreateInterruptsAndRouting(pci_visitor.gic_v3_interrupt_map_elements());
@@ -203,7 +203,7 @@ zx::result<> Crosvm::Start(fdf::DriverContext context) {
 
   fdf_devicetree::VisitorRegistry visitors;
   auto pci_visitor = std::make_unique<pci_dt::PciVisitor>();
-  const auto& pci_visitor_ref = *pci_visitor.get();
+  const pci_dt::PciVisitor& pci_visitor_ref = *pci_visitor;
   if (zx::result<> result =
           visitors.RegisterVisitor(std::make_unique<fdf_devicetree::BindPropertyVisitor>());
       result.is_error()) {

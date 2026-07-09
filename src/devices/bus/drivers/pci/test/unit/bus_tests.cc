@@ -55,6 +55,11 @@ class IncomingNamespace {
   component::OutgoingDirectory outgoing_{async_get_default_dispatcher()};
 };
 
+// Defined in device_tests.cc (linked into the same pci-unit binary): counts how
+// many composite node specs the bus driver has published, via the
+// device_add_composite_spec mock.
+extern int g_pci_composite_spec_add_count;
+
 // TODO(https://fxbug.dev/42075363): Migrate test to use dispatcher integration.
 class PciBusTests : public ::gtest::TestLoopFixture {
  protected:
@@ -437,6 +442,39 @@ TEST_F(PciBusTests, MultiFnAllFunctionsScanned) {
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
   ASSERT_EQ(bus->GetDeviceCount(), dev_cnt);
+}
+
+// A device whose BDF the platform reports as devicetree-described gets only a
+// fragment from the bus driver; the bus driver does not publish a composite node
+// spec for it (the devicetree owns the composite).
+TEST_F(PciBusTests, DevicetreeDeviceSkipsCompositeSpec) {
+  auto& ecam = pciroot().ecam();
+  ecam.get_device({0, 0, 0})->set_vendor_id(0x8086).set_device_id(1);
+  pciroot().devicetree_devices().push_back(
+      {/*bus_id=*/0x0, /*device_id=*/0x0, /*function_id=*/0x0});
+
+  g_pci_composite_spec_add_count = 0;
+  auto owned_bus =
+      std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(), std::nullopt);
+  ASSERT_OK(owned_bus->Initialize());
+  auto* bus = owned_bus.release();
+  ASSERT_EQ(bus->GetDeviceCount(), 1u);
+  EXPECT_EQ(g_pci_composite_spec_add_count, 0);
+}
+
+// The same topology without the devicetree entry: the bus driver publishes a
+// composite node spec as usual.
+TEST_F(PciBusTests, NonDevicetreeDeviceAddsCompositeSpec) {
+  auto& ecam = pciroot().ecam();
+  ecam.get_device({0, 0, 0})->set_vendor_id(0x8086).set_device_id(1);
+
+  g_pci_composite_spec_add_count = 0;
+  auto owned_bus =
+      std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(), std::nullopt);
+  ASSERT_OK(owned_bus->Initialize());
+  auto* bus = owned_bus.release();
+  ASSERT_EQ(bus->GetDeviceCount(), 1u);
+  EXPECT_EQ(g_pci_composite_spec_add_count, 1);
 }
 
 TEST_F(PciBusTests, Inspect) {

@@ -66,6 +66,12 @@ type PciPlatformInfo = resource struct {
     /// driver will bind to an ACPI device with ACPI_BUS_TYPE == PCI and a
     /// matching PCI_BIND_TOPO.
     acpi_bdfs vector<PciBdf>:MAX;
+    /// A vector of PciBdfs that are described by the devicetree. For each BDF in
+    /// this list the PCI bus driver publishes only the device's fragment and
+    /// does not publish a composite node spec, leaving composite creation to the
+    /// devicetree (the pci-child-visitor), whose composite already includes this
+    /// device's fragment plus any sideband resources (gpios, regulators, ...).
+    devicetree_bdfs vector<PciBdf>:MAX;
 };
 
 type PciAddressSpace = strict enum : uint8 {

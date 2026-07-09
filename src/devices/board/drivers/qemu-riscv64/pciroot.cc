@@ -89,6 +89,7 @@ zx_status_t QemuRiscv64Pciroot::PcirootGetPciPlatformInfo(pci_platform_info_t* i
   info->irq_routing_list = irq_routing_entries_.data();
   info->irq_routing_count = irq_routing_entries_.size();
   info->acpi_bdfs_count = 0;
+  info->devicetree_bdfs_count = 0;
   strncpy(info->name, kPcirootName, sizeof(kPcirootName));
 
   zx::vmo ecam;

@@ -53,7 +53,8 @@ zx_status_t FakeBusDriver::CreateDevice(pci_bdf_t bdf, uint8_t* base_cfg, size_t
   cfg->Write(Config::kVendorId, vid);
   cfg->Write(Config::kDeviceId, did);
   return pci::Device::Create(this->zxdev(), std::move(cfg), &upstream(), bus().bdi(),
-                             inspector_.GetRoot().CreateChild(cfg->addr()), /*has_acpi=*/false);
+                             inspector_.GetRoot().CreateChild(cfg->addr()), /*has_acpi=*/false,
+                             /*has_devicetree=*/false);
 }
 
 }  // namespace pci

@@ -45,7 +45,7 @@ class DeviceImpl : public Device {
  public:
   static zx_status_t Create(zx_device_t* parent, std::unique_ptr<Config>&& cfg,
                             UpstreamNode* upstream, BusDeviceInterface* bdi, inspect::Node node,
-                            bool has_acpi);
+                            bool has_acpi, bool has_devicetree);
 
   // Implement ref counting, do not let derived classes override.
   PCI_IMPLEMENT_REFCOUNTED;
@@ -55,17 +55,17 @@ class DeviceImpl : public Device {
 
  protected:
   DeviceImpl(zx_device_t* parent, std::unique_ptr<Config>&& cfg, UpstreamNode* upstream,
-             BusDeviceInterface* bdi, inspect::Node node, bool has_acpi)
+             BusDeviceInterface* bdi, inspect::Node node, bool has_acpi, bool has_devicetree)
       : Device(parent, std::move(cfg), upstream, bdi, std::move(node), /*is_bridge=*/false,
-               has_acpi) {}
+               has_acpi, has_devicetree) {}
 };
 
 zx_status_t DeviceImpl::Create(zx_device_t* parent, std::unique_ptr<Config>&& cfg,
                                UpstreamNode* upstream, BusDeviceInterface* bdi, inspect::Node node,
-                               bool has_acpi) {
+                               bool has_acpi, bool has_devicetree) {
   fbl::AllocChecker ac;
-  auto raw_dev =
-      new (&ac) DeviceImpl(parent, std::move(cfg), upstream, bdi, std::move(node), has_acpi);
+  auto raw_dev = new (&ac)
+      DeviceImpl(parent, std::move(cfg), upstream, bdi, std::move(node), has_acpi, has_devicetree);
   if (!ac.check()) {
     zxlogf(ERROR, "[%s] Out of memory attemping to create PCIe device.", cfg->addr());
     return ZX_ERR_NO_MEMORY;
@@ -86,13 +86,15 @@ zx_status_t DeviceImpl::Create(zx_device_t* parent, std::unique_ptr<Config>&& cf
 }  // namespace
 
 Device::Device(zx_device_t* parent, std::unique_ptr<Config>&& config, UpstreamNode* upstream,
-               BusDeviceInterface* bdi, inspect::Node node, bool is_bridge, bool has_acpi)
+               BusDeviceInterface* bdi, inspect::Node node, bool is_bridge, bool has_acpi,
+               bool has_devicetree)
     : cfg_(std::move(config)),
       upstream_(upstream),
       bdi_(bdi),
       bar_count_(is_bridge ? PCI_BAR_REGS_PER_BRIDGE : PCI_BAR_REGS_PER_DEVICE),
       is_bridge_(is_bridge),
       has_acpi_(has_acpi),
+      has_devicetree_(has_devicetree),
       parent_(parent),
       inspect_(std::move(node))
 
@@ -114,8 +116,9 @@ Device::~Device() {
 
 zx_status_t Device::Create(zx_device_t* parent, std::unique_ptr<Config>&& config,
                            UpstreamNode* upstream, BusDeviceInterface* bdi, inspect::Node node,
-                           bool has_acpi) {
-  return DeviceImpl::Create(parent, std::move(config), upstream, bdi, std::move(node), has_acpi);
+                           bool has_acpi, bool has_devicetree) {
+  return DeviceImpl::Create(parent, std::move(config), upstream, bdi, std::move(node), has_acpi,
+                            has_devicetree);
 }
 
 zx_status_t Device::Init() {
