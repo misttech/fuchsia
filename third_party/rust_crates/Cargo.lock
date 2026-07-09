@@ -666,12 +666,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "175812e0be2bccb6abe50bb8d566126198344f707e304f45c648fd8f2cc0365e"
 
 [[package]]
-name = "bytemuck"
-version = "1.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8efb64bd706a16a1bdde310ae86b351e4d21550d98d056f22f8a7f7a2183fec"
-
-[[package]]
 name = "byteorder"
 version = "1.5.0"
 
@@ -1726,7 +1720,7 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6f339eb8adc052cd2ca78910fda869aefa38d22d5cb648e6485e4d3fc06f3b1"
 dependencies = [
- "foreign-types-shared 0.1.1",
+ "foreign-types-shared",
 ]
 
 [[package]]
@@ -1734,12 +1728,6 @@ name = "foreign-types-shared"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00b0228411908ca8685dba7fc2cdd70ec9990a6e753e89b6ac91a84c40fbaf4b"
-
-[[package]]
-name = "foreign-types-shared"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
 name = "form_urlencoded"
@@ -1776,7 +1764,6 @@ dependencies = [
  "aes 0.9.1",
  "aes-gcm",
  "aes-gcm-siv",
- "ahash",
  "ansi_term",
  "anyhow",
  "arbitrary",
@@ -1802,7 +1789,6 @@ dependencies = [
  "bitflags 2.13.0",
  "blocking",
  "bstr",
- "bt-bap",
  "bt-bass",
  "bt-broadcast-assistant",
  "bt-common",
@@ -1831,7 +1817,6 @@ dependencies = [
  "crossbeam-channel",
  "crossbeam-utils",
  "crossterm",
- "crypto-common 0.1.6",
  "csv",
  "darling 0.23.0",
  "data-encoding",
@@ -1839,7 +1824,6 @@ dependencies = [
  "derivative",
  "derive_builder",
  "difference",
- "digest 0.11.3",
  "downcast-rs 2.0.2",
  "dyn-clone",
  "ecb",
@@ -1855,7 +1839,6 @@ dependencies = [
  "flate2",
  "flyweights",
  "foreign-types",
- "foreign-types-shared 0.3.1",
  "fragile",
  "fuse3",
  "futures",
@@ -1872,7 +1855,6 @@ dependencies = [
  "half",
  "handlebars",
  "hashbrown 0.17.1",
- "heapless",
  "heck 0.3.1",
  "heck 0.5.0",
  "hex",
@@ -1912,7 +1894,6 @@ dependencies = [
  "nom-language",
  "nom_locate",
  "notify",
- "nu-ansi-term",
  "num",
  "num-derive",
  "num-traits",
@@ -1921,7 +1902,6 @@ dependencies = [
  "once_cell",
  "openat",
  "openssl",
- "overload",
  "p256 0.11.1",
  "p256 0.13.2",
  "parking_lot 0.12.5",
@@ -1961,17 +1941,14 @@ dependencies = [
  "ref-cast",
  "regex",
  "regex-lite",
- "regex-syntax 0.8.10",
  "ring",
  "rkyv",
- "roaring",
  "rsa",
  "rust_icu_common",
  "rust_icu_sys",
  "rust_icu_ucal",
  "rust_icu_udat",
  "rust_icu_udata",
- "rust_icu_uenum",
  "rust_icu_uloc",
  "rust_icu_unorm2",
  "rust_icu_ustring",
@@ -1985,7 +1962,6 @@ dependencies = [
  "rutabaga_gfx",
  "sapphire-async",
  "sapphire-collections",
- "sapphire-gatt",
  "sapphire-peer-cache",
  "sapphire-sync",
  "sapphire-uuid",
@@ -2051,7 +2027,6 @@ dependencies = [
  "vk-sys",
  "vt100",
  "vte",
- "wait-timeout",
  "walkdir",
  "which 8.0.4",
  "winnow 0.7.13",
@@ -2368,15 +2343,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hash32"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47d60b12902ba28e2730cd37e95b8c9223af2808df9e902d4df49588d1470606"
-dependencies = [
- "byteorder",
-]
-
-[[package]]
 name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2406,16 +2372,6 @@ dependencies = [
  "foldhash 0.2.0",
  "serde",
  "serde_core",
-]
-
-[[package]]
-name = "heapless"
-version = "0.9.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25ba4bd83f9415b58b4ed8dc5714c76e626a105be4646c02630ad730ad3b5aa4"
-dependencies = [
- "hash32",
- "stable_deref_trait",
 ]
 
 [[package]]
@@ -4388,16 +4344,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "roaring"
-version = "0.11.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1dedc5658c6ecb3bdb5ef5f3295bb9253f42dcf3fd1402c03f6b1f7659c3c4a9"
-dependencies = [
- "bytemuck",
- "byteorder",
-]
-
-[[package]]
 name = "rsa"
 version = "0.9.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4735,22 +4681,6 @@ dependencies = [
 [[package]]
 name = "sapphire-collections"
 version = "0.1.0"
-
-[[package]]
-name = "sapphire-gatt"
-version = "0.1.0"
-dependencies = [
- "futures",
- "sapphire-async",
- "sapphire-collections",
- "sapphire-peer-cache",
- "sapphire-sync",
- "sapphire-uuid",
- "strum",
- "strum_macros",
- "thiserror 2.0.18",
- "zerocopy",
-]
 
 [[package]]
 name = "sapphire-peer-cache"
@@ -5193,12 +5123,6 @@ name = "splines"
 version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b882be9bf6b37258bfba80ed5b5eeccccd6700bfbaca202bbd53e4c13bf3daa7"
-
-[[package]]
-name = "stable_deref_trait"
-version = "1.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "static_assertions"
@@ -6203,3 +6127,7 @@ version = "2.0.16+zstd.1.5.7"
 dependencies = [
  "libc",
 ]
+
+[[patch.unused]]
+name = "sapphire-gatt"
+version = "0.1.0"

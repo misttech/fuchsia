@@ -67,18 +67,6 @@ alias(
 )
 
 alias(
-    name = "ahash-0.8.12",
-    actual = "//third_party/rust_crates/vendor/ahash-0.8.12:ahash",
-    tags = ["manual"],
-)
-
-alias(
-    name = "ahash",
-    actual = "//third_party/rust_crates/vendor/ahash-0.8.12:ahash",
-    tags = ["manual"],
-)
-
-alias(
     name = "ansi_term-0.12.1",
     actual = "//third_party/rust_crates/vendor/ansi_term-0.12.1:ansi_term",
     tags = ["manual"],
@@ -375,18 +363,6 @@ alias(
 alias(
     name = "bstr",
     actual = "//third_party/rust_crates/vendor/bstr-1.12.1:bstr",
-    tags = ["manual"],
-)
-
-alias(
-    name = "bt-bap-0.0.1",
-    actual = "//third_party/rust_crates/forks/bluetooth/bt-bap:bt_bap",
-    tags = ["manual"],
-)
-
-alias(
-    name = "bt-bap",
-    actual = "//third_party/rust_crates/forks/bluetooth/bt-bap:bt_bap",
     tags = ["manual"],
 )
 
@@ -727,18 +703,6 @@ alias(
 )
 
 alias(
-    name = "crypto-common-0.1.6",
-    actual = "//third_party/rust_crates/vendor/crypto-common-0.1.6:crypto_common",
-    tags = ["manual"],
-)
-
-alias(
-    name = "crypto-common",
-    actual = "//third_party/rust_crates/vendor/crypto-common-0.1.6:crypto_common",
-    tags = ["manual"],
-)
-
-alias(
     name = "csv-1.4.0",
     actual = "//third_party/rust_crates/ask2patch/csv:csv",
     tags = ["manual"],
@@ -819,18 +783,6 @@ alias(
 alias(
     name = "difference",
     actual = "//third_party/rust_crates/vendor/difference-2.0.0:difference",
-    tags = ["manual"],
-)
-
-alias(
-    name = "digest-0.11.3",
-    actual = "//third_party/rust_crates/vendor/digest-0.11.3:digest",
-    tags = ["manual"],
-)
-
-alias(
-    name = "digest",
-    actual = "//third_party/rust_crates/vendor/digest-0.11.3:digest",
     tags = ["manual"],
 )
 
@@ -1011,18 +963,6 @@ alias(
 alias(
     name = "foreign-types",
     actual = "//third_party/rust_crates/vendor/foreign-types-0.3.2:foreign_types",
-    tags = ["manual"],
-)
-
-alias(
-    name = "foreign-types-shared-0.3.1",
-    actual = "//third_party/rust_crates/vendor/foreign-types-shared-0.3.1:foreign_types_shared",
-    tags = ["manual"],
-)
-
-alias(
-    name = "foreign-types-shared",
-    actual = "//third_party/rust_crates/vendor/foreign-types-shared-0.3.1:foreign_types_shared",
     tags = ["manual"],
 )
 
@@ -1215,18 +1155,6 @@ alias(
 alias(
     name = "hashbrown",
     actual = "//third_party/rust_crates/vendor/hashbrown-0.17.1:hashbrown",
-    tags = ["manual"],
-)
-
-alias(
-    name = "heapless-0.9.3",
-    actual = "//third_party/rust_crates/vendor/heapless-0.9.3:heapless",
-    tags = ["manual"],
-)
-
-alias(
-    name = "heapless",
-    actual = "//third_party/rust_crates/vendor/heapless-0.9.3:heapless",
     tags = ["manual"],
 )
 
@@ -1693,18 +1621,6 @@ alias(
 )
 
 alias(
-    name = "nu-ansi-term-0.46.0",
-    actual = "//third_party/rust_crates/vendor/nu-ansi-term-0.46.0:nu_ansi_term",
-    tags = ["manual"],
-)
-
-alias(
-    name = "nu-ansi-term",
-    actual = "//third_party/rust_crates/vendor/nu-ansi-term-0.46.0:nu_ansi_term",
-    tags = ["manual"],
-)
-
-alias(
     name = "num-0.4.3",
     actual = "//third_party/rust_crates/vendor/num-0.4.3:num",
     tags = ["manual"],
@@ -1797,18 +1713,6 @@ alias(
 alias(
     name = "openssl",
     actual = "//third_party/rust_crates/forks/openssl-0.10.81:openssl",
-    tags = ["manual"],
-)
-
-alias(
-    name = "overload-0.1.1",
-    actual = "//third_party/rust_crates/vendor/overload-0.1.1:overload",
-    tags = ["manual"],
-)
-
-alias(
-    name = "overload",
-    actual = "//third_party/rust_crates/vendor/overload-0.1.1:overload",
     tags = ["manual"],
 )
 
@@ -2275,18 +2179,6 @@ alias(
 )
 
 alias(
-    name = "regex-syntax-0.8.10",
-    actual = "//third_party/rust_crates/vendor/regex-syntax-0.8.10:regex_syntax",
-    tags = ["manual"],
-)
-
-alias(
-    name = "regex-syntax",
-    actual = "//third_party/rust_crates/vendor/regex-syntax-0.8.10:regex_syntax",
-    tags = ["manual"],
-)
-
-alias(
     name = "ring-0.17.8",
     actual = "//third_party/rust_crates/forks/ring-0.17.8:ring",
     tags = ["manual"],
@@ -2307,18 +2199,6 @@ alias(
 alias(
     name = "rkyv",
     actual = "//third_party/rust_crates/vendor/rkyv-0.8.16:rkyv",
-    tags = ["manual"],
-)
-
-alias(
-    name = "roaring-0.11.4",
-    actual = "//third_party/rust_crates/vendor/roaring-0.11.4:roaring",
-    tags = ["manual"],
-)
-
-alias(
-    name = "roaring",
-    actual = "//third_party/rust_crates/vendor/roaring-0.11.4:roaring",
     tags = ["manual"],
 )
 
@@ -2391,18 +2271,6 @@ alias(
 alias(
     name = "rust_icu_udata",
     actual = "//third_party/rust_crates/vendor/rust_icu_udata-5.6.0:rust_icu_udata",
-    tags = ["manual"],
-)
-
-alias(
-    name = "rust_icu_uenum-5.6.0",
-    actual = "//third_party/rust_crates/vendor/rust_icu_uenum-5.6.0:rust_icu_uenum",
-    tags = ["manual"],
-)
-
-alias(
-    name = "rust_icu_uenum",
-    actual = "//third_party/rust_crates/vendor/rust_icu_uenum-5.6.0:rust_icu_uenum",
     tags = ["manual"],
 )
 
@@ -2559,18 +2427,6 @@ alias(
 alias(
     name = "sapphire-collections",
     actual = "//third_party/rust_crates/intree/sunstone/sapphire-collections:sapphire_collections",
-    tags = ["manual"],
-)
-
-alias(
-    name = "sapphire-gatt-0.1.0",
-    actual = "//third_party/rust_crates/intree/sunstone/sapphire-gatt:sapphire_gatt",
-    tags = ["manual"],
-)
-
-alias(
-    name = "sapphire-gatt",
-    actual = "//third_party/rust_crates/intree/sunstone/sapphire-gatt:sapphire_gatt",
     tags = ["manual"],
 )
 
@@ -3351,18 +3207,6 @@ alias(
 alias(
     name = "vte",
     actual = "//third_party/rust_crates/vendor/vte-0.15.0:vte",
-    tags = ["manual"],
-)
-
-alias(
-    name = "wait-timeout-0.2.1",
-    actual = "//third_party/rust_crates/vendor/wait-timeout-0.2.1:wait_timeout",
-    tags = ["manual"],
-)
-
-alias(
-    name = "wait-timeout",
-    actual = "//third_party/rust_crates/vendor/wait-timeout-0.2.1:wait_timeout",
     tags = ["manual"],
 )
 

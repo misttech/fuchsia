@@ -35,14 +35,6 @@ group("aes-gcm-siv-0.11.1") {
   public_deps = [ ":aes-gcm-siv-v0_11_1" ]
 }
 
-group("ahash") {
-  public_deps = [ ":ahash-v0_8_12" ]
-}
-
-group("ahash-0.8.12") {
-  public_deps = [ ":ahash-v0_8_12" ]
-}
-
 group("ansi_term") {
   public_deps = [ ":ansi_term-v0_12_1" ]
 }
@@ -255,14 +247,6 @@ group("bstr") {
 
 group("bstr-1.12.1") {
   public_deps = [ ":bstr-v1_12_1" ]
-}
-
-group("bt-bap") {
-  public_deps = [ ":bt-bap-v0_0_1" ]
-}
-
-group("bt-bap-0.0.1") {
-  public_deps = [ ":bt-bap-v0_0_1" ]
 }
 
 group("bt-bass") {
@@ -501,14 +485,6 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
-group("crypto-common") {
-  public_deps = [ ":crypto-common-v0_1_6" ]
-}
-
-group("crypto-common-0.1.6") {
-  public_deps = [ ":crypto-common-v0_1_6" ]
-}
-
 group("csv") {
   public_deps = [ ":csv-v1_4_0" ]
 }
@@ -567,14 +543,6 @@ group("difference") {
 
 group("difference-2.0.0") {
   public_deps = [ ":difference-v2_0_0" ]
-}
-
-group("digest") {
-  public_deps = [ ":digest-v0_11_3" ]
-}
-
-group("digest-0.11.3") {
-  public_deps = [ ":digest-v0_11_3" ]
 }
 
 group("downcast-rs") {
@@ -703,14 +671,6 @@ group("foreign-types") {
 
 group("foreign-types-0.3.2") {
   public_deps = [ ":foreign-types-v0_3_2" ]
-}
-
-group("foreign-types-shared") {
-  public_deps = [ ":foreign-types-shared-v0_3_1" ]
-}
-
-group("foreign-types-shared-0.3.1") {
-  public_deps = [ ":foreign-types-shared-v0_3_1" ]
 }
 
 group("fragile") {
@@ -847,14 +807,6 @@ group("hashbrown") {
 
 group("hashbrown-0.17.1") {
   public_deps = [ ":hashbrown-v0_17_1" ]
-}
-
-group("heapless") {
-  public_deps = [ ":heapless-v0_9_3" ]
-}
-
-group("heapless-0.9.3") {
-  public_deps = [ ":heapless-v0_9_3" ]
 }
 
 group("heck-0_3") {
@@ -1217,14 +1169,6 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
-group("nu-ansi-term") {
-  public_deps = [ ":nu-ansi-term-v0_46_0" ]
-}
-
-group("nu-ansi-term-0.46.0") {
-  public_deps = [ ":nu-ansi-term-v0_46_0" ]
-}
-
 group("num") {
   public_deps = [ ":num-v0_4_3" ]
 }
@@ -1307,14 +1251,6 @@ if (current_os == "fuchsia") {
 
     visibility = openssl_visibility
   }
-}
-
-group("overload") {
-  public_deps = [ ":overload-v0_1_1" ]
-}
-
-group("overload-0.1.1") {
-  public_deps = [ ":overload-v0_1_1" ]
 }
 
 group("p256-0_11") {
@@ -1469,12 +1405,16 @@ if (current_os == "fuchsia") {
   }
 }
 
-group("pkcs8") {
-  public_deps = [ ":pkcs8-v0_10_2" ]
+if (current_os == "fuchsia") {
+  group("pkcs8") {
+    public_deps = [ ":pkcs8-v0_10_2" ]
+  }
 }
 
-group("pkcs8-0.10.2") {
-  public_deps = [ ":pkcs8-v0_10_2" ]
+if (current_os == "fuchsia") {
+  group("pkcs8-0.10.2") {
+    public_deps = [ ":pkcs8-v0_10_2" ]
+  }
 }
 
 group("png") {
@@ -1661,14 +1601,6 @@ group("regex-lite-0.1.9") {
   public_deps = [ ":regex-lite-v0_1_9" ]
 }
 
-group("regex-syntax") {
-  public_deps = [ ":regex-syntax-v0_8_10" ]
-}
-
-group("regex-syntax-0.8.10") {
-  public_deps = [ ":regex-syntax-v0_8_10" ]
-}
-
 group("ring") {
   public_deps = [ ":ring-v0_17_8" ]
 }
@@ -1683,14 +1615,6 @@ group("rkyv") {
 
 group("rkyv-0.8.16") {
   public_deps = [ ":rkyv-v0_8_16" ]
-}
-
-group("roaring") {
-  public_deps = [ ":roaring-v0_11_4" ]
-}
-
-group("roaring-0.11.4") {
-  public_deps = [ ":roaring-v0_11_4" ]
 }
 
 group("rsa") {
@@ -1760,18 +1684,6 @@ if (current_os == "fuchsia") {
 if (current_os == "fuchsia") {
   group("rust_icu_udata-5.6.0") {
     public_deps = [ ":rust_icu_udata-v5_6_0" ]
-  }
-}
-
-if (current_os == "fuchsia") {
-  group("rust_icu_uenum") {
-    public_deps = [ ":rust_icu_uenum-v5_6_0" ]
-  }
-}
-
-if (current_os == "fuchsia") {
-  group("rust_icu_uenum-5.6.0") {
-    public_deps = [ ":rust_icu_uenum-v5_6_0" ]
   }
 }
 
@@ -1897,14 +1809,6 @@ group("sapphire-collections") {
 
 group("sapphire-collections-0.1.0") {
   public_deps = [ ":sapphire-collections-v0_1_0" ]
-}
-
-group("sapphire-gatt") {
-  public_deps = [ ":sapphire-gatt-v0_1_0" ]
-}
-
-group("sapphire-gatt-0.1.0") {
-  public_deps = [ ":sapphire-gatt-v0_1_0" ]
 }
 
 group("sapphire-peer-cache") {
@@ -2515,18 +2419,6 @@ group("vte") {
 
 group("vte-0.15.0") {
   public_deps = [ ":vte-v0_15_0" ]
-}
-
-if (!(current_os == "fuchsia")) {
-  group("wait-timeout") {
-    public_deps = [ ":wait-timeout-v0_2_1" ]
-  }
-}
-
-if (!(current_os == "fuchsia")) {
-  group("wait-timeout-0.2.1") {
-    public_deps = [ ":wait-timeout-v0_2_1" ]
-  }
 }
 
 group("walkdir") {
@@ -5132,39 +5024,6 @@ rustc_library("bytecount-v0_6_9") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":bytecount-v0_6_9.license" ]
-}
-
-license("bytemuck-v1_25_0.license") {
-  public_package_name = "bytemuck"
-  license_files = [
-    "//third_party/rust_crates/vendor/bytemuck-1.25.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/bytemuck-1.25.0/LICENSE-MIT",
-    "//third_party/rust_crates/vendor/bytemuck-1.25.0/LICENSE-ZLIB",
-  ]
-}
-
-rustc_library("bytemuck-v1_25_0") {
-  crate_name = "bytemuck"
-  source_root = "//third_party/rust_crates/vendor/bytemuck-1.25.0/src/lib.rs"
-  output_name = "bytemuck-b66ad3f792ebed41"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=b66ad3f792ebed41",
-    "-Cextra-filename=-b66ad3f792ebed41",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":bytemuck-v1_25_0.license" ]
 }
 
 license("byteorder-v1_5_0.license") {
@@ -9208,39 +9067,6 @@ rustc_library("foreign-types-shared-v0_1_1") {
   applicable_licenses = [ ":foreign-types-shared-v0_1_1.license" ]
 }
 
-license("foreign-types-shared-v0_3_1.license") {
-  public_package_name = "foreign_types_shared"
-  license_files = [
-    "//third_party/rust_crates/vendor/foreign-types-shared-0.3.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/foreign-types-shared-0.3.1/LICENSE-MIT",
-  ]
-}
-
-rustc_library("foreign-types-shared-v0_3_1") {
-  crate_name = "foreign_types_shared"
-  source_root =
-      "//third_party/rust_crates/vendor/foreign-types-shared-0.3.1/src/lib.rs"
-  output_name = "foreign_types_shared-94bcc05c3b190abb"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=94bcc05c3b190abb",
-    "-Cextra-filename=-94bcc05c3b190abb",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":foreign-types-shared-v0_3_1.license" ]
-}
-
 license("form_urlencoded-v1_2_2.license") {
   public_package_name = "form_urlencoded"
   license_files = [
@@ -10447,39 +10273,6 @@ rustc_library("handlebars-v4_3_5") {
   applicable_licenses = [ ":handlebars-v4_3_5.license" ]
 }
 
-license("hash32-v0_3_1.license") {
-  public_package_name = "hash32"
-  license_files = [
-    "//third_party/rust_crates/vendor/hash32-0.3.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/hash32-0.3.1/LICENSE-MIT",
-  ]
-}
-
-rustc_library("hash32-v0_3_1") {
-  crate_name = "hash32"
-  source_root = "//third_party/rust_crates/vendor/hash32-0.3.1/src/lib.rs"
-  output_name = "hash32-c794e193167b001f"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":byteorder-v1_5_0" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=c794e193167b001f",
-    "-Cextra-filename=-c794e193167b001f",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":hash32-v0_3_1.license" ]
-}
-
 license("hashbrown-v0_12_3.license") {
   public_package_name = "hashbrown"
   license_files = [
@@ -10618,43 +10411,6 @@ rustc_library("hashbrown-v0_17_1") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":hashbrown-v0_17_1.license" ]
-}
-
-license("heapless-v0_9_3.license") {
-  public_package_name = "heapless"
-  license_files = [
-    "//third_party/rust_crates/vendor/heapless-0.9.3/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/heapless-0.9.3/LICENSE-MIT",
-  ]
-}
-
-rustc_library("heapless-v0_9_3") {
-  crate_name = "heapless"
-  source_root = "//third_party/rust_crates/vendor/heapless-0.9.3/src/lib.rs"
-  output_name = "heapless-3034a000e0df031d"
-  edition = "2021"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":hash32-v0_3_1" ]
-  if (false || (current_cpu == "riscv32" || current_cpu == "arm") ||
-      (current_cpu == "x64" || current_cpu == "arm64")) {
-    deps += [ ":stable_deref_trait-v1_2_1" ]
-  }
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=3034a000e0df031d",
-    "-Cextra-filename=-3034a000e0df031d",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":heapless-v0_9_3.license" ]
 }
 
 license("heck-v0_3_1.license") {
@@ -18056,42 +17812,6 @@ rustc_macro("rkyv_derive-v0_8_16") {
   applicable_licenses = [ ":rkyv_derive-v0_8_16.license" ]
 }
 
-license("roaring-v0_11_4.license") {
-  public_package_name = "roaring"
-  license_files = [
-    "//third_party/rust_crates/vendor/roaring-0.11.4/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/roaring-0.11.4/LICENSE-MIT",
-  ]
-}
-
-rustc_library("roaring-v0_11_4") {
-  crate_name = "roaring"
-  source_root = "//third_party/rust_crates/vendor/roaring-0.11.4/src/lib.rs"
-  output_name = "roaring-81ffa754d7e54df0"
-  edition = "2021"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":byteorder-v1_5_0" ]
-  deps += [ ":bytemuck-v1_25_0" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=81ffa754d7e54df0",
-    "-Cextra-filename=-81ffa754d7e54df0",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"std\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":roaring-v0_11_4.license" ]
-}
-
 license("rsa-v0_9_10.license") {
   public_package_name = "rsa"
   license_files = [
@@ -19203,40 +18923,6 @@ rustc_library("sapphire-collections-v0_1_0") {
     "-Cextra-filename=-8795358b52a39395",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
-}
-
-rustc_library("sapphire-gatt-v0_1_0") {
-  crate_name = "sapphire_gatt"
-  source_root = "//src/connectivity/bluetooth/sunstone/sapphire-gatt/src/lib.rs"
-  output_name = "sapphire_gatt-3cfcf673d85d3aa8"
-  edition = "2024"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":sapphire-async-v0_1_0" ]
-  deps += [ ":sapphire-collections-v0_1_0" ]
-  deps += [ ":sapphire-peer-cache-v0_1_0" ]
-  deps += [ ":sapphire-sync-v0_1_0" ]
-  deps += [ ":sapphire-uuid-v0_1_0" ]
-  deps += [ ":futures-v0_3_31" ]
-  deps += [ ":strum-v0_28_0" ]
-  deps += [ ":strum_macros-v0_28_0($host_toolchain)" ]
-  deps += [ ":thiserror-v2_0_18" ]
-  deps += [ ":zerocopy-v0_8_48" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=3cfcf673d85d3aa8",
-    "-Cextra-filename=-3cfcf673d85d3aa8",
   ]
 
   visibility = [ ":*" ]
@@ -20962,39 +20648,6 @@ rustc_library("splines-v5_0_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":splines-v5_0_0.license" ]
-}
-
-license("stable_deref_trait-v1_2_1.license") {
-  public_package_name = "stable_deref_trait"
-  license_files = [
-    "//third_party/rust_crates/vendor/stable_deref_trait-1.2.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/stable_deref_trait-1.2.1/LICENSE-MIT",
-  ]
-}
-
-rustc_library("stable_deref_trait-v1_2_1") {
-  crate_name = "stable_deref_trait"
-  source_root =
-      "//third_party/rust_crates/vendor/stable_deref_trait-1.2.1/src/lib.rs"
-  output_name = "stable_deref_trait-390259eba24a080d"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=390259eba24a080d",
-    "-Cextra-filename=-390259eba24a080d",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":stable_deref_trait-v1_2_1.license" ]
 }
 
 license("static_assertions-v1_1_0.license") {

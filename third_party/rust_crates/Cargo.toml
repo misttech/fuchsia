@@ -29,7 +29,6 @@ edition = "2024"
 aes = "0.9.1"
 aes-gcm = "0.10.3"
 aes-gcm-siv = { version = "0.11.1", features = ["std"] }
-ahash = "0.8.12"
 ansi_term = "0.12.0"
 anyhow = "1.0.102"
 arbitrary = { version = "1.4.2", features = ["derive"] }
@@ -53,7 +52,6 @@ bitfield = "0.19.4"
 bitflags = { version = "2.13.0", features = ["serde", "std"] }
 blocking = "1.6.2"
 bstr = { version = "1.12.1", default-features = false, features = [ "std" ] }
-bt-bap = "0.0.1"
 bt-bass = { version = "0.0.1", features = ["test-utils"] }
 bt-broadcast-assistant = { version = "0.0.1", features = ["debug"] }
 bt-common = "0.0.1"
@@ -96,14 +94,12 @@ criterion = { version = "0.2", default-features = false }
 crossbeam = "0.8.4"
 crossbeam-channel = "0.5.15"
 crossbeam-utils = "0.8.21"
-crypto-common = "0.1.6"
 csv = "1.4.0"
 darling = "0.23.0"
 data-encoding = "2.11.0"
 derivative = { version = "2.2.0", features = ["use_core"] }
 derive_builder = "0.20.2"
 difference = "2.0.0"
-digest = { version = "0.11.3", features = ["mac"] }
 downcast-rs = "2.0.2"
 dyn-clone = "1.0.20"
 ecb = "0.2"
@@ -117,7 +113,6 @@ fatfs = "0.3.6"
 flate2 = { version = "1.1.9", default-features = false, features = ["rust_backend"] }
 flyweights = { version = "0.1.5", features = ["json_schema", "serde"] }
 foreign-types = "0.3.1"
-foreign-types-shared = "0.3.1"
 fragile = "=2.0.1"
 futures = "=0.3.31"
 futures-executor = "=0.3.31"
@@ -132,9 +127,8 @@ gpt = "3.1.0"
 half = "2.7.1"
 handlebars = "4.3.5"
 hashbrown = { version = "0.17.1", default-features = false, features = ["inline-more", "serde", "default-hasher"] }
-heapless = { version = "0.9.3", default-features = false }
 heck = { package = "heck", version = "0.5" }
-heck-0_3 = { package = "heck", version = "0.3.1" }
+heck-0_3 = { package = "heck", version = "=0.3.1" }
 hex = { version = "0.4.3", features = ["serde"] }
 hkdf = "0.12.4"
 hmac = "0.12.1"
@@ -169,13 +163,11 @@ nix = { version = "0.29.0", features = ["feature", "fs", "hostname", "net", "pro
 nom = { version = "8.0.0", default-features = false, features = ["std"] }
 nom-language = "0.1.0"
 nom_locate = "5.0.0"
-nu-ansi-term = "0.46.0"
 num = { version = "0.4.3", features = ["rand"] }
 num-derive = "0.4.2"
 num-traits = "0.2.19"
 omaha_client = "0.3.8"
 once_cell = "1.21.3"
-overload = "0.1.1"
 p256 = { version = "0.13.2", features = ["ecdh", "pem", "serde"] }
 p256-0_11 = { package = "p256", version = "0.11.1", features = ["ecdh", "pem", "serde"] }
 paste = "1.0.15"
@@ -189,7 +181,6 @@ pin-init = { version = "0.3.0", default-features = false }
 pin-project = "1.1"
 pin-project-lite = "0.2.17"
 pin-weak = "1.1.0"
-pkcs8 = "0.10.2"
 png = "0.18" # saved for future use
 pretty = "0.12.5"
 pretty_assertions = "1.2.1"
@@ -210,10 +201,8 @@ rayon = "1.10.0"
 ref-cast = "1.0.25"
 regex = "1.12.3"
 regex-lite = "0.1.9"
-regex-syntax = "0.8.10"
 ring = "0.17.8"
 rkyv = { version = "0.8.16", features = ["little_endian", "unaligned", "pointer_width_32"] }
-roaring = "0.11.4"
 rsa = { version = "0.9.10", default-features = false }
 rustc-hash = "1.0.1"
 rustls = { version = "0.21.12", features = ["dangerous_configuration"] }
@@ -223,7 +212,6 @@ rustyline = "2.1.0"
 rutabaga_gfx = { version = "0.1.75", features = ["gfxstream"] }
 sapphire-async = { version = "0.1.0", features = ["std", "testing"] }
 sapphire-collections = { version = "0.1.0", features = ["std"] }
-sapphire-gatt = "0.1.0"
 sapphire-peer-cache = "0.1.0"
 sapphire-sync = { version = "0.1.0", features = ["std"] }
 sapphire-uuid = "0.1.0"
@@ -295,12 +283,12 @@ hyper-rustls = { version = "0.24.2", default-features = false }
 openat = "0.1.21"
 openssl = { version = "0.10.81", features = ["unstable_boringssl"] }
 pkcs1 = "0.7.5"
+pkcs8 = "0.10.2"
 rust_icu_common = { version = "5.6.0", default-features = false, features = ["renaming"] }
 rust_icu_sys = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env", "icu_version_67_plus"] }
 rust_icu_ucal = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
 rust_icu_udat = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
 rust_icu_udata = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
-rust_icu_uenum = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
 rust_icu_uloc = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env", "icu_version_67_plus"] }
 rust_icu_unorm2 = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env", "icu_version_67_plus"] }
 rust_icu_ustring = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
@@ -357,7 +345,6 @@ term_grid = "0.2.0"
 # supports target-specific feature resolution
 tokio = { version = "=1.52.3", default-features = false }
 tokio-stream = "0.1.18"
-wait-timeout = "0.2.1"
 xattr = "1.6.1"
 zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2"] }
 # keep-sorted end
@@ -630,9 +617,6 @@ uses_fuchsia_license = true
 [gn.package.sapphire-collections."0.1.0"]
 uses_fuchsia_license = true
 
-[gn.package.sapphire-gatt."0.1.0"]
-uses_fuchsia_license = true
-
 [gn.package.sapphire-peer-cache."0.1.0"]
 uses_fuchsia_license = true
 
@@ -696,9 +680,6 @@ license_files = ["LICENSE-APACHE"]
 [gn.package.handlebars."4.3.5"]
 # pest relies on this being set to find the grammar file
 env_vars = [ "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/handlebars-4.3.5" ]
-
-[gn.package.heapless."0.9.3"]
-# Has build script but no config needed.
 
 [gn.package.heck."0.3.1"]
 group_name = "heck-0_3"
