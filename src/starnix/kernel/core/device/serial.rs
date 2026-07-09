@@ -12,6 +12,7 @@ use crate::vfs::{FileOps, FsString, NamespaceNode, VecInputBuffer, VecOutputBuff
 use anyhow::Error;
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_hardware_serial as fserial;
+use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::{DeviceId, TTY_MAJOR};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::from_status_like_fdio;
@@ -113,14 +114,12 @@ impl SerialDevice {
     ///
     /// To register the device, call `register_serial_device`.
     pub fn new(
-        current_task: &CurrentTask,
+        kernel: &Kernel,
         serial_device: ClientEnd<fserial::DeviceMarker>,
+        creds: FsCred,
     ) -> Result<Arc<Self>, Errno> {
-        let kernel = current_task.kernel();
-
         let state = Arc::new(TtyState::default());
         let fs = new_pts_fs_with_state(kernel, Default::default(), state.clone())?;
-        let creds = current_task.current_fscred();
         let terminal = state.get_next_terminal(fs.root().clone(), creds)?;
 
         let serial_proxy = Arc::new(serial_device.into_sync_proxy());

@@ -75,12 +75,11 @@ impl Framebuffer {
 
     /// Initialize the framebuffer device. Should only be called once per kernel.
     pub fn device_init(
-        system_task: &CurrentTask,
+        kernel: &Kernel,
         aspect_ratio: Option<AspectRatio>,
         enable_visual_debugging: bool,
         initial_view_id_annotation: String,
     ) -> Result<Arc<Framebuffer>, Errno> {
-        let kernel = system_task.kernel();
         let registry = &kernel.device_registry;
 
         let framebuffer = kernel.expando.get_or_try_init(|| {
@@ -89,7 +88,7 @@ impl Framebuffer {
 
         let graphics_class = registry.objects.graphics_class();
         registry.register_device(
-            system_task.kernel(),
+            kernel,
             "fb0".into(),
             DeviceMetadata::new("fb0".into(), DeviceId::FB0, DeviceMode::Char),
             graphics_class,

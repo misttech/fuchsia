@@ -512,7 +512,7 @@ pub fn run_container_features(system_task: &CurrentTask, features: &Features) ->
 
     if features.framebuffer {
         let framebuffer = Framebuffer::device_init(
-            system_task,
+            kernel,
             features.aspect_ratio,
             features.enable_visual_debugging,
             features.initial_view_id_annotation.clone(),
@@ -560,11 +560,9 @@ pub fn run_container_features(system_task: &CurrentTask, features: &Features) ->
         let keyboard_device = InputDevice::new_keyboard(&kernel.inspect_node);
         let mouse_device = InputDevice::new_mouse(&kernel.inspect_node);
 
-        touch_device.clone().register(&kernel.kthreads.system_task(), DEFAULT_TOUCH_DEVICE_ID)?;
-        keyboard_device
-            .clone()
-            .register(&kernel.kthreads.system_task(), DEFAULT_KEYBOARD_DEVICE_ID)?;
-        mouse_device.clone().register(&kernel.kthreads.system_task(), DEFAULT_MOUSE_DEVICE_ID)?;
+        touch_device.clone().register(kernel, DEFAULT_TOUCH_DEVICE_ID)?;
+        keyboard_device.clone().register(kernel, DEFAULT_KEYBOARD_DEVICE_ID)?;
+        mouse_device.clone().register(kernel, DEFAULT_MOUSE_DEVICE_ID)?;
 
         let (input_events_relay, input_events_relay_handle) = new_input_relay();
         input_events_relay.start_relays(
@@ -652,8 +650,7 @@ pub fn run_container_features(system_task: &CurrentTask, features: &Features) ->
         register_wakeup_test_device(system_task)?;
     }
     if features.mmcblk_stub {
-        let _device = add_mmc_block_device(system_task.kernel())
-            .context("Failed to add stub mmcblk0 device")?;
+        let _device = add_mmc_block_device(kernel).context("Failed to add stub mmcblk0 device")?;
     }
     if features.android_usb {
         usb_device_init(kernel).context("Failed to add android usb device nodes")?;

@@ -16,6 +16,7 @@ use starnix_core::device::serial::SerialDevice;
 use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::task::Kernel;
 use starnix_logging::{log_error, log_info, log_warn};
+use starnix_uapi::auth::FsCred;
 
 use std::sync::Arc;
 
@@ -61,7 +62,6 @@ pub fn nanohub_device_init(kernel: &Arc<Kernel>) {
 }
 
 async fn register_datachannel_devices(kernel: Arc<Kernel>) {
-    let current_task = kernel.kthreads.system_task();
     let service = match Service::open(fnanohub::StarnixDataChannelServiceMarker) {
         Ok(service) => service,
         Err(e) => {
@@ -100,13 +100,13 @@ async fn register_datachannel_devices(kernel: Arc<Kernel>) {
             registry.objects.get_or_create_class("nanohub".into(), registry.objects.virtual_bus());
 
         if let Err(e) = registry.register_dyn_device_with_dir(
-            current_task.kernel(),
+            &kernel,
             name.as_bytes().into(),
             device_class,
             build_device_directory,
             DataChannelDevice::new(
                 data_channel_service_proxy,
-                current_task.kernel().suspend_resume_manager.clone(),
+                kernel.suspend_resume_manager.clone(),
             ),
         ) {
             log_warn!("Failed to register datachannel device: {:?}", e);
@@ -137,7 +137,6 @@ async fn register_serial_device(kernel: Arc<Kernel>) {
     loop {
         match watcher.try_next().await {
             Ok(Some(watch_msg)) => {
-                let current_task = kernel.kthreads.system_task();
                 let filename = watch_msg
                     .filename
                     .as_path()
@@ -175,17 +174,20 @@ async fn register_serial_device(kernel: Arc<Kernel>) {
                     };
 
                     if device_class == fserial::Class::Mcu {
-                        let serial_device =
-                            SerialDevice::new(current_task, serial_proxy.into_channel().into())
-                                .expect("Can create SerialDevice wrapper");
+                        let serial_device = SerialDevice::new(
+                            &kernel,
+                            serial_proxy.into_channel().into(),
+                            FsCred::root(),
+                        )
+                        .expect("Can create SerialDevice wrapper");
 
                         // TODO This will register with an incorrect device number. We should be
                         // dynamically registering a major device and this should be minor device 1
                         // of that major device.
-                        let registry = &current_task.kernel().device_registry;
+                        let registry = &kernel.device_registry;
                         registry
                             .register_dyn_device(
-                                current_task.kernel(),
+                                &kernel,
                                 "ttyHS1".into(),
                                 registry.objects.tty_class(),
                                 serial_device,

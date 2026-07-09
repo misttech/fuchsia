@@ -7,7 +7,7 @@ use crate::input_event_relay::OpenedFiles;
 use futures::FutureExt;
 use starnix_core::device::kobject::DeviceMetadata;
 use starnix_core::device::{DeviceMode, DeviceOps};
-use starnix_core::task::CurrentTask;
+use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{FileOps, FsString, NamespaceNode};
 use starnix_sync::{InputDeviceFileNodesLock, LockDepMutex};
 use starnix_uapi::device_id::{DeviceId as StarnixDeviceId, INPUT_MAJOR};
@@ -278,13 +278,12 @@ impl InputDevice {
         }
     }
 
-    pub fn register(self, system_task: &CurrentTask, device_id: u32) -> Result<(), Errno> {
-        let kernel = system_task.kernel();
+    pub fn register(self, kernel: &Kernel, device_id: u32) -> Result<(), Errno> {
         let registry = &kernel.device_registry;
 
         let input_class = registry.objects.input_class();
         registry.register_device(
-            system_task.kernel(),
+            kernel,
             FsString::from(format!("event{}", device_id)).as_ref(),
             DeviceMetadata::new(
                 format!("input/event{}", device_id).into(),
