@@ -34,6 +34,16 @@ tools_bazel_root_targets = [
     install_host_tool = true
   },
   {
+    bazel_label = "//tools/fidl/gidl-format:gidl-format"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/gidl-format_/gidl-format"
+        ninja = "gidl-format"
+      },
+    ]
+    install_host_tool = true
+  },
+  {
     bazel_label = "//tools/go_test_parser:go_test_parser"
     copy_outputs = [
       {

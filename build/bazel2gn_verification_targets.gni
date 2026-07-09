@@ -155,6 +155,7 @@ bazel2gn_verification_targets = [
   "//tools/fidl/fidlgen_hlcpp:verify_bazel2gn",
   "//tools/fidl/fidlgen_rust/codegen:verify_bazel2gn",
   "//tools/fidl/fidlgen_rust:verify_bazel2gn",
+  "//tools/fidl/gidl-format:verify_bazel2gn",
   "//tools/fidl/lib/apidiff:verify_bazel2gn",
   "//tools/fidl/lib/fidlgen:verify_bazel2gn",
   "//tools/fidl/lib/fidlgen_cpp:verify_bazel2gn",

@@ -24,9 +24,9 @@ if (!is_host) {
 
       # For `fx format-code`.
       "//build/bazel/host:bazel_root_host_tools.formatjson5",
+      "//build/bazel/host:bazel_root_host_tools.gidl-format.host_tool",
       "//tools/cmc",
       "//tools/fidl/fidlc:fidl-format",
-      "//tools/fidl/gidl-format:host",
 
       # For `fx klog`.
       "//tools/loglistener:host",
